@@ -9,31 +9,11 @@ import (
 	"connectrpc.com/connect"
 )
 
-// secrets.go holds the cloud's answer about a hook for a little while, and the
-// bound on it is a security property rather than a performance one.
-//
-// v1 makes a p2p round trip to auth for a hook secret on EVERY unauthenticated
-// POST to a hook — the lookup is the route's Auth validator, so it runs
-// before anything has been proven — with no cache and no limit anywhere. A
-// stranger posting garbage therefore spends this node's connection to auth, and
-// spends it once per request.
-//
-// A cache alone would move the problem rather than solve it: a cache keyed by a
-// string the stranger chooses grows with the number of DISTINCT strings they
-// send. So the cache is bounded, and ratelimit.go bounds what reaches it in the
-// first place.
-//
-// ONLY A USABLE HOOK IS REMEMBERED — found, with a secret. A miss is not: the
-// rate limits already bound what a flood of invented ids costs (one lookup per
-// admitted request), and a remembered miss is a project whose secret was just
-// set refusing its first pushes for a minute on every node but the one it was
-// set through. A failure to reach the register or the vault is not either, for
-// the same reason in the other direction.
-//
-// A REMEMBERED HOOK IS RE-ASKED ONCE WHEN IT FAILS TO VERIFY A DELIVERY
-// (webhook.go). That is what makes a rotation correct on every frontend, not
-// just the one the secret was set through: the old secret here is a guess, and a
-// delivery it refuses is the evidence it went stale.
+// secrets.go caches hook lookups, bounded because the key is a stranger's string;
+// ratelimit.go bounds what reaches it. Only a usable hook is remembered: a miss or
+// a failed lookup is not, so a newly set secret works at once everywhere. A
+// remembered hook that fails to verify a delivery is re-asked once (webhook.go),
+// which is what makes rotation correct on every frontend.
 
 // cache is a bounded, expiring map of one fetch's outcome. Entries leave by
 // expiry or, when the map is full, oldest-inserted-first.
@@ -61,14 +41,9 @@ func newCache[V any](max int, ttl time.Duration, now func() time.Time) *cache[V]
 	}
 }
 
-// do returns the remembered value for key, or calls fetch and remembers what
-// it returns. A failed fetch is never remembered.
-//
-// FETCH RUNS WITHOUT THE LOCK HELD, deliberately: it is a network call, and a
-// cache that serialized every webhook behind one mutex would be a better denial
-// of service than the one it prevents. The cost is that a cold key hit
-// concurrently is fetched more than once, which is a duplicated read of a value
-// that does not change — and the rate limiter is what bounds how many.
+// do returns the remembered value for key, or fetches and remembers it; a failed
+// fetch is not remembered. The fetch runs without the lock, so a concurrent cold
+// key may be fetched twice.
 func (c *cache[V]) do(key string, fetch func() (V, error)) (V, error) {
 	if entry, ok := c.load(key); ok {
 		return entry.value, nil
@@ -112,10 +87,8 @@ func (c *cache[V]) storeLocked(key string, entry cacheEntry[V]) {
 	}
 	c.items[key] = entry
 
-	// Oldest-inserted-first rather than least-recently-used. LRU would need a
-	// write on every read and would still be defeated by enough distinct keys;
-	// what actually holds the line is that there IS a ceiling, and that the
-	// global rate limit bounds how fast a stranger can push against it.
+	// Oldest-inserted-first, not LRU: the ceiling and the global rate limit are what
+	// hold.
 	for len(c.order) > c.max {
 		oldest := c.order[0]
 		c.order = c.order[1:]
@@ -132,19 +105,9 @@ func (c *cache[V]) forget(key string) {
 	}
 }
 
-// hookCache is the cache the webhook route reads hooks through: the bounded,
-// expiring map above, plus ONE FETCH IN FLIGHT PER PROJECT and an order on
-// fetches, because a refresh is a write that must not lose to an older read.
-//
-// Every fetch takes a ticket from one counter when it starts, and an entry
-// carries the ticket of the fetch that produced it. Only the LATEST fetch
-// started for a key may write that key, and a newer start, or a drop, makes
-// the older one's result its own callers' alone. So an old lookup that comes
-// back after a refresh — the case where a slow answer from before a rotation
-// would put the old secret back — changes nothing.
-//
-// THE MUTEX IS NEVER HELD ACROSS A FETCH. A waiter blocks on the flight's
-// channel, not on the lock.
+// hookCache is the webhook route's cache: one fetch in flight per project, and
+// tickets so only the latest fetch for a key may write it; a slow pre-rotation
+// answer cannot restore an old secret. The mutex is never held across a fetch.
 type hookCache struct {
 	*cache[hookEntry]
 	fetch func(ctx context.Context, project string) (Hook, error)
@@ -181,20 +144,14 @@ func newHookCache(max int, ttl time.Duration, now func() time.Time, fetch func(c
 	}
 }
 
-// get answers from the cache, or joins the fetch in flight for project, or
-// starts one.
-//
-// THE CACHE AND THE FLIGHTS ARE READ UNDER ONE LOCK. Read apart, a flight
-// that lands between the two reads is in neither, and the lookup starts a
-// second fetch for a value already held.
+// get answers from the cache, joins the flight for project, or starts one; cache
+// and flights are read under one lock.
 func (c *hookCache) get(ctx context.Context, project string) (hookLookup, error) {
 	return c.await(ctx, project, 0)
 }
 
-// refresh asks again for a hook the cache answered with ticket, never answering
-// from the cache. A fetch already in flight is joined only when it started
-// AFTER that answer was produced; one started before could return the very
-// value being doubted.
+// refresh asks again for a hook answered with ticket, joining only a fetch started
+// after that answer.
 func (c *hookCache) refresh(ctx context.Context, project string, ticket uint64) (hookLookup, error) {
 	return c.await(ctx, project, ticket+1)
 }
@@ -224,9 +181,8 @@ func (c *hookCache) await(ctx context.Context, project string, notBefore uint64)
 	}
 }
 
-// run is one fetch. ITS CONTEXT OUTLIVES THE REQUEST THAT STARTED IT, since
-// other requests may be waiting on it; the fetch is bounded by the caller's
-// own timeout (s.hook's), not by whichever request happened to start it.
+// run is one fetch, its context outliving the starting request since others may
+// wait on it; bounded by s.hook's timeout.
 func (c *hookCache) run(ctx context.Context, project string, f *hookFlight) {
 	f.hook, f.err = c.fetch(context.WithoutCancel(ctx), project)
 
@@ -237,11 +193,8 @@ func (c *hookCache) run(ctx context.Context, project string, f *hookFlight) {
 		case f.err == nil && f.hook.signed():
 			c.storeLocked(project, cacheEntry[hookEntry]{value: hookEntry{hook: f.hook, ticket: f.ticket}, at: c.now()})
 		case absent(f.err) || f.err == nil:
-			// AN AUTHORITATIVE ABSENCE EVICTS, and so does a hook that came back
-			// with no secret: whatever was remembered is no longer the cloud's
-			// answer. A failure to ask leaves the entry as it was — and its
-			// expiry as it was, so a lookup that keeps failing never extends how
-			// long an old secret is believed.
+			// An authoritative absence, or a hook with no secret, evicts. A failure to ask
+			// leaves the entry and its expiry as they were.
 			delete(c.items, project)
 			c.forget(project)
 		}

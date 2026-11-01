@@ -15,20 +15,10 @@ import (
 	"github.com/taubyte/tau/services/build/artifact"
 )
 
-// needsEgressRestriction FAILS when this machine cannot confine a container's
-// network, and says what is missing.
-//
-// IT IS AN ENVIRONMENT CAPABILITY AND NOT A CHOICE. A build runs a stranger's
-// commands, so pkg/containers installs a firewall and REFUSES TO START THE
-// CONTAINER if it cannot — a rootless docker keeps its bridge in its own
-// namespace, and a process without CAP_NET_ADMIN cannot program it at all. That
-// fail-closed behaviour is the property; a test that turned the restriction off
-// to get green would be testing a build this service will never run.
-//
-// IT USED TO SKIP, and a skipped run prints `ok`: every machine that could not
-// build reported these as passing, having built nothing. They are selected by a
-// build tag, so whoever runs them asked for a real build — `make test-build`
-// gives them a rootful daemon and the privilege.
+// needsEgressRestriction fails when this machine cannot confine a container's
+// network, saying what is missing. pkg/containers refuses to start an unconfined
+// build, so skipping would report builds that never ran; `make test-build` gives
+// a rootful daemon.
 func needsEgressRestriction(t *testing.T, err error) {
 	t.Helper()
 	if err != nil && strings.Contains(err.Error(), "egress") {
@@ -36,11 +26,6 @@ func needsEgressRestriction(t *testing.T, err error) {
 	}
 }
 
-// A REAL BUILD, IN A REAL CONTAINER, tagged the way every other test in this
-// tree that needs a daemon is. What it proves is the part no fake can: that the
-// checkout is bind-mounted where the commands expect it, that the commands run
-// in order and stop at the first failure, that the build's own output reaches
-// the job's log, and that what it wrote is read back off the host.
 func TestARealBuild(t *testing.T) {
 	e, err := artifact.NewEngine(nil)
 	require.NoError(t, err)
@@ -66,9 +51,6 @@ func TestARealBuild(t *testing.T) {
 	require.Contains(t, log.String(), "building")
 }
 
-// THE FIRST COMMAND THAT FAILS ENDS THE BUILD, which is what anybody writing
-// two lines of a build expects, and the container's exit code is what reports
-// it.
 func TestARealBuildThatFails(t *testing.T) {
 	e, err := artifact.NewEngine(nil)
 	require.NoError(t, err)
@@ -89,8 +71,6 @@ func TestARealBuildThatFails(t *testing.T) {
 	require.Contains(t, log.String(), "main.go:3: undefined: x")
 }
 
-// A BUILD WHOSE COMMANDS SUCCEEDED AND PUT THE PRODUCT SOMEWHERE ELSE is the
-// most common way a build fails without failing.
 func TestARealBuildThatLeavesNothing(t *testing.T) {
 	e, err := artifact.NewEngine(nil)
 	require.NoError(t, err)
@@ -106,7 +86,6 @@ func TestARealBuildThatLeavesNothing(t *testing.T) {
 	require.ErrorContains(t, err, "left nothing at")
 }
 
-// A VARIABLE THE AUTHOR DECLARED FOR THE BUILD REACHES IT.
 func TestARealBuildSeesItsVariables(t *testing.T) {
 	e, err := artifact.NewEngine(nil)
 	require.NoError(t, err)
@@ -128,8 +107,6 @@ func TestARealBuildSeesItsVariables(t *testing.T) {
 	require.Equal(t, "github.com/acme/*", string(body))
 }
 
-// A REAL BUILD IS LOGGED WHILE IT RUNS: its first line reaches the log while
-// the container is still waiting for the test to let it finish.
 func TestARealBuildLogsWhileItRuns(t *testing.T) {
 	e, err := artifact.NewEngine(nil)
 	require.NoError(t, err)

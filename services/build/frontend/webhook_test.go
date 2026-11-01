@@ -12,28 +12,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A hostile caller gets one of these. The friendly case is one test; the rest
-// of this file is what a stranger can try.
-
 func TestAVerifiedPushIsQueuedAndTheCallerIsToldNothing(t *testing.T) {
 	h := newHarness(t, Config{})
 
 	w := h.do(t, webhookRequest(webhookOpts{}))
 
 	require.Equal(t, http.StatusAccepted, w.Code)
-	// v1 returns the whole Job — id included — to whoever posted the webhook,
-	// and its unauthenticated /download route is keyed by that id.
 	require.Empty(t, bodyOf(t, w))
 	require.Equal(t, []enqueued{{testRepoKey, "refs/heads/main", testSHA}}, h.backend.enqueues())
 	// The id is logged, where an operator tracing a delivery can find it.
 	require.Contains(t, h.logs.joined(), testJobID)
 }
 
-// pkg/http resolves a route variable from the QUERY before the path, so on
-// every v1 route with one, ?hook= picks the HMAC key. net/http's PathValue
-// cannot be reached that way.
-// WHAT THE FORGE SAYS A DELIVERY IS decides what this role does with it — and
-// nothing is queued unless the answer is a push.
 func TestEachAnswerAboutADeliveryHasItsOwnStatus(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -60,9 +50,6 @@ func TestEachAnswerAboutADeliveryHasItsOwnStatus(t *testing.T) {
 	}
 }
 
-// THE REPOSITORY QUEUED IS THE ONE THE VERIFICATION VOUCHED FOR, never one the
-// body named: the forge binds a push to the hook's own repository, and this
-// role passes that on without reading the payload itself.
 func TestWhatIsQueuedIsWhatWasVerified(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.deliveries.verify = func(hook Hook, _ http.Header, _ []byte) (Push, error) {
@@ -89,9 +76,6 @@ func TestAQueryParameterCannotChooseTheHook(t *testing.T) {
 	require.Equal(t, []string{testHookID}, asked)
 }
 
-// gopkg.in/go-playground/webhooks.v5 skips the MAC entirely when the secret is
-// empty, and auth's own p2p registration path hands out a hard-coded one. A
-// hook this cloud cannot authenticate must fail closed.
 func TestAnEmptySecretIsAFailureAndNeverASkippedMAC(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.hooks.get = func(id string) (Hook, error) {
@@ -121,9 +105,6 @@ func TestTheBodyIsBoundedBeforeItIsRead(t *testing.T) {
 	require.Empty(t, h.backend.enqueues())
 }
 
-// auth creates every hook with ContentType "json"
-// (services/auth/github_client.go), so the form encoding is a second parser for
-// a stranger's bytes that this cloud never asks for.
 func TestOnlyJSONIsParsed(t *testing.T) {
 	for _, contentType := range []string{"application/x-www-form-urlencoded", "text/plain", "application/json; boundary"} {
 		t.Run(contentType, func(t *testing.T) {

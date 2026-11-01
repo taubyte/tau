@@ -53,8 +53,6 @@ func heldIn(t *testing.T, r *register.Register, region string) []string {
 	return out
 }
 
-// EACH REGION IS PUBLISHED ITS OWN VIEW, beside the whole object, and a deploy that
-// changes nothing any region reads moves nothing.
 func TestADeployPublishesOneViewPerRegion(t *testing.T) {
 	r := registry(t)
 	co := &checkout{dir: configDir(t, map[string]string{
@@ -97,7 +95,6 @@ func TestADeployPublishesOneViewPerRegion(t *testing.T) {
 	require.EqualValues(t, 3, as[0].View.Revision)
 }
 
-// AN EDGE ACROSS REGIONS IS REFUSED before anything publishes.
 func TestADeployReachingAcrossRegionsIsRefused(t *testing.T) {
 	r := registry(t)
 	co := &checkout{dir: configDir(t, map[string]string{
@@ -114,8 +111,6 @@ func TestADeployReachingAcrossRegionsIsRefused(t *testing.T) {
 	require.ErrorIs(t, err, register.ErrNotPublished)
 }
 
-// A REGION THE CLOUD STOPS SERVING IS DROPPED from the deployment, though the object is
-// the same: a new manifest that does not list it, so it stops resolving.
 func TestADroppedRegionStopsResolving(t *testing.T) {
 	r := registry(t)
 	co := &checkout{dir: configDir(t, map[string]string{

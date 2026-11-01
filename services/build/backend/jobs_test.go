@@ -15,8 +15,6 @@ import (
 
 const unknownJobID = "0000000000000000000000000000000000000000000000000000000000000000"
 
-// A caller-supplied id is refused for SHAPE before a single store read, so it
-// never reaches a key builder.
 func TestEveryJobRPCRefusesAMalformedIDBeforeReadingAnything(t *testing.T) {
 	h := newHarness(t)
 
@@ -48,10 +46,6 @@ func TestEveryJobRPCIsLeaderOnly(t *testing.T) {
 		connect.CodeOf(h.list("p", func(*buildv2.JobRef) error { return nil })))
 }
 
-// THE MAPS ARE A READ SHAPE OFF THE RECORD, which is one Get rather than a
-// prefix listing plus a Get per row. What they hold is one cid per attempt's
-// log and one per resource — content ids of things in the asset store, not the
-// content, and not a row each in raft.
 func TestGetCarriesTheCidsOfEveryAttemptAndResource(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -79,8 +73,6 @@ func TestGetCarriesTheCidsOfEveryAttemptAndResource(t *testing.T) {
 	require.Equal(t, map[string]string{"prod/website/home": "cid-a-2"}, job.GetAssetCid())
 }
 
-// AND THE MAPS A CALLER IS HANDED ARE NOT THE RECORD'S. Two reads of one job
-// must not share a map with each other or with the next write of that record.
 func TestGetHandsOutACopyOfTheMapsAndNotTheRecords(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -100,8 +92,6 @@ func TestGetHandsOutACopyOfTheMapsAndNotTheRecords(t *testing.T) {
 	require.Equal(t, map[string]string{stamp(1): "cid-log-1"}, second.GetLogs())
 }
 
-// A job with no runs behind it reads as empty maps rather than as nulls, which
-// is what v1's shape promises a caller.
 func TestGetAnswersAJobThatHasProducedNothingWithEmptyMaps(t *testing.T) {
 	h := newHarness(t)
 
@@ -159,10 +149,6 @@ func TestListReportsAnIndexRowItCannotDecode(t *testing.T) {
 		connect.CodeOf(h.list("p", func(*buildv2.JobRef) error { return nil })))
 }
 
-// Cancel is a record write and the withdrawal of the item that record was
-// written for. A queued job needs no special case beyond that: the claimer
-// re-reads the record before it runs, so a delivery that outruns the withdrawal
-// is dropped rather than built.
 func TestCancelWritesTheRecordAndTakesTheItemOutOfTheQueue(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -183,8 +169,6 @@ func TestCancelWritesTheRecordAndTakesTheItemOutOfTheQueue(t *testing.T) {
 	require.Empty(t, h.runner.seen(), "a cancelled job must not be run")
 }
 
-// WHAT THE LEFTOVER ITEM ACTUALLY COSTS, which is why the withdrawal is not
-// tidiness. Both halves are the same orphan seen from two deployments.
 func TestACancelledJobLeavesNoWorkBehindItInTheQueue(t *testing.T) {
 	t.Run("the builder reaches the live job in the very next cycle", func(t *testing.T) {
 		h := newHarness(t)
@@ -244,8 +228,6 @@ func TestCancellingAFinishedJobIsAFailedPrecondition(t *testing.T) {
 	}
 }
 
-// An item the queue no longer holds is nothing to withdraw, not a failure: it
-// is a delivery already acked by a run whose terminal write never landed.
 func TestCancellingAJobWhoseItemIsAlreadyGoneIsNotAnError(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -258,10 +240,6 @@ func TestCancellingAJobWhoseItemIsAlreadyGoneIsNotAnError(t *testing.T) {
 	require.Equal(t, buildv2.JobStatus_JobStatusCancelled, h.status(t, id))
 }
 
-// The withdrawal is a second entry and can fail on its own. The record is what
-// cancels the job, so it is written first and the failure is reported — and the
-// caller's retry is what finishes the withdrawal, which is why cancelling a
-// cancelled job is a repair rather than a no-op.
 func TestCancelReportsAWithdrawalThatFailedAndTheNextCancelFinishesIt(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -291,9 +269,6 @@ func TestCancelReportsAStoreThatRefusedTheWrite(t *testing.T) {
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(h.cancel(id)))
 }
 
-// v1's retry looked the job up, found it, and answered {"retry": jid} without
-// doing anything — so "retry" on a running job was a lie the caller could not
-// detect.
 func TestRetryOnANonTerminalJobIsRefusedRatherThanSilentlyIgnored(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -309,9 +284,6 @@ func TestRetryOnANonTerminalJobIsRefusedRatherThanSilentlyIgnored(t *testing.T) 
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(h.retry(id)))
 }
 
-// A retry keeps what earlier attempts produced: the record's counter keeps
-// going up, so the next run's log is recorded under a higher attempt and the
-// previous one's cid stays where it was.
 func TestRetryReopensAndReQueuesWithoutLosingHistory(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -366,7 +338,6 @@ func TestACorruptRecordIsInternalOnEveryRead(t *testing.T) {
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(h.retry(id)))
 }
 
-// The record's push is a second entry, so it can fail on its own.
 func TestRetryReportsAPushThatFailsAfterTheRecordWasReopened(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -380,28 +351,6 @@ func TestRetryReportsAPushThatFailsAfterTheRecordWasReopened(t *testing.T) {
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(h.retry(id)))
 }
 
-// The retention row is written at the moment a job finishes, so a retry that
-// looked it up under the reopening's timestamp would delete a key nothing wrote
-// and leave the real row behind — a job that reads Open and is also listed as
-// retained.
-//
-// THE CLOCK MOVES TWICE HERE, AND BOTH MOVES ARE THE TEST.
-//
-// The second — between the finish and the retry — is what makes the reopening's
-// timestamp a different key from the one the finish wrote. It has been here
-// since the round that spelled the delete by hand.
-//
-// THE FIRST IS THE NINTH ROUND'S, and without it this test was named for an
-// invariant it could not see. A job built instantly has CreatedAt == UpdatedAt,
-// so `retained` stamping time.Unix(rec.CreatedAt, 0) and `dropRetained` reading
-// rec.CreatedAt are BOTH invisible: two independent one-token substitutions,
-// each reading a plausible timestamp off the right record, and each green
-// across twenty runs of the whole service. Every other clock.advance in this
-// package expires a claim or ages a reconcile row; none of them ever moved the
-// clock between a job's creation and its terminal write, so nothing in the
-// package ever wrote a terminal record whose two timestamps differed. Five
-// minutes here is a build that took five minutes, and it is what makes the
-// retention row's key a fact about when the job FINISHED.
 func TestRetryRemovesTheRetentionRowItActuallyWrote(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -425,12 +374,6 @@ func TestRetryRemovesTheRetentionRowItActuallyWrote(t *testing.T) {
 	require.Empty(t, h.store.Keys(terminal), "a reopened job is not retained history")
 }
 
-// ── what a deployment runs ───────────────────────────────────────────────
-
-// THE ARTIFACT ROW IS WRITTEN IN THE SAME ENTRY AS THE RECORD of the build that
-// produced it, so "this job succeeded" and "this is what that deployment now
-// runs" cannot end up disagreeing — and a reader pays one read rather than a
-// walk over a project's job history looking for the newest build of a resource.
 func TestASuccessfulBuildPointsTheDeploymentAtWhatItMade(t *testing.T) {
 	h := newWireHarness(t, WithAssets(newAssets()))
 	id := h.push(t, testRef, testCommit)
@@ -449,9 +392,6 @@ func TestASuccessfulBuildPointsTheDeploymentAtWhatItMade(t *testing.T) {
 	require.Equal(t, cid, h.mustRecord(t, id).Assets["prod/website/home"])
 }
 
-// ONE RESOURCE, TWO DEPLOYMENTS, TWO ARTIFACTS. A build stanza is
-// per-environment, so a key that was only the resource id would have preview's
-// build silently overwrite production's.
 func TestADeploymentsArtifactIsItsOwn(t *testing.T) {
 	h := newWireHarness(t, WithAssets(newAssets()))
 	id := h.push(t, testRef, testCommit)
@@ -482,9 +422,6 @@ func TestADeploymentsArtifactIsItsOwn(t *testing.T) {
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }
 
-// A FAILED BUILD'S OUTPUT IS KEPT AND ITS ARTIFACT IS NOT PUBLISHED. The log of
-// a build that failed is the output somebody wants; what a deployment RUNS must
-// not become something a build failed to finish.
 func TestAFailedBuildDoesNotMoveWhatADeploymentRuns(t *testing.T) {
 	h := newWireHarness(t, WithAssets(newAssets()))
 	id := h.push(t, testRef, testCommit)
@@ -524,9 +461,7 @@ func TestArtifactRefusesWhatItCannotAsk(t *testing.T) {
 	_, err := h.built(t, "shop", "prod", "website/home")
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 
-	// AND IT IS ITS OWN ACTION, so an authorizer can tell "what does this
-	// project run" from "read this job" — the subject means something else in
-	// each, and one told "read" with a project in it would either check it
-	// against jobs and refuse everything or stop checking and allow everything.
+	// And it is its own action, so an authorizer can tell a project read from a job
+	// read.
 	require.Contains(t, h.authorizer.acts, ActArtifact)
 }

@@ -11,22 +11,10 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 )
 
-// authapi.go is the public door to auth's sign-in and user calls.
-//
-// AUTH HAS NO INGRESS, and gains none: it answers other tau nodes only, so the
-// sign-in a browser or the CLI makes is carried here and handed to it over
-// p2p. What is carried is ConnectRPC unchanged — this file does not read a
-// message, it only decides which calls pass:
-//
-//   - ONLY THE PROCEDURES NAMED BELOW, by their generated constants. Admission,
-//     which nodes ask of auth, is not one of them.
-//   - ONLY POST, with a body bounded at the point of reading.
-//   - ONLY THE HEADERS a Connect call needs. Authorization is the caller's
-//     TAU token here, because these calls are auth's own; no forge token is
-//     forwarded.
-//   - BEHIND THE SAME LIMITS as every other route a caller reaches: the global
-//     bucket, then one per client address, since a sign-in has no credential
-//     yet to key by.
+// authapi.go is the public door to auth's sign-in and user calls; auth itself has
+// no ingress. ConnectRPC passes through unread, limited to the named procedures,
+// POST with a bounded body, the headers a Connect call needs (Authorization is
+// the caller's tau token), behind the global and per-address limits.
 
 // AuthAPI carries one Connect call to auth and returns its answer.
 type AuthAPI interface {

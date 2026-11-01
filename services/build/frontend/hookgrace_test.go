@@ -8,8 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A ROTATED SECRET'S PREVIOUS VALUE VERIFIES FOR THE GRACE, and then only the
-// new one does — with the hook still remembered, so the clock alone closes it.
 func TestAReplacedHookSecretVerifiesForTheGraceOnly(t *testing.T) {
 	h := newHarness(t, Config{HookSecretGrace: 10 * time.Minute, SecretCacheTTL: time.Hour})
 	replaced := h.clock.now()

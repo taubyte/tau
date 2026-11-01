@@ -14,17 +14,10 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 )
 
-// buildapi.go is a build somebody asked for by hand: `tau ci run`, and — in a
-// universe, never in a cloud — `tau build` carrying its own result in.
-//
-// A MANUAL BUILD IS A PUSH NOBODY DELIVERED, and it goes the way a delivered
-// one does once the caller is authorized: the same eligibility, the same
-// tenancy, the same Enqueue. What differs is how it is believed. A webhook is
-// believed because a forge signed it; this is believed because a builder on the
-// project asked, and the backend still reads the ref at the forge over the
-// repository's deploy key before anything is queued. The commit is the
-// caller's to name: the cloud never asks a forge anything with a user's
-// credential, so "the branch's head" is resolved on the caller's side.
+// buildapi.go is a build asked for by hand: `tau ci run`, and in a universe only,
+// `tau build` uploading its result. A manual build is authorized as a builder on
+// the project, then goes the way a delivered push does; the backend still confirms
+// the ref at the forge. The commit is the caller's to name.
 
 // maxBuildBody bounds the one small body a manual build reads.
 const maxBuildBody = 4 << 10

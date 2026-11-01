@@ -11,13 +11,8 @@ import (
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
-// ingress_test.go holds the three properties net/http's own ServeMux gives and
-// pkg/http does not, because each of them is a defect this role exists to
-// remove rather than a behaviour to assume.
+// The properties net/http's ServeMux gives and pkg/http does not.
 
-// pkg/http/context/helpers.go resolves a route variable from the QUERY first,
-// then the mux vars, then a header, then the body — so on every v1 route with a
-// path variable the caller can override it.
 func TestAPathValueCannotBeOverriddenFromAnywhereElse(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -44,8 +39,6 @@ func TestAPathValueCannotBeOverriddenFromAnywhereElse(t *testing.T) {
 	}
 }
 
-// A {wildcard} spans exactly one segment, so a hook id can never contain a
-// slash and can never reach a second path segment.
 func TestAWildcardIsOneSegment(t *testing.T) {
 	h := newHarness(t, Config{})
 
@@ -58,8 +51,6 @@ func TestAWildcardIsOneSegment(t *testing.T) {
 	}
 }
 
-// A wrong method is a 405 rather than a route that quietly does not exist, so a
-// misconfigured caller is told what is wrong.
 func TestTheMethodIsPartOfTheRoute(t *testing.T) {
 	h := newHarness(t, Config{})
 
@@ -78,7 +69,6 @@ func TestTheMethodIsPartOfTheRoute(t *testing.T) {
 	}
 }
 
-// Five routes and no others: no /ping, no bare-cid log route, no /download.
 func TestNothingElseIsServed(t *testing.T) {
 	h := newHarness(t, Config{})
 

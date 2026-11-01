@@ -33,8 +33,6 @@ func guardedRoutes() []route {
 
 var everyRole = []register.Role{register.RoleNone, register.RoleViewer, register.RoleBuilder, register.RoleSecretManager, register.RoleOwner}
 
-// EVERY ROUTE AT EVERY ROLE: served from the role it takes upward, the 404 a
-// denial is below it.
 func TestEveryRouteServesItsRoleAndAboveAndDeniesBelow(t *testing.T) {
 	for _, r := range guardedRoutes() {
 		for _, role := range everyRole {
@@ -142,8 +140,6 @@ func TestAnUnknownProjectIsTheSameAnswerAsADeniedOne(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, w.Code)
 }
 
-// The backend's own Authorizer refusing THIS NODE is a deployment fault, and it
-// is still answered as a 404 rather than confirming that the job exists.
 func TestABackendPermissionDenialDoesNotConfirmExistence(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.backend.get = func(string) (*buildv2.Job, error) {

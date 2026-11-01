@@ -16,40 +16,18 @@ import (
 	"github.com/taubyte/tau/pkg/containers/core"
 )
 
-// engine.go runs a build in a container.
-//
-// # The source is bind-mounted and the product is read back off the host
-//
-// A build writes into the checkout, so what it produced is on this machine when
-// the container exits and there is nothing to copy out of a stopped container.
-// That is also why Checkout hands back a directory rather than a filesystem.
-//
-// # Egress is restricted on a node, always
-//
-// A build runs a stranger's commands — `cargo build` fetches from crates.io and
-// runs whatever build.rs it downloaded — so it gets the public internet and
-// nothing else: no node-local services, no cloud metadata endpoint, no
-// private or link-local ranges, enforced fail-closed by pkg/containers. A node
-// cannot turn it off: a build that could reach the node's own register is a
-// build that can deploy itself. Only `tau build`, on the developer's own
-// machine, runs with OpenEgress.
-//
-// # The log is the build's output as it is written
-//
-// stdout and stderr go to the job's log together, in the order the build wrote
-// them, while the container runs — so a build being watched prints as it goes,
-// and a failed build's output is in the log before its exit code is.
+// engine.go runs a build in a container. The checkout is bind-mounted and the
+// product read back off the host. Egress on a node is always restricted to the
+// public internet (pkg/containers, fail-closed): a build reaching the node's
+// register could deploy itself; only `tau build` uses OpenEgress. stdout and
+// stderr stream to the job log in order.
 
-// mount is where the checkout appears inside the build.
-//
-// IT IS A FIXED PATH AND NOT THE HOST'S. The host path is a temporary directory
-// whose name nothing should depend on, and a build that saw it could write a
-// path into its own output that means nothing anywhere else.
+// mount is where the checkout appears inside the build, fixed so no output can
+// embed a host temp path.
 const mount = "/src"
 
-// shell runs the author's commands. They are joined with && so the first
-// failure ends the build, which is what anybody writing two lines of a build
-// expects and what a container's exit code then reports.
+// shell runs the author's commands, joined with && so the first failure ends the
+// build.
 var shell = []string{"/bin/sh", "-c"}
 
 // Containers is an Engine over pkg/containers.
@@ -61,22 +39,15 @@ type Containers struct {
 // EngineOption configures a Containers.
 type EngineOption func(*Containers)
 
-// OpenEgress is a build on a developer's own machine: the toolchain reaches
-// what that machine reaches. The restriction protects a node's own services
-// and its peers from a stranger's commands; on a developer's machine the
-// commands are the developer's, run as they would run them by hand, and the
-// restriction needs privileges a developer's docker does not have.
+// OpenEgress is a build on a developer's own machine: the commands are theirs,
+// and the restriction needs privileges a developer's docker lacks.
 func OpenEgress() EngineOption {
 	return func(c *Containers) { c.open = true }
 }
 
 var _ Engine = (*Containers)(nil)
 
-// NewEngine builds one over a backend the caller already chose.
-//
-// A NIL BACKEND IS THE MACHINE'S DEFAULT, which is what a development cloud
-// wants; a node whose operator named one passes it, so a build runs on the same
-// daemon its workloads do.
+// NewEngine builds one over backend; nil is the machine's default.
 func NewEngine(backend core.Backend, opts ...EngineOption) (*Containers, error) {
 	options := []containers.Option{}
 	if backend != nil {
@@ -161,12 +132,8 @@ func (s Spec) environment() map[string]string {
 	return out
 }
 
-// collect reads what a build left behind.
-//
-// A FILE IS ITSELF AND A DIRECTORY IS A TAR.GZ. A wasm component is one file
-// and a website is a tree, and the vocabulary lets an author name either — so
-// the artifact's shape follows what was declared rather than forcing a website
-// to be zipped by hand into a file the config would then have to name.
+// collect reads what a build left behind: a file as itself, a directory as a
+// tar.gz.
 func collect(dir, output string) (io.ReadCloser, error) {
 	path := joinWithin(dir, output)
 
@@ -191,11 +158,8 @@ func collect(dir, output string) (io.ReadCloser, error) {
 	return tarball(path)
 }
 
-// tarball streams a directory as a gzipped tar.
-//
-// IT IS A PIPE AND NOT A TEMPORARY FILE, because the caller hands what comes
-// back straight to a content-addressed store that reads to EOF — so a site's
-// worth of files never has to exist twice on this disk.
+// tarball streams a directory as a gzipped tar through a pipe, so a site is never
+// on disk twice.
 func tarball(root string) (io.ReadCloser, error) {
 	reader, writer := io.Pipe()
 

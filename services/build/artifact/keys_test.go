@@ -21,8 +21,6 @@ func (s spelled) Key(cloneURL string) (repokey.Key, error) {
 	return repokey.Key{Host: "forge.example", Owner: "acme", Name: "paylib"}, nil
 }
 
-// A SOURCE IS KEYED THROUGH THE REGISTRY, so a push filed under the forge's
-// canonical key builds the resource whichever address the config spelled.
 func TestASourceIsKeyedTheWayTheForgeSpellsIt(t *testing.T) {
 	e := &engine{}
 	require.NoError(t, builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: source(t)}, e, mainRepo,

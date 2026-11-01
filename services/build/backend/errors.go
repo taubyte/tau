@@ -7,10 +7,7 @@ import (
 	"connectrpc.com/connect"
 )
 
-// errors.go is the one code table (service-conventions.md §1): every
-// connect.NewError in this package goes through one of these, so the mapping
-// from a Go failure to a wire status is decided in one place rather than
-// re-guessed per handler.
+// The one code table: every connect.NewError in this package goes through these.
 
 func errInvalidArgument(format string, args ...any) error {
 	return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(format, args...))
@@ -51,18 +48,10 @@ func errUnavailable(format string, args ...any) error {
 // nothing else (jobid.go).
 var jobIDPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
-// requireJobID refuses a caller-supplied id that this service could not have
-// minted, BEFORE it reaches a key builder or a single store read.
-//
-// The id is derived, so it is guessable, and it is therefore never a bearer
-// token: every JobService call authorizes separately. What this closes is the
-// other half — an id is a KEY SEGMENT, and store.go's grammar is stated over
-// ids that are exactly one segment. hex cannot contain "/"
-// and cannot be "." or "..", and a fixed length means no id can be a prefix of
-// another, so no listing under one job's prefix can reach another's rows.
-// The encoding in store.go holds that for any input; this holds it for the
-// SHAPE, so a malformed id is an InvalidArgument at the edge rather than a
-// lookup that quietly finds nothing.
+// requireJobID refuses a caller-supplied id this service could not have minted,
+// before any key builder or store read. Fixed-length hex is always exactly one
+// key segment and never a prefix of another id. Ids are guessable, so every call
+// still authorizes.
 func requireJobID(id string) error {
 	if id == "" {
 		return errInvalidArgument("job id is required")

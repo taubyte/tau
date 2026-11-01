@@ -12,44 +12,30 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 )
 
-// Defaults. Fields on Config set through New, never mutable package globals —
-// v1's services/patrick/service.go's BootstrapTime, DefaultReAnnounceJobTime and
-// MaxReAnnounceJobs are those, shared by every instance in a process, and
-// v1's services/patrick/types.go already records that as a fixed race.
+// Defaults, each a Config field set through New, never a shared package global.
 const (
-	// DefaultMaxBodyBytes bounds a webhook body. GitHub's own push payloads run
-	// to a few hundred KiB at the truncation limits it documents (20 commits,
-	// 3000 files), so a mebibyte is generous; the point is that a stranger
-	// cannot decide how much this process reads. v1 io.ReadAll's the whole body
-	// before any authentication happens and no tau service ever sets a cap.
+	// DefaultMaxBodyBytes bounds a webhook body; GitHub's push payloads stay well
+	// under a mebibyte, and a stranger must not decide how much this process reads.
 	DefaultMaxBodyBytes = 1 << 20
-	// DefaultReadHeaderTimeout is the slow-header bound. net/http has no
-	// default for it, so without one a single idle connection holds a goroutine
-	// for as long as it likes.
+	// DefaultReadHeaderTimeout bounds slow headers; net/http has no default.
 	DefaultReadHeaderTimeout = 10 * time.Second
 	// DefaultIdleTimeout closes a kept-alive connection nobody is using.
 	DefaultIdleTimeout = 60 * time.Second
 	// DefaultShutdownTimeout bounds how long Close waits for in-flight requests.
 	DefaultShutdownTimeout = 10 * time.Second
-	// DefaultBackendTimeout bounds ONE call into the backend or into auth. It
-	// exists because the goroutine waiting on that call is holding an
-	// internet-facing connection: a backend that stops answering must cost this
-	// process a bounded amount of memory, not an unbounded one.
+	// DefaultBackendTimeout bounds one call into the backend or auth, so a silent
+	// backend costs bounded memory on internet-facing connections.
 	DefaultBackendTimeout = 30 * time.Second
-	// DefaultSecretCacheTTL is how long a hook's registration is believed. It
-	// bounds how long a replaced secret still verifies on a node that remembers
-	// it — the first delivery under the new one ends that sooner, by re-asking
-	// (webhook.go) — and how long an unlinked project's deliveries do; so it is
-	// short.
+	// DefaultSecretCacheTTL is how long a hook's registration is believed, bounding
+	// how long a replaced secret or an unlinked project's deliveries still verify.
 	DefaultSecretCacheTTL = time.Minute
 	// DefaultSecretCacheMax bounds the cache and the per-hook rate limiter
 	// alike. Both are keyed by a string a stranger chooses, so both need a
 	// ceiling; see ratelimit.go for what that ceiling costs.
 	DefaultSecretCacheMax = 1024
-	// DefaultHookSecretGrace is how long a replaced hook secret still verifies
-	// after its replacement was written: deliveries already in flight, and a
-	// forge whose hook the client has not yet updated. The secrets service
-	// keeps a replaced version an hour, so a longer grace is cut to that.
+	// DefaultHookSecretGrace is how long a replaced hook secret still verifies, for
+	// in-flight deliveries and forges not yet updated; the secrets service keeps a
+	// replaced version an hour.
 	DefaultHookSecretGrace = time.Hour
 
 	// DefaultStreamBackoff and DefaultStreamBackoffMax bound how soon a forge
@@ -63,47 +49,27 @@ const (
 	// behind a barrier, so the ceiling is what a long queue costs per viewer.
 	DefaultFollowBackoff    = 500 * time.Millisecond
 	DefaultFollowBackoffMax = 2 * time.Second
-	// DefaultStreamResync is how often a connected stream's linked
-	// repositories have their branch heads compared anyway. A stream has no
-	// replay, and a push it lost — to a disconnect, to the window before the
-	// forge registered the subscription, to a backend that refused the
-	// enqueue — is otherwise only found by the next push. See streams.go.
+	// DefaultStreamResync is how often a connected stream's linked repositories have
+	// their heads compared anyway, since a stream has no replay (streams.go).
 	DefaultStreamResync = 5 * time.Minute
 )
 
-// The four limits, two per public surface, and they are four because the two
-// surfaces defend different things and neither's flood may spend the other's
-// budget. See ratelimit.go.
-//
-// THE NUMBERS ARE POLICY and an operator overrides every one of them. What is
-// not policy is that a Config naming none of them is limited rather than open,
-// which is why they are defaults and not zero.
-//
-// THE TWO WEBHOOK LIMITS ARE ALSO THE LOOKUP BUDGET. Both are taken before
-// every hook lookup, and an admitted request makes AT MOST ONE logical lookup:
-// a cold one when nothing is remembered, or one refresh when a remembered hook
-// fails to verify the delivery — never both, since a fresh answer is not
-// re-asked (webhook.go). So the register and the vault see at most WebhookRate
-// lookups per node and HookRate per project, whatever a stranger sends, and a
-// refresh needs no cooldown of its own: it spends the token its request
-// already paid for.
+// The four limits, two per public surface, so neither surface's flood spends the
+// other's budget (ratelimit.go). Defaults, so an unconfigured Config is limited.
+// The two webhook limits also bound hook lookups: an admitted request makes at
+// most one.
 var (
 	DefaultHookRate    = Rate{Burst: 30, Per: time.Minute}
 	DefaultWebhookRate = Rate{Burst: 300, Per: time.Minute}
-	// DefaultCallerRate is one credential's share of the job API. A CLI polling
-	// one build's status wants about one request a second; sixty a minute is
-	// that, with a minute's worth of burst in front of it.
+	// DefaultCallerRate is one credential's share of the job API: about one request a
+	// second, with a minute of burst.
 	DefaultCallerRate = Rate{Burst: 60, Per: time.Minute}
-	// DefaultJobRate is the whole job API's ceiling on one node, and it is the
-	// bound that actually holds: a stranger gets a fresh per-credential bucket
-	// by inventing a new bearer token, and cannot get a fresh one of these.
+	// DefaultJobRate is the job API's ceiling on one node, the bound that holds since
+	// a new bearer token gets a fresh per-credential bucket.
 	DefaultJobRate = Rate{Burst: 600, Per: time.Minute}
 )
 
-// DefaultEligibleRefs is RESTATED, not imported. v1's legacy/specs/common's
-// DefaultBranches is v1's frozen address space and nothing new imports it; the
-// list is also policy, and policy an operator can change does not belong in a
-// package v1 freezes.
+// DefaultEligibleRefs is restated rather than imported from v1's frozen specs.
 func DefaultEligibleRefs() []string { return []string{"refs/heads/main", "refs/heads/master"} }
 
 // Rate is a token bucket: Burst requests may arrive at once, and the bucket
@@ -129,10 +95,8 @@ func (r Rate) valid() error {
 // Config is what an operator declared. A plain value: no live objects, no
 // setters, and it round-trips through yaml.
 type Config struct {
-	// Listen is the address Start binds. There is no default and no constant:
-	// a port baked into a service is why services/auth/service_basic_test.go
-	// hardcodes eight of them and why sibling worktrees collide. Tests bind
-	// "127.0.0.1:0" or, more often, use Handler() and bind nothing at all.
+	// Listen is the address Start binds; no default. Tests use Handler() and bind
+	// nothing.
 	Listen string `yaml:"listen"`
 
 	// MaxBodyBytes bounds one webhook body. Zero means DefaultMaxBodyBytes.
@@ -148,31 +112,18 @@ type Config struct {
 	// DefaultBackendTimeout.
 	BackendTimeout time.Duration `yaml:"backendTimeout"`
 
-	// EligibleRefs are the refs a push is built for. Nil means
-	// DefaultEligibleRefs. THE POLICY LIVES HERE, before Enqueue is ever
-	// called (build.proto: "a push to an ineligible ref is refused at the HTTP
-	// handler and never reaches this RPC"), so the backend never re-filters a
-	// ref and there is exactly one place that decides.
+	// EligibleRefs are the refs a push is built for; nil means DefaultEligibleRefs.
+	// The one place that decides, before Enqueue.
 	EligibleRefs []string `yaml:"eligibleRefs"`
 
-	// HookRate limits one hook id; WebhookRate limits the webhook route.
-	// CallerRate limits one credential; JobRate limits the four job routes.
-	// The ZERO Rate means the matching default, so a config that names none of
-	// them is limited rather than open. Turning a limit off takes a period with
-	// a burst of zero — deliberately not the shape a half-filled config falls
-	// into.
-	//
-	// THE JOB ROUTES NEED THEIR OWN PAIR rather than sharing the webhook's.
-	// One shared ceiling would let a flood on either surface lock the other
-	// out, and the two are not interchangeable: a webhook refused is a delivery
-	// a provider stops retrying, and a job route refused is a CLI that cannot
-	// read its own build.
-	// Origins are the browser origins (scheme://host[:port]) whose pages may
-	// call this ingress — the cloud's consoles. Every other origin gets no
-	// CORS headers, so a browser refuses it the answer. No cookie is ever
-	// accepted, so no credentialed request is allowed. See cors.go.
+	// Origins are the browser origins (scheme://host[:port]) whose pages may call this
+	// ingress; no cookie is ever accepted (cors.go).
 	Origins []string `yaml:"origins"`
 
+	// HookRate limits one hook id, WebhookRate the webhook route, CallerRate one
+	// credential, JobRate the job routes. Each surface has its own pair so a flood
+	// on one cannot lock out the other. A zero Rate means the default; turning one
+	// off takes a period with a burst of zero.
 	HookRate    Rate `yaml:"hookRate"`
 	WebhookRate Rate `yaml:"webhookRate"`
 	CallerRate  Rate `yaml:"callerRate"`
@@ -307,12 +258,8 @@ func (c Config) withDefaults() (Config, error) {
 	return c, nil
 }
 
-// Hook is what verifies a delivery addressed to one project: each of its
-// repositories with the secret that repository's own webhook signs with.
-//
-// A SIGNATURE IS GOOD FOR ITS OWN REPOSITORY ONLY. v1 fetched one secret and
-// let the BODY name the repository, so a signature under one hook authorized a
-// job for any repository the cloud had.
+// Hook verifies a delivery addressed to one project: each repository with its own
+// webhook secret, so a signature is good for its own repository only.
 type Hook struct {
 	Project      string
 	Repositories []HookRepository
@@ -328,38 +275,29 @@ type HookRepository struct {
 	Replaced time.Time
 }
 
-// ErrNoHook is a project this cloud cannot verify a push for: nobody linked
-// it, or no repository of it has a hook secret set. It is an answer, not a failure: the
-// webhook route denies it, where a failure to ask is a 503 (secrets.go).
+// ErrNoHook is a project this cloud cannot verify a push for; an answer the route
+// denies, unlike a failure to ask (503).
 var ErrNoHook = errors.New("build: no hook for this project")
 
-// Hooks is what verifies a webhook addressed to a project: the register's
-// record of the project, and the hook secret its link stored in the vault.
+// Hooks verifies a webhook addressed to a project, from the register and the
+// vault.
 type Hooks interface {
 	// Hook returns project's hook, or ErrNoHook.
 	Hook(ctx context.Context, project string) (Hook, error)
 }
 
-// Deliveries authenticates a webhook delivery and says what it means.
-//
-// IT IS AN INTERFACE because which forge signed a delivery,
-// how, and where in the payload the push is, are the host's answers — and this
-// package names no host. forgeauth answers it through pkg/forge.
+// Deliveries authenticates a webhook delivery and says what it means; an interface
+// since the forge is the host's answer (forgeauth).
 type Deliveries interface {
-	// Verify checks one delivery against the hook it was addressed to, under
-	// the scheme the repository's forge signs with and that repository's own
-	// secret, and returns the push it proves. A push is always for one of
-	// the hook's own repositories: a delivery naming any other does not verify.
-	//
-	// ErrNotAPush and ErrRefDeleted are genuine deliveries this cloud does not
-	// build; ErrMalformed is a genuine delivery naming no usable push;
-	// ErrUnverified is a delivery that is not genuine. Anything else is a hook
-	// this cloud cannot check at all.
+	// Verify checks one delivery against its hook under the repository's own scheme
+	// and secret and returns the push; a delivery naming another repository does not
+	// verify. ErrNotAPush and ErrRefDeleted are genuine non-builds, ErrMalformed a
+	// genuine delivery with no usable push, ErrUnverified not genuine; anything else
+	// is a hook that cannot be checked.
 	Verify(hook Hook, header http.Header, body []byte) (Push, error)
 }
 
-// Push is what a verified delivery means: build.proto's PushEvent, and nothing
-// else. Everything else a payload carries is a stranger's bytes a forge relayed.
+// Push is what a verified delivery means: build.proto's PushEvent, nothing else.
 type Push struct {
 	Repository string
 	Ref        string
@@ -367,8 +305,7 @@ type Push struct {
 }
 
 var (
-	// ErrNotAPush is a genuine delivery of an event this cloud does not build
-	// on — a ping when a hook is created, and a dozen others after.
+	// ErrNotAPush is a genuine delivery of another event, such as a ping.
 	ErrNotAPush = errors.New("build: not a push event")
 
 	// ErrRefDeleted is a genuine push that deletes its ref.
@@ -396,29 +333,17 @@ type Callers interface {
 	Caller(ctx context.Context, token string) (string, error)
 }
 
-// Vault is the secrets service as this role sees it — three calls, and
-// deliberately NOT the fourth.
-//
-// THERE IS NO Get. A developer sets a secret and lists what is set; nothing on
-// this ingress reads a value back. That is the difference between a stolen
-// token being "they can overwrite my secrets" and "they have every secret this
-// project holds" — and it costs a developer nothing, because the value is
-// theirs already and rotating is setting again. Every platform this competes
-// with is write-only after the set for the same reason.
-//
-// OPTIONAL. A frontend composed without one answers every route below with the
-// same 404 a denial gets, because a cloud that holds no secrets should not
-// distinguish itself from one that holds none of yours.
+// Vault is the secrets service as this role sees it: set and list, never get, so a
+// stolen token can overwrite secrets but never read them. Optional; without it
+// every route answers the same 404 a denial gets.
 type Vault interface {
 	Set(ctx context.Context, project, environment, name string, value []byte) error
 	Delete(ctx context.Context, project, environment, name string) error
 	List(ctx context.Context, project, environment string) ([]string, error)
 }
 
-// Linker is the register's project table as this role writes it: linking,
-// the caller's own index, and a project's grants. The register's surface is
-// p2p only; this is the one public door to it, and it opens only after the
-// caller is authorized (projectapi.go, grantapi.go).
+// Linker is the register's project table as this role writes it: linking, the
+// caller's index and grants, only after authorization.
 type Linker interface {
 	LinkProject(ctx context.Context, l register.Link) (register.ProjectRecord, error)
 	ProjectsOf(ctx context.Context, user string) ([]register.ProjectRecord, error)
@@ -430,16 +355,13 @@ type Linker interface {
 	Grants(ctx context.Context, project string) ([]register.Grant, error)
 }
 
-// Streams is a forge's own authenticated push feed, for the forges that have
-// one and no webhook a signature covers (Gerrit). forgeauth answers it through
-// pkg/forge. A push read from a stream is the same Push a verified delivery
-// is, and goes the same way from here: eligibility, tenancy, Enqueue.
+// Streams is a forge's own push feed, for forges with no signed webhook (Gerrit).
+// A streamed push goes the way a verified delivery does.
 type Streams interface {
 	// Hosts is every forge host with a feed.
 	Hosts() []string
-	// Stream holds one subscription to host's feed: ready once it is
-	// accepted, then emit per push — a nil error for a push, the reason for a
-	// claim the forge layer refused. It returns when ctx ends or the feed
+	// Stream holds one subscription: ready once accepted, then emit per push (an error
+	// for a claim the forge layer refused). It returns when ctx ends or the feed
 	// breaks, and never reconnects.
 	Stream(ctx context.Context, host string, ready func(), emit func(Push, error)) error
 	// Heads is one repository's branch heads, as pushes.
@@ -452,11 +374,8 @@ type Linked interface {
 	LinkedRepositories(ctx context.Context) ([]string, error)
 }
 
-// Backend is build's private half, as this role sees it: build.proto's five
-// RPCs and nothing else. It is an interface here rather than
-// services/build/clients' concrete client so that every route in this package
-// is testable with a fake and no libp2p host — and so that this package cannot
-// reach past the five RPCs into anything else the backend holds.
+// Backend is build's private half as this role sees it: build.proto's five RPCs
+// and nothing else, an interface so routes test against a fake.
 type Backend interface {
 	Enqueue(ctx context.Context, repositoryKey, ref, commitSHA string) (jobID string, err error)
 	Get(ctx context.Context, jobID string) (*buildv2.Job, error)
@@ -465,12 +384,9 @@ type Backend interface {
 	List(ctx context.Context, projectID string, emit func(jobID string) error) error
 	Cancel(ctx context.Context, jobID string) error
 	Retry(ctx context.Context, jobID string) error
-	// Follow streams one run's output to emit — the run `attempt` names, from
-	// `from` to the end of it — and returns the offset it reached. Only the
-	// backend node writing the log can answer; the others say Unavailable,
-	// which is what makes a pooled caller walk to the writer. Unavailable from
-	// all of them is a log no node is writing yet; FailedPrecondition is a run
-	// that has ended, whose log is what its record files under its attempt.
+	// Follow streams one run's output from `from` and returns the offset reached; only
+	// the writer answers. Unavailable from all is a log not yet written;
+	// FailedPrecondition is an ended run.
 	Follow(ctx context.Context, jobID string, attempt int32, from int64, emit func(data []byte, next int64) error) (int64, error)
 	// Snapshot is Follow up to what the log holds when it is asked: it ends
 	// there while the build goes on.

@@ -17,9 +17,6 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 )
 
-// The four routes v1 guards with "does this bearer hold a working GitHub
-// token", after which no handler reads the resulting client.
-
 func TestGetJobAnswersTheSchemasOwnShape(t *testing.T) {
 	h := newHarness(t, Config{})
 
@@ -66,9 +63,6 @@ func TestAProjectWithNoJobsIsAnEmptyArrayAndNotNull(t *testing.T) {
 	require.JSONEq(t, `[]`, bodyOf(t, w))
 }
 
-// A failure before the first id can still choose a status. One after it cannot,
-// so the array is left open and a decoder reports truncation rather than
-// accepting a short list as complete.
 func TestAListThatBreaksAfterItStartedIsLeftVisiblyTruncated(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.backend.list = func(_ string, emit func(string) error) error {
@@ -104,16 +98,12 @@ func TestCancelSaysNothingAndRetrySaysQueued(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, cancel.Code)
 	require.Empty(t, bodyOf(t, cancel))
 
-	// 202, not 204: the job is queued, not finished. v1 answers both with
-	// {"cancelled": jid} / {"retry": jid} — the id the caller just sent.
+	// 202, not 204: the job is queued, not finished.
 	retry := h.do(t, authed(http.MethodPost, "/retry/"+testJobID, testToken))
 	require.Equal(t, http.StatusAccepted, retry.Code)
 	require.Empty(t, bodyOf(t, retry))
 }
 
-// v1's retry answered success without doing anything when the job was still
-// open. The backend answers FailedPrecondition; it must reach the caller as a
-// conflict and not as a success.
 func TestRetryingARunningJobIsAConflict(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.backend.retry = func(string) error {
@@ -125,8 +115,6 @@ func TestRetryingARunningJobIsAConflict(t *testing.T) {
 	require.Equal(t, http.StatusConflict, w.Code)
 }
 
-// The read that authorizes happens before the mutation, so a caller who may not
-// touch a job cannot cancel it and find out afterwards that they could not.
 func TestAMutationIsAuthorizedBeforeItHappens(t *testing.T) {
 	for _, route := range []string{"/cancel/", "/retry/"} {
 		t.Run(route, func(t *testing.T) {
@@ -172,9 +160,6 @@ func TestAnIdTheBackendCouldNotHaveMintedIsABadRequest(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, w.Code)
 }
 
-// A caller-chosen path segment that leaves this process is bounded before it
-// does. The backend refuses anything but a 43-character id; it should not have
-// to receive a megabyte to say so.
 func TestAnOversizedIdNeverReachesTheBackend(t *testing.T) {
 	for _, path := range []string{"/job/", "/jobs/", "/cancel/", "/retry/"} {
 		t.Run(path, func(t *testing.T) {
@@ -196,19 +181,6 @@ func TestAnOversizedIdNeverReachesTheBackend(t *testing.T) {
 	}
 }
 
-// ── what a request costs before anything is proven ───────────────────────────
-
-// bearer() checks the SHAPE of the Authorization header and nothing else, so
-// "Bearer x" reaches mayTouchJob — which has to call the backend first, because
-// the job's repository_key IS the authorization subject. Every backend read
-// goes through its lead(), and pkg/raft/cluster.go's Barrier is
-// hashicorp/raft's: api.go puts a logFuture{log: Log{Type: LogBarrier}} on
-// applyCh and raft.go's leaderLoop hands it to dispatchLogs. That is a log
-// entry replicated to quorum, not a local read.
-//
-// So one stranger's HTTP request costs the whole consistency domain one
-// replicated entry. webhook.go's own doc comment names this defect and closes
-// it for the webhook route with two limits; these four had none.
 func TestNoJobRouteSpendsTheCloudOnceForEveryRequest(t *testing.T) {
 	const flood = 1000
 
@@ -253,10 +225,6 @@ func TestNoJobRouteSpendsTheCloudOnceForEveryRequest(t *testing.T) {
 	}
 }
 
-// Retry is the one route that CREATES WORK — it queues a build — so it is the
-// one where a cap that was skipped costs more than a read. A tenant holding
-// write access to one of their own repositories must not be able to ask for
-// builds as fast as it can open connections.
 func TestRetryIsUnderTheSameCapsAsEveryOtherJobRoute(t *testing.T) {
 	const flood = 1000
 
@@ -275,10 +243,7 @@ func TestRetryIsUnderTheSameCapsAsEveryOtherJobRoute(t *testing.T) {
 	require.Positive(t, limited, "nothing was ever refused")
 }
 
-// admitted() is the only thing in this package that turns a job route's handler
-// into one the mux will take, and these four lines are that guarantee restated
-// where a reader looks for it rather than only where it is enforced: the day one
-// of them can be mounted directly, this file stops compiling.
+// The compile-time guarantee that every job route goes through admitted().
 var _ = []jobHandler{
 	(&Service{}).handleGetJob,
 	(&Service{}).handleListJobs,
@@ -286,10 +251,6 @@ var _ = []jobHandler{
 	(&Service{}).handleRetryJob,
 }
 
-// The per-caller limiter is keyed by a string the stranger chooses, so a fresh
-// bearer token buys a fresh bucket. Only the unkeyable one can stop that — the
-// same sentence ratelimit.go makes about invented hook ids, on the surface
-// where the cost is a replicated raft entry rather than a lookup.
 func TestAFloodOfInventedCredentialsMeetsTheGlobalJobLimit(t *testing.T) {
 	h := newHarness(t, Config{
 		JobRate:    Rate{Burst: 2, Per: time.Minute},
@@ -334,12 +295,6 @@ func TestOneCredentialsBurstDoesNotSpendTheWholeJobAPI(t *testing.T) {
 	require.Equal(t, http.StatusOK, h.do(t, authed(http.MethodGet, "/job/"+testJobID, testToken)).Code)
 }
 
-// The order inside credentials() is the fix, not just the presence of a
-// limiter. A request refused by bearer() or pathID() has cost this cloud
-// nothing, so it must not spend a token: if it did, a stranger could empty the
-// global bucket with requests that ask for nothing and lock out every caller
-// whose request would have been served — the rate limit doing the job it exists
-// to prevent.
 func TestARequestThatCostsNothingSpendsNoLimit(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -374,10 +329,6 @@ func TestARequestThatCostsNothingSpendsNoLimit(t *testing.T) {
 	}
 }
 
-// Two public surfaces, four limits, and neither surface's flood may spend the
-// other's budget. A webhook refused is a delivery GitHub stops retrying; a job
-// route refused is a CLI that cannot read its own build. They are not
-// interchangeable, so they do not share a ceiling.
 func TestTheTwoPublicSurfacesDoNotSpendEachOthersBudget(t *testing.T) {
 	exhausting := Config{
 		JobRate:     Rate{Burst: 1, Per: time.Minute},

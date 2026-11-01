@@ -14,8 +14,6 @@ import (
 // Collecting what a build left behind needs no daemon, and it is where the
 // interesting cases are.
 
-// A FILE IS ITSELF. A wasm component is one file, and handing it over is an
-// open.
 func TestCollectAFile(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "target", "release"), 0o755))
@@ -31,10 +29,6 @@ func TestCollectAFile(t *testing.T) {
 	require.Equal(t, "\x00asm\x01\x00\x00\x00", string(body))
 }
 
-// A DIRECTORY IS A TAR.GZ. A website is a tree, and the vocabulary lets an
-// author name either — so the artifact's shape follows what was declared
-// rather than forcing a site to be zipped by hand into a file the config would
-// then have to name.
 func TestCollectADirectory(t *testing.T) {
 	dir := t.TempDir()
 	root := filepath.Join(dir, "dist")
@@ -57,10 +51,6 @@ func TestCollectADirectory(t *testing.T) {
 	}
 }
 
-// A SYMLINK IS NOT FOLLOWED. A build controls what it writes, and one that
-// wrote a link to /etc/passwd into its output directory would otherwise have
-// this read that file into the artifact — which then goes to a
-// content-addressed store anybody with the id can read.
 func TestCollectDoesNotFollowASymlink(t *testing.T) {
 	dir := t.TempDir()
 	root := filepath.Join(dir, "dist")
@@ -83,17 +73,12 @@ func TestCollectDoesNotFollowASymlink(t *testing.T) {
 	}
 }
 
-// THE MOST COMMON WAY A BUILD FAILS WITHOUT FAILING: the commands succeeded and
-// put the product somewhere else. Saying what was expected is the whole of what
-// makes that findable.
 func TestCollectWhenTheBuildLeftNothing(t *testing.T) {
 	_, err := collect(t.TempDir(), "target/release/app.wasm")
 	require.ErrorContains(t, err, "left nothing at")
 	require.ErrorContains(t, err, "target/release/app.wasm")
 }
 
-// An output that climbs out collapses to the checkout root, which is a
-// directory that exists — so what comes back is the checkout, not /etc.
 func TestCollectCannotBeAimedOutside(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "only"), []byte("x"), 0o644))
@@ -106,8 +91,6 @@ func TestCollectCannotBeAimedOutside(t *testing.T) {
 	require.Equal(t, map[string]string{"only": "x"}, files)
 }
 
-// An empty output directory is an empty archive rather than an error: the
-// build declared it and produced nothing, which is the build's answer.
 func TestCollectAnEmptyDirectory(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "dist"), 0o755))

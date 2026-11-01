@@ -16,11 +16,6 @@ import (
 	"github.com/taubyte/tau/services/build"
 )
 
-// THE NARROW-DEPENDENCY RULE, AS A TEST rather than as a claim in a doc
-// comment. A mocknet host, a raft mock over a map, and a two-line fake for the
-// one question this service asks auth. No DHT, no DAG, no gossipsub, no temp
-// directory, no kvdb factory, no port, and no raft.New — which takes peer.Node
-// and would have made every one of those mandatory.
 func TestServiceNeedsOnlyAMocknetHostAMockClusterAndAFakeAuth(t *testing.T) {
 	s, err := New(Config{}, WithHost(newHost(t, newMocknet(t))), WithStore(raft.NewMockCluster()), WithRepositories(newRepositories()))
 	require.NoError(t, err)
@@ -74,8 +69,6 @@ func TestNewRefusesWhatItCannotBeBuiltFrom(t *testing.T) {
 	}
 }
 
-// New binds nothing and opens nothing, so a node can construct every service
-// before it starts any of them.
 func TestNewBindsNothing(t *testing.T) {
 	h := newHarness(t)
 	require.Nil(t, h.server)
@@ -98,8 +91,6 @@ func TestStartTwiceIsAnErrorAndSoIsStartAfterClose(t *testing.T) {
 	require.ErrorContains(t, h.Start(t.Context()), "closed")
 }
 
-// A second listener on one protocol id is refused at bind time, so a taken
-// protocol is an error rather than a service that starts and is never reached.
 func TestASecondListenerOnTheProtocolIsRefused(t *testing.T) {
 	h := newHarness(t)
 	require.NoError(t, h.Start(t.Context()))
@@ -111,8 +102,6 @@ func TestASecondListenerOnTheProtocolIsRefused(t *testing.T) {
 	require.ErrorIs(t, other.Start(t.Context()), rpc.ErrProtocolTaken)
 }
 
-// Close stops the loop it started, and waits for it — a loop still running
-// after Close would write to a store the composition root is about to close.
 func TestCloseStopsTheClaimLoop(t *testing.T) {
 	h := newHarnessCfg(t, func(c *Config) {
 		c.ClaimInterval = time.Millisecond
@@ -129,8 +118,6 @@ func TestCloseStopsTheClaimLoop(t *testing.T) {
 	}
 }
 
-// Close does not touch the store: Store has no Close, and the composition root
-// owns the cluster the services beside this one replicate into.
 func TestCloseLeavesTheStoreAlone(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -141,9 +128,6 @@ func TestCloseLeavesTheStoreAlone(t *testing.T) {
 	require.True(t, exists)
 }
 
-// The queue's own name is the consistency domain, and its dead letter is that
-// name plus the suffix — which is what makes draining it an ordinary claim on
-// the same group.
 func TestTheQueueAndItsDeadLetterAreNamedFromTheDomain(t *testing.T) {
 	h := newHarness(t)
 	require.Equal(t, build.QueueDomain, h.cfg.Queue.Name)
@@ -151,8 +135,6 @@ func TestTheQueueAndItsDeadLetterAreNamedFromTheDomain(t *testing.T) {
 	require.NotNil(t, h.dead)
 }
 
-// The transport's own knobs reach rpc.Listen without this package growing an
-// option per knob.
 func TestServerOptionsReachTheListener(t *testing.T) {
 	var configured bool
 	h := newHarness(t, WithServerOptions(rpc.WithHTTPServer(func(*http.Server) {
@@ -163,10 +145,6 @@ func TestServerOptionsReachTheListener(t *testing.T) {
 	require.True(t, configured, "a ServerOption given to New must reach rpc.Listen")
 }
 
-// A ROLLING RESTART MUST NOT BURN WHATEVER WAS BUILDING. Close ends the loop's
-// context, so the run in flight returns rather than holding the process open —
-// but the delivery is abandoned, not acknowledged: the item stays claimed, the
-// claim expires, and the queue redelivers it to whoever is leader then.
 func TestCloseAbandonsTheRunInFlightRatherThanFailingTheJob(t *testing.T) {
 	h := newHarnessCfg(t, func(c *Config) {
 		c.ClaimInterval = time.Millisecond
@@ -205,9 +183,6 @@ func TestCloseAbandonsTheRunInFlightRatherThanFailingTheJob(t *testing.T) {
 	require.Equal(t, uint32(2), d.Attempt, "the interrupted delivery cost an attempt")
 }
 
-// The other half of the same rule: a run that RETURNED during a shutdown is a
-// run that finished, and it is settled. The abandon is for a run the shutdown
-// cut short, not for work this node had already done.
 func TestARunThatFinishedDuringAShutdownIsStillSettled(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)

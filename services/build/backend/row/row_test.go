@@ -30,8 +30,6 @@ func (a *applied) Batch(ops []raft.BatchOp, timeout time.Duration) error {
 	return a.err
 }
 
-// The two rows there are, in the order they went in — pkg/raft applies a batch
-// in order, and an entry writes a record and the rows that index it together.
 func TestARowIsAKeyAndAVerb(t *testing.T) {
 	var e row.Entry
 	e.Set("a", []byte("v"))
@@ -47,7 +45,6 @@ func TestARowIsAKeyAndAVerb(t *testing.T) {
 	require.Equal(t, time.Second, to.timeout)
 }
 
-// AND THE ORDER IS THE CALLER'S, however many rows there are.
 func TestTheRowsComeOutInTheOrderTheyWentIn(t *testing.T) {
 	e := row.Sized(4)
 	for _, key := range []string{"a", "b", "c", "d"} {
@@ -64,9 +61,6 @@ func TestTheRowsComeOutInTheOrderTheyWentIn(t *testing.T) {
 	require.Equal(t, []string{"a", "b", "c", "d"}, keys)
 }
 
-// THE ZERO VALUE IS THE ONE A CALLER CAN WRITE FOR ITSELF, and it holds nothing:
-// the slice is unexported, so there is no field to put a row in. What it can do
-// is be added to through the two verbs, which is the only way any row exists.
 func TestTheOnlyEntryAcallerCanBuildForItselfHoldsNothing(t *testing.T) {
 	var e row.Entry
 	require.Zero(t, e.Len())
@@ -76,9 +70,6 @@ func TestTheOnlyEntryAcallerCanBuildForItselfHoldsNothing(t *testing.T) {
 	require.Zero(t, to.calls, "an entry with no rows must not reach the store at all")
 }
 
-// A ROW GOES IN AND CANNOT COME BACK OUT except at the store. There is no
-// accessor and no exported field, so a caller cannot read a key back to
-// re-splice it, and cannot hand the batch anywhere Apply did not.
 func TestApplyIsTheOnlyWayOut(t *testing.T) {
 	e := row.Sized(1)
 	e.Set("k", []byte("v"))
@@ -95,16 +86,6 @@ func TestApplyIsTheOnlyWayOut(t *testing.T) {
 	require.Equal(t, 1, e.Len())
 }
 
-// A COPY SHARES THE ORIGINAL'S ROWS, which is the one thing about this value a
-// caller has to know, so it is measured rather than assumed. An Entry is an
-// ordinary struct over a slice: two variables holding one entry are one entry,
-// and rows added through either can overwrite the other's.
-//
-// ITS CALLER HAS ONE PER ENTRY AND KEEPS IT BEHIND A POINTER — the row methods
-// hang off *entry, and the type that chains them carries that pointer — so no
-// copy is made there, and population_test.go pins that the entry is assembled in
-// exactly one place. This test exists so that the sharing is a stated property
-// rather than a surprise somebody debugs.
 func TestACopySharesTheRowsAndIsNotASecondEntry(t *testing.T) {
 	e := row.Sized(4)
 	e.Set("shared", nil)
@@ -139,16 +120,12 @@ type keeper struct{}
 
 func (keeper) Batch(ops []raft.BatchOp, _ time.Duration) error { sink = ops; return nil }
 
-// legacyOp and legacyOps are the shape round ten deleted, kept here so that the
-// trade is measured rather than argued: a row was an ordinary value in an
-// ordinary slice, and the slice was COPIED into raft's own shape on the way out
-// — which is the copy that made the store's door take an expression.
+// legacyOp and legacyOps are the old shape, a plain slice copied into raft's on
+// the way out, kept to measure the trade.
 type legacyOp struct{ op raft.BatchOp }
 
-// Both arms hold their rows in a HEAP STRUCT, because that is where a caller's
-// entry lives: one per transition, handed down a chain of row methods. Measured
-// into a local the slice does not escape, and the allocation this round removed
-// reads as zero.
+// Both arms hold rows in a heap struct, where a caller's entry lives; in a local
+// the slice would not escape.
 type legacyEntry struct{ ops []legacyOp }
 
 type heldEntry struct{ ops row.Entry }
@@ -161,14 +138,6 @@ func legacyOps(rows []legacyOp) []raft.BatchOp {
 	return out
 }
 
-// WHAT AN ENTRY COSTS, on the widest one its caller writes: four rows composed
-// and handed to a store, once per replicated entry. It is printed rather than
-// asserted, because what it has to be smaller than is a raft round trip and
-// nothing here can bound one.
-//
-// The two are the same four rows either way. What the second one does not do is
-// allocate the second slice — the rows are built into raft's own shape as they
-// go — so what the round removed from the door is also one allocation per entry.
 func BenchmarkEntry(b *testing.B) {
 	value := make([]byte, 128)
 	sha := make([]byte, 40)

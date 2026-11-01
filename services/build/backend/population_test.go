@@ -15,72 +15,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// population_test.go pins the POPULATION rather than any one member of it.
-//
-// The defect these tests exist for was not that one transition wrote a stale
-// record; it was that a fix closed ONE read-modify-write site over the job
-// record and left the others open, and nothing said how many there were. A
-// seventh site added later would be that again, silently, and no interleaving
-// test can fail for a site nobody wrote one for.
-//
-// THE TABLE HAS BEEN TOO COARSE FIVE TIMES, AND EACH TIME IN THE SAME WAY: it
-// could not see the thing it claimed to guard.
-//
-//   - One row per FUNCTION with one column — "does the read hold the lock" —
-//     could not say that the SECOND write a read decides, the ack of a delivery
-//     it drops, was made after the section closed. So the table names the KINDS
-//     of write a read decides and checks each separately.
-//   - "After the first jobLock.Lock()" is not a section, and neither is "inside
-//     SOME Lock..Unlock span": a body that reads, unlocks, works, re-locks and
-//     writes has every call inside a section, and it is not the section the
-//     read was taken in.
-//   - A fact checked by SPELLING is not checked. The pairing scan matched the
-//     idents openIndexKey and jobRecordKey, so a second builder in store.go
-//     with the same body and another name moved an open row alone in an entry
-//     nothing here saw. A builder is enumerated FROM store.go now and
-//     classified by the key it RETURNS, measured by calling it.
-//   - A section checked by the IDENT IT HANGS OFF is not checked either:
-//     jobLock.mu.Unlock() released the exclusion and left the identity alive,
-//     and read as no Unlock at all.
-//   - AND A SCAN THAT ONLY WALKS FUNCTION BODIES CANNOT SEE A PACKAGE-LEVEL
-//     DECLARATION. A `var carry = section.Read[jobRecord]` is a GenDecl, never
-//     inside a FuncDecl, so every call site through it read as a call to
-//     "carry" and the enumeration of who may read or write was silently
-//     complete. So pkgFuncs collects the package level too, as a frame named
-//     "(package level)", and any enumeration that finds it there fails.
-//
-// WHAT CHANGED UNDER THESE TESTS, and what it does to them. A section is no
-// longer a span between two calls: it is a CLOSURE, and the writes are methods
-// on a handle that exists only inside it (section.go). So the questions worth
-// asking here changed shape too — "is this call inside a Lock..Unlock span"
-// became "is this write a method on the handle", which is a fact about a
-// receiver rather than about two positions, and four tests whose whole subject
-// was the old spelling are gone rather than rewritten:
-//
-//   - which functions may be PASSED a section: nothing is passed one, because
-//     nothing hands one out. The check was a comparison against the string
-//     "section.Section" and would have missed ...section.Section, a pointer and
-//     a struct field carrying one; its subject no longer exists.
-//   - that a section is entered once and left on the way out: entering is a
-//     function call now, so "left on the way out" is what a call IS.
-//   - that a reading is only made by the read that took it: there is no reading
-//     and no stamp. What replaced it is below — a handle is only made by the
-//     one thing that took the lock.
-//   - that the one read taking no section is the one that decides nothing: a
-//     read decides nothing on its own now, because it carries no handle. The
-//     enumeration of who reads a record survives, in the first test here.
-//
-// WHAT IT STILL CANNOT SEE, AND WHAT NOW DOES. Everything here is a fact about
-// POSITIONS IN A FILE. "The write this read decided is made while the section
-// is still running" is a fact about two instants in one execution, and no scan
-// can see it: a body that hands its handle to a closure that outlives the call
-// has every write textually inside the section. That property is carried by
-// the compiler and the runtime instead — the handle is the only route to a
-// write, and it is dead the moment the section returns — and measured in
-// section_test.go. These halves are complementary and neither is redundant:
-// this one says which functions may write at all and which key they may write,
-// at review time; that one says whether the write happened when it was still
-// allowed to.
+// Pins the population of writers rather than any one member: a new
+// read-modify-write site over the job record would otherwise go unseen by every
+// interleaving test. Writes are methods on a handle that exists only inside a
+// section's closure (section.go), so these scans ask who may write and which key,
+// at review time; whether a write happened while still allowed is the runtime's,
+// measured in section_test.go. Key builders are enumerated from store.go and
+// classified by the key they return, and package-level declarations are scanned
+// too.
 
 // span is one call's argument range: from its '(' to its ')'. A body handed to
 // withJob is one, and so is the closure handed to under().
@@ -100,9 +42,7 @@ func covered(spans []span, at token.Pos) bool {
 // a table keyed by name alone would silently hold one of them.
 type funcs struct {
 	name string
-	// recv is the receiver's type name: "Service", "held", "entry", or "" for
-	// a function with none. IT IS THE WHOLE OF WHAT "INSIDE A SECTION" MEANS
-	// NOW for a write: a method on held is reachable only from a body that was
+	// recv is the receiver's type name: a method on held is reachable only from a body
 	// handed one.
 	recv  string
 	calls map[string]bool
@@ -126,54 +66,28 @@ type funcs struct {
 	gated []span
 	// literals is every composite literal type this body builds.
 	literals map[string][]token.Pos
-	// idents is every bare identifier it names. It is what makes "the lock is
-	// touched in one place" a question about the LOCK rather than about a
-	// method name: sync.Once has a Do too, and matching the verb alone put
-	// Close on the list of things that open a section.
+	// idents is every bare identifier named, so "the lock is touched in one place" is
+	// about the lock, not a method name like Do.
 	idents map[string][]token.Pos
 	// returnsHandle is whether it hands a *held back to its caller, which would
 	// be a second door onto one.
 	returnsHandle bool
 }
 
-// packageLevel is the frame everything outside a function body is attributed
-// to. It exists because the defeat of the round before this one was exactly a
-// package-level declaration: a scan that walks FuncDecls only cannot see one,
-// and an enumeration that cannot see a declaration is not an enumeration.
+// packageLevel is the frame package-level declarations are attributed to; every
+// enumeration rejects it.
 const packageLevel = "(package level)"
 
-// pairedQueueWrites are the queue verbs that PAIR WITH A RECORD WRITE: a job
-// gets an item, loses one, or has one acknowledged, and the record says the
-// same thing in the same breath. Claim and Sweep are not among them — see
-// TestEveryQueueWriteIsInsideTheSectionThatDecidedIt.
+// pairedQueueWrites pair with a record write; Claim and Sweep do not.
 var pairedQueueWrites = map[string]bool{"Push": true, "Remove": true, "Ack": true, "Nack": true}
 
-// rowVerbs are the two calls that MAKE A ROW: backend/row's Set and Delete, on
-// the entry the row goes into. There is no third, and there is no free-standing
-// row to make one out of — row.Entry's slice is unexported and its elements'
-// contents are another package's, so a row exists only where one of these two
-// is called.
-//
-// THIS IS A NAME AND IT IS WRITTEN DOWN AS ONE. What every census below reads
-// is the identifier at a call site; what it stands for is the act of composing
-// a row. An alias is the obvious respelling, and it is caught here rather than
-// by luck: a method value `mk := e.ops.Set` is a selector, so the function that
-// takes it appears in callers(all, "Set") exactly as a direct call would — and a
-// call through `mk` fails the key check above, because `mk(…)` is not a call to
-// a store.go builder. TestARespeltRowMakerIsStillCounted drives both.
+// rowVerbs are backend/row's Set and Delete, the only calls that make a row. A
+// method value alias still counts its taker as a caller, and a call through it
+// fails the key check (TestARespeltRowMakerIsStillCounted).
 var rowVerbs = map[string]bool{"Set": true, "Delete": true}
 
-// neverTaken are the three backend/row verbs that may appear ONLY as the thing
-// being called: the two that make a row, and the one that hands an entry's rows
-// to a store.
-//
-// A METHOD VALUE IS NOT A CALL, and that is the whole of why this exists.
-// `mk := e.ops.Set` leaves the function reading as an ordinary caller of Set,
-// and the call through mk has the callee name "mk", so every census keyed on
-// the verb walks past the key it names. `ap := e.ops.Apply` is worse: stashed in
-// a package-level var and invoked later, it applies the entry's rows OUTSIDE the
-// gate that refuses a section which has returned — the one property no scan can
-// see and the runtime holds. Both were measured GREEN before this line.
+// neverTaken may appear only as the callee: a method value would hide the call
+// from every census, and a stashed Apply could run after its section returned.
 var neverTaken = map[string]bool{"Set": true, "Delete": true, "Apply": true}
 
 // barrierVerbs are the pkg/queue calls that take a barrier of their own:
@@ -183,17 +97,9 @@ var barrierVerbs = map[string]bool{
 	"Push": true, "Remove": true, "Ack": true, "Nack": true, "Claim": true, "Sweep": true,
 }
 
-// ── WHICH KEY, MEASURED RATHER THAN SPELLED ──────────────────────────────
-//
-// A key builder is enumerated FROM store.go — every declaration in it with no
-// receiver and exactly one string result — and then CLASSIFIED BY THE KEY IT
-// RETURNS, by calling it. Two names that produce one key are one builder as far
-// as every scan in this file is concerned, which is the whole point: the defect
-// was six lines, a second builder with a different name and the same body, and
-// it defeated both the "ends in Key" test and the ident-matching pairing scan.
-//
-// The enumeration is checked against the invocation table, so a builder added
-// to store.go and not invoked here fails rather than going unclassified.
+// Key builders are enumerated from store.go and classified by the key they return,
+// so two names producing one key are one builder; the enumeration is checked
+// against the invocation table.
 
 // sampleKeys invokes every builder store.go declares, with one canonical set of
 // inputs so that two builders producing the same key produce the same string.
@@ -222,10 +128,8 @@ func sampleKeys() map[string]string {
 	}
 }
 
-// storeDeclares is every builder store.go declares: no receiver, exactly one
-// string result. unseg, parseOpenIndexKey and idFromIndexKey return two or
-// three values and are readers rather than builders; merged returns a map, and
-// encode, with, status and terminal have receivers.
+// storeDeclares is every builder store.go declares: no receiver, one string
+// result.
 func storeDeclares(t *testing.T) []string {
 	t.Helper()
 
@@ -294,22 +198,9 @@ func wholeKeys(all map[string]string) map[string]bool {
 	return out
 }
 
-// indexRowKeys is EVERY ROW OF THIS PACKAGE'S THAT IS NOT THE RECORD AND NOT AN
-// ATTEMPT ROW: the open index reconcile repairs and MaxOpenPerRepo counts, the
-// project index a caller lists by, the retention index, the ref anchor, and the
-// artifact row that says what a deployment currently runs. A
-// write of one is neither a record write nor a queue write, and without a
-// column of its own it was invisible to the table. It is a union of CLASSES, so
-// a second spelling of any of them is in it.
-//
-// THE ANCHOR WAS IN NONE OF THE CENSUSES UNTIL THE NINTH ROUND, and that is
-// what made it the unrecoverable half of that round's escape: a transition that
-// wrote only a ref anchor answered "no, this read decides no index write" to
-// the table below, and the reach walk never saw the key at all. It is not a row
-// a listing walks — it is read by key, by the next build of that ref — but it
-// is a row a job's transition writes, which is what these censuses are about.
-// TestEveryKeyThisPackageWritesIsInSomeCensus is what keeps the next one from
-// being missed the same way.
+// indexRowKeys is every row that is neither the record nor an attempt row: open,
+// project and retention indexes, the ref anchor, and the artifact row. A union of
+// classes, so a second spelling is in it.
 func indexRowKeys(all map[string]string) map[string]bool {
 	out := map[string]bool{}
 	for _, like := range []string{"openIndexKey", "projectIndexKey", "terminalIndexKey", "refLastKey", "artifactKey"} {
@@ -320,29 +211,6 @@ func indexRowKeys(all map[string]string) map[string]bool {
 	return out
 }
 
-// AND NO KEY THIS PACKAGE WRITES IS IN NO CENSUS.
-//
-// Every scan in this file asks its question of a CLASS of key — is this the
-// record, is it one of the listings — and a builder in neither is a row that
-// every one of those scans walks past. refLastKey was exactly that for eight
-// rounds: excluded from the record class because it is not a record, and absent
-// from the index class because nothing lists it. It is the row that decides
-// what the NEXT build of a ref diffs from.
-//
-// So the classification is closed here rather than assumed: a builder added to
-// store.go is invoked by sampleKeys (classes() says so), and then it is in
-// exactly one of the two censuses or this fails with its name in the message.
-//
-// THERE WERE THREE, and the third was the attempt rows — a log or asset row per
-// entry, written by the one writer outside every section. There is no such row
-// and no such KEY: a log is a file (services/build/livelog) and its cid is a
-// field of the record, so the class is gone rather than empty.
-//
-// THE WRITER OUTSIDE EVERY SECTION IS NOT GONE, THOUGH, and saying it was is
-// how it went unwatched for a round. It writes BYTES to the asset store now,
-// during the build, and bytes compose no key — so it is invisible to this
-// census by construction rather than by accident, and the census that does
-// watch it is TestEveryWriteToTheAssetStoreIsNamedAndPlaced.
 func TestEveryKeyThisPackageWritesIsInSomeCensus(t *testing.T) {
 	keys := classes(t)
 	whole := wholeKeys(keys)
@@ -371,11 +239,7 @@ func TestEveryKeyThisPackageWritesIsInSomeCensus(t *testing.T) {
 	}
 }
 
-// assembles is every function that BUILDS a composite literal of the named
-// type, which is a different question from which functions return one: a chain
-// method returns the entry it was handed, and that is not a second way to get
-// one. It is the question the round that made the handle a closure already
-// asked of held, asked of the two types the writes now hang off.
+// assembles is every function that builds a composite literal of the named type.
 func assembles(all map[string]funcs, name string) []string {
 	var out []string
 	for n, f := range all {
@@ -421,37 +285,17 @@ func receiver(fn *ast.FuncDecl) string {
 	return id.Name
 }
 
-// ── THE SCAN'S OWN INPUT ─────────────────────────────────────────────────
-//
-// EVERY CHECK IN THIS FILE IS A SCAN OVER THIS PACKAGE'S SOURCE, AND NOTHING
-// SAID WHICH SOURCE. parsePackage filtered by suffix and asserted only that a
-// package called "backend" came back, so one line inside the filter —
-//
-//	return !strings.HasSuffix(fi.Name(), "_test.go") && fi.Name() != "errors.go"
-//
-// took a file out of EVERY census at once. Go lets a method on any type be
-// declared in ANY file of its package, so that is not a theoretical hole: a new
-// write method on the handle, declared in errors.go rather than in section.go,
-// fails by name in the committed tree and is GREEN with that one line added.
-// One line, and it reaches further than any single line the doc used to count:
-// hiding that same write through the doors below takes two of them hollowed.
-//
-// SO THE SCAN OWNS ITS INPUT, and it owns it from three sides that disagree in
-// different ways: backendFiles is what it EXPECTS, sourceFiles is what is
-// ACTUALLY THERE, and the parser answers with what it READ. A file added to
-// this package is an edit to the list below; a file the filter drops is a
-// failure by name; and a file added and dropped in one go — the two-line
-// version of the same attack — is caught by the list not naming it.
+// The scan owns its input from three sides: backendFiles is what it expects,
+// sourceFiles what is on disk, and the parser what it read. A file a filter
+// silently dropped would take it out of every census at once.
 var backendFiles = []string{
 	"authz.go", "config.go", "doc.go", "errors.go", "jobid.go", "jobs.go",
 	"leader.go", "meter.go", "output.go", "queue.go", "reconcile.go", "rpc.go",
 	"runner.go", "section.go", "service.go", "store.go",
 }
 
-// sourceFiles is the DIRECTORY'S OWN ANSWER: every .go file here that is not a
-// test. It applies no build constraints on purpose — the parser reads a file
-// the build might exclude, and a scan that sees MORE than the build is the safe
-// direction of that difference, where a scan that sees less is the hole above.
+// sourceFiles is every non-test .go file here, ignoring build constraints: seeing
+// more than the build is the safe direction.
 func sourceFiles(t *testing.T) []string {
 	t.Helper()
 
@@ -521,12 +365,8 @@ func pkgFuncs(t *testing.T) map[string]funcs {
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
 			if !ok || fn.Body == nil {
-				// EVERYTHING THAT IS NOT A FUNCTION BODY IS STILL SOMEWHERE,
-				// and the round before this one was defeated by exactly that: a
-				// package-level var holding a function value made every call
-				// through it read as a call to the var's name. Whatever is
-				// declared out here is attributed to one frame, which every
-				// enumeration below then rejects by name.
+				// Package-level declarations are attributed to one frame, which every enumeration
+				// rejects.
 				scanTop(&level, decl)
 				continue
 			}
@@ -749,8 +589,8 @@ func writesIndex(all map[string]funcs, qualified string, rows map[string]bool) b
 	return false
 }
 
-// barriers reports whether a call takes a barrier, directly or through this
-// package's own functions or pkg/queue's prepare().
+// barriers reports whether a call takes a barrier, directly, through this
+// package, or through pkg/queue's prepare().
 func barriers(all map[string]funcs, call string) bool {
 	if call == "Barrier" || barrierVerbs[call] {
 		return true
@@ -763,14 +603,8 @@ func barriers(all map[string]funcs, call string) bool {
 	return false
 }
 
-// entryWrite reports whether a call ends in an entry or a paired queue write,
-// wherever in the call tree it is built.
-//
-// THE STORE IS REACHED BY Apply AND NOT BY Batch. Round ten moved the batch
-// behind a type: an entry's rows are a row.Entry, and row.Entry.Apply takes the
-// STORE rather than the ops, so this package names raft's batch nowhere. That
-// the name Batch appears in no body here is itself checked, in
-// TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord.
+// entryWrite reports whether a call ends in an entry or a paired queue write. The
+// store is reached by row.Entry.Apply, never Batch.
 func entryWrite(all map[string]funcs, call string) bool {
 	if call == "Apply" || pairedQueueWrites[call] {
 		return true
@@ -795,16 +629,6 @@ func writesIn(all map[string]funcs, f funcs) map[string][]token.Pos {
 	return out
 }
 
-// record() reads one record and one only — of any builder that produces a job
-// record key, not of the one spelled jobRecordKey — so counting its callers
-// counts every read of a job record in this package.
-//
-// AND WHO CALLS IT IS THE OTHER HALF. A read used to be handed the section it
-// was taken in, so "who may read" was also "who may stamp"; now the read is
-// taken by the entry point that took the lock, before the body runs. Its three
-// callers are that entry point, mend's second read under the same holding, and
-// job() — the one read in this package that decides no write and therefore
-// needs no section at all.
 func TestOnlyOneFunctionReadsAJobRecord(t *testing.T) {
 	all := pkgFuncs(t)
 	recordKeys := sameKeyAs(classes(t), "jobRecordKey")
@@ -831,9 +655,8 @@ func TestOnlyOneFunctionReadsAJobRecord(t *testing.T) {
 			"a read outside every section — and a read outside every section decides nothing, "+
 			"because there is no handle attached to it")
 
-	// AND THE SOURCE IS THE ONLY THING A SECTION READS THROUGH. enter names one
-	// and does not read; the two reads on it are the section's first and its
-	// second, and they differ only in the barrier.
+	// The source is the only thing a section reads through; enter names one and does
+	// not read.
 	require.False(t, all["Service.enter"].calls["readRecord"],
 		"the entry point names the source; it does not take the read itself, or there would be "+
 			"a second answer to what a holding carries")
@@ -841,13 +664,9 @@ func TestOnlyOneFunctionReadsAJobRecord(t *testing.T) {
 		methodsOn(t, "jobReader"),
 		"the source is three methods: what the section is about, and its two reads")
 
-	// AND ALL THREE MUST NAME THE SAME FIELD. A source is two answers — what
-	// this section is about, and what it reads — and nothing in the type makes
-	// them agree. Divergent, the handle composes every key from one job while
-	// the body decides on another's record, which is the defect this whole
-	// mechanism exists to make unspellable, reintroduced at the door. Measured,
-	// it does not even fail: the suite HANGS, because a transition deciding on
-	// a record that is never the one it wrote loops.
+	// All three must name the same field: a source whose subject and read diverge
+	// would compose keys for one job while deciding on another's record (measured: the
+	// suite hangs).
 	subject := reads(t, "jobReader.Subject", "id")
 	require.NotEmpty(t, subject, "the source must say what it is about by naming a field")
 	for _, read := range []string{"jobReader.First", "jobReader.Again"} {
@@ -891,13 +710,8 @@ func reads(t *testing.T, method, call string) string {
 	return out[0]
 }
 
-// fieldsOn is every field name declared on a struct type in this package.
-//
-// IT EXISTS SO THAT A CHECK ON A FIELD FAILS CLOSED. Two of the enumerations
-// below say "nothing assigns this field", which is require.Empty over a map
-// keyed by the field's NAME — so a field renamed and reassigned would leave the
-// check looking at a key nothing writes and passing on an empty answer. Asking
-// the type whether the field is still there is what turns that into a failure.
+// fieldsOn is every field declared on a struct type, so a "nothing assigns this
+// field" check fails closed after a rename.
 func fieldsOn(t *testing.T, recv string) []string {
 	t.Helper()
 
@@ -943,19 +757,14 @@ func methodsOn(t *testing.T, recv string) []string {
 	return out
 }
 
-// site is one SECTION and THE WRITES ITS READ DECIDES — one row per transition,
-// with a column per KIND of write, because a read can decide a record entry in
-// one branch and a queue write in another and a single boolean cannot say which
-// of the two escaped.
+// site is one section and the writes its read decides, a column per kind of
+// write.
 type site struct {
 	// record: the read decides an entry that writes the job record.
 	record bool
 	// queue: the read decides a push, a withdrawal or an ack.
 	queue bool
-	// index: the read decides a write or a delete of an INDEX ROW. Without a
-	// column of its own an open-row write is neither of the two above, and a
-	// site that made one fell through this table as a site that decides
-	// nothing at all.
+	// index: the read decides a write or delete of an index row.
 	index bool
 	// unbarriered says it entered through withJobUnbarriered, which reads
 	// WITHOUT a barrier — so it must take one with reread() before it decides
@@ -964,18 +773,6 @@ type site struct {
 	why         string
 }
 
-// EVERY SECTION IS NAMED HERE, with every write it decides. Adding a transition
-// means adding a line, which is the point: a site nobody thought about fails
-// here rather than shipping, which is exactly what the sixth site did — and a
-// site whose SECOND write leaves the section fails in section_test.go, which is
-// what the ninth did.
-//
-// THE BARRIER IS NO LONGER A COLUMN, and that is the redesign showing through.
-// It used to be one per row, because each transition took its own lead() and a
-// row that forgot was a row deciding on entries this node had not applied. It
-// is the entry point's now — withJob takes it before the read, once, for
-// everybody — so what is left to say per row is which entry point was used, and
-// only one row uses the other one.
 func TestEveryReadModifyWriteOfAJobRecordIsOneSection(t *testing.T) {
 	population := map[string]site{
 		// jobs.go
@@ -1031,9 +828,7 @@ func TestEveryReadModifyWriteOfAJobRecordIsOneSection(t *testing.T) {
 			continue
 		}
 
-		// AND THE TRIAGE MUST DECIDE NOTHING. Every write the section makes
-		// comes after the barrier reread() takes, or the first read is not
-		// triage at all.
+		// And the triage must decide nothing: every write follows reread()'s barrier.
 		require.NotEmpty(t, want.why, "%s: a section that reads without a barrier must say why that is safe", name)
 		reread, ok := f.at["reread"]
 		require.True(t, ok, "%s: a section that reads without a barrier must read again behind one", name)
@@ -1045,11 +840,7 @@ func TestEveryReadModifyWriteOfAJobRecordIsOneSection(t *testing.T) {
 		}
 	}
 
-	// AND THE BARRIER IS THE SOURCE'S, before the read every body decides on.
-	// It was nine lines in nine transitions, then one line in the entry point,
-	// and it is now a field of the thing that answers "what is this section
-	// about and what does it read" — which is where the difference between the
-	// two entry points belongs, because that is the whole of the difference.
+	// The barrier is the source's, taken before the read every body decides on.
 	require.True(t, barriers(all, "lead"), "lead() must barrier, or no section has one")
 	for _, read := range []string{"jobReader.First", "jobReader.Again"} {
 		src := all[read]
@@ -1057,13 +848,9 @@ func TestEveryReadModifyWriteOfAJobRecordIsOneSection(t *testing.T) {
 			"%s must barrier BEFORE the read a body's writes are decided on", read)
 	}
 
-	// THE SECOND READ ALWAYS BARRIERS, whichever entry point was used, and that
-	// is why mend's exemption is safe: its one caller reads without one and then
-	// decides on a read that has one. The link from reread to Again runs through
-	// the holding, which is an interface call in another package and not
-	// something any scan over this package can follow — so what is pinned here
-	// are its two ends. The other is below: reread is the ONLY thing that asks a
-	// holding to read again.
+	// The second read always barriers, which is why mend's exemption is safe. The
+	// reread-to-Again link is an interface call no scan follows, so its two ends are
+	// pinned.
 	require.False(t, all["jobReader.Again"].calls["barrier"],
 		"Again must not consult the flag: a second read that skipped the barrier when the "+
 			"first did is the exemption spreading from one branch to the whole section")
@@ -1071,20 +858,6 @@ func TestEveryReadModifyWriteOfAJobRecordIsOneSection(t *testing.T) {
 		"and First must, or withJob and withJobUnbarriered are the same door")
 }
 
-// EVERY QUEUE WRITE IS INSIDE THE SECTION THAT DECIDED IT — the rule jobLock's
-// own comment states, checked from the write side rather than the read side.
-//
-// THIS IS THE ONE AN EARLIER ROUND WROTE DOWN AND DID NOT IMPLEMENT. The
-// comment said "a transition holds this across the queue write that pairs with
-// its record write — a push, a withdrawal, an ack", and run() acked its
-// deliveries with no lock held at all, at both of its two exits. A table keyed
-// by the READING function could not see it, because run reads nothing.
-//
-// "INSIDE THE SECTION" IS A RECEIVER NOW. The three verbs are reachable only
-// from methods on held, and a held exists only inside a body — so what this
-// checks is that each verb's callers are those methods and that each makes its
-// call inside under(), the gate that refuses a handle whose section has
-// returned.
 func TestEveryQueueWriteIsInsideTheSectionThatDecidedIt(t *testing.T) {
 	// verb -> the functions of this package that call it -> why it is outside a
 	// section, or "" when it is inside one.
@@ -1127,15 +900,8 @@ func TestEveryQueueWriteIsInsideTheSectionThatDecidedIt(t *testing.T) {
 	}
 }
 
-// inSection reports whether fn's calls to `call` are made inside a section, and
-// that is now two questions with two short answers: is fn a method on the
-// handle, and does it make the call inside under().
-//
-// IT USED TO BE A WALK OVER Lock..Unlock SPANS, up through every caller, and
-// the walk was the weakness: a body that reads under the lock, releases it, and
-// then makes the write its read decided has every call inside SOME span. There
-// are no spans now. A write is a method on a value that exists only inside a
-// body, and the gate is the one expression that makes it.
+// inSection reports whether fn's calls to `call` are inside a section: fn is a
+// method on the handle and makes the call inside under().
 func inSection(all map[string]funcs, fn, call string) (bool, string) {
 	f, known := all[fn]
 	if !known {
@@ -1156,10 +922,9 @@ func inSection(all map[string]funcs, fn, call string) (bool, string) {
 	return true, ""
 }
 
-// inBody reports whether fn's calls to `call` are made inside one of its own
-// sections — for the calls a TRANSITION makes on the handle it was given. A
-// method on held is inside one by construction; a function that takes no
-// section of its own is inside one only if every function that calls IT is.
+// inBody reports whether fn's calls to `call` are inside one of its own sections:
+// a method on held is by construction; a function with no section of its own only
+// if all its callers are.
 func inBody(all map[string]funcs, fn, call string) (bool, string) {
 	return inBodyFrom(all, fn, call, map[string]bool{})
 }
@@ -1201,33 +966,6 @@ func inBodyFrom(all map[string]funcs, fn, call string, seen map[string]bool) (bo
 	return true, ""
 }
 
-// A RECORD AND ITS OPEN ROW MOVE IN ONE ENTRY, and mend's orphan delete is the
-// one entry that moves the row alone.
-//
-// That pairing is what makes "this row is listed as open AND its record reads
-// finished" impossible to produce within ONE applied prefix: whatever prefix a
-// node has, it has applied both halves or neither. mend needs it — the whole
-// reason its delete is a repair and not a guess — and it needs a barrier on top
-// of it, because the listing and the read are two different prefixes
-// (reconcile.go). Split across two entries by some later transition, the repair
-// starts dropping rows a live job still needs.
-//
-// IT IS A TYPE NOW RATHER THAN A SCAN, and that is what the round that removed
-// the arbitrary key bought here. The pairing used to be counted: every mention
-// of an open-row builder had to sit inside a []raft.BatchOp literal that also
-// mentioned a record builder, which was a fact about two idents being near each
-// other in a composite literal. There are no such literals left. open() and
-// dropOpen() are methods on `stated` — an entry that CARRIES this job's record
-// — and the only thing that produces one is record(), which puts that record
-// into the very same entry. An open row in an entry that writes no record is
-// not a scan failure any more; it does not compile.
-//
-// AND THE EXCEPTION IS NAMED RATHER THAN INVISIBLE. mend's own entry deletes an
-// open row and writes no record, on purpose: the record it read is finished or
-// gone, and the row is the only thing left to remove. So it is the one method
-// that touches an open-row key from a bare entry, and its callers are
-// enumerated — an exemption scoped by the shape of an argument is an exemption
-// anybody can reach for.
 func TestARecordAndItsOpenRowMoveInOneEntry(t *testing.T) {
 	all := pkgFuncs(t)
 	openRowKeys := sameKeyAs(classes(t), "openIndexKey")
@@ -1264,14 +1002,8 @@ func TestARecordAndItsOpenRowMoveInOneEntry(t *testing.T) {
 			"open row of a job whose record it has not shown to be gone")
 }
 
-// keyBuilder reports whether an expression is a call to one of store.go's key
-// builders — the only expressions that may name a key an entry writes.
-//
-// IT USED TO SAY THAT AND CHECK strings.HasSuffix(name, "Key"). A name is not a
-// builder: any function anywhere, called anything ending in those three
-// letters, satisfied it. `builders` is the measured set — declared in store.go
-// and returning a whole key rather than a prefix — so this now checks what the
-// sentence above always claimed.
+// keyBuilder reports whether an expression calls one of store.go's whole-key
+// builders, the only expressions that may name a key an entry writes.
 func keyBuilder(builders map[string]bool, expr ast.Expr) bool {
 	call, ok := expr.(*ast.CallExpr)
 	if !ok {
@@ -1306,35 +1038,6 @@ func params(fn *ast.FuncDecl) map[string]int {
 	return out
 }
 
-// EVERY KEY A ROW NAMES IS BUILT WHERE THE ROW IS, AND NOTHING TAKES ONE.
-//
-// A row comes to exist in exactly two ways — row.Entry.Set and row.Entry.Delete
-// (backend/row) — and the key each is handed must be a call to one of store.go's
-// builders. Not "a builder or a parameter": A PARAMETER IS THE HOLE.
-//
-// THAT ESCAPE HATCH WAS REAL AND IT WAS USED, and both the door and the writer
-// behind it are gone now. The check used to read "a builder here, or a
-// parameter every caller builds", and the sink's write() was the one door
-// through it: a method taking (key, cid), scoped by the SHAPE of its argument,
-// belonging to the one writer in this package outside every section. The census
-// one test down then exempted that owner unconditionally from the check that a
-// key names its writer's own subject — `if owner == sink { return true }` —
-// because a door that takes a key cannot satisfy a census about which keys a
-// writer may compose. One line inside it,
-//
-//	set(refLastKey("github.com/evil/repo", "refs/heads/main"), []byte("0000…"))
-//
-// left all seven build packages green and moved another repository's ref anchor
-// on the happy path of every build. What that writer existed for was a log row
-// per line; a log is a FILE now (services/build/livelog) and its cid is a field
-// of the record, written by the section that settles the job. So there is no
-// parameter branch here, no exemption one test down, and no writer outside a
-// section for either of them to be about.
-//
-// mend's dropOrphanedOpen still takes the REPOSITORY of a row whose record is
-// gone — a parameter, and the named exception — but it is not a key: it is one
-// segment, handed to a builder that composes the rest from the handle's own
-// subject, and TestARecordAndItsOpenRowMoveInOneEntry enumerates its one caller.
 func TestEveryKeyAnEntryWritesIsBuiltWhereTheEntryIs(t *testing.T) {
 	pkg := parsePackage(t)
 	builders := wholeKeys(classes(t))
@@ -1363,27 +1066,9 @@ func TestEveryKeyAnEntryWritesIsBuiltWhereTheEntryIs(t *testing.T) {
 	}
 	require.Positive(t, made, "this package makes rows, so a scan that found none read the wrong tree")
 
-	// AND A ROW MAKER IS ONLY EVER CALLED, NEVER TAKEN.
-	//
-	// THIS IS THE ALIAS, AND IT IS THE ONE RESPELLING THAT BEAT EVERY CENSUS
-	// ABOVE. `mk := s.ops.Set` inside stated.anchor, and then
-	//
-	//	mk(refLastKey("github.com/evil/repo", "refs/heads/main"), []byte("0000…"))
-	//
-	// beside the anchor's own row: the method VALUE is a selector, so the
-	// function still reads as a caller of Set and the table of who may make a
-	// row is unchanged — and the call through `mk` has the callee name "mk", so
-	// every scan keyed on the verb walks straight past the key it names. It was
-	// GREEN across all seven build packages, measured.
-	//
-	// AND THE SAME IS TRUE OF Apply ONE FLOOR UP: `ap := e.ops.Apply`, stashed
-	// in a package-level var and called after the section closed, applies the
-	// entry's rows outside the gate — and commit is an allowed caller of Apply,
-	// so no enumeration notices. That was GREEN too.
-	//
-	// A method value is not a call, so the fix is not another list: these verbs
-	// may appear ONLY as the thing being called. Then an alias is a failure by
-	// name where it is taken, and a call through one is a key no builder built.
+	// A row maker is only ever called, never taken: a method value alias (`mk :=
+	// s.ops.Set`, `ap := e.ops.Apply`) would read as an ordinary caller and hide the
+	// key it names.
 	for _, file := range pkg.Files {
 		called := map[token.Pos]bool{}
 		ast.Inspect(file, func(n ast.Node) bool {
@@ -1411,14 +1096,6 @@ func TestEveryKeyAnEntryWritesIsBuiltWhereTheEntryIs(t *testing.T) {
 	}
 }
 
-// A RESPELLING OF A ROW MAKER IS STILL COUNTED, and this is the check on the
-// check: every census over the rows reads an IDENTIFIER, so the honest thing is
-// to measure what happens when the identifier is moved.
-//
-// A method value is a selector wherever it is taken, so the function that takes
-// one is in callers(all, verb) exactly as a caller would be; and a call THROUGH
-// it hands a key the scan cannot classify, which the key census fails on rather
-// than passes. Both halves are asserted against the real scan.
 func TestARespeltRowMakerIsStillCounted(t *testing.T) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "aliased.go", `package backend
@@ -1440,9 +1117,8 @@ func (e *entry) aliased(key string) {
 		"a method value taken off the entry must count as naming Set, or an alias is a row "+
 			"maker no census of names can see")
 
-	// And the alias of a key builder is caught from the other side: the census
-	// of what a row may be handed asks for a CALL TO A BUILDER, so `bk(…)` is a
-	// failure rather than something it walks past.
+	// An aliased key builder is caught from the other side: `bk(…)` is not a call to a
+	// builder.
 	builders := wholeKeys(classes(t))
 	var handed []ast.Expr
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
@@ -1456,20 +1132,6 @@ func (e *entry) aliased(key string) {
 		"a key built through an aliased builder is not a call to one, so the census fails on it")
 }
 
-// The write side, from the other direction: every entry that SETS a job record
-// is written inside the section that read it — which is now ONE METHOD, because
-// the key is composed rather than spelled.
-//
-// THE ENUMERATION IS BY KEY, NOT BY IDENT. A second builder returning the same
-// key let settle write a job record while this list still read
-// [create, begin, retry, finish].
-//
-// AND IT USED TO BE FOUR NAMES. create, begin and retry each built the record's
-// key themselves, inside their own bodies, from an id they had in scope — and
-// begin built it from the id in the RECORD rather than from the id its section
-// was entered on, which is the same expression only as long as the store agrees
-// with itself. There is one writer of a record key in this package now, it is a
-// method on an entry, and the id it uses is the section's.
 func TestEveryWriteOfAJobRecordIsInsideASection(t *testing.T) {
 	all := pkgFuncs(t)
 	recordKeys := sameKeyAs(classes(t), "jobRecordKey")
@@ -1490,10 +1152,8 @@ func TestEveryWriteOfAJobRecordIsInsideASection(t *testing.T) {
 		"a second place that names a job record key is a second place that decides which job an "+
 			"entry is about")
 
-	// AND IT NAMES THE SECTION'S JOB. This is the whole of the round: the key
-	// is the handle's subject, and the record's own id is overwritten with it,
-	// so a body that hands over a record it read somewhere else writes THIS job
-	// rather than that one.
+	// The record key is the handle's subject, and the record's id is overwritten with
+	// it.
 	record := all["entry.record"]
 	require.Equal(t, "entry", record.recv)
 	require.Contains(t, record.writesTo, "ID",
@@ -1516,52 +1176,11 @@ func TestEveryWriteOfAJobRecordIsInsideASection(t *testing.T) {
 	}
 }
 
-// EVERY KEY A ROW NAMES IS THE SUBJECT ITS WRITER WAS CONSTRUCTED ON, and this
-// is the clause the whole ladder was missing until the eighth round and did not
-// hold for every writer until the tenth.
-//
-// Seven rounds answered WHEN a write was made and WHO made it. None answered
-// ABOUT WHAT: commit took []raft.BatchOp and finish took extra ...raft.BatchOp,
-// so a body inside a live, unforgeable, correctly-barriered section could put
-// one more line in its entry — a row at jobRecordKey(someOtherJob) — and pass
-// every static guard and every runtime refusal, because the holding it wrote
-// through was genuinely live. Nothing anywhere compared an id inside a key with
-// the id the read was taken on.
-//
-// So no key is spelled at a call site any more. Each ROW is a method, it
-// composes its own key from the subject its writer carries, and this is where
-// the population of those methods is closed.
-//
-// AND THERE IS ONE SUBJECT NOW, BECAUSE THERE IS ONE WRITER. There were two:
-// an entry's rows are about the job its section was entered on and read it out
-// of the handle, h.id(), and the SINK's were about the attempt it was
-// constructed for and read it off a field of its own. The sink was exempt from
-// this census for two rounds — one line, `if owner == sink { return true }` —
-// because its door TOOK A KEY, and a door that takes a key cannot answer a
-// census about which keys its owner may compose. The exemption was
-// unconditional, so a single line inside the sink's own rows,
-//
-//	set(refLastKey("github.com/evil/repo", "refs/heads/main"), []byte("0000…"))
-//
-// moved another repository's ref anchor on the happy path of every build, from
-// a writer this file had placed outside every section BY DESIGN. It was brought
-// inside the census in the round after that, and it is DELETED now: what it
-// existed for was a replicated row per log line, and a log is a file whose cid
-// the settling section writes (output.go). Every row this package makes is an
-// entry's, and every entry's is the section's.
-//
-// IT IS SCANNED OVER THE WHOLE PACKAGE, not over the entry's own methods, and
-// that was a correction one round needed: scanned over entry and stated alone, a
-// row appended from a method on the HANDLE was invisible, and
-// `j.writes().put(refLastKey("github.com/evil/repo", …), …)` inside ends() was
-// measured GREEN against the whole suite. A row exists only where Set or Delete
-// is called, so that is what is counted, wherever it is.
 func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 	builders := wholeKeys(classes(t))
 
-	// THE ONE ROW A JOB OWNS THAT IS NOT KEYED BY ITS id, and why. Naming it is
-	// what keeps it from being a general escape: everything else must show the
-	// subject in the key it builds.
+	// The one row a job owns not keyed by its id, named so it is not a general
+	// escape.
 	notKeyedByTheJob := map[string]string{
 		"refLastKey": "the ref anchor is keyed by (repository, ref), because the thing that reads " +
 			"it is the NEXT build of that ref, which is a different job. All three of its parts " +
@@ -1569,14 +1188,8 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 			"belonging to the job the read was taken on.",
 	}
 
-	// AND ONE MORE, WHOSE PARTS COME FROM THIS RUN'S OWN OUTPUT. The artifact
-	// row says what a deployment now runs, so it is keyed by (project,
-	// deployment, resource) and read by a WORKER rather than by any job. Its
-	// project comes off the record this section read; its other two are fields
-	// of the `produced` value this same entry is writing onto that record, so
-	// the rows it makes and the record it writes name the same artifacts by
-	// construction. They are a typed pair rather than a parsed string
-	// precisely so that can be said here.
+	// The artifact row, keyed by (project, deployment, resource): its project comes
+	// off the record read, the other two from this run's `produced`, a typed pair.
 	fromThisRunsOutput := map[string]string{
 		"artifactKey": "the artifact row is keyed by (project, deployment, resource): the project " +
 			"comes off the record THIS SECTION READ, and the other two are fields of the produced " +
@@ -1633,11 +1246,8 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 				}
 				if why, exempt := fromThisRunsOutput[builder]; exempt {
 					for _, arg := range args {
-						// THE OUTPUT'S PARTS ARE FIELDS OF A LOOP VARIABLE over
-						// this run's assets, never a literal and never a
-						// composed string: a key part that was neither the
-						// record's nor this run's is exactly the escape this
-						// census exists for.
+						// The output's parts are fields of a loop variable over this run's assets, never a
+						// literal or composed string.
 						require.True(t,
 							strings.HasPrefix(arg, e+".h.rec().") ||
 								strings.HasPrefix(arg, "ref."),
@@ -1656,10 +1266,8 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 		}
 	}
 
-	// AND EVERY ROW THIS PACKAGE CAN WRITE IS IN THIS TABLE. A row is made
-	// nowhere but a call to Set or Delete, so a method added anywhere — on the
-	// entry, on the handle, on the sink, on a Service — fails here until
-	// somebody has said which row it is and shown that it names its own subject.
+	// Every row this package can write is in this table, so a new Set or Delete caller
+	// fails here until classified.
 	require.Equal(t, map[string][]string{
 		"entry.record":           {"jobRecordKey"},
 		"entry.dropRetained":     {"terminalIndexKey"},
@@ -1672,16 +1280,8 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 		"stated.artifacts":       {"artifactKey"},
 	}, rows, "one row kind per method, and every method named")
 
-	// AND THOSE TWO VERBS ARE THE ONLY THINGS THAT MAKE A ROW AT ALL. row.Entry's
-	// slice is unexported in another package and its elements carry another
-	// package's structs, so a row exists only where one of them is called, and a
-	// batch exists nowhere in this package at all.
-	//
-	// THIS HOLDS A NAME. What is compared is the identifier at a call site, and
-	// the act it stands for is composing a row. It is not defeated by taking the
-	// method value — a selector counts wherever it appears, and
-	// TestARespeltRowMakerIsStillCounted measures that — but it is a name, and a
-	// name is the shape three rounds of this package's history were beaten by.
+	// Set and Delete are the only things that make a row; row.Entry's slice is
+	// unexported.
 	all := pkgFuncs(t)
 	require.ElementsMatch(t, []string{
 		"entry.record", "stated.open", "stated.inProject", "stated.retained", "stated.anchor",
@@ -1695,11 +1295,7 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 	}, names(callers(all, "Delete")),
 		"and a row removed likewise")
 
-	// AND THE ROWS ARE NEVER REPLACED, only added to. There is no append here
-	// any more — an entry's rows are a value whose slice this package cannot
-	// name — so what is left to say is that nothing ASSIGNS the field: an entry
-	// handed the rows of another entry writes a set of rows none of the methods
-	// above composed, and an assignment is the only way to do it.
+	// Rows are only added to: nothing assigns an entry's `ops`.
 	require.Contains(t, fieldsOn(t, "entry"), "ops",
 		"an entry's rows are the field the check below names, so a rename would make it vacuous")
 	for name, f := range all {
@@ -1712,28 +1308,6 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 			"methods put there")
 }
 
-// THE RUN IS REGISTERED INSIDE THE SECTION THAT CLAIMED IT, and two arguments
-// in this package rest their whole weight on that.
-//
-// runner.go's begin says a cancel serialized AFTER the claim's section must
-// find the run registered, or it writes a terminal record while a build it
-// could have stopped runs on to its own deadline. section.go's withdraw
-// swallows queue.ErrClaimed on the strength of it: the first of the three exits
-// by which a claimed item always leaves is the holder's own ack, and what makes
-// that prompt is the stop inside cancel's section reaching a run this node
-// registered inside begin's.
-//
-// IT WAS CHECKED HERE AND ONLY HERE, and that was the hole. The scan asked
-// whether the assignment sat inside SOME jobLock span, which is the one thing a
-// scan can ask and cannot answer: a registration handed to run() as a closure
-// built inside the section and invoked after begin returns is inside the span
-// textually and outside the section in every way that matters.
-//
-// So the write is a method on the handle, and what is left here is the
-// ENUMERATION: who may touch this map at all. THE STOP IS IN IT NOW. It only
-// READS the map — and then invokes what it found, which ends a build — so a
-// list of the map's WRITERS walked straight past the one write in this package
-// that reaches no store at all.
 func TestTheClaimAndTheRegistrationAreOneSection(t *testing.T) {
 	all := pkgFuncs(t)
 
@@ -1790,17 +1364,6 @@ func TestTheClaimAndTheRegistrationAreOneSection(t *testing.T) {
 	require.True(t, held, "cancel stops a run outside the section that decided it — %s", chain)
 }
 
-// THE FOUR LOOP-SIDE TRANSITIONS CANNOT INTERLEAVE WITH EACH OTHER, and this is
-// why rather than an assumption: begin, settle, drainDeadLetter and mend are
-// reached only from step() and reconcile(), which are called only from loop(),
-// which is started by exactly one `go` statement in this package — and Start
-// refuses a second one (TestStartTwiceIsAnErrorAndSoIsStartAfterClose). One
-// goroutine runs all four, in order.
-//
-// They still take jobLock, because the goroutine they share is not the one
-// Cancel, Retry and Enqueue answer on, and because a rule that holds by
-// arithmetic over the package's `go` statements is a rule that a second loop
-// would break without touching any of them.
 func TestTheClaimLoopIsTheOnlyGoroutineThisPackageStarts(t *testing.T) {
 	var started []string
 	for _, file := range parsePackage(t).Files {
@@ -1819,59 +1382,6 @@ func TestTheClaimLoopIsTheOnlyGoroutineThisPackageStarts(t *testing.T) {
 		"a second goroutine in this package is a second writer, and the four loop-side transitions stop excluding each other by construction")
 }
 
-// EVERY WRITE IS A METHOD ON THE HANDLE OR ON ITS ENTRY, AND EVERY ONE OF THEM
-// WRITES INSIDE under().
-//
-// entry.commit is this package's only path to a replicated batch; push, ack and
-// withdraw are the only paths to the three queue writes that pair with a record
-// write; and register and stop are the only paths to the map that says what
-// this node is running. Each hangs off a handle — an entry carries the handle
-// that made it and nothing else can make one — so a helper that wants to write
-// takes the handle, which is a parameter list rather than a scan; and each
-// makes its write inside under(), which refuses a handle whose section has
-// returned.
-//
-// THE RECEIVER IS THE POINT. A write used to take a reading: unforgeable, but
-// MINTABLE, because the thing that stamped one was exported and generic over an
-// arbitrary closure. So a body inside a live section could put a live stamp on
-// any value at all, and what the check proved was that a section was running at
-// the instant the stamp was made. There is nothing to mint now.
-//
-// THIS IS THE STATIC HALF OF section.go, and it is the half that cannot be a
-// type: Go has no way to scope a struct field to a method set, so s.store.Batch
-// is an expression any function in this package can write. What that expression
-// CANNOT do is name a section — and this is what says it must not be written.
-//
-// AND THE ARGUMENT IS GONE FROM THAT DOOR, WHICH IS ROUND TEN. This used to read
-// what each caller HANDED Store.Batch and require it be a call to row.Ops —
-// which is the outermost callee's NAME, and two spellings of one act:
-//
-//	store.Batch(append(row.Ops(e.ops), forged), t)   -> "append", failed
-//	store.Batch(row.Ops(append(e.ops, forged)), t)   -> "Ops",    PASSED
-//
-// Moving the append one level in defeated it, and with the forged key spliced as
-// a string literal there was no builder call for the key census to classify
-// either: eight lines in one file put a row moving another repository's ref
-// anchor on every replicated entry this service writes, with all nine of the
-// doc's ends intact. So the rows are handed to a store by row.Entry.Apply, which
-// takes the STORE and not the rows, and Batch is named NOWHERE in this package —
-// which is what is checked, instead of what its argument was spelled.
-//
-// AND THERE IS NO EXEMPTION LEFT IN THIS ONE. There was one, named rather than
-// implicit: a log or asset row was content keyed by (job, attempt), written
-// DURING the build by a writer outside every section on purpose, and a whole
-// test existed to check the clauses of that sentence. There is no such row —
-// a log is a file, and its cid reaches the raft store once, from the section
-// that settles the job — so the list below is the whole population of ROW
-// writers rather than that population minus one.
-//
-// THE WRITE THAT WAS EXEMPT MOVED RATHER THAN STOPPED. A build still produces
-// content while it runs and still cannot hold jobLock while it does, so the
-// bytes go to the ASSET store from outside every section — which this census
-// cannot see, because it is a census of rows, and which
-// TestEveryWriteToTheAssetStoreIsNamedAndPlaced is. An exemption deleted along
-// with its subject is a class closed; an exemption deleted because the subject
-// moved to another store is the same hole one room over.
 func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 	all := pkgFuncs(t)
 
@@ -1880,14 +1390,8 @@ func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 		"an entry applied outside commit() is an entry no section decided — and a handle is the "+
 			"only thing that can say the section it was decided in is still running")
 
-	// AND NOTHING IN THIS PACKAGE NAMES Batch AT ALL.
-	//
-	// Store.Batch takes []raft.BatchOp, because that is raft's own signature and
-	// this package does not get to change it — so a call to it is a place where
-	// a raw op is spellable again, and the previous round's guard read the NAME
-	// of whatever expression was in its first argument. There is no such call
-	// now: row.Entry.Apply takes the store, so a batch has no expression here,
-	// and this asks the question with no argument in it.
+	// Nothing here names Batch: row.Entry.Apply takes the store, so no raw op is
+	// spellable.
 	require.Empty(t, names(callers(all, "Batch")),
 		"a call to Store.Batch is an entry composed where nothing above can see it — the rows "+
 			"reach a store through row.Entry.Apply, which takes the store rather than them")
@@ -1903,10 +1407,8 @@ func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 		"held.register": "running",
 		"held.stopRun":  "running",
 	}
-	// THE HANDLE AND THE THINGS THAT CARRY ONE. An entry is made by held.writes
-	// and holds the handle that made it; a stated is made by entry.record and
-	// holds that entry. Neither is reachable without a live handle, and both
-	// are enumerated below.
+	// The handle and the things carrying one: entry is made by held.writes, stated by
+	// entry.record.
 	carriesTheHandle := map[string]bool{"held": true, "entry": true, "stated": true}
 
 	for fn, verb := range writes {
@@ -1921,17 +1423,13 @@ func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 		}
 	}
 
-	// AND THE THINGS THAT CARRY A HANDLE COME FROM ONE PLACE EACH. A second
-	// constructor for either is a second way to hold a live section's authority
-	// without having been handed it.
+	// Each carrier has one constructor.
 	require.ElementsMatch(t, []string{"held.writes"}, assembles(all, "entry"),
 		"an entry is made by the handle and nowhere else")
 	require.ElementsMatch(t, []string{"entry.record"}, assembles(all, "stated"))
 
-	// AND NOTHING REACHES PAST THE HANDLE INTO THE HOLDING. Write, Reread and
-	// Subject are backend/section's three doors and each has exactly one caller
-	// here: the gate every write is an argument to, mend's second read, and the
-	// accessor every key an entry writes is composed from.
+	// backend/section's three doors (Write, Reread, Subject) each have one caller
+	// here.
 	require.ElementsMatch(t, []string{"held.under"}, onTheHolding(t, "Write"),
 		"the gate is the only thing that asks the holding to write")
 	require.ElementsMatch(t, []string{"held.reread"}, onTheHolding(t, "Reread"),
@@ -1940,9 +1438,7 @@ func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 		"and the subject is read in one place, which is what every key is built from — a "+
 			"second reader of it is a second answer to what this section is about")
 
-	// AND NOTHING ELSE IS A WRITE METHOD. A seventh method on the handle or its
-	// entry that reached a store or the map without the gate is the hole this
-	// list would not notice, so the list is closed from the other side too.
+	// And nothing else is a write method.
 	for name, f := range all {
 		if !carriesTheHandle[f.recv] {
 			continue
@@ -1950,12 +1446,6 @@ func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 		if _, checked := writes[name]; checked {
 			continue
 		}
-		// "write" WAS IN THIS SET AND IS NOT ANY MORE. It was the sink's door,
-		// added when a method on the handle that built a foreign sink and wrote
-		// through it turned out to reach another job's attempt prefix past
-		// every verb below. There is no such door and no such prefix: the verb
-		// named nothing once the sink was deleted, and a check on a name that
-		// stands for nothing is worse than no check, because it reads like one.
 		for verb := range map[string]bool{
 			"Apply": true, "Batch": true, "Push": true, "Ack": true,
 			"Remove": true, "Nack": true, "running": true,
@@ -1966,74 +1456,10 @@ func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 	}
 }
 
-// THE ASSET STORE IS THE OTHER STORE, AND IT IS WRITTEN FROM OUTSIDE EVERY
-// SECTION — WHICH IS WHY IT NEEDS A CENSUS OF ITS OWN.
-//
-// The round that deleted attemptSink said it deleted the CLASS: the one writer
-// in this package outside every section, gone, and four ends with it. That was
-// true of the class as the sentence defined it — a replicated row — and this
-// package has two stores. What replaced the sink opens the second one:
-// Assets.Put is durable on another node before it returns (config.go), it is
-// the only door in this package that leaves this machine at all, and a build
-// calls it WHILE IT RUNS, from the runner's goroutine, with no section
-// anywhere.
-//
-// AND NOTHING SAW IT. Measured on the committed tree of this round, before this
-// test existed: a second door on the Service in output.go —
-//
-//	func (s *Service) watched(jobID string, from int64) {
-//		s.assetStore.Put(context.Background(), strings.NewReader(...))
-//	}
-//
-// called from Follow, is one durable object per viewer that no record names,
-// made from a path with no section, in the file that replaced the sink. Every
-// package under services/build was GREEN, all fifteen censuses in this file
-// included. It is the sink's own shape one store over: content nothing has to
-// agree about, written by whoever felt like it, and unreferenced — and nothing
-// in this service deletes an asset (config.go says so out loud), so an orphan
-// made here is permanent.
-//
-// NEITHER OF THEM MAY BE INSIDE A SECTION, and that is not a preference. A
-// section is jobLock, which is ONE LOCK OVER THE WHOLE JOB TABLE: every
-// transition of every job on this node takes it. A Put inside one holds a claim
-// loop, a webhook's Enqueue, a user's Cancel and a reconcile pass behind a
-// round trip to another machine — for the length of a compile in Asset's case,
-// and for up to PublishTimeout in publish's.
-//
-// AND ONE OF THEM WAS, FOR A ROUND. publish had been an ARGUMENT to settle,
-// evaluated before the call and therefore before the ack, and the round that
-// fixed that moved it inside settle's body — which put the store's round trip
-// under jobLock on the happy path of every build, in the same commit whose own
-// comments said in three places that it must not be. It is two sections now
-// with the publish between them, so the ack is still first and the lock is
-// still not held across the network: settle says why the order is that one and
-// what it costs.
-//
-// THE TWO DOORS ARE NOT THE SAME KIND OF WRITE, which is the whole reason both
-// are allowed:
-//
-//	runOutput.Asset    CONTENT, during the run, outside every section. Its cid
-//	                   goes into a map in the run's own goroutine and no
-//	                   further. Storing it is idempotent and content-addressed,
-//	                   so a run that later fails costs the store the same bytes
-//	                   twice under one id.
-//	runOutput.publish  THE POINTER'S BYTES, between settle's two sections:
-//	                   after the ack, because a cid that reaches the store on a
-//	                   delivery this node no longer holds is an object no record
-//	                   will ever name, and before the record, because the cid it
-//	                   returns is a field of the entry that settles the job.
 func TestEveryWriteToTheAssetStoreIsNamedAndPlaced(t *testing.T) {
 	all := pkgFuncs(t)
 
-	// WHO MAY NAME THE STORE AT ALL. This is the field rather than the verb, so
-	// a door that reaches it and calls something else on it — a store that
-	// grows a second method, a wrapper — fails here without anybody having
-	// thought of that method's name.
-	// New is in the population because an Option now configures an options
-	// value and NEW assembles the Service from it — so the constructor names
-	// every injected dependency exactly once, by construction. That is the
-	// point of the shape rather than a leak: there is no other way to put a
-	// store on a Service.
+	// Who may name the asset store field at all; New assembles it from the options.
 	require.ElementsMatch(t, []string{"New", "WithAssets", "runOutput.Asset", "runOutput.publish"},
 		names(callers(all, "assetStore")),
 		"a fifth function names the asset store: the constructor that assembles it, the option "+
@@ -2041,31 +1467,14 @@ func TestEveryWriteToTheAssetStoreIsNamedAndPlaced(t *testing.T) {
 			"are the whole population, and anything else is a write to another node that no "+
 			"section decided")
 
-	// AND WHO MAY CALL IT. The field check above cannot see a door HANDED the
-	// store — `func stash(a Assets, …)` names no field — and this one cannot
-	// see a second method on it, so neither is redundant.
+	// And who may call it: a door handed the store names no field.
 	require.ElementsMatch(t, []string{"runOutput.Asset", "runOutput.publish"},
 		names(callers(all, "Put")),
 		"a third caller of Put stores bytes on another node from a place this file has not "+
 			"placed, and a store this package cannot unreference keeps them")
 
-	// THE ONE THAT SHIPS THE LOG IS SETTLE'S, AND IT IS BETWEEN SETTLE'S TWO
-	// SECTIONS. Its position has been wrong in both directions, one round each,
-	// and this is the check that pins the only place it is right:
-	//
-	//	BEFORE THE ACK   `settle(d, out.publish(ctx), err)` — an argument, so
-	//	                 evaluated before the call — shipped a whole log to the
-	//	                 store and then wrote no record naming it whenever the
-	//	                 ack it was about to make would have failed: a claim that
-	//	                 had expired, a leadership flap. Measured behaviourally
-	//	                 by the two runner tests that assert a lost delivery
-	//	                 ships nothing.
-	//	INSIDE A SECTION the fix for that put it in settle's body, which held
-	//	                 jobLock — the whole node's job table — across the round
-	//	                 trip to another machine. Measured behaviourally by
-	//	                 TestASlowAssetStoreDoesNotStallEveryOtherJobOnTheNode.
-	//
-	// So this asserts the position, and both of the tests above catch a move.
+	// The log ships only from settle, between its two sections: before the ack it
+	// orphans the log on a lost claim, inside a section it stalls the node.
 	require.ElementsMatch(t, []string{"Service.settle"}, names(callers(all, "publish")),
 		"a publish outside settle is a log shipped on a delivery nothing has acked, which is the "+
 			"orphan the shutdown path already declines to make")
@@ -2088,39 +1497,25 @@ func TestEveryWriteToTheAssetStoreIsNamedAndPlaced(t *testing.T) {
 	require.True(t, covered([]span{settle.bodies[0]}, settle.at["ack"]),
 		"the ack is not in the first of settle's sections, so it is not what the publish is past")
 
-	// AND "OUTSIDE SETTLE'S OWN SECTIONS" IS NOT "OUTSIDE EVERY SECTION" until
-	// settle's caller is asked. A settle called from inside somebody else's
-	// body holds jobLock through all three of its parts, and every position
-	// checked above is still exactly where it is.
+	// And settle's caller holds no section, or every position above is moot.
 	require.ElementsMatch(t, []string{"Service.run"}, names(callers(all, "settle")),
 		"a second caller of settle is a second place the publish's position is decided")
 	require.Empty(t, all["Service.run"].bodies,
 		"run opens a section of its own, so everything settle does inside it — the publish "+
 			"included — is under jobLock however settle is spelled")
 
-	// AND THE ONE OUTSIDE EVERY SECTION IS NOT THIS PACKAGE'S TO CALL. Asset is
-	// a door for the RUNNER — a stranger's build, handing over bytes it made —
-	// and a caller here would be this package storing something of its own from
-	// outside a section, which is the sink again with the store swapped.
+	// Asset is the runner's door; nothing in this package calls it.
 	require.Empty(t, names(callers(all, "Asset")),
 		"something in this package puts an asset: the door outside every section belongs to the "+
 			"runner, and what it may leave behind is content and not a decision")
 
-	// AND THE VERB IS ONLY EVER CALLED, NEVER TAKEN. This is the one respelling
-	// that walked past every line above, and it is `mk := e.ops.Set` one store
-	// over: `door := o.s.assetStore.Put`, taken inside a caller this file
-	// ALLOWS and stashed in a package-level var, leaves the taker reading as an
-	// ordinary caller and gives the call through it the name of a variable
-	// nobody enumerated. Measured GREEN against the four lines above before
-	// this one was written.
+	// Put is only ever called, never taken as a value.
 	require.Empty(t, takenAsAValue(t, "Put"),
 		"the asset store's verb is taken as a value rather than called, so what is done through "+
 			"it is done in a function whose name the call does not carry")
 
-	// AND WHAT THE OUTSIDE DOOR LEAVES BEHIND REACHES A RECORD BY ONE PATH.
-	// Asset writes the cid into the run's own map and publish reads it, inside
-	// the section, into the value settle records. A third toucher is a cid
-	// spent somewhere no section is.
+	// The run's cids reach a record by one path: Asset writes o.built, publish reads
+	// it.
 	require.Contains(t, fieldsOn(t, "runOutput"), "built",
 		"the run's cids are the field the two checks below name, so a rename would make them vacuous")
 	written := map[string][]token.Pos{}
@@ -2135,15 +1530,8 @@ func TestEveryWriteToTheAssetStoreIsNamedAndPlaced(t *testing.T) {
 		"and a third toucher of them is a cid read somewhere the section that records it cannot see")
 }
 
-// takenAsAValue is every place a method named verb appears as a VALUE rather
-// than as the thing being called.
-//
-// A METHOD VALUE IS NOT A CALL. The function that takes one still reads as an
-// ordinary caller of the verb, and the call THROUGH it carries the name of
-// whatever the value was assigned to — so an enumeration of who may call
-// something walks past the place it is actually called. It is how a row maker
-// escaped three censuses at once (rowVerbs, above), and it is why the door onto
-// the asset store is asked the same question.
+// takenAsAValue is every place a method named verb appears as a value rather than
+// as the callee.
 func takenAsAValue(t *testing.T, verb string) []string {
 	t.Helper()
 
@@ -2170,12 +1558,9 @@ func takenAsAValue(t *testing.T, verb string) []string {
 	return out
 }
 
-// onTheHolding is every function that calls verb ON A HANDLE'S HOLDING —
-// <anything>.in.verb(...) — including at the package level.
-//
-// IT MATCHES THE FIELD AND NOT THE VARIABLE, because the variable is whatever
-// the body called its handle, and it does not match the verb alone because a
-// verb is not a receiver: sha256's hash has a Write too, and jobID calls it.
+// onTheHolding is every function calling verb on a handle's holding
+// (<anything>.in.verb(...)), matching the field so another type's Write does not
+// count.
 func onTheHolding(t *testing.T, verb string) []string {
 	t.Helper()
 
@@ -2204,32 +1589,13 @@ func onTheHolding(t *testing.T, verb string) []string {
 	return names(found)
 }
 
-// A HANDLE IS ONLY MADE BY THE ONE THING THAT TOOK THE LOCK.
-//
-// The authority a write carries is the holding inside the handle, and only
-// backend/section can make one live — but held is this package's own struct, so
-// this package can assemble one around whatever holding it has. That is not the
-// hole it looks like: a handle assembled outside a running body carries the
-// zero holding and is refused (section_test.go), and one assembled inside a
-// running body carries exactly the authority that body already had. What WOULD
-// be a hole is a second way to obtain a live one — a factory, a stashed
-// constructor, a function that hands one back — because then "the handle is the
-// section" stops being true.
-//
-// SO THIS IS SCANNED OVER THE WHOLE FILE AND NOT OVER FUNCTION BODIES. The
-// defeat of the round before this one was a package-level `var` holding the
-// minting function: never inside a FuncDecl, so never scanned, and every call
-// through it read as a call to the var's name.
 func TestAHandleIsOnlyMadeByTheOneThatTookTheLock(t *testing.T) {
 	all := pkgFuncs(t)
 
 	require.ElementsMatch(t, []string{"Service.enter"}, assembles(all, "held"),
 		"a handle assembled anywhere but the one place that took the lock is a section nobody entered")
 
-	// AND THE SUBJECT IS NAMED IN THE SAME PLACE, once. jobReader is what
-	// answers "which job is this section about" and "what does it read", and it
-	// is built where the lock is taken — so a section is entered on a job by
-	// the same expression that takes the exclusion, and there is no second one.
+	// The subject is named once, where the lock is taken.
 	require.ElementsMatch(t, []string{"Service.enter"}, assembles(all, "jobReader"),
 		"a source assembled anywhere else is a section about a job the door did not name")
 
@@ -2257,15 +1623,6 @@ func TestAHandleIsOnlyMadeByTheOneThatTookTheLock(t *testing.T) {
 	}
 }
 
-// A SECTION IS NEVER OPENED INSIDE ANOTHER, and this one is about a hazard the
-// redesign introduced rather than one it closed: jobLock is a plain mutex, so a
-// body that reached for withJob again would deadlock against itself — silently,
-// as a test that hangs rather than a test that fails.
-//
-// Before, the same mistake was two Enters in one body, which was a defect
-// (two sections, one read) rather than a hang. It is worth an enumeration for
-// the same reason the goroutine count is: it holds by arithmetic over what the
-// bodies call, and nothing else would notice it going.
 func TestASectionIsNeverOpenedInsideAnother(t *testing.T) {
 	all := pkgFuncs(t)
 
@@ -2291,9 +1648,6 @@ func TestASectionIsNeverOpenedInsideAnother(t *testing.T) {
 	}
 }
 
-// THERE IS ONE SECTION LOCK IN THIS PACKAGE AND IT IS jobLock. A second one is
-// a second exclusion over the same job table — two writers that serialize
-// against nothing.
 func TestThereIsOneSectionLockAndItIsjobLock(t *testing.T) {
 	var locks []string
 	for _, file := range parsePackage(t).Files {

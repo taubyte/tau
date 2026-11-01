@@ -7,39 +7,11 @@ import (
 	"time"
 )
 
-// ratelimit.go is what stands between a request nobody has proven anything
-// about and the rest of this cloud, and it is a PAIR of limits per public
-// surface because the two defend different things and neither does the other's
-// job.
-//
-//   - The PER-KEY limit is fairness. One hook, or one credential, however busy
-//     or however compromised, cannot spend the whole node. It is keyed by a
-//     string a stranger chooses, so its map is bounded, and eviction under
-//     pressure hands an evicted key a fresh bucket — which is exactly why it is
-//     not the bound that holds.
-//   - The GLOBAL limit is the bound that holds. It is one bucket, O(1) memory,
-//     unkeyable and therefore un-floodable, and it is what caps the total rate
-//     at which invented keys reach the cloud. A per-key limiter alone is
-//     defeated by using a new key every time.
-//
-// # Both surfaces need them, and for one reason
-//
-// A request is admitted BEFORE anything about it has been proven, because on
-// both surfaces the proof itself is what costs. On the webhook it is the hook
-// lookup — v1's lookup IS that route's authenticator, so in v1 the round trip
-// to auth happens first and there is nothing in front of it. On the four job
-// routes it is worse: bearer() establishes only that the Authorization header
-// has a shape, and mayTouchJob must then read the job from the backend before
-// it can authorize anything, because the job's repository_key IS the subject.
-// That read is leader-only and passes through a raft barrier, which
-// hashicorp/raft implements as a log entry replicated to quorum — so an
-// un-admitted job route hands a stranger one replicated entry per HTTP request.
-//
-// # What is deliberately NOT bounded here
-//
-// Neither limit is replicated. A cloud with n frontends admits n times this,
-// which is the honest reading of a per-process limit and is stated rather than
-// implied.
+// Two limits per public surface: a per-key limit for fairness (keyed by a
+// stranger's string, so bounded and evictable, hence not the bound that holds)
+// and a global one, unkeyable, that is the bound that holds. Requests are admitted
+// before anything is proven because the proof itself costs: a hook lookup, or a
+// job read through a raft barrier. Limits are per process.
 
 // bucket is a token bucket that refills continuously.
 type bucket struct {
@@ -88,28 +60,15 @@ func (b *bucket) allow() bool {
 	return true
 }
 
-// allowHook takes a token from one hook id's bucket.
-//
-// The buckets live in the same bounded, expiring map the secrets do, with a TTL
-// of one refill period — which is not a shortcut but the correct lifetime: a
-// bucket untouched for a whole period has refilled to full, so forgetting it
-// and minting a fresh one are the same thing.
+// allowHook takes a token from one hook id's bucket, kept with a TTL of one refill
+// period: a bucket idle that long is full anyway.
 func (s *Service) allowHook(hookID string) bool {
 	return keyed(s.hookBuckets, hookID, s.cfg.HookRate, s.now)
 }
 
-// allowCaller takes a token from one credential's bucket.
-//
-// THE KEY IS A DIGEST OF THE CREDENTIAL AND NEVER THE CREDENTIAL. The map
-// outlives the request by a refill period, and a bearer token left in a map key
-// is a live GitHub credential this process kept after it was done with it —
-// reachable from a heap dump, and printed by anything that ever ranges over the
-// map to debug it. A digest keys the same caller to the same bucket, which is
-// all the limiter needs, and is not a credential if it leaks.
-//
-// SHA-256 rather than a cheaper hash because the input is chosen by the caller:
-// a hash they can find collisions in is a hash they can use to put an unrelated
-// caller's requests in their own exhausted bucket.
+// allowCaller takes a token from one credential's bucket, keyed by its SHA-256 so
+// no credential outlives the request in a map; a collision-resistant hash because
+// the caller chooses the input.
 func (s *Service) allowCaller(token string) bool {
 	digest := sha256.Sum256([]byte(token))
 	return keyed(s.callerBuckets, hex.EncodeToString(digest[:]), s.cfg.CallerRate, s.now)

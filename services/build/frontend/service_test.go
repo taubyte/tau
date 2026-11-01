@@ -12,9 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// New's error returns, the lifecycle, and the claim that this package needs
-// nothing but five fakes to stand up.
-
 func TestNewRefusesEveryMissingDependency(t *testing.T) {
 	hooks, deliveries, projects, backend, callers := &fakeHooks{}, &fakeDeliveries{}, &fakeProjects{}, &fakeBackend{}, &fakeCallers{}
 
@@ -113,8 +110,6 @@ func TestAnOptionsOwnErrorSurvives(t *testing.T) {
 	require.ErrorIs(t, err, sentinel)
 }
 
-// service-conventions.md §2a: construction must not start anything, so a
-// Service can be built just to be looked at. v1's New serves.
 func TestNewBindsNothing(t *testing.T) {
 	h := newHarness(t, Config{Listen: "127.0.0.1:0"})
 
@@ -129,8 +124,7 @@ func TestStartServesAndCloseStops(t *testing.T) {
 	addr := h.Addr()
 	require.NotNil(t, addr)
 
-	// A real request over a real socket — on a port the kernel chose, because a
-	// hardcoded one is why sibling worktrees collide.
+	// A real request on a kernel-chosen port.
 	resp, err := http.Get(fmt.Sprintf("http://%s/job/%s", addr, testJobID))
 	require.NoError(t, err)
 	resp.Body.Close()
@@ -181,8 +175,6 @@ func TestTheHTTPServerHookRunsBeforeItServes(t *testing.T) {
 	require.Equal(t, h.Handler(), seen.Handler)
 }
 
-// The claim doc.go makes: no libp2p host, no listener, no port, and the whole
-// route table reachable.
 func TestServiceNeedsOnlyFakes(t *testing.T) {
 	s, err := New(Config{}, WithHooks(&fakeHooks{}), WithDeliveries(&fakeDeliveries{}), WithProjects(&fakeProjects{}), WithBackend(&fakeBackend{}), WithCallers(&fakeCallers{}),
 		WithLinker(linkedTestProject(t)), WithVault(&fakeVault{}))
@@ -196,8 +188,6 @@ func TestServiceNeedsOnlyFakes(t *testing.T) {
 	}
 }
 
-// A call out of this process is bounded, because the goroutine waiting on it is
-// holding an internet-facing connection.
 func TestEveryCallOutOfThisProcessCarriesADeadline(t *testing.T) {
 	h := newHarness(t, Config{BackendTimeout: 25 * time.Millisecond})
 
@@ -214,8 +204,6 @@ func TestEveryCallOutOfThisProcessCarriesADeadline(t *testing.T) {
 	require.LessOrEqual(t, time.Until(deadline), 25*time.Millisecond)
 }
 
-// A listener taken away underneath Serve is not an orderly shutdown, and the
-// only place that can be said is the log — Start has already returned by then.
 func TestAServerThatDiesSaysSoInTheLog(t *testing.T) {
 	h := newHarness(t, Config{Listen: "127.0.0.1:0"})
 	require.NoError(t, h.Start(t.Context()))
@@ -231,9 +219,6 @@ func TestAServerThatDiesSaysSoInTheLog(t *testing.T) {
 	require.Contains(t, h.logs.joined(), "serving on")
 }
 
-// A public listener that a slow client can keep open through shutdown is a
-// public listener that does not shut down, so the graceful wait is bounded and
-// the listener goes away regardless.
 func TestCloseStopsEvenWhenARequestWillNot(t *testing.T) {
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) })

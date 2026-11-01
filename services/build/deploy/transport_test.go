@@ -16,10 +16,9 @@ import (
 	"github.com/taubyte/tau/services/build/deploy"
 )
 
-// transport_test is the rule that the credential decides the transport: a
-// keyed repository is read over ssh with its key against a pinned host, a
-// keyless one over https anonymously, and a clone that fails is never retried
-// another way.
+// The credential decides the transport: a keyed repository over ssh against a
+// pinned host, a keyless one over anonymous https, and a failed clone never
+// retried another way.
 
 // asked records which protocol each clone asked for an address over.
 type asked struct {
@@ -87,8 +86,6 @@ func TestTheCredentialDecidesTheTransport(t *testing.T) {
 	require.Equal(t, []forge.Protocol{forge.HTTPS}, none.protocols())
 }
 
-// A WRONG KEY FAILS, AND NOTHING ELSE IS TRIED. The server serves only the key
-// it was told to, and Served stays 0: no anonymous retry read the repository.
 func TestAWrongKeyDoesNotFallBack(t *testing.T) {
 	_, public := gittest.KeyPair(t)
 	wrong, _ := gittest.KeyPair(t)
@@ -109,8 +106,6 @@ func TestAWrongKeyDoesNotFallBack(t *testing.T) {
 	require.Equal(t, []forge.Protocol{forge.SSH}, a.protocols(), "the https address is never asked for after ssh failed")
 }
 
-// A KEYLESS CLONE OF A PRIVATE REPOSITORY says what is wrong and how to fix it,
-// rather than surfacing the forge's refusal as a missing repository.
 func TestAKeylessPrivateRepositoryIsNamed(t *testing.T) {
 	var hits int
 	var mu sync.Mutex

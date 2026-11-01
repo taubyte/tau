@@ -16,22 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// THE API IS THE WALL, so the API is what is pinned.
-//
-// Every defeat this package exists to end was a caller reaching for something
-// that was there: a "which section is running" accessor that returned a
-// spendable number, a mutex beside it, a stamp it could assign, a minting
-// function it could put on a value it had read anywhere at all — and then, when
-// all of those were gone, a Reread that took a closure returning T, which is
-// the minting function again with a method receiver in place of the token.
-//
-// So the whole exported surface is enumerated here, and a function added to it
-// — however reasonable — fails until somebody has decided what it hands out.
-//
-// THE TWO CLAIMS UNDER IT are what the enumeration is for: nothing but Do
-// returns a Holding, and Do takes the mutex to make one. A second source of a
-// live Holding is a token again, and this time there would be no read attached
-// to it either.
 func TestTheOnlyThingThatHandsOutAHoldingIsDo(t *testing.T) {
 	var exported, handsOutAHolding []string
 	locksTheMutex := map[string]bool{}
@@ -84,20 +68,6 @@ func TestTheOnlyThingThatHandsOutAHoldingIsDo(t *testing.T) {
 		"and Do must take the mutex to make one, or the handle is not exclusion")
 }
 
-// AND NO VALUE COMES IN FROM A CALLER AT ALL, which is stronger than the
-// sentence this test used to check.
-//
-// It used to allow a value in "through a read function this package calls",
-// which was true of Do and true of Reread — and Reread is where that allowance
-// went wrong. A body inside a live holding could hand it a closure returning
-// anything, from any read, taken at any time, and the holding installed it: the
-// exported generic minting function of the round before, needing no token
-// because the receiver already carried the authority.
-//
-// THE READS ARE A Source NOW, chosen at the door by whoever took the lock, and
-// nothing exported takes a function that produces a T. What this scan therefore
-// requires is an EMPTY answer, and the control below it is that the same scan
-// finds the shape when it is there.
 func TestNothingExportedTakesAValueFromItsCaller(t *testing.T) {
 	require.Empty(t, producers(t, declarations(t)),
 		"a parameter that returns T is a caller saying what this holding carries — which is "+
@@ -135,14 +105,8 @@ func producers(t *testing.T, decls []*ast.FuncDecl) []string {
 	return out
 }
 
-// declarations is this package's own source, AND IT PINS WHICH SOURCE THAT IS.
-//
-// The scan above asserts an ABSENCE — nothing exported takes a value from its
-// caller — and an absence is only as good as the file set it was measured over.
-// A filter that skips a file by name, or a second file added beside this one,
-// would make the emptiness a fact about the scan rather than about the package.
-// So what it expects to read is written down, and what is on disk has to agree
-// with it: a second file here is an edit to this list.
+// declarations is this package's own source, pinned to the expected file list so
+// an absence measured over it is a fact about the package.
 func declarations(t *testing.T) []*ast.FuncDecl {
 	t.Helper()
 	fset := token.NewFileSet()
@@ -219,9 +183,6 @@ func typeName(expr ast.Expr) string {
 	return ""
 }
 
-// A HOLDING IS LIVE ONLY WHILE ITS BODY IS RUNNING, and an escaped one never
-// comes back to life — not when the lock is free, and not while somebody else
-// holds it.
 func TestAHoldingIsLiveOnlyWhileItsBodyRuns(t *testing.T) {
 	var l Lock[string]
 	require.False(t, l.Held())
@@ -249,8 +210,6 @@ func TestAHoldingIsLiveOnlyWhileItsBodyRuns(t *testing.T) {
 	}))
 }
 
-// AND A REFUSED WRITE IS NOT MADE. The closure is the write; a gate that
-// answered a question would leave it to the caller to act on the answer.
 func TestARefusedWriteDoesNotRunTheWrite(t *testing.T) {
 	var l Lock[string]
 	var escaped Holding[string]
@@ -264,9 +223,6 @@ func TestARefusedWriteDoesNotRunTheWrite(t *testing.T) {
 	require.False(t, written, "the write is the argument, so a refusal is a write that never ran")
 }
 
-// THE ZERO HOLDING IS NO HOLDING. It is the only one a caller can construct,
-// and it answers nothing — which is what makes a handle assembled at a write
-// site worthless rather than merely detectable.
 func TestTheZeroHoldingIsLiveInNothing(t *testing.T) {
 	var none Holding[string]
 	require.ErrorIs(t, none.Write(func() error { return nil }), ErrStale)
@@ -285,10 +241,6 @@ func TestTheZeroHoldingIsLiveInNothing(t *testing.T) {
 	}))
 }
 
-// THE SUBJECT IS THE HOLDING'S, NOT THE CALLER'S. It is read from the source
-// ONCE, at the instant of the read, so a source that changes its mind
-// afterwards changes nothing about what the holding is about — which is what a
-// caller composes the keys of its writes from.
 func TestTheSubjectIsSnapshottedAtTheRead(t *testing.T) {
 	var l Lock[string]
 	moving := &mutable{subject: "the job the read was taken on", value: "x"}
@@ -306,8 +258,6 @@ func TestTheSubjectIsSnapshottedAtTheRead(t *testing.T) {
 			"authority, so there is no assignment that separates the two")
 }
 
-// THE EXCLUSION IS REAL, and Held is not a substitute for it: Do blocks until
-// the body running now has returned.
 func TestDoWaitsForTheBodyRunningNow(t *testing.T) {
 	var l Lock[int]
 	var mu sync.Mutex
@@ -341,8 +291,6 @@ func TestDoWaitsForTheBodyRunningNow(t *testing.T) {
 	require.False(t, l.Held())
 }
 
-// A READ THAT FAILED RUNS NO BODY: there is nothing to decide a write on, and
-// the error is the caller's own.
 func TestAFailedReadRunsNoBody(t *testing.T) {
 	var l Lock[string]
 	boom := errors.New("the store is gone")
@@ -357,8 +305,6 @@ func TestAFailedReadRunsNoBody(t *testing.T) {
 	require.False(t, l.Held(), "and the lock is released however the read went")
 }
 
-// A READ THAT FOUND NOTHING IS STILL A DECISION — "there is no job here" is
-// what create's write is decided on — so it runs the body like any other.
 func TestAReadThatFoundNothingStillDecides(t *testing.T) {
 	var l Lock[string]
 	require.NoError(t, l.Do(&mutable{subject: "a job"}, func(h Holding[string]) error {
@@ -367,12 +313,6 @@ func TestAReadThatFoundNothingStillDecides(t *testing.T) {
 	}))
 }
 
-// REREADING IS A SECOND READ OF THE SAME SUBJECT UNDER THE SAME HOLDING, and
-// the value it installs is the one the body decides on from then on.
-//
-// IT TAKES NOTHING. What it installs comes from Again, on the source named at
-// the door — so a body that wanted to decide on a record it had read somewhere
-// else has no argument to hand it and no field to assign it to.
 func TestRereadReplacesWhatTheHoldingCarries(t *testing.T) {
 	var l Lock[string]
 	src := &mutable{subject: "a job", value: "triage", found: true}
@@ -396,9 +336,6 @@ func TestRereadReplacesWhatTheHoldingCarries(t *testing.T) {
 	require.Equal(t, 2, src.agains, "Reread reads, every time, rather than taking what it is given")
 }
 
-// AND AN ESCAPED HANDLE CANNOT REREAD ITSELF BACK TO LIFE. Reread is a read
-// under a live holding, so the one thing it cannot be is the way a dead handle
-// gets a fresh value to write on.
 func TestAnEscapedHandleCannotRereadItselfAlive(t *testing.T) {
 	var l Lock[string]
 	src := &mutable{subject: "a job", value: "x", found: true}
@@ -416,10 +353,6 @@ func TestAnEscapedHandleCannotRereadItselfAlive(t *testing.T) {
 	require.ErrorIs(t, escaped.Write(func() error { return nil }), ErrStale)
 }
 
-// A COPY OF A HANDLE IS THE SAME HANDLE. The body is handed a value, so copying
-// one is free and inevitable — and a copy that outlives the body is dead with
-// it, which is what makes "hand your decision to a helper" safe and "stash it
-// for later" useless.
 func TestACopyOfAHandleDiesWithTheOneItWasCopiedFrom(t *testing.T) {
 	var l Lock[string]
 	var copied Holding[string]
@@ -432,9 +365,6 @@ func TestACopyOfAHandleDiesWithTheOneItWasCopiedFrom(t *testing.T) {
 	require.ErrorIs(t, copied.Write(func() error { return nil }), ErrStale)
 }
 
-// THE BODY'S ERROR IS DO'S ERROR, and a body that panics still releases the
-// lock and kills the handle — a transition that crashed must not leave the
-// table locked for the life of the process.
 func TestDoReportsTheBodyAndSurvivesAPanic(t *testing.T) {
 	var l Lock[string]
 	boom := errors.New("the body refused")
@@ -451,41 +381,6 @@ func TestDoReportsTheBodyAndSurvivesAPanic(t *testing.T) {
 	require.ErrorIs(t, escaped.Write(func() error { return nil }), ErrStale)
 }
 
-// THE IDENTITY DIES BEFORE THE EXCLUSION IS RELEASED, and this is a test for
-// the ORDER OF DO'S TWO CLOSING STATEMENTS rather than for their effect.
-//
-// Every other test in this package, and the one named for this ordering in the
-// package that uses it, takes its measurements AFTER Do has returned — when
-// both statements have run, whichever order they are in. So reversing them,
-//
-//	defer func() {
-//	        l.mu.Unlock()
-//	        l.held.Store(0)
-//	}()
-//
-// left this package green and its caller green in two runs out of five, and the
-// sentence in Do saying the order matters was carried by nothing.
-//
-// THE HARM IS NOT THAT THE OUTGOING SECTION LIVES TOO LONG. It is that the
-// store lands on the INCOMING one: a goroutine waiting on the mutex takes it
-// the instant it is released, mints its own identity, puts it in that same
-// field — and the section on its way out then writes 0 over it. A body that
-// entered correctly, holding the exclusion, finds its own writes refused with
-// ErrStale, which is the one thing this package promises cannot happen.
-//
-// SO IT IS MEASURED UNDER CONTENTION, and that is not decoration. An uncontended
-// Unlock hands nothing over: the goroutine that unlocks keeps running and gets
-// to the store on the next instruction, so the window is a preemption wide. A
-// mutex somebody has been waiting on for a millisecond enters starvation mode
-// and hands the lock DIRECTLY to the waiter, which is exactly the interleaving —
-// eight goroutines holding it long enough to starve each other reproduce it in
-// ten runs out of ten, where one goroutine handing over to one other found it in
-// none.
-//
-// IT IS ONE-SIDED. In the committed order the store happens before the unlock,
-// which happens before any waiter can take the mutex, so no interleaving can
-// clear a live identity and no write can be refused. There is nothing here to
-// tune and nothing to flake: a failure is the ordering, not the timing.
 func TestTheIdentityDiesBeforeTheExclusionIsReleased(t *testing.T) {
 	var l Lock[string]
 	var cleared atomic.Bool
@@ -517,11 +412,8 @@ func TestTheIdentityDiesBeforeTheExclusionIsReleased(t *testing.T) {
 		"a holding was cleared while another section's read was running under it")
 }
 
-// watchful is a source that watches the identity WHILE IT READS. A source's
-// First runs with the mutex held and this holding already minted, so a Lock
-// that reports itself unheld there can only have been cleared by somebody
-// else's section on its way out. It is the second detector; the first is the
-// refusal that follows.
+// watchful checks the identity while reading: First runs with the mutex held and
+// this holding minted, so an unheld Lock there means another section cleared it.
 type watchful struct {
 	lock    *Lock[string]
 	cleared *atomic.Bool

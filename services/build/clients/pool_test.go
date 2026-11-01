@@ -38,11 +38,6 @@ func TestNewPoolRefusesWhatItCannotDialWith(t *testing.T) {
 	}
 }
 
-// The claim the whole design rests on: a peer that does not serve the protocol
-// answers with connect.CodeUnavailable, exactly as a peer that is down does and
-// exactly as a raft follower refusing a write will. Three cases, one branch —
-// which is why there is no leader lookup, no forwarding and no client cache
-// keyed by leadership anywhere in build.
 func TestAPeerThatDoesNotServeTheProtocolIsUnavailable(t *testing.T) {
 	mn := newMocknet(t)
 	caller := newHost(t, mn)
@@ -90,8 +85,6 @@ func TestDoWalksPastUnavailableAndStopsOnAnAnswer(t *testing.T) {
 	require.Len(t, tried, 2, "the first peer's Unavailable must move on to the second")
 }
 
-// The other half of the same rule, and the one that keeps a considered refusal
-// from being retried N times: any code but Unavailable is the answer.
 func TestDoReturnsAnyOtherCodeImmediately(t *testing.T) {
 	mn := newMocknet(t)
 	caller := newHost(t, mn)
@@ -144,8 +137,6 @@ func TestDoReportsAResolverFailureAsNoBackend(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoBackend)
 }
 
-// A peer that was unavailable is reported back, so a live Discovery stops
-// leading with it, and its client is dropped rather than kept open.
 func TestAnUnavailablePeerIsReportedAndDropped(t *testing.T) {
 	mn := newMocknet(t)
 	caller := newHost(t, mn)
@@ -241,8 +232,6 @@ func TestCloseIsIdempotentAndStopsDo(t *testing.T) {
 	require.Equal(t, 0, p.held())
 }
 
-// A pool whose host is closed cannot build a client, which is the one error
-// inside the loop that is not a call's answer.
 func TestADialThatCannotBeBuiltIsTriedPastRatherThanReturned(t *testing.T) {
 	mn := newMocknet(t)
 	caller := newHost(t, mn)
@@ -258,9 +247,6 @@ func TestADialThatCannotBeBuiltIsTriedPastRatherThanReturned(t *testing.T) {
 	require.Equal(t, 1, calls)
 }
 
-// Close can land while a Do is in flight — a node shutting down does exactly
-// that — so the two paths that re-check it are reachable, and these are the
-// interleavings that reach them.
 func TestCloseDuringADoIsRefusedRatherThanRaced(t *testing.T) {
 	mn := newMocknet(t)
 	caller := newHost(t, mn)
@@ -304,9 +290,6 @@ func (h *hookResolver) Peers(context.Context, int) ([]peer.ID, error) {
 func (h *hookResolver) Known() []peer.ID { return h.peers }
 func (h *hookResolver) Failed(peer.ID)   {}
 
-// discovery.Static answers an empty set with an error, but the Resolver
-// interface permits "nil error, no peers" — a live Discovery whose want was
-// satisfied by nothing — and that is a different branch.
 func TestAnEmptyPeerSetWithNoErrorIsStillNoBackend(t *testing.T) {
 	mn := newMocknet(t)
 	p, err := NewPool(newHost(t, mn), &hookResolver{}, AuthProtocol, 4)
@@ -316,10 +299,6 @@ func TestAnEmptyPeerSetWithNoErrorIsStillNoBackend(t *testing.T) {
 	require.ErrorIs(t, p.Do(t.Context(), func(*rpc.Client) error { return nil }), ErrNoBackend)
 }
 
-// The bound only bites when more peers ANSWER than it holds, which one Do
-// never does — it stops at the first answer. Several Do calls against a
-// rotating peer set is what fills it, and is what a running node does as
-// discovery reorders behind it.
 func TestTheOldestClientIsEvictedOnceTheBoundIsReached(t *testing.T) {
 	mn := newMocknet(t)
 	caller := newHost(t, mn)

@@ -10,9 +10,6 @@ import (
 	"github.com/taubyte/tau/services/build"
 )
 
-// The zero Config must be a working one, because a node that declared nothing
-// still has to start. Every default is checked, not just that it is non-zero:
-// a default that silently changed is a behaviour change nothing else notices.
 func TestTheZeroConfigIsValidAndItsDefaultsAreThese(t *testing.T) {
 	c, err := Config{}.withDefaults()
 	require.NoError(t, err)
@@ -28,16 +25,12 @@ func TestTheZeroConfigIsValidAndItsDefaultsAreThese(t *testing.T) {
 	require.Equal(t, DefaultBuildTimeout+DefaultClaimMargin, c.Queue.VisibilityTimeout)
 }
 
-// The queue's name is the consistency domain build.proto fixes by literal. Two
-// nodes of one cloud disagreeing about it is two queues where there is meant
-// to be one, so it is not a deployment's to set.
 func TestTheQueueNameIsForcedToTheConsistencyDomain(t *testing.T) {
 	c, err := Config{Queue: queue.Config{Name: "something-else"}}.withDefaults()
 	require.NoError(t, err)
 	require.Equal(t, build.QueueDomain, c.Queue.Name)
 }
 
-// A lease that does not outlast a build is a second claimer with the same job.
 func TestALeaseThatDoesNotOutlastABuildIsRefused(t *testing.T) {
 	for _, tc := range []struct {
 		name              string
@@ -89,9 +82,6 @@ func TestActionsName(t *testing.T) {
 	require.Equal(t, "action(99)", Action(99).String())
 }
 
-// THE PUBLISH IS SPENT OUT OF THE MARGIN, so a publish that could use all of it
-// is an acknowledgement made after the claim expired — which the queue refuses,
-// correctly, and the job is then rebuilt by whoever takes the redelivery.
 func TestAPublishTimeoutMustFitInsideTheClaimMargin(t *testing.T) {
 	for name, c := range map[string]Config{
 		"the whole margin": {ClaimMargin: 30 * time.Second, PublishTimeout: 30 * time.Second},

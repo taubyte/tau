@@ -15,10 +15,8 @@ import (
 	"github.com/taubyte/tau/services/build"
 )
 
-// The servers the frontend's backend adapter are tested against. Same fixture as
-// harness_test.go's: mocknet, discovery.Static, and no port anywhere.
-
-// ── build's own backend ──────────────────────────────────────────────────────
+// The servers the frontend's backend adapter is tested against: mocknet,
+// discovery.Static, no port.
 
 // fakeBackend answers build.proto's five RPCs however a test says. A nil hook
 // is an Unimplemented, so a test that forgot to set one fails loudly rather

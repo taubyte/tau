@@ -9,27 +9,11 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// streams.go is the SECOND SOURCE OF A PUSH, not a second pipeline. A forge
-// with no webhook a signature covers (Gerrit) reports pushes on an event feed
-// the deployment opens itself, over a channel it authenticated; a push read
-// there is the same Push a verified delivery is, and goes the same way from
-// here — refusal (push.go), then backend.Enqueue. Nothing about building
-// differs by where the push came from.
-//
-// EVERY FRONTEND HOLDS EVERY STREAM, and that is safe because it is the
-// webhook's own answer to a redelivery: the backend's job id is a hash of
-// (repository, ref, commit), so N nodes enqueueing one push make one job. No
-// node is elected to hold a stream, so no node's loss stops pushes arriving.
-//
-// A STREAM HAS NO REPLAY. Whatever happens while it is down is gone from it,
-// so every time a subscription is accepted the branch heads of every linked
-// repository on that forge are read and enqueued, and again every
-// StreamResync while it stays up. A head already built is the job it already
-// was (Enqueue is idempotent, and a finished job is not requeued), so the
-// comparison against what was built is the backend's job table and costs one
-// Enqueue per eligible head. The periodic pass also covers the two misses a
-// reconnect cannot: the window between a subscription being accepted and the
-// forge actually registering it, and a push whose Enqueue failed.
+// streams.go is a second source of pushes, not a second pipeline: a push from a
+// forge's event feed (Gerrit) goes the webhook's way. Every frontend holds every
+// stream; the backend's job id dedups. A stream has no replay, so on every accepted
+// subscription and every StreamResync the eligible heads of every linked
+// repository are enqueued again, which is idempotent.
 
 // startStreams starts one subscription loop per forge host with a feed. It is
 // a no-op without WithStreams.

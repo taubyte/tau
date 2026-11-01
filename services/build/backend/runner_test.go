@@ -70,10 +70,6 @@ func TestOneStepClaimsRunsAcksAndFinishes(t *testing.T) {
 	require.Empty(t, logFiles(t, h), "the log file must not outlive the run that wrote it")
 }
 
-// The before..after anchor is this service's own: written on success, read at
-// claim, never taken from the webhook. build.proto is explicit that `before` is
-// exactly as webhook-supplied as `commit_sha` is, so carrying it would buy back
-// no trust — the backend reads what it itself last finished.
 func TestBeforeIsWhatThisServiceItselfLastFinished(t *testing.T) {
 	h := newHarness(t)
 
@@ -95,10 +91,6 @@ func TestBeforeIsWhatThisServiceItselfLastFinished(t *testing.T) {
 	require.Empty(t, h.runner.seen()[2].Before)
 }
 
-// AN ERROR FROM Run IS TERMINAL. The queue's retry exists for a worker that
-// DIED, not for a build that failed — retrying a compile error five times is
-// waste. v1's MaxJobAttempts counted only REPORTED failures, so a crash was
-// free and a job that killed its worker retried forever.
 func TestARunThatFailsIsTerminalRatherThanRetried(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -119,8 +111,6 @@ func TestARunThatFailsIsTerminalRatherThanRetried(t *testing.T) {
 	require.Empty(t, h.lastCommit(testRepo, testRef))
 }
 
-// A runner that panics must not take the loop down, and must not leave the item
-// claimed until its lease expires either.
 func TestARunnerThatPanicsIsAFailedBuild(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -131,8 +121,6 @@ func TestARunnerThatPanicsIsAFailedBuild(t *testing.T) {
 	require.Contains(t, h.mustRecord(t, id).Reason, "panicked")
 }
 
-// Cancel while running: one record write, and the run's context ends in the
-// same process. v1 needed three hops between two services for this.
 func TestCancelWhileRunningStopsTheRunAndKeepsTheCancelledStatus(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -153,9 +141,6 @@ func TestCancelWhileRunningStopsTheRunAndKeepsTheCancelledStatus(t *testing.T) {
 	require.Empty(t, h.lastCommit(testRepo, testRef))
 }
 
-// The claim's own deadline is the hard bound, and BuildTimeout is the policy on
-// top. The smaller wins, so a lease made generous does not silently become the
-// build timeout.
 func TestTheRunIsBoundedByWhicheverOfTheLeaseAndThePolicyIsShorter(t *testing.T) {
 	t.Run("the lease is the bound", func(t *testing.T) {
 		h := newHarnessCfg(t, func(c *Config) {
@@ -199,10 +184,6 @@ func TestTheRunIsBoundedByWhicheverOfTheLeaseAndThePolicyIsShorter(t *testing.T)
 	})
 }
 
-// A RUN WHOSE CLAIM EXPIRED PUBLISHES NOTHING. Ack is the commit point and the
-// only compare-and-swap this service has; the loser learns it there. v1 asked
-// whether it still owned the job only when REPORTING, after it had already
-// stashed assets and pushed keys to tns.
 func TestARunWhoseClaimExpiredMidRunPublishesNothing(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -229,14 +210,6 @@ func TestARunWhoseClaimExpiredMidRunPublishesNothing(t *testing.T) {
 			"which is the orphan the shutdown path already declines to create")
 }
 
-// The same rule for the other way a claim stops being ours.
-//
-// SETTLE NOTICES AT ITS BARRIER NOW, not at its ack. The two are the same fact
-// about the same instant — a node that is no longer the leader can neither
-// barrier nor ack — and which of them speaks is decided by the order the
-// section runs in: the barrier comes before the read the outcome is decided on,
-// and the ack comes after it, inside the body that read it (section.go). What matters
-// here is unchanged and is asserted below: NOTHING IS PUBLISHED.
 func TestLeadershipLostMidRunPublishesNothing(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -258,8 +231,6 @@ func TestLeadershipLostMidRunPublishesNothing(t *testing.T) {
 	require.Zero(t, h.assets.count(), "and nothing it built or printed reached the store")
 }
 
-// A worker that DIED is the case redelivery exists for: the claim expires, the
-// item comes back, and the attempt is consumed. v1's crashes were free.
 func TestAWorkerThatDiedCostsAnAttemptAndTheJobComesBack(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -281,12 +252,9 @@ func TestAWorkerThatDiedCostsAnAttemptAndTheJobComesBack(t *testing.T) {
 	require.Equal(t, uint32(1), work[0].Attempt)
 }
 
-// A job that exhausts its attempts reaches the dead letter, and the drain is
-// what stops it sitting there forever with a record that still reads Open.
 func TestAnExhaustedJobIsDeadLetteredAndTheDrainMarksItFailed(t *testing.T) {
-	// New opens the queue from cfg (service.go:257), so setting MaxAttempts
-	// before construction is enough — the old shape had to reopen it because
-	// the option ran after the queue was already built.
+	// New opens the queue from cfg, so setting MaxAttempts before construction is
+	// enough.
 	h := newHarnessCfg(t, func(c *Config) {
 		c.Queue.MaxAttempts = 1
 	})
@@ -320,8 +288,6 @@ func TestAnExhaustedJobIsDeadLetteredAndTheDrainMarksItFailed(t *testing.T) {
 	require.Empty(t, h.runner.seen(), "an exhausted job is never run again")
 }
 
-// A dead-letter entry whose record is already terminal is acknowledged without
-// being rewritten.
 func TestDrainingADeadLetterEntryForAFinishedJobJustAcksIt(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -335,8 +301,6 @@ func TestDrainingADeadLetterEntryForAFinishedJobJustAcksIt(t *testing.T) {
 	require.Equal(t, 0, ready)
 }
 
-// A queue item whose record is gone cannot be identified, let alone built, so
-// it is acknowledged and dropped rather than redelivered forever.
 func TestAnItemWithNoRecordIsAckedAndDropped(t *testing.T) {
 	h := newHarness(t)
 	require.NoError(t, h.work.Push(unknownJobID, nil))
@@ -349,8 +313,6 @@ func TestAnItemWithNoRecordIsAckedAndDropped(t *testing.T) {
 	require.Equal(t, 0, claimed)
 }
 
-// The ack-to-record gap healing itself: a redelivered job that is already
-// finished is acked and dropped.
 func TestARedeliveredJobThatIsAlreadyFinishedIsDropped(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -364,8 +326,6 @@ func TestARedeliveredJobThatIsAlreadyFinishedIsDropped(t *testing.T) {
 	require.Equal(t, 0, claimed)
 }
 
-// TWO BACKENDS OVER ONE DOMAIN: only the leader claims. That is the whole of
-// the mutual exclusion, and it is why there is no claim RPC in build.proto.
 func TestOnlyTheLeaderOfTheDomainClaims(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -388,8 +348,6 @@ func TestOnlyTheLeaderOfTheDomainClaims(t *testing.T) {
 	require.Equal(t, 0, claimed)
 }
 
-// A node without a Runner still serves, still replicates and still keeps the
-// queue swept — it just claims nothing. A voter need not be a builder.
 func TestANodeWithNoRunnerKeepsTheQueueSweptAndClaimsNothing(t *testing.T) {
 	store := newStore()
 	clock := newClock()
@@ -438,9 +396,6 @@ func TestStepReportsACorruptRecordRatherThanRunningIt(t *testing.T) {
 	require.Empty(t, h.runner.seen())
 }
 
-// The loop is a ticker over step and holds no logic of its own, which is what
-// makes every branch above reachable without a goroutine or a sleep. This is
-// the one test that runs it.
 func TestTheStartedLoopEventuallyRunsAQueuedJob(t *testing.T) {
 	h := newHarnessCfg(t, func(c *Config) {
 		c.ClaimInterval = time.Millisecond
@@ -462,9 +417,6 @@ func TestTheStartedLoopEventuallyRunsAQueuedJob(t *testing.T) {
 	}, 5*time.Second, time.Millisecond)
 }
 
-// The store's own refusals, at each of the four places a cycle touches it. Each
-// is a separate branch, and a cycle that swallowed any of them would look like
-// a queue that quietly stopped draining.
 func TestStepReportsEachOfTheStoresRefusals(t *testing.T) {
 	t.Run("the dead letter cannot be read", func(t *testing.T) {
 		h := newHarness(t)
@@ -508,13 +460,6 @@ func TestStepReportsEachOfTheStoresRefusals(t *testing.T) {
 	})
 }
 
-// The read the outcome is decided on can fail too, and a failure there must not
-// be mistaken for "nothing to write".
-//
-// THE DELIVERY SURVIVES IT. The read comes before the ack now — it is what the
-// ack carries out — so a record nothing can decode costs a redelivery rather
-// than the item: this is the same answer the dead-letter drain gives a corrupt
-// record one queue over, and the item is still bounded by MaxAttempts.
 func TestSettleReportsARecordItCannotRead(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -532,8 +477,6 @@ func TestSettleReportsARecordItCannotRead(t *testing.T) {
 	require.Equal(t, 1, claimed, "a record nothing could read must not cost the item that names it")
 }
 
-// A dead-letter entry acknowledged by somebody else between the claim and the
-// ack is reported rather than swallowed.
 func TestTheDeadLetterDrainReportsAnAckItCannotMake(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -547,8 +490,6 @@ func TestTheDeadLetterDrainReportsAnAckItCannotMake(t *testing.T) {
 	require.ErrorContains(t, err, "dead letter ack")
 }
 
-// The drain's own record write can fail, and the entry must then stay in the
-// dead letter rather than being acknowledged as handled.
 func TestTheDeadLetterDrainReportsARecordItCannotWrite(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -565,10 +506,6 @@ func TestTheDeadLetterDrainReportsARecordItCannotWrite(t *testing.T) {
 	require.Equal(t, 1, claimed, "an entry whose record could not be written stays claimed and comes back")
 }
 
-// THE TWO CLAIM-LOOP SECTIONS TAKE A BARRIER OF THEIR OWN, and a barrier that
-// cannot be taken is a section that must not decide. Both are reached only
-// after a queue call has already barriered successfully, so the refusal has to
-// be armed between the two — which is what the batch hook is for.
 func TestASectionThatCannotBarrierDecidesNothing(t *testing.T) {
 	t.Run("the claim's section", func(t *testing.T) {
 		h := newHarness(t)
@@ -623,9 +560,6 @@ func TestASectionThatCannotBarrierDecidesNothing(t *testing.T) {
 	})
 }
 
-// A dead-letter entry whose record will not decode is reported rather than
-// treated as a job that has no record — which would ack it and lose the only
-// thing that says the build ever happened.
 func TestTheDeadLetterDrainReportsACorruptRecord(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -640,11 +574,7 @@ func TestTheDeadLetterDrainReportsACorruptRecord(t *testing.T) {
 	require.Equal(t, 1, claimed, "and the entry is not acknowledged")
 }
 
-// ── what this service accounted for ──────────────────────────────────────
-
-// A BUILD IS THE MOST OBVIOUSLY BILLED THING A CLOUD DOES, and this service
-// knew none of it. The job record carries the outcome, but a record is a
-// counter: it says what the figure is where an emission says what happened.
+// meter records what was accounted for.
 type meter struct {
 	mu     sync.Mutex
 	events []Accounted
@@ -705,10 +635,6 @@ func TestASuccessfulBuildIsAccounted(t *testing.T) {
 	require.Equal(t, uint64(len("building\n")), logs[0].Bytes)
 }
 
-// A FAILED BUILD IS ACCOUNTED. It occupied a builder for exactly as long as one
-// that worked, and a plan that charges differently for the two has to be able
-// to tell them apart — which is what Succeeded is for, rather than this
-// deciding on the biller's behalf by emitting nothing.
 func TestAFailedBuildIsAccounted(t *testing.T) {
 	m := &meter{}
 	h := newHarness(t, WithMeter(m), WithAssets(newAssets()))
@@ -726,8 +652,6 @@ func TestAFailedBuildIsAccounted(t *testing.T) {
 	require.False(t, builds[0].Succeeded)
 }
 
-// A node with no meter builds exactly as it did, and the events are not
-// constructed at all.
 func TestNoMeterIsTheOrdinaryCase(t *testing.T) {
 	h := newHarness(t, WithAssets(newAssets()))
 	id := h.push(t, testRef, testCommit)

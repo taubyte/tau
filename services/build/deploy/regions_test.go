@@ -9,10 +9,6 @@ import (
 	"github.com/taubyte/tau/services/build/deploy"
 )
 
-// A REGION THIS CLOUD DOES NOT SERVE IS REFUSED BY DEFAULT. The basic fixture says
-// where its scopes and resources run; a deploy given no Regions has none (WithNoRegions),
-// so it refuses before publishing rather than running them somewhere they were not
-// told to be.
 func TestARegionThisCloudDoesNotServeIsRefusedByDefault(t *testing.T) {
 	r := registry(t)
 	d, err := deploy.New(
@@ -30,7 +26,6 @@ func TestARegionThisCloudDoesNotServeIsRefusedByDefault(t *testing.T) {
 	require.Error(t, err, "nothing was published")
 }
 
-// EACH REGION THE FIXTURE NAMES DEPLOYS IT, as its own view.
 func TestTheFixtureDeploysAsEachRegion(t *testing.T) {
 	for _, region := range []string{"region-1", "region-2"} {
 		t.Run(region, func(t *testing.T) {
@@ -51,7 +46,6 @@ func (placesNothing) Place(schema.Placement) schema.Answer { return schema.Answe
 func (placesNothing) Allow([]string) []schema.Concern      { return nil }
 func (placesNothing) Serves() []string                     { return nil }
 
-// A PLACEMENT THE CLOUD CANNOT HONOUR IS REFUSED BEFORE ANYTHING PUBLISHES.
 func TestAnUnplaceableDeploymentPublishesNothing(t *testing.T) {
 	r := registry(t)
 	var log out

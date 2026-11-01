@@ -1,44 +1,12 @@
-// Package deploy is what a push to a project's CONFIGURATION repository does.
+// Package deploy is what a push to a project's configuration repository does, and
+// the only writer of the register: a deploy is a commit that arrived through the
+// frontend, was authorized, and became a watched job.
 //
-// # The register is written here and nowhere else
-//
-// tau is git-native: the config repository is the source of truth and a deploy
-// is a commit. So the only thing that writes the register is the build service
-// acting on a push that arrived through the frontend, was authorized there,
-// and became a job with a record and a log somebody can watch. Every other
-// composition in this tree reads the register and cannot publish to it —
-// node/locate.go says so in as many words.
-//
-// A person running a publish command against a swarm would go around all of
-// that: no commit, no authorization, no record, and a fleet whose state no
-// longer matches any git history.
-//
-// # The branch is the deployment
-//
-// A project declares which branches feed which of its deployments, so the ref
-// that was pushed already answers "deploy where". `main` feeds production and
-// the shadow written inside it; `release/*` feeds staging; anything else is a
-// preview. Nobody types an environment, and nobody types a revision either:
-// the register refuses one that does not move forward, so this reads what is
-// published and adds one.
-//
-// # Each deployment is its own compile
-//
-// Fifty-one attributes may be written per deployment — every ceiling, every
-// limit, the toolchain a build runs — and the compiler resolves `<key>_<env>`
-// down to `<key>` for the one it is compiling. One object published under
-// several names would give every deployment production's numbers.
-//
-// # It routes; it does not do both
-//
-// A push is one of two things and this is where that is decided, because the
-// decision is one question to the register's project table and both answers need it. A push to the
-// configuration repository is handled here. A push to a code repository is a
-// BUILD — services/build/artifact — and is delegated when this was given one.
-//
-// A node with no builder refuses a code push BY NAME rather than succeeding
-// quietly, because a job that reported success having built nothing looks
-// exactly like a deploy that worked.
+// The pushed branch picks the deployments through the project's environment
+// table; the revision is the published one plus one. Each deployment is its own
+// compile, since per-environment keys resolve differently. A push to a code
+// repository is delegated to services/build/artifact, and refused by name on a
+// node without a builder.
 package deploy
 
 import (
@@ -57,16 +25,13 @@ import (
 	"github.com/taubyte/tau/services/build/backend"
 )
 
-// branchRef is the only ref shape a deploy answers to. A tag or a note is not a
-// deployment: nothing in the environment table matches one, so it would resolve
-// to no deployments and fail as if the project were misconfigured.
+// branchRef is the only ref shape a deploy answers to; a tag matches no
+// environment.
 const branchRef = "refs/heads/"
 
 var (
-	// ErrNotConfiguration is a push to a repository that is not the project's
-	// configuration, on a node that was given nothing to build code with. It
-	// names the job rather than passing it: one that returned success having
-	// produced nothing would look exactly like a deploy that worked.
+	// ErrNotConfiguration is a code push on a node with nothing to build code with,
+	// refused by name rather than succeeding having done nothing.
 	ErrNotConfiguration = errors.New("deploy: this repository is not the project's configuration, and this node was not given anything to build code with")
 
 	// ErrNotABranch is a ref that is not a branch.
@@ -78,13 +43,9 @@ var (
 	ErrNoRegister = errors.New("deploy: nowhere to publish to")
 	ErrNoCheckout = errors.New("deploy: no way to read a repository")
 	ErrNoProjects = errors.New("deploy: no way to tell a configuration repository from a code one")
-	// ErrBroken is a deployment this cloud cannot place where it says it runs.
-	// ErrNotClaimed is a configuration whose project.yaml names an id the
-	// pushed repository has not claimed. The register's project table is the
-	// one thing that says which repository may publish under an id, and this
-	// is the read of it at publish time: a config copied from another project
-	// keeps that project's id, and publishing it would move that project's
-	// pointers.
+	// ErrNotClaimed is a configuration whose project.yaml names an id this repository
+	// has not claimed in the register's project table; a copied config would
+	// otherwise move another project's pointers.
 	ErrNotClaimed = errors.New("deploy: the project id is not claimed by this repository")
 
 	// ErrBroken is a project the audit calls broken, or cannot cut into views here.
@@ -101,46 +62,29 @@ type Domains interface {
 	Prove(ctx context.Context, project, fqdn string) error
 }
 
-// Projects answers what a repository IS to a project.
-//
-// It is one question and not the project table's whole surface, because that is all this
-// needs and a wider seam would be a wider thing to stand up in a test.
+// Projects answers what a repository is to a project.
 type Projects interface {
 	// Configures reports whether this repository is the project's
 	// configuration — the one whose pushes are deploys.
 	Configures(ctx context.Context, projectID, repositoryKey string) (bool, error)
 }
 
-// Checkout puts one commit of a repository somewhere readable.
-//
-// IT TAKES THE COMMIT AND NOT ONLY THE BRANCH. A branch moves; the job is about
-// one commit, and a deploy that read whatever the branch pointed at by the time
-// it ran would publish something no push ever asked for.
-//
-// IT HANDS BACK A DIRECTORY ON THIS MACHINE, not a filesystem abstraction, and
-// that is a deliberate narrowing: the other thing a push becomes is a BUILD,
-// which runs the repository's own commands in a container against a bind-mounted
-// directory. There is no way to bind-mount an afero.Fs, so a seam that returned
-// one would be a seam only half of its callers could use.
+// Checkout puts one commit (never just the branch head) of a repository in a
+// directory on this machine, since a build bind-mounts it.
 type Checkout interface {
 	// Checkout returns the directory holding the tree at `commit`, plus a
 	// function that releases whatever it took.
 	Checkout(ctx context.Context, repositoryKey, branch, commit string) (dir string, done func(), err error)
 }
 
-// Builder is what a push to a CODE repository becomes, and what a push to the
-// configuration repository becomes too once it is published: a resource whose
-// source is a bare path is built from the configuration repository.
-//
-// It is an interface rather than the concrete builder so that this package
-// does not import the one that runs containers — routing a push and running a
-// build are different jobs, and only one of them needs a daemon.
+// Builder is what a code push becomes, and what a configuration push becomes once
+// published (bare-path resources). An interface so this package does not import
+// the container runner.
 type Builder interface {
 	Build(ctx context.Context, w backend.Work, out backend.Output) error
 }
 
-// Register is the slice of the register a deploy writes: read what is there,
-// then publish.
+// Register is the slice of the register a deploy writes.
 type Register interface {
 	Resolve(ctx context.Context, project, environment string) (register.Pointer, error)
 	Manifest(ctx context.Context, project, environment string) (register.Manifest, register.ObjectID, error)
@@ -152,9 +96,7 @@ type Deploy struct {
 	projects Projects
 	checkout Checkout
 
-	// register is looked up per run rather than held, for the same reason
-	// node/ does it: which node answers is a routing question, and a
-	// register can go away between two builds.
+	// register is looked up per run: a register can go away between builds.
 	register func(context.Context) (Register, error)
 
 	// builder runs a push to a code repository, when this node was given one.
@@ -163,11 +105,8 @@ type Deploy struct {
 	// regions answers where a deployment runs; see WithRegions.
 	regions schema.Regions
 
-	// cloudFqdn is the zone this cloud serves. It completes the generated half
-	// of a name — `<label>.<project label>` in the config, the rest here — and
-	// a name that cannot be completed is reported rather than published
-	// half-formed, because a partial name in a routing table is one no request
-	// will ever carry.
+	// cloudFqdn completes generated names; a name that cannot be completed is
+	// reported rather than published half-formed.
 	cloudFqdn string
 
 	domains Domains
@@ -209,12 +148,9 @@ func New(opts ...Option) (*Deploy, error) {
 	}, nil
 }
 
-// Run publishes what the pushed commit compiles to.
-//
-// EVERY DEPLOYMENT COMPILES BEFORE ANY ONE PUBLISHES. A project that compiles
-// for production and not for preview must not go half live, and a compile
-// error is the runner's error either way — the queue's retry exists for a
-// worker that died, not for config that does not compile.
+// Run publishes what the pushed commit compiles to. Every deployment compiles
+// before any publishes, so a project never goes half live; a compile error is
+// the runner's error.
 func (d *Deploy) Run(ctx context.Context, w backend.Work, out backend.Output) error {
 	branch, ok := strings.CutPrefix(w.Ref, branchRef)
 	if !ok || branch == "" {
@@ -226,10 +162,8 @@ func (d *Deploy) Run(ctx context.Context, w backend.Work, out backend.Output) er
 		return fmt.Errorf("deploy: %w", err)
 	}
 	if !configures {
-		// A CODE PUSH IS SOMEBODY ELSE'S JOB, and this is the only place that
-		// knows which of the two it is — the question costs one read of the project table
-		// and both answers need it, so asking it twice would be asking it
-		// twice.
+		// A code push is the builder's job; this is the one place that tells the two
+		// apart.
 		if d.builder == nil {
 			return ErrNotConfiguration
 		}
@@ -269,10 +203,8 @@ func (d *Deploy) Run(ctx context.Context, w backend.Work, out backend.Output) er
 		say(out, "compiled %s", name)
 	}
 
-	// THE ID IS THE AUTHOR'S, AND THE CLAIM IS WHAT LETS IT PUBLISH. w.ProjectID
-	// is the project this repository is linked as configuration of; every
-	// compiled deployment must name exactly that id, or it is refused before
-	// anything is written.
+	// Every compiled deployment must name w.ProjectID, the project this repository
+	// configures, or nothing is written.
 	for _, c := range plan {
 		if id := c.project.ID(); id != w.ProjectID {
 			return fmt.Errorf("%w: project.yaml names %q, and %s is linked as the configuration of %q — run `tau link` for this id, or put %q back",
@@ -341,12 +273,8 @@ func (d *Deploy) prove(ctx context.Context, projectID, fqdn string, proven map[s
 	return nil
 }
 
-// put publishes one deployment and says what it did.
-//
-// WHAT IS ALREADY THERE DECIDES THE REVISION, and whether there is anything to
-// do at all: a compiled project is content-addressed, so a push that changed
-// nothing this deployment reads produces the same object id, and moving the
-// pointer for it would churn every reader to say the same thing.
+// put publishes one deployment. A compiled project is content-addressed, so an
+// unchanged one moves no pointer.
 func (d *Deploy) put(ctx context.Context, r Register, projectID, environment string,
 	compiled []byte, views []register.View, hosts []string) (register.ObjectID, uint64, bool, error) {
 
@@ -401,16 +329,9 @@ func deployments(fs afero.Fs, dir, branch string) ([]string, error) {
 	return fed, nil
 }
 
-// compileFor reads a config directory as ONE deployment sees it.
-//
-// THE DECLARED SET TRAVELS WITH THE ENVIRONMENT, because one document carries
-// every deployment's spelling at once: without it, strict mode reads
-// `timeout_preview` in production's compile as a typo and refuses the project
-// outright — which is not a wrong value but no deploy at all.
-//
-// THE BYTES ARE JSON OF THE COMPILED OBJECT, which is what pkg/project reads
-// back. Saying so in one place is what keeps the writer and the reader from
-// disagreeing about a format nobody else names.
+// compileFor compiles a config directory for one deployment, with the declared
+// environment set so other environments' suffixed keys are not typos. The bytes
+// are the compiled object's JSON, which pkg/project reads.
 func compileFor(fs afero.Fs, dir, branch, environment string) ([]byte, *specs.Project, map[string]any, error) {
 	declared, err := schema.EnvironmentsOf(fs, dir)
 	if err != nil {
@@ -447,14 +368,9 @@ func compileFor(fs afero.Fs, dir, branch, environment string) ([]byte, *specs.Pr
 	return compiled, p, flat, nil
 }
 
-// cut asks this cloud's Regions where a compiled deployment runs, and cuts it into one
-// view per region it serves — what each region reads, and nothing it would filter out.
-//
-// WHAT CANNOT BE CUT IS REFUSED BEFORE ANYTHING PUBLISHES, exactly as a compile error
-// is: a resource with nowhere to run, or one reaching across regions to something held
-// only in another, is a deployment that half works. Everything short of that is said in
-// the build log, so a region a project names and this cloud does not serve is never
-// silently dropped.
+// cut asks this cloud's Regions where a deployment runs and cuts it into one view
+// per served region. What cannot be cut is refused before anything publishes;
+// everything short of that goes to the build log.
 func (d *Deploy) cut(flat map[string]any, environment string, out backend.Output) ([]register.View, error) {
 	views, findings, err := schema.Views(flat, schema.WithRegions(d.regions), schema.AuditIn(environment))
 	var refused []string
@@ -494,9 +410,8 @@ func (d *Deploy) cut(flat map[string]any, environment string, out backend.Output
 	return cut, nil
 }
 
-// sameViews is whether the current manifest lists exactly these views, so a push that
-// changed nothing any region reads moves no pointer — and a change in what this cloud
-// serves, a destination added or dropped with the object the same, still does.
+// sameViews is whether the current manifest lists exactly these views, so an
+// unchanged push moves no pointer while a changed set of destinations does.
 func sameViews(ctx context.Context, r Register, projectID, environment string, views []register.View) (bool, error) {
 	m, _, err := r.Manifest(ctx, projectID, environment)
 	switch {
@@ -516,15 +431,9 @@ func sameViews(ctx context.Context, r Register, projectID, environment string, v
 	return true, nil
 }
 
-// hostsOf is the fully-qualified names a deployment answers on, and the
-// generated ones that could not be completed.
-//
-// A ZONE'S APEX IS ONE OF THEM, and it is not a resource answering at a name —
-// it is the name this project is AUTHORITATIVE for. It is published here
-// because the index this feeds is what turns a query into a project, and
-// without it nothing could find the records an author wrote: a zone that
-// declares an MX would resolve to nobody, which is the whole of what
-// "a zone served authoritatively by this cloud" promises.
+// hostsOf is the fqdns a deployment answers on, and the generated ones that could
+// not be completed. A zone's apex is included: it is how a DNS query finds the
+// project's records.
 func hostsOf(p *specs.Project, cloudFqdn string) (hosts, incomplete []string) {
 	for _, h := range p.Hosts() {
 		if !h.Generated {
@@ -538,9 +447,7 @@ func hostsOf(p *specs.Project, cloudFqdn string) (hosts, incomplete []string) {
 		hosts = append(hosts, h.Fqdn+"."+cloudFqdn)
 	}
 
-	// NEVER GENERATED: a zone is one the author owns and delegated here. The
-	// cloud's own zone is not declared as a resource at all — a name under it
-	// is reached with host.generated, which the loop above already completed.
+	// Never generated: a zone is the author's, delegated here.
 	for _, z := range p.Zones() {
 		hosts = append(hosts, z.Fqdn)
 	}

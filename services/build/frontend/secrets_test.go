@@ -11,9 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The cache is a security bound before it is a performance one: it is keyed by
-// a string a stranger chooses.
-
 func TestAHookIsBelievedForOneTTLAndNoLonger(t *testing.T) {
 	h := newHarness(t, Config{SecretCacheTTL: time.Minute})
 
@@ -28,8 +25,6 @@ func TestAHookIsBelievedForOneTTLAndNoLonger(t *testing.T) {
 	require.Equal(t, 2, h.hooks.count())
 }
 
-// A MISS IS NOT REMEMBERED. A project whose secret has just been set must be
-// accepted at its very next push, on every node, not a minute later.
 func TestAMissIsNotRemembered(t *testing.T) {
 	h := newHarness(t, Config{})
 	linked := false
@@ -49,8 +44,6 @@ func TestAMissIsNotRemembered(t *testing.T) {
 	require.Equal(t, http.StatusAccepted, h.do(t, webhookRequest(webhookOpts{})).Code)
 }
 
-// A hook with no secret is not remembered either: it is not usable, and the
-// secret may be set a moment later.
 func TestAHookWithNoSecretIsNotRemembered(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.hooks.get = func(id string) (Hook, error) {
@@ -62,8 +55,6 @@ func TestAHookWithNoSecretIsNotRemembered(t *testing.T) {
 	require.Equal(t, 2, h.hooks.count())
 }
 
-// "auth is unreachable" is not remembered, and is a 503 rather than a denial:
-// this node does not know whether the hook exists.
 func TestAFailureToReachAuthIsNotRemembered(t *testing.T) {
 	for _, err := range []error{
 		connect.NewError(connect.CodeUnavailable, errors.New("no peer answered")),
@@ -97,10 +88,6 @@ func TestAFailureToReachAuthIsNotRemembered(t *testing.T) {
 	require.Equal(t, http.StatusAccepted, h.do(t, webhookRequest(webhookOpts{})).Code)
 }
 
-// The ceiling is what stops a stranger's distinct ids from growing this
-// process. Eviction is oldest-inserted-first, so the flood costs the entries a
-// legitimate hook had — which is why ratelimit.go's global bucket, not this,
-// is the bound that holds.
 func TestTheCacheHasACeiling(t *testing.T) {
 	h := newHarness(t, Config{
 		SecretCacheMax: 4,

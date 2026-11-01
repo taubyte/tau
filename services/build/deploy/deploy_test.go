@@ -23,8 +23,6 @@ const (
 	envsFixture  = "../../../pkg/tcc/taubyte/v2/fixtures/environments"
 )
 
-// ── the seams, stood up ──────────────────────────────────────────────────
-
 // projects answers the one question a deploy asks of auth.
 type projects struct {
 	config string
@@ -158,10 +156,6 @@ func runner(t *testing.T, c *checkout, r deploy.Register, opts ...deploy.Option)
 	return d
 }
 
-// ── what a push does ─────────────────────────────────────────────────────
-
-// A PUSH TO THE CONFIG REPOSITORY IS THE DEPLOY. Nothing else writes the
-// register, and nobody typed an environment or a revision.
 func TestAPushPublishes(t *testing.T) {
 	c := &checkout{dir: fixture(t, basicFixture)}
 	r := registry(t)
@@ -183,9 +177,6 @@ func TestAPushPublishes(t *testing.T) {
 	require.True(t, c.released)
 }
 
-// THE BRANCH IS THE DEPLOYMENT. One push to `main` puts production and the
-// shadow written inside it live; `release/*` is staging's, and neither is typed
-// anywhere.
 func TestTheBranchDecidesTheDeployments(t *testing.T) {
 	c := &checkout{dir: fixture(t, envsFixture)}
 	r := registry(t)
@@ -212,8 +203,6 @@ func TestTheBranchDecidesTheDeployments(t *testing.T) {
 	require.Equal(t, uint64(1), pointer.Revision)
 }
 
-// EACH DEPLOYMENT IS ITS OWN COMPILE, which is the whole point of a
-// per-environment limit. Two deployments of one commit are two objects.
 func TestEachDeploymentIsItsOwnObject(t *testing.T) {
 	dir := fixture(t, envsFixture)
 	r := registry(t)
@@ -230,9 +219,6 @@ func TestEachDeploymentIsItsOwnObject(t *testing.T) {
 		"preview's timeout is 5s and production's is 30s; one object for both would give preview production's numbers")
 }
 
-// A PUSH THAT CHANGED NOTHING THIS DEPLOYMENT READS MOVES NOTHING. A compiled
-// project is content-addressed, so bumping the revision would churn every
-// reader's pointer to say the same thing.
 func TestAnUnchangedPushDoesNotMoveThePointer(t *testing.T) {
 	c := &checkout{dir: fixture(t, basicFixture)}
 	r := registry(t)
@@ -247,9 +233,6 @@ func TestAnUnchangedPushDoesNotMoveThePointer(t *testing.T) {
 	require.Contains(t, log.String(), "unchanged at revision 1")
 }
 
-// THE CLOUD'S HALF OF A GENERATED NAME IS NOT IN THE CONFIG. Without it the
-// name is reported rather than published: half a name in a routing table is one
-// no request will ever carry.
 func TestAGeneratedNameNeedsTheCloudsZone(t *testing.T) {
 	dir := fixture(t, basicFixture)
 	r := registry(t)
@@ -274,10 +257,6 @@ func TestAGeneratedNameNeedsTheCloudsZone(t *testing.T) {
 	require.Equal(t, "prod", environment)
 }
 
-// ── what it refuses ──────────────────────────────────────────────────────
-
-// A CODE BUILD IS NAMED, NOT PASSED. One that returned success having produced
-// nothing would look exactly like a deploy that worked.
 func TestACodeRepositoryIsRefusedByName(t *testing.T) {
 	dir := fixture(t, basicFixture)
 
@@ -347,11 +326,6 @@ func TestWhatItCannotBeBuiltWithout(t *testing.T) {
 	require.ErrorContains(t, err, "register")
 }
 
-// ── the paths a real cloud takes and a happy test does not ───────────────
-
-// A CONFIG THAT DOES NOT COMPILE IS THE RUNNER'S ERROR. The queue's retry
-// exists for a worker that died; retrying a compile error is waste, and the
-// author needs the message rather than five copies of it.
 func TestConfigThatDoesNotCompile(t *testing.T) {
 	broken := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(broken, "project.yaml"),
@@ -369,8 +343,6 @@ func TestConfigThatDoesNotCompile(t *testing.T) {
 	require.Error(t, err)
 }
 
-// AUTH FAILING IS NOT "THIS IS A CODE REPOSITORY". One says the deploy cannot
-// be decided; the other says it was decided against.
 func TestAuthFailingIsNotARefusal(t *testing.T) {
 	dir := fixture(t, basicFixture)
 
@@ -388,9 +360,6 @@ func TestAuthFailingIsNotARefusal(t *testing.T) {
 	require.NotErrorIs(t, err, deploy.ErrNotConfiguration)
 }
 
-// A REGISTER THAT CANNOT BE FOUND FAILS THE JOB, and it fails it AFTER every
-// deployment compiled — so an author whose config is broken hears about the
-// config rather than about the fleet.
 func TestNoRegisterFailsAfterTheCompile(t *testing.T) {
 	c := &checkout{dir: fixture(t, basicFixture)}
 
@@ -411,8 +380,6 @@ func TestNoRegisterFailsAfterTheCompile(t *testing.T) {
 	require.Contains(t, log.String(), "compiled ", "the compile ran and said so before the fleet was needed")
 }
 
-// A PUBLISH THAT FAILS FAILS THE JOB. A deploy that reported success having
-// published nothing is the failure mode this whole path exists to avoid.
 func TestAPublishThatFails(t *testing.T) {
 	dir := fixture(t, basicFixture)
 
@@ -463,10 +430,6 @@ func (unreadable) Publish(context.Context, register.Publication) (register.Objec
 	return "", nil
 }
 
-// ── routing ──────────────────────────────────────────────────────────────
-
-// A PUSH IS ONE OF TWO THINGS AND THIS IS WHERE THAT IS DECIDED, because the
-// decision is one question to auth and both answers need it.
 func TestACodePushIsDelegated(t *testing.T) {
 	dir := fixture(t, basicFixture)
 	b := &builderStub{}
@@ -501,8 +464,6 @@ func TestACodePushIsDelegated(t *testing.T) {
 	require.Less(t, strings.Index(log.String(), "published"), strings.Index(log.String(), "delegated"), "published before it built")
 }
 
-// A builder that failed is the job's failure, not a deploy that fell back to
-// doing nothing.
 func TestACodePushThatFails(t *testing.T) {
 	d, err := deploy.New(
 		deploy.WithRegions(schema.WithRegion("region-1")),
@@ -540,9 +501,6 @@ func (b *builderStub) Build(_ context.Context, w backend.Work, out backend.Outpu
 	return nil
 }
 
-// A CONFIGURATION NAMING ANOTHER PROJECT'S ID IS REFUSED BEFORE ANYTHING IS
-// WRITTEN. A config copied from another project keeps that project's id, and
-// the register's claim is what says this repository may not publish under it.
 func TestAConfigNamingAnIdItDidNotClaimPublishesNothing(t *testing.T) {
 	c := &checkout{dir: fixture(t, basicFixture)}
 	r := registry(t)
@@ -559,8 +517,6 @@ func TestAConfigNamingAnIdItDidNotClaimPublishesNothing(t *testing.T) {
 	require.ErrorIs(t, err, register.ErrNotPublished)
 }
 
-// A ZONE IS PROVEN BEFORE ANYTHING PUBLISHES: a project naming a domain it has
-// not proven is its own would answer for somebody else's.
 func TestAnUnprovenZoneIsRefusedBeforeAnythingPublishes(t *testing.T) {
 	r := registry(t)
 	none := &domains{}

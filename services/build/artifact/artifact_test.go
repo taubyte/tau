@@ -31,8 +31,6 @@ const (
 	projectID  = "shop"
 )
 
-// ── the seams, stood up ──────────────────────────────────────────────────
-
 type projects struct {
 	main string
 	err  error
@@ -127,14 +125,8 @@ func (o *out) stored() map[string]string {
 	return copied
 }
 
-// ── a register with real compiled projects in it ─────────────────────────
-
-// project writes a small configuration on disk.
-//
-// IT IS ITS OWN FIXTURE rather than the vocabulary's, because what these tests
-// are about is which resources a push touches and what each build is handed —
-// and the shared fixtures carry a dockerfile build and a resource with no
-// source, both of which are their own cases and are tested as such below.
+// Its own fixture: the shared ones carry a dockerfile build and a sourceless
+// resource, tested separately below.
 const everyBranch = "environments:\n    prod:\n        branches: [\"*\"]\n"
 
 func projectConfig(t *testing.T, environments string, resources map[string]string) string {
@@ -276,11 +268,6 @@ func source(t *testing.T) string {
 	return dir
 }
 
-// ── what a push builds ───────────────────────────────────────────────────
-
-// IT BUILDS WHAT THE DEPLOYED CONFIGURATION SAYS THIS REPOSITORY MAKES — from
-// the recipe the running deployment declares, not from whatever the config
-// repository's HEAD says today.
 func TestAPushBuildsWhatTheConfigurationSaysItMakes(t *testing.T) {
 	e := &engine{}
 	c := &checkout{dir: source(t)}
@@ -311,9 +298,6 @@ func TestAPushBuildsWhatTheConfigurationSaysItMakes(t *testing.T) {
 	require.True(t, c.released, "the checkout is released whatever happened")
 }
 
-// WHAT RUNS A RESOURCE REACHES ITS BUILD, because what the platform does with
-// the product depends on it: a js bundle is packed for the js tier, and a kind
-// with no choice of tier says none.
 func TestTheBuildIsToldWhatRunsTheResource(t *testing.T) {
 	dir := projectConfig(t, everyBranch, map[string]string{
 		"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\nruntime: wasm\n" +
@@ -347,8 +331,6 @@ func TestTheBuildIsToldWhatRunsTheResource(t *testing.T) {
 	}, runtimes)
 }
 
-// A RESOURCE THAT NAMES ITS OWN REPOSITORY IS BUILT BY A PUSH TO THAT ONE, and
-// by nothing else.
 func TestAResourceWithItsOwnRepository(t *testing.T) {
 	e := &engine{}
 	o := newOut()
@@ -364,8 +346,6 @@ func TestAResourceWithItsOwnRepository(t *testing.T) {
 	require.Equal(t, "paylib.wasm", specs[0].Output)
 }
 
-// THE COMMANDS ARE THE AUTHOR'S, IN ORDER, and an absent one is absent rather
-// than an empty shell invocation.
 func TestTheBuildCommandsAreTheAuthors(t *testing.T) {
 	e := &engine{}
 	o := newOut()
@@ -384,9 +364,6 @@ func TestTheBuildCommandsAreTheAuthors(t *testing.T) {
 	}
 }
 
-// ONE RESOURCE CAN HAVE A DIFFERENT ARTIFACT PER DEPLOYMENT, because a build
-// stanza is per-environment — so a key that was only the resource id would have
-// preview's build silently overwrite production's.
 func TestOneResourceBuildsOncePerDeployment(t *testing.T) {
 	e := &engine{}
 	o := newOut()
@@ -424,11 +401,6 @@ func keysOf(m map[string]string) []string {
 	return out
 }
 
-// ── what it refuses, and what it merely reports ──────────────────────────
-
-// A PROJECT THAT HAS NEVER BEEN DEPLOYED has no configuration to build against,
-// and building against the repository's own guess would be this service
-// inventing a recipe.
 func TestAProjectThatWasNeverDeployed(t *testing.T) {
 	r, err := pkgregister.New(pkgregister.WithStore(pkgregister.NewMemStore()))
 	require.NoError(t, err)
@@ -438,8 +410,6 @@ func TestAProjectThatWasNeverDeployed(t *testing.T) {
 	require.ErrorIs(t, err, artifact.ErrNeverDeployed)
 }
 
-// A PUSH THAT TOUCHES NOTHING IS NOT A FAILURE. A repository can be registered
-// to a project and back nothing in the deployments this branch feeds.
 func TestAPushThatTouchesNothing(t *testing.T) {
 	e := &engine{}
 	c := &checkout{dir: t.TempDir()}
@@ -485,8 +455,6 @@ func TestWhatItRefuses(t *testing.T) {
 	require.ErrorContains(t, err, "no space left")
 }
 
-// A PROJECT WITH NO MAIN REPOSITORY KNOWN has no bare-path resources to build,
-// and a push claiming to be it builds nothing rather than everything.
 func TestNoMainRepositoryKnown(t *testing.T) {
 	e := &engine{}
 	require.NoError(t, builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: t.TempDir()}, e, "").
@@ -518,16 +486,6 @@ func TestWhatItCannotBeBuiltWithout(t *testing.T) {
 	}
 }
 
-// ── the two the vocabulary's own fixtures are ────────────────────────────
-
-// A DOCKERFILE BUILD PRODUCES AN IMAGE, not a file, and an image has to be
-// pushed to a registry before anything can run it. This cloud has no registry,
-// so the push is refused BY NAME — and the whole push, not just that resource,
-// for the reason a deploy compiles everything before publishing anything: a
-// partially rebuilt deployment looks exactly like a healthy one.
-//
-// The vocabulary's own basic project declares one, so this is not a
-// hypothetical: it is the first thing a real project hits.
 func TestADockerfileBuildIsRefusedByName(t *testing.T) {
 	e := &engine{}
 
@@ -539,11 +497,6 @@ func TestADockerfileBuildIsRefusedByName(t *testing.T) {
 	require.Empty(t, e.seen(), "nothing was built, rather than everything but that one")
 }
 
-// A RESOURCE WITH A BUILD AND NO SOURCE IS NOT BUILT FROM THE CHECKOUT ROOT.
-// The environments fixture is exactly that shape — it exercises per-deployment
-// keys and declares no source — and before pkg/project could tell an absent
-// source from a bare path of "", it would have been built from whatever the
-// repository root happened to contain.
 func TestAResourceWithNoSourceIsNotBuilt(t *testing.T) {
 	e := &engine{}
 
@@ -552,12 +505,6 @@ func TestAResourceWithNoSourceIsNotBuilt(t *testing.T) {
 	require.Empty(t, e.seen())
 }
 
-// ── the path is a stranger's ─────────────────────────────────────────────
-
-// THE COMPILER REFUSES A PATH THAT CLIMBS OUT, which is the first line and the
-// one that matters: `IsRepoLocation` rejects `..` where the config is read, so
-// a compiled object cannot carry one. joinWithin is the second line, tested in
-// path_test.go, for a compiled object that arrived some other way.
 func TestAPathThatClimbsOutIsRefusedAtCompileTime(t *testing.T) {
 	escaping := projectConfig(t, everyBranch, map[string]string{
 		"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\nruntime: wasm\n" +
@@ -573,8 +520,6 @@ func TestAPathThatClimbsOutIsRefusedAtCompileTime(t *testing.T) {
 	_, _, err = c.Compile(t.Context())
 	require.ErrorContains(t, err, "climbs out of the repository")
 }
-
-// ── what it cannot find out ──────────────────────────────────────────────
 
 func TestWhenItCannotAskAuth(t *testing.T) {
 	b, err := artifact.New(
@@ -615,9 +560,6 @@ func (unreachable) Object(context.Context, pkgregister.ObjectID) ([]byte, error)
 	return nil, errors.New("the register is unreachable")
 }
 
-// A BRANCH THE CONFIGURATION DECLARES AND NOBODY HAS DEPLOYED builds nothing,
-// because an artifact filed under a pointer no worker will ever read is a build
-// that looks like it worked.
 func TestABranchWhoseDeploymentIsNotLive(t *testing.T) {
 	// Only production is published; release/* feeds staging, which is not.
 	r := deployed(t, perEnvironment(t), "production")
@@ -631,7 +573,6 @@ func TestABranchWhoseDeploymentIsNotLive(t *testing.T) {
 	require.ErrorContains(t, err, "none of those is deployed")
 }
 
-// A BRANCH NO ENVIRONMENT IS FED BY builds nothing, and says which ones exist.
 func TestABranchThatFeedsNoDeployment(t *testing.T) {
 	r := deployed(t, projectConfig(t, "environments:\n    production:\n        branches: [main]\n", nil), "production")
 
@@ -644,11 +585,6 @@ func TestABranchThatFeedsNoDeployment(t *testing.T) {
 	require.ErrorContains(t, err, `"wip" feeds none of production`)
 }
 
-// ── the build's own environment ──────────────────────────────────────────
-
-// A BUILD-TIME VARIABLE REACHES THE BUILD AND A RUN-TIME ONE DOES NOT. Passing
-// everything would put a runtime secret into a toolchain container somebody
-// else wrote.
 func TestOnlyBuildTimeVariablesReachTheBuild(t *testing.T) {
 	config := projectConfig(t, everyBranch, map[string]string{
 		"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\nruntime: wasm\n" +
@@ -670,9 +606,6 @@ func TestOnlyBuildTimeVariablesReachTheBuild(t *testing.T) {
 	require.Equal(t, map[string]string{"GOPRIVATE": "github.com/acme/*"}, specs[0].Variables)
 }
 
-// A SECRET NEEDS A RESOLVER AND THERE IS NONE, so the build is refused rather
-// than run without it — a build that quietly lost its token fails somewhere
-// further in, with a message about a dependency it could not fetch.
 func TestABuildThatNeedsASecret(t *testing.T) {
 	e := &engine{}
 
@@ -684,9 +617,6 @@ func TestABuildThatNeedsASecret(t *testing.T) {
 	require.Empty(t, e.seen())
 }
 
-// TestABuildTimeSecretReachesTheBuild, which is the private-dependency token
-// and the registry credential — the thing between an imported project and a
-// build that completes.
 func TestABuildTimeSecretReachesTheBuild(t *testing.T) {
 	e := &engine{}
 	held := vault{projectID + "/prod/QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy": "ghp_thetoken"}
@@ -701,9 +631,6 @@ func TestABuildTimeSecretReachesTheBuild(t *testing.T) {
 	require.NotContains(t, specs[0].Variables, "GITHUB_TOKEN")
 }
 
-// TestAVaultThatRefusesFailsTheBuildBeforeAnythingRuns. Every spec is read
-// before any build runs, so a resource whose secret cannot be resolved must
-// not leave the others rebuilt and that one stale.
 func TestAVaultThatRefusesFailsTheBuildBeforeAnythingRuns(t *testing.T) {
 	e := &engine{}
 
@@ -716,8 +643,6 @@ func TestAVaultThatRefusesFailsTheBuildBeforeAnythingRuns(t *testing.T) {
 	require.Empty(t, e.seen(), "nothing was built")
 }
 
-// TestTheValueNeverReachesTheJobLog. This error is written into the job
-// record, which everyone who can read the repository can read.
 func TestTheValueNeverReachesTheJobLog(t *testing.T) {
 	out := newOut()
 	err := builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, &engine{}, mainRepo,
@@ -739,9 +664,6 @@ func TestASecretsResolverMustNotBeNil(t *testing.T) {
 	require.ErrorContains(t, err, "secrets must not be nil")
 }
 
-// A RESOURCE WHOSE SERVING BLOCK IS DELEGATED TO A FILE THE COMPILE DID NOT
-// READ IS REFUSED BY NAME, rather than built and served by the block that file
-// was meant to replace.
 func TestAnUnreadDelegatedBlockIsRefusedByName(t *testing.T) {
 	delegated := projectConfig(t, everyBranch, map[string]string{
 		"component/paylib.yaml": "id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv\n" +
@@ -758,10 +680,6 @@ func TestAnUnreadDelegatedBlockIsRefusedByName(t *testing.T) {
 	require.Empty(t, e.seen())
 }
 
-// A BARE PATH IS THE MAIN REPOSITORY, never a code repository, however many
-// the project links: pushing the configuration repository builds the bare-path
-// resource, pushing a code repository no source names builds nothing, and
-// pushing the one a source names by git URL builds only that resource.
 func TestABarePathIsTheMainRepositoryNotACodeRepository(t *testing.T) {
 	r := deployed(t, oneEnvironment(t))
 	for _, c := range []struct {
@@ -784,9 +702,6 @@ func TestABarePathIsTheMainRepositoryNotACodeRepository(t *testing.T) {
 	}
 }
 
-// AN ENGINE WITH NOTHING TO RUN A BUILD IN DECLINES IT: the push is not failed
-// for what it could not build here, nothing is stored for it, and the log says
-// which resource was left unbuilt.
 func TestABuildTheEngineDeclinesIsReportedUnbuilt(t *testing.T) {
 	e := &engine{err: fmt.Errorf("%w: this universe runs no containers", artifact.ErrNoEngine)}
 	o := newOut()

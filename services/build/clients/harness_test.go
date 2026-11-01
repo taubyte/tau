@@ -13,10 +13,7 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 )
 
-// This package's fixture is mocknet and nothing else: no DHT, no datastore, no
-// port. discovery.Static supplies the peers, which is what
-// p2p/discovery's own doc says a service test should inject when the question
-// under test is not discovery.
+// The fixture is mocknet only; discovery.Static supplies the peers.
 
 func newMocknet(t testing.TB) mocknet.Mocknet {
 	t.Helper()

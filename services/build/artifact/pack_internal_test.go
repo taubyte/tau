@@ -65,9 +65,6 @@ type readSeekCloser struct{ *bytes.Reader }
 
 func (readSeekCloser) Close() error { return nil }
 
-// A JS BUNDLE IS HANDED OVER AS THE ARCHIVE THE TIER READS, and the tier runs
-// it: the bundle a build left at `output:` is the entry, its source map travels
-// beside it, and nothing else of the output's directory goes in.
 func TestAJSBundleIsPackedIntoTheArchiveTheTierRuns(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "dist/worker.js", echoBundle)
@@ -98,7 +95,6 @@ func TestAJSBundleIsPackedIntoTheArchiveTheTierRuns(t *testing.T) {
 	require.Equal(t, "POST ping", string(res.Body))
 }
 
-// A SOURCE MAP IS OPTIONAL. A bundle built without one is packed alone.
 func TestABundleWithNoSourceMapIsPackedAlone(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "worker.mjs", echoBundle)
@@ -109,7 +105,6 @@ func TestABundleWithNoSourceMapIsPackedAlone(t *testing.T) {
 	require.Contains(t, got, archive.ManifestName)
 }
 
-// ANY OTHER RUNTIME'S PRODUCT IS HANDED OVER AS THE BUILD LEFT IT.
 func TestOnlyAJSProductIsPacked(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "app.wasm", "\x00asm")
@@ -124,7 +119,6 @@ func TestOnlyAJSProductIsPacked(t *testing.T) {
 	}
 }
 
-// WHAT CANNOT BE PACKED IS REFUSED BY NAME, before anything is stored.
 func TestWhatAJSBuildCannotBePackedFrom(t *testing.T) {
 	cases := map[string]struct {
 		prepare func(t *testing.T, dir string)

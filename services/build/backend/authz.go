@@ -8,33 +8,11 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 )
 
-// authz.go is the only file in this package that reads caller identity
-// (service-conventions.md §5b: "an identity that is optional to read is an
-// identity that is not checked").
-//
-// It reads rpc.RemotePeer(ctx), which go-libp2p-gostream fills in from the
-// security-authenticated stream the request arrived on, and never a field in
-// the request message — a request field is what the caller itself wrote.
-// build.proto says so where it says why JobService carries no caller field:
-// "the identity on a p2p stream is the calling node's, and a frontend relaying
-// four HTTP routes is one node relaying many humans", so a field there would be
-// exactly the identity-the-caller-encodes that §5b exists to refuse.
-//
-// EVERY RPC REQUIRES AN IDENTITY, and that is not tautological. rpc.RemotePeer
-// returns ErrNoRemotePeer for a request that did not arrive over one of
-// p2p/rpc's listeners, so a handler that calls allow() is structurally
-// unmountable on an HTTP ingress — which is the one mistake this whole trust
-// boundary is about. A build-frontend that grew a route straight onto these
-// handlers would fail every call rather than serve the queue to the internet.
-//
-// THE DEFAULT IS THAT ANY PEER THE TRANSPORT ADMITTED MAY CALL: membership is a
-// certificate from the cloud's CA, checked in the libp2p handshake
-// (p2p/sectls), and a node started with open: true admits anyone. That is the
-// documented OSS trust model, and this package does NOT build a second
-// membership system in front of it: doing so would be
-// exactly the service-local admission policy service-conventions.md §4 reserves
-// for the cluster service. AllowPeers exists so a deployment that knows its
-// frontends' peer ids can narrow ActEnqueue without inventing a mechanism.
+// caller is the only read of caller identity in this package: rpc.RemotePeer from
+// the authenticated stream, never a request field. It fails for a request not
+// arriving over p2p/rpc, so these handlers cannot be mounted on an HTTP ingress.
+// By default any peer the transport admitted may call (membership is the libp2p
+// handshake); AllowPeers narrows ActEnqueue.
 func caller(ctx context.Context) (peer.ID, error) {
 	id, err := rpc.RemotePeer(ctx)
 	if err != nil {

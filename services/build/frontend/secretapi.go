@@ -8,37 +8,16 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 )
 
-// secretapi.go is where a developer's secret values are written, and it is the
-// one write in v2 that is NOT a git push.
-//
-// EVERYTHING ELSE THIS CLOUD RUNS COMES FROM A COMMIT. The register's only
-// writer is the build service, because a deploy from a laptop bypasses git, its
-// authorization and its record. A secret inverts that exactly: putting the
-// value in git IS the failure, so it is written out of band and a rotation is
-// one call with no commit and no build behind it. That is the vocabulary's own
-// statement about the `secret` kind, not a convenience added here.
-//
-// SO IT TAKES ITS OWN ROLE: secret-manager, which an owner grants and a
-// builder does not hold.
-//
-// THERE IS NO READ ROUTE, and there will not be one. See Vault in config.go: a
-// developer sets a value and lists which names are set. A GET of a value would
-// turn a leaked developer token from "they can overwrite my secrets" into "they
-// have every secret this project holds", and it buys nothing — the value was
-// theirs when they set it, and rotating is setting again.
+// secretapi.go writes a developer's secret values: the one write not from a git
+// push, since the value in git is the failure. It needs the secret-manager role.
+// There is no read route: a leaked token can overwrite secrets, never read them.
 
-// maxSecretValue bounds the body of a Set before it is read.
-//
-// A SECRET IS A CREDENTIAL, NOT A FILE. The largest thing anybody legitimately
-// puts here is a certificate chain with a private key; 64KiB is several of
-// those. Without a cap this is an authenticated route that will hold whatever a
-// caller sends in memory and then replicate it to every node in the swarm.
+// maxSecretValue bounds a Set body before it is read: a secret is a credential,
+// and a certificate chain with key fits several times over.
 const maxSecretValue = 64 << 10
 
-// handleListSecrets is GET /secrets/{projectId}/{environment}.
-//
-// NAMES, NEVER VALUES. This answers "is DATABASE_URL set in production", which
-// is what a developer checks before a deploy and what a CLI shows.
+// handleListSecrets is GET /secrets/{projectId}/{environment}: names, never
+// values.
 func (s *Service) handleListSecrets(w http.ResponseWriter, r *http.Request, token, projectID string) {
 	environment, err := pathID(r, "environment")
 	if err != nil {
@@ -67,11 +46,8 @@ func (s *Service) handleListSecrets(w http.ResponseWriter, r *http.Request, toke
 	}
 }
 
-// handleSetSecret is PUT /secrets/{projectId}/{environment}/{name}.
-//
-// THE BODY IS THE VALUE, raw. It is not a JSON field, because wrapping it would
-// mean a value containing a quote or a newline depends on the caller escaping
-// it correctly — and a secret is exactly the string nobody looks at again.
+// handleSetSecret is PUT /secrets/{projectId}/{environment}/{name}; the raw body
+// is the value, so no escaping is involved.
 func (s *Service) handleSetSecret(w http.ResponseWriter, r *http.Request, token, projectID string) {
 	environment, name, err := s.secretPath(r)
 	if err != nil {
@@ -83,9 +59,7 @@ func (s *Service) handleSetSecret(w http.ResponseWriter, r *http.Request, token,
 		return
 	}
 
-	// BOUNDED BEFORE IT IS READ. MaxBytesReader makes the read itself fail at
-	// the limit, so an oversized body is never held; reading first and checking
-	// the length after is the version of this that does not work.
+	// Bounded before it is read: MaxBytesReader fails the read at the limit.
 	value, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxSecretValue))
 	if err != nil {
 		respond(w, errTooLarge)
@@ -96,11 +70,8 @@ func (s *Service) handleSetSecret(w http.ResponseWriter, r *http.Request, token,
 		respond(w, err)
 		return
 	}
-	// A ROTATED HOOK SECRET IS BELIEVED NOW on the frontend it was set
-	// through, rather than at its first delivery under the new secret. This is
-	// a local speedup and nothing more: every OTHER frontend still remembers
-	// the old secret, and what makes them correct is the webhook route's
-	// re-ask on a remembered hook that refuses a delivery (webhook.go).
+	// A rotated hook secret is believed now on this frontend; other frontends catch up
+	// by re-asking on a failed verification (webhook.go).
 	s.secrets.drop(projectID)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -139,14 +110,8 @@ func (s *Service) secretPath(r *http.Request) (environment, name string, err err
 	return environment, name, nil
 }
 
-// mayTouchSecrets is mayTouchProject, plus the one thing that is different
-// here: a frontend with no vault refuses exactly as a denial does.
-//
-// THE ORDER MATTERS AND IT IS THIS WAY ROUND ON PURPOSE. The vault check is
-// first because it costs nothing and asks nothing of auth — and because
-// answering it after authorization would make these routes tell a caller who
-// may touch the project whether this cloud has a vault, which is a fact about
-// the deployment rather than about them.
+// mayTouchSecrets is mayTouchProject, refusing first (as a denial) when there is no
+// vault, so the answer reveals nothing about the deployment.
 func (s *Service) mayTouchSecrets(r *http.Request, token, projectID string) error {
 	if s.vault == nil {
 		return errDenied

@@ -12,10 +12,6 @@ import (
 	"github.com/taubyte/tau/pkg/raft"
 )
 
-// THE PREFIX RULE, AGAINST A REAL STORE. raft's Keys is a plain HasPrefix, so a
-// prefix that does not end in "/" reads rows of every job whose id happens to
-// start with the same characters. There is no ListRegEx here to catch it a
-// second time, so this is the whole guard.
 func TestEveryPrefixEndsInASlashAndACrossJobReadIsImpossible(t *testing.T) {
 	store := raft.NewMockCluster()
 
@@ -45,8 +41,6 @@ func TestEveryPrefixEndsInASlashAndACrossJobReadIsImpossible(t *testing.T) {
 		"this is what a missing trailing slash costs")
 }
 
-// seg() is what makes the grammar hold for ids this package never generates.
-// A ref contains "/" by construction and a repository key is variable depth.
 func TestNoInputCanForgeASegmentBoundary(t *testing.T) {
 	for _, hostile := range []string{
 		"refs/heads/x", "../../etc", "..", ".", "", "a/b/c/d",
@@ -63,8 +57,6 @@ func TestNoInputCanForgeASegmentBoundary(t *testing.T) {
 	}
 }
 
-// A ref crafted to climb out of its own job's prefix cannot: the whole ref is
-// one segment, so there is nowhere to climb to.
 func TestAHostileRefCannotReachAnotherJobsRows(t *testing.T) {
 	victim := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	hostileRef := "refs/heads/../../../job/" + seg(victim) + "/attempt"
@@ -99,10 +91,6 @@ func TestIDFromIndexKeyReadsTheIDOffTheEnd(t *testing.T) {
 	}
 }
 
-// mend DELETES A KEY IT REBUILDS, so the round trip has to be the identity or
-// the repair deletes a row nobody asked it to. A repository key is variable
-// depth and a job id is opaque; both survive because seg() puts neither a "/"
-// nor a "." in a segment.
 func TestParseOpenIndexKeyRoundTrips(t *testing.T) {
 	for _, repositoryKey := range []string{
 		"github.com/a/b",
@@ -139,9 +127,6 @@ func TestParseOpenIndexKeyRejectsWhatIsNotOne(t *testing.T) {
 	}
 }
 
-// Byte order is the only sort order (root AGENTS.md rule 7), so an attempt is
-// zero-padded wherever it is a key: attempt 2 must sort before attempt 10 in a
-// reader that sorts the log map it was handed.
 func TestTheLogsOfARecordSortInAttemptOrder(t *testing.T) {
 	rec := jobRecord{}.with(produced{attempt: 2, logCID: "cid-2"})
 	rec = rec.with(produced{attempt: 10, logCID: "cid-10"})
@@ -152,10 +137,6 @@ func TestTheLogsOfARecordSortInAttemptOrder(t *testing.T) {
 	require.Equal(t, map[string]string{stamp(2): "cid-2", stamp(10): "cid-10"}, rec.Logs)
 }
 
-// A RECORD'S MAPS ARE COPIED RATHER THAN ADDED TO. The record a section read
-// carries the holding's maps, and a transition that appended through them would
-// edit what the section believes it read, in place, before anything was
-// committed — and a rolled-back or refused entry would leave the edit behind.
 func TestWithLeavesTheRecordItWasBuiltFromAlone(t *testing.T) {
 	before := jobRecord{
 		Attempt: 1,
@@ -213,14 +194,6 @@ func TestJobRecordRoundTrips(t *testing.T) {
 	require.Equal(t, rec, got)
 }
 
-// A DECODED RECORD MUST BE THE RECORD ITS KEY NAMES, and until the round that
-// made every write name the job it was decided on, nothing compared the two:
-// the key was taken for the error message alone.
-//
-// A row that decodes cleanly and says it belongs to somebody else was handed
-// back as this job's record, and every transition then decided on it — begin
-// composed its entry's key from rec.ID, so a record claiming another job would
-// have been written under another job's key, in a section entered on this one.
 func TestADecodedRecordMustBeTheOneItsKeyNames(t *testing.T) {
 	const id = "0123456789012345678901234567890123456789abc"
 
@@ -255,9 +228,6 @@ func TestTerminalIsExactlyTheThreeEndStates(t *testing.T) {
 	}
 }
 
-// The queue's own keyspace is "queue/<escaped name>/", so build's rows and the
-// queue's rows share a store without sharing a prefix. Two prefixes that could
-// overlap would put a job record where a queue scan reads it.
 func TestBuildsRowsAndTheQueuesRowsCannotOverlap(t *testing.T) {
 	require.True(t, strings.HasPrefix(jobPrefix("x"), rootSegment+"/"))
 	require.False(t, strings.HasPrefix(jobPrefix("x"), "queue/"))

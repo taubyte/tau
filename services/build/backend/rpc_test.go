@@ -38,15 +38,9 @@ func (r *recordingAuthorizer) Allow(_ context.Context, caller peer.ID, act Actio
 	return nil
 }
 
-// wireHarness is a running Service on one mocknet host, reached from a second
-// over the real transport: connect-go, over go-libp2p-gostream, over mocknet.
-// No port is bound.
-//
-// This is the ONLY way any test in this package gets a caller identity a
-// handler was not separately told about — rpc.RemotePeer reads a context value
-// under a key private to package rpc, so nothing outside it can fabricate one —
-// and the only way to exercise the streamed List, since connect.ServerStream
-// has no exported constructor.
+// wireHarness is a running Service on one mocknet host reached from another over
+// the real transport, the only way to get a real caller identity and to exercise
+// the streamed List.
 type wireHarness struct {
 	*harness
 	authorizer *recordingAuthorizer
@@ -89,10 +83,6 @@ func newWireHarness(t *testing.T, opts ...Option) *wireHarness {
 	}
 }
 
-// One end-to-end over the real transport, covering all five RPCs — including
-// the streamed List, which cannot be proven any other way — and asserting that
-// the identity the handler authorized on is the CALLING host's peer id, taken
-// from the authenticated stream and not from anything the caller sent.
 func TestEveryRPCOverTheWireAuthorizesOnTheCallingPeer(t *testing.T) {
 	h := newWireHarness(t)
 
@@ -134,8 +124,6 @@ func TestEveryRPCOverTheWireAuthorizesOnTheCallingPeer(t *testing.T) {
 	require.NotEqual(t, h.host.ID(), h.caller.ID())
 }
 
-// One deny per guarded RPC, over the wire, so the code the caller sees is the
-// one the authorizer produced rather than one connect invented.
 func TestADeniedCallerIsRefusedOnEveryRPC(t *testing.T) {
 	for _, tc := range []struct {
 		act  Action
@@ -181,8 +169,6 @@ func TestADeniedCallerIsRefusedOnEveryRPC(t *testing.T) {
 	})
 }
 
-// A follower answers "ask somebody else" over the wire too, which is the code
-// clients.Pool.Do walks past to the next peer.
 func TestAFollowerAnswersUnavailableOverTheWire(t *testing.T) {
 	h := newWireHarness(t)
 	h.store.stepDown()
@@ -193,9 +179,6 @@ func TestAFollowerAnswersUnavailableOverTheWire(t *testing.T) {
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
 }
 
-// The connect adapters pass a domain method's error through unchanged, so the
-// caller sees the code this service decided rather than one connect invented
-// for an unexpected return.
 func TestAnUnknownJobIsNotFoundOverEveryJobRPC(t *testing.T) {
 	h := newWireHarness(t)
 	ref := connect.NewRequest(&buildv2.JobRef{Id: unknownJobID})
@@ -223,9 +206,6 @@ func (h *wireHarness) built(t *testing.T, project, environment, resource string)
 	return res.Msg.GetCid(), nil
 }
 
-// THE SNAPSHOT CROSSES THE WIRE: asked over the RPC a remote caller uses, it
-// ends at what the running build has written, while a follow on the same RPC
-// stays open for the next line and ends with the build.
 func TestASnapshotEndsOverTheWireWhileAFollowStaysOpen(t *testing.T) {
 	h := newWireHarness(t)
 	started, lines := make(chan struct{}), make(chan string)

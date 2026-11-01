@@ -21,10 +21,6 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 )
 
-// followapi_test is GET /job/{jid}/logs — the route v1 has no version of,
-// because patrick can hand over a log only once the build has ended and the
-// whole of it has reached IPFS.
-
 // read is Backend.Follow or Backend.Snapshot.
 type read = func(id string, run int32, from int64, emit func([]byte, int64) error) (int64, error)
 
@@ -117,9 +113,6 @@ func TestFollowResumesAtAnOffset(t *testing.T) {
 	require.Equal(t, []asked{{1, 6}}, follows.all())
 }
 
-// A NEGATIVE OFFSET IS REFUSED RATHER THAN CLAMPED: it means the caller's
-// arithmetic went backwards, and starting somebody's build over from the
-// beginning would hide that.
 func TestFollowRefusesAnOffsetThatIsNotOne(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.backend.follow = serves("output\n")
@@ -130,8 +123,6 @@ func TestFollowRefusesAnOffsetThatIsNotOne(t *testing.T) {
 	}
 }
 
-// A run is a positive number, refused like an offset that is not one; one
-// the job will never reach is refused by the backend, and is the caller's too.
 func TestFollowRefusesAnAttemptThatIsNotOne(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.backend.follow = serves("output\n")
@@ -149,9 +140,6 @@ func TestFollowRefusesAnAttemptThatIsNotOne(t *testing.T) {
 	require.Equal(t, "9", w.Header().Get("X-Job-Attempt"))
 }
 
-// THE SAME AUTHORIZATION AS EVERY OTHER JOB ROUTE, decided before the first
-// byte: on the caller's WRITE access to the job's repository, through
-// admitted() like everything else in jobapi.go.
 func TestFollowIsAuthorizedLikeTheRest(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.backend.follow = serves("secret build output\n")
@@ -162,22 +150,14 @@ func TestFollowIsAuthorizedLikeTheRest(t *testing.T) {
 	require.NotContains(t, w.Body.String(), "secret build output",
 		"nothing of the log reached an unauthenticated caller")
 
-	// A caller who may read the repository but not write to it. Read access is
-	// not enough because a public repository reads to everyone, which is
-	// exactly what let an unrelated caller reach another project's jobs in v1.
-	//
-	// IT IS A 404 AND NOT A 403, which is this package's own choice and worth
-	// pinning on a route that streams: telling a stranger "you may not read
-	// this job" confirms the job exists, and a job id carries a repository.
+	// A caller without a role on the project gets a 404, not a 403: a job id carries a
+	// repository.
 	h.projects.role = func(string, string) (register.Role, error) { return register.RoleNone, nil }
 	w = h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs", testToken))
 	require.Equal(t, http.StatusNotFound, w.Code)
 	require.NotContains(t, w.Body.String(), "secret build output")
 }
 
-// WITHOUT ?attempt= THE RESPONSE IS THE JOB'S CURRENT RUN: the one claimed or
-// last run, a queued job's next, and the first of a job that ended before it
-// ran. Every ask the read makes is about that run, and the header names it.
 func TestTheResponseIsOneRunAndSaysWhich(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -207,10 +187,6 @@ func TestTheResponseIsOneRunAndSaysWhich(t *testing.T) {
 	}
 }
 
-// AN OFFSET IS A POSITION IN ONE RUN'S LOG. A client resuming the first run
-// while the second is being written gets the rest of the first — or hears that
-// it was not kept — and never the second run's bytes from the same offset,
-// which would splice two runs into what reads as one log.
 func TestAResumeIsNeverAnotherRunsLog(t *testing.T) {
 	first, second := "first run, line one\nfirst run, line two\n", "second run, line one\nsecond run, line two\n"
 	h := newHarness(t, quick, WithAssets(fakeAssets{"bafy1": first}))
@@ -240,10 +216,6 @@ func TestAResumeIsNeverAnotherRunsLog(t *testing.T) {
 	require.NotContains(t, w.Body.String(), "second run")
 }
 
-// A RUN THAT HAS ENDED IS READ FROM ITS OWN ENTRY. A cancelled job's record
-// turns terminal before its run's log is stored; whatever answers in that
-// window, the last log the record names is the previous run's, and it is not
-// this one.
 func TestAnEndedRunIsNeverAnotherRunsStoredLog(t *testing.T) {
 	h := newHarness(t, quick, WithAssets(fakeAssets{"bafy1": "the first run\n", "bafy2": "the second run\n"}))
 	h.backend.get = jobAt(buildv2.JobStatus_JobStatusCancelled, 2, map[string]string{key(1): "bafy1"})
@@ -264,8 +236,6 @@ func TestAnEndedRunIsNeverAnotherRunsStoredLog(t *testing.T) {
 	require.Equal(t, "the first run\n", w.Body.String())
 }
 
-// A JOB THAT ENDED BEFORE ITS RUN STARTED left that run nothing to log: the
-// response is empty and whole, not a log that was lost.
 func TestARunTheJobNeverReachedIsEmpty(t *testing.T) {
 	h := newHarness(t, quick, WithAssets(fakeAssets{}))
 	h.backend.get = jobAt(buildv2.JobStatus_JobStatusCancelled, 0, nil)
@@ -280,8 +250,6 @@ func TestARunTheJobNeverReachedIsEmpty(t *testing.T) {
 	require.Empty(t, h.logs.joined())
 }
 
-// A FOLLOW THAT BREAKS IS RESUMED, from where it broke and in the same run: the
-// request names the run, so whatever answers next can only be that run's log.
 func TestAFollowThatBreaksResumesItsRun(t *testing.T) {
 	h := newHarness(t, quick)
 	var follows recorded
@@ -304,9 +272,6 @@ func TestAFollowThatBreaksResumesItsRun(t *testing.T) {
 	require.Empty(t, h.logs.joined())
 }
 
-// A FOLLOW WHOSE RUN WAS LOST IS CUT, NOT ENDED. The 200 has gone by the time
-// the run turns out to have left no log, and a response that ended would read
-// as the whole of it; cut, the client resumes — and is told then.
 func TestAFollowWhoseRunWasLostIsCut(t *testing.T) {
 	h := newHarness(t, quick, WithAssets(fakeAssets{}))
 	srv := httptest.NewServer(h.Handler())
@@ -360,9 +325,6 @@ func TestAFollowsPaceHasDefaults(t *testing.T) {
 	require.Equal(t, time.Minute, c.FollowBackoffMax, "a ceiling below the first wait is raised to it")
 }
 
-// A JOB NO NODE IS WRITING A LOG FOR YET IS WAITED FOR. Queued, every backend
-// answers Unavailable, and the follow asks again from the same offset until a
-// node writes the log — which is then the whole response.
 func TestAFollowWaitsForAJobToStart(t *testing.T) {
 	h := newHarness(t, quick)
 	var asked []int64
@@ -402,9 +364,6 @@ func (q *queuedJob) snapshot(id string, run int32, from int64, emit func([]byte,
 	return notWritten(id, run, from, emit)
 }
 
-// A QUEUED JOB'S FOLLOW IS OPEN WHILE IT WAITS, and its snapshot is empty: it
-// has logged nothing so far. Once the job starts the follow gets its log as it
-// is written and ends with the build.
 func TestAQueuedJobIsFollowedFromBeforeItStarts(t *testing.T) {
 	h := newHarness(t, quick)
 	srv := httptest.NewServer(h.Handler())
@@ -432,8 +391,6 @@ func TestAQueuedJobIsFollowedFromBeforeItStarts(t *testing.T) {
 	require.Empty(t, h.logs.joined())
 }
 
-// A follow waiting on a queued job ends when its viewer hangs up, however long
-// the next wait would have been.
 func TestAWaitingFollowEndsWithItsViewer(t *testing.T) {
 	h := newHarness(t, Config{FollowBackoff: time.Hour})
 	ctx, cancel := context.WithCancel(t.Context())
@@ -472,10 +429,6 @@ func retried(id string) (*buildv2.Job, error) {
 	}, nil
 }
 
-// A RUN THAT ENDED BEFORE THE READ REACHED ITS LOG — between two of a follow's
-// asks, or before the request came — answers FailedPrecondition, and the
-// response is the log its record files under that run, from the offset
-// reached.
 func TestAnEndedJobsLogIsTheStoredOne(t *testing.T) {
 	h := newHarness(t, quick, WithAssets(fakeAssets{"bafy9": "the attempt before\n", "bafy10": "cloning\nerror: failed\n"}))
 	h.backend.get = retried
@@ -513,8 +466,6 @@ func TestAnEndedJobsLogIsTheStoredOne(t *testing.T) {
 	require.Equal(t, "10", w.Header().Get("X-Job-Attempt"))
 }
 
-// A stored log that cannot be read is answered as the status it is, since
-// nothing of it has been sent.
 func TestAnEndedJobsLogThatCannotBeRead(t *testing.T) {
 	for name, tc := range map[string]struct {
 		h      *harness
@@ -543,8 +494,6 @@ func TestAnEndedJobsLogThatCannotBeRead(t *testing.T) {
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 }
 
-// A snapshot of a job no node is writing yet is asked for once and is empty —
-// the job has logged nothing so far — and nothing about it is a failure.
 func TestASnapshotOfAQueuedJobIsEmpty(t *testing.T) {
 	h := newHarness(t, quick)
 	asks := 0
@@ -643,9 +592,6 @@ func readN(t *testing.T, r io.Reader, n int) string {
 	return string(buf)
 }
 
-// A SNAPSHOT IS WHAT A RUNNING BUILD HAS LOGGED SO FAR, and the response ends
-// while the build goes on: `tau logs` without --follow. The same route without
-// it follows: each line as it is written, ending when the build does.
 func TestASnapshotEndsWhileTheBuildRunsAndAFollowEndsWithIt(t *testing.T) {
 	h := newHarness(t, Config{})
 	srv := httptest.NewServer(h.Handler())
@@ -673,8 +619,6 @@ func TestASnapshotEndsWhileTheBuildRunsAndAFollowEndsWithIt(t *testing.T) {
 	require.Empty(t, rest, "the follow ends with the build")
 }
 
-// A BUILD THAT HAS ENDED IS WHOLE TO BOTH READS: the follow drains to the end
-// and stops, and a snapshot of it is the same bytes.
 func TestAnEndedBuildsLogIsWholeToBothReads(t *testing.T) {
 	h := newHarness(t, Config{})
 	build := newBuilding(t, "cloning\ncompiling\n")
@@ -688,9 +632,6 @@ func TestAnEndedBuildsLogIsWholeToBothReads(t *testing.T) {
 	}
 }
 
-// ?snapshot= is a boolean: false follows, after the snapshot every read starts
-// with, and a value that is not one is refused rather than guessed at, as an
-// offset that is not a number is.
 func TestASnapshotIsAskedForWithABoolean(t *testing.T) {
 	h := newHarness(t, Config{})
 	var reads []string
@@ -716,7 +657,6 @@ func TestASnapshotIsAskedForWithABoolean(t *testing.T) {
 	}
 }
 
-// A console reads the run a log response is about, so a browser is let see it.
 func TestAConsoleSeesWhichRunALogIs(t *testing.T) {
 	h := newHarness(t, Config{Origins: []string{"https://console.example"}})
 	h.backend.follow = serves("output\n")

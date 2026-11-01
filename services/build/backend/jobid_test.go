@@ -19,10 +19,6 @@ func mustKey(t *testing.T, s string) repokey.Key {
 	return k
 }
 
-// THE COLLISION, RUN. A separator-joined triple can be re-cut, and a ref is
-// attacker-chosen for any repository an attacker can push to — so the naive
-// form hands one push the job id of another. Framing removes the class: a
-// length prefix cannot be moved into the field it measures.
 func TestASeparatorJoinedTripleCollidesAndTheFramedOneDoesNot(t *testing.T) {
 	naive := func(k, r, s string) string {
 		sum := sha256.Sum256([]byte(k + ":" + r + ":" + s))
@@ -43,32 +39,12 @@ func TestASeparatorJoinedTripleCollidesAndTheFramedOneDoesNot(t *testing.T) {
 		jobID(key, "refs/heads/x", "deadbeef:c"))
 }
 
-// The same class one field over: the boundary between the repository key and
-// the ref.
 func TestTheRepositoryKeyAndTheRefCannotBeRecut(t *testing.T) {
 	a := jobID(mustKey(t, "github.com/o/n"), "refs/heads/x", strings.Repeat("a", 40))
 	b := jobID(mustKey(t, "github.com/o"), "refs/heads/x", strings.Repeat("a", 40))
 	require.NotEqual(t, a, b)
 }
 
-// THE BOUNDARY THAT ACTUALLY MOVES, and it moves on inputs this service's own
-// validators accept — which is what makes it an attack and not an argument.
-//
-//	("github.com/o/n",             "refs/heads/arefs/heads/x", 40 x 'a')
-//	("github.com/o/nrefs/heads/a", "refs/heads/x",             40 x 'a')
-//
-// Both keys are canonical: repokey joins everything above the last segment into
-// Owner, so a key of any depth is a key. Both refs are branch refs, because a
-// ref contains "/" by construction. The sha is fixed-length, so the only
-// boundary either input can slide is the one between the key and the ref — and
-// slid, the two triples are ONE string. A ref is attacker-chosen for any
-// repository an attacker can push to, and Enqueue answers an id it already
-// holds with the job it already made, so an id that can be re-cut is a way to
-// resolve a victim's push onto an attacker's job.
-//
-// The two tests above assert something true and neither reaches this: the
-// separator pair differs under bare concatenation as well, and the key/ref pair
-// compares two inputs that simply differ rather than a RE-CUT of one string.
 func TestATripleRecutAtTheKeyRefBoundaryDoesNotCollide(t *testing.T) {
 	sha := strings.Repeat("a", 40)
 	left := struct{ key, ref string }{"github.com/o/n", "refs/heads/arefs/heads/x"}
@@ -103,8 +79,6 @@ func TestAJobIDIsDeterministicAndExactlyOneKeySegment(t *testing.T) {
 	require.NotEqual(t, id, jobID(key, "refs/heads/main", strings.Repeat("e", 40)))
 }
 
-// The domain separator is what keeps this hash from equalling some other
-// sha256 over the same bytes.
 func TestTheDomainSeparatorIsInTheDigest(t *testing.T) {
 	require.Contains(t, jobIDDomain, "tau.build.v2")
 	require.True(t, strings.HasSuffix(jobIDDomain, "\x00"))
@@ -161,9 +135,6 @@ func TestValidCommitSHA(t *testing.T) {
 	}
 }
 
-// A repository key is accepted only in repokey's canonical spelling. Two
-// spellings of one repository would be two job ids for one push, and the
-// idempotency this service promises rests on there being one.
 func TestParseRepositoryKeyAcceptsOnlyTheCanonicalSpelling(t *testing.T) {
 	for _, ok := range []string{
 		"github.com/acme/pay",
@@ -186,11 +157,6 @@ func TestParseRepositoryKeyAcceptsOnlyTheCanonicalSpelling(t *testing.T) {
 	}
 }
 
-// A key whose HOST is nonsense round-trips as canonical, and that is fine and
-// worth pinning: seg() means a "." host cannot move a boundary, and auth
-// refuses the push anyway because nobody registered that repository. The
-// grammar's safety belongs to the encoding, not to the plausibility of the
-// input.
 func TestANonsenseHostIsCanonicalAndHarmless(t *testing.T) {
 	k, ok := parseRepositoryKey("../etc/passwd")
 	require.True(t, ok)

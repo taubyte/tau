@@ -32,8 +32,6 @@ func TestABucketSpendsItsBurstAndRefillsOnTheClock(t *testing.T) {
 	require.False(t, b.allow())
 }
 
-// A Config that asked for no limit gets none, and the call sites do not need a
-// branch to say so.
 func TestNoRateIsNoBucketAndNoLimit(t *testing.T) {
 	for _, r := range []Rate{{}, {Burst: 0, Per: time.Minute}, {Burst: 5, Per: 0}} {
 		b := newBucket(r, time.Now)
@@ -44,7 +42,6 @@ func TestNoRateIsNoBucketAndNoLimit(t *testing.T) {
 	}
 }
 
-// A clock that goes backwards must not mint tokens.
 func TestTimeGoingBackwardsDoesNotRefill(t *testing.T) {
 	c := &clock{at: time.Unix(1000, 0)}
 	b := newBucket(Rate{Burst: 1, Per: time.Second}, c.now)
@@ -54,9 +51,6 @@ func TestTimeGoingBackwardsDoesNotRefill(t *testing.T) {
 	require.False(t, b.allow())
 }
 
-// The per-hook buckets live in the same bounded map the secrets do, with a TTL
-// of one refill period — a bucket untouched for that long has refilled to full,
-// so forgetting it and minting a new one are the same thing.
 func TestAForgottenBucketIsAFullBucket(t *testing.T) {
 	h := newHarness(t, Config{HookRate: Rate{Burst: 1, Per: time.Minute}})
 
@@ -75,9 +69,6 @@ func TestBucketsAreKeptApartByHook(t *testing.T) {
 	require.True(t, h.allowHook("b"))
 }
 
-// The per-hook map has a ceiling, and eviction under pressure hands an evicted
-// hook a fresh bucket. That is the approximation ratelimit.go names, and it is
-// stated as a test so nobody discovers it as a surprise.
 func TestThePerHookLimiterIsDefeatedByEnoughDistinctKeys(t *testing.T) {
 	h := newHarness(t, Config{
 		SecretCacheMax: 2,
@@ -94,11 +85,6 @@ func TestThePerHookLimiterIsDefeatedByEnoughDistinctKeys(t *testing.T) {
 	require.True(t, h.allowHook("victim"), "the evicted bucket came back full")
 }
 
-// A bearer token is a live GitHub credential. The per-caller bucket map outlives
-// the request that made it by a whole refill period, so the token must never be
-// the key: what goes in is a digest, which keys the same caller to the same
-// bucket without keeping the credential around to be read out of a heap dump or
-// printed by anything that ranges over the map.
 func TestACredentialNeverBecomesAMapKey(t *testing.T) {
 	h := newHarness(t, Config{CallerRate: Rate{Burst: 1, Per: time.Minute}})
 
@@ -117,7 +103,6 @@ func TestACredentialNeverBecomesAMapKey(t *testing.T) {
 	require.Equal(t, hex.EncodeToString(digest[:]), keys[0])
 }
 
-// The same caller finds the same bucket; a different one gets its own.
 func TestBucketsAreKeptApartByCredential(t *testing.T) {
 	h := newHarness(t, Config{CallerRate: Rate{Burst: 1, Per: time.Minute}})
 
@@ -129,10 +114,6 @@ func TestBucketsAreKeptApartByCredential(t *testing.T) {
 	require.True(t, h.allowCaller(testToken))
 }
 
-// The two keyed maps are separate objects on purpose: one shared map would let
-// a flood of invented keys on either surface evict the other's buckets, and an
-// evicted bucket comes back full — the per-key limit turned off by a caller
-// rather than by an operator.
 func TestAFloodOfHookIdsDoesNotEvictACallersBucket(t *testing.T) {
 	h := newHarness(t, Config{
 		SecretCacheMax: 2,

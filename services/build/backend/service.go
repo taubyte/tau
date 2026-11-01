@@ -31,11 +31,8 @@ type Service struct {
 	dead  *queue.Queue
 
 	runner Runner
-	// assetStore is the ONE DOOR IN THIS PACKAGE THAT LEAVES THIS MACHINE, and
-	// it is named for the door rather than for what goes through it: the record
-	// has an Assets map and a run has the cids it collected, so a field spelled
-	// `assets` was one identifier standing for three things and a census keyed
-	// on it could not ask about any of them (population_test.go).
+	// assetStore is the one door in this package off this machine, named for the door
+	// so the censuses can tell it from the record's Assets map and a run's cids.
 	assetStore Assets
 	authz      Authorizer
 	now        func() time.Time
@@ -50,23 +47,13 @@ type Service struct {
 	stop    context.CancelCauseFunc
 	stopped chan struct{}
 
-	// running holds the cancel of every job THIS node is currently running, so
-	// Cancel can stop one in the same process that wrote the record. It is the
-	// whole of what v1 needed a monkey p2p round trip for.
+	// running holds the cancel of every job this node runs, so Cancel can stop one in
+	// the process that wrote the record.
 	runningMu sync.Mutex
 	running   map[string]context.CancelFunc
 
-	// logs holds the log of every build this node is WRITING ONE FOR, with the
-	// run it belongs to, so that Follow can fork a reader off it while it is
-	// still being appended to — and goes on holding it until the run's record
-	// names it (output.go's discard).
-	//
-	// IT IS A SECOND MAP AND NOT A SECOND OPINION about what this node runs.
-	// The one above is decided by a record READ — the claim's, inside its
-	// section, which is what makes a cancel find something to stop — and this
-	// one is decided by the run itself having started, like Service.forget and
-	// for the same reason: a build holds no lock, and opening its log is not a
-	// transition of anything.
+	// logs holds the log of every build this node is writing, for Follow, until the
+	// run's record names it. Decided by the run having started, not by a record read.
 	logsMu sync.Mutex
 	logs   map[string]runLog
 
@@ -79,12 +66,8 @@ type Service struct {
 	closed    atomic.Bool
 }
 
-// Option configures a Service at construction. v2's tunables are fields set
-// through Option, never package-level vars every instance in a process would
-// share.
-// Option configures an options value, not the Service. A Service is built once,
-// from a validated snapshot, so there is no window in which a half-configured
-// one exists and no second way to make one.
+// Option configures an options value; New builds the Service once from the
+// validated snapshot.
 type Option func(*options) error
 
 type options struct {
@@ -101,11 +84,8 @@ type options struct {
 	serverOptions []rpc.ServerOption
 }
 
-// WithHost is the libp2p host this service answers on. Required.
-//
-// A NIL HOST IS AN ERROR RATHER THAN A NODE THIS SERVICE INVENTS. v1 has that
-// fallback copied across four services, and a service that can invent its own
-// libp2p identity can be started a way production never starts it.
+// WithHost is the libp2p host this service answers on. Required: nil is an
+// error, never an invented identity.
 func WithHost(h host.Host) Option {
 	return func(o *options) error {
 		if h == nil {
@@ -160,11 +140,9 @@ func WithServerOptions(opts ...rpc.ServerOption) Option {
 	}
 }
 
-// WithRunner gives this node something to run claimed work with. WITHOUT ONE
-// THE NODE CLAIMS NOTHING: it still serves the RPCs, still replicates, and
-// still keeps the queue swept — a node can be a voter in the consistency
-// domain without being a builder, and that is a deployment's choice rather
-// than a degraded state.
+// WithRunner gives this node something to run claimed work with. Without one the
+// node claims nothing but still serves, replicates and sweeps: a voter need not
+// be a builder.
 func WithRunner(r Runner) Option {
 	return func(o *options) error {
 		if r == nil {
@@ -187,13 +165,9 @@ func WithMeter(m Meter) Option {
 	}
 }
 
-// WithAssets gives this node somewhere to put what a build produced: the log
-// file when the run ends, and each artifact as it is built. WITHOUT ONE THE
-// NODE STILL BUILDS — the log is written, followed and then thrown away with
-// the run, and the job carries no cids — because v2 has no storage service to
-// implement Assets yet and a node that refused to build without one could not
-// be started at all today. See Assets in config.go for what a real
-// implementation owes.
+// WithAssets gives this node somewhere to put logs and artifacts. Without one the
+// node still builds, but logs die with the run and jobs carry no cids (see
+// Assets in config.go).
 func WithAssets(a Assets) Option {
 	return func(o *options) error {
 		if a == nil {
@@ -228,21 +202,10 @@ func WithClock(now func() time.Time) Option {
 	}
 }
 
-// New validates and allocates. It binds nothing, opens nothing and creates
-// nothing — no listener until Start, no database ever — so a Service can be
-// constructed just to be inspected, and a node can construct every service
-// before starting any of them (service-conventions.md §2a).
-//
-// One bag of operator values and everything else injected: the host it answers
-// on, the store it persists into, and the one question it may ask auth. Each is
-// a With… that refuses nil, so a missing dependency fails at construction and a
-// bad one fails where it was written.
-//
-// It never constructs raft. raft.New takes peer.Node, which bundles host, DHT,
-// datastore, DAG and pubsub, and taking it would mean this package could not be
-// built against mocknet.GenPeer() with nothing else standing up —
-// service_test.go's TestServiceNeedsOnlyAMocknetHostAMockClusterAndAFakeAuth is
-// that claim as a test rather than as this sentence.
+// New validates and allocates; it binds and opens nothing, so every service can
+// be constructed before any starts. Each dependency comes through a With… that
+// refuses nil. It never constructs raft, so the package builds against
+// mocknet.GenPeer().
 func New(cfg Config, opts ...Option) (*Service, error) {
 	effective, err := cfg.withDefaults()
 	if err != nil {
@@ -298,10 +261,8 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 	// a zero this package would have to default a second time.
 	s.cfg.Queue = s.work.Config()
 
-	// THE DEAD LETTER IS JUST ANOTHER QUEUE ON THE SAME GROUP, which is what
-	// makes draining it a claim/ack like any other. Without a drain, a job that
-	// exhausts its attempts sits there forever while its record still reads
-	// Open and nothing ever notices.
+	// The dead letter is another queue on the same group, drained by an ordinary
+	// claim and ack.
 	s.dead, err = s.group.Open(queue.Config{
 		Name:         s.cfg.Queue.DeadLetter,
 		ApplyTimeout: s.cfg.Queue.ApplyTimeout,
@@ -313,14 +274,9 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 	return s, nil
 }
 
-// Start listens and serves, then starts the claim loop. Calling it twice, or
-// after Close, is an error rather than a second listener leaking or a silent
-// no-op.
-//
-// Both service blocks mount behind ONE protocol id — build.Protocol, walked off
-// the schema — because the id names the proto package's listener. A second
-// rpc.Listen on it is refused at bind time with ErrProtocolTaken, so a taken
-// protocol is an error rather than a service that starts and is never reached.
+// Start listens, serves, and starts the claim loop; twice or after Close is an
+// error. Both service blocks share build.Protocol; a second rpc.Listen on it
+// fails with ErrProtocolTaken.
 func (s *Service) Start(ctx context.Context) error {
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
@@ -338,10 +294,8 @@ func (s *Service) Start(ctx context.Context) error {
 	}
 	s.server = server
 
-	// WITH A CAUSE, because the loop's context ending is not self-explanatory:
-	// Close ends it too, and a run that was interrupted by a shutdown reaches
-	// run() as an error from Run over a cancelled context — exactly what a build
-	// that failed looks like. See errShuttingDown.
+	// With a cause, since a run interrupted by shutdown otherwise looks like a failed
+	// build (errShuttingDown).
 	loopCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 	s.stop = cancel
 	s.stopped = make(chan struct{})
@@ -377,30 +331,14 @@ func (s *Service) loop(ctx context.Context, done chan<- struct{}) {
 	}
 }
 
-// errShuttingDown is the cause Close cancels the claim loop's context with, and
-// it exists because NOTHING IN AN ERROR SAYS WHY A CONTEXT DIED. A run stopped
-// by a shutdown returns exactly what a run stopped by Cancel returns, and what
-// a Runner that wraps ctx.Err() in its own message returns, and what a build
-// that genuinely failed at that instant returns. context.Cause on the loop's
-// own context is the fact rather than a reading of the error.
+// errShuttingDown is the cause Close cancels the loop with: no error says why a
+// context died, but context.Cause does.
 var errShuttingDown = errors.New("build: shutting down")
 
-// Close is idempotent and stops the two things this service started: serving,
-// and the claim loop. It does not close the store, and cannot — Store has no
-// Close method (config.go), because the store was handed in by whatever
-// composed the node and is shared with the services composed beside it.
-//
-// A RUN IN FLIGHT IS ABANDONED, NOT FAILED. The loop's context ends here, so a
-// Runner that honours it returns and a shutdown does not wait out an hour-long
-// build — but the delivery is NOT acknowledged and no terminal record is
-// written. The item stays claimed, the claim expires, and the queue redelivers
-// it to whoever is leader then, which is the same path a node that was killed
-// takes. A rolling restart therefore costs an attempt and a rebuild; it never
-// leaves a job reading Failed for a build nobody ever finished.
-//
-// Acknowledging it here would look tidier and would be a lie the caller cannot
-// detect: the ack "removes an item for good", so there is no redelivery behind
-// it, and every restart would permanently fail whatever was building.
+// Close is idempotent and stops serving and the claim loop; the store is not its
+// to close. A run in flight is abandoned, not failed: unacked, its claim expires
+// and the queue redelivers it, so a restart costs a rebuild, never a false
+// Failed.
 func (s *Service) Close() error {
 	s.closeOnce.Do(func() {
 		s.closed.Store(true)

@@ -7,9 +7,9 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 )
 
-// domainapi.go is v1's domain claim: the record a project's owner sets so the
-// cloud believes a custom domain is the project's. The cloud signs it (the cm
-// service); a deploy declaring the zone is refused until a lookup finds it.
+// domainapi.go issues the TXT record a project's owner sets so the cloud believes
+// a custom domain is the project's; a deploy declaring the zone is refused until
+// it is found.
 
 // DomainClaim is one TXT record to set.
 type DomainClaim struct {

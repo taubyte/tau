@@ -11,9 +11,6 @@ import (
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
-// The one inconsistency this design can produce: a record written and a push
-// that never landed. reconcile is what notices, and Push's own deduplication is
-// its entire safety.
 func TestReconcileReQueuesARecordWhosePushWasLost(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -39,10 +36,6 @@ func TestReconcileReQueuesARecordWhosePushWasLost(t *testing.T) {
 	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id))
 }
 
-// IT CANNOT TOUCH A RUNNING JOB, and that is Push's own dedup rather than a
-// check here: pushing an id the queue already holds — ready, delayed, backing
-// off or claimed — is a no-op. v1's re-announce had no such property and
-// re-queued jobs another cluster was already running.
 func TestReconcileCannotDisturbAClaimedJob(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -62,9 +55,6 @@ func TestReconcileCannotDisturbAClaimedJob(t *testing.T) {
 	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id))
 }
 
-// An open row whose record has finished, or has gone, is the row that is wrong.
-// Dropping it is what keeps MaxOpenPerRepo counting real work rather than
-// history.
 func TestReconcileDropsStaleOpenRows(t *testing.T) {
 	h := newHarness(t)
 
@@ -161,8 +151,6 @@ func TestReconcileReportsWhatItCannotRead(t *testing.T) {
 	})
 }
 
-// The loop's other ticker. One test that it is wired, for the same reason the
-// claim loop has one.
 func TestTheStartedLoopReconciles(t *testing.T) {
 	h := newHarnessCfg(t, func(c *Config) {
 		c.ClaimInterval = time.Hour // only reconcile may fire
@@ -191,19 +179,6 @@ func staleHarness(t testing.TB) (*harness, *staleStore) {
 	return newHarnessOver(t, stale, store), stale
 }
 
-// mend'S DELETE IS DECIDED ON A READ, AND THE READ AND THE LISTING ABOVE IT
-// COME FROM TWO DIFFERENT APPLIED PREFIXES.
-//
-// reconcile takes one barrier, at the top, and lists the open index behind it.
-// The record is read per row, arbitrarily later, and a node that regains
-// leadership mid-walk holds entries that are committed and not applied: it
-// reads a job as finished while the retry that reopened it is already ordered
-// ahead of anything this pass will write. raft.BatchOp has no compare-and-swap,
-// so the delete lands on the row that retry wrote.
-//
-// reconcile.go names the harm: a job that reads Open and that nothing walking
-// the open index will ever look at again — MaxOpenPerRepo stops counting it and
-// no later pass can see it.
 func TestMendDoesNotDropAnOpenRowItReadAtAnOlderPrefix(t *testing.T) {
 	h, stale := staleHarness(t)
 	id := h.push(t, testRef, testCommit)

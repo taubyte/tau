@@ -31,9 +31,6 @@ func asBuilder(project, user string) (register.Role, error) {
 	return register.RoleViewer, nil
 }
 
-// A MANUAL BUILD IS QUEUED EXACTLY AS A VERIFIED PUSH IS: the same Enqueue,
-// with the repository, ref and commit the caller named, and the job id handed
-// back — to a builder on the project, who may read it.
 func TestABuilderQueuesABuildByHand(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.projects.role = asBuilder
@@ -47,7 +44,6 @@ func TestABuilderQueuesABuildByHand(t *testing.T) {
 	require.Equal(t, []enqueued{{testRepoKey, "refs/heads/main", testSHA}}, h.backend.enqueues())
 }
 
-// WHAT A MANUAL BUILD REFUSES, each before anything is queued.
 func TestWhatAManualBuildRefuses(t *testing.T) {
 	for name, c := range map[string]struct {
 		token   string
@@ -113,7 +109,6 @@ func TestWhatAManualBuildRefuses(t *testing.T) {
 	}
 }
 
-// A PUSH OUTSIDE THE TENANCY is refused by hand as it is by webhook.
 func TestAManualBuildOutsideTheTenancy(t *testing.T) {
 	h := newHarness(t, Config{}, servesOnly(t, "github.com/someone-else"))
 	h.projects.role = asBuilder
@@ -122,9 +117,6 @@ func TestAManualBuildOutsideTheTenancy(t *testing.T) {
 	require.Empty(t, h.backend.enqueues())
 }
 
-// THE BACKEND'S REFUSAL OF THE PUSH IS NAMED: a commit the forge does not hold
-// at that ref is what the person needs to read. Anything else is translated as
-// every route translates it.
 func TestAManualBuildTheBackendRefuses(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.projects.role = asBuilder
@@ -164,8 +156,6 @@ func upload(token, project, ref, body string) *http.Request {
 	return withBody(authed(http.MethodPost, "/upload/"+project+"?ref="+ref, token), []byte(body))
 }
 
-// ON A CLOUD NOTHING TAKES A BUILD IN: without Uploads the route does not
-// exist and /cloud says so.
 func TestACloudTakesNoUpload(t *testing.T) {
 	h, _ := registered(t)
 	w := h.do(t, upload("tok-"+testUser, testProject, "refs/heads/main", "bundle"))
@@ -177,8 +167,6 @@ func TestACloudTakesNoUpload(t *testing.T) {
 	require.NotContains(t, w.Body.String(), "uploads")
 }
 
-// A UNIVERSE TAKES A DEVELOPER'S BUILD, as a commit of the project's
-// configuration repository, queued the way a push is.
 func TestAUniverseTakesAnUploadAsACommitOfTheConfiguration(t *testing.T) {
 	held := &uploads{}
 	h, l := registered(t, WithUploads(held), WithCloudFqdn("tau.example"))
@@ -222,7 +210,6 @@ func TestAUniverseTakesAnUploadAsACommitOfTheConfiguration(t *testing.T) {
 	require.Len(t, h.backend.enqueues(), 2)
 }
 
-// AN UPLOAD FOR A PROJECT THE REGISTER CANNOT READ is the register's answer.
 func TestAnUploadForAProjectThatCannotBeRead(t *testing.T) {
 	h := newHarness(t, Config{}, WithLinker(unreadable{}), WithUploads(&uploads{}))
 	h.projects.role = asBuilder
@@ -270,7 +257,6 @@ func (p published) Compiled(_ context.Context, project, environment string) ([]b
 	return []byte(got), nil
 }
 
-// WHAT A DEPLOYMENT RUNS is read back by a viewer, for `tau build --published`.
 func TestAViewerReadsWhatADeploymentRuns(t *testing.T) {
 	h := newHarness(t, Config{}, WithPublished(published{testProject + "/prod": `{"object":{}}`}))
 	h.projects.role = func(project, _ string) (register.Role, error) { return asBuilder(project, "someone") }

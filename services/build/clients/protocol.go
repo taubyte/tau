@@ -10,8 +10,7 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 )
 
-// AuthProtocol is "/tau/auth/v2", derived from auth's schema exactly the way
-// auth itself derives it (service-conventions.md §2d) rather than typed here.
+// AuthProtocol is "/tau/auth/v2", derived from auth's schema.
 var AuthProtocol = rpc.Protocol(authv2connect.IdentityServiceName)
 
 // requireProtocol refuses a pool built for another service. Nothing else would

@@ -13,15 +13,9 @@ import (
 	"github.com/taubyte/tau/services/build"
 )
 
-// BuildClient is the frontend's whole view of the backend: build.proto's five
-// RPCs, over build.Protocol, through the pool's one-peer-at-a-time loop.
-//
-// EVERY ONE OF THEM CAN COME BACK Unavailable AND THAT IS NOT AN ERROR YET.
-// The backend answers Unavailable on a raft follower (its leader.go makes that
-// one rule for reads and writes alike), and Pool.Do walks to the next peer on
-// exactly that code — so a cloud whose leader is the third peer the resolver
-// names costs two extra round trips and no special handling here. It is only
-// after every peer has said it that ErrNoBackend comes back.
+// BuildClient is the frontend's view of the backend: build.proto's five RPCs
+// through the pool. A follower answers Unavailable and Pool.Do walks to the next
+// peer; only when every peer says so does ErrNoBackend come back.
 type BuildClient struct {
 	pool *Pool
 }
@@ -34,14 +28,8 @@ func Builds(p *Pool) (*BuildClient, error) {
 	return &BuildClient{pool: p}, nil
 }
 
-// Enqueue records a verified push and returns the job id it became.
-//
-// The three arguments are the whole of what crosses this boundary
-// (build.proto's PushEvent), and the frontend has already established that the
-// caller may cause a job for this repository before calling. The id comes back
-// because an operator tracing a delivery needs to know which job it became;
-// it must not reach the webhook's response body, and webhook.go does not put
-// it there.
+// Enqueue records a verified push and returns its job id, for operators; webhook.go
+// keeps it out of the response body.
 func (c *BuildClient) Enqueue(ctx context.Context, repositoryKey, ref, commitSHA string) (string, error) {
 	var id string
 	err := c.pool.Do(ctx, func(client *rpc.Client) error {
@@ -84,17 +72,9 @@ func (c *BuildClient) Get(ctx context.Context, jobID string) (*buildv2.Job, erro
 	return job, nil
 }
 
-// List hands each of a project's job ids to emit as it arrives.
-//
-// A CONSUMED STREAM CANNOT BE RETRIED, and that is the one thing this method
-// has to get right. Pool.Do's contract is that Unavailable means "ask the next
-// peer" — correct for a unary call, and wrong the moment an id has already
-// been handed onwards, because the next peer would start its listing from the
-// beginning and the caller would see the first ids twice. So once anything has
-// been emitted, a failure is re-wrapped as a plain error: Pool.Do returns
-// every code but Unavailable immediately, so the plain error stops the walk.
-// A stream that broke before its first id is still safe to retry and is left
-// as it came.
+// List hands each of a project's job ids to emit. A consumed stream cannot be
+// retried on another peer without repeating ids, so once anything was emitted a
+// failure loses its Unavailable code and stops the walk.
 func (c *BuildClient) List(ctx context.Context, projectID string, emit func(jobID string) error) error {
 	if emit == nil {
 		return connect.NewError(connect.CodeInternal, errors.New("build: list needs somewhere to put the ids"))
@@ -122,16 +102,8 @@ func (c *BuildClient) List(ctx context.Context, projectID string, emit func(jobI
 	})
 }
 
-// resumable keeps err's connect code while nothing has been handed onwards,
-// and strips it once something has.
-//
-// THE CAUSE IS FOLDED IN WITH %v AND NOT %w, and that is the whole mechanism
-// rather than a slip: %w leaves connect.CodeOf finding the Unavailable
-// underneath, which is precisely the code Pool.Do walks to the next peer on, so
-// a wrapped error would still be retried and the caller would still see the
-// first ids twice. Breaking the chain IS the statement — once an id has been
-// delivered this is no longer a routable failure, and nothing downstream should
-// be able to conclude that it is.
+// resumable keeps err's connect code while nothing was handed onwards, and strips
+// it once something was. %v, not %w: a wrapped Unavailable would still be retried.
 func (c *BuildClient) resumable(sent int, err error) error {
 	if err == nil || sent == 0 {
 		return err
@@ -159,28 +131,11 @@ func (c *BuildClient) Retry(ctx context.Context, jobID string) error {
 	})
 }
 
-// Follow streams one run's output to emit — the run `attempt` names, from
-// `from` to the end of it — and returns the offset it reached.
-//
-// THE OFFSET IS WHAT MAKES A RETRY SAFE, and it is the whole difference from
-// List above. List cannot be retried once it has handed an id onwards, because
-// the next peer would start again from the beginning and the caller would see
-// the same ids twice — so it strips the Unavailable code to stop the walk. Here
-// the request carries the run and where in it the caller got to, so a walk to
-// the next peer RESUMES that run rather than repeating it or reading another
-// run's log from the same offset. The code is left alone deliberately: only the
-// node writing the log can answer, every other one says Unavailable, and
-// walking past them is exactly how the writer is found.
-//
-// SO A WALK THAT FINDS NO WRITER ENDS Unavailable, and that is a log still to
-// come — the job is queued, or claimed and not writing yet — which the caller
-// may ask for again. A run that has ended stops the walk at the leader with
-// FailedPrecondition instead, since no node will write its log again: what it
-// logged is what its record files under its attempt, if anything.
-//
-// An emit that fails is the CALLER's failure — a hung-up HTTP client, most
-// likely — and is never a routing problem, so it stops the walk with its own
-// error.
+// Follow streams one run's output from `from` to its end and returns the offset
+// reached. The request carries the run and offset, so walking to the next peer
+// resumes rather than repeats; only the writer answers, others say Unavailable. A
+// walk ending Unavailable is a log still to come; an ended run stops at the leader
+// with FailedPrecondition. A failing emit is the caller's and stops the walk.
 func (c *BuildClient) Follow(ctx context.Context, jobID string, attempt int32, from int64, emit func(data []byte, next int64) error) (int64, error) {
 	return c.read(ctx, jobID, attempt, from, false, emit)
 }
@@ -223,14 +178,9 @@ func (c *BuildClient) read(ctx context.Context, jobID string, attempt int32, fro
 	return offset, err
 }
 
-// Artifact is the content id of what one resource of one deployment currently
-// runs.
-//
-// IT IS THE READ A WORKER MAKES, and the only one in this client that is about
-// a project rather than a job. A resource nothing has built comes back as a
-// connect.CodeNotFound error, unchanged — the code is preserved rather than
-// flattened, because "nothing has built this yet" is a wait and "the cloud is
-// unreachable" is a retry, and they are the same string.
+// Artifact is the cid of what one resource of one deployment runs, the read a
+// worker makes. NotFound is preserved: "nothing built yet" waits, "unreachable"
+// retries.
 func (c *BuildClient) Artifact(ctx context.Context, project, environment, resource string) (string, error) {
 	var cid string
 	err := c.pool.Do(ctx, func(client *rpc.Client) error {

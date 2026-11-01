@@ -21,11 +21,8 @@ import (
 	"github.com/taubyte/tau/services/build/artifact"
 )
 
-// hostBackend is a core.Backend that runs the container's command as a host
-// process, with its volume's source as the working directory. It is how Make's
-// own part of a build — what it asks the runtime for, and what it does with the
-// answer — is exercised without a daemon; the docker_integration tests are what
-// prove a real runtime agrees.
+// hostBackend is a core.Backend running the container's command as a host process
+// in its volume's source, exercising Make without a daemon.
 type hostBackend struct {
 	held      bool
 	pullErr   error
@@ -180,8 +177,6 @@ func TestMakeRunsTheBuildConfined(t *testing.T) {
 	require.True(t, backend.removed)
 }
 
-// A JS FUNCTION'S BUILD HANDS BACK AN ARCHIVE: the author's commands write a
-// bundle, and what Make returns is that bundle packed for the js tier.
 func TestMakePacksAJSFunctionsBundle(t *testing.T) {
 	body, _, err := runBuild(t, &hostBackend{}, artifact.Spec{
 		Image:    "node:22",
@@ -334,9 +329,6 @@ func TestMakeFailsWhenTheContainerCannotBeCreated(t *testing.T) {
 	require.ErrorContains(t, err, "no egress firewall")
 }
 
-// A MONOREPO RESOURCE REACHES ITS SIBLINGS. The whole checkout is mounted and
-// the commands run in the resource's own directory, so a `../` dependency is
-// there, and the output is read relative to that directory.
 func TestMakeRunsInTheResourcesDirectoryOfTheWholeCheckout(t *testing.T) {
 	backend := &hostBackend{}
 	dir := t.TempDir()
@@ -357,8 +349,6 @@ func TestMakeRunsInTheResourcesDirectoryOfTheWholeCheckout(t *testing.T) {
 	require.Equal(t, []core.VolumeMount{{Source: dir, Destination: "/src"}}, backend.config.Volumes)
 }
 
-// A PATH THAT CLIMBS OUT RUNS AT THE CHECKOUT ROOT, which is joinWithin's rule
-// for a path carried into the container.
 func TestMakeKeepsAClimbingPathInsideTheCheckout(t *testing.T) {
 	backend := &hostBackend{}
 	_, _, err := runBuild(t, backend, artifact.Spec{
@@ -368,7 +358,6 @@ func TestMakeKeepsAClimbingPathInsideTheCheckout(t *testing.T) {
 	require.Equal(t, "/src", backend.config.WorkDir)
 }
 
-// A SECRET REACHES THE BUILD the way a variable does.
 func TestMakeHandsTheBuildItsSecrets(t *testing.T) {
 	backend := &hostBackend{}
 	body, _, err := runBuild(t, backend, artifact.Spec{
@@ -383,7 +372,6 @@ func TestMakeHandsTheBuildItsSecrets(t *testing.T) {
 	require.Equal(t, "hi-ghp_x", body)
 }
 
-// ON A DEVELOPER'S MACHINE the build reaches what the machine reaches.
 func TestMakeWithOpenEgressInstallsNoRestriction(t *testing.T) {
 	backend := &hostBackend{}
 	_, _, err := runBuild(t, backend, artifact.Spec{
@@ -393,8 +381,6 @@ func TestMakeWithOpenEgressInstallsNoRestriction(t *testing.T) {
 	require.False(t, backend.config.Network != nil && backend.config.Network.RestrictEgress)
 }
 
-// A TOOLCHAIN THE MACHINE ALREADY HOLDS is used when no registry has it: an
-// image built here, or a registry that is down.
 func TestMakeUsesAHeldImageWhenThePullFails(t *testing.T) {
 	body, _, err := runBuild(t, &hostBackend{held: true, pullErr: errors.New("not in any registry")}, artifact.Spec{
 		Image: "tau-local/toolchain:1", Dir: t.TempDir(), Commands: []string{"printf built > out"}, Output: "out",
@@ -403,9 +389,6 @@ func TestMakeUsesAHeldImageWhenThePullFails(t *testing.T) {
 	require.Equal(t, "built", body)
 }
 
-// THE DIGEST NAMES THE RECIPE: the same build is one name wherever it was
-// planned, a change to what runs is another, and a secret's value is no part
-// of it.
 func TestARecipesDigest(t *testing.T) {
 	base := artifact.Spec{
 		Image: "rust:1.90", Dir: "/one/machine", Path: "services/hello",

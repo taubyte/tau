@@ -21,19 +21,12 @@ import (
 	"github.com/taubyte/tau/pkg/raft"
 )
 
-// THE FLIPPABLE STORE SHIPS WITH THIS PACKAGE, and it is not a convenience.
-// raft.MockCluster's IsLeader() is hardcoded true, its Barrier does nothing and
-// its Batch always succeeds, so the ENTIRE leadership half of this service —
-// which is every RPC in it — is untestable with the tree's existing double.
-// Anyone assuming otherwise would have green tests over an untested failure
-// path. It is pkg/queue/fake_test.go's fake, which exists for exactly the
-// same reason.
+// fakeStore exists because raft.MockCluster's IsLeader is always true, its Barrier
+// a no-op and its Batch always succeeds, leaving the leadership half untestable.
 type fakeStore struct {
 	*raft.MockCluster
 
-	// barriers counts them because a barrier is a replicated log entry and the
-	// claim loop runs continuously, so "take one in every section" is a cost
-	// and not only a correctness argument. barrier_test.go spends it.
+	// barriers counts them: each is a replicated log entry (barrier_test.go).
 	barriers atomic.Int64
 
 	mu          sync.Mutex
@@ -312,13 +305,8 @@ func (f *fakeRunner) Run(ctx context.Context, w Work, out Output) error {
 	return run(ctx, w, out)
 }
 
-// fakeAssets is the byte store a build's output goes to — v2's storage service,
-// which does not exist yet (config.go's Assets says what a real one owes this
-// seam).
-//
-// IT IS CONTENT-ADDRESSED, like the thing it stands in for, because that is
-// what makes the assertions below about cids mean anything: the same bytes are
-// the same id, so a test names what it expects by naming the content.
+// fakeAssets is a content-addressed byte store, so a test names an expected cid by
+// its content.
 type fakeAssets struct {
 	mu     sync.Mutex
 	stored map[string][]byte
@@ -488,14 +476,9 @@ func newHarnessCfg(t testing.TB, adjust func(*Config), opts ...Option) *harness 
 	return newHarnessOverCfg(t, store, store, adjust, opts...)
 }
 
-// newHarnessOver builds the service over `over`, which may be a wrapper around
-// `store` rather than the store itself.
-//
-// THE QUEUE IS OPENED OVER WHATEVER New WAS GIVEN, so a wrapper installed by
-// assigning Service.store afterwards is under the service and NOT under the
-// queue — which is invisible until a test tries to get between a record read
-// and the queue write it decided, and then simply never fires. Passing it here
-// is the only way both sides are behind one hook.
+// newHarnessOver builds the service over `over`, which may wrap `store`. The queue
+// is opened over whatever New was given, so a wrapper must be passed here to sit
+// under both.
 func newHarnessOver(t testing.TB, over Store, store *fakeStore, opts ...Option) *harness {
 	return newHarnessOverCfg(t, over, store, nil, opts...)
 }
@@ -551,10 +534,8 @@ func (h *harness) mustRecord(t testing.TB, id string) jobRecord {
 	return rec
 }
 
-// finishNow is a terminal write the way a transition makes one: one section,
-// one read, and the write that read decided. A fixture cannot write it any
-// other way — finish is a method on the handle withJob hands its body, and
-// there is no handle anywhere else — so the fixture does what the code does.
+// finishNow writes a terminal record the way a transition does: one section, one
+// read, one write.
 func (h *harness) finishNow(t testing.TB, id string, status buildv2.JobStatus, reason string) error {
 	t.Helper()
 	return h.withJob(id, func(j *held) error {

@@ -33,20 +33,12 @@ func TestAllowPeersNarrowsToTheListedOnes(t *testing.T) {
 	require.Error(t, AllowPeers().Allow(t.Context(), peer.ID("anyone"), ActRead, "x"))
 }
 
-// A caller identity comes from the stream, so a context that did not arrive
-// over one of p2p/rpc's listeners has none — and this service refuses rather
-// than guessing.
 func TestACallerWithNoStreamIsUnauthenticated(t *testing.T) {
 	_, err := caller(context.Background())
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 	require.ErrorIs(t, err, rpc.ErrNoRemotePeer)
 }
 
-// THE TRUST BOUNDARY, AS A TEST. Mount this service's own mux on a plain HTTP
-// listener — which is what a frontend growing "just one route" onto the queue
-// would be — and every RPC answers Unauthenticated, because rpc.RemotePeer
-// finds no libp2p stream under the request. The handlers are structurally
-// unmountable on an ingress, which is the one mistake the whole split is about.
 func TestTheseHandlersCannotBeServedOnAnHTTPIngress(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)

@@ -37,8 +37,6 @@ func TestTranslateIsTheWholeCodeTable(t *testing.T) {
 	require.Equal(t, http.StatusBadGateway, status)
 }
 
-// services/build/clients wraps the last peer's error with %w, so the code
-// underneath is still found — an ErrNoBackend is a 503 and not a 502.
 func TestAWrappedConnectCodeIsStillFound(t *testing.T) {
 	noBackend := errors.New("build: no peer answered")
 	wrapped := fmt.Errorf("%w on %s: %w", noBackend, "/tau/build/v2",
@@ -50,8 +48,6 @@ func TestAWrappedConnectCodeIsStillFound(t *testing.T) {
 	require.ErrorIs(t, wrapped, noBackend)
 }
 
-// A route that already concluded "not found" is not overridden by whatever code
-// the call underneath happened to carry.
 func TestADecidedAnswerWinsOverATranslatedOne(t *testing.T) {
 	w := httptest.NewRecorder()
 	respond(w, fmt.Errorf("%w: %w", errDenied, connect.NewError(connect.CodeInternal, errors.New("boom"))))
@@ -70,7 +66,6 @@ func TestNoAnswerEchoesTheCallersInput(t *testing.T) {
 	require.Equal(t, "application/json", w.Header().Get("Content-Type"))
 }
 
-// A 202 is not a failure and must not carry an "error" body.
 func TestAnIgnoredDeliveryIsAcceptedAndNotAnError(t *testing.T) {
 	w := httptest.NewRecorder()
 	respond(w, ignored("ref is not built"))

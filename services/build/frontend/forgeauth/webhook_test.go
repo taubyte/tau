@@ -19,10 +19,8 @@ import (
 	"github.com/taubyte/tau/services/build/frontend"
 )
 
-// THE WHOLE ROUTE, WITH REAL SIGNATURES. The frontend's own tests fake what a
-// delivery means; this one sends a genuinely signed delivery from each forge
-// shape — each under its own scheme — through the real handler, and asserts
-// what reaches the backend. It is the test that says the route is not GitHub's.
+// The whole route with real signatures from each forge shape, through the real
+// handler.
 
 const commit = "1111111111111111111111111111111111111111"
 
@@ -149,8 +147,6 @@ func TestEveryForgesDeliveriesReachTheSameRoute(t *testing.T) {
 	}
 }
 
-// A HOOK THIS CLOUD CANNOT CHECK is not a delivery that failed: the forge was
-// never asked, and saying 403 would blame the sender for the cloud's config.
 func TestAHookThisCloudCannotCheckIsNotAnUnverifiedDelivery(t *testing.T) {
 	reg, err := fake.New(fake.GitHubLike).Registry(forge.Policy{})
 	require.NoError(t, err)
@@ -171,8 +167,6 @@ func TestAHookThisCloudCannotCheckIsNotAnUnverifiedDelivery(t *testing.T) {
 	require.ErrorContains(t, err, "no repositories")
 }
 
-// A GENUINE DELIVERY NAMING NO USABLE PUSH is the forge's malformed payload,
-// not an attack and not the cloud's config.
 func TestAGenuineButUnreadableDeliveryIsMalformed(t *testing.T) {
 	f := fake.New(fake.GitHubLike)
 	reg, err := f.Registry(forge.Policy{})

@@ -12,9 +12,7 @@ import (
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
-// A caller that hangs up mid-response is the ordinary case for a listing of a
-// project's whole job history, so the write failures are a path rather than an
-// edge.
+// A caller hanging up mid-listing is ordinary, so write failures are a path.
 
 // breakingWriter is an http.ResponseWriter whose Write fails from the nth call
 // on — a client that went away.
@@ -56,9 +54,6 @@ func TestAListStopsWhenTheCallerGoesAway(t *testing.T) {
 	}
 }
 
-// protojson refuses a string field that is not valid UTF-8, which is the one
-// way a Job this cloud stored can fail to encode. It is a 502 and not a partial
-// body.
 func TestAJobThatCannotBeEncodedIsNotHalfWritten(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.backend.get = func(id string) (*buildv2.Job, error) {

@@ -9,20 +9,12 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
 )
 
-// The protocol id belongs to the proto PACKAGE, not to either service block
-// in it, so both generated names have to derive the same string. If they ever
-// did not, one of the two would be mounted behind a listener nothing dials.
 func TestBothServiceBlocksDeriveOneProtocolID(t *testing.T) {
 	require.Equal(t, Protocol, rpc.Protocol(buildv2connect.QueueServiceName))
 	require.Equal(t, Protocol, rpc.Protocol(buildv2connect.JobServiceName))
 	require.EqualValues(t, "/tau/build/v2", Protocol)
 }
 
-// The frontend's empty protocol id is a claim about the trust boundary, not an
-// oversight: build.proto's header makes "this role hosts no RPC surface" the
-// thing a reader can check. A registry that required a protocol id per
-// descriptor would force one to be invented, and an invented id is a listener
-// somebody eventually mounts.
 func TestOnlyTheFrontendFacesTheInternetAndOnlyTheBackendHasAProtocol(t *testing.T) {
 	require.Equal(t, IngressPublic, Frontend.Ingress)
 	require.EqualValues(t, "", Frontend.Protocol, "the public role must have no protocol id")
@@ -35,16 +27,11 @@ func TestOnlyTheFrontendFacesTheInternetAndOnlyTheBackendHasAProtocol(t *testing
 	require.NotEmpty(t, Backend.Name)
 }
 
-// IngressNone is the zero value so that a descriptor nobody finished still
-// says "p2p only" rather than "public" — silence is safe.
 func TestSilenceIsPrivate(t *testing.T) {
 	var d Descriptor
 	require.Equal(t, IngressNone, d.Ingress)
 }
 
-// QueueDomain is the literal build.proto and service-conventions.md §4 both
-// fix. It is a key segment in pkg/queue's own layout, which escapes it, so
-// the "/" in it is not a path boundary anywhere.
 func TestQueueDomainIsTheLiteralTheProtoFixes(t *testing.T) {
 	require.Equal(t, "build/queue", QueueDomain)
 }

@@ -23,9 +23,6 @@ func enqueue(t *testing.T, h *harness, key, ref, commit string) (string, error) 
 	return h.enqueue(t.Context(), &buildv2.PushEvent{RepositoryKey: key, Ref: ref, CommitSha: commit})
 }
 
-// One Enqueue writes four things in a fixed order: the record, the project
-// index row and the open index row in ONE entry, then the queue item. A reader
-// never sees a job that is in one of the three and not the others.
 func TestEnqueueWritesTheRecordAndBothIndexesInOneEntry(t *testing.T) {
 	h := newHarness(t)
 
@@ -56,8 +53,6 @@ func TestEnqueueWritesTheRecordAndBothIndexesInOneEntry(t *testing.T) {
 	require.Equal(t, 0, claimed)
 }
 
-// IDEMPOTENCY IS THE JOB ID. There is no dedup index for the two to disagree
-// about, and a redelivered webhook is answered with the job it already made.
 func TestARedeliveredPushIsTheSameJob(t *testing.T) {
 	h := newHarness(t)
 
@@ -72,8 +67,6 @@ func TestARedeliveredPushIsTheSameJob(t *testing.T) {
 	require.Len(t, h.store.Keys(projectIndexPrefix("project-of-"+testRepo)), 1)
 }
 
-// A redelivery of a job somebody is running must not push it again, and one of
-// a finished job must not resurrect it.
 func TestARedeliveryOfAClaimedOrFinishedJobChangesNothing(t *testing.T) {
 	for _, status := range []buildv2.JobStatus{
 		buildv2.JobStatus_JobStatusClaimed,
@@ -103,9 +96,6 @@ func TestARedeliveryOfAClaimedOrFinishedJobChangesNothing(t *testing.T) {
 	}
 }
 
-// The one crash window this design has: a record written and a push that never
-// landed, because queue.Push does its own Batch and the two cannot be fused. A
-// redelivered webhook repairs it, and so does reconcile.
 func TestARedeliveryRepairsARecordWhosePushWasLost(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -126,8 +116,6 @@ func TestARedeliveryRepairsARecordWhosePushWasLost(t *testing.T) {
 	require.Equal(t, 1, ready, "an Open record with no item must be re-queued")
 }
 
-// Every argument here originates in an unauthenticated POST, so this is the
-// last place they are looked at before becoming a hash and three key segments.
 func TestEnqueueRefusesStrangerAuthoredNonsense(t *testing.T) {
 	h := newHarness(t)
 
@@ -152,8 +140,6 @@ func TestEnqueueRefusesStrangerAuthoredNonsense(t *testing.T) {
 	require.Empty(t, h.store.Keys(rootSegment+"/"), "nothing refused may have written a row")
 }
 
-// A follower answers "ask somebody else" to a write, which is the same code
-// clients.Pool.Do walks past for a peer that is down.
 func TestEnqueueOnAFollowerIsUnavailable(t *testing.T) {
 	h := newHarness(t)
 	h.store.stepDown()
@@ -171,12 +157,6 @@ func TestEnqueueOnALeaderThatCannotBarrierIsUnavailable(t *testing.T) {
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
 }
 
-// A push for a repository nobody registered is refused BEFORE anything is
-// queued — the admission check on stranger-authored input.
-// LEADERSHIP IS CHECKED INSIDE THE SECTION, not only at the door. A delivery
-// waits on jobLock while another transition holds it across a replicated entry,
-// and leadership can be lost in that wait — so the barrier and the refusal are
-// where the read is, which is the only place they say anything about the read.
 func TestASectionRefusesLeadershipItLostWhileItWaited(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -198,8 +178,6 @@ func TestAPushForAnUnregisteredRepositoryIsRefusedBeforeAnythingIsQueued(t *test
 	require.Empty(t, h.store.Keys(rootSegment+"/"))
 }
 
-// "This cloud does not know that repository" and "auth is unreachable" are the
-// same string and very different answers, so the code is preserved.
 func TestAnUnreachableAuthIsUnavailableRatherThanARefusal(t *testing.T) {
 	h := newHarness(t)
 	h.repos.fail(connect.NewError(connect.CodeUnavailable, errors.New("no peer answered")))
@@ -230,8 +208,6 @@ func TestARepositoryBelongingToNoProjectIsAFailedPrecondition(t *testing.T) {
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 }
 
-// Admission control, on input a stranger authored. v1 has no bound of either
-// kind, so a push loop is a queue nobody can drain.
 func TestAdmissionBoundsTheQueueAndTheRepository(t *testing.T) {
 	t.Run("queue depth", func(t *testing.T) {
 		h := newHarnessCfg(t, func(c *Config) { c.MaxQueueDepth = 1 })
@@ -270,9 +246,6 @@ func TestAStoreThatRefusesTheWriteIsUnavailable(t *testing.T) {
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
 }
 
-// The push is a separate entry from the record, so it can fail on its own — and
-// when it does the caller is told, rather than being handed an id for a job
-// nothing will run until reconcile notices.
 func TestAPushThatFailsAfterTheRecordIsReported(t *testing.T) {
 	h := newHarness(t)
 
@@ -296,15 +269,6 @@ func TestACorruptRecordIsInternalRatherThanASecondJob(t *testing.T) {
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
 }
 
-// A SET AND A DELETE ARE THE ONLY TWO SHAPES OF WRITE THIS PACKAGE MAKES, and
-// Store deliberately offers no single-key Set or Delete: a single-key write is a
-// way to write half a transition.
-//
-// WHAT THEY LOOK LIKE AT THE STORE IS backend/row's TEST, not this one — an
-// entry's rows have no expression outside that package and no accessor, so what
-// this can say is the half that is about THIS package: an entry reaches a store
-// through row.Entry.Apply, and every row in one was composed by a method that
-// built its own key.
 func TestTheOnlyWritesAreOneEntrysRows(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -327,7 +291,6 @@ func TestTheOnlyWritesAreOneEntrysRows(t *testing.T) {
 	}, keysIn(entries[1]), "and a cancel the record, the open row removed and the retention row")
 }
 
-// The repair path's push is its own entry too.
 func TestTheRepairPushCanFailOnItsOwn(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -343,12 +306,8 @@ func TestTheRepairPushCanFailOnItsOwn(t *testing.T) {
 	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id))
 }
 
-// gatedRepositories is auth with a hold on the one question this service asks
-// it. Project is a p2p round trip — the only place an Enqueue waits on somebody
-// else — so it is where the state an Enqueue read can go stale under it. The
-// FIRST call blocks in it; every later one answers normally, so the test can
-// drive a second delivery all the way through while the first is still in
-// flight.
+// gatedRepositories blocks the first Project call, the only place Enqueue waits on
+// another node, so a second delivery can run while the first is in flight.
 type gatedRepositories struct {
 	*fakeRepositories
 
@@ -373,19 +332,6 @@ func (g *gatedRepositories) Project(ctx context.Context, key string) (string, er
 	return g.fakeRepositories.Project(ctx, key)
 }
 
-// A REDELIVERY THAT OVERLAPS THE FIRST DELIVERY IS THE CASE THE IDEMPOTENCY
-// CLAIM HAS TO SURVIVE. GitHub redelivers a webhook whose response it did not
-// see, which is exactly the response that is still being computed — so the two
-// deliveries are CONCURRENT, not sequential, and every sequential test above
-// passes either way.
-//
-// The whole of Enqueue's idempotency is a read of the job table. Between that
-// read and the write it decides, there is a round trip to auth; a delivery that
-// reads an empty table before the round trip and writes after it writes what it
-// decided on a table that is no longer there. What that costs is not a wasted
-// entry: the record goes back to Open with its attempt counter at zero, and the
-// push mints a second queue item because the ack of the first run had removed
-// the queue's own record of the id — so one push is built twice.
 func TestARedeliveryThatOverlapsTheFirstDeliveryDoesNotBuildTwice(t *testing.T) {
 	gate := newGatedRepositories(testRepo)
 	h := newHarness(t, WithRepositories(gate))
@@ -427,10 +373,8 @@ func TestARedeliveryThatOverlapsTheFirstDeliveryDoesNotBuildTwice(t *testing.T) 
 	require.Len(t, h.runner.seen(), 1, "one push, one build")
 }
 
-// staleStore is a node that has just won an election: it holds entries that are
-// committed and NOT YET APPLIED, so what it reads locally lags until a barrier.
-// raft.MockCluster cannot lag — its Barrier does nothing — so the one thing a
-// barrier is for is invisible without this.
+// staleStore is a newly elected node holding committed, unapplied entries;
+// raft.MockCluster cannot lag.
 type staleStore struct {
 	*fakeStore
 
@@ -445,12 +389,8 @@ type staleStore struct {
 	behind      bool
 }
 
-// commitElsewhere is an entry another leader wrote and this node has accepted
-// and not yet applied. It takes a row.Entry rather than raft's ops so that the
-// entry a test stands in for is composed the way this package composes one —
-// which is also the only way to get at what is in one: an entry hands its rows
-// to a Batcher and to nothing else, so the collector below is how a test reads
-// them.
+// commitElsewhere is an entry another leader wrote, accepted and not yet applied
+// here.
 func (s *staleStore) commitElsewhere(t *testing.T, e row.Entry) {
 	t.Helper()
 	require.NoError(t, e.Apply(unapplied{s}, 0))
@@ -467,15 +407,9 @@ func (u unapplied) Batch(ops []raft.BatchOp, _ time.Duration) error {
 	return nil
 }
 
-// behindFrom is the same lag arranged so that it starts AFTER a caller has
-// taken its own barrier rather than before it: from the next LISTING of
-// prefix until the next barrier, key answers with applied — the value it had
-// at the prefix this node has reached — while the store itself has moved on.
-//
-// Writes are not behind. raft.BatchOp has no compare-and-swap, so a delete
-// decided on that read lands on the store as it IS, not as it was read: this
-// node reads the past and writes the present, which is the whole reason a
-// barrier is taken before a read and not after it.
+// behindFrom makes key answer `applied` from the next listing of prefix until the
+// next barrier. Writes are not behind: a delete decided on the stale read lands
+// on the present store.
 func (s *staleStore) behindFrom(prefix, key string, applied []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -520,12 +454,6 @@ func (s *staleStore) Barrier(timeout time.Duration) error {
 	return s.fakeStore.MockCluster.Batch(ops, timeout)
 }
 
-// A DELIVERY COMING BACK FROM AUTH MAY HAVE MISSED A TERM. Another node can
-// have taken leadership during the round trip, built the push, finished it and
-// handed leadership back; the entries that say so are committed here and not
-// applied, so a local read does not see them. That is why the write is decided
-// behind a barrier and not on what the delivery read on its way in — the same
-// argument pkg/queue makes before it hands out an item.
 func TestACreateDecidesOnWhatABarrierMakesVisible(t *testing.T) {
 	gate := newGatedRepositories(testRepo)
 	var store *staleStore
@@ -609,16 +537,6 @@ func (s *recordingStore) written() int {
 	return s.records
 }
 
-// The interleaving one field over: a second delivery reads the job table while
-// the first is BETWEEN its read and its write. Re-reading is not enough on its
-// own — both deliveries would read the same empty table and both would write —
-// so the read and the write it decides are one section, and the second delivery
-// is parked outside it.
-//
-// The hook holds the first delivery inside its entry and waits on a deadline
-// rather than on a signal from the second, because when this is correct the
-// second delivery is parked and has no signal to send. That is the whole point,
-// and it is pkg/queue/exclusive_test.go's shape for the same reason.
 func TestASecondDeliveryCannotDecideWhileTheFirstIsWriting(t *testing.T) {
 	var store *recordingStore
 	h := newHarness(t, func(o *options) error {
@@ -667,9 +585,6 @@ func TestASecondDeliveryCannotDecideWhileTheFirstIsWriting(t *testing.T) {
 	require.Zero(t, claimed)
 }
 
-// THE DECISION IS REMADE WHEN THE DELIVERY COMES BACK, so everything the state
-// of this node can have become while it was away is answered here rather than
-// written through.
 func TestWhatADeliveryFindsWhenItComesBackFromAuth(t *testing.T) {
 	// A leadership flap during the round trip. The Batch would refuse it
 	// anyway; refusing before it is what keeps the answer "ask somebody else"
@@ -732,8 +647,6 @@ func (c *confirmer) Confirm(_ context.Context, key, ref, commit string) error {
 	return c.err
 }
 
-// A PUSH IS QUEUED ONLY FOR WHAT THE REPOSITORY HOLDS, and a repository that
-// cannot be asked is a retry, not a refusal.
 func TestEnqueueConfirmsThePushAtTheRepository(t *testing.T) {
 	for _, tc := range []struct {
 		name string

@@ -9,14 +9,8 @@ import (
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
-// barrier_test.go SPENDS the barrier budget, because "every section takes its
-// own" is a cost as well as a correctness argument: a Barrier is a replicated
-// raft log entry, the claim loop runs on a ticker forever, and reconcile walks
-// every open job in the cloud.
-//
-// The numbers below are the whole of the argument for where the barriers are
-// and where they are not. They are asserted rather than printed so that a
-// change to the budget has to be a change to this file.
+// The barrier budget, asserted: a Barrier is a replicated raft log entry, the
+// claim loop runs forever, and reconcile walks every open job.
 
 // spent runs f and reports how many barriers it took.
 func spent(h *harness, f func()) int64 {
@@ -26,9 +20,7 @@ func spent(h *harness, f func()) int64 {
 }
 
 func TestWhatTheSectionsBarriersCost(t *testing.T) {
-	// AN IDLE CYCLE IS THE FLOOR, and this service already pays it once per
-	// ClaimInterval — a second by default — before any section of this
-	// package's own is entered. Everything below is measured against it.
+	// An idle cycle is the floor, paid once per ClaimInterval.
 	t.Run("an idle claim cycle", func(t *testing.T) {
 		h := newHarness(t)
 		n := spent(h, func() {
@@ -41,31 +33,10 @@ func TestWhatTheSectionsBarriersCost(t *testing.T) {
 			"the dead letter's claim, the sweep, and the work queue's claim — all pkg/queue's own")
 	})
 
-	// ONE JOB CLAIMED, BUILT AND SETTLED COSTS FOUR MORE: begin's lead(), and
-	// then settle's THREE — the ack's section, the ack itself, and the record's
-	// section.
-	//
-	// THE FIRST OF SETTLE'S TWO was what "every write carries the read that
-	// decided it" cost. The ack used to be both the section's barrier and its
-	// first write, taken before the read so that the record below it was read at
-	// an applied prefix — and a write taken before the read cannot carry one, so
-	// the ack took a bare section instead and a body that split the deciding
-	// read from the ack across two sections was allowed to destroy the item. The
-	// barrier is lead() now, like every other section's, and the ack is an
-	// ordinary write behind the read.
-	//
-	// AND THE SECOND IS WHAT GETTING THE ASSET STORE OUT OF jobLock COSTS. The
-	// ack and the record write cannot be one section any more, because the
-	// handoff of the log goes BETWEEN them: a section is jobLock, which is one
-	// lock over the whole job table, and a Put held inside one stalls every
-	// claim, every webhook's Enqueue and every Cancel on this node for as long
-	// as the store takes. Two sections means two reads, and the second read is
-	// decided on a prefix that may be minutes newer than the first — so it takes
-	// its own barrier, like every other section that writes a terminal record.
-	//
-	// PER BUILD — minutes of work — against a loop that spends three a second
-	// regardless. Every other number in this file is unchanged: the identity
-	// itself is atomics, and it replicates nothing.
+	// A claimed, built and settled job costs four more: begin's lead(), then settle's
+	// three (the ack's section, the ack, the record's section). Settle is two
+	// sections because the log handoff to the asset store sits between them, outside
+	// jobLock, and the second section reads a newer prefix so takes its own barrier.
 	t.Run("a cycle that claims, runs and settles a job", func(t *testing.T) {
 		h := newHarness(t)
 		id := h.push(t, testRef, testCommit)
@@ -94,12 +65,8 @@ func TestWhatTheSectionsBarriersCost(t *testing.T) {
 		require.Equal(t, buildv2.JobStatus_JobStatusFailed, h.status(t, id))
 	})
 
-	// AND THIS IS WHY mend'S BARRIER IS ON THE DELETE BRANCH. A reconcile pass
-	// over live jobs is one barrier for the whole walk, however many are open.
-	// Taken before mend's first read instead, it would be one replicated entry
-	// per open job per pass — the cost reconcile.go's age gate already exists to
-	// avoid, and at MaxQueueDepth an order of magnitude more than the claim
-	// loop's whole budget.
+	// Why mend's barrier is on the delete branch: a pass over live jobs is one barrier
+	// for the whole walk, not one per open job.
 	t.Run("a reconcile pass over open jobs", func(t *testing.T) {
 		h := newHarness(t)
 		const open = 16
@@ -137,12 +104,8 @@ func TestWhatTheSectionsBarriersCost(t *testing.T) {
 		require.Equal(t, int64(1+open), n, "one for the pass, and one per push it made")
 	})
 
-	// AND THIS IS WHAT THE DELETE BRANCH ACTUALLY COSTS: one per row that looks
-	// orphaned, paid where the decision is made rather than on every row of
-	// every pass. In steady state there are none of these, which is the whole
-	// difference between the two placements — this number is bounded by the
-	// repair work there is to do, and one-per-read is bounded by the size of the
-	// cloud.
+	// The delete branch costs one per orphan-looking row, bounded by the repair work
+	// rather than the size of the cloud.
 	t.Run("a reconcile pass over orphaned rows", func(t *testing.T) {
 		h := newHarness(t)
 		const orphans = 4

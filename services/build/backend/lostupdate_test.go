@@ -15,43 +15,20 @@ import (
 	"github.com/taubyte/tau/services/build/backend/row"
 )
 
-// lostupdate_test.go is one test per PAIR of transitions that can be in flight
-// at the same instant, because the defect it covers is in none of them on its
-// own: every write of a job record reads the record, decides, and writes, and
-// raft ORDERS two entries without noticing that the second was decided on a
-// read taken before the first.
-//
-// THE GATE IS ON THE READ, not on a Batch. The window this closes is "the read
-// and the write with nothing between them", so the only place a test can open
-// it reliably is the read itself — a hook on "the next entry" fires on whatever
-// queue write the transition happens to make first, which for the dead-letter
-// drain is its own claim and for a redelivered push is the record it did not
-// write. Gated there, those two reproduce nothing and would have shipped as
-// tests that pass either way.
-//
-// The hook then holds the gated transition for a bounded window rather than
-// waiting for a signal from the racing one, because when this is correct the
-// racing one is parked and has no signal to send. That is
-// TestASecondDeliveryCannotDecideWhileTheFirstIsWriting's shape, and
-// pkg/queue/exclusive_test.go's, for the same reason.
+// One test per pair of transitions that can be in flight at once: each reads the
+// record, decides, and writes, and raft orders entries without seeing that the
+// second decided on a stale read. The gate is on the read, which is where the
+// window opens, and holds the gated transition for a bounded window since a
+// correctly parked racer sends no signal.
 
 // window is how long a gate holds a transition after its read: long enough for
 // an unsynchronised sibling to read AND write, so that a lost update is
 // reproduced rather than merely made likely.
 const window = 100 * time.Millisecond
 
-// readGatedStore fires a hook when a key it is watching is read, after the read
-// has answered. Everything else is the harness's store.
-//
-// IT COUNTS READS, because WHICH read a hook fires on is the difference between
-// a test and a test that passes either way. A section that triages on a cheap
-// read and decides on a second one is only raced by a hook on the SECOND: armed
-// on the first, the racer it launches is caught by the re-read and the section
-// is never reached at all — which is how PAIR 4 below came to pass two thousand
-// runs against a mend with its jobLock section deleted.
-//
-// AND IT HOLDS SEVERAL ARMS AT ONCE, because a pass over several rows is where
-// two racers of different kinds meet one walk.
+// readGatedStore fires a hook after a watched key's read answers. It counts reads
+// because a section that triages on one read and decides on a second is only
+// raced at the second; it holds several arms for passes over several rows.
 type readGatedStore struct {
 	*fakeStore
 
@@ -77,10 +54,8 @@ func gated(t *testing.T, h *harness, key string) *readGatedStore {
 	return g
 }
 
-// gatedHarness builds the harness with the gate ALREADY UNDER THE QUEUE, which
-// gated() above cannot do: New opens the queue over the store it was handed, so
-// a wrapper installed afterwards sees the service's reads and none of the
-// queue's.
+// gatedHarness puts the gate under the queue too, since New opens the queue over
+// the store it was given.
 func gatedHarness(t *testing.T, opts ...Option) (*harness, *readGatedStore) {
 	t.Helper()
 	store := newStore()
@@ -198,13 +173,8 @@ func (s *readGatedStore) Get(key string) ([]byte, bool) {
 	return value, found
 }
 
-// requireCancelKept is the invariant the cancel pairs assert: A CANCEL THAT
-// ANSWERED THE CALLER IS THE RECORD'S LAST WORD. Anything else is a caller told
-// the build stopped while it ran to completion and published its anchor.
-//
-// A refusal is the one other honest answer — the job had already finished — and
-// is checked just as hard, so that "cancel returned an error" cannot be how a
-// broken version passes.
+// requireCancelKept asserts a cancel that answered the caller is the record's last
+// word; a refusal (the job had finished) is the only other honest answer.
 func requireCancelKept(t *testing.T, h *harness, id string, err error) {
 	t.Helper()
 	t.Logf("cancel=%v status=%s anchor=%q builds=%d",
@@ -224,15 +194,6 @@ func requireCancelKept(t *testing.T, h *harness, id string, err error) {
 		"and a cancelled build must not advance the ref anchor")
 }
 
-// PAIR 1 — cancel (an RPC goroutine) against run's claim (the loop's).
-//
-// The window is between run's re-read of the record and the entry that writes
-// it back as Claimed. Unserialized, a cancel landing in it wrote Cancelled,
-// could not withdraw an item a consumer holds, and found nothing to stop —
-// nothing was registered until invoke had started — and then run's entry,
-// decided on the read taken before all of that, put the record back to Claimed.
-// The build ran to completion, the job reported Success, and the ref anchor
-// advanced to the commit the caller cancelled.
 func TestACancelIsNotLostToTheClaimThatOverlapsIt(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -270,11 +231,6 @@ func TestACancelIsNotLostToTheClaimThatOverlapsIt(t *testing.T) {
 		"the cancel must stop the run it raced, not leave it to its own deadline")
 }
 
-// PAIR 2 — cancel against settle, the same loop goroutine one step later: the
-// build is over, the delivery is being acked, the terminal record is being
-// written. settle re-reads exactly so that a cancel is not overwritten, and the
-// re-read is as stale as any other the moment something writes between it and
-// the entry it decided.
 func TestACancelIsNotLostToTheSettleThatOverlapsIt(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -300,9 +256,6 @@ func TestACancelIsNotLostToTheSettleThatOverlapsIt(t *testing.T) {
 	requireCancelKept(t, h, id, cancelErr)
 }
 
-// PAIR 3 — cancel against the dead-letter drain, the loop's third writer of a
-// record. It marks an exhausted job Failed, and a cancel in the window is
-// overwritten by that.
 func TestACancelIsNotLostToTheDeadLetterDrainThatOverlapsIt(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -336,38 +289,6 @@ func exhaust(t *testing.T, h *harness) {
 	require.Equal(t, 1, dead, "the job must be in the dead letter or this test means nothing")
 }
 
-// PAIR 4 — a reopen against the reconcile pass that overlaps it.
-//
-// TWO ROWS IN ONE PASS, because mend has two guards and they stop two different
-// racers. With one row this was a DISJUNCTION — it passed with EITHER guard
-// present — and that is not a detail: it passed two thousand runs against a
-// mend whose jobLock section had been deleted, leaving the section pinned by an
-// AST table and nothing else. The gate fired on mend's FIRST read, which since
-// the exemption was split is the TRIAGE read that decides nothing, so the retry
-// it released was caught by the post-barrier re-read and the section was never
-// reached.
-//
-//   - THE ROW THE SECTION DEFENDS (raced). reconcile reads a record, finds it
-//     finished, and deletes the open-index row that says otherwise. A retry
-//     answering on an rpc goroutine in the window between THAT read — the
-//     second, the deciding one — and the delete reopens the job and writes that
-//     very row back; mend's entry then deletes it. This racer CONTENDS FOR
-//     jobLock, which is exactly what makes the section the thing that stops it.
-//
-//   - THE ROW THE RE-READ DEFENDS (ahead). The other racer cannot be raced,
-//     because it has ALREADY HAPPENED. reconcile takes one barrier, at the top,
-//     and lists behind it; the record is read per row, arbitrarily later, and a
-//     node that regains leadership mid-walk holds entries that are committed
-//     and not applied. The triage read sees a job as finished while the retry
-//     that reopened it is already ordered ahead of anything this pass will
-//     write — and raft.BatchOp has no compare-and-swap, so the delete lands on
-//     the row that retry wrote. The gate plants the reopen after the triage
-//     read has answered, which is what an unapplied entry looks like from
-//     inside mend. Nothing contends for anything, and no section can help.
-//
-// NOTHING REPAIRS EITHER. reconcile walks the open index, so a job missing from
-// it is a job reconcile will never look at again, and MaxOpenPerRepo stops
-// counting it.
 func TestAReopenIsNotLostToTheReconcileThatOverlapsIt(t *testing.T) {
 	h, gate := gatedHarness(t)
 
@@ -404,12 +325,8 @@ func TestAReopenIsNotLostToTheReconcileThatOverlapsIt(t *testing.T) {
 	<-planted
 	require.NoError(t, plantErr, "the entry this pass had not applied")
 
-	// A RACER THE GATE NEVER RELEASED IS NOT A PASSING TEST. It means mend no
-	// longer makes the read this was armed on — the triage and the deciding
-	// read collapsed back into one — and mend then walked both rows with
-	// nothing racing it at all. It is not waited out, because waiting out a
-	// hang is how a test reports "nothing happened" as success; the two rows
-	// below are what say what actually happened.
+	// A racer the gate never released is a failure: mend no longer makes the read this
+	// was armed on.
 	select {
 	case <-retried:
 		require.NoError(t, retryErr, "the caller was told its retry was accepted")
@@ -445,10 +362,6 @@ func finishedAndStillListed(t *testing.T, h *harness, commit string) string {
 	return id
 }
 
-// PAIR 5 — a redelivered webhook against cancel. Enqueue answers a push it
-// already has by re-pushing the item, and that decision is a read of the
-// record: a cancel that finishes the job and withdraws the item in the window
-// has it put straight back, for a job nobody will ever build.
 func TestAWithdrawnItemIsNotPutBackByTheDeliveryThatOverlapsIt(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -470,10 +383,6 @@ func TestAWithdrawnItemIsNotPutBackByTheDeliveryThatOverlapsIt(t *testing.T) {
 	require.Zero(t, ready+claimed, "a cancelled job must not be left with work in the queue")
 }
 
-// PAIR 6 — cancel against the push that finishes a job's creation. The job id
-// is derived from (repository, ref, commit), so it is guessable before Enqueue
-// has answered, and a Cancel naming it can arrive between the entry that writes
-// the record and the item that entry is meant to be claimed by.
 func TestANewJobIsNotLeftWithAnItemByTheCancelThatOverlapsItsCreation(t *testing.T) {
 	h := newHarness(t)
 	key, ok := parseRepositoryKey(testRepo)

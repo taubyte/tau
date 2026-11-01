@@ -18,23 +18,11 @@ import (
 	"github.com/taubyte/tau/services/build/backend"
 )
 
-// git.go is the Checkout a node actually runs: a real clone of a real
-// repository, at the commit the push named.
-//
-// THE COMMIT IS CHECKED OUT, NOT THE BRANCH. A branch moves. By the time a job
-// is claimed the branch may be two commits further on, and a deploy that read
-// whatever it pointed at then would publish something no push ever asked for
-// and record it under the sha of one that did.
+// git.go is the Checkout a node runs: a real clone at the pushed commit, never the
+// branch head.
 
-// Credentials is how a private repository is read.
-//
-// A DEPLOY KEY IS PER REPOSITORY, which is the only shape that lets one cloud
-// serve repositories belonging to people who do not know each other: a token
-// with account scope read across a whole account, and one leaked from a build
-// would be a key to every repository in it.
-//
-// nil means public repositories only, and a private one then fails at the
-// clone, named as unreadable, rather than silently building nothing.
+// Credentials is how a private repository is read: a per-repository deploy key,
+// never an account-scoped token. nil means public repositories only.
 type Credentials interface {
 	// DeployKey is the repository's private key, in PEM. An empty string with
 	// no error means this repository needs none.
@@ -45,14 +33,9 @@ type Credentials interface {
 type Clone struct {
 	credentials Credentials
 
-	// address turns a repository key into where to clone it from over a
-	// protocol, and as whom.
-	//
-	// THE PROTOCOL IS THE CREDENTIAL'S. A repository with a deploy key is read
-	// over ssh, because a deploy key is an ssh key; one without is read over
-	// https, anonymously, because what it can read is what is public. Checkout
-	// decides which, where the key is known; the address is the forge's answer
-	// to it, the ssh ACCOUNT included: see Forged.
+	// address turns a repository key into a clone address over a protocol. The
+	// protocol follows the credential: ssh with a deploy key, anonymous https
+	// without.
 	address func(repositoryKey string, over forge.Protocol) (forge.Address, error)
 
 	// hostKeys are the ssh host keys a forge host may answer with. A clone over
@@ -110,14 +93,9 @@ func HTTPS(repositoryKey string, over forge.Protocol) (forge.Address, error) {
 	return forge.Address{URL: "https://" + key.String() + ".git"}, nil
 }
 
-// Forged is the address the forge serving a key's host gives it, over the
-// protocol asked. SSH is what a deploy key needs, and the account it
-// authenticates as is the driver's to say — not a `git@` spelled here; HTTPS is
-// the forge's anonymous clone URL — not an ssh one rewritten here.
-//
-// ASKED ANONYMOUSLY, because an address is a host fact and not a permission:
-// the credential a clone uses is the repository's deploy key, handed to git,
-// never a caller's token.
+// Forged is the address the forge serving a key's host gives it: over ssh with the
+// driver's account, over https its anonymous clone URL. Asked anonymously; the
+// clone's credential is the deploy key.
 func Forged(forges *forge.Registry) func(repositoryKey string, over forge.Protocol) (forge.Address, error) {
 	return func(repositoryKey string, over forge.Protocol) (forge.Address, error) {
 		key, err := parse(repositoryKey)
@@ -175,11 +153,7 @@ func (c *Clone) Checkout(ctx context.Context, repositoryKey, branch, commit stri
 	return repo.Dir(), release, nil
 }
 
-// refused is a clone the host turned away for want of a credential. A forge
-// answers an anonymous read of a private repository either way: GitHub as
-// not-found, others as authentication required.
-// reach is how repositoryKey is fetched from: its address, and its deploy key
-// when one is set — the same for a clone and for a confirmation.
+// reach is how repositoryKey is fetched: its address, and its deploy key if set.
 func (c *Clone) reach(ctx context.Context, repositoryKey string) ([]git.Option, string, error) {
 	key, err := parse(repositoryKey)
 	if err != nil {
@@ -246,11 +220,8 @@ func refused(err error) bool {
 		errors.Is(err, transport.ErrRepositoryNotFound)
 }
 
-// checkoutCommit moves the worktree to one exact commit.
-//
-// A COMMIT THE CLONE DOES NOT HAVE IS AN ERROR AND NOT A FALLBACK. It means the
-// branch was force-pushed or rewritten between the webhook and the claim, and
-// building the branch head instead would deploy a commit nobody pushed.
+// checkoutCommit moves the worktree to one exact commit; a missing commit (force
+// push) is an error, never a fallback to the head.
 func checkoutCommit(repo *gogit.Repository, commit string) error {
 	if commit == "" {
 		return errors.New("deploy: the push names no commit")

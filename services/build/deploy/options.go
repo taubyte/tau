@@ -55,11 +55,8 @@ func WithCheckout(c Checkout) Option {
 	}
 }
 
-// WithRegister is where a deploy publishes.
-//
-// IT IS A FUNCTION AND NOT A VALUE, because which node answers is a routing
-// question: a register can go away between two builds, and one resolved at
-// construction would be the one this node dialed at boot forever.
+// WithRegister is where a deploy publishes, a function since a register can go
+// away between builds.
 func WithRegister(find func(context.Context) (Register, error)) Option {
 	return func(o *options) error {
 		if find == nil {

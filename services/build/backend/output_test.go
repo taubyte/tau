@@ -20,13 +20,6 @@ import (
 	"github.com/taubyte/tau/services/build/livelog"
 )
 
-// A BUILD IS WATCHABLE WHILE IT RUNS, and that is the thing v1 has no version
-// of: patrick can hand you a log only once the build is over and the whole of
-// it has reached IPFS.
-//
-// The fork is at an offset, so this is also the reconnecting client's path: the
-// reader below is at 0 because it joined at the start, and one that dropped
-// would come back at the offset it had.
 func TestARunningBuildsLogIsFollowedWhileItIsStillBeingWritten(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -71,17 +64,11 @@ func TestARunningBuildsLogIsFollowedWhileItIsStillBeingWritten(t *testing.T) {
 	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
 	require.Empty(t, logFiles(t, h))
 
-	// And it is not followable any more: what a reader wants now is the cid on
-	// the job, which is an address in the asset store rather than a file on
-	// whichever node happened to build it.
+	// And it is no longer followable: the cid on the job is the address now.
 	_, err = h.Follow(id, 1, 0)
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }
 
-// Follow is the seam a read route calls, so its refusals are the ones that
-// route would return. None of them is authorization: that is the frontend's, on
-// the caller's write access to the job's repository (output.go says why the
-// route is not here).
 func TestFollowRefusesWhatItCannotAnswer(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -117,9 +104,6 @@ func TestFollowRefusesWhatItCannotAnswer(t *testing.T) {
 	require.NoError(t, <-done)
 }
 
-// THE OUTPUT OF A BUILD THAT FAILED IS THE OUTPUT SOMEBODY WANTS. v1 publishes
-// its log from a `defer` at the end of the run, so a build that killed its
-// worker left a temp file nothing names and no cid to read it by.
 func TestAFailedBuildKeepsWhatItPrintedBeforeItFailed(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -137,8 +121,6 @@ func TestAFailedBuildKeepsWhatItPrintedBeforeItFailed(t *testing.T) {
 		"what it printed, then why it failed: the record carries no reason anybody can read")
 }
 
-// And a runner that PANICS is the same case one step further: the recovery
-// turns it into a failed build, and the output is already in hand.
 func TestAPanickingBuildKeepsWhatItPrinted(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -155,11 +137,6 @@ func TestAPanickingBuildKeepsWhatItPrinted(t *testing.T) {
 	require.Equal(t, "step 3 of 4\nerror: runner panicked: nil map write\n", h.assets.content(t, rec.Logs[stamp(1)]))
 }
 
-// A CANCELLED BUILD KEEPS ITS LOG AND KEEPS ITS STATUS. The status must not
-// move — a cancelled job must not be overwritten with the outcome of the run
-// that was cancelled — and the log is exactly what whoever cancelled it wants
-// to read. v1 carries this in a second RPC in the other direction (monkey hands
-// patrick the accumulated logs so patrick can write them beside the status).
 func TestACancelledBuildStillGetsItsLog(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -180,10 +157,6 @@ func TestACancelledBuildStillGetsItsLog(t *testing.T) {
 		"and the log of the run that was cancelled is on the record")
 }
 
-// AN ABANDONED RUN PUBLISHES NOTHING, for the same reason its record is not
-// written: the delivery is left for its claim to expire and another node builds
-// the job from the start. A log shipped here would be bytes in the asset store
-// that no job ever names, and nothing in this design deletes those.
 func TestAnAbandonedRunPublishesNothingAndLeavesNoFile(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -204,10 +177,6 @@ func TestAnAbandonedRunPublishesNothingAndLeavesNoFile(t *testing.T) {
 	require.Empty(t, logFiles(t, h), "and the file it wrote is not left behind either")
 }
 
-// A NODE WITH NO ASSET STORE STILL BUILDS. v2 has no storage service yet, so
-// this is the shape every node has today: the log is written, it can be
-// followed while the build runs, and then it goes — the job carries no cids
-// because there is nowhere for the bytes to be.
 func TestANodeWithNoAssetStoreBuildsAndKeepsNothing(t *testing.T) {
 	h := newHarness(t, withoutAssets())
 	id := h.push(t, testRef, testCommit)
@@ -230,9 +199,6 @@ func TestANodeWithNoAssetStoreBuildsAndKeepsNothing(t *testing.T) {
 	require.Empty(t, logFiles(t, h))
 }
 
-// A LOG THAT COULD NOT BE STORED DOES NOT FAIL THE BUILD. A compile that
-// succeeded did not stop succeeding because the asset store was unreachable;
-// what a reader sees is a job with no log, which is the truth.
 func TestAnAssetStoreThatRefusesTheLogLeavesTheJobWithoutOne(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -252,9 +218,6 @@ func TestAnAssetStoreThatRefusesTheLogLeavesTheJobWithoutOne(t *testing.T) {
 		"and what DID reach the store is still named by the record")
 }
 
-// THE PUBLISH IS BOUNDED, because what follows it is the ack and the ack is
-// this service's commit point. An asset store that hangs must cost the log,
-// never the job.
 func TestAPublishThatOutlastsItsDeadlineCostsTheLogAndNotTheJob(t *testing.T) {
 	h := newHarnessCfg(t, func(c *Config) {
 		c.PublishTimeout = 10 * time.Millisecond
@@ -275,10 +238,6 @@ func TestAPublishThatOutlastsItsDeadlineCostsTheLogAndNotTheJob(t *testing.T) {
 	require.Empty(t, rec.Logs)
 }
 
-// THE CAP IS ADMISSION CONTROL ON A STRANGER'S OUTPUT — the build script that
-// decides how much to print is in a repository this cloud was asked to build.
-// Past it the log says so and the build carries on: a verbose build is not a
-// failed one, and the runner is not told otherwise.
 func TestALogPastItsCapIsTruncatedAndTheBuildStillSucceeds(t *testing.T) {
 	h := newHarnessCfg(t, func(c *Config) {
 		c.MaxLogBytes = 16
@@ -305,9 +264,6 @@ func TestALogPastItsCapIsTruncatedAndTheBuildStillSucceeds(t *testing.T) {
 	require.Contains(t, stored, "truncated", "a truncated log that does not say so is a log that lies")
 }
 
-// A RUN THIS NODE CANNOT OPEN A LOG FOR IS A FAILED BUILD. Running an hour of
-// somebody's CI and then having nothing to show for it is worse than handing
-// the job to a node whose disk works.
 func TestARunThatCannotOpenALogIsAFailedBuild(t *testing.T) {
 	h := newHarnessCfg(t, func(c *Config) {
 		// A FILE where the directory should be: MkdirAll fails on it.
@@ -333,8 +289,6 @@ func TestARunThatCannotOpenALogIsAFailedBuild(t *testing.T) {
 	require.Zero(t, claimed, "and the delivery is settled rather than left to expire")
 }
 
-// An artifact needs a resource to be for and bytes to be, and both refusals are
-// the runner's own fault rather than something to store.
 func TestAnAssetNeedsAResourceAndContent(t *testing.T) {
 	h := newHarness(t)
 	h.push(t, testRef, testCommit)
@@ -348,9 +302,6 @@ func TestAnAssetNeedsAResourceAndContent(t *testing.T) {
 	require.Equal(t, 1, h.assets.count(), "only the log reached the store")
 }
 
-// An asset store that answers with no cid at all is this process's own fault to
-// report: a record naming the empty string is a job that says it has an
-// artifact nobody can fetch.
 func TestAnAssetStoreThatReturnsNoCidIsRefused(t *testing.T) {
 	h := newHarness(t)
 	h.push(t, testRef, testCommit)
@@ -366,8 +317,6 @@ func TestAnAssetStoreThatReturnsNoCidIsRefused(t *testing.T) {
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
 }
 
-// THE REGISTRY IS THE RUN'S, and it is empty the moment the run is over — on
-// every path, because the cleanup is deferred rather than written at each exit.
 func TestNothingIsLeftFollowableAfterARun(t *testing.T) {
 	h := newHarness(t)
 
@@ -395,10 +344,6 @@ func TestNothingIsLeftFollowableAfterARun(t *testing.T) {
 	}
 }
 
-// AND A SECOND RUN OF ONE JOB DOES NOT UNFOLLOW THE FIRST. The queue's
-// exclusion means there should not be one; if there ever is, the older run
-// ending must not take the newer run's log off the registry, which is what a
-// blind delete by key would do.
 func TestARunEndingOnlyForgetsItsOwnLog(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -421,8 +366,6 @@ func TestARunEndingOnlyForgetsItsOwnLog(t *testing.T) {
 	require.Empty(t, h.logs)
 }
 
-// The two runs of one job above also say why the file is named for the attempt
-// and not only for the job.
 func TestTwoAttemptsOfOneJobWriteDifferentFiles(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -438,9 +381,6 @@ func TestTwoAttemptsOfOneJobWriteDifferentFiles(t *testing.T) {
 	require.Len(t, logFiles(t, h), 2)
 }
 
-// discard and publish both end the log, and a run reaches both: the deferred
-// cleanup runs after the publish that already closed it. Neither may be a
-// second close of a file, a second delete from the registry, or a second read.
 func TestEndingARunTwiceIsTheSameEnding(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -459,10 +399,6 @@ func TestEndingARunTwiceIsTheSameEnding(t *testing.T) {
 	require.Empty(t, logFiles(t, h))
 }
 
-// A LOG WHOSE NAME IS GONE IS STILL THE LOG. This is what the log directory
-// being somewhere the OS sweeps costs, which is nothing: the run opened the
-// file once, and what it holds is the inode. A publish that had to open the
-// path again found nothing, stored nothing, and said nothing about it.
 func TestALogWhoseNameWentIsPublishedAnyway(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -480,8 +416,6 @@ func TestALogWhoseNameWentIsPublishedAnyway(t *testing.T) {
 	require.Equal(t, "one line\n", h.assets.content(t, p.logCID))
 }
 
-// AND A LOG THIS NODE REALLY CANNOT READ IS A FAILURE IT REPORTS, never an
-// empty map handed back as if there were nothing to say.
 func TestAPublishThatCannotReadItsLogSaysSo(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -501,17 +435,6 @@ func TestAPublishThatCannotReadItsLogSaysSo(t *testing.T) {
 	require.Zero(t, h.assets.count(), "and nothing half-read reaches the store")
 }
 
-// A LOG THAT LOST BYTES IS NOT PUBLISHED AS A COMPLETE ONE, and this is the
-// production end of livelog's read order: a failure a reader hits is asked
-// about BEFORE the close, because every read of a whole log is a read of a
-// closed one. Here the file gets shorter than the log says it is — somebody
-// outside this process rewrote it — which is the fault a reader stops on
-// instead of reporting whatever is at that offset now.
-//
-// WHAT MUST NOT HAPPEN IS THE SETTLE THIS DEFECT CAME FROM: a job carrying
-// Success and Logs: map[], with nothing anywhere saying that a build's output
-// was lost. A build whose log this node cannot read back is a failed build, and
-// it says which failure it was.
 func TestALogThatLostBytesFailsTheBuildRatherThanBeingStoredShort(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -532,13 +455,6 @@ func TestALogThatLostBytesFailsTheBuildRatherThanBeingStoredShort(t *testing.T) 
 	require.Zero(t, h.assets.objects(), "which the store did not take either")
 }
 
-// AND THE READER IS ASKED EVEN WHEN THE STORE SAID YES.
-//
-// Put returns ONE error for two faults — its own and the reader's — so a store
-// that swallowed a read error and answered with a cid has stored something that
-// is not this log, and the record naming it would be worse than a record with
-// no log at all: it reads as a complete build log for as long as anybody looks
-// at it.
 func TestAStoreThatSwallowedAReadErrorDoesNotGetToNameTheLog(t *testing.T) {
 	h := newHarness(t, WithAssets(&swallowingStore{}))
 	id := h.push(t, testRef, testCommit)
@@ -555,14 +471,6 @@ func TestAStoreThatSwallowedAReadErrorDoesNotGetToNameTheLog(t *testing.T) {
 	require.Empty(t, rec.Logs, "the cid it answered with names bytes that are not the log")
 }
 
-// AND A STORE THAT STOPPED READING DOES NOT GET TO NAME IT EITHER.
-//
-// A read that ENDED EARLY raises no error anywhere: the reader was never asked
-// for the rest, so it has nothing to report, and Put answers with the cid of
-// whatever it took. What that cid addresses is a PREFIX of the build's output —
-// and a job pointing at it says "here is the log", which is the same lie as
-// Success with an empty map, only harder to notice. So the publish counts what
-// left the file and compares it with what the log says it holds.
 func TestAStoreThatStoppedReadingDoesNotGetToNameTheLog(t *testing.T) {
 	h := newHarness(t, WithAssets(&shortStore{}))
 	id := h.push(t, testRef, testCommit)
@@ -604,9 +512,6 @@ func logFile(h *harness, w Work) string {
 	return filepath.Join(h.cfg.LogDir, seg(w.JobID)+"."+stamp(int64(w.Attempt))+".log")
 }
 
-// The writer's own refusal reaches the runner unchanged when it is not the cap:
-// a build writing to a log that is already closed is a bug in this package, not
-// a full log, and must not read as a successful write.
 func TestAWriteToAnEndedLogIsReportedToTheRunner(t *testing.T) {
 	h := newHarness(t)
 	out, err := h.output(Work{JobID: h.push(t, testRef, testCommit), Attempt: 1})
@@ -643,8 +548,6 @@ func readExactly(t *testing.T, r io.Reader, n int) string {
 	}
 }
 
-// A log directory this node can make and a log file it cannot create are two
-// different failures, and both are the same answer: the run does not start.
 func TestARunThatCannotCreateItsLogFileIsAFailedBuild(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -664,8 +567,6 @@ func TestARunThatCannotCreateItsLogFileIsAFailedBuild(t *testing.T) {
 	require.Contains(t, rec.Reason, id, "the failure names the job it belongs to")
 }
 
-// An asset store that refuses an artifact tells the runner, which is the one
-// party that can decide whether a build without it is a build at all.
 func TestAnAssetStoreThatRefusesAnArtifactTellsTheRunner(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -682,9 +583,6 @@ func TestAnAssetStoreThatRefusesAnArtifactTellsTheRunner(t *testing.T) {
 	require.Empty(t, rec.Assets)
 }
 
-// A log whose file went while the build was still running is not followable,
-// and that is not the caller's fault: it is an Unavailable rather than the
-// InvalidArgument a bad offset gets.
 func TestFollowReportsALogItCannotOpen(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -698,9 +596,6 @@ func TestFollowReportsALogItCannotOpen(t *testing.T) {
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
 }
 
-// A run whose record disappeared underneath it settles the delivery and writes
-// nothing: there is no record to put an outcome on, and the log it produced has
-// nothing to be named by.
 func TestSettleWritesNothingForARecordThatIsGone(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -720,17 +615,12 @@ func TestSettleWritesNothingForARecordThatIsGone(t *testing.T) {
 	require.Zero(t, ready)
 	require.Zero(t, claimed, "the delivery is still acknowledged")
 
-	// AND IT SHIPS NOTHING EITHER, which is why the publish is asked for only
-	// after a section has found a record for the cid to reach. The store keeps
-	// what it is handed and nothing in this service unreferences an asset, so a
-	// log sent on this path is a permanent object no job will ever name.
+	// It ships nothing either: the publish is asked for only after a section found a
+	// record for the cid.
 	require.Zero(t, h.assets.count(),
 		"there is no record to name a log, so the log does not go")
 }
 
-// A RUN THAT PRODUCED NOTHING WRITES NOTHING ONTO A TERMINAL RECORD. A
-// replicated entry that changes no field is a cost with no fact in it, and this
-// is the path every cancelled job takes on a node with no asset store.
 func TestACancelledJobWithNoOutputCostsNoEntry(t *testing.T) {
 	h := newHarness(t, withoutAssets())
 	id := h.push(t, testRef, testCommit)
@@ -750,10 +640,6 @@ func TestACancelledJobWithNoOutputCostsNoEntry(t *testing.T) {
 		"the ack is the one write: nothing produced is nothing to record")
 }
 
-// A LOG IS FILED UNDER THE ATTEMPT THAT WROTE IT, not under whatever the record
-// says when the build is over. The record is re-read after the run, outside the
-// lock the run did not hold, and the two numbers can differ — settle's own doc
-// lists three things that can have written it in the meantime.
 func TestALogIsFiledUnderTheRunsAttemptAndNotTheRecordsAtSettleTime(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -779,11 +665,6 @@ func TestALogIsFiledUnderTheRunsAttemptAndNotTheRecordsAtSettleTime(t *testing.T
 		h.mustRecord(t, id).Logs)
 }
 
-// AND RECORDING IT ON A TERMINAL JOB MOVES NOTHING ELSE. The status, the reason
-// and the instant the job finished are all left where the cancel put them —
-// which matters beyond tidiness, because the retention row is keyed by that
-// instant, and a record whose timestamp moved is a job listed as retained at a
-// second nothing wrote.
 func TestRecordingALogOnACancelledJobMovesNothingElse(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -812,18 +693,6 @@ func TestRecordingALogOnACancelledJobMovesNothingElse(t *testing.T) {
 	require.True(t, retained, "the retention row still names the instant the record carries")
 }
 
-// A LOG PATH IS PUBLIC, SO THE FILE AT IT MUST BE ONE THIS NODE MADE. Both
-// halves of the name are derived — seg(jobID) is a hash of the repository, the
-// ref and the commit, and jobid.go says out loud that being deterministic makes
-// it guessable — and the open truncates. So a symbolic link planted at that
-// path before the build starts is a request to truncate whatever it points at
-// with this node's privileges, and the run then unlinks the link, which takes
-// the evidence with it.
-//
-// MEASURED ON THE TREE BEFORE THE FIX: the victim below came back holding the
-// build's output and the job read Success. The only precondition was somebody
-// creating the log directory first, which os.MkdirAll accepted whoever owned it
-// and whatever its mode.
 func TestALogIsNeverOpenedThroughASymlinkPlantedAtItsPath(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -855,10 +724,6 @@ func TestALogIsNeverOpenedThroughASymlinkPlantedAtItsPath(t *testing.T) {
 	require.Contains(t, rec.Reason, id)
 }
 
-// THE OTHER HALF IS THE DIRECTORY, and it is the half that decides whether the
-// name above can be created at all. A directory this service owns at 0700 is
-// one nobody else can plant anything in, and it is what makes every path-shaped
-// step in a run safe for the ordinary reason.
 func TestTheLogDirectoryTheServiceUsesIsOneNobodyElseCanWriteIn(t *testing.T) {
 	shared := filepath.Join(t.TempDir(), "tau-build-logs")
 	require.NoError(t, os.Mkdir(shared, 0o777))
@@ -876,10 +741,6 @@ func TestTheLogDirectoryTheServiceUsesIsOneNobodyElseCanWriteIn(t *testing.T) {
 		"a directory an operator pointed at something shared is tightened before a run writes in it")
 }
 
-// AND THE DEFAULT IS NOT A NAME EVERY ACCOUNT ON THE BOX COMPETES FOR. It was
-// one flat "tau-build-logs" under the OS temp dir, which on linux is a single
-// /tmp: whoever creates it owns it, and every other account's node is then a
-// node that cannot own its own log directory.
 func TestTheDefaultLogDirectoryIsThisAccountsAlone(t *testing.T) {
 	cfg, err := Config{}.withDefaults()
 	require.NoError(t, err)
@@ -888,23 +749,6 @@ func TestTheDefaultLogDirectoryIsThisAccountsAlone(t *testing.T) {
 	require.NotEqual(t, filepath.Join(os.TempDir(), "tau-build-logs"), cfg.LogDir)
 }
 
-// A SECTION IS jobLock, AND jobLock IS ONE LOCK OVER THE WHOLE JOB TABLE. Every
-// transition of every job on this node takes it — a claim, a settle, a Cancel,
-// a Retry, an Enqueue's resume, the dead-letter drain, every row of a reconcile
-// pass — so a round trip to the asset store made while it is held is one slow
-// storage node stalling WEBHOOK INGESTION and every user-facing cancel and
-// retry, for up to PublishTimeout per settled build. section.go, output.go and
-// population_test.go all say a Put must not be inside one; this is the
-// measurement that says the code agrees.
-//
-// MEASURED BEFORE THE PUBLISH MOVED OUT: the enqueue below was still blocked
-// after 300ms with the store stalled, and completed 0.58ms after it was
-// released.
-//
-// THE PROBE IS AN UNRELATED REPOSITORY on purpose. Two transitions of two
-// different jobs already serialize against each other by design (section.go
-// argues why one table-wide mutex is the right price); what must not happen is
-// that they serialize behind a NETWORK CALL.
 func TestASlowAssetStoreDoesNotStallEveryOtherJobOnTheNode(t *testing.T) {
 	const elsewhere = "github.com/acme/unrelated"
 
@@ -947,24 +791,6 @@ func TestASlowAssetStoreDoesNotStallEveryOtherJobOnTheNode(t *testing.T) {
 	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
 }
 
-// THE ONE THING A LOG'S TRIP TO THE STORE IS NOT IS ATOMIC WITH THE RECORD,
-// and this is that measured rather than argued. output.go says a cid reaches a
-// job only for a log that reached the store; the CONVERSE — that a log reaches
-// the store only if a cid for it reaches a job — was written down as a
-// biconditional for one round and is false, and a claim that is false is worse
-// than the weaker one that holds.
-//
-// THE STORE HERE TRIPS A LEADERSHIP FLAP THE INSTANT IT HAS TAKEN THE BYTES,
-// which is the one interleaving that produces it: everything before the object
-// is kept is refused by the ack, and everything after it is a record write this
-// node can no longer make. What is left is an object in the asset store that no
-// record names — and nothing in this service unreferences an asset (config.go)
-// — plus a job that reads Claimed with no queue item, which reconcile pushes
-// back once it is older than its cutoff so that the rebuild writes a SECOND log.
-//
-// doc.go names it under what is not covered at all, with its width and its
-// precondition. This test is what makes that entry a fact: a round that closes
-// the window has to delete this.
 func TestALogCanReachTheStoreAndNoCidReachAnyJob(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -1014,18 +840,6 @@ func TestALogCanReachTheStoreAndNoCidReachAnyJob(t *testing.T) {
 	require.Equal(t, "attempt 1 printed this\n", h.assets.content(t, orphaned))
 }
 
-// A CANCEL AND A RETRY CAN LAND WHILE THE LOG IS GOING TO THE STORE, and that
-// is the window the second section exists to read again. The first section
-// found a record this run's outcome was about, so the bytes went; by the time
-// the cid comes back the record is a NEW attempt that this run knows nothing
-// about, and this run's outcome must not be written over it.
-//
-// WHAT MUST NOT HAPPEN IS THE LOG BEING DROPPED. The store has kept it and
-// nothing in this service unreferences an asset, so a branch that returned
-// without recording the cid would leave a permanent object no job names — the
-// orphan the ack in front of the publish exists to prevent, made by the branch
-// after it instead. It is filed under the RUN'S attempt, beside whatever the
-// rebuild writes.
 func TestAJobReopenedWhileItsLogWasStoredKeepsThatLog(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -1062,12 +876,6 @@ func TestAJobReopenedWhileItsLogWasStoredKeepsThatLog(t *testing.T) {
 	require.Equal(t, 1, ready, "the retry's item is there, and the requeue deduplicated against it")
 }
 
-// THE RECORD CAN GO WHILE THE LOG IS GOING TO THE STORE, and the second section
-// reads again for that as much as for the three states settle lists. There is
-// nothing left to name the log with, so nothing is written — and the object the
-// store already took is one nothing will ever name, which is the same window
-// doc.go records under what is not covered at all, reached by a different
-// precondition.
 func TestARecordThatWentWhileItsLogWasStoredIsNotWrittenBack(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -1095,8 +903,6 @@ func TestARecordThatWentWhileItsLogWasStoredIsNotWrittenBack(t *testing.T) {
 	require.Equal(t, 1, h.assets.objects(), "and the log the store already took stays with it")
 }
 
-// AND THE REOPENED JOB'S LOG IS A WRITE LIKE ANY OTHER: a store that refuses it
-// is reported, rather than swallowed on the way to the push.
 func TestAReopenedJobsLogReportsAStoreThatRefusedIt(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)

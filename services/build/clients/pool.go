@@ -16,23 +16,17 @@ import (
 )
 
 var (
-	// ErrNoBackend wraps the last failure when every peer a Resolver named was
-	// unavailable. It is what a caller retries on, and it is deliberately the
-	// same answer whether the swarm holds no such peer at all or holds several
-	// that all said "ask somebody else".
+	// ErrNoBackend wraps the last failure when every named peer was unavailable,
+	// whether none exist or all deferred.
 	ErrNoBackend = errors.New("build: no peer answered")
 
 	// ErrClosed is returned by Do after Close.
 	ErrClosed = errors.New("build: client pool is closed")
 )
 
-// Pool holds at most max rpc.Clients for one protocol and hands them out in
-// the order a discovery.Resolver names peers.
-//
-// A client is an HTTP/2 connection over one libp2p stream, so re-dialling per
-// call throws away the multiplexing that makes it worth having; a cache with
-// no bound, on the other hand, is a stream per peer the swarm ever mentioned.
-// max is that bound, and it is also how many peers one Do will try.
+// Pool holds at most max rpc.Clients for one protocol, handed out in Resolver
+// order. A client is an HTTP/2 connection over one stream, worth keeping; max
+// bounds the cache and how many peers one Do tries.
 type Pool struct {
 	host     host.Host
 	resolver discovery.Resolver
@@ -75,22 +69,10 @@ func NewPool(h host.Host, r discovery.Resolver, p protocol.ID, max int) (*Pool, 
 // that means to call auth.
 func (p *Pool) Protocol() protocol.ID { return p.protocol }
 
-// Do calls fn against peers serving the protocol, one at a time, until one
-// answers with something other than "ask somebody else".
-//
-// connect.CodeUnavailable means try the next peer, and it covers three cases
-// with one branch: the peer is down, the peer does not serve this protocol at
-// all, or the peer is a raft follower and refused because it may not write.
-// pool_test.go proves the second of those is genuinely Unavailable rather than
-// some transport-shaped error, because the whole reason there is no leader
-// lookup anywhere in build is that these three collapse into one branch here.
-//
-// EVERY OTHER CODE IS THE ANSWER and is returned immediately: a
-// FailedPrecondition from the leader is not a routing problem, and retrying it
-// against the next peer would turn one considered refusal into N.
-//
-// A peer that was unavailable is reported to the Resolver and its client is
-// dropped, so the next Do does not lead with it.
+// Do calls fn against peers one at a time until one answers other than
+// Unavailable, which covers a peer that is down, does not serve the protocol, or
+// is a raft follower. Every other code is the answer. An unavailable peer is
+// reported to the Resolver and its client dropped.
 func (p *Pool) Do(ctx context.Context, fn func(c *rpc.Client) error) error {
 	peers, err := p.peers(ctx)
 	if err != nil {
@@ -142,10 +124,8 @@ func (p *Pool) peers(ctx context.Context) ([]peer.ID, error) {
 	return peers, nil
 }
 
-// client returns the cached client for pid, dialling and caching one if there
-// is none. Over max, the oldest is closed and dropped: a peer id names one node
-// for good, so a client is safe to keep, but the set of peers is not bounded by
-// anything this package controls.
+// client returns the cached client for pid, dialling one if needed; over max the
+// oldest is closed and dropped.
 func (p *Pool) client(pid peer.ID) (*rpc.Client, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

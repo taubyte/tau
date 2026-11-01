@@ -13,12 +13,9 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 )
 
-// authz.go is the only file in this package that decides whether a caller may
-// do a thing, and it decides it ON THE PROJECT: the caller is the tau user
-// auth verifies their token as, and what they may do is their role in the
-// register's project table. No forge is asked anything.
-//
-// A DENIAL IS A 404 (errors.go), so none of these routes is an id oracle.
+// authz.go decides whether a caller may do a thing, on the project: the tau user
+// auth verifies the token as, and their role in the register's project table. A
+// denial is a 404, so no route is an id oracle.
 
 const bearerPrefix = "Bearer "
 
@@ -108,20 +105,9 @@ func (s *Service) mayTouchJob(ctx context.Context, token, jobID string, want reg
 	return job, nil
 }
 
-// parseRepositoryKey accepts only a key already in repokey's canonical form.
-//
-// The stored value is a KEY ("github.com/acme/pay"), not a clone URL, and
-// repokey.Parse requires a scheme — so the check re-derives instead: a key is
-// canonical exactly when parsing it as an https URL yields itself back. That
-// refuses "GitHub.com/Acme/Pay", a ".git" suffix, a trailing slash, a default
-// port, a query and a userinfo, each of which would otherwise be a second
-// spelling of one repository.
-//
-// The backend's jobid.go has the same six lines for the same reason, and they
-// are not shared: services/build is the pair's shared vocabulary and its own
-// test holds it to three imports, so adding pkg/git/repokey there to save a
-// duplicate would widen the surface both roles inherit in order to narrow one
-// they do not.
+// parseRepositoryKey accepts only repokey's canonical form: parsing the key as an
+// https URL must yield itself. Duplicated from backend/jobid.go to keep
+// services/build's import surface small.
 func parseRepositoryKey(key string) (repokey.Key, bool) {
 	if key == "" {
 		return repokey.Key{}, false

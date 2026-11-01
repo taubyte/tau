@@ -17,8 +17,6 @@ import (
 
 var aDigest = strings.Repeat("a", 64)
 
-// A BUNDLE IS THE TREE IT WAS BUILT FROM AND WHAT EACH RECIPE PRODUCED, and it
-// unpacks to exactly that.
 func TestABundleRoundTrips(t *testing.T) {
 	tree := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(tree, "services", "hello"), 0o755))
@@ -87,8 +85,6 @@ func tarball(t *testing.T, headers ...tar.Header) io.Reader {
 	return &buf
 }
 
-// EVERY NAME IS A STRANGER'S, and anything but a file in the tree or a product
-// by digest is refused.
 func TestUnpackingRefusesWhatIsNotABundle(t *testing.T) {
 	for name, r := range map[string]io.Reader{
 		"not gzip":       strings.NewReader("plain"),

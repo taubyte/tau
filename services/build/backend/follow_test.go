@@ -18,10 +18,6 @@ import (
 	"github.com/taubyte/tau/services/build/livelog"
 )
 
-// follow_test is the wire in front of Service.Follow: the seam existed and
-// nothing could reach it, so a build could be watched only by whoever was
-// logged into the machine running it.
-
 // collector is a ServerStream's Send, which is all the handler uses.
 type collector struct {
 	mu     sync.Mutex
@@ -81,8 +77,6 @@ func running(t *testing.T, s *Service, jobID string, attempt uint32) *livelog.Lo
 	return log
 }
 
-// A LOG IS FOLLOWED WHILE IT IS WRITTEN, which is the whole point: v1 can hand
-// one over only once the build has ended and the whole of it has reached IPFS.
 func TestFollowStreamsARunningBuild(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -105,9 +99,8 @@ func TestFollowStreamsARunningBuild(t *testing.T) {
 	require.NoError(t, err)
 	require.Eventually(t, func() bool { return out.text() == "cloning\ncompiling\n" }, 2*time.Second, 5*time.Millisecond)
 
-	// THE BUILD ENDING IS A COMPLETE ANSWER AND NOT AN ERROR. livelog does not
-	// return EOF early — a reader that catches up blocks — so reaching it means
-	// the writer closed and the follower has the whole log.
+	// The build ending is a complete answer, not an error: livelog blocks rather than
+	// returning EOF early.
 	require.NoError(t, log.Close())
 	require.NoError(t, <-done)
 
@@ -115,8 +108,6 @@ func TestFollowStreamsARunningBuild(t *testing.T) {
 		"the offset a resuming client sends back is carried per chunk")
 }
 
-// THE OFFSET IS WHY A DROPPED CONNECTION COSTS NOTHING. A viewer resumes where
-// it was and sees neither a gap nor a repeat.
 func TestFollowResumesAtAnOffset(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -131,9 +122,6 @@ func TestFollowResumesAtAnOffset(t *testing.T) {
 	require.Equal(t, "second\n", out.text())
 }
 
-// A NODE THAT IS NOT WRITING THIS LOG SAYS Unavailable, NOT NotFound — which is
-// what makes a pooled caller walk to the next backend instead of stopping at
-// whichever one its resolver named first.
 func TestFollowOnANodeThatIsNotTheWriter(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -156,9 +144,6 @@ func TestFollowOnANodeThatIsNotTheWriter(t *testing.T) {
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 }
 
-// A VIEWER THAT HUNG UP IS NOTICED ON THE NEXT CHUNK. livelog's Reader blocks
-// until the writer appends, so a follow of a quiet build must check the context
-// before it reads or it would hold the goroutine until the build ended.
 func TestFollowEndsWhenTheViewerGoesAway(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -187,8 +172,6 @@ func TestFollowEndsWhenTheViewerGoesAway(t *testing.T) {
 	}
 }
 
-// A send that fails is the caller's connection, and stops the follow with its
-// own error rather than being retried anywhere.
 func TestFollowStopsWhenItCannotSend(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -254,9 +237,6 @@ func snapshotOf(t *testing.T, h *harness, id string, from int64) *collector {
 	return &out
 }
 
-// A SNAPSHOT IS WHAT A RUNNING BUILD HAS WRITTEN SO FAR, and it ends while the
-// build goes on: `tau logs` without --follow. A follow of the same build gets
-// each line as it is written and ends with the build.
 func TestASnapshotEndsAtWhatTheBuildHasWrittenAndAFollowEndsWithTheBuild(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -306,11 +286,6 @@ func TestASnapshotEndsAtWhatTheBuildHasWrittenAndAFollowEndsWithTheBuild(t *test
 	}
 }
 
-// A LOG NO NODE IS WRITING IS STILL TO COME UNTIL THE JOB HAS ENDED. Queued, or
-// claimed with its log on another node, it is Unavailable from this one, which
-// is what has a caller walk on or ask again. Ended, the leader says so as
-// FailedPrecondition, because no node will write it again; a follower cannot
-// read the record and walks on to the leader.
 func TestALogNoNodeIsWritingIsComingUntilTheJobEnds(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -344,8 +319,6 @@ func TestALogNoNodeIsWritingIsComingUntilTheJobEnds(t *testing.T) {
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(ask(strings.Repeat("ab", 32), false)), "no such job")
 }
 
-// A LOG WHOSE WRITER HAS CLOSED IS WHOLE TO BOTH READS: the moment between a
-// build ending and its log leaving this node.
 func TestAnEndedLogIsWholeToAFollowAndASnapshot(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -363,7 +336,6 @@ func TestAnEndedLogIsWholeToAFollowAndASnapshot(t *testing.T) {
 	}
 }
 
-// A snapshot is refused exactly where a follow is, with the same codes.
 func TestASnapshotIsRefusedWhereAFollowIs(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -387,10 +359,6 @@ func ask(t *testing.T, h *harness, jobID string, attempt int32, from int64, snap
 	return out.text(), err
 }
 
-// AN OFFSET IS A POSITION IN ONE RUN'S LOG. A node writing the job's next run
-// answers a resume of the previous one as if it held no log, and the leader
-// says that run has ended — never the next run's bytes from the same offset,
-// which would splice two runs into one log.
 func TestAResumeIsNeverAnotherRunsLog(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -425,10 +393,6 @@ func TestAResumeIsNeverAnotherRunsLog(t *testing.T) {
 	require.Equal(t, "second run, line one\nsecond run, line two\n"[read:], got)
 }
 
-// A RUN IS NAMED BY ITS ATTEMPT, and which runs are still to come is the
-// record's to say: the next one of a queued job, and the one a claim is on.
-// One the job has moved past, or that it ended before, has ended; one past
-// its next is not a run at all.
 func TestWhetherARunHasEndedIsTheRecords(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -475,11 +439,6 @@ func storing(t *testing.T, h *harness) (reached chan struct{}, release func()) {
 	return reached, release
 }
 
-// A BUILD THAT HAS ENDED IS WHOLE WHILE ITS LOG GOES TO THE STORE. The record
-// still reads Claimed until the log is stored and named, so the node that
-// wrote the log is the one that can answer for it — and a snapshot taken then,
-// `tau logs` between the end of a build and its record settling, is its log
-// and not nothing.
 func TestALogIsWholeWhileItIsHandedToTheStore(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
@@ -509,10 +468,6 @@ func TestALogIsWholeWhileItIsHandedToTheStore(t *testing.T) {
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "stored and named: the node has let go")
 }
 
-// A CANCELLED RUN'S LOG IS FOLLOWED FROM THE NODE THAT WROTE IT UNTIL IT IS
-// STORED. Cancel makes the record terminal before the run has even stopped,
-// so for the whole of the handoff the record names only what earlier runs
-// left: a follow then must still read this run's log, not the last stored one.
 func TestACancelledRunsLogIsFollowedUntilItIsStored(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)

@@ -12,22 +12,12 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 )
 
-// projectapi.go is linking a project: the route a developer's CLI calls to make
-// a configuration repository and its code repositories one project on this
-// cloud, under the id the author's project.yaml carries.
-//
-// A LINK IS A REGISTRATION BY ITS OWNER, and no forge is asked anything.
-// Linking a repository you do not control gets you nothing: only a forge admin
-// can install the webhook and deploy key the cloud needs, and the cloud only
-// ever touches what the owner wired up. So:
-//
-//   - any authenticated tau user may link a new id, and becomes its owner;
-//   - every repository passes this cloud's tenancy, the only namespace rule;
-//   - the register applies its own rules on top: an id another configuration
-//     repository owns, or a repository another project owns, is refused by
-//     name;
-//   - an owner linking again replaces the project's repositories, which is how
-//     a rename or a transfer is followed. A webhook never moves a project.
+// projectapi.go links a project: a configuration repository and its code
+// repositories, under the id in project.yaml. A link is a registration by its
+// owner and no forge is asked: only a forge admin can install the webhook and
+// deploy key the cloud needs. Any tau user may link a new id and owns it;
+// tenancy applies; the register refuses ids or repositories owned elsewhere; an
+// owner relinking replaces the repositories.
 
 // maxLinkBody bounds the one body this route reads: a handful of repository
 // keys.

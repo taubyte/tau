@@ -173,8 +173,6 @@ func TestLinkingClaimsTheIdForTheCaller(t *testing.T) {
 	require.Empty(t, projectsOf(t, h, "tok-bob"))
 }
 
-// NO NAMESPACE IS ASSUMED: an org's repository, a nested group's, any valid
-// name links the same way a personal one does.
 func TestAnyRepositoryLinks(t *testing.T) {
 	h, _ := registered(t)
 	for id, body := range map[string]string{
@@ -195,7 +193,6 @@ func TestLinkingAConfigOnlyProject(t *testing.T) {
 	require.Contains(t, bodyOf(t, w), `"code_repository_keys":[]`)
 }
 
-// TENANCY IS THE ONLY NAMESPACE RULE, checked on every key the link names.
 func TestTenancyIsCheckedOnEveryLinkedKey(t *testing.T) {
 	served, err := tenancy.Parse([]string{"github.com/acme"})
 	require.NoError(t, err)
@@ -207,8 +204,6 @@ func TestTenancyIsCheckedOnEveryLinkedKey(t *testing.T) {
 	require.Equal(t, http.StatusCreated, h.do(t, linkRequestFor("tok-alice", "QmPay", linkBody)).Code)
 }
 
-// AN ID ANOTHER USER OWNS IS REFUSED, however it is spelled; a repository
-// another project holds is refused by the register, by name.
 func TestAClaimedIdIsAConflictThatSaysWhatToDo(t *testing.T) {
 	h, _ := registered(t)
 	require.Equal(t, http.StatusCreated, h.do(t, linkRequestFor("tok-alice", "QmPay", linkBody)).Code)
@@ -224,8 +219,6 @@ func TestAClaimedIdIsAConflictThatSaysWhatToDo(t *testing.T) {
 	require.Contains(t, bodyOf(t, w), "github.com/acme/pay is project QmPay's")
 }
 
-// THE OWNER RELINKING REPLACES THE REPOSITORIES: a renamed configuration, a
-// dropped code repository, and the dropped one free for another project.
 func TestTheOwnerRelinkReplacesTheRepositories(t *testing.T) {
 	h, l := registered(t)
 	require.Equal(t, http.StatusCreated, h.do(t, linkRequestFor("tok-alice", "QmPay", linkBody)).Code)
@@ -318,8 +311,6 @@ func TestTheProjectRoutesWithoutALinkerAreADenial(t *testing.T) {
 	require.Error(t, WithLinker(nil)(&options{}))
 }
 
-// A project the register never linked is the same 404 a denial is, on every
-// route that authorizes against a project.
 func TestAnUnlinkedProjectIsADenial(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.projects.role = func(_, id string) (register.Role, error) {

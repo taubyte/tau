@@ -76,9 +76,6 @@ func TestAnEnqueueWithNoIdIsAFault(t *testing.T) {
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
 }
 
-// The backend answers Unavailable on a follower, for reads and writes alike, so
-// a cloud whose leader is the second peer costs one extra round trip and no
-// special handling anywhere.
 func TestAFollowerIsWalkedPastForEveryRPC(t *testing.T) {
 	notLeader := func() error {
 		return connect.NewError(connect.CodeUnavailable, errors.New("not the leader of build/queue"))
@@ -119,8 +116,6 @@ func TestAFollowerIsWalkedPastForEveryRPC(t *testing.T) {
 	require.NoError(t, c.Retry(t.Context(), "job-1"))
 }
 
-// Every other code is the ANSWER, and retrying it against the next peer would
-// turn one considered refusal into N.
 func TestAConsideredRefusalIsNotRetried(t *testing.T) {
 	asked := 0
 	refuse := &fakeBackend{retry: func(string) error {
@@ -137,10 +132,6 @@ func TestAConsideredRefusalIsNotRetried(t *testing.T) {
 	require.Equal(t, 1, asked)
 }
 
-// A CONSUMED STREAM CANNOT BE RETRIED. Pool.Do's rule is right for a unary
-// call and wrong the moment an id has been handed onwards: the next peer would
-// start its listing from the beginning and the caller would see the first ids
-// twice.
 func TestAListThatBrokeAfterItStartedIsNotRetriedAgainstAnotherPeer(t *testing.T) {
 	breaks := &fakeBackend{list: func(_ string, send func(*buildv2.JobRef) error) error {
 		if err := send(&buildv2.JobRef{Id: "a"}); err != nil {
@@ -170,7 +161,6 @@ func TestAListThatBrokeAfterItStartedIsNotRetriedAgainstAnotherPeer(t *testing.T
 	require.Equal(t, []string{"a"}, got, "no id was delivered twice")
 }
 
-// A stream that broke BEFORE its first id is still safe to retry, and is.
 func TestAListThatBrokeBeforeItStartedIsRetried(t *testing.T) {
 	breaks := &fakeBackend{list: func(string, func(*buildv2.JobRef) error) error {
 		return connect.NewError(connect.CodeUnavailable, errors.New("not the leader"))
@@ -189,8 +179,6 @@ func TestAListThatBrokeBeforeItStartedIsRetried(t *testing.T) {
 	require.Equal(t, []string{"a"}, got)
 }
 
-// The caller's own failure — a broken HTTP connection, most likely — is never a
-// routing problem, so it must not be retried either.
 func TestTheCallersOwnFailureStopsTheWalk(t *testing.T) {
 	emit := func(_ string, send func(*buildv2.JobRef) error) error {
 		for _, id := range []string{"a", "b"} {
@@ -244,8 +232,6 @@ func TestEveryPeerUnavailableIsErrNoBackend(t *testing.T) {
 	require.ErrorIs(t, c.Cancel(t.Context(), "job-1"), ErrNoBackend)
 }
 
-// ── following a running build ────────────────────────────────────────────
-
 // chunks is a Follow the fake backend serves from a fixed string.
 func chunks(text string, size int) func(string, int64, func(*buildv2.LogChunk) error) error {
 	return func(_ string, offset int64, send func(*buildv2.LogChunk) error) error {
@@ -276,7 +262,6 @@ func TestFollow(t *testing.T) {
 	require.Equal(t, int64(len("cloning\ncompiling\ndone\n")), end)
 }
 
-// A CALLER RESUMES WHERE IT WAS and sees neither a gap nor a repeat.
 func TestFollowResumes(t *testing.T) {
 	c := newBuilds(t, &fakeBackend{follow: chunks("first\nsecond\n", 64)})
 
@@ -289,10 +274,6 @@ func TestFollowResumes(t *testing.T) {
 	require.Equal(t, "second\n", string(got))
 }
 
-// THE OFFSET IS WHAT MAKES THE WALK SAFE, and it is the whole difference from
-// List: a peer that cannot serve says Unavailable, the pool moves on, and the
-// request carries where the caller got to — so the next peer RESUMES rather
-// than starting the log again.
 func TestFollowWalksToTheWriterAndResumes(t *testing.T) {
 	mn := newMocknet(t)
 	caller := newHost(t, mn)
@@ -333,10 +314,6 @@ func TestFollowWalksToTheWriterAndResumes(t *testing.T) {
 	require.Equal(t, []int32{3}, writer.asked())
 }
 
-// A JOB THAT HAS ENDED STOPS THE WALK AT THE LEADER: its FailedPrecondition is
-// an answer rather than a routing problem, so no peer after it is asked. A
-// walk that finds no writer at all is Unavailable — a log still to come, which
-// the caller asks for again.
 func TestFollowOfAnEndedJobStopsAtTheLeader(t *testing.T) {
 	var asked atomic.Int32
 	after := &fakeBackend{follow: func(id string, offset int64, send func(*buildv2.LogChunk) error) error {
@@ -363,8 +340,6 @@ func TestFollowOfAnEndedJobStopsAtTheLeader(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoBackend)
 }
 
-// An emit that fails is the CALLER's failure — a hung-up HTTP client — and is
-// never a routing problem, so it stops rather than being retried elsewhere.
 func TestFollowStopsOnTheCallersFailure(t *testing.T) {
 	c := newBuilds(t, &fakeBackend{follow: chunks("output\n", 2)})
 
@@ -381,13 +356,7 @@ func TestFollowNeedsSomewhereToPutIt(t *testing.T) {
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
 }
 
-// ── what a deployment runs ───────────────────────────────────────────────
-
-// THIS CLIENT DOES NOT SATISFY worker.Artifacts, and the difference is one
-// argument: that seam passes a KIND as well, because a caller looking up a
-// resource has one in hand. A resource id is already unique, so the kind is not
-// part of the key a build wrote — and dropping it is the composer's line to
-// write, in view of both, rather than a shape either package bends to.
+// Not worker.Artifacts: that seam also passes a kind, which the composer drops.
 var _ = worker.Artifacts(nil)
 
 func TestArtifact(t *testing.T) {
@@ -403,9 +372,6 @@ func TestArtifact(t *testing.T) {
 	require.Equal(t, "bafybuilt", cid)
 }
 
-// A RESOURCE NOTHING HAS BUILT KEEPS ITS CODE. "Nothing has built this yet" is
-// a wait and "the cloud is unreachable" is a retry, and they are the same
-// string — so the code is what tells them apart.
 func TestArtifactThatIsNotThere(t *testing.T) {
 	c := newBuilds(t, &fakeBackend{built: func(string, string, string) (string, error) {
 		return "", connect.NewError(connect.CodeNotFound, errors.New("nothing has been built for that"))
@@ -415,7 +381,6 @@ func TestArtifactThatIsNotThere(t *testing.T) {
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }
 
-// AND Unavailable WALKS, because the row is replicated and any leader answers.
 func TestArtifactWalksPastAFollower(t *testing.T) {
 	c := newBuilds(t,
 		&fakeBackend{built: func(string, string, string) (string, error) {
@@ -429,8 +394,6 @@ func TestArtifactWalksPastAFollower(t *testing.T) {
 	require.Equal(t, "bafybuilt", cid)
 }
 
-// A SNAPSHOT IS ITS OWN REQUEST: the backend is asked for what the log holds
-// now, not for a follow the caller would have to cut short.
 func TestSnapshotAsksForWhatTheLogHoldsNow(t *testing.T) {
 	c := newBuilds(t, &fakeBackend{
 		follow: func(string, int64, func(*buildv2.LogChunk) error) error {
@@ -449,7 +412,6 @@ func TestSnapshotAsksForWhatTheLogHoldsNow(t *testing.T) {
 	require.Equal(t, int64(len("cloning\n")), end)
 }
 
-// And it walks to the writer as a follow does, still asking for a snapshot.
 func TestSnapshotWalksToTheWriterAndResumes(t *testing.T) {
 	mn := newMocknet(t)
 	caller := newHost(t, mn)

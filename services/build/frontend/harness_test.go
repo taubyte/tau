@@ -20,10 +20,8 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 )
 
-// This package's whole fixture is five fakes and an httptest recorder. There is
-// no libp2p host, no listener and no port anywhere in it — which is the claim
-// doc.go makes about why the dependencies are interfaces, held here as a
-// test rather than as a sentence.
+// The fixture is fakes and an httptest recorder: no libp2p host, listener or
+// port.
 
 const (
 	testHookID  = "hook-1"
@@ -35,8 +33,6 @@ const (
 	testUser    = "user-1"
 	testSHA     = "1111111111111111111111111111111111111111"
 )
-
-// ── the fakes ────────────────────────────────────────────────────────────────
 
 type fakeHooks struct {
 	mu    sync.Mutex
@@ -63,13 +59,8 @@ func (f *fakeHooks) count() int {
 	return f.calls
 }
 
-// fakeDeliveries stands in for the forge. HOW a delivery is verified is
-// pkg/forge's, tested there against every scheme, and forgeauth's end-to-end
-// test runs real signed deliveries through this handler; what this package owns
-// is what the handler does with each answer, so the fake is the answers.
-//
-// By default a delivery verifies when its test signature is one repository's
-// secret, and means the push its body names, for that repository.
+// fakeDeliveries stands in for the forge's answers: a delivery verifies when its
+// test signature is one repository's secret.
 type fakeDeliveries struct {
 	verify func(hook Hook, header http.Header, body []byte) (Push, error)
 }
@@ -246,8 +237,6 @@ func (f *fakeBackend) enqueues() []enqueued {
 	return append([]enqueued(nil), f.sent...)
 }
 
-// ── the service under test ───────────────────────────────────────────────────
-
 type harness struct {
 	*Service
 	hooks      *fakeHooks
@@ -320,8 +309,6 @@ func (h *harness) do(t *testing.T, r *http.Request) *httptest.ResponseRecorder {
 	h.Handler().ServeHTTP(w, r)
 	return w
 }
-
-// ── request builders ─────────────────────────────────────────────────────────
 
 // pushBody is what the fake reads a push out of.
 func pushBody(ref, after string) []byte {

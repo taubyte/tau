@@ -88,10 +88,6 @@ func withBody(r *http.Request, body []byte) *http.Request {
 
 const secretPath = "/secrets/" + testProject + "/production"
 
-// ── the round trip ───────────────────────────────────────────────────────────
-
-// TestASecretIsSetListedAndDeleted — the whole developer-facing surface, which
-// is three calls and no fourth.
 func TestASecretIsSetListedAndDeleted(t *testing.T) {
 	v := newVault()
 	h := newHarness(t, Config{}, WithVault(v))
@@ -112,8 +108,6 @@ func TestASecretIsSetListedAndDeleted(t *testing.T) {
 	require.Empty(t, v.held())
 }
 
-// TestRotatingIsSettingAgain, with no commit and no build behind it — the
-// reason the value is not in git.
 func TestRotatingASecretNeedsNoPush(t *testing.T) {
 	v := newVault()
 	h := newHarness(t, Config{}, WithVault(v))
@@ -127,8 +121,6 @@ func TestRotatingASecretNeedsNoPush(t *testing.T) {
 	require.Empty(t, h.backend.sent, "nothing was queued")
 }
 
-// TestAnEnvironmentWithNothingSetIsAnEmptyList and not a 404: the question has
-// an answer and the answer is none.
 func TestAnEnvironmentWithNothingSetIsAnEmptyList(t *testing.T) {
 	h := newHarness(t, Config{}, WithVault(newVault()))
 
@@ -137,11 +129,6 @@ func TestAnEnvironmentWithNothingSetIsAnEmptyList(t *testing.T) {
 	require.JSONEq(t, `[]`, bodyOf(t, w))
 }
 
-// ── what the route refuses ───────────────────────────────────────────────────
-
-// TestThereIsNoRouteThatReadsASecretBack. A GET of a value would turn a leaked
-// developer token from "they can overwrite my secrets" into "they have every
-// secret this project holds".
 func TestThereIsNoRouteThatReadsASecretBack(t *testing.T) {
 	v := newVault()
 	h := newHarness(t, Config{}, WithVault(v))
@@ -157,8 +144,6 @@ func TestThereIsNoRouteThatReadsASecretBack(t *testing.T) {
 	require.NotContains(t, bodyOf(t, w), "sk_live")
 }
 
-// TestASecretIsAsPowerfulAsACommit, so it is authorized identically: write
-// access to a repository the project is made of.
 func TestOnlySomebodyWhoMayPushMaySetASecret(t *testing.T) {
 	v := newVault()
 	h := newHarness(t, Config{}, WithVault(v))
@@ -182,8 +167,6 @@ func TestASecretRouteWithNoCredentialIsUnauthorized(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
-// TestACloudWithNoVaultIsNotAnOracleForWhetherItHasOne. The refusal is the
-// same 404 a denial gets, and it happens before auth is asked anything.
 func TestACloudWithNoVaultRefusesLikeADenial(t *testing.T) {
 	h := newHarness(t, Config{})
 
@@ -191,9 +174,6 @@ func TestACloudWithNoVaultRefusesLikeADenial(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, w.Code)
 }
 
-// TestAValueIsBoundedBeforeItIsRead. Without the cap this is an authenticated
-// route that holds whatever a caller sends and then replicates it to every node
-// in the swarm.
 func TestAnOversizedValueIsRefusedAndNotStored(t *testing.T) {
 	v := newVault()
 	h := newHarness(t, Config{}, WithVault(v))
@@ -210,8 +190,6 @@ func TestAnOversizedValueIsRefusedAndNotStored(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, w.Code)
 }
 
-// TestASecretPathSegmentIsBounded, like every other caller-chosen segment that
-// leaves this process.
 func TestALongPathSegmentIsRefused(t *testing.T) {
 	v := newVault()
 	h := newHarness(t, Config{}, WithVault(v))
@@ -232,14 +210,6 @@ func TestALongPathSegmentIsRefused(t *testing.T) {
 	require.Empty(t, v.held())
 }
 
-// TestAWildcardSpansOneSegment, so an environment cannot carry a slash into the
-// vault's key — which is the isolation between one environment's secrets and
-// another's, and the reason the vault refuses a separator a second time.
-//
-// THE ANSWER IS 405 AND THAT IS THE PROOF. If {environment} could span two
-// segments, "a/b" would have matched the listing route and been read as one
-// environment name. It did not: the request fell through to the three-segment
-// pattern, which has no GET.
 func TestAnEnvironmentCannotCarryASlash(t *testing.T) {
 	v := newVault()
 	h := newHarness(t, Config{}, WithVault(v))
@@ -253,8 +223,6 @@ func TestAnEnvironmentCannotCarryASlash(t *testing.T) {
 	require.Empty(t, v.held())
 }
 
-// TestAVaultFailureIsNotADenial. A caller told "not found" would set the
-// secret again; one told the cloud is unhappy retries.
 func TestAVaultFailureIsAnUpstreamFailure(t *testing.T) {
 	v := newVault()
 	v.err = connect.NewError(connect.CodeUnavailable, errors.New("the swarm is unreachable"))
@@ -271,9 +239,6 @@ func TestAVaultMustNotBeNil(t *testing.T) {
 	require.ErrorContains(t, err, "no vault")
 }
 
-// TestSettingASecretIsBelievedAtOnceByTheHookItVerifies: a relink rotates the
-// hook secret through this route, and the frontend it went through must not
-// keep verifying the old one until its cached hook expires.
 func TestSettingASecretIsBelievedAtOnceByTheHookItVerifies(t *testing.T) {
 	h := newHarness(t, Config{}, WithVault(newVault()))
 	h.hooks.get = func(id string) (Hook, error) {

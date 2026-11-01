@@ -12,19 +12,9 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// pack.go is the step after the author's commands that is the platform's own.
-//
-// # A js function ships as an archive, not as its bundle
-//
 // The js tier reads a zip whose manifest names the entry module
-// (pkg/invoke/js/archive), so the bundle a build wrote at `output:` is packed
-// into one, with its source map when the build left one beside it. The
-// author's build is a bundler run like any other; nothing in it is tau's.
-//
-// THE COMPILED FORM IS NOT MADE YET. warpjs cannot compile an ES module, so an
-// archive holds the source and the tier loads it from there. Once it can, the
-// `.warp` beside each module is made here, and a reader that cannot use one
-// still runs the source.
+// (pkg/invoke/js/archive), so a js bundle is packed into one with its source map.
+// The compiled `.warp` form is not made yet: warpjs cannot compile an ES module.
 
 // product is what a build in dir left behind for spec, as the tier that runs it
 // reads it.
@@ -71,11 +61,7 @@ func packJS(dir, output string) (io.ReadCloser, error) {
 	return io.NopCloser(&packed), nil
 }
 
-// readProduct reads one file a build wrote, within what is left of budget.
-//
-// A LINK IS REFUSED rather than followed, as it is in a directory product: a
-// build controls what it writes, and a bundle that is a link to a file of this
-// machine's would put that file in the artifact.
+// readProduct reads one built file within budget, refusing a link.
 func readProduct(file, named string, budget *int64) ([]byte, error) {
 	info, err := os.Lstat(file)
 	if os.IsNotExist(err) {

@@ -12,29 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// boundary_test.go is the trust boundary as a test rather than as a
-// convention. service-topology.md §2 says the two-public-services invariant
-// "is assertable in a test and should be one, because it is the kind of
-// property that decays silently", and every property below is one somebody
-// adds a line and breaks without noticing:
-//
-//   - the public role may not import the private one. If it could, the
-//     process a stranger's POST reaches would hold the queue's writer and the
-//     clone credentials, and the split would be a directory layout rather
-//     than a boundary.
-//   - the private role may not import pkg/http. That is
-//     service-conventions.md §5a's second, mechanical half of the ingress
-//     check: the one that catches a listener added without touching the
-//     descriptor.
-//   - the dial adapters may import neither role, so that neither role's
-//     internals can reach the other through them.
-//
-// It reads the packages' own import lists rather than `go list -deps`,
-// deliberately: a transitive scan would answer "does net/http appear anywhere
-// below this" — which it does, through p2p/rpc — where the question is what
-// THIS package was written against. That is the same scope
-// service-conventions.md states ("grep for pkg/http in this package and find
-// nothing"), and it is the scope a reviewer can check by eye.
+// The trust boundary as a test: the public role may not import the private one,
+// the private role may not import pkg/http, and the dial adapters may import
+// neither role. It reads each package's own imports, not its transitive set,
+// since net/http appears below p2p/rpc.
 const (
 	buildPkg    = "github.com/taubyte/tau/services/build"
 	backendPkg  = buildPkg + "/backend"
@@ -42,16 +23,9 @@ const (
 	clientsPkg  = buildPkg + "/clients"
 )
 
-// imports returns the import paths of the non-test files of the package in
-// dir, and whether the directory exists at all.
-//
-// IT CHECKS THAT IT READ EVERY FILE THAT IS THERE, because a scan that filters
-// its own input by name proves nothing about the files it skipped. One line in
-// the filter — `&& fi.Name() != "service.go"` — would take a file out of every
-// check below at once, and every check below is an ABSENCE: an import that is
-// not there. An absence measured over a file set nobody pinned is an absence of
-// evidence. sources() is the directory's own answer and is the same rule this
-// filter is meant to be applying.
+// imports returns the import paths of the non-test files in dir, and whether dir
+// exists. It checks it read every file present, since every check here is an
+// absence.
 func imports(t *testing.T, dir string) ([]string, bool) {
 	t.Helper()
 
@@ -117,9 +91,6 @@ func requireNoImport(t *testing.T, paths []string, banned, why string) {
 	}
 }
 
-// This package is the pair's shared vocabulary, so anything it imports is
-// imported by both roles. Keeping it to three is what makes the backend's
-// "imports no pkg/http" check mechanical rather than transitive.
 func TestTheSharedPackageStaysThreeImportsWide(t *testing.T) {
 	got, ok := imports(t, ".")
 	require.True(t, ok)
@@ -147,12 +118,6 @@ func TestThePrivateRoleHasNoIngress(t *testing.T) {
 	}
 }
 
-// The adapters both roles dial through may not import either role. Returning a
-// role's interface type from here would make every frontend that dials auth
-// depend on the backend's package, which is the dependency this whole file
-// exists to keep out — so the adapters return their own concrete types and the
-// interface satisfaction is asserted in clients' TEST files, where a dependency
-// costs nothing.
 func TestTheDialAdaptersImportNeitherRole(t *testing.T) {
 	paths, ok := imports(t, "clients")
 	require.True(t, ok, "the clients package must exist")
@@ -163,8 +128,6 @@ func TestTheDialAdaptersImportNeitherRole(t *testing.T) {
 		"dialling auth needs auth's SCHEMA, never auth's service package and the store behind it")
 }
 
-// The public role's half of the same boundary, and the half that matters most:
-// this is the one process in build a stranger can reach.
 func TestThePublicRoleServesNoP2PRPC(t *testing.T) {
 	paths, ok := imports(t, "frontend")
 	require.True(t, ok, "the frontend package must exist")
@@ -194,10 +157,6 @@ func TestThePublicRoleServesNoP2PRPC(t *testing.T) {
 		"the public role's routes and limits live in ingress.go, as they do in gateway's")
 }
 
-// The identity adapter is a package of its own, and it names NO provider: the
-// host picks the forge through pkg/forge, so no provider SDK is imported
-// anywhere in this tree's build service and a new forge is a binding, not a
-// sibling package.
 func TestTheIdentityAdapterKnowsNoProvider(t *testing.T) {
 	frontendImports, ok := imports(t, "frontend")
 	require.True(t, ok)

@@ -8,11 +8,9 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 )
 
-// assetapi.go is what a finished build left behind, read back per job: a
-// log by the key the job records it under, and a resource's artifact by the
-// resource id. Each is authorized exactly as the job is (mayTouchJob) and
-// looked up in that job's own maps, so a content id is never something a
-// caller names. There is no bare-cid route.
+// assetapi.go reads back what a finished build left: a log by its record key and
+// an artifact by resource id, authorized as the job is and looked up in its own
+// maps. No caller ever names a cid.
 
 // handleJobLog is GET /job/{jid}/logs/{key}: one finished log.
 func (s *Service) handleJobLog(w http.ResponseWriter, r *http.Request, token, jobID string) {

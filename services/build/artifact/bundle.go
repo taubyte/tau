@@ -14,12 +14,9 @@ import (
 	"strings"
 )
 
-// bundle.go is the one format a developer's build travels in: the tree it was
-// built from and what each recipe produced, keyed by the recipe's digest. A
-// development cloud that takes one in deploys the tree the way it deploys a
-// push, plans the builds from what it compiled, and finds each product by the
-// digest IT planned — so a product the developer built from a different
-// recipe than the one the cloud plans is never found, rather than served.
+// A bundle carries a developer's build: the tree and each recipe's product keyed
+// by digest. A cloud taking one finds each product by the digest it planned, so a
+// product from a different recipe is never served.
 
 const (
 	bundleTree     = "tree/"
@@ -105,12 +102,8 @@ func packFile(archive *tar.Writer, name, from string) error {
 	return err
 }
 
-// UnpackBundle reads a bundle into dir.
-//
-// EVERY NAME IS A STRANGER'S, and only a regular file under tree/ or a digest
-// under products/ is written; anything else — a link, a device, a name that
-// climbs out — is refused rather than skipped, so a bundle is the tree it says
-// it is or nothing.
+// UnpackBundle reads a bundle into dir. Only regular files under tree/ and digests
+// under products/ are written; links, devices and climbing names are refused.
 func UnpackBundle(r io.Reader, dir string) (Bundle, error) {
 	gz, err := gzip.NewReader(r)
 	if err != nil {

@@ -21,9 +21,8 @@ import (
 	"github.com/taubyte/tau/services/build/deploy"
 )
 
-// git_test stands up a REAL repository with two commits and clones it. The
-// point is the commit: a branch moves between the webhook and the claim, and a
-// deploy that read the branch head would publish something no push asked for.
+// repository stands up a real repository with two commits, so the clone is shown
+// to read the commit, not the head.
 
 func repository(t *testing.T) (path string, first, second string) {
 	t.Helper()
@@ -64,8 +63,6 @@ func repository(t *testing.T) (path string, first, second string) {
 	return path, first, second
 }
 
-// A REAL CLONE, AT THE COMMIT THE PUSH NAMED — not at the branch head, which by
-// the time a job is claimed is somewhere else.
 func TestACloneReadsTheCommitAndNotTheBranch(t *testing.T) {
 	path, first, second := repository(t)
 	require.NotEqual(t, first, second)
@@ -88,9 +85,6 @@ func TestACloneReadsTheCommitAndNotTheBranch(t *testing.T) {
 	}
 }
 
-// A COMMIT THE CLONE DOES NOT HAVE IS AN ERROR AND NOT A FALLBACK: it means the
-// branch was rewritten between the push and the build, and building the head
-// instead would deploy a commit nobody pushed.
 func TestACommitThatIsNotThere(t *testing.T) {
 	path, _, _ := repository(t)
 	clone := deploy.NewClone(nil, deploy.WithAddress(func(string, forge.Protocol) (forge.Address, error) { return forge.Address{URL: path}, nil }))
@@ -107,9 +101,6 @@ func TestACommitThatIsNotThere(t *testing.T) {
 	require.ErrorContains(t, err, "not a commit")
 }
 
-// THE WHOLE PATH: a real repository, a real clone at a real commit, compiled and
-// published — which is what a push does and the only thing that writes the
-// register.
 func TestAPushOfARealRepositoryDeploys(t *testing.T) {
 	path, first, second := repository(t)
 	r := registry(t)
@@ -148,9 +139,6 @@ func TestAPushOfARealRepositoryDeploys(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// How a cloud reaches a repository: https reads what is public, and a forged
-// address is the one the forge serving the host gives — the ssh account
-// included, which is the driver's to say and not a `git@` spelled here.
 func TestHowACloudReachesARepository(t *testing.T) {
 	address, err := deploy.HTTPS("github.com/acme/shop", forge.HTTPS)
 	require.NoError(t, err)
@@ -183,10 +171,7 @@ func TestHowACloudReachesARepository(t *testing.T) {
 	require.ErrorContains(t, err, "not a repository")
 }
 
-// keys stands in for auth. A deploy key is PER REPOSITORY, which is what lets
-// one cloud serve repositories belonging to people who do not know each other:
-// an account-scoped token leaked from a build would be a key to every
-// repository in that account.
+// keys stands in for auth's per-repository deploy keys.
 type keys struct {
 	key string
 	err error
@@ -240,7 +225,6 @@ func TestReadingAPrivateRepository(t *testing.T) {
 	require.ErrorContains(t, err, "which is not ssh")
 }
 
-// A repository key that is not one never reaches the network.
 func TestAKeyThatIsNotARepository(t *testing.T) {
 	_, _, err := deploy.NewClone(nil).Checkout(t.Context(), "", "main", "abc")
 	require.ErrorContains(t, err, "not a repository")
@@ -255,8 +239,6 @@ func hostPublicKey(t *testing.T) gossh.PublicKey {
 	return key
 }
 
-// A PUSH IS CONFIRMED AT THE REPOSITORY: the ref is there at the commit, or the
-// push is not built.
 func TestAPushIsConfirmedAtTheRepository(t *testing.T) {
 	path, first, second := repository(t)
 	clone := deploy.NewClone(nil, deploy.WithAddress(func(string, forge.Protocol) (forge.Address, error) { return forge.Address{URL: path}, nil }))

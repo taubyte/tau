@@ -6,13 +6,9 @@ import (
 	"strings"
 )
 
-// cors.go lets the cloud's own consoles call this ingress from a browser.
-//
-// AN ORIGIN IS ALLOWED BY EXACT MATCH against Config.Origins, and nothing
-// else is: no wildcard, no reflection of whatever Origin arrived. Credentials
-// travel as a header a page sets on purpose — Authorization, the tau token —
-// never as cookies, so Access-Control-Allow-Credentials is never sent and a
-// page on another origin cannot ride a signed-in browser.
+// cors.go lets the cloud's own consoles call this ingress from a browser. Origins
+// match exactly; credentials travel only as the Authorization header, never
+// cookies, so Allow-Credentials is never sent.
 
 var (
 	corsHeaders = strings.Join([]string{"Authorization", "Content-Type", "Connect-Protocol-Version", "Connect-Timeout-Ms", "Git-Protocol"}, ", ")

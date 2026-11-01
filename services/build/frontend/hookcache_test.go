@@ -25,8 +25,6 @@ func rotatable(h *harness, secret *string, mu *sync.Mutex) {
 	}
 }
 
-// A ROTATION IS BELIEVED AT THE FIRST DELIVERY UNDER THE NEW SECRET, on a node
-// that still remembers the old one, and the old one stops verifying then.
 func TestARotatedSecretIsBelievedAtItsFirstDelivery(t *testing.T) {
 	h := newHarness(t, Config{})
 	var mu sync.Mutex
@@ -51,8 +49,6 @@ func TestARotatedSecretIsBelievedAtItsFirstDelivery(t *testing.T) {
 	require.Len(t, h.backend.enqueues(), 3)
 }
 
-// AT MOST ONE LOOKUP PER REQUEST: a fresh answer is never re-asked, and a
-// re-asked one is never re-asked again.
 func TestARefusedDeliveryCostsAtMostOneLookup(t *testing.T) {
 	h := newHarness(t, Config{})
 
@@ -67,7 +63,6 @@ func TestARefusedDeliveryCostsAtMostOneLookup(t *testing.T) {
 	}
 }
 
-// Only a delivery that does not VERIFY says anything about the secret.
 func TestOnlyAnUnverifiedDeliveryReasks(t *testing.T) {
 	for _, err := range []error{ErrMalformed, ErrNotAPush, ErrRefDeleted, errors.New("no driver")} {
 		t.Run(err.Error(), func(t *testing.T) {
@@ -80,8 +75,6 @@ func TestOnlyAnUnverifiedDeliveryReasks(t *testing.T) {
 	}
 }
 
-// A project unlinked since it was remembered: the re-ask finds nothing, the
-// entry is evicted, and the next delivery asks again.
 func TestAReaskThatFindsNothingEvicts(t *testing.T) {
 	h := newHarness(t, Config{})
 	var mu sync.Mutex
@@ -99,8 +92,6 @@ func TestAReaskThatFindsNothingEvicts(t *testing.T) {
 	require.Equal(t, 3, h.hooks.count())
 }
 
-// A re-ask that cannot reach the cloud is a 503 and leaves the remembered hook
-// exactly as it was — its expiry included.
 func TestAReaskThatFailsKeepsTheEntryAndItsExpiry(t *testing.T) {
 	h := newHarness(t, Config{SecretCacheTTL: time.Minute})
 	down := false
@@ -125,7 +116,6 @@ func TestAReaskThatFailsKeepsTheEntryAndItsExpiry(t *testing.T) {
 	require.Equal(t, 3, h.hooks.count(), "and expired when it always would have")
 }
 
-// A re-ask that returns a hook with no secret is the 500 a cold one would be.
 func TestAReaskThatFindsNoSecretIsTheOperators(t *testing.T) {
 	h := newHarness(t, Config{})
 	var mu sync.Mutex
@@ -144,8 +134,6 @@ func TestAReaskThatFindsNoSecretIsTheOperators(t *testing.T) {
 	require.Equal(t, 3, h.hooks.count(), "and evicted")
 }
 
-// NO LINKED/UNLINKED ORACLE: an absent hook and a forged delivery to a real
-// one look the same to the caller.
 func TestAnAbsentHookAndABadSignatureAreOneAnswer(t *testing.T) {
 	h := newHarness(t, Config{})
 	absentW := h.do(t, webhookRequest(webhookOpts{hookID: "nobody-linked-this"}))
@@ -156,8 +144,6 @@ func TestAnAbsentHookAndABadSignatureAreOneAnswer(t *testing.T) {
 	require.Equal(t, absentW.Header(), forgedW.Header())
 }
 
-// THE RATE LIMITS PRECEDE THE RE-ASK TOO: it spends its request's token and
-// no other, so a refused request is not a free lookup.
 func TestTheRateLimitsPrecedeEveryLookup(t *testing.T) {
 	h := newHarness(t, Config{HookRate: Rate{Burst: 2, Per: time.Minute}})
 	h.do(t, webhookRequest(webhookOpts{}))
@@ -167,8 +153,6 @@ func TestTheRateLimitsPrecedeEveryLookup(t *testing.T) {
 	require.Equal(t, http.StatusTooManyRequests, h.do(t, webhookRequest(webhookOpts{signature: "forged"})).Code)
 	require.Equal(t, 2, h.hooks.count())
 }
-
-// ── the cache on its own ─────────────────────────────────────────────────────
 
 // gatedFetch blocks each call until the test releases it with an answer.
 type gatedFetch struct {
@@ -234,9 +218,6 @@ func TestConcurrentLookupsShareOneFetch(t *testing.T) {
 	require.True(t, look.cached)
 }
 
-// AN OLDER FETCH CANNOT OVERWRITE A NEWER ONE. A slow cold lookup that
-// answers with the old secret after a refresh answered with the new one
-// changes nothing.
 func TestAnOlderFetchCannotOverwriteANewerOne(t *testing.T) {
 	g := newGatedFetch()
 	c := newHookCache(8, time.Minute, time.Now, g.fetch)
@@ -270,7 +251,6 @@ func TestAnOlderFetchCannotOverwriteANewerOne(t *testing.T) {
 	require.Equal(t, "new", string(look.hook.Repositories[0].Secret))
 }
 
-// A refresh joins a fetch that started after the answer it doubts.
 func TestARefreshJoinsANewerFetch(t *testing.T) {
 	g := newGatedFetch()
 	c := newHookCache(8, time.Minute, time.Now, g.fetch)
@@ -298,8 +278,6 @@ func TestARefreshJoinsANewerFetch(t *testing.T) {
 	require.Equal(t, 1, g.calls)
 }
 
-// A drop detaches the fetch in flight: whatever made the caller drop may be
-// newer than what that fetch read.
 func TestADropDetachesTheFetchInFlight(t *testing.T) {
 	g := newGatedFetch()
 	c := newHookCache(8, time.Minute, time.Now, g.fetch)
@@ -321,8 +299,6 @@ func TestADropDetachesTheFetchInFlight(t *testing.T) {
 	require.Equal(t, "after", string(look.hook.Repositories[0].Secret))
 }
 
-// A waiter whose request ends stops waiting; the fetch carries on for the
-// others and is still remembered.
 func TestAWaiterThatGivesUpDoesNotCancelTheFetch(t *testing.T) {
 	g := newGatedFetch()
 	c := newHookCache(8, time.Minute, time.Now, g.fetch)

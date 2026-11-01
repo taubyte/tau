@@ -13,10 +13,8 @@ import (
 // legitimate is long; the cache and the rate limiter are both keyed by it.
 const maxHookIDLength = 256
 
-// handleWebhook is POST /hook/{projectId}, and THE ORDER OF THE CHECKS IS THE
-// DESIGN. Each one is placed where it is because of what it costs and what it
-// is allowed to know, and the file reads top to bottom in the order a stranger's
-// bytes are believed:
+// handleWebhook is POST /hook/{projectId}, its checks ordered by what each costs
+// and may know:
 //
 //	nothing is believed          -> the path, the method, the encoding, the size
 //	the cloud is asked           -> only after the rate limits
@@ -24,86 +22,45 @@ const maxHookIDLength = 256
 //	the bytes are interpreted    -> only after the signature
 //	the cloud does work          -> only after the hook binds the repository
 //
-// v1 runs that list nearly backwards: the hook lookup IS the route's
-// authenticator, so an unauthenticated POST spends a p2p round trip to auth
-// before anything at all has been proven, and the whole body is read into
-// memory before that.
-//
-// THERE IS NO DELIVERY-ID REPLAY CACHE, and its absence is a decision rather
-// than an omission. A replayed delivery is already answered twice over: the
-// backend's job id is a hash of (repository, ref, commit), so a second Enqueue
-// of one push returns the first job rather than making a second — that is
-// build.proto's own idempotency and it is CORRECT, not tolerated — and the two
-// rate limits above bound what a replay costs when it does reach the wire. A
-// cache would add a third, weaker copy of a guarantee two mechanisms already
-// hold, keyed by yet another string a stranger chooses.
+// No delivery-id replay cache: Enqueue is idempotent on (repository, ref, commit)
+// and the rate limits bound a replay's cost.
 func (s *Service) handleWebhook(w http.ResponseWriter, r *http.Request) {
-	// THE PROJECT ID COMES FROM THE PATH AND FROM NOWHERE ELSE. It is in the
-	// URL rather than looked up from the body because the body is not believed
-	// until it verifies, and verifying needs the project's secret: a project's
-	// very first push is verified from its link alone, before anything has been
-	// published for it. net/http's own
-	// ServeMux resolves a {wildcard} from the path only, and PathValue cannot
-	// be reached by a query parameter, a header or a body field. v1's
-	// pkg/http/context/helpers.go resolves query FIRST, then mux vars, then
-	// header, then body — so `?hook=` overrides the path on every patrick route
-	// that has one, and the string that selects the HMAC key is chosen by the
-	// caller twice over. ingress_test.go holds that this one is not.
+	// The project id comes from the path only: the body is not believed until it
+	// verifies, which needs the project's secret.
 	hookID := r.PathValue("projectId")
 	if hookID == "" || len(hookID) > maxHookIDLength {
 		respond(w, errDenied)
 		return
 	}
 
-	// NO EVENT CHECK HERE. Which header names the event is the forge's —
-	// X-GitHub-Event, X-Gitlab-Event, X-Event-Key — and this route names no
-	// forge, so a ping is told apart from a push only after the delivery
-	// verifies (ErrNotAPush below). It costs a rate-limited lookup, which is
-	// what every push already costs.
+	// No event check here: which header names the event is the forge's, so a ping is
+	// told apart only after verification.
 
-	// ONE ENCODING, BECAUSE THE HOOK IS THIS CLOUD'S OWN. GitHub can be asked
-	// to send `application/x-www-form-urlencoded` with the payload in a form
-	// field, and every hook this cloud registers asks for json. Accepting the
-	// form encoding would be a second parser for a stranger's bytes, for a
-	// shape this cloud never asks for.
+	// JSON only: every hook this cloud registers asks for it, so no second parser for a
+	// stranger's bytes.
 	if !isJSON(r.Header.Get("Content-Type")) {
 		respond(w, problem(http.StatusUnsupportedMediaType, "expected application/json"))
 		return
 	}
 
-	// THE TWO RATE LIMITS COME BEFORE THE LOOKUP, which is the only ordering
-	// that matters — see ratelimit.go for why there are two. The global one is
-	// first because it is the one a caller cannot get a fresh bucket for by
-	// changing the hook id, and because it gates the map insert the per-hook
-	// one would otherwise have to make.
+	// Both rate limits come before the lookup, the global one first since it gates the
+	// per-hook map insert.
 	if !s.globalHooks.allow() || !s.allowHook(hookID) {
 		respond(w, tooManyRequests(s.cfg.HookRate.Per))
 		return
 	}
 
-	// BOUNDED, AND READ EXACTLY ONCE. MaxBytesReader is installed before the
-	// first read rather than checked after it, so a body larger than the cap is
-	// never in this process's memory. The same bytes are then verified and
-	// parsed: reading twice — or verifying one copy and parsing another, which
-	// is what v1's `req.Body = io.NopCloser(bytes.NewReader(ctx.Body()))`
-	// splice sets up — is how a signature comes to cover something other than
-	// what was acted on.
+	// Bounded before the first read and read once; the same bytes are verified and
+	// parsed.
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, s.cfg.MaxBodyBytes))
 	if err != nil {
 		respond(w, problem(http.StatusRequestEntityTooLarge, "payload too large"))
 		return
 	}
 
-	// The cloud is asked — once, and at most once more below.
-	//
-	// AN ABSENT HOOK AND A BAD SIGNATURE ARE ONE ANSWER: the same status and
-	// the same body, with the reason in this process's log only. Telling them
-	// apart tells anybody who can name a project id whether it is linked here,
-	// and a project id is in its project.yaml. An operator debugging a rotated
-	// secret reads it in the frontend's log, not in the provider's delivery
-	// log. A failure to ASK is different — the register or the vault did not
-	// answer — and is a 503, because this node does not know which it is and a
-	// provider retries a 5xx.
+	// An absent hook and a bad signature get the same answer, the reason only in the
+	// log, so a project id's linkage is not revealed. A failure to ask is a 503 so the
+	// provider retries.
 	look, err := s.secrets.get(r.Context(), hookID)
 	if err != nil {
 		s.refuseLookup(w, hookID, err)
@@ -113,24 +70,13 @@ func (s *Service) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// THE BYTES ARE AUTHENTICATED, AND ONLY THEN INTERPRETED, by the forge that
-	// serves the repository's host, under the scheme that forge signs with.
-	// Verify also holds the check v1 does not have: the signature was made with
-	// a secret the URL chose, while the repository is named by the BODY, so a
-	// push is only ever for one of the project's own repositories — otherwise a
-	// signature under any project's secret would authorize a job for any
-	// repository this cloud has.
+	// Authenticated, then interpreted, by the forge serving the repository's host;
+	// Verify also requires the push to be for one of the project's own repositories.
 	event, err := s.deliveries.Verify(look.hook.accepting(s.now(), s.cfg.HookSecretGrace), r.Header, body)
 
-	// A REMEMBERED HOOK THAT REFUSES A DELIVERY IS ASKED FOR AGAIN, ONCE, and
-	// the same headers and body are verified against the answer. This — not
-	// the drop secretapi.go and projectapi.go make — is what makes a rotation
-	// correct across the fleet: that drop reaches only the frontend the secret
-	// was set through, and every other one is still holding the old secret.
-	// Only a CACHED answer is re-asked, never a fresh one, and never twice, so
-	// an admitted request costs at most one lookup either way (config.go). Only
-	// ErrUnverified triggers it: a delivery that verified and was malformed, or
-	// was an event this cloud ignores, says nothing about the secret.
+	// A remembered hook that refuses a delivery is asked again once and the delivery
+	// re-verified: this is what makes rotation correct on every frontend. Only a
+	// cached answer, only on ErrUnverified, never twice.
 	if errors.Is(err, ErrUnverified) && look.cached {
 		s.log("hook %s: %v; asking again in case the secret was rotated", hookID, err)
 		look, err = s.secrets.refresh(r.Context(), hookID, look.ticket)
@@ -181,11 +127,7 @@ func (s *Service) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 202 AND AN EMPTY BODY. The job id is logged, where an operator tracing a
-	// delivery can find it, and is not returned: v1 hands the whole Job back to
-	// whoever posted the webhook, and a verified webhook proves only that
-	// somebody holds a hook secret — it does not make them a reader of this
-	// cloud's state.
+	// 202 and an empty body; the job id goes to the log.
 	s.log("hook %s queued job %s for %s %s", hookID, jobID, event.Repository, event.Ref)
 	accepted(w, "")
 }
@@ -208,10 +150,7 @@ func (s *Service) refuseLookup(w http.ResponseWriter, hookID string, err error) 
 	respond(w, problem(http.StatusServiceUnavailable, "try again later"))
 }
 
-// usable refuses a hook with no secret. AN EMPTY SECRET IS A 500, NEVER A
-// SKIPPED MAC: it is a hook this cloud registered and cannot check, which is
-// the operator's to see; forge refuses it too, but its refusal reads as a
-// delivery that did not verify.
+// usable refuses a hook with no secret as a 500, never a skipped MAC.
 func (s *Service) usable(w http.ResponseWriter, hookID string, hook Hook) bool {
 	if hook.signed() {
 		return true
