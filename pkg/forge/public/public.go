@@ -1,12 +1,8 @@
-// Package public is the two public forges, bound the way a cloud binds them
-// when its operator named none.
-//
-// IT EXISTS FOR THE DEVELOPER'S SIDE OF A LINK. `tau link` installs a webhook
-// with the developer's token, and the wire secret it installs is derived under
-// the forge driver's signing scheme — so the CLI's driver for a host must sign
-// with exactly the scheme the cloud verifies with, or every delivery fails.
-// node.DefaultForges is the cloud's half of that agreement, and node's own test
-// holds the two to the same schemes host by host.
+// Package public is the two public forges, bound as a cloud binds them when its
+// operator named none. `tau link` installs a webhook whose wire secret is
+// derived under the driver's scheme, so the CLI must sign with exactly the
+// scheme the cloud verifies with; node's test holds node.DefaultForges to the
+// same schemes.
 package public
 
 import (

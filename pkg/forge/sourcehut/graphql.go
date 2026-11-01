@@ -24,7 +24,6 @@ const (
 	maxDrainOnError = 4 << 10
 )
 
-// client is one credential against one git.sr.ht.
 type client struct {
 	d    *driver
 	http *http.Client
@@ -61,13 +60,11 @@ func noRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastRe
 
 func (c *client) Host() string { return c.d.host }
 
-// statusError is an answer that was not a 2xx.
 type statusError struct {
 	Operation string
 	Status    int
 }
 
-// Refused is a 4xx: the forge's own answer refusing the request.
 func (e *statusError) Refused() bool { return e.Status >= 400 && e.Status < 500 }
 
 func (e *statusError) Error() string {
@@ -81,7 +78,6 @@ type graphqlError struct {
 	Messages  []string
 }
 
-// Refused is always true: the forge answered, and said no.
 func (e *graphqlError) Refused() bool { return true }
 
 func (e *graphqlError) Error() string {
@@ -108,7 +104,6 @@ type gqlResponse struct {
 	} `json:"errors"`
 }
 
-// send runs one document. out receives the response's data.
 func (c *client) send(ctx context.Context, doc document, vars map[string]any, out any) error {
 	enc, err := json.Marshal(gqlRequest{Query: doc.text, OperationName: doc.name, Variables: vars})
 	if err != nil {
@@ -162,15 +157,12 @@ func (c *client) classify(err error) error {
 	return err
 }
 
-// bounded cuts a string somebody else chose to a length an error may carry.
 func bounded(s string) string {
 	if len(s) <= maxHostString {
 		return s
 	}
 	return s[:maxHostString] + "…"
 }
-
-// ─────────────────────────────── repositories ───────────────────────────────
 
 // repoFields is every field this driver reads off a Repository.
 const repoFields = `id rid name visibility access owner { canonicalName } HEAD { name }`

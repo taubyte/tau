@@ -1,57 +1,14 @@
-// Package gitlab drives a GitLab instance — gitlab.com, a self-managed server,
-// or a loopback one in a test — as a forge.Driver.
+// Package gitlab drives a GitLab instance, gitlab.com, self-managed or
+// loopback, as a forge.Driver; the host is the constructor's only required
+// argument.
 //
-// THE HOST IS THE PROVIDER, AND THIS DRIVER IS WHAT PROVES THAT IS NOT A SLOGAN.
-// Nothing here is written against "gitlab.com": the host is the constructor's
-// first argument, it is the only thing a Binding names, and the same code serves
-// git.acme.internal, gitlab.com and 127.0.0.1:41337. There is no provider enum
-// to extend, no `provider:` field to set and no default host to fall back to —
-// New with no host is an error, because a driver that guesses which server it
-// talks to is a credential aimed at a server nobody named.
-//
-// # What GitLab makes different, and why that is the point
-//
-// This is the second driver over pkg/forge, and it was written to find where
-// that interface was still shaped like GitHub. Four things here are not GitHub's
-// shape:
-//
-//   - GITLAB NESTS. A subgroup is a path segment, so repokey.Key.Owner routinely
-//     holds a "/" and Addressable accepts every depth. This is the driver that
-//     makes Addressable more than decoration: a fixed-depth forge refuses what
-//     this one accepts, and neither flattens.
-//
-//   - AUTHORIZATION IS NOT REST. Access is asked over GraphQL, deliberately, and
-//     the REST permissions hash is not merely unused but wrong — see Access.
-//     GraphQL also answers 200 for failures, so the "404 is not found, 401 is the
-//     credential, 5xx is an outage" mapping the taxonomy is written against does
-//     not reach it, and the errors array has to be turned into the taxonomy by
-//     hand.
-//
-//   - A WEBHOOK IS SIGNED ONLY WHEN THE INSTANCE CAN SIGN. GitLab's decade-old
-//     procedure replays a shared token in a header and binds nothing — not the
-//     body, not a timestamp — and tau accepts no delivery it cannot verify by a
-//     signature over the body. So push hooks exist only on a driver built with
-//     Signing, which registers Standard Webhooks; without it the driver
-//     implements neither forge.PushHooks nor forge.Signatures and the registry
-//     reports both as *forge.UnsupportedError. See Signing.
-//
-//   - CREATION IS NOT A PATH OPERATION. A project is created under a NAMESPACE
-//     ID, so Create resolves the namespace first. That integer is a namespace id,
-//     never a repository id, it is resolved per call and stored nowhere, so the
-//     doctrine's prohibition is intact — but the round trip is real and it is
-//     documented on the method rather than hidden inside it.
-//
-// # Credentials
-//
-// A caller's credential is bound once, by forge.Registry.For, and spent through
-// forge.PinnedTransport so it can never reach another host — and this driver
-// follows NO redirect at all, because the hop a pin cannot refuse is the one
-// back onto this host: see noRedirect.
-//
-// The DEPLOYMENT's credential — the one Memberships answers with — is a
-// construction option, held by the driver, and no Session can reach it. A driver
-// built without it does not implement forge.Memberships AT ALL, because it is a
-// different Go type: see New.
+// GitLab nests, so Addressable accepts every depth. Access is asked over
+// GraphQL, which answers 200 for failures. Push hooks exist only with Signing
+// (Standard Webhooks): GitLab's older procedure replays a token and binds
+// nothing. Create resolves a namespace id first. A caller's credential is
+// pinned to the host and no redirect is followed (see noRedirect). The
+// deployment's credential is a construction option held by the driver; without
+// it the driver is a type with no membership face.
 package gitlab
 
 import (
@@ -65,10 +22,8 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// Compile-time face assertions. A face method whose signature is one type wrong
-// compiles clean, fails its type assertion in silence, and vanishes from
-// forge.Session.Capabilities — these lines and the conformance suite's exact
-// capability comparison are the two things that catch it.
+// Compile-time face assertions: a face method one type wrong vanishes from
+// Capabilities silently.
 var (
 	_ forge.Driver      = (*driver)(nil)
 	_ forge.Driver      = (*memberDriver)(nil)
@@ -104,21 +59,9 @@ type config struct {
 	deployment forge.Credential
 }
 
-// New builds a driver for one GitLab host.
-//
-// host is a repokey host spelling — lowercase, a port only when it is not the
-// transport's default — and it is what a forge.Binding must name. The same
-// string is checked twice, here and in forge.New, because a host that is not
-// something repokey derives from a clone URL is a driver no key will ever
-// resolve to and the failure is otherwise silent forever.
-//
-// IT RETURNS forge.Driver AND NOT A CONCRETE TYPE ON PURPOSE. Which optional
-// faces a driver has is decided by its Go type, so a face whose availability
-// depends on configuration cannot be one method with a nil check inside it —
-// that is precisely the stub-returning-a-zero-value the interface exists to make
-// impossible. A driver given a Deployment credential is therefore a DIFFERENT
-// TYPE from one without, and forge.Session.Capabilities tells the truth about
-// both without either declaring anything.
+// New builds a driver for one GitLab host, a repokey host spelling. It returns
+// forge.Driver because which faces a driver has is its Go type: one given a
+// Deployment credential is a different type.
 func New(host string, opts ...Option) (forge.Driver, error) {
 	if host == "" {
 		return nil, errors.New("gitlab: no host. The host is the provider, so there is no default: name the instance this driver serves")
@@ -149,21 +92,9 @@ func New(host string, opts ...Option) (forge.Driver, error) {
 	return d, nil
 }
 
-// BaseURL points the driver at the instance's API root. In production it is
-// derived from the host and never set; it exists because a test instance answers
-// on http at a loopback port, which is also what a developer's own GitLab does.
-//
-// The URL's host must be the driver's host — anything else is a credential aimed
-// at another server, and PinnedTransport would refuse every request anyway, one
-// layer too late to be legible.
-//
-// A PATH PREFIX IS REFUSED, and the reason is the doctrine rather than laziness.
-// An instance served under a relative URL root spells its clone URLs with that
-// prefix, so https://acme.example/gitlab/team/pay.git has the repokey key
-// acme.example/gitlab/team/pay: the prefix is folded into the repository's
-// OWNER. Every namespace this driver resolved would be off by one segment, and a
-// tenancy scoped to "team" would be scoped to "gitlab". Give such an instance its
-// own host.
+// BaseURL points the driver at the instance's API root, for a loopback test
+// instance; production derives it from the host, and its host must be the
+// driver's. A path prefix is refused: it would fold into every key's owner.
 func BaseURL(raw string) Option {
 	return func(c *config) error {
 		u, err := url.Parse(raw)
@@ -190,17 +121,9 @@ func BaseURL(raw string) Option {
 }
 
 // Signing says the instance signs deliveries with Standard Webhooks (GitLab 19.0
-// and later), and it is what gives this driver push hooks at all: they are
-// registered with a signing token and verified under
-// forge.SchemeStandardWebhooks. A driver built without it has no hook faces,
-// because the only other thing GitLab offers is a token replayed in a header,
-// which binds nothing and which tau does not accept.
-//
-// ITS FAILURE MODE IS CLOSED. An instance too old to know the attribute ignores
-// it and signs nothing, at which point every delivery fails verification and the
-// hook is visibly broken. There is no arrangement in which getting this wrong
-// causes a forged delivery to be accepted. Whether an instance is new enough is
-// the operator's to know, and it is a per-instance fact, not a per-forge one.
+// and later), which gives the driver push hooks verified under
+// forge.SchemeStandardWebhooks. It fails closed: an older instance ignores the
+// attribute and signs nothing, so every delivery fails verification.
 func Signing() Option {
 	return func(c *config) error {
 		c.signing = true
@@ -209,14 +132,8 @@ func Signing() Option {
 }
 
 // OAuth sends the credential as "Authorization: Bearer" instead of
-// "PRIVATE-TOKEN".
-//
-// GITLAB HAS TWO CREDENTIAL HEADERS FOR TWO CREDENTIAL KINDS, and forge.Credential
-// is one opaque string with no kind, so a driver has to be told. PRIVATE-TOKEN
-// carries a personal, project or group access token; an OAuth access token is only
-// accepted as a Bearer. Defaulting to PRIVATE-TOKEN keeps the decade-stable case
-// working with no option at all, and this is the one line a deployment adds when
-// its tokens come from an OAuth flow.
+// "PRIVATE-TOKEN": an OAuth access token is accepted only as Bearer, and
+// forge.Credential carries no kind.
 func OAuth() Option {
 	return func(c *config) error {
 		c.oauth = true
@@ -235,18 +152,9 @@ func HTTPTransport(rt http.RoundTripper) Option {
 	}
 }
 
-// Deployment gives the driver the credential it answers membership questions
-// with, and giving it is what makes the driver a forge.Memberships at all.
-//
-// It is the DEPLOYMENT's credential, not a caller's: a caller's own token
-// carries whatever scopes that caller granted, and a 404 from it conflates "not
-// a member" with "you may not look". Held by the driver, spent by one method,
+// Deployment gives the driver the credential it answers membership with, a group
+// access token or a service account's with read_api, held by the driver and
 // reachable from no Session.
-//
-// On GitLab this is a group access token or a service account's token with
-// read_api. There is no GitHub-App equivalent — no installation, no per-tenant
-// grant, no way for a tenant to revoke tau's access without revoking the token —
-// and that asymmetry is a real product question rather than a coding one.
 func Deployment(cred forge.Credential) Option {
 	return func(c *config) error {
 		if cred.IsZero() || cred.IsAnonymous() {
@@ -257,42 +165,17 @@ func Deployment(cred forge.Credential) Option {
 	}
 }
 
-// ─────────────────────────────── the driver ───────────────────────────────
-
 type driver struct{ cfg *config }
 
 func (d *driver) Host() string { return d.cfg.host }
 
-// Addressable accepts EVERY DEPTH, and that is this driver's whole contribution
-// to the shape of the interface: a GitLab group nests, so acme/team/widget is one
-// repository whose owner is two segments, and a driver that joined them into
-// "acme-team" or "team" would address a project that either does not exist or is
-// somebody else's.
-//
-// What it does refuse is a key GitLab cannot name at all:
-//
-//   - a repository at the host root, because a project always lives in a
-//     namespace, and
-//   - a path segment of "-", which GitLab reserves as a route separator
-//     (/acme/pay/-/settings), so no project is ever served under one.
-//
-// Both are refused here, before any request leaves the process, because the
-// registry calls this once per key rather than each method calling it and one
-// method forgetting.
+// Addressable accepts every depth, since a GitLab group nests. It refuses a
+// repository at the host root and a "-" segment, GitLab's route separator.
 func (d *driver) Addressable(key repokey.Key) error { return d.cfg.addressable(key) }
 
-// addressable is the rule itself, on the configuration rather than on the
-// driver, because the LISTING has to ask it too: a client holds the config and
-// not the driver, and a listing that yielded a key this very method refuses
-// would hand a consumer a project no method of this driver could ever act on.
-// One rule, two callers — the alternative is a second copy that drifts.
+// addressable is on the config because the listing asks it too.
 func (c *config) addressable(key repokey.Key) error {
-	// THE HOST FIRST, and it is here rather than left to the registry because
-	// Addressable is EXPORTED and answers on its own. The registry routes by
-	// host and Session.check compares one before calling it, so a key that
-	// arrives through either has already been through it — but a consumer that
-	// asks a driver directly whether it can address a key on another host was
-	// being told yes. The github driver refuses it here for the same reason.
+	// The host first: Addressable is exported and answers on its own.
 	if key.Host != c.host {
 		return fmt.Errorf("this driver answers for %s", c.host)
 	}
@@ -314,11 +197,8 @@ func (d *driver) Bind(cred forge.Credential) (forge.Client, error) {
 	return &client{cfg: d.cfg, api: d.cfg.httpClient(cred)}, nil
 }
 
-// memberDriver is a driver that also holds the deployment's credential. It is a
-// separate type because forge computes capabilities from type assertions: a
-// single type with a nil-check inside IsActiveMember would claim CapMembership
-// on a deployment that cannot answer it, and would then answer "not a member" to
-// a question it never asked.
+// memberDriver holds the deployment's credential, as a separate type:
+// capabilities come from type assertions.
 type memberDriver struct {
 	*driver
 	api *http.Client
@@ -333,7 +213,6 @@ func (d *signingDriver) Bind(cred forge.Credential) (forge.Client, error) {
 	return bindHooks(d.driver, cred)
 }
 
-// signingMemberDriver is both: membership and hooks.
 type signingMemberDriver struct{ *memberDriver }
 
 func (d *signingMemberDriver) Bind(cred forge.Credential) (forge.Client, error) {
@@ -347,8 +226,6 @@ func bindHooks(d *driver, cred forge.Credential) (forge.Client, error) {
 	}
 	return &hookClient{client: c.(*client)}, nil
 }
-
-// ─────────────────────────── host and transport plumbing ───────────────────────────
 
 // httpClient is one credential's http.Client. The credential is attached by
 // PinnedTransport, which checks EVERY HOP: a 302 to somewhere else gets no
@@ -372,44 +249,12 @@ func (c *config) httpClient(cred forge.Credential) *http.Client {
 	})}
 }
 
-// noRedirect stops at the 3xx instead of replaying the request wherever the
-// answer points. THIS DRIVER FOLLOWS NO REDIRECT AT ALL, which is the rule the
-// github driver in this same tree holds and states, and two drivers over one
-// interface may not disagree about a threat the layer has written down.
-//
-// A PIN CANNOT SEE THIS ONE. PinnedTransport checks the HOST of every hop, and
-// that is the whole of what a pin can decide: a 3xx to another path on the very
-// host the credential is for passes it, and must. GitLab answers exactly that
-// for a project that was renamed or TRANSFERRED, and Go then replays the
-// request — as a GET on 301, 302 and 303, method and body intact on 307 and
-// 308. So without this, a request built for one project is answered by another:
-// the permissions read are that other project's, the hook is installed on it,
-// the deploy key is installed on it, the deletion lands on it — while every
-// value this driver returns still carries the key the CALLER named, because
-// forge.Hook is stamped with the key that was asked about. A transferred path is
-// free to be re-registered by anyone the moment it is transferred, which is what
-// turns a rename into a grant.
-//
-// A WRITE CANNOT BE UNDONE BY CHECKING AFTERWARDS, which is why the refusal is
-// before the second request rather than a re-read after it: by the time a re-fetch
-// could notice, the hook is on somebody else's project and this one is gone. The
-// 301/302/303 rewrite to GET is worse and not better — Delete followed it, read a
-// 200, and reported success having deleted nothing.
-//
-// It is one rule on the client rather than a check per call because it must hold
-// for every request this driver makes, the deployment credential's membership
-// walk included, and because a rule with no host arithmetic in it cannot disagree
-// with the pin. ErrUseLastResponse hands the 3xx to do, which reads it as the
-// non-2xx it is: one error path, and the status is the fact an operator needs.
-//
-// THE CONSEQUENCE IS A PRODUCT DECISION AND IT IS FLAGGED RATHER THAN TAKEN
-// QUIETLY: a project that was renamed or transferred now yields an error naming
-// the 3xx instead of an answer about its successor. Following it is not a
-// milder alternative — it is the defect above — so the choice an owner has is
-// between this error and an explicit, key-comparing "follow one hop and prove
-// it arrived where it was sent", which is a feature nobody has asked for. The
-// github driver took this same direction on the same reasoning, and the two
-// drivers agreeing is worth more than either answer alone.
+// This driver follows no redirect, as the github driver. GitLab answers a
+// renamed or transferred project with a same-host 3xx, which the pin permits
+// and Go replays, so a request for one project would be answered by another
+// while returning the caller's key; a transferred path is free to re-register,
+// and a write cannot be undone by checking afterwards. A renamed project
+// therefore yields an error naming the 3xx.
 func noRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
 // checkHostSpelling refuses a host that is not what repokey derives from a clone

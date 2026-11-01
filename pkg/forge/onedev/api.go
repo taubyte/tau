@@ -27,15 +27,13 @@ const (
 	maxDrainOnError = 4 << 10
 )
 
-// client is a driver acting as one credential. It is stateless and holds no
-// copy of the credential: the token reaches one closure, which writes the
-// header, and nothing else.
+// client holds no copy of the credential: only the closure writing the header
+// does.
 type client struct {
 	d    *driver
 	http *http.Client
-	// anonymous is whether this client sends no credential at all. OneDev
-	// answers an anonymous caller 401 for everything it may not see, and for
-	// THAT caller a 401 is "not visible", not "credential refused".
+	// anonymous: OneDev answers an anonymous caller 401 for everything it may not
+	// see, so for that caller a 401 is "not visible", not "credential refused".
 	anonymous bool
 }
 
@@ -64,22 +62,19 @@ func (d *driver) bind(token string) *client {
 	}
 }
 
-// noRedirect: THIS DRIVER FOLLOWS NO REDIRECT AT ALL, the gitea driver's rule
-// for its reasons. OneDev has no reason to send one to an API or git client,
-// and a followed hop is a question answered about a repository nobody named.
+// No redirect is followed, the gitea driver's rule: OneDev sends none to an API
+// or git client.
 func noRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
 func (c *client) Host() string { return c.d.host }
 
-// statusError is a non-2xx answer: the request this driver made and the code
-// it got back, and nothing the host chose.
+// statusError carries the request and its code, nothing the host chose.
 type statusError struct {
 	Method string
 	Path   string
 	Status int
 }
 
-// Refused is a 4xx: the forge's own answer refusing the request.
 func (e *statusError) Refused() bool { return e.Status >= 400 && e.Status < 500 }
 
 func (e *statusError) Error() string {
@@ -94,8 +89,7 @@ func statusOf(err error) int {
 	return 0
 }
 
-// send issues one request and decodes a 2xx JSON body into out. It is the only
-// place in the package an *http.Request is built.
+// send is the only place an *http.Request is built.
 func (c *client) send(ctx context.Context, rq request, in, out any) error {
 	body, err := c.do(ctx, rq, in)
 	if err != nil {
@@ -110,7 +104,6 @@ func (c *client) send(ctx context.Context, rq request, in, out any) error {
 	return nil
 }
 
-// do is send without the decode: the bytes of a 2xx answer, bounded.
 func (c *client) do(ctx context.Context, rq request, in any) ([]byte, error) {
 	p, err := rq.path()
 	if err != nil {
@@ -209,19 +202,10 @@ type cloneURLJSON struct {
 	SSH  string `json:"ssh"`
 }
 
-// cloneKey fetches the clone addresses OneDev gives project id and derives the
-// key from the HTTP one — the forge naming the repository, not the caller.
-//
-// asked is what tau called the project, and every error names it rather than
-// the string the forge sent, and carries no reason repokey gave: repokey
-// quotes what it was handed, and a clone URL with an identity half would be
-// the forge writing a credential of its choosing into a tau log.
-//
-// A clone URL on another host is refused, for the gitea driver's reason: the
-// key would name a host nothing here can act on, and the address is where a
-// builder spends a credential. The SSH address is passed through unchecked:
-// OneDev serves ssh on its own port, which is a different repokey host and a
-// good clone address.
+// cloneKey derives the key from the HTTP clone address OneDev gives project id.
+// Errors name asked, never the forge's string or repokey's reason. A clone URL
+// on another host is refused; the SSH address passes unchecked, OneDev serving
+// ssh on its own port.
 func (c *client) cloneKey(ctx context.Context, id int64, asked string) (repokey.Key, cloneURLJSON, error) {
 	var cu cloneURLJSON
 	if err := c.send(ctx, routeCloneURL.at(idSegment(id)), nil, &cu); err != nil {
@@ -290,12 +274,8 @@ func (c *client) record(ctx context.Context, id int64, asked string) (forge.Repo
 	return forge.Repository{Key: key, HTTPS: cu.HTTP, SSH: cu.SSH, DefaultBranch: branch, Private: private}, true, nil
 }
 
-// private is MEASURED, because OneDev has no visibility field: who may read a
-// project is a set of role grants, inherited down the tree, and the instance
-// decides whether anonymous access exists at all. A project is reported
-// private unless a caller holding NO credential can resolve it — the one
-// definition that means the same on every instance. Metadata only; Access is
-// the authorization answer.
+// private is measured, since OneDev has no visibility field: a project is
+// private unless a caller holding no credential can resolve it. Metadata only.
 func (c *client) private(ctx context.Context, key repokey.Key) (bool, error) {
 	if c.anonymous {
 		return false, nil

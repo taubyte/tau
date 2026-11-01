@@ -1,46 +1,14 @@
-// Package sourcehut is the forge driver for git.sr.ht: sr.ht itself and any
-// self-hosted sourcehut, through git.sr.ht's GraphQL API at /query.
+// Package sourcehut is the forge driver for git.sr.ht, sr.ht or self-hosted,
+// through its GraphQL API at /query.
 //
-// # sourcehut is not shaped like GitHub, and the differences are the driver
-//
-//   - THERE ARE NO ORGANIZATIONS. Every repository belongs to one user and is
-//     addressed ~user/name, so a key's owner carries the tilde and a nested
-//     owner is refused before the wire. A repository is created only under the
-//     credential's own account, and membership — "does this user belong to
-//     this organization" — has nothing to ask, so CapMembership is absent and
-//     answers *forge.UnsupportedError rather than a false.
-//
-//   - THE API IS ONE ENDPOINT. Every operation is a POST of a named GraphQL
-//     document to /query; a redirect is never followed, so a same-host hop
-//     cannot pick which repository a question was about.
-//
-//   - EVERYTHING WRITES BY INTERNAL ID. deleteRepository, createDeployKey,
-//     createGitWebhook take sourcehut's own ids, so each write first resolves
-//     the key to its repository, and every answer that names a repository is
-//     checked against the key that was asked about. Removing a hook or a deploy
-//     key by a handle first lists that repository's own hooks or keys, because
-//     the handle is global on sourcehut and a removal that trusted it could
-//     remove a resource on a repository nobody named.
-//
-//   - A DEPLOY KEY HAS NO TITLE. sourcehut keeps the key's comment, so the
-//     title is written as the comment of the key installed and read back from
-//     it. The mode is RO, and a key the forge reports as anything else is
-//     removed again and the install refused.
-//
-//   - DELIVERIES ARE SIGNED WITH THE INSTANCE'S OWN ED25519 KEY, not a shared
-//     secret: forge.SchemePayloadEd25519, which says why a per-hook secret is
-//     still needed and how this driver spends it (an alias in the query it
-//     registers). The key is a deployment fact: sr.ht's published one is the
-//     default for git.sr.ht, and a self-hosted instance names its own with
-//     PayloadKey. A driver with no key cannot verify, so it has no Signatures
-//     face and RegisterPushHook answers *forge.UnsupportedError.
-//
-//   - NO PUSH PROBE: answering it means speaking git over SSH, which no driver
-//     here does yet.
-//
-// No SDK and no GraphQL library: the whole of what tau asks is a dozen fixed
-// documents, and a client generator would put its types one careless signature
-// away from this boundary.
+// There are no organizations: a repository is ~user/name, created only under
+// the credential's own account, and membership is absent. Every operation is a
+// POST of a named document to one endpoint, and no redirect is followed. Writes
+// take internal ids, so each resolves the key first and checks the answer; a
+// hook or deploy key handle is global, so removal lists the repository's own
+// first. A deploy key has no title, so the title is the key's comment. Deliveries
+// are signed with the instance's Ed25519 key (forge.SchemePayloadEd25519); a
+// driver with no key has no Signatures face. No push probe.
 package sourcehut
 
 import (
@@ -56,15 +24,13 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// PublicHost is sr.ht's own git service.
 const PublicHost = "git.sr.ht"
 
 // srhtPayloadKey is the key sr.ht signs every webhook delivery with, as
 // published at https://man.sr.ht/graphql.md#webhooks.
 const srhtPayloadKey = "uX7KWyyDNMaBma4aVbJ/cbUQpdjqczuCyK/HxzV/u+4="
 
-// driver is one git.sr.ht, constructed for the host it answers for. It carries
-// no caller credential.
+// driver carries no caller credential.
 type driver struct {
 	host string
 	// endpoint is the GraphQL endpoint. git.sr.ht serves it from /query on
@@ -78,9 +44,9 @@ type driver struct {
 	key     ed25519.PublicKey
 }
 
-// signingDriver is a driver that knows the key its forge signs with, and so can
-// read deliveries. It is a separate type because forge computes capabilities by
-// type assertion and whether a key is known is decided once, at New.
+// signingDriver knows the key its forge signs with, as a separate type:
+// capabilities come from type assertions, and whether a key is known is decided
+// at New.
 type signingDriver struct{ *driver }
 
 var (
@@ -90,10 +56,8 @@ var (
 	_ forge.PayloadKey = (*signingDriver)(nil)
 )
 
-// Option is a deployment fact about one sourcehut.
 type Option func(*driver) error
 
-// Transport is the RoundTripper UNDER the credential pin.
 func Transport(rt http.RoundTripper) Option {
 	return func(d *driver) error {
 		if rt == nil {
@@ -138,7 +102,6 @@ func Plaintext() Option {
 	}
 }
 
-// New builds the driver for one git.sr.ht host.
 func New(host string, opts ...Option) (forge.Driver, error) {
 	if host == "" {
 		return nil, errors.New("forge/sourcehut: a driver names the host it answers for")
@@ -183,7 +146,6 @@ func (d *driver) Addressable(key repokey.Key) error {
 	return nil
 }
 
-// Bind returns a client acting as cred and only as cred.
 func (d *driver) Bind(cred forge.Credential) (forge.Client, error) {
 	if cred.IsZero() {
 		return nil, forge.ErrNoCredential
@@ -191,5 +153,4 @@ func (d *driver) Bind(cred forge.Credential) (forge.Client, error) {
 	return d.bind(string(cred.Expose())), nil
 }
 
-// PayloadKey is the key this instance signs deliveries with.
 func (d *signingDriver) PayloadKey() ed25519.PublicKey { return d.key }

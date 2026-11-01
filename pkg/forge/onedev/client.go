@@ -37,14 +37,9 @@ func (c *client) Whoami(ctx context.Context) (forge.Identity, error) {
 	return forge.Identity{Login: u.Name, Subject: strconv.FormatInt(u.ID, 10)}, nil
 }
 
-// Access is the authorization question, asked the only way OneDev answers it:
-// by asking for each privilege in turn and reading the first that is granted.
-// See the package comment.
-//
-// IT IS BOUND TO THE KEY IT WAS ASKED ABOUT. The id the path resolved to is
-// checked against the clone address OneDev gives that id, so a path the forge
-// resolves to a project that names itself otherwise is an error here and not
-// that project's grant reported as the asked one's.
+// Access asks each privilege in turn and reads the first granted (see the
+// package comment). It is bound to the key asked about: the id the path
+// resolved to is checked against the clone address OneDev gives that id.
 func (c *client) Access(ctx context.Context, key repokey.Key) (forge.Access, error) {
 	id, err := c.projectID(ctx, key)
 	if err != nil {
@@ -173,17 +168,10 @@ type createProjectRequest struct {
 	CodeIndexingSetting struct{} `json:"codeIndexingSetting"`
 }
 
-// Create makes the project AT THE KEY IT WILL BE ADDRESSED BY: under the parent
-// project its owner names, which must already exist.
-//
-// PRIVATE IS MEASURED AND THEN HELD TO. OneDev has no visibility flag: a new
-// project inherits its readers from its ancestors' grants, so whether it is
-// private is decided by the tree it lands in and not by a field in this
-// request. The created project is measured the way Repository measures one,
-// and a project that came out other than asked is deleted again and the
-// create refused — the gitea driver's rule for a writable deploy key, for the
-// same reason: the caller named a property and must not be handed a resource
-// without it.
+// Create makes the project at its key, under the parent project its owner
+// names, which must exist. OneDev has no visibility flag, so the created project
+// is measured, and one that came out other than asked is deleted and the create
+// refused.
 func (c *client) Create(ctx context.Context, key repokey.Key, opts forge.CreateOptions) (forge.Repository, error) {
 	parentID, err := c.projectID(ctx, parentOf(key))
 	if err != nil {
@@ -254,11 +242,9 @@ func (c *client) Delete(ctx context.Context, key repokey.Key) error {
 // idSegment is the one place a project number becomes a path segment.
 func idSegment(id int64) string { return strconv.FormatInt(id, 10) }
 
-// CloneAddress is the offline derivation, with no request and no credential in
-// the URL. OneDev's own clone URLs are https://host/<path>.git, and its ssh
-// listens on a port of its own (6611 by default) that the key's host cannot
-// carry — so the ssh spelling here is a guess on a ported host, and
-// Repository(), which returns the addresses the forge gives, is authoritative.
+// CloneAddress is the offline derivation. OneDev's ssh listens on its own port
+// (6611 by default), which the key's host cannot carry, so Repository's
+// addresses are authoritative.
 func (c *client) CloneAddress(key repokey.Key, over forge.Protocol) (forge.Address, error) {
 	escaped, err := escapedSegments(strings.Split(key.FullName(), "/"))
 	if err != nil {

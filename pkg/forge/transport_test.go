@@ -10,10 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestPinnedTransportRefusesTheRedirect is the threat this type exists for. An
-// http.Client follows redirects, so a forge — or anything answering as one —
-// that replies 302 to somewhere else receives the Authorization header on the
-// next hop unless a RoundTripper, which sees every hop, stops it.
 func TestPinnedTransportRefusesTheRedirect(t *testing.T) {
 	var elsewhereSaw http.Header
 	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -69,9 +65,6 @@ func TestPinnedTransportServesItsOwnHost(t *testing.T) {
 	assert.Empty(t, req.Header.Get("Authorization"))
 }
 
-// TestPinnedTransportRefusesCleartextOffLoopback: a credential on the wire in
-// the clear is spent, and httptest's own loopback server is the exception that
-// makes a driver's tests possible at all.
 func TestPinnedTransportRefusesCleartextOffLoopback(t *testing.T) {
 	rt := PinnedTransport("git.example.invalid", roundTripperFunc(func(*http.Request) (*http.Response, error) {
 		t.Fatal("the request reached the wire")
@@ -86,8 +79,6 @@ func TestPinnedTransportRefusesCleartextOffLoopback(t *testing.T) {
 	assert.Contains(t, leak.To, "http://")
 }
 
-// TestPinnedTransportKnowsADefaultPortIsTheSameServer: repokey drops a default
-// port, so a driver that spells one out must not be refused as a leak.
 func TestPinnedTransportKnowsADefaultPortIsTheSameServer(t *testing.T) {
 	reached := 0
 	base := roundTripperFunc(func(*http.Request) (*http.Response, error) {

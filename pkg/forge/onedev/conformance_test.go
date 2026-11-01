@@ -10,14 +10,8 @@ import (
 	"github.com/taubyte/tau/pkg/forge/onedev"
 )
 
-// expect is the EXACT capability set, compared for equality by the suite.
-//
-// CapDeployKeys is absent because OneDev has no repository-scoped key: an SSH
-// key belongs to a user and reaches every project that user reaches.
-// CapMembership is absent because a parent project is not an organisation
-// with members, and there is no deployment credential that would answer it.
-// CapPushProbe is absent for the gitlab driver's reason: "may this machine key
-// push" is git's question, not a forge's.
+// expect is the exact set. No deploy keys: an SSH key belongs to a user. No
+// membership: a parent project has no members. No push probe: git's question.
 func expect() forge.Set {
 	return forge.Set{
 		forge.CapIdentity:   {},
@@ -30,10 +24,6 @@ func expect() forge.Set {
 	}
 }
 
-// CapPushHooks and CapSignatures are absent because OneDev cannot sign a
-// delivery; see TestPushHooksAreUnsupported.
-//
-// TestConformance runs the suite under the zero policy, the only one.
 func TestConformance(t *testing.T) {
 	f := newFixture(t)
 	reg := f.registry(t, forge.Policy{})

@@ -1,18 +1,8 @@
 package gogs_test
 
-// The Gogs this package's tests talk to is an httptest server and nothing
-// else. NOTHING HERE REACHES a real forge (the container suite, tag forges, is
-// where a real one is): a test that needs the network is a
-// test that is green when the network is, and a signature check proven against
-// a live forge is a signature check nobody can re-run.
-//
-// What the fixture serves is the twelve endpoints the driver calls, in Gogs's
-// own shapes, with Gogs's own status codes for the cases that matter — 401 on a
-// revoked token, 404 on a repository this credential cannot see, 403 on an
-// organization it may not create in, 409 on a name already taken — and Gogs's
-// two habits a Gogs copy gets wrong, both measured against a real Gogs: every
-// listing ignores "page" and answers whole, and removing a hook that is not
-// there answers 204.
+// An httptest server serving the twelve endpoints the driver calls in Gogs's
+// shapes and status codes, with the two habits measured against a real Gogs:
+// listings ignore "page", and removing a missing hook answers 204.
 
 import (
 	"encoding/json"
@@ -74,7 +64,6 @@ type fKey struct {
 	readOnly bool
 }
 
-// fixture is one in-memory Gogs behind a TLS httptest server.
 type fixture struct {
 	srv  *httptest.Server
 	rt   *breakableRT
@@ -110,7 +99,6 @@ func newFixture(t *testing.T) *fixture {
 	f.host = strings.TrimPrefix(f.srv.URL, "https://")
 	f.rt = &breakableRT{base: f.srv.Client().Transport}
 
-	// The fixtures the conformance suite names, seeded to the grants it asserts.
 	f.seed("acme", "pay", true, permPush)      // Writable
 	f.seed("acme", "public", false, permPull)  // ReadOnly: readable, no grant
 	f.seed("acme", "site", true, permAdmin)    // Admin
@@ -120,19 +108,9 @@ func newFixture(t *testing.T) *fixture {
 	// 404 it gives one that does not exist, and pretending otherwise here would
 	// test a forge nobody runs.
 
-	// acme/billing was renamed to acme/pay, and this Gogs still answers for
-	// the old name — with the new repository, whose full_name and clone URL say
-	// so. It is the fixture the derivation contract is asserted on: everywhere
-	// else the key asked about and the key answered with are the same string,
-	// so a driver echoing its own argument back is indistinguishable from one
-	// reading the answer.
-	//
-	// IT RESOLVES THE OLD NAME RATHER THAN REDIRECTING TO IT, and it must:
-	// Gogs answers a rename with 307 and this driver follows no redirect at
-	// all (see noRedirect, and the reason it is right), so a 3xx here would
-	// assert that policy a second time instead of asserting derivation. What
-	// the contract says is that the KEY COMES FROM THE ANSWER, and the answer
-	// is what a body says about which repository it describes.
+	// acme/billing was renamed to acme/pay, and this Gogs answers the old name with
+	// the new repository. It resolves rather than redirects: the driver follows no
+	// redirect, and this fixture asserts derivation.
 	f.renames = map[string]string{"acme/billing": "acme/pay"}
 	return f
 }
@@ -166,16 +144,8 @@ func (f *fixture) Requests() []forgetest.Request { return f.rt.drain() }
 func (f *fixture) Break()   { f.rt.broken.Store(true) }
 func (f *fixture) Unbreak() { f.rt.broken.Store(false) }
 
-// RedirectOnce makes the next request this server answers with status, pointing
-// at loc. It is what the suite arms to find out where a driver's requests
-// actually GO: this fixture can only report the ones that reached it, so the
-// interesting one — the request that went somewhere else — is the one it cannot
-// see, and the suite reads that at the other end.
-//
-// The status is the suite's, not this fixture's: 301, 302 and 303 make Go
-// rewrite a write to a GET, and 307 and 308 replay it, so the two reach
-// different halves of the defect and only the caller knows which half it is
-// asking about.
+// The status is the suite's: 301, 302 and 303 make Go rewrite a write to a GET,
+// 307 and 308 replay it.
 func (f *fixture) RedirectOnce(loc string, status int) {
 	f.mu.Lock()
 	f.redirect, f.redirectStatus = loc, status
@@ -233,16 +203,9 @@ func (b *breakableRT) drain() []forgetest.Request {
 	return out
 }
 
-// RoundTrip RECORDS BEFORE IT DECIDES, and it records here rather than in the
-// handler because Requests is documented as what the SUBJECT sent and not as
-// what a server received. The difference is the whole of two probes: a request
-// the wire swallowed is still a request this driver composed — which is how the
-// same-host probe learns where a destructive operation would have gone without
-// letting it go there — and a request that went to another host never reaches
-// this fixture's handler at all.
-//
-// It is under forge.PinnedTransport, so what it records is the hop AFTER the
-// credential was attached, which is the only place worth looking for one.
+// RoundTrip records before it decides: Requests is what the subject sent, so a
+// request the broken wire swallowed still shows where it would have gone. It is
+// under the pin, so it sees the credential attached.
 func (b *breakableRT) RoundTrip(r *http.Request) (*http.Response, error) {
 	b.record(forgetest.Request{Method: r.Method, URL: r.URL.String(), Header: r.Header.Clone()})
 	if b.broken.Load() {
@@ -250,8 +213,6 @@ func (b *breakableRT) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	return b.base.RoundTrip(r)
 }
-
-// ─────────────────────────────── the server ───────────────────────────────
 
 func (f *fixture) handler() http.Handler {
 	mux := http.NewServeMux()
@@ -311,7 +272,6 @@ func bearer(r *http.Request) string {
 	return t
 }
 
-// user gates every endpoint a CALLER'S token reaches.
 func (f *fixture) user(w http.ResponseWriter, r *http.Request) bool {
 	if bearer(r) == goodToken {
 		return true

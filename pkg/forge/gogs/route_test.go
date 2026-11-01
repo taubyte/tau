@@ -1,25 +1,8 @@
 package gogs_test
 
-// THE ROUTING TABLE IS WHAT THE SWEEP'S EXPECTATION COMES FROM.
-//
-// The sweep next door discovers what this driver sends by sending it: every
-// operation is run once and what arrived is read off the recorder. That finds
-// every ENDPOINT some operation reaches, and it finds nothing about a BRANCH no
-// input reaches — which is not hypothetical, because the endpoint Create takes
-// when the key names the credential's own account was armed by nothing for five
-// rounds for exactly that reason, and closing that instance left the class open:
-// adding
-//
-//	if strings.HasPrefix(key.Name, "z") { path = "user/repos?legacy=1" }
-//
-// to an existing operation left the whole forge tree at exit 0.
-//
-// So a path is no longer a string a call site composes. It is a route declared
-// by newRoute, which registers it by constructing it, and send refuses to issue
-// anything else — so the set of requests this driver CAN issue is a fact of the
-// program. The rows below are the closure over that fact: a route nothing
-// reached is a request nothing arms, and it fails here naming the line that
-// declared it.
+// A path is a route declared by newRoute, so the requests this driver can issue
+// are a fact of the program; a route nothing reached fails here, naming the line
+// that declared it.
 
 import (
 	"fmt"
@@ -46,11 +29,8 @@ func assertOneRoute(t *testing.T, drv forge.Driver, shape string) []gogs.RouteFa
 	return routesMatching(t, gogs.DeclaredRoutes(drv), shape)
 }
 
-// routesMatching asks that of ONE TABLE rather than of the driver's own. The
-// closures below walk a table with a route inserted into it, so they cannot ask
-// through a function that goes and fetches the real one — the inserted route
-// would not be in the answer, and "was it reached" would be decided for it by
-// different code than for every other route.
+// routesMatching asks one table, not the driver's own: the closures below walk a
+// table with a route inserted into it.
 func routesMatching(t *testing.T, table []gogs.RouteFact, shape string) []gogs.RouteFact {
 	t.Helper()
 	method, path, found := strings.Cut(shape, " ")
@@ -66,58 +46,11 @@ func routesMatching(t *testing.T, table []gogs.RouteFact, shape string) []gogs.R
 	return matched
 }
 
-// ─────────────────── the closure, and its one invocation path ───────────────────
+// The row inserts a route nothing reaches at every position and requires the
+// complaints to be exactly that route's: none means the closure did not run, an
+// extra one is a shipped route the sweep missed. Equality is load-bearing:
+// containment would let a shipped, unreached route ride along.
 
-// A CLOSURE THAT IS A LOOP WITH AN ASSERT IN IT GUARDS NOTHING BUT ITSELF.
-// Round 7 measured the shape next door: the ledger's rules were proven against
-// a recorder and then APPLIED with a discarded one, and the whole suite passed
-// at exit 0 with a real contract assertion deleted. The two rows here had the
-// same shape. Measured on this driver: declare
-//
-//	routeMutant = newRoute(http.MethodGet, "repos/"+hole+"/"+hole+"/mutant")
-//
-// and the row below fails naming route.go:119, which is the closure working;
-// then change one token in the row — `range table` to `range table[:0]` — and
-// the whole package is back at exit 0 with that request still declared and
-// still armed by nothing. Nothing else in the package says a word about it,
-// because nothing else applies the table to anything.
-//
-// SO THERE IS ONE CALL SITE AND IT PROVES BOTH HALVES AT ONCE. The closure is
-// the pure function below; the row inserts a route NOTHING REACHES into the
-// table, walks the table with it, and requires the complaints to be EXACTLY
-// that route's:
-//
-//   - an empty answer means the closure did not run — switched off, or ranged
-//     over a subset that skipped the position the inserted route is at, which
-//     is why it is inserted at every position in turn;
-//   - an extra line is a route this driver really ships that the sweep really
-//     did not reach, named by the line that declared it. That is the original
-//     property, unweakened: the inserted route is one more row in the answer,
-//     never a substitute for a row.
-//
-// AND THE OBSERVATION IS BUILT AFTER THE INSERTION, from the same matcher, so
-// "reached" is decided for the inserted route by the code that decides it for
-// every other one. Marking the table's routes reached to quiet the row marks
-// this one too, and the complaint it must make stops being made.
-//
-// WHERE THE TOWER ENDS, and it ends here rather than at another rung. What must
-// be correct is: sweepShapes returns what the driver really put on the wire;
-// sweptRoutes decides "reached" by RouteFact.Matches and nothing else; the row
-// below runs the insertion over every position and compares for EQUALITY. That
-// is a handful of lines in one place, all of them named in this comment, and it
-// is the same exposure as trusting that this file is compiled into the package
-// at all.
-//
-// EQUALITY IS LOAD-BEARING AND NOT TIDINESS. Self-attacked, and it worked:
-// weakening it to containment — assert.Subset, "the answer includes the
-// inserted route" — keeps every self-test property and silently drops the real
-// one, and a route this driver ships that nothing reaches then rides along in
-// the answer at exit 0. Measured. That line is the floor; a further rung would
-// be a closure over the closure with its own invocation to guard, and that
-// regress does not terminate.
-
-// describe is how a route is named in a complaint: what it is, and the line
-// that introduced it.
 func describe(r gogs.RouteFact) string {
 	return fmt.Sprintf("%s %s, declared at %s", r.Method, r.Template, r.Declared)
 }
@@ -127,19 +60,11 @@ func describe(r gogs.RouteFact) string {
 // to be able to tell it from a route this driver really declared.
 const decoyDeclared = "route_test.go, as the route nothing reaches"
 
-// decoyUnsent is a query parameter no route declares and nothing sends.
 const decoyUnsent = "nothing-sends-this"
 
-// aRouteNothingReaches is the request this driver could grow tomorrow: declared
-// and SHIPPING — a route a test built to drive the plumbing is skipped by both
-// closures, so a decoy that was not shipping would prove nothing about either.
-//
-// It carries ONE query parameter, decoyUnsent, which nothing sends and which
-// is the whole of what the parameter row must complain about. The other
-// drivers give it a second, one the sweep really sends, to catch a `sent` map
-// filled from the table rather than from the wire; this driver sends no query
-// parameter at all, so there is no such parameter to give it — and the empty
-// sweptQueries pins that.
+// aRouteNothingReaches ships, since a route a test built is skipped by both
+// closures. It carries only decoyUnsent: this driver sends no query parameter
+// for a second one to be.
 func aRouteNothingReaches() gogs.RouteFact {
 	return gogs.RouteFact{
 		Method:   http.MethodGet,
@@ -151,13 +76,10 @@ func aRouteNothingReaches() gogs.RouteFact {
 	}
 }
 
-// withRouteAt is the table with one more route in it, at the given position.
 func withRouteAt(table []gogs.RouteFact, i int, r gogs.RouteFact) []gogs.RouteFact {
 	return slices.Insert(slices.Clone(table), i, r)
 }
 
-// unreachedRoutes IS THE CLOSURE over the routing table: every route this
-// driver ships that the sweep never reached, as one complaint each.
 func unreachedRoutes(table []gogs.RouteFact, reached map[string]bool) []string {
 	out := []string{}
 	for _, r := range table {
@@ -204,26 +126,6 @@ func parametersNeverSent(table []gogs.RouteFact, sent map[string]bool) []string 
 	return out
 }
 
-// TestEveryRouteThisDriverCanIssueIsSwept.
-//
-// This is the row a new branch fails. The sweep drives every operation; a route
-// that no operation reached is a request this driver can issue that nothing in
-// the sweep arms — not the redirect rows, not the anonymous row, not the
-// escaping rows — and it is named here by the line that declared it rather than
-// discovered a round later.
-//
-// WHAT THIS CLOSES AND WHAT IT DOES NOT, measured rather than reasoned. A
-// branch that reaches a NEW route fails here; a branch that adds a query
-// PARAMETER fails the row below; a branch that adds one without declaring it is
-// refused by the driver. What survives is a branch that reuses a route the
-// sweep already reached and changes only a VALUE it sends — measured, twice, at
-// exit 0: Create sending Private false when the key's name starts with "z", and
-// Create taking its own personal-account branch on the same condition. The
-// first is a request the sweep never sees and the second is a request it sees
-// under another name; neither is a new SHAPE, and shape is the unit here. What
-// would close them is a driver DRIVEN over its own branches rather than over a
-// table of operations, which is a different mechanism from this one and not a
-// stronger version of it.
 func TestEveryRouteThisDriverCanIssueIsSwept(t *testing.T) {
 	shapes := sweepShapes(t)
 	subject := newSweepForge(t, sweepOps[0])
@@ -241,14 +143,6 @@ func TestEveryRouteThisDriverCanIssueIsSwept(t *testing.T) {
 	}
 }
 
-// TestEveryQueryParameterThisDriverDeclaresIsSwept is the same closure one
-// level down. A branch that adds a parameter to a request the sweep already
-// reaches changes what is asked without changing any path — so the route
-// declares which parameters it may carry, send refuses one it did not declare,
-// and a declared parameter nothing sent is a parameter armed by nothing.
-//
-// It is applied the same way, for the reason the comment above gives: a loop
-// with an assert in it is switched off by one token and says nothing about it.
 func TestEveryQueryParameterThisDriverDeclaresIsSwept(t *testing.T) {
 	subject := newSweepForge(t, sweepOps[0])
 
@@ -277,15 +171,6 @@ func TestEveryQueryParameterThisDriverDeclaresIsSwept(t *testing.T) {
 	}
 }
 
-// TestThisDriverBuildsAnHTTPRequestInExactlyOnePlace is what makes the table
-// exhaustive rather than merely tidy. Every closure above is about routes, and
-// a route only constrains a request that was built through send — so a second
-// place that builds one is a request outside the table, armed by nothing and
-// escaped by nobody.
-//
-// It reads the package's own source rather than trusting a comment, because
-// "send is the only place" is exactly the kind of sentence that stays in a file
-// after it has stopped being true.
 func TestThisDriverBuildsAnHTTPRequestInExactlyOnePlace(t *testing.T) {
 	loaded, err := packages.Load(&packages.Config{
 		Mode:  packages.NeedName | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
@@ -326,11 +211,8 @@ func TestThisDriverBuildsAnHTTPRequestInExactlyOnePlace(t *testing.T) {
 		})
 	}
 
-	// AND ONE PLACE BUILDS THE CLIENT. The pin and the redirect policy are
-	// installed on an http.Client, so a second one built anywhere is a second
-	// set of both — which is exactly the shape of the defect an earlier round
-	// found here, where a redirect policy lived on one of this driver's two
-	// clients and not the other.
+	// One place builds the client: the pin and the redirect policy live on an
+	// http.Client, so a second client is a second set of both.
 	clients := []string{}
 	for _, file := range pkg.Syntax {
 		ast.Inspect(file, func(n ast.Node) bool {
@@ -357,27 +239,6 @@ func TestThisDriverBuildsAnHTTPRequestInExactlyOnePlace(t *testing.T) {
 	}
 }
 
-// TestThisDriverTurnsAStringIntoAPathInExactlyOnePlace is the census the
-// traversal refusal rests on, made a fact of the program rather than a sentence
-// in a comment.
-//
-// escapedSegments says of itself that it IS THE ONE PLACE A STRING BECOMES PART
-// OF A PATH IN THIS PACKAGE, and until now nothing said so but the comment —
-// which is exactly the kind of sentence that stays in a file after it has
-// stopped being true. It matters more now than when it was only about escaping:
-// addressesItself refuses a segment that names something else, and a second
-// place that composed a path would be a place that refuses nothing.
-//
-// url.PathEscape and url.QueryEscape are the two ways a string is turned into a
-// piece of a URL, and both are counted. What is asserted is the FILE: route.go is
-// where escapedSegments and addressesItself live, and a call from anywhere else
-// is a path composed outside the refusal — a call site that "escaped it here"
-// and never asked whether the thing it escaped was a name.
-// The load is written plainly, like its neighbour above, and it is hermetic
-// anyway: the conformance suite this driver's tests link pins GOPROXY=off and
-// GOWORK=off on the process in an init, and an environment is a property of a
-// process rather than of a call site. Measured, from this package's directory
-// with GOWORK naming a file that is not a workspace: both loads here pass.
 func TestThisDriverTurnsAStringIntoAPathInExactlyOnePlace(t *testing.T) {
 	loaded, err := packages.Load(&packages.Config{
 		Mode:  packages.NeedName | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,

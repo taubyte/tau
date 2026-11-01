@@ -10,14 +10,12 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// Scheme names the procedure this driver registers NEW hooks with: Standard
-// Webhooks, the only one GitLab offers that binds the body. It does not
-// implement one; the core verifies under the scheme stored with the hook.
+// Standard Webhooks is the only procedure GitLab offers that binds the body.
+// Verification is the core's, under the scheme stored with the hook.
 func (d *signingDriver) Scheme() forge.Scheme { return forge.SchemeStandardWebhooks }
 
 func (d *signingMemberDriver) Scheme() forge.Scheme { return forge.SchemeStandardWebhooks }
 
-// Push is the signing drivers' reading of a verified delivery; see push.
 func (d *signingDriver) Push(body forge.VerifiedBody, header http.Header) (forge.PushClaim, error) {
 	return push(body, header)
 }
@@ -26,12 +24,8 @@ func (d *signingMemberDriver) Push(body forge.VerifiedBody, header http.Header) 
 	return push(body, header)
 }
 
-// pushPayload is the slice of GitLab's push event this driver reads, and reading
-// this little is deliberate. A delivery is a stranger's bytes that a signature
-// proves the instance relayed — not bytes that are true — so every field kept is
-// one more thing something later trusts. The numeric project id, the commit
-// list, the pusher, the timestamps and the whole deprecated top-level
-// "repository" block are all present in the real payload and all ignored.
+// pushPayload reads only what a Push needs: every field kept is one more thing
+// downstream comes to trust.
 type pushPayload struct {
 	ObjectKind string `json:"object_kind"`
 	Ref        string `json:"ref"`
@@ -48,18 +42,9 @@ type pushPayload struct {
 	} `json:"project"`
 }
 
-// push reads a delivery the core HAS ALREADY VERIFIED — the parameter type is
-// the proof, since forge.VerifiedBody's fields are unexported and no package
-// outside forge can build a non-empty one — and returns what the payload CLAIMS.
-// It decides nothing: the core compares the claimed repository against the one
-// the hook was registered for.
-//
-// THE EVENT IS NAMED IN A HEADER, IN PROSE. GitLab writes "Push Hook", with a
-// space and a capital, where GitHub writes "push"; a tag push is a different
-// event under a different name and is not a push here, because nothing in tau
-// builds one. That the interface hands the raw http.Header to the driver rather
-// than a normalised event string is what makes both spellings the driver's
-// business and neither the core's.
+// push reads a delivery the core has verified and returns what it claims. The
+// event is named in a header, in prose: "Push Hook"; a tag push is not a push
+// here, since nothing in tau builds one.
 func push(body forge.VerifiedBody, header http.Header) (forge.PushClaim, error) {
 	if header.Get("X-Gitlab-Event") != "Push Hook" {
 		return forge.PushClaim{}, forge.ErrNotAPush
@@ -75,15 +60,9 @@ func push(body forge.VerifiedBody, header http.Header) (forge.PushClaim, error) 
 		return forge.PushClaim{}, forge.ErrNotAPush
 	}
 
-	// The repository is named by ITS CLONE URL and derived through the one
-	// grammar, so the payload and the config agree by construction rather than
-	// by two readings of "owner/name".
-	//
-	// IT IS MEASURED BEFORE IT IS PARSED, and the reason it fails is not carried
-	// — both for the reason repository gives. A delivery is a stranger's bytes
-	// that a signature proves the instance relayed, up to the core's eight
-	// megabyte cap, and repokey quotes what it was given; a key derived from an
-	// implausible one would be stored and printed by everything downstream.
+	// The repository is named by its clone URL, through the one grammar. It is
+	// measured before it is parsed, and the parse error is not carried, for
+	// repository's reasons.
 	switch cloneURL := payload.Project.GitHTTPURL; {
 	case cloneURL == "":
 		return forge.PushClaim{}, errors.New("gitlab: delivery names no repository")

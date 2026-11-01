@@ -40,8 +40,6 @@ import (
 	"github.com/taubyte/tau/services/build/deploy"
 )
 
-// ─────────────────────────────── one forge ───────────────────────────────
-
 // instance is one booted forge, set up the way the scenario needs it: an admin
 // account that owns a namespace and two repositories, and an ordinary user the
 // scenario acts as. It is the whole of what differs between forges; the
@@ -86,18 +84,11 @@ type instance struct {
 	branchURL func(key repokey.Key, branch string) string
 	asAdmin   http.Header
 
-	// noMembership and noHooks name the optional faces this forge's driver
-	// does not offer. They are declared rather than read off the session, so
-	// a driver that loses a face fails the walk instead of shrinking it: walk
-	// asserts each absent face is refused as *forge.UnsupportedError.
-	//
-	// noHooks is a forge that cannot sign a delivery. tau accepts no delivery
-	// it cannot verify by a signature over the body, so such a forge has no
-	// push hooks and its pushes trigger no build.
+	// noMembership and noHooks name the faces this forge's driver lacks, declared
+	// rather than read off the session so a driver that loses a face fails the walk;
+	// walk asserts each is refused as *forge.UnsupportedError.
 	noMembership, noHooks bool
 }
-
-// ─────────────────────────────── the walk ───────────────────────────────
 
 // walk is everything tau asks of a forge, against a real one, in the order a
 // link and a build ask it. Membership and hooks are optional faces: a forge
@@ -334,7 +325,6 @@ type deployKey string
 
 func (k deployKey) DeployKey(context.Context, string) (string, error) { return string(k), nil }
 
-// push puts one commit on main at remote and returns its hash.
 func push(t *testing.T, remote string, auth transport.AuthMethod) string {
 	t.Helper()
 	st, commit := gittest.Repository(t, map[string]string{"README": pushContent})
@@ -377,8 +367,6 @@ func pushWithKey(t *testing.T, address forge.Address, private string, hostKeys [
 	t.Logf("push with the deploy key: %v", err)
 	return err
 }
-
-// ─────────────────────────────── the receiver ───────────────────────────────
 
 // receiver is the callback a forge delivers to: every request it gets, as the
 // header and the exact body bytes, in order.
@@ -430,8 +418,6 @@ func (rx *receiver) await(t *testing.T, judge func(forge.Delivery) bool) bool {
 	return false
 }
 
-// ─────────────────────────────── containers ───────────────────────────────
-
 // container is one forge server this test started, through the repo's own
 // docker backend.
 type container struct {
@@ -439,7 +425,6 @@ type container struct {
 	out  output
 }
 
-// output collects what a container writes, as it writes it.
 type output struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -463,7 +448,6 @@ func (o *output) String() string {
 // 1.7 GiB. start refuses an image that is not here.
 var forgeImages = []string{giteaImage, forgejoImage, gitlabImage, gerritImage, onedevImage, gogsImage}
 
-// TestPullEveryForgeImage is what `make forge-images` runs ahead of the suite.
 func TestPullEveryForgeImage(t *testing.T) {
 	backend, err := docker.New(core.DockerConfig{})
 	require.NoError(t, err)
@@ -525,15 +509,9 @@ func start(t *testing.T, cfg *core.ContainerConfig) *container {
 // ownerLabel names the test process that started a container.
 const ownerLabel = "taubyte.forge-live.owner"
 
-// sweep removes every container an earlier run of this harness started and
-// did not live to remove.
-//
-// t.Cleanup cannot cover that run: when go test's -timeout fires it panics the
-// binary, and a killed or disconnected run is gone the same way, and none of
-// them runs a Cleanup. A GitLab boot is a large slice of the suite's budget, so
-// that is a real ending, and each one left a multi-gigabyte server running.
-// Only containers whose owner process is gone are removed, so two runs on one
-// host do not tear each other down.
+// sweep removes containers an earlier run started and did not live to remove: a
+// -timeout panic or a killed run runs no Cleanup. Only containers whose owner
+// process is gone are removed, so two runs on one host leave each other alone.
 func sweep(t *testing.T) {
 	t.Helper()
 	cli, err := client.New(client.FromEnv)
@@ -561,10 +539,8 @@ func remove(ctx context.Context, cli *client.Client, id string) error {
 	return err
 }
 
-// logs is everything the container has written so far.
 func (c *container) logs() string { return c.out.String() }
 
-// lines are the log lines carrying a tag the container's own script wrote.
 func (c *container) lines(tag string) []string {
 	var out []string
 	sc := bufio.NewScanner(strings.NewReader(c.logs()))
@@ -588,7 +564,6 @@ func tail(s string, n int) string {
 	return strings.Join(lines, "\n")
 }
 
-// freePort is a loopback port nothing holds right now.
 func freePort(t *testing.T) int {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -650,7 +625,6 @@ func basic(user, password string) string {
 	return base64.StdEncoding.EncodeToString([]byte(user + ":" + password))
 }
 
-// fetch is a GET's body, for diagnostics.
 func fetch(t *testing.T, url string, header http.Header) string {
 	t.Helper()
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
@@ -668,7 +642,6 @@ func fetch(t *testing.T, url string, header http.Header) string {
 	return resp.Status + " " + string(b)
 }
 
-// status is the code a GET answers.
 func status(t *testing.T, url string, header http.Header) int {
 	t.Helper()
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)

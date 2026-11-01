@@ -18,13 +18,9 @@ import (
 
 func b64(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
 
-// ─────────────────────────────── deliveries ───────────────────────────────
-//
-// A delivery is the answer to the query the hook was REGISTERED with, signed
-// with this fixture's own Ed25519 key over body||nonce — which is what
-// git.sr.ht's webhook worker does. The binding alias in the body is the one
-// the stored query carries, not one recomputed here, so a driver that wrote
-// the wrong alias into its query produces deliveries that do not verify.
+// A delivery is the answer to the query the hook was registered with, signed
+// with this fixture's Ed25519 key over body||nonce, as git.sr.ht's webhook
+// worker does. The binding alias is the one the stored query carries.
 
 func (f *fixture) Delivery(h forge.Hook, ref, commit string) (forge.Delivery, error) {
 	return f.deliver(h, h.Key, ref, commit, "GIT_POST_RECEIVE")
@@ -81,8 +77,6 @@ func (f *fixture) deliver(h forge.Hook, names repokey.Key, ref, commit, event st
 	return forge.Delivery{Header: forge.SignPayload(f.priv, body, "nonce-"+string(h.Handle)), Body: body}, nil
 }
 
-// ─────────────────────────────── the suite ───────────────────────────────
-
 func TestConformance(t *testing.T) {
 	f := newFixture(t)
 	drv, err := sourcehut.New(f.Host(), sourcehut.Transport(f.Transport()), sourcehut.PayloadKey(f.PublicKey()))
@@ -92,9 +86,6 @@ func TestConformance(t *testing.T) {
 	forgetest.Run(t, f.subject(t, reg, forge.CapSignatures))
 }
 
-// TestConformanceWithoutAKey: an instance whose signing key is not configured
-// cannot verify a delivery, so it has no Signatures face and registering a hook
-// is *UnsupportedError — never a hook nothing can check.
 func TestConformanceWithoutAKey(t *testing.T) {
 	f := newFixture(t)
 	drv, err := sourcehut.New(f.Host(), sourcehut.Transport(f.Transport()))

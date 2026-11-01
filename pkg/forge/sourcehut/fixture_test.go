@@ -1,12 +1,9 @@
 package sourcehut_test
 
-// The git.sr.ht this package's tests talk to is an httptest server answering
-// the driver's GraphQL documents by operation name, in the shapes git.sr.ht's
-// schema (api/graph/schema.graphqls) gives them. It does not execute GraphQL;
-// it is a RECORDED-SHAPE fake. No maintained container image of git.sr.ht
-// exists — a working instance is git.sr.ht plus meta.sr.ht for auth, its API
-// daemon, PostgreSQL, Redis and the webhook worker, each built from source —
-// so what this proves is the driver against the schema, not against a server.
+// An httptest server answering the driver's GraphQL documents by operation
+// name, in the shapes git.sr.ht's schema gives them; it does not execute
+// GraphQL. No maintained container image of git.sr.ht exists, so this proves
+// the driver against the schema, not against a server.
 
 import (
 	"crypto/ed25519"
@@ -77,7 +74,6 @@ type fixture struct {
 	redirect       string
 	redirectStatus int
 
-	// faults a driver test arms to reach a branch no honest forge takes.
 	keyAccess   string // the mode createDeployKey reports, when set
 	keyRepo     string // the repository createDeployKey reports, when set
 	pageForever bool   // every listing answers a fresh cursor
@@ -103,10 +99,9 @@ func newFixture(t *testing.T) *fixture {
 	f.host = strings.TrimPrefix(f.srv.URL, "https://")
 	f.rt = &breakableRT{base: f.srv.Client().Transport}
 
-	// Writable is the credential's own: sourcehut's listing is of the
-	// caller's account and omits a repository it was granted by ACL (which
-	// forge.Lister's contract allows), and the suite asks the listing for
-	// Writable. The ACL grant is ~acme/pay, asserted in driver_test.go.
+	// Writable is the credential's own: the listing omits ACL grants, which
+	// forge.Lister allows, and the suite asks the listing for Writable. The ACL
+	// grant, ~acme/pay, is asserted in driver_test.go.
 	f.seed("tau", "pay", true, "RW")
 	f.seed("acme", "pay", true, "RW")
 	f.seed("acme", "public", false, "RO")  // ReadOnly
@@ -206,8 +201,6 @@ func (b *breakableRT) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	return b.base.RoundTrip(r)
 }
-
-// ─────────────────────────────── the server ───────────────────────────────
 
 type gqlRequest struct {
 	Query         string         `json:"query"`

@@ -1,43 +1,17 @@
-// Package gogs is the forge driver for the Gogs API.
+// Package gogs is the forge driver for the Gogs API, the gitea driver's
+// structure for the API Gitea forked. Measured against a real Gogs (container
+// suite, tag docker_integration):
 //
-// # Gogs is the API Gitea forked, and the differences are where it bites
+//   - Listings are not paged: they answer whole and ignore "page", so each is one
+//     request with no query.
+//   - An organization's create path is singular, POST /org/{org}/repos.
+//   - There is no membership question: what Gogs offers reads "could not see" as
+//     "not a member", so the core answers *UnsupportedError.
+//   - Removing a missing hook answers 204.
+//   - The signature is X-Gogs-Signature, bare hex HMAC-SHA256
+//     (forge.SchemeGogsSHA256); the event header is X-Gogs-Event.
 //
-// Gitea started as a fork of Gogs, so the two share /api/v1 and most of its
-// paths, and this driver is the gitea driver's structure for that reason. What
-// differs was measured against a real Gogs (the container suite, tag
-// docker_integration), and each is a place a copy of the gitea driver would be
-// quietly wrong:
-//
-//   - LISTINGS ARE NOT PAGED. /user/repos, a repository's keys and its hooks
-//     answer the whole collection and ignore "page" and "limit": page 2 is page
-//     1 again. The gitea pager stops on an EMPTY page, which here never comes —
-//     it would walk a thousand copies of page 1 and yield every repository a
-//     thousand times. So each listing is ONE request with no query at all.
-//
-//   - AN ORGANIZATION'S CREATE PATH IS SINGULAR: POST /org/{org}/repos. The
-//     plural spelling Gitea uses is a 404 on Gogs.
-//
-//   - THERE IS NO MEMBERSHIP QUESTION. Gogs has no /orgs/{org}/members, and
-//     what it does have does not answer one: /users/{user}/orgs lists only
-//     PUBLIC memberships, and team rosters miss a member who was invited to the
-//     organization without a team, which Gogs allows. Each would read "we
-//     could not see" as "not a member", so membership is not offered and the
-//     core answers *UnsupportedError.
-//
-//   - REMOVING A HOOK THAT DOES NOT EXIST ANSWERS 204. The success is Gogs's,
-//     and it is reported as Gogs gave it: a removal is idempotent by intent.
-//
-//   - THE SIGNATURE IS X-Gogs-Signature, a bare hex HMAC-SHA256 with no
-//     "sha256=" prefix and no X-Hub-Signature-256 beside it, so this driver
-//     names forge.SchemeGogsSHA256 and verifies nothing. The event header is
-//     X-Gogs-Event.
-//
-// Every deploy key Gogs installs is read-only, and its answer says so; the
-// answer is still read, the gitea driver's rule, because a standing write
-// credential is exactly what the interface has no parameter for.
-//
-// No SDK, for the github driver's reason: the whole of what tau asks is twelve
-// requests.
+// A deploy key's read-only answer is still read, the gitea driver's rule.
 package gogs
 
 import (
@@ -51,11 +25,9 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// acceptJSON is the only media type the Gogs API speaks.
 const acceptJSON = "application/json"
 
-// driver is one Gogs, constructed for the host it answers for. It carries no
-// credential at all.
+// driver carries no credential.
 type driver struct {
 	host string
 	// base is the API root, absolute and ending in "/". Gogs serves it from
@@ -97,7 +69,6 @@ func Plaintext() Option {
 	}
 }
 
-// New builds the driver for one Gogs host.
 func New(host string, opts ...Option) (forge.Driver, error) {
 	if host == "" {
 		return nil, errors.New("forge/gogs: a driver names the host it answers for")
@@ -132,7 +103,6 @@ func (d *driver) Addressable(key repokey.Key) error {
 	return nil
 }
 
-// Bind returns a client acting as cred and only as cred.
 func (d *driver) Bind(cred forge.Credential) (forge.Client, error) {
 	if cred.IsZero() {
 		return nil, forge.ErrNoCredential

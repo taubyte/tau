@@ -1,13 +1,7 @@
 package gogs_test
 
-// THE ROWS WHERE THE FORGE IS THE ADVERSARY. The gitlab driver in this tree has
-// a file of these and this package did not, and the two that follow are the
-// ones that were missing something rather than merely missing a name.
-//
-// What they have in common is that NOTHING FAILS. Every case here is a 200, or
-// a delivery whose signature verifies, so no status and no MAC says anything is
-// wrong — and what arrives is a string somebody else chose, on a path that ends
-// in a tau log line. An error string is the most-copied thing in a log.
+// Rows where the forge is the adversary and nothing fails: a 200, or a verified
+// delivery, carrying a string somebody else chose toward a tau log line.
 
 import (
 	"crypto/hmac"
@@ -24,24 +18,6 @@ import (
 	"github.com/taubyte/tau/pkg/forge"
 )
 
-// TestAdvAForgeCanWriteTheCallersOwnCredentialIntoTausLogs.
-//
-// A clone URL is the one field of a repository answer this driver MUST read —
-// the key is derived from it and from nothing else — and repokey QUOTES WHAT IT
-// WAS GIVEN when it refuses one. A clone URL carrying an identity half is
-// exactly the shape repokey calls a secret at rest, so a forge that answers 200
-// with one has written a string of its choosing into the error, and the forge
-// receives the caller's own credential on every request.
-//
-// Measured before this: the error read
-//
-//	forge/gogs: the clone URL of "acme/pay" is not one this layer can name:
-//	"https://x-access-token:<token>@host/acme/pay.git" carries a credential ...
-//
-// through Repository, Access and Create alike. The gitlab driver refuses to
-// carry repokey's reason for this reason in so many words; this driver carried
-// it and bounded the length instead, which stops a log-length attack and not
-// this one.
 func TestAdvAForgeCanWriteTheCallersOwnCredentialIntoTausLogs(t *testing.T) {
 	const relayed = "ghp_RELAYED_1a2b3c4d5e6f7a8b"
 
@@ -80,15 +56,8 @@ func TestAdvAForgeCanWriteTheCallersOwnCredentialIntoTausLogs(t *testing.T) {
 	}
 }
 
-// second drops a value and keeps the error, so the table above reads as one
-// line per method.
 func second[T any](_ T, err error) error { return err }
 
-// TestAdvADeliveryIsAStrangersCloneURL is the gitlab driver's row of the same
-// name. A verified delivery is still a stranger's bytes — the signature proves
-// the forge RELAYED them, not that they are true — and the core admits one up
-// to eight megabytes. So the clone URL a payload names is measured before it is
-// parsed, and the reason it will not parse is not carried.
 func TestAdvADeliveryIsAStrangersCloneURL(t *testing.T) {
 	const inThePayload = "ghp_INPAYLOAD_9f8e7d6c5b4a"
 

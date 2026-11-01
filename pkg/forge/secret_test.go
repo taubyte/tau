@@ -12,10 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestASecretHasNoRendering walks every door out of a value, because closing
-// String alone leaves four open: %x on the struct, a json.Marshal of anything
-// containing it, an encoding.TextMarshaler lookup, and a structured logger
-// reaching unexported fields by reflection.
 func TestASecretHasNoRendering(t *testing.T) {
 	s, err := NewSecret()
 	require.NoError(t, err)
@@ -78,8 +74,6 @@ func TestSecretComparisonRefusesTwoAbsences(t *testing.T) {
 	assert.True(t, SecretFrom([]byte{}).Empty())
 }
 
-// TestSecretFromCopies: a store's buffer that is reused after the call must not
-// change what a hook verifies against.
 func TestSecretFromCopies(t *testing.T) {
 	buf := []byte("original")
 	s := SecretFrom(buf)

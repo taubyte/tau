@@ -26,9 +26,6 @@ const (
 	forgejoImage = "codeberg.org/forgejo/forgejo:12.0.4-rootless"
 )
 
-// TestARealGiteaAnswersTheGiteaDriver and TestARealForgejoAnswersTheGiteaDriver
-// are one driver against the two servers it claims to speak for. The claim
-// that Forgejo kept Gitea's API is a claim about two servers, so both run.
 func TestARealGiteaAnswersTheGiteaDriver(t *testing.T) { walk(t, bootGitea(t, "gitea", giteaImage)) }
 
 func TestARealForgejoAnswersTheGiteaDriver(t *testing.T) {

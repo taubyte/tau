@@ -19,17 +19,10 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// instance is a GitLab, in one process, over httptest. NOTHING HERE REACHES THE
-// NETWORK: a test that talks to gitlab.com is not a test, it is a report on
-// somebody else's uptime.
-//
-// It answers the endpoints this driver actually calls, in the shapes GitLab
-// documents — a project addressed by its URL-encoded full path, a namespace id
-// that has to be resolved before a project can be created, a members endpoint
-// keyed by a numeric user id, a GraphQL endpoint that answers 200 whatever
-// happens — because the whole point of a second driver is to find where the
-// interface was shaped like the first forge, and a fixture that answers in
-// GitHub's shapes would find nothing.
+// instance is a GitLab over httptest, answering the endpoints the driver calls
+// in GitLab's documented shapes: a project by URL-encoded full path, a namespace
+// id resolved before create, members keyed by user id, and a GraphQL endpoint
+// answering 200 whatever happens.
 type instance struct {
 	srv  *httptest.Server
 	rec  *recorder
@@ -138,8 +131,6 @@ func (r *recorder) setBroken(b bool) {
 	r.mu.Unlock()
 }
 
-// keys are the conformance fixtures on this instance, named by what the suite
-// asks of them.
 type keys struct {
 	Writable    repokey.Key
 	ReadOnly    repokey.Key
@@ -185,13 +176,8 @@ func newInstance(t *testing.T) *instance {
 	in.seed("acme/scratch", "private", forge.AccessAdmin)
 	in.seed("acme/team/widget", "private", forge.AccessAdmin)
 
-	// acme/billing was renamed to acme/pay and this instance still answers for
-	// the old path, WITH the project it became — whose http_url_to_repo says
-	// which one that is. It is the only fixture here on which a driver echoing
-	// back the key it was asked about answers differently from one deriving the
-	// key from what the instance said, which is what the conformance suite
-	// asserts on it. Serving it in one hop rather than 301-ing to it keeps that
-	// assertion about derivation instead of about redirect policy.
+	// acme/billing was renamed to acme/pay and this instance answers the old path
+	// with the new project, in one hop, so the assertion is about derivation.
 	in.moved = map[string]string{"acme/billing": "acme/pay"}
 	return in
 }
@@ -226,15 +212,8 @@ func (in *instance) keys(t *testing.T) keys {
 	}
 }
 
-// redirectOnce makes the next request this instance answers with status,
-// pointing at loc. A fixture records what ARRIVED at it, so where a request went
-// instead is the one thing it cannot report; this is what lets the suite go and
-// look at the other end.
-//
-// The status is the suite's and not this instance's: 301, 302 and 303 make Go
-// rewrite a write to a GET and 307 and 308 replay it, so the two reach
-// different halves of the defect, and only the caller knows which half it is
-// asking about.
+// The status is the suite's: 301, 302 and 303 make Go rewrite a write to a GET,
+// 307 and 308 replay it.
 func (in *instance) redirectOnce(loc string, status int) {
 	in.mu.Lock()
 	in.redirect, in.redirectStatus = loc, status
@@ -253,8 +232,6 @@ func (in *instance) driver(t *testing.T, opts ...Option) forge.Driver {
 	}
 	return d
 }
-
-// ─────────────────────────────── the handler ───────────────────────────────
 
 func (in *instance) serve(w http.ResponseWriter, r *http.Request) {
 	in.mu.Lock()
@@ -461,7 +438,6 @@ func (in *instance) serveCreate(w http.ResponseWriter, r *http.Request, token st
 	writeJSON(w, http.StatusCreated, in.projectJSON(in.projects[full]))
 }
 
-// serveProject routes everything under /api/v4/projects/{encoded full path}.
 func (in *instance) serveProject(w http.ResponseWriter, r *http.Request, token, rest string) {
 	segments := strings.Split(rest, "/")
 	full, err := url.PathUnescape(segments[0])
@@ -689,8 +665,6 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(body)
 }
-
-// ─────────────────────────────── deliveries ───────────────────────────────
 
 // deliveryPayload is GitLab's push event, in GitLab's shape. It carries the
 // fields the driver reads and a couple it deliberately does not, so that

@@ -1,18 +1,10 @@
 package onedev_test
 
-// The OneDev this package's tests talk to is an httptest server, written from
-// what a real OneDev 16.9 answered when it was probed (see the live suite,
-// pkg/forge/live/onedev_test.go, which runs the driver against one):
-//
-//   - GET /~api/projects/ids/{path} is 404 for a project absent or invisible,
-//     and 401 for an anonymous caller on an instance without anonymous access
-//   - GET /~api/projects/{id}/... is 403 for a project the caller cannot see
-//   - settings are 403 without "manage project", the default branch is 403
-//     without "read code" and 204 for an empty repository
-//   - a git-receive-pack advertisement is 200 to a credential that may push
-//     and 403 to an authenticated one that may not
-//   - creating a duplicate name is a 500 and creating under a parent one may
-//     not create in is a 403
+// An httptest server written from what a real OneDev 16.9 answered (the live
+// suite runs the driver against one): an id lookup 404 for a project absent or
+// invisible and 401 to an anonymous caller; 403 per privilege; 204 for an empty
+// repository's default branch; a receive-pack advertisement 200 to a pusher and
+// 403 otherwise; 500 for a duplicate name.
 
 import (
 	"encoding/json"
@@ -38,7 +30,6 @@ const (
 	userID = 3
 )
 
-// grant is what the fixture user holds on a project.
 type grant int
 
 const (
@@ -197,8 +188,6 @@ func (b *breakableRT) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	return b.base.RoundTrip(r)
 }
-
-// ─────────────────────────────── the server ───────────────────────────────
 
 func (f *fixture) handler() http.Handler {
 	mux := http.NewServeMux()

@@ -6,25 +6,11 @@ import (
 	"strings"
 )
 
-// PinnedTransport attaches a credential to requests for ONE HOST and nothing
-// else.
-//
-// THE THREAT IS A REDIRECT. Every forge SDK runs on an http.Client, and an
-// http.Client follows redirects; a forge — or anything answering as one,
-// including a self-hosted instance an operator named — that answers 302 to
-// https://attacker.example receives the Authorization header on the next hop
-// unless something stops it. A RoundTripper sees every hop, so the per-hop host
-// check belongs here, once, rather than in each driver where one will forget.
-// It also refuses cleartext http to anything but loopback, because a credential
-// on the wire in the clear is spent.
-//
-// The driver supplies attach, because the header form is genuinely per-forge
-// (Bearer, "token <t>", PRIVATE-TOKEN). What it does not get to decide is WHEN
-// attach runs.
-//
-// host is a repokey host spelling: no scheme, and a port only when it is not
-// the transport's default. A request that spells the default port out names the
-// same server, so it is accepted.
+// PinnedTransport attaches a credential to requests for one host and nothing
+// else. Every forge SDK follows redirects, so the per-hop host check lives here,
+// once; it also refuses cleartext http to anything but loopback. The driver
+// supplies attach, the header form, but not when it runs. host is a repokey
+// host spelling; a request spelling the default port out names the same server.
 func PinnedTransport(host string, base http.RoundTripper, attach func(http.Header)) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport

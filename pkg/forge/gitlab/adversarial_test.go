@@ -1,7 +1,5 @@
 package gitlab
 
-// ADVERSARIAL. Everything here is httptest or in-process.
-
 import (
 	"context"
 	"fmt"
@@ -37,18 +35,6 @@ func advSess(t *testing.T, h http.Handler, full string) (*forge.Session, repokey
 	return sess, k
 }
 
-// TestAdvAnInstanceCanWriteTheCallersOwnCredentialIntoTausLogs.
-//
-// fault renders the instance's own words — message(r.body) — into the error for
-// every status that is not 401 or a 404 naming a repository. The instance
-// receives the caller's PRIVATE-TOKEN on every request, so it can put that token
-// in the sentence, and the sentence becomes an error string, and an error string
-// is the most-copied thing in a log.
-//
-// The github driver in this same tree refuses to read a non-2xx body at all, for
-// exactly this reason, in so many words: "a host that can choose what lands in
-// your logs can choose to put your own credential there". The two drivers
-// disagree about a threat the layer names.
 func TestAdvAnInstanceCanWriteTheCallersOwnCredentialIntoTausLogs(t *testing.T) {
 	echo := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -78,8 +64,6 @@ func TestAdvAnInstanceCanWriteTheCallersOwnCredentialIntoTausLogs(t *testing.T) 
 	}
 }
 
-// TestAdvAccessNeverReadsAFailureAsAVerdict. Every way the instance can fail to
-// answer, and in none of them may a level come back with a nil error.
 func TestAdvAccessNeverReadsAFailureAsAVerdict(t *testing.T) {
 	for name, h := range map[string]http.Handler{
 		"500": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(500) }),
@@ -129,7 +113,6 @@ func TestAdvAccessNeverReadsAFailureAsAVerdict(t *testing.T) {
 // over a freshly minted secret as well.
 const advWebhookSecret = "gitlab-adversarial-hook-secret-#1-padded-to-32b"
 
-// otherThan is a byte the given one is not.
 func otherThan(b byte) byte {
 	if b == 'x' {
 		return 'y'
@@ -137,9 +120,6 @@ func otherThan(b byte) byte {
 	return 'x'
 }
 
-// TestAdvNoForgedDeliveryReachesAPush drives the whole VerifyPush path with a
-// real signing gitlab driver and every wrong signature an attacker can present,
-// including the token GitLab replays when it does not sign.
 func TestAdvNoForgedDeliveryReachesAPush(t *testing.T) {
 	drv, err := New("gitlab.example.invalid", Signing())
 	require.NoError(t, err)
@@ -210,9 +190,6 @@ func TestAdvNoForgedDeliveryReachesAPush(t *testing.T) {
 	})
 }
 
-// TestAdvAKeySegmentCannotWalkOutOfItsPathSegment: repokey's grammar accepts
-// characters an API path gives meaning to, so the driver's escaping is what
-// stops one from becoming a different request.
 func TestAdvAKeySegmentCannotWalkOutOfItsPathSegment(t *testing.T) {
 	var got []string
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -243,12 +220,6 @@ func TestAdvAKeySegmentCannotWalkOutOfItsPathSegment(t *testing.T) {
 	assert.Contains(t, got[0], "%3F")
 }
 
-// TestAdvNoInstanceChosenSentenceReachesAnError is the REST of the class the
-// message() defect belongs to. Every case here answers 200 — so fault never sees
-// it — and every one puts the caller's own credential in a free-text field this
-// driver renders into an error. The threat is identical: the instance receives
-// the token on every request, so any instance-chosen string that reaches an
-// error is a channel from the instance into tau's logs.
 func TestAdvNoInstanceChosenSentenceReachesAnError(t *testing.T) {
 	repository := func(s *forge.Session, k repokey.Key) error {
 		_, err := s.Repository(context.Background(), k)
@@ -297,9 +268,6 @@ func TestAdvNoInstanceChosenSentenceReachesAnError(t *testing.T) {
 	}
 }
 
-// TestAdvAnInstanceCannotChooseHowLongATauLogLineIs. A host that picks how long
-// a log line is picks how much of a disk it costs, so every host-chosen string
-// that survives into an error is bounded first.
 func TestAdvAnInstanceCannotChooseHowLongATauLogLineIs(t *testing.T) {
 	const wide = 200000
 	for name, body := range map[string]string{
@@ -318,12 +286,6 @@ func TestAdvAnInstanceCannotChooseHowLongATauLogLineIs(t *testing.T) {
 	}
 }
 
-// TestAdvADeliveryIsAStrangersCloneURL. A verified delivery is still a
-// stranger's bytes — the signature proves the instance RELAYED them, not that
-// they are true — and the core admits one up to eight megabytes. So the clone URL
-// a payload names is measured before it is parsed, and the reason it will not
-// parse is not carried: repokey quotes what it was given, and a URL with an
-// identity half is the one shape repokey calls a secret at rest.
 func TestAdvADeliveryIsAStrangersCloneURL(t *testing.T) {
 	const inThePayload = "glpat-RELAYED-8c31f0d5b7a2"
 

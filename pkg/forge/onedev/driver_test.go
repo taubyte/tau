@@ -16,10 +16,6 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// The conformance suite proves the contract; these are the answers a real
-// OneDev rarely gives, each one a place a driver could turn a malformed reply
-// into a verdict.
-
 func session(t *testing.T, f *fixture, full string) (*forge.Session, repokey.Key) {
 	t.Helper()
 	return sessionOn(t, f, full), f.key(t, full)
@@ -65,8 +61,6 @@ func TestNewRefusesWhatItCannotServe(t *testing.T) {
 	assert.Equal(t, "http://127.0.0.1:6610/acme/pay.git", addr.URL, "Plaintext is what the clone address is spelled in")
 }
 
-// OneDev cannot sign a delivery, so the hook faces are absent and each hook
-// question is a refusal by name that never reaches the wire.
 func TestPushHooksAreUnsupported(t *testing.T) {
 	f := newFixture(t)
 	s, k := session(t, f, "acme/site")

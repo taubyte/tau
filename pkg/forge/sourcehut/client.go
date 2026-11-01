@@ -13,7 +13,6 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// THE DOCUMENTS. Everything this driver asks a git.sr.ht is here.
 var (
 	docMe = document{"Me", `query Me { me { id username canonicalName email } }`}
 
@@ -63,7 +62,6 @@ var (
 // maxPages bounds a listing whose forge keeps answering a cursor.
 const maxPages = 1000
 
-// Whoami is who this credential belongs to.
 func (c *client) Whoami(ctx context.Context) (forge.Identity, error) {
 	var out struct {
 		Me *userJSON `json:"me"`
@@ -151,7 +149,6 @@ func (c *client) Access(ctx context.Context, key repokey.Key) (forge.Access, err
 	return forge.AccessNone, nil
 }
 
-// Repository describes key, as the forge answers for it.
 func (c *client) Repository(ctx context.Context, key repokey.Key) (forge.Repository, error) {
 	_, repo, _, err := c.lookup(ctx, key, docRepository)
 	if err != nil {
@@ -258,7 +255,6 @@ func (c *client) Create(ctx context.Context, key repokey.Key, opts forge.CreateO
 	return repo, nil
 }
 
-// Delete removes key, by the id the forge answers for it.
 func (c *client) Delete(ctx context.Context, key repokey.Key) error {
 	r, err := c.resolve(ctx, key)
 	if err != nil {
@@ -282,8 +278,6 @@ func (c *client) Delete(ctx context.Context, key repokey.Key) error {
 	}
 	return nil
 }
-
-// ──────────────────────────────── deploy keys ────────────────────────────────
 
 // InstallDeployKey installs a READ-ONLY key. The title is the key's comment,
 // which is the one label sourcehut keeps.
@@ -329,7 +323,6 @@ func (c *client) InstallDeployKey(ctx context.Context, key repokey.Key, title, p
 	return h, nil
 }
 
-// undo removes a deploy key this driver should not have, and says why.
 func (c *client) undo(ctx context.Context, key repokey.Key, h forge.Handle, why string) error {
 	var out struct {
 		Removed *struct {
@@ -348,7 +341,6 @@ type deployKeyJSON struct {
 	Comment string `json:"comment"`
 }
 
-// ListDeployKeys is every deploy key on key.
 func (c *client) ListDeployKeys(ctx context.Context, key repokey.Key) ([]forge.InstalledDeployKey, error) {
 	var out []forge.InstalledDeployKey
 	err := c.pages(func(cursor *string) (*string, error) {
@@ -422,8 +414,6 @@ func (c *client) RemoveDeployKey(ctx context.Context, key repokey.Key, h forge.H
 	return nil
 }
 
-// ────────────────────────────────── hooks ──────────────────────────────────
-
 // RegisterPushHook subscribes callback to post-receive events on key, with a
 // query whose answer carries wire — the hook's binding (see
 // forge.SchemePayloadEd25519).
@@ -459,7 +449,6 @@ type hookJSON struct {
 	URL string `json:"url"`
 }
 
-// ListPushHooks is every git webhook on key.
 func (c *client) ListPushHooks(ctx context.Context, key repokey.Key) ([]forge.InstalledPushHook, error) {
 	r, err := c.resolve(ctx, key)
 	if err != nil {
@@ -530,7 +519,6 @@ func handleOK(h forge.Handle) error {
 	return nil
 }
 
-// CloneAddress is where a builder clones key from.
 func (c *client) CloneAddress(key repokey.Key, over forge.Protocol) (forge.Address, error) {
 	addr, ok := c.addresses(key)[over]
 	if !ok {

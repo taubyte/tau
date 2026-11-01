@@ -14,10 +14,6 @@ func TestThePublicForgesAreBound(t *testing.T) {
 	require.Equal(t, []string{"github.com", "gitlab.com"}, r.Hosts())
 }
 
-// TestEachPublicForgeSignsUnderItsOwnScheme: the scheme is the half of a link
-// the CLI and the cloud must agree on, so each host is held to the one its
-// forge actually sends — gitlab.com included, which a bare gitlab.New would
-// bind to a replayed token instead.
 func TestEachPublicForgeSignsUnderItsOwnScheme(t *testing.T) {
 	r, err := Registry(forge.Policy{})
 	require.NoError(t, err)

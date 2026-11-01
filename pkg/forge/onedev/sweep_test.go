@@ -12,12 +12,6 @@ import (
 	"github.com/taubyte/tau/pkg/forge/onedev"
 )
 
-// TestTheSuiteReachesEveryRouteThisDriverShips runs the conformance suite and
-// then reads back every request it made against the routing table. A route
-// the suite never reached is a request whose redirect, outage and credential
-// properties nothing asserted, and it fails here naming the line that
-// declared it — as does a declared query parameter no request carried. And a
-// request that matches NO route is a path composed outside the table.
 func TestTheSuiteReachesEveryRouteThisDriverShips(t *testing.T) {
 	f := newFixture(t)
 	reg := f.registry(t, forge.Policy{})

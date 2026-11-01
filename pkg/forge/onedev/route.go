@@ -13,17 +13,10 @@ import (
 	"sync"
 )
 
-// THE PATH OF A REQUEST IS A TEMPLATE FROM A CLOSED SET, the gitea driver's
-// rule for its reasons: every segment reaches a path through one function that
-// escapes it and refuses a dot segment, and a route is registered by being
-// constructed, so the sweep in this package's tests can fail on a request no
-// test reached instead of silently not covering it.
-//
-// ONE DIFFERENCE: A PROJECT PATH IS SEVERAL SEGMENTS. OneDev nests projects
-// arbitrarily, so "acme/team/widget" fills one hole and becomes three path
-// segments, each escaped and each checked on its own. That hole is spelled
-// differently from the one-segment hole so a template says which it takes,
-// and a "/" handed to a one-segment hole is refused rather than split.
+// A request path is a template from a closed set, the gitea driver's rule. A
+// project path fills one hole as several segments, each escaped and checked;
+// that hole is spelled differently, and a "/" handed to a one-segment hole is
+// refused.
 type route struct {
 	method   string
 	template string

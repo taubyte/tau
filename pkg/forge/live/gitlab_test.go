@@ -24,20 +24,6 @@ import (
 
 const gitlabImage = "gitlab/gitlab-ce:18.4.2-ce.0"
 
-// TestARealGitLabAnswersTheGitLabDriver is the gitlab driver against GitLab
-// CE, WITHOUT HOOKS, and the walk asserts exactly that.
-//
-// CE DOES NOT SIGN: 18.4.2 has no signing_token anywhere in its rails source,
-// ignores one sent to the API, and delivers with only X-Gitlab-Token — so a
-// binding with Signing() fails closed on every delivery (measured). The token
-// is replayed verbatim and covers no body, and tau accepts no delivery it
-// cannot verify by a signature over the body, so the driver is bound without
-// Signing() and has no hook faces: every hook question is refused as
-// unsupported, and the rest of the walk runs as for any forge.
-//
-// IT IS THE HEAVY ONE: an omnibus GitLab is a dozen services and boots in
-// minutes, not seconds. The boot time is logged, so the cost of keeping it in
-// the suite is a number somebody can read.
 func TestARealGitLabAnswersTheGitLabDriver(t *testing.T) { walk(t, bootGitLab(t)) }
 
 // gitlabScript runs the image's own init (its CMD), waits for the web tier, and

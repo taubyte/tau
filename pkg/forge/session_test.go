@@ -11,16 +11,10 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// THE REFUSALS THAT ARE THIS PACKAGE'S AND NOT A DRIVER'S.
-//
-// Everything here is decided before any driver code runs — by Registry.bind, by
-// Session's anonymous guard, by Session.check, by the stamping RegisterPushHook
-// does — and that is why it is tested HERE. The conformance suite next door was
-// the only thing asserting several of these, which put them in a file whose own
-// rule is that every assertion must have a fault behind it: no driver can make
-// one of these fire, so no fault could ever be written for one, and the suite
-// could not tell that from decoration. They are the same claims, moved to where
-// the code that can break them lives.
+// The refusals decided before any driver code runs, by Registry.bind,
+// Session's anonymous guard, Session.check and RegisterPushHook's stamping, are
+// tested here: no driver fault can make them fire, so the conformance suite
+// cannot hold them.
 
 func sessionForTest(t *testing.T, d Driver, cred Credential) (*Registry, *Session, repokey.Key) {
 	t.Helper()
@@ -32,11 +26,6 @@ func sessionForTest(t *testing.T, d Driver, cred Credential) (*Registry, *Sessio
 	return reg, sess, k
 }
 
-// TestAZeroCredentialIsRefusedBeforeAnyDriverSeesIt. A Credential nobody filled
-// in is the shape a dropped configuration value has, and the one thing it must
-// never become is anonymity: an anonymous session is a deliberate state with its
-// own refusals, and a forgotten token silently becoming one is a caller reading
-// a public repository and believing it asked about a private one.
 func TestAZeroCredentialIsRefusedBeforeAnyDriverSeesIt(t *testing.T) {
 	d := &stub{host: stubHost, scheme: SchemeHubSHA256}
 	reg, err := New(Policy{}, Binding{Host: stubHost, Driver: d})
@@ -49,10 +38,6 @@ func TestAZeroCredentialIsRefusedBeforeAnyDriverSeesIt(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoCredential, "a zero credential bound a host session")
 }
 
-// TestAnAnonymousSessionAnswersNoAuthorizationQuestion. Anonymous() BINDS —
-// reading a public repository with no credential is a real thing to want — and
-// is refused at the QUESTION rather than at the door. The refusal lives here so
-// that no driver can forget it and no driver can invent a second version of it.
 func TestAnAnonymousSessionAnswersNoAuthorizationQuestion(t *testing.T) {
 	_, sess, k := sessionForTest(t, &stub{host: stubHost, scheme: SchemeHubSHA256}, Anonymous())
 	assert.True(t, sess.IsAnonymous(), "a session bound to Anonymous() does not say so")
@@ -68,11 +53,6 @@ func TestAnAnonymousSessionAnswersNoAuthorizationQuestion(t *testing.T) {
 	assert.Equal(t, Identity{}, id, "a refused identity question still answered an identity")
 }
 
-// TestTheThreeMandatoryCapabilitiesAreNotOptional. Identity, access and
-// repository are in every computed Set because they are the interface a Client
-// IS. A forge added by stubbing the dangerous questions is the failure this
-// package was built against, and the shape of that stub would be a Set missing
-// one of these.
 func TestTheThreeMandatoryCapabilitiesAreNotOptional(t *testing.T) {
 	// plain is a driver with no signatures and no memberships, which is what a
 	// host with a clone protocol and no webhooks looks like.
@@ -85,10 +65,6 @@ func TestTheThreeMandatoryCapabilitiesAreNotOptional(t *testing.T) {
 		"the three questions a Client IS were refused")
 }
 
-// TestARefusalNamesTheHostAsWellAsTheQuestion. An *UnsupportedError that names
-// only the capability tells an operator which question went unanswered and not
-// which deployment could not answer it, and a deployment binds more than one
-// host.
 func TestARefusalNamesTheHostAsWellAsTheQuestion(t *testing.T) {
 	_, sess, k := sessionForTest(t, &plain{host: stubHost}, Token("t"))
 
@@ -103,9 +79,6 @@ func TestARefusalNamesTheHostAsWellAsTheQuestion(t *testing.T) {
 	assert.Equal(t, stubHost, un.Host)
 }
 
-// TestAnUnaddressableKeyIsNamedByTheRefusal. The error carries the KEY and not
-// only a sentence, because the caller that has to act on it — skip this
-// repository, tell this operator — has nothing else to act on.
 func TestAnUnaddressableKeyIsNamedByTheRefusal(t *testing.T) {
 	reg, err := New(Policy{}, Binding{Host: stubHost, Driver: &stub{host: stubHost, scheme: SchemeHubSHA256}})
 	require.NoError(t, err)
@@ -118,10 +91,6 @@ func TestAnUnaddressableKeyIsNamedByTheRefusal(t *testing.T) {
 	assert.Equal(t, stubHost, ua.Host)
 }
 
-// TestAMembershipQuestionNobodyCanAnswerIsNeverANo. Both halves of it: a host
-// with no driver, and a driver with no membership face. (false, nil) is a
-// definitive non-member and a caller will act on it, so neither of these may
-// produce one.
 func TestAMembershipQuestionNobodyCanAnswerIsNeverANo(t *testing.T) {
 	reg, err := New(Policy{}, Binding{Host: stubHost, Driver: &plain{host: stubHost}})
 	require.NoError(t, err)
@@ -138,11 +107,6 @@ func TestAMembershipQuestionNobodyCanAnswerIsNeverANo(t *testing.T) {
 	assert.False(t, ok, "\"there is no driver for that host\" arrived as \"they are not a member\"")
 }
 
-// TestAHookIsStampedWithWhatItWasAskedFor. Key, scheme and secret are put on a
-// Hook by this package and never by a driver, which is what makes "a hook whose
-// scheme nothing recorded" unconstructible — and what makes a hook that landed
-// on another repository impossible to report honestly, since its Key says the
-// one that was asked about no matter where it went.
 func TestAHookIsStampedWithWhatItWasAskedFor(t *testing.T) {
 	secret, err := NewSecret()
 	require.NoError(t, err)
@@ -213,9 +177,6 @@ var (
 	_ PushProber     = (*fullClient)(nil)
 )
 
-// TestEveryFaceIsReachedThroughTheSession. Each optional face a client has is
-// reported by Capabilities and reached by its Session method, and listing stops
-// when the caller says so rather than when the driver runs out.
 func TestEveryFaceIsReachedThroughTheSession(t *testing.T) {
 	d := &full{stub: stub{host: stubHost, scheme: SchemeHubSHA256}}
 	_, sess, k := sessionForTest(t, d, Token("t"))
@@ -266,8 +227,6 @@ func TestEveryFaceIsReachedThroughTheSession(t *testing.T) {
 	assert.Equal(t, []string{"list", "create", "delete", "clone-address", "can-push"}, d.calls)
 }
 
-// TestAKeyOnAnotherHostReachesNoFace. Every keyed method runs the same guard,
-// so a key on another host is refused by name and the client is never called.
 func TestAKeyOnAnotherHostReachesNoFace(t *testing.T) {
 	d := &full{stub: stub{host: stubHost, scheme: SchemeHubSHA256}}
 	_, sess, _ := sessionForTest(t, d, Token("t"))
@@ -296,8 +255,6 @@ func TestAKeyOnAnotherHostReachesNoFace(t *testing.T) {
 	assert.Empty(t, d.calls, "a key on another host reached the client")
 }
 
-// TestAMissingFaceIsRefusedForEveryMethod. A client without a face answers
-// every method of it with the capability it lacks, never a zero value.
 func TestAMissingFaceIsRefusedForEveryMethod(t *testing.T) {
 	_, sess, k := sessionForTest(t, &bare{host: stubHost}, Token("t"))
 	ctx := context.Background()
@@ -335,7 +292,6 @@ func TestAMissingFaceIsRefusedForEveryMethod(t *testing.T) {
 	}
 }
 
-// bare binds a client with only the three mandatory faces.
 type bare struct{ host string }
 
 func (d *bare) Host() string                  { return d.host }

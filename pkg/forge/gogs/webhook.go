@@ -11,19 +11,12 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// Scheme is what this driver registers NEW hooks with. It does not implement
-// one: Gogs sends X-Gogs-Signature, a bare hex HMAC-SHA256 over the body keyed
-// by the hook's secret string, and that procedure lives in pkg/forge as
-// SchemeGogsSHA256. The container suite proves it against a delivery a real
-// Gogs signed.
+// Gogs sends X-Gogs-Signature, a bare hex HMAC-SHA256 of the body;
+// verification is the core's (forge.SchemeGogsSHA256).
 func (d *driver) Scheme() forge.Scheme { return forge.SchemeGogsSHA256 }
 
-// pushPayload is the whole of what this driver reads out of a push delivery.
-//
-// Gogs sends the commit list, the pusher, the sender, a compare URL and the
-// repository's numeric id and owner; all of them are absent here on purpose. A
-// delivery is a stranger's bytes that a forge relayed, and every field that
-// survives into a Push is one more thing something downstream comes to trust.
+// pushPayload reads only what a Push needs: every field kept is one more thing
+// downstream comes to trust.
 type pushPayload struct {
 	Ref        string `json:"ref"`
 	After      string `json:"after"`
@@ -32,18 +25,9 @@ type pushPayload struct {
 	} `json:"repository"`
 }
 
-// Push reads a delivery the core HAS ALREADY VERIFIED — the parameter type is
-// the proof — and returns what the payload CLAIMS. It decides nothing: the core
-// compares the repository claimed here against the one the hook was registered
-// for, and rejects a mismatch.
-//
-// THE REPOSITORY IS NAMED BY ITS CLONE URL AND BY NOTHING ELSE, for the gitea
-// driver's reason: it is what repokey derives a key from everywhere else.
-//
-// "after" is the only commit read. Gogs sends no head_commit, and it reports a
-// branch deletion as a separate "delete" event rather than as a push to the
-// zero id; a push that does name the zero id is still handed to the core,
-// which is what turns it into ErrRefDeleted.
+// Push reads a delivery the core has verified and returns what it claims; the
+// repository is named by its clone URL. Only "after" is read: Gogs sends no
+// head_commit, and reports a branch deletion as a separate "delete" event.
 func (d *driver) Push(body forge.VerifiedBody, header http.Header) (forge.PushClaim, error) {
 	if !strings.EqualFold(header.Get("X-Gogs-Event"), "push") {
 		return forge.PushClaim{}, forge.ErrNotAPush

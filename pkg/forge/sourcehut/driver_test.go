@@ -85,8 +85,6 @@ func TestNewRefusesWhatIsNotADeployment(t *testing.T) {
 	}
 }
 
-// TestSrHtSignsWithItsPublishedKey: git.sr.ht itself needs no key option, and
-// another instance without one cannot verify and says so as a capability.
 func TestSrHtSignsWithItsPublishedKey(t *testing.T) {
 	drv, err := sourcehut.New(sourcehut.PublicHost)
 	require.NoError(t, err)
@@ -129,8 +127,6 @@ func TestCloneAddressesAreTheInstances(t *testing.T) {
 	assert.Equal(t, "http://127.0.0.1:8080/~a/b", https.URL)
 }
 
-// TestAccessReadsTheGrantAndTheOwner: an ACL grant is write and not admin;
-// only the owner administers.
 func TestAccessReadsTheGrantAndTheOwner(t *testing.T) {
 	r := newRig(t)
 	s, k := r.sess(t, "~acme/pay")
@@ -374,8 +370,6 @@ func TestHooksAreTheRepositorysOwn(t *testing.T) {
 	assert.ErrorContains(t, err, "not the GraphQL alias")
 }
 
-// TestPushReadsOneRefOfOnePostReceive drives Push through VerifyPush with
-// deliveries this test signs, in shapes an honest forge would not send.
 func TestPushReadsOneRefOfOnePostReceive(t *testing.T) {
 	r := newRig(t)
 	s, k := r.sess(t, "~tau/site")

@@ -28,9 +28,6 @@ import (
 // client waits forever. 0.13.3 answers the same clone.
 const gogsImage = "gogs/gogs:0.13.3"
 
-// TestARealGogsAnswersTheGogsDriver walks everything tau asks of a forge
-// against a real Gogs. Membership is absent: Gogs cannot answer it and the
-// driver does not offer it, so walk asserts it is refused.
 func TestARealGogsAnswersTheGogsDriver(t *testing.T) { walk(t, bootGogs(t)) }
 
 // gogsScript writes the whole configuration — install lock, sqlite, the

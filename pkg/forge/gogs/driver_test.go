@@ -1,11 +1,5 @@
 package gogs_test
 
-// What the conformance suite cannot reach: the branches a correct forge never
-// takes. A forge that answers a repository with a clone URL naming another
-// repository, one that 302s a credentialed request off its own host, one that
-// returns an id of zero for a hook nothing could then remove. Each is a thing
-// this driver has a line for, and a line with no test is a line nobody has run.
-
 import (
 	"context"
 	"encoding/json"
@@ -26,8 +20,6 @@ import (
 	"github.com/taubyte/tau/pkg/forge/gogs"
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
-
-// ─────────────────────────────── helpers ───────────────────────────────
 
 func stubServer(t *testing.T, h http.Handler) (string, gogs.Option) {
 	t.Helper()
@@ -56,7 +48,6 @@ func sessionOn(t *testing.T, h http.Handler, full string, opts ...gogs.Option) (
 	return sess, k
 }
 
-// answer is a server that gives one status and one body to everything.
 func answer(status int, body string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -66,8 +57,6 @@ func answer(status int, body string) http.Handler {
 }
 
 func ctx() context.Context { return context.Background() }
-
-// ─────────────────────────────── construction ───────────────────────────────
 
 func TestNewRefusesAHostNoKeyWillEverMatch(t *testing.T) {
 	for _, host := range []string{
@@ -119,9 +108,6 @@ func (h *hops) RoundTrip(r *http.Request) (*http.Response, error) {
 	return h.base.RoundTrip(r)
 }
 
-// TestTheAPIIsServedUnderV1OnTheRepositoryHost: Gogs serves its API from
-// /api/v1/ on the host the repositories are on, and authenticates with
-// "token <t>", which Gogs documents.
 func TestTheAPIIsServedUnderV1OnTheRepositoryHost(t *testing.T) {
 	c := &canned{body: `{"login":"octo-tau","id":7}`}
 	drv, err := gogs.New("gogs.example", gogs.Transport(c))
@@ -144,9 +130,6 @@ func TestTheAPIIsServedUnderV1OnTheRepositoryHost(t *testing.T) {
 	assert.Equal(t, "application/json", c.sent[0].Header.Get("Accept"))
 }
 
-// TestPlaintextIsHTTPAndThePinStillRefusesItOffLoopback: Plaintext exists for
-// a loopback container, and it cannot downgrade a real forge — the pin refuses
-// a credential over http to any host that is not loopback.
 func TestPlaintextIsHTTPAndThePinStillRefusesItOffLoopback(t *testing.T) {
 	c := &canned{body: `{"login":"octo-tau","id":7}`}
 	drv, err := gogs.New("127.0.0.1:3000", gogs.Transport(c), gogs.Plaintext())
@@ -184,9 +167,6 @@ func TestTransportNeedsARoundTripper(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestThereIsNoMembershipQuestion: Gogs has no endpoint that answers one, so
-// the face is absent and the core says so — never a (false, nil) a caller
-// would act on.
 func TestThereIsNoMembershipQuestion(t *testing.T) {
 	drv, err := gogs.New("gogs.example")
 	require.NoError(t, err)
@@ -201,9 +181,6 @@ func TestThereIsNoMembershipQuestion(t *testing.T) {
 	assert.False(t, member)
 }
 
-// TestAddressableRefusesWhatGogsCannotAddress. The nested case is the one the
-// suite covers; these two are the others, and Addressable is exported so they
-// are reachable.
 func TestAddressableRefusesWhatGogsCannotAddress(t *testing.T) {
 	drv, err := gogs.New("gogs.example")
 	require.NoError(t, err)
@@ -232,13 +209,6 @@ func TestBindRefusesACredentialNobodySet(t *testing.T) {
 	require.ErrorIs(t, err, forge.ErrNoCredential, "an unset credential must never degrade into anonymity")
 }
 
-// ─────────────────────────── the credential never leaves ───────────────────────────
-
-// TestTheCredentialNeverReachesAnErrorString drives every method against a
-// host that fails in every way and reads the whole error — Error(), %v and
-// %+v — for the token. An error string is the most-copied thing in a log, and
-// a host that gets to choose what lands in one would choose to put the
-// caller's own credential there.
 func TestTheCredentialNeverReachesAnErrorString(t *testing.T) {
 	for name, h := range map[string]http.Handler{
 		"401": answer(http.StatusUnauthorized, `{}`),
@@ -289,17 +259,6 @@ func TestTheCredentialNeverReachesAnErrorString(t *testing.T) {
 	}
 }
 
-// TestNoRedirectIsFollowed. An http.Client replays a request wherever a 3xx
-// points, and Gogs answers a renamed or TRANSFERRED repository with 301 to
-// its current path — so a request built for one repository comes back answered
-// by another, carrying that other repository's `permissions`.
-//
-// PinnedTransport is not the answer to that and cannot be. It refuses the hop
-// that leaves the host, which is the whole of what a per-hop host check can
-// decide; a redirect to another repository on the SAME host is one it permits
-// by design. So the driver refuses to follow at all, and this asserts both
-// halves: for the off-host redirect the error is no longer the pin's, because
-// the driver never got as far as asking the pin to make a second request.
 func TestNoRedirectIsFollowed(t *testing.T) {
 	for name, target := range map[string]string{
 		"off the host, which the pin would have refused": "https://elsewhere.example.invalid/api/v1/user",
@@ -347,12 +306,6 @@ func TestNoRedirectIsFollowed(t *testing.T) {
 	}
 }
 
-// TestAccessIsBoundToTheKeyItWasAskedAbout is the whole defect in one call.
-// Gogs answers a request for a renamed or TRANSFERRED repository with 301 to
-// its current path; what comes back is a repository object and the caller's
-// permissions ON THAT OTHER REPOSITORY. Access is what the registration gate is
-// built on, and the name it was asked about is free for anyone to re-register
-// the moment the transfer happens.
 func TestAccessIsBoundToTheKeyItWasAskedAbout(t *testing.T) {
 	var asked []string
 	sess, key := sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -381,13 +334,6 @@ func TestAccessIsBoundToTheKeyItWasAskedAbout(t *testing.T) {
 			"the answer is not bound to the key that was asked about", got, key)
 }
 
-// TestAWriteIsNotReplayedAtWhateverARedirectNames is the same defect on the
-// write side, and the one no check-afterwards can undo. Gogs answers a POST
-// to a moved repository with 307, which Go replays method and body against, so
-// the hook is created on the repository the redirect names while the forge.Hook
-// that comes back is stamped with the key the CALLER asked for. On 301 it is
-// worse for a delete: Go rewrites a non-HEAD request to GET, so Delete would
-// have read a 200 and reported success having deleted nothing.
 func TestAWriteIsNotReplayedAtWhateverARedirectNames(t *testing.T) {
 	var created string
 	sess, key := sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -415,10 +361,6 @@ func TestAWriteIsNotReplayedAtWhateverARedirectNames(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestAnAnswerAboutAnotherRepositoryIsRefused is what no redirect rule can see:
-// a host that answers 200 at the path this driver built with a body describing
-// a DIFFERENT repository. A proxy told the wrong external URL does it by
-// accident; a forge handing a caller somebody else's grant does it on purpose.
 func TestAnAnswerAboutAnotherRepositoryIsRefused(t *testing.T) {
 	sess, key := sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -437,8 +379,6 @@ func TestAnAnswerAboutAnotherRepositoryIsRefused(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "attacker", repo.Key.Owner, "the repository was filed under the name that was asked, not the one the forge named")
 }
-
-// ─────────────────────────────── access ───────────────────────────────
 
 func TestAccessMapsGogssFlagsOntoTausRungs(t *testing.T) {
 	for name, tc := range map[string]struct {
@@ -466,10 +406,6 @@ func TestAccessMapsGogssFlagsOntoTausRungs(t *testing.T) {
 	}
 }
 
-// TestAForbiddenAnswerIsNotARefusal. On Gogs a 403 is a rate limit, an
-// organization that blocked the OAuth app, or SAML enforcement — an operator
-// problem. Reading it as "you may not push" denies a legitimate writer for a
-// setting they do not control.
 func TestAForbiddenAnswerIsNotARefusal(t *testing.T) {
 	sess, key := sessionOn(t, answer(http.StatusForbidden, `{"message":"API rate limit exceeded"}`), "acme/pay")
 	lvl, err := sess.Access(ctx(), key)
@@ -496,22 +432,12 @@ func TestAnAnswerThisDriverCannotReadIsAnError(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestARepositoryWhoseCloneURLNamesNothingIsRefused: Key is DERIVED from the
-// clone URL, so a forge that answers with one this layer cannot name has not
-// answered.
 func TestARepositoryWhoseCloneURLNamesNothingIsRefused(t *testing.T) {
 	sess, key := sessionOn(t, answer(http.StatusOK, `{"full_name":"acme/pay","clone_url":"","default_branch":"main"}`), "acme/pay")
 	_, err := sess.Repository(ctx(), key)
 	require.Error(t, err)
 }
 
-// TestARepositoryOnAnotherHostIsRefused. The gitlab driver refuses a clone URL
-// on a host other than the one it answers for and calls it not hypothetical —
-// an instance behind a proxy told the wrong external URL emits exactly that.
-// The consequence here is sharper than a misfiled key: HTTPS is the address a
-// builder clones with a credential, so a forge that gets to name it gets to
-// name where that credential is spent, and 169.254.169.254 is a URL like any
-// other.
 func TestARepositoryOnAnotherHostIsRefused(t *testing.T) {
 	for _, elsewhere := range []string{
 		"https://evil.example/acme/pay.git",
@@ -537,21 +463,6 @@ func TestARepositoryOnAnotherHostIsRefused(t *testing.T) {
 	}
 }
 
-// TestARepositoryReportsBothAddressesTheForgeNamed, and reports each as
-// ITSELF.
-//
-// HTTPS is the address a builder clones WITH A CREDENTIAL and SSH is the one it
-// clones with a key, so a driver that put one where the other belongs sends a
-// token to an address nothing derived a key from. No key check can see that:
-// both spellings name the same repository, the key still comes from clone_url,
-// and every other assertion in this package still passes. Measured before this
-// test: reporting ssh_url as HTTPS left the whole tree at exit 0.
-//
-// The SSH URL here is on another HOST AND PORT, which is the documented
-// passthrough —
-// a forge may legitimately serve SSH elsewhere, nothing clones it with a bearer
-// credential, and this driver reports what it was told rather than inventing
-// agreement.
 func TestARepositoryReportsBothAddressesTheForgeNamed(t *testing.T) {
 	var https, ssh string
 	sess, key := sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -578,16 +489,6 @@ func TestARepositoryReportsBothAddressesTheForgeNamed(t *testing.T) {
 	assert.NotEqual(t, repo.Key, fromSSH)
 }
 
-// TestAnAnswerThisDriverWillNotFinishReadingIsAnError. A response is a
-// stranger's bytes even when the stranger is Gogs, and an unbounded decode is
-// an unbounded allocation decided by whoever is answering. maxResponseBody is
-// the whole of what stops that, and until this test it was a constant with a
-// comment: deleting the LimitReader around the decode left the tree at exit 0,
-// because nothing here had ever sent a large answer.
-//
-// The body below is valid JSON describing the repository that was asked for, so
-// a driver that reads all of it SUCCEEDS — which is what makes the refusal the
-// thing being asserted rather than a malformed-input path.
 func TestAnAnswerThisDriverWillNotFinishReadingIsAnError(t *testing.T) {
 	sess, key := sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -607,12 +508,6 @@ func TestWhoamiRefusesACredentialBelongingToNobody(t *testing.T) {
 	require.Error(t, err, "a login-less answer is not an identity")
 }
 
-// ─────────────────────────────── listing ───────────────────────────────
-
-// TestTheListingIsOneRequestAndSkipsWhatItCannotName. Gogs answers the whole
-// listing and ignores "page": a server that is asked for page 2 answers page 1
-// again, which is what this forge does, so a driver that paged would yield every
-// repository twice and then forever.
 func TestTheListingIsOneRequestAndSkipsWhatItCannotName(t *testing.T) {
 	var queries []string
 	sess, _ := sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -674,12 +569,6 @@ func TestAListingThatFailsIsAnError(t *testing.T) {
 	require.ErrorAs(t, err, &ce)
 }
 
-// ─────────────────────────────── creation ───────────────────────────────
-
-// TestCreatingUnderTheAuthenticatedAccountUsesTheOtherEndpoint. POST
-// /orgs/{me}/repos is a 404 because a user is not an organization, so which
-// endpoint applies genuinely depends on who the credential is — which is why
-// Create reads the identity first.
 func TestCreatingUnderTheAuthenticatedAccountUsesTheOtherEndpoint(t *testing.T) {
 	var paths []string
 	sess, k := sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -703,9 +592,6 @@ func TestCreatingUnderTheAuthenticatedAccountUsesTheOtherEndpoint(t *testing.T) 
 	assert.Contains(t, paths, "POST /api/v1/user/repos", "a repository under the caller's own account went to the organization endpoint")
 }
 
-// TestARepositoryCreatedSomewhereElseIsRefused. Creation is the one call that
-// CHOSE where the repository would land, so a key that comes back different is
-// a repository made somewhere nobody asked for — not a rename to surface.
 func TestARepositoryCreatedSomewhereElseIsRefused(t *testing.T) {
 	sess, key := sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host := r.Host
@@ -731,10 +617,6 @@ func TestCreateNeedsToKnowWhoTheCredentialIs(t *testing.T) {
 	require.Error(t, err)
 }
 
-// ─────────────────────────── hooks and deploy keys ───────────────────────────
-
-// TestAResourceWithNoIdIsRefused: a hook or a key the forge numbered zero is one
-// nothing could ever remove, which is how a registrar leaks by construction.
 func TestAResourceWithNoIdIsRefused(t *testing.T) {
 	sess, key := sessionOn(t, answer(http.StatusCreated, `{"id":0}`), "acme/site")
 	_, err := sess.InstallDeployKey(ctx(), key, "tau", "ssh-ed25519 AAAA tau")
@@ -748,22 +630,6 @@ func TestAResourceWithNoIdIsRefused(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestA404OnAResourceIsNotAVerdictAboutTheRepository is the whole of what
-// classifyResource exists for, and until this test it was a comment.
-//
-// A hook and a deploy key live UNDER a repository, and Gogs answers 404 for a
-// handle that is gone exactly as it answers 404 for a repository that is. Filing
-// the first as *NotFoundError says the host serves no repository acme/site — a
-// repository that is plainly there — and a consumer acting on that deregisters a
-// live project because a hook it was tidying up had already been removed.
-// Measured before this test: routing the removals through classify(err, key)
-// instead left the whole tree at exit 0.
-//
-// THE SPLIT IS ASSERTED IN BOTH DIRECTIONS, because the interesting half is not
-// that a removal is exempt but that a fetch is not. The two POSTs are on the
-// fetch side deliberately: creating a hook under a repository that 404s IS the
-// repository being missing, since the resource does not exist yet to be the
-// subject.
 func TestA404OnAResourceIsNotAVerdictAboutTheRepository(t *testing.T) {
 	sess, key := sessionOn(t, answer(http.StatusNotFound, `{"message":"Not Found"}`), "acme/site")
 	callback, err := url.Parse("https://build.example.invalid/hook")
@@ -789,9 +655,6 @@ func TestA404OnAResourceIsNotAVerdictAboutTheRepository(t *testing.T) {
 	require.ErrorAs(t, err, &missing)
 }
 
-// TestRemovingSomethingWithoutItsHandleIsRefused. An empty handle would build a
-// path ending in a slash, which addresses the COLLECTION: a removal of one thing
-// answered by all of them.
 func TestRemovingSomethingWithoutItsHandleIsRefused(t *testing.T) {
 	var reached int
 	sess, key := sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -804,25 +667,6 @@ func TestRemovingSomethingWithoutItsHandleIsRefused(t *testing.T) {
 	assert.Equal(t, 0, reached, "an empty handle reached the forge")
 }
 
-// TestAHandleThatNamesSomethingElseIsRefused is the row above generalized to
-// what it was always about: an empty handle is one spelling of a handle that
-// does not name a resource, and the OTHERS WERE SENT.
-//
-// MEASURED ON THE CLEAN TREE: RemoveDeployKey(acme/site, "..") composed and SENT
-//
-//	DELETE /api/v1/repos/acme/site/keys/..
-//
-// which RFC 3986 dot-segment removal — Go's own path.Clean, and every conforming
-// proxy, gateway and origin — resolves to /api/v1/repos/acme/site: Gogs's
-// delete-a-repository endpoint, reached with the caller's credential, on the
-// repository tau was asked to tidy. Go's own httptest server answered it with a
-// 307 to exactly that path. "." resolves one rung less far, to the COLLECTION,
-// which is the defect the row above is written against; "a/b" names a resource
-// under a collection nobody asked about with no dot in it at all.
-//
-// ESCAPING IS NOT THE ANSWER TO ANY OF THESE, which is why they were sent for
-// six rounds under a function whose job was thought to be escaping:
-// url.PathEscape("..") is "..", because a dot is unreserved.
 func TestAHandleThatNamesSomethingElseIsRefused(t *testing.T) {
 	for _, handle := range []string{"..", ".", "../..", "a/b", "../../attacker?a#b"} {
 		t.Run(handle, func(t *testing.T) {
@@ -839,8 +683,6 @@ func TestAHandleThatNamesSomethingElseIsRefused(t *testing.T) {
 	}
 }
 
-// TestTheDeployKeyGoesOutReadOnly reads the request body, because the assertion
-// the suite can make is the one the fixture reports and this one is the wire.
 func TestTheDeployKeyGoesOutReadOnly(t *testing.T) {
 	var body map[string]any
 	sess, key := sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -855,10 +697,6 @@ func TestTheDeployKeyGoesOutReadOnly(t *testing.T) {
 	assert.Equal(t, true, body["read_only"], "tau's deploy key exists so a builder can clone")
 }
 
-// TestAKeyTheForgeReportsWritableIsTakenBackOff. Asked for read-only and told
-// the key can push, the driver removes it and refuses: a standing write
-// credential is what the interface has no parameter for. If the removal fails
-// too, the error says the key is still there.
 func TestAKeyTheForgeReportsWritableIsTakenBackOff(t *testing.T) {
 	for name, removal := range map[string]int{"removed": http.StatusNoContent, "stuck": http.StatusInternalServerError} {
 		t.Run(name, func(t *testing.T) {
@@ -885,9 +723,6 @@ func TestAKeyTheForgeReportsWritableIsTakenBackOff(t *testing.T) {
 	}
 }
 
-// TestTheHookSubscribesToPushesAndNothingElse, and hands over the wire string
-// verbatim: re-encoding it registers a hook that looks perfect and rejects every
-// delivery it will ever receive.
 func TestTheHookSubscribesToPushesAndNothingElse(t *testing.T) {
 	var body struct {
 		Type   string   `json:"type"`
@@ -943,9 +778,6 @@ func TestCloneAddressesCarryNoCredentialAndReDeriveTheKey(t *testing.T) {
 	assert.Equal(t, key, got)
 }
 
-// TestARepositoryCreatedWithNoNameableCloneURLIsRefused: the key is derived
-// from the clone URL, so a forge that created something it cannot name a clone
-// URL for has not created anything this layer can address.
 func TestARepositoryCreatedWithNoNameableCloneURLIsRefused(t *testing.T) {
 	sess, key := sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/user") {
@@ -960,9 +792,6 @@ func TestARepositoryCreatedWithNoNameableCloneURLIsRefused(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestInstallingOnARepositoryTheCredentialCannotAdministerFails. A hook and a
-// deploy key both need more than push, and the failure is the forge's — late,
-// and named as such.
 func TestInstallingOnARepositoryTheCredentialCannotAdministerFails(t *testing.T) {
 	sess, key := sessionOn(t, answer(http.StatusForbidden, `{"message":"Must have admin rights to Repository"}`), "acme/pay")
 
@@ -977,18 +806,6 @@ func TestInstallingOnARepositoryTheCredentialCannotAdministerFails(t *testing.T)
 	require.Error(t, err)
 }
 
-// TestAHostDoesNotGetToChooseHowLongALogLineIs. A clone URL and a full name are
-// both the forge's to write, and both land in an error message when they cannot
-// be read; neither may be unbounded.
-//
-// THE SECOND CASE IS ON THIS DRIVER'S OWN HOST, and it is the one the length
-// bound is really for. On another host the host check refuses the answer and the
-// error is short whether or not anything measured the URL — measured: deleting
-// the length check left the whole tree at exit 0 while only the off-host case
-// existed. Here the URL is one repokey will happily parse, so without the bound
-// a key IS derived from it, and a key is stored, indexed, compared and printed
-// by everything downstream: the length an instance picks becomes a cost tau
-// keeps paying.
 func TestAHostDoesNotGetToChooseHowLongALogLineIs(t *testing.T) {
 	long := strings.Repeat("a", 4000)
 
@@ -1014,9 +831,6 @@ func TestAHostDoesNotGetToChooseHowLongALogLineIs(t *testing.T) {
 	})
 }
 
-// TestAListingRefusesWhatItCouldNotRemoveAndAsksOnce: a listed hook or key with
-// no id is one nothing could ever remove, and a listing is one request however
-// long the answer.
 func TestAListingRefusesWhatItCouldNotRemoveAndAsksOnce(t *testing.T) {
 	sess, k := sessionOn(t, answer(http.StatusOK, `[{"id":0}]`), "acme/pay")
 	_, err := sess.ListPushHooks(ctx(), k)

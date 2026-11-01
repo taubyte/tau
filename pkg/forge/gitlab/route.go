@@ -15,28 +15,10 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// THE PATH OF A REQUEST IS A TEMPLATE FROM A CLOSED SET, NEVER A STRING A CALL
-// SITE PASTED TOGETHER. The github driver in this tree says the same thing in
-// the same place, because a rule two drivers hold has to be held the same way
-// or the difference between them is a difference nobody can read.
-//
-// THE ESCAPING was already one function here, and it stays one: endpoint()
-// escaped every segment it was given, which is why deleting that escape fails
-// six named tests while five of the github driver's seven could be deleted at
-// exit 0. What that mechanism did not cover is the URL this driver hands BACK —
-// CloneAddress pasted key.FullName() into a clone address raw — so the function
-// below is now what both use.
-//
-// WHAT IS NEW IS DISCOVERY. The sweep arms every request this driver makes by
-// running every operation and reading what arrived, so a request only some
-// input reaches is a request the sweep never sees. A route is registered by
-// being CONSTRUCTED, so the set of requests this driver can issue is a fact of
-// the program rather than a list somebody keeps, and the sweep fails on a route
-// it did not reach rather than silently not covering it.
-//
-// A QUERY PARAMETER IS DECLARED THE SAME WAY, for the same reason: a branch
-// that adds one to a request the sweep already reaches would otherwise change
-// what is asked without changing any path the sweep compares.
+// A request path is a template from a closed set, as in the github driver: every
+// segment, the clone address's included, goes through escapedSegments, and a
+// route is registered by being constructed, so the sweep fails on a route it
+// never reached. Query parameters are declared the same way.
 type route struct {
 	method string
 	// template is the path under the instance root, "/"-separated, with hole
@@ -49,14 +31,11 @@ type route struct {
 	// declared is where newRoute was called, so a route the sweep never reached
 	// is reported by the line that introduced it.
 	declared string
-	// ships says this route was declared in code this driver ships, as opposed
-	// to a route a test builds to drive the plumbing. It is Go's own division —
-	// a _test.go file is not in the package a consumer imports — and it is
-	// recorded here rather than recovered from the string above.
+	// ships says the route was declared outside a _test.go file, not built by a
+	// test to drive the plumbing.
 	ships bool
 }
 
-// hole is the template segment a call fills in.
 const hole = "{}"
 
 var (
@@ -65,8 +44,8 @@ var (
 	enrolled   = map[*route]bool{}
 )
 
-// newRoute declares one request this driver can issue, and REGISTERS IT BY
-// CONSTRUCTING IT. There is no second list to keep in step.
+// newRoute registers a route by constructing it, so there is no second list to
+// keep in step.
 func newRoute(method, template string, params ...string) *route {
 	r := &route{
 		method:   method,
@@ -86,13 +65,8 @@ func newRoute(method, template string, params ...string) *route {
 	return r
 }
 
-// THE ROUTING TABLE. Everything this driver asks a GitLab instance is here.
-//
-// A PROJECT IS ADDRESSED BY ITS FULL PATH, URL-ENCODED, which is why the hole
-// under projects/ takes acme/team/widget and the escaping below turns it into
-// acme%2Fteam%2Fwidget. That single hole is GitLab's own addressing and not a
-// flattening: the "/" inside it is data, and it must arrive as %2F or the
-// request lands on a different route entirely.
+// The routing table. A project is addressed by its full path URL-encoded: the
+// hole under projects/ takes acme/team/widget, and its "/" must arrive as %2F.
 var (
 	routeCurrentUser = newRoute(http.MethodGet, "api/v4/user")
 
@@ -114,20 +88,17 @@ var (
 	routeRemovePushHook   = newRoute(http.MethodDelete, "api/v4/projects/"+hole+"/hooks/"+hole)
 	routeListPushHooks    = newRoute(http.MethodGet, "api/v4/projects/"+hole+"/hooks", "per_page", "page")
 
-	// The two the DEPLOYMENT's own credential spends, on a client no session
-	// can reach.
+	// Spent with the deployment's own credential.
 	routeUser        = newRoute(http.MethodGet, "api/v4/users", "username")
 	routeGroupMember = newRoute(http.MethodGet, "api/v4/groups/"+hole+"/members/all/"+hole)
 )
 
-// request is one route with the arguments its holes take.
 type request struct {
 	route *route
 	args  []string
 	query url.Values
 }
 
-// at fills a route's holes, in order.
 func (r *route) at(args ...string) request { return request{route: r, args: args} }
 
 // with adds query parameters, which the route must have declared.
@@ -136,17 +107,8 @@ func (rq request) with(query url.Values) request {
 	return rq
 }
 
-// escapedSegments IS THE ONE PLACE A STRING BECOMES PART OF A PATH IN THIS
-// PACKAGE. The routes above go through it, and so does the clone address, which
-// is not a request at all but is still a URL with a key pasted into it.
-//
-// It escapes literals too: url.PathEscape("projects") is "projects", so the
-// exception would buy nothing and would cost the property — there is no segment
-// here that somebody has to decide about.
-//
-// AND ESCAPING WAS NEVER THE PROPERTY, which is the correction. See
-// addressesItself: a segment that is escaped perfectly can still be a segment
-// that names something else, and this function refused nothing.
+// escapedSegments is the one place a string becomes part of a path, literals
+// included. Escaping is not enough; see addressesItself.
 func escapedSegments(segments []string) (string, error) {
 	escaped := make([]string, len(segments))
 	for i, s := range segments {
@@ -158,54 +120,13 @@ func escapedSegments(segments []string) (string, error) {
 	return strings.Join(escaped, "/"), nil
 }
 
-// addressesItself IS THE PROPERTY ESCAPING DOES NOT GIVE: a segment must still
-// name the place it was put in after a resolver has read it. The github driver
-// in this tree states it in the same place and the same words, because a rule
-// two drivers hold has to be held the same way or the difference between them is
-// a difference nobody can read.
-//
-// url.PathEscape("..") is "..". A dot is unreserved, so escaping leaves a dot
-// segment exactly as it was — and a dot segment is not a name, it is an
-// instruction to whoever resolves the path. RFC 3986 remove_dot_segments is
-// required of every conforming proxy, gateway and origin, and Go's own
-// path.Clean and URL.ResolveReference implement it, so this driver composing
-//
-//	DELETE /api/v4/projects/acme%2Fsite/deploy_keys/..
-//
-// is this driver composing DELETE /api/v4/projects/acme%2Fsite — deleting the
-// project it was asked to tidy — with the caller's credential already attached.
-// "." is the same defect one rung down: it resolves to the COLLECTION, which is
-// the threat handleSegment was already written against.
-//
-// IT IS CHECKED IN THE RAW SPELLING, WHICH IS THE ONE THE SERVER HOLDS. This
-// driver escapes once and the instance on the other end decodes once, so the
-// string a server really has in its hands is the segment as it arrived here —
-// which is why "../.." is refused even though it escapes to "..%2F..", one
-// innocent-looking segment on the wire.
-//
-// AND CHECKING THE ESCAPED SPELLING AS WELL WOULD BE CHECKING THIS ONE TWICE.
-// It was written that way and it was dead: measured, deleting the escaped half
-// left the whole forge tree at GO_TEST_EXIT=0, because url.PathEscape emits no
-// "/" and leaves an unreserved dot alone, so PathEscape(s) is a dot segment
-// exactly when s is. That coincidence is not left as an argument —
-// TestCheckingTheEscapedSpellingWouldBeCheckingTheRawOneTwice is the row that
-// holds it, and it is what this one line rests on.
-//
-// A "/" INSIDE A SEGMENT IS NOT REFUSED, and on this driver it may not be: the
-// hole under projects/ takes acme/team/widget and the escaping turns it into
-// acme%2Fteam%2Fwidget, which is GitLab's own addressing. What is refused is a
-// COMPONENT of that path that is a dot segment, which no project path has.
-//
-// IT IS NOT AIMED AT ESCAPING, and it must not be. An instance hands back an
-// opaque handle and may legitimately spell one with a "?", a "#" or a "%" in it;
-// those are escaped here and arrive as themselves, and refusing them would
-// refuse real instances. What is refused is the segment that, escaped perfectly,
-// still addresses something the caller never named.
-//
-// The one decode is the doctrine. A server that decodes twice turns "%252e" back
-// into "." and no escaping survives that; it is a defect in the server, and a
-// driver that tried to pre-empt it would be refusing every handle with a percent
-// in it for a spelling nothing conforming produces.
+// addressesItself refuses a segment that would not name the place it was put
+// once resolved: url.PathEscape("..") is "..", and DELETE .../deploy_keys/..
+// resolves to deleting the project; "." resolves to the collection. It checks
+// the raw spelling, the one the server holds after its one decode, so "../.."
+// is refused though it escapes to one segment; checking the escaped spelling
+// too would check this one twice. A "/" inside a segment is GitLab's own
+// addressing and is not refused. A "?", "#" or "%" is escaped and sent.
 func addressesItself(segment string) error {
 	if segment == "" {
 		return errors.New("an empty path segment addresses the collection the request is under, so one thing is asked about and all of them are answered")
@@ -216,9 +137,7 @@ func addressesItself(segment string) error {
 	return nil
 }
 
-// bounded cuts a string SOMEBODY ELSE CHOSE to a length an error may carry, for
-// the reason maxHostString gives: whoever picks how long a log line is picks how
-// much of a disk it costs.
+// bounded cuts a string somebody else chose to a length an error may carry.
 func bounded(s string) string {
 	if len(s) <= maxHostString {
 		return s

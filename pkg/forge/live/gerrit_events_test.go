@@ -31,11 +31,6 @@ import (
 	"github.com/taubyte/tau/services/build/frontend/forgeauth"
 )
 
-// TestARealGerritStreamsItsPushes is the trigger Gerrit has instead of a
-// webhook: `gerrit stream-events` over ssh, pinned to the sshd's host key. A
-// real push must arrive as the push claim pkg/forge checks, and a push made
-// while nothing is subscribed must be found once something is — through the
-// build frontend's own reconnect, which is what turns it into an Enqueue.
 func TestARealGerritStreamsItsPushes(t *testing.T) {
 	ctx := t.Context()
 	httpPort, sshPort := freePort(t), freePort(t)

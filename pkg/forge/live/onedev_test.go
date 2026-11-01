@@ -21,14 +21,6 @@ import (
 
 const onedevImage = "1dev/server:16.9.4"
 
-// TestARealOneDevAnswersTheOneDevDriver is the onedev driver against OneDev.
-//
-// IT IS NOT walk, AND THE DIFFERENCE IS OneDev's, NOT THE TEST'S. walk
-// requires deploy keys, which OneDev has no spelling of, and OneDev creates
-// projects under a parent project rather than a user namespace. Membership is
-// absent too, and so are hooks: OneDev signs nothing (X-OneDev-Signature is the
-// stored secret replayed), and tau accepts no delivery it cannot verify by a
-// signature over the body. Each absent face is asserted to be refused.
 func TestARealOneDevAnswersTheOneDevDriver(t *testing.T) {
 	ctx := t.Context()
 	od := bootOneDev(t)

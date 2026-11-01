@@ -15,11 +15,8 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// The stubs below exist for the branches a working forge never reaches: a Bind
-// that fails, a driver with no Signatures face, a hook handle that comes back
-// empty. Everything a working forge DOES reach is covered by running
-// pkg/forge/fake through pkg/forge/forgetest, which is the real test of
-// this package.
+// The stubs reach the branches a working forge never does; everything a working
+// forge reaches is covered by running pkg/forge/fake through pkg/forge/forgetest.
 
 const stubHost = "git.example.invalid"
 
@@ -103,7 +100,6 @@ func (c *stubClient) ListPushHooks(context.Context, repokey.Key) ([]InstalledPus
 	return nil, nil
 }
 
-// wanderer binds a client that answers for a different host.
 type wanderer struct{ host string }
 
 func (d *wanderer) Host() string                  { return d.host }
@@ -136,9 +132,6 @@ func key(t *testing.T, spelling string) repokey.Key {
 	return k
 }
 
-// TestNewRefusesADeploymentThatIsWrong: each of these would otherwise surface
-// only later, and only as a security failure or as a host nothing ever resolves
-// to.
 func TestNewRefusesADeploymentThatIsWrong(t *testing.T) {
 	good := &stub{host: stubHost, scheme: SchemeHubSHA256}
 
@@ -258,7 +251,6 @@ func TestASessionRefusesAKeyItWasNotBoundFor(t *testing.T) {
 	sess, err := reg.For(key(t, "https://"+stubHost+"/acme/pay"), Token("t"))
 	require.NoError(t, err)
 
-	// Another host.
 	var wh *WrongHostError
 	_, err = sess.Repository(context.Background(), key(t, "https://elsewhere.invalid/acme/pay"))
 	require.ErrorAs(t, err, &wh)
@@ -391,9 +383,6 @@ func TestInstallDeployKeyRefusesAKeyWithNoPublicHalf(t *testing.T) {
 	assert.Contains(t, err.Error(), "no public half")
 }
 
-// TestVerifyPushRefusesEveryWayADeliveryCanBeWrong walks the ten steps in
-// VerifyPush's doc comment, each on its own, so a step that is deleted later
-// fails a named test rather than nothing.
 func TestVerifyPushRefusesEveryWayADeliveryCanBeWrong(t *testing.T) {
 	k := key(t, "https://"+stubHost+"/acme/pay")
 	secret := vectorSecret()
@@ -578,8 +567,6 @@ func TestVerifyPushRefusesEveryWayADeliveryCanBeWrong(t *testing.T) {
 	})
 }
 
-// TestPolicyClockAndToleranceAreSubstitutable keeps the replay window testable
-// without sleeping, and proves the defaults are the documented ones.
 func TestPolicyClockAndToleranceAreSubstitutable(t *testing.T) {
 	k := key(t, "https://"+stubHost+"/acme/pay")
 	secret := vectorSecret()
@@ -645,28 +632,6 @@ func TestErrorsSayWhichQuestionWentUnanswered(t *testing.T) {
 	}
 }
 
-// TestEverySchemeRefusesEveryWayADeliveryCanBeWrong is where the conformance
-// suite's delivery mutations live now, and it is the place the fault that can
-// kill them lives.
-//
-// They used to run in pkg/forge/forgetest, once per driver, as
-// `reject("a body with one byte changed", …)` and six more like it. Nothing a
-// driver or a probe does decides whether VerifyPush refuses a mutated delivery:
-// the core verifies BEFORE any driver code runs, so no fault a conformance
-// suite can inject reaches those assertions, and all seven were individually
-// deletable with the tree at exit 0 — measured. In a driver suite they were
-// decoration, by that suite's own rule; here the code under test is the thing
-// that refuses, so a fault in it fails them by name.
-//
-// It runs every mutation against EVERY scheme this package implements, which
-// the conformance suite could not: a driver has one.
-//
-// A hook with NO SECRET is not one of them, and the absence is deliberate. The
-// suite's row for it only ever asserted a refusal, and refusal there is
-// defended twice — VerifyPush's own guard, and then a MAC that cannot match a
-// key nothing derived — so removing the guard leaves the row green. The subtest
-// above asserts the REASON that guard gives, which is what removing it breaks,
-// and that is the sharper of the two.
 func TestEverySchemeRefusesEveryWayADeliveryCanBeWrong(t *testing.T) {
 	k := key(t, "https://"+stubHost+"/acme/pay")
 	body := []byte(`{"anything":true}`)

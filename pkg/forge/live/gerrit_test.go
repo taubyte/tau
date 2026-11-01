@@ -27,11 +27,6 @@ import (
 // unsupported — see the gerrit package comment).
 const gerritImage = "gerritcodereview/gerrit:3.12.3"
 
-// TestARealGerritAnswersTheGerritDriver walks one project through what the
-// gerrit driver answers. It is its own walk and not walk(): walk requires deploy
-// keys, hooks and signatures, which Gerrit does not have, so here their
-// ABSENCE is asserted instead — each must be *forge.UnsupportedError against
-// a real server, not only against the fixture.
 func TestARealGerritAnswersTheGerritDriver(t *testing.T) {
 	ctx := t.Context()
 	port := freePort(t)

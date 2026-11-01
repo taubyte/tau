@@ -9,15 +9,8 @@ import (
 	"github.com/taubyte/tau/pkg/forge/forgetest"
 )
 
-// baseCapabilities is what this driver can answer for any credential on any
-// instance. It is declared here and compared for EQUALITY by the suite, because
-// a face method whose signature is one type wrong compiles, fails its type
-// assertion in silence and disappears — and only equality names which one went.
-//
-// CapPushProbe is absent because "may this credential push" is git's question
-// and not a forge's; CapMembership is absent unless the driver was given the
-// deployment's credential, and that absence is a different Go type rather than a
-// method that would have answered false.
+// baseCapabilities is compared for equality by the suite. CapPushProbe is git's
+// question; CapMembership needs the deployment credential, a different Go type.
 func baseCapabilities() forge.Set {
 	return forge.Set{
 		forge.CapIdentity:   {},
@@ -106,11 +99,6 @@ func withMembership(s forge.Set) forge.Set {
 	return s
 }
 
-// TestConformance runs the suite over all four of this driver's Go types: with
-// and without Signing, with and without the deployment's credential. Each is a
-// different type because each has different faces, and the suite's exact
-// capability comparison proves they differ in only the ways they should. All of
-// them run under the ZERO POLICY: there is no looser one.
 func TestConformance(t *testing.T) {
 	deploy := Deployment(forge.Token(deployToken))
 	for _, tc := range []struct {

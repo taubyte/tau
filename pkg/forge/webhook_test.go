@@ -28,34 +28,6 @@ var (
 	vectorAt   = time.Unix(1767225600, 0)
 )
 
-// TestExternalVectors asserts verify AND Sign against digests computed OUTSIDE
-// this package (python hmac/base64 over the same inputs), so the two directions
-// cannot be wrong in the same direction and still agree with each other. A
-// round trip of Sign through verify would prove only that this file is
-// self-consistent.
-//
-// They also PIN THE DERIVATION, which is a wire format: a forge stores the
-// string Wire produced, so a change to how it is derived strands every hook
-// registered before it, silently, at the next delivery. The python below is an
-// independent HKDF written on top of hmac alone, so agreeing with it also
-// checks the one convention that is easy to get wrong — RFC 5869's absent salt
-// is HashLen zero bytes, not an empty string.
-//
-//	def hkdf(ikm, info):                        # RFC 5869, L = 32
-//	    prk = hmac(key=b"\x00"*32, msg=ikm)      # Extract
-//	    return hmac(key=prk, msg=info + b"\x01") # Expand, one block
-//
-//	dom       = "taubyte/forge/webhook/v1/"
-//	mat(sc)   = hkdf(secret, dom + sc)
-//	wire(hub) = urlsafe-b64-nopad(mat("hub-sha256"))
-//	hub       = hex(hmac_sha256(key=wire(hub), msg=body))
-//	wire(bit) = urlsafe-b64-nopad(mat("bitbucket-sha256"))
-//	bit       = hex(hmac_sha256(key=wire(bit), msg=body))
-//	wire(gog) = urlsafe-b64-nopad(mat("gogs-sha256"))
-//	gog       = hex(hmac_sha256(key=wire(gog), msg=body))   # no prefix
-//	wire(swh) = "whsec_" + b64(mat("standard-webhooks"))
-//	swh       = b64(hmac_sha256(key=mat("standard-webhooks"),
-//	                            msg="msg_1.1767225600."+body))
 func TestExternalVectors(t *testing.T) {
 	s := vectorSecret()
 
@@ -268,12 +240,6 @@ func TestAnEmptySecretDerivesNothing(t *testing.T) {
 	}
 }
 
-// TestEverySchemeInsistsOnAWholeSecret. The floor used to belong to one scheme
-// and for the wrong reason: SchemeStandardWebhooks refused a short secret
-// because GitLab's whsec_ FORMAT is base64 of exactly 32 bytes, so the other
-// three keyed a MAC with whatever they were handed -- one byte, wire form
-// "eA", exhaustible offline from a single captured delivery. The floor is a
-// property of the SECRET now, so it holds for a scheme added tomorrow too.
 func TestEverySchemeInsistsOnAWholeSecret(t *testing.T) {
 	for _, sc := range []Scheme{SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeGogsSHA256} {
 		for _, short := range [][]byte{[]byte("x"), []byte("short"), make([]byte, SecretSize-1)} {
@@ -305,10 +271,6 @@ func TestObjectIDsAreWholeOrNothing(t *testing.T) {
 	assert.False(t, isZeroOID("0000000000000000000000000000000000000001"))
 }
 
-// TestARefnameIsAGrammarAndNotABlocklist. The accepted half is the half that
-// matters: a check that refuses the six shapes somebody thought of and refuses
-// half the world with them is not a fix. Every refused case names the rule that
-// refused it, so widening one rule cannot quietly widen another.
 func TestARefnameIsAGrammarAndNotABlocklist(t *testing.T) {
 	for _, ref := range []string{
 		"refs/heads/main",
@@ -373,17 +335,14 @@ func TestARefnameIsAGrammarAndNotABlocklist(t *testing.T) {
 	}
 }
 
-// TestARefusedRefNamesTheRuleAndNotTheRef: a ref is a stranger's bytes, and
-// VerifyPush's error is the thing that ends up in a log.
 func TestARefusedRefNamesTheRuleAndNotTheRef(t *testing.T) {
 	assert.Equal(t, "the ref is longer than a refname may be",
 		refReason("refs/heads/"+strings.Repeat("a", MaxRefLength)))
 	assert.Equal(t, "the delivery names no ref", refReason(""))
 }
 
-// TestOneSecretIsUnrelatedKeysUnderEveryScheme is the domain separation stated as the thing
-// that matters, over EVERY pair rather than the two a reviewer happened to try:
-// nothing one scheme puts on the wire is anything another scheme would accept.
+// Over every pair of schemes: nothing one puts on the wire is anything another
+// would accept.
 
 func TestOneSecretIsUnrelatedKeysUnderEveryScheme(t *testing.T) {
 	s := vectorSecret()
@@ -421,9 +380,6 @@ func TestOneSecretIsUnrelatedKeysUnderEveryScheme(t *testing.T) {
 	assert.Len(t, seen, 2*len(all)+1)
 }
 
-// TestTheDerivationIsBoundToTheSchemeName. The label is what separates the
-// domains, so a scheme renamed is a scheme whose hooks stop verifying — the
-// same contract Scheme values already carry as stored wire values.
 func TestTheDerivationIsBoundToTheSchemeName(t *testing.T) {
 	s := vectorSecret()
 	want, err := SchemeHubSHA256.material(s)

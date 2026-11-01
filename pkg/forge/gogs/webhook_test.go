@@ -1,22 +1,7 @@
 package gogs_test
 
-// A SIGNATURE CHECK THAT IS ONLY TESTED ON ITS HAPPY PATH IS NOT TESTED. What
-// follows is one vector computed OUTSIDE Go — python's hmac, hashlib and base64
-// — and then every way a delivery can be wrong. The good vector is a literal, so
-// this file cannot agree with the implementation by computing the answer the
-// same way the implementation does; if the driver ever named a different scheme,
-// or the scheme's construction moved, this constant would stop matching and no
-// amount of internal consistency would hide it.
-//
-// THE RECIPE IS THE WHOLE OF THAT CLAIM, and it is written to be RUN rather than
-// read. It went stale once and nothing noticed: it still printed the
-// pre-domain-separation derivation — base64 of the secret itself, which yields
-// AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8 — long after the constants below
-// moved to the derived wire secret. A recipe that does not reproduce them costs
-// the file the only thing that made it a vector file, and turns it into magic
-// numbers whose provenance is that they were once right. Nothing in this tree
-// can check a comment, so the check is a person pasting it into python3 and
-// reading two lines. Below is that paste, verbatim.
+// One vector computed outside Go, in python3, so this file cannot agree with
+// the implementation by computing the answer the same way:
 //
 //	import base64, hashlib, hmac
 //
@@ -24,11 +9,8 @@ package gogs_test
 //	secret = bytes(range(32))
 //	info   = b"taubyte/forge/webhook/v1/" + b"gogs-sha256"   # secretDomain + the scheme
 //
-//	# HKDF-SHA256 (RFC 5869) over HMAC (RFC 2104), spelled out rather than
-//	# imported, so the recipe depends on the RFCs and not on a library agreeing
-//	# with Go's: extract under the all-zero salt an absent salt means, then one
-//	# expand block, which is the whole of the expand because 32 bytes is exactly
-//	# SHA-256's own output length.
+//	# HKDF-SHA256 (RFC 5869): extract under the all-zero salt, then one expand
+//	# block, all of it since 32 bytes is SHA-256's output length.
 //	prk    = hmac.new(b"\x00" * 32, secret, hashlib.sha256).digest()
 //	okm    = hmac.new(prk, info + b"\x01", hashlib.sha256).digest()
 //
@@ -36,9 +18,8 @@ package gogs_test
 //	print(wire.decode())                                    # vectorWire
 //	print(hmac.new(wire, body, hashlib.sha256).hexdigest())  # vectorSHA256
 //
-// Gogs sends the digest BARE in X-Gogs-Signature — no "sha256=" — and nothing
-// in X-Hub-Signature-256, so the GitHub spelling of the same MAC is one of the
-// rows that must be rejected.
+// Gogs sends the digest bare in X-Gogs-Signature, so GitHub's spelling of the
+// same MAC is one of the rows that must be rejected.
 
 import (
 	"crypto/hmac"
@@ -63,18 +44,10 @@ import (
 const (
 	vectorBody = `{"ref":"refs/heads/main","after":"9b2c1d4e5f60718293a4b5c6d7e8f90123456789","repository":{"full_name":"acme/pay","clone_url":"https://gogs.example/acme/pay.git"}}`
 
-	// vectorWire is what a Gogs would have STORED for this hook, and the
-	// bytes it would key its HMAC with: base64url, unpadded, of
-	// HKDF-SHA256(vectorSecret, salt=none, info="taubyte/forge/webhook/v1/"+
-	// "gogs-sha256", 32 bytes).
-	//
-	// It and the digest below are computed from RFC 5869 and RFC 2104 and
-	// not from this package, which is the only thing that makes them a vector:
-	// a constant read back out of the implementation asserts that the code
-	// agrees with itself and would move, silently, with any change to the
-	// derivation. This set moved once already — the wire used to be base64 of
-	// the Secret itself, and secretDomain is versioned so that changing it
-	// strands old hooks loudly rather than quietly.
+	// vectorWire is what Gogs stores for this hook and keys its HMAC with:
+	// base64url, unpadded, of HKDF-SHA256(vectorSecret, salt=none,
+	// info="taubyte/forge/webhook/v1/"+"gogs-sha256", 32 bytes), computed from the
+	// RFCs rather than from this package.
 	vectorWire   = "5xhInBOJT_lftfUIGLTPSqJjOiVKH7IeRpq8qKCRD3Y"
 	vectorSHA256 = "2065c47ac484c45f74f1b82254865bbecdd51b98adef602a64802bfa1ddf88f4"
 
@@ -121,8 +94,6 @@ func pushHeader(sig string) http.Header {
 	return h
 }
 
-// TestTheVectorGogsWouldSendIsAccepted. If this fails, no delivery from a real
-// Gogs would ever verify.
 func TestTheVectorGogsWouldSendIsAccepted(t *testing.T) {
 	reg, hook := instanceRegistry(t)
 	push, err := reg.VerifyPush(hook, forge.Delivery{
@@ -133,19 +104,6 @@ func TestTheVectorGogsWouldSendIsAccepted(t *testing.T) {
 	assert.Equal(t, forge.Push{Key: hook.Key, Ref: vectorRef, Commit: vectorCommit}, push)
 }
 
-// TestTheWireStringThisDriverHandsGogsIsTheVector. Of the three constants
-// above, vectorWire was the one NOTHING IN THIS FILE READ BACK. It is used
-// twice, both times to key a forgery, and a forgery keyed with the wrong string
-// is rejected exactly as fast as one keyed with the right one — so if it drifted
-// the suite stayed green and "a correct MAC of a different body" quietly stopped
-// being about the body and became a second test of the wrong key.
-//
-// The value is pinned elsewhere in the tree — the forge package asserts the same
-// literal, as gogWire, against Scheme.Wire — but not here and not at the seam
-// this constant is described by. vectorWire is "what a Gogs would have STORED
-// for this hook", and the only place that becomes true is the registration
-// request, so that is where it is compared: the end of the chain the recipe at
-// the top of this file describes, out on the wire in config.secret.
 func TestTheWireStringThisDriverHandsGogsIsTheVector(t *testing.T) {
 	c := &canned{body: `{"id":7}`}
 	drv, err := gogs.New("gogs.example", gogs.Transport(c))
@@ -178,14 +136,6 @@ func TestTheWireStringThisDriverHandsGogsIsTheVector(t *testing.T) {
 		"the wire is an encoding of the Secret rather than a one-way function of it, which is the derivation this file's recipe was still printing long after it stopped being true")
 }
 
-// TestTheComparisonIsOverBytesAndNotOverTheHeaderString. A digest spelled in
-// upper case is the SAME MAC, and it verifies — because the check decodes the
-// hex and compares the bytes in constant time rather than comparing the header
-// string Gogs sent. That is the right way round: a string comparison would be
-// both case-sensitive for no reason and, being a plain ==, would leak its
-// progress. Gogs itself always sends lower case; nothing is loosened by
-// accepting the other spelling of the same number, because an attacker still
-// has to know the number.
 func TestTheComparisonIsOverBytesAndNotOverTheHeaderString(t *testing.T) {
 	reg, hook := instanceRegistry(t)
 	push, err := reg.VerifyPush(hook, forge.Delivery{
@@ -196,8 +146,6 @@ func TestTheComparisonIsOverBytesAndNotOverTheHeaderString(t *testing.T) {
 	assert.Equal(t, vectorCommit, push.Commit)
 }
 
-// TestEveryWayASignatureCanBeWrongIsRejected. Each case is a real forgery
-// attempt or a real implementation mistake, and every one must produce no Push.
 func TestEveryWayASignatureCanBeWrongIsRejected(t *testing.T) {
 	reg, hook := instanceRegistry(t)
 	body := []byte(vectorBody)
@@ -267,9 +215,6 @@ func TestEveryWayASignatureCanBeWrongIsRejected(t *testing.T) {
 	}
 }
 
-// TestAHookRecordedUnderAnotherSchemeDoesNotVerify: the scheme is stored beside
-// the secret and pinned at verification, so a hook cannot be checked under a
-// procedure it was not registered with.
 func TestAHookRecordedUnderAnotherSchemeDoesNotVerify(t *testing.T) {
 	reg, hook := instanceRegistry(t)
 	for _, s := range []forge.Scheme{forge.SchemeHubSHA256, forge.SchemeBitbucketSHA256, forge.SchemeStandardWebhooks} {
@@ -282,8 +227,6 @@ func TestAHookRecordedUnderAnotherSchemeDoesNotVerify(t *testing.T) {
 	}
 }
 
-// TestWhatAVerifiedPayloadIsReadFor. Everything below is a correctly signed
-// delivery, so what is being asserted is the reading and not the checking.
 func TestWhatAVerifiedPayloadIsReadFor(t *testing.T) {
 	reg, hook := instanceRegistry(t)
 

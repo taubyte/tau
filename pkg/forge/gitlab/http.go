@@ -23,12 +23,8 @@ const maxBody = 4 << 20
 // A host that picks how long a log line is picks how much of a disk it costs.
 const maxHostString = 256
 
-// response is one API answer, read whole before anything is decided about it, so
-// the status, the headers and the body are all in hand when the failure taxonomy
-// is applied.
-//
-// method and path are what THIS DRIVER SENT, and they are here because they are
-// the whole of what an error may say about a failure: see fault.
+// response is one answer read whole before the taxonomy applies; method and path
+// are what this driver sent, all an error may say.
 type response struct {
 	status int
 	header http.Header
@@ -45,11 +41,8 @@ func (c *client) call(ctx context.Context, rq request, body any) (*response, err
 	return do(ctx, c.api, c.cfg, rq, body)
 }
 
-// do IS THE ONLY PLACE IN THIS PACKAGE THAT BUILDS AN *http.Request, and it
-// takes a ROUTE rather than a URL, so a path that reaches the wire is a path
-// some declared route composed with every segment escaped by the one function
-// that escapes segments. Both of this driver's http.Clients — the caller's and
-// the deployment's — come through here.
+// do is the only place an *http.Request is built, from a route; both of this
+// driver's clients go through it.
 func do(ctx context.Context, api *http.Client, cfg *config, rq request, body any) (*response, error) {
 	host, method := cfg.host, rq.route.method
 	u, err := rq.url(cfg.base)
@@ -77,12 +70,8 @@ func do(ctx context.Context, api *http.Client, cfg *config, rq request, body any
 
 	resp, err := api.Do(req)
 	if err != nil {
-		// An outage, a refused connection, a request the pin refused to make.
-		// It is a plain error and nothing in the taxonomy, so no consumer can
-		// pattern-match it into a verdict.
-		//
-		// A REDIRECT IS NOT HERE. This client follows none, so a 3xx arrives
-		// below as the response it is and fault names its status.
+		// An outage or a refused request: a plain error, outside the taxonomy. A 3xx
+		// arrives below as a response.
 		return nil, fmt.Errorf("gitlab: %s %s: %w", method, host, err)
 	}
 	defer resp.Body.Close()
@@ -100,27 +89,11 @@ func do(ctx context.Context, api *http.Client, cfg *config, rq request, body any
 	}, nil
 }
 
-// fault turns a non-2xx answer into the right member of the failure taxonomy, or
-// nil. key is the repository the request named, or nil when it named none.
-//
-// THE MAPPING IS DELIBERATELY NARROW. Only 401 is a statement about the
-// credential and only 404-on-a-named-repository is "no such repository";
-// everything else is a plain error, because the alternative is a consumer
-// reading an instance's 403 — which GitLab returns for an archived project, a
-// blocked user, a missing scope and a permission the caller genuinely lacks —
-// as a verdict it can act on.
-//
-// NOTHING THE INSTANCE WROTE IS IN THE ERROR. Not the body it composed, not the
-// reason phrase on its status line: an error here names the method and the path
-// THIS DRIVER built, the numeric status, and Go's own text for that number. The
-// instance receives the caller's credential on every request, so a sentence it
-// gets to choose is a sentence it can put that credential in — and an error
-// string is the most-copied thing in a log. It is the same refusal the github
-// driver's package comment states, and this driver used to render the body here.
-//
-// The two answers that do NOT come through here are safe for the same reason and
-// not by exception: the 401 carries a fixed sentence, and the 404 carries the
-// key TAU asked about. Neither reads a single byte the instance chose.
+// fault maps a non-2xx answer into the taxonomy, or nil; key is the repository
+// the request named, or nil. Only 401 is the credential and only 404 on a named
+// repository is "no such repository"; anything else, a 403 included, is a plain
+// error. Nothing the instance wrote is in an error: not its body, not its
+// reason phrase.
 func (c *client) fault(r *response, key *repokey.Key) error {
 	return fault(c.cfg.host, r, key)
 }
@@ -139,7 +112,6 @@ func fault(host string, r *response, key *repokey.Key) error {
 	return &statusError{host: host, method: r.method, path: r.path, status: r.status}
 }
 
-// statusError is a non-2xx answer the taxonomy does not name.
 type statusError struct {
 	host, method, path string
 	status             int
@@ -149,10 +121,8 @@ func (e *statusError) Error() string {
 	return fmt.Sprintf("gitlab: %s answered %s %q with %s", e.host, e.method, e.path, statusLine(e.status))
 }
 
-// Refused is a 4xx: the instance's own answer refusing the request.
 func (e *statusError) Refused() bool { return e.status >= 400 && e.status < 500 }
 
-// decode reads a successful answer's body.
 func decode(r *response, out any) error {
 	if out == nil {
 		return nil
@@ -163,7 +133,6 @@ func decode(r *response, out any) error {
 	return nil
 }
 
-// get is the whole of a read: request, taxonomy, decode.
 func (c *client) get(ctx context.Context, rq request, key *repokey.Key, out any) (*response, error) {
 	r, err := c.call(ctx, rq, nil)
 	if err != nil {
@@ -175,7 +144,6 @@ func (c *client) get(ctx context.Context, rq request, key *repokey.Key, out any)
 	return r, decode(r, out)
 }
 
-// send is the whole of a write.
 func (c *client) send(ctx context.Context, rq request, key *repokey.Key, body, out any) error {
 	r, err := c.call(ctx, rq, body)
 	if err != nil {

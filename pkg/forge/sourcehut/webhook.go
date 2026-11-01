@@ -11,9 +11,8 @@ import (
 	"github.com/taubyte/tau/pkg/forge"
 )
 
-// Scheme is what this driver registers hooks with. It verifies nothing: the
-// instance's Ed25519 signature and the hook's binding are both checked by
-// forge before Push is ever handed a body.
+// The instance's Ed25519 signature and the hook's binding are checked by the
+// core before Push is handed a body.
 func (d *signingDriver) Scheme() forge.Scheme { return forge.SchemePayloadEd25519 }
 
 // wireAlias is the shape forge.SchemePayloadEd25519's wire string has. It is
@@ -67,14 +66,9 @@ type pushPayload struct {
 	} `json:"data"`
 }
 
-// Push reads a delivery the core HAS ALREADY VERIFIED and returns what it
-// CLAIMS. The repository is derived from the owner and name the payload
-// carries, through the same grammar as every other answer.
-//
-// ONE PUSH, ONE REF. sourcehut delivers one post-receive event for a push of
-// several refs, and a PushClaim names one; a delivery naming more than one is
-// refused rather than reduced to whichever came first, because a build of one
-// ref of several reads as the push having been handled.
+// Push reads a delivery the core has verified and returns what it claims. A
+// delivery naming more than one ref is refused: a claim names one, and building
+// one of several reads as the push handled.
 func (d *signingDriver) Push(body forge.VerifiedBody, _ http.Header) (forge.PushClaim, error) {
 	var p pushPayload
 	if err := json.Unmarshal(body.Bytes(), &p); err != nil {

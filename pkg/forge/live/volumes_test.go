@@ -17,12 +17,6 @@ import (
 	"github.com/taubyte/tau/pkg/containers/core"
 )
 
-// TestARealForgeContainerTakesItsVolumesWithIt and
-// TestARealSweptContainerTakesItsVolumesWithIt hold the harness to removing a
-// forge's anonymous volumes with its container, on both of the paths that
-// remove one: the test's own cleanup and the sweep of a dead run's leftovers.
-// Every forge image declares VOLUMEs, so a removal that keeps them leaves a
-// forge's data on the host for every forge every gate boots.
 func TestARealForgeContainerTakesItsVolumesWithIt(t *testing.T) {
 	cli, err := client.New(client.FromEnv)
 	require.NoError(t, err)

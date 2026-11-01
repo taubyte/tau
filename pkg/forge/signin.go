@@ -1,25 +1,14 @@
 package forge
 
-// signin.go is the optional face a forge has when a person can sign in to it
-// through an OAuth app: where to send them, where to redeem the code, and what
-// to ask for.
-//
-// IT IS THE DRIVER'S, NOT A SESSION'S, because there is no caller credential
-// yet — signing in is how one is obtained. The face only NAMES endpoints; the
-// exchange itself is OAuth 2.0 and is the same on every forge, so it is
-// written once by whoever redeems a code, never per driver. Who the resulting
-// credential is stays the mandatory Whoami, asked of a Session bound to it.
-//
-// The endpoints are derived from the host the driver was built for, which is
-// the package's doctrine applied once more: a sign-in cannot be aimed at a
-// server other than the forge it is for.
+// The sign-in face names a forge's OAuth endpoints, derived from the driver's
+// host so a sign-in cannot be aimed elsewhere. It is the driver's, since there
+// is no caller credential yet; the OAuth exchange itself is written once by
+// whoever redeems a code.
 
 import "slices"
 
-// CapSignIn is the sign-in face.
 const CapSignIn Capability = "sign-in"
 
-// OAuth is how a person signs in to one forge.
 type OAuth struct {
 	// AuthorizeURL is where a browser is sent.
 	AuthorizeURL string
@@ -38,7 +27,6 @@ type OAuth struct {
 	SecretInBody bool
 }
 
-// SignIn is implemented by a Driver whose forge is an OAuth provider.
 type SignIn interface {
 	OAuth() OAuth
 }

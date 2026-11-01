@@ -25,30 +25,12 @@ const DefaultMaxDeliveryBody = 8 << 20
 // either direction.
 const DefaultTimestampTolerance = 5 * time.Minute
 
-// Scheme is a COMPLETE, NAMED VERIFICATION PROCEDURE, implemented once here:
-// which header, which encoding, exactly which bytes are covered, which MAC, and
-// what a match means.
-//
-// A SCHEME IS NOT A FORGE, and that is the whole reason it is a separate
-// vocabulary. Gitea and Forgejo sign X-Hub-Signature-256 byte for byte the way
-// GitHub does, so all three name SchemeHubSHA256 and there is one
-// implementation between them. Bitbucket puts a SHA-256 MAC in X-Hub-Signature
-// — the header GitHub uses for SHA-1 — so it is a different scheme even though
-// the header name repeats, and a verifier dispatching on header names would
-// accept SHA-1 where SHA-256 was meant.
-//
-// EVERY SCHEME BINDS THE BODY. A delivery tau cannot verify by a signature over
-// its body is not accepted anywhere, so there is no token-replay scheme here: a
-// forge that can only replay a shared secret in a header (GitLab without a
-// signing token, OneDev, Azure DevOps) has no push hooks in tau at all, and its
-// driver says so with *UnsupportedError rather than registering a hook whose
-// deliveries anyone holding one header value could forge.
-//
-// THE SCHEME A HOOK WAS REGISTERED WITH IS STORED BESIDE ITS SECRET AND PINNED
-// AT VERIFICATION, so an instance upgraded later keeps verifying its older
-// hooks correctly. Scheme values are therefore written into a store: they are a
-// wire format and are stable, and renaming one strands every hook registered
-// before the rename.
+// Scheme is a complete, named verification procedure implemented here: which
+// header, which encoding, which bytes, which MAC. It is not a forge: Gitea and
+// Forgejo sign exactly as GitHub does, while Bitbucket's SHA-256 MAC in GitHub's
+// SHA-1 header is its own scheme. Every scheme binds the body; a forge that only
+// replays a shared secret has no push hooks. The scheme a hook was registered
+// with is stored beside its secret, so these values are a stable wire format.
 type Scheme string
 
 const (
@@ -79,31 +61,14 @@ const (
 	// spelling in either header would be two schemes pretending to be one.
 	SchemeGogsSHA256 Scheme = "gogs-sha256"
 	// SchemePayloadEd25519 is X-Payload-Signature: std base64 of an Ed25519
-	// signature over the verbatim body followed by the X-Payload-Nonce
-	// header's value, made with the FORGE'S OWN private key. sourcehut.
-	//
-	// THE SIGNATURE PROVES WHO SENT A DELIVERY AND NOT WHICH SUBSCRIPTION IT
-	// IS FOR, and that is the whole reason this scheme is more than a
-	// signature check. Every webhook on a sourcehut instance is signed by the
-	// same key, and a sourcehut webhook's payload is the answer to a GraphQL
-	// query its OWNER wrote — so anyone with an account can subscribe a hook
-	// of their own to tau's callback, alias fields of a victim's public
-	// repository into exactly the shape a push payload has, and have the forge
-	// sign it. Step 9 of VerifyPush does not stop that: the delivery really
-	// does claim the victim's repository, at a real commit of it.
-	//
-	// So the per-hook Secret still exists, and it binds the delivery to the
-	// hook: Wire derives a GraphQL alias from it, the driver writes that alias
-	// into the query it registers, and the forge echoes it back as a key of
-	// the signed body. A delivery verifies only when the forge's key signed it
-	// AND its top-level data carries this hook's alias. The alias rides the
-	// body in cleartext, so it is weaker than a MAC key: whoever reads one
-	// delivery body can subscribe a hook carrying it. It is never in a header,
-	// and the body is what Policy.MaxDeliveryBody already treats as hostile.
-	//
-	// sourcehut signs no timestamp and this package keeps no nonce store, so
-	// a captured delivery replays; what it can replay is a push that already
-	// happened, to the repository it already named.
+	// signature over the body followed by the X-Payload-Nonce header's value, made
+	// with the forge's own key (sourcehut). The signature proves who sent a delivery,
+	// not which subscription it is for: anyone can subscribe a hook whose query
+	// aliases a victim's repository into a push's shape. So Wire derives a GraphQL
+	// alias from the hook's Secret, the driver writes it into the registered query,
+	// and a delivery verifies only if its data carries that alias. The alias rides
+	// the body in cleartext, weaker than a MAC key. sourcehut signs no timestamp,
+	// so a captured delivery replays the push it already named.
 	SchemePayloadEd25519 Scheme = "payload-ed25519"
 )
 
@@ -138,27 +103,11 @@ func (s Scheme) implemented() bool {
 // exactly the way renaming a Scheme would.
 const secretDomain = "taubyte/forge/webhook/v1/"
 
-// material is the DOMAIN SEPARATION, and it is the whole of it: one Secret
-// derives a DIFFERENT 32 bytes under every scheme, because HKDF's info string
-// carries the scheme's name.
-//
-// Without it SchemeHubSHA256 and SchemeBitbucketSHA256 keyed identically, so a
-// MAC captured under either was a valid MAC under the other, in a different
-// header — a collision a reviewer found and not a theoretical one.
-//
-// It also stops the wire string from being a REVERSIBLE ENCODING of the Secret.
-// The old hub wire was base64 of the secret itself, so the string sitting in a
-// forge's webhook settings — a string repository admins configure, support
-// staff paste, and CI logs echo — was the Secret. Now it is a one-way function
-// of it, and a leak of any one scheme's wire string tells you nothing about the
-// others.
-//
-// WHETHER ONE Secret MAY BACK SEVERAL HOOKS AT ALL IS A POLICY QUESTION AND IT
-// IS NOT ANSWERED HERE. Domain separation makes sharing safe ACROSS SCHEMES; it
-// does nothing about two hooks on two repositories under the SAME scheme, which
-// still key identically and where a compromise of one is a compromise of both.
-// The safe habit is one NewSecret per hook, and nothing in this package can
-// enforce that, because the store is the consumer's.
+// material is the domain separation: one Secret derives different bytes under
+// every scheme, HKDF's info carrying the scheme's name, so a MAC under one is
+// not valid under another and a wire string reveals nothing of the Secret.
+// Whether one Secret may back several hooks under the same scheme is the
+// consumer's policy: the safe habit is one NewSecret per hook.
 func (s Scheme) material(secret Secret) ([]byte, error) {
 	if secret.Empty() {
 		return nil, fmt.Errorf("forge: cannot derive a %s wire secret from an empty Secret", s)
@@ -172,16 +121,10 @@ func (s Scheme) material(secret Secret) ([]byte, error) {
 	return hkdf.Key(sha256.New, secret.Expose(), nil, secretDomain+string(s), SecretSize)
 }
 
-// Wire is the string a driver hands the forge at registration. IT IS PAIRED
-// WITH THE VERIFIER BY CONSTRUCTION: split them and you get a hook that
-// registers cleanly and rejects every delivery it ever receives, which is a
-// failure that only shows up in production and only as silence.
-//
-// Both spellings encode the SAME per-scheme material; they differ only in the
-// alphabet and prefix the receiving forge insists on. What the MAC is then
-// keyed with still differs — the wire string's bytes for the hub schemes, the
-// bytes behind the prefix for Standard Webhooks — which is precisely why Wire
-// and key live in one file beside verify.
+// Wire is the string a driver hands the forge at registration, paired with the
+// verifier by construction. The spellings differ only in the alphabet and
+// prefix the forge insists on; what the MAC is keyed with differs too, which is
+// why Wire and key live beside verify.
 func (s Scheme) Wire(secret Secret) (string, error) {
 	k, err := s.material(secret)
 	if err != nil {
@@ -226,7 +169,6 @@ func (s Scheme) key(secret Secret) ([]byte, error) {
 	}
 }
 
-// header is the one this scheme reads and writes.
 func (s Scheme) header() string {
 	switch s {
 	case SchemeHubSHA256:
@@ -265,11 +207,9 @@ type Hook struct {
 	Secret Secret
 }
 
-// VerifiedBody IS THE ENFORCEMENT MECHANISM, NOT A LABEL. Its fields are
-// unexported, so no package outside this one can build a non-empty value: a
-// driver's payload reader takes one and therefore cannot be handed bytes that
-// did not come through Registry.VerifyPush. A consumer cannot "just parse the
-// payload", and a driver cannot verify optionally.
+// VerifiedBody's fields are unexported, so no package outside this one can
+// build a non-empty value: a driver's payload reader cannot be handed bytes
+// that did not come through Registry.VerifyPush.
 type VerifiedBody struct {
 	body   []byte
 	scheme Scheme
@@ -298,34 +238,23 @@ type Push struct {
 	Commit string
 }
 
-// VerifyPush is the ONLY way to turn a delivery into a Push, and it is the
-// whole of a webhook-receiving process's forge surface: no credential, no
-// Session, no connection, so that process cannot degrade into making an API
-// call. Every step is this package's:
+// VerifyPush is the only way to turn a delivery into a Push, and needs no
+// credential, Session or connection. Its steps:
 //
 //  1. the hook names a host this registry has a driver for
 //  2. that driver can address the hook's key
 //  3. the driver can read a payload at all
 //  4. the recorded scheme is implemented, and the policy accepts it
-//  5. the secret is non-empty AND long enough to be a MAC key — "no secret
-//     configured" never reaches a compare, and neither does a secret an
-//     attacker can exhaust offline from one captured delivery. A hook already
-//     in a store is checked here and not only at registration
+//  5. the secret is non-empty and long enough to be a MAC key, checked here for
+//     stored hooks too
 //  6. the body is within the policy's cap
-//  7. the signature verifies, in constant time, against the RECORDED scheme
+//  7. the signature verifies, in constant time, against the recorded scheme
 //  8. only then does the driver read the body, out of a VerifiedBody
-//  9. THE HOOK MAY ONLY SPEAK FOR ITS OWN REPOSITORY. Against an honest forge
-//     this is redundant, which is exactly why it is here: one comparison turns
-//     a forge bug, a driver bug or a confused-deputy delivery into a rejection
-//     instead of a build of somebody else's code.
-//  10. the ref is a REFNAME and not merely non-empty, and the commit is a whole
-//     object id that is not the all-zero deletion sentinel. A verified delivery
-//     is still a stranger's bytes, and Push.Ref is spent on a git command line
+//  9. the hook may only speak for its own repository
+//  10. the ref is a refname and the commit a whole object id, not the all-zero
+//     deletion sentinel
 //
-// THERE IS NO DEV-MODE BRANCH. v1's receiver skips verification entirely when a
-// dev flag and a fixed fake secret line up, so the bypass is one
-// misconfiguration away from production. A test that needs a delivery to pass
-// signs it; Sign is exported for exactly that.
+// There is no dev-mode branch: a test that needs a delivery to pass signs it.
 func (r *Registry) VerifyPush(h Hook, d Delivery) (Push, error) {
 	driver, err := r.Driver(h.Key.Host)
 	if err != nil {
@@ -405,14 +334,10 @@ func (r *Registry) maxDeliveryBody() int {
 	return DefaultMaxDeliveryBody
 }
 
-// Sign produces the headers a forge would send for a body under a scheme. It
-// exists so a fake forge and the conformance suite can produce REAL deliveries
-// — never so verification can be tested by round-tripping this package's own
-// output. The scheme tests assert verify against vectors computed OUTSIDE this
-// package, and Sign is asserted against those same vectors, so the two
-// directions cannot be wrong together and still pass.
-//
-// id and at are read only by a scheme that signs them; the others ignore both.
+// Sign produces the headers a forge would send, for fakes and the conformance
+// suite. Verify and Sign are each asserted against externally computed vectors,
+// so they cannot be wrong together. id and at are read only by a scheme that
+// signs them.
 func Sign(s Scheme, secret Secret, body []byte, id string, at time.Time) (http.Header, error) {
 	hdr := make(http.Header)
 	switch s {
@@ -626,12 +551,8 @@ func isObjectID(s string) bool {
 	return err == nil
 }
 
-// MaxRefLength bounds a whole refname. GIT ITSELF SETS NO TOTAL LENGTH, so this
-// is not a git rule and is not pretending to be one: it is the bound on how big
-// a thing a stranger's payload gets to choose, at the one place a ref is spent —
-// an argv, a log line, a job record. The longest refnames anyone actually writes
-// are dependabot's, around 110 bytes; 1024 is an order of magnitude above that
-// and still nothing.
+// MaxRefLength bounds a whole refname. Git sets no total length; this bounds what
+// a stranger's payload may choose, well above the longest names anyone writes.
 const MaxRefLength = 1024
 
 // maxRefComponent is the one length git DOES effectively enforce: a loose ref
@@ -639,35 +560,11 @@ const MaxRefLength = 1024
 // filename, and 255 bytes is the limit on every filesystem git runs on.
 const maxRefComponent = 255
 
-// refReason returns why a ref is not one a verified push delivery may carry, or
-// "" if it is. IT IS A GRAMMAR AND NOT A BLOCKLIST: it says what a refname IS,
-// so a shape nobody thought of is refused by default rather than accepted by
-// default.
-//
-// The rules are git-check-ref-format's, for a full refname, plus two this layer
-// adds:
-//
-//   - FULLY QUALIFIED. A ref must begin "refs/". Every forge that fires a push
-//     event sends the qualified form, and a driver that receives a bare name
-//     (Bitbucket Cloud sends changes[].new.name = "master") must qualify it
-//     rather than pass it on — because a bare name is AMBIGUOUS exactly where
-//     it is spent: `git fetch origin main` resolves through refspec matching and
-//     can land on a tag, `git fetch origin refs/heads/main` cannot. The prefix
-//     also settles, structurally and not by listing them, every shape that is
-//     not a ref at all: a leading "-" is an option and not a ref, "../.." is a
-//     path and not a ref, and a bare word is neither.
-//   - BOUNDED. MaxRefLength over the whole name, maxRefComponent per component.
-//
-// and one more that is about how the ref got here rather than about git: a
-// delivery body is JSON, JSON is UTF-8, so a ref that is not valid UTF-8 did not
-// survive the wire intact and is not the ref anybody pushed.
-//
-// What is deliberately NOT refused: any byte above ASCII that forms valid UTF-8.
-// Accented and CJK branch names are legal in git and people use them, and they
-// are not dangerous anywhere — nothing here builds a shell string.
-//
-// The returned reason names the rule and NEVER quotes the ref: the ref is a
-// stranger's bytes, and an error string is the most-copied thing in a log.
+// refReason returns why a ref is not one a verified push may carry, or "". It is
+// git-check-ref-format's grammar for a full refname, plus: fully qualified
+// ("refs/...", since a bare name is ambiguous where it is spent), bounded, and
+// valid UTF-8. Any valid UTF-8 above ASCII is allowed. The reason names the rule,
+// never the ref.
 func refReason(ref string) string {
 	switch {
 	case ref == "":
