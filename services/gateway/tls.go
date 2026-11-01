@@ -13,44 +13,24 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// tls.go is which certificate answers a handshake for a gateway's name.
+// Handler is served by a composer; Certificate is its tls.Config GetCertificate,
+// asked per handshake by server name, because only the gateway can read which
+// certificate the gateway answering that name declares. node/boot binds it.
 //
-// # The gateway chooses; the composer binds
+// `certificate.source` defaults to `generated` on every zone-hosted gateway:
 //
-// This service still binds nothing — Handler is what a composer serves — but
-// a composer serving it over TLS has to answer every handshake with the
-// certificate the GATEWAY ANSWERING THAT NAME declares, and only the gateway
-// can read that off the compiled project. So it is asked, per handshake, by
-// the server name the client sent: Certificate is a tls.Config's
-// GetCertificate. node/boot binds it.
-//
-// # Where the certificate comes from
-//
-// `certificate.source` is defaulted to `generated` on every zone-hosted
-// gateway, so it is the common case and must never be a refusal:
-//
-//	generated   the operator's wildcard for the cloud's own zone, when it
-//	            covers the name — pkg/certificate's Wildcard, the same code a
-//	            proxy terminates with — and otherwise, for a name under the
-//	            zone, one issued by ACME when the node has an Issuer; a
-//	            name in the project's own zone is issued only once that
-//	            zone is proven to be the project's (services/cm)
+//	generated   the operator's wildcard for the cloud's zone when it covers the
+//	            name (pkg/certificate's Wildcard); otherwise, under the zone,
+//	            one issued by ACME when the node has an Issuer. A name in the
+//	            project's own zone is issued only once that zone is proven
+//	            the project's (services/cm)
 //	provided    the secret the gateway names, read through the same resolver
 //	            the worker and the proxy take
 //
-// A generated name the wildcard does not cover — a zone the author holds,
-// whose certificate this cloud cannot issue — fails ITS handshake and nothing
-// else: the name is still served over plain HTTP, exactly as it was before
-// this node terminated anything, because the author asked for nothing a
-// default did not say.
-//
-// # A provided certificate on a node that terminates nothing
-//
-// is refused by name over plain HTTP. The author wrote a certificate; serving
-// the name in the clear from a node that has no way to use it would be the
-// security control silently not applied. A node that DOES terminate serves the
-// same name over both, as any site does, and the handshake carries the
-// certificate.
+// A generated name the wildcard does not cover fails its handshake only; it is
+// still served over plain HTTP. A provided certificate on a node that terminates
+// nothing is refused over plain HTTP: serving it in the clear would skip a control
+// the author asked for.
 
 // acmeChallengePrefix is where a CA fetches an HTTP-01 answer.
 const acmeChallengePrefix = "/.well-known/acme-challenge/"
@@ -107,12 +87,9 @@ func (s *Service) Certificate(hello *tls.ClientHelloInfo) (*tls.Certificate, err
 	return &cert, nil
 }
 
-// declared is the certificate block that answers a name.
-//
-// ONE NAME, POSSIBLY SEVERAL GATEWAYS — one per path — and one handshake.
-// A gateway that PROVIDES a certificate is the author saying which one this
-// name presents, so the first that does answers; otherwise every one of them
-// is on the default and the wildcard answers for all.
+// declared is the certificate block that answers a name. One name may have several
+// gateways, one per path, and one handshake: the first that provides a certificate
+// answers, otherwise the wildcard answers for all.
 func declared(candidates []candidate) specs.Certificate {
 	for _, c := range candidates {
 		if c.gateway.Certificate.Source == specs.CertificateSourceProvided {
@@ -143,8 +120,8 @@ func (s *Service) certificateOf(ctx context.Context, proj *specs.Project, declar
 		return cert, nil
 
 	case specs.CertificateSourceGenerated, "":
-		// A NAME IN THE PROJECT'S OWN ZONE is ordered only once the zone is
-		// proven to be the project's; the issuer checks.
+		// A name in the project's own zone is ordered only once the zone is proven the
+		// project's; the issuer checks.
 		if p, ok := s.issuer.(ProjectIssuer); ok && !certificate.Under(s.cfg.CloudFqdn, name) {
 			if zone := zoneOf(proj, name); zone != "" {
 				cert, err := p.ForProject(ctx, projectName, zone, name)
@@ -155,9 +132,8 @@ func (s *Service) certificateOf(ctx context.Context, proj *specs.Project, declar
 			}
 		}
 		cert, err := certificate.Wildcard(s.cfg.Wildcard, s.cfg.CloudFqdn, name)
-		// THE OPERATOR'S WILDCARD FIRST, when it covers the name: it was
-		// supplied on purpose and costs no CA a request. Otherwise a name
-		// under the cloud's zone is issued, and nothing else ever is.
+		// The operator's wildcard first, when it covers the name. Otherwise only a name
+		// under the cloud's zone is issued.
 		if errors.Is(err, certificate.ErrNoWildcard) && s.issuer != nil && certificate.Under(s.cfg.CloudFqdn, name) {
 			cert, err = s.issuer.Certificate(ctx, name)
 		}

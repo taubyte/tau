@@ -8,19 +8,10 @@ import (
 	"time"
 )
 
-// meter.go is how something OUTSIDE this service learns what it accounted for.
-//
-// BANDWIDTH IS THE THIRD BILLED UNIT and the one with the widest spread between
-// plans, and this is the only service that sees every byte in and out. A worker
-// sees a request that already arrived and a response it hands back; what
-// crossed the edge — including everything this refused before a worker was ever
-// asked — is visible here and nowhere else.
-//
-// IT IS THE SHAPE services/storage, services/build AND services/worker DECLARE,
-// deliberately: a sink that can total three should not have to learn a fourth
-// vocabulary.
-//
-// A nil Meter is the ordinary case and costs a nil check.
+// Bandwidth is a billed unit, and this is the only service that sees every byte in
+// and out, including everything refused before a worker was asked. The shape matches
+// services/storage, services/build and services/worker so a sink totals all four
+// alike. A nil Meter costs a nil check.
 
 // Meter is told about a request this service accounted for. Record must not
 // block: it is called on the request path.
@@ -37,31 +28,18 @@ const (
 	OpServe Op = "serve"
 
 	// OpRefuse is a request the edge turned away: an unknown name, no route, a
-	// rate limit, a body over the ceiling.
-	//
-	// IT IS THE HALF A WORKER CANNOT SEE. A flood that never reaches a
-	// workload costs this cloud bandwidth and CPU and shows up in no
-	// invocation count, which is exactly the traffic somebody disputing a bill
-	// asks about.
+	// rate limit, a body over the ceiling. A worker never sees it, yet it costs
+	// bandwidth and CPU.
 	OpRefuse Op = "refuse"
 
-	// OpAttach is a browser that was attached to a bus, reported once when it
-	// leaves.
-	//
-	// IT IS NEITHER OF THE OTHER TWO. No workload was invoked, so calling it a
-	// serve would inflate the number a caller checks their invocation bill
-	// against; and it is not a refusal, because the edge did exactly what it
-	// was asked. What it is instead is the one thing here with a DURATION that
-	// means something — a connection held for an hour costs a socket for an
-	// hour — which is a unit a sink totals differently from a request.
+	// OpAttach is a browser attached to a bus, reported once when it leaves. No
+	// workload was invoked, so it is not a serve, and the edge did what it was asked,
+	// so it is not a refusal. Its duration is what a sink totals.
 	OpAttach Op = "attach"
 )
 
-// Accounted is one request that crossed the edge.
-//
-// THE TENANT IS SPELLED OUT, and for a refusal it may be empty: a request for a
-// name nothing answers on belongs to no project, which is a real answer and one
-// a sink has to be able to total separately.
+// Accounted is one request that crossed the edge. For a refusal the project may be
+// empty: a name nothing answers on belongs to no project.
 type Accounted struct {
 	Project     string
 	Environment string
@@ -74,21 +52,16 @@ type Accounted struct {
 	Op     Op
 	Status int
 
-	// In and Out are the bytes of the request and response BODIES. Headers are
-	// not counted: they are bounded by the server's own header limit and
-	// counting them would make the figure depend on how a client spells its
-	// user agent.
+	// In and Out are body bytes. Headers are bounded by the server's limit and
+	// counting them would make the figure depend on the client's user agent.
 	In  int64
 	Out int64
 
 	Duration time.Duration
 }
 
-// emit hands over one event, or does nothing at all.
-//
-// IT IS NOT CALLED record, for the reason services/worker's is not: one
-// spelling across the services that emit is worth more than a name that reads
-// marginally better in one of them.
+// emit hands over one event, or does nothing without a Meter. The name matches
+// the other emitting services.
 func (s *Service) emit(ctx context.Context, ev Accounted) {
 	if s.meter == nil {
 		return
@@ -96,11 +69,8 @@ func (s *Service) emit(ctx context.Context, ev Accounted) {
 	s.meter.Record(ctx, ev)
 }
 
-// crossing is the response writer, counting.
-//
-// IT WRAPS RATHER THAN COUNTING AT EACH RETURN because this handler has
-// seventeen exits and a counter written as a line before each one is a counter
-// that is wrong the first time somebody adds an eighteenth.
+// crossing is the response writer, counting. Wrapping covers every exit of the
+// handler, including ones added later.
 type crossing struct {
 	w http.ResponseWriter
 
@@ -113,9 +83,7 @@ type crossing struct {
 	in      int64
 	out     int64
 
-	// served says a workload answered. Everything else — an unknown name, no
-	// route, a rate limit, a body over the ceiling — is a refusal, and it is
-	// the half a worker cannot see.
+	// served says a workload answered; anything else is a refusal.
 	served bool
 
 	// attached says this crossing was a websocket on a bus.
@@ -147,9 +115,7 @@ func (c *crossing) WriteHeader(status int) {
 
 func (c *crossing) Write(p []byte) (int, error) {
 	if c.status == 0 {
-		// net/http writes 200 for a body with no explicit status, and an
-		// accounting that missed that would report every plain success as
-		// having no status at all.
+		// net/http writes 200 for a body with no explicit status.
 		c.status = http.StatusOK
 	}
 	n, err := c.w.Write(p)
@@ -175,8 +141,7 @@ func (c *crossing) accounted(now time.Time) Accounted {
 	}
 	status := c.status
 	if status == 0 {
-		// A handler that returned without writing anything answered 200 by
-		// net/http's own rule.
+		// A handler that wrote nothing answered 200 by net/http's rule.
 		status = http.StatusOK
 	}
 	return Accounted{

@@ -23,13 +23,9 @@ import (
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// harness is a gateway over a real register holding a really-compiled project,
-// with a worker that records what it was asked to run.
-//
-// THE PROJECT IS COMPILED BY tcc. What this service reads is the compiled
-// vocabulary — route blocks, handler blocks, cors, rate_limit, transformers —
-// so a fixture of my own would be a fixture of what I believe that vocabulary
-// produces, and it would keep passing on the day it produced something else.
+// harness is a gateway over a real register holding a project compiled by tcc, with
+// a worker that records what it was asked to run. A hand-built fixture would keep
+// passing on the day the compiler produced something else.
 type harness struct {
 	Gateway *Service
 	Reg     *register.Register
@@ -186,9 +182,9 @@ func (w *recordingWorkers) asked() []call {
 	return append([]call(nil), w.transformed...)
 }
 
-// cloneRequest snapshots what a transformer was HANDED. The chain mutates the
-// request in place as each one forwards, so recording the pointer would record
-// what the LAST transformer produced for every entry.
+// cloneRequest snapshots what a transformer was handed: the chain mutates the
+// request in place, so recording the pointer would record the last transformer's
+// output for every entry.
 func cloneRequest(req *invoke.Request) *invoke.Request {
 	out := *req
 	out.Headers = make(map[string][]string, len(req.Headers))

@@ -28,9 +28,6 @@ func TestNewRefusesWhatItCannotWorkWithout(t *testing.T) {
 	}
 }
 
-// TestTheConfigRefusesNumbersThatMeanNothing, at construction, with a message
-// about the setting — rather than on the first request, where it reads as a
-// runtime fault.
 func TestTheConfigRefusesNumbersThatMeanNothing(t *testing.T) {
 	h := newHarness(t, Config{})
 
@@ -59,8 +56,6 @@ func TestTheDefaultsAreApplied(t *testing.T) {
 	require.Equal(t, int64(DefaultMaxBody), s.cfg.MaxBody)
 }
 
-// TestTheCacheSettingsReachTheCache, so a Config that names them is not a
-// Config that is ignored.
 func TestTheCacheSettingsReachTheCache(t *testing.T) {
 	h := newHarness(t, Config{})
 
@@ -72,16 +67,11 @@ func TestTheCacheSettingsReachTheCache(t *testing.T) {
 	require.Zero(t, projects)
 }
 
-// TestThisIsTheOnePublicService, which is worth pinning: it takes no host.Host
-// and answers no peer, and every other v2 service is the other way round.
 func TestThisIsThePublicService(t *testing.T) {
 	require.Equal(t, IngressPublic, Descriptor.Ingress)
 	require.Equal(t, "gateway", Descriptor.Name)
 }
 
-// TestAWorkersInterfaceIsAllItNeeds. The gateway chooses a route and never a
-// node, and this is the falsifiable form of that: it is constructed against
-// three interfaces and nothing else stands up.
 func TestAWorkersInterfaceIsAllItNeeds(t *testing.T) {
 	var _ Workers = (*recordingWorkers)(nil)
 	var _ register.Registry = (*fakeSource)(nil)

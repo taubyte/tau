@@ -13,9 +13,6 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// TestARouteThatNamesAPortIsDeliveredOverIt. The fixture's shop gateway routes
-// /checkout to `api` on its `http` port, and api listens on two — so invoking
-// would have answered from whichever sorted first.
 func TestARouteThatNamesAPortIsDeliveredOverIt(t *testing.T) {
 	h := newHarness(t, Config{})
 
@@ -31,7 +28,6 @@ func TestARouteThatNamesAPortIsDeliveredOverIt(t *testing.T) {
 	require.Equal(t, "an order", string(seen[0].req.Body), "the body travels over the connection")
 }
 
-// TestARouteThatNamesNoPortIsInvoked, the way it always was.
 func TestARouteThatNamesNoPortIsInvoked(t *testing.T) {
 	h := newHarness(t, Config{})
 
@@ -41,8 +37,6 @@ func TestARouteThatNamesNoPortIsInvoked(t *testing.T) {
 	require.Empty(t, h.Workers.seen()[0].port)
 }
 
-// TestAPortThatCannotBeReachedIsAFailedRoute, not a silent fallback to the
-// workload's other port.
 func TestAPortThatCannotBeReachedIsAFailedRoute(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.Workers.fail(errors.New("api declares no port called http"))
@@ -60,7 +54,6 @@ func (*hangUp) Conn(context.Context, specs.Address, string) (net.Conn, error) {
 	return client, nil
 }
 
-// TestAWorkloadThatHangsUpIsAnError, said with the port it was reached on.
 func TestAWorkloadThatHangsUpIsAnError(t *testing.T) {
 	s := &Service{workers: &hangUp{}}
 	_, err := s.deliver(t.Context(), specs.Address{Kind: "application", Name: "api"}, "metrics", &invoke.Request{})

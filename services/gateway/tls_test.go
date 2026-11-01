@@ -24,9 +24,7 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// tls_test holds which certificate answers a gateway's name, and ends in a
-// real handshake: what a certificate block means is that a TLS client reaches
-// the route, and a test asserting on configuration alone would pass for a
+// Ends in a real handshake: a test on configuration alone would pass for a
 // gateway answering in the clear.
 
 // issued is a certificate for the names given, as the PEM halves and as the
@@ -64,9 +62,8 @@ func generatedName(t *testing.T) string {
 	t.Helper()
 	p, err := specs.Load(compiled(t))
 	require.NoError(t, err)
-	// THE LAST, as TestAGeneratedNameLosesTheCloudsSegment takes it: the
-	// fixture's other generated gateway is guarded, and this is about the
-	// handshake rather than the guard.
+	// The last one: the fixture's other generated gateway is guarded, and this is about
+	// the handshake.
 	var name string
 	for _, host := range p.Hosts() {
 		if host.Generated && host.Kind == gatewayKind {
@@ -115,8 +112,6 @@ func leafOf(t *testing.T, c *tls.Certificate) string {
 	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.Certificate[0]}))
 }
 
-// TestAGeneratedNameAnswersWithTheCloudsWildcard — the default on every
-// gateway, so it is the common case and must never be a refusal.
 func TestAGeneratedNameAnswersWithTheCloudsWildcard(t *testing.T) {
 	name := generatedName(t)
 	cert, key, _ := issued(t, name)
@@ -127,9 +122,6 @@ func TestAGeneratedNameAnswersWithTheCloudsWildcard(t *testing.T) {
 	require.Equal(t, cert, leafOf(t, got))
 }
 
-// TestANameTheWildcardDoesNotCoverFailsItsHandshakeAndNothingElse. shop is in
-// the author's zone, on the defaulted `generated`, and this cloud issues
-// nothing: the handshake fails, and the name is still served in the clear.
 func TestANameTheWildcardDoesNotCoverFailsItsHandshakeAndNothingElse(t *testing.T) {
 	cert, key, _ := issued(t, "x.tau.example.io")
 	h := newHarness(t, Config{CloudFqdn: "tau.example.io", Wildcard: certificate.Pair{Certificate: cert, Key: key}})
@@ -141,14 +133,12 @@ func TestANameTheWildcardDoesNotCoverFailsItsHandshakeAndNothingElse(t *testing.
 	w := h.do(t, http.MethodPost, "http://shop.example.com/checkout", "")
 	require.Equal(t, http.StatusOK, w.Code, "a default asked for nothing a plain request breaks")
 
-	// AND A NODE WITH NO WILDCARD AT ALL says that, not something else.
+	// A node with no wildcard at all says so.
 	bare := newHarness(t, Config{CloudFqdn: "tau.example.io"})
 	_, err = bare.Gateway.Certificate(hello(generatedName(t)))
 	require.ErrorIs(t, err, certificate.ErrNoWildcard)
 }
 
-// TestAHandshakeForNothingIsRefused: no server name, a name nobody owns, and a
-// name its owner serves nothing at.
 func TestAHandshakeForNothingIsRefused(t *testing.T) {
 	h := newHarness(t, Config{CloudFqdn: "tau.example.io"})
 
@@ -159,8 +149,6 @@ func TestAHandshakeForNothingIsRefused(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoCertificate)
 }
 
-// TestAProvidedCertificateIsTheSecret, read through the resolver, and refused
-// by name when it cannot be.
 func TestAProvidedCertificateIsTheSecret(t *testing.T) {
 	cert, key, _ := issued(t, "shop.example.com")
 
@@ -182,7 +170,6 @@ func TestAProvidedCertificateIsTheSecret(t *testing.T) {
 	require.ErrorIs(t, err, certificate.ErrNoKey)
 }
 
-// TestTHECERTIFICATEBLOCKITSELF, where the compile could not have produced it.
 func TestACertificateBlockThisCannotProduceIsRefused(t *testing.T) {
 	s := &Service{}
 	_, err := s.certificateOf(t.Context(), nil, specs.Certificate{Source: "provided"}, "shop", "prod", "x")
@@ -192,8 +179,6 @@ func TestACertificateBlockThisCannotProduceIsRefused(t *testing.T) {
 	require.Empty(t, scopeOf(""))
 }
 
-// TestAPROVIDEDCERTIFICATEISREFUSEDINTHECLEARWHERENOTHINGTERMINATES, and served
-// in the clear where something does — as any site is.
 func TestAProvidedCertificateIsRefusedInTheClearWhereNothingTerminates(t *testing.T) {
 	h := newHarnessOf(t, providing(t), Config{})
 	w := h.do(t, http.MethodPost, "http://shop.example.com/checkout", "")
@@ -206,8 +191,6 @@ func TestAProvidedCertificateIsRefusedInTheClearWhereNothingTerminates(t *testin
 	require.Equal(t, http.StatusOK, w.Code)
 }
 
-// TestARealHandshakeReachesTheRoute: a TLS client, the certificate the
-// gateway chose, verified against the name, and the answer the route gave.
 func TestARealHandshakeReachesTheRoute(t *testing.T) {
 	name := generatedName(t)
 	cert, key, pool := issued(t, name)

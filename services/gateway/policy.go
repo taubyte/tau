@@ -9,18 +9,12 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// policy.go is what a gateway does at the name, before and after the route:
-// CORS and rate limiting.
-//
-// BOTH ARE READ OFF THE MATCHED GATEWAY RESOURCE. They are per-name policy in
-// the vocabulary, not per-node settings, so an operator cannot turn a project's
-// CORS off and a project cannot raise its own rate limit past what it wrote.
+// CORS and rate limiting are read off the matched gateway resource: they are
+// per-name policy, so an operator cannot turn a project's CORS off and a project
+// cannot raise its own limit past what it wrote.
 
-// cors answers a preflight and decorates a response.
-//
-// THE ORIGIN IS ECHOED, NEVER WILDCARDED. `Access-Control-Allow-Origin: *`
-// cannot carry credentials and is a different policy from the list an author
-// wrote; echoing the one that matched says exactly what the config says.
+// cors answers a preflight and decorates a response. The matching origin is echoed,
+// never wildcarded: `*` cannot carry credentials and is a different policy.
 func cors(w http.ResponseWriter, r *http.Request, policy specs.GatewayCors, self string) {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
@@ -59,29 +53,21 @@ func originAllowed(allowed []string, origin string) bool {
 	return false
 }
 
-// limitKey is what the limit is counted per: "ip", or "header:<name>".
-//
-// AN UNKNOWN KEY COUNTS EVERYTHING TOGETHER rather than counting nothing. A
-// misspelled key that silently disabled the limit is the failure mode worth
-// avoiding: it looks configured and is not.
+// limitKey is what the limit is counted per: "ip", or "header:<name>". An unknown
+// key counts everything together, so a misspelling cannot silently disable the
+// limit.
 func limitKey(spec string, r *http.Request) string {
 	if name, ok := strings.CutPrefix(spec, "header:"); ok {
-		// TRIMMED AND LOWERCASED ONCE. Trimming only for the lookup made
-		// `header:X-Api-Key` and `header: X-Api-Key` two buckets for one
-		// header, which is a caller doubling their budget with a space.
+		// Normalised once, so `header: X-Api-Key` is not a second bucket.
 		name = strings.TrimSpace(name)
 		return "h/" + strings.ToLower(name) + "/" + r.Header.Get(name)
 	}
 	return "ip/" + clientIP(r)
 }
 
-// clientIP is the peer address and never a forwarded header.
-//
-// X-Forwarded-For IS CLIENT-CONTROLLED unless something in front of the gateway
-// is known to rewrite it, and this listener does not know that. Trusting it
-// would let one caller spend every other caller's budget by picking a new value
-// per request — which is the rate limit removed, by the requests it exists to
-// stop.
+// clientIP is the peer address and never a forwarded header. X-Forwarded-For is
+// client-controlled, and trusting it would let a caller dodge the limit with a new
+// value per request.
 func clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {

@@ -12,7 +12,6 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// TestTheRateLimitRefillsAtTheRateTheAuthorWrote, and is capped at the burst.
 func TestTheRateLimitRefills(t *testing.T) {
 	now := &fakeClock{at: time.Unix(1_700_000_000, 0)}
 	l := ratelimit.NewBuckets(now.Now, 16)
@@ -36,8 +35,6 @@ func TestTheRateLimitRefills(t *testing.T) {
 	require.False(t, l.Allow("k", 60, 3))
 }
 
-// TestNoRateLimitIsNoRateLimit. A gateway that wrote no rate_limit block means
-// exactly that.
 func TestNoRateLimitIsNoRateLimit(t *testing.T) {
 	now := &fakeClock{at: time.Unix(1_700_000_000, 0)}
 	l := ratelimit.NewBuckets(now.Now, 16)
@@ -53,8 +50,6 @@ func TestNoRateLimitIsNoRateLimit(t *testing.T) {
 	require.False(t, l.Allow("j", 2, 0))
 }
 
-// TestKeysAreSeparate, and the table is bounded — a gateway under a spray of
-// one-request-per-key traffic must not grow a bucket per source forever.
 func TestKeysAreSeparateAndBounded(t *testing.T) {
 	now := &fakeClock{at: time.Unix(1_700_000_000, 0)}
 	l := ratelimit.NewBuckets(now.Now, 2)
@@ -67,9 +62,6 @@ func TestKeysAreSeparateAndBounded(t *testing.T) {
 	require.LessOrEqual(t, l.Len(), 2)
 }
 
-// TestTheLimitKeyIsNeverAForwardedHeader. X-Forwarded-For is client-controlled
-// unless something in front is known to rewrite it, and trusting it would let
-// one caller spend everyone's budget by picking a new value per request.
 func TestTheLimitKeyIsNeverAForwardedHeader(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.RemoteAddr = "203.0.113.7:51000"
@@ -78,9 +70,7 @@ func TestTheLimitKeyIsNeverAForwardedHeader(t *testing.T) {
 	require.Equal(t, "ip/203.0.113.7", limitKey("ip", r))
 	require.Equal(t, "ip/203.0.113.7", limitKey("", r), "an unset key counts per ip")
 
-	// An unknown key counts everything together rather than counting nothing:
-	// a misspelled key that silently disabled the limit looks configured and
-	// is not.
+	// An unknown key counts everything together rather than nothing.
 	require.Equal(t, "ip/203.0.113.7", limitKey("per-user", r))
 
 	r.Header.Set("X-Api-Key", "abc")
@@ -106,9 +96,6 @@ func TestRetryAfterIsAWholeSecondAtLeast(t *testing.T) {
 	require.Equal(t, "1", retryAfter(0))
 }
 
-// TestAllowSelfIsHowAGeneratedNameSaysItsOwnOrigin. The cloud's half of the
-// name is not knowable when the config is written, so an author cannot put it
-// in the origins list.
 func TestAllowSelf(t *testing.T) {
 	gateway := specs.Resource{"cors": map[string]any{"allow_self": true}}
 

@@ -38,7 +38,7 @@ func TestAGeneratedNameTheWildcardDoesNotHoldIsIssued(t *testing.T) {
 	require.Equal(t, cert, leafOf(t, got))
 	require.Equal(t, []string{name}, issuer.asked)
 
-	// A NAME OUTSIDE THE ZONE is never sent to the CA.
+	// A name outside the zone is never sent to the CA.
 	_, err = h.Gateway.Certificate(hello("shop.example.com"))
 	require.ErrorIs(t, err, ErrNoCertificate)
 	require.Equal(t, []string{name}, issuer.asked)
@@ -87,8 +87,6 @@ func (p *projectIssuer) ForProject(_ context.Context, project, zone, name string
 	return p.cert, p.err
 }
 
-// A NAME IN THE PROJECT'S OWN ZONE goes to an issuer that proves the zone,
-// named with the project and the zone it is in.
 func TestACustomNameIsIssuedForItsProjectAndZone(t *testing.T) {
 	cert, key, _ := issued(t, "shop.example.com")
 	pair, err := tls.X509KeyPair([]byte(cert), []byte(key))

@@ -14,8 +14,7 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// config.go declares what this service is built from. Every interface here is
-// declared by the consumer and is as narrow as the use.
+// Every interface here is declared by the consumer and as narrow as the use.
 
 // Hosts answers whose environment a name belongs to. It is one read, and it is
 // the first thing that happens to a request.
@@ -164,7 +163,6 @@ type Config struct {
 	Wildcard certificate.Pair
 }
 
-// Defaults.
 const (
 	DefaultHostTTL  = 30 * time.Second
 	DefaultMaxHosts = 4096
@@ -295,13 +293,8 @@ func WithAdmission(a Admits) Option {
 	}
 }
 
-// WithLogger is where this service says why a route could not be served.
-//
-// THE CALLER IS TOLD A STATUS AND THE OPERATOR IS TOLD WHY. A stranger asking
-// the edge must not learn what failed inside a deployment, so the response says
-// only 502 or 504 — and without this the reason went nowhere at all: a container
-// tier that could not reach the workload it started read, from every side, as a
-// timeout. The default says nothing; a composer passes its own.
+// WithLogger is where this service says why a route could not be served: a stranger
+// is told only 502 or 504, and the operator the reason. The default says nothing.
 func WithLogger(logf func(format string, args ...any)) Option {
 	return func(o *options) error {
 		if logf == nil {

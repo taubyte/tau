@@ -11,9 +11,7 @@ import (
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// route_test.go tests the matching directly, because the interesting cases are
-// combinations no single fixture has: a catch-all beside a specific path, two
-// routes of equal specificity, a pattern that does not compile.
+// Matching is tested directly: the cases are combinations no single fixture has.
 
 func gw(name string, route map[string]any) candidate {
 	return candidate{
@@ -26,9 +24,6 @@ func handler(kind, name string) map[string]any {
 	return map[string]any{"kind": kind, "name": name}
 }
 
-// TestTheMostSpecificRouteWins. `/` is the catch-all a site needs and it must
-// not swallow `/api`, which is the single most common shape in every imported
-// compose file.
 func TestTheMostSpecificRouteWins(t *testing.T) {
 	candidates := []candidate{
 		gw("site", map[string]any{"path": "/", "match": "prefix", "handler": handler("website", "shop")}),
@@ -49,7 +44,6 @@ func TestTheMostSpecificRouteWins(t *testing.T) {
 	}
 }
 
-// TestAnExactMatchBeatsEveryPrefix, however long the prefix.
 func TestAnExactMatchBeatsEveryPrefix(t *testing.T) {
 	candidates := []candidate{
 		gw("prefix", map[string]any{"path": "/api/v2/orders", "match": "prefix", "handler": handler("function", "prefixed")}),
@@ -66,9 +60,6 @@ func TestAnExactMatchBeatsEveryPrefix(t *testing.T) {
 	require.Equal(t, "prefixed", m.handler().HandlerName)
 }
 
-// TestAPrefixIsSegmentwise. `/api` must not match `/apiary`, which a plain
-// string prefix does — and the difference is a route quietly serving a path its
-// author never named.
 func TestAPrefixIsSegmentwise(t *testing.T) {
 	candidates := []candidate{
 		gw("api", map[string]any{"path": "/api", "match": "prefix", "handler": handler("function", "api")}),
@@ -107,8 +98,6 @@ func TestARegexRouteMatchesAndABrokenOneMatchesNothing(t *testing.T) {
 	require.False(t, found)
 }
 
-// TestAMethodMissIsNotAPathMiss. Saying "no such page" for a POST to a GET-only
-// route sends a caller looking for a bug in their URL.
 func TestAMethodMissIsNotAPathMiss(t *testing.T) {
 	candidates := []candidate{
 		gw("api", map[string]any{"path": "/api", "match": "prefix", "methods": []any{"GET", "HEAD"},
@@ -134,9 +123,6 @@ func TestAMethodMissIsNotAPathMiss(t *testing.T) {
 	}
 }
 
-// TestTwoEquallySpecificRoutesResolveTheSameWayEverywhere. A gateway where the
-// answer depended on map order would serve one node's traffic differently from
-// another's, intermittently.
 func TestTwoEquallySpecificRoutesAreStable(t *testing.T) {
 	candidates := []candidate{
 		gw("zebra", map[string]any{"path": "/x", "handler": handler("function", "z")}),
@@ -150,8 +136,6 @@ func TestTwoEquallySpecificRoutesAreStable(t *testing.T) {
 	}
 }
 
-// TestAGatewayWithNoRouteBlockIsNotACandidate — a router-routed one has none,
-// and it must not be picked as if it had an empty path.
 func TestAGatewayWithNoRouteBlockIsNotACandidate(t *testing.T) {
 	_, found, _ := pick([]candidate{{
 		host:    specs.Host{Kind: "gateway", Name: "routed"},
@@ -160,8 +144,6 @@ func TestAGatewayWithNoRouteBlockIsNotACandidate(t *testing.T) {
 	require.False(t, found)
 }
 
-// TestStripPrefix. A website built for / mounted at /docs 404s on every page
-// while the config looks correct.
 func TestStripPrefix(t *testing.T) {
 	stripping := []candidate{
 		gw("docs", map[string]any{"path": "/docs", "match": "prefix", "strip_prefix": true,
@@ -185,7 +167,6 @@ func TestStripPrefix(t *testing.T) {
 	require.Equal(t, "/about", m.stripped("/about"), "there is nothing to strip off the root")
 }
 
-// TestTheHandlersScopeIsItsOwnWhenItNamesOne, and the gateway's otherwise.
 func TestTheHandlersScope(t *testing.T) {
 	inNamespace := candidate{
 		host: specs.Host{Kind: "gateway", Name: "g", Scope: []string{"shop"}},
@@ -213,14 +194,6 @@ func TestTheHandlersScope(t *testing.T) {
 	require.Equal(t, []string{"shop", "local"}, splitScope("shop/local/"))
 }
 
-// TestARouteNamesItsOwnRouter.
-//
-// A gateway whose `routing` is `router` has no static routes; a single route
-// whose `target` is `router` picks that route's own. The second used to read
-// `route/handler/name` — which the vocabulary requires only when the target IS
-// a handler — so the guard was true in exactly the case the value was empty.
-// The branch never fired, and the request fell through to an address with no
-// kind and no name.
 func TestARouteNamesItsOwnRouter(t *testing.T) {
 	routed := []candidate{
 		gw("edge", map[string]any{
@@ -237,7 +210,6 @@ func TestARouteNamesItsOwnRouter(t *testing.T) {
 	require.Equal(t, []string{"shop"}, scope)
 }
 
-// TestAGatewayLevelRouterStillWins where no route declares one of its own.
 func TestAGatewayLevelRouterIsUnchanged(t *testing.T) {
 	m := match{gateway: specs.ReadGateway(specs.Resource{"routing": "router",
 		"router": map[string]any{"name": "everything"}})}
@@ -246,10 +218,6 @@ func TestAGatewayLevelRouterIsUnchanged(t *testing.T) {
 	require.Equal(t, "everything", name)
 }
 
-// TestAROUTESOWNAUTHORIZERISREADWHERETHECOMPILERPUTSIT, which is
-// `route/authorizer/*`: httpAuthorizerAttributes("route") declares it there and
-// the compile leaves it there. It is pinned against a COMPILED gateway, because
-// a hand-built map would agree with whatever path this package spelled.
 func TestARoutesOwnAuthorizerIsReadWhereTheCompilerPutsIt(t *testing.T) {
 	c, err := schema.New(schema.WithLocal("../../node/dream/projects/with/bus"), schema.WithBranch("main"))
 	require.NoError(t, err)
@@ -266,8 +234,7 @@ func TestARoutesOwnAuthorizerIsReadWhereTheCompilerPutsIt(t *testing.T) {
 	require.Equal(t, "doorman", name, "the route's own authorizer, as compiled")
 	require.Nil(t, scope, "no namespace written, so the gateway's own scope")
 
-	// AND IT ANSWERS INSTEAD OF THE GATEWAY'S, which is the vocabulary's own
-	// sentence: "A route's own answers instead of the gateway's."
+	// A route's own answers instead of the gateway's.
 	both := specs.ReadGateway(specs.Resource{
 		"authorizer": map[string]any{"name": "everything"},
 		"route":      map[string]any{"authorizer": map[string]any{"name": "this", "namespace": "/shop"}},

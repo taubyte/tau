@@ -17,14 +17,6 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// TestTheWholeChain: a Host header arrives, the register says whose it is, the
-// compiled project says what serves that name and path, and the request goes to
-// the handler the author named.
-//
-// `ask` IS THE ROUTE THAT REACHES A WORKLOAD in this fixture. `shop` is the
-// richer one and it declares a fail-closed transformer, so it deliberately does
-// not serve — see TestAFailClosedTransformerRefuses, which is the more
-// interesting test of the two.
 func TestTheWholeChain(t *testing.T) {
 	h := newHarness(t, Config{})
 
@@ -42,8 +34,6 @@ func TestTheWholeChain(t *testing.T) {
 	require.Equal(t, []byte("a question"), seen[0].req.Body)
 }
 
-// TestANameNobodyOwnsIsNotFound, and the answer says nothing about anybody's
-// deployment.
 func TestANameNobodyOwnsIsNotFound(t *testing.T) {
 	h := newHarness(t, Config{})
 
@@ -53,8 +43,6 @@ func TestANameNobodyOwnsIsNotFound(t *testing.T) {
 	require.Empty(t, h.Workers.seen())
 }
 
-// TestAHostIsMatchedHoweverItWasTyped. DNS is case-insensitive and a Host
-// header carries whatever the client typed.
 func TestAHostIsMatchedHoweverItWasTyped(t *testing.T) {
 	h := newHarness(t, Config{})
 
@@ -66,8 +54,6 @@ func TestAHostIsMatchedHoweverItWasTyped(t *testing.T) {
 	}
 }
 
-// TestTheMethodIsPartOfTheRoute. Saying "no such page" for a GET to a POST-only
-// route sends a caller looking for a bug in their URL.
 func TestTheMethodIsPartOfTheRoute(t *testing.T) {
 	h := newHarness(t, Config{})
 
@@ -80,8 +66,6 @@ func TestTheMethodIsPartOfTheRoute(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, w.Code)
 }
 
-// TestAGeneratedNameLosesTheCloudsSegment. The compiled project carries the
-// part it can know; the node knows the rest and takes it off the request.
 func TestAGeneratedNameLosesTheCloudsSegment(t *testing.T) {
 	h := newHarness(t, Config{CloudFqdn: "tau.example.io"})
 
@@ -101,9 +85,6 @@ func TestAGeneratedNameLosesTheCloudsSegment(t *testing.T) {
 	require.Equal(t, "website/shop", w.Header().Get("X-Served"))
 }
 
-// TestTheHandlersScopeIsTheRoutesAndNotTheGatewaysWhenItSaysSo. A transformer
-// or a handler can name a namespace; when it does not, the gateway's own scope
-// is where the name resolves.
 func TestTheHandlerResolvesInTheRightScope(t *testing.T) {
 	h := newHarness(t, Config{})
 
@@ -111,8 +92,6 @@ func TestTheHandlerResolvesInTheRightScope(t *testing.T) {
 	require.Empty(t, h.Workers.seen()[0].at.Scope, "the gateway is at the root and the handler named no namespace")
 }
 
-// TestCorsEchoesTheOriginThatMatched, and never a wildcard: `*` cannot carry
-// credentials and is a different policy from the list an author wrote.
 func TestCorsEchoesTheOriginThatMatched(t *testing.T) {
 	h := newHarness(t, Config{})
 
@@ -121,11 +100,8 @@ func TestCorsEchoesTheOriginThatMatched(t *testing.T) {
 	require.Equal(t, "https://shop.example.com", w.Header().Get("Access-Control-Allow-Origin"))
 	require.Contains(t, w.Header().Values("Vary"), "Origin")
 
-	// AND IT IS SET BEFORE THE ROUTE'S OWN GAPS. cors is policy at the NAME, so
-	// a browser is told what is allowed even when the answer is a failure —
-	// otherwise a fetch that got a 503 would be reported as a CORS error and
-	// send somebody looking in the wrong place entirely. This route's
-	// transformer runs now, so the answer here is the handler's.
+	// cors is policy at the name, so it is set even on a failure; otherwise a 503 would
+	// surface as a CORS error.
 	require.Equal(t, http.StatusOK, w.Code)
 
 	w = h.do(t, http.MethodPost, "http://shop.example.com/checkout", "",
@@ -134,8 +110,6 @@ func TestCorsEchoesTheOriginThatMatched(t *testing.T) {
 		"cors is a browser's rule; the request is not refused here for it")
 }
 
-// TestAPreflightIsAnsweredEvenWhereNoRouteTakesTheMethod. It asks what is
-// allowed; it is not a request for a page.
 func TestAPreflightIsAnswered(t *testing.T) {
 	h := newHarness(t, Config{})
 
@@ -149,7 +123,6 @@ func TestAPreflightIsAnswered(t *testing.T) {
 	require.Empty(t, h.Workers.seen(), "a preflight never reaches the workload")
 }
 
-// TestTheRateLimitIsTheAuthorsNumber, counted per node.
 func TestTheRateLimitIsTheAuthorsNumber(t *testing.T) {
 	// `ask` is the fixture's tightest: 60 rpm, burst 10.
 	h := newHarness(t, Config{})
@@ -169,17 +142,6 @@ func TestTheRateLimitIsTheAuthorsNumber(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 }
 
-// TestAFailClosedTransformerThatCannotBeRunRefuses. `redact` strips card
-// numbers out of request bodies on the way in and is declared fail-closed;
-// serving its route without it would be the gateway deciding a security control
-// was optional.
-//
-// THE FIRST VERSION OF THIS PASSED WITH A 200, and the bug was one accessor:
-// transformers are a LIST in the compiled object, and reading them as a map
-// returned nothing — so a fail-closed transformer silently stopped existing.
-// It used to assert the refusal a gateway made because nothing could RUN a
-// transformer; what it holds now is the narrower and more useful claim, that one
-// which fails takes the route with it.
 func TestAFailClosedTransformerThatCannotRunRefuses(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.Workers.shapeErr = map[string]error{"redact": errors.New("the component would not start")}
@@ -189,7 +151,6 @@ func TestAFailClosedTransformerThatCannotRunRefuses(t *testing.T) {
 	require.Empty(t, h.Workers.seen(), "and the body never reached the workload")
 }
 
-// TestATransformerRunsBeforeTheHandlerAndShapesWhatItSees.
 func TestATransformerShapesTheRequest(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.Workers.shaped = map[string]*invoke.Outcome{
@@ -204,10 +165,8 @@ func TestATransformerShapesTheRequest(t *testing.T) {
 	w := h.do(t, http.MethodPost, "http://shop.example.com/checkout", "a card number")
 	require.Equal(t, http.StatusOK, w.Code)
 
-	// THE CHAIN IS A PIPELINE AND THE ORDER IS THE DECLARATION'S. This route
-	// names two, and what the second one sees is what the first produced —
-	// otherwise the list would be independent opinions, none able to build on
-	// another.
+	// The chain is a pipeline in declared order: the second transformer sees what the
+	// first produced.
 	asked := h.Workers.asked()
 	require.Len(t, asked, 2, "both transformers ran")
 	require.Equal(t, "redact", asked[0].at.Name, "in the order declared")
@@ -224,9 +183,6 @@ func TestATransformerShapesTheRequest(t *testing.T) {
 	require.Equal(t, []string{"yes"}, served[0].req.Headers["X-Redacted"])
 }
 
-// TestATransformerCanANSWERAndTheHandlerNeverRuns, which is how a filter
-// rejects: the request stops at the transformer and what it returned is what the
-// client gets.
 func TestATransformerCanAnswerInsteadOfForwarding(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.Workers.shaped = map[string]*invoke.Outcome{
@@ -244,9 +200,6 @@ func TestATransformerCanAnswerInsteadOfForwarding(t *testing.T) {
 	require.Empty(t, h.Workers.seen(), "the handler never ran")
 }
 
-// TestAROUTERROUTEDNameAsksItsRouter, which used to be a 501: a gateway whose
-// `routing` is a function had no static route and nothing could run the
-// function, so the only honest answer was "not implemented".
 func TestARouterRoutedNameAsksItsRouter(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.Workers.routing = map[string]*invoke.Routing{
@@ -266,8 +219,6 @@ func TestARouterRoutedNameAsksItsRouter(t *testing.T) {
 	require.Equal(t, "picked", served[0].at.Name, "the handler is the one it named")
 }
 
-// TestAROUTERMayANSWERItself — a redirect needs no workload, and invoking one to
-// produce a 302 would be a cold start for a header.
 func TestARouterCanAnswerWithoutAHandler(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.Workers.routing = map[string]*invoke.Routing{
@@ -283,10 +234,6 @@ func TestARouterCanAnswerWithoutAHandler(t *testing.T) {
 	require.Empty(t, h.Workers.seen(), "no handler ran")
 }
 
-// TestNONEIsA404AndAFAILUREIsNot. A routing table that cannot be read is not
-// the same as a path that is not in it: one is this cloud's problem and the
-// other is the client's, and telling a client — and every cache between here and
-// it — that a path does not exist is not a thing to guess at.
 func TestARouterThatMatchesNothingIs404AndOneThatFailsIsNot(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.Workers.routing = map[string]*invoke.Routing{
@@ -302,7 +249,6 @@ func TestARouterThatMatchesNothingIs404AndOneThatFailsIsNot(t *testing.T) {
 		"a router that could not be run must not read as a missing path")
 }
 
-// TestABodyLargerThanTheBudgetIsRefusedBeforeItIsBuffered.
 func TestABodyLargerThanTheBudgetIsRefused(t *testing.T) {
 	h := newHarness(t, Config{MaxBody: 8})
 
@@ -311,9 +257,6 @@ func TestABodyLargerThanTheBudgetIsRefused(t *testing.T) {
 	require.Empty(t, h.Workers.seen())
 }
 
-// TestWhatTheWorkerSaysBecomesWhatTheClientIsTold. The distinction is whose
-// problem it is: a deployment missing a piece is a 502, a node at capacity is a
-// 503 worth retrying.
 func TestWhatTheWorkerSaysBecomesWhatTheClientIsTold(t *testing.T) {
 	for _, c := range []struct {
 		err  error
@@ -333,7 +276,6 @@ func TestWhatTheWorkerSaysBecomesWhatTheClientIsTold(t *testing.T) {
 	}
 }
 
-// TestTheWorkersAnswerIsPassedThrough, headers and all.
 func TestTheWorkersAnswerIsPassedThrough(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.Workers.answer(&invoke.Response{
@@ -353,9 +295,6 @@ func TestTheWorkersAnswerIsPassedThrough(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 }
 
-// TestTheHostTableIsRemembered, and separately from the pointer: a stale owner
-// sends a request to the wrong PROJECT, where a stale pointer only serves the
-// previous revision of the right one.
 func TestTheHostTableIsRemembered(t *testing.T) {
 	h := newHarness(t, Config{HostTTL: 30 * time.Second})
 
@@ -383,8 +322,6 @@ func TestTheHostTableIsRemembered(t *testing.T) {
 	require.Equal(t, 1, names)
 }
 
-// TestTheHostTableIsBounded. A public listener sees every name anybody points
-// at it, including ones nobody owns.
 func TestTheHostTableIsBounded(t *testing.T) {
 	h := newHarness(t, Config{MaxHosts: 2})
 
@@ -397,8 +334,6 @@ func TestTheHostTableIsBounded(t *testing.T) {
 	require.LessOrEqual(t, names, 2)
 }
 
-// TestAnUnreachableHostTableIsNotAMissingName. Answering 404 while the register
-// is down would tell every client the site does not exist.
 func TestAnUnreachableHostTableIsNotAMissingName(t *testing.T) {
 	h := newHarness(t, Config{})
 
@@ -423,8 +358,6 @@ func TestARequestWithNoHostIsRefused(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, w.Code)
 }
 
-// TestEveryStatusTheClientCanBeTold, directly, because several of them come
-// from failures a fixture cannot produce.
 func TestStatusFor(t *testing.T) {
 	for _, c := range []struct {
 		err  error
@@ -444,16 +377,11 @@ func TestStatusFor(t *testing.T) {
 	}
 }
 
-// TestAnEnvironmentThatCannotBeReadIsNotAMissingSite. The name is claimed and
-// the pointer exists, so the site is not missing — the platform cannot produce
-// what it promised, which is the definition of a 502 and not a 404. A 404 here
-// would send the owner looking at their DNS.
 func TestAnEnvironmentThatCannotBeRead(t *testing.T) {
 	h := newHarness(t, Config{})
 
-	// The register claims the name and holds no object for it, which is what a
-	// half-replicated publish looks like on a node that has the pointer and
-	// not the bytes.
+	// The register claims the name and holds no object for it, as on a node with a
+	// half-replicated publish.
 	s, err := New(Config{},
 		WithHosts(h.Reg), WithSource(emptySource{}), WithWorkers(h.Workers), WithClock(h.clock.Now))
 	require.NoError(t, err)
@@ -464,8 +392,6 @@ func TestAnEnvironmentThatCannotBeRead(t *testing.T) {
 	require.Equal(t, http.StatusBadGateway, w.Code)
 }
 
-// TestANameThisNodeOwnsWithNothingAtIt. A deploy that removed the gateway but
-// whose claim has not been released.
 func TestANameOwnedWithNothingAtIt(t *testing.T) {
 	h := newHarness(t, Config{})
 
@@ -483,8 +409,6 @@ func TestANameOwnedWithNothingAtIt(t *testing.T) {
 	require.Empty(t, h.Workers.seen())
 }
 
-// TestAProxysNameIsNotAGatewaysName. A proxy answers on a name too, and it
-// carries a raw connection: nothing here can parse it.
 func TestAProxysNameIsNotServedHere(t *testing.T) {
 	h := newHarness(t, Config{CloudFqdn: "tau.example.io"})
 
@@ -503,12 +427,8 @@ func TestAProxysNameIsNotServedHere(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, w.Code)
 }
 
-// ── what crossed the edge ────────────────────────────────────────────────
-
-// BANDWIDTH IS THE THIRD BILLED UNIT and this is the only service that sees
-// every byte in and out. A worker sees a request that already arrived; what
-// crossed the edge — including everything refused before a worker was asked —
-// is visible here and nowhere else.
+// meter records what crossed the edge, including everything refused before a
+// worker was asked.
 type meter struct {
 	mu     sync.Mutex
 	events []Accounted
@@ -520,8 +440,8 @@ func (m *meter) Record(_ context.Context, ev Accounted) {
 	m.events = append(m.events, ev)
 }
 
-// recorded is every event so far. only() is the shape most tests want; an
-// attachment is emitted when the socket closes, so its test waits for it.
+// recorded is every event so far. An attachment is emitted when the socket closes,
+// so its test waits for it.
 func (m *meter) recorded() []Accounted {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -553,9 +473,6 @@ func TestAServedRequestIsAccounted(t *testing.T) {
 	require.Positive(t, ev.Out, "and what the workload answered with")
 }
 
-// A REQUEST FOR A NAME NOTHING ANSWERS ON BELONGS TO NO PROJECT, which is a
-// real answer and one a sink has to be able to total separately — the host is
-// the only attribution it has.
 func TestAnUnknownNameIsAccountedAgainstNoProject(t *testing.T) {
 	m := &meter{}
 	h := newHarness(t, Config{}, WithMeter(m))
@@ -570,16 +487,12 @@ func TestAnUnknownNameIsAccountedAgainstNoProject(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, ev.Status)
 }
 
-// A FLOOD THAT NEVER REACHES A WORKLOAD costs this cloud bandwidth and CPU and
-// shows up in no invocation count — which is exactly the traffic somebody
-// disputing a bill asks about.
 func TestARefusedRouteIsAccounted(t *testing.T) {
 	m := &meter{}
 	h := newHarness(t, Config{}, WithMeter(m))
 
-	// The name has a route and it is POST-only, so a GET is refused with 405 —
-	// which is a refusal like any other and is exactly the kind a worker never
-	// hears about.
+	// The name has a POST-only route, so a GET is a 405 refusal a worker never hears
+	// about.
 	res := h.do(t, http.MethodGet, "http://ask.example.com/nothing-here", "")
 	require.Equal(t, http.StatusMethodNotAllowed, res.Code)
 
@@ -589,8 +502,6 @@ func TestARefusedRouteIsAccounted(t *testing.T) {
 	require.Equal(t, http.StatusMethodNotAllowed, ev.Status)
 }
 
-// EVERY EXIT IS ACCOUNTED, and there are many: a deferred emission is the only
-// shape that survives one more being added.
 func TestEveryExitIsAccounted(t *testing.T) {
 	for name, url := range map[string]string{
 		"unknown name": "http://nobody.example.com/",
@@ -607,7 +518,6 @@ func TestEveryExitIsAccounted(t *testing.T) {
 	}
 }
 
-// A node with no meter serves exactly as it did.
 func TestNoMeterIsTheOrdinaryCase(t *testing.T) {
 	h := newHarness(t, Config{})
 	require.Equal(t, http.StatusOK, h.do(t, http.MethodPost, "http://ask.example.com/", "").Code)
@@ -617,9 +527,6 @@ func TestWithMeterRefusesNil(t *testing.T) {
 	require.Error(t, WithMeter(nil)(&options{}))
 }
 
-// THE CALLER IS TOLD A STATUS AND THE OPERATOR IS TOLD WHY. Before this the
-// reason a route failed went nowhere: a container the tier started and could
-// not reach read, from every side, as a 504.
 func TestAWorkloadThatCannotServeIsLoggedWithItsReason(t *testing.T) {
 	var said []string
 	h := newHarness(t, Config{}, WithLogger(func(format string, args ...any) {

@@ -14,41 +14,17 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// bus.go attaches a browser to a bus.
+// Attaches a browser to a bus. A bus with a `host:` is reachable from the internet
+// and this is the only internet-facing service; nothing is invoked or placed, since
+// every node reaches the same topic.
 //
-// # Why the gateway and not the worker
+// A bus is n:n, so a browser publishes as well as receives; writing `host:` declares
+// that. No envelope and no sender id: a workload writes bare payloads to the same
+// topic, and the sender gets its own message back.
 //
-// A bus with a `host:` is reachable from the internet, and this is the only v2
-// service that faces it. Nothing is invoked: the connection is held open and
-// what arrives on the topic is written to it, so there is no request to route
-// and no placement decision to make — every node on the swarm reaches the same
-// topic, so whichever one the connection landed on is the one that serves it.
-//
-// # It is both directions, and that is what `attach` means
-//
-// A bus is n:n: "everything attached gets what is sent". A read-only socket
-// would be 1:n and a different kind. So a browser publishes as well as
-// receives, and WRITING `host:` IS WHAT DECLARES THAT — the vocabulary has no
-// axis that says otherwise, and the kind's own doc calls the name "the name a
-// browser attaches to". An author who wants a one-way feed does not give the
-// bus a host and pushes from a workload instead.
-//
-// There is no envelope and no sender id. A workload publishing to the same
-// topic writes the payload and nothing else, so a frame that arrived wrapped
-// would be a second wire format for one topic — and the sender gets its own
-// message back, because that is what "everything attached" says.
-//
-// # A bus that holds many instances is addressed by path
-//
-// `instances:` is this kind's only inbound control, and it is the vocabulary's
-// own: "the thing attaching is a BROWSER, so the instance name is the caller's,
-// and the project has to have a point at which it says no". So the path IS the
-// instance — `wss://chat.example.com/room-42` — and the bus's validator decides
-// whether that room may exist before anything is subscribed to.
-//
-// A bus with no `instances:` block holds one topic and is attached to at `/`.
-// Naming an instance on one, or omitting it on the other, is refused rather than
-// quietly served as the resource itself.
+// A bus with `instances:` is addressed by path (`wss://chat.example.com/room-42`), and
+// its validator admits the room before anything subscribes; one without is attached
+// at `/`. Naming an instance on the wrong kind is refused.
 
 // busKind is what an ephemeral n:n bus is called in the vocabulary.
 const busKind = specs.KindBus
@@ -97,13 +73,8 @@ type attachable struct {
 	id string
 }
 
-// attachRouted is a bus reached the way everything else is: a route named it.
-//
-// THE ROUTE HAS ALREADY DECIDED EVERYTHING BUT THE UPGRADE by the time this
-// runs -- the path matched, the methods were checked, CORS was written, the
-// rate limit was spent and the transformer chain had its say, any one of which
-// may have answered instead. What is left is whether this is a websocket, and
-// which bus the route named.
+// attachRouted is a bus reached through a route, which has already matched the path,
+// checked methods, written CORS, spent the rate limit and run the transformer chain.
 func (s *Service) attachRouted(w http.ResponseWriter, r *http.Request, billed *crossing, m match, p *specs.Project, projectName, environment string) {
 	if !upgrading(r) {
 		// The name and the path are right and the request is not the one this

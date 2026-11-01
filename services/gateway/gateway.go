@@ -1,45 +1,19 @@
-// Package gateway is the way in. It is the only v2 service that faces the
-// internet, and the only one that turns a request into a target.
-//
-// # What it does, per request
+// Package gateway is the way in: the only v2 service facing the internet, turning a
+// request into a target.
 //
 //	a Host header      -> whose environment this is        [the register]
 //	that environment   -> what it currently runs           [register.Cache]
 //	the name and path  -> which gateway resource serves it [the compiled config]
 //	the route's handler-> a worker, over p2p
 //
-// EVERY POLICY COMES OFF THE CONFIG. CORS, rate limits, methods, path matching
-// and prefix stripping are what the author wrote, per name, and none of them is
-// an operator setting. What an operator declares is the cloud's own zone, the
-// budgets that protect the node, and nothing about any project.
+// Every policy (CORS, rate limits, methods, path matching, prefix stripping) comes
+// from the config; an operator declares only the cloud's zone and node budgets. It
+// chooses a route, never a node (Workers decides from live measurements).
 //
-// # It chooses a route, never a node
-//
-// Which worker answers is a routing decision made from live measurements, and
-// it is behind the Workers interface so that it stays in one place. A gateway
-// that picked a peer itself would be a second router, disagreeing with the
-// first under exactly the load that makes routing matter.
-//
-// # What it is not, yet
-//
-// IT DOES NOT BIND A SOCKET. Handler() returns an http.Handler and the composer
-// serves it; a composer that serves it over TLS asks Certificate which
-// certificate answers each name, because only the gateway can read that off
-// the compiled project. It issues none — see tls.go.
-//
-// IT RUNS TRANSFORMERS AND IT DOES NOT ROUTE. A transformer is a function built
-// against `implements: gateway-transformer`, and its world exists: the chain
-// runs in shaped() before anything else sees the request, in the order declared,
-// and any one of them may answer instead of forwarding. It runs on a WORKER
-// rather than here, because a transformer is a workload of the same deployment
-// and the node that is warm for the project is warm for its transformers.
-//
-// IT RUNS ROUTERS TOO, and on a worker for the same reason. A gateway whose
-// `routing` is a function has no static route at all; a single route whose
-// `target` is `router` picks that route's handler. Both are the same question
-// and one world answers it — see destination(), which runs AFTER the chain
-// because a router that saw the request first would be deciding from a body
-// somebody was about to redact.
+// It binds no socket: Handler is served by the composer, which asks Certificate per
+// name for TLS (tls.go). Transformers run in shaped(), in declared order, before
+// anything sees the request, each able to answer; routers run in destination(), after
+// the chain. Both run on a worker, where the project is warm.
 package gateway
 
 import (
@@ -181,10 +155,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.Timeout)
 	defer cancel()
 
-	// EVERY EXIT FROM THIS FUNCTION IS ACCOUNTED, and there are seventeen of
-	// them. A deferred emission is the only shape that survives one more being
-	// added — which is what happened to every counter that was written as a
-	// line before each `return`.
+	// A deferred emission accounts every exit, including ones added later.
 	billed := &crossing{w: w, started: s.now()}
 	w = billed
 	defer func() { s.emit(ctx, billed.accounted(s.now())) }()
@@ -310,12 +281,8 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A BUS IS ATTACHED TO RATHER THAN INVOKED, and it happens HERE -- after the
-	// transformer chain and before the router -- because that is what routing a
-	// bus was for. It used to own a `host:` and be found by walking the hosts
-	// index, which skipped the path, the methods, the CORS, the rate limit and
-	// the chain: a bus could not be authorized or rate-limited at all. Reached as
-	// a handler, it gets every one of them for the price of being named.
+	// A bus is attached here, after the chain and before the router, so it gets the
+	// route's path, methods, CORS, rate limit and chain like any handler.
 	if m.handler().HandlerKind == busKind {
 		s.attachRouted(w, r, billed, m, proj, projectName, environment)
 		return
@@ -372,31 +339,9 @@ func writeTo(w http.ResponseWriter, res *invoke.Response) {
 	w.Write(res.Body)
 }
 
-// destination is where this request goes: the route's declared handler, or
-// whatever its router decided.
-//
-// A ROUTER IS NAMED IN TWO PLACES and they are the same question. A gateway
-// whose `routing` is `router` has no static routes at all; a single route whose
-// `target` is `router` picks that route's handler. routerAttributes in the DSL
-// is one function for exactly that reason, and this is its other half.
-//
-// A ROUTER THAT COULD NOT BE RUN IS NOT A 404. A routing table that cannot be
-// read is not the same as a path that is not in it — one is this cloud's
-// problem and the other is the client's, and telling a client (and every cache
-// between here and it) that a path does not exist is not a thing to guess at.
-//
-// It answers (address, nil, 0, "") to invoke, (_, answer, 0, "") to serve that
-// response, and (_, nil, code, why) to refuse.
-// admitted asks the route's guard, or the gateway's, whether this request may
-// pass. An empty reason is a pass.
-//
-// A ROUTE'S OWN ANSWERS INSTEAD OF THE GATEWAY'S, which is what having both
-// sites is for: a gateway states the policy its routes inherit, and a route
-// that needs its own says so where the route is written.
-//
-// WHAT A REFUSAL SAYS IS DELIBERATELY LITTLE. The guard's reason is for an
-// operator — a refusal that repeated it would describe somebody's policy to
-// anyone who asked, which is the rule `refuse` keeps everywhere else.
+// admitted asks the route's guard, or the gateway's, whether this request may pass;
+// an empty reason passes. A route's own guard overrides the gateway's. A refusal says
+// little: the guard's reason is for the operator.
 func (s *Service) admitted(ctx context.Context, m match, projectName, environment string, req *invoke.Request) (int, string) {
 	name, scope := m.guard()
 	if name == "" {
@@ -433,6 +378,12 @@ func (s *Service) admitted(ctx context.Context, m match, projectName, environmen
 	return 0, ""
 }
 
+// destination is where this request goes: the route's declared handler, or
+// whatever its router decided. A router that could not be run is not a 404: an
+// unreadable routing table is this cloud's problem, not a missing path.
+//
+// It answers (address, nil, 0, "") to invoke, (_, answer, 0, "") to serve that
+// response, and (_, nil, code, why) to refuse.
 func (s *Service) destination(ctx context.Context, m match, projectName, environment string, req *invoke.Request) (specs.Address, *invoke.Response, int, string) {
 	router, scope := m.router()
 	if router == "" {
@@ -483,17 +434,12 @@ func (s *Service) destination(ctx context.Context, m match, projectName, environ
 
 // shaped runs this route's transformers, in order, over req.
 //
-// IT MUTATES req IN PLACE as each one forwards, because the chain is a pipeline:
-// what the second transformer sees is what the first produced, and what the
-// handler sees is what the last one did. A chain that handed each transformer
-// the ORIGINAL request would be a list of independent opinions, none of which
-// could build on another.
+// It mutates req in place as each one forwards: the chain is a pipeline, so each
+// transformer sees what the previous one produced.
 //
-// WHAT HAPPENS WHEN ONE FAILS IS THE AUTHOR'S, per entry, and it is the one
-// decision here that is genuinely dangerous in both directions: a filter that
-// fails open stops filtering exactly when something is wrong, and an enrichment
-// that fails closed takes the site down to add a header. So `fail` is required
-// to be one of two words and neither is guessed.
+// What a failure means is the author's, per entry: a filter that fails open stops
+// filtering when something is wrong, and an enrichment that fails closed takes the
+// site down to add a header. So `fail` must be one of two words, never guessed.
 //
 // It answers (answer, 0, "") to stop the chain with that response, (nil, 0, "")
 // to carry on, and (nil, code, why) to refuse.
@@ -537,14 +483,9 @@ func (s *Service) shaped(ctx context.Context, m match, projectName, environment 
 }
 
 // unbuilt reports the parts of the vocabulary this gateway cannot yet honour,
-// and says so rather than serving a request as if they were not there.
+// rather than serving a request as if they were not there.
 func (s *Service) unbuilt(m match) (int, string) {
 
-	// TRANSFORMERS ARE NOT HERE ANY MORE. They ran nowhere, so a fail-closed one
-	// had to refuse the route and a fail-open one had to be skipped; now they
-	// run, in order, in shaped(). What a failing one means is still the author's
-	// per entry, and it is decided there — where the failure is — rather than
-	// here, where the only thing knowable was that nothing could run at all.
 	return 0, ""
 }
 
@@ -564,9 +505,8 @@ func (s *Service) candidatesAt(p *specs.Project, name, projectName string) []can
 	return out
 }
 
-// gatewayKind is what an HTTP entry point is called in the vocabulary. A proxy
-// answers on a name too, and is not one of these: it carries a raw connection
-// and never a request, so nothing here can parse it.
+// gatewayKind is an HTTP entry point. A proxy answers on a name too, but carries a
+// raw connection, never a request.
 const gatewayKind = specs.KindGateway
 
 // ownerOf says whose name this is, remembering the answer for HostTTL.
@@ -598,11 +538,8 @@ func (s *Service) ownerOf(ctx context.Context, name string) (string, string, err
 	return projectName, environment, nil
 }
 
-// hostOf is the name the request was made to, without its port and lowercased.
-//
-// DNS IS CASE-INSENSITIVE AND A Host HEADER CARRIES WHAT THE CLIENT TYPED, so a
-// table keyed by what the author wrote would miss half the requests for one
-// name.
+// hostOf is the name the request was made to, without its port and lowercased,
+// since DNS is case-insensitive and a Host header carries what the client typed.
 func hostOf(r *http.Request) string {
 	name := r.Host
 	if r.URL != nil && r.URL.Host != "" {
@@ -614,12 +551,10 @@ func hostOf(r *http.Request) string {
 	return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(name), "."))
 }
 
-// statusFor turns a failure from below into what the client is told.
-//
-// THE DISTINCTION IS WHOSE PROBLEM IT IS. A deployment missing a piece — no
-// tier, no artifact, no secret — is a 502: the site is broken and the caller
-// can do nothing about it. A node at capacity is a 503 with the request worth
-// retrying. Saying 404 for either would send somebody looking for a typo.
+// statusFor turns a failure from below into what the client is told. A deployment
+// missing a piece (tier, artifact, secret) is a 502: the caller can do nothing. A
+// node at capacity is a 503, worth retrying. A 404 would send somebody looking for a
+// typo.
 func statusFor(err error) int {
 	switch {
 	case errors.Is(err, register.ErrNotPublished), errors.Is(err, specs.ErrNotFound):
@@ -641,12 +576,8 @@ func statusFor(err error) int {
 	return http.StatusBadGateway
 }
 
-// refuse is the one place a body is written for a failure, so what a client
-// sees is decided once.
-//
-// IT SAYS NOTHING ABOUT THE PROJECT. A 404 that named the environment, the
-// resource it looked for or the reason the register refused would be a public
-// listener describing somebody's deployment to anyone who asked.
+// refuse is the one place a failure body is written. It says nothing about the
+// project: a public listener must not describe somebody's deployment.
 func refuse(w http.ResponseWriter, status int, why string) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(status)

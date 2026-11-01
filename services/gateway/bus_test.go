@@ -17,9 +17,8 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// bus_test is the browser half of this platform's messaging: a page attaches to
-// a name, gets what is published, and publishes back, with nothing deployed
-// beside it. That is the "noops" claim in the one place a user can see it.
+// The browser half of messaging: a page attaches, receives what is published, and
+// publishes back, with nothing deployed beside it.
 
 // busNamed is the fqdn a bus in the fixture answers on, as the register was
 // told it. The fixture holds two: `presence` with no instances block, which is
@@ -85,9 +84,6 @@ func upgradeRequest(host string) *http.Request {
 	return r
 }
 
-// A BROWSER ATTACHES AND GETS WHAT IS SENT. The whole path: a Host header, the
-// register, the compiled project, the bus's own handle, an upgrade, and a
-// message that was published by something else entirely.
 func TestABrowserGetsWhatIsPublishedToTheBus(t *testing.T) {
 	buses := &fakeBuses{}
 	h := newHarness(t, Config{}, WithBuses(buses), WithAdmission(&fakeAdmits{}))
@@ -108,8 +104,6 @@ func TestABrowserGetsWhatIsPublishedToTheBus(t *testing.T) {
 	require.Equal(t, "someone came online", string(message))
 }
 
-// AND IT PUBLISHES BACK, because a bus is n:n and that is what attaching means.
-// A read-only socket would be a different kind.
 func TestABrowserPublishesToTheBus(t *testing.T) {
 	buses := &fakeBuses{}
 	h := newHarness(t, Config{}, WithBuses(buses), WithAdmission(&fakeAdmits{}))
@@ -128,10 +122,6 @@ func TestABrowserPublishesToTheBus(t *testing.T) {
 	}, 5*time.Second, 10*time.Millisecond)
 }
 
-// THE HANDLE IS THE ONE A WORKLOAD'S GRANT CARRIES. If these two ever disagree,
-// a browser and a workload publishing to what the author wrote as one bus are
-// on two topics and never meet — and nothing fails, which is the worst shape a
-// defect can have.
 func TestTheHandleIsTheOneAWorkloadWouldGet(t *testing.T) {
 	buses := &fakeBuses{}
 	h := newHarness(t, Config{}, WithBuses(buses), WithAdmission(&fakeAdmits{}))
@@ -145,8 +135,6 @@ func TestTheHandleIsTheOneAWorkloadWouldGet(t *testing.T) {
 	require.Equal(t, []string{specs.Handle("shop", "prod", id)}, buses.asked())
 }
 
-// A GENERATED BUS NAME LOSES THE CLOUD'S SEGMENT, the same as every other
-// reachable name — the compiled project cannot know the cloud it runs in.
 func TestABusIsReachedAtItsGeneratedName(t *testing.T) {
 	buses := &fakeBuses{}
 	h := newHarness(t, Config{CloudFqdn: "tau.example.io"}, WithBuses(buses), WithAdmission(&fakeAdmits{}))
@@ -159,9 +147,6 @@ func TestABusIsReachedAtItsGeneratedName(t *testing.T) {
 	conn.Close()
 }
 
-// A PLAIN REQUEST TO A BUS IS TOLD TO UPGRADE. 404 would be the answer for a
-// name nothing serves, and this name resolves — saying so sends somebody
-// looking for a typo they did not make.
 func TestAPlainRequestToABusIsToldToUpgrade(t *testing.T) {
 	h := newHarness(t, Config{}, WithBuses(&fakeBuses{}), WithAdmission(&fakeAdmits{}))
 	fqdn, _ := busNamed(t, "presence", "")
@@ -172,8 +157,6 @@ func TestAPlainRequestToABusIsToldToUpgrade(t *testing.T) {
 	require.Contains(t, w.Body.String(), "websocket")
 }
 
-// A NODE WITH NO GOSSIP SAYS SO. Accepting the connection and delivering
-// nothing would be a browser that looks attached and never updates.
 func TestAGatewayWithNoBusBackingRefuses(t *testing.T) {
 	h := newHarness(t, Config{})
 	fqdn, _ := busNamed(t, "presence", "")
@@ -183,9 +166,6 @@ func TestAGatewayWithNoBusBackingRefuses(t *testing.T) {
 	require.Equal(t, http.StatusNotImplemented, w.Code)
 }
 
-// A BUS THAT HOLDS MANY INSTANCES IS ATTACHED TO BY PATH, and the path IS the
-// instance. The fixture's `chat` is that shape: 200 instances, admitted by
-// `may_open`, and a browser naming a room.
 func TestAnInstanceOfABusIsAttachedToByPath(t *testing.T) {
 	buses := &fakeBuses{}
 	admit := &fakeAdmits{}
@@ -209,7 +189,6 @@ func TestAnInstanceOfABusIsAttachedToByPath(t *testing.T) {
 	require.Equal(t, "may_open", admit.settings()[0]["instances/validator/name"])
 }
 
-// AND A VALIDATOR THAT SAYS NO IS A REFUSAL, before anything is subscribed to.
 func TestAnInstanceTheValidatorRefusedIsNotAttached(t *testing.T) {
 	buses := &fakeBuses{}
 	admit := &fakeAdmits{refuse: errors.New("may_open refused it")}
@@ -229,9 +208,6 @@ func TestAnInstanceTheValidatorRefusedIsNotAttached(t *testing.T) {
 	require.NotContains(t, w.Body.String(), "may_open")
 }
 
-// A BUS THAT HOLDS MANY CANNOT BE ATTACHED TO AS ITSELF, and one that holds one
-// cannot be attached to as an instance. Serving either would be a caller
-// getting a topic its author never described.
 func TestABusIsAddressedTheWayItsBlockSaysItIs(t *testing.T) {
 	buses := &fakeBuses{}
 	h := newHarness(t, Config{}, WithBuses(buses), WithAdmission(&fakeAdmits{}))
@@ -253,8 +229,6 @@ func TestABusIsAddressedTheWayItsBlockSaysItIs(t *testing.T) {
 	require.Empty(t, buses.asked())
 }
 
-// AN INSTANCE NAME IS A KEY AND NOT A PATH, so a second segment is not a deeper
-// instance — it is not an instance at all.
 func TestAPathWithTwoSegmentsIsNotAnInstance(t *testing.T) {
 	buses := &fakeBuses{}
 	h := newHarness(t, Config{}, WithBuses(buses), WithAdmission(&fakeAdmits{}))
@@ -269,8 +243,6 @@ func TestAPathWithTwoSegmentsIsNotAnInstance(t *testing.T) {
 	require.Empty(t, buses.asked())
 }
 
-// A GATEWAY WITH NOTHING TO ASK REFUSES EVERY INSTANCE, because a security
-// control that is silently absent is worse than one that is loudly missing.
 func TestABusWithInstancesNeedsAnAdmission(t *testing.T) {
 	h := newHarness(t, Config{}, WithBuses(&fakeBuses{}))
 	fqdn, _ := busNamed(t, "chat", "")
@@ -283,9 +255,6 @@ func TestABusWithInstancesNeedsAnAdmission(t *testing.T) {
 	require.Equal(t, http.StatusNotImplemented, w.Code)
 }
 
-// A BUS THAT CANNOT BE ATTACHED TO IS AN HTTP STATUS. Attaching happens BEFORE
-// the upgrade for exactly this reason: afterwards the only thing that can be
-// said is a close frame, which a browser reports as a network error.
 func TestAnUnreachableBusIsAnswered(t *testing.T) {
 	buses := &fakeBuses{err: errors.New("no gossip")}
 	h := newHarness(t, Config{}, WithBuses(buses), WithAdmission(&fakeAdmits{}))
@@ -296,10 +265,6 @@ func TestAnUnreachableBusIsAnswered(t *testing.T) {
 	require.Equal(t, http.StatusBadGateway, w.Code)
 }
 
-// AN ATTACHMENT IS METERED AS ITSELF. No workload was invoked, so calling it a
-// serve would inflate the invocation figure a caller checks their bill against;
-// and the bytes both ways are counted, because this is the only place that sees
-// them.
 func TestAnAttachmentIsMeteredAsAnAttach(t *testing.T) {
 	buses := &fakeBuses{}
 	m := &meter{}
@@ -330,9 +295,6 @@ func TestAnAttachmentIsMeteredAsAnAttach(t *testing.T) {
 	require.EqualValues(t, 10, ev.Out)
 }
 
-// AN UPGRADE TO A NAME WITH NO BUS IS STILL A REQUEST. What tells the two
-// apart is the request AND the name together, so a client sending upgrade
-// headers at an HTTP route gets the route rather than a refusal about buses.
 func TestAnUpgradeAtANameWithNoBusIsARequest(t *testing.T) {
 	buses := &fakeBuses{}
 	h := newHarness(t, Config{}, WithBuses(buses))
