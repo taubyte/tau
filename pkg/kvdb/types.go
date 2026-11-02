@@ -17,7 +17,5 @@ type kvDatabase struct {
 }
 
 type stats struct {
-	heads      []cid.Cid
-	maxHeight  uint64
-	queuedJobs int
+	heads []cid.Cid
 }

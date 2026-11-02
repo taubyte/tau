@@ -282,13 +282,6 @@ func TestMockKVDB(t *testing.T) {
 		assert.Assert(t, stats != nil)
 		assert.Equal(t, uint(0), uint(stats.Type())) // TypeCRDT = 0
 		assert.Equal(t, len(stats.Heads()), 0)
-
-		// Test encode/decode (mock implementations)
-		encoded := stats.Encode()
-		assert.Equal(t, len(encoded), 0)
-
-		err = stats.Decode([]byte("test"))
-		assert.NilError(t, err)
 	})
 
 	t.Run("Factory", func(t *testing.T) {

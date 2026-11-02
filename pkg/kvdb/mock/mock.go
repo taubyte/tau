@@ -349,11 +349,3 @@ func (s *MockStats) Type() kvdb.Type {
 func (s *MockStats) Heads() []cid.Cid {
 	return s.heads
 }
-
-func (s *MockStats) Encode() []byte {
-	return []byte{}
-}
-
-func (s *MockStats) Decode(data []byte) error {
-	return nil
-}
