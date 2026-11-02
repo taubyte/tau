@@ -170,13 +170,11 @@ func TestEachPolicyIsHeldInItsRole(t *testing.T) {
 		"cache/edge":       schema.RoleSeed,
 		"cache/free":       schema.RoleAnywhere,
 		"zone/example_com": schema.RoleFollows,
-		"package/api_code": schema.RoleFollows,
-	}, rolesByName(t, views["region-2"]))
+	}, rolesByName(t, views["region-2"]), "the package goes with the pinned function that runs it, and nowhere else")
 	require.Equal(t, map[string]schema.Role{
 		"cache/edge":       schema.RoleDemand,
 		"cache/free":       schema.RoleAnywhere,
 		"zone/example_com": schema.RoleFollows,
-		"package/api_code": schema.RoleFollows,
 	}, rolesByName(t, views["region-3"]))
 
 	// THE INDEX OF A VIEW NAMES ONLY WHAT IT HOLDS.
@@ -184,6 +182,26 @@ func TestEachPolicyIsHeldInItsRole(t *testing.T) {
 	for key := range idx {
 		require.NotContains(t, key, "/function/api/")
 	}
+}
+
+func TestWhatAPinnedWorkloadReadsStaysInsideThePin(t *testing.T) {
+	views, findings, err := viewsOf(t, several{"region-1", "region-2"}, map[string]string{
+		"/project.yaml":       regionsProject + everyBranch,
+		"/function/api.yaml":  viewFunction("api", "regions:\n    pinned: [region-1]\nsecret:\n    stripe:\n        ops: [get]\n"),
+		"/secret/stripe.yaml": "id: " + cidFor("secret/stripe") + "\nrotation: 720h\n",
+		"/secret/spare.yaml":  "id: " + cidFor("secret/spare") + "\nrotation: 720h\n",
+	})
+	require.NoError(t, err)
+	require.Empty(t, findings)
+	require.Equal(t, map[string]schema.Role{
+		"function/api":     schema.RolePinned,
+		"package/api_code": schema.RoleNeeded,
+		"secret/stripe":    schema.RoleNeeded,
+		"secret/spare":     schema.RoleFollows,
+	}, rolesByName(t, views["region-1"]))
+	require.Equal(t, map[string]schema.Role{
+		"secret/spare": schema.RoleFollows,
+	}, rolesByName(t, views["region-2"]), "what nothing reads still follows everywhere; what the pinned function reads does not")
 }
 
 func TestACdnWithNoServedSeedIsSeededEverywhere(t *testing.T) {

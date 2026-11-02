@@ -204,6 +204,17 @@ func PlanViews(obj map[string]any, opts ...AuditOption) Plan {
 			"Every resource is held only in the regions it is placed in, and nothing reaches across regions: there is no contract for it. Place both where they meet, or let the one reached be placed wherever this is.", from.id})
 	}
 
+	// DEPENDED ON: what has no footprint and something placed reaches, through what has
+	// none either. It is held where what reaches it is, and nowhere else: a package goes
+	// with the workloads that run it, and a secret a pinned function reads stays inside
+	// the pin.
+	depended := map[string]bool{}
+	for id := range hasFootprint {
+		for _, next := range closureUnplaced(needs, hasFootprint, id) {
+			depended[next] = true
+		}
+	}
+
 	for _, region := range plan.Destinations {
 		roles := plan.Roles[region]
 
@@ -232,11 +243,11 @@ func PlanViews(obj map[string]any, opts ...AuditOption) Plan {
 			}
 		}
 
-		// FOLLOWS: what has no footprint, is reached by nothing here, and reaches
+		// FOLLOWS: what has no footprint, is reached by nothing placed, and reaches
 		// nothing placed outside this region. A zone nothing points at lands in every
 		// view, which is where a resource that runs nowhere of its own is served.
 		for _, res := range all {
-			if hasFootprint[res.id] || roles[res.id] != "" || isScopeOnly(res) {
+			if hasFootprint[res.id] || depended[res.id] || roles[res.id] != "" || isScopeOnly(res) {
 				continue
 			}
 			ok := true
@@ -268,8 +279,9 @@ func PlanViews(obj map[string]any, opts ...AuditOption) Plan {
 	}
 
 	// HELD NOWHERE: something with no footprint whose placed targets share no region.
+	// What is depended on is held with what depends on it, which is that one's to answer.
 	for _, res := range all {
-		if hasFootprint[res.id] || isScopeOnly(res) {
+		if hasFootprint[res.id] || depended[res.id] || isScopeOnly(res) {
 			continue
 		}
 		held := false
