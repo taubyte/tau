@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,8 +31,11 @@ func TestARealGitLabAnswersTheGitLabDriver(t *testing.T) { walk(t, bootGitLab(t)
 // creates the administrator's token with gitlab-rails — GitLab's own console,
 // and the documented way to make a token without a browser. The token's value
 // is the test's, handed in, so nothing secret has to be read back out of a log;
-// the host keys are read off the server's own disk.
-const gitlabScript = `/assets/init-container &
+// the host keys are read off the server's own disk. Its bundled postgres logs to a
+// file, not to the container, so that file is followed too: it is what says why
+// the database never came up.
+const gitlabScript = `(tail -F -n +1 /var/log/gitlab/postgresql/current 2>/dev/null | sed -u 's/^/TAU-PG /') &
+/assets/init-container &
 pid=$!
 until curl -fs -o /dev/null http://127.0.0.1/users/sign_in; do sleep 5; done
 gitlab-rails runner "t = User.find_by_username('root').personal_access_tokens.create!(name: 'harness', scopes: [:api], expires_at: 7.days.from_now); t.set_token(ENV['TAU_ADMIN_TOKEN']); t.save!"
@@ -72,6 +76,12 @@ gitlab_rails['usage_ping_enabled'] = false
 			{HostIP: "127.0.0.1", HostPort: httpPort, ContainerPort: 80, Protocol: "tcp"},
 			{HostIP: "127.0.0.1", HostPort: sshPort, ContainerPort: 22, Protocol: "tcp"},
 		}},
+	})
+	t.Cleanup(func() {
+		if t.Failed() {
+			pg := c.lines("TAU-PG")
+			t.Logf("gitlab's postgres log, %d lines, tail:\n%s", len(pg), tail(strings.Join(pg, "\n"), 60))
+		}
 	})
 	eventually(t, "gitlab ready", 15*time.Minute, func() bool { return len(c.lines("TAU-READY")) > 0 })
 	t.Logf("gitlab boot, pull excluded, to a usable admin token: %s", time.Since(booted).Round(time.Second))
