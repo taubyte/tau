@@ -285,6 +285,7 @@ func TestContainerOptions(t *testing.T) {
 		Command([]string{"echo", "hi"}),
 		WorkDir("/work"),
 		Volume("/host", "/container"),
+		ReadOnlyVolume("/tools", "/opt/tools"),
 		Variable("KEY", "value"),
 		Variables(map[string]string{"OTHER": "thing"}),
 	} {
@@ -297,8 +298,9 @@ func TestContainerOptions(t *testing.T) {
 	assert.Equal(t, []string{"echo", "hi"}, config.Command)
 	assert.Equal(t, "/work", config.WorkDir)
 	assert.ElementsMatch(t, []string{"KEY=value", "OTHER=thing"}, config.Env)
-	require.Len(t, config.Volumes, 1)
+	require.Len(t, config.Volumes, 2)
 	assert.Equal(t, core.VolumeMount{Source: "/host", Destination: "/container"}, config.Volumes[0])
+	assert.Equal(t, core.VolumeMount{Source: "/tools", Destination: "/opt/tools", ReadOnly: true}, config.Volumes[1])
 }
 
 func framed(payload string) string {

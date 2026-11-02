@@ -14,6 +14,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/containers"
 	"github.com/taubyte/tau/pkg/containers/core"
+	"github.com/taubyte/tau/pkg/vault"
 )
 
 // engine.go runs a build in a container. The checkout is bind-mounted and the
@@ -66,9 +67,28 @@ func NewEngine(backend core.Backend, opts ...EngineOption) (*Containers, error) 
 }
 
 // Make runs one build, a step at a time, and returns what it produced.
+//
+// Every step has the vault at /.taubyte when the spec has one, and the log masks each
+// value it serves from then on, across steps.
 func (c *Containers) Make(ctx context.Context, spec Spec, log io.Writer) (io.ReadCloser, error) {
+	var mounts []containers.ContainerOption
+	flush := func() {}
+	if spec.Vault != nil {
+		redact := vault.NewRedactor(log)
+		served, err := vault.Serve(spec.Vault, redact.Add)
+		if err != nil {
+			return nil, err
+		}
+		defer served.Close()
+		log, flush = redact, func() { redact.Flush() }
+		mounts = append(mounts, containers.ReadOnlyVolume(served.Dir(), vault.Dir))
+	}
+
 	for _, step := range spec.Steps {
-		if err := c.run(ctx, spec, step, log); err != nil {
+		err := c.run(ctx, spec, step, mounts, log)
+		// What the log holds back is a step's own last bytes, not the next step's.
+		flush()
+		if err != nil {
 			return nil, fmt.Errorf("step %s: %w", step.Name, err)
 		}
 	}
@@ -77,7 +97,7 @@ func (c *Containers) Make(ctx context.Context, spec Spec, log io.Writer) (io.Rea
 
 // run is one step: its image over the checkout, its commands in one shell. What it
 // leaves in the checkout is what the next step finds.
-func (c *Containers) run(ctx context.Context, spec Spec, step Step, log io.Writer) error {
+func (c *Containers) run(ctx context.Context, spec Spec, step Step, mounts []containers.ContainerOption, log io.Writer) error {
 	// Image pulls, and keeps an image the machine already holds when the pull
 	// fails — a toolchain built on this machine, or a registry that is down.
 	image, err := c.client.Image(ctx, step.Image, containers.Output(log))
@@ -90,6 +110,7 @@ func (c *Containers) run(ctx context.Context, spec Spec, step Step, log io.Write
 		containers.WorkDir(path.Join(mount, filepath.ToSlash(within(spec.Path)))),
 		containers.Command(append(shell, strings.Join(step.Commands, " && "))),
 	}
+	options = append(options, mounts...)
 	if !c.open {
 		options = append(options, containers.RestrictedEgress())
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	"github.com/taubyte/tau/pkg/vault"
 	"github.com/taubyte/tau/services/build/artifact"
 	"github.com/taubyte/tau/tools/tau/internal/project"
 )
@@ -434,4 +435,21 @@ func TestACodeRepositoryBuildsAgainstWhatIsPublished(t *testing.T) {
 	r = x.run("build", code, "--project", id)
 	require.NotZero(t, r.code)
 	require.Contains(t, r.stderr, "which is not a repository")
+}
+
+func TestALocalBuildReadsItsSecretsFromThisMachine(t *testing.T) {
+	t.Setenv("TAU_SECRET_STRIPE_KEY", "sk_test_1")
+	v := environVault{granted: []string{"stripe-key", "unset"}}
+
+	value, err := v.Read(t.Context(), "stripe-key")
+	require.NoError(t, err)
+	require.Equal(t, "sk_test_1", string(value))
+
+	_, err = v.Read(t.Context(), "unset")
+	require.ErrorContains(t, err, "TAU_SECRET_UNSET is not set on this machine")
+
+	// Set on the machine is not granted to the package.
+	t.Setenv("TAU_SECRET_SLACK", "xoxb")
+	_, err = v.Read(t.Context(), "slack")
+	require.ErrorIs(t, err, vault.ErrNotGranted)
 }

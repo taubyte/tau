@@ -3,6 +3,7 @@
 package artifact_test
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/vault"
 	"github.com/taubyte/tau/services/build/artifact"
 )
 
@@ -133,4 +135,55 @@ func TestARealBuildLogsWhileItRuns(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "release"), nil, 0o644))
 	require.NoError(t, <-done)
 	require.Contains(t, log.buf.String(), "linked")
+}
+
+// secretsAt is a build's vault holding exactly what it was granted.
+type secretsAt map[string]string
+
+func (s secretsAt) Read(_ context.Context, label string) ([]byte, error) {
+	value, ok := s[label]
+	if !ok {
+		return nil, vault.ErrNotGranted
+	}
+	return []byte(value), nil
+}
+
+func TestARealBuildReadsItsSecretThroughTheHelper(t *testing.T) {
+	e, err := artifact.NewEngine(nil)
+	require.NoError(t, err)
+
+	var log strings.Builder
+	product, err := e.Make(t.Context(), artifact.Spec{
+		Dir: t.TempDir(),
+		Steps: []artifact.Step{
+			{Name: "read", Image: "busybox:1.36", Commands: []string{
+				"env | grep -c sk_live_1 || echo not in the environment",
+				"/.taubyte/secret stripe > token",
+				"echo token is $(cat token)",
+				"/.taubyte/secret slack || echo refused with $?",
+				"touch /.taubyte/planted || echo the vault is read-only",
+			}},
+			// A value served in one step is still masked in the next.
+			{Name: "after", Image: "busybox:1.36", Commands: []string{"echo still $(cat token)", "cp token out"}},
+		},
+		Secrets: []string{"stripe"},
+		Vault:   secretsAt{"stripe": "sk_live_1"},
+		Output:  "out",
+	}, &log)
+	needsEgressRestriction(t, err)
+	require.NoError(t, err, log.String())
+	defer product.Close()
+
+	body, err := io.ReadAll(product)
+	require.NoError(t, err)
+	require.Equal(t, "sk_live_1", string(body), "the value as stored: no newline, nothing masked")
+
+	said := log.String()
+	require.NotContains(t, said, "sk_live_1")
+	require.Contains(t, said, "not in the environment")
+	require.Contains(t, said, "token is ***")
+	require.Contains(t, said, "still ***")
+	require.Contains(t, said, "slack is not granted here")
+	require.Contains(t, said, "refused with 1")
+	require.Contains(t, said, "the vault is read-only")
 }

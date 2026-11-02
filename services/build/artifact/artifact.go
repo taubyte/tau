@@ -17,12 +17,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
+	"github.com/taubyte/tau/pkg/vault"
 	"github.com/taubyte/tau/services/build/backend"
 )
 
@@ -58,6 +61,10 @@ var (
 	// ErrNotBuiltHere is a package asking for something this cloud's builds do not do
 	// yet, refused by name rather than built without it.
 	ErrNotBuiltHere = errors.New("artifact: this cloud does not build that yet")
+
+	// ErrNoSecrets is a package granted secrets in a cloud with nothing to read them
+	// from: refused, rather than built into a step that cannot read what it was given.
+	ErrNoSecrets = errors.New("artifact: no secrets service to read a build's secrets from")
 )
 
 // Register is the read a build makes of what is deployed.
@@ -110,6 +117,14 @@ type Spec struct {
 	// Type is the package's. A warp bundle is not handed over as the build left it:
 	// the platform packs it into the archive that tier reads (see pack.go).
 	Type string
+
+	// Secrets are the labels of the secrets the package is granted, sorted. A step
+	// reads one with /.taubyte/secret <label>; none is ever in its environment.
+	Secrets []string
+
+	// Vault answers them. It is the caller's, not the recipe's: a cloud's build reads
+	// the secrets service, a developer's their own machine.
+	Vault vault.Reader
 }
 
 // Step is one toolchain image and the commands run in it, in one shell.
@@ -128,8 +143,9 @@ func (s Spec) Digest() string {
 		Variables map[string]string `json:"variables"`
 		Output    string            `json:"output"`
 		Type      string            `json:"type,omitempty"`
+		Secrets   []string          `json:"secrets,omitempty"`
 	}
-	named, _ := json.Marshal(digestInput{filepath.ToSlash(s.Path), s.Steps, s.Variables, s.Output, s.Type})
+	named, _ := json.Marshal(digestInput{filepath.ToSlash(s.Path), s.Steps, s.Variables, s.Output, s.Type, s.Secrets})
 	sum := sha256.Sum256(named)
 	return hex.EncodeToString(sum[:])
 }
@@ -238,6 +254,10 @@ func (b *Builder) Build(ctx context.Context, w backend.Work, out backend.Output)
 		if err != nil {
 			return err
 		}
+		if len(item.Secrets) > 0 && b.secrets == nil {
+			return fmt.Errorf("%w: package/%s is granted %s", ErrNoSecrets, item.Name, strings.Join(spec.Secrets, ", "))
+		}
+		spec.Vault = granted{secrets: b.secrets, project: w.ProjectID, environment: item.Environment, ids: item.Secrets}
 		recipes[i] = spec
 	}
 
@@ -321,6 +341,9 @@ type Item struct {
 	Package     specs.Package
 	Path        string
 	Variables   []specs.Variable
+
+	// Secrets are what the package is granted, label to the secret's id.
+	Secrets map[string]string
 }
 
 // Plan is every build the deployments owe that backs says is at hand, exported so
@@ -345,6 +368,11 @@ func Plan(deployments []Deployment, backs func(specs.Buildable) (bool, error)) (
 					ErrUnfilled, buildable.Name, config, d.Environment)
 			}
 
+			secrets, err := grantedTo(d.Project, buildable)
+			if err != nil {
+				return nil, err
+			}
+
 			out = append(out, Item{
 				Environment: d.Environment,
 				Scope:       buildable.Scope,
@@ -353,8 +381,50 @@ func Plan(deployments []Deployment, backs func(specs.Buildable) (bool, error)) (
 				Package:     buildable.Package,
 				Path:        buildable.Source.Path,
 				Variables:   buildable.Variables,
+				Secrets:     secrets,
 			})
 		}
+	}
+	return out, nil
+}
+
+// granted is a build's vault in a cloud: what its package is granted, read from the
+// secrets service when a step asks, so a rotation is seen by the next read.
+type granted struct {
+	secrets              Secrets
+	project, environment string
+	ids                  map[string]string
+}
+
+func (g granted) Read(ctx context.Context, label string) ([]byte, error) {
+	id, ok := g.ids[label]
+	if !ok {
+		return nil, fmt.Errorf("%w: the package's access block names no secret %q", vault.ErrNotGranted, label)
+	}
+	value, err := g.secrets.Secret(ctx, g.project, g.environment, id)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(value), nil
+}
+
+// grantedTo is every secret a package's access block grants it, by label, resolved
+// where the package sits.
+func grantedTo(p *specs.Project, b specs.Buildable) (map[string]string, error) {
+	r, _, err := p.Resource(b.Scope, specs.KindPackage, b.Name)
+	if err != nil {
+		return nil, fmt.Errorf("artifact: package/%s: %w", b.Name, err)
+	}
+	var out map[string]string
+	for _, reach := range r.Reaches(specs.KindSecret) {
+		_, id, err := p.Reached(b.Scope, reach)
+		if err != nil {
+			return nil, fmt.Errorf("artifact: package/%s reads %w", b.Name, err)
+		}
+		if out == nil {
+			out = map[string]string{}
+		}
+		out[reach.Label] = id
 	}
 	return out, nil
 }
@@ -408,6 +478,7 @@ func Recipe(i Item, checkout string) (Spec, error) {
 		}
 		spec.Steps = append(spec.Steps, Step{Name: step.Name, Image: step.Image, Commands: step.Commands})
 	}
+	spec.Secrets = slices.Sorted(maps.Keys(i.Secrets))
 	for _, v := range i.Variables {
 		if spec.Variables == nil {
 			spec.Variables = map[string]string{}

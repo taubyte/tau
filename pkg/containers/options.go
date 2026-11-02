@@ -74,6 +74,14 @@ func Volume(sourcePath, containerPath string) ContainerOption {
 	}
 }
 
+// ReadOnlyVolume mounts a local directory the container may read and not write.
+func ReadOnlyVolume(sourcePath, containerPath string) ContainerOption {
+	return func(c *Container) error {
+		c.volumes = append(c.volumes, volume{source: sourcePath, target: containerPath, readOnly: true})
+		return nil
+	}
+}
+
 // RestrictedEgress makes the backend confine the container's network egress to
 // the public internet — blocking node-local services, the cloud metadata
 // endpoint, and private/link-local ranges. Set for any workload the node did not

@@ -37,7 +37,7 @@ DREAM_P ?= $(shell n=$$(nproc 2>/dev/null || echo 4); p=$$((n / 4)); [ $$p -lt 1
 # it fails the package outright rather than skipping it.
 DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xargs grep -L '//go:build dreaming && ee' | sed 's|^\./||' | grep -vE '^(ee/|tools/tau/|\.)' | xargs -n1 dirname | sort -u | sed 's|^|./|')
 
-.PHONY: test test-cli test-acme test-acme-live test-dreaming test-raft test-docker test-containerd test-application test-build test-corpus test-external-databases forge-images test-forges test-containers cover-containers cover-containers-unit cover-containers-docker cover-containers-root cover-containers-rootless cover-containers-report test-taucorder test-race test-all proto-v2 proto-v2-check
+.PHONY: test test-cli test-acme test-acme-live test-dreaming test-raft test-docker test-containerd test-application test-build test-corpus test-external-databases forge-images test-forges test-containers cover-containers cover-containers-unit cover-containers-docker cover-containers-root cover-containers-rootless cover-containers-report test-taucorder test-race test-all proto-v2 proto-v2-check vault-helper
 
 # THE TIMEOUT IS EXPLICIT BECAUSE THE DEFAULT IS A GUESS ABOUT THE MACHINE.
 # go test allows a package 10 minutes unless told otherwise, and pkg/kvdb spends
@@ -239,6 +239,19 @@ proto-v2:
 
 proto-v2-check:
 	go test -exec $(LEAKCHECK) $(FLAGS) ./tools/protogen/... ./pkg/proto/...
+
+# The secret helper a build or a container runs at /.taubyte/secret (pkg/vault). Its
+# binaries are committed and embedded, so only an edit to secret.zig needs this. Zig is
+# pinned because its standard library changes between releases.
+ZIG ?= zig
+VAULT_HELPER_OUT ?= pkg/vault/helper
+vault-helper:
+	@$(ZIG) version | grep -qx 0.14.1 || { echo "vault-helper: needs zig 0.14.1, $(ZIG) is $$($(ZIG) version)"; exit 1; }
+	cache=$$(mktemp -d) && for a in x86_64 aarch64; do \
+		$(ZIG) build-exe pkg/vault/helper/secret.zig -O ReleaseSmall -fstrip -fsingle-threaded \
+			-target $$a-linux-musl --cache-dir $$cache -femit-bin=$(VAULT_HELPER_OUT)/secret-$$a || exit 1; \
+		rm -f $(VAULT_HELPER_OUT)/secret-$$a.o; \
+	done; rm -rf $$cache
 
 # Enterprise-build targets live in the ee submodule and are pulled in when it's
 # checked out (a no-op for an OSS-only tree). Run `make help-ee` for the list.

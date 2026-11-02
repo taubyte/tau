@@ -24,8 +24,9 @@ type Client struct {
 
 // volume defines the source and target to be volumed in the docker container.
 type volume struct {
-	source string
-	target string
+	source   string
+	target   string
+	readOnly bool
 }
 
 // Container wraps the methods of the docker container.

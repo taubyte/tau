@@ -20,6 +20,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/taubyte/tau/pkg/specs"
+	"github.com/taubyte/tau/pkg/vault"
 	"github.com/taubyte/tau/services/build/artifact"
 	"github.com/taubyte/tau/tools/tau/internal/config"
 	"github.com/taubyte/tau/tools/tau/internal/project"
@@ -107,6 +108,7 @@ func runBuild(cmd *cobra.Command, env Env, dir string) error {
 		if recipes[i], err = artifact.Recipe(item, work); err != nil {
 			return err
 		}
+		recipes[i].Vault = environVault{granted: recipes[i].Secrets}
 	}
 
 	engine := env.Engine
@@ -297,6 +299,39 @@ func appendLoaded(to []artifact.Deployment, environment string, compiled []byte)
 		return nil, fmt.Errorf("reading %s's compiled configuration: %w", environment, err)
 	}
 	return append(to, artifact.Deployment{Environment: environment, Project: loaded}), nil
+}
+
+// SecretEnvPrefix is how `tau build` is handed a secret its package is granted: the
+// label upper-cased, anything not a letter or digit an underscore, after this prefix.
+// A step reads it through /.taubyte/secret, exactly as it would in a cloud.
+const SecretEnvPrefix = "TAU_SECRET_"
+
+// environVault answers a local build's secrets from this machine's environment, when
+// a step asks.
+type environVault struct{ granted []string }
+
+func (e environVault) Read(_ context.Context, label string) ([]byte, error) {
+	if !slices.Contains(e.granted, label) {
+		return nil, fmt.Errorf("%w: the package's access block names no secret %q", vault.ErrNotGranted, label)
+	}
+	name := SecretEnvPrefix + envName(label)
+	value, ok := os.LookupEnv(name)
+	if !ok {
+		return nil, fmt.Errorf("%s is not set on this machine", name)
+	}
+	return []byte(value), nil
+}
+
+func envName(label string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z':
+			return r - 'a' + 'A'
+		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			return r
+		}
+		return '_'
+	}, label)
 }
 
 // environmentsFor is --env, which must be one the project declares, or every

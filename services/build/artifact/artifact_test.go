@@ -18,6 +18,7 @@ import (
 
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
+	"github.com/taubyte/tau/pkg/vault"
 	"github.com/taubyte/tau/services/build/artifact"
 	"github.com/taubyte/tau/services/build/backend"
 )
@@ -621,17 +622,95 @@ func TestAPackagesValuesAreItsBuildsEnvironment(t *testing.T) {
 	require.Equal(t, map[string]string{"GOPRIVATE": "github.com/acme/*"}, specs[0].Variables)
 }
 
+// vaultOf records what a build's vault was asked, and answers.
+type vaultOf struct {
+	mu    sync.Mutex
+	asked []string
+	err   error
+}
+
+func (v *vaultOf) Secret(_ context.Context, project, environment, secretID string) (string, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.asked = append(v.asked, project+"/"+environment+"/"+secretID)
+	if v.err != nil {
+		return "", v.err
+	}
+	return "sk_live_1", nil
+}
+
+// answers is a vault holding values outright.
+type answers map[string]string
+
+func (a answers) Read(_ context.Context, label string) ([]byte, error) {
+	value, ok := a[label]
+	if !ok {
+		return nil, vault.ErrNotGranted
+	}
+	return []byte(value), nil
+}
+
+const stripeID = "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy"
+
 // A secret is read by the step itself, through the helper, under the package's own
 // grant; nothing resolves one into the build's environment.
 func TestASecretIsNeverInTheBuildsEnvironment(t *testing.T) {
 	e := &engine{}
-	require.NoError(t, builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, mainRepo).
+	secrets := &vaultOf{}
+	require.NoError(t, builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, mainRepo, artifact.WithSecrets(secrets)).
 		Build(t.Context(), work(paylibRepo), newOut()))
 
 	specs := e.seen()
 	require.Len(t, specs, 1)
 	require.NotContains(t, specs[0].Variables, "GITHUB_TOKEN")
 	require.Equal(t, []string{"export GITHUB_TOKEN=$(/.taubyte/secret stripe) && .taubyte/build.sh"}, specs[0].Steps[0].Commands)
+	require.Equal(t, []string{"stripe"}, specs[0].Secrets, "the grant, by the label the step reads it with")
+	require.Empty(t, secrets.asked, "nothing is read until a step asks")
+}
+
+func TestTheBuildsVaultReadsWhatThePackageIsGranted(t *testing.T) {
+	e := &engine{}
+	secrets := &vaultOf{}
+	require.NoError(t, builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, mainRepo, artifact.WithSecrets(secrets)).
+		Build(t.Context(), work(paylibRepo), newOut()))
+	v := e.seen()[0].Vault
+	require.NotNil(t, v)
+
+	value, err := v.Read(t.Context(), "stripe")
+	require.NoError(t, err)
+	require.Equal(t, "sk_live_1", string(value))
+	require.Equal(t, []string{projectID + "/prod/" + stripeID}, secrets.asked, "by id, in the deployment built")
+
+	// Another secret of the project is not this package's to read.
+	_, err = v.Read(t.Context(), "slack")
+	require.ErrorIs(t, err, vault.ErrNotGranted)
+	require.Len(t, secrets.asked, 1, "a refused label never reaches the secrets service")
+
+	secrets.err = errors.New("no member answered")
+	_, err = v.Read(t.Context(), "stripe")
+	require.ErrorContains(t, err, "no member answered")
+}
+
+func TestAGrantChangesTheRecipe(t *testing.T) {
+	granted := artifact.Spec{Steps: []artifact.Step{{Name: "b", Image: "go:1.23"}}, Output: "x", Secrets: []string{"stripe"}}
+	plain := granted
+	plain.Secrets = nil
+	require.NotEqual(t, granted.Digest(), plain.Digest())
+
+	// The vault is who answers, not what is built.
+	granted.Vault = answers{"stripe": "sk_live_1"}
+	again := granted
+	again.Vault = nil
+	require.Equal(t, granted.Digest(), again.Digest())
+}
+
+func TestAGrantedPackageInACloudWithNoSecretsIsRefused(t *testing.T) {
+	e := &engine{}
+	err := builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, mainRepo).
+		Build(t.Context(), work(paylibRepo), newOut())
+	require.ErrorIs(t, err, artifact.ErrNoSecrets)
+	require.ErrorContains(t, err, "package/paylib is granted stripe")
+	require.Empty(t, e.seen())
 }
 
 func TestAnInputIsRefusedByName(t *testing.T) {
