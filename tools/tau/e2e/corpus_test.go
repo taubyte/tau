@@ -4,6 +4,8 @@ package e2e
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -318,6 +320,15 @@ var corpus = []corpusCase{
 		{host: "js.example.com", method: http.MethodPost, path: "/", body: "ping", status: 200, answer: "POST ping"},
 		{host: "js.example.com", method: http.MethodGet, path: "/orders", status: 200, answer: "GET "},
 	}},
+	// A BUILD READS A SECRET through the helper, set the way a developer sets one: both
+	// builds bake in the fingerprint of the value set, and neither has it in its
+	// environment.
+	{name: "with/package/vault", prepare: func(t *testing.T, work string) {
+		t.Setenv("TAU_SECRET_SIGNING_KEY", signingKey)
+		ok(t, "secrets", "set", "signing_key", signingKey, "--dir", work, "--env", "prod")
+	}, probes: []probe{
+		{host: "vault.example.com", method: http.MethodGet, path: "/", status: 200, answer: fingerprintOf(signingKey)},
+	}},
 	// ONE HOST, A FUNCTION ON EACH TIER: the componentized one says it is js
 	// compiled to wasm, and the packed one answers on the js tier.
 	{name: "with/function/runtimes", probes: []probe{
@@ -408,6 +419,14 @@ var corpus = []corpusCase{
 	{name: "refused/function/noruntime", refused: "required attribute 'type'"},
 	{name: "refused/function/unknownruntime", refused: "valid values here: wasm, warp, oci, assets"},
 	{name: "refused/views/across", region: "region-2", refused: `reaches cache/sessions_r1, which is not placed in "region-2" where this is`},
+}
+
+// signingKey is with/package/vault's secret, and fingerprintOf what its build bakes in.
+const signingKey = "sk_build_1"
+
+func fingerprintOf(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])[:16]
 }
 
 // languageProbes asks every function of with/languages, each built by the

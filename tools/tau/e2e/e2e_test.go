@@ -146,6 +146,7 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 
 	dir := t.TempDir()
 	ok(t, "init", "shop", "--dir", dir)
+	ok(t, "new", "secret", "db_url", "--dir", dir)
 	require.Contains(t, ok(t, "validate", "--dir", dir), "✓ compiles")
 
 	configRepo := repokey.Key{Host: f.Host(), Owner: fake.Namespace, Name: "shop"}
@@ -255,7 +256,9 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 		return r.code == 0 && strings.Contains(r.stdout, jobs[0].ID)
 	}, time.Minute, time.Second, "the grant never let bob read the jobs")
 	require.Contains(t, ok(t, "projects", "--profile", "bob"), linked.ProjectID)
-	require.NotZero(t, tau("secrets", "set", "X", "y", "--profile", "bob", "--project", linked.ProjectID, "--env", "prod").code, "a viewer manages no secrets")
+	viewer := tau("secrets", "set", "db_url", "y", "--profile", "bob", "--dir", dir, "--project", linked.ProjectID, "--env", "prod")
+	require.NotZero(t, viewer.code)
+	require.Contains(t, viewer.stderr, "not found", "a viewer manages no secrets")
 
 	ok(t, "grants", "revoke", grant.ID, "--profile", "owner", "--dir", dir, "--yes")
 	require.Eventually(t, func() bool {
@@ -264,9 +267,10 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 
 	// Secrets, owner only.
 	require.Eventually(t, func() bool {
-		return tau("secrets", "set", "DB_URL", "postgres://x", "--profile", "owner", "--dir", dir, "--env", "prod").code == 0
+		return tau("secrets", "set", "db_url", "postgres://x", "--profile", "owner", "--dir", dir, "--env", "prod").code == 0
 	}, time.Minute, time.Second)
-	ok(t, "secrets", "unset", "DB_URL", "--profile", "owner", "--dir", dir, "--env", "prod", "--yes")
+	require.Contains(t, ok(t, "secrets", "list", "--profile", "owner", "--dir", dir, "--env", "prod"), "db_url")
+	ok(t, "secrets", "unset", "db_url", "--profile", "owner", "--dir", dir, "--env", "prod", "--yes")
 	require.Contains(t, ok(t, "status", "--profile", "owner", "--dir", dir), linked.ProjectID)
 
 	t.Setenv(config.EnvToken, f.BadTokenString())

@@ -1,0 +1,6 @@
+id: QmbEEcvKzjizRmRorFUb7EEQRWWoZkbwqQeNheR8Qmypmx
+name: vaultbuild
+description: a package whose build reads a secret through the helper and bakes a fingerprint of it into the bundle, so the answer says the build was given the value that was set
+environments:
+    prod:
+        branches: ["*"]

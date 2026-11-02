@@ -3,6 +3,8 @@ package cli
 import (
 	"errors"
 	"io"
+	"slices"
+	"sort"
 
 	"github.com/spf13/cobra"
 
@@ -43,6 +45,31 @@ func secretName(args []string) (string, error) {
 	return "", errors.New("a secret name is required")
 }
 
+// configuration is the project a secret is named in. The vault keeps a value under the
+// secret's id, which is what a workload's grant reads, so a name means nothing without
+// the configuration that declares it.
+func configuration(cmd *cobra.Command) (*project.Project, error) {
+	p, err := project.Open(flagString(cmd, "dir"))
+	if err != nil {
+		return nil, err
+	}
+	if !p.IsProject() {
+		return nil, errors.New("a secret is named in the project's configuration: run this in the project, or pass --dir")
+	}
+	return p, nil
+}
+
+// secretID is the id the vault keeps a named secret's value under.
+func secretID(cmd *cobra.Command, name string) (string, error) {
+	p, err := configuration(cmd)
+	if err != nil {
+		return "", err
+	}
+	return p.IDOf(secretKind, name)
+}
+
+const secretKind = "secret"
+
 func secretsCommand(env Env) *cobra.Command {
 	scoped := func(c *cobra.Command) *cobra.Command {
 		addDir(c)
@@ -64,10 +91,25 @@ func secretsCommand(env Env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			names, err := cl.Secrets(cmd.Context(), id, e)
+			p, err := configuration(cmd)
 			if err != nil {
 				return err
 			}
+			ids, err := cl.Secrets(cmd.Context(), id, e)
+			if err != nil {
+				return err
+			}
+			// What the configuration no longer declares is listed by its id, so it
+			// can still be unset.
+			named := p.AddressesByID(secretKind)
+			names := make([]string, 0, len(ids))
+			for _, key := range ids {
+				if name, ok := named[key]; ok {
+					key = name
+				}
+				names = append(names, key)
+			}
+			sort.Strings(names)
 			return emit(cmd, env, names, theme(env).Secrets(e, names))
 		},
 	})
@@ -82,6 +124,10 @@ func secretsCommand(env Env) *cobra.Command {
 				return err
 			}
 			id, e, err := secretTarget(cmd, env)
+			if err != nil {
+				return err
+			}
+			key, err := secretID(cmd, name)
 			if err != nil {
 				return err
 			}
@@ -106,7 +152,7 @@ func secretsCommand(env Env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := cl.SetSecret(cmd.Context(), id, e, name, value); err != nil {
+			if err := cl.SetSecret(cmd.Context(), id, e, key, value); err != nil {
 				return err
 			}
 			return emit(cmd, env, map[string]string{"set": name, "env": e}, theme(env).Done("set "+name+" in "+e))
@@ -127,14 +173,24 @@ func secretsCommand(env Env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := confirm(cmd, env, "Remove "+name+" from "+e+"?"); err != nil {
-				return err
-			}
 			cl, err := client(cmd, env)
 			if err != nil {
 				return err
 			}
-			if err := cl.UnsetSecret(cmd.Context(), id, e, name); err != nil {
+			// A secret the configuration no longer declares is named by the id
+			// `secrets list` showed, and only one the vault holds.
+			key, err := secretID(cmd, name)
+			if err != nil {
+				held, listErr := cl.Secrets(cmd.Context(), id, e)
+				if listErr != nil || !slices.Contains(held, name) {
+					return err
+				}
+				key = name
+			}
+			if err := confirm(cmd, env, "Remove "+name+" from "+e+"?"); err != nil {
+				return err
+			}
+			if err := cl.UnsetSecret(cmd.Context(), id, e, key); err != nil {
 				return err
 			}
 			return emit(cmd, env, map[string]string{"unset": name, "env": e}, theme(env).Done("removed "+name+" from "+e))

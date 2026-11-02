@@ -1,0 +1,7 @@
+id: QmSx99VFV43RzF35JLq2utx9haezTwbd4vU4mLT6y94Ny5
+description: answers with the fingerprint its build baked in; it is granted no secret itself
+package:
+    name: fingerprint_code
+execution:
+    timeout: 15s
+    memory: 64MB

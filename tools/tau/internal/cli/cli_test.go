@@ -13,6 +13,7 @@ import (
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/tools/tau/internal/config"
+	"github.com/taubyte/tau/tools/tau/internal/project"
 )
 
 func TestLoginStoresTheTokenPrivately(t *testing.T) {
@@ -450,29 +451,57 @@ func TestSecrets(t *testing.T) {
 	x.link("proj-1")
 
 	require.Contains(t, x.run("secrets", "list", "--dir", x.dir).stderr, "--env is required")
+	require.Contains(t, x.run("secrets", "list", "--dir", x.dir, "--env", "prod").stderr, "named in the project's configuration",
+		"a name means nothing without the configuration that declares it")
+
+	x.ok("init", "shop", "--dir", x.dir)
+	for _, name := range []string{"db_url", "cert", "api_key"} {
+		x.ok("new", "secret", name, "--dir", x.dir)
+	}
+	p, err := project.Open(x.dir)
+	require.NoError(t, err)
+	idOf := func(name string) string {
+		id, err := p.IDOf("secret", name)
+		require.NoError(t, err)
+		return id
+	}
 	golden(t, "secrets-empty", x.ok("secrets", "list", "--dir", x.dir, "--env", "prod"))
 
-	x.ok("secrets", "set", "DB_URL", "postgres://x", "--dir", x.dir, "--env", "prod")
+	// THE VAULT KEEPS A VALUE UNDER THE SECRET'S ID, which is what a workload's grant
+	// reads; the developer names it.
+	x.ok("secrets", "set", "db_url", "postgres://x", "--dir", x.dir, "--env", "prod")
+	require.Equal(t, []byte("postgres://x"), x.f.secrets["proj-1/prod"][idOf("db_url")])
 	x.stdin = "line one\nline two\n"
-	x.ok("secrets", "set", "CERT", "--value-stdin", "--dir", x.dir, "--env", "prod")
-	require.Equal(t, []byte("line one\nline two\n"), x.f.secrets["proj-1/prod"]["CERT"])
+	x.ok("secrets", "set", "cert", "--value-stdin", "--dir", x.dir, "--env", "prod")
+	require.Equal(t, []byte("line one\nline two\n"), x.f.secrets["proj-1/prod"][idOf("cert")])
+	require.NotContains(t, x.f.secrets["proj-1/prod"], "cert")
+
+	// One the configuration does not declare is refused, naming it.
+	require.Contains(t, x.run("secrets", "set", "DB_URL", "x", "--dir", x.dir, "--env", "prod").stderr, `declares no secret "DB_URL"`)
 
 	golden(t, "secrets", x.ok("secrets", "list", "--dir", x.dir, "--env", "prod"))
-	require.Contains(t, x.run("secrets", "unset", "CERT", "--dir", x.dir, "--env", "prod").stderr, "pass --yes")
-	x.ok("secrets", "unset", "CERT", "--dir", x.dir, "--env", "prod", "--yes")
-	require.NotContains(t, x.f.secrets["proj-1/prod"], "CERT")
+	require.Contains(t, x.run("secrets", "unset", "cert", "--dir", x.dir, "--env", "prod").stderr, "pass --yes")
+	x.ok("secrets", "unset", "cert", "--dir", x.dir, "--env", "prod", "--yes")
+	require.NotContains(t, x.f.secrets["proj-1/prod"], idOf("cert"))
+
+	// A secret the configuration stopped declaring is listed, and unset, by its id.
+	orphan := idOf("db_url")
+	require.NoError(t, os.Remove(filepath.Join(x.dir, "secret", "db_url.yaml")))
+	require.Contains(t, x.ok("secrets", "list", "--dir", x.dir, "--env", "prod"), orphan)
+	require.NotZero(t, x.run("secrets", "unset", "QmNotHeld", "--dir", x.dir, "--env", "prod", "--yes").code, "an id the vault does not hold is not removed")
+	x.ok("secrets", "unset", orphan, "--dir", x.dir, "--env", "prod", "--yes")
+	require.NotContains(t, x.f.secrets["proj-1/prod"], orphan)
 
 	require.Contains(t, x.run("secrets", "set", "--dir", x.dir, "--env", "prod").stderr, "name is required")
-	require.Contains(t, x.run("secrets", "set", "X", "--dir", x.dir, "--env", "prod").stderr, "a value is required")
+	require.Contains(t, x.run("secrets", "set", "api_key", "--dir", x.dir, "--env", "prod").stderr, "a value is required")
 	require.NotZero(t, x.run("secrets", "unset", "--dir", x.dir, "--env", "prod").code)
 	require.NotZero(t, x.run("secrets", "list", "--dir", t.TempDir(), "--env", "prod").code)
 	require.NotZero(t, x.run("secrets", "list", "--project", "proj-1", "--env", "prod", "--cloud", "::").code)
 
 	// At a terminal, the environment and the value are asked for, the value hidden.
-	x.ok("init", "shop", "--dir", x.dir)
 	x.interactive = true
 	x.prompter.answers = []string{"prod", "s3cret"}
-	x.ok("secrets", "set", "API_KEY", "--dir", x.dir)
-	require.Equal(t, []byte("s3cret"), x.f.secrets["proj-1/prod"]["API_KEY"])
-	require.Equal(t, []string{"Environment", "Value of API_KEY"}, x.prompter.asked)
+	x.ok("secrets", "set", "api_key", "--dir", x.dir)
+	require.Equal(t, []byte("s3cret"), x.f.secrets["proj-1/prod"][idOf("api_key")])
+	require.Equal(t, []string{"Environment", "Value of api_key"}, x.prompter.asked)
 }

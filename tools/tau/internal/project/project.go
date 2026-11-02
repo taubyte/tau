@@ -14,7 +14,9 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -108,6 +110,70 @@ func (p *Project) ID() string {
 	}
 	id, _ := v.(string)
 	return id
+}
+
+// IDOf is the id of the kind at address, its name or scope/name for one in a scope,
+// read from the configuration, or an error naming what it does not declare.
+func (p *Project) IDOf(kind, address string) (string, error) {
+	scope, name := "", address
+	if i := strings.LastIndex(address, "/"); i >= 0 {
+		scope, name = address[:i], address[i+1:]
+	}
+	res, err := p.s.Address(kind, name, scope)
+	if err != nil {
+		return "", err
+	}
+	if !p.s.Exists(res) {
+		return "", fmt.Errorf("the project declares no %s %q; declare it first (tau new %s %s)", kind, address, kind, name)
+	}
+	idField, _ := identity()
+	v, err := p.s.Get(res, []string{idField})
+	if err != nil {
+		return "", err
+	}
+	id, _ := v.(string)
+	if id == "" {
+		return "", fmt.Errorf("%s %q has no id", kind, address)
+	}
+	return id, nil
+}
+
+// AddressesByID is every instance of kind the configuration declares, in every scope,
+// by id: its address as IDOf reads one.
+func (p *Project) AddressesByID(kind string) map[string]string {
+	out := map[string]string{}
+	res, err := p.s.Address(kind, "_", "")
+	if err != nil {
+		return out
+	}
+	group := res[0]
+	var container string
+	for _, k := range p.s.Kinds() {
+		if k.Container {
+			container = k.Group
+		}
+	}
+	idField, _ := identity()
+
+	var walk func(at []string, scope string)
+	walk = func(at []string, scope string) {
+		names, _ := p.s.List(append(slices.Clone(at), group))
+		for _, name := range names {
+			v, _ := p.s.Get(append(slices.Clone(at), group, name), []string{idField})
+			if id, _ := v.(string); id != "" {
+				out[id] = path.Join(scope, name)
+			}
+		}
+		if container == "" {
+			return
+		}
+		scopes, _ := p.s.List(append(slices.Clone(at), container))
+		for _, sc := range scopes {
+			walk(append(slices.Clone(at), container, sc), path.Join(scope, sc))
+		}
+	}
+	walk(nil, "")
+	return out
 }
 
 // Issue is a field a resource still owes, or holds wrongly.

@@ -52,7 +52,8 @@ func TestTheStartersWorldIsTheHosts(t *testing.T) {
 	host := filepath.Join("..", "..", "..", "..", "pkg", "invoke", "wasm", "wit")
 	var want []string
 	require.NoError(t, filepath.WalkDir(host, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+		// The world is its WIT; the host's Go beside it (wit.go embeds it) is not.
+		if err != nil || d.IsDir() || filepath.Ext(path) != ".wit" {
 			return err
 		}
 		rel, err := filepath.Rel(host, path)
