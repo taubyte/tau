@@ -29,8 +29,11 @@ import (
 type fakeBackend struct {
 	mu sync.Mutex
 
-	created  []*core.ContainerConfig
-	started  []core.ContainerID
+	created []*core.ContainerConfig
+	started []core.ContainerID
+	// unbound is a container whose port another process took before it bound it: it
+	// never came up, and the runtime chose again, so snapshot leaves it out.
+	unbound  map[core.ContainerID]bool
 	stopped  []core.ContainerID
 	removed  []core.ContainerID
 	statuses map[core.ContainerID]string
@@ -155,6 +158,14 @@ func (f *fakeBackend) Start(_ context.Context, id core.ContainerID) error {
 
 		srv, err := listen(m.HostPort)
 		if err != nil {
+			if portTaken(err) {
+				f.mu.Lock()
+				if f.unbound == nil {
+					f.unbound = map[core.ContainerID]bool{}
+				}
+				f.unbound[id] = true
+				f.mu.Unlock()
+			}
 			return err
 		}
 		// A container that binds nothing still has its port held, as docker's proxy does,
@@ -262,7 +273,12 @@ func (f *fakeBackend) closeAll() {
 func (f *fakeBackend) snapshot() (created []*core.ContainerConfig, stopped, removed []core.ContainerID) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]*core.ContainerConfig(nil), f.created...),
+	for i, cfg := range f.created {
+		if !f.unbound[core.ContainerID(fmt.Sprintf("c%d", i+1))] {
+			created = append(created, cfg)
+		}
+	}
+	return created,
 		append([]core.ContainerID(nil), f.stopped...),
 		append([]core.ContainerID(nil), f.removed...)
 }
@@ -831,11 +847,11 @@ func TestTheMappingIsOrderedByName(t *testing.T) {
 		Artifact: "ghcr.io/acme/many:1",
 		Ports:    map[string]int{"http": 8080, "admin": 9090, "metrics": 9100},
 	}
-	e.Start(t.Context(), spec)
-	e.Start(t.Context(), spec)
-
-	created, _, _ := backend.snapshot()
-	require.Len(t, created, 2)
+	for range 2 {
+		inst, err := e.Start(t.Context(), spec)
+		require.NoError(t, err)
+		t.Cleanup(func() { inst.Close() })
+	}
 
 	order := func(c *core.ContainerConfig) []int {
 		var out []int
@@ -844,6 +860,8 @@ func TestTheMappingIsOrderedByName(t *testing.T) {
 		}
 		return out
 	}
+	created, _, _ := backend.snapshot()
+	require.Len(t, created, 2)
 	// admin, http, metrics — by NAME, so 9090 first.
 	require.Equal(t, []int{9090, 8080, 9100}, order(created[0]))
 	require.Equal(t, order(created[0]), order(created[1]))
@@ -982,6 +1000,9 @@ func TestAPortTakenBeforeTheContainerBindsIsChosenAgain(t *testing.T) {
 	require.NoError(t, err)
 	defer inst.Close()
 	require.Equal(t, 2, asked)
+
+	created, _, _ := rt.snapshot()
+	require.Len(t, created, 1, "the container that lost its port never came up, so one did")
 }
 
 // A port that stays taken is not chosen forever: the start gives up and says why.
