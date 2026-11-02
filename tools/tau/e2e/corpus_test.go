@@ -601,8 +601,8 @@ func (u *underTest) bothWays(t *testing.T, c corpusCase) {
 	p, err := specs.Load(object)
 	require.NoError(t, err)
 	for _, b := range p.Buildables() {
-		cid, err := serving.BuildArtifacts().Artifact(t.Context(), id, "prod", b.Kind, b.ID)
-		require.NoError(t, err, "%s/%s", b.Kind, b.Name)
+		cid, err := serving.BuildArtifacts().Artifact(t.Context(), id, "prod", specs.KindPackage, b.ID)
+		require.NoError(t, err, "package/%s", b.Name)
 		require.Equal(t, cloned["prod/"+b.ID], cid)
 	}
 }
