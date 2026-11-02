@@ -403,10 +403,10 @@ var corpus = []corpusCase{
 	// A CLOUD OF ONE UNNAMED REGION serves no project that names its regions,
 	// and says which.
 	{name: "with/placement", refused: "which this build does not serve"},
-	{name: "refused/application/noartifact", refused: "names no image and declares no build"},
+	{name: "refused/application/noartifact", refused: "is of type oci and names no image and no build"},
 	{name: "refused/environments/missing", refused: "declares no environments"},
-	{name: "refused/function/noruntime", refused: "required attribute 'runtime'"},
-	{name: "refused/function/unknownruntime", refused: "valid values here: wasm, js"},
+	{name: "refused/function/noruntime", refused: "required attribute 'type'"},
+	{name: "refused/function/unknownruntime", refused: "valid values here: wasm, warp, oci, assets"},
 	{name: "refused/views/across", region: "region-2", refused: `reaches cache/sessions_r1, which is not placed in "region-2" where this is`},
 }
 
