@@ -252,12 +252,18 @@ func TestAnEndlessLoopHitsTheDeadlineAndRetires(t *testing.T) {
 			require.ErrorIs(t, err, invoke.ErrNotServable, "a realm stopped mid-call is not reused")
 			require.ErrorIs(t, err, js.ErrDeadline, "and says why")
 
-			f.spec.Timeout = 100 * time.Millisecond
 			p := f.pool()
-			_, err = p.Do(t.Context(), f.spec, get(path))
-			require.ErrorIs(t, err, js.ErrDeadline)
-			require.Zero(t, p.Warm(f.spec))
 			resp, err := p.Do(t.Context(), f.spec, get("/"))
+			require.NoError(t, err)
+			require.Equal(t, "1", string(resp.Body))
+			require.Equal(t, 1, p.Warm(f.spec))
+
+			ctx, cancel = context.WithTimeout(t.Context(), 100*time.Millisecond)
+			defer cancel()
+			_, err = p.Do(ctx, f.spec, get(path))
+			require.ErrorIs(t, err, js.ErrDeadline)
+			require.Zero(t, p.Warm(f.spec), "the warm realm it stopped is retired")
+			resp, err = p.Do(t.Context(), f.spec, get("/"))
 			require.NoError(t, err)
 			require.Equal(t, "1", string(resp.Body), "the next request gets a fresh realm")
 		})
