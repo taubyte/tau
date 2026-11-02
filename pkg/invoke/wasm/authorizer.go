@@ -129,7 +129,7 @@ func (r *Runtime) Authorize(ctx context.Context, spec invoke.Spec, q Question) (
 	}
 	defer runtime.Close(ctx)
 
-	out, err := instance.Call(ctx, authorizeExport, questionValue(q))
+	out, err := call(ctx, instance, authorizeExport, questionValue(q))
 	if err != nil {
 		return Decision{}, fmt.Errorf("wasm: asking %s: %w", spec.Name, err)
 	}

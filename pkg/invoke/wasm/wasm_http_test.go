@@ -1,6 +1,7 @@
 package wasm_test
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -69,4 +70,14 @@ func TestTheNativeWorldStillAnswersByName(t *testing.T) {
 	require.Equal(t, 200, res.Status)
 	require.Equal(t, []string{"/orders"}, res.Headers["x-path"])
 	require.Equal(t, wasm.Name, "wasm")
+}
+
+func TestACancelledContextEndsAStandardWorldCall(t *testing.T) {
+	instance := start(t, tier(t, standardWorld(t)), invoke.Spec{Name: "fn"})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, err := instance.Serve(ctx, &invoke.Request{Method: "GET"})
+	require.ErrorIs(t, err, context.Canceled, "a call under a dead context does not run")
 }

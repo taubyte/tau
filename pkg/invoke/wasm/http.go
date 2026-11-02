@@ -25,6 +25,9 @@ const (
 )
 
 func (f *function) serveHTTP(ctx context.Context, req *invoke.Request) (*invoke.Response, error) {
+	if ctx.Err() != nil {
+		return nil, context.Cause(ctx)
+	}
 	if req == nil {
 		req = &invoke.Request{}
 	}

@@ -44,7 +44,7 @@ func (f *function) Direct(ctx context.Context, conn *invoke.Connection, peeked [
 		peeked = []byte{}
 	}
 
-	out, err := f.instance.Call(ctx, f.export, connectionValue(conn), peeked)
+	out, err := call(ctx, f.instance, f.export, connectionValue(conn), peeked)
 	if err != nil {
 		return nil, fmt.Errorf("wasm: calling %s: %w", f.export, err)
 	}

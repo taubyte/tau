@@ -64,7 +64,7 @@ func (r *Runtime) Admit(ctx context.Context, spec invoke.Spec, o Opening) (Verdi
 	}
 	defer runtime.Close(ctx)
 
-	out, err := instance.Call(ctx, admitExport, openingValue(o))
+	out, err := call(ctx, instance, admitExport, openingValue(o))
 	if err != nil {
 		return Verdict{}, fmt.Errorf("wasm: asking %s: %w", spec.Name, err)
 	}

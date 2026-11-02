@@ -40,7 +40,7 @@ func (f *function) Transform(ctx context.Context, req *invoke.Request) (*invoke.
 		return nil, fmt.Errorf("%w: this is a %s and transforms nothing", ErrUnsupportedWorld, f.world)
 	}
 
-	out, err := f.instance.Call(ctx, f.export, requestValue(req))
+	out, err := call(ctx, f.instance, f.export, requestValue(req))
 	if err != nil {
 		return nil, fmt.Errorf("wasm: calling %s: %w", f.export, err)
 	}

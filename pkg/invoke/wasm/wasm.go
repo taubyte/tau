@@ -371,10 +371,6 @@ func (r *Runtime) instantiate(ctx context.Context, spec invoke.Spec, world strin
 
 	config := r.mode.config().
 		WithCompilationCache(r.cache).
-		// A GUEST THAT WILL NOT STOP IS STOPPED. The pool bounds a request
-		// with a context; without this a guest in a loop ignores it and holds
-		// the goroutine until the process ends.
-		WithCloseOnContextDone(true).
 		// WebAssembly 3.0, because toolchains emit it: componentize-py's
 		// CPython needs extended-const.
 		WithCoreFeatures(api.CoreFeaturesV3)
@@ -477,6 +473,15 @@ func (f *function) Close() error {
 	return err
 }
 
+// call enters the guest unless the caller has already given up. A done context
+// stops a call only at the engine's preemption checks, and a short call reaches none.
+func call(ctx context.Context, instance *component.Instance, export string, args ...component.Value) ([]component.Value, error) {
+	if ctx.Err() != nil {
+		return nil, context.Cause(ctx)
+	}
+	return instance.Call(ctx, export, args...)
+}
+
 // Serve hands one request to the guest.
 func (f *function) Serve(ctx context.Context, req *invoke.Request) (*invoke.Response, error) {
 	if f.world != WorldHandler {
@@ -486,7 +491,7 @@ func (f *function) Serve(ctx context.Context, req *invoke.Request) (*invoke.Resp
 		return f.serveHTTP(ctx, req)
 	}
 
-	out, err := f.instance.Call(ctx, f.export, requestValue(req))
+	out, err := call(ctx, f.instance, f.export, requestValue(req))
 	if err != nil {
 		return nil, fmt.Errorf("wasm: calling %s: %w", f.export, err)
 	}

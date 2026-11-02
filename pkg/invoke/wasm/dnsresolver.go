@@ -42,7 +42,7 @@ func (r *Runtime) Resolve(ctx context.Context, spec invoke.Spec, q invoke.Questi
 	}
 	defer runtime.Close(ctx)
 
-	out, err := instance.Call(ctx, resolveExport, dnsQuestionValue(q))
+	out, err := call(ctx, instance, resolveExport, dnsQuestionValue(q))
 	if err != nil {
 		return nil, fmt.Errorf("wasm: asking %s: %w", spec.Name, err)
 	}

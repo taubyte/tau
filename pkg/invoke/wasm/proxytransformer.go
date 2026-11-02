@@ -38,7 +38,7 @@ func (f *function) Shape(ctx context.Context, s *invoke.Stream) (*invoke.Shaping
 		return nil, fmt.Errorf("%w: this is a %s and shapes nothing", ErrUnsupportedWorld, f.world)
 	}
 
-	out, err := f.instance.Call(ctx, f.export, streamValue(s))
+	out, err := call(ctx, f.instance, f.export, streamValue(s))
 	if err != nil {
 		return nil, fmt.Errorf("wasm: calling %s: %w", f.export, err)
 	}

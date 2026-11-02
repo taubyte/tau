@@ -64,7 +64,7 @@ require (
 	github.com/pkg/sftp v1.13.9
 	github.com/pterm/pterm v0.12.65
 	github.com/samyfodil/musql v0.4.0
-	github.com/samyfodil/wazy v0.4.0
+	github.com/samyfodil/wazy v0.5.1-0.20261102034151-f4398bbb823e
 	github.com/spf13/afero v1.11.0
 	github.com/stretchr/testify v1.11.1
 	github.com/taubyte/domain-validation v1.0.1
