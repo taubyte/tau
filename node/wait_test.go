@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/libp2p/go-libp2p/p2p/protocol/identify"
 	"github.com/stretchr/testify/require"
@@ -208,7 +210,8 @@ func TestAGossipReportSaysWhichWayEachStreamRuns(t *testing.T) {
 	// that stream is still being opened.
 	reached := make(chan struct{})
 	var once sync.Once
-	_, err := pubsub.NewGossipSub(t.Context(), deaf, pubsub.WithAppSpecificRpcInspector(func(from peer.ID, _ *pubsub.RPC) error {
+	refused := &refusals{Host: deaf, of: late.ID(), refused: make(chan struct{})}
+	_, err := pubsub.NewGossipSub(t.Context(), refused, pubsub.WithAppSpecificRpcInspector(func(from peer.ID, _ *pubsub.RPC) error {
 		if from == late.ID() {
 			once.Do(func() { close(reached) })
 		}
@@ -225,6 +228,13 @@ func TestAGossipReportSaysWhichWayEachStreamRuns(t *testing.T) {
 		protos, err := deaf.Peerstore().GetProtocols(late.ID())
 		return err == nil && slices.Contains(protos, identify.ID)
 	}, 10*time.Second, 10*time.Millisecond)
+	// AND deaf's own stream to late was refused. Opened at connect, it can still be
+	// negotiating once late gossips, and would then be the stream to late.
+	select {
+	case <-refused.refused:
+	case <-time.After(10 * time.Second):
+		t.Fatal("deaf never tried a stream to late")
+	}
 
 	topic, err := newPubSub(t, late).Join("probe")
 	require.NoError(t, err)
@@ -239,4 +249,20 @@ func TestAGossipReportSaysWhichWayEachStreamRuns(t *testing.T) {
 
 	require.Equal(t, fmt.Sprintf("\ngossip with %s: its peerstore says it gossips false, a stream to it false, a stream from it true", late.ID()), gossipWith{deaf}.String())
 	require.Equal(t, fmt.Sprintf("\ngossip with %s: its peerstore says it gossips true, a stream to it true, a stream from it false", deaf.ID()), gossipWith{late}.String())
+}
+
+// refusals is a host that says when a stream it opens to one peer is refused.
+type refusals struct {
+	host.Host
+	of      peer.ID
+	once    sync.Once
+	refused chan struct{}
+}
+
+func (r *refusals) NewStream(ctx context.Context, p peer.ID, protos ...protocol.ID) (network.Stream, error) {
+	s, err := r.Host.NewStream(ctx, p, protos...)
+	if err != nil && p == r.of {
+		r.once.Do(func() { close(r.refused) })
+	}
+	return s, err
 }
