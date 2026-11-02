@@ -7,8 +7,10 @@ import (
 	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
+	"github.com/libp2p/go-libp2p/p2p/protocol/identify"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,27 +22,46 @@ import (
 // newSwarm is n peers on one mocknet, handed over once every one has a gossip
 // stream to every other.
 //
-// EVERY PEER GOSSIPS BEFORE IT IS CONNECTED. A gossipsub opens its stream to a
-// peer when it starts or when identify says the peer gossips, and never retries
-// one that failed. A peer connected before the other gossiped hears of it only
-// from an identify push: sent once, and limited per subnet, which every mocknet
-// peer shares. Miss it and that peer never sends the other anything.
+// A GOSSIPSUB OPENS ITS STREAM TO A PEER WHEN IDENTIFY SAYS THE PEER GOSSIPS,
+// and never retries one that failed. Every peer gossips before it is connected,
+// but that is not enough: identify answers from a snapshot of the host's
+// protocols that it refreshes on its own goroutine, so a peer connected before
+// the refresh is told the other does not gossip. The correction is an identify
+// push, sent once and limited per subnet, which every mocknet peer shares. So a
+// pair whose identify left out gossip connects again, and identifies again.
 func newSwarm(t *testing.T, n int) []member {
 	t.Helper()
 
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
 
+	hosts := make([]host.Host, n)
 	out := make([]member, n)
 	for i := range out {
 		h, err := mn.GenPeer()
 		require.NoError(t, err)
 		ps, err := pubsub.NewGossipSub(t.Context(), h)
 		require.NoError(t, err)
+		hosts[i] = h
 		out[i] = member{ps, h.ID()}
 	}
 	require.NoError(t, mn.LinkAll())
 	require.NoError(t, mn.ConnectAllButSelf())
+
+	for i, h := range hosts {
+		for j, other := range hosts {
+			if i == j {
+				continue
+			}
+			deadline := time.Now().Add(30 * time.Second)
+			for !saysItGossips(t, h, other.ID()) {
+				require.True(t, time.Now().Before(deadline), "peer %d never heard that peer %d gossips", i, j)
+				require.NoError(t, mn.DisconnectPeers(h.ID(), other.ID()))
+				_, err := mn.ConnectPeers(h.ID(), other.ID())
+				require.NoError(t, err)
+			}
+		}
+	}
 
 	for i, m := range out {
 		for j, other := range out {
@@ -55,6 +76,18 @@ func newSwarm(t *testing.T, n int) []member {
 	return out
 }
 
+// saysItGossips waits until h has identified every connection to p, then
+// reports whether p said it gossips.
+func saysItGossips(t *testing.T, h host.Host, p peer.ID) bool {
+	ids := h.(interface{ IDService() identify.IDService }).IDService()
+	for _, c := range h.Network().ConnsToPeer(p) {
+		<-ids.IdentifyWait(c)
+	}
+	supported, err := h.Peerstore().SupportsProtocols(p, pubsub.GossipSubDefaultProtocols...)
+	require.NoError(t, err)
+	return len(supported) > 0
+}
+
 // member is a swarm peer's gossipsub and the id the other peers know it by.
 type member struct {
 	*pubsub.PubSub
@@ -63,8 +96,8 @@ type member struct {
 
 // TestEveryPeerOfALargeSwarmHasAStreamToEveryOther when the swarm is handed
 // over. A host takes ten identify pushes in a burst from one subnet, then one
-// every five seconds, so sixteen mocknet peers are past it: a swarm that
-// connected before it gossiped left some peers never sending to others.
+// every five seconds, so sixteen mocknet peers are past it: a peer identified
+// from a snapshot taken before it gossiped was never sent to by the other.
 func TestEveryPeerOfALargeSwarmHasAStreamToEveryOther(t *testing.T) {
 	swarm := newSwarm(t, 16)
 
