@@ -643,13 +643,13 @@ func TestKVFSM_Keys_Empty(t *testing.T) {
 	}
 }
 
-func TestKVFSM_Restore_InvalidCBOR(t *testing.T) {
+func TestKVFSM_Restore_RefusesWhatIsNotASnapshot(t *testing.T) {
 	store := newTestStore()
 	fsm := newKVFSM(t.Context(), store, "/raft/test")
 
 	err := fsm.Restore(io.NopCloser(bytes.NewReader([]byte("not a snapshot"))))
 	if err == nil {
-		t.Error("expected error for invalid CBOR")
+		t.Error("expected error for bytes that are not a snapshot")
 	}
 }
 

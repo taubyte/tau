@@ -80,17 +80,11 @@ type FSM interface {
 }
 
 type ClusterInfoResponse struct {
-	LeaderID    string `mapstructure:"leader"`
-	Term        uint64 `mapstructure:"term"`
-	LastIndex   uint64 `mapstructure:"lastIndex"`
-	MemberCount int    `mapstructure:"memberCount"`
-	NodeID      string `mapstructure:"nodeID"`
-}
-
-// ExportFSMResponse carries CBOR-encoded map[string]CRDTEntry and the FSM Lamport clock.
-type ExportFSMResponse struct {
-	FSMState []byte `mapstructure:"fsmState"`
-	Clock    uint64 `mapstructure:"clock"`
+	LeaderID    string
+	Term        uint64
+	LastIndex   uint64
+	MemberCount int
+	NodeID      string
 }
 
 type FSMResponse struct {
