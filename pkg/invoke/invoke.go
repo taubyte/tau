@@ -51,7 +51,8 @@ type Spec struct {
 	Label       string
 	Scope       []string
 
-	// Revision is the immutable build identity, part of identity.
+	// Revision is the compiled configuration this spec was read from, immutable and
+	// part of identity. A code push keeps it; Artifact says which build runs.
 	Revision string
 
 	// Concurrency is how many requests one instance may serve at once. One, the Lambda
@@ -190,12 +191,14 @@ func (s Spec) validate() error {
 	return nil
 }
 
-// key is the pool's identity for a spec. Concurrency and Timeout are excluded:
-// they are how the pool treats an instance, not what the instance IS, and
+// key is the pool's identity for a spec. The artifact is in it beside the revision:
+// a code push publishes a new artifact under an unchanged configuration, and an
+// instance of the old code must not answer for the new. Concurrency and Timeout are
+// excluded: they are how the pool treats an instance, not what the instance IS, and
 // changing a timeout should not force a cold start.
-func (s Spec) key() specKey { return specKey{s.Runtime, s.Name, s.Revision} }
+func (s Spec) key() specKey { return specKey{s.Runtime, s.Name, s.Revision, s.Artifact} }
 
-type specKey struct{ runtime, name, revision string }
+type specKey struct{ runtime, name, revision, artifact string }
 
 // Request is one call into an instance; not net/http, since pubsub deliveries and
 // p2p calls are invocations too.

@@ -164,6 +164,27 @@ func TestANewRevisionNeverSharesAnInstance(t *testing.T) {
 		"which is what makes a rollback warm rather than a cold start")
 }
 
+// A code push is a new artifact under the same revision: the configuration did not
+// change, the code did.
+func TestACodePushNeverSharesAnInstance(t *testing.T) {
+	e := newFakeRuntime("fake")
+	p, _ := newPool(t, e, nil)
+	ctx := context.Background()
+
+	built, pushed := spec("shop", "r1"), spec("shop", "r1")
+	built.Artifact, pushed.Artifact = "bafy-built", "bafy-pushed"
+
+	_, err := p.Do(ctx, built, &Request{})
+	require.NoError(t, err)
+	_, err = p.Do(ctx, pushed, &Request{})
+	require.NoError(t, err)
+
+	started, _ := e.counts()
+	require.Equal(t, 2, started, "the pushed code started an instance of its own")
+	require.Equal(t, 1, p.Warm(built), "and the build before it is still warm, for a rollback")
+	require.Equal(t, 1, p.Warm(pushed))
+}
+
 func TestConcurrencyOneMeansOneRequestAtATimePerInstance(t *testing.T) {
 	e := newFakeRuntime("fake")
 	release := make(chan struct{})
