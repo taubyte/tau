@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/invoke"
+	"github.com/taubyte/tau/pkg/invoke/secret"
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
@@ -32,7 +33,7 @@ func (h *held) SecretFor(_ context.Context, grant invoke.Grant) ([]byte, error) 
 	}
 	value, ok := h.values[grant.Handle]
 	if !ok {
-		return nil, fmt.Errorf("%w: %s", wasm.ErrNotSet, grant.Handle)
+		return nil, fmt.Errorf("%w: %s", secret.ErrNotSet, grant.Handle)
 	}
 	return value, nil
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/taubyte/tau/node/cache"
 	"github.com/taubyte/tau/pkg/invoke"
+	invokesecret "github.com/taubyte/tau/pkg/invoke/secret"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
@@ -114,7 +115,7 @@ func TestAnUnsetSecretIsTheTiersArm(t *testing.T) {
 	_, err := n.vault.SecretFor(t.Context(), invoke.Grant{
 		Kind: "secret", Label: "stripe", Handle: "shop/prod/QmNeverSet", Ops: []string{"get"},
 	})
-	require.ErrorIs(t, err, wasmtier.ErrNotSet)
+	require.ErrorIs(t, err, invokesecret.ErrNotSet)
 }
 
 func TestAMalformedSecretHandleIsRefused(t *testing.T) {

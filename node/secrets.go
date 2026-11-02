@@ -12,7 +12,7 @@ import (
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/pkg/invoke"
-	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	invokesecret "github.com/taubyte/tau/pkg/invoke/secret"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/pkg/specs"
 	secretsService "github.com/taubyte/tau/services/secrets"
@@ -142,10 +142,10 @@ func (v *vault) SecretFor(ctx context.Context, grant invoke.Grant) ([]byte, erro
 	value, err := v.Secret(ctx, project, environment, id)
 	if err != nil {
 		if errors.Is(err, secretsService.ErrNotSet) {
-			// THE TIER'S ARM, so a guest is told "nothing is set" rather than
+			// THE MODULE'S ARM, so a guest is told "nothing is set" rather than
 			// "the node is unhappy" — the same translation node/cache.go makes
 			// and the same bug it was written to stop.
-			return nil, fmt.Errorf("%w: %w", wasmtier.ErrNotSet, err)
+			return nil, fmt.Errorf("%w: %w", invokesecret.ErrNotSet, err)
 		}
 		return nil, err
 	}
