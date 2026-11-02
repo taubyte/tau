@@ -31,7 +31,7 @@ func writeFile(t *testing.T, dir, name, body string) {
 
 func packed(t *testing.T, dir, output string) []byte {
 	t.Helper()
-	product, err := product(dir, Spec{Runtime: specs.WorkloadBlockRuntimeJs, Output: output})
+	product, err := product(dir, Spec{Type: specs.PackageTypeWarp, Output: output})
 	require.NoError(t, err)
 	defer product.Close()
 	body, err := io.ReadAll(product)
@@ -109,8 +109,8 @@ func TestOnlyAJSProductIsPacked(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "app.wasm", "\x00asm")
 
-	for _, runtime := range []string{"", specs.WorkloadBlockRuntimeWasm} {
-		product, err := product(dir, Spec{Runtime: runtime, Output: "app.wasm"})
+	for _, typ := range []string{"", specs.PackageTypeWasm} {
+		product, err := product(dir, Spec{Type: typ, Output: "app.wasm"})
 		require.NoError(t, err)
 		body, err := io.ReadAll(product)
 		require.NoError(t, err)
@@ -182,7 +182,7 @@ func TestWhatAJSBuildCannotBePackedFrom(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
 			c.prepare(t, dir)
-			_, err := product(dir, Spec{Runtime: specs.WorkloadBlockRuntimeJs, Output: c.output})
+			_, err := product(dir, Spec{Type: specs.PackageTypeWarp, Output: c.output})
 			require.ErrorContains(t, err, c.says)
 		})
 	}

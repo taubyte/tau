@@ -26,10 +26,14 @@ func untouched(t *testing.T) *specs.Project {
 
 func appliedTo(t *testing.T, p *specs.Project, runtime, kind, name string) (invoke.Spec, error) {
 	t.Helper()
-	r, id, err := p.Resource(nil, kind, name)
+	r, _, err := p.Resource(nil, kind, name)
+	require.NoError(t, err)
+	target := Target{Kind: kind, Name: name}
+	workload := specs.ReadWorkloadBlock(r)
+	pkg, err := packageOf(target, p, workload)
 	require.NoError(t, err)
 	spec := invoke.Spec{Runtime: runtime}
-	return spec, applied(&spec, Target{Kind: kind, Name: name}, p, r, id)
+	return spec, appliedWith(&spec, target, p, r, pkg, workload)
 }
 
 func TestTheFixturesApplicationsAreRefusedByName(t *testing.T) {
@@ -42,7 +46,7 @@ func TestTheFixturesApplicationsAreRefusedByName(t *testing.T) {
 
 	_, err = appliedTo(t, p, runtimeContainer, specs.KindApplication, "db")
 	require.ErrorIs(t, err, ErrUnserved)
-	require.ErrorContains(t, err, "source.image_pull_secret names the secret")
+	require.ErrorContains(t, err, "names the pull secret")
 
 	_, err = appliedTo(t, p, runtimeContainer, specs.KindApplication, "worker_pool")
 	require.ErrorIs(t, err, ErrUnserved)
@@ -64,10 +68,16 @@ func TestACPUCeilingAndAReadinessProbeAreCarried(t *testing.T) {
 // judge applies a resource's own declarations in an empty project.
 func judge(t *testing.T, runtime, kind string, r specs.Resource) (invoke.Spec, error) {
 	t.Helper()
+	return judgeRunning(t, runtime, kind, r, ranPackage{})
+}
+
+// judgeRunning is judge for a workload whose package says something of its own.
+func judgeRunning(t *testing.T, runtime, kind string, r specs.Resource, pkg ranPackage) (invoke.Spec, error) {
+	t.Helper()
 	p, err := specs.Load([]byte(`{"object":{"id":"Qmp"}}`))
 	require.NoError(t, err)
 	spec := invoke.Spec{Runtime: runtime}
-	return spec, applied(&spec, Target{Kind: kind, Name: "x"}, p, r, "Qmx")
+	return spec, appliedWith(&spec, Target{Kind: kind, Name: "x"}, p, r, pkg, specs.ReadWorkloadBlock(r))
 }
 
 func TestACPUCeilingOnTheWasmTierIsRefused(t *testing.T) {
@@ -103,25 +113,13 @@ func TestASandboxsOwnClockIsRefused(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestAnUnreadDelegatedBlockIsRefused(t *testing.T) {
-	r := specs.Resource{"source": map[string]any{"kind": "git", "git": "https://example.com/a/b", "config": "taubyte.yaml"}}
-
-	_, err := judge(t, runtimeContainer, specs.KindWorker, r)
-	require.ErrorIs(t, err, ErrUnserved)
-	require.ErrorContains(t, err, `source.config names "taubyte.yaml"`)
-
-	filled, err := specs.Load([]byte(`{"object":{"id":"Qmp"},"mounted":{"Qmx":{"repo":"b","commit":"c"}}}`))
-	require.NoError(t, err)
-	spec := invoke.Spec{Runtime: runtimeContainer}
-	require.NoError(t, applied(&spec, Target{Kind: specs.KindWorker, Name: "x"}, filled, r, "Qmx"))
-}
-
 func TestAPullCredentialInANamespaceSaysWhere(t *testing.T) {
-	_, err := judge(t, runtimeContainer, specs.KindSandbox, specs.Resource{
-		"source": map[string]any{"kind": "image", "image": "a/b:1", "image_pull_secret": map[string]any{"name": "Qmreg", "namespace": "/ops"}},
-	})
+	pkg := ranPackage{Package: specs.Package{Name: "base", Source: specs.PackageSource{
+		Kind: specs.PackageSourceKindImage, Image: "a/b:1", ImagePullSecretName: "Qmreg", ImagePullSecretNamespace: "/ops",
+	}}}
+	_, err := judgeRunning(t, runtimeContainer, specs.KindSandbox, specs.Resource{}, pkg)
 	require.ErrorIs(t, err, ErrUnserved)
-	require.ErrorContains(t, err, "names the secret Qmreg in /ops")
+	require.ErrorContains(t, err, "its package base names the pull secret Qmreg in /ops")
 }
 
 func refusal(kind string, target specs.Resource) string {

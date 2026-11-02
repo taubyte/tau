@@ -1,0 +1,25 @@
+id: QmQ9vj8KsKBA91iFxrMV2jE3DqcfAMxx8YYn6MUDVUNvJU
+description: the storefront's bundle, with the payment component for the browser; the build reads its registry token through the helper, so the token is never in its environment
+type: static
+source: apps/shop
+output: dist
+variables:
+    API_BASE:
+        value: https://api.example.com
+build:
+    inputs:
+        pay:
+            name: paylib
+    steps:
+        - name: site
+          image: node:22
+          cache:
+              - ~/.pnpm-store
+          commands:
+              - export NPM_TOKEN=$(/.taubyte/secret stripe)
+              - pnpm install --frozen-lockfile
+              - cp .inputs/pay/paylib.wasm public/
+              - pnpm build
+secret:
+    stripe:
+        ops: [get]

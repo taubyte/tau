@@ -1,0 +1,11 @@
+id: QmPB42KuCd5ikQT2w3N9qzpJnaBztnyA6zJRgbJviXDZYG
+type: wasm
+source: services/doorman
+output: target/wasm32-wasip1/release/doorman.wasm
+build:
+    steps:
+        - name: build
+          image: ghcr.io/samyfodil/wazy-build-rust:1.99.1-cc0.21.1
+          commands:
+              - cargo fetch --locked
+              - cargo component build --release --locked --target wasm32-wasip2

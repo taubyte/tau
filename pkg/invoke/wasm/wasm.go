@@ -39,7 +39,7 @@ import (
 )
 
 // Name is the string the config vocabulary uses for this tier.
-const Name = specs.WorkerRuntimeWasm
+const Name = specs.PackageTypeWasm
 
 // The two settings this tier reads, spelled as the vocabulary spells them.
 const (

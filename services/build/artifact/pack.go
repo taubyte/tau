@@ -19,7 +19,7 @@ import (
 // product is what a build in dir left behind for spec, as the tier that runs it
 // reads it.
 func product(dir string, spec Spec) (io.ReadCloser, error) {
-	if spec.Runtime == specs.WorkloadBlockRuntimeJs {
+	if spec.Type == specs.PackageTypeWarp {
 		return packJS(dir, spec.Output)
 	}
 	return collect(dir, spec.Output)

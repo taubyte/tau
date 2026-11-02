@@ -1,0 +1,4 @@
+id: QmTZbXLMgxFoD1MduaEfU6vCd2CpFVn1LqUBjjnDNxLTvN
+type: oci
+source:
+    image: ghcr.io/acme/sandbox:1

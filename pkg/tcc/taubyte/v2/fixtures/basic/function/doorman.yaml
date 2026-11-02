@@ -1,18 +1,12 @@
 id: QmTgMPaMmJsBmAVzWmGKZ3kTQqzBHPkrGCjkbLGSjcEXsZ
 description: decides whether a request may pass and with what - it is asked about the REQUEST, which is why it is this world and not the authorizer one a cache names
-runtime: wasm
+package:
+    name: doorman_code
 # THE ONLY http-authorizer IN THIS FIXTURE. A cache's authorizer is asked
 # `who: caller` about a workload; whoever opens a socket at the edge has no
 # project, environment or scope, so ingress needs the world that is handed the
 # request itself.
 implements: http-authorizer
-source: services/doorman
-build:
-    commands:
-        image: rust:1.83
-        install: cargo fetch --locked
-        run: cargo build --release --target wasm32-wasip2
-        output: target/wasm32-wasip2/release/doorman.wasm
 execution:
     call: authorize
     timeout: 5s

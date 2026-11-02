@@ -44,121 +44,75 @@ func resolving(seam Artifacts) *Service {
 	return s
 }
 
-// aWorkload is the resource doing the naming: its OWN id and kind are what a
-// fall-through arm is asked about, and what the component arm must not use.
+// aWorkload is the resource naming the package. Its own id and kind are never what
+// the seam is asked about: what it runs is published under the package's.
 var aWorkload = Target{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"}
 
-const (
-	theComponent = "QmTheComponentsOwnResourceID"
-	theWorkload  = "QmTheWorkloadsOwnResourceID"
-)
+const thePackage = "QmThePackagesOwnResourceID"
 
-func source(fields ...string) specs.Resource {
-	block := map[string]any{}
-	for i := 0; i+1 < len(fields); i += 2 {
-		block[fields[i]] = fields[i+1]
+func runs(kind, field, value string) ranPackage {
+	src := specs.PackageSource{Kind: kind}
+	switch field {
+	case "image":
+		src.Image = value
+	case "builtin":
+		src.Builtin = value
+	case "git":
+		src.Git = value
 	}
-	return specs.Resource{"source": block}
+	return ranPackage{Package: specs.Package{Name: "paylib", Source: src}, ID: thePackage}
 }
 
 func TestArtifactOf(t *testing.T) {
 	type testCase struct {
-		name     string
-		resource specs.Resource
-		seam     *asked
+		name string
+		pkg  ranPackage
+		seam *asked
 
 		artifact string
 		err      error  // errors.Is
 		says     string // substring of the refusal
-		asks     bool   // the seam was asked exactly once
-		askedFor string // ...about this id
-		askedAs  string // ...under this kind
+		asks     bool   // the seam was asked exactly once, about the package
 	}
 	for _, tc := range []testCase{
-		// A component's id is asked about, not answered with, and asked about as a
-		// `component`, since the artifact is published under the component's own id.
 		{
-			name:     "a component reference is resolved through the seam",
-			resource: source("kind", "component", "component", theComponent),
-			seam:     &asked{answer: "bafyrealartifact"},
-			artifact: "bafyrealartifact",
+			name:     "a built package is asked about by its own id, as a package",
+			pkg:      runs("git", "git", "https://github.com/acme/paylib"),
+			seam:     &asked{answer: "bafybuilt"},
+			artifact: "bafybuilt",
 			asks:     true,
-			askedFor: theComponent,
-			askedAs:  "component",
 		},
-		// `resourceID` is the naming workload's; passing it here would resolve a different
-		// build, or none.
 		{
-			name:     "and never by the naming workload's own id",
-			resource: source("kind", "component", "component", theComponent),
-			seam:     &asked{answer: "bafy"},
-			artifact: "bafy",
+			name:     "and so is one built from this repository",
+			pkg:      runs("", "", ""),
+			seam:     &asked{answer: "bafybuilt"},
+			artifact: "bafybuilt",
 			asks:     true,
-			askedFor: theComponent, // NOT theWorkload
-			askedAs:  "component",  // NOT the workload's kind
 		},
-		// A nameless reference is refused BY NAME rather than asked about as "".
-		{
-			name:     "a component reference with nothing in it is refused",
-			resource: source("kind", "component"),
-			seam:     &asked{answer: "bafy"},
-			err:      ErrNoArtifact,
-			says:     "function/checkout names no component",
-		},
-		// A node with no artifact seam cannot run a component, and the refusal names which.
-		{
-			name:     "a component with no seam wired is refused naming it",
-			resource: source("kind", "component", "component", theComponent),
-			err:      ErrNoArtifact,
-			says:     theComponent,
-		},
-		// An unbuilt component must not resolve to "".
-		{
-			name:     "a failing seam refuses the component",
-			resource: source("kind", "component", "component", theComponent),
-			seam:     &asked{err: errUnbuilt},
-			err:      errUnbuilt,
-			asks:     true,
-			askedFor: theComponent,
-			askedAs:  "component",
-		},
-
-		// The other arms are unchanged.
 		{
 			name:     "an image is its own reference and asks nothing",
-			resource: source("kind", "image", "image", "ghcr.io/acme/db:16"),
+			pkg:      runs(specs.PackageSourceKindImage, "image", "ghcr.io/acme/db:16"),
 			seam:     &asked{answer: "never asked for"},
 			artifact: "ghcr.io/acme/db:16",
 		},
 		{
 			name:     "a builtin has no artifact and asks nothing",
-			resource: source("kind", specs.SourceBlockSourceKindBuiltin, specs.SourceBlockSourceKindBuiltin, "step"),
+			pkg:      runs(specs.PackageSourceKindBuiltin, "builtin", "step"),
 			seam:     &asked{answer: "never asked for"},
 			artifact: "", // shipped by the runtime; asking for one is the bug
 		},
 		{
-			name:     "anything else is asked about by the workload's own id and kind",
-			resource: source("kind", "git", "git", "https://github.com/acme/app"),
-			seam:     &asked{answer: "bafybuilt"},
-			artifact: "bafybuilt",
-			asks:     true,
-			askedFor: theWorkload,
-			askedAs:  "function",
+			name: "with no seam wired a built package is refused naming it",
+			pkg:  runs("git", "git", "https://github.com/acme/paylib"),
+			err:  ErrNoArtifact,
+			says: "package paylib",
 		},
 		{
-			name:     "a bare path in this repository is the same fall-through",
-			resource: specs.Resource{"source": "services/checkout"},
-			seam:     &asked{answer: "bafybuilt"},
-			artifact: "bafybuilt",
-			asks:     true,
-			askedFor: theWorkload,
-			askedAs:  "function",
-		},
-		{
-			name:     "and with no seam wired it is refused naming the resource",
-			resource: specs.Resource{"source": "services/checkout"},
-			err:      ErrNoArtifact,
-			says:     "function/checkout",
+			name: "an unbuilt package must not resolve to nothing",
+			pkg:  runs("git", "git", "https://github.com/acme/paylib"),
+			seam: &asked{err: errUnbuilt},
+			err:  errUnbuilt,
+			asks: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -168,7 +122,7 @@ func TestArtifactOf(t *testing.T) {
 				seam = tc.seam
 			}
 
-			got, err := resolving(seam).artifactOf(t.Context(), aWorkload, tc.resource, theWorkload)
+			got, err := resolving(seam).artifactOf(t.Context(), aWorkload, tc.pkg)
 
 			if tc.err != nil {
 				require.ErrorIs(t, err, tc.err)
@@ -184,36 +138,33 @@ func TestArtifactOf(t *testing.T) {
 				return
 			}
 			if !tc.asks {
-				require.Zero(t, tc.seam.calls, "the seam was asked and should not have been")
+				require.Zero(t, tc.seam.calls, "the seam was asked about a resource that names its own artifact")
 				return
 			}
-			require.Equal(t, 1, tc.seam.calls, "the seam was asked exactly once")
-			require.Equal(t, tc.askedFor, tc.seam.id, "asked about the wrong resource")
-			require.Equal(t, tc.askedAs, tc.seam.kind, "asked under the wrong kind")
+			require.Equal(t, 1, tc.seam.calls)
+			require.Equal(t, thePackage, tc.seam.id)
+			require.Equal(t, specs.KindPackage, tc.seam.kind)
 			require.Equal(t, aWorkload.Project, tc.seam.project)
 			require.Equal(t, aWorkload.Environment, tc.seam.environment)
 		})
 	}
 }
 
-var errUnbuilt = errors.New("the build service has no artifact for that resource")
+var errUnbuilt = errors.New("not built yet")
 
-func TestTwoWorkloadsNamingOneComponentRunTheSameBuild(t *testing.T) {
+func TestTwoWorkloadsNamingOnePackageRunTheSameBuild(t *testing.T) {
 	seam := &asked{answer: "bafyoneartifact"}
 	s := resolving(seam)
-	shared := source("kind", "component", "component", theComponent)
+	shared := runs("git", "git", "https://github.com/acme/paylib")
 
-	first, err := s.artifactOf(t.Context(), aWorkload, shared, "QmFirstWorkload")
+	first, err := s.artifactOf(t.Context(), aWorkload, shared)
 	require.NoError(t, err)
-	firstAsked := seam.id
 
 	other := aWorkload
 	other.Name, other.Kind = "refunds", "worker"
-	second, err := s.artifactOf(t.Context(), other, shared, "QmSecondWorkload")
+	second, err := s.artifactOf(t.Context(), other, shared)
 	require.NoError(t, err)
 
-	require.Equal(t, first, second, "one component, one build")
-	require.Equal(t, theComponent, firstAsked)
-	require.Equal(t, theComponent, seam.id,
-		"the second asked about the component too, not about itself")
+	require.Equal(t, first, second, "one package, one build")
+	require.Equal(t, thePackage, seam.id, "the second asked about the package too, not about itself")
 }

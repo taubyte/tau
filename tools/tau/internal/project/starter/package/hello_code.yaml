@@ -1,0 +1,11 @@
+description: what the function runs - the crate at services/hello, built into a component
+type: wasm
+source: services/hello
+output: target/wasm32-wasip2/release/hello.wasm
+build:
+    steps:
+        - name: build
+          image: ghcr.io/samyfodil/wazy-build-rust:1.99.1-cc0.21.1
+          commands:
+              - cargo fetch --locked
+              - cargo build --release --locked --target wasm32-wasip2

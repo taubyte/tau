@@ -1,0 +1,6 @@
+id: QmZSPg5JbXrMaFGGd3zKxicvKUuULBAvvzVSv5a7wxSSCz
+type: oci
+source:
+    image: ghcr.io/acme/postgres:16
+    image_pull_secret:
+        name: stripe

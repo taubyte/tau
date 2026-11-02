@@ -83,9 +83,9 @@ func build(t testing.TB, cfg Config, opts ...Option) *harness {
 	require.NoError(t, err)
 
 	counting := &countingRegister{Register: reg}
-	// The three engines the vocabulary names, so a kind's Engines() decides which runs a
-	// resource.
-	rt := &fakeRuntime{name: "container"}
+	// Three of the tiers, named by the package types they run, so a package's type
+	// decides which runs a resource.
+	rt := &fakeRuntime{name: "oci"}
 	wasm := &fakeRuntime{name: "wasm"}
 	site := &fakeRuntime{name: "static"}
 
@@ -211,6 +211,17 @@ func servable(t testing.TB, flat map[string]any) map[string]any {
 	applications, ok := root[specs.KindApplication].(map[string]any)
 	require.True(t, ok)
 
+	// a registry credential is the package's, which every workload naming it carries
+	if packages, ok := root[specs.KindPackage].(map[string]any); ok {
+		for _, v := range packages {
+			if pkg, ok := v.(map[string]any); ok {
+				if source, ok := pkg["source"].(map[string]any); ok {
+					delete(source, "image_pull_secret")
+				}
+			}
+		}
+	}
+
 	for _, v := range applications {
 		app, ok := v.(map[string]any)
 		if !ok {
@@ -219,9 +230,6 @@ func servable(t testing.TB, flat map[string]any) map[string]any {
 		delete(app, specs.ApplicationKeyLiveness)
 		if limits, ok := app[specs.ApplicationKeyLimits].(map[string]any); ok {
 			delete(limits, "max_instances")
-		}
-		if source, ok := app[specs.ApplicationKeySource].(map[string]any); ok {
-			delete(source, "image_pull_secret")
 		}
 		if readiness, ok := app[specs.ApplicationKeyReadiness].(map[string]any); ok && readiness["kind"] == specs.ApplicationReadinessKindFunction {
 			delete(app, specs.ApplicationKeyReadiness)

@@ -153,16 +153,13 @@ func TestNewWritesAResourceAndRefusesAnIncompleteOne(t *testing.T) {
 	x := newTester(t)
 	x.ok("init", "shop", "--dir", x.dir)
 
-	r := x.run("new", "function", "bye", "--dir", x.dir, "--set", "source=services/bye")
+	r := x.run("new", "function", "bye", "--dir", x.dir)
 	require.Equal(t, 1, r.code)
-	require.Contains(t, r.stderr, "--set runtime=", "the tier is the author's to say")
-	r = x.run("new", "function", "bye", "--dir", x.dir, "--set", "source=services/bye", "--set", "runtime=wasm")
-	require.Equal(t, 1, r.code)
-	require.Contains(t, r.stderr, "--set execution.call=", "and a component names its export")
+	require.Contains(t, r.stderr, "--set package.name=", "what it runs is the author's to say")
 	require.NoFileExists(t, filepath.Join(x.dir, "function", "bye.yaml"))
 
 	out := x.ok("new", "function", "bye", "--dir", x.dir,
-		"--set", "source=services/bye", "--set", "runtime=wasm", "--set", "execution.call=handle",
+		"--set", "package.name=hello_code", "--set", "execution.call=handle",
 		"--set", "execution.timeout=10s", "--set", "execution.memory=16MB")
 	require.Contains(t, out, "created function/bye")
 	require.FileExists(t, filepath.Join(x.dir, "function", "bye.yaml"))
@@ -183,19 +180,12 @@ func TestNewPromptsForWhatTheResourceOwes(t *testing.T) {
 	x := newTester(t)
 	x.ok("init", "shop", "--dir", x.dir)
 	x.interactive = true
-	x.prompter.answers = []string{"function", "bye", "wasm", "handle", "10s", "16MB"}
-	out := x.ok("new", "--dir", x.dir, "--set", "source=services/bye")
+	x.prompter.answers = []string{"function", "bye", "hello_code", "10s", "16MB"}
+	out := x.ok("new", "--dir", x.dir, "--set", "execution.call=handle")
 	require.Contains(t, out, "created function/bye")
-	require.Equal(t, []string{"Kind", "Name", "runtime", "execution.call", "execution.timeout", "execution.memory"}, x.prompter.asked)
+	require.Equal(t, []string{"Kind", "Name", "package.name", "execution.timeout", "execution.memory"}, x.prompter.asked)
 
-	// a module's entrypoint has a convention, so js is not asked for one
-	x.prompter.asked = nil
-	x.prompter.answers = []string{"function", "hi", "js", "10s", "16MB"}
-	out = x.ok("new", "--dir", x.dir, "--set", "source=services/hi")
-	require.Contains(t, out, "created function/hi")
-	require.Equal(t, []string{"Kind", "Name", "runtime", "execution.timeout", "execution.memory"}, x.prompter.asked)
-
-	x.prompter.answers = []string{"function", "bad", "wasm", "handle", "10s", "lots"}
+	x.prompter.answers = []string{"function", "bad", "hello_code", "10s", "lots"}
 	require.NotZero(t, x.run("new", "--dir", x.dir).code)
 
 	x.prompter.err = errors.New("interrupted")

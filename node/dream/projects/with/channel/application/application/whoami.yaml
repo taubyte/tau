@@ -1,8 +1,7 @@
 id: QmeeaR9J7NUBFMKqt1g8Kc9LaojTAiWw6xwyNvjviMYW48
 description: echoes the request line it read off its socket, so an answer naming the dialed path came from inside the container
-# PINNED BY DIGEST. A tag can be moved under the test; a digest is the bytes.
-source:
-    image: "traefik/whoami@sha256:43a68d10b9dfcfc3ffbfe4dd42100dc9aeaf29b3a5636c856337a5940f1b4f1c"
+package:
+    name: whoami_code
 ports:
     http:
         number: 80

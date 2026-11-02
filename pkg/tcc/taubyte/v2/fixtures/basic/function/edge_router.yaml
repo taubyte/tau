@@ -1,9 +1,8 @@
 id: QmPZ9XwnqQzhLTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPYuR
 description: decides where a request goes - a gateway with one of these has no static routes at all
-runtime: wasm
+package:
+    name: paylib
 implements: gateway-router
-source:
-    component: paylib
 execution:
     call: route
     timeout: 2s

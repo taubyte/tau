@@ -44,7 +44,7 @@ func TestTheWholeChain(t *testing.T) {
 	require.Len(t, started, 1)
 	spec := started[0]
 
-	require.Equal(t, "container", spec.Runtime, "read off the kind's Engines(), not a table here")
+	require.Equal(t, "oci", spec.Runtime, "read off the package's type, not a table here")
 	require.Equal(t, "ghcr.io/acme/api:1.4", spec.Artifact)
 	require.Equal(t, int64(512_000_000), spec.Memory, "512MB, in bytes, from execution/memory")
 	require.Equal(t, 80, spec.Concurrency)
@@ -64,9 +64,9 @@ func TestTheTierComesFromTheVocabulary(t *testing.T) {
 
 	spec := h.Runtime.specs()[0]
 	require.Equal(t, "wasm", spec.Runtime)
-	// The seam was asked as a `component` about the component; artifact_test.go asserts
-	// the arguments.
-	require.Equal(t, "registry/shop/prod/component@sha256:QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv",
+	// The seam was asked as a `package` about the package; artifact_test.go asserts the
+	// arguments.
+	require.Equal(t, "registry/shop/prod/package@sha256:QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv",
 		spec.Artifact)
 	require.Equal(t, int64(32_000_000), spec.Memory)
 	require.Equal(t, 20*time.Second, spec.Timeout, "a duration compiles to nanoseconds and comes back a duration")
@@ -101,39 +101,19 @@ func TestABuiltResourceIsRefusedRatherThanGuessedAt(t *testing.T) {
 	// With a resolver, the same target runs.
 	with := newHarness(t)
 	invokeOver(t, with, target("application", "worker_pool"))
-	require.Contains(t, with.Runtime.specs()[0].Artifact, "registry/shop/prod/application@sha256:")
+	require.Contains(t, with.Runtime.specs()[0].Artifact, "registry/shop/prod/package@sha256:")
 }
 
-func TestASecretIsNeverAnEmptyString(t *testing.T) {
-	h := newBareHarness(t, WithArtifacts(artifactFunc(func(context.Context, string, string, string, string) (string, error) {
-		return "an-image", nil
-	})))
-
-	_, err := h.Client.Invoke(t.Context(), connect.NewRequest(&workerv2.InvokeRequest{
-		Target: target("application", "api"),
-	}))
-	require.Error(t, err)
-	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
-
-	with := newHarness(t)
-	invokeOver(t, with, target("application", "api"))
-
-	env := with.Runtime.specs()[0].Env
-	require.Equal(t, "info", env["LOG_LEVEL"])
-	require.Equal(t, "region-1", env["REGION"])
-	require.Contains(t, env["STRIPE_KEY"], "sk_live_")
-}
-
-func TestAFailingSecretFailsTheInvocation(t *testing.T) {
+// A SECRET IS NEVER HANDED OVER, so a workload whose environment once carried one now
+// starts with its literals alone, whatever resolver the node has.
+func TestASecretIsNeverInAWorkloadsEnvironment(t *testing.T) {
 	h := newHarness(t, WithSecrets(secretFunc(func(context.Context, string, string, string) (string, error) {
-		return "", errRefused
+		return "sk_live_never", nil
 	})))
+	invokeOver(t, h, target("application", "api"))
 
-	_, err := h.Client.Invoke(t.Context(), connect.NewRequest(&workerv2.InvokeRequest{
-		Target: target("application", "api"),
-	}))
-	require.Error(t, err)
-	require.Empty(t, h.Runtime.specs(), "nothing was started")
+	env := h.Runtime.specs()[0].Env
+	require.Equal(t, map[string]string{"LOG_LEVEL": "info", "REGION": "region-1"}, env)
 }
 
 func TestTheCompiledProjectIsFetchedOnce(t *testing.T) {
@@ -338,18 +318,20 @@ func TestTheClientIsTheSameWorker(t *testing.T) {
 func TestAFunctionOnATierThisNodeLacksIsRefusedByName(t *testing.T) {
 	h := build(t, Config{}, resolvers()...)
 	h.Register.Register = publishedDocs(t, map[string]string{
-		"/function/greet.yaml": "id: QmQhhiXXgeW3Z5Q5JjH9VF5cQkn4ZCPU4nAKUgc2z2GwMd\nruntime: js\nexecution:\n    timeout: 5s\n    memory: 16MB\n",
+		"/package/module.yaml": "id: QmQhhiXXgeW3Z5Q5JjH9VF5cQkn4ZCPU4nAKUgc2z2GwMe\ntype: warp\n",
+		"/function/greet.yaml": "id: QmQhhiXXgeW3Z5Q5JjH9VF5cQkn4ZCPU4nAKUgc2z2GwMd\npackage:\n    name: module\nexecution:\n    timeout: 5s\n    memory: 16MB\n",
 	})
 	greet := specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "greet"}
 
 	spec, err := h.Worker.Resolve(t.Context(), greet)
 	require.NoError(t, err)
-	require.Equal(t, specs.FunctionRuntimeJs, spec.Runtime)
-	require.Equal(t, "default", spec.Settings[specs.WorkloadBlockKeyExecutionCall], "the module's default export")
+	require.Equal(t, specs.PackageTypeWarp, spec.Runtime)
+	_, called := spec.Settings[specs.WorkloadBlockKeyExecutionCall]
+	require.False(t, called, "a module's default export is its tier's to know")
 
 	_, err = newWorkerClient(t, h).Invoke(t.Context(), greet, &invoke.Request{Method: "GET", Path: "/"})
 	require.ErrorIs(t, err, invoke.ErrNoRuntime)
-	require.ErrorContains(t, err, `"js"`)
+	require.ErrorContains(t, err, `"warp"`)
 	require.Empty(t, h.Runtime.specs(), "nothing was started on another tier")
 	require.Empty(t, h.Static.specs())
 }

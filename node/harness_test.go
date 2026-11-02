@@ -243,7 +243,7 @@ func makeNode(t *testing.T, cfg Config, extra ...Option) (*Node, host.Host, *mem
 		WithHost(h),
 		WithPubSub(newPubSub(t, h)),
 		WithDatabases(factory),
-		WithRuntimes(&tier{name: "container"}),
+		WithRuntimes(&tier{name: "oci"}),
 		// A raft cluster of one, in memory. What this composition is asked to
 		// prove is the wiring; that raft replicates is pkg/raft's own test.
 		WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),

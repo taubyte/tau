@@ -33,16 +33,15 @@ func RenderReaders(pkg string, root []*engine.Node, kinds []string) []byte {
 	}
 	body.WriteString("}\n\n")
 
-	// Cross-kind questions (what a project builds, where content comes from, what a tier
-	// needs of anything runnable) get the union of what any kind declares under those
-	// keys.
+	// Cross-kind questions (where content comes from, what a tier needs of anything
+	// runnable) get the union of what any kind declares under those keys. What a
+	// project builds is only ever a package's, so it needs no union.
 	for _, union := range []struct {
 		name string
 		keys []string
 	}{
 		{"SourceBlock", []string{"source"}},
-		{"BuildBlock", []string{"build"}},
-		{"WorkloadBlock", []string{"egress", "execution", "implements", "limits", "name", "ports", "runtime", "serve", "variables"}},
+		{"WorkloadBlock", []string{"egress", "execution", "implements", "limits", "name", "package", "ports", "serve", "variables"}},
 	} {
 		body.Write(RenderUnion(union.name, root, kinds, union.keys, m.groupsUnder(union.keys)))
 		body.WriteString("\n")

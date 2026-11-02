@@ -1,0 +1,10 @@
+id: QmctBErnZtXqa8DhwkNYMFyrLqBXj4zVL8WsmqRccNuNNF
+type: wasm
+source: services/golang
+output: function.wasm
+build:
+    steps:
+        - name: build
+          image: ghcr.io/samyfodil/wazy-build-go:1.26.10
+          commands:
+              - sh build.sh

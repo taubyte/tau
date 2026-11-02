@@ -1,0 +1,10 @@
+id: QmeFgbNcRbDKTt56ykLEz4AUvbR2ipXGfrUfgZ8vHvZuc1
+type: wasm
+source: services/typescript
+output: function.wasm
+build:
+    steps:
+        - name: build
+          image: ghcr.io/samyfodil/wazy-build-js:1.39.0-cjs0.23.0-node22.23.4
+          commands:
+              - tsc --target es2022 --module es2022 --lib es2022,dom --outDir out function.ts && jco componentize out/function.js --wit ../../wit --world-name handler -o function.wasm

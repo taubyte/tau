@@ -1,0 +1,5 @@
+id: QmSFZiZ4nsw4NmQc3jnbWUpJrbnQVcv7T7L3iLUaULnYUw
+description: the storefront api's image, built somewhere else
+type: oci
+source:
+    image: "ghcr.io/acme/api:1.4"

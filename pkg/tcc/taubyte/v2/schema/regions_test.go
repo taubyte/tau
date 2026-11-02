@@ -28,7 +28,7 @@ func (onlyNamed) Serves() []string                { return []string{"region-1", 
 func compileDocs(t *testing.T, env string, docs map[string]string) map[string]any {
 	t.Helper()
 	fs := afero.NewMemMapFs()
-	for path, body := range docs {
+	for path, body := range withPackages(docs) {
 		require.NoError(t, afero.WriteFile(fs, path, []byte(body), 0o644))
 	}
 	opts := []schema.Option{schema.WithVirtual(fs, "/"), schema.WithBranch("main")}

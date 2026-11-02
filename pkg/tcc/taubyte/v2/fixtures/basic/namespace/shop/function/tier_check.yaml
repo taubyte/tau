@@ -1,6 +1,7 @@
 id: QmQwsLKS7hLCkVCFPYqjHhLNxjnkNCiJqBFPPbrmvSaWAd
 description: the cache's own authorizer - handed the caller and the operation, it returns the ops that caller gets
-runtime: wasm
+package:
+    name: tier_check_code
 implements: authorizer
 execution:
     call: authorize

@@ -115,16 +115,20 @@ func withValidator() []byte {
 		"object": {
 			"id": "` + projectID + `",
 			"name": "shop",
+			"package": {
+				"` + codePackageID + `": {"name": "code", "type": "wasm"}
+			},
 			"function": {
 				"` + validatorID + `": {
 					"name": "may_open",
-					"runtime": "wasm",
 					"execution": {"call": "handle", "memory": 33554432},
-					"source": "services/may_open"
+					"package": {"name": "` + codePackageID + `"}
 				}
 			}
 		},
 		"indexes": {
+			"projects/` + projectID + `/package/code/links": [
+				"branches/main/projects/` + projectID + `/package/` + codePackageID + `"],
 			"projects/` + projectID + `/function/may_open/links": [
 				"branches/main/projects/` + projectID + `/function/` + validatorID + `"]
 		}

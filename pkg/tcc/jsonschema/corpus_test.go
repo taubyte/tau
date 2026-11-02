@@ -106,15 +106,15 @@ func TestCorpusWithoutEnvironmentsIsRefused(t *testing.T) {
 	assert.ErrorContains(t, r.Validate(doc), "minProperties")
 }
 
-func TestCorpusFunctionWithoutATierItRunsOnIsRefused(t *testing.T) {
+func TestCorpusPackageWithoutATypeIsRefused(t *testing.T) {
 	r := published(t)
 	docs := projects(t, "refused/function")
 
 	missing := docs["refused/function/noruntime"]
 	assert.Assert(t, missing != nil)
-	assert.ErrorContains(t, r.Validate(missing), `missing properties: ["runtime"]`)
+	assert.ErrorContains(t, r.Validate(missing), `missing properties: ["type"]`)
 
 	unknown := docs["refused/function/unknownruntime"]
 	assert.Assert(t, unknown != nil)
-	assert.ErrorContains(t, r.Validate(unknown), "properties/runtime: enum: nodejs does not equal any of: [wasm js]")
+	assert.ErrorContains(t, r.Validate(unknown), "properties/type: enum: nodejs does not equal any of: [wasm warp oci static]")
 }

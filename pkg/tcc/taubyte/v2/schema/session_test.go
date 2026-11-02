@@ -65,13 +65,15 @@ func TestValidateFieldRefusesWhatTheVocabularyRefuses(t *testing.T) {
 func TestValidateFieldReadsABlockAsABlock(t *testing.T) {
 	s := session(t)
 	fn := []string{"function", "checkout"}
+	pkg := []string{"package", "paylib"}
 
-	assert.NilError(t, s.ValidateField(fn, []string{"source"}, map[string]any{"component": "paylib"}))
-	assert.NilError(t, s.ValidateField(fn, []string{"source"}, "agents/support"))
-	assert.NilError(t, s.ValidateField(fn, []string{"source", "component"}, "paylib"))
+	assert.NilError(t, s.ValidateField(fn, []string{"package"}, map[string]any{"name": "paylib"}))
+	assert.NilError(t, s.ValidateField(pkg, []string{"source"}, map[string]any{"git": "https://github.com/acme/paylib"}))
+	assert.NilError(t, s.ValidateField(pkg, []string{"source"}, "agents/support"))
+	assert.NilError(t, s.ValidateField(fn, []string{"package", "name"}, "paylib"))
 
 	// the leaves keep their own checks
-	assert.Assert(t, s.ValidateField(fn, []string{"source", "component"}, "not a name!") != nil,
+	assert.Assert(t, s.ValidateField(fn, []string{"package", "name"}, "not a name!") != nil,
 		"a block's leaf stopped being checked")
 	// and a mapping under a key that heads no block is still the wrong type
 	assert.Assert(t, s.ValidateField(fn, []string{"name"}, map[string]any{"x": "y"}) != nil,
@@ -108,10 +110,10 @@ func TestValidateResourceAttributesWhatIsWrong(t *testing.T) {
 	assert.DeepEqual(t, issues[0].Field, []string{"execution", "timeout"})
 
 	// a required field that is absent has no value to check, so it is looked for by name
-	assert.NilError(t, s.Delete(fn, []string{"execution", "call"}))
+	assert.NilError(t, s.Delete(fn, []string{"execution", "memory"}))
 	found := false
 	for _, i := range s.ValidateResource(fn) {
-		found = found || strings.Join(i.Field, "/") == "execution/call"
+		found = found || strings.Join(i.Field, "/") == "execution/memory"
 	}
 	assert.Assert(t, found, "a required field went missing and nothing said so")
 }
@@ -134,4 +136,25 @@ func TestGenerateMintsWhatNobodyAuthors(t *testing.T) {
 	// A field the author writes is not one to mint.
 	_, err = s.Generate(fn, []string{"name"})
 	assert.ErrorContains(t, err, "not a generated field")
+}
+
+// A required field of an entry is looked for in every entry the document has: a port
+// with no number, a step with no toolchain.
+func TestValidateResourceLooksInsideEveryEntry(t *testing.T) {
+	s := session(t)
+
+	app := []string{"application", "api"}
+	assert.NilError(t, s.Delete(app, []string{"ports", "metrics", "number"}))
+	pkg := []string{"package", "shop_site"}
+	assert.NilError(t, s.Delete(pkg, []string{"build", "steps", "0", "image"}))
+
+	found := map[string]bool{}
+	for _, res := range [][]string{app, pkg} {
+		for _, i := range s.ValidateResource(res) {
+			found[strings.Join(i.Field, "/")] = true
+		}
+	}
+	assert.Assert(t, found["ports/metrics/number"], "%v", found)
+	assert.Assert(t, found["build/steps/0/image"], "%v", found)
+	assert.Assert(t, !found["ports/http/number"], "an entry that has it owes nothing: %v", found)
 }

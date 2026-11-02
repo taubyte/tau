@@ -35,9 +35,8 @@ func TestARealBuild(t *testing.T) {
 
 	var log strings.Builder
 	product, err := e.Make(t.Context(), artifact.Spec{
-		Image:     "busybox:1.36",
 		Dir:       dir,
-		Commands:  []string{"echo building", "mkdir -p out", "cp input out/app.wasm"},
+		Steps:     []artifact.Step{{Name: "build", Image: "busybox:1.36", Commands: []string{"echo building", "mkdir -p out", "cp input out/app.wasm"}}},
 		Variables: map[string]string{"GREETING": "hi"},
 		Output:    "out/app.wasm",
 	}, &log)
@@ -57,10 +56,9 @@ func TestARealBuildThatFails(t *testing.T) {
 
 	var log strings.Builder
 	_, err = e.Make(t.Context(), artifact.Spec{
-		Image:    "busybox:1.36",
-		Dir:      t.TempDir(),
-		Commands: []string{"echo compiling", "echo main.go:3: undefined: x >&2", "false", "echo this must not run > out"},
-		Output:   "out",
+		Dir:    t.TempDir(),
+		Steps:  []artifact.Step{{Name: "build", Image: "busybox:1.36", Commands: []string{"echo compiling", "echo main.go:3: undefined: x >&2", "false", "echo this must not run > out"}}},
+		Output: "out",
 	}, &log)
 	needsEgressRestriction(t, err)
 	require.Error(t, err)
@@ -77,10 +75,9 @@ func TestARealBuildThatLeavesNothing(t *testing.T) {
 
 	var log strings.Builder
 	_, err = e.Make(t.Context(), artifact.Spec{
-		Image:    "busybox:1.36",
-		Dir:      t.TempDir(),
-		Commands: []string{"echo done"},
-		Output:   "target/app.wasm",
+		Dir:    t.TempDir(),
+		Steps:  []artifact.Step{{Name: "build", Image: "busybox:1.36", Commands: []string{"echo done"}}},
+		Output: "target/app.wasm",
 	}, &log)
 	needsEgressRestriction(t, err)
 	require.ErrorContains(t, err, "left nothing at")
@@ -92,9 +89,8 @@ func TestARealBuildSeesItsVariables(t *testing.T) {
 
 	var log strings.Builder
 	product, err := e.Make(t.Context(), artifact.Spec{
-		Image:     "busybox:1.36",
 		Dir:       t.TempDir(),
-		Commands:  []string{"printf %s \"$GOPRIVATE\" > out"},
+		Steps:     []artifact.Step{{Name: "build", Image: "busybox:1.36", Commands: []string{"printf %s \"$GOPRIVATE\" > out"}}},
 		Variables: map[string]string{"GOPRIVATE": "github.com/acme/*"},
 		Output:    "out",
 	}, &log)
@@ -116,10 +112,9 @@ func TestARealBuildLogsWhileItRuns(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		product, err := e.Make(t.Context(), artifact.Spec{
-			Image:    "busybox:1.36",
-			Dir:      dir,
-			Commands: []string{"echo compiling", "while [ ! -f release ]; do sleep 0.1; done", "echo linked", "printf built > out"},
-			Output:   "out",
+			Dir:    dir,
+			Steps:  []artifact.Step{{Name: "build", Image: "busybox:1.36", Commands: []string{"echo compiling", "while [ ! -f release ]; do sleep 0.1; done", "echo linked", "printf built > out"}}},
+			Output: "out",
 		}, log)
 		if err == nil {
 			product.Close()

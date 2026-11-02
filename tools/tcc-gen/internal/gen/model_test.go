@@ -61,16 +61,13 @@ func TestSharedBlocksAreFoundNotListed(t *testing.T) {
 	require.Equal(t, "Authorizer", memberOf(t, types["Cache"], "Authorizer").goType())
 	require.Equal(t, "[]TransformersEntry", memberOf(t, types["Proxy"], "Transformers").goType(),
 		"the gateway's and the proxy's transformers are one declaration")
-	require.Equal(t, "map[string]VariablesEntry", memberOf(t, types["Website"], "Variables").goType(),
-		"a different legal set for `at` is still one entry")
+	require.Equal(t, "map[string]VariablesEntry", memberOf(t, types["Package"], "Variables").goType(),
+		"a package's values are a workload's shape, so one entry")
 
 	require.Equal(t, "FunctionExecution", memberOf(t, types["Function"], "Execution").goType(),
 		"a function's execution is not an application's")
 	require.Equal(t, "ApplicationExecution", memberOf(t, types["Application"], "Execution").goType())
 
-	// THE UNION OF LEGAL VALUES, for a shared entry validated differently.
-	at := memberOf(t, types["VariablesEntry"], "At")
-	require.ElementsMatch(t, []string{"run", "build", "both"}, at.loc.Enum)
 }
 
 func TestACoreNameIsNotShadowed(t *testing.T) {
@@ -99,7 +96,7 @@ func TestABlockOfDefaultsHasNoDeclared(t *testing.T) {
 
 func TestTheShortFormIsTheBlocksValue(t *testing.T) {
 	_, types := modelOf(t)
-	v := memberOf(t, types["FunctionSource"], "Value")
+	v := memberOf(t, types["PackageSource"], "Value")
 	require.Equal(t, []string{"source"}, v.key)
 }
 

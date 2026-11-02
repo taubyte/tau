@@ -1,0 +1,10 @@
+id: QmaPUX9i3WzKFyo7QzMrKCYWk2ppvN7gaTi8PdrRziuy2e
+type: warp
+source: services/answer
+output: dist/worker.js
+build:
+    steps:
+        - name: build
+          image: ghcr.io/samyfodil/wazy-build-js:1.39.0-cjs0.23.0-node22.23.4
+          commands:
+              - rolldown src/index.js --format esm --platform neutral --file dist/worker.js --sourcemap

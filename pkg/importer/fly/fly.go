@@ -122,8 +122,13 @@ func Import(data []byte) (importer.Result, error) {
 	}
 
 	base := map[string]any{}
+	// One package, whatever the processes: they fan out below and all run it.
+	var pkg map[string]any
 	if f.Build != nil {
-		importBuild(&r, base, f.Build)
+		pkg = importBuild(&r, f.Build)
+	}
+	if pkg != nil {
+		r.Runs(base, name, pkg)
 	}
 	if len(f.Env) > 0 {
 		// A variable is a block; `at` and `as` are defaulted.
@@ -149,9 +154,7 @@ func Import(data []byte) (importer.Result, error) {
 	// empty resource is one that runs nothing while looking like it runs
 	// something. Everything else in the file is still reported, which is why
 	// this sets a flag rather than returning early.
-	_, hasSource := base["source"]
-	_, hasBuild := base["build"]
-	runnable := hasSource || hasBuild
+	runnable := pkg != nil
 	if !runnable {
 		r.Add(importer.Finding{Key: "build", Level: importer.Blocked, Code: "NO_SOURCE",
 			Detail: "this file names neither an image nor a Dockerfile build, so there is nothing to run; " +
@@ -214,36 +217,46 @@ func Import(data []byte) (importer.Result, error) {
 // appKind is what a Fly app becomes.
 const appKind = "application"
 
-func importBuild(r *importer.Result, doc map[string]any, b *build) {
+// importBuild is the package a Fly app runs, or nil when the file names nothing to
+// run. A Dockerfile build takes the package's variables as its build arguments.
+func importBuild(r *importer.Result, b *build) map[string]any {
 	switch {
 	case b.Image != "":
-		doc["source"] = map[string]any{"image": b.Image}
+		return map[string]any{"type": ociPackage, "source": map[string]any{"image": b.Image}}
 	case b.Builder != "":
 		// A CNB builder is a whole lifecycle, not a Dockerfile.
 		r.Add(importer.Finding{Key: "build.builder", Level: importer.Blocked,
 			Code:   "NEEDS_CNB_LIFECYCLE",
 			Needs:  "a buildpack build path, or a re-derivation of the same build",
 			Detail: "builder " + b.Builder + " is a Cloud Native Buildpacks lifecycle, which is not a Dockerfile build"})
-	default:
-		d := map[string]any{}
-		if b.Dockerfile != "" {
-			d["path"] = b.Dockerfile
-		}
-		if b.BuildTarget != "" {
-			d["target"] = b.BuildTarget
-		}
-		if len(b.Args) > 0 {
-			args := map[string]any{}
-			for k, v := range b.Args {
-				args[k] = v
-			}
-			d["args"] = args
-		}
-		if len(d) > 0 {
-			doc["build"] = map[string]any{"dockerfile": d}
-		}
+		return nil
 	}
+	d := map[string]any{}
+	if b.Dockerfile != "" {
+		d["path"] = b.Dockerfile
+	}
+	if b.BuildTarget != "" {
+		d["target"] = b.BuildTarget
+	}
+	if len(d) == 0 && len(b.Args) == 0 {
+		return nil
+	}
+	if d["path"] == nil {
+		d["path"] = "Dockerfile"
+	}
+	pkg := map[string]any{"type": ociPackage, "build": map[string]any{"dockerfile": d}}
+	if len(b.Args) > 0 {
+		args := map[string]any{}
+		for k, v := range b.Args {
+			args[k] = map[string]any{"value": v}
+		}
+		pkg["variables"] = args
+	}
+	return pkg
 }
+
+// ociPackage is the package type an image is.
+const ociPackage = "oci"
 
 // flySize turns a Fly memory string ("512mb", "1gb", or a bare number meaning
 // megabytes) into the case-sensitive spelling units.ParseStrictBytes reads.

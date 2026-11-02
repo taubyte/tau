@@ -38,19 +38,24 @@ func TestTheBuildHalfIsWhatTheFileIsFor(t *testing.T) {
 	// vocabulary's own and not Vercel's.
 	doc, ok := r.Doc("website", SiteName)
 	require.True(t, ok, "got %v", r.Resources)
+	built := SiteName + "_code"
+	require.Equal(t, map[string]any{"name": built}, doc["package"])
+	pkg, ok := r.Doc("package", built)
+	require.True(t, ok)
 	require.Equal(t, map[string]any{
-		"commands": map[string]any{
+		"type":   "static",
+		"output": ".next",
+		"build": map[string]any{"steps": []any{map[string]any{
+			"name": "build",
 			// The image is written: without it the project imported with an empty to-do list and
 			// failed to compile.
-			"image":   defaultBuildImage,
-			"install": "pnpm i",
-			"run":     "next build",
-			"output":  ".next",
-		},
-	}, doc["build"])
+			"image":    defaultBuildImage,
+			"commands": []string{"pnpm i", "next build"},
+		}}},
+	}, pkg)
 
 	// AND THE CHOICE IS REPORTED, because it is a runtime nobody chose.
-	f := finding(t, r, SiteName, "build.image")
+	f := finding(t, r, built, "build.steps.image")
 	require.Equal(t, importer.Approximated, f.Level)
 	require.Equal(t, "SOURCE_IN_API:node-version", f.Code)
 }

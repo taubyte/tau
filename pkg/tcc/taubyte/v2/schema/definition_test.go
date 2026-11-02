@@ -110,16 +110,21 @@ func TestFunctionHasNoTrigger(t *testing.T) {
 	assert.Equal(t, nested(fn, "execution", "memory"), int64(32000000), "32MB parses to bytes")
 }
 
-func TestComponentSourceResolves(t *testing.T) {
+func TestAPackageReferenceResolves(t *testing.T) {
 	flat := compileBasic(t)
-	modID := ""
-	for id := range resources(t, flat, "component") {
-		modID = id
+	paylib := ""
+	for id, p := range resources(t, flat, "package") {
+		if p.(map[string]any)["name"] == "paylib" {
+			paylib = id
+		}
 	}
-	assert.Assert(t, modID != "", "no component compiled")
+	assert.Assert(t, paylib != "", "no paylib package compiled")
 
-	fn := namedResource(t, resources(t, flat, "function"), "checkout")
-	assert.DeepEqual(t, fn["source"], map[string]any{"kind": "component", "component": modID})
+	// two workloads, one artifact
+	for _, name := range []string{"checkout", "edge_router"} {
+		fn := namedResource(t, resources(t, flat, "function"), name)
+		assert.DeepEqual(t, fn["package"], map[string]any{"name": paylib})
+	}
 }
 
 func TestQueueDeadLetterResolves(t *testing.T) {
@@ -201,7 +206,10 @@ func TestDatabaseEngineIsClosed(t *testing.T) {
 	assert.ErrorContains(t, compile("description: nothing\n"), "attribute type has an empty key")
 }
 
-func TestTheEntrypointFollowsTheTier(t *testing.T) {
+// The tier is the package's, so a workload says what it runs and what to call in it,
+// and the compiler asks nothing about the tier itself; whether the call is needed is
+// checkWorkloadPackages', which can see the package.
+func TestAWorkloadNamesWhatItRuns(t *testing.T) {
 	head := "id: " + cidFor("probe") + "\n"
 	compile := func(kind, body string) (map[string]any, error) {
 		flat, err := buildDoc(t, "/"+kind+"/probe.yaml", head+body)
@@ -213,42 +221,22 @@ func TestTheEntrypointFollowsTheTier(t *testing.T) {
 	const limits = "execution:\n    timeout: 20s\n    memory: 32MB\n"
 	const called = "execution:\n    call: handle\n    timeout: 20s\n    memory: 32MB\n"
 
-	for kind, tiers := range map[string]string{"function": "wasm, js", "worker": "wasm, js, container"} {
+	for _, kind := range []string{"function", "worker"} {
 		_, err := compile(kind, limits)
-		assert.ErrorContains(t, err, "required attribute 'runtime'", "%s: a tier with no default has to be written", kind)
+		assert.ErrorContains(t, err, "required attribute 'package/name'", "%s: what runs has to be named", kind)
 
-		_, err = compile(kind, "runtime: python\n"+called)
-		assert.ErrorContains(t, err, `invalid value "python"; valid values here: `+tiers, "%s: a tier is one of the kind's engines", kind)
+		_, err = compile(kind, "runtime: wasm\npackage:\n    name: redact_code\n"+called)
+		assert.ErrorContains(t, err, "unknown key 'runtime'", "%s: the tier is the package's", kind)
 
-		_, err = compile(kind, "runtime: wasm\n"+limits)
-		assert.ErrorContains(t, err, "required attribute 'execution/call'", "%s: a component names its export", kind)
-
-		res, err := compile(kind, "runtime: wasm\n"+called)
+		res, err := compile(kind, "package:\n    name: redact_code\n"+called)
 		assert.NilError(t, err)
 		assert.Equal(t, nested(res, "execution", "call"), "handle")
 
-		res, err = compile(kind, "runtime: js\n"+limits)
-		assert.NilError(t, err, "%s: a module's entrypoint has a convention", kind)
-		assert.Equal(t, nested(res, "execution", "call"), "default", "%s: js defaults to the default export", kind)
-
-		res, err = compile(kind, "runtime: js\n"+called)
-		assert.NilError(t, err)
-		assert.Equal(t, nested(res, "execution", "call"), "handle", "%s: a written export wins over the convention", kind)
+		res, err = compile(kind, "package:\n    name: redact_code\n"+limits)
+		assert.NilError(t, err, "%s: an entrypoint is a check, not a load error", kind)
+		_, defaulted := nestedOK(res, "execution", "call")
+		assert.Assert(t, !defaulted, "%s: no tier's convention is written into the object", kind)
 	}
-
-	// A function has no tier that runs an image.
-	_, err := compile("function", "runtime: container\n"+limits)
-	assert.ErrorContains(t, err, `invalid value "container"; valid values here: wasm, js`)
-
-	res, err := compile("worker", "runtime: container\nsource:\n    image: busybox\n"+limits)
-	assert.NilError(t, err, "a container names an image, not an exported symbol")
-	_, defaulted := nestedOK(res, "execution", "call")
-	assert.Assert(t, !defaulted, "a container is given no entrypoint it did not write")
-
-	// A container with neither image nor build loads: the exclusion spans two blocks
-	// and is checkBuild's.
-	_, err = compile("worker", "runtime: container\n"+limits)
-	assert.NilError(t, err)
 }
 
 func TestDatabaseEngineCarriesItsOwnConnection(t *testing.T) {
@@ -573,8 +561,11 @@ func TestNamespaceScope(t *testing.T) {
 	kv := only(t, shop["cache"].(map[string]any))
 	assert.Equal(t, kv["name"], "sessions")
 
-	app := namedResource(t, resources(t, compileBasic(t), "application"), "api")
-	assert.Equal(t, nested(app, "source", "image"), "ghcr.io/acme/api:1.4", "applications is a compute kind, not a scope")
+	flat := compileBasic(t)
+	app := namedResource(t, resources(t, flat, "application"), "api")
+	image := namedResource(t, resources(t, flat, "package"), "api_image")
+	assert.Equal(t, nested(image, "source", "image"), "ghcr.io/acme/api:1.4")
+	assert.Assert(t, nested(app, "package", "name") != nil, "applications is a compute kind, not a scope")
 	// what the platform assigns is never authored: the port is handed to the
 	// workload and tunnelled, and how many instances run is placement
 	for _, gone := range []string{"port", "replicas"} {
@@ -602,16 +593,17 @@ func TestAccessIsPerTarget(t *testing.T) {
 
 	// nesting did NOT cost the resource its own compile passes
 	assert.Equal(t, nested(fn, "execution", "timeout"), int64(20000000000), "scalars still parse")
-	src, _ := fn["source"].(map[string]any)
-	assert.Assert(t, src != nil && strings.HasPrefix(src["component"].(string), "Qm"),
-		"refs still resolve: %v", fn["source"])
+	pkg, _ := fn["package"].(map[string]any)
+	assert.Assert(t, pkg != nil && strings.HasPrefix(pkg["name"].(string), "Qm"),
+		"refs still resolve: %v", fn["package"])
 
 	// and a verb the kind does not implement is refused at load
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
 	assert.NilError(t, afero.WriteFile(fs, "/function/checkout.yaml", []byte(`
 id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh
-runtime: wasm
+package:
+    name: redact_code
 execution: {call: checkout, timeout: 20s, memory: 32MB}
 cache:
     orders:
@@ -805,7 +797,8 @@ func TestSiblingNamespaceIsNameableAndUnchecked(t *testing.T) {
 	// shop reaches into billing's books
 	assert.NilError(t, afero.WriteFile(fs, "/namespace/shop/function/notify.yaml", []byte(`
 id: QmbWqxBEKC3P8tqsKc98xmWNzrzDtRLMiMPL8wBuTGsMnR
-runtime: wasm
+package:
+    name: redact_code
 execution: {call: notify, timeout: 5s, memory: 16MB}
 database:
     ledger:
@@ -892,7 +885,7 @@ func TestNamespacePathForms(t *testing.T) {
 		assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
 		assert.NilError(t, afero.WriteFile(fs, "/function/checkout.yaml", []byte(
 			"id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n"+
-				"runtime: wasm\n"+
+				"package:\n    name: redact_code\n"+
 				"execution: {call: c, timeout: 1s, memory: 1MB}\n"+
 				"cache:\n    orders:\n        namespace: "+bad+"\n        ops: [get]\n"), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
@@ -1079,13 +1072,11 @@ func TestWorkloadVariables(t *testing.T) {
 	// a literal is in git and says so
 	assert.Equal(t, vars["LOG_LEVEL"].(map[string]any)["value"], "info")
 
-	// a secret is a REFERENCE: the value never enters the config
-	sec, _ := vars["STRIPE_KEY"].(map[string]any)["secret"].(map[string]any)
-	from, _ := sec["name"].(string)
-	assert.Assert(t, strings.HasPrefix(from, "Qm"),
-		"got %v, want a resolved secret id", vars["STRIPE_KEY"])
-	_, literal := vars["STRIPE_KEY"].(map[string]any)["value"]
-	assert.Assert(t, !literal)
+	// a secret is never a variable: the workload reads it through the vault, under
+	// the grant it declares
+	_, handedOver := vars["STRIPE_KEY"]
+	assert.Assert(t, !handedOver, "a secret was handed over as a variable: %v", vars)
+	assert.DeepEqual(t, nested(api, "secret", "stripe", "ops"), []string{"get"})
 
 	// every workload kind can be configured, not just the container one
 	for _, kind := range []string{"application", "function", "worker", "sandbox"} {
@@ -1108,8 +1099,9 @@ func TestDefaultsThatWereUnreachable(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/package/img.yaml", []byte(standingPackages["/package/img.yaml"]), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/application/a.yaml", []byte(
-		"id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY\nsource:\n    image: img\nexecution:\n    memory: 1MB\nports:\n    p:\n        number: 80\n"), 0o644))
+		"id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY\npackage:\n    name: img\nexecution:\n    memory: 1MB\nports:\n    p:\n        number: 80\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/sync/q.yaml",
 		[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nqueue:\n    consensus: raft\n"), 0o644))
 	// A log beside it, so the queue's defaults are shown to land on the queue only.
@@ -1170,6 +1162,7 @@ func TestWorkflowLowers(t *testing.T) {
 	sort.Strings(produced)
 	assert.DeepEqual(t, produced, []string{
 		"function/checkout_charge", "function/checkout_reserve", "function/checkout_settle",
+		"package/checkout_driver",
 		"sync/checkout_charge", "sync/checkout_failed", "sync/checkout_reserve",
 		"sync/checkout_settle",
 	})
@@ -1247,8 +1240,8 @@ func TestConsumersNeedNoHardcodedShapes(t *testing.T) {
 
 	// resolves to an id — the kind is on the Ref, and the namespace is authored beside
 	// the name, so nothing is packed into the value
-	src := find("function", "source/component")
-	assert.Equal(t, src.Kind, "component")
+	src := find("function", "package/name")
+	assert.Equal(t, src.Kind, "package")
 	assert.Assert(t, !src.ByName)
 
 	// keeps the authored name, and says where its namespace is
@@ -1365,7 +1358,7 @@ func TestAResourceNameIsNotValidated(t *testing.T) {
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
 	assert.NilError(t, afero.WriteFile(fs, "/function/paid-tier.yaml", []byte(
 		"id: QmWQ7XwnqQzhLTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPYuB\n"+
-			"runtime: wasm\n"+
+			"package:\n    name: redact_code\n"+
 			"execution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
@@ -1437,8 +1430,9 @@ func TestChannelIsOneToOneAndStreamFansOut(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/package/img.yaml", []byte(standingPackages["/package/img.yaml"]), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/application/db.yaml",
-			[]byte("id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY\nsource:\n    image: img\nexecution:\n    memory: 1MB\nports:\n    pg:\n        number: 5432\n"), 0o644))
+			[]byte("id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY\npackage:\n    name: img\nexecution:\n    memory: 1MB\nports:\n    pg:\n        number: 5432\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, path, []byte(id+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 		assert.NilError(t, err)
@@ -1569,8 +1563,9 @@ func TestABusIsAStreamThatCannotBecomeALog(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/package/wasm.yaml", []byte(standingPackages["/package/wasm.yaml"]), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/function/f.yaml",
-			[]byte("id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nruntime: wasm\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
+			[]byte("id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\npackage:\n    name: wasm\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, path,
 			[]byte("id: QmYb8sCzT9dGqLxKRp7BwVn2jMhFcXPtUdEaWqRk4vNhJ5\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
@@ -1645,6 +1640,7 @@ func TestEveryEngineIsClosedAndNoKindIsOpen(t *testing.T) {
 			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/secret/k.yaml",
 			[]byte("id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/package/wasm.yaml", []byte(standingPackages["/package/wasm.yaml"]), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, path,
 			[]byte("id: QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
@@ -1686,7 +1682,7 @@ func TestEveryEngineIsClosedAndNoKindIsOpen(t *testing.T) {
 
 	// What stays open: a workload names the host it reaches and the secret it uses.
 	assert.NilError(t, compile("/function/p.yaml",
-		"runtime: wasm\nexecution:\n    call: p\n    timeout: 5s\n    memory: 8MB\negress:\n    - some-vendor-api.example.com\nsecret:\n    k:\n        ops: [get]\n"),
+		"package:\n    name: wasm\nexecution:\n    call: p\n    timeout: 5s\n    memory: 8MB\negress:\n    - some-vendor-api.example.com\nsecret:\n    k:\n        ops: [get]\n"),
 		"a workload reaching an external system needs no kind for it")
 }
 
@@ -1824,8 +1820,9 @@ func TestInstancesTakeALimitAndAreNamedByAKey(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
+		assert.NilError(t, afero.WriteFile(fs, "/package/wasm.yaml", []byte(standingPackages["/package/wasm.yaml"]), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/function/f.yaml",
-			[]byte("id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nruntime: wasm\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
+			[]byte("id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\npackage:\n    name: wasm\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/cache/c.yaml",
 			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))

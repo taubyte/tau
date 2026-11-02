@@ -1,14 +1,8 @@
 id: QmSpknkBq8JUhQMQ6j3Qn1S4S6TLYKSVa6c2YX1pqLHJiR
 description: what the zone above is asked - it answers `geo` with a record, `quiet` with a name that exists and holds nothing of the type asked for, and everything else with no such name
-runtime: wasm
+package:
+    name: warren_code
 implements: dns-resolver
-source: services/warren
-build:
-    commands:
-        image: ghcr.io/samyfodil/wazy-build-rust:1.99.1-cc0.21.1
-        install: cargo fetch --locked
-        run: cargo component build --release --locked --target wasm32-wasip2
-        output: target/wasm32-wasip1/release/warren.wasm
 execution:
     call: resolve
     timeout: 15s

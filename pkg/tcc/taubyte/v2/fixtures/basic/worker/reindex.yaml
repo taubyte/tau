@@ -1,11 +1,7 @@
 id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdN
 description: the wasm tier - a component this platform builds, so it has an entrypoint to call
-runtime: wasm
-build:
-    commands:
-        image: golang:1.23
-        run: make wasm
-        output: reindex.wasm
+package:
+    name: reindex_code
 execution:
     call: reindex
     timeout: 5m

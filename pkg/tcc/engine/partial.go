@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -88,6 +89,18 @@ type RequiredField struct {
 	// resource's root, so test this bool, not its length.
 	WhenBranch   bool
 	WhenBranchAt []string
+
+	// In is where the field's ENTRIES are, when it is a field of each entry of a group
+	// or each element of a list (`build/steps`); its paths are then relative to one
+	// entry. Empty for a field of the resource itself. List says the entries are a
+	// list's elements, addressed by position.
+	In   []string
+	List bool
+
+	// Claimed is every key under In that the holder's own fields declare, which is not
+	// an entry: an agent's `model: {name: …}` is its own field beside the access group
+	// of the same name.
+	Claimed []string
 }
 
 // fieldPaths is every plain authored location of an attribute: each finite
@@ -123,7 +136,9 @@ func fieldPaths(a *Attribute) [][]string {
 
 // RequiredFields returns a resource group's required fields with the condition
 // governing each: a missing field has no value, so a loop over present values
-// can never report it. A field at a dynamic path is skipped.
+// can never report it. A block's fields are the resource's, one key down; a group's
+// or a list's are each entry's (In). A field at a dynamic path is skipped, and so is
+// anything inside an entry's own groups.
 func RequiredFields(root []*Node, group string) []RequiredField {
 	var out []RequiredField
 	for _, g := range root {
@@ -131,42 +146,92 @@ func RequiredFields(root []*Node, group string) []RequiredField {
 		if name != group || len(g.Children) == 0 {
 			continue
 		}
-		attrs := g.Children[0].Attributes
-		for _, a := range attrs {
-			cond, conditional := a.Meta["requiredWhen"].(ConditionSpec)
-			if !a.Required && !conditional {
-				continue
-			}
-			paths := fieldPaths(a)
-			if paths == nil {
-				continue
-			}
-			rf := RequiredField{FieldRef: FieldRef{Path: paths[0]}}
-			if len(paths) > 1 {
-				rf.AnyOf = paths
-			}
-			if conditional {
-				// Resolve the discriminator's NAME to its authored path here,
-				// where the attribute list is in hand — a consumer holding only
-				// paths could not do it without guessing.
-				sib := attrByName(attrs, cond.Field)
-				if sib == nil {
-					continue // names an attribute this group doesn't have
+		iter := g.Children[0]
+		out = append(out, requiredOf(iter.Attributes, nil, nil, false)...)
+		var walk func(holder []*Attribute, children []*Node, at []string)
+		walk = func(holder []*Attribute, children []*Node, at []string) {
+			for _, c := range children {
+				key, _ := c.Match.(string)
+				if key == "" || !c.Nested {
+					continue
 				}
-				rf.WhenIn = cond.In
-
-				if sp := fieldPath(sib); sp != nil {
-					rf.When = &FieldRef{Path: sp}
-				} else if at, ok := branchPrefix(sib); ok {
-					// A CAPTURED BRANCH: the discriminator has no value of its
-					// own, its value is the key under this prefix.
-					rf.WhenBranch, rf.WhenBranchAt = true, at
-				} else {
-					continue // a dynamic path that is not a captured branch
+				here := append(append([]string{}, at...), key)
+				if IsBlock(c) {
+					out = append(out, requiredOf(c.Attributes, here, nil, false)...)
+					walk(c.Attributes, c.Children, here)
+					continue
+				}
+				if !c.Group || len(c.Children) == 0 {
+					continue
+				}
+				claimed := claimedAt(holder, key)
+				for _, rf := range requiredOf(c.Children[0].Attributes, nil, here, c.Sequence) {
+					rf.Claimed = claimed
+					out = append(out, rf)
 				}
 			}
-			out = append(out, rf)
 		}
+		if iter.Nested {
+			walk(iter.Attributes, iter.Children, nil)
+		}
+	}
+	return out
+}
+
+// claimedAt is every key under key that one of the holder's own fields declares.
+func claimedAt(holder []*Attribute, key string) []string {
+	var out []string
+	for _, a := range holder {
+		for _, p := range fieldPaths(a) {
+			if len(p) > 1 && p[0] == key && !slices.Contains(out, p[1]) {
+				out = append(out, p[1])
+			}
+		}
+	}
+	return out
+}
+
+// requiredOf is the required fields of one level: attrs, addressed through prefix
+// (a block's key), and filed under in when they are a group's or a list's entries.
+func requiredOf(attrs []*Attribute, prefix, in []string, list bool) []RequiredField {
+	under := func(p []string) []string { return append(append([]string{}, prefix...), p...) }
+	var out []RequiredField
+	for _, a := range attrs {
+		cond, conditional := a.Meta["requiredWhen"].(ConditionSpec)
+		if !a.Required && !conditional {
+			continue
+		}
+		paths := fieldPaths(a)
+		if paths == nil {
+			continue
+		}
+		rf := RequiredField{FieldRef: FieldRef{Path: under(paths[0])}, In: in, List: list}
+		if len(paths) > 1 {
+			for _, p := range paths {
+				rf.AnyOf = append(rf.AnyOf, under(p))
+			}
+		}
+		if conditional {
+			// Resolve the discriminator's NAME to its authored path here,
+			// where the attribute list is in hand — a consumer holding only
+			// paths could not do it without guessing.
+			sib := attrByName(attrs, cond.Field)
+			if sib == nil {
+				continue // names an attribute this group doesn't have
+			}
+			rf.WhenIn = cond.In
+
+			if sp := fieldPath(sib); sp != nil {
+				rf.When = &FieldRef{Path: under(sp)}
+			} else if at, ok := branchPrefix(sib); ok {
+				// A CAPTURED BRANCH: the discriminator has no value of its
+				// own, its value is the key under this prefix.
+				rf.WhenBranch, rf.WhenBranchAt = true, under(at)
+			} else {
+				continue // a dynamic path that is not a captured branch
+			}
+		}
+		out = append(out, rf)
 	}
 	return out
 }

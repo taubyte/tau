@@ -98,9 +98,10 @@ func TestADeployPublishesOneViewPerRegion(t *testing.T) {
 func TestADeployReachingAcrossRegionsIsRefused(t *testing.T) {
 	r := registry(t)
 	co := &checkout{dir: configDir(t, map[string]string{
-		"project.yaml": viewProject,
-		"cache/a.yaml": cacheDoc(cacheA, "regions:\n    pinned: [region-1]\n"),
-		"function/f.yaml": "id: " + fnID + "\nruntime: wasm\nsource: services/f\nbuild:\n    commands:\n        image: rust:1.83\n        run: cargo build\n        output: x.wasm\n" +
+		"project.yaml":        viewProject,
+		"cache/a.yaml":        cacheDoc(cacheA, "regions:\n    pinned: [region-1]\n"),
+		"package/f_code.yaml": "id: QmP66dBkc5zUMF7W7HuU3HgTmPa1w92gGNG4zY854f4Wkt\ntype: wasm\n",
+		"function/f.yaml": "id: " + fnID + "\npackage:\n    name: f_code\n" +
 			"execution:\n    call: handle\n    timeout: 15s\n    memory: 32MiB\nregions:\n    pinned: [region-2]\ncache:\n    a:\n        ops: [get]\n",
 	})}
 	var log out

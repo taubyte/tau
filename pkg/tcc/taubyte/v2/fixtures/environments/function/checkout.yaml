@@ -1,6 +1,7 @@
 id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Za
 description: one document, four deployments - what production runs is the unsuffixed line
-runtime: wasm
+package:
+    name: checkout_code
 execution:
     call: checkout
     timeout: 30s
@@ -9,11 +10,3 @@ execution:
     memory: 64MB
     memory_preview: 16MB
     memory_staging: 32MB
-build:
-    commands:
-        image: rust:1.83
-        image_preview: rust:1.83-slim
-        run: cargo build --release
-        run_preview: cargo build
-        output: target/release/checkout.wasm
-        output_preview: target/debug/checkout.wasm

@@ -15,12 +15,13 @@ import (
 // cases; this tests the second line of defence, a compiled object not from tcc.
 
 const (
-	guardProject = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
-	cacheOneID   = "QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioE1"
-	guardFuncID  = "QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioE2"
-	plainFuncID  = "QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioE3"
-	nestedCache  = "QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioE4"
-	nestedNSID   = "QmNsp5gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioX"
+	guardProject   = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
+	cacheOneID     = "QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioE1"
+	guardFuncID    = "QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioE2"
+	plainFuncID    = "QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioE3"
+	guardPackageID = "QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioE9"
+	nestedCache    = "QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioE4"
+	nestedNSID     = "QmNsp5gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioX"
 )
 
 // guardedProject is one cache guarded by `authorizer`, plus a second cache one
@@ -36,14 +37,17 @@ func guardedProject(t *testing.T, guard map[string]any) *specs.Project {
 			"function": map[string]any{
 				guardFuncID: map[string]any{
 					"name": "keeper", "implements": "authorizer",
-					"runtime":   "wasm",
+					"package":   map[string]any{"name": guardPackageID},
 					"execution": map[string]any{"call": "authorize", "memory": 8388608},
 				},
 				plainFuncID: map[string]any{
 					"name": "plain", "implements": "handler",
-					"runtime":   "wasm",
+					"package":   map[string]any{"name": guardPackageID},
 					"execution": map[string]any{"call": "handle", "memory": 8388608},
 				},
+			},
+			"package": map[string]any{
+				guardPackageID: map[string]any{"name": "code", "type": "wasm"},
 			},
 			"cache": map[string]any{
 				cacheOneID: map[string]any{

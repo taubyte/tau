@@ -22,9 +22,9 @@ import (
 //go:embed starter
 var starter embed.FS
 
-// source is what the starter's function is built from, written beside the
-// documents as it is: the Rust crate the function's `source` names, and tau's
-// world at wit/, which the crate builds against.
+// source is what the starter's package is built from, written beside the
+// documents as it is: the Rust crate its `source` names, and tau's world at wit/,
+// which the crate builds against.
 //
 //go:embed source
 var source embed.FS

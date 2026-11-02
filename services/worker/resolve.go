@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -41,16 +41,15 @@ var (
 	ErrNoSecrets  = errors.New("worker: the resource wants a secret and nothing here resolves one")
 )
 
-// Artifacts answers what a built resource currently runs. An image source names its
-// artifact; every other source names a source, and what building it produced is the
-// build service's to say. A component reference is asked about under kind
-// `component` with the component's own id. Absent, a built resource is refused with
+// Artifacts answers what a built package currently is. A workload runs its package,
+// so it is always asked about under kind `package` with the package's own id. An image
+// names its artifact and a builtin has none. Absent, a built package is refused with
 // ErrNoArtifact.
 type Artifacts interface {
 	Artifact(ctx context.Context, project, environment, kind, resourceID string) (string, error)
 }
 
-// Secrets resolves a secret a run-time variable refers to. A missing secret is a
+// Secrets resolves a secret a workload reads through its vault. A missing secret is a
 // refusal, not an empty string.
 type Secrets interface {
 	Secret(ctx context.Context, project, environment, secretID string) (string, error)
@@ -63,20 +62,21 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *
 	// would refuse it before Invoke's own branch.
 	workload := specs.ReadWorkloadBlock(r)
 	var runtime, artifact string
+	var pkg ranPackage
 	if !servedHere(t.Kind) {
 		var err error
-		if runtime, err = runtimeOf(t.Kind, workload); err != nil {
+		if pkg, err = packageOf(t, proj, workload); err != nil {
 			return invoke.Spec{}, err
 		}
-		if artifact, err = s.artifactOf(ctx, t, r, resourceID); err != nil {
+		if runtime, err = runtimeOf(t.Kind, pkg.Package); err != nil {
+			return invoke.Spec{}, err
+		}
+		if artifact, err = s.artifactOf(ctx, t, pkg); err != nil {
 			return invoke.Spec{}, err
 		}
 	}
 
-	env, err := s.envOf(ctx, t, workload.Variables)
-	if err != nil {
-		return invoke.Spec{}, err
-	}
+	env := envOf(workload.Variables)
 
 	reaches, err := reachesOf(t, proj, r)
 	if err != nil {
@@ -108,7 +108,7 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *
 		spec.Concurrency = int(*concurrency)
 	}
 	// Beside the artifact, so a tier reads one field to know which it has.
-	spec.Builtin = specs.ReadSourceBlock(r).SourceBuiltin
+	spec.Builtin = pkg.Source.Builtin
 
 	spec.Settings = settingsOf(workload)
 
@@ -124,7 +124,7 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *
 	// Carried where a tier honours it, refused by name where none does; a kind served
 	// here runs on no tier.
 	if runtime != "" {
-		if err := appliedWith(&spec, t, proj, r, resourceID, workload); err != nil {
+		if err := appliedWith(&spec, t, proj, r, pkg, workload); err != nil {
 			return invoke.Spec{}, err
 		}
 	}
@@ -902,93 +902,73 @@ func settingsOf(w specs.WorkloadBlock) map[string]string {
 // artifact have no answer rather than failing.
 func servedHere(kind string) bool { return kind == mcpKind }
 
-// runtimeOf says which tier runs this, asking the vocabulary's Engines() rather than
-// holding a table.
-func runtimeOf(kind string, w specs.WorkloadBlock) (string, error) {
-	// A kind with more than one tier authors the choice: `function` and
-	// `worker` do.
-	if declared := w.Runtime; declared != "" {
-		return declared, nil
-	}
-
-	engines := schema.EnginesOf(kind)
-	switch len(engines) {
-	case 1:
-		return engines[0], nil
-	case 0:
-		return "", fmt.Errorf("%w: %s", ErrNoRuntime, kind)
-	default:
-		return "", fmt.Errorf("%w: %s runs on %s", ErrAmbiguous, kind, strings.Join(engines, " or "))
-	}
+// ranPackage is what a workload runs, read off the package it names.
+type ranPackage struct {
+	specs.Package
+	ID string
 }
 
-// artifactOf reads what to run out of the resource, or asks the build service
-// when the resource names a source rather than an artifact.
-func (s *Service) artifactOf(ctx context.Context, t Target, r specs.Resource, resourceID string) (string, error) {
+// packageOf reads the package a workload names. The reference compiled to the
+// package's id, so it is found by id rather than by a name looked up again.
+func packageOf(t Target, proj *specs.Project, w specs.WorkloadBlock) (ranPackage, error) {
+	id := w.PackageName
+	if id == "" {
+		return ranPackage{}, fmt.Errorf("%w: %s/%s names no package", ErrNoRuntime, t.Kind, t.Name)
+	}
+	kind, scope, name, ok := proj.Locate(id)
+	if !ok || kind != specs.KindPackage {
+		return ranPackage{}, fmt.Errorf("%w: %s/%s names the package %s, which this deployment does not hold", ErrNoRuntime, t.Kind, t.Name, id)
+	}
+	r, _, err := proj.Resource(scope, specs.KindPackage, name)
+	if err != nil {
+		return ranPackage{}, err
+	}
+	return ranPackage{Package: specs.ReadPackage(r), ID: id}, nil
+}
+
+// runtimeOf is the tier that runs the package, which is its type, refused where the
+// vocabulary's Engines() says the kind cannot run it.
+func runtimeOf(kind string, pkg specs.Package) (string, error) {
+	engines := schema.EnginesOf(kind)
+	if len(engines) == 0 {
+		return "", fmt.Errorf("%w: %s", ErrNoRuntime, kind)
+	}
+	if !slices.Contains(engines, pkg.Type) {
+		return "", fmt.Errorf("%w: a %s runs on %s, and the package %s is of type %q", ErrNoRuntime, kind, strings.Join(engines, " or "), pkg.Name, pkg.Type)
+	}
+	return pkg.Type, nil
+}
+
+// artifactOf is what the package is: an image names itself, a builtin ships with the
+// runtime, and anything built is the build service's to say.
+func (s *Service) artifactOf(ctx context.Context, t Target, pkg ranPackage) (string, error) {
 	// `source/kind` is the vocabulary's own discriminator, so which branch was
 	// taken is read rather than guessed from which field happens to be set.
-	source := specs.ReadSourceBlock(r)
-	switch source.SourceKind {
-	case specs.SourceBlockSourceKindImage:
-		return source.SourceImage, nil
-	case specs.SourceBlockSourceKindComponent:
-		// A component is a Ref, so this is the component's resource id, not an artifact. It
-		// is built, so it goes through the artifact seam, asked about the component rather
-		// than the naming workload.
-		component := source.SourceComponent
-		if component == "" {
-			return "", fmt.Errorf("%w: %s/%s names no component", ErrNoArtifact, t.Kind, t.Name)
-		}
-		if s.artifacts == nil {
-			return "", fmt.Errorf("%w: component %s", ErrNoArtifact, component)
-		}
-		return s.artifacts.Artifact(ctx, t.Project, t.Environment, specs.KindComponent, component)
-	case specs.SourceBlockSourceKindBuiltin:
-		// A builtin ships with the runtime and has no artifact.
+	switch pkg.Source.Kind {
+	case specs.PackageSourceKindImage:
+		return pkg.Source.Image, nil
+	case specs.PackageSourceKindBuiltin:
 		return "", nil
 	}
-
 	if s.artifacts == nil {
-		return "", fmt.Errorf("%w: %s/%s", ErrNoArtifact, t.Kind, t.Name)
+		return "", fmt.Errorf("%w: package %s", ErrNoArtifact, pkg.Name)
 	}
-	return s.artifacts.Artifact(ctx, t.Project, t.Environment, t.Kind, resourceID)
+	return s.artifacts.Artifact(ctx, t.Project, t.Environment, specs.KindPackage, pkg.ID)
 }
 
-// envOf is the run-time half of the variables block. `at: build` values are baked into
-// the artifact and not handed over.
-func (s *Service) envOf(ctx context.Context, t Target, variables map[string]specs.VariablesEntry) (map[string]string, error) {
-	if len(variables) == 0 {
-		return nil, nil
-	}
-
-	// In name order, so the same failure is reported on every call.
-	names := make([]string, 0, len(variables))
-	for name := range variables {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-
+// envOf is the variables block delivered as environment. A secret is never one: the
+// workload reads it through its vault.
+func envOf(variables map[string]specs.VariablesEntry) map[string]string {
 	out := map[string]string{}
-	for _, name := range names {
-		v := variables[name]
-		if v.At == specs.VariablesEntryAtBuild || v.As != specs.VariablesEntryAsEnv {
-			continue
+	for name, v := range variables {
+		if v.As == specs.VariablesEntryAsEnv {
+			out[name] = v.Value
 		}
-
-		if id := v.Secret.Name; id != "" {
-			if s.secrets == nil {
-				return nil, fmt.Errorf("%w: %s wants %s", ErrNoSecrets, t.Name, name)
-			}
-			value, err := s.secrets.Secret(ctx, t.Project, t.Environment, id)
-			if err != nil {
-				return nil, fmt.Errorf("worker: %s: resolving %s: %w", t.Name, name, err)
-			}
-			out[name] = value
-			continue
-		}
-		out[name] = v.Value
 	}
-	return out, nil
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // Resolve is the whole read: a target in, a spec out, exported for a gateway placing

@@ -89,7 +89,7 @@ func buildModel(root []*engine.Node, kinds []string, reserved map[string]bool) *
 	for name := range reserved {
 		m.taken[name] = true
 	}
-	for _, name := range []string{"SourceBlock", "ReadSourceBlock", "BuildBlock", "ReadBuildBlock", "WorkloadBlock", "ReadWorkloadBlock", "Readers", "present"} {
+	for _, name := range []string{"SourceBlock", "ReadSourceBlock", "WorkloadBlock", "ReadWorkloadBlock", "Readers", "present"} {
 		m.taken[name] = true
 	}
 

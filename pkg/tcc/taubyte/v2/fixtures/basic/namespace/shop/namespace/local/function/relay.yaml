@@ -1,6 +1,7 @@
 id: QmXjjmDUAsdBnCLnMmnbi9WdPYYbCbAdYSpuvfvBBnvLPP
 description: in shop/local; its own cache with no path, billing's books by absolute path, and the project-wide work queue it is dispatched from - a wasm consumer needs no deliver block, the call is the delivery
-runtime: wasm
+package:
+    name: relay_code
 execution:
     call: relay
     timeout: 5s

@@ -58,12 +58,12 @@ func TestAHandleCarriesTheDeployment(t *testing.T) {
 func TestAMapReadsANestedBlock(t *testing.T) {
 	p := load(t)
 
-	fn, _, err := p.Resource(nil, "function", "reserve_stock")
+	fn, _, err := p.Resource(nil, "package", "reserve_stock_code")
 	require.NoError(t, err)
 
 	build, ok := fn.Map("build")
 	require.True(t, ok)
-	require.Equal(t, "commands", build["kind"])
+	require.Equal(t, "steps", build["kind"])
 
 	_, ok = fn.Map("source")
 	require.False(t, ok, "the fixture writes the bare form, which is a string")

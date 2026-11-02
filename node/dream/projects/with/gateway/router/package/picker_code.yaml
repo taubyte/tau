@@ -1,0 +1,11 @@
+id: QmdB2vm8kXueU9bETNrsXhg84EcueE1Xpcz8iY1nDedeps
+type: wasm
+source: services/picker
+output: target/wasm32-wasip1/release/picker.wasm
+build:
+    steps:
+        - name: build
+          image: ghcr.io/samyfodil/wazy-build-rust:1.99.1-cc0.21.1
+          commands:
+              - cargo fetch --locked
+              - cargo component build --release --locked --target wasm32-wasip2

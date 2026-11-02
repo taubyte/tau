@@ -15,32 +15,21 @@ import type {
 } from "../loader.js";
 import type { AsyncFs } from "../fs.js";
 
-export type ApplicationKind = "image" | "git";
 export type ApplicationReadinessKind = "http" | "function";
 export type ApplicationLivenessKind = "http" | "function";
 export type ApplicationRegionsPolicy = "pinned" | "cdn" | "failover";
-export type ApplicationBuildKind = "dockerfile";
-export type FunctionKind = "component" | "builtin" | "git";
 export type FunctionRegionsPolicy = "pinned" | "cdn" | "failover";
-export type FunctionBuildKind = "commands" | "script";
-export type FunctionRuntime = "wasm" | "js";
 export type FunctionImplements = "handler" | "authorizer" | "http-authorizer" | "dns-resolver" | "instance-validator" | "gateway-transformer" | "proxy-transformer" | "gateway-router" | "proxy-router";
-export type WorkerKind = "component" | "builtin" | "git" | "image";
 export type WorkerRegionsPolicy = "pinned" | "cdn" | "failover";
-export type WorkerBuildKind = "commands" | "script" | "dockerfile";
-export type WorkerRuntime = "wasm" | "js" | "container";
 export type WorkerImplements = "handler" | "authorizer" | "http-authorizer" | "dns-resolver" | "instance-validator" | "gateway-transformer" | "proxy-transformer" | "gateway-router" | "proxy-router";
-export type SandboxKind = "image" | "git";
 export type SandboxRegionsPolicy = "pinned" | "cdn" | "failover";
-export type SandboxBuildKind = "dockerfile";
 export type CronRegionsPolicy = "pinned" | "cdn" | "failover";
 export type CronOn_overlap = "skip" | "queue" | "allow";
-export type ComponentKind = "git";
-export type ComponentRegionsPolicy = "pinned" | "cdn" | "failover";
-export type ComponentBuildKind = "commands" | "script";
-export type WebsiteKind = "git";
+export type PackageKind = "git" | "image" | "builtin";
+export type PackageRegionsPolicy = "pinned" | "cdn" | "failover";
+export type PackageBuildKind = "steps" | "dockerfile";
+export type PackageType = "wasm" | "warp" | "oci" | "static";
 export type WebsiteRegionsPolicy = "pinned" | "cdn" | "failover";
-export type WebsiteBuildKind = "commands" | "script";
 export type WebsiteMode = "static" | "spa";
 export type CacheInstancesAdmission = "validator";
 export type CacheRegionsPolicy = "pinned" | "cdn" | "failover";
@@ -136,11 +125,11 @@ export class Session {
   cronNames(app?: string): Promise<string[]> {
     return this.binding.list(this.handle, app ? ["namespace", app, "cron"] : ["cron"]);
   }
-  component(name: string, app?: string): ComponentConfig {
-    return new ComponentConfig(this, name, app);
+  package(name: string, app?: string): PackageConfig {
+    return new PackageConfig(this, name, app);
   }
-  componentNames(app?: string): Promise<string[]> {
-    return this.binding.list(this.handle, app ? ["namespace", app, "component"] : ["component"]);
+  packageNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "package"] : ["package"]);
   }
   website(name: string, app?: string): WebsiteConfig {
     return new WebsiteConfig(this, name, app);
@@ -402,82 +391,14 @@ export class ApplicationConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
   }
 
-  async source(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source"])) as string | undefined;
-  }
-  setSource(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source"], v);
-  }
-  unsetSource(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source"]);
-  }
-
-  /** Which application this is — the key its settings live under. */
-  async kind(): Promise<ApplicationKind | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["source"]).catch(() => null);
-    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["image", "git"] as readonly string[]) if (k in block) return k as ApplicationKind;
-    return undefined;
-  }
-
-  async image(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "image"])) as string | undefined;
-  }
-  setImage(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "image"], v);
-  }
-  unsetImage(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "image"]);
-  }
-
   async namespace(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "image_pull_secret", "namespace"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["package", "namespace"])) as string | undefined;
   }
   setNamespace(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "image_pull_secret", "namespace"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["package", "namespace"], v);
   }
   unsetNamespace(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "image_pull_secret", "namespace"]);
-  }
-
-  async git(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "git"])) as string | undefined;
-  }
-  setGit(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "git"], v);
-  }
-  unsetGit(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "git"]);
-  }
-
-  async branch(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "branch"])) as string | undefined;
-  }
-  setBranch(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "branch"], v);
-  }
-  unsetBranch(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "branch"]);
-  }
-
-  async path(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "path"])) as string | undefined;
-  }
-  setPath(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "path"], v);
-  }
-  unsetPath(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
-  }
-
-  async config(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "config"])) as string | undefined;
-  }
-  setConfig(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "config"], v);
-  }
-  unsetConfig(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "config"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["package", "namespace"]);
   }
 
   /** Which application this is — the key its settings live under. */
@@ -496,6 +417,16 @@ export class ApplicationConfig extends ResourceConfig {
   }
   unsetPort(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["readiness", "http", "port"]);
+  }
+
+  async path(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["readiness", "http", "path"])) as string | undefined;
+  }
+  setPath(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["readiness", "http", "path"], v);
+  }
+  unsetPath(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["readiness", "http", "path"]);
   }
 
   /** Which application this is — the key its settings live under. */
@@ -604,34 +535,6 @@ export class ApplicationConfig extends ResourceConfig {
   unsetStandby(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
-
-  /** Which application this is — the key its settings live under. */
-  async buildKind(): Promise<ApplicationBuildKind | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["build"]).catch(() => null);
-    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["dockerfile"] as readonly string[]) if (k in block) return k as ApplicationBuildKind;
-    return undefined;
-  }
-
-  async dockerfile(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", "dockerfile", "path"])) as string | undefined;
-  }
-  setDockerfile(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", "dockerfile", "path"], v);
-  }
-  unsetDockerfile(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", "dockerfile", "path"]);
-  }
-
-  async target(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", "dockerfile", "target"])) as string | undefined;
-  }
-  setTarget(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", "dockerfile", "target"], v);
-  }
-  unsetTarget(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", "dockerfile", "target"]);
-  }
 }
 
 /** Typed accessors for a function's config. */
@@ -680,16 +583,6 @@ export class FunctionConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
   }
 
-  async runtime(): Promise<FunctionRuntime | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["runtime"])) as FunctionRuntime | undefined;
-  }
-  setRuntime(v: FunctionRuntime): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["runtime"], v);
-  }
-  unsetRuntime(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["runtime"]);
-  }
-
   async implements(): Promise<FunctionImplements | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["implements"])) as FunctionImplements | undefined;
   }
@@ -700,92 +593,14 @@ export class FunctionConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["implements"]);
   }
 
-  async source(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source"])) as string | undefined;
-  }
-  setSource(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source"], v);
-  }
-  unsetSource(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source"]);
-  }
-
-  /** Which function this is — the key its settings live under. */
-  async kind(): Promise<FunctionKind | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["source"]).catch(() => null);
-    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["component", "builtin", "git"] as readonly string[]) if (k in block) return k as FunctionKind;
-    return undefined;
-  }
-
-  async component(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "component"])) as string | undefined;
-  }
-  setComponent(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "component"], v);
-  }
-  unsetComponent(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "component"]);
-  }
-
   async namespace(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "namespace"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["package", "namespace"])) as string | undefined;
   }
   setNamespace(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "namespace"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["package", "namespace"], v);
   }
   unsetNamespace(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "namespace"]);
-  }
-
-  async builtin(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "builtin"])) as string | undefined;
-  }
-  setBuiltin(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "builtin"], v);
-  }
-  unsetBuiltin(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "builtin"]);
-  }
-
-  async git(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "git"])) as string | undefined;
-  }
-  setGit(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "git"], v);
-  }
-  unsetGit(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "git"]);
-  }
-
-  async branch(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "branch"])) as string | undefined;
-  }
-  setBranch(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "branch"], v);
-  }
-  unsetBranch(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "branch"]);
-  }
-
-  async path(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "path"])) as string | undefined;
-  }
-  setPath(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "path"], v);
-  }
-  unsetPath(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
-  }
-
-  async config(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "config"])) as string | undefined;
-  }
-  setConfig(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "config"], v);
-  }
-  unsetConfig(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "config"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["package", "namespace"]);
   }
 
   async call(): Promise<string | undefined> {
@@ -876,68 +691,6 @@ export class FunctionConfig extends ResourceConfig {
   unsetStandby(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
-
-  /** Which function this is — the key its settings live under. */
-  async buildKind(): Promise<FunctionBuildKind | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["build"]).catch(() => null);
-    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["commands", "script"] as readonly string[]) if (k in block) return k as FunctionBuildKind;
-    return undefined;
-  }
-
-  /** Lives under the function's kind, so the branch is explicit. */
-  async buildImage(buildKind: FunctionBuildKind): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "image"])) as string | undefined;
-  }
-  setBuildImage(buildKind: FunctionBuildKind, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "image"], v);
-  }
-  unsetBuildImage(buildKind: FunctionBuildKind): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "image"]);
-  }
-
-  /** Lives under the function's kind, so the branch is explicit. */
-  async buildOutput(buildKind: FunctionBuildKind): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "output"])) as string | undefined;
-  }
-  setBuildOutput(buildKind: FunctionBuildKind, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "output"], v);
-  }
-  unsetBuildOutput(buildKind: FunctionBuildKind): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "output"]);
-  }
-
-  /** Lives under the function's kind, so the branch is explicit. */
-  async buildInstall(buildKind: FunctionBuildKind): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "install"])) as string | undefined;
-  }
-  setBuildInstall(buildKind: FunctionBuildKind, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "install"], v);
-  }
-  unsetBuildInstall(buildKind: FunctionBuildKind): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "install"]);
-  }
-
-  /** Lives under the function's kind, so the branch is explicit. */
-  async buildRun(buildKind: FunctionBuildKind): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "run"])) as string | undefined;
-  }
-  setBuildRun(buildKind: FunctionBuildKind, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "run"], v);
-  }
-  unsetBuildRun(buildKind: FunctionBuildKind): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "run"]);
-  }
-
-  async buildScript(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", "script", "path"])) as string | undefined;
-  }
-  setBuildScript(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", "script", "path"], v);
-  }
-  unsetBuildScript(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", "script", "path"]);
-  }
 }
 
 /** Typed accessors for a worker's config. */
@@ -986,16 +739,6 @@ export class WorkerConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
   }
 
-  async runtime(): Promise<WorkerRuntime | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["runtime"])) as WorkerRuntime | undefined;
-  }
-  setRuntime(v: WorkerRuntime): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["runtime"], v);
-  }
-  unsetRuntime(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["runtime"]);
-  }
-
   async implements(): Promise<WorkerImplements | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["implements"])) as WorkerImplements | undefined;
   }
@@ -1006,102 +749,14 @@ export class WorkerConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["implements"]);
   }
 
-  async source(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source"])) as string | undefined;
-  }
-  setSource(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source"], v);
-  }
-  unsetSource(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source"]);
-  }
-
-  /** Which worker this is — the key its settings live under. */
-  async kind(): Promise<WorkerKind | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["source"]).catch(() => null);
-    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["component", "builtin", "git", "image"] as readonly string[]) if (k in block) return k as WorkerKind;
-    return undefined;
-  }
-
-  async component(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "component"])) as string | undefined;
-  }
-  setComponent(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "component"], v);
-  }
-  unsetComponent(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "component"]);
-  }
-
   async namespace(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "namespace"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["package", "namespace"])) as string | undefined;
   }
   setNamespace(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "namespace"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["package", "namespace"], v);
   }
   unsetNamespace(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "namespace"]);
-  }
-
-  async builtin(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "builtin"])) as string | undefined;
-  }
-  setBuiltin(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "builtin"], v);
-  }
-  unsetBuiltin(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "builtin"]);
-  }
-
-  async git(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "git"])) as string | undefined;
-  }
-  setGit(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "git"], v);
-  }
-  unsetGit(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "git"]);
-  }
-
-  async branch(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "branch"])) as string | undefined;
-  }
-  setBranch(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "branch"], v);
-  }
-  unsetBranch(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "branch"]);
-  }
-
-  async path(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "path"])) as string | undefined;
-  }
-  setPath(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "path"], v);
-  }
-  unsetPath(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
-  }
-
-  async config(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "config"])) as string | undefined;
-  }
-  setConfig(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "config"], v);
-  }
-  unsetConfig(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "config"]);
-  }
-
-  async image(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "image"])) as string | undefined;
-  }
-  setImage(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "image"], v);
-  }
-  unsetImage(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "image"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["package", "namespace"]);
   }
 
   async call(): Promise<string | undefined> {
@@ -1192,88 +847,6 @@ export class WorkerConfig extends ResourceConfig {
   unsetStandby(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
-
-  /** Which worker this is — the key its settings live under. */
-  async buildKind(): Promise<WorkerBuildKind | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["build"]).catch(() => null);
-    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["commands", "script", "dockerfile"] as readonly string[]) if (k in block) return k as WorkerBuildKind;
-    return undefined;
-  }
-
-  /** Lives under the worker's kind, so the branch is explicit. */
-  async buildImage(buildKind: WorkerBuildKind): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "image"])) as string | undefined;
-  }
-  setBuildImage(buildKind: WorkerBuildKind, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "image"], v);
-  }
-  unsetBuildImage(buildKind: WorkerBuildKind): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "image"]);
-  }
-
-  /** Lives under the worker's kind, so the branch is explicit. */
-  async buildOutput(buildKind: WorkerBuildKind): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "output"])) as string | undefined;
-  }
-  setBuildOutput(buildKind: WorkerBuildKind, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "output"], v);
-  }
-  unsetBuildOutput(buildKind: WorkerBuildKind): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "output"]);
-  }
-
-  /** Lives under the worker's kind, so the branch is explicit. */
-  async buildInstall(buildKind: WorkerBuildKind): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "install"])) as string | undefined;
-  }
-  setBuildInstall(buildKind: WorkerBuildKind, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "install"], v);
-  }
-  unsetBuildInstall(buildKind: WorkerBuildKind): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "install"]);
-  }
-
-  /** Lives under the worker's kind, so the branch is explicit. */
-  async buildRun(buildKind: WorkerBuildKind): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "run"])) as string | undefined;
-  }
-  setBuildRun(buildKind: WorkerBuildKind, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "run"], v);
-  }
-  unsetBuildRun(buildKind: WorkerBuildKind): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "run"]);
-  }
-
-  async buildScript(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", "script", "path"])) as string | undefined;
-  }
-  setBuildScript(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", "script", "path"], v);
-  }
-  unsetBuildScript(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", "script", "path"]);
-  }
-
-  async dockerfile(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", "dockerfile", "path"])) as string | undefined;
-  }
-  setDockerfile(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", "dockerfile", "path"], v);
-  }
-  unsetDockerfile(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", "dockerfile", "path"]);
-  }
-
-  async target(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", "dockerfile", "target"])) as string | undefined;
-  }
-  setTarget(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", "dockerfile", "target"], v);
-  }
-  unsetTarget(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", "dockerfile", "target"]);
-  }
 }
 
 /** Typed accessors for a sandbox's config. */
@@ -1322,82 +895,14 @@ export class SandboxConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
   }
 
-  async source(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source"])) as string | undefined;
-  }
-  setSource(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source"], v);
-  }
-  unsetSource(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source"]);
-  }
-
-  /** Which sandbox this is — the key its settings live under. */
-  async kind(): Promise<SandboxKind | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["source"]).catch(() => null);
-    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["image", "git"] as readonly string[]) if (k in block) return k as SandboxKind;
-    return undefined;
-  }
-
-  async image(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "image"])) as string | undefined;
-  }
-  setImage(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "image"], v);
-  }
-  unsetImage(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "image"]);
-  }
-
   async namespace(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "image_pull_secret", "namespace"])) as string | undefined;
+    return (await this.s.binding.get(this.s.handle, this.res, ["package", "namespace"])) as string | undefined;
   }
   setNamespace(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "image_pull_secret", "namespace"], v);
+    return this.s.binding.set(this.s.handle, this.res, ["package", "namespace"], v);
   }
   unsetNamespace(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "image_pull_secret", "namespace"]);
-  }
-
-  async git(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "git"])) as string | undefined;
-  }
-  setGit(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "git"], v);
-  }
-  unsetGit(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "git"]);
-  }
-
-  async branch(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "branch"])) as string | undefined;
-  }
-  setBranch(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "branch"], v);
-  }
-  unsetBranch(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "branch"]);
-  }
-
-  async path(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "path"])) as string | undefined;
-  }
-  setPath(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "path"], v);
-  }
-  unsetPath(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
-  }
-
-  async config(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "config"])) as string | undefined;
-  }
-  setConfig(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "config"], v);
-  }
-  unsetConfig(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "config"]);
+    return this.s.binding.delete(this.s.handle, this.res, ["package", "namespace"]);
   }
 
   async idle(): Promise<string | undefined> {
@@ -1487,34 +992,6 @@ export class SandboxConfig extends ResourceConfig {
   }
   unsetStandby(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
-  }
-
-  /** Which sandbox this is — the key its settings live under. */
-  async buildKind(): Promise<SandboxBuildKind | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["build"]).catch(() => null);
-    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["dockerfile"] as readonly string[]) if (k in block) return k as SandboxBuildKind;
-    return undefined;
-  }
-
-  async dockerfile(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", "dockerfile", "path"])) as string | undefined;
-  }
-  setDockerfile(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", "dockerfile", "path"], v);
-  }
-  unsetDockerfile(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", "dockerfile", "path"]);
-  }
-
-  async target(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", "dockerfile", "target"])) as string | undefined;
-  }
-  setTarget(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", "dockerfile", "target"], v);
-  }
-  unsetTarget(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", "dockerfile", "target"]);
   }
 }
 
@@ -1644,10 +1121,10 @@ export class CronConfig extends ResourceConfig {
   }
 }
 
-/** Typed accessors for a component's config. */
-export class ComponentConfig extends ResourceConfig {
+/** Typed accessors for a package's config. */
+export class PackageConfig extends ResourceConfig {
   constructor(s: Session, name: string, app?: string) {
-    super(s, app ? ["namespace", app, "component", name] : ["component", name]);
+    super(s, app ? ["namespace", app, "package", name] : ["package", name]);
   }
 
   async id(): Promise<string | undefined> {
@@ -1700,11 +1177,11 @@ export class ComponentConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["source"]);
   }
 
-  /** Which component this is — the key its settings live under. */
-  async kind(): Promise<ComponentKind | undefined> {
+  /** Which package this is — the key its settings live under. */
+  async kind(): Promise<PackageKind | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, ["source"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["git"] as readonly string[]) if (k in block) return k as ComponentKind;
+    for (const k of ["git", "image", "builtin"] as readonly string[]) if (k in block) return k as PackageKind;
     return undefined;
   }
 
@@ -1748,22 +1225,82 @@ export class ComponentConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["source", "config"]);
   }
 
-  /** Which component this is — the key its settings live under. */
-  async regionsPolicy(): Promise<ComponentRegionsPolicy | undefined> {
+  async image(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "image"])) as string | undefined;
+  }
+  setImage(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "image"], v);
+  }
+  unsetImage(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "image"]);
+  }
+
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "image_pull_secret", "namespace"])) as string | undefined;
+  }
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "image_pull_secret", "namespace"], v);
+  }
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "image_pull_secret", "namespace"]);
+  }
+
+  async builtin(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "builtin"])) as string | undefined;
+  }
+  setBuiltin(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "builtin"], v);
+  }
+  unsetBuiltin(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "builtin"]);
+  }
+
+  async type(): Promise<PackageType | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["type"])) as PackageType | undefined;
+  }
+  setType(v: PackageType): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["type"], v);
+  }
+  unsetType(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["type"]);
+  }
+
+  async output(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["output"])) as string | undefined;
+  }
+  setOutput(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["output"], v);
+  }
+  unsetOutput(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["output"]);
+  }
+
+  async watch(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["watch"])) as string[] | undefined;
+  }
+  setWatch(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["watch"], v);
+  }
+  unsetWatch(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["watch"]);
+  }
+
+  /** Which package this is — the key its settings live under. */
+  async regionsPolicy(): Promise<PackageRegionsPolicy | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, ["regions"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["pinned", "cdn", "failover"] as readonly string[]) if (k in block) return k as ComponentRegionsPolicy;
+    for (const k of ["pinned", "cdn", "failover"] as readonly string[]) if (k in block) return k as PackageRegionsPolicy;
     return undefined;
   }
 
-  /** Lives under the component's kind, so the branch is explicit. */
-  async regionsIn(regionsPolicy: ComponentRegionsPolicy): Promise<string[] | undefined> {
+  /** Lives under the package's kind, so the branch is explicit. */
+  async regionsIn(regionsPolicy: PackageRegionsPolicy): Promise<string[] | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["regions", regionsPolicy])) as string[] | undefined;
   }
-  setRegionsIn(regionsPolicy: ComponentRegionsPolicy, v: string[]): Promise<void> {
+  setRegionsIn(regionsPolicy: PackageRegionsPolicy, v: string[]): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["regions", regionsPolicy], v);
   }
-  unsetRegionsIn(regionsPolicy: ComponentRegionsPolicy): Promise<void> {
+  unsetRegionsIn(regionsPolicy: PackageRegionsPolicy): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", regionsPolicy]);
   }
 
@@ -1787,66 +1324,32 @@ export class ComponentConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
 
-  /** Which component this is — the key its settings live under. */
-  async buildKind(): Promise<ComponentBuildKind | undefined> {
+  /** Which package this is — the key its settings live under. */
+  async buildKind(): Promise<PackageBuildKind | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, ["build"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["commands", "script"] as readonly string[]) if (k in block) return k as ComponentBuildKind;
+    for (const k of ["steps", "dockerfile"] as readonly string[]) if (k in block) return k as PackageBuildKind;
     return undefined;
   }
 
-  /** Lives under the component's kind, so the branch is explicit. */
-  async buildImage(buildKind: ComponentBuildKind): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "image"])) as string | undefined;
+  async dockerfile(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", "dockerfile", "path"])) as string | undefined;
   }
-  setBuildImage(buildKind: ComponentBuildKind, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "image"], v);
+  setDockerfile(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", "dockerfile", "path"], v);
   }
-  unsetBuildImage(buildKind: ComponentBuildKind): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "image"]);
-  }
-
-  /** Lives under the component's kind, so the branch is explicit. */
-  async buildOutput(buildKind: ComponentBuildKind): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "output"])) as string | undefined;
-  }
-  setBuildOutput(buildKind: ComponentBuildKind, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "output"], v);
-  }
-  unsetBuildOutput(buildKind: ComponentBuildKind): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "output"]);
+  unsetDockerfile(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", "dockerfile", "path"]);
   }
 
-  /** Lives under the component's kind, so the branch is explicit. */
-  async buildInstall(buildKind: ComponentBuildKind): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "install"])) as string | undefined;
+  async target(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["build", "dockerfile", "target"])) as string | undefined;
   }
-  setBuildInstall(buildKind: ComponentBuildKind, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "install"], v);
+  setTarget(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["build", "dockerfile", "target"], v);
   }
-  unsetBuildInstall(buildKind: ComponentBuildKind): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "install"]);
-  }
-
-  /** Lives under the component's kind, so the branch is explicit. */
-  async buildRun(buildKind: ComponentBuildKind): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "run"])) as string | undefined;
-  }
-  setBuildRun(buildKind: ComponentBuildKind, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "run"], v);
-  }
-  unsetBuildRun(buildKind: ComponentBuildKind): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "run"]);
-  }
-
-  async buildScript(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", "script", "path"])) as string | undefined;
-  }
-  setBuildScript(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", "script", "path"], v);
-  }
-  unsetBuildScript(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", "script", "path"]);
+  unsetTarget(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["build", "dockerfile", "target"]);
   }
 }
 
@@ -1896,62 +1399,14 @@ export class WebsiteConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
   }
 
-  async source(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source"])) as string | undefined;
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["package", "namespace"])) as string | undefined;
   }
-  setSource(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source"], v);
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["package", "namespace"], v);
   }
-  unsetSource(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source"]);
-  }
-
-  /** Which website this is — the key its settings live under. */
-  async kind(): Promise<WebsiteKind | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["source"]).catch(() => null);
-    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["git"] as readonly string[]) if (k in block) return k as WebsiteKind;
-    return undefined;
-  }
-
-  async git(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "git"])) as string | undefined;
-  }
-  setGit(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "git"], v);
-  }
-  unsetGit(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "git"]);
-  }
-
-  async branch(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "branch"])) as string | undefined;
-  }
-  setBranch(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "branch"], v);
-  }
-  unsetBranch(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "branch"]);
-  }
-
-  async path(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "path"])) as string | undefined;
-  }
-  setPath(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "path"], v);
-  }
-  unsetPath(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
-  }
-
-  async config(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "config"])) as string | undefined;
-  }
-  setConfig(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "config"], v);
-  }
-  unsetConfig(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["source", "config"]);
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["package", "namespace"]);
   }
 
   async index(): Promise<string | undefined> {
@@ -2021,68 +1476,6 @@ export class WebsiteConfig extends ResourceConfig {
   }
   unsetStandby(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
-  }
-
-  /** Which website this is — the key its settings live under. */
-  async buildKind(): Promise<WebsiteBuildKind | undefined> {
-    const at = await this.s.binding.get(this.s.handle, this.res, ["build"]).catch(() => null);
-    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["commands", "script"] as readonly string[]) if (k in block) return k as WebsiteBuildKind;
-    return undefined;
-  }
-
-  /** Lives under the website's kind, so the branch is explicit. */
-  async buildImage(buildKind: WebsiteBuildKind): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "image"])) as string | undefined;
-  }
-  setBuildImage(buildKind: WebsiteBuildKind, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "image"], v);
-  }
-  unsetBuildImage(buildKind: WebsiteBuildKind): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "image"]);
-  }
-
-  /** Lives under the website's kind, so the branch is explicit. */
-  async buildOutput(buildKind: WebsiteBuildKind): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "output"])) as string | undefined;
-  }
-  setBuildOutput(buildKind: WebsiteBuildKind, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "output"], v);
-  }
-  unsetBuildOutput(buildKind: WebsiteBuildKind): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "output"]);
-  }
-
-  /** Lives under the website's kind, so the branch is explicit. */
-  async buildInstall(buildKind: WebsiteBuildKind): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "install"])) as string | undefined;
-  }
-  setBuildInstall(buildKind: WebsiteBuildKind, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "install"], v);
-  }
-  unsetBuildInstall(buildKind: WebsiteBuildKind): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "install"]);
-  }
-
-  /** Lives under the website's kind, so the branch is explicit. */
-  async buildRun(buildKind: WebsiteBuildKind): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", buildKind, "run"])) as string | undefined;
-  }
-  setBuildRun(buildKind: WebsiteBuildKind, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", buildKind, "run"], v);
-  }
-  unsetBuildRun(buildKind: WebsiteBuildKind): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", buildKind, "run"]);
-  }
-
-  async buildScript(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["build", "script", "path"])) as string | undefined;
-  }
-  setBuildScript(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["build", "script", "path"], v);
-  }
-  unsetBuildScript(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["build", "script", "path"]);
   }
 }
 
@@ -5160,16 +4553,10 @@ export interface Application {
   "regions/in"?: string[];
   "regions/main"?: string;
   "regions/standby"?: string;
-  source?: string;
-  kind?: string;
-  image?: string;
   namespace?: string;
-  git?: string;
-  branch?: string;
-  path?: string;
-  config?: string;
   readinesskind?: string;
   port?: string;
+  path?: string;
   livenesskind?: string;
   failures?: number;
   memory?: number;
@@ -5177,9 +4564,6 @@ export interface Application {
   egress?: string[];
   max_instances?: number;
   concurrency?: number;
-  buildkind?: string;
-  dockerfile?: string;
-  target?: string;
 }
 
 /** Function as decoded from the compiled config object. */
@@ -5192,28 +4576,13 @@ export interface Function {
   "regions/in"?: string[];
   "regions/main"?: string;
   "regions/standby"?: string;
-  runtime?: FunctionRuntime;
   implements?: FunctionImplements;
-  source?: string;
-  kind?: string;
-  component?: string;
   namespace?: string;
-  builtin?: string;
-  git?: string;
-  branch?: string;
-  path?: string;
-  config?: string;
   call?: string;
   timeout?: number;
   memory?: number;
   cpu?: number;
   egress?: string[];
-  buildkind?: string;
-  buildimage?: string;
-  buildoutput?: string;
-  buildinstall?: string;
-  buildrun?: string;
-  buildscript?: string;
 }
 
 /** Worker as decoded from the compiled config object. */
@@ -5226,31 +4595,13 @@ export interface Worker {
   "regions/in"?: string[];
   "regions/main"?: string;
   "regions/standby"?: string;
-  runtime?: WorkerRuntime;
   implements?: WorkerImplements;
-  source?: string;
-  kind?: string;
-  component?: string;
   namespace?: string;
-  builtin?: string;
-  git?: string;
-  branch?: string;
-  path?: string;
-  config?: string;
-  image?: string;
   call?: string;
   timeout?: number;
   memory?: number;
   cpu?: number;
   egress?: string[];
-  buildkind?: string;
-  buildimage?: string;
-  buildoutput?: string;
-  buildinstall?: string;
-  buildrun?: string;
-  buildscript?: string;
-  dockerfile?: string;
-  target?: string;
 }
 
 /** Sandbox as decoded from the compiled config object. */
@@ -5263,22 +4614,12 @@ export interface Sandbox {
   "regions/in"?: string[];
   "regions/main"?: string;
   "regions/standby"?: string;
-  source?: string;
-  kind?: string;
-  image?: string;
   namespace?: string;
-  git?: string;
-  branch?: string;
-  path?: string;
-  config?: string;
   idle?: number;
   max?: number;
   egress?: string[];
   memory?: number;
   cpu?: number;
-  buildkind?: string;
-  dockerfile?: string;
-  target?: string;
 }
 
 /** Cron as decoded from the compiled config object. */
@@ -5297,8 +4638,8 @@ export interface Cron {
   jitter?: number;
 }
 
-/** Component as decoded from the compiled config object. */
-export interface Component {
+/** Package as decoded from the compiled config object. */
+export interface Package {
   id?: string;
   name?: string;
   description?: string;
@@ -5313,12 +4654,12 @@ export interface Component {
   branch?: string;
   path?: string;
   config?: string;
-  buildkind?: string;
-  buildimage?: string;
-  buildoutput?: string;
-  buildinstall?: string;
-  buildrun?: string;
-  buildscript?: string;
+  image?: string;
+  namespace?: string;
+  builtin?: string;
+  type?: PackageType;
+  output?: string;
+  watch?: string[];
 }
 
 /** Website as decoded from the compiled config object. */
@@ -5331,21 +4672,10 @@ export interface Website {
   "regions/in"?: string[];
   "regions/main"?: string;
   "regions/standby"?: string;
-  source?: string;
-  kind?: string;
-  git?: string;
-  branch?: string;
-  path?: string;
-  config?: string;
+  namespace?: string;
   index?: string;
   mode?: WebsiteMode;
   not_found?: string;
-  buildkind?: string;
-  buildimage?: string;
-  buildoutput?: string;
-  buildinstall?: string;
-  buildrun?: string;
-  buildscript?: string;
 }
 
 /** Cache as decoded from the compiled config object. */

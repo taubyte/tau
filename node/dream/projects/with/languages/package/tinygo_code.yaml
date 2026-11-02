@@ -1,0 +1,11 @@
+id: QmTcPv9ENKVp1Crw1vyvp2bK3cu77UifZ6htzXueFb99v4
+type: wasm
+source: services/tinygo
+output: function.wasm
+build:
+    steps:
+        - name: build
+          image: ghcr.io/samyfodil/wazy-build-tinygo:0.43.0-go1.26.10
+          commands:
+              - go mod download
+              - sh build.sh

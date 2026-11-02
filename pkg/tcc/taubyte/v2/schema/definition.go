@@ -12,7 +12,6 @@ package schema
 import (
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"sync"
 
@@ -134,25 +133,18 @@ var hostWorlds = []string{"handler", "authorizer", "http-authorizer", "dns-resol
 // the tiers ask the compiler's question rather than keep copies.
 func HostWorlds() []string { return append([]string(nil), hostWorlds...) }
 
-// runnableAttributes is the shape of a kind that runs code; engines is the kind's
-// own Engines(). `runtime` is required with no default because RequiredWhen
-// reads the discriminator from the document, so a default would silently stop
-// demanding the entrypoint. The entrypoint follows the tier: wasm requires one, js
-// defaults to the module's default export, a container has none. The source
-// branches are the kind's, so a function gets no `image` branch.
-func runnableAttributes(engines, sources []string) []*Attribute {
+// runnableAttributes is the shape of a kind that runs code. The tier is the
+// package's type, so it is not written here; neither is the entrypoint's
+// requirement, which only a wasm package has (checkEntrypoints).
+func runnableAttributes() []*Attribute {
 	base := []*Attribute{
-		String("runtime", InSet(engines...), Required(), InSection("code"),
-			Doc("Runtime", "Which tier runs this, one of: "+strings.Join(engines, ", ")+".")),
 		String("implements", InSet(hostWorlds...), Default("handler"), InSection("code"),
 			Doc("Implements", "Which host interface this was built against. handler: takes a request. authorizer: takes a caller and an operation, answers with ops. gateway-transformer: takes a parsed HTTP request. proxy-transformer: takes bytes on a stream. gateway-router: takes a parsed HTTP request, decides which route or function should handle it. proxy-router: takes bytes on a stream, decides which target should receive the connection.")),
 	}
-	// A workload's code: this repository by default, a project component, a
-	// platform-shipped program, or another repository.
-	base = append(base, contentSource("code", sources...)...)
+	base = append(base, packageRef()...)
 	base = append(base,
-		String(Key("execution", "call"), RequiredWhen("runtime", wasmEngine), Default("default"), DefaultWhen("runtime", jsEngine), InSection("code"),
-			Doc("Entrypoint", "The export the host calls: a symbol of the WASM component, or an export of the JS module. Required for wasm; js defaults to the module's default export.")),
+		String(Key("execution", "call"), InSection("code"),
+			Doc("Entrypoint", "The export the host calls: a symbol of a wasm package's component, or an export of a warp package's module. Required for wasm; a warp package defaults to its default export.")),
 		// A ceiling is what an environment differs in; identity never carries an
 		// environment mark.
 		Duration(Key("execution", "timeout"), Required(), PerEnv(), InSection("limits"), Doc("Timeout", "Maximum execution time, as a human string (e.g. \"30s\").")),
@@ -174,8 +166,6 @@ var secSource = Section("source", "Source", "Where the code is sourced from.")
 // applicationAttributes is the container kind's shape; readiness and liveness are
 // the same five fields twice.
 func applicationAttributes() []*Attribute {
-	// What it runs is `source: {image: …}` or a build stanza, so an application built
-	// from its own repository is authorable; exactly one of the two is checkBuild's.
 	out := probeAttributes("readiness", "network", "Whether this instance should be given work.")
 	out = append(out, probeAttributes("liveness", "network", "Whether this instance is still working, or should be replaced.")...)
 	return append(out,
@@ -395,32 +385,26 @@ func regionAttributes() []*Attribute {
 
 var secPlacement = Section("placement", "Placement", "Where this may run, within what its scopes allow.")
 
-// The engines are the tiers this platform can run:
+// A tier is named by the package type it runs, so the artifact and what runs it are
+// one word (package.go):
 //
-//	wasm       a component-model component; WIT is the author contract
-//	js         an ES module run by a JS engine embedded in the worker
-//	container  an OCI image, so a workload built elsewhere arrives unchanged
-//	static     a directory of files, served rather than executed
+//	wasm    a component-model component; WIT is the author contract
+//	warp    a JS bundle, run by the JS engine embedded in the worker
+//	oci     an OCI image, so a workload built elsewhere arrives unchanged
+//	static  a directory of files, served rather than executed
 //
-// Another engine is a constant here, an entry in BuildWaysOf if built
-// differently, and the word in each kind's Engines(); consumers ask EnginesOf.
-const (
-	wasmEngine      = "wasm"
-	jsEngine        = "js"
-	containerEngine = "container"
-	staticEngine    = "static"
-)
+// Another tier is a package type and the word in each kind's Engines(); consumers
+// ask EnginesOf.
 
-// The kinds that choose a tier: `runtime`'s InSet and the kind's Engines() are
-// one fact, so one slice.
+// The kinds that run on more than one tier. Which one is the package's type.
 var (
-	functionEngines = []string{wasmEngine, jsEngine}
-	workerEngines   = []string{wasmEngine, jsEngine, containerEngine}
+	functionEngines = []string{wasmPackage, warpPackage}
+	workerEngines   = []string{wasmPackage, warpPackage, ociPackage}
 )
 
 // Engines declares which tiers may run a kind, so no consumer keeps its own
-// table. attachBuild derives the build ways from it. Not an attribute except
-// where there is a choice: `function` and `worker` carry `runtime`.
+// table. Never an attribute: the tier is the type of the package the workload
+// names, and checkPackages refuses one the kind cannot run.
 func Engines(names ...string) NodeOption { return GroupAnnotate("engines", names) }
 
 // EnginesOfIter reads a kind's declared tiers off its iterator.
@@ -438,165 +422,6 @@ func EnginesOf(kind string) []string {
 		return EnginesOfIter(g.Children[0])
 	}
 	return nil
-}
-
-// BuiltKinds is every kind carrying the build block, which is every kind
-// declaring an engine, in declaration order.
-func BuiltKinds() []string {
-	var out []string
-	for _, g := range V2Resources {
-		if len(g.Children) == 0 || len(EnginesOfIter(g.Children[0])) == 0 {
-			continue
-		}
-		if key, _ := g.Match.(string); key != "" {
-			out = append(out, key)
-		}
-	}
-	return out
-}
-
-// The ways an artifact is produced, branches of a switch since one way's fields
-// mean nothing under another.
-const (
-	commandsWay   = "commands"
-	scriptWay     = "script"
-	dockerfileWay = "dockerfile"
-)
-
-// BuildWaysOf is how an artifact for one engine can be produced: wasm and static
-// run a toolchain image and take its output, an OCI image builds a Dockerfile. A
-// shared set would let `dockerfile:` compile under a website and be read by
-// nothing.
-func BuildWaysOf(engine string) []string {
-	if engine == containerEngine {
-		return []string{dockerfileWay}
-	}
-	return []string{commandsWay, scriptWay}
-}
-
-// buildAttributes is how the content at `source:` becomes what runs, stated in
-// the config instead of the repository's `.taubyte/build.sh`, so an imported
-// repository is never written to. pkg/builder's mechanism is unchanged.
-//
-//	build:                          build:                    build:
-//	    commands:                       script:                   dockerfile:
-//	        image: node:22                  image: golang:1.23        path: Dockerfile
-//	        install: npm ci                 path: .taubyte/build.sh   target: prod
-//	        run: npm run build              output: main.wasm
-//	        output: dist
-//
-// No engine here: what is produced is the kind's (Engines, `runtime`). No
-// `build:` means the repository decides; a branchless `build:` is an error; no
-// `output` is the builder's output directory and `.` the source root; no `target`
-// is the Dockerfile's last stage. install and run are separate so the build cache
-// keys on install. No framework preset until a builder knows a framework's whole
-// output; it would be one more branch.
-func buildAttributes(ways ...string) []*Attribute {
-	// The runner ways share image, output and the rest, declared once on a subset
-	// Either(); this keeps them off `dockerfile`, whose image is the output.
-	var runners []string
-	for _, w := range ways {
-		if w == commandsWay || w == scriptWay {
-			runners = append(runners, w)
-		}
-	}
-	has := func(way string) bool { return slices.Contains(ways, way) }
-	inRunner := func(leaf string) AttrOption {
-		return Path([]StringMatch{"build", Either(runners...), leaf}...)
-	}
-
-	out := []*Attribute{
-		// The branch set is the caller's, so a website gets
-		// `unknown key 'dockerfile'; valid keys here: commands, script`.
-		// Field("BuildKind") because `Kind` is taken by `source/kind`.
-		String(Key("build", "kind"), Path("build", Either(ways...)), Captures(), Field("BuildKind"), InSection("build"),
-			Doc("Build", "How the thing that runs is made. Omit the whole block and this repository decides, as it always has.")),
-	}
-
-	if len(runners) > 0 {
-		out = append(out,
-			// Required on both running branches: otherwise the build changes when the
-			// platform's default toolchain does. A version pin is a tag.
-			//
-			// Accessor because `worker` also declares `source/image`, and a generated client
-			// names a field by its last segment. accessor_test does not cover paths with an
-			// Either(), so this override is the only guard.
-			String(Key("build", "image"), inRunner("image"), Accessor("BuildImage"),
-				RequiredWhen(Key("build", "kind"), runners...), PerEnv(), InSection("build"),
-				Doc("Toolchain", "OCI image the build runs in, e.g. \"node:22\" or \"golang:1.23\". The source is mounted into it and the product is taken from the output directory.")),
-
-			// IsRepoLocation because three states differ: omitted is the builder's output
-			// directory, outside the source tree; `.` is the source root, published in place;
-			// a path is under it.
-			String(Key("build", "output"), inRunner("output"), IsRepoLocation(), PerEnv(), InSection("build"),
-				Doc("Output", "Where the build left its product, relative to the source — \"dist\", \"build\", \"main.wasm\". \".\" is the source root, for a build that publishes in place. Omitted means the build wrote to the output directory the builder gave it.")),
-		)
-	}
-
-	if has(commandsWay) {
-		out = append(out,
-			// A one-branch Either() so a `framework` branch is a list entry later.
-			String(Key("build", "install"), Path("build", Either(commandsWay), "install"), PerEnv(), InSection("build"),
-				Doc("Install", "The dependency step, e.g. \"pnpm install --frozen-lockfile\". A separate field from the build because it is what a build cache is keyed on; omitted means there is nothing to fetch.")),
-			String(Key("build", "run"), Path("build", Either(commandsWay), "run"),
-				RequiredWhen(Key("build", "kind"), commandsWay), PerEnv(), InSection("build"),
-				Doc("Command", "The build step, e.g. \"pnpm build\".")),
-		)
-	}
-
-	if has(scriptWay) {
-		// The script branch is `.taubyte/build.sh`, declared: a script runs because the
-		// config named it. Discovery of an undeclared script is what an absent block
-		// still means.
-		out = append(out, String(Key("build", "script"), Path("build", scriptWay, "path"), IsRepoPath(),
-			Accessor("BuildScript"), RequiredWhen(Key("build", "kind"), scriptWay), InSection("build"),
-			Doc("Script", "A script in this repository that builds it, e.g. \".taubyte/build.sh\". The escape hatch: everything the other ways cannot say. It runs with its network confined, like any other repository content.")))
-	}
-
-	if has(dockerfileWay) {
-		// pkg/builder builds a repository's Dockerfile today but runs the build in it;
-		// taking the produced image as the artifact is integration still to do. The
-		// branch exists so a container workload need not be someone else's image.
-		out = append(out,
-			// Accessor because `build/dockerfile/path` and `build/script/path` share a last
-			// segment on `worker`; accessor_test reports it if either override goes.
-			String(Key("build", "dockerfile"), Path("build", dockerfileWay, "path"), IsRepoPath(),
-				Accessor("Dockerfile"), RequiredWhen(Key("build", "kind"), dockerfileWay), InSection("build"),
-				Doc("Dockerfile", "Path to the Dockerfile, relative to the source.")),
-			String(Key("build", "target"), Path("build", dockerfileWay, "target"), IsVariableName(),
-				ShowWhen(Key("build", "kind"), dockerfileWay), InSection("build"),
-				Doc("Stage", "Which stage of a multi-stage Dockerfile is the artifact. Omitted means the last one.")),
-		)
-	}
-	return out
-}
-
-var secBuild = Section("build", "Build", "How the source becomes the thing that runs.")
-
-// attachBuild hangs the build block off every kind declaring an engine, the
-// branch set unioned over its engines. Which way goes with which tier is
-// checkBuild's. It runs before attachLowerable, like attachPlacement.
-func attachBuild() {
-	for _, g := range V2Resources {
-		if len(g.Children) == 0 {
-			continue
-		}
-		iter := g.Children[0]
-		engines := EnginesOfIter(iter)
-		if len(engines) == 0 {
-			continue
-		}
-		var ways []string
-		for _, e := range engines {
-			for _, w := range BuildWaysOf(e) {
-				if !slices.Contains(ways, w) {
-					ways = append(ways, w)
-				}
-			}
-		}
-		iter.Attributes = append(iter.Attributes, buildAttributes(ways...)...)
-		secBuild(iter)
-	}
 }
 
 // handlerKinds are what may serve a route, closed so an unknown key is a compile
@@ -631,7 +456,7 @@ func Connected(kind string) bool {
 		return false
 	}
 	for _, e := range engines {
-		if e != containerEngine {
+		if e != ociPackage {
 			return false
 		}
 	}
@@ -1077,9 +902,9 @@ var V2Resources = []*Node{
 	// platform places. No ops: HTTP arrives only through a gateway route.
 	DefineGroup("application",
 		resource(
-			commonAttributes(append(contentSource("code", "image", "git"), applicationAttributes()...)...),
-			Nested(portsGroup(), variablesGroup(runLifetime, buildLifetime, bothLifetimes)),
-			GroupDoc("A long-running container that listens on HTTP. Mount a volume for anything it must keep."), Icon("box"), Category("compute"), Footprint(), Engines(containerEngine),
+			commonAttributes(append(packageRef(), applicationAttributes()...)...),
+			Nested(portsGroup(), variablesGroup()),
+			GroupDoc("A long-running container that listens on HTTP. Mount a volume for anything it must keep."), Icon("box"), Category("compute"), Footprint(), Engines(ociPackage),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Resource("application", "Application", "Application", "application"),
 		)),
@@ -1088,8 +913,8 @@ var V2Resources = []*Node{
 	// world, not a kind.
 	DefineGroup("function",
 		resource(
-			runnableAttributes(functionEngines, []string{"component", "builtin", "git"}),
-			Nested(variablesGroup(runLifetime, buildLifetime, bothLifetimes)),
+			runnableAttributes(),
+			Nested(variablesGroup()),
 			GroupDoc("A serverless function. It declares no trigger: what may reach it is an inbound edge."), Icon("bolt"), Category("compute"), Footprint(), Engines(functionEngines...),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Ops(WriteOp("invoke")), // invoke is write: a call may do anything the callee can
@@ -1099,8 +924,8 @@ var V2Resources = []*Node{
 	// On demand, long-running once triggered, not listening on HTTP.
 	DefineGroup("worker",
 		resource(
-			runnableAttributes(workerEngines, []string{"component", "builtin", "git", "image"}),
-			Nested(variablesGroup(runLifetime, buildLifetime, bothLifetimes)),
+			runnableAttributes(),
+			Nested(variablesGroup()),
 			GroupDoc("An on-demand workload that runs to completion. Not HTTP-listening."), Icon("gear"), Category("compute"), Footprint(), Completes(), Engines(workerEngines...),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Ops(WriteOp("invoke")),
@@ -1111,15 +936,15 @@ var V2Resources = []*Node{
 	// max_lifetime differ: an idle session and a runaway one are different failures.
 	DefineGroup("sandbox",
 		resource(
-			commonAttributes(append(contentSource("code", "image", "git"),
+			commonAttributes(append(packageRef(),
 				Duration(Key("lifetime", "idle"), PerEnv(), InSection("limits"), Doc("Idle Timeout", "Stop the sandbox after this long with no activity.")),
 				Duration(Key("lifetime", "max"), PerEnv(), InSection("limits"), Doc("Max Lifetime", "Hard ceiling on how long a sandbox may live.")),
 				egressAttribute(),
 				Bytes(Key("execution", "memory"), Required(), PerEnv(), InSection("limits"), Doc("Memory", "Maximum memory the sandbox may use.")),
 				cpuLimit(),
 			)...),
-			Nested(variablesGroup(runLifetime, buildLifetime, bothLifetimes)),
-			GroupDoc("An interactive container with exec and filesystem access, for agent and build sessions."), Icon("terminal"), Category("compute"), Footprint(), Engines(containerEngine),
+			Nested(variablesGroup()),
+			GroupDoc("An interactive container with exec and filesystem access, for agent and build sessions."), Icon("terminal"), Category("compute"), Footprint(), Engines(ociPackage),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Ops(WriteOp("exec"), ReadOp("read"), WriteOp("write")),
 			Resource("sandbox", "Sandbox", "Sandbox", "sandbox"),
@@ -1153,14 +978,13 @@ var V2Resources = []*Node{
 			Resource("cron", "Cron", "Cron", "cron"),
 		)),
 
-	DefineGroup("component",
+	DefineGroup("package",
 		resource(
-			commonAttributes(contentSource("source", "git")...),
-			// A component has no process, so its only variable lifetime is `build`.
-			Nested(variablesGroup(buildLifetime)),
-			GroupDoc("A WASM component built from source, referenced as a workload's code. Component Model: it declares its imports and exports in WIT."), Icon("book"), Category("code"), Engines(wasmEngine),
-			secIdentity, secAccess, secConfig, secSource,
-			Resource("component", "Component", "Component", "component"),
+			commonAttributes(packageAttributes()...),
+			Nested(variablesGroup(), buildBlock()),
+			GroupDoc("What a workload runs: one artifact, where its code comes from and how it is built. Nothing else builds."), Icon("book"), Category("code"),
+			secIdentity, secAccess, secConfig, secSource, secBuild,
+			Resource("package", "Package", "Package", "package"),
 		)),
 
 	// A built static site, served because a domain edges to it. `mode` exists because
@@ -1168,17 +992,16 @@ var V2Resources = []*Node{
 	// client-side router, the 404 page with 404 otherwise.
 	DefineGroup("website",
 		resource(
-			commonAttributes(append(contentSource("source", "git"),
-				String(Key("serve", "index"), Default("index.html"), Delegable(), InSection("serving"),
+			commonAttributes(append(packageRef(),
+				String(Key("serve", "index"), Default("index.html"), InSection("serving"),
 					Doc("Index Document", "What a request for a directory returns, e.g. \"/docs/\" -> /docs/index.html.")),
-				String(Key("serve", "mode"), InSet("static", "spa"), Default("static"), Delegable(), InSection("serving"),
+				String(Key("serve", "mode"), InSet("static", "spa"), Default("static"), InSection("serving"),
 					Doc("Mode", "static: an unmatched path returns the not-found document with 404. spa: it returns the index document with 200, because the page's own router renders the route.")),
-				String(Key("serve", "not_found"), Delegable(), InSection("serving"), ShowWhen(Key("serve", "mode"), "static"),
+				String(Key("serve", "not_found"), InSection("serving"), ShowWhen(Key("serve", "mode"), "static"),
 					Doc("Not Found Document", "Returned with 404 for a path the site does not have. Omitted means a bare 404.")),
 			)...),
-			Nested(variablesGroup(buildLifetime)),
-			GroupDoc("A static website built from a git repository. What serves it is an inbound domain edge."), Icon("globe"), Category("compute"), Engines(staticEngine),
-			secIdentity, secAccess, secConfig, secSource,
+			GroupDoc("A static website: a package of type static, served. What serves it is an inbound domain edge."), Icon("globe"), Category("compute"), Engines(staticPackage),
+			secIdentity, secAccess, secCode,
 			Section("serving", "Serving", "What the site returns for a path it does not have."),
 			Resource("website", "Website", "Website", "website"),
 		)),
@@ -1678,25 +1501,30 @@ var V2Resources = []*Node{
 				// `component` or `builtin`.
 			}, contentSource("source", "git")...)...),
 			// Nothing builds an agent, so its variables have only the run lifetime.
-			Nested(variablesGroup(runLifetime)),
+			Nested(variablesGroup()),
 			GroupDoc("An LLM loop with tools. What it may call is what it declares access to — there is no second list."), Icon("agent"), Category("compute"), Footprint(),
 			secIdentity, secAccess, secConfig, secNetwork, secLimits, secSource,
 			Section("model", "Model", "Which model answers, and what it is told."),
 			Section("memory", "Memory", "What it remembers, and how wide the vectors are."),
 			Ops(WriteOp("invoke")),
 
-			// An agent lowers: the loop is a function with the platform's `builtin: agent`
-			// source, and memory a vector index. An agent whose loop is the author's code is
+			// An agent lowers: the loop is a function running the platform's `agent`
+			// package, and memory a vector index. An agent whose loop is the author's code is
 			// a `function`.
 			Lowers(
+				Into("package",
+					Named(Concat(Attr("name"), Text("_loop"))),
+					Carries(Text("the platform's agent loop")),
+					Sets("type", Text(wasmPackage)),
+					Sets(Key("source", "builtin"), Text("agent")),
+				),
 				Into("function",
 					// The loop is what CALLS the tools this agent declares, so opened,
 					// the box reads model-and-memory-and-tools around it.
 					Acts(),
 					Named(Concat(Attr("name"), Text("_infer"))),
 					Carries(Text("the loop: call the model, run a tool, decide again")),
-					Sets("runtime", Text(wasmEngine)),
-					Sets(Key("source", "builtin"), Text("agent")),
+					Sets(Key("package", "name"), Concat(Attr("name"), Text("_loop"))),
 					Sets(Key("execution", "call"), Text("infer")),
 					Sets(Key("execution", "timeout"), Attr(Key("limits", "timeout"))),
 					Sets(Key("execution", "memory"), Attr(Key("limits", "memory"))),
@@ -1783,6 +1611,14 @@ var V2Resources = []*Node{
 					Reaches("receive", From("function", Concat(Attr("name"), Text("_"), Each("name")))),
 				),
 
+				// The drivers' code is the platform's, one package for every step.
+				Into("package",
+					Named(Concat(Attr("name"), Text("_driver"))),
+					Carries(Text("the platform's step driver")),
+					Sets("type", Text(wasmPackage)),
+					Sets(Key("source", "builtin"), Text("step")),
+				),
+
 				// One driver per step, platform code: receive one item, invoke the step's
 				// function, send the result on; a failure redelivers and exhaustion dead-letters.
 				// A function, since a queue delivery is an inbound edge, and it shares the step's
@@ -1791,8 +1627,7 @@ var V2Resources = []*Node{
 					PerEach("steps"),
 					Named(Concat(Attr("name"), Text("_"), Each("name"))),
 					Carries(Concat(Text("step "), Each("name"), Text(": receive, run, hand on"))),
-					Sets("runtime", Text(wasmEngine)),
-					Sets(Key("source", "builtin"), Text("step")),
+					Sets(Key("package", "name"), Concat(Attr("name"), Text("_driver"))),
 					Sets(Key("execution", "call"), Text("step")),
 					// Bounds one delivery, not the run; the invoke's own limit is the callee's.
 					Sets(Key("execution", "timeout"), Text("1h")),
@@ -1903,7 +1738,6 @@ var scopeShape = namespacesGroup(MaxNamespaceDepth)
 
 var _ = func() any {
 	attachPlacement()
-	attachBuild()
 	attachAccess()
 	attachIndexes()
 	attachLowerable()
@@ -2082,23 +1916,14 @@ var secTransformers = Section("transformers", "Transformers", "Functions traffic
 // reaches a build as a reference instead of being pasted into a script. The legal
 // set is the caller's, first element the default, so `at: run` on a website is a
 // compile error.
-const (
-	runLifetime   = "run"
-	buildLifetime = "build"
-	bothLifetimes = "both"
-)
-
-func variablesGroup(lifetimes ...string) *Node {
+// variablesGroup is a resource's literals: a workload's, read when it starts, and a
+// package's, read by its build. A secret is read through the vault, never handed
+// over.
+func variablesGroup() *Node {
 	return DefineGroup("variables",
 		DefineIter([]*Attribute{
-			String("at", InSet(lifetimes...), Default(lifetimes[0]), InSection("config"),
-				Doc("Handed Over", "run: the workload reads it when it starts. build: the build reads it and the workload never sees it. both: handed over twice, which is what a value baked into a bundle and read again at run is.")),
-			String("value", PerEnv(), InSection("config"),
+			String("value", Required(), PerEnv(), InSection("config"),
 				Doc("Value", "A literal, stored in git and readable by anyone who can read the repo. For anything that is not a secret.")),
-			String(Key("secret", "namespace"), IsNamespacePath(), InSection("config"),
-				Doc("Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
-			String(Key("secret", "name"), IsVariableName(), Ref("secret", Inbound()), InSection("config"),
-				Doc("From Secret", "Take the value from this secret, as \"secret/<name>\". Only the reference is in git.")),
 
 			// A file is a second delivery mechanism for values an environment variable cannot
 			// carry (certificates, keys, large json).

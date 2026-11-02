@@ -1,12 +1,6 @@
 description: answers the route
-runtime: wasm
-source: services/hello
-build:
-    commands:
-        image: ghcr.io/samyfodil/wazy-build-rust:1.99.1-cc0.21.1
-        install: cargo fetch --locked
-        run: cargo build --release --locked --target wasm32-wasip2
-        output: target/wasm32-wasip2/release/hello.wasm
+package:
+    name: hello_code
 execution:
     call: handle
     timeout: 15s

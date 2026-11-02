@@ -1,0 +1,11 @@
+id: QmPB42KuCd5ikQT2w3N9qzpJnaBztnyA6zJRgbJviXDZYG
+type: wasm
+source: services/doorman
+output: target/wasm32-wasip2/release/doorman.wasm
+build:
+    steps:
+        - name: build
+          image: rust:1.83
+          commands:
+              - cargo fetch --locked
+              - cargo build --release --target wasm32-wasip2

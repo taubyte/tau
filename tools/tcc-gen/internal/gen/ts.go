@@ -184,13 +184,14 @@ type tsEnum struct {
 func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enumOrder *[]string) ([]tsField, error) {
 	var out []tsField
 	seen := map[string]bool{}
+	attrs := withBlocks(n, nil)
 	// A node may hold SEVERAL switches — a database's type and each type's
 	// engine, an application's readiness and its liveness — so the discriminator
 	// is looked up per switch, keyed by WHERE the choice sits. One alias per node
 	// gave every switch the last one's name and values, which is how sqlEngine()
 	// came to be typed by the admission key.
 	switches := map[string]branchSwitch{}
-	for _, a := range n.Attributes {
+	for _, a := range attrs {
 		prefix, alts, _, ok := branchOf(a)
 		if !ok || !a.Captures {
 			continue
@@ -208,7 +209,7 @@ func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enu
 		}
 	}
 
-	for _, a := range n.Attributes {
+	for _, a := range attrs {
 		prefix, alts, suffix, branched := branchOf(a)
 		if a.Captures && !branched {
 			continue // a key with no alternatives is not addressable
@@ -258,6 +259,41 @@ func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enu
 		out = append(out, f)
 	}
 	return out, nil
+}
+
+// withBlocks is a node's own fields and its blocks', a block's addressed through its
+// key the way the compiled object files it: a package's `build: {dockerfile: {path}}`
+// is the package's build/dockerfile/path.
+func withBlocks(n *engine.Node, at []string) []*engine.Attribute {
+	out := make([]*engine.Attribute, 0, len(n.Attributes))
+	for _, a := range n.Attributes {
+		if len(at) == 0 {
+			out = append(out, a)
+			continue
+		}
+		c := *a
+		c.Name = strings.Join(at, "/") + "/" + a.Name
+		path := a.Path
+		if len(path) == 0 {
+			for _, seg := range strings.Split(a.Name, "/") {
+				path = append(path, seg)
+			}
+		}
+		c.Path = nil
+		for _, seg := range at {
+			c.Path = append(c.Path, seg)
+		}
+		c.Path = append(c.Path, path...)
+		c.Segments = append(append([]string{}, at...), engine.CompiledSegments(a)...)
+		out = append(out, &c)
+	}
+	for _, child := range n.Children {
+		if engine.IsBlock(child) {
+			key, _ := child.Match.(string)
+			out = append(out, withBlocks(child, append(append([]string{}, at...), key))...)
+		}
+	}
+	return out
 }
 
 // resourceBase is the surface EVERY resource shares, whatever its kind: its

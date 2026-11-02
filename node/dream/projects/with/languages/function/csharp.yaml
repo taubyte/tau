@@ -1,13 +1,7 @@
 id: QmWwN9XrPRinVaayWnpPyzXTbnKM117Hna6YhYNV5mc1cK
 description: answers in C#, through componentize-dotnet and NativeAOT-LLVM
-runtime: wasm
-source: services/csharp
-build:
-    commands:
-        image: ghcr.io/samyfodil/wazy-build-csharp:0.8.0-preview00011-net10.0.402
-        install: dotnet restore
-        run: dotnet build -c Release --no-restore
-        output: bin/Release/net10.0/wasi-wasm/native/function.wasm
+package:
+    name: csharp_code
 execution:
     call: handle
     timeout: 15s

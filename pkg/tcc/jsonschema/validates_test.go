@@ -37,13 +37,12 @@ func TestSchemaRefusesWhatTheCompilerRefuses(t *testing.T) {
 		body := map[string]any{
 			"id":          "QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh",
 			"description": "x",
-			"runtime":     "wasm",
-			"execution":   map[string]any{"call": "c", "timeout": "1s", "memory": "1MB"},
+			"type":        "wasm",
 		}
 		if source != nil {
 			body["source"] = source
 		}
-		return doc("function", "checkout", body)
+		return doc("package", "paylib", body)
 	}
 
 	type testCase struct {
@@ -54,12 +53,12 @@ func TestSchemaRefusesWhatTheCompilerRefuses(t *testing.T) {
 	for _, tc := range []testCase{
 		{"source absent", fn(nil), true},
 		{"a bare path", fn("pkg/checkout"), true},
-		{"a component", fn(map[string]any{"component": "paylib"}), true},
+		{"an image", fn(map[string]any{"image": "ghcr.io/acme/paylib:1"}), true},
 		{"a git url", fn(map[string]any{"git": "https://gitlab.com/a/b", "branch": "main"}), true},
 
 		{"an empty source block", fn(map[string]any{}), false},
 		{"a source with no branch", fn(map[string]any{"branch": "main"}), false},
-		{"two branches at once", fn(map[string]any{"component": "x", "git": "https://g/x"}), false},
+		{"two branches at once", fn(map[string]any{"image": "x", "git": "https://g/x"}), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := r.Validate(tc.doc)

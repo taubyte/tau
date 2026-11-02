@@ -1,0 +1,10 @@
+id: QmSkLizsRg4ywviJgWJbqo7xYbP1hafL4pm3bMhvBADbMT
+type: wasm
+source: services/cpp
+output: function.wasm
+build:
+    steps:
+        - name: build
+          image: ghcr.io/samyfodil/wazy-build-c:34.0
+          commands:
+              - wit-bindgen c --out-dir gen --world handler ../../wit && clang --target=wasm32-wasip2 -O2 -c gen/handler.c -o gen/handler.o && clang++ --target=wasm32-wasip2 -O2 -fno-exceptions -mexec-model=reactor function.cpp gen/handler.o gen/handler_component_type.o -o function.wasm

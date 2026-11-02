@@ -53,7 +53,7 @@ func TestAnUploadIsACommitTheUniverseHolds(t *testing.T) {
 	require.NoError(t, err)
 	defer u.Close()
 
-	recipe := artifact.Spec{Image: "rust:1.90", Path: "services/hello", Commands: []string{"cargo component build"}, Output: "out.wasm"}
+	recipe := artifact.Spec{Path: "services/hello", Steps: []artifact.Step{{Name: "build", Image: "rust:1.90", Commands: []string{"cargo component build"}}}, Output: "out.wasm"}
 	commit, err := u.Put(t.Context(), "proj", "git.example/acme/shop", "refs/heads/main", bundleOf(t, recipe, "the developer's"))
 	require.NoError(t, err)
 	require.Len(t, commit, 40)
@@ -86,7 +86,7 @@ func TestAnUploadIsACommitTheUniverseHolds(t *testing.T) {
 	// A RECIPE THE DEVELOPER DID NOT BUILD is not found, so an upload deploys
 	// only what this universe would have built.
 	other := recipe
-	other.Commands = []string{"cargo component build --release"}
+	other.Steps = []artifact.Step{{Name: "build", Image: "rust:1.90", Commands: []string{"cargo component build --release"}}}
 	_, err = s.Engine.Make(t.Context(), other, io.Discard)
 	require.ErrorContains(t, err, "recipe other than the one this universe planned")
 

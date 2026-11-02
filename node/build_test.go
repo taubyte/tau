@@ -268,7 +268,7 @@ func TestAnAssetStoreIsEnoughToServeASite(t *testing.T) {
 
 	// All three: a static site, a wasm component and a js function are what
 	// the smallest possible cloud runs, and none of them needs a daemon.
-	require.ElementsMatch(t, []string{"static", "wasm", "js"}, tierNames(n))
+	require.ElementsMatch(t, []string{"static", "wasm", "warp"}, tierNames(n))
 
 	// And with neither, it refuses rather than starting a worker that can run
 	// nothing.
@@ -402,7 +402,7 @@ func TestAnInjectedTierWins(t *testing.T) {
 
 	// One wasm, and it is the injected one; static and js are still built,
 	// because nothing else answers for them.
-	require.ElementsMatch(t, []string{"wasm", "static", "js"}, tierNames(n))
+	require.ElementsMatch(t, []string{"wasm", "static", "warp"}, tierNames(n))
 	require.Same(t, n.opts.runtimes[0], n.tiers()[0])
 }
 

@@ -129,6 +129,9 @@ func (v2FieldValidator) RequiredFields(group string) []session.RequiredField {
 			WhenIn:       r.WhenIn,
 			WhenBranch:   r.WhenBranch,
 			WhenBranchAt: r.WhenBranchAt,
+			In:           r.In,
+			List:         r.List,
+			Claimed:      r.Claimed,
 		}
 		if r.When != nil {
 			rf.When = &session.FieldRef{Path: r.When.Path}

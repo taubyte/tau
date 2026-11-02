@@ -34,11 +34,6 @@ import (
 // project directory.
 const OutDir = ".tau/out"
 
-// SecretEnvPrefix is how a build-time secret is handed to `tau build`: the
-// secret's name, upper-cased with anything that is not a letter or digit as an
-// underscore, after this prefix.
-const SecretEnvPrefix = "TAU_SECRET_"
-
 // built is one product of a local build, as recipes.json records it.
 type built struct {
 	Environment string `json:"environment"`
@@ -87,7 +82,7 @@ func runBuild(cmd *cobra.Command, env Env, dir string) error {
 	items, err := artifact.Plan(deployments, func(res specs.Buildable) (bool, error) {
 		backs, err := src.backs(res)
 		if !backs && err == nil {
-			skipped = append(skipped, fmt.Sprintf("%s/%s is built from %s", res.Kind, res.Name, sourceName(res)))
+			skipped = append(skipped, fmt.Sprintf("package/%s is built from %s", res.Name, sourceName(res)))
 		}
 		return backs, err
 	})
@@ -107,13 +102,9 @@ func runBuild(cmd *cobra.Command, env Env, dir string) error {
 		return err
 	}
 
-	secrets := environSecrets{}
-	for _, d := range deployments {
-		secrets[d.Environment] = d.Project
-	}
 	recipes := make([]artifact.Spec, len(items))
 	for i, item := range items {
-		if recipes[i], err = artifact.Recipe(ctx, secrets, src.project, item, work); err != nil {
+		if recipes[i], err = artifact.Recipe(item, work); err != nil {
 			return err
 		}
 	}
@@ -138,14 +129,14 @@ func runBuild(cmd *cobra.Command, env Env, dir string) error {
 	}
 	for i, item := range items {
 		digest := recipes[i].Digest()
-		fmt.Fprintf(log, "building %s/%s for %s (recipe %s)\n", item.Kind, item.Name, item.Environment, digest)
+		fmt.Fprintf(log, "building package/%s for %s (recipe %s)\n", item.Name, item.Environment, digest)
 
-		file := filepath.Join(OutDir, item.Environment, item.Kind, item.Name)
+		file := filepath.Join(OutDir, item.Environment, specs.KindPackage, item.Name)
 		if err := make1(ctx, engine, recipes[i], log, filepath.Join(dir, file)); err != nil {
-			return fmt.Errorf("building %s/%s for %s: %w", item.Kind, item.Name, item.Environment, err)
+			return fmt.Errorf("building package/%s for %s: %w", item.Name, item.Environment, err)
 		}
 		products[digest] = filepath.Join(dir, file)
-		out.Built = append(out.Built, built{Environment: item.Environment, Kind: item.Kind, Name: item.Name, ID: item.ID, Recipe: digest, File: file})
+		out.Built = append(out.Built, built{Environment: item.Environment, Kind: specs.KindPackage, Name: item.Name, ID: item.ID, Recipe: digest, File: file})
 	}
 	if err := writeRecipes(dir, environments, out.Built); err != nil {
 		return err
@@ -190,7 +181,7 @@ func (s source) backs(res specs.Buildable) (bool, error) {
 	}
 	key, err := s.keys.Key(res.Source.Git)
 	if err != nil {
-		return false, fmt.Errorf("%s/%s names %q, which is not a repository: %w", res.Kind, res.Name, res.Source.Git, err)
+		return false, fmt.Errorf("package/%s names %q, which is not a repository: %w", res.Name, res.Source.Git, err)
 	}
 	return key.String() == s.repository, nil
 }
@@ -455,38 +446,6 @@ func renderBuild(env Env, out buildOutput) string {
 		b.WriteString(fmt.Sprintf("job %s: %s\n", out.Pushed, out.Status))
 	}
 	return b.String()
-}
-
-// environSecrets resolves a build-time secret from this machine's environment:
-// the secret the variable names, by its name in the deployment, after
-// SecretEnvPrefix. One that is not set is refused by the name to set.
-type environSecrets map[string]*specs.Project
-
-func (e environSecrets) Secret(_ context.Context, _, environment, secretID string) (string, error) {
-	label := secretID
-	if p := e[environment]; p != nil {
-		if _, _, name, ok := p.Locate(secretID); ok {
-			label = name
-		}
-	}
-	name := SecretEnvPrefix + envName(label)
-	value, ok := os.LookupEnv(name)
-	if !ok {
-		return "", fmt.Errorf("set %s to build with it here", name)
-	}
-	return value, nil
-}
-
-func envName(secret string) string {
-	return strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z':
-			return r - 'a' + 'A'
-		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-			return r
-		}
-		return '_'
-	}, secret)
 }
 
 // branchOf is the checked-out branch, or main outside a repository.

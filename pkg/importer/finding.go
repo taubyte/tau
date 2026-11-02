@@ -99,6 +99,19 @@ func (r *Result) Set(kind, name string, doc map[string]any) {
 	r.Resources = append(r.Resources, Resource{Kind: kind, Name: name, Doc: doc})
 }
 
+// Runs gives a workload the package it runs, filed beside it: `<name>_image` for one
+// somebody else built, `<name>_code` for one built here. The workload names it, and
+// says nothing about its source or build itself.
+func (r *Result) Runs(doc map[string]any, name string, pkg map[string]any) string {
+	pkgName := name + "_code"
+	if src, ok := pkg["source"].(map[string]any); ok && src["image"] != nil {
+		pkgName = name + "_image"
+	}
+	r.Set("package", pkgName, pkg)
+	doc["package"] = map[string]any{"name": pkgName}
+	return pkgName
+}
+
 // Doc is one imported resource's document, for a caller that knows what it is
 // looking for.
 func (r Result) Doc(kind, name string) (map[string]any, bool) {

@@ -1,0 +1,19 @@
+id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv
+description: payment helpers
+type: wasm
+source:
+    git: https://github.com/acme/paylib
+    branch: main
+output: paylib.wasm
+build:
+    steps:
+        - name: build
+          image: taubyte/go-wasi:v2
+          commands:
+              - export GITHUB_TOKEN=$(/.taubyte/secret stripe) && .taubyte/build.sh
+variables:
+    GOPRIVATE:
+        value: github.com/acme/*
+secret:
+    stripe:
+        ops: [get]

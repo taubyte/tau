@@ -1161,18 +1161,10 @@ const zoneKind = "zone"
 // Source kinds, as the compiler spells them. A bare path has no kind: it is a
 // string where the others are objects.
 const (
-	SourcePath      = ""
-	SourceGit       = "git"
-	SourceComponent = "component"
-	SourceImage     = "image"
-	SourceBuiltin   = "builtin"
-)
-
-// Build kinds.
-const (
-	BuildCommands   = "commands"
-	BuildScript     = "script"
-	BuildDockerfile = "dockerfile"
+	SourcePath    = ""
+	SourceGit     = "git"
+	SourceImage   = "image"
+	SourceBuiltin = "builtin"
 )
 
 // Source is where a resource's content comes from.
@@ -1203,10 +1195,8 @@ type Source struct {
 	Git    string
 	Branch string
 
-	// Component names another resource of this project whose artifact this one
-	// runs; Image is a reference pulled rather than built.
-	Component string
-	Image     string
+	// Image is a reference pulled rather than built.
+	Image string
 
 	// Config is the file in that repository the resource's serving block is
 	// delegated to, or "". See Project.Filled for whether it was read.
@@ -1214,42 +1204,10 @@ type Source struct {
 }
 
 // Built reports whether this source is something this platform makes. An image
-// is pulled and a builtin is already here; a component is built as its own
-// resource rather than again as this one.
+// is pulled and a builtin is already here.
 func (s Source) Built() bool {
 	return s.Declared && (s.Kind == SourcePath || s.Kind == SourceGit)
 }
-
-// Build is how a resource is made.
-type Build struct {
-	// Kind is one of the Build* constants, and "" is a resource that declares
-	// no build at all.
-	Kind string
-
-	// Image is the toolchain the build runs in.
-	Image string
-
-	// Install and Run are the two commands, for Kind commands.
-	Install string
-	Run     string
-
-	// Script is a path in the repository to execute, for Kind script. It is
-	// the escape hatch for a build that does not fit two commands.
-	Script string
-
-	// Dockerfile is a path to one, for Kind dockerfile.
-	Dockerfile string
-
-	// Output is what the build leaves behind: a file for a wasm component, a
-	// directory for a website.
-	Output string
-
-	// Target names which of a multi-target build to take.
-	Target string
-}
-
-// Declared reports whether the author said how this is made.
-func (b Build) Declared() bool { return b.Kind != "" }
 
 // Source reads a resource's source block.
 func (r Resource) Source() Source {
@@ -1266,47 +1224,22 @@ func (r Resource) Source() Source {
 	}
 
 	return Source{
-		Declared:  true,
-		Kind:      r.String("source", "kind"),
-		Path:      r.String("source", "path"),
-		Git:       r.String("source", "git"),
-		Branch:    r.String("source", "branch"),
-		Component: r.String("source", "component"),
-		Image:     r.String("source", "image"),
-		Config:    r.String("source", "config"),
+		Declared: true,
+		Kind:     r.String("source", "kind"),
+		Path:     r.String("source", "path"),
+		Git:      r.String("source", "git"),
+		Branch:   r.String("source", "branch"),
+		Image:    r.String("source", "image"),
+		Config:   r.String("source", "config"),
 	}
 }
 
-// Build reads a resource's build block.
-func (r Resource) Build() Build {
-	return Build{
-		Kind:       r.String("build", "kind"),
-		Image:      r.String("build", "image"),
-		Install:    r.String("build", "install"),
-		Run:        r.String("build", "run"),
-		Script:     r.String("build", "script"),
-		Dockerfile: r.String("build", "dockerfile"),
-		Output:     r.String("build", "output"),
-		Target:     r.String("build", "target"),
-	}
-}
-
-// Variable is one of a resource's declared environment variables.
+// Variable is one of a resource's declared values: a workload's, read when it
+// starts, or a package's, read by its build.
 type Variable struct {
-	Name string
-
-	// At is when it applies: "build" or "run". The compiler writes it, and a
-	// variable that does not say is a run-time one.
-	At string
-
-	// Value is a literal. Secret names one instead, and exactly one of the two
-	// is set.
-	Value  string
-	Secret string
+	Name  string
+	Value string
 }
-
-// FromSecret reports whether this variable's value has to be resolved.
-func (v Variable) FromSecret() bool { return v.Secret != "" }
 
 // Variables are a resource's declared environment, sorted by name.
 func (r Resource) Variables() []Variable {
@@ -1323,13 +1256,7 @@ func (r Resource) Variables() []Variable {
 		}
 
 		v := Variable{Name: name}
-		v.At, _ = at["at"].(string)
 		v.Value, _ = at["value"].(string)
-		if secret, ok := at["secret"].(map[string]any); ok {
-			// A REFERENCE COMPILES TO AN ID, so what is carried is the secret's
-			// id and not the name it was written as.
-			v.Secret, _ = secret["name"].(string)
-		}
 		out = append(out, v)
 	}
 
@@ -1337,45 +1264,41 @@ func (r Resource) Variables() []Variable {
 	return out
 }
 
-// Buildable is one resource this project makes from source.
+// Buildable is one package this project makes from source.
 type Buildable struct {
-	// Scope, Kind and Name address it, in the form Resource takes.
+	// Scope and Name address it, in the form Resource takes.
 	Scope []string
-	Kind  string
 	Name  string
 
-	// ID is the resource's own id, which is what an artifact is filed under.
+	// ID is the package's own id, which is what its artifact is filed under.
 	ID string
 
-	Source Source
-	Build  Build
+	Source  Source
+	Package Package
 
-	// Variables is the resource's declared environment, both build- and
-	// run-time. Which of them a build passes is the build's decision.
+	// Variables are the package's values, which its build reads.
 	Variables []Variable
-
-	// Runtime is the tier the resource says runs it, "" for a kind that has
-	// no choice. What the platform does with a build's product after the
-	// author's commands depends on it.
-	Runtime string
 }
 
-// Buildables is every resource this project makes from source, in a stable
-// order.
+// Buildables is every package this project makes from source, in a stable order.
+// A package is the only kind that builds.
 //
 // IT IS THE WHOLE PROJECT AND NOT ONE REPOSITORY'S WORTH, because which
-// repository a resource belongs to is only half in the config: a resource whose
-// source is a bare path belongs to the project's own code repository, and what
-// that repository IS lives in auth. The caller has that and filters; this reads
-// what the config says.
+// repository a package belongs to is only half in the config: one whose source is
+// a bare path belongs to the project's own code repository, and what that
+// repository IS lives in auth. The caller has that and filters; this reads what
+// the config says.
 //
-// A resource that declares a source it does not build — an image, a builtin, a
-// component — is not here. Neither is one with a source and no build: nothing
-// says how to make it, and guessing would be this package inventing a toolchain.
+// A package whose source is not built here — an image, a builtin — is not here.
+// Neither is one with a source and no build: nothing says how to make it, and
+// guessing would be this package inventing a toolchain.
 func (p *Project) Buildables() []Buildable {
 	out := make([]Buildable, 0, len(p.located))
 
 	for id, at := range p.located {
+		if at.kind != KindPackage {
+			continue
+		}
 		// THE ADDRESS IS A SCOPE AND `at` TAKES A CURSOR. Handing it the scope
 		// directly reads the project root for every resource, whatever
 		// namespace it is actually in — which finds a resource of that name if
@@ -1389,30 +1312,28 @@ func (p *Project) Buildables() []Buildable {
 			continue
 		}
 
-		source, build := r.Source(), r.Build()
-		if !source.Built() || !build.Declared() {
+		source, pkg := r.Source(), ReadPackage(r)
+		if !source.Built() || !pkg.Build.Declared {
 			continue
 		}
 
 		out = append(out, Buildable{
 			Scope:     at.scope,
-			Kind:      at.kind,
 			Name:      at.name,
 			ID:        id,
 			Source:    source,
-			Build:     build,
+			Package:   pkg,
 			Variables: r.Variables(),
-			Runtime:   r.String("runtime"),
 		})
 	}
 
 	// SORTED, because the source is a map and a build order that changed
 	// between two pushes of the same commit is one nobody can read a log of.
 	sort.Slice(out, func(i, j int) bool {
-		if out[i].Kind != out[j].Kind {
-			return out[i].Kind < out[j].Kind
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
 		}
-		return out[i].Name < out[j].Name
+		return strings.Join(out[i].Scope, "/") < strings.Join(out[j].Scope, "/")
 	})
 	return out
 }

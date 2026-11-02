@@ -39,7 +39,7 @@ import (
 )
 
 // Name is the string the config vocabulary uses for this tier.
-const Name = specs.WorkloadBlockRuntimeJs
+const Name = specs.PackageTypeWarp
 
 // The settings this tier reads, spelled as the vocabulary spells them.
 const (

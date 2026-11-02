@@ -38,16 +38,22 @@ func withProxy(change func(map[string]any)) []byte {
 		"object": map[string]any{
 			"id":   projectID,
 			"name": "shop",
+			"package": map[string]any{
+				imagePackageID: map[string]any{"name": "postgres", "type": "oci",
+					"source": map[string]any{"kind": "image", "image": "ghcr.io/acme/postgres:16"}},
+			},
 			"application": map[string]any{
 				proxyAppID: map[string]any{
-					"name":   "db",
-					"source": map[string]any{"kind": "image", "image": "ghcr.io/acme/postgres:16"},
-					"ports":  map[string]any{"pg": map[string]any{"number": 5432}},
+					"name":    "db",
+					"package": map[string]any{"name": imagePackageID},
+					"ports":   map[string]any{"pg": map[string]any{"number": 5432}},
 				},
 			},
 			"proxy": map[string]any{proxyResourceID: res},
 		},
 		"indexes": map[string]any{
+			"projects/" + projectID + "/package/postgres/links": []any{
+				"branches/main/projects/" + projectID + "/package/" + imagePackageID},
 			"projects/" + projectID + "/application/db/links": []any{
 				"branches/main/projects/" + projectID + "/application/" + proxyAppID},
 			"projects/" + projectID + "/proxy/pgwire/links": []any{
@@ -141,7 +147,7 @@ func TestAProxyWithoutPlacementIsRefusedAtConstruction(t *testing.T) {
 
 	_, err := New(Config{Services: []string{Register, Worker, Proxy}},
 		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}),
-		WithRuntimes(&tier{name: "container"}))
+		WithRuntimes(&tier{name: "oci"}))
 	require.ErrorContains(t, err, "through placement")
 }
 

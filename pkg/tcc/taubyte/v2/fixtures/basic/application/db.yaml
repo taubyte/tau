@@ -1,9 +1,7 @@
 id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY
 description: postgres - nothing about it is http, so no gateway can reach it
-source:
-    image: "ghcr.io/acme/postgres:16"
-    image_pull_secret:
-        name: stripe
+package:
+    name: db_code
 ports:
     pg:
         number: 5432

@@ -254,16 +254,12 @@ func TestTheSeamsReachTheWorker(t *testing.T) {
 			asked <- "artifact"
 			return "registry/built@sha256:" + id, nil
 		})),
-		WithSecrets(secretFunc(func(_ context.Context, _, _, id string) (string, error) {
-			asked <- "secret"
-			return "sk_" + id, nil
-		})),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 
 	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1, Compiled: needsBothSeams(),
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: builtByThePlatform(),
 	})
 	require.NoError(t, err)
 
@@ -271,10 +267,9 @@ func TestTheSeamsReachTheWorker(t *testing.T) {
 		Project: "shop", Environment: "prod", Kind: "function", Name: "built",
 	})
 	require.NoError(t, err)
-	require.Contains(t, spec.Artifact, "registry/built@sha256:")
-	require.Contains(t, spec.Env["TOKEN"], "sk_")
+	require.Contains(t, spec.Artifact, "registry/built@sha256:"+codePackageID, "asked about the package it runs")
 
-	require.Len(t, asked, 2)
+	require.Len(t, asked, 1)
 }
 
 type artifactFunc func(ctx context.Context, project, environment, kind, resourceID string) (string, error)
@@ -283,70 +278,12 @@ func (f artifactFunc) Artifact(ctx context.Context, project, environment, kind, 
 	return f(ctx, project, environment, kind, resourceID)
 }
 
-type secretFunc func(ctx context.Context, project, environment, secretID string) (string, error)
-
-func (f secretFunc) Secret(ctx context.Context, project, environment, secretID string) (string, error) {
-	return f(ctx, project, environment, secretID)
-}
-
-func TestAWorkerResolvesASecretFromItsOwnVault(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}}, prebuilt())
-	require.NoError(t, n.Start(t.Context()))
-
-	require.NoError(t, n.Vault().Set(t.Context(), "shop", "prod", secretID, []byte("sk_live")))
-
-	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1, Compiled: needsASecret(),
-	})
-	require.NoError(t, err)
-
-	spec, err := n.Worker().Resolve(t.Context(), workerTarget())
-	require.NoError(t, err)
-	require.Equal(t, "sk_live", spec.Env["TOKEN"])
-}
-
-func TestAWorkerFindsAVaultOnAnotherNode(t *testing.T) {
-	nodes := fleet(t,
-		Config{Services: []string{Register, Secrets, Discovery}},
-		Config{Services: []string{Worker, Discovery}},
-	)
-	holder, compute := nodes[0], nodes[1]
-
-	require.NoError(t, holder.Vault().Set(t.Context(), "shop", "prod", secretID, []byte("sk_live")))
-
-	_, err := holder.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1, Compiled: needsASecret(),
-	})
-	require.NoError(t, err)
-
-	sees(t, compute, Register)
-	sees(t, compute, Secrets)
-
-	spec, err := compute.Worker().Resolve(t.Context(), workerTarget())
-	require.NoError(t, err)
-	require.Equal(t, "sk_live", spec.Env["TOKEN"])
-}
-
-func TestAWorkerWithNoVaultAnywhereRefusesRatherThanRunning(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery}}, prebuilt())
-	require.NoError(t, n.Start(t.Context()))
-
-	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1, Compiled: needsASecret(),
-	})
-	require.NoError(t, err)
-
-	_, err = n.Worker().Resolve(t.Context(), workerTarget())
-	require.ErrorIs(t, err, ErrNoSecrets)
-}
-
 func TestABuiltResourceWithNoBuildServiceIsRefused(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}})
 	require.NoError(t, n.Start(t.Context()))
 
-	require.NoError(t, n.Vault().Set(t.Context(), "shop", "prod", secretID, []byte("sk_live")))
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1, Compiled: needsBothSeams(),
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: builtByThePlatform(),
 	})
 	require.NoError(t, err)
 

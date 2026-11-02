@@ -115,6 +115,33 @@ failure and never a quietly mis-compiled field. Name another resource from insid
 element the way every cross-namespace reference does — a `namespace` and a `name`
 (§5) — not a `Ref()`.
 
+### A group or a list under a key: `DefineBlock`
+
+A field alone needs no block — `Key("build", "image")` already nests it. When a group
+or a list belongs under a key rather than at the document root, the key is a block:
+one object with fields of its own and groups beneath it.
+
+```go
+Nested(DefineBlock("build", []*Attribute{String(Key("dockerfile", "path"))},
+    DefineList("steps", stepAttrs),
+    DefineGroup("inputs", DefineIter(inputAttrs)),
+))
+```
+
+```yaml
+build:
+    dockerfile: {path: Dockerfile}
+    steps:
+        - name: site
+    inputs:
+        ui: {name: ui}
+```
+
+A block is data of its resource: its durations parse, its references resolve where the
+resource was authored, and it may be its own file (`package/web/build.yaml`). Every
+consumer walks it — dump, decompile, the JSON Schema, tcc-gen's readers and TS, the
+required-field check — so it is a shape, not a special case.
+
 ---
 
 ## 3. The conditional switch: `Either(...)` + `Key()`

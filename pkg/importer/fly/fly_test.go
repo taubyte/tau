@@ -74,13 +74,19 @@ app = "shop"
   memory = "512mb"
 `)
 	doc := docOf(t, r, "shop")
+	require.Equal(t, map[string]any{"name": "shop_code"}, doc["package"])
+	pkg, ok := r.Doc("package", "shop_code")
+	require.True(t, ok)
 	require.Equal(t, map[string]any{
-		"dockerfile": map[string]any{
+		"type": "oci",
+		"build": map[string]any{"dockerfile": map[string]any{
 			"path":   "Dockerfile.prod",
 			"target": "release",
-			"args":   map[string]any{"NODE_ENV": "production"},
-		},
-	}, doc["build"])
+		}},
+		// a build's arguments are the package's variables, which a Dockerfile build takes as
+		// its ARGs
+		"variables": map[string]any{"NODE_ENV": map[string]any{"value": "production"}},
+	}, pkg)
 
 	// A VARIABLE IS A BLOCK, and a limit lives under `execution` — both are
 	// where the vocabulary puts them, not where fly.toml does.
@@ -140,8 +146,13 @@ app = "shop"
   worker = "npm run worker"
 `)
 	require.Equal(t, []string{"shop_web", "shop_worker"}, r.Names("application"))
-	require.Equal(t, map[string]any{"image": "acme/shop:1"}, docOf(t, r, "shop_web")["source"],
-		"each carries the app's build")
+	// every process runs the one package
+	for _, process := range []string{"shop_web", "shop_worker"} {
+		require.Equal(t, map[string]any{"name": "shop_image"}, docOf(t, r, process)["package"], process)
+	}
+	require.Equal(t, []string{"shop_image"}, r.Names("package"))
+	pkg, _ := r.Doc("package", "shop_image")
+	require.Equal(t, map[string]any{"image": "acme/shop:1"}, pkg["source"])
 
 	// The command is not carried, so N processes become N otherwise identical resources.
 	for _, process := range []string{"shop_web", "shop_worker"} {

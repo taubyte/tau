@@ -67,8 +67,17 @@ func (e *engine) Make(_ context.Context, spec artifact.Spec, log io.Writer) (io.
 	if e.err != nil {
 		return nil, e.err
 	}
-	fmt.Fprintf(log, "ran %s in %s\n", spec.Image, spec.Dir)
+	fmt.Fprintf(log, "ran %s in %s\n", imageOf(spec), spec.Dir)
 	return io.NopCloser(strings.NewReader("built " + spec.Output)), nil
+}
+
+// imageOf is the toolchain of a recipe's first step, which is how these tests tell
+// one recipe from another.
+func imageOf(spec artifact.Spec) string {
+	if len(spec.Steps) == 0 {
+		return ""
+	}
+	return spec.Steps[0].Image
 }
 
 func (e *engine) seen() []artifact.Spec {
@@ -126,7 +135,7 @@ func (o *out) stored() map[string]string {
 }
 
 // Its own fixture: the shared ones carry a dockerfile build and a sourceless
-// resource, tested separately below.
+// package, tested separately below.
 const everyBranch = "environments:\n    prod:\n        branches: [\"*\"]\n"
 
 func projectConfig(t *testing.T, environments string, resources map[string]string) string {
@@ -144,25 +153,33 @@ func projectConfig(t *testing.T, environments string, resources map[string]strin
 	return dir
 }
 
-// oneEnvironment is a project with a resource in its own repository and one in
-// the project's, both built from two commands.
+// steps is a package's build of one step.
+func steps(image string, commands ...string) string {
+	out := "build:\n    steps:\n        - name: build\n          image: " + image + "\n          commands:\n"
+	for _, c := range commands {
+		out += "              - " + c + "\n"
+	}
+	return out
+}
+
+// oneEnvironment is a project with a package in its own repository and one in the
+// project's.
 func oneEnvironment(t *testing.T) string {
 	t.Helper()
 	return projectConfig(t, everyBranch, map[string]string{
-		"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\nruntime: wasm\n" +
-			"source: services/reserve\n" +
-			"build:\n    commands:\n        image: rust:1.83\n" +
-			"        install: cargo fetch --locked\n        run: cargo build --release\n" +
-			"        output: target/release/reserve.wasm\n" +
+		"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\npackage:\n    name: reserve_code\n" +
 			"execution:\n    call: reserve\n    timeout: 15s\n    memory: 32MB\n",
-		"component/paylib.yaml": "id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv\n" +
-			"source:\n    git: https://github.com/acme/paylib\n    branch: main\n" +
-			"build:\n    script:\n        image: taubyte/go-wasi:v2\n" +
-			"        path: .taubyte/build.sh\n        output: paylib.wasm\n",
+		"package/reserve_code.yaml": "id: QmbB2PpNzfnQ3wAJykt9UZU2SRrFNSzawU16yo9mdpM2Wh\ntype: wasm\n" +
+			"source: services/reserve\noutput: target/release/reserve.wasm\n" +
+			steps("rust:1.83", "cargo fetch --locked", "cargo build --release"),
+		"package/paylib.yaml": "id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv\ntype: wasm\n" +
+			"source:\n    git: https://github.com/acme/paylib\n    branch: main\noutput: paylib.wasm\n" +
+			steps("taubyte/go-wasi:v2", ".taubyte/build.sh"),
 	})
 }
 
-// perEnvironment is one resource whose toolchain differs by deployment.
+// perEnvironment is one package whose build differs by deployment: in a value its
+// recipe reads, and in where the artifact lands.
 func perEnvironment(t *testing.T) string {
 	t.Helper()
 	return projectConfig(t,
@@ -172,15 +189,13 @@ func perEnvironment(t *testing.T) string {
 			"    preview:\n        branches: [\"*\"]\n"+
 			"    staging:\n        branches: [\"release/*\"]\n",
 		map[string]string{
-			"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\nruntime: wasm\n" +
-				"source: services/reserve\n" +
-				"build:\n    commands:\n        image: rust:1.83\n" +
-				"        image_preview: rust:1.83-slim\n" +
-				"        run: cargo build --release\n" +
-				"        run_preview: cargo build\n" +
-				"        output: target/release/reserve.wasm\n" +
-				"        output_preview: target/debug/reserve.wasm\n" +
+			"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\npackage:\n    name: reserve_code\n" +
 				"execution:\n    call: reserve\n    timeout: 15s\n    memory: 32MB\n",
+			"package/reserve_code.yaml": "id: QmbB2PpNzfnQ3wAJykt9UZU2SRrFNSzawU16yo9mdpM2Wh\ntype: wasm\n" +
+				"source: services/reserve\n" +
+				"output: target/release/reserve.wasm\noutput_preview: target/debug/reserve.wasm\n" +
+				"variables:\n    PROFILE:\n        value: release\n        value_preview: dev\n" +
+				steps("rust:1.83", "cargo build --profile $PROFILE"),
 		})
 }
 
@@ -246,20 +261,6 @@ func builder(t *testing.T, r artifact.Register, c *checkout, e *engine, main str
 	return b
 }
 
-// vault is a Secrets over a map keyed the way the real one is:
-// project/environment/name.
-type vault map[string]string
-
-func (v vault) Secret(_ context.Context, project, environment, secretID string) (string, error) {
-	value, ok := v[project+"/"+environment+"/"+secretID]
-	if !ok {
-		return "", errNoSuchSecret
-	}
-	return value, nil
-}
-
-var errNoSuchSecret = errors.New("nothing is set under that name")
-
 func source(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -283,10 +284,10 @@ func TestAPushBuildsWhatTheConfigurationSaysItMakes(t *testing.T) {
 
 	images := map[string]bool{}
 	for _, spec := range specs {
-		images[spec.Image] = true
+		images[imageOf(spec)] = true
 	}
-	require.True(t, images["rust:1.83"], "function/reserve")
-	require.False(t, images["taubyte/go-wasi:v2"], "component/paylib is in ITS OWN repository")
+	require.True(t, images["rust:1.83"], "package/reserve_code")
+	require.False(t, images["taubyte/go-wasi:v2"], "package/paylib is in ITS OWN repository")
 
 	// Each artifact is filed under its deployment and its resource id.
 	stored := o.stored()
@@ -298,40 +299,51 @@ func TestAPushBuildsWhatTheConfigurationSaysItMakes(t *testing.T) {
 	require.True(t, c.released, "the checkout is released whatever happened")
 }
 
-func TestTheBuildIsToldWhatRunsTheResource(t *testing.T) {
+func TestTheBuildIsToldWhatThePackageIs(t *testing.T) {
 	dir := projectConfig(t, everyBranch, map[string]string{
-		"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\nruntime: wasm\n" +
-			"source: services/reserve\n" +
-			"build:\n    commands:\n        image: rust:1.83\n" +
-			"        run: cargo build --release\n        output: target/release/reserve.wasm\n" +
-			"execution:\n    call: reserve\n    timeout: 15s\n    memory: 32MB\n",
-		"function/answer.yaml": "id: QmPGAFTpKc2PFZBCUANU4bdoVVFjvJKJP4eeyi2DjAN4fz\nruntime: js\n" +
-			"source: services/answer\n" +
-			"build:\n    commands:\n        image: node:22\n" +
-			"        run: npx esbuild src/index.js --bundle --format=esm --outfile=dist/worker.js\n" +
-			"        output: dist/worker.js\n" +
-			"execution:\n    timeout: 15s\n    memory: 32MB\n",
-		"component/paylib.yaml": "id: QmekNGuKUGBE9sg23vrcgPEZSCcvj7XUa9NyrNHq6MSVtb\n" +
-			"source: services/paylib\n" +
-			"build:\n    commands:\n        image: taubyte/go-wasi:v2\n" +
-			"        run: go build\n        output: paylib.wasm\n",
+		"package/reserve_code.yaml": "id: QmbB2PpNzfnQ3wAJykt9UZU2SRrFNSzawU16yo9mdpM2Wh\ntype: wasm\n" +
+			"source: services/reserve\noutput: target/release/reserve.wasm\n" +
+			steps("rust:1.83", "cargo build --release"),
+		"package/answer_code.yaml": "id: QmaSQRCEX9SX2BGXksrfSGXvxyFhxspcVS2fB2Z3dmeYex\ntype: warp\n" +
+			"source: services/answer\noutput: dist/worker.js\n" +
+			steps("node:22", "npx esbuild src/index.js --bundle --format=esm --outfile=dist/worker.js"),
 	})
 	e := &engine{}
 	require.NoError(t, builder(t, deployed(t, dir), &checkout{dir: source(t)}, e, mainRepo).
 		Build(t.Context(), work(mainRepo), newOut()))
 
-	runtimes := map[string]string{}
+	types := map[string]string{}
 	for _, spec := range e.seen() {
-		runtimes[spec.Output] = spec.Runtime
+		types[spec.Output] = spec.Type
 	}
 	require.Equal(t, map[string]string{
 		"target/release/reserve.wasm": "wasm",
-		"dist/worker.js":              "js",
-		"paylib.wasm":                 "",
-	}, runtimes)
+		"dist/worker.js":              "warp",
+	}, types)
 }
 
-func TestAResourceWithItsOwnRepository(t *testing.T) {
+// One package, a step per toolchain, in order over one checkout.
+func TestEachStepNamesItsOwnToolchain(t *testing.T) {
+	dir := projectConfig(t, everyBranch, map[string]string{
+		"package/reserve_code.yaml": "id: QmbB2PpNzfnQ3wAJykt9UZU2SRrFNSzawU16yo9mdpM2Wh\ntype: wasm\n" +
+			"source: services/reserve\noutput: out.wasm\n" +
+			"build:\n    steps:\n" +
+			"        - name: generate\n          image: bufbuild/buf:1.47\n          commands: [buf generate]\n" +
+			"        - name: compile\n          image: tinygo/tinygo:0.34\n          commands: [tinygo build -o out.wasm]\n",
+	})
+	e := &engine{}
+	require.NoError(t, builder(t, deployed(t, dir), &checkout{dir: source(t)}, e, mainRepo).
+		Build(t.Context(), work(mainRepo), newOut()))
+
+	seen := e.seen()
+	require.Len(t, seen, 1, "one package is one build")
+	require.Equal(t, []artifact.Step{
+		{Name: "generate", Image: "bufbuild/buf:1.47", Commands: []string{"buf generate"}},
+		{Name: "compile", Image: "tinygo/tinygo:0.34", Commands: []string{"tinygo build -o out.wasm"}},
+	}, seen[0].Steps)
+}
+
+func TestAPackageWithItsOwnRepository(t *testing.T) {
 	e := &engine{}
 	o := newOut()
 
@@ -340,9 +352,9 @@ func TestAResourceWithItsOwnRepository(t *testing.T) {
 
 	specs := e.seen()
 	require.Len(t, specs, 1)
-	require.Equal(t, "taubyte/go-wasi:v2", specs[0].Image)
-	// A script build runs the script the author named.
-	require.Equal(t, []string{"sh .taubyte/build.sh"}, specs[0].Commands)
+	require.Equal(t, "taubyte/go-wasi:v2", imageOf(specs[0]))
+	// A script is a step like any other: the author names it.
+	require.Equal(t, []string{".taubyte/build.sh"}, specs[0].Steps[0].Commands)
 	require.Equal(t, "paylib.wasm", specs[0].Output)
 }
 
@@ -354,17 +366,17 @@ func TestTheBuildCommandsAreTheAuthors(t *testing.T) {
 		Build(t.Context(), work(mainRepo), o))
 
 	for _, spec := range e.seen() {
-		switch spec.Image {
+		switch imageOf(spec) {
 		case "rust:1.83":
-			require.Equal(t, []string{"cargo fetch --locked", "cargo build --release"}, spec.Commands)
+			require.Equal(t, []string{"cargo fetch --locked", "cargo build --release"}, spec.Steps[0].Commands)
 			require.Equal(t, "target/release/reserve.wasm", spec.Output)
-			require.Equal(t, filepath.Join("services", "reserve"), spec.Path, "the commands run in the resource's own directory")
+			require.Equal(t, filepath.Join("services", "reserve"), spec.Path, "the commands run in the package's own directory")
 			require.DirExists(t, filepath.Join(spec.Dir, "services"), "of a checkout mounted whole, so a sibling it depends on is there")
 		}
 	}
 }
 
-func TestOneResourceBuildsOncePerDeployment(t *testing.T) {
+func TestOnePackageBuildsOncePerDeployment(t *testing.T) {
 	e := &engine{}
 	o := newOut()
 
@@ -379,13 +391,13 @@ func TestOneResourceBuildsOncePerDeployment(t *testing.T) {
 	require.Contains(t, keysOf(stored), "ab")
 	require.NotContains(t, keysOf(stored), "staging")
 
-	// AND THE TOOLCHAIN DIFFERS, which is the whole reason they are separate.
-	images := map[string]bool{}
+	// AND WHAT THE RECIPE READS DIFFERS, which is the whole reason they are separate.
+	profiles := map[string]string{}
 	for _, spec := range e.seen() {
-		images[spec.Image] = true
+		profiles[spec.Variables["PROFILE"]] = spec.Output
 	}
-	require.True(t, images["rust:1.83"], "production's")
-	require.True(t, images["rust:1.83-slim"], "preview's")
+	require.Equal(t, "target/release/reserve.wasm", profiles["release"], "production's")
+	require.Equal(t, "target/debug/reserve.wasm", profiles["dev"], "preview's")
 }
 
 func keysOf(m map[string]string) []string {
@@ -488,16 +500,22 @@ func TestWhatItCannotBeBuiltWithout(t *testing.T) {
 
 func TestADockerfileBuildIsRefusedByName(t *testing.T) {
 	e := &engine{}
+	config := projectConfig(t, everyBranch, map[string]string{
+		"package/reserve_code.yaml": "id: QmbB2PpNzfnQ3wAJykt9UZU2SRrFNSzawU16yo9mdpM2Wh\ntype: wasm\n" +
+			"source: services/reserve\noutput: out.wasm\n" + steps("rust:1.83", "cargo build"),
+		"package/worker_pool_code.yaml": "id: QmPzkkzbkX2TYHQsuoJ67gFL65t84vNLcFNSXtjLfvAge4\ntype: oci\n" +
+			"source: services/pool\nbuild:\n    dockerfile:\n        target: runtime\n",
+	})
 
-	err := builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, mainRepo).
+	err := builder(t, deployed(t, config), &checkout{dir: source(t)}, e, mainRepo).
 		Build(t.Context(), work(mainRepo), newOut())
 
-	require.ErrorContains(t, err, "dockerfile")
-	require.ErrorContains(t, err, "application/worker_pool")
+	require.ErrorIs(t, err, artifact.ErrNotBuiltHere)
+	require.ErrorContains(t, err, "package/worker_pool_code is built from a Dockerfile")
 	require.Empty(t, e.seen(), "nothing was built, rather than everything but that one")
 }
 
-func TestAResourceWithNoSourceIsNotBuilt(t *testing.T) {
+func TestAPackageWithNoSourceIsNotBuilt(t *testing.T) {
 	e := &engine{}
 
 	require.NoError(t, builder(t, deployed(t, envsFixture, "production"), &checkout{dir: t.TempDir()}, e, mainRepo).
@@ -507,11 +525,8 @@ func TestAResourceWithNoSourceIsNotBuilt(t *testing.T) {
 
 func TestAPathThatClimbsOutIsRefusedAtCompileTime(t *testing.T) {
 	escaping := projectConfig(t, everyBranch, map[string]string{
-		"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\nruntime: wasm\n" +
-			"source: ../../../../etc\n" +
-			"build:\n    commands:\n        image: rust:1.83\n        run: cat shadow\n" +
-			"        output: out\n" +
-			"execution:\n    call: reserve\n    timeout: 15s\n    memory: 32MB\n",
+		"package/escape_code.yaml": "id: QmP66dBkc5zUMF7W7HuU3HgTmPa1w92gGNG4zY854f4Wkt\ntype: wasm\n" +
+			"source: ../../../../etc\noutput: out\n" + steps("rust:1.83", "cat shadow"),
 	})
 
 	c, err := schema.New(schema.WithLocal(escaping), schema.WithBranch("main"))
@@ -585,16 +600,16 @@ func TestABranchThatFeedsNoDeployment(t *testing.T) {
 	require.ErrorContains(t, err, `"wip" feeds none of production`)
 }
 
-func TestOnlyBuildTimeVariablesReachTheBuild(t *testing.T) {
+func TestAPackagesValuesAreItsBuildsEnvironment(t *testing.T) {
 	config := projectConfig(t, everyBranch, map[string]string{
-		"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\nruntime: wasm\n" +
-			"source: services/reserve\n" +
-			"build:\n    commands:\n        image: rust:1.83\n        run: cargo build\n" +
-			"        output: out.wasm\n" +
+		"package/reserve_code.yaml": "id: QmbB2PpNzfnQ3wAJykt9UZU2SRrFNSzawU16yo9mdpM2Wh\ntype: wasm\n" +
+			"source: services/reserve\noutput: out.wasm\n" +
+			"variables:\n    GOPRIVATE:\n        value: github.com/acme/*\n" +
+			steps("rust:1.83", "cargo build"),
+		// a workload's values are its own, read when it starts, and never the build's
+		"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\npackage:\n    name: reserve_code\n" +
 			"execution:\n    call: reserve\n    timeout: 15s\n    memory: 32MB\n" +
-			"variables:\n" +
-			"    GOPRIVATE:\n        at: build\n        value: github.com/acme/*\n" +
-			"    API_BASE:\n        at: run\n        value: https://api.example.com\n",
+			"variables:\n    API_BASE:\n        value: https://api.example.com\n",
 	})
 
 	e := &engine{}
@@ -606,51 +621,34 @@ func TestOnlyBuildTimeVariablesReachTheBuild(t *testing.T) {
 	require.Equal(t, map[string]string{"GOPRIVATE": "github.com/acme/*"}, specs[0].Variables)
 }
 
-func TestABuildThatNeedsASecret(t *testing.T) {
+// A secret is read by the step itself, through the helper, under the package's own
+// grant; nothing resolves one into the build's environment.
+func TestASecretIsNeverInTheBuildsEnvironment(t *testing.T) {
 	e := &engine{}
-
-	err := builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, mainRepo).
-		Build(t.Context(), work(paylibRepo), newOut())
-
-	require.ErrorIs(t, err, artifact.ErrNoSecrets)
-	require.ErrorContains(t, err, "GITHUB_TOKEN")
-	require.Empty(t, e.seen())
-}
-
-func TestABuildTimeSecretReachesTheBuild(t *testing.T) {
-	e := &engine{}
-	held := vault{projectID + "/prod/QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy": "ghp_thetoken"}
-
-	require.NoError(t, builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, mainRepo,
-		artifact.WithSecrets(held)).
+	require.NoError(t, builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, mainRepo).
 		Build(t.Context(), work(paylibRepo), newOut()))
 
 	specs := e.seen()
 	require.Len(t, specs, 1)
-	require.Equal(t, "ghp_thetoken", specs[0].Secrets["GITHUB_TOKEN"])
 	require.NotContains(t, specs[0].Variables, "GITHUB_TOKEN")
+	require.Equal(t, []string{"export GITHUB_TOKEN=$(/.taubyte/secret stripe) && .taubyte/build.sh"}, specs[0].Steps[0].Commands)
 }
 
-func TestAVaultThatRefusesFailsTheBuildBeforeAnythingRuns(t *testing.T) {
+func TestAnInputIsRefusedByName(t *testing.T) {
+	config := projectConfig(t, everyBranch, map[string]string{
+		"package/paylib.yaml": "id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv\ntype: wasm\n" +
+			"source:\n    git: https://github.com/acme/paylib\noutput: paylib.wasm\n" + steps("go:1.23", "make"),
+		"package/reserve_code.yaml": "id: QmbB2PpNzfnQ3wAJykt9UZU2SRrFNSzawU16yo9mdpM2Wh\ntype: static\n" +
+			"source: services/reserve\noutput: dist\n" +
+			"build:\n    inputs:\n        pay:\n            name: paylib\n" +
+			"    steps:\n        - name: site\n          image: node:22\n          commands: [npm run build]\n",
+	})
 	e := &engine{}
-
-	err := builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, mainRepo,
-		artifact.WithSecrets(vault{})).
-		Build(t.Context(), work(paylibRepo), newOut())
-
-	require.ErrorIs(t, err, errNoSuchSecret)
-	require.ErrorContains(t, err, "GITHUB_TOKEN")
-	require.Empty(t, e.seen(), "nothing was built")
-}
-
-func TestTheValueNeverReachesTheJobLog(t *testing.T) {
-	out := newOut()
-	err := builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, &engine{}, mainRepo,
-		artifact.WithSecrets(vault{})).
-		Build(t.Context(), work(paylibRepo), out)
-
-	require.Error(t, err)
-	require.NotContains(t, err.Error(), "ghp_")
+	err := builder(t, deployed(t, config), &checkout{dir: source(t)}, e, mainRepo).
+		Build(t.Context(), work(mainRepo), newOut())
+	require.ErrorIs(t, err, artifact.ErrNotBuiltHere)
+	require.ErrorContains(t, err, "package/reserve_code reads other packages' artifacts as inputs")
+	require.Empty(t, e.seen())
 }
 
 func TestASecretsResolverMustNotBeNil(t *testing.T) {
@@ -666,17 +664,16 @@ func TestASecretsResolverMustNotBeNil(t *testing.T) {
 
 func TestAnUnreadDelegatedBlockIsRefusedByName(t *testing.T) {
 	delegated := projectConfig(t, everyBranch, map[string]string{
-		"component/paylib.yaml": "id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv\n" +
-			"source:\n    git: https://github.com/acme/paylib\n    branch: main\n    config: taubyte.yaml\n" +
-			"build:\n    script:\n        image: taubyte/go-wasi:v2\n" +
-			"        path: .taubyte/build.sh\n        output: paylib.wasm\n",
+		"package/paylib.yaml": "id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv\ntype: wasm\n" +
+			"source:\n    git: https://github.com/acme/paylib\n    branch: main\n    config: taubyte.yaml\noutput: paylib.wasm\n" +
+			steps("taubyte/go-wasi:v2", ".taubyte/build.sh"),
 	})
 	e := &engine{}
 
 	err := builder(t, deployed(t, delegated), &checkout{dir: source(t)}, e, mainRepo).
 		Build(t.Context(), work(paylibRepo), newOut())
 	require.ErrorIs(t, err, artifact.ErrUnfilled)
-	require.ErrorContains(t, err, `component/paylib names source.config "taubyte.yaml"`)
+	require.ErrorContains(t, err, `package/paylib names source.config "taubyte.yaml"`)
 	require.Empty(t, e.seen())
 }
 
@@ -697,7 +694,7 @@ func TestABarePathIsTheMainRepositoryNotACodeRepository(t *testing.T) {
 			Build(t.Context(), work(c.pushed), newOut()), c.pushed)
 		var images []string
 		for _, s := range e.seen() {
-			images = append(images, s.Image)
+			images = append(images, imageOf(s))
 		}
 		require.Equal(t, c.images, images, c.pushed)
 	}
@@ -711,7 +708,7 @@ func TestABuildTheEngineDeclinesIsReportedUnbuilt(t *testing.T) {
 		Build(t.Context(), work(mainRepo), o))
 	require.NotEmpty(t, e.seen())
 	require.Empty(t, o.stored())
-	require.Contains(t, o.text(), "not built: function/reserve for prod")
+	require.Contains(t, o.text(), "not built: package/reserve_code for prod")
 	require.Contains(t, o.text(), "this universe runs no containers")
 	require.Contains(t, o.text(), "(recipe ", "and every build it was asked for named its recipe")
 }

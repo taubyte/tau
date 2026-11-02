@@ -2,6 +2,7 @@ package emit_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -32,26 +33,27 @@ func compiles(t *testing.T, fs afero.Fs, dir string) {
 func TestAHoleInTheOutputIsNamedInTheReport(t *testing.T) {
 	fs := afero.NewMemMapFs()
 
-	// A website built by commands, with no toolchain image — the exact shape a
-	// Vercel import produced before it started writing one.
+	// A website whose package builds with a step naming no toolchain image — the exact
+	// shape a Vercel import produced before it started writing one.
 	result := importer.Result{Source: "test"}
-	result.Set("website", "site", map[string]any{
-		"build": map[string]any{
-			"commands": map[string]any{"run": "npm run build", "output": "dist"},
-		},
+	site := map[string]any{}
+	result.Runs(site, "site", map[string]any{
+		"type": "static", "output": "dist",
+		"build": map[string]any{"steps": []any{map[string]any{"name": "build", "commands": []string{"npm run build"}}}},
 	})
+	result.Set("website", "site", site)
 
 	report, err := emit.To(fs, "/project", "shop", result)
 	require.NoError(t, err)
 
 	require.False(t, report.Compiles, "it does not compile")
-	require.Contains(t, report.Why, "build/commands/image")
+	require.Contains(t, report.Why, "image")
 
 	var named []string
 	for _, m := range report.Missing {
-		named = append(named, m.Field)
+		named = append(named, m.Kind+"/"+m.Name+": "+m.Field)
 	}
-	require.Contains(t, named, "build/commands/image",
+	require.Contains(t, strings.Join(named, "\n"), "image",
 		"the to-do list must name what blocks the compile; it named %v", named)
 }
 

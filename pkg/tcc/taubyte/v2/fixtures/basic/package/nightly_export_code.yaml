@@ -1,0 +1,4 @@
+id: QmRyykJ75BWZDr9VRr23G7ZZ1Jb3gkAaaQcjyTKbZf2mHf
+type: oci
+source:
+    image: docker.io/acme/exporter:2.1

@@ -1,13 +1,7 @@
 id: QmNP8ZJRT6En1LVfTwkbiD4HgdeRxvpHGn4m5Sp2cY8UxS
 description: publishes on the path it is asked on - it declares `publish` and nothing else, so the grant it runs under is the one thing that could put a message on the topic
-runtime: wasm
-source: services/cacher
-build:
-    commands:
-        image: ghcr.io/samyfodil/wazy-build-rust:1.99.1-cc0.21.1
-        install: cargo fetch --locked
-        run: cargo component build --release --locked --target wasm32-wasip2
-        output: target/wasm32-wasip1/release/cacher.wasm
+package:
+    name: cacher_code
 execution:
     call: handle
     timeout: 15s

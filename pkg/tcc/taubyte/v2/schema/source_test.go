@@ -11,23 +11,22 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// sourceOf compiles one document and returns its `source`; absent means this
-// repository at the resource's own location.
+// sourceOf compiles one package and returns its `source`; absent means this
+// repository at the package's own location.
 func sourceOf(t *testing.T, doc string) (any, error) {
 	t.Helper()
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
-	assert.NilError(t, afero.WriteFile(fs, "/function/checkout.yaml", []byte(
-		"id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n"+
-			"runtime: wasm\n"+doc+"execution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/package/probe.yaml", []byte(
+		"id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\ntype: wasm\n"+doc), 0o644))
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
 	obj, _, err := c.Compile(context.Background())
 	if err != nil {
 		return nil, err
 	}
-	fn := namedResource(t, resources(t, obj.Flat(), "function"), "checkout")
-	return fn["source"], nil
+	pkg := namedResource(t, resources(t, obj.Flat(), "package"), "probe")
+	return pkg["source"], nil
 }
 
 func TestSourceSwitch(t *testing.T) {
@@ -40,8 +39,8 @@ func TestSourceSwitch(t *testing.T) {
 		{"absent means here", "", nil},
 		{"a bare path is this repository", "source: pkg/checkout\n", "pkg/checkout"},
 		{"a single dot is the repository root", "source: \".\"\n", "."},
-		{"another component of this project", "source:\n    component: paylib\n    namespace: /\n",
-			map[string]any{"kind": "component", "component": "QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv", "namespace": "/"}},
+		{"somebody else's image", "source:\n    image: ghcr.io/acme/api:1.4\n",
+			map[string]any{"kind": "image", "image": "ghcr.io/acme/api:1.4"}},
 		{"another repository, by clone URL", "source:\n    git: https://gitlab.com/acme/pay\n    branch: main\n    path: cmd\n",
 			map[string]any{"kind": "git", "git": "https://gitlab.com/acme/pay", "branch": "main", "path": "cmd"}},
 	} {
@@ -56,7 +55,7 @@ func TestSourceSwitch(t *testing.T) {
 func TestSourceSwitchRefuses(t *testing.T) {
 	type testCase struct{ name, doc, contains string }
 	for _, tc := range []testCase{
-		{"two branches at once", "source:\n    builtin: agent\n    component: paylib\n", "only one may be set"},
+		{"two branches at once", "source:\n    builtin: agent\n    image: busybox\n", "only one may be set"},
 		{"a provider that is not a branch", "source:\n    github:\n        id: \"1\"\n", "unknown key 'github'"},
 		{"git named as a block", "source:\n    git:\n        url: https://x/y\n", "takes a value, not a block"},
 		{"a url with no host", "source:\n    git: acme/pay\n", "no scheme"},

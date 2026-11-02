@@ -85,7 +85,7 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 
 	workflow := idOf(t, flat, "workflow", "checkout")
 	made, added := schema.Became(flat, workflow)
-	assert.Equal(t, len(made), 7, "a queue and a driver per step, and the one they fail into")
+	assert.Equal(t, len(made), 8, "a queue and a driver per step, the one they fail into, and the drivers' package")
 
 	kinds := map[string]int{}
 	for _, id := range made {
@@ -95,6 +95,7 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 	}
 	assert.Equal(t, kinds["sync"], 4)
 	assert.Equal(t, kinds["function"], 3, "a driver per step, whatever the step does")
+	assert.Equal(t, kinds["package"], 1, "every driver runs the one package")
 	assert.Equal(t, kinds["stream"], 0, "nothing authored asked for a stream")
 	assert.Equal(t, kinds["group"], 0)
 	assert.Equal(t, kinds["namespace"], 0)
@@ -366,7 +367,7 @@ func TestAnAuthoredOpIsNotRecordedAsGranted(t *testing.T) {
 	assert.NilError(t, afero.WriteFile(fs, "/function/relay_own.yaml", []byte(
 		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zu\n"+
 			"description: says for itself that it receives from the queue its step will make\n"+
-			"runtime: wasm\n"+
+			"package:\n    name: redact_code\n"+
 			"execution:\n"+
 			"    call: relay\n"+
 			"    timeout: 5s\n"+
@@ -706,5 +707,5 @@ func TestAnAgentDeclaresNoConversationState(t *testing.T) {
 		}
 	}
 	sort.Strings(became)
-	assert.DeepEqual(t, became, []string{"database/support_memory", "function/support_infer"})
+	assert.DeepEqual(t, became, []string{"database/support_memory", "function/support_infer", "package/support_loop"})
 }

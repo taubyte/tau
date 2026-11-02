@@ -65,41 +65,48 @@ func NewEngine(backend core.Backend, opts ...EngineOption) (*Containers, error) 
 	return c, nil
 }
 
-// Make runs one build and returns what it produced.
+// Make runs one build, a step at a time, and returns what it produced.
 func (c *Containers) Make(ctx context.Context, spec Spec, log io.Writer) (io.ReadCloser, error) {
+	for _, step := range spec.Steps {
+		if err := c.run(ctx, spec, step, log); err != nil {
+			return nil, fmt.Errorf("step %s: %w", step.Name, err)
+		}
+	}
+	return product(joinWithin(spec.Dir, spec.Path), spec)
+}
+
+// run is one step: its image over the checkout, its commands in one shell. What it
+// leaves in the checkout is what the next step finds.
+func (c *Containers) run(ctx context.Context, spec Spec, step Step, log io.Writer) error {
 	// Image pulls, and keeps an image the machine already holds when the pull
 	// fails — a toolchain built on this machine, or a registry that is down.
-	image, err := c.client.Image(ctx, spec.Image, containers.Output(log))
+	image, err := c.client.Image(ctx, step.Image, containers.Output(log))
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	options := []containers.ContainerOption{
 		containers.Volume(spec.Dir, mount),
 		containers.WorkDir(path.Join(mount, filepath.ToSlash(within(spec.Path)))),
-		containers.Command(append(shell, strings.Join(spec.Commands, " && "))),
+		containers.Command(append(shell, strings.Join(step.Commands, " && "))),
 	}
 	if !c.open {
 		options = append(options, containers.RestrictedEgress())
 	}
-	if env := spec.environment(); len(env) > 0 {
-		options = append(options, containers.Variables(env))
+	if len(spec.Variables) > 0 {
+		options = append(options, containers.Variables(spec.Variables))
 	}
 
 	container, err := image.Instantiate(ctx, options...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// A log that stops taking bytes says nothing about whether the build
 	// worked, so it does not fail the build: the output past that point is
 	// dropped and the container runs to its own end.
 	sink := &forgiving{w: log}
-	if err := container.Stream(ctx, sink, sink); err != nil {
-		return nil, err
-	}
-
-	return product(joinWithin(spec.Dir, spec.Path), spec)
+	return container.Stream(ctx, sink, sink)
 }
 
 // forgiving passes writes through until one fails, then swallows the rest.
@@ -115,21 +122,6 @@ func (f *forgiving) Write(p []byte) (int, error) {
 		}
 	}
 	return len(p), nil
-}
-
-// environment is what the build sees: its variables and its secrets, alike.
-func (s Spec) environment() map[string]string {
-	if len(s.Variables)+len(s.Secrets) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(s.Variables)+len(s.Secrets))
-	for k, v := range s.Variables {
-		out[k] = v
-	}
-	for k, v := range s.Secrets {
-		out[k] = v
-	}
-	return out
 }
 
 // collect reads what a build left behind: a file as itself, a directory as a

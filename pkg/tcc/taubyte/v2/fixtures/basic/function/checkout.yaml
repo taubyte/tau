@@ -1,8 +1,7 @@
 id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh
 description: takes an order and charges it
-runtime: wasm
-source:
-    component: paylib
+package:
+    name: paylib
 execution:
     call: checkout
     timeout: 20s

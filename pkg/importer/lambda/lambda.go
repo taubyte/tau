@@ -312,7 +312,7 @@ func importFunction(r *importer.Result, x fn) {
 	if x.container {
 		kind = containerKind
 		if x.image != "" {
-			doc["source"] = map[string]any{"image": x.image}
+			r.Runs(doc, name, map[string]any{"type": "oci", "source": map[string]any{"image": x.image}})
 		}
 
 		// An application is not invoked per request and has no timeout, so a Lambda's Timeout
@@ -340,6 +340,11 @@ func importFunction(r *importer.Result, x fn) {
 				Code:   "MEMORY_DEFAULTED",
 				Detail: "this function names no MemorySize, so it ran under AWS's default; " + defaultMemory + " was written"})
 		}
+	}
+	if !x.container {
+		// A zip's code becomes a package of a type this file cannot say: it is ported, so
+		// the to-do list names the package's type.
+		r.Runs(doc, name, map[string]any{})
 	}
 	if len(doc) > 0 {
 		r.Set(kind, name, doc)

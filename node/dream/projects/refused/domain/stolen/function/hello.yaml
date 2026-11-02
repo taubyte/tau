@@ -1,13 +1,7 @@
 id: QmRN6wdp1S2A5EtjW9A3M1vKSBuQQGcgvuhoMUoEz4iiT5
 description: answers the route, and says which method arrived in the status so a 200 cannot be a constant
-runtime: wasm
-source: services/hello
-build:
-    commands:
-        image: ghcr.io/samyfodil/wazy-build-rust:1.99.1-cc0.21.1
-        install: cargo fetch --locked
-        run: cargo component build --release --locked --target wasm32-wasip2
-        output: target/wasm32-wasip1/release/handler.wasm
+package:
+    name: hello_code
 execution:
     call: handle
     timeout: 15s

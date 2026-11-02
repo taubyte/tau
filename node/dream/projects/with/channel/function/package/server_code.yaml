@@ -1,0 +1,11 @@
+id: QmVoA7PqKXkkPC28QEEZouKJXeibgLQVfi9S8g52PpN8fd
+type: wasm
+source: services/cacher
+output: target/wasm32-wasip1/release/cacher.wasm
+build:
+    steps:
+        - name: build
+          image: ghcr.io/samyfodil/wazy-build-rust:1.99.1-cc0.21.1
+          commands:
+              - cargo fetch --locked
+              - cargo component build --release --locked --target wasm32-wasip2

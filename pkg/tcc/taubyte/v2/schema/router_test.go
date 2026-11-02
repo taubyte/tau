@@ -15,9 +15,10 @@ func gatewayWith(t *testing.T, body string) error {
 	t.Helper()
 	fs := afero.NewMemMapFs()
 	for path, doc := range map[string]string{
+		"/package/wasm.yaml":  standingPackages["/package/wasm.yaml"],
 		"/project.yaml":       "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\nname: p\n",
-		"/function/edge.yaml": "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nruntime: wasm\nimplements: gateway-router\nexecution:\n    call: route\n    timeout: 1s\n    memory: 16MB\n",
-		"/function/api.yaml":  "id: QmTaCZBnrxvJm5xkLQKN4o3TFhBqHfLYCUuCkFTGiT8s8t\nruntime: wasm\nexecution:\n    call: api\n    timeout: 1s\n    memory: 16MB\n",
+		"/function/edge.yaml": "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\npackage:\n    name: wasm\nimplements: gateway-router\nexecution:\n    call: route\n    timeout: 1s\n    memory: 16MB\n",
+		"/function/api.yaml":  "id: QmTaCZBnrxvJm5xkLQKN4o3TFhBqHfLYCUuCkFTGiT8s8t\npackage:\n    name: wasm\nexecution:\n    call: api\n    timeout: 1s\n    memory: 16MB\n",
 		"/gateway/g.yaml":     "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zg\nhost:\n    generated:\n        name: shop\n" + body,
 	} {
 		assert.NilError(t, afero.WriteFile(fs, path, []byte(doc), 0o644))
@@ -66,9 +67,10 @@ func auditGateway(t *testing.T, body string) []schema.Finding {
 	t.Helper()
 	fs := afero.NewMemMapFs()
 	for path, doc := range map[string]string{
+		"/package/wasm.yaml":  standingPackages["/package/wasm.yaml"],
 		"/project.yaml":       "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\nname: p\n",
-		"/function/edge.yaml": "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nruntime: wasm\nimplements: gateway-router\nexecution:\n    call: route\n    timeout: 1s\n    memory: 16MB\n",
-		"/function/api.yaml":  "id: QmTaCZBnrxvJm5xkLQKN4o3TFhBqHfLYCUuCkFTGiT8s8t\nruntime: wasm\nexecution:\n    call: api\n    timeout: 1s\n    memory: 16MB\n",
+		"/function/edge.yaml": "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\npackage:\n    name: wasm\nimplements: gateway-router\nexecution:\n    call: route\n    timeout: 1s\n    memory: 16MB\n",
+		"/function/api.yaml":  "id: QmTaCZBnrxvJm5xkLQKN4o3TFhBqHfLYCUuCkFTGiT8s8t\npackage:\n    name: wasm\nexecution:\n    call: api\n    timeout: 1s\n    memory: 16MB\n",
 		"/gateway/g.yaml":     "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zg\nhost:\n    generated:\n        name: shop\n" + body,
 	} {
 		assert.NilError(t, afero.WriteFile(fs, path, []byte(doc), 0o644))
@@ -83,11 +85,12 @@ func auditGateway(t *testing.T, body string) []schema.Finding {
 func TestARouterCanLiveInAnotherNamespace(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	for path, doc := range map[string]string{
-		"/project.yaml": "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\nname: p\n",
+		"/package/wasm.yaml": standingPackages["/package/wasm.yaml"],
+		"/project.yaml":      "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\nname: p\n",
 		// same NAME in two scopes: only the namespace tells them apart
-		"/function/edge.yaml":                "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nruntime: wasm\nexecution:\n    call: nope\n    timeout: 1s\n    memory: 16MB\n",
+		"/function/edge.yaml":                "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\npackage:\n    name: wasm\nexecution:\n    call: nope\n    timeout: 1s\n    memory: 16MB\n",
 		"/namespace/shop/meta.yaml":          "id: QmQPeNsJPyVWPFDVHb77w8G42Fvo15z4bmmjRoBHfW1YZv\n",
-		"/namespace/shop/function/edge.yaml": "id: QmTaCZBnrxvJm5xkLQKN4o3TFhBqHfLYCUuCkFTGiT8s8t\nruntime: wasm\nimplements: gateway-router\nexecution:\n    call: route\n    timeout: 1s\n    memory: 16MB\n",
+		"/namespace/shop/function/edge.yaml": "id: QmTaCZBnrxvJm5xkLQKN4o3TFhBqHfLYCUuCkFTGiT8s8t\npackage:\n    name: wasm\nimplements: gateway-router\nexecution:\n    call: route\n    timeout: 1s\n    memory: 16MB\n",
 		"/gateway/g.yaml":                    "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zg\nhost:\n    generated:\n        name: shop\nrouter:\n    namespace: /shop\n    name: edge\n",
 	} {
 		assert.NilError(t, afero.WriteFile(fs, path, []byte(doc), 0o644))

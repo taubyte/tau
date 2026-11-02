@@ -38,7 +38,10 @@ services:
 	require.Equal(t, Source, r.Source)
 	doc, ok := r.Doc("application", "api")
 	require.True(t, ok)
-	require.Equal(t, map[string]any{"image": "acme/api:1"}, doc["source"])
+	require.Equal(t, map[string]any{"name": "api_image"}, doc["package"])
+	pkg, ok := r.Doc("package", "api_image")
+	require.True(t, ok)
+	require.Equal(t, map[string]any{"image": "acme/api:1"}, pkg["source"])
 
 	// compose's own findings survive the delegation.
 	require.Equal(t, importer.Blocked, finding(t, r, "restart").Level)

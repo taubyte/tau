@@ -125,12 +125,13 @@ func TestAGroupTwoKindsReadDifferentlyStopsTheGenerator(t *testing.T) {
 }
 
 func TestAUnionsDiscriminatorNamesEveryKindsValues(t *testing.T) {
-	out := string(RenderReaders("specs", v2.GenerationRoot(), []string{"application", "function"}))
+	out := string(RenderReaders("specs", v2.GenerationRoot(), []string{"package", "agent", "application", "function"}))
 
 	require.Contains(t, out, `SourceBlockKeySourceKind`)
-	for _, value := range []string{"Image", "Git", "Component", "Builtin"} {
+	for _, value := range []string{"Image", "Git", "Builtin"} {
 		require.Contains(t, out, "SourceBlockSourceKind"+value+" ")
 	}
 	require.Contains(t, out, `WorkloadBlockKeyVariables`)
-	require.Contains(t, out, "which of image, git, component, builtin was written")
+	require.Contains(t, out, `WorkloadBlockKeyPackageName`)
+	require.Contains(t, out, "which of git, image, builtin was written")
 }

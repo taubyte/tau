@@ -190,8 +190,10 @@ func TestAnEntrypointRoundTripsOnEitherTier(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
 	for path, doc := range map[string]string{
-		"/function/exports_default.yaml": "id: " + cidFor("exports_default") + "\nruntime: wasm\nexecution:\n    call: default\n    timeout: 1s\n    memory: 1MB\n",
-		"/function/module.yaml":          "id: " + cidFor("module") + "\nruntime: js\nexecution:\n    timeout: 1s\n    memory: 1MB\n",
+		"/package/wasm.yaml":             standingPackages["/package/wasm.yaml"],
+		"/package/warp.yaml":             standingPackages["/package/warp.yaml"],
+		"/function/exports_default.yaml": "id: " + cidFor("exports_default") + "\npackage:\n    name: wasm\nexecution:\n    call: default\n    timeout: 1s\n    memory: 1MB\n",
+		"/function/module.yaml":          "id: " + cidFor("module") + "\npackage:\n    name: warp\nexecution:\n    timeout: 1s\n    memory: 1MB\n",
 	} {
 		assert.NilError(t, afero.WriteFile(fs, path, []byte(doc), 0o644))
 	}
@@ -207,5 +209,6 @@ func TestAnEntrypointRoundTripsOnEitherTier(t *testing.T) {
 
 	fns := resources(t, compileFor(t, schema.WithVirtual(out, "/")).Flat(), "function")
 	assert.Equal(t, nested(namedResource(t, fns, "exports_default"), "execution", "call"), "default")
-	assert.Equal(t, nested(namedResource(t, fns, "module"), "execution", "call"), "default")
+	_, called := nestedOK(namedResource(t, fns, "module"), "execution", "call")
+	assert.Assert(t, !called, "a module's default export is its tier's to know, not written into the object")
 }

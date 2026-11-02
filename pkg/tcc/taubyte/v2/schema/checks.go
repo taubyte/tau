@@ -119,13 +119,15 @@ func Audit(obj map[string]any, r Resolver, opts ...AuditOption) []Finding {
 	for _, res := range all {
 		byKind[res.kind] = append(byKind[res.kind], res)
 	}
+	pkgs := packagesByID(byKind)
 
 	var out []Finding
 	out = append(out, checkReachable(all, byKind)...)
 	out = append(out, checkPortsAreFed(all)...)
-	out = append(out, checkDelivery(all)...)
+	out = append(out, checkDelivery(all, pkgs)...)
 	out = append(out, checkVariables(all)...)
-	out = append(out, checkBuild(all)...)
+	out = append(out, checkPackages(all)...)
+	out = append(out, checkWorkloadPackages(all, pkgs)...)
 	out = append(out, checkTransformerWorlds(all)...)
 	out = append(out, checkBusIsGuarded(all, byKind)...)
 	out = append(out, checkDelegatedFills(obj, all)...)
@@ -452,10 +454,10 @@ func checkPortsAreFed(all []compiled) []Finding {
 
 // checkDelivery: a container has no host ABI, so an item has to be posted to a port
 // it declared. A WASM workload is dispatched and needs none.
-func checkDelivery(all []compiled) []Finding {
+func checkDelivery(all []compiled, pkgs map[string]compiled) []Finding {
 	var out []Finding
 	for _, res := range all {
-		if !runsAsContainer(res) {
+		if !runsAsContainer(res, pkgs) {
 			continue // dispatched, not posted to
 		}
 		for group, val := range res.fields {
@@ -492,18 +494,34 @@ func checkDelivery(all []compiled) []Finding {
 }
 
 // runsAsContainer: whether something must be posted to a port. The tier is the
-// kind's (Engines()), or `runtime` where it declares more than one; an image
-// field is not the test, since a Dockerfile-built workload has none.
-func runsAsContainer(res compiled) bool {
-	if tier := res.str("runtime"); tier != "" {
-		return tier == containerEngine
-	}
-	engines := EnginesOf(res.kind)
-	return len(engines) == 1 && engines[0] == containerEngine
+// type of the package the workload names; an image field is not the test, since
+// a Dockerfile-built package has none.
+func runsAsContainer(res compiled, pkgs map[string]compiled) bool {
+	return tierOf(res, pkgs) == ociPackage
 }
 
-// checkVariables: exactly one of value or secret. The DSL cannot state a mutual
-// exclusion, so it is stated here.
+// packagesByID is every package, by the id a workload's reference compiles to.
+func packagesByID(byKind map[string][]compiled) map[string]compiled {
+	out := map[string]compiled{}
+	for _, p := range byKind["package"] {
+		out[p.id] = p
+	}
+	return out
+}
+
+// tierOf is the tier a workload runs on: its package's type's, or the kind's own
+// where it has one tier and names no package. "" when neither says.
+func tierOf(res compiled, pkgs map[string]compiled) string {
+	if p, ok := pkgs[res.at("package", "name")]; ok {
+		return p.str("type")
+	}
+	if engines := EnginesOf(res.kind); len(engines) == 1 {
+		return engines[0]
+	}
+	return ""
+}
+
+// checkVariables: a variable delivered as a file needs a path to be mounted at.
 func checkVariables(all []compiled) []Finding {
 	var out []Finding
 	for _, res := range all {
@@ -519,62 +537,76 @@ func checkVariables(all []compiled) []Finding {
 						"A file has to be mounted somewhere the workload can open it.", res.id})
 				}
 			}
-			_, literal := entry["value"]
-			_, secret := entry["secret"]
-			switch {
-			case literal && secret:
-				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
-					fmt.Sprintf("variable %q has both a value and a secret", name),
-					"One or the other: a literal is in git, a secret reference is not. With both, which one the workload gets is whatever the runtime happens to prefer.", res.id})
-			case !literal && !secret:
-				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
-					fmt.Sprintf("variable %q has neither a value nor a secret", name),
-					"The name is declared and nothing is behind it, so the workload reads an empty string.", res.id})
-			}
 		}
 	}
 	return out
 }
 
-// checkBuild: exclusions spanning `source:` and `build:`, two attributes no
-// single switch reaches:
+// checkPackages: what a package's type, source and build say has to agree, across
+// fields no single switch reaches.
 //
-//	an image AND a build      the image is finished; nothing the build says would run
-//	neither, on a container   there is no artifact and no recipe for one
-//	a build the tier cannot use   a Dockerfile makes an image, not a component
-func checkBuild(all []compiled) []Finding {
+//	an image AND a build          the image is finished; nothing the build says would run
+//	an image that is not oci      an image is what an oci package is
+//	a Dockerfile that is not oci  a Dockerfile makes an image
+//	oci with neither              there is no image and no recipe for one
+//	steps with no output          the build would leave nothing to take
+//	a Dockerfile with an output   its artifact is the image it makes
+func checkPackages(all []compiled) []Finding {
+	var out []Finding
+	broken := func(res compiled, what, why string) {
+		out = append(out, Finding{Broken, res.kind, res.name, res.scope, what, why, res.id})
+	}
+	for _, res := range all {
+		if res.kind != "package" {
+			continue
+		}
+		typ, way, from := res.str("type"), res.at("build", "kind"), res.at("source", "kind")
+		switch {
+		case from == "image" && way != "":
+			broken(res, "takes its artifact from an image and also declares a build",
+				"The image is already built, so nothing the build says would run. Take one out: name the image, or the build that produces one.")
+		case from == "image" && typ != ociPackage:
+			broken(res, fmt.Sprintf("names an image and is of type %s", typ),
+				"An image is what a package of type oci is. Make it oci, or point source at the code this type is built from.")
+		case way == dockerfileBuild && typ != ociPackage:
+			broken(res, fmt.Sprintf("is built from a Dockerfile and is of type %s", typ),
+				"A Dockerfile makes an image, which is a package of type oci. Build a "+typ+" package with steps.")
+		case typ == ociPackage && way == "" && from != "image" && from != "builtin":
+			broken(res, "is of type oci and names no image and no build",
+				"An oci package is an image: point source at one somebody built, or declare the build that makes it.")
+		}
+		switch output := res.str("output"); {
+		case way == stepsBuild && output == "":
+			broken(res, "is built with steps and names no output",
+				"Steps leave files behind; output says which of them is the artifact, e.g. \"dist\" or \"target/release/app.wasm\".")
+		case way == dockerfileBuild && output != "":
+			broken(res, "is built from a Dockerfile and names an output",
+				"A Dockerfile build's artifact is the image it makes. Take output out.")
+		}
+	}
+	return out
+}
+
+// checkWorkloadPackages: a workload runs on its package's tier, which its kind has
+// to be able to run, and a wasm component is entered through a named export.
+func checkWorkloadPackages(all []compiled, pkgs map[string]compiled) []Finding {
 	var out []Finding
 	for _, res := range all {
-		if len(EnginesOf(res.kind)) == 0 {
-			continue // nothing builds it, and nothing here applies
+		p, ok := pkgs[res.at("package", "name")]
+		if !ok {
+			continue // nothing named, or unresolved: the reference's to refuse
 		}
-		way := res.at("build", "kind")
-		fromImage := res.at("source", "kind") == "image"
-
-		switch {
-		case fromImage && way != "":
+		tier := p.str("type")
+		if engines := EnginesOf(res.kind); !slices.Contains(engines, tier) {
 			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
-				"takes its content from an image and also declares a build",
-				"The image is already built, so nothing the build says would run. Take one out: name the image, or name the build that produces one.", res.id})
-		case !fromImage && way == "" && runsAsContainer(res):
-			// A repository alone is enough for a wasm component or a static site —
-			// that is what the absent block means everywhere else. It is not enough
-			// for an image: nothing here turns a directory into one without being
-			// told how.
-			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
-				"names no image and declares no build",
-				"A container runs an image. Either point source at one somebody built, or declare the build that makes it.", res.id})
+				fmt.Sprintf("runs package %s, which is of type %s", p.name, p.str("type")),
+				fmt.Sprintf("A %s runs on %s. Name a package that one of those runs.", res.kind, strings.Join(engines, " or ")), res.id})
+			continue
 		}
-
-		// The way of building and the tier that runs the product, on a kind that
-		// chooses between tiers. A Dockerfile produces an image; commands and a script
-		// produce what the builder found in its output directory.
-		if tier := res.str("runtime"); tier != "" && way != "" {
-			if produces := BuildWaysOf(tier); !slices.Contains(produces, way) {
-				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
-					fmt.Sprintf("runs on the %s tier and is built with %q", tier, way),
-					fmt.Sprintf("That way of building does not produce what a %s tier runs. Use one of: %s.", tier, strings.Join(produces, ", ")), res.id})
-			}
+		if tier == wasmPackage && res.at("execution", "call") == "" {
+			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+				fmt.Sprintf("runs the wasm package %s and names no entrypoint", p.name),
+				"A component exports many functions and the host calls one. Name it in execution.call.", res.id})
 		}
 	}
 	return out
@@ -1439,7 +1471,7 @@ func checkAuthoredBuiltins(low interp.Lowered, all []compiled) []Finding {
 		}
 		out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 			fmt.Sprintf("names the built-in program %q, which is not an author's to name", name),
-			"`source: {builtin: …}` is how a lowering says a workload's code is the platform's own — the agent loop, a workflow's step driver. The set is closed by what the runtime ships, so a resource somebody wrote can only name something that is not there. Point `source` at this repository, a component, or a git URL.",
+			"`source: {builtin: …}` is how a lowering says a workload's code is the platform's own — the agent loop, a workflow's step driver. The set is closed by what the runtime ships, so a resource somebody wrote can only name something that is not there. Point the package's `source` at this repository, a git URL or an image.",
 			res.id})
 	}
 	return out

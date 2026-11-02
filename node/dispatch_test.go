@@ -52,9 +52,8 @@ func withConsumer(c consumer) []byte {
 
 	workload := map[string]any{
 		"name":      "checkout",
-		"runtime":   "wasm",
 		"execution": map[string]any{"call": "handle", "memory": 33554432},
-		"source":    "services/checkout",
+		"package":   map[string]any{"name": codePackageID},
 		"sync":      map[string]any{"jobs": entry},
 	}
 	if c.Concurrency > 0 {
@@ -75,14 +74,17 @@ func withConsumer(c consumer) []byte {
 
 	doc := map[string]any{
 		"object": map[string]any{
-			"id":   projectID,
-			"name": "shop",
+			"id":      projectID,
+			"name":    "shop",
+			"package": map[string]any{codePackageID: map[string]any{"name": "code", "type": "wasm"}},
 			"function": map[string]any{
 				"QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY": workload,
 			},
 			"sync": map[string]any{queueID: target},
 		},
 		"indexes": map[string]any{
+			"projects/" + projectID + "/package/code/links": []any{
+				"branches/main/projects/" + projectID + "/package/" + codePackageID},
 			"projects/" + projectID + "/function/checkout/links": []any{
 				"branches/main/projects/" + projectID + "/function/QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY"},
 			"projects/" + projectID + "/sync/jobs/links": []any{

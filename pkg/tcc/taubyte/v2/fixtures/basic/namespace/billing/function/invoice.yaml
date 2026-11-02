@@ -1,6 +1,7 @@
 id: QmS8sDbYoAcgtGdmDGiG3Yhoqp6nJEUTvSsUJqzhqVGYCe
 description: bills an order; reads a cache, writes the books
-runtime: wasm
+package:
+    name: invoice_code
 execution:
     call: invoice
     timeout: 10s

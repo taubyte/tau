@@ -32,6 +32,7 @@ var (
 	DefineIter      = engine.DefineIter
 	DefineIterGroup = engine.DefineIterGroup
 	DefineList      = engine.DefineList
+	DefineBlock     = engine.DefineBlock
 
 	// The lowering terms. They live in interp rather than engine because the
 	// interpreter is what carries them out; they are re-exported here so a vocabulary

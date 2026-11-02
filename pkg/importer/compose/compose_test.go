@@ -55,11 +55,21 @@ func hasFinding(r importer.Result, service, key string) bool {
 	return false
 }
 
+// pkgOf is the package a service runs.
+func pkgOf(t *testing.T, r importer.Result, service string) map[string]any {
+	t.Helper()
+	ref, ok := docOf(t, r, service)["package"].(map[string]any)
+	require.True(t, ok, "%s names no package", service)
+	pkg, ok := r.Doc("package", ref["name"].(string))
+	require.True(t, ok, "%s names %v, which was not imported", service, ref)
+	return pkg
+}
+
 func TestTheTargetKindIsVerifiedAgainstTheVocabulary(t *testing.T) {
 	kind, err := targetKind()
 	require.NoError(t, err)
-	require.Contains(t, v2.EnginesOf(kind), "container",
-		"the importer's target must be a kind the vocabulary says runs containers")
+	require.Contains(t, v2.EnginesOf(kind), "oci",
+		"the importer's target must be a kind the vocabulary says runs images")
 }
 
 func TestWhatCarriesAcrossFaithfully(t *testing.T) {
@@ -75,8 +85,9 @@ services:
 `)
 	api := docOf(t, r, "api")
 
-	// `source` is a block and `image` is one of its branches.
-	require.Equal(t, map[string]any{"image": "acme/api:1.2.3"}, api["source"])
+	// What runs is a package, and an image is one of its sources.
+	require.Equal(t, map[string]any{"name": "api_image"}, api["package"])
+	require.Equal(t, map[string]any{"type": "oci", "source": map[string]any{"image": "acme/api:1.2.3"}}, pkgOf(t, r, "api"))
 
 	// A VARIABLE IS A BLOCK, not a bare value: `at` says build or run and `as`
 	// says how it is delivered, both defaulted by the vocabulary.
@@ -140,24 +151,29 @@ services:
       context: ./api
       dockerfile: Dockerfile.prod
       target: release
+      args:
+        VERSION: "1.4"
 `)
-	api := docOf(t, r, "api")
+	pkg := pkgOf(t, r, "api")
 
-	// The context is `source`, not part of the build.
-	require.Equal(t, "api", api["source"])
+	// The context is the package's source, not part of the build.
+	require.Equal(t, "api", pkg["source"])
 	require.Equal(t, map[string]any{
 		"dockerfile": map[string]any{
 			"path":   "Dockerfile.prod",
 			"target": "release",
 		},
-	}, api["build"])
+	}, pkg["build"])
+	// and the build's arguments are the package's variables, which a Dockerfile build
+	// takes as its ARGs
+	require.Equal(t, map[string]any{"VERSION": map[string]any{"value": "1.4"}}, pkg["variables"])
 
 	short := importOf(t, `
 services:
   api:
     build: ./api
 `)
-	require.Equal(t, "api", docOf(t, short, "api")["source"])
+	require.Equal(t, "api", pkgOf(t, short, "api")["source"])
 	require.NotContains(t, docOf(t, short, "api"), "build", "a context alone says nothing about how")
 }
 
@@ -233,7 +249,7 @@ services:
 		require.NotContains(t, api, key,
 			"%s reached the config; the runtime cannot honour it and the next reader would believe it", key)
 	}
-	require.Equal(t, map[string]any{"image": "x"}, api["source"], "and what CAN be honoured is still there")
+	require.Equal(t, map[string]any{"image": "x"}, pkgOf(t, r, "api")["source"], "and what CAN be honoured is still there")
 
 	// The named volume is a resource of its own and the service mounts it.
 	require.Equal(t, map[string]any{"data": map[string]any{"ops": []string{"mount-rw"}, "path": "/var/lib/data"}},
@@ -430,8 +446,8 @@ volumes:
   pgdata: {}
 `)
 	require.Equal(t, []string{"api", "db", "web"}, r.Names("application"))
-	require.Equal(t, map[string]any{"image": "acme/api:2"}, docOf(t, r, "api")["source"])
-	require.Equal(t, "web", docOf(t, r, "web")["source"])
+	require.Equal(t, map[string]any{"image": "acme/api:2"}, pkgOf(t, r, "api")["source"])
+	require.Equal(t, "web", pkgOf(t, r, "web")["source"])
 
 	// The database keeps its data, which is the difference between importing a
 	// Postgres and importing a Postgres that loses everything on re-placement.

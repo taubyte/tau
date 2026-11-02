@@ -1,6 +1,7 @@
 id: QmcMwon2o4JQSgWXcaEw6AjViyDiCCTJKyTmSxX93V985J
 description: what every request passes through first - it may change the request or answer it outright, and answering is how a gateway refuses without anything behind it ever running
-runtime: wasm
+package:
+    name: shaper_code
 # THE REFUSING ARM IS THE POINT. `outcome` is forward-or-answer, and the WIT
 # world says what answer is for: it "stops the chain here and the response goes
 # back to the client, which is how a filter rejects without the request ever
@@ -8,13 +9,6 @@ runtime: wasm
 # `transformers:` rather than `authorizer:` because the question is per-request
 # and its answer is a response, not the set of ops an authorizer returns.
 implements: gateway-transformer
-source: services/shaper
-build:
-    commands:
-        image: ghcr.io/samyfodil/wazy-build-rust:1.99.1-cc0.21.1
-        install: cargo fetch --locked
-        run: cargo component build --release --locked --target wasm32-wasip2
-        output: target/wasm32-wasip1/release/shaper.wasm
 execution:
     call: transform
     timeout: 15s

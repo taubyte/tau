@@ -58,20 +58,22 @@ func TestEveryGeneratedReaderReadsItsOwnKind(t *testing.T) {
 func TestTheUnionsReadAcrossKinds(t *testing.T) {
 	p := load(t)
 
-	fn, _, err := p.Resource(nil, "function", "reserve_stock")
-	require.NoError(t, err)
-
-	src := specs.ReadSourceBlock(fn)
-	require.Equal(t, "services/reserve", src.Source, "the bare form, at its own key")
-	require.Empty(t, src.SourcePath, "and not the block form")
-
-	build := specs.ReadBuildBlock(fn)
-	require.Equal(t, "commands", build.BuildKind)
-	require.Equal(t, "rust:1.83", build.BuildImage)
-
-	// AN APPLICATION DECLARES A DIFFERENT SOURCE and the same union reads it,
+	// A PACKAGE AND AN AGENT both declare a source, and the one union reads both,
 	// which is the whole point of a union: a walk over a project meets both.
-	app, _, err := p.Resource(nil, "application", "api")
+	pkg, _, err := p.Resource(nil, "package", "paylib")
 	require.NoError(t, err)
-	require.NotEmpty(t, specs.ReadSourceBlock(app).SourceImage)
+	src := specs.ReadSourceBlock(pkg)
+	require.Equal(t, "git", src.SourceKind)
+	require.Equal(t, "https://github.com/acme/paylib", src.SourceGit)
+
+	image, _, err := p.Resource(nil, "package", "api_image")
+	require.NoError(t, err)
+	require.NotEmpty(t, specs.ReadSourceBlock(image).SourceImage)
+
+	// and every workload names what it runs through the same field
+	for _, at := range [][2]string{{"function", "reserve_stock"}, {"application", "api"}} {
+		r, _, err := p.Resource(nil, at[0], at[1])
+		require.NoError(t, err)
+		require.NotEmpty(t, specs.ReadWorkloadBlock(r).PackageName, "%s/%s", at[0], at[1])
+	}
 }

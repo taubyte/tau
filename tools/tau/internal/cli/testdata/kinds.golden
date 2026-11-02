@@ -4,7 +4,6 @@ kinds
   bus
   cache
   channel
-  component
   cron
   database
   function
@@ -12,6 +11,7 @@ kinds
   mcp
   model
   namespace (a scope: resources go inside it with --in)
+  package
   proxy
   sandbox
   secret

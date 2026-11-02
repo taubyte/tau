@@ -1,8 +1,7 @@
 id: QmeeaR9J7NUBFMKqt1g8Kc9LaojTAiWw6xwyNvjviMYW48
 description: echoes the request it was handed, so an answer proves it came from inside the container and not from a constant
-# PINNED BY DIGEST. A tag can be moved under the test; a digest is the bytes.
-source:
-    image: "traefik/whoami@sha256:43a68d10b9dfcfc3ffbfe4dd42100dc9aeaf29b3a5636c856337a5940f1b4f1c"
+package:
+    name: whoami_code
 # the port the image already listens on - an off-the-shelf image binds its own
 # number whatever it is told, so the tier maps this rather than handing it $PORT
 ports:

@@ -1,6 +1,7 @@
 id: QmPvURuXz82xhtXTxNcU3SJzwwByafdHcgL7JLp3njdUAu
 description: a container with nothing to run - a path in a repository, and no build that turns it into an image
-source: services/api
+package:
+    name: nothing_code
 ports:
     http:
         number: 8080

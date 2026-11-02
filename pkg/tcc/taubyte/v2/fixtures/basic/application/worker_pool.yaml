@@ -1,10 +1,7 @@
 id: QmRZ8XwnqQzhLTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPYuK
 description: a container queue consumer built from this repository - ready when the pool says so; nothing restarts it, so it declares no liveness
-source: services/pool
-build:
-    dockerfile:
-        path: Dockerfile
-        target: runtime
+package:
+    name: worker_pool_code
 ports:
     work:
         number: 8080

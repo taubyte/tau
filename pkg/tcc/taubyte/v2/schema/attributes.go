@@ -51,21 +51,31 @@ var attributeIndex = sync.OnceValue(func() map[string][]string {
 		}
 
 		seen := map[string]bool{}
-		var walk func(n *engine.Node)
-		walk = func(n *engine.Node) {
+		// at is the key a block's fields are filed under, and a group's or a list's
+		// entries inside one are `*`, the segment a read computes.
+		var walk func(n *engine.Node, at string)
+		walk = func(n *engine.Node, at string) {
 			if n == nil {
 				return
 			}
 			for _, a := range n.Attributes {
 				if a != nil && a.Name != "" {
-					seen[a.Name] = true
+					seen[at+a.Name] = true
 				}
 			}
 			for _, c := range n.Children {
-				walk(c)
+				key, _ := c.Match.(string)
+				switch {
+				case engine.IsBlock(c):
+					walk(c, at+key+"/")
+				case at != "" && key != "" && len(c.Children) > 0:
+					walk(c.Children[0], at+key+"/*/")
+				default:
+					walk(c, at)
+				}
 			}
 		}
-		walk(g.Children[0])
+		walk(g.Children[0], "")
 
 		names := make([]string, 0, len(seen))
 		for name := range seen {

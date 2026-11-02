@@ -40,12 +40,14 @@ func withStepFunction() []byte {
 		"object": {
 			"id": "` + projectID + `",
 			"name": "shop",
+			"package": {
+				"` + codePackageID + `": {"name": "code", "type": "wasm"}
+			},
 			"function": {
 				"QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY": {
 					"name": "reserve_stock",
-					"runtime": "wasm",
 					"execution": {"call": "handle", "memory": 33554432},
-					"source": "services/reserve"
+					"package": {"name": "` + codePackageID + `"}
 				}
 			},
 			"sync": {
@@ -60,6 +62,8 @@ func withStepFunction() []byte {
 			}
 		},
 		"indexes": {
+			"projects/` + projectID + `/package/code/links": [
+				"branches/main/projects/` + projectID + `/package/` + codePackageID + `"],
 			"projects/` + projectID + `/function/reserve_stock/links": [
 				"branches/main/projects/` + projectID + `/function/QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY"],
 			"projects/` + projectID + `/sync/checkout_reserve/links": [

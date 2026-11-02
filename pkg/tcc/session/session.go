@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -59,6 +60,16 @@ type RequiredField struct {
 	// branch sitting at the resource's root.
 	WhenBranch   bool
 	WhenBranchAt []string
+
+	// In is where the field's entries are, when it is a field of each entry of a group
+	// or each element of a list; Path is then relative to one entry. List says the
+	// entries are positions rather than names.
+	In   []string
+	List bool
+
+	// Claimed is every key under In that is the holder's own field rather than an
+	// entry.
+	Claimed []string
 }
 
 // Completer supplies a DSL's field completion sources: the fixed candidates (enum
@@ -401,18 +412,20 @@ func (s *Session) ValidateResource(res []string) []FieldIssue {
 	var issues []FieldIssue
 	// A required field that is absent has no value to check, so it is looked for by
 	// name.
-	for _, rf := range s.bind.FieldValidator.RequiredFields(group) {
-		if !s.requiredNow(res, rf) || s.hasValue(res, rf.FieldRef) {
-			continue
+	for _, required := range s.bind.FieldValidator.RequiredFields(group) {
+		for _, rf := range s.atEachEntry(res, required) {
+			if !s.requiredNow(res, rf) || s.hasValue(res, rf.FieldRef) {
+				continue
+			}
+			at := s.authoredAt(res, rf.FieldRef)
+			msg := fmt.Sprintf("required field %q is missing", strings.Join(at, "/"))
+			switch {
+			case rf.When != nil:
+				msg = fmt.Sprintf("%s is required when %s is %s", strings.Join(at, "/"),
+					strings.Join(rf.When.Path, "/"), strings.Join(rf.WhenIn, " or "))
+			}
+			issues = append(issues, FieldIssue{Field: at, Message: msg})
 		}
-		at := s.authoredAt(res, rf.FieldRef)
-		msg := fmt.Sprintf("required field %q is missing", strings.Join(at, "/"))
-		switch {
-		case rf.When != nil:
-			msg = fmt.Sprintf("%s is required when %s is %s", strings.Join(at, "/"),
-				strings.Join(rf.When.Path, "/"), strings.Join(rf.WhenIn, " or "))
-		}
-		issues = append(issues, FieldIssue{Field: at, Message: msg})
 	}
 	for _, f := range s.bind.FieldValidator.Fields(group) {
 		v, err := s.Get(res, f)
@@ -424,6 +437,53 @@ func (s *Session) ValidateResource(res []string) []FieldIssue {
 		}
 	}
 	return issues
+}
+
+// atEachEntry is a required field once for the resource, or, for a field of a group's
+// entries or a list's elements, once per entry the document has, addressed from the
+// resource. An entry that is not there owes nothing.
+func (s *Session) atEachEntry(res []string, rf RequiredField) []RequiredField {
+	if len(rf.In) == 0 {
+		return []RequiredField{rf}
+	}
+	v, err := s.Get(res, rf.In)
+	if err != nil {
+		return nil
+	}
+	var entries []string
+	switch held := v.(type) {
+	case []any:
+		for i := range held {
+			entries = append(entries, strconv.Itoa(i))
+		}
+	case map[string]any:
+		for name := range held {
+			if !slices.Contains(rf.Claimed, name) {
+				entries = append(entries, name)
+			}
+		}
+		sort.Strings(entries)
+	}
+	out := make([]RequiredField, 0, len(entries))
+	for _, entry := range entries {
+		at := append(append([]string{}, rf.In...), entry)
+		under := func(p []string) []string { return append(append([]string{}, at...), p...) }
+		one := rf
+		one.In = nil
+		one.Path = under(rf.Path)
+		one.AnyOf = nil
+		for _, p := range rf.AnyOf {
+			one.AnyOf = append(one.AnyOf, under(p))
+		}
+		if rf.When != nil {
+			one.When = &FieldRef{Path: under(rf.When.Path)}
+		}
+		if rf.WhenBranch {
+			one.WhenBranchAt = under(rf.WhenBranchAt)
+		}
+		out = append(out, one)
+	}
+	return out
 }
 
 // hasValue reports whether a field is authored at any of its locations.

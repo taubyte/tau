@@ -1,0 +1,10 @@
+id: QmbukiddS7jezXxexBGHGxceDGKkpgHMXMov8agUCx6JSd
+type: wasm
+source: services/python
+output: function.wasm
+build:
+    steps:
+        - name: build
+          image: ghcr.io/samyfodil/wazy-build-python:0.25.1-py3.13.9
+          commands:
+              - componentize-py -d ../../wit -w handler componentize function -o function.wasm

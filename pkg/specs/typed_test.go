@@ -28,12 +28,7 @@ func TestEntriesAreReadPerEntry(t *testing.T) {
 	require.Equal(t, int64(9090), api.Ports["metrics"].Number)
 
 	require.Equal(t, "info", api.Variables["LOG_LEVEL"].Value)
-	require.Equal(t, specs.VariablesEntryAtRun, api.Variables["LOG_LEVEL"].At)
 	require.Equal(t, specs.VariablesEntryAsEnv, api.Variables["LOG_LEVEL"].As)
-	stripe := api.Variables["STRIPE_KEY"]
-	require.True(t, stripe.Secret.Declared)
-	require.NotEmpty(t, stripe.Secret.Name, "a reference compiles to an id")
-	require.False(t, api.Variables["REGION"].Secret.Declared)
 
 	shop := specs.ReadGateway(resource(t, nil, specs.KindGateway, "shop"))
 	require.Len(t, shop.Transformers, 2)
@@ -178,9 +173,9 @@ func TestSharedBlocksReadTheSameFromAnyKind(t *testing.T) {
 	require.Equal(t, specs.ReadInstances(r), specs.ReadDatabase(r).Instances)
 	require.Equal(t, specs.InstancesAdmissionValidator, specs.ReadInstances(r).Admission)
 
-	fn := specs.ReadFunction(resource(t, nil, specs.KindFunction, "reserve_stock"))
-	require.Equal(t, "services/reserve", fn.Source.Value, "the short form, at the block's own key")
-	require.Equal(t, specs.FunctionBuildKindCommands, fn.Build.Kind)
+	pkg := specs.ReadPackage(resource(t, nil, specs.KindPackage, "reserve_stock_code"))
+	require.Equal(t, "services/reserve", pkg.Source.Value, "the short form, at the block's own key")
+	require.Equal(t, specs.PackageBuildKindSteps, pkg.Build.Kind)
 }
 
 func TestTheKeysAreTheCompiledPaths(t *testing.T) {

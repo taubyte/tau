@@ -1,18 +1,12 @@
 id: QmVjvvMP9tfzUrjKH2qrQX52g1PL4ft5ewNum6ZftAxRip
 description: who may attach, and with what - it is asked about the REQUEST, because whoever completes the handshake is a browser and a browser has no project, environment or scope for the other authorizer world to be asked about
-runtime: wasm
+package:
+    name: doorman_code
 # THE ROUTE NAMES THIS, NOT THE BUS. A bus carries an `authorizer:` of its own
 # because it declares Ops(subscribe, publish), but that one is asked
 # `who: caller` about a WORKLOAD. Ingress needs the world that is handed the
 # request itself, which is why `implements` says http-authorizer.
 implements: http-authorizer
-source: services/doorman
-build:
-    commands:
-        image: ghcr.io/samyfodil/wazy-build-rust:1.99.1-cc0.21.1
-        install: cargo fetch --locked
-        run: cargo component build --release --locked --target wasm32-wasip2
-        output: target/wasm32-wasip1/release/doorman.wasm
 execution:
     call: authorize
     timeout: 5s

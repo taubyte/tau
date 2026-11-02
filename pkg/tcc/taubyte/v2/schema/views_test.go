@@ -67,9 +67,27 @@ func (s several) Place(p schema.Placement) schema.Answer {
 }
 
 func viewFunction(name, block string) string {
-	return "id: " + cidFor("function/"+name) + "\nruntime: wasm\nsource: services/" + name + "\n" +
-		"build:\n    commands:\n        image: rust:1.83\n        run: cargo build\n        output: x.wasm\n" +
+	return "id: " + cidFor("function/"+name) + "\npackage:\n    name: " + name + "_code\n" +
 		"execution:\n    call: handle\n    timeout: 15s\n    memory: 32MiB\n" + block
+}
+
+// viewPackage is what a viewFunction runs. withPackages adds one beside every function,
+// so a test lists the workloads it is about.
+func viewPackage(name string) string {
+	return "id: " + cidFor("package/"+name+"_code") + "\ntype: wasm\nsource: services/" + name + "\noutput: x.wasm\n" +
+		"build:\n    steps:\n        - name: build\n          image: rust:1.83\n          commands: [cargo build]\n"
+}
+
+func withPackages(docs map[string]string) map[string]string {
+	out := map[string]string{}
+	for path, body := range docs {
+		out[path] = body
+		if name, ok := strings.CutPrefix(path, "/function/"); ok {
+			name = strings.TrimSuffix(name, ".yaml")
+			out["/package/"+name+"_code.yaml"] = viewPackage(name)
+		}
+	}
+	return out
 }
 
 func viewCache(name, block string) string {
@@ -122,6 +140,7 @@ func TestNoRegionsIsOneViewOfEverything(t *testing.T) {
 		"cache/sessions":   schema.RoleAnywhere,
 		"gateway/api":      schema.RoleFollows,
 		"zone/example_com": schema.RoleNeeded,
+		"package/api_code": schema.RoleNeeded,
 	}, rolesByName(t, v))
 }
 
@@ -144,17 +163,20 @@ func TestEachPolicyIsHeldInItsRole(t *testing.T) {
 		"cache/free":       schema.RoleAnywhere,
 		"gateway/api":      schema.RoleFollows,
 		"zone/example_com": schema.RoleNeeded,
+		"package/api_code": schema.RoleNeeded,
 	}, rolesByName(t, views["region-1"]))
 	require.Equal(t, map[string]schema.Role{
 		"cache/ha":         schema.RoleStandby,
 		"cache/edge":       schema.RoleSeed,
 		"cache/free":       schema.RoleAnywhere,
 		"zone/example_com": schema.RoleFollows,
+		"package/api_code": schema.RoleFollows,
 	}, rolesByName(t, views["region-2"]))
 	require.Equal(t, map[string]schema.Role{
 		"cache/edge":       schema.RoleDemand,
 		"cache/free":       schema.RoleAnywhere,
 		"zone/example_com": schema.RoleFollows,
+		"package/api_code": schema.RoleFollows,
 	}, rolesByName(t, views["region-3"]))
 
 	// THE INDEX OF A VIEW NAMES ONLY WHAT IT HOLDS.

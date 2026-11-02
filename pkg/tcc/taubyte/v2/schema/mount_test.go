@@ -11,14 +11,15 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// mountedProject is a project whose docs site lives in its own repository.
+// mountedProject is a project whose docs site lives in its own repository, which
+// carries the site's build the way a CI file lives with the code it builds.
 func mountedProject(t *testing.T, siteBody string) afero.Fs {
 	t.Helper()
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\nname: shop\nregions: [region-1]\n"), 0o644))
-	assert.NilError(t, afero.WriteFile(fs, "/website/docs.yaml",
-		[]byte("id: QmRgVLmWTBpgTbCPnHRUvKGnHqHf7Yd7t8ZffKeRXPkRLL\n"+siteBody), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/package/docs.yaml",
+		[]byte("id: QmRgVLmWTBpgTbCPnHRUvKGnHqHf7Yd7t8ZffKeRXPkRLL\ntype: static\n"+siteBody), 0o644))
 	return fs
 }
 
@@ -53,7 +54,7 @@ func TestTheCompilerReportsWhatItNeedsToFetch(t *testing.T) {
 	prod := mountsOf(t, fs, "production")
 	assert.Equal(t, len(prod), 1)
 	m := prod[0]
-	assert.Equal(t, m.Kind, "website")
+	assert.Equal(t, m.Kind, "package")
 	assert.Equal(t, m.Name, "docs")
 	assert.Equal(t, m.Repo, "https://github.com/acme/docs")
 	assert.Equal(t, m.Branch, "main")
@@ -78,7 +79,7 @@ func TestTheMountPointIsDerivedAndStable(t *testing.T) {
 	second := mountsOf(t, fs, "production")
 	assert.Equal(t, len(first), 1)
 	assert.Equal(t, first[0].At, second[0].At, "the same project asks for the same place twice")
-	assert.Equal(t, first[0].At, interp.MountPoint("", "website", "docs"))
+	assert.Equal(t, first[0].At, interp.MountPoint("", "package", "docs"))
 }
 
 // fulfil is the caller's half: it does what a build service would do with a Mount —
@@ -107,7 +108,7 @@ func compileMounted(t *testing.T, fs afero.Fs, env string, extra ...schema.Optio
 	if err != nil {
 		return nil, err
 	}
-	return only(t, resources(t, obj.Flat(), "website")), nil
+	return only(t, resources(t, obj.Flat(), "package")), nil
 }
 
 const delegating = "source:\n" +
@@ -115,7 +116,7 @@ const delegating = "source:\n" +
 	"    branch: main\n" +
 	"    config: taubyte.yaml\n"
 
-func TestAServingBlockIsReadFromTheSourceRepository(t *testing.T) {
+func TestABuildIsReadFromTheSourceRepository(t *testing.T) {
 	fs := mountedProject(t, delegating)
 
 	mounts := mountsOf(t, fs, "production")
@@ -123,21 +124,22 @@ func TestAServingBlockIsReadFromTheSourceRepository(t *testing.T) {
 
 	site, err := compileMounted(t, fs, "production",
 		fulfil(t, mounts[0], "def456", map[string]string{
-			"taubyte.yaml": "serve:\n    mode: spa\n    index: app.html\n",
+			"taubyte.yaml": "build:\n    steps:\n        - name: site\n          image: node:22\n          commands: [npm run build]\n",
 		}))
 	assert.NilError(t, err)
 
-	assert.Equal(t, nested(site, "serve", "mode"), "spa")
-	assert.Equal(t, nested(site, "serve", "index"), "app.html")
+	assert.Equal(t, nested(site, "build", "kind"), "steps")
+	step := nested(site, "build", "steps").([]any)[0].(map[string]any)
+	assert.Equal(t, step["image"], "node:22")
 }
 
 func TestAValueSetInBothPlacesIsRefused(t *testing.T) {
-	fs := mountedProject(t, delegating+"serve:\n    mode: static\n")
+	fs := mountedProject(t, delegating+"build:\n    steps:\n        - name: site\n          image: node:22\n          commands: [npm run build]\n")
 
 	mounts := mountsOf(t, fs, "production")
 	_, err := compileMounted(t, fs, "production",
 		fulfil(t, mounts[0], "def456", map[string]string{
-			"taubyte.yaml": "serve:\n    mode: spa\n",
+			"taubyte.yaml": "build:\n    steps:\n        - name: site\n          image: node:22\n          commands: [npm run build]\n",
 		}))
 	assert.ErrorContains(t, err, "only one may say it")
 	assert.ErrorContains(t, err, "taubyte.yaml")
@@ -152,6 +154,8 @@ func TestAFillCannotWriteAnUndelegatedField(t *testing.T) {
 		"id: QmPZVNdFnq1vBqWQ56rTHJkFUuA16uBpHUZSDzLToCVdVz\n",
 		"source:\n    git: https://github.com/attacker/x\n",
 		"cache:\n    sessions:\n        ops: [get]\n",
+		"type: wasm\n",
+		"output: elsewhere\n",
 	} {
 		_, err := compileMounted(t, fs, "production",
 			fulfil(t, mounts[0], "def456", map[string]string{"taubyte.yaml": body}))
@@ -164,7 +168,7 @@ func TestAFillWithoutACommitIsRefused(t *testing.T) {
 	mounts := mountsOf(t, fs, "production")
 
 	_, err := compileMounted(t, fs, "production",
-		fulfil(t, mounts[0], "", map[string]string{"taubyte.yaml": "serve:\n    mode: spa\n"}))
+		fulfil(t, mounts[0], "", map[string]string{"taubyte.yaml": "build:\n    steps:\n        - name: site\n          image: node:22\n          commands: [npm run build]\n"}))
 	assert.ErrorContains(t, err, "provenance is not optional")
 }
 
@@ -196,7 +200,7 @@ func TestAMountThatWasAnsweredIsNotReported(t *testing.T) {
 
 	found := auditMounted(t, fs, "production",
 		fulfil(t, mounts[0], "def456", map[string]string{
-			"taubyte.yaml": "serve:\n    mode: spa\n",
+			"taubyte.yaml": "build:\n    steps:\n        - name: site\n          image: node:22\n          commands: [npm run build]\n",
 		}))
 	hasNo(t, found, "was not read from")
 }
@@ -207,7 +211,7 @@ func TestTheObjectRecordsWhereTheFillCameFrom(t *testing.T) {
 
 	opts := []schema.Option{schema.WithVirtual(fs, "/"), schema.WithBranch("main"),
 		schema.WithEnvironments("production", "staging"), schema.WithEnvironment("production"),
-		fulfil(t, mounts[0], "def456", map[string]string{"taubyte.yaml": "serve:\n    mode: spa\n"})}
+		fulfil(t, mounts[0], "def456", map[string]string{"taubyte.yaml": "build:\n    steps:\n        - name: site\n          image: node:22\n          commands: [npm run build]\n"})}
 	c, err := schema.New(opts...)
 	assert.NilError(t, err)
 	obj, _, err := c.Compile(context.Background())
@@ -220,7 +224,7 @@ func TestTheObjectRecordsWhereTheFillCameFrom(t *testing.T) {
 		assert.Equal(t, f.Repo, "https://github.com/acme/docs")
 		assert.Equal(t, f.Branch, "main")
 		assert.Equal(t, f.Config, "taubyte.yaml")
-		assert.Equal(t, f.Kind, "website")
+		assert.Equal(t, f.Kind, "package")
 		assert.Equal(t, f.Name, "docs")
 	}
 }
@@ -231,7 +235,7 @@ func TestAFillCannotCreateAnotherMount(t *testing.T) {
 
 	answered := fulfil(t, mounts[0], "def456", map[string]string{
 		// a fill trying to add a second delegating resource
-		"taubyte.yaml": "serve:\n    mode: spa\n",
+		"taubyte.yaml": "build:\n    steps:\n        - name: site\n          image: node:22\n          commands: [npm run build]\n",
 	})
 
 	opts := []schema.Option{schema.WithVirtual(fs, "/"), schema.WithBranch("main"),
@@ -254,14 +258,13 @@ func TestAFillIsReadUnderTheSourcePath(t *testing.T) {
 	mounts := mountsOf(t, fs, "production")
 	site, err := compileMounted(t, fs, "production",
 		fulfil(t, mounts[0], "abc123", map[string]string{
-			"sites/docs/taubyte.yaml": "serve:\n    mode: spa\n",
+			"sites/docs/taubyte.yaml": "build:\n    steps:\n        - name: site\n          image: node:22\n          commands: [npm run build]\n",
 			// the same name at the root must NOT be the one read
-			"taubyte.yaml": "serve:\n    index: wrong.html\n",
+			"taubyte.yaml": "build:\n    steps:\n        - name: site\n          image: wrong:1\n          commands: [npm run build]\n",
 		}))
 	assert.NilError(t, err)
-	assert.Equal(t, nested(site, "serve", "mode"), "spa")
-	assert.Equal(t, nested(site, "serve", "index"), "index.html",
-		"the root file is not this resource's, so its value must not appear")
+	step := nested(site, "build", "steps").([]any)[0].(map[string]any)
+	assert.Equal(t, step["image"], "node:22", "the root file is not this resource's, so its value must not appear")
 }
 
 func TestAnAnsweredMountWithNoFileIsRefused(t *testing.T) {
@@ -269,7 +272,7 @@ func TestAnAnsweredMountWithNoFileIsRefused(t *testing.T) {
 	mounts := mountsOf(t, fs, "production")
 
 	_, err := compileMounted(t, fs, "production",
-		fulfil(t, mounts[0], "def456", map[string]string{"something-else.yaml": "serve:\n"}))
+		fulfil(t, mounts[0], "def456", map[string]string{"something-else.yaml": "build:\n"}))
 	assert.ErrorContains(t, err, "could not be read")
 }
 
@@ -278,7 +281,7 @@ func TestAFillThatIsNotBlocksIsRefused(t *testing.T) {
 	mounts := mountsOf(t, fs, "production")
 
 	_, err := compileMounted(t, fs, "production",
-		fulfil(t, mounts[0], "def456", map[string]string{"taubyte.yaml": "- serve\n- mode\n"}))
+		fulfil(t, mounts[0], "def456", map[string]string{"taubyte.yaml": "- build\n- steps\n"}))
 	assert.ErrorContains(t, err, "not readable as yaml")
 }
 
@@ -325,20 +328,19 @@ func (a *asking) Mount(_ context.Context, m interp.Mount) (afero.Fs, string, err
 func TestAMounterMakesItOneCall(t *testing.T) {
 	fs := mountedProject(t, delegating)
 	ask := &asking{commit: "def456", files: map[string]string{
-		"taubyte.yaml": "serve:\n    mode: spa\n    index: app.html\n",
+		"taubyte.yaml": "build:\n    steps:\n        - name: site\n          image: node:22\n          commands: [npm run build]\n",
 	}}
 
 	site, err := compileMounted(t, fs, "production", schema.WithMounter(ask))
 	assert.NilError(t, err)
 
-	assert.Equal(t, nested(site, "serve", "mode"), "spa")
-	assert.Equal(t, nested(site, "serve", "index"), "app.html")
+	assert.Equal(t, nested(site, "build", "kind"), "steps")
 	assert.DeepEqual(t, ask.asked, mountsOf(t, fs, "production"))
 }
 
 func TestTheMounterIsAskedOncePerMount(t *testing.T) {
 	fs := mountedProject(t, delegating)
-	ask := &asking{commit: "def456", files: map[string]string{"taubyte.yaml": "serve:\n    mode: spa\n"}}
+	ask := &asking{commit: "def456", files: map[string]string{"taubyte.yaml": "build:\n    steps:\n        - name: site\n          image: node:22\n          commands: [npm run build]\n"}}
 
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"),
 		schema.WithEnvironments("production", "staging"), schema.WithEnvironment("production"),
@@ -366,18 +368,19 @@ func TestAMounterThatFailsFailsTheCompile(t *testing.T) {
 
 	_, err := compileMounted(t, fs, "production", schema.WithMounter(ask))
 	assert.ErrorContains(t, err, "no such ref")
-	assert.ErrorContains(t, err, "website/docs")
+	assert.ErrorContains(t, err, "package/docs")
 }
 
 func TestAMountAnsweredByHandIsNotAsked(t *testing.T) {
 	fs := mountedProject(t, delegating)
 	mounts := mountsOf(t, fs, "production")
-	ask := &asking{commit: "def456", files: map[string]string{"taubyte.yaml": "serve:\n    mode: static\n"}}
+	ask := &asking{commit: "def456", files: map[string]string{"taubyte.yaml": "build:\n    steps:\n        - name: site\n          image: wrong:1\n          commands: [npm run build]\n"}}
 
 	site, err := compileMounted(t, fs, "production", schema.WithMounter(ask),
-		fulfil(t, mounts[0], "abc123", map[string]string{"taubyte.yaml": "serve:\n    mode: spa\n"}))
+		fulfil(t, mounts[0], "abc123", map[string]string{"taubyte.yaml": "build:\n    steps:\n        - name: site\n          image: node:22\n          commands: [npm run build]\n"}))
 	assert.NilError(t, err)
-	assert.Equal(t, nested(site, "serve", "mode"), "spa")
+	step := nested(site, "build", "steps").([]any)[0].(map[string]any)
+	assert.Equal(t, step["image"], "node:22", "the hand-given answer is the one read")
 	assert.Equal(t, len(ask.asked), 0)
 }
 

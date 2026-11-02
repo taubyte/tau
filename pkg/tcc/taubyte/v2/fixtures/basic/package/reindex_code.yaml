@@ -1,0 +1,9 @@
+id: QmbZBksGwBDZQAo7rXB8EQ1hPcLMuKmK7x4Tt5UNq4ZJjm
+type: wasm
+output: reindex.wasm
+build:
+    steps:
+        - name: build
+          image: golang:1.23
+          commands:
+              - make wasm

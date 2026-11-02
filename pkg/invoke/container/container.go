@@ -33,7 +33,7 @@ import (
 )
 
 // Name is what the config vocabulary calls this tier.
-const Name = specs.WorkerRuntimeContainer
+const Name = specs.PackageTypeOci
 
 var (
 	ErrNoBackend = errors.New("container: no container backend")

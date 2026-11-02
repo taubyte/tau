@@ -60,14 +60,14 @@ func TestGenerateTSAccessors(t *testing.T) {
 	ts := string(out)
 
 	for _, want := range []string{
-		`export type FunctionKind = "component" | "builtin" | "git";`,                  // a closed set becomes a union
-		`export type FunctionBuildKind = "commands" | "script";`,                       // and so does the build stanza's
+		`export type PackageKind = "git" | "image" | "builtin";`,                       // a closed set becomes a union
+		`export type PackageBuildKind = "steps" | "dockerfile";`,                       // and so does a block's switch
 		`function(name: string, app?: string): FunctionConfig {`,                       // Session factory (app-scoped)
 		`super(s, app ? ["namespace", app, "function", name] : ["function", name]);`,   // resource address
 		`functionNames(app?: string): Promise<string[]> {`,                             // list
 		`delete(): Promise<void> {`,                                                    // delete
 		`applicationNames(app?: string): Promise<string[]> {`,                          // the container's list, named like every other lister
-		"async kind(): Promise<FunctionKind | undefined> {",                            // async + union
+		"async kind(): Promise<PackageKind | undefined> {",                             // async + union
 		`this.s.binding.get(this.s.handle, this.res, ["build", "dockerfile", "path"])`, // nested field path
 		`setMemory(v: string): Promise<void> {`,                                        // setter
 		"async memory(): Promise<string | undefined> {",                                // Bytes -> string (source form)

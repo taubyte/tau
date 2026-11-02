@@ -23,7 +23,7 @@ const (
 	KindWorker       = "worker"
 	KindSandbox      = "sandbox"
 	KindCron         = "cron"
-	KindComponent    = "component"
+	KindPackage      = "package"
 	KindWebsite      = "website"
 	KindCache        = "cache"
 	KindDatabase     = "database"
@@ -47,7 +47,6 @@ const (
 
 // Application is that kind, read from a compiled object.
 type Application struct {
-	Build       ApplicationBuild
 	Description string
 	Egress      []string
 	Execution   ApplicationExecution
@@ -55,10 +54,10 @@ type Application struct {
 	Limits      ApplicationLimits
 	Liveness    ApplicationLiveness
 	Name        string
+	Package     PackageBlock
 	Ports       map[string]ApplicationPortsEntry
 	Readiness   ApplicationReadiness
 	Regions     Regions
-	Source      ApplicationSource
 	Tags        []string
 	Variables   map[string]VariablesEntry
 }
@@ -66,7 +65,6 @@ type Application struct {
 // ReadApplication decodes one from a resource.
 func ReadApplication(r Resource) Application {
 	var out Application
-	out.Build = ReadApplicationBuild(r)
 	out.Description = r.String("description")
 	out.Egress = r.Strings("egress")
 	out.Execution = ReadApplicationExecution(r)
@@ -74,6 +72,7 @@ func ReadApplication(r Resource) Application {
 	out.Limits = ReadApplicationLimits(r)
 	out.Liveness = ReadApplicationLiveness(r)
 	out.Name = r.String("name")
+	out.Package = ReadPackageBlock(r)
 	for _, name := range r.Keys("ports") {
 		if out.Ports == nil {
 			out.Ports = map[string]ApplicationPortsEntry{}
@@ -82,7 +81,6 @@ func ReadApplication(r Resource) Application {
 	}
 	out.Readiness = ReadApplicationReadiness(r)
 	out.Regions = ReadRegions(r)
-	out.Source = ReadApplicationSource(r)
 	out.Tags = r.Strings("tags")
 	for _, name := range r.Keys("variables") {
 		if out.Variables == nil {
@@ -95,7 +93,6 @@ func ReadApplication(r Resource) Application {
 
 // Application's keys, and the values its fields may hold.
 const (
-	ApplicationKeyBuild       = "build"
 	ApplicationKeyDescription = "description"
 	ApplicationKeyEgress      = "egress"
 	ApplicationKeyExecution   = "execution"
@@ -103,43 +100,12 @@ const (
 	ApplicationKeyLimits      = "limits"
 	ApplicationKeyLiveness    = "liveness"
 	ApplicationKeyName        = "name"
+	ApplicationKeyPackage     = "package"
 	ApplicationKeyPorts       = "ports"
 	ApplicationKeyReadiness   = "readiness"
 	ApplicationKeyRegions     = "regions"
-	ApplicationKeySource      = "source"
 	ApplicationKeyTags        = "tags"
 	ApplicationKeyVariables   = "variables"
-)
-
-// ApplicationBuild is the "build" block of Application, read from a compiled object.
-type ApplicationBuild struct {
-	Dockerfile string // authored at build/dockerfile/path
-	Kind       string // which of dockerfile was written
-	Target     string // authored at build/dockerfile/target
-
-	// Declared says the author wrote this block: a field the compiler does not
-	// default is present. A block whose fields are all defaults reads false.
-	Declared bool
-}
-
-// ReadApplicationBuild decodes one from a resource.
-func ReadApplicationBuild(r Resource) ApplicationBuild {
-	var out ApplicationBuild
-	out.Dockerfile = r.String("build", "dockerfile")
-	out.Kind = r.String("build", "kind")
-	out.Target = r.String("build", "target")
-	out.Declared = r.Has("build", "dockerfile") ||
-		r.Has("build", "kind") ||
-		r.Has("build", "target")
-	return out
-}
-
-// ApplicationBuild's keys, and the values its fields may hold.
-const (
-	ApplicationBuildKeyDockerfile  = "build/dockerfile"
-	ApplicationBuildKeyKind        = "build/kind"
-	ApplicationBuildKeyTarget      = "build/target"
-	ApplicationBuildKindDockerfile = "dockerfile"
 )
 
 // ApplicationExecution is the "execution" block of Application, read from a compiled object.
@@ -237,6 +203,32 @@ const (
 	ApplicationLivenessKindFunction         = "function"
 )
 
+// PackageBlock is the "package" block of Application, Function, Sandbox, Website, Worker, read from a compiled object.
+type PackageBlock struct {
+	Name      string
+	Namespace string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadPackageBlock decodes one from a resource.
+func ReadPackageBlock(r Resource) PackageBlock {
+	var out PackageBlock
+	out.Name = r.String("package", "name")
+	out.Namespace = r.String("package", "namespace")
+	out.Declared = r.Has("package", "name") ||
+		r.Has("package", "namespace")
+	return out
+}
+
+// PackageBlock's keys, and the values its fields may hold.
+const (
+	PackageBlockKeyName      = "package/name"
+	PackageBlockKeyNamespace = "package/namespace"
+)
+
 // ApplicationPortsEntry is one entry of "ports" in Application, keyed by name.
 type ApplicationPortsEntry struct {
 	Number int64
@@ -294,7 +286,7 @@ const (
 	ApplicationReadinessKindFunction         = "function"
 )
 
-// Regions is the "regions" block of Agent, Application, Bus, Cache, Channel, Component, Cron, Database, Function, Gateway, Mcp, Model, Proxy, Sandbox, Secret, Storage, Stream, Sync, Volume, Website, Worker, Workflow, Zone, read from a compiled object.
+// Regions is the "regions" block of Agent, Application, Bus, Cache, Channel, Cron, Database, Function, Gateway, Mcp, Model, Package, Proxy, Sandbox, Secret, Storage, Stream, Sync, Volume, Website, Worker, Workflow, Zone, read from a compiled object.
 type Regions struct {
 	In      []string // authored at regions/{pinned|cdn}
 	Main    string   // authored at regions/failover/main
@@ -331,135 +323,42 @@ const (
 	RegionsPolicyFailover = "failover"
 )
 
-// ApplicationSource is the "source" block of Application, read from a compiled object.
-type ApplicationSource struct {
-	Branch                   string
-	Config                   string
-	Git                      string
-	Image                    string
-	ImagePullSecretName      string
-	ImagePullSecretNamespace string
-	Kind                     string // which of image, git was written
-	Path                     string
-	Value                    string
-
-	// Declared says the author wrote this block: a field the compiler does not
-	// default is present. A block whose fields are all defaults reads false.
-	Declared bool
-}
-
-// ReadApplicationSource decodes one from a resource.
-func ReadApplicationSource(r Resource) ApplicationSource {
-	var out ApplicationSource
-	out.Branch = r.String("source", "branch")
-	out.Config = r.String("source", "config")
-	out.Git = r.String("source", "git")
-	out.Image = r.String("source", "image")
-	out.ImagePullSecretName = r.String("source", "image_pull_secret", "name")
-	out.ImagePullSecretNamespace = r.String("source", "image_pull_secret", "namespace")
-	out.Kind = r.String("source", "kind")
-	out.Path = r.String("source", "path")
-	out.Value = r.String("source")
-	out.Declared = r.Has("source") ||
-		r.Has("source", "branch") ||
-		r.Has("source", "config") ||
-		r.Has("source", "git") ||
-		r.Has("source", "image") ||
-		r.Has("source", "image_pull_secret", "name") ||
-		r.Has("source", "image_pull_secret", "namespace") ||
-		r.Has("source", "kind") ||
-		r.Has("source", "path")
-	return out
-}
-
-// ApplicationSource's keys, and the values its fields may hold.
-const (
-	ApplicationSourceKeyBranch                   = "source/branch"
-	ApplicationSourceKeyConfig                   = "source/config"
-	ApplicationSourceKeyGit                      = "source/git"
-	ApplicationSourceKeyImage                    = "source/image"
-	ApplicationSourceKeyImagePullSecretName      = "source/image_pull_secret/name"
-	ApplicationSourceKeyImagePullSecretNamespace = "source/image_pull_secret/namespace"
-	ApplicationSourceKeyKind                     = "source/kind"
-	ApplicationSourceKeyPath                     = "source/path"
-	ApplicationSourceKeyValue                    = "source"
-	ApplicationSourceKindImage                   = "image"
-	ApplicationSourceKindGit                     = "git"
-)
-
-// VariablesEntry is one entry of "variables" in Agent, Application, Component, Function, Sandbox, Website, Worker, keyed by name.
+// VariablesEntry is one entry of "variables" in Agent, Application, Function, Package, Sandbox, Worker, keyed by name.
 type VariablesEntry struct {
-	As     string // defaulted
-	At     string // defaulted
-	Path   string
-	Secret VariablesEntrySecret
-	Value  string
+	As    string // defaulted
+	Path  string
+	Value string
 }
 
 // ReadVariablesEntry decodes one from a resource.
 func ReadVariablesEntry(r Resource) VariablesEntry {
 	var out VariablesEntry
 	out.As = r.String("as")
-	out.At = r.String("at")
 	out.Path = r.String("path")
-	out.Secret = ReadVariablesEntrySecret(r)
 	out.Value = r.String("value")
 	return out
 }
 
 // VariablesEntry's keys, and the values its fields may hold.
 const (
-	VariablesEntryKeyAs     = "as"
-	VariablesEntryKeyAt     = "at"
-	VariablesEntryKeyPath   = "path"
-	VariablesEntryKeySecret = "secret"
-	VariablesEntryKeyValue  = "value"
-	VariablesEntryAsEnv     = "env"
-	VariablesEntryAsFile    = "file"
-	VariablesEntryAtRun     = "run"
-	VariablesEntryAtBuild   = "build"
-	VariablesEntryAtBoth    = "both"
-)
-
-// VariablesEntrySecret is the "secret" block of VariablesEntry, read from a compiled object.
-type VariablesEntrySecret struct {
-	Name      string
-	Namespace string
-
-	// Declared says the author wrote this block: a field the compiler does not
-	// default is present. A block whose fields are all defaults reads false.
-	Declared bool
-}
-
-// ReadVariablesEntrySecret decodes one from a resource.
-func ReadVariablesEntrySecret(r Resource) VariablesEntrySecret {
-	var out VariablesEntrySecret
-	out.Name = r.String("secret", "name")
-	out.Namespace = r.String("secret", "namespace")
-	out.Declared = r.Has("secret", "name") ||
-		r.Has("secret", "namespace")
-	return out
-}
-
-// VariablesEntrySecret's keys, and the values its fields may hold.
-const (
-	VariablesEntrySecretKeyName      = "secret/name"
-	VariablesEntrySecretKeyNamespace = "secret/namespace"
+	VariablesEntryKeyAs    = "as"
+	VariablesEntryKeyPath  = "path"
+	VariablesEntryKeyValue = "value"
+	VariablesEntryAsEnv    = "env"
+	VariablesEntryAsFile   = "file"
 )
 
 // Function is that kind, read from a compiled object.
 type Function struct {
 	Authorizer  Authorizer
-	Build       FunctionBuild
 	Description string
 	Egress      []string
 	Execution   FunctionExecution
 	Id          string
 	Implements  string // defaulted
 	Name        string
+	Package     PackageBlock
 	Regions     Regions
-	Runtime     string
-	Source      FunctionSource
 	Tags        []string
 	Variables   map[string]VariablesEntry
 }
@@ -468,16 +367,14 @@ type Function struct {
 func ReadFunction(r Resource) Function {
 	var out Function
 	out.Authorizer = ReadAuthorizer(r)
-	out.Build = ReadFunctionBuild(r)
 	out.Description = r.String("description")
 	out.Egress = r.Strings("egress")
 	out.Execution = ReadFunctionExecution(r)
 	out.Id = r.String("id")
 	out.Implements = r.String("implements")
 	out.Name = r.String("name")
+	out.Package = ReadPackageBlock(r)
 	out.Regions = ReadRegions(r)
-	out.Runtime = r.String("runtime")
-	out.Source = ReadFunctionSource(r)
 	out.Tags = r.Strings("tags")
 	for _, name := range r.Keys("variables") {
 		if out.Variables == nil {
@@ -491,16 +388,14 @@ func ReadFunction(r Resource) Function {
 // Function's keys, and the values its fields may hold.
 const (
 	FunctionKeyAuthorizer                = "authorizer"
-	FunctionKeyBuild                     = "build"
 	FunctionKeyDescription               = "description"
 	FunctionKeyEgress                    = "egress"
 	FunctionKeyExecution                 = "execution"
 	FunctionKeyId                        = "id"
 	FunctionKeyImplements                = "implements"
 	FunctionKeyName                      = "name"
+	FunctionKeyPackage                   = "package"
 	FunctionKeyRegions                   = "regions"
-	FunctionKeyRuntime                   = "runtime"
-	FunctionKeySource                    = "source"
 	FunctionKeyTags                      = "tags"
 	FunctionKeyVariables                 = "variables"
 	FunctionImplementsHandler            = "handler"
@@ -512,8 +407,6 @@ const (
 	FunctionImplementsProxyTransformer   = "proxy-transformer"
 	FunctionImplementsGatewayRouter      = "gateway-router"
 	FunctionImplementsProxyRouter        = "proxy-router"
-	FunctionRuntimeWasm                  = "wasm"
-	FunctionRuntimeJs                    = "js"
 )
 
 // Authorizer is the "authorizer" block of Agent, Bus, Cache, Channel, Database, Function, Gateway, Mcp, Model, Sandbox, Secret, Storage, Stream, Sync, Volume, Worker, Workflow, read from a compiled object.
@@ -542,53 +435,9 @@ const (
 	AuthorizerKeyNamespace = "authorizer/namespace"
 )
 
-// FunctionBuild is the "build" block of Function, read from a compiled object.
-type FunctionBuild struct {
-	Image   string // authored at build/{commands|script}/image
-	Install string // authored at build/{commands}/install
-	Kind    string // which of commands, script was written
-	Output  string // authored at build/{commands|script}/output
-	Run     string // authored at build/{commands}/run
-	Script  string // authored at build/script/path
-
-	// Declared says the author wrote this block: a field the compiler does not
-	// default is present. A block whose fields are all defaults reads false.
-	Declared bool
-}
-
-// ReadFunctionBuild decodes one from a resource.
-func ReadFunctionBuild(r Resource) FunctionBuild {
-	var out FunctionBuild
-	out.Image = r.String("build", "image")
-	out.Install = r.String("build", "install")
-	out.Kind = r.String("build", "kind")
-	out.Output = r.String("build", "output")
-	out.Run = r.String("build", "run")
-	out.Script = r.String("build", "script")
-	out.Declared = r.Has("build", "image") ||
-		r.Has("build", "install") ||
-		r.Has("build", "kind") ||
-		r.Has("build", "output") ||
-		r.Has("build", "run") ||
-		r.Has("build", "script")
-	return out
-}
-
-// FunctionBuild's keys, and the values its fields may hold.
-const (
-	FunctionBuildKeyImage     = "build/image"
-	FunctionBuildKeyInstall   = "build/install"
-	FunctionBuildKeyKind      = "build/kind"
-	FunctionBuildKeyOutput    = "build/output"
-	FunctionBuildKeyRun       = "build/run"
-	FunctionBuildKeyScript    = "build/script"
-	FunctionBuildKindCommands = "commands"
-	FunctionBuildKindScript   = "script"
-)
-
 // FunctionExecution is the "execution" block of Function, read from a compiled object.
 type FunctionExecution struct {
-	Call    string // defaulted
+	Call    string
 	Cpu     *int64
 	Memory  int64
 	Timeout time.Duration
@@ -605,7 +454,8 @@ func ReadFunctionExecution(r Resource) FunctionExecution {
 	out.Cpu = present[int64](r.Int("execution", "cpu"))
 	out.Memory, _ = r.Int("execution", "memory")
 	out.Timeout, _ = r.Duration("execution", "timeout")
-	out.Declared = r.Has("execution", "cpu") ||
+	out.Declared = r.Has("execution", "call") ||
+		r.Has("execution", "cpu") ||
 		r.Has("execution", "memory") ||
 		r.Has("execution", "timeout")
 	return out
@@ -619,76 +469,17 @@ const (
 	FunctionExecutionKeyTimeout = "execution/timeout"
 )
 
-// FunctionSource is the "source" block of Function, read from a compiled object.
-type FunctionSource struct {
-	Branch    string
-	Builtin   string
-	Component string
-	Config    string
-	Git       string
-	Kind      string // which of component, builtin, git was written
-	Namespace string
-	Path      string
-	Value     string
-
-	// Declared says the author wrote this block: a field the compiler does not
-	// default is present. A block whose fields are all defaults reads false.
-	Declared bool
-}
-
-// ReadFunctionSource decodes one from a resource.
-func ReadFunctionSource(r Resource) FunctionSource {
-	var out FunctionSource
-	out.Branch = r.String("source", "branch")
-	out.Builtin = r.String("source", "builtin")
-	out.Component = r.String("source", "component")
-	out.Config = r.String("source", "config")
-	out.Git = r.String("source", "git")
-	out.Kind = r.String("source", "kind")
-	out.Namespace = r.String("source", "namespace")
-	out.Path = r.String("source", "path")
-	out.Value = r.String("source")
-	out.Declared = r.Has("source") ||
-		r.Has("source", "branch") ||
-		r.Has("source", "builtin") ||
-		r.Has("source", "component") ||
-		r.Has("source", "config") ||
-		r.Has("source", "git") ||
-		r.Has("source", "kind") ||
-		r.Has("source", "namespace") ||
-		r.Has("source", "path")
-	return out
-}
-
-// FunctionSource's keys, and the values its fields may hold.
-const (
-	FunctionSourceKeyBranch     = "source/branch"
-	FunctionSourceKeyBuiltin    = "source/builtin"
-	FunctionSourceKeyComponent  = "source/component"
-	FunctionSourceKeyConfig     = "source/config"
-	FunctionSourceKeyGit        = "source/git"
-	FunctionSourceKeyKind       = "source/kind"
-	FunctionSourceKeyNamespace  = "source/namespace"
-	FunctionSourceKeyPath       = "source/path"
-	FunctionSourceKeyValue      = "source"
-	FunctionSourceKindComponent = "component"
-	FunctionSourceKindBuiltin   = "builtin"
-	FunctionSourceKindGit       = "git"
-)
-
 // Worker is that kind, read from a compiled object.
 type Worker struct {
 	Authorizer  Authorizer
-	Build       WorkerBuild
 	Description string
 	Egress      []string
 	Execution   WorkerExecution
 	Id          string
 	Implements  string // defaulted
 	Name        string
+	Package     PackageBlock
 	Regions     Regions
-	Runtime     string
-	Source      WorkerSource
 	Tags        []string
 	Variables   map[string]VariablesEntry
 }
@@ -697,16 +488,14 @@ type Worker struct {
 func ReadWorker(r Resource) Worker {
 	var out Worker
 	out.Authorizer = ReadAuthorizer(r)
-	out.Build = ReadWorkerBuild(r)
 	out.Description = r.String("description")
 	out.Egress = r.Strings("egress")
 	out.Execution = ReadWorkerExecution(r)
 	out.Id = r.String("id")
 	out.Implements = r.String("implements")
 	out.Name = r.String("name")
+	out.Package = ReadPackageBlock(r)
 	out.Regions = ReadRegions(r)
-	out.Runtime = r.String("runtime")
-	out.Source = ReadWorkerSource(r)
 	out.Tags = r.Strings("tags")
 	for _, name := range r.Keys("variables") {
 		if out.Variables == nil {
@@ -720,16 +509,14 @@ func ReadWorker(r Resource) Worker {
 // Worker's keys, and the values its fields may hold.
 const (
 	WorkerKeyAuthorizer                = "authorizer"
-	WorkerKeyBuild                     = "build"
 	WorkerKeyDescription               = "description"
 	WorkerKeyEgress                    = "egress"
 	WorkerKeyExecution                 = "execution"
 	WorkerKeyId                        = "id"
 	WorkerKeyImplements                = "implements"
 	WorkerKeyName                      = "name"
+	WorkerKeyPackage                   = "package"
 	WorkerKeyRegions                   = "regions"
-	WorkerKeyRuntime                   = "runtime"
-	WorkerKeySource                    = "source"
 	WorkerKeyTags                      = "tags"
 	WorkerKeyVariables                 = "variables"
 	WorkerImplementsHandler            = "handler"
@@ -741,67 +528,11 @@ const (
 	WorkerImplementsProxyTransformer   = "proxy-transformer"
 	WorkerImplementsGatewayRouter      = "gateway-router"
 	WorkerImplementsProxyRouter        = "proxy-router"
-	WorkerRuntimeWasm                  = "wasm"
-	WorkerRuntimeJs                    = "js"
-	WorkerRuntimeContainer             = "container"
-)
-
-// WorkerBuild is the "build" block of Worker, read from a compiled object.
-type WorkerBuild struct {
-	Dockerfile string // authored at build/dockerfile/path
-	Image      string // authored at build/{commands|script}/image
-	Install    string // authored at build/{commands}/install
-	Kind       string // which of commands, script, dockerfile was written
-	Output     string // authored at build/{commands|script}/output
-	Run        string // authored at build/{commands}/run
-	Script     string // authored at build/script/path
-	Target     string // authored at build/dockerfile/target
-
-	// Declared says the author wrote this block: a field the compiler does not
-	// default is present. A block whose fields are all defaults reads false.
-	Declared bool
-}
-
-// ReadWorkerBuild decodes one from a resource.
-func ReadWorkerBuild(r Resource) WorkerBuild {
-	var out WorkerBuild
-	out.Dockerfile = r.String("build", "dockerfile")
-	out.Image = r.String("build", "image")
-	out.Install = r.String("build", "install")
-	out.Kind = r.String("build", "kind")
-	out.Output = r.String("build", "output")
-	out.Run = r.String("build", "run")
-	out.Script = r.String("build", "script")
-	out.Target = r.String("build", "target")
-	out.Declared = r.Has("build", "dockerfile") ||
-		r.Has("build", "image") ||
-		r.Has("build", "install") ||
-		r.Has("build", "kind") ||
-		r.Has("build", "output") ||
-		r.Has("build", "run") ||
-		r.Has("build", "script") ||
-		r.Has("build", "target")
-	return out
-}
-
-// WorkerBuild's keys, and the values its fields may hold.
-const (
-	WorkerBuildKeyDockerfile  = "build/dockerfile"
-	WorkerBuildKeyImage       = "build/image"
-	WorkerBuildKeyInstall     = "build/install"
-	WorkerBuildKeyKind        = "build/kind"
-	WorkerBuildKeyOutput      = "build/output"
-	WorkerBuildKeyRun         = "build/run"
-	WorkerBuildKeyScript      = "build/script"
-	WorkerBuildKeyTarget      = "build/target"
-	WorkerBuildKindCommands   = "commands"
-	WorkerBuildKindScript     = "script"
-	WorkerBuildKindDockerfile = "dockerfile"
 )
 
 // WorkerExecution is the "execution" block of Worker, read from a compiled object.
 type WorkerExecution struct {
-	Call    string // defaulted
+	Call    string
 	Cpu     *int64
 	Memory  int64
 	Timeout time.Duration
@@ -818,7 +549,8 @@ func ReadWorkerExecution(r Resource) WorkerExecution {
 	out.Cpu = present[int64](r.Int("execution", "cpu"))
 	out.Memory, _ = r.Int("execution", "memory")
 	out.Timeout, _ = r.Duration("execution", "timeout")
-	out.Declared = r.Has("execution", "cpu") ||
+	out.Declared = r.Has("execution", "call") ||
+		r.Has("execution", "cpu") ||
 		r.Has("execution", "memory") ||
 		r.Has("execution", "timeout")
 	return out
@@ -832,88 +564,17 @@ const (
 	WorkerExecutionKeyTimeout = "execution/timeout"
 )
 
-// WorkerSource is the "source" block of Worker, read from a compiled object.
-type WorkerSource struct {
-	Branch                   string
-	Builtin                  string
-	Component                string
-	Config                   string
-	Git                      string
-	Image                    string
-	ImagePullSecretName      string
-	ImagePullSecretNamespace string
-	Kind                     string // which of component, builtin, git, image was written
-	Namespace                string
-	Path                     string
-	Value                    string
-
-	// Declared says the author wrote this block: a field the compiler does not
-	// default is present. A block whose fields are all defaults reads false.
-	Declared bool
-}
-
-// ReadWorkerSource decodes one from a resource.
-func ReadWorkerSource(r Resource) WorkerSource {
-	var out WorkerSource
-	out.Branch = r.String("source", "branch")
-	out.Builtin = r.String("source", "builtin")
-	out.Component = r.String("source", "component")
-	out.Config = r.String("source", "config")
-	out.Git = r.String("source", "git")
-	out.Image = r.String("source", "image")
-	out.ImagePullSecretName = r.String("source", "image_pull_secret", "name")
-	out.ImagePullSecretNamespace = r.String("source", "image_pull_secret", "namespace")
-	out.Kind = r.String("source", "kind")
-	out.Namespace = r.String("source", "namespace")
-	out.Path = r.String("source", "path")
-	out.Value = r.String("source")
-	out.Declared = r.Has("source") ||
-		r.Has("source", "branch") ||
-		r.Has("source", "builtin") ||
-		r.Has("source", "component") ||
-		r.Has("source", "config") ||
-		r.Has("source", "git") ||
-		r.Has("source", "image") ||
-		r.Has("source", "image_pull_secret", "name") ||
-		r.Has("source", "image_pull_secret", "namespace") ||
-		r.Has("source", "kind") ||
-		r.Has("source", "namespace") ||
-		r.Has("source", "path")
-	return out
-}
-
-// WorkerSource's keys, and the values its fields may hold.
-const (
-	WorkerSourceKeyBranch                   = "source/branch"
-	WorkerSourceKeyBuiltin                  = "source/builtin"
-	WorkerSourceKeyComponent                = "source/component"
-	WorkerSourceKeyConfig                   = "source/config"
-	WorkerSourceKeyGit                      = "source/git"
-	WorkerSourceKeyImage                    = "source/image"
-	WorkerSourceKeyImagePullSecretName      = "source/image_pull_secret/name"
-	WorkerSourceKeyImagePullSecretNamespace = "source/image_pull_secret/namespace"
-	WorkerSourceKeyKind                     = "source/kind"
-	WorkerSourceKeyNamespace                = "source/namespace"
-	WorkerSourceKeyPath                     = "source/path"
-	WorkerSourceKeyValue                    = "source"
-	WorkerSourceKindComponent               = "component"
-	WorkerSourceKindBuiltin                 = "builtin"
-	WorkerSourceKindGit                     = "git"
-	WorkerSourceKindImage                   = "image"
-)
-
 // Sandbox is that kind, read from a compiled object.
 type Sandbox struct {
 	Authorizer  Authorizer
-	Build       SandboxBuild
 	Description string
 	Egress      []string
 	Execution   SandboxExecution
 	Id          string
 	Lifetime    SandboxLifetime
 	Name        string
+	Package     PackageBlock
 	Regions     Regions
-	Source      SandboxSource
 	Tags        []string
 	Variables   map[string]VariablesEntry
 }
@@ -922,15 +583,14 @@ type Sandbox struct {
 func ReadSandbox(r Resource) Sandbox {
 	var out Sandbox
 	out.Authorizer = ReadAuthorizer(r)
-	out.Build = ReadSandboxBuild(r)
 	out.Description = r.String("description")
 	out.Egress = r.Strings("egress")
 	out.Execution = ReadSandboxExecution(r)
 	out.Id = r.String("id")
 	out.Lifetime = ReadSandboxLifetime(r)
 	out.Name = r.String("name")
+	out.Package = ReadPackageBlock(r)
 	out.Regions = ReadRegions(r)
-	out.Source = ReadSandboxSource(r)
 	out.Tags = r.Strings("tags")
 	for _, name := range r.Keys("variables") {
 		if out.Variables == nil {
@@ -944,48 +604,16 @@ func ReadSandbox(r Resource) Sandbox {
 // Sandbox's keys, and the values its fields may hold.
 const (
 	SandboxKeyAuthorizer  = "authorizer"
-	SandboxKeyBuild       = "build"
 	SandboxKeyDescription = "description"
 	SandboxKeyEgress      = "egress"
 	SandboxKeyExecution   = "execution"
 	SandboxKeyId          = "id"
 	SandboxKeyLifetime    = "lifetime"
 	SandboxKeyName        = "name"
+	SandboxKeyPackage     = "package"
 	SandboxKeyRegions     = "regions"
-	SandboxKeySource      = "source"
 	SandboxKeyTags        = "tags"
 	SandboxKeyVariables   = "variables"
-)
-
-// SandboxBuild is the "build" block of Sandbox, read from a compiled object.
-type SandboxBuild struct {
-	Dockerfile string // authored at build/dockerfile/path
-	Kind       string // which of dockerfile was written
-	Target     string // authored at build/dockerfile/target
-
-	// Declared says the author wrote this block: a field the compiler does not
-	// default is present. A block whose fields are all defaults reads false.
-	Declared bool
-}
-
-// ReadSandboxBuild decodes one from a resource.
-func ReadSandboxBuild(r Resource) SandboxBuild {
-	var out SandboxBuild
-	out.Dockerfile = r.String("build", "dockerfile")
-	out.Kind = r.String("build", "kind")
-	out.Target = r.String("build", "target")
-	out.Declared = r.Has("build", "dockerfile") ||
-		r.Has("build", "kind") ||
-		r.Has("build", "target")
-	return out
-}
-
-// SandboxBuild's keys, and the values its fields may hold.
-const (
-	SandboxBuildKeyDockerfile  = "build/dockerfile"
-	SandboxBuildKeyKind        = "build/kind"
-	SandboxBuildKeyTarget      = "build/target"
-	SandboxBuildKindDockerfile = "dockerfile"
 )
 
 // SandboxExecution is the "execution" block of Sandbox, read from a compiled object.
@@ -1040,62 +668,6 @@ const (
 	SandboxLifetimeKeyMax  = "lifetime/max"
 )
 
-// SandboxSource is the "source" block of Sandbox, read from a compiled object.
-type SandboxSource struct {
-	Branch                   string
-	Config                   string
-	Git                      string
-	Image                    string
-	ImagePullSecretName      string
-	ImagePullSecretNamespace string
-	Kind                     string // which of image, git was written
-	Path                     string
-	Value                    string
-
-	// Declared says the author wrote this block: a field the compiler does not
-	// default is present. A block whose fields are all defaults reads false.
-	Declared bool
-}
-
-// ReadSandboxSource decodes one from a resource.
-func ReadSandboxSource(r Resource) SandboxSource {
-	var out SandboxSource
-	out.Branch = r.String("source", "branch")
-	out.Config = r.String("source", "config")
-	out.Git = r.String("source", "git")
-	out.Image = r.String("source", "image")
-	out.ImagePullSecretName = r.String("source", "image_pull_secret", "name")
-	out.ImagePullSecretNamespace = r.String("source", "image_pull_secret", "namespace")
-	out.Kind = r.String("source", "kind")
-	out.Path = r.String("source", "path")
-	out.Value = r.String("source")
-	out.Declared = r.Has("source") ||
-		r.Has("source", "branch") ||
-		r.Has("source", "config") ||
-		r.Has("source", "git") ||
-		r.Has("source", "image") ||
-		r.Has("source", "image_pull_secret", "name") ||
-		r.Has("source", "image_pull_secret", "namespace") ||
-		r.Has("source", "kind") ||
-		r.Has("source", "path")
-	return out
-}
-
-// SandboxSource's keys, and the values its fields may hold.
-const (
-	SandboxSourceKeyBranch                   = "source/branch"
-	SandboxSourceKeyConfig                   = "source/config"
-	SandboxSourceKeyGit                      = "source/git"
-	SandboxSourceKeyImage                    = "source/image"
-	SandboxSourceKeyImagePullSecretName      = "source/image_pull_secret/name"
-	SandboxSourceKeyImagePullSecretNamespace = "source/image_pull_secret/namespace"
-	SandboxSourceKeyKind                     = "source/kind"
-	SandboxSourceKeyPath                     = "source/path"
-	SandboxSourceKeyValue                    = "source"
-	SandboxSourceKindImage                   = "image"
-	SandboxSourceKindGit                     = "git"
-)
-
 // Cron is that kind, read from a compiled object.
 type Cron struct {
 	Description string
@@ -1140,224 +712,248 @@ const (
 	CronOnOverlapAllow = "allow"
 )
 
-// Component is that kind, read from a compiled object.
-type Component struct {
-	Build       ComponentBuild
+// Package is that kind, read from a compiled object.
+type Package struct {
+	Build       PackageBuild
 	Description string
 	Id          string
 	Name        string
+	Output      string
 	Regions     Regions
-	Source      ComponentSource
+	Source      PackageSource
 	Tags        []string
+	Type        string
 	Variables   map[string]VariablesEntry
+	Watch       []string
 }
 
-// ReadComponent decodes one from a resource.
-func ReadComponent(r Resource) Component {
-	var out Component
-	out.Build = ReadComponentBuild(r)
+// ReadPackage decodes one from a resource.
+func ReadPackage(r Resource) Package {
+	var out Package
+	out.Build = ReadPackageBuild(r)
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
+	out.Output = r.String("output")
 	out.Regions = ReadRegions(r)
-	out.Source = ReadComponentSource(r)
+	out.Source = ReadPackageSource(r)
 	out.Tags = r.Strings("tags")
+	out.Type = r.String("type")
 	for _, name := range r.Keys("variables") {
 		if out.Variables == nil {
 			out.Variables = map[string]VariablesEntry{}
 		}
 		out.Variables[name] = ReadVariablesEntry(r.Sub("variables", name))
 	}
+	out.Watch = r.Strings("watch")
 	return out
 }
 
-// Component's keys, and the values its fields may hold.
+// Package's keys, and the values its fields may hold.
 const (
-	ComponentKeyBuild       = "build"
-	ComponentKeyDescription = "description"
-	ComponentKeyId          = "id"
-	ComponentKeyName        = "name"
-	ComponentKeyRegions     = "regions"
-	ComponentKeySource      = "source"
-	ComponentKeyTags        = "tags"
-	ComponentKeyVariables   = "variables"
+	PackageKeyBuild       = "build"
+	PackageKeyDescription = "description"
+	PackageKeyId          = "id"
+	PackageKeyName        = "name"
+	PackageKeyOutput      = "output"
+	PackageKeyRegions     = "regions"
+	PackageKeySource      = "source"
+	PackageKeyTags        = "tags"
+	PackageKeyType        = "type"
+	PackageKeyVariables   = "variables"
+	PackageKeyWatch       = "watch"
+	PackageTypeWasm       = "wasm"
+	PackageTypeWarp       = "warp"
+	PackageTypeOci        = "oci"
+	PackageTypeStatic     = "static"
 )
 
-// ComponentBuild is the "build" block of Component, read from a compiled object.
-type ComponentBuild struct {
-	Image   string // authored at build/{commands|script}/image
-	Install string // authored at build/{commands}/install
-	Kind    string // which of commands, script was written
-	Output  string // authored at build/{commands|script}/output
-	Run     string // authored at build/{commands}/run
-	Script  string // authored at build/script/path
+// PackageBuild is the "build" block of Package, read from a compiled object.
+type PackageBuild struct {
+	DockerfilePath   string // defaulted
+	DockerfileTarget string
+	Inputs           map[string]PackageBuildInputsEntry
+	Kind             string // which of steps, dockerfile was written
+	Steps            []PackageBuildStepsEntry
 
 	// Declared says the author wrote this block: a field the compiler does not
 	// default is present. A block whose fields are all defaults reads false.
 	Declared bool
 }
 
-// ReadComponentBuild decodes one from a resource.
-func ReadComponentBuild(r Resource) ComponentBuild {
-	var out ComponentBuild
-	out.Image = r.String("build", "image")
-	out.Install = r.String("build", "install")
+// ReadPackageBuild decodes one from a resource.
+func ReadPackageBuild(r Resource) PackageBuild {
+	var out PackageBuild
+	out.DockerfilePath = r.String("build", "dockerfile", "path")
+	out.DockerfileTarget = r.String("build", "dockerfile", "target")
+	for _, name := range r.Keys("build", "inputs") {
+		if out.Inputs == nil {
+			out.Inputs = map[string]PackageBuildInputsEntry{}
+		}
+		out.Inputs[name] = ReadPackageBuildInputsEntry(r.Sub("build", "inputs", name))
+	}
 	out.Kind = r.String("build", "kind")
-	out.Output = r.String("build", "output")
-	out.Run = r.String("build", "run")
-	out.Script = r.String("build", "script")
-	out.Declared = r.Has("build", "image") ||
-		r.Has("build", "install") ||
+	for _, e := range r.List("build", "steps") {
+		out.Steps = append(out.Steps, ReadPackageBuildStepsEntry(e))
+	}
+	out.Declared = r.Has("build", "dockerfile", "target") ||
 		r.Has("build", "kind") ||
-		r.Has("build", "output") ||
-		r.Has("build", "run") ||
-		r.Has("build", "script")
+		r.Has("build", "inputs") ||
+		r.Has("build", "steps")
 	return out
 }
 
-// ComponentBuild's keys, and the values its fields may hold.
+// PackageBuild's keys, and the values its fields may hold.
 const (
-	ComponentBuildKeyImage     = "build/image"
-	ComponentBuildKeyInstall   = "build/install"
-	ComponentBuildKeyKind      = "build/kind"
-	ComponentBuildKeyOutput    = "build/output"
-	ComponentBuildKeyRun       = "build/run"
-	ComponentBuildKeyScript    = "build/script"
-	ComponentBuildKindCommands = "commands"
-	ComponentBuildKindScript   = "script"
+	PackageBuildKeyDockerfilePath   = "build/dockerfile/path"
+	PackageBuildKeyDockerfileTarget = "build/dockerfile/target"
+	PackageBuildKeyInputs           = "build/inputs"
+	PackageBuildKeyKind             = "build/kind"
+	PackageBuildKeySteps            = "build/steps"
+	PackageBuildKindSteps           = "steps"
+	PackageBuildKindDockerfile      = "dockerfile"
 )
 
-// ComponentSource is the "source" block of Component, read from a compiled object.
-type ComponentSource struct {
-	Branch string
-	Config string
-	Git    string
-	Kind   string // which of git was written
-	Path   string
-	Value  string
+// PackageBuildInputsEntry is one entry of "inputs" in PackageBuild, keyed by name.
+type PackageBuildInputsEntry struct {
+	Name      string
+	Namespace string
+}
+
+// ReadPackageBuildInputsEntry decodes one from a resource.
+func ReadPackageBuildInputsEntry(r Resource) PackageBuildInputsEntry {
+	var out PackageBuildInputsEntry
+	out.Name = r.String("name")
+	out.Namespace = r.String("namespace")
+	return out
+}
+
+// PackageBuildInputsEntry's keys, and the values its fields may hold.
+const (
+	PackageBuildInputsEntryKeyName      = "name"
+	PackageBuildInputsEntryKeyNamespace = "namespace"
+)
+
+// PackageBuildStepsEntry is one entry of "steps" in PackageBuild, in the order written.
+type PackageBuildStepsEntry struct {
+	Cache    []string
+	Commands []string
+	Image    string
+	Name     string
+}
+
+// ReadPackageBuildStepsEntry decodes one from a resource.
+func ReadPackageBuildStepsEntry(r Resource) PackageBuildStepsEntry {
+	var out PackageBuildStepsEntry
+	out.Cache = r.Strings("cache")
+	out.Commands = r.Strings("commands")
+	out.Image = r.String("image")
+	out.Name = r.String("name")
+	return out
+}
+
+// PackageBuildStepsEntry's keys, and the values its fields may hold.
+const (
+	PackageBuildStepsEntryKeyCache    = "cache"
+	PackageBuildStepsEntryKeyCommands = "commands"
+	PackageBuildStepsEntryKeyImage    = "image"
+	PackageBuildStepsEntryKeyName     = "name"
+)
+
+// PackageSource is the "source" block of Package, read from a compiled object.
+type PackageSource struct {
+	Branch                   string
+	Builtin                  string
+	Config                   string
+	Git                      string
+	Image                    string
+	ImagePullSecretName      string
+	ImagePullSecretNamespace string
+	Kind                     string // which of git, image, builtin was written
+	Path                     string
+	Value                    string
 
 	// Declared says the author wrote this block: a field the compiler does not
 	// default is present. A block whose fields are all defaults reads false.
 	Declared bool
 }
 
-// ReadComponentSource decodes one from a resource.
-func ReadComponentSource(r Resource) ComponentSource {
-	var out ComponentSource
+// ReadPackageSource decodes one from a resource.
+func ReadPackageSource(r Resource) PackageSource {
+	var out PackageSource
 	out.Branch = r.String("source", "branch")
+	out.Builtin = r.String("source", "builtin")
 	out.Config = r.String("source", "config")
 	out.Git = r.String("source", "git")
+	out.Image = r.String("source", "image")
+	out.ImagePullSecretName = r.String("source", "image_pull_secret", "name")
+	out.ImagePullSecretNamespace = r.String("source", "image_pull_secret", "namespace")
 	out.Kind = r.String("source", "kind")
 	out.Path = r.String("source", "path")
 	out.Value = r.String("source")
 	out.Declared = r.Has("source") ||
 		r.Has("source", "branch") ||
+		r.Has("source", "builtin") ||
 		r.Has("source", "config") ||
 		r.Has("source", "git") ||
+		r.Has("source", "image") ||
+		r.Has("source", "image_pull_secret", "name") ||
+		r.Has("source", "image_pull_secret", "namespace") ||
 		r.Has("source", "kind") ||
 		r.Has("source", "path")
 	return out
 }
 
-// ComponentSource's keys, and the values its fields may hold.
+// PackageSource's keys, and the values its fields may hold.
 const (
-	ComponentSourceKeyBranch = "source/branch"
-	ComponentSourceKeyConfig = "source/config"
-	ComponentSourceKeyGit    = "source/git"
-	ComponentSourceKeyKind   = "source/kind"
-	ComponentSourceKeyPath   = "source/path"
-	ComponentSourceKeyValue  = "source"
-	ComponentSourceKindGit   = "git"
+	PackageSourceKeyBranch                   = "source/branch"
+	PackageSourceKeyBuiltin                  = "source/builtin"
+	PackageSourceKeyConfig                   = "source/config"
+	PackageSourceKeyGit                      = "source/git"
+	PackageSourceKeyImage                    = "source/image"
+	PackageSourceKeyImagePullSecretName      = "source/image_pull_secret/name"
+	PackageSourceKeyImagePullSecretNamespace = "source/image_pull_secret/namespace"
+	PackageSourceKeyKind                     = "source/kind"
+	PackageSourceKeyPath                     = "source/path"
+	PackageSourceKeyValue                    = "source"
+	PackageSourceKindGit                     = "git"
+	PackageSourceKindImage                   = "image"
+	PackageSourceKindBuiltin                 = "builtin"
 )
 
 // Website is that kind, read from a compiled object.
 type Website struct {
-	Build       WebsiteBuild
 	Description string
 	Id          string
 	Name        string
+	Package     PackageBlock
 	Regions     Regions
 	Serve       WebsiteServe
-	Source      WebsiteSource
 	Tags        []string
-	Variables   map[string]VariablesEntry
 }
 
 // ReadWebsite decodes one from a resource.
 func ReadWebsite(r Resource) Website {
 	var out Website
-	out.Build = ReadWebsiteBuild(r)
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
+	out.Package = ReadPackageBlock(r)
 	out.Regions = ReadRegions(r)
 	out.Serve = ReadWebsiteServe(r)
-	out.Source = ReadWebsiteSource(r)
 	out.Tags = r.Strings("tags")
-	for _, name := range r.Keys("variables") {
-		if out.Variables == nil {
-			out.Variables = map[string]VariablesEntry{}
-		}
-		out.Variables[name] = ReadVariablesEntry(r.Sub("variables", name))
-	}
 	return out
 }
 
 // Website's keys, and the values its fields may hold.
 const (
-	WebsiteKeyBuild       = "build"
 	WebsiteKeyDescription = "description"
 	WebsiteKeyId          = "id"
 	WebsiteKeyName        = "name"
+	WebsiteKeyPackage     = "package"
 	WebsiteKeyRegions     = "regions"
 	WebsiteKeyServe       = "serve"
-	WebsiteKeySource      = "source"
 	WebsiteKeyTags        = "tags"
-	WebsiteKeyVariables   = "variables"
-)
-
-// WebsiteBuild is the "build" block of Website, read from a compiled object.
-type WebsiteBuild struct {
-	Image   string // authored at build/{commands|script}/image
-	Install string // authored at build/{commands}/install
-	Kind    string // which of commands, script was written
-	Output  string // authored at build/{commands|script}/output
-	Run     string // authored at build/{commands}/run
-	Script  string // authored at build/script/path
-
-	// Declared says the author wrote this block: a field the compiler does not
-	// default is present. A block whose fields are all defaults reads false.
-	Declared bool
-}
-
-// ReadWebsiteBuild decodes one from a resource.
-func ReadWebsiteBuild(r Resource) WebsiteBuild {
-	var out WebsiteBuild
-	out.Image = r.String("build", "image")
-	out.Install = r.String("build", "install")
-	out.Kind = r.String("build", "kind")
-	out.Output = r.String("build", "output")
-	out.Run = r.String("build", "run")
-	out.Script = r.String("build", "script")
-	out.Declared = r.Has("build", "image") ||
-		r.Has("build", "install") ||
-		r.Has("build", "kind") ||
-		r.Has("build", "output") ||
-		r.Has("build", "run") ||
-		r.Has("build", "script")
-	return out
-}
-
-// WebsiteBuild's keys, and the values its fields may hold.
-const (
-	WebsiteBuildKeyImage     = "build/image"
-	WebsiteBuildKeyInstall   = "build/install"
-	WebsiteBuildKeyKind      = "build/kind"
-	WebsiteBuildKeyOutput    = "build/output"
-	WebsiteBuildKeyRun       = "build/run"
-	WebsiteBuildKeyScript    = "build/script"
-	WebsiteBuildKindCommands = "commands"
-	WebsiteBuildKindScript   = "script"
 )
 
 // WebsiteServe is the "serve" block of Website, read from a compiled object.
@@ -1388,49 +984,6 @@ const (
 	WebsiteServeKeyNotFound = "serve/not_found"
 	WebsiteServeModeStatic  = "static"
 	WebsiteServeModeSpa     = "spa"
-)
-
-// WebsiteSource is the "source" block of Website, read from a compiled object.
-type WebsiteSource struct {
-	Branch string
-	Config string
-	Git    string
-	Kind   string // which of git was written
-	Path   string
-	Value  string
-
-	// Declared says the author wrote this block: a field the compiler does not
-	// default is present. A block whose fields are all defaults reads false.
-	Declared bool
-}
-
-// ReadWebsiteSource decodes one from a resource.
-func ReadWebsiteSource(r Resource) WebsiteSource {
-	var out WebsiteSource
-	out.Branch = r.String("source", "branch")
-	out.Config = r.String("source", "config")
-	out.Git = r.String("source", "git")
-	out.Kind = r.String("source", "kind")
-	out.Path = r.String("source", "path")
-	out.Value = r.String("source")
-	out.Declared = r.Has("source") ||
-		r.Has("source", "branch") ||
-		r.Has("source", "config") ||
-		r.Has("source", "git") ||
-		r.Has("source", "kind") ||
-		r.Has("source", "path")
-	return out
-}
-
-// WebsiteSource's keys, and the values its fields may hold.
-const (
-	WebsiteSourceKeyBranch = "source/branch"
-	WebsiteSourceKeyConfig = "source/config"
-	WebsiteSourceKeyGit    = "source/git"
-	WebsiteSourceKeyKind   = "source/kind"
-	WebsiteSourceKeyPath   = "source/path"
-	WebsiteSourceKeyValue  = "source"
-	WebsiteSourceKindGit   = "git"
 )
 
 // Cache is that kind, read from a compiled object.
@@ -3506,7 +3059,7 @@ var Readers = map[string]func(Resource) any{
 	"worker":       func(r Resource) any { return ReadWorker(r) },
 	"sandbox":      func(r Resource) any { return ReadSandbox(r) },
 	"cron":         func(r Resource) any { return ReadCron(r) },
-	"component":    func(r Resource) any { return ReadComponent(r) },
+	"package":      func(r Resource) any { return ReadPackage(r) },
 	"website":      func(r Resource) any { return ReadWebsite(r) },
 	"cache":        func(r Resource) any { return ReadCache(r) },
 	"database":     func(r Resource) any { return ReadDatabase(r) },
@@ -3534,14 +3087,12 @@ type SourceBlock struct {
 	Source                         string
 	SourceBranch                   string
 	SourceBuiltin                  string
-	SourceComponent                string
 	SourceConfig                   string
 	SourceGit                      string
 	SourceImage                    string
 	SourceImagePullSecretName      string
 	SourceImagePullSecretNamespace string
-	SourceKind                     string // which of image, git, component, builtin was written
-	SourceNamespace                string
+	SourceKind                     string // which of git, image, builtin was written
 	SourcePath                     string
 }
 
@@ -3551,14 +3102,12 @@ func ReadSourceBlock(r Resource) SourceBlock {
 	out.Source = r.String("source")
 	out.SourceBranch = r.String("source", "branch")
 	out.SourceBuiltin = r.String("source", "builtin")
-	out.SourceComponent = r.String("source", "component")
 	out.SourceConfig = r.String("source", "config")
 	out.SourceGit = r.String("source", "git")
 	out.SourceImage = r.String("source", "image")
 	out.SourceImagePullSecretName = r.String("source", "image_pull_secret", "name")
 	out.SourceImagePullSecretNamespace = r.String("source", "image_pull_secret", "namespace")
 	out.SourceKind = r.String("source", "kind")
-	out.SourceNamespace = r.String("source", "namespace")
 	out.SourcePath = r.String("source", "path")
 	return out
 }
@@ -3568,67 +3117,22 @@ const (
 	SourceBlockKeySource                         = "source"
 	SourceBlockKeySourceBranch                   = "source/branch"
 	SourceBlockKeySourceBuiltin                  = "source/builtin"
-	SourceBlockKeySourceComponent                = "source/component"
 	SourceBlockKeySourceConfig                   = "source/config"
 	SourceBlockKeySourceGit                      = "source/git"
 	SourceBlockKeySourceImage                    = "source/image"
 	SourceBlockKeySourceImagePullSecretName      = "source/image_pull_secret/name"
 	SourceBlockKeySourceImagePullSecretNamespace = "source/image_pull_secret/namespace"
 	SourceBlockKeySourceKind                     = "source/kind"
-	SourceBlockKeySourceNamespace                = "source/namespace"
 	SourceBlockKeySourcePath                     = "source/path"
 	SourceBlockSourceValue                       = "value"
 	SourceBlockSourceOidc                        = "oidc"
-	SourceBlockSourceKindImage                   = "image"
 	SourceBlockSourceKindGit                     = "git"
-	SourceBlockSourceKindComponent               = "component"
+	SourceBlockSourceKindImage                   = "image"
 	SourceBlockSourceKindBuiltin                 = "builtin"
 )
 
-// BuildBlock is every field any kind declares under "build", read from a compiled
-// object. A kind that declares none of them reads as the zero value.
-type BuildBlock struct {
-	BuildDockerfile string // authored at build/dockerfile/path
-	BuildImage      string // authored at build/{commands|script}/image
-	BuildInstall    string // authored at build/{commands}/install
-	BuildKind       string // which of dockerfile, commands, script was written
-	BuildOutput     string // authored at build/{commands|script}/output
-	BuildRun        string // authored at build/{commands}/run
-	BuildScript     string // authored at build/script/path
-	BuildTarget     string // authored at build/dockerfile/target
-}
-
-// ReadBuildBlock decodes one from a resource.
-func ReadBuildBlock(r Resource) BuildBlock {
-	var out BuildBlock
-	out.BuildDockerfile = r.String("build", "dockerfile")
-	out.BuildImage = r.String("build", "image")
-	out.BuildInstall = r.String("build", "install")
-	out.BuildKind = r.String("build", "kind")
-	out.BuildOutput = r.String("build", "output")
-	out.BuildRun = r.String("build", "run")
-	out.BuildScript = r.String("build", "script")
-	out.BuildTarget = r.String("build", "target")
-	return out
-}
-
-// BuildBlock's keys, and the values its fields may hold.
-const (
-	BuildBlockKeyBuildDockerfile  = "build/dockerfile"
-	BuildBlockKeyBuildImage       = "build/image"
-	BuildBlockKeyBuildInstall     = "build/install"
-	BuildBlockKeyBuildKind        = "build/kind"
-	BuildBlockKeyBuildOutput      = "build/output"
-	BuildBlockKeyBuildRun         = "build/run"
-	BuildBlockKeyBuildScript      = "build/script"
-	BuildBlockKeyBuildTarget      = "build/target"
-	BuildBlockBuildKindDockerfile = "dockerfile"
-	BuildBlockBuildKindCommands   = "commands"
-	BuildBlockBuildKindScript     = "script"
-)
-
 // WorkloadBlock is every field any kind declares under these keys, read from a
-// compiled object: "egress", "execution", "implements", "limits", "name", "ports", "runtime", "serve", "variables".
+// compiled object: "egress", "execution", "implements", "limits", "name", "package", "ports", "serve", "variables".
 // A kind that declares none of them reads as the zero value.
 type WorkloadBlock struct {
 	Egress             []string
@@ -3644,8 +3148,9 @@ type WorkloadBlock struct {
 	LimitsSteps        int64
 	LimitsTimeout      *time.Duration
 	Name               string
+	PackageName        string
+	PackageNamespace   string
 	Ports              map[string]ApplicationPortsEntry
-	Runtime            string
 	ServeIndex         string
 	ServeKind          string // which of application, function was written
 	ServeMode          string
@@ -3672,13 +3177,14 @@ func ReadWorkloadBlock(r Resource) WorkloadBlock {
 	out.LimitsSteps, _ = r.Int("limits", "steps")
 	out.LimitsTimeout = present[time.Duration](r.Duration("limits", "timeout"))
 	out.Name = r.String("name")
+	out.PackageName = r.String("package", "name")
+	out.PackageNamespace = r.String("package", "namespace")
 	for _, name := range r.Keys("ports") {
 		if out.Ports == nil {
 			out.Ports = map[string]ApplicationPortsEntry{}
 		}
 		out.Ports[name] = ReadApplicationPortsEntry(r.Sub("ports", name))
 	}
-	out.Runtime = r.String("runtime")
 	out.ServeIndex = r.String("serve", "index")
 	out.ServeKind = r.String("serve", "kind")
 	out.ServeMode = r.String("serve", "mode")
@@ -3710,8 +3216,9 @@ const (
 	WorkloadBlockKeyLimitsSteps               = "limits/steps"
 	WorkloadBlockKeyLimitsTimeout             = "limits/timeout"
 	WorkloadBlockKeyName                      = "name"
+	WorkloadBlockKeyPackageName               = "package/name"
+	WorkloadBlockKeyPackageNamespace          = "package/namespace"
 	WorkloadBlockKeyPorts                     = "ports"
-	WorkloadBlockKeyRuntime                   = "runtime"
 	WorkloadBlockKeyServeIndex                = "serve/index"
 	WorkloadBlockKeyServeKind                 = "serve/kind"
 	WorkloadBlockKeyServeMode                 = "serve/mode"
@@ -3729,9 +3236,6 @@ const (
 	WorkloadBlockImplementsProxyTransformer   = "proxy-transformer"
 	WorkloadBlockImplementsGatewayRouter      = "gateway-router"
 	WorkloadBlockImplementsProxyRouter        = "proxy-router"
-	WorkloadBlockRuntimeWasm                  = "wasm"
-	WorkloadBlockRuntimeJs                    = "js"
-	WorkloadBlockRuntimeContainer             = "container"
 	WorkloadBlockServeKindApplication         = "application"
 	WorkloadBlockServeKindFunction            = "function"
 	WorkloadBlockServeModeStatic              = "static"

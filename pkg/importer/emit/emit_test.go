@@ -69,10 +69,9 @@ func TestAProjectWithNothingMissingCompiles(t *testing.T) {
 	fs := afero.NewMemMapFs()
 
 	complete := importer.Result{Source: "hand"}
-	complete.Set("application", "api", map[string]any{
-		"source":    map[string]any{"image": "ghcr.io/acme/api:1.4"},
-		"execution": map[string]any{"memory": "512MB"},
-	})
+	api := map[string]any{"execution": map[string]any{"memory": "512MB"}}
+	complete.Runs(api, "api", map[string]any{"type": "oci", "source": map[string]any{"image": "ghcr.io/acme/api:1.4"}})
+	complete.Set("application", "api", api)
 
 	report, err := emit.To(fs, "/project", "shop", complete)
 	require.NoError(t, err)

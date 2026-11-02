@@ -1,13 +1,7 @@
 id: QmdyFJcaZzjFwjSw1NJdQGkYNhvG1kWtZAhM8SZBaAaLuR
 description: the near end - it is invoked from outside and dials the channel, so what it answers came back through a second guest
-runtime: wasm
-source: services/cacher
-build:
-    commands:
-        image: ghcr.io/samyfodil/wazy-build-rust:1.99.1-cc0.21.1
-        install: cargo fetch --locked
-        run: cargo component build --release --locked --target wasm32-wasip2
-        output: target/wasm32-wasip1/release/cacher.wasm
+package:
+    name: dialer_code
 execution:
     call: handle
     timeout: 15s

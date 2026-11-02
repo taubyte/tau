@@ -107,18 +107,14 @@ func TestANamedEntryReferenceDrawsAnEdge(t *testing.T) {
 
 	var found []string
 	for _, rel := range schema.Relations(obj) {
-		if byID[rel.From].Kind != "secret" || byID[rel.To].Kind != "application" {
+		if byID[rel.From].Kind != "package" || byID[rel.To].Kind != "package" {
 			continue
-		}
-		if !strings.HasPrefix(rel.Verb, "variables ") {
-			continue // the same secret is also read directly and pulls an image
 		}
 		found = append(found, byID[rel.From].Name+" -"+rel.Verb+"-> "+byID[rel.To].Name)
 	}
 
-	// The arrow runs FROM the secret, because that reference is Inbound(): a secret's
-	// value travels out of it, and there is no verb that writes one from a workload. The
-	// entry is named by the author, so the edge is named by the entry rather than by a
-	// position, which a map does not have.
-	assert.DeepEqual(t, found, []string{"stripe -variables STRIPE_KEY-> api"})
+	// A build input is an entry named by the author, so the edge is named by the entry
+	// rather than by a position, which a map does not have. It sits in a block, and is
+	// addressed through it.
+	assert.DeepEqual(t, found, []string{"shop_site -build/inputs pay-> paylib"})
 }

@@ -1,14 +1,8 @@
 id: Qmc18Dcz6pUAGJqrUZTYjRia5RReCWQByKq4L73VioUfSw
 description: where each request goes, decided rather than written down - this gateway declares no static route, so every path is a question put to this function
-runtime: wasm
+package:
+    name: picker_code
 implements: gateway-router
-source: services/picker
-build:
-    commands:
-        image: ghcr.io/samyfodil/wazy-build-rust:1.99.1-cc0.21.1
-        install: cargo fetch --locked
-        run: cargo component build --release --locked --target wasm32-wasip2
-        output: target/wasm32-wasip1/release/picker.wasm
 execution:
     call: route
     timeout: 15s

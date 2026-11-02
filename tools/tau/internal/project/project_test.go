@@ -24,10 +24,10 @@ func initStarter(t *testing.T) string {
 	return dir
 }
 
-// starterFiles is every path init writes: the three documents and the source.
+// starterFiles is every path init writes: the four documents and the source.
 func starterFiles(t *testing.T) []string {
 	t.Helper()
-	files := []string{"function/hello.yaml", "gateway/front.yaml", "project.yaml"}
+	files := []string{"function/hello.yaml", "gateway/front.yaml", "package/hello_code.yaml", "project.yaml"}
 	require.NoError(t, fs.WalkDir(source, "source", func(path string, d fs.DirEntry, err error) error {
 		if err == nil && !d.IsDir() {
 			files = append(files, strings.TrimPrefix(path, "source/"))
@@ -120,7 +120,7 @@ func TestNewResourceFromTheSchema(t *testing.T) {
 
 	p, err := Open(dir)
 	require.NoError(t, err)
-	res, issues, err := p.New("function", "bye", "", map[string]string{"source": "services/bye"})
+	res, issues, err := p.New("function", "bye", "", map[string]string{"package.name": "hello_code"})
 	require.NoError(t, err)
 	require.Equal(t, []string{"function", "bye"}, res)
 	require.NotEmpty(t, issues, "a function owes its execution fields")
@@ -129,8 +129,7 @@ func TestNewResourceFromTheSchema(t *testing.T) {
 		require.NotEmpty(t, issue.Field)
 	}
 	require.Error(t, p.SetField(res, "execution.memory", "not-a-size"))
-	require.Error(t, p.SetField(res, "runtime", "nodejs"), "a tier the kind does not run")
-	require.NoError(t, p.SetField(res, "runtime", "wasm"))
+	require.Error(t, p.SetField(res, "runtime", "wasm"), "the tier is the package's, not the function's")
 	require.NoError(t, p.SetField(res, "execution.call", "handle"))
 	require.NoError(t, p.SetField(res, "execution.timeout", "10s"))
 	require.NoError(t, p.SetField(res, "execution.memory", "16MB"))

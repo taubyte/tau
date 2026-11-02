@@ -5,8 +5,8 @@
 // It reads the config as deployed, from the register, not git's HEAD: the branch
 // resolves to deployments through the published environment table, and each
 // deployment's compiled object gives the recipes. A never-deployed project is
-// refused. Build stanzas are per environment, so each artifact is handed over
-// with the deployment it was built for.
+// refused. Only a package builds, and what it builds is per environment, so each
+// artifact is handed over with the deployment it was built for.
 package artifact
 
 import (
@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/taubyte/tau/pkg/git/repokey"
@@ -30,10 +29,6 @@ import (
 // branchRef is the only ref shape a build answers to, for the same reason a
 // deploy does: nothing in an environment table matches a tag.
 const branchRef = "refs/heads/"
-
-// buildTime is what a variable's `at` says when it belongs to the build rather
-// than to the workload.
-const buildTime = specs.VariablesEntryAtBuild
 
 var (
 	// ErrNeverDeployed is a code push for a project whose configuration has never
@@ -60,7 +55,9 @@ var (
 	// repository's block instead.
 	ErrUnfilled = errors.New("artifact: this resource's serving block is delegated to a file the compile did not read")
 
-	ErrNoSecrets = errors.New("artifact: this build needs a secret and this cloud has nothing to resolve one with")
+	// ErrNotBuiltHere is a package asking for something this cloud's builds do not do
+	// yet, refused by name rather than built without it.
+	ErrNotBuiltHere = errors.New("artifact: this cloud does not build that yet")
 )
 
 // Register is the read a build makes of what is deployed.
@@ -76,9 +73,8 @@ type Projects interface {
 	MainRepository(ctx context.Context, projectID string) (string, error)
 }
 
-// Secrets resolves a build-time secret, the same shape services/worker resolves a
-// run-time one with. Optional: without it, builds needing a secret are refused by
-// name.
+// Secrets resolves a secret for a build's vault, the same shape services/worker
+// resolves a run-time one with.
 type Secrets interface {
 	Secret(ctx context.Context, project, environment, secretID string) (string, error)
 }
@@ -92,60 +88,48 @@ type Checkout interface {
 
 // Spec is one build to run.
 type Spec struct {
-	// Image is the author's toolchain. A build with no image is refused, never
-	// defaulted.
-	Image string
-
-	// Dir holds the whole checkout, not just the resource's path, because a monorepo
-	// resource reaches its siblings (path dependencies, replaces, workspaces).
+	// Dir holds the whole checkout, not just the package's path, because a monorepo
+	// package reaches its siblings (path dependencies, replaces, workspaces).
 	Dir string
 
-	// Path is the resource's own directory within Dir, where the commands run
-	// and Output is read from. Empty is the checkout root.
+	// Path is the package's own directory within Dir, where every step runs and
+	// Output is read from. Empty is the checkout root.
 	Path string
 
-	// Commands run in order, each in a shell, and the first that fails ends
-	// the build.
-	Commands []string
+	// Steps run in order over the one checkout, each in its own toolchain image,
+	// and the first that fails ends the build.
+	Steps []Step
 
-	// Variables are the author's build-time environment.
+	// Variables are the package's values, every step's environment.
 	Variables map[string]string
 
-	// Secrets are the build-time variables whose values came out of a vault.
-	// They reach the build exactly as Variables do, and are kept apart so a
-	// recipe can be named without its credentials in the name.
-	Secrets map[string]string
-
-	// Output is what to collect afterwards, relative to Path. It is a file for
-	// a wasm component and a js bundle, and a directory for a website.
+	// Output is what to collect afterwards, relative to Path. It is a file for a
+	// wasm component and a directory for a static site.
 	Output string
 
-	// Runtime is the tier the resource declares it runs on, when it declares
-	// one. A js bundle is not handed over as the build left it: the platform
-	// packs it into the archive that tier reads (see pack.go).
-	Runtime string
+	// Type is the package's. A warp bundle is not handed over as the build left it:
+	// the platform packs it into the archive that tier reads (see pack.go).
+	Type string
+}
+
+// Step is one toolchain image and the commands run in it, in one shell.
+type Step struct {
+	Name     string
+	Image    string
+	Commands []string
 }
 
 // Digest names what the recipe is, so a developer's build and a cloud's are known
-// to be one recipe. A secret is named, never its value: a digest in a job log must
-// not let a reader test guesses.
+// to be one recipe.
 func (s Spec) Digest() string {
-	secrets := make([]string, 0, len(s.Secrets))
-	for name := range s.Secrets {
-		secrets = append(secrets, name)
-	}
-	sort.Strings(secrets)
-
 	type digestInput struct {
-		Image     string            `json:"image"`
 		Path      string            `json:"path"`
-		Commands  []string          `json:"commands"`
+		Steps     []Step            `json:"steps"`
 		Variables map[string]string `json:"variables"`
-		Secrets   []string          `json:"secrets"`
 		Output    string            `json:"output"`
-		Runtime   string            `json:"runtime,omitempty"`
+		Type      string            `json:"type,omitempty"`
 	}
-	named, _ := json.Marshal(digestInput{s.Image, filepath.ToSlash(s.Path), s.Commands, s.Variables, secrets, s.Output, s.Runtime})
+	named, _ := json.Marshal(digestInput{filepath.ToSlash(s.Path), s.Steps, s.Variables, s.Output, s.Type})
 	sum := sha256.Sum256(named)
 	return hex.EncodeToString(sum[:])
 }
@@ -246,11 +230,11 @@ func (b *Builder) Build(ctx context.Context, w backend.Work, out backend.Output)
 	}
 	defer release()
 
-	// Every spec is read before any build runs, so one unbuildable resource cannot
+	// Every spec is read before any build runs, so one unbuildable package cannot
 	// leave the others rebuilt and it stale.
 	recipes := make([]Spec, len(work))
 	for i, item := range work {
-		spec, err := Recipe(ctx, b.secrets, w.ProjectID, item, dir)
+		spec, err := Recipe(item, dir)
 		if err != nil {
 			return err
 		}
@@ -258,22 +242,22 @@ func (b *Builder) Build(ctx context.Context, w backend.Work, out backend.Output)
 	}
 
 	for i, item := range work {
-		say(out, "building %s/%s for %s (recipe %s)", item.Kind, item.Name, item.Environment, recipes[i].Digest())
+		say(out, "building package/%s for %s (recipe %s)", item.Name, item.Environment, recipes[i].Digest())
 
 		product, err := b.engine.Make(ctx, recipes[i], out)
 		if errors.Is(err, ErrNoEngine) {
 			// An engine with nothing to run this in declines rather than fails.
-			say(out, "not built: %s/%s for %s: %v", item.Kind, item.Name, item.Environment, err)
+			say(out, "not built: package/%s for %s: %v", item.Name, item.Environment, err)
 			continue
 		}
 		if err != nil {
-			return fmt.Errorf("artifact: building %s/%s for %s: %w", item.Kind, item.Name, item.Environment, err)
+			return fmt.Errorf("artifact: building package/%s for %s: %w", item.Name, item.Environment, err)
 		}
 
 		err = out.Asset(ctx, item.Environment, item.ID, product)
 		product.Close()
 		if err != nil {
-			return fmt.Errorf("artifact: storing %s/%s for %s: %w", item.Kind, item.Name, item.Environment, err)
+			return fmt.Errorf("artifact: storing package/%s for %s: %w", item.Name, item.Environment, err)
 		}
 	}
 	return nil
@@ -328,19 +312,15 @@ type Deployment struct {
 	Project     *specs.Project
 }
 
-// Item is one build: a resource, in one deployment.
+// Item is one build: a package, in one deployment.
 type Item struct {
 	Environment string
 	Scope       []string
-	Kind        string
 	Name        string
 	ID          string
-	Build       specs.Build
+	Package     specs.Package
 	Path        string
 	Variables   []specs.Variable
-
-	// Runtime is the tier the resource declares, "" for a kind with no choice.
-	Runtime string
 }
 
 // Plan is every build the deployments owe that backs says is at hand, exported so
@@ -358,30 +338,28 @@ func Plan(deployments []Deployment, backs func(specs.Buildable) (bool, error)) (
 				continue
 			}
 
-			// Refused: a delegated serving block the compile did not read would be served by
-			// the block it replaces.
+			// Refused: a build delegated to the package's own repository that the
+			// compile did not read would build what the config repository says instead.
 			if config := buildable.Source.Config; config != "" && !d.Project.Filled(buildable.ID) {
-				return nil, fmt.Errorf("%w: %s/%s names source.config %q and the compile of %s did not read it",
-					ErrUnfilled, buildable.Kind, buildable.Name, config, d.Environment)
+				return nil, fmt.Errorf("%w: package/%s names source.config %q and the compile of %s did not read it",
+					ErrUnfilled, buildable.Name, config, d.Environment)
 			}
 
 			out = append(out, Item{
 				Environment: d.Environment,
 				Scope:       buildable.Scope,
-				Kind:        buildable.Kind,
 				Name:        buildable.Name,
 				ID:          buildable.ID,
-				Build:       buildable.Build,
+				Package:     buildable.Package,
 				Path:        buildable.Source.Path,
 				Variables:   buildable.Variables,
-				Runtime:     buildable.Runtime,
 			})
 		}
 	}
 	return out, nil
 }
 
-// backedBy reports whether a pushed repository is the one this resource is built
+// backedBy reports whether a pushed repository is the one this package is built
 // from: a bare path is the project's main repository, otherwise the source names
 // it.
 func (b *Builder) backedBy(res specs.Buildable, pushed, main string) (bool, error) {
@@ -396,83 +374,52 @@ func (b *Builder) backedBy(res specs.Buildable, pushed, main string) (bool, erro
 	key, err := parse(res.Source.Git)
 	if err != nil {
 		// An unparseable clone URL is an error, not a skip that silently stops building.
-		return false, fmt.Errorf("artifact: %s/%s names %q, which is not a repository: %w",
-			res.Kind, res.Name, res.Source.Git, err)
+		return false, fmt.Errorf("artifact: package/%s names %q, which is not a repository: %w",
+			res.Name, res.Source.Git, err)
 	}
 	return key.String() == pushed, nil
 }
 
-// Recipe turns one item into the build it runs in checkout; secrets may be nil.
-func Recipe(ctx context.Context, secrets Secrets, projectID string, i Item, checkout string) (Spec, error) {
+// Recipe turns one item into the build it runs in checkout.
+func Recipe(i Item, checkout string) (Spec, error) {
+	build := i.Package.Build
+	switch {
+	case build.Kind == specs.PackageBuildKindDockerfile:
+		// A Dockerfile produces an image, which needs a registry this cloud lacks.
+		return Spec{}, fmt.Errorf("%w: package/%s is built from a Dockerfile, and storing an image needs a registry",
+			ErrNotBuiltHere, i.Name)
+	case len(build.Inputs) > 0:
+		// Refused rather than built without them: a build that reads .inputs/<name>
+		// would fail, or quietly build without what it embeds.
+		return Spec{}, fmt.Errorf("%w: package/%s reads other packages' artifacts as inputs",
+			ErrNotBuiltHere, i.Name)
+	}
+
 	spec := Spec{
-		Image:   i.Build.Image,
-		Dir:     checkout,
-		Path:    within(i.Path),
-		Output:  i.Build.Output,
-		Runtime: i.Runtime,
+		Dir:    checkout,
+		Path:   within(i.Path),
+		Output: i.Package.Output,
+		Type:   i.Package.Type,
 	}
-
-	// Kind before image: a dockerfile build has no `image`.
-	switch i.Build.Kind {
-	case specs.BuildCommands:
-		for _, command := range []string{i.Build.Install, i.Build.Run} {
-			if command != "" {
-				spec.Commands = append(spec.Commands, command)
-			}
+	for _, step := range build.Steps {
+		if step.Image == "" {
+			return Spec{}, fmt.Errorf("artifact: package/%s's step %q names no toolchain image, and this service does not pick one",
+				i.Name, step.Name)
 		}
-	case specs.BuildScript:
-		if i.Build.Script == "" {
-			return Spec{}, fmt.Errorf("artifact: %s/%s is a script build that names no script", i.Kind, i.Name)
-		}
-		spec.Commands = []string{"sh " + i.Build.Script}
-	default:
-		// A dockerfile build produces an image, which needs a registry this cloud lacks.
-		return Spec{}, fmt.Errorf("artifact: %s/%s is a %q build, and only %q and %q produce something this cloud can store",
-			i.Kind, i.Name, i.Build.Kind, specs.BuildCommands, specs.BuildScript)
+		spec.Steps = append(spec.Steps, Step{Name: step.Name, Image: step.Image, Commands: step.Commands})
 	}
-
-	// Only variables with `at: build` reach the build: no runtime secret in someone
-	// else's toolchain container.
 	for _, v := range i.Variables {
-		if v.At != buildTime {
-			continue
+		if spec.Variables == nil {
+			spec.Variables = map[string]string{}
 		}
-		if !v.FromSecret() {
-			if spec.Variables == nil {
-				spec.Variables = map[string]string{}
-			}
-			spec.Variables[v.Name] = v.Value
-			continue
-		}
-
-		// No resolver means the build is refused, not run without its secret.
-		if secrets == nil {
-			return Spec{}, fmt.Errorf("%w: %s/%s's %s wants %s",
-				ErrNoSecrets, i.Kind, i.Name, v.Name, v.Secret)
-		}
-
-		// The item's environment: each deployment builds with its own secret.
-		value, err := secrets.Secret(ctx, projectID, i.Environment, v.Secret)
-		if err != nil {
-			// No value in the message: this error reaches the job log.
-			return Spec{}, fmt.Errorf("artifact: %s/%s's %s needs the secret %s in %s: %w",
-				i.Kind, i.Name, v.Name, v.Secret, i.Environment, err)
-		}
-		if spec.Secrets == nil {
-			spec.Secrets = map[string]string{}
-		}
-		spec.Secrets[v.Name] = value
+		spec.Variables[v.Name] = v.Value
 	}
 
-	if spec.Image == "" {
-		return Spec{}, fmt.Errorf("artifact: %s/%s declares no build image, and this service does not pick one",
-			i.Kind, i.Name)
-	}
-	if len(spec.Commands) == 0 {
-		return Spec{}, fmt.Errorf("artifact: %s/%s declares a build that runs nothing", i.Kind, i.Name)
+	if len(spec.Steps) == 0 {
+		return Spec{}, fmt.Errorf("artifact: package/%s declares a build that runs nothing", i.Name)
 	}
 	if spec.Output == "" {
-		return Spec{}, fmt.Errorf("artifact: %s/%s declares a build that leaves nothing behind", i.Kind, i.Name)
+		return Spec{}, fmt.Errorf("artifact: package/%s declares a build that leaves nothing behind", i.Name)
 	}
 	return spec, nil
 }

@@ -505,7 +505,7 @@ func References() []Reference {
 			continue
 		}
 		kind, _ := g.Match.(string)
-		collectReferences(kind, g.Children[0], "", &out, seen)
+		collectReferences(kind, g.Children[0], "", "", &out, seen)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].On != out[j].On {
@@ -535,19 +535,22 @@ type Reference struct {
 	In string
 }
 
-func collectReferences(kind string, iter *engine.Node, in string, out *[]Reference, seen map[string]bool) {
+// collectReferences gathers iter's references. at is the key a block sits under, so a
+// field in it is addressed from what holds the block.
+func collectReferences(kind string, iter *engine.Node, in, at string, out *[]Reference, seen map[string]bool) {
 	for _, a := range iter.Attributes {
 		spec, ok := a.Meta["ref"].(engine.RefSpec)
 		if !ok {
 			continue
 		}
-		key := kind + "\x00" + in + "\x00" + a.Name
+		name := at + a.Name
+		key := kind + "\x00" + in + "\x00" + name
 		if seen[key] {
 			continue
 		}
 		seen[key] = true
 		r := Reference{
-			On: kind, Field: a.Name, Kind: spec.Group, KindFrom: spec.KindFrom,
+			On: kind, Field: name, Kind: spec.Group, KindFrom: spec.KindFrom,
 			ByName: spec.ByName, Inbound: spec.Inbound,
 			Serves: spec.Serves, In: in,
 		}
@@ -564,15 +567,22 @@ func collectReferences(kind string, iter *engine.Node, in string, out *[]Referen
 			}
 			for _, b := range iter.Attributes {
 				if b.Name == cand && b.Name != a.Name {
-					r.Namespace = cand
+					r.Namespace = at + cand
 				}
 			}
 		}
 		*out = append(*out, r)
 	}
 	for _, child := range iter.Children {
-		if key, _ := child.Match.(string); key != "" && len(child.Children) > 0 {
-			collectReferences(kind, child.Children[0], key, out, seen)
+		key, _ := child.Match.(string)
+		switch {
+		case key == "":
+		case engine.IsBlock(child):
+			// A block's fields are the holder's, one key down, and its groups are
+			// entries at the block's path.
+			collectReferences(kind, child, in, at+key+"/", out, seen)
+		case len(child.Children) > 0:
+			collectReferences(kind, child.Children[0], at+key, "", out, seen)
 		}
 	}
 }

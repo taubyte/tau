@@ -18,14 +18,10 @@ import (
 // does not do. The message names the attribute and what to change.
 var ErrUnserved = errors.New("worker: the workload declares something this cloud does not do")
 
-// applied carries what a tier honours and refuses what none does. It runs after the
-// spec is otherwise complete, so it judges by the real runtime.
-func applied(spec *invoke.Spec, t Target, proj *specs.Project, r specs.Resource, resourceID string) error {
-	return appliedWith(spec, t, proj, r, resourceID, specs.ReadWorkloadBlock(r))
-}
-
-// appliedWith is applied over a workload block the caller already read.
-func appliedWith(spec *invoke.Spec, t Target, proj *specs.Project, r specs.Resource, resourceID string, workload specs.WorkloadBlock) error {
+// appliedWith carries what a tier honours and refuses what none does, over a workload
+// block and package the caller already read. It runs after the spec is otherwise
+// complete, so it judges by the real runtime.
+func appliedWith(spec *invoke.Spec, t Target, proj *specs.Project, r specs.Resource, pkg ranPackage, workload specs.WorkloadBlock) error {
 	var refused []string
 
 	// A CPU ceiling is a CFS quota, which only a container has; a wasm guest is metered
@@ -58,21 +54,12 @@ func appliedWith(spec *invoke.Spec, t Target, proj *specs.Project, r specs.Resou
 		}
 	}
 
-	source := specs.ReadSourceBlock(r)
-
 	// A PULL CREDENTIAL IS NOT CARRIED TO THE BACKENDS: neither pulls with
 	// one. An image on a private registry would fail to pull with an error
 	// about authentication that the config had answered.
-	if name := source.SourceImagePullSecretName; name != "" {
-		refused = append(refused, fmt.Sprintf("source.image_pull_secret names the secret %s%s, and this cloud pulls images anonymously — "+
-			"push it to a registry that needs no credential", name, inNamespace(source.SourceImagePullSecretNamespace)))
-	}
-
-	// A delegated serving block the compile did not read means the resource would run
-	// with the config repository's values instead.
-	if config := source.SourceConfig; config != "" && !proj.Filled(resourceID) {
-		refused = append(refused, fmt.Sprintf("source.config names %q, and the compile that produced this deployment did not read it — "+
-			"what it would run is the config repository's block, not that file's", config))
+	if name := pkg.Source.ImagePullSecretName; name != "" {
+		refused = append(refused, fmt.Sprintf("its package %s names the pull secret %s%s, and this cloud pulls images anonymously — "+
+			"push it to a registry that needs no credential", pkg.Name, name, inNamespace(pkg.Source.ImagePullSecretNamespace)))
 	}
 
 	if len(refused) == 0 {
@@ -115,7 +102,7 @@ func probes(spec *invoke.Spec, app specs.Application) []string {
 }
 
 // runtimeContainer is the tier with a cgroup.
-const runtimeContainer = specs.WorkloadBlockRuntimeContainer
+const runtimeContainer = specs.PackageTypeOci
 
 func inNamespace(namespace string) string {
 	if namespace == "" {

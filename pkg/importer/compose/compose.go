@@ -34,8 +34,11 @@ var (
 // container kind, checked against the vocabulary so a rename fails at import.
 const containerKind = "application"
 
+// ociPackage is the package type an image is, and the tier that runs one.
+const ociPackage = "oci"
+
 func targetKind() (string, error) {
-	if !slices.Contains(v2.EnginesOf(containerKind), "container") {
+	if !slices.Contains(v2.EnginesOf(containerKind), ociPackage) {
 		return "", fmt.Errorf("%w: %q runs %v", ErrNoKind, containerKind, v2.EnginesOf(containerKind))
 	}
 	return containerKind, nil
@@ -243,20 +246,27 @@ func importService(r *importer.Result, kind, source string, s service, volumes m
 
 	doc := map[string]any{}
 
-	// `source` is a block and `image` is one of its branches.
+	// What runs is a package: an image somebody built, or one this cloud builds from a
+	// Dockerfile. A build's context is the package's source.
 	switch {
 	case s.Image != "":
-		doc["source"] = map[string]any{"image": s.Image}
+		r.Runs(doc, name, map[string]any{"type": ociPackage, "source": map[string]any{"image": s.Image}})
 	case !s.Build.IsZero():
-		// The context is `source`, not part of the build stanza.
-		build := buildToDockerfile(s.Build)
+		build, args := buildToDockerfile(s.Build)
+		pkg := map[string]any{"type": ociPackage}
 		if context, ok := build["context"].(string); ok && context != "" && context != "." {
-			doc["source"] = strings.TrimPrefix(context, "./")
+			pkg["source"] = strings.TrimPrefix(context, "./")
 		}
 		delete(build, "context")
-		if len(build) > 0 {
-			doc["build"] = map[string]any{"dockerfile": build}
+		if len(build) == 0 {
+			build["path"] = "Dockerfile"
 		}
+		pkg["build"] = map[string]any{"dockerfile": build}
+		// A Dockerfile build takes the package's variables as its build arguments.
+		if len(args) > 0 {
+			pkg["variables"] = args
+		}
+		r.Runs(doc, name, pkg)
 	default:
 		r.Add(importer.Finding{Resource: name, Key: "image", Level: importer.Blocked, Code: "NO_SOURCE",
 			Detail: "the service names neither an image nor a build; there is nothing to run"})
@@ -582,22 +592,23 @@ func bytesOf(size string) string {
 	return ""
 }
 
-// buildToDockerfile maps a compose build (string or mapping) onto the build
-// stanza's dockerfile branch.
-func buildToDockerfile(n yaml.Node) map[string]any {
+// buildToDockerfile maps a compose build (string or mapping) onto a package's
+// dockerfile build, and its args onto the package's variables.
+func buildToDockerfile(n yaml.Node) (map[string]any, map[string]any) {
 	out := map[string]any{}
 	if n.Kind == yaml.ScalarNode {
 		out["context"] = n.Value
-		return out
+		return out, nil
 	}
 	type buildSpec struct {
-		Context    string `yaml:"context"`
-		Dockerfile string `yaml:"dockerfile"`
-		Target     string `yaml:"target"`
+		Context    string    `yaml:"context"`
+		Dockerfile string    `yaml:"dockerfile"`
+		Target     string    `yaml:"target"`
+		Args       yaml.Node `yaml:"args"`
 	}
 	var m buildSpec
 	if err := n.Decode(&m); err != nil {
-		return out
+		return out, nil
 	}
 	if m.Context != "" {
 		out["context"] = m.Context
@@ -608,7 +619,14 @@ func buildToDockerfile(n yaml.Node) map[string]any {
 	if m.Target != "" {
 		out["target"] = m.Target
 	}
-	return out
+	var args map[string]any
+	for name, value := range envOf(m.Args) {
+		if args == nil {
+			args = map[string]any{}
+		}
+		args[name] = map[string]any{"value": value}
+	}
+	return out, args
 }
 
 // envOf reads both compose spellings: a mapping and a KEY=VALUE list.

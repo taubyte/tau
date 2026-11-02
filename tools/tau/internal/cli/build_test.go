@@ -46,43 +46,55 @@ func (s *shell) Make(ctx context.Context, spec artifact.Spec, log io.Writer) (io
 	s.saw = append(s.saw, files)
 	s.mu.Unlock()
 
-	c := exec.CommandContext(ctx, "/bin/sh", "-c", strings.Join(spec.Commands, " && "))
-	c.Dir = filepath.Join(spec.Dir, spec.Path)
-	c.Env = []string{"PATH=" + os.Getenv("PATH")}
-	for k, v := range spec.Variables {
-		c.Env = append(c.Env, k+"="+v)
-	}
-	for k, v := range spec.Secrets {
-		c.Env = append(c.Env, k+"="+v)
-	}
-	c.Stdout, c.Stderr = log, log
-	if err := c.Run(); err != nil {
-		return nil, err
+	for _, step := range spec.Steps {
+		c := exec.CommandContext(ctx, "/bin/sh", "-c", strings.Join(step.Commands, " && "))
+		c.Dir = filepath.Join(spec.Dir, spec.Path)
+		c.Env = []string{"PATH=" + os.Getenv("PATH")}
+		for k, v := range spec.Variables {
+			c.Env = append(c.Env, k+"="+v)
+		}
+		c.Stdout, c.Stderr = log, log
+		if err := c.Run(); err != nil {
+			return nil, err
+		}
 	}
 	return os.Open(filepath.Join(spec.Dir, spec.Path, spec.Output))
 }
 
-const helloBuild = `build:
-    commands:
-        image: busybox:1.36
-        install: mkdir -p out
-        run: cat ../shared/greeting > out/hello.wasm
-        output: out/hello.wasm
+const helloBuild = `output: out/hello.wasm
+build:
+    steps:
+        - name: build
+          image: busybox:1.36
+          commands:
+              - mkdir -p out
+              - cat ../shared/greeting > out/hello.wasm
 `
 
-// buildable is a starter project whose function builds with the shell engine,
+// buildable is a starter project whose package builds with the shell engine,
 // reading a sibling directory the way a monorepo dependency is read.
 func buildable(t *testing.T, x *tester) {
 	t.Helper()
 	x.ok("init", "shop", "--dir", x.dir)
-	fn := filepath.Join(x.dir, "function", "hello.yaml")
-	body, err := os.ReadFile(fn)
+	pkg := filepath.Join(x.dir, "package", "hello_code.yaml")
+	body, err := os.ReadFile(pkg)
 	require.NoError(t, err)
-	at := bytes.Index(body, []byte("build:"))
-	end := bytes.Index(body, []byte("execution:"))
-	require.True(t, at > 0 && end > at)
-	rewritten := append(append(append([]byte{}, body[:at]...), helloBuild...), body[end:]...)
-	require.NoError(t, os.WriteFile(fn, rewritten, 0o644))
+	// The starter's own output and build give way to this one; its id stays, wherever
+	// init minted it.
+	var kept []string
+	inBuild := false
+	for _, line := range strings.Split(string(body), "\n") {
+		top := line != "" && line[0] != ' '
+		if top {
+			inBuild = strings.HasPrefix(line, "build:")
+		}
+		if inBuild || strings.HasPrefix(line, "output:") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	rewritten := strings.TrimRight(strings.Join(kept, "\n"), "\n") + "\n" + helloBuild
+	require.NoError(t, os.WriteFile(pkg, []byte(rewritten), 0o644))
 	require.NoError(t, os.MkdirAll(filepath.Join(x.dir, "services", "hello"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(x.dir, "services", "hello", "build.toml"), []byte("[package]"), 0o644))
 	require.NoError(t, os.MkdirAll(filepath.Join(x.dir, "services", "shared"), 0o755))
@@ -118,8 +130,8 @@ func TestABuildOnThisMachineIsTheCloudsBuild(t *testing.T) {
 	require.Len(t, out.Built, 1)
 	b := out.Built[0]
 	require.Equal(t, "prod", b.Environment)
-	require.Equal(t, "function/hello", b.Kind+"/"+b.Name)
-	require.Equal(t, filepath.Join(OutDir, "prod", "function", "hello"), b.File)
+	require.Equal(t, "package/hello_code", b.Kind+"/"+b.Name)
+	require.Equal(t, filepath.Join(OutDir, "prod", "package", "hello_code"), b.File)
 
 	product, err := os.ReadFile(filepath.Join(x.dir, b.File))
 	require.NoError(t, err)
@@ -135,7 +147,7 @@ func TestABuildOnThisMachineIsTheCloudsBuild(t *testing.T) {
 	require.NotContains(t, e.saw[0], ".tau/out/prod/recipes.json", "nothing under .tau is part of the tree")
 
 	text := x.ok("build", x.dir)
-	require.Contains(t, text, "function/hello")
+	require.Contains(t, text, "package/hello_code")
 	require.Contains(t, text, b.Recipe[:12])
 }
 
@@ -151,7 +163,7 @@ func TestWhatTreeABuildReads(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(x.dir, "services", "untracked"), []byte("new"), 0o644))
 
 	x.ok("build", x.dir)
-	product, err := os.ReadFile(filepath.Join(x.dir, OutDir, "prod", "function", "hello"))
+	product, err := os.ReadFile(filepath.Join(x.dir, OutDir, "prod", "package", "hello_code"))
 	require.NoError(t, err)
 	require.Equal(t, "uncommitted", string(product))
 	e := x.engine.(*shell)
@@ -159,7 +171,7 @@ func TestWhatTreeABuildReads(t *testing.T) {
 	require.NotContains(t, e.saw[0], "secret.txt")
 
 	x.ok("build", x.dir, "--clean")
-	product, err = os.ReadFile(filepath.Join(x.dir, OutDir, "prod", "function", "hello"))
+	product, err = os.ReadFile(filepath.Join(x.dir, OutDir, "prod", "package", "hello_code"))
 	require.NoError(t, err)
 	require.Equal(t, "hello from the tree", string(product), "--clean builds HEAD")
 	require.NotContains(t, e.saw[1], "services/untracked")
@@ -213,7 +225,7 @@ func TestWhatABuildRefuses(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(x.dir, "services", "shared", "greeting")))
 	r = x.run("build", x.dir)
 	require.NotZero(t, r.code)
-	require.Contains(t, r.stderr, "building function/hello for prod")
+	require.Contains(t, r.stderr, "building package/hello_code for prod")
 }
 
 func TestABranchThatFeedsNoDeployment(t *testing.T) {
@@ -230,44 +242,18 @@ func TestABranchThatFeedsNoDeployment(t *testing.T) {
 	x.ok("build", x.dir, "--env", "prod", "--branch", "feature")
 }
 
-func TestABuildTimeSecretOnThisMachine(t *testing.T) {
+func TestAPackageFromAnotherRepositoryIsNotBuiltHere(t *testing.T) {
 	x := newTester(t)
 	buildable(t, x)
-	fn := filepath.Join(x.dir, "function", "hello.yaml")
-	body, err := os.ReadFile(fn)
+	pkg := filepath.Join(x.dir, "package", "hello_code.yaml")
+	body, err := os.ReadFile(pkg)
 	require.NoError(t, err)
-	withSecret := bytes.Replace(body, []byte("run: cat ../shared/greeting > out/hello.wasm"), []byte(`run: printf %s "$NPM_TOKEN" > out/hello.wasm`), 1)
-	withSecret = append(withSecret, []byte("variables:\n    NPM_TOKEN:\n        at: build\n        secret:\n            name: npm_token\n")...)
-	require.NoError(t, os.WriteFile(fn, withSecret, 0o644))
-	x.ok("new", "secret", "npm_token", "--dir", x.dir, "--set", "source=value")
-
-	t.Setenv("TAU_SECRET_NPM_TOKEN", "")
-	os.Unsetenv("TAU_SECRET_NPM_TOKEN")
-	r := x.run("build", x.dir)
-	require.NotZero(t, r.code)
-	require.Contains(t, r.stderr, "set TAU_SECRET_NPM_TOKEN")
-
-	t.Setenv("TAU_SECRET_NPM_TOKEN", "s3cret")
-	var out buildOutput
-	require.NoError(t, json.Unmarshal([]byte(x.ok("build", x.dir, "-o", "json")), &out))
-	product, err := os.ReadFile(filepath.Join(x.dir, out.Built[0].File))
-	require.NoError(t, err)
-	require.Equal(t, "s3cret", string(product))
-	require.Equal(t, "S3_TOKEN_X", envName("s3-token.x"))
-}
-
-func TestAResourceFromAnotherRepositoryIsNotBuiltHere(t *testing.T) {
-	x := newTester(t)
-	buildable(t, x)
-	fn := filepath.Join(x.dir, "function", "hello.yaml")
-	body, err := os.ReadFile(fn)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(fn, bytes.Replace(body, []byte("source: services/hello"), []byte("source:\n    git: https://github.com/acme/hello\n"), 1), 0o644))
+	require.NoError(t, os.WriteFile(pkg, bytes.Replace(body, []byte("source: services/hello"), []byte("source:\n    git: https://github.com/acme/hello\n"), 1), 0o644))
 
 	var out buildOutput
 	require.NoError(t, json.Unmarshal([]byte(x.ok("build", x.dir, "-o", "json")), &out))
 	require.Empty(t, out.Built)
-	require.Equal(t, []string{"function/hello is built from https://github.com/acme/hello"}, out.Skipped)
+	require.Equal(t, []string{"package/hello_code is built from https://github.com/acme/hello"}, out.Skipped)
 	text := x.ok("build", x.dir)
 	require.Contains(t, text, "not built here")
 	require.Contains(t, text, "nothing in main's deployments is built from this directory")
@@ -395,10 +381,10 @@ func TestACodeRepositoryBuildsAgainstWhatIsPublished(t *testing.T) {
 	buildable(t, x)
 	x.login()
 	x.f.uploads = true
-	fn := filepath.Join(x.dir, "function", "hello.yaml")
-	body, err := os.ReadFile(fn)
+	pkg := filepath.Join(x.dir, "package", "hello_code.yaml")
+	body, err := os.ReadFile(pkg)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(fn, bytes.Replace(body, []byte("source: services/hello"), []byte("source:\n    git: https://github.com/acme/lib\n    path: services/hello\n"), 1), 0o644))
+	require.NoError(t, os.WriteFile(pkg, bytes.Replace(body, []byte("source: services/hello"), []byte("source:\n    git: https://github.com/acme/lib\n    path: services/hello\n"), 1), 0o644))
 	id := projectYAMLID(t, x.dir)
 	x.f.published[id+"/prod"] = compiledOf(t, x)
 
@@ -430,7 +416,7 @@ func TestACodeRepositoryBuildsAgainstWhatIsPublished(t *testing.T) {
 	// Another repository's build plans nothing here.
 	require.NoError(t, json.Unmarshal([]byte(x.ok("build", code, "--project", id, "--repo", "github.com/acme/other", "-o", "json")), &out))
 	require.Empty(t, out.Built)
-	require.Equal(t, []string{"function/hello is built from https://github.com/acme/lib"}, out.Skipped)
+	require.Equal(t, []string{"package/hello_code is built from https://github.com/acme/lib"}, out.Skipped)
 
 	// A branch the published table does not feed, and a source that is no
 	// repository, are refused.

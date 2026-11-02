@@ -11,6 +11,11 @@ import (
 const (
 	projectID = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
 	secretID  = "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy"
+
+	// codePackageID is the package every function here runs, and imagePackageID the
+	// image every application does.
+	codePackageID  = "QmUAdPDpqX8h9iMcn2ionxAkptmvD5bGqzMrRWHAcpU9fg"
+	imagePackageID = "QmUAdPDpqX8h9iMcn2ionxAkptmvD5bGqzMrRWHAcpU9fh"
 )
 
 func compiled() []byte {
@@ -18,12 +23,14 @@ func compiled() []byte {
 		"object": {
 			"id": "` + projectID + `",
 			"name": "shop",
+			"package": {
+				"` + codePackageID + `": {"name": "code", "type": "wasm"}
+			},
 			"function": {
 				"QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY": {
 					"name": "checkout",
-					"runtime": "wasm",
 					"execution": {"call": "handle", "memory": 33554432},
-					"source": "services/checkout"
+					"package": {"name": "` + codePackageID + `"}
 				}
 			},
 			"gateway": {
@@ -45,6 +52,8 @@ func compiled() []byte {
 			}
 		},
 		"indexes": {
+			"projects/` + projectID + `/package/code/links": [
+				"branches/main/projects/` + projectID + `/package/` + codePackageID + `"],
 			"projects/` + projectID + `/function/checkout/links": [
 				"branches/main/projects/` + projectID + `/function/QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY"],
 			"projects/` + projectID + `/gateway/shop/links": [
@@ -61,54 +70,27 @@ func workerTarget() specs.Address {
 
 func gatewayConfig() gateway.Config { return gateway.Config{} }
 
-// needsASecret is a project whose one function names a secret and nothing else.
-// It is the ordinary shape of anything imported from a platform that had
-// environment variables, and a test using it hands the node prebuilt() so that
-// the one seam left to refuse is the secrets one.
-func needsASecret() []byte {
+// builtByThePlatform is a project whose one function runs a package the platform
+// builds, so the only seam it needs is the build service's.
+func builtByThePlatform() []byte {
 	return []byte(`{
 		"object": {
 			"id": "` + projectID + `",
 			"name": "shop",
-			"function": {
-				"QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY": {
-					"name": "checkout",
-					"runtime": "wasm",
-					"execution": {"call": "handle", "memory": 33554432},
-					"source": "services/checkout",
-					"variables": {
-						"TOKEN": {"as": "env", "at": "run", "secret": {"name": "` + secretID + `"}}
-					}
-				}
-			}
-		},
-		"indexes": {
-			"projects/` + projectID + `/function/checkout/links": [
-				"branches/main/projects/` + projectID + `/function/QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY"]
-		}
-	}`)
-}
-
-// needsBothSeams is a project whose one function is built by the platform and wants a
-// secret: both refusals at once.
-func needsBothSeams() []byte {
-	return []byte(`{
-		"object": {
-			"id": "` + projectID + `",
-			"name": "shop",
+			"package": {
+				"` + codePackageID + `": {"name": "code", "type": "wasm"}
+			},
 			"function": {
 				"QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY": {
 					"name": "built",
-					"runtime": "wasm",
 					"execution": {"call": "handle", "memory": 33554432},
-					"source": "services/built",
-					"variables": {
-						"TOKEN": {"as": "env", "at": "run", "secret": {"name": "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy"}}
-					}
+					"package": {"name": "` + codePackageID + `"}
 				}
 			}
 		},
 		"indexes": {
+			"projects/` + projectID + `/package/code/links": [
+				"branches/main/projects/` + projectID + `/package/` + codePackageID + `"],
 			"projects/` + projectID + `/function/built/links": [
 				"branches/main/projects/` + projectID + `/function/QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY"]
 		}

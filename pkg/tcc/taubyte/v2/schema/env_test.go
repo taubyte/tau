@@ -32,7 +32,7 @@ func compileInEnv(t *testing.T, env, doc string) (map[string]any, error) {
 }
 
 const envDoc = "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n" +
-	"runtime: wasm\n" +
+	"package:\n    name: redact_code\n" +
 	"execution:\n" +
 	"    call: c\n" +
 	"    timeout: 20s\n" +
@@ -75,21 +75,21 @@ func TestAnEnvironmentReadsItsOwnValue(t *testing.T) {
 func TestAnUnmarkedKeyCannotBeEnved(t *testing.T) {
 	_, err := compileInEnv(t, "preview", "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n"+
 		"id_preview: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Za\n"+
-		"runtime: wasm\n"+
+		"package:\n    name: redact_code\n"+
 		"execution: {call: c, timeout: 1s, memory: 1MB}\n")
 	assert.ErrorContains(t, err, "unknown key 'id_preview'")
 }
 
 func TestAnUndeclaredEnvironmentIsATypo(t *testing.T) {
 	_, err := compileInEnv(t, "preview", "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n"+
-		"runtime: wasm\n"+
+		"package:\n    name: redact_code\n"+
 		"execution:\n    call: c\n    timeout: 1s\n    timeout_prevew: 5s\n    memory: 1MB\n")
 	assert.ErrorContains(t, err, "unknown key 'timeout_prevew'")
 }
 
 func TestAPlacementDiffersPerEnvironment(t *testing.T) {
 	const doc = "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n" +
-		"runtime: wasm\n" +
+		"package:\n    name: redact_code\n" +
 		"execution:\n    call: c\n    timeout: 1s\n    memory: 1MB\n" +
 		"regions:\n    pinned: [region-1]\n    pinned_preview: [region-2]\n"
 
@@ -116,7 +116,7 @@ func TestAPlacementDiffersPerEnvironment(t *testing.T) {
 
 func TestAPolicyIsTheSameInEveryDeployment(t *testing.T) {
 	fn, err := compileInEnv(t, "preview", "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n"+
-		"runtime: wasm\n"+
+		"package:\n    name: redact_code\n"+
 		"execution: {call: c, timeout: 1s, memory: 1MB}\n"+
 		"regions:\n    failover:\n        main: region-1\n        standby: region-2\n    pinned_preview: [region-2]\n")
 	assert.NilError(t, err, "each key is legal on its own, so the compile cannot refuse it")

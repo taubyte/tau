@@ -1,0 +1,10 @@
+id: QmUjDEJESCBEFCAzSUgaCULsNhubVTRLEeopVdngdV9szx
+type: wasm
+source: services/js
+output: function.wasm
+build:
+    steps:
+        - name: build
+          image: ghcr.io/samyfodil/wazy-build-js:1.39.0-cjs0.23.0-node22.23.4
+          commands:
+              - jco componentize function.js --wit ../../wit --world-name handler -o function.wasm

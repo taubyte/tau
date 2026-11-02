@@ -1,0 +1,6 @@
+id: QmWMEeTvsrRsZ9QZV7So2fQ6oUPEs2bQ5evptEX1rZvaMY
+type: oci
+source: services/pool
+build:
+    dockerfile:
+        target: runtime

@@ -80,18 +80,13 @@ Resources:
 // filled is a value for each field an import could not supply; the point is that
 // the to-do list is complete.
 var filled = map[string]any{
-	"build/commands/image":  "node:22",
-	"build/script/image":    "node:22",
-	"build/commands/run":    "npm run build",
-	"build/commands/output": "dist",
-	"execution/call":        "handler",
-	"runtime":               "wasm",
-	"execution/memory":      "512MB",
-	"execution/timeout":     "30s",
-	"source/image":          "ghcr.io/acme/placeholder:1",
-	"quota":                 "1GB",
-	"size":                  "512MB",
-	"consensus":             "crdt",
+	"type":              "wasm",
+	"execution/call":    "handler",
+	"execution/memory":  "512MB",
+	"execution/timeout": "30s",
+	"quota":             "1GB",
+	"size":              "512MB",
+	"consensus":         "crdt",
 }
 
 // imported runs one importer's output to a published project, filling in exactly
@@ -189,7 +184,7 @@ func assertRunnable(t *testing.T, specs map[string]invoke.Spec) {
 
 // implementedTiers restates pkg/importer/emit/runnable_test's set; here it is the
 // resolved spec, not the kind, that must name one.
-var implementedTiers = []string{"container", "js", "static", "wasm"}
+var implementedTiers = []string{"oci", "static", "warp", "wasm"}
 
 func TestAFlyAppIsRunnable(t *testing.T) {
 	result, err := fly.Import([]byte(theFlyFile))
@@ -241,7 +236,7 @@ func TestALambdaImageStartsOnTheContainerTier(t *testing.T) {
 
 	var sawContainer bool
 	for _, spec := range specs {
-		if spec.Runtime == "container" {
+		if spec.Runtime == "oci" {
 			sawContainer = true
 			require.Equal(t, "1234.dkr.ecr.us-east-1.amazonaws.com/app:1", spec.Artifact,
 				"the image the template named")

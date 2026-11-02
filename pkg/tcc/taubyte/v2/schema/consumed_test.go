@@ -50,9 +50,15 @@ var (
 
 	advisoryRotation = excuse{inert, "how often a secret's value is expected to rotate. The vocabulary calls it advisory: it states an expectation and asks the cloud to do nothing."}
 
-	secretScopeConsumed = excuse{handled, "the namespace half of a variable's secret reference. The compile resolved the name beside it to the secret's ID, so the scope had already done its work — see resolve.go's envOf."}
+	packageScopeConsumed = excuse{handled, "the namespace half of a `package: {name: …}` reference. The compile resolved the name to the package's ID, so the scope was consumed resolving it."}
 
-	componentScopeConsumed = excuse{handled, "the namespace half of a `source: {component: …}` reference. The compile resolved the name to the component's ID, so the scope was consumed resolving it."}
+	dockerfileRefused = excuse{handled, "where a package's Dockerfile is and which stage is its image. The build service refuses a dockerfile build by name (ErrNotBuiltHere): storing the image it makes needs a registry this cloud lacks, so neither field is ever served weaker than written."}
+
+	inputsRefused = excuse{handled, "another package's artifact a build reads. The build service refuses a package with inputs by name (ErrNotBuiltHere) rather than building it without what it would embed."}
+
+	cacheDisposable = excuse{notServed, "directories a step keeps for its next build. A cache is disposable by definition — a build never depends on finding one — and this build keeps none, so every step starts clean: slower, never wrong."}
+
+	watchEveryPush = excuse{notServed, "which paths' change rebuilds a package. This build rebuilds every package a pushed repository backs on every push, a superset of what watch would select: slower, never stale."}
 
 	proxyCertScopeConsumed = excuse{handled, "the namespace half of a proxy's certificate secret. The compile resolved the name beside it to the secret's ID."}
 
@@ -81,9 +87,15 @@ var preparatoryKinds = map[string]string{
 // unread is every declared attribute nothing reads, and why; `*` excuses it on
 // every kind. An entry no longer needed fails too.
 var unread = map[string]excuse{
-	"*/tags":             noTagReader,
-	"*/secret/namespace": secretScopeConsumed,
-	"*/source/namespace": componentScopeConsumed,
+	"*/tags":              noTagReader,
+	"*/package/namespace": packageScopeConsumed,
+
+	"package/build/dockerfile/path":    dockerfileRefused,
+	"package/build/dockerfile/target":  dockerfileRefused,
+	"package/build/inputs/*/name":      inputsRefused,
+	"package/build/inputs/*/namespace": inputsRefused,
+	"package/build/steps/*/cache":      cacheDisposable,
+	"package/watch":                    watchEveryPush,
 
 	"secret/rotation": advisoryRotation,
 
@@ -135,6 +147,9 @@ var readers = map[string][]string{
 	// schedule.go is the cron arm of the same service.
 	"services/worker/schedule.go": {"cron"},
 
+	// The build service makes a package's artifact, the only kind that builds.
+	"services/build/artifact/artifact.go": {"package"},
+
 	// The two services that read a DECLARATION rather than the grant, each for
 	// its own kind - see the file docs, which say why.
 	"services/database/declarations.go":   {"database"},
@@ -171,6 +186,8 @@ var exposed = map[string][]string{
 	// Project.Zones() is the one accessor in pkg/specs that hands a generated
 	// struct out, and these two are what read it.
 	"zone": {"node/zone/zone.go", "services/build/deploy/deploy.go"},
+	// A workload runs its package, which the worker reads by its generated reader.
+	"package": {"services/worker/resolve.go", "services/worker/unserved.go", "services/build/artifact/artifact.go"},
 }
 
 func TestEveryDeclaredAttributeIsReadBySomething(t *testing.T) {

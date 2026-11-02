@@ -30,7 +30,7 @@ func TestAJSFunctionRunsWhereTheAssetStoreIs(t *testing.T) {
 	require.NotContains(t, tierNames(without), js.Name)
 	_, err = without.pool.Do(t.Context(), greet, req)
 	require.ErrorIs(t, err, invoke.ErrNoRuntime)
-	require.ErrorContains(t, err, `"js"`)
+	require.ErrorContains(t, err, `"warp"`)
 }
 
 func TestTheWorkersEnginesAreTheOperators(t *testing.T) {

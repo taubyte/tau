@@ -156,9 +156,8 @@ func TestMakeRunsTheBuildConfined(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "input"), []byte("hello"), 0o644))
 
 	body, log, err := runBuild(t, backend, artifact.Spec{
-		Image:     "busybox:1.36",
 		Dir:       dir,
-		Commands:  []string{"echo building", "echo warned >&2", "mkdir -p out", "cp input out/app.wasm"},
+		Steps:     []artifact.Step{{Name: "build", Image: "busybox:1.36", Commands: []string{"echo building", "echo warned >&2", "mkdir -p out", "cp input out/app.wasm"}}},
 		Variables: map[string]string{"GREETING": "hi"},
 		Output:    "out/app.wasm",
 	})
@@ -179,11 +178,10 @@ func TestMakeRunsTheBuildConfined(t *testing.T) {
 
 func TestMakePacksAJSFunctionsBundle(t *testing.T) {
 	body, _, err := runBuild(t, &hostBackend{}, artifact.Spec{
-		Image:    "node:22",
-		Dir:      t.TempDir(),
-		Commands: []string{"mkdir -p dist", "echo 'export default {}' > dist/worker.js"},
-		Output:   "dist/worker.js",
-		Runtime:  "js",
+		Dir:    t.TempDir(),
+		Steps:  []artifact.Step{{Name: "build", Image: "node:22", Commands: []string{"mkdir -p dist", "echo 'export default {}' > dist/worker.js"}}},
+		Output: "dist/worker.js",
+		Type:   "warp",
 	})
 	require.NoError(t, err)
 
@@ -199,10 +197,9 @@ func TestMakePacksAJSFunctionsBundle(t *testing.T) {
 func TestMakeStopsAtTheFirstFailingCommand(t *testing.T) {
 	dir := t.TempDir()
 	_, _, err := runBuild(t, &hostBackend{}, artifact.Spec{
-		Image:    "busybox:1.36",
-		Dir:      dir,
-		Commands: []string{"false", "echo ran > out"},
-		Output:   "out",
+		Dir:    dir,
+		Steps:  []artifact.Step{{Name: "build", Image: "busybox:1.36", Commands: []string{"false", "echo ran > out"}}},
+		Output: "out",
 	})
 	require.ErrorIs(t, err, containers.ErrorExitCode)
 	require.NoFileExists(t, filepath.Join(dir, "out"))
@@ -210,10 +207,9 @@ func TestMakeStopsAtTheFirstFailingCommand(t *testing.T) {
 
 func TestMakeLogsTheOutputOfAFailingBuild(t *testing.T) {
 	_, log, err := runBuild(t, &hostBackend{}, artifact.Spec{
-		Image:    "busybox:1.36",
-		Dir:      t.TempDir(),
-		Commands: []string{"echo compiling", "echo main.go:3: undefined: x >&2", "false"},
-		Output:   "out",
+		Dir:    t.TempDir(),
+		Steps:  []artifact.Step{{Name: "build", Image: "busybox:1.36", Commands: []string{"echo compiling", "echo main.go:3: undefined: x >&2", "false"}}},
+		Output: "out",
 	})
 	require.ErrorIs(t, err, containers.ErrorExitCode)
 	require.Contains(t, log, "compiling")
@@ -248,10 +244,9 @@ func TestMakeLogsTheBuildWhileItRuns(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		product, err := e.Make(t.Context(), artifact.Spec{
-			Image:    "busybox:1.36",
-			Dir:      dir,
-			Commands: []string{"echo compiling", "while [ ! -f release ]; do sleep 0.02; done", "echo linked", "printf built > out"},
-			Output:   "out",
+			Dir:    dir,
+			Steps:  []artifact.Step{{Name: "build", Image: "busybox:1.36", Commands: []string{"echo compiling", "while [ ! -f release ]; do sleep 0.02; done", "echo linked", "printf built > out"}}},
+			Output: "out",
 		}, log)
 		if err == nil {
 			product.Close()
@@ -280,10 +275,9 @@ func TestMakeSurvivesALogThatStopsTakingBytes(t *testing.T) {
 	require.NoError(t, err)
 
 	product, err := e.Make(t.Context(), artifact.Spec{
-		Image:    "busybox:1.36",
-		Dir:      t.TempDir(),
-		Commands: []string{"echo noisy", "printf built > out"},
-		Output:   "out",
+		Dir:    t.TempDir(),
+		Steps:  []artifact.Step{{Name: "build", Image: "busybox:1.36", Commands: []string{"echo noisy", "printf built > out"}}},
+		Output: "out",
 	}, brokenLog{})
 	require.NoError(t, err, "a log that fails says nothing about the build")
 	body, err := io.ReadAll(product)
@@ -295,10 +289,9 @@ func TestMakeSurvivesALogThatStopsTakingBytes(t *testing.T) {
 func TestMakeWithNoVariablesSetsNoEnvironment(t *testing.T) {
 	backend := &hostBackend{}
 	body, _, err := runBuild(t, backend, artifact.Spec{
-		Image:    "busybox:1.36",
-		Dir:      t.TempDir(),
-		Commands: []string{"printf built > out"},
-		Output:   "out",
+		Dir:    t.TempDir(),
+		Steps:  []artifact.Step{{Name: "build", Image: "busybox:1.36", Commands: []string{"printf built > out"}}},
+		Output: "out",
 	})
 	require.NoError(t, err)
 	require.Equal(t, "built", body)
@@ -307,24 +300,23 @@ func TestMakeWithNoVariablesSetsNoEnvironment(t *testing.T) {
 
 func TestMakeReportsAMissingProduct(t *testing.T) {
 	_, _, err := runBuild(t, &hostBackend{}, artifact.Spec{
-		Image:    "busybox:1.36",
-		Dir:      t.TempDir(),
-		Commands: []string{"true"},
-		Output:   "target/app.wasm",
+		Dir:    t.TempDir(),
+		Steps:  []artifact.Step{{Name: "build", Image: "busybox:1.36", Commands: []string{"true"}}},
+		Output: "target/app.wasm",
 	})
 	require.ErrorContains(t, err, "left nothing at")
 }
 
 func TestMakeFailsWhenTheImageCannotBePulled(t *testing.T) {
 	_, _, err := runBuild(t, &hostBackend{pullErr: errors.New("registry down")}, artifact.Spec{
-		Image: "busybox:1.36", Dir: t.TempDir(), Commands: []string{"true"}, Output: "out",
+		Dir: t.TempDir(), Steps: []artifact.Step{{Name: "build", Image: "busybox:1.36", Commands: []string{"true"}}}, Output: "out",
 	})
 	require.ErrorContains(t, err, "registry down")
 }
 
 func TestMakeFailsWhenTheContainerCannotBeCreated(t *testing.T) {
 	_, _, err := runBuild(t, &hostBackend{createErr: errors.New("no egress firewall")}, artifact.Spec{
-		Image: "busybox:1.36", Dir: t.TempDir(), Commands: []string{"true"}, Output: "out",
+		Dir: t.TempDir(), Steps: []artifact.Step{{Name: "build", Image: "busybox:1.36", Commands: []string{"true"}}}, Output: "out",
 	})
 	require.ErrorContains(t, err, "no egress firewall")
 }
@@ -337,11 +329,10 @@ func TestMakeRunsInTheResourcesDirectoryOfTheWholeCheckout(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "wit", "world.wit"), []byte("shared"), 0o644))
 
 	body, _, err := runBuild(t, backend, artifact.Spec{
-		Image:    "busybox:1.36",
-		Dir:      dir,
-		Path:     "services/hello",
-		Commands: []string{"mkdir -p out", "cp ../../wit/world.wit out/app.wasm"},
-		Output:   "out/app.wasm",
+		Dir:    dir,
+		Path:   "services/hello",
+		Steps:  []artifact.Step{{Name: "build", Image: "busybox:1.36", Commands: []string{"mkdir -p out", "cp ../../wit/world.wit out/app.wasm"}}},
+		Output: "out/app.wasm",
 	})
 	require.NoError(t, err)
 	require.Equal(t, "shared", body)
@@ -352,30 +343,46 @@ func TestMakeRunsInTheResourcesDirectoryOfTheWholeCheckout(t *testing.T) {
 func TestMakeKeepsAClimbingPathInsideTheCheckout(t *testing.T) {
 	backend := &hostBackend{}
 	_, _, err := runBuild(t, backend, artifact.Spec{
-		Image: "busybox:1.36", Dir: t.TempDir(), Path: "../../etc", Commands: []string{"printf x > out"}, Output: "out",
+		Dir: t.TempDir(), Path: "../../etc", Steps: []artifact.Step{{Name: "build", Image: "busybox:1.36", Commands: []string{"printf x > out"}}}, Output: "out",
 	})
 	require.NoError(t, err)
 	require.Equal(t, "/src", backend.config.WorkDir)
 }
 
-func TestMakeHandsTheBuildItsSecrets(t *testing.T) {
+func TestMakeHandsEveryStepItsVariables(t *testing.T) {
 	backend := &hostBackend{}
 	body, _, err := runBuild(t, backend, artifact.Spec{
-		Image:     "busybox:1.36",
-		Dir:       t.TempDir(),
-		Commands:  []string{"printf %s-%s \"$GREETING\" \"$TOKEN\" > out"},
+		Dir: t.TempDir(),
+		Steps: []artifact.Step{
+			{Name: "first", Image: "busybox:1.36", Commands: []string{"printf %s \"$GREETING\" > half"}},
+			{Name: "second", Image: "busybox:1.36", Commands: []string{"printf %s-%s \"$(cat half)\" \"$GREETING\" > out"}},
+		},
 		Variables: map[string]string{"GREETING": "hi"},
-		Secrets:   map[string]string{"TOKEN": "ghp_x"},
 		Output:    "out",
 	})
 	require.NoError(t, err)
-	require.Equal(t, "hi-ghp_x", body)
+	require.Equal(t, "hi-hi", body, "the second step read what the first left, with the same values")
+}
+
+func TestAFailingStepEndsTheBuild(t *testing.T) {
+	dir := t.TempDir()
+	_, _, err := runBuild(t, &hostBackend{}, artifact.Spec{
+		Dir: dir,
+		Steps: []artifact.Step{
+			{Name: "first", Image: "busybox:1.36", Commands: []string{"false"}},
+			{Name: "second", Image: "busybox:1.36", Commands: []string{"echo ran > out"}},
+		},
+		Output: "out",
+	})
+	require.ErrorIs(t, err, containers.ErrorExitCode)
+	require.ErrorContains(t, err, "step first")
+	require.NoFileExists(t, filepath.Join(dir, "out"), "the step after a failing one never ran")
 }
 
 func TestMakeWithOpenEgressInstallsNoRestriction(t *testing.T) {
 	backend := &hostBackend{}
 	_, _, err := runBuild(t, backend, artifact.Spec{
-		Image: "busybox:1.36", Dir: t.TempDir(), Commands: []string{"printf x > out"}, Output: "out",
+		Dir: t.TempDir(), Steps: []artifact.Step{{Name: "build", Image: "busybox:1.36", Commands: []string{"printf x > out"}}}, Output: "out",
 	}, artifact.OpenEgress())
 	require.NoError(t, err)
 	require.False(t, backend.config.Network != nil && backend.config.Network.RestrictEgress)
@@ -383,7 +390,7 @@ func TestMakeWithOpenEgressInstallsNoRestriction(t *testing.T) {
 
 func TestMakeUsesAHeldImageWhenThePullFails(t *testing.T) {
 	body, _, err := runBuild(t, &hostBackend{held: true, pullErr: errors.New("not in any registry")}, artifact.Spec{
-		Image: "tau-local/toolchain:1", Dir: t.TempDir(), Commands: []string{"printf built > out"}, Output: "out",
+		Dir: t.TempDir(), Steps: []artifact.Step{{Name: "build", Image: "tau-local/toolchain:1", Commands: []string{"printf built > out"}}}, Output: "out",
 	})
 	require.NoError(t, err)
 	require.Equal(t, "built", body)
@@ -391,24 +398,29 @@ func TestMakeUsesAHeldImageWhenThePullFails(t *testing.T) {
 
 func TestARecipesDigest(t *testing.T) {
 	base := artifact.Spec{
-		Image: "rust:1.90", Dir: "/one/machine", Path: "services/hello",
-		Commands: []string{"cargo build"}, Variables: map[string]string{"A": "1"},
-		Secrets: map[string]string{"TOKEN": "first"}, Output: "out.wasm",
+		Dir: "/one/machine", Path: "services/hello",
+		Steps:     []artifact.Step{{Name: "build", Image: "rust:1.90", Commands: []string{"cargo build"}}},
+		Variables: map[string]string{"A": "1"}, Output: "out.wasm",
 	}
 	same := base
 	same.Dir = "/another/machine"
-	same.Secrets = map[string]string{"TOKEN": "second"}
-	require.Equal(t, base.Digest(), same.Digest(), "where the checkout is and what a secret holds are not the recipe")
+	require.Equal(t, base.Digest(), same.Digest(), "where the checkout is is not the recipe")
 	require.Len(t, base.Digest(), 64)
 
 	for name, change := range map[string]func(*artifact.Spec){
-		"image":    func(s *artifact.Spec) { s.Image = "rust:1.91" },
-		"path":     func(s *artifact.Spec) { s.Path = "services/other" },
-		"commands": func(s *artifact.Spec) { s.Commands = []string{"cargo build --release"} },
+		"image": func(s *artifact.Spec) {
+			s.Steps = []artifact.Step{{Name: "build", Image: "rust:1.91", Commands: []string{"cargo build"}}}
+		},
+		"path": func(s *artifact.Spec) { s.Path = "services/other" },
+		"commands": func(s *artifact.Spec) {
+			s.Steps = []artifact.Step{{Name: "build", Image: "rust:1.90", Commands: []string{"cargo build --release"}}}
+		},
+		"step": func(s *artifact.Spec) {
+			s.Steps = append(append([]artifact.Step{}, s.Steps...), artifact.Step{Name: "shrink", Image: "binaryen", Commands: []string{"wasm-opt"}})
+		},
 		"variable": func(s *artifact.Spec) { s.Variables = map[string]string{"A": "2"} },
-		"secret":   func(s *artifact.Spec) { s.Secrets = map[string]string{"OTHER": "first"} },
 		"output":   func(s *artifact.Spec) { s.Output = "other.wasm" },
-		"runtime":  func(s *artifact.Spec) { s.Runtime = "js" },
+		"type":     func(s *artifact.Spec) { s.Type = "warp" },
 	} {
 		changed := base
 		change(&changed)

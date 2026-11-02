@@ -1,0 +1,15 @@
+id: QmPUnSYosVzMuhisQ5c5KSRS4yD9qyx7erZ8LhFoGUUJkN
+description: one recipe, and what differs per deployment is a value the recipe reads
+type: wasm
+output: target/release/checkout.wasm
+output_preview: target/debug/checkout.wasm
+variables:
+    PROFILE:
+        value: release
+        value_preview: dev
+build:
+    steps:
+        - name: build
+          image: rust:1.83
+          commands:
+              - cargo build --profile $PROFILE

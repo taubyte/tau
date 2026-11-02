@@ -1,7 +1,7 @@
 id: QmVUyCkPnH4TfoyRmnAXPzGZ4PGwVJ9wJTvGXFqSaYbnGF
 description: the storefront api; two listening ports, named so nothing repeats a number
-source:
-    image: "ghcr.io/acme/api:1.4"
+package:
+    name: api_image
 ports:
     http:
         number: 8080
@@ -26,9 +26,6 @@ variables:
         value: info
     REGION:
         value: region-1
-    STRIPE_KEY:
-        secret:
-            name: stripe
 regions:
     failover:
         main: region-1

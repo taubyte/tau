@@ -172,10 +172,14 @@ func withZone(apex string, records []any) []byte {
 			"name": "shop",
 			// The application is what the worker is asked to hold — see
 			// serving. A zone declares no workload of its own.
+			"package": map[string]any{
+				imagePackageID: map[string]any{"name": "postgres", "type": "oci",
+					"source": map[string]any{"kind": "image", "image": "ghcr.io/acme/postgres:16"}},
+			},
 			"application": map[string]any{
 				proxyAppID: map[string]any{
-					"name":   "db",
-					"source": map[string]any{"kind": "image", "image": "ghcr.io/acme/postgres:16"},
+					"name":    "db",
+					"package": map[string]any{"name": imagePackageID},
 				},
 			},
 			"zone": map[string]any{
@@ -183,6 +187,8 @@ func withZone(apex string, records []any) []byte {
 			},
 		},
 		"indexes": map[string]any{
+			"projects/" + projectID + "/package/postgres/links": []any{
+				"branches/main/projects/" + projectID + "/package/" + imagePackageID},
 			"projects/" + projectID + "/application/db/links": []any{
 				"branches/main/projects/" + projectID + "/application/" + proxyAppID},
 			"projects/" + projectID + "/zone/own/links": []any{

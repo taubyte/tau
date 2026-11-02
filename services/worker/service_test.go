@@ -19,7 +19,7 @@ import (
 
 func newBits(t *testing.T) (*fakeRuntime, Pool) {
 	t.Helper()
-	rt := &fakeRuntime{name: "container"}
+	rt := &fakeRuntime{name: "oci"}
 	pool, err := invoke.NewPool(invoke.WithRuntime(rt))
 	require.NoError(t, err)
 	t.Cleanup(func() { pool.Close() })
@@ -117,21 +117,18 @@ func TestTheProtocolIsDerived(t *testing.T) {
 		"a request from the internet arrives through a gateway, which is what decides what may be reached")
 }
 
-func TestARuntimeIsNeverGuessed(t *testing.T) {
-	got, err := runtimeOf("application", specs.ReadWorkloadBlock(specs.Resource{}))
-	require.NoError(t, err)
-	require.Equal(t, "container", got, "a kind with one tier runs on it")
-
-	for kind, tier := range map[string]string{"function": "js", "worker": "container"} {
-		got, err = runtimeOf(kind, specs.ReadWorkloadBlock(specs.Resource{"runtime": tier}))
+func TestTheTierIsThePackages(t *testing.T) {
+	for kind, typ := range map[string]string{"application": "oci", "function": "warp", "worker": "oci"} {
+		got, err := runtimeOf(kind, specs.Package{Name: "p", Type: typ})
 		require.NoError(t, err)
-		require.Equal(t, tier, got, "the resource's own choice wins over the kind's set")
-
-		_, err = runtimeOf(kind, specs.ReadWorkloadBlock(specs.Resource{}))
-		require.ErrorIs(t, err, ErrAmbiguous, "%s runs on more than one tier and this one says none", kind)
+		require.Equal(t, typ, got, "%s runs its package's type", kind)
 	}
 
-	_, err = runtimeOf("cache", specs.ReadWorkloadBlock(specs.Resource{}))
+	_, err := runtimeOf("function", specs.Package{Name: "p", Type: "oci"})
+	require.ErrorIs(t, err, ErrNoRuntime, "a function does not run an image")
+	require.ErrorContains(t, err, `the package p is of type "oci"`)
+
+	_, err = runtimeOf("cache", specs.Package{Name: "p", Type: "wasm"})
 	require.ErrorIs(t, err, ErrNoRuntime, "nothing runs a cache")
 }
 
@@ -157,22 +154,16 @@ func TestHeadersSurviveTheRoundTrip(t *testing.T) {
 		fromWire(map[string]*workerv2.Headers{"Accept": {Values: []string{"application/json", "text/plain"}}}))
 }
 
-func TestOnlyRunTimeEnvironmentVariablesAreHandedOver(t *testing.T) {
-	s := &Service{}
-
-	env, err := s.envOf(t.Context(), Target{Name: "api"}, specs.ReadWorkloadBlock(specs.Resource{
+func TestOnlyEnvironmentVariablesAreHandedOverAsEnvironment(t *testing.T) {
+	env := envOf(specs.ReadWorkloadBlock(specs.Resource{
 		"variables": map[string]any{
-			"LOG_LEVEL": map[string]any{"as": "env", "at": "run", "value": "info"},
-			"BUILT_AT":  map[string]any{"as": "env", "at": "build", "value": "2026"},
-			"CERT":      map[string]any{"as": "file", "at": "run", "value": "-----BEGIN"},
+			"LOG_LEVEL": map[string]any{"as": "env", "value": "info"},
+			"CERT":      map[string]any{"as": "file", "value": "-----BEGIN"},
 		},
 	}).Variables)
-	require.NoError(t, err)
 	require.Equal(t, map[string]string{"LOG_LEVEL": "info"}, env)
 
 	// No variables at all is nil rather than an empty map, so a spec with no
 	// environment says so.
-	env, err = s.envOf(t.Context(), Target{Name: "api"}, nil)
-	require.NoError(t, err)
-	require.Nil(t, env)
+	require.Nil(t, envOf(nil))
 }

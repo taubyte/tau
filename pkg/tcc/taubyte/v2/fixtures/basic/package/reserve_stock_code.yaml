@@ -1,0 +1,11 @@
+id: QmNcfJqjztnjfHVBpmGUVznML6YXPJc7yVZAYna6hTa7Fp
+type: wasm
+source: services/reserve
+output: target/wasm32-wasip2/release/reserve.wasm
+build:
+    steps:
+        - name: build
+          image: rust:1.83
+          commands:
+              - cargo fetch --locked
+              - cargo build --release --target wasm32-wasip2

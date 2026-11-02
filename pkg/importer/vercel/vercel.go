@@ -90,33 +90,42 @@ func Import(data []byte) (importer.Result, error) {
 
 	r := importer.Result{Source: Source}
 
-	// What the file describes is a website built by `build/commands`.
-	commands := map[string]any{}
-	if f.InstallCommand != nil && *f.InstallCommand != "" {
-		commands["install"] = *f.InstallCommand
+	// What the file describes is a website, running a static package built with one
+	// step.
+	var commands []string
+	for _, c := range []*string{f.InstallCommand, f.BuildCommand} {
+		if c != nil && *c != "" {
+			commands = append(commands, *c)
+		}
 	}
-	if f.BuildCommand != nil && *f.BuildCommand != "" {
-		commands["run"] = *f.BuildCommand
+	output := ""
+	if f.OutputDirectory != nil {
+		output = *f.OutputDirectory
 	}
-	if f.OutputDirectory != nil && *f.OutputDirectory != "" {
-		commands["output"] = *f.OutputDirectory
-	}
-	if len(commands) > 0 {
-		// The build image is required and Vercel does not name one, so one is written and
-		// reported: emitted without, the project imported with an empty to-do list (a dynamic
-		// path escapes the session's required-field check) and then failed to compile.
-		commands["image"] = defaultBuildImage
+	if len(commands) > 0 || output != "" {
+		pkg := map[string]any{"type": "static"}
+		if output != "" {
+			pkg["output"] = output
+		}
+		site := map[string]any{"description": "imported from vercel.json"}
+		if len(commands) > 0 {
+			// The build image is required and Vercel does not name one, so one is written and
+			// reported: emitted without, the project imported with an empty to-do list and
+			// then failed to compile.
+			pkg["build"] = map[string]any{"steps": []any{map[string]any{
+				"name": "build", "image": defaultBuildImage, "commands": commands,
+			}}}
+		}
+		built := r.Runs(site, SiteName, pkg)
+		r.Set(siteKind, SiteName, site)
 
-		r.Set(siteKind, SiteName, map[string]any{
-			"description": "imported from vercel.json",
-			"build":       map[string]any{"commands": commands},
-		})
-
-		r.Add(importer.Finding{Resource: SiteName, Key: "build.image", Level: importer.Approximated,
-			Code: "SOURCE_IN_API:node-version",
-			Detail: "the image a build runs in has to be named, and Vercel picks it from a project setting and " +
-				"package.json's engines field rather than from this file; " + defaultBuildImage +
-				" was written — change it if the build needs another runtime"})
+		if len(commands) > 0 {
+			r.Add(importer.Finding{Resource: built, Key: "build.steps.image", Level: importer.Approximated,
+				Code: "SOURCE_IN_API:node-version",
+				Detail: "the image a build runs in has to be named, and Vercel picks it from a project setting and " +
+					"package.json's engines field rather than from this file; " + defaultBuildImage +
+					" was written — change it if the build needs another runtime"})
+		}
 	}
 
 	if f.Framework != nil && *f.Framework != "" {
@@ -233,9 +242,11 @@ func importFunctions(r *importer.Result, fns map[string]function) {
 			Detail: "\"" + glob + "\" configures every file it matches, and each of those is its own function here; " +
 				"one resource was made for the pattern and it has to be split by hand"})
 
-		if len(doc) > 0 {
-			r.Set(functionKind, name, doc)
-		}
+		// WHAT IT RUNS IS A PACKAGE, AND WHAT KIND IS NOT IN THIS FILE: a Node function is
+		// built into a component, a module or nothing yet, so the package's type is left
+		// for a person and the to-do list says so.
+		r.Runs(doc, name, map[string]any{})
+		r.Set(functionKind, name, doc)
 
 		switch {
 		case strings.HasPrefix(fn.Runtime, "edge"):

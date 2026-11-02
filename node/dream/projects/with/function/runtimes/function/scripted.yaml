@@ -1,12 +1,7 @@
 id: QmepZjoL2vm7ymJ2vizHAiK6kDuhwYPzQQsyejDBM316bF
 description: runs on the js tier, from a bundle packed by the platform
-runtime: js
-source: services/answer
-build:
-    commands:
-        image: ghcr.io/samyfodil/wazy-build-js:1.39.0-cjs0.23.0-node22.23.4
-        run: rolldown src/index.js --format esm --platform neutral --file dist/worker.js --sourcemap
-        output: dist/worker.js
+package:
+    name: scripted_code
 execution:
     timeout: 15s
     memory: 64MB

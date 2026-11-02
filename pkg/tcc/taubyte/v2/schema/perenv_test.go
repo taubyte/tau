@@ -17,19 +17,15 @@ func TestWhatMayBeWrittenPerEnvironment(t *testing.T) {
 		"agent/model/name", "agent/model/namespace", "agent/value",
 		"application/egress", "application/execution/cpu", "application/execution/memory",
 		"application/limits/concurrency",
-		"application/limits/max_instances", "application/source/image", "application/value",
+		"application/limits/max_instances", "application/value",
 		"bus/instances/limit",
 		"cache/instances/limit", "cache/size", "cache/ttl",
-		"component/build/image", "component/build/install", "component/build/output",
-		"component/build/run", "component/value",
 		"database/document/database", "database/document/host",
 		"database/document/size", "database/document/tls",
 		"database/kv/size",
 		"database/sql/database", "database/sql/host",
 		"database/sql/size", "database/sql/tls",
 		"database/instances/limit", "database/vector/size",
-		"function/build/image", "function/build/install", "function/build/output",
-		"function/build/run",
 		"function/egress", "function/execution/cpu", "function/execution/memory",
 		"function/execution/timeout", "function/value",
 		"gateway/cors/allow_self", "gateway/cors/origins",
@@ -45,17 +41,17 @@ func TestWhatMayBeWrittenPerEnvironment(t *testing.T) {
 		"sync/log/retention/size",
 		"sandbox/egress", "sandbox/execution/cpu", "sandbox/execution/memory",
 		"sandbox/lifetime/idle", "sandbox/lifetime/max",
-		"sandbox/source/image", "sandbox/value",
+		"sandbox/value",
 		"storage/instances/limit", "storage/size", "storage/streaming/ttl",
 		"stream/host", "stream/tls",
 		"volume/checkpoint/interval", "volume/checkpoint/rpo_budget", "volume/quota",
-		"website/build/image", "website/build/install", "website/build/output",
-		"website/build/run", "website/value",
-		"worker/build/image", "worker/build/install", "worker/build/output",
-		"worker/build/run",
 		"worker/egress", "worker/execution/cpu",
 		"worker/execution/memory", "worker/execution/timeout",
-		"worker/source/image", "worker/value",
+		"worker/value",
+		// A PACKAGE is where an artifact differs per deployment: where its build left
+		// it, an image's tag, a value its build reads. Its steps are one list, the
+		// same in every environment (a list element cannot vary).
+		"package/output", "package/source/image", "package/value",
 		"workflow/concurrency", "workflow/timeout",
 
 		// PLACEMENT, on every kind — one decision, not twenty-three. The BRANCH
@@ -66,7 +62,7 @@ func TestWhatMayBeWrittenPerEnvironment(t *testing.T) {
 		"bus/regions/in",
 		"cache/regions/in",
 		"channel/regions/in",
-		"component/regions/in",
+		"package/regions/in",
 		"cron/regions/in",
 		"database/regions/in",
 		"function/regions/in",
@@ -92,12 +88,7 @@ func TestWhatMayBeWrittenPerEnvironment(t *testing.T) {
 		// staging deployment read whatever production reads. The environment is
 		// the axis this schema varies on, so it is the axis this varies on too.
 		"agent/source/branch",
-		"application/source/branch",
-		"component/source/branch",
-		"function/source/branch",
-		"sandbox/source/branch",
-		"website/source/branch",
-		"worker/source/branch",
+		"package/source/branch",
 	}
 
 	seen := map[string]bool{}

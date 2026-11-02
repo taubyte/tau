@@ -84,10 +84,11 @@ func (i *fakeInstance) Shape(_ context.Context, s *invoke.Stream) (*invoke.Shapi
 func worldsHarness(t *testing.T) (*harness, *Client) {
 	t.Helper()
 	fn := func(id, world, call string) string {
-		return "id: " + id + "\nruntime: wasm\nimplements: " + world + "\nexecution:\n    call: " + call + "\n    timeout: 5s\n    memory: 16MB\n"
+		return "id: " + id + "\npackage:\n    name: code\nimplements: " + world + "\nexecution:\n    call: " + call + "\n    timeout: 5s\n    memory: 16MB\n"
 	}
 	h := build(t, Config{}, resolvers()...)
 	h.Register.Register = publishedDocs(t, map[string]string{
+		"/package/code.yaml":    "id: QmQ21mKigzmJBeoPNZkjkM4cxMyMjDx7PF9JqDrmWZoP3L\ntype: wasm\n",
 		"/function/redact.yaml": fn("QmQ21mKigzmJBeoPNZkjkM4cxMyMjDx7PF9JqDrmWZoP3K", "gateway-transformer", "transform"),
 		"/function/edge.yaml":   fn("QmZEDwPfbUF9WAui2sFGQJZyYucnV3zfuUHW8FahdJQB2B", "gateway-router", "route"),
 		"/function/picker.yaml": fn("Qmc18Dcz6pUAGJqrUZTYjRia5RReCWQByKq4L73VioUfSw", "proxy-router", "direct"),
