@@ -9,6 +9,7 @@ import (
 
 	pkgregister "github.com/taubyte/tau/pkg/register"
 
+	"github.com/taubyte/tau/pkg/proto/codec"
 	registerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/register/v2/registerv2connect"
 )
@@ -24,7 +25,7 @@ import (
 // mount is the one handler rpc.Listen serves.
 func (s *Service) mount() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle(registerv2connect.NewRegisterServiceHandler(&handler{s}))
+	mux.Handle(registerv2connect.NewRegisterServiceHandler(&handler{s}, codec.Option()))
 	return mux
 }
 

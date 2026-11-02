@@ -23,6 +23,7 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	pkgcertificate "github.com/taubyte/tau/pkg/certificate"
 	"github.com/taubyte/tau/pkg/certificate/acme"
+	"github.com/taubyte/tau/pkg/proto/codec"
 	cmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2/cmv2connect"
 )
@@ -189,7 +190,7 @@ func (c *Client) at(p peer.ID) (cmv2connect.CertificateServiceClient, error) {
 		}
 		c.conns[p] = conn
 	}
-	return cmv2connect.NewCertificateServiceClient(conn.HTTP(), conn.URL()), nil
+	return cmv2connect.NewCertificateServiceClient(conn.HTTP(), conn.URL(), codec.Option()), nil
 }
 
 // stored is the newest issuance of name any cm node holds: each holds a

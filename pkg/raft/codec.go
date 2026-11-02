@@ -55,7 +55,7 @@ func encodeSet(key string, value []byte) ([]byte, error) {
 	b.set.Key, b.set.Value = key, value
 	b.op.Set = &b.set
 	b.cmd.Op = &b.op
-	out, err := proto.Marshal(&b.cmd)
+	out, err := b.cmd.MarshalVT()
 	proto.Reset(&b.set)
 	proto.Reset(&b.cmd)
 	b.op.Set = nil
@@ -63,12 +63,16 @@ func encodeSet(key string, value []byte) ([]byte, error) {
 	return out, err
 }
 
-// decode reads raw into m; emptyOK is for a record whose zero value can be real.
-func decode[M proto.Message](raw []byte, m M, emptyOK bool) error {
+// decode reads raw into an empty m; emptyOK is for a record whose zero value can
+// be real.
+func decode[M interface {
+	proto.Message
+	UnmarshalVT([]byte) error
+}](raw []byte, m M, emptyOK bool) error {
 	if len(raw) == 0 && !emptyOK {
 		return errUndecodable
 	}
-	if err := proto.Unmarshal(raw, m); err != nil {
+	if err := m.UnmarshalVT(raw); err != nil {
 		return err
 	}
 	if len(m.ProtoReflect().GetUnknown()) > 0 {
@@ -83,7 +87,7 @@ func encodeCommand(cmd Command) ([]byte, error) {
 	if cmd.Type == CommandSet && cmd.Set != nil {
 		return encodeSet(cmd.Set.Key, cmd.Set.Value)
 	}
-	return proto.Marshal(commandProto(cmd))
+	return commandProto(cmd).MarshalVT()
 }
 
 func commandProto(cmd Command) *raftv2.Command {
@@ -161,7 +165,7 @@ func encodeFSMEntry(e CRDTEntry) ([]byte, error) {
 	m := entries.get()
 	defer entries.put(m)
 	m.Value, m.Timestamp, m.WallClock, m.Deleted = e.Value, e.Timestamp, e.WallClock, e.Deleted
-	return proto.Marshal(m)
+	return m.MarshalVT()
 }
 
 // decodeFSMEntry reads one FSM value. Every entry carries a timestamp, so empty bytes
@@ -192,7 +196,7 @@ func entriesFrom(entries map[string]*raftv2.Entry) map[string]CRDTEntry {
 }
 
 func encodeSnapshot(entries map[string]CRDTEntry, clock uint64) ([]byte, error) {
-	return proto.Marshal(&raftv2.Snapshot{Entries: entriesProto(entries), Clock: clock})
+	return (&raftv2.Snapshot{Entries: entriesProto(entries), Clock: clock}).MarshalVT()
 }
 
 // decodeSnapshot reads a snapshot. An empty FSM at clock zero encodes to nothing.
@@ -204,6 +208,30 @@ func decodeSnapshot(raw []byte) (map[string]CRDTEntry, uint64, error) {
 	return entriesFrom(m.GetEntries()), m.GetClock(), nil
 }
 
+// logProto is a log as the transport carries it; the log store writes the same
+// message.
+func logProto(l *raft.Log) *raftv2.LogEntry {
+	var at int64
+	if !l.AppendedAt.IsZero() {
+		at = l.AppendedAt.UnixNano()
+	}
+	return &raftv2.LogEntry{Index: l.Index, Term: l.Term, Type: uint32(l.Type), Data: l.Data, Extensions: l.Extensions, AppendedAt: at}
+}
+
+func logFrom(m *raftv2.LogEntry) *raft.Log {
+	l := &raft.Log{
+		Index:      m.GetIndex(),
+		Term:       m.GetTerm(),
+		Type:       raft.LogType(m.GetType()),
+		Data:       m.GetData(),
+		Extensions: m.GetExtensions(),
+	}
+	if at := m.GetAppendedAt(); at != 0 {
+		l.AppendedAt = time.Unix(0, at)
+	}
+	return l
+}
+
 func encodeLog(l *raft.Log) ([]byte, error) {
 	var at int64
 	if !l.AppendedAt.IsZero() {
@@ -212,7 +240,7 @@ func encodeLog(l *raft.Log) ([]byte, error) {
 	m := logs.get()
 	defer logs.put(m)
 	m.Index, m.Term, m.Type, m.Data, m.Extensions, m.AppendedAt = l.Index, l.Term, uint32(l.Type), l.Data, l.Extensions, at
-	return proto.Marshal(m)
+	return m.MarshalVT()
 }
 
 // decodeLog reads a stored log into l. Every log has an index, so empty bytes are
@@ -223,16 +251,7 @@ func decodeLog(raw []byte, l *raft.Log) error {
 	if err := decode(raw, m, false); err != nil {
 		return err
 	}
-	*l = raft.Log{
-		Index:      m.GetIndex(),
-		Term:       m.GetTerm(),
-		Type:       raft.LogType(m.GetType()),
-		Data:       m.GetData(),
-		Extensions: m.GetExtensions(),
-	}
-	if at := m.GetAppendedAt(); at != 0 {
-		l.AppendedAt = time.Unix(0, at)
-	}
+	*l = *logFrom(m)
 	return nil
 }
 
@@ -241,7 +260,7 @@ func encodeMeta(meta *snapshotMeta) ([]byte, error) {
 	for i, s := range meta.Configuration.Servers {
 		servers[i] = &raftv2.Server{Suffrage: int32(s.Suffrage), Id: string(s.ID), Address: string(s.Address)}
 	}
-	return proto.Marshal(&raftv2.SnapshotMeta{
+	return (&raftv2.SnapshotMeta{
 		Id:                 meta.ID,
 		Index:              meta.Index,
 		Term:               meta.Term,
@@ -249,7 +268,7 @@ func encodeMeta(meta *snapshotMeta) ([]byte, error) {
 		ConfigurationIndex: meta.ConfigurationIndex,
 		Size:               meta.Size,
 		Version:            int32(meta.Version),
-	})
+	}).MarshalVT()
 }
 
 // decodeMeta reads a snapshot's metadata. Every snapshot has an id, so empty bytes

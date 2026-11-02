@@ -8,7 +8,7 @@ import (
 	"io"
 	"net"
 
-	"google.golang.org/protobuf/proto"
+	"github.com/taubyte/tau/pkg/proto/codec"
 )
 
 const (
@@ -113,11 +113,7 @@ type sealedCodec struct {
 func (sealedCodec) Name() string { return "proto" }
 
 func (c sealedCodec) Marshal(m any) ([]byte, error) {
-	msg, ok := m.(proto.Message)
-	if !ok {
-		return nil, fmt.Errorf("%T is not a proto message", m)
-	}
-	plain, err := proto.Marshal(msg)
+	plain, err := codec.Codec.Marshal(m)
 	if err != nil {
 		return nil, err
 	}
@@ -129,10 +125,6 @@ func (c sealedCodec) Marshal(m any) ([]byte, error) {
 }
 
 func (c sealedCodec) Unmarshal(data []byte, m any) error {
-	msg, ok := m.(proto.Message)
-	if !ok {
-		return fmt.Errorf("%T is not a proto message", m)
-	}
 	if len(data) < nonceSize {
 		return fmt.Errorf("encrypted data too short: expected at least %d bytes, got %d", nonceSize, len(data))
 	}
@@ -140,5 +132,5 @@ func (c sealedCodec) Unmarshal(data []byte, m any) error {
 	if err != nil {
 		return fmt.Errorf("decryption failed: %w", err)
 	}
-	return proto.Unmarshal(plain, msg)
+	return codec.Codec.Unmarshal(plain, m)
 }

@@ -8,6 +8,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/taubyte/tau/p2p/rpc"
+	"github.com/taubyte/tau/pkg/proto/codec"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
 	"github.com/taubyte/tau/services/build"
@@ -33,7 +34,7 @@ func Builds(p *Pool) (*BuildClient, error) {
 func (c *BuildClient) Enqueue(ctx context.Context, repositoryKey, ref, commitSHA string) (string, error) {
 	var id string
 	err := c.pool.Do(ctx, func(client *rpc.Client) error {
-		queue := buildv2connect.NewQueueServiceClient(client.HTTP(), client.URL())
+		queue := buildv2connect.NewQueueServiceClient(client.HTTP(), client.URL(), codec.Option())
 		resp, err := queue.Enqueue(ctx, connect.NewRequest(&buildv2.PushEvent{
 			RepositoryKey: repositoryKey,
 			Ref:           ref,
@@ -58,7 +59,7 @@ func (c *BuildClient) Enqueue(ctx context.Context, repositoryKey, ref, commitSHA
 func (c *BuildClient) Get(ctx context.Context, jobID string) (*buildv2.Job, error) {
 	var job *buildv2.Job
 	err := c.pool.Do(ctx, func(client *rpc.Client) error {
-		jobs := buildv2connect.NewJobServiceClient(client.HTTP(), client.URL())
+		jobs := buildv2connect.NewJobServiceClient(client.HTTP(), client.URL(), codec.Option())
 		resp, err := jobs.Get(ctx, connect.NewRequest(&buildv2.JobRef{Id: jobID}))
 		if err != nil {
 			return err
@@ -82,7 +83,7 @@ func (c *BuildClient) List(ctx context.Context, projectID string, emit func(jobI
 
 	var sent int
 	return c.pool.Do(ctx, func(client *rpc.Client) error {
-		jobs := buildv2connect.NewJobServiceClient(client.HTTP(), client.URL())
+		jobs := buildv2connect.NewJobServiceClient(client.HTTP(), client.URL(), codec.Option())
 		stream, err := jobs.List(ctx, connect.NewRequest(&buildv2.ProjectRef{Id: projectID}))
 		if err != nil {
 			return c.resumable(sent, err)
@@ -114,7 +115,7 @@ func (c *BuildClient) resumable(sent int, err error) error {
 // Cancel stops a job and writes its terminal record.
 func (c *BuildClient) Cancel(ctx context.Context, jobID string) error {
 	return c.pool.Do(ctx, func(client *rpc.Client) error {
-		jobs := buildv2connect.NewJobServiceClient(client.HTTP(), client.URL())
+		jobs := buildv2connect.NewJobServiceClient(client.HTTP(), client.URL(), codec.Option())
 		_, err := jobs.Cancel(ctx, connect.NewRequest(&buildv2.JobRef{Id: jobID}))
 		return err
 	})
@@ -125,7 +126,7 @@ func (c *BuildClient) Cancel(ctx context.Context, jobID string) error {
 // it (build.proto's Retry returns Empty for the same reason).
 func (c *BuildClient) Retry(ctx context.Context, jobID string) error {
 	return c.pool.Do(ctx, func(client *rpc.Client) error {
-		jobs := buildv2connect.NewJobServiceClient(client.HTTP(), client.URL())
+		jobs := buildv2connect.NewJobServiceClient(client.HTTP(), client.URL(), codec.Option())
 		_, err := jobs.Retry(ctx, connect.NewRequest(&buildv2.JobRef{Id: jobID}))
 		return err
 	})
@@ -154,7 +155,7 @@ func (c *BuildClient) read(ctx context.Context, jobID string, attempt int32, fro
 
 	offset := from
 	err := c.pool.Do(ctx, func(client *rpc.Client) error {
-		jobs := buildv2connect.NewJobServiceClient(client.HTTP(), client.URL())
+		jobs := buildv2connect.NewJobServiceClient(client.HTTP(), client.URL(), codec.Option())
 		stream, err := jobs.Follow(ctx, connect.NewRequest(&buildv2.FollowRequest{
 			JobId:    jobID,
 			Attempt:  attempt,
@@ -184,7 +185,7 @@ func (c *BuildClient) read(ctx context.Context, jobID string, attempt int32, fro
 func (c *BuildClient) Artifact(ctx context.Context, project, environment, resource string) (string, error) {
 	var cid string
 	err := c.pool.Do(ctx, func(client *rpc.Client) error {
-		jobs := buildv2connect.NewJobServiceClient(client.HTTP(), client.URL())
+		jobs := buildv2connect.NewJobServiceClient(client.HTTP(), client.URL(), codec.Option())
 		resp, err := jobs.Artifact(ctx, connect.NewRequest(&buildv2.ArtifactRequest{
 			Project:     project,
 			Environment: environment,

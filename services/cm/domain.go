@@ -42,6 +42,7 @@ import (
 	dv "github.com/taubyte/domain-validation"
 
 	"github.com/taubyte/tau/p2p/rpc"
+	"github.com/taubyte/tau/pkg/proto/codec"
 	cmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2/cmv2connect"
 )
@@ -389,7 +390,7 @@ func (d *Domains) at(p peer.ID) (cmv2connect.DomainServiceClient, error) {
 		}
 		d.conns[p] = conn
 	}
-	return cmv2connect.NewDomainServiceClient(conn.HTTP(), conn.URL()), nil
+	return cmv2connect.NewDomainServiceClient(conn.HTTP(), conn.URL(), codec.Option()), nil
 }
 
 // Claim is the TXT record that proves fqdn is project's.

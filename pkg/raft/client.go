@@ -48,7 +48,7 @@ type internalClient interface {
 type client struct {
 	node     taupeer.Node
 	protocol protocol.ID
-	opts     []connect.ClientOption
+	codec    connect.ClientOption
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -66,15 +66,11 @@ func newInternalClient(node taupeer.Node, namespace string, encryptionCipher cip
 	if node == nil {
 		return nil, errors.New("no node to call from")
 	}
-	var opts []connect.ClientOption
-	if opt, ok := codecOptions(encryptionCipher); ok {
-		opts = append(opts, opt)
-	}
 	ctx, cancel := context.WithCancel(node.Context())
 	return &client{
 		node:     node,
 		protocol: protocol.ID(Protocol(namespace)),
-		opts:     opts,
+		codec:    codecOption(encryptionCipher),
 		ctx:      ctx,
 		cancel:   cancel,
 		peers:    make(map[peer.ID]*peerConn),
@@ -102,7 +98,7 @@ func (c *client) to(pid peer.ID) (raftv2connect.RaftServiceClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	pc := &peerConn{conn: conn, svc: raftv2connect.NewRaftServiceClient(conn.HTTP(), conn.URL(), c.opts...)}
+	pc := &peerConn{conn: conn, svc: raftv2connect.NewRaftServiceClient(conn.HTTP(), conn.URL(), c.codec)}
 	c.peers[pid] = pc
 	return pc.svc, nil
 }

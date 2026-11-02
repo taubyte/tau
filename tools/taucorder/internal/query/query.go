@@ -13,6 +13,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/taubyte/tau/pkg/proto/codec"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
 	registerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
@@ -34,8 +35,8 @@ type Client struct {
 func New(f Fleet, hc connect.HTTPClient, base string) *Client {
 	return &Client{
 		fleet:    f,
-		register: registerv2connect.NewRegisterServiceClient(hc, base),
-		jobs:     buildv2connect.NewJobServiceClient(hc, base),
+		register: registerv2connect.NewRegisterServiceClient(hc, base, codec.Option()),
+		jobs:     buildv2connect.NewJobServiceClient(hc, base, codec.Option()),
 	}
 }
 

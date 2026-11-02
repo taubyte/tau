@@ -11,13 +11,14 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 
+	"github.com/taubyte/tau/pkg/proto/codec"
 	workerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/worker/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/worker/v2/workerv2connect"
 )
 
 func (s *Service) mount() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle(workerv2connect.NewWorkerServiceHandler(&handler{s}))
+	mux.Handle(workerv2connect.NewWorkerServiceHandler(&handler{s}, codec.Option()))
 	return mux
 }
 

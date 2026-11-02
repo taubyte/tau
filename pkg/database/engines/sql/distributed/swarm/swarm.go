@@ -32,6 +32,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/taubyte/tau/p2p/rpc"
+	"github.com/taubyte/tau/pkg/proto/codec"
 	sqlsyncv2 "github.com/taubyte/tau/pkg/proto/gen/tau/sqlsync/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/sqlsync/v2/sqlsyncv2connect"
 )
@@ -71,7 +72,7 @@ func New(ctx context.Context, h host.Host, ps PubSub) (*Mesh, error) {
 		stores:  map[string]*replication.Store{},
 		clients: map[peer.ID]sqlsyncv2connect.SQLSyncServiceClient{},
 	}
-	path, handler := sqlsyncv2connect.NewSQLSyncServiceHandler(&service{m: m})
+	path, handler := sqlsyncv2connect.NewSQLSyncServiceHandler(&service{m: m}, codec.Option())
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
 	server, err := rpc.Listen(ctx, h, Protocol, mux)
@@ -142,7 +143,7 @@ func (m *Mesh) client(id peer.ID) (sqlsyncv2connect.SQLSyncServiceClient, error)
 	if err != nil {
 		return nil, err
 	}
-	c := sqlsyncv2connect.NewSQLSyncServiceClient(conn.HTTP(), conn.URL())
+	c := sqlsyncv2connect.NewSQLSyncServiceClient(conn.HTTP(), conn.URL(), codec.Option())
 	m.clients[id] = c
 	return c, nil
 }

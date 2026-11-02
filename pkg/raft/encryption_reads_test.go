@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 )
 
 // raft reads its transport through a buffered reader, whose buffer is only
@@ -141,7 +140,7 @@ func TestSealedCodec_RefusesWhatProtoCannotEncode(t *testing.T) {
 	_, err := rand.Read(key)
 	require.NoError(t, err)
 
-	sealed, err := sealedCodec{gcm: keyToCipher(t, key)}.Marshal(&raftv2.KeysRequest{Prefix: "\xff"})
+	sealed, err := sealedCodec{gcm: keyToCipher(t, key)}.Marshal("not a message")
 	require.Error(t, err)
 	require.Nil(t, sealed)
 }

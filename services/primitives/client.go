@@ -12,6 +12,7 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	"github.com/taubyte/tau/pkg/proto/codec"
 	primitivesv2 "github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v2/primitivesv2connect"
 )
@@ -135,7 +136,7 @@ func NewClient(h host.Host, at libp2ppeer.ID) (*Client, error) {
 	}
 	return &Client{
 		conn: conn,
-		svc:  primitivesv2connect.NewPrimitivesServiceClient(conn.HTTP(), conn.URL()),
+		svc:  primitivesv2connect.NewPrimitivesServiceClient(conn.HTTP(), conn.URL(), codec.Option()),
 	}, nil
 }
 

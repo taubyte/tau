@@ -7,6 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/Masterminds/semver"
+	"github.com/taubyte/tau/pkg/proto/codec"
 	pb "github.com/taubyte/tau/tools/spore-drive/proto/gen/health/v1"
 	pbconnect "github.com/taubyte/tau/tools/spore-drive/proto/gen/health/v1/healthv1connect"
 )
@@ -43,7 +44,7 @@ func Serve(ctx context.Context, version string) (*Service, error) {
 		version: version,
 	}
 
-	srv.path, srv.handler = pbconnect.NewHealthServiceHandler(srv)
+	srv.path, srv.handler = pbconnect.NewHealthServiceHandler(srv, codec.Option())
 
 	return srv, nil
 }

@@ -10,6 +10,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/taubyte/tau/pkg/proto/codec"
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 )
@@ -58,17 +59,17 @@ func (b *bearer) RoundTrip(r *http.Request) (*http.Response, error) {
 
 // Sessions is auth's sign-in surface, carrying the tau token when there is one.
 func (c *Client) Sessions() authv2connect.SessionServiceClient {
-	return authv2connect.NewSessionServiceClient(c.authed, c.base.String())
+	return authv2connect.NewSessionServiceClient(c.authed, c.base.String(), codec.Option())
 }
 
 // Anonymous is the sign-in surface with no credential at all: a refresh is
 // authorized by its refresh token alone.
 func (c *Client) Anonymous() authv2connect.SessionServiceClient {
-	return authv2connect.NewSessionServiceClient(c.http, c.base.String())
+	return authv2connect.NewSessionServiceClient(c.http, c.base.String(), codec.Option())
 }
 
 func (c *Client) Users() authv2connect.UserServiceClient {
-	return authv2connect.NewUserServiceClient(c.authed, c.base.String())
+	return authv2connect.NewUserServiceClient(c.authed, c.base.String(), codec.Option())
 }
 
 // Refreshing is Tokens kept in memory and renewed from a refresh token. Save

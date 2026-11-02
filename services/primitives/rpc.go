@@ -7,6 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/taubyte/tau/pkg/proto/codec"
 	primitivesv2 "github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v2/primitivesv2connect"
 )
@@ -19,7 +20,7 @@ import (
 // mount is the one handler rpc.Listen serves.
 func (s *Service) mount() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle(primitivesv2connect.NewPrimitivesServiceHandler(&handler{s}))
+	mux.Handle(primitivesv2connect.NewPrimitivesServiceHandler(&handler{s}, codec.Option()))
 	return mux
 }
 

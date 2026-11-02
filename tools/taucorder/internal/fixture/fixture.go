@@ -17,6 +17,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/taubyte/tau/p2p/rpc"
+	"github.com/taubyte/tau/pkg/proto/codec"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
 	registerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
@@ -103,13 +104,13 @@ func (c *Cloud) Count(name string) int {
 
 // Register serves RegisterService.
 func (c *Cloud) Register() (string, http.Handler) {
-	_, h := registerv2connect.NewRegisterServiceHandler(&register{c: c})
+	_, h := registerv2connect.NewRegisterServiceHandler(&register{c: c}, codec.Option())
 	return registerv2connect.RegisterServiceName, h
 }
 
 // Build serves JobService.
 func (c *Cloud) Build() (string, http.Handler) {
-	_, h := buildv2connect.NewJobServiceHandler(&jobs{c: c})
+	_, h := buildv2connect.NewJobServiceHandler(&jobs{c: c}, codec.Option())
 	return buildv2connect.JobServiceName, h
 }
 

@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"connectrpc.com/connect"
+	"github.com/taubyte/tau/pkg/proto/codec"
 	pb "github.com/taubyte/tau/tools/spore-drive/proto/gen/mock/v1"
 	pbconnect "github.com/taubyte/tau/tools/spore-drive/proto/gen/mock/v1/mockv1connect"
 	"github.com/taubyte/tau/tools/spore-drive/randname"
@@ -163,7 +164,7 @@ func Serve(ctx context.Context) (*Service, error) {
 		hosts: make(map[string]*hostInst),
 	}
 
-	srv.path, srv.handler = pbconnect.NewMockSSHServiceHandler(srv)
+	srv.path, srv.handler = pbconnect.NewMockSSHServiceHandler(srv, codec.Option())
 
 	return srv, nil
 }

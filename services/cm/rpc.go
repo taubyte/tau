@@ -7,14 +7,15 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/taubyte/tau/pkg/proto/codec"
 	cmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2/cmv2connect"
 )
 
 func (s *Service) mount() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle(cmv2connect.NewCertificateServiceHandler(handler{s}))
-	mux.Handle(cmv2connect.NewDomainServiceHandler(handler{s}))
+	mux.Handle(cmv2connect.NewCertificateServiceHandler(handler{s}, codec.Option()))
+	mux.Handle(cmv2connect.NewDomainServiceHandler(handler{s}, codec.Option()))
 	return mux
 }
 

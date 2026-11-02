@@ -12,6 +12,7 @@ import (
 	peerCore "github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/taubyte/tau/p2p/rpc"
+	"github.com/taubyte/tau/pkg/proto/codec"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2/secretsv2connect"
 	"github.com/taubyte/tau/pkg/secrets/tdh"
@@ -93,7 +94,7 @@ func (c *Client) at(to peerCore.ID) (secretsv2connect.SecretsServiceClient, erro
 	if err != nil {
 		return nil, err
 	}
-	return secretsv2connect.NewSecretsServiceClient(conn.HTTP(), conn.URL()), nil
+	return secretsv2connect.NewSecretsServiceClient(conn.HTTP(), conn.URL(), codec.Option()), nil
 }
 
 // first runs call against members in order until one answers.

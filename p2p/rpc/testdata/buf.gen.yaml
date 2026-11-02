@@ -11,3 +11,10 @@ plugins:
   - local: protoc-gen-connect-go
     out: gen
     opt: paths=source_relative
+  # pinned to v0.6.1-0.20240319094008-0393e58bdf10 — the github.com/planetscale/vtprotobuf
+  # version in go.mod; p2p/rpc's codec calls MarshalVT/UnmarshalVT/SizeVT.
+  - local: protoc-gen-go-vtproto
+    out: gen
+    opt:
+      - paths=source_relative
+      - features=marshal+unmarshal+size

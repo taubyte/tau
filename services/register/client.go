@@ -13,6 +13,7 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 
+	"github.com/taubyte/tau/pkg/proto/codec"
 	registerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/register/v2/registerv2connect"
 )
@@ -43,7 +44,7 @@ func NewClient(h host.Host, p libp2ppeer.ID) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("register: dialling %s: %w", p, err)
 	}
-	return &Client{conn: conn, svc: registerv2connect.NewRegisterServiceClient(conn.HTTP(), conn.URL())}, nil
+	return &Client{conn: conn, svc: registerv2connect.NewRegisterServiceClient(conn.HTTP(), conn.URL(), codec.Option())}, nil
 }
 
 // Close releases the stream. Calls after it fail.

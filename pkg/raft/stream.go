@@ -15,6 +15,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 	discoveryUtil "github.com/libp2p/go-libp2p/p2p/discovery/util"
 	"github.com/taubyte/tau/p2p/rpc"
+	"github.com/taubyte/tau/pkg/proto/codec"
 	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2/raftv2connect"
 )
@@ -47,22 +48,20 @@ func TransportProtocol(namespace string) string {
 	return path.Join(ProtocolRaftPrefix, namespace, "transport")
 }
 
-func codecOptions(gcm cipher.AEAD) (connect.Option, bool) {
+// codecOption is the group's codec: tau's own, sealed under the group's key when
+// it has one.
+func codecOption(gcm cipher.AEAD) connect.Option {
 	if gcm == nil {
-		return nil, false
+		return codec.Option()
 	}
-	return connect.WithCodec(sealedCodec{gcm: gcm}), true
+	return connect.WithCodec(sealedCodec{gcm: gcm})
 }
 
 func newStreamService(c *cluster) (*raftStreamService, error) {
 	protocol := protocol.ID(Protocol(c.namespace))
 	ss := &raftStreamService{cluster: c}
 
-	var opts []connect.HandlerOption
-	if opt, ok := codecOptions(c.encryptionCipher); ok {
-		opts = append(opts, opt)
-	}
-	route, handler := raftv2connect.NewRaftServiceHandler(ss, opts...)
+	route, handler := raftv2connect.NewRaftServiceHandler(ss, codecOption(c.encryptionCipher))
 	mux := http.NewServeMux()
 	mux.Handle(route, handler)
 

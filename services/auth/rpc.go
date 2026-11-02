@@ -11,6 +11,7 @@ import (
 	"connectrpc.com/connect"
 	"golang.org/x/oauth2"
 
+	"github.com/taubyte/tau/pkg/proto/codec"
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 	"github.com/taubyte/tau/services/auth/password"
@@ -18,9 +19,9 @@ import (
 
 func (s *Service) mount() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle(authv2connect.NewIdentityServiceHandler(&identityHandler{s}))
-	mux.Handle(authv2connect.NewSessionServiceHandler(&sessionHandler{s}))
-	mux.Handle(authv2connect.NewUserServiceHandler(&userHandler{s}))
+	mux.Handle(authv2connect.NewIdentityServiceHandler(&identityHandler{s}, codec.Option()))
+	mux.Handle(authv2connect.NewSessionServiceHandler(&sessionHandler{s}, codec.Option()))
+	mux.Handle(authv2connect.NewUserServiceHandler(&userHandler{s}, codec.Option()))
 	return mux
 }
 

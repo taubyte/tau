@@ -16,6 +16,7 @@ import (
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/p2p/rpc"
+	"github.com/taubyte/tau/pkg/proto/codec"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2/secretsv2connect"
 	"github.com/taubyte/tau/pkg/secrets/tdh"
 )
@@ -812,7 +813,7 @@ func (srv *Service) secretsAt(to peerCore.ID) (secretsv2connect.SecretsServiceCl
 	if err != nil {
 		return nil, err
 	}
-	return secretsv2connect.NewSecretsServiceClient(c.HTTP(), c.URL()), nil
+	return secretsv2connect.NewSecretsServiceClient(c.HTTP(), c.URL(), codec.Option()), nil
 }
 
 func (srv *Service) dealerAt(to peerCore.ID) (secretsv2connect.DealerServiceClient, error) {
@@ -820,7 +821,7 @@ func (srv *Service) dealerAt(to peerCore.ID) (secretsv2connect.DealerServiceClie
 	if err != nil {
 		return nil, err
 	}
-	return secretsv2connect.NewDealerServiceClient(c.HTTP(), c.URL()), nil
+	return secretsv2connect.NewDealerServiceClient(c.HTTP(), c.URL(), codec.Option()), nil
 }
 
 // peers holds one p2p/rpc client per member, opened on first use.

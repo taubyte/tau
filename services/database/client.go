@@ -16,6 +16,7 @@ import (
 	kvengine "github.com/taubyte/tau/pkg/database/engines/kv"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	"github.com/taubyte/tau/pkg/proto/codec"
 	databasev2 "github.com/taubyte/tau/pkg/proto/gen/tau/database/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/database/v2/databasev2connect"
 )
@@ -37,7 +38,7 @@ func NewClient(h host.Host, at libp2ppeer.ID) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{conn: conn, svc: databasev2connect.NewDatabaseServiceClient(conn.HTTP(), conn.URL())}, nil
+	return &Client{conn: conn, svc: databasev2connect.NewDatabaseServiceClient(conn.HTTP(), conn.URL(), codec.Option())}, nil
 }
 
 func (c *Client) Close() error { c.conn.Close(); return nil }

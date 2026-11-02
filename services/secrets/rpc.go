@@ -8,6 +8,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/taubyte/tau/p2p/rpc"
+	"github.com/taubyte/tau/pkg/proto/codec"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2/secretsv2connect"
 	"github.com/taubyte/tau/pkg/secrets/tdh"
@@ -15,8 +16,8 @@ import (
 
 func (srv *Service) mount() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle(secretsv2connect.NewSecretsServiceHandler(&secretsHandler{srv}))
-	mux.Handle(secretsv2connect.NewDealerServiceHandler(&dealerHandler{srv}))
+	mux.Handle(secretsv2connect.NewSecretsServiceHandler(&secretsHandler{srv}, codec.Option()))
+	mux.Handle(secretsv2connect.NewDealerServiceHandler(&dealerHandler{srv}, codec.Option()))
 	return mux
 }
 

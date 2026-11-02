@@ -10,6 +10,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/database"
 	kvengine "github.com/taubyte/tau/pkg/database/engines/kv"
+	"github.com/taubyte/tau/pkg/proto/codec"
 	databasev2 "github.com/taubyte/tau/pkg/proto/gen/tau/database/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/database/v2/databasev2connect"
 )
@@ -25,7 +26,7 @@ const maxKeys = 512
 // mount is the one handler rpc.Listen serves.
 func (s *Service) mount() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle(databasev2connect.NewDatabaseServiceHandler(&handler{s}))
+	mux.Handle(databasev2connect.NewDatabaseServiceHandler(&handler{s}, codec.Option()))
 	return mux
 }
 

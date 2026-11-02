@@ -60,3 +60,12 @@ plugins:
   - local: protoc-gen-connect-go
     out: gen
     opt: paths=source_relative
+  # pinned to v0.6.1-0.20240319094008-0393e58bdf10 — the github.com/planetscale/vtprotobuf
+  # version in go.mod. MarshalVT/UnmarshalVT/SizeVT are what pkg/proto/codec calls. No
+  # pool feature: its ResetVT keeps byte slices' backing arrays, so a value decoded out
+  # of a pooled message is overwritten by the next decode into it.
+  - local: protoc-gen-go-vtproto
+    out: gen
+    opt:
+      - paths=source_relative
+      - features=marshal+unmarshal+size

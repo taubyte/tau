@@ -20,6 +20,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/taubyte/tau/pkg/proto/codec"
 	"github.com/taubyte/tau/tools/spore-drive/config"
 	"github.com/taubyte/tau/tools/spore-drive/course"
 	"github.com/taubyte/tau/tools/spore-drive/drive"
@@ -67,7 +68,7 @@ func Serve(ctx context.Context) (*Service, error) {
 		spore:   drive.New,
 		courses: map[string]*planned{},
 	}
-	s.path, s.handler = pbconnect.NewDriveServiceHandler(s)
+	s.path, s.handler = pbconnect.NewDriveServiceHandler(s, codec.Option())
 	return s, nil
 }
 

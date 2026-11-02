@@ -6,6 +6,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/taubyte/tau/p2p/rpc"
+	"github.com/taubyte/tau/pkg/proto/codec"
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 )
@@ -29,7 +30,7 @@ func Identities(p *Pool) (*IdentityClient, error) {
 func (c *IdentityClient) Caller(ctx context.Context, token string) (string, error) {
 	var user string
 	err := c.pool.Do(ctx, func(client *rpc.Client) error {
-		resp, err := authv2connect.NewIdentityServiceClient(client.HTTP(), client.URL()).Verify(ctx, connect.NewRequest(&authv2.VerifyRequest{Token: token}))
+		resp, err := authv2connect.NewIdentityServiceClient(client.HTTP(), client.URL(), codec.Option()).Verify(ctx, connect.NewRequest(&authv2.VerifyRequest{Token: token}))
 		if err != nil {
 			return err
 		}
