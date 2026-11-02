@@ -213,6 +213,23 @@ func TestATamperedCarriedStateIsRefused(t *testing.T) {
 	}
 	all := treeBlocks(t, a, good)
 
+	// The trees share structure, so a block of the older snapshot can reappear in the
+	// newer one, linked; the stranger is one that does not.
+	carried := map[string]bool{}
+	for _, b := range all {
+		carried[string(b)] = true
+	}
+	var stranger []byte
+	for _, b := range oldBlocks {
+		if !carried[string(b)] {
+			stranger = b
+			break
+		}
+	}
+	if stranger == nil {
+		t.Fatal("every block of the older snapshot is in the newer one")
+	}
+
 	flipped := slices.Clone(good.GetInline()[1])
 	flipped[len(flipped)/2] ^= 1
 	cases := map[string]struct {
@@ -225,7 +242,7 @@ func TestATamperedCarriedStateIsRefused(t *testing.T) {
 		"other format":   {func(d *pb.Delta) { d.Root.Format = stateFormat + 1 }, errMalformedState},
 		"extra tree":     {func(d *pb.Delta) { d.Trees = append(d.Trees, d.Trees[0]) }, errMalformedState},
 		"wrong bytes":    {func(d *pb.Delta) { d.Inline[1] = flipped }, errInlineUnlinked},
-		"unlinked block": {func(d *pb.Delta) { d.Inline = append(d.Inline[:2:2], oldBlocks[0]) }, errInlineUnlinked},
+		"unlinked block": {func(d *pb.Delta) { d.Inline = append(d.Inline[:2:2], stranger) }, errInlineUnlinked},
 		"child first":    {func(d *pb.Delta) { d.Inline[0], d.Inline[3] = d.Inline[3], d.Inline[0] }, errInlineUnlinked},
 		"twice":          {func(d *pb.Delta) { d.Inline = append(d.Inline[:2:2], d.Inline[0]) }, errInlineUnlinked},
 		"oversize":       {func(d *pb.Delta) { d.Inline = all }, errInlineOversize},
