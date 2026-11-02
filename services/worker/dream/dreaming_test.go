@@ -29,7 +29,7 @@ import (
 )
 
 func TestAWorkerResolvesAgainstARegisterAcrossTheSwarm(t *testing.T) {
-	recorder := &recordingTier{name: "container"}
+	recorder := &recordingTier{name: "oci"}
 	defer workerDream.Runtimes(workerDream.Runtimes(recorder)...)
 
 	m, err := mesh.New(t.Context(), t.Name())
@@ -76,7 +76,7 @@ func TestAWorkerResolvesAgainstARegisterAcrossTheSwarm(t *testing.T) {
 	require.Len(t, started, 1, "the lookup reached the tier exactly once")
 
 	spec := started[0]
-	require.Equal(t, "container", spec.Runtime, "read off the kind's own Engines()")
+	require.Equal(t, "oci", spec.Runtime, "read off the type of the package it runs")
 	require.Equal(t, "ghcr.io/acme/postgres:16", spec.Artifact)
 	require.Equal(t, int64(2_000_000_000), spec.Memory, "2GB, in bytes, as the author wrote it")
 	require.Contains(t, spec.Name, "shop/prod/application/")
@@ -120,7 +120,7 @@ func TestAUniverseWithNoTierSaysSo(t *testing.T) {
 		return last != nil && connect.CodeOf(last) == connect.CodeFailedPrecondition
 	}, 30*time.Second, 250*time.Millisecond, "expected the tier to be the thing missing, got %v", last)
 
-	require.Contains(t, last.Error(), "container", "and it names the tier the config asked for")
+	require.Contains(t, last.Error(), "oci", "and it names the tier the config asked for")
 }
 
 func nodesByID(m *mesh.Mesh) map[string]peer.Node {
@@ -157,9 +157,9 @@ func compiled(t *testing.T) []byte {
 	obj, _, err := c.Compile(context.Background())
 	require.NoError(t, err)
 
-	// The fixture's `db` declares a cloud-wide instance ceiling and a registry
-	// credential, which this cloud refuses by name (unserved_test asserts that); these
-	// tests are about the lookup reaching a tier.
+	// The fixture's `db` declares a cloud-wide instance ceiling and its package a
+	// registry credential, which this cloud refuses by name (unserved_test asserts
+	// that); these tests are about the lookup reaching a tier.
 	flat := obj.Flat()
 	root, _ := flat["object"].(map[string]any)
 	applications, _ := root["application"].(map[string]any)
@@ -171,7 +171,11 @@ func compiled(t *testing.T) []byte {
 		if limits, ok := app["limits"].(map[string]any); ok {
 			delete(limits, "max_instances")
 		}
-		if source, ok := app["source"].(map[string]any); ok {
+	}
+	packages, _ := root["package"].(map[string]any)
+	for _, v := range packages {
+		pkg, _ := v.(map[string]any)
+		if source, ok := pkg["source"].(map[string]any); ok {
 			delete(source, "image_pull_secret")
 		}
 	}

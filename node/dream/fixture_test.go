@@ -18,9 +18,12 @@ const projectID = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
 // more than one fixture in this package puts a name in it.
 const zoneID = "QmRgVLmWTBpgTbCPnHRUvKGnHqHf7Yd7t8ZffKeRXPkRLL"
 
-// checkoutID is the one function compiled() declares, the resource id the artifact
-// seam is asked about.
-const checkoutID = "QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY"
+// checkoutID is the one function compiled() declares, and checkoutPackageID what it
+// runs, the id the artifact seam is asked about.
+const (
+	checkoutID        = "QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY"
+	checkoutPackageID = "QmPUnSYosVzMuhisQ5c5KSRS4yD9qyx7erZ8LhFoGUUJkN"
+)
 
 // anArtifact is a cid for a fixture whose tier never reads the bytes. A test
 // that wants a component to actually RUN puts one in the asset store and stages
@@ -47,10 +50,12 @@ func compiled() []byte {
 			"function": {
 				"` + checkoutID + `": {
 					"name": "checkout",
-					"runtime": "wasm",
 					"execution": {"call": "handle", "memory": 33554432},
-					"source": "services/checkout"
+					"package": {"name": "` + checkoutPackageID + `"}
 				}
+			},
+			"package": {
+				"` + checkoutPackageID + `": {"name": "checkout_code", "type": "wasm", "source": "services/checkout"}
 			},
 			"gateway": {
 				"QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zk": {
@@ -71,6 +76,8 @@ func compiled() []byte {
 			}
 		},
 		"indexes": {
+			"projects/` + projectID + `/package/checkout_code/links": [
+				"branches/main/projects/` + projectID + `/package/` + checkoutPackageID + `"],
 			"projects/` + projectID + `/function/checkout/links": [
 				"branches/main/projects/` + projectID + `/function/` + checkoutID + `"],
 			"projects/` + projectID + `/gateway/shop/links": [

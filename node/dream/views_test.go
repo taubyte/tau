@@ -67,7 +67,7 @@ func TestEachRegionServesItsOwnView(t *testing.T) {
 
 	r1, r1Node := inRegion(t, "region-1", "with/views")
 	held, _ := viewHeld(t, r1Node, "region-1")
-	require.Equal(t, map[string]bool{"function/hello": true, "gateway/regional": true, "zone/example_com": true, "cache/sessions": true}, held)
+	require.Equal(t, map[string]bool{"function/hello": true, "package/hello_code": true, "gateway/regional": true, "zone/example_com": true, "cache/sessions": true}, held)
 
 	var said string
 	require.Eventually(t, func() bool {

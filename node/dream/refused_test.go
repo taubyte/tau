@@ -17,7 +17,7 @@ import (
 
 func TestAnApplicationWithNothingToRunIsBroken(t *testing.T) {
 	broken := brokenIn(t, "refused/application/noartifact")
-	require.Contains(t, broken, "application: names no image and declares no build")
+	require.Contains(t, broken, "package: is of type oci and names no image and no build")
 	require.NotContains(t, broken, "application: is not placed anywhere")
 
 	require.Empty(t, brokenIn(t, "with/application"),
@@ -36,7 +36,7 @@ func TestAnApplicationWithNothingToRunIsBroken(t *testing.T) {
 	err = d.Run(t.Context(), backend.Work{JobID: "j", RepositoryKey: "github.com/acme/" + id,
 		Ref: "refs/heads/main", CommitSHA: "c", ProjectID: id}, &buildLog{})
 	require.ErrorIs(t, err, buildDeploy.ErrBroken)
-	require.ErrorContains(t, err, "names no image and declares no build")
+	require.ErrorContains(t, err, "is of type oci and names no image and no build")
 
 	envs, err := r.Environments(t.Context(), id)
 	require.NoError(t, err)
@@ -74,8 +74,8 @@ func TestAProjectWithNoEnvironmentsIsRefused(t *testing.T) {
 func TestAFunctionWithoutATierItRunsOnIsRefused(t *testing.T) {
 	type testCase struct{ project, id, reason string }
 	for _, tc := range []testCase{
-		{"refused/function/noruntime", "QmckTZTPqB6a5thN1vZNAjoXUBdEUXWL3vA1gFxcx3xBk9", "required attribute 'runtime'"},
-		{"refused/function/unknownruntime", "QmTSpD9SVJriUVp9EHdp1okVF71Ua9FvmeCYXwFABkQiD7", `invalid value "nodejs"; valid values here: wasm, js`},
+		{"refused/function/noruntime", "QmckTZTPqB6a5thN1vZNAjoXUBdEUXWL3vA1gFxcx3xBk9", "required attribute 'type'"},
+		{"refused/function/unknownruntime", "QmTSpD9SVJriUVp9EHdp1okVF71Ua9FvmeCYXwFABkQiD7", `invalid value "nodejs"; valid values here: wasm, warp, oci, assets`},
 	} {
 		t.Run(tc.project, func(t *testing.T) {
 			dir := filepath.Join("projects", tc.project)

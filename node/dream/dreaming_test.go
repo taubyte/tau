@@ -41,7 +41,7 @@ func TestAFleetServesARequestEndToEnd(t *testing.T) {
 	registry := nodeOf(t, pids[0])
 	require.NotNil(t, registry.Register(), "the first node runs the register")
 
-	stagedOn(t, pids, "shop", map[string]string{checkoutID: anArtifact})
+	stagedOn(t, pids, "shop", map[string]string{checkoutPackageID: anArtifact})
 
 	_, err = registry.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 1,
@@ -72,7 +72,7 @@ func TestAGatewayNodeReachesAWorkerNode(t *testing.T) {
 	edge, compute := nodeOf(t, pids[0]), nodeOf(t, pids[1])
 
 	// A universe has no build service; the recording tier never reads the cid.
-	stagedOn(t, pids, "shop", map[string]string{checkoutID: anArtifact})
+	stagedOn(t, pids, "shop", map[string]string{checkoutPackageID: anArtifact})
 
 	_, err = edge.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 1,

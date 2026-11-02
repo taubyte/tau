@@ -22,6 +22,10 @@ import (
 const (
 	manyCacheID = "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zi"
 	mayOpenFunc = "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zj"
+
+	// What each of them runs.
+	cacherPackageID  = "QmSQWYU5v1UGYk8ABXTyewQFnG7VtCHQtVQ9D2LgBwrG5x"
+	mayOpenPackageID = "Qmcg5kkaVm6tkPFBNzRriUtr8XpWnRz5KkxesPSVtEgurk"
 )
 
 // withInstances is a project whose function reaches a many-instance cache, plus the
@@ -32,12 +36,15 @@ func withInstances() []byte {
 		"object": map[string]any{
 			"id":   cacheProjectID,
 			"name": "shop",
+			"package": map[string]any{
+				cacherPackageID:  map[string]any{"name": "cacher_code", "type": "wasm", "source": "services/cacher"},
+				mayOpenPackageID: map[string]any{"name": "admitter_code", "type": "wasm", "source": "services/admitter"},
+			},
 			"function": map[string]any{
 				cacheFuncID: map[string]any{
 					"name":      "cacher",
-					"runtime":   "wasm",
+					"package":   map[string]any{"name": cacherPackageID},
 					"execution": map[string]any{"call": "handle", "memory": 33554432},
-					"source":    "services/cacher",
 					"cache": map[string]any{
 						"rooms": map[string]any{"ops": []any{"get", "put"}},
 					},
@@ -45,9 +52,8 @@ func withInstances() []byte {
 				mayOpenFunc: map[string]any{
 					"name":       "may_open",
 					"implements": "instance-validator",
-					"runtime":    "wasm",
+					"package":    map[string]any{"name": mayOpenPackageID},
 					"execution":  map[string]any{"call": "admit", "memory": 8388608},
-					"source":     "services/admitter",
 				},
 			},
 			"cache": map[string]any{
@@ -64,6 +70,10 @@ func withInstances() []byte {
 			},
 		},
 		"indexes": map[string]any{
+			"projects/" + cacheProjectID + "/package/cacher_code/links": []any{
+				"branches/main/projects/" + cacheProjectID + "/package/" + cacherPackageID},
+			"projects/" + cacheProjectID + "/package/admitter_code/links": []any{
+				"branches/main/projects/" + cacheProjectID + "/package/" + mayOpenPackageID},
 			"projects/" + cacheProjectID + "/function/cacher/links": []any{
 				"branches/main/projects/" + cacheProjectID + "/function/" + cacheFuncID},
 			"projects/" + cacheProjectID + "/function/may_open/links": []any{
@@ -101,7 +111,7 @@ func TestAnInstanceIsAdmittedByARealFunction(t *testing.T) {
 	admits, err := store.Put(t.Context(), bytes.NewReader(admitterWASM(t)))
 	require.NoError(t, err)
 
-	stagedOn(t, pids, "shop", map[string]string{cacheFuncID: cid, mayOpenFunc: admits})
+	stagedOn(t, pids, "shop", map[string]string{cacherPackageID: cid, mayOpenPackageID: admits})
 
 	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 1, Compiled: withInstances(),
@@ -172,7 +182,7 @@ func TestTheInstanceLimitHoldsEndToEnd(t *testing.T) {
 	admits, err := store.Put(t.Context(), bytes.NewReader(admitterWASM(t)))
 	require.NoError(t, err)
 
-	stagedOn(t, pids, "shop", map[string]string{cacheFuncID: cid, mayOpenFunc: admits})
+	stagedOn(t, pids, "shop", map[string]string{cacherPackageID: cid, mayOpenPackageID: admits})
 
 	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 1, Compiled: withInstances(),

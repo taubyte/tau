@@ -46,7 +46,7 @@ func TestACodePushIsWhatTheNextRequestRuns(t *testing.T) {
 	require.Equal(t, 200, before.Code, "the first build answered")
 	require.Equal(t, "/", before.Header().Get("x-path"), "and it is the handler")
 
-	stagedOn(t, pids, "shop", map[string]string{r.idOf(t, "function", "hello"): second})
+	stagedOn(t, pids, "shop", map[string]string{r.idOf(t, "package", "hello_code"): second})
 
 	after := r.ask(t, http.MethodGet, "/")
 	require.Empty(t, after.Header().Get("x-path"), "the instance warmed by the first build answered after the push")

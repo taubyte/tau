@@ -43,6 +43,28 @@ func runnableFixture(t *testing.T, componentCID string) ([]byte, map[string]stri
 	root, ok := flat["object"].(map[string]any)
 	require.True(t, ok)
 
+	// Every package by id, wherever its scope: a lowered workflow's drivers' package is
+	// in the workflow's own.
+	packages := map[string]map[string]any{}
+	var collect func(scope map[string]any)
+	collect = func(scope map[string]any) {
+		for kind, group := range scope {
+			instances, ok := group.(map[string]any)
+			if !ok {
+				continue
+			}
+			for id, v := range instances {
+				if res, ok := v.(map[string]any); ok {
+					if kind == "package" {
+						packages[id] = res
+					}
+					collect(res)
+				}
+			}
+		}
+	}
+	collect(root)
+
 	pointed := map[string]string{}
 	var walk func(scope map[string]any)
 	walk = func(scope map[string]any) {
@@ -51,7 +73,7 @@ func runnableFixture(t *testing.T, componentCID string) ([]byte, map[string]stri
 			if !ok {
 				continue
 			}
-			for id, v := range instances {
+			for _, v := range instances {
 				res, ok := v.(map[string]any)
 				if !ok {
 					continue
@@ -70,16 +92,14 @@ func runnableFixture(t *testing.T, componentCID string) ([]byte, map[string]stri
 					}
 				}
 				if kind == "function" {
-					source, _ := res["source"].(map[string]any)
-					// A driver runs a builtin, which has no artifact.
-					if s, _ := source["kind"].(string); s != "builtin" {
-						// A function naming a component runs the component's build, filed under that id
-						// (checkout and edge_router name paylib).
-						if component, _ := source["component"].(string); component != "" {
-							pointed[component] = componentCID
-						} else {
-							pointed[id] = componentCID
-						}
+					ref, _ := res["package"].(map[string]any)
+					pkgID, _ := ref["name"].(string)
+					source, _ := packages[pkgID]["source"].(map[string]any)
+					// A driver runs a builtin package, which has no artifact; an image has its own.
+					if s, _ := source["kind"].(string); s != "builtin" && s != "image" {
+						// Every function runs this one build, filed under its package's id (checkout
+						// and edge_router both run paylib).
+						pointed[pkgID] = componentCID
 						if exec, ok := res["execution"].(map[string]any); ok {
 							exec["call"] = "handle"
 						}

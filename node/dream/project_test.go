@@ -49,7 +49,7 @@ import (
 // turns red. Sources nobody built are pointed at shipped components through the
 // artifact seam (nodeDream.Built), not by rewriting `source`.
 
-// artifacts maps an author's label to the component it runs, "" being the default;
+// artifacts maps a workload's label to the build its package is, "" being the default;
 // a map since the authorizer project needs a second world.
 type artifacts map[string]string
 
@@ -91,6 +91,9 @@ func projectAs(t *testing.T, name string, components artifacts, regions schema.R
 		require.NotEqual(t, schema.Broken, f.Severity, "%s: %s", name, f)
 	}
 
+	// WHAT RUNS IS A PACKAGE, staged under the package's id, the one the seam is asked
+	// about; the workload naming it is what the author's label says to run.
+	packages, _ := root["package"].(map[string]any)
 	pointed := map[string]string{}
 	runs := 0
 	for _, group := range root {
@@ -98,36 +101,30 @@ func projectAs(t *testing.T, name string, components artifacts, regions schema.R
 		if !ok {
 			continue
 		}
-		for id, v := range instances {
+		for _, v := range instances {
 			res, ok := v.(map[string]any)
 			if !ok {
 				continue
 			}
-			// A resource with no `source` runs nothing.
-			if _, isSource := res["source"]; !isSource {
+			ref, ok := res["package"].(map[string]any)
+			if !ok {
 				continue
 			}
-			// An image is its own artifact, read straight off the resource, so nothing is
-			// staged.
-			if src, ok := res["source"].(map[string]any); ok && src["kind"] == "image" {
+			pkgID, _ := ref["name"].(string)
+			pkg, _ := packages[pkgID].(map[string]any)
+			// An image is its own artifact, read straight off the package, and a builtin
+			// ships with the runtime, so nothing is staged for either.
+			if src, ok := pkg["source"].(map[string]any); ok && (src["kind"] == "image" || src["kind"] == "builtin") {
 				runs++
 				continue
 			}
 			label, _ := res["name"].(string)
 			cid := components.of(label)
 			require.NotEmpty(t, cid, "%s names %q and nothing was handed in for it", name, label)
-
-			// A workload whose source is a component is staged under the component's id, the
-			// one the seam is asked about; staging the workload's id too would hide a wrong
-			// question.
-			if src, ok := res["source"].(map[string]any); ok {
-				if component, _ := src["component"].(string); component != "" {
-					pointed[component] = cid
-					runs++
-					continue
-				}
+			if held, staged := pointed[pkgID]; staged {
+				require.Equal(t, held, cid, "%s: two workloads run one package and were handed different builds", name)
 			}
-			pointed[id] = cid
+			pointed[pkgID] = cid
 			runs++
 		}
 	}
