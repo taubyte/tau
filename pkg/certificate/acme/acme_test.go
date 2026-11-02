@@ -45,6 +45,7 @@ type cloud struct {
 	ca        *ca.CAImpl
 	answer    func(token string) (string, bool)
 	txt       *presenter
+	server    *httptest.Server
 }
 
 // presenter is a zone's TXT records in memory, what the resolver answers
@@ -109,7 +110,8 @@ func newCloud(t *testing.T, eab map[string]string) *cloud {
 	// No nonce is rejected: pebble refuses 5% of good nonces by default, each costing
 	// the client a backoff of up to ten seconds.
 	t.Setenv("PEBBLE_WFE_NONCEREJECT", "0")
-	// Every order is proved: pebble otherwise reuses a valid authorization at random.
+	// Pebble otherwise reuses a valid authorization half the time. At 0 it still does
+	// one time in a hundred, so no test may rely on a second order being proved.
 	t.Setenv("PEBBLE_AUTHZREUSE", "0")
 	c := &cloud{txt: &presenter{records: map[string][]string{}}}
 	challenges := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -137,6 +139,7 @@ func newCloud(t *testing.T, eab map[string]string) *cloud {
 	front := wfe.New(logger, store, v, c.ca, nil, false, len(eab) > 0, 0, 0)
 	srv := httptest.NewTLSServer(front.Handler())
 	t.Cleanup(srv.Close)
+	c.server = srv
 	c.directory = srv.URL + "/dir"
 	c.rootCA = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw}))
 	return c
@@ -365,7 +368,7 @@ func TestAFailedRenewalIsSaidAndTheOldCertificateKeepsServing(t *testing.T) {
 	first, err := i.Certificate(t.Context(), "f.example.io")
 	require.NoError(t, err)
 
-	c.answer = func(string) (string, bool) { return "", false }
+	c.server.Close()
 	now = first.Leaf.NotAfter.Add(-time.Minute)
 	served, err := i.Certificate(t.Context(), "f.example.io")
 	require.NoError(t, err)
