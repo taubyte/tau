@@ -155,19 +155,41 @@ func Remainder(root *engine.Node, kind string) []string {
 	}
 	// A list is authored inside the resource, so its elements' fields are the shell's
 	// too — and they are where a lowering does most of its reading.
-	for _, child := range iter.Children {
-		list, _ := child.Match.(string)
-		if list == "" || len(child.Children) == 0 {
+	out = append(out, ownFields(iter.Children, "", carried)...)
+	sort.Strings(out)
+	return out
+}
+
+// ownFields is every field authored in a resource's own groups, lists and blocks,
+// addressed from the resource. A block's fields follow its key; a group's and a list's
+// follow the key of their element.
+func ownFields(children []*engine.Node, prefix string, carried map[string]bool) []string {
+	var out []string
+	for _, child := range children {
+		key, _ := child.Match.(string)
+		if key == "" {
+			continue
+		}
+		at := prefix + key
+		if engine.IsBlock(child) {
+			for _, a := range child.Attributes {
+				if !carried[at+"\x00"+a.Name] {
+					out = append(out, at+"/"+a.Name)
+				}
+			}
+			out = append(out, ownFields(child.Children, at+"/", carried)...)
+			continue
+		}
+		if len(child.Children) == 0 {
 			continue
 		}
 		for _, a := range child.Children[0].Attributes {
-			if carried[list+"\x00"+a.Name] {
+			if carried[at+"\x00"+a.Name] {
 				continue
 			}
-			out = append(out, list+"/"+a.Name)
+			out = append(out, at+"/"+a.Name)
 		}
 	}
-	sort.Strings(out)
 	return out
 }
 

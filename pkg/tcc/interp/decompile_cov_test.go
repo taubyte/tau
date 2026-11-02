@@ -45,6 +45,16 @@ func dcFn() *engine.Node {
 				engine.String("lib", engine.Ref("lib")),
 			})),
 			engine.DefineList("steps", []*engine.Attribute{engine.String("run")}),
+			engine.DefineBlock("build", []*engine.Attribute{
+				engine.Duration("timeout"),
+				engine.String("lib", engine.Ref("lib")),
+			},
+				engine.DefineList("steps", []*engine.Attribute{engine.String("run")}),
+				engine.DefineGroup("inputs", engine.DefineIter([]*engine.Attribute{
+					engine.String("lib", engine.Ref("lib")),
+					engine.Duration("wait"),
+				})),
+			),
 		),
 		engine.Resource("fn", "Fn", "Fn", "fn"))
 }
@@ -96,7 +106,8 @@ var dcFiles = map[string]string{
 	"/domain/main.yaml": "id: D1\nfqdn: a.example.com\nzone: zones/a.zone\n",
 	"/zones/a.zone":     "@ IN A 1.2.3.4\n",
 	"/fn/api.yaml": "id: F1\ntype: https\ntimeout: 20s\ndomains: [main]\nuses: core\n" +
-		"ports:\n    web:\n        proto: tcp\n        idle: 5m\n        lib: core\nsteps:\n    - run: a\n    - run: b\n",
+		"ports:\n    web:\n        proto: tcp\n        idle: 5m\n        lib: core\nsteps:\n    - run: a\n    - run: b\n" +
+		"build:\n    timeout: 90s\n    lib: core\n    steps:\n        - run: c\n    inputs:\n        ui:\n            lib: core\n            wait: 1s\n",
 	"/fn/peer.yaml":           "id: F2\ntype: p2p\n",
 	"/app/eu/meta.yaml":       "id: A1\n",
 	"/app/eu/lib/own.yaml":    "id: L2\n",
@@ -161,6 +172,11 @@ func testDecompileWritesWhatWasAuthored(t *testing.T, containerFirst bool) {
 	assert.Equal(t, api["uses"], "core")
 	assert.DeepEqual(t, api["ports"], map[string]any{"web": map[string]any{"proto": "tcp", "idle": "5m0s", "lib": "core"}})
 	assert.DeepEqual(t, api["steps"], []any{map[string]any{"run": "a"}, map[string]any{"run": "b"}})
+	assert.DeepEqual(t, api["build"], map[string]any{
+		"timeout": "1m30s", "lib": "core",
+		"steps":  []any{map[string]any{"run": "c"}},
+		"inputs": map[string]any{"ui": map[string]any{"lib": "core", "wait": "1s"}},
+	})
 	_, has := api["name"]
 	assert.Assert(t, !has, "name is compiled, not authored")
 
@@ -241,4 +257,15 @@ func TestDecompileAbsentReference(t *testing.T) {
 	assert.NilError(t, d.Decompile(obj))
 	_, has := readDoc(t, out, "/fn/api.yaml")["uses"]
 	assert.Assert(t, !has)
+}
+
+// A block is data of its resource: its durations parse, and a reference in it or in a
+// group beneath it resolves where the resource was authored.
+func TestABlockIsCompiledLikeTheResourceItIsIn(t *testing.T) {
+	flat := dcCompile(t, memFs(t, dcFiles), false)
+	build := flat["fn"].(map[string]any)["F1"].(map[string]any)["build"].(map[string]any)
+	assert.Equal(t, build["timeout"], int64(90_000_000_000))
+	assert.Equal(t, build["lib"], "L1")
+	assert.DeepEqual(t, build["steps"], []any{map[string]any{"run": "c"}})
+	assert.DeepEqual(t, build["inputs"], map[string]any{"ui": map[string]any{"lib": "L1", "wait": int64(1_000_000_000)}})
 }

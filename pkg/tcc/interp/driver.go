@@ -78,6 +78,9 @@ func ownEntries(scope object.Object[object.Refrence], groups []*engine.Node, roo
 }
 
 func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scope object.Object[object.Refrence], g *engine.Node, mixed bool, own map[string]bool) error {
+	if engine.IsBlock(g) {
+		return d.processBlock(ct, scope, g)
+	}
 	groupKey, _ := g.Match.(string)
 	if len(g.Children) == 0 {
 		return nil
@@ -165,6 +168,24 @@ func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scop
 		}
 	}
 	return nil
+}
+
+// processBlock runs a block's own projections and then its groups, in the context of
+// the resource holding it: a block is data of the resource, like its nested groups.
+func (d *CompileDriver) processBlock(ct transform.Context[object.Refrence], scope object.Object[object.Refrence], b *engine.Node) error {
+	key := b.Match.(string)
+	sel := scope.Child(key)
+	blockObj, err := sel.Object()
+	if err == object.ErrNotExist {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("fetching %s failed with %w", key, err)
+	}
+	if err := applyInstanceOps(sel, b.Attributes); err != nil {
+		return fmt.Errorf("%s: %w", key, err)
+	}
+	return d.processGroups(ct, blockObj, b.Children, false)
 }
 
 // applyInstanceOps runs the per-resource-instance projections: each scalar term

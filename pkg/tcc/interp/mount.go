@@ -161,23 +161,32 @@ func delegableTop(root *engine.Node, kind string) map[string]bool {
 		if key, _ := g.Match.(string); key != kind || len(g.Children) == 0 {
 			continue
 		}
-		var walk func(n *engine.Node)
-		walk = func(n *engine.Node) {
+		// top is the key a leaf below the resource's own document root sits under: a
+		// delegable field inside a block or a group delegates that block or group.
+		var walk func(n *engine.Node, top string)
+		walk = func(n *engine.Node, top string) {
 			for _, a := range n.Attributes {
 				if !engine.IsDelegable(a) {
 					continue
 				}
-				name := a.Name
-				if cut := strings.Index(name, "/"); cut > 0 {
-					name = name[:cut]
+				name := top
+				if name == "" {
+					name = a.Name
+					if cut := strings.Index(name, "/"); cut > 0 {
+						name = name[:cut]
+					}
 				}
 				out[name] = true
 			}
 			for _, c := range n.Children {
-				walk(c)
+				under := top
+				if key, _ := c.Match.(string); under == "" && key != "" {
+					under = key
+				}
+				walk(c, under)
 			}
 		}
-		walk(g.Children[0])
+		walk(g.Children[0], "")
 	}
 	return out
 }

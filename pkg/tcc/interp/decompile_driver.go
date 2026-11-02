@@ -95,20 +95,8 @@ func (r *decompileRefs) Process(ct transform.Context[object.Refrence], scope obj
 		// A nested group's entries carry references too. Only children marked Nested are
 		// the resource's own data; a container's other children are scopes the scope
 		// walk visits, and inverting them here too would invert every id twice.
-		nested := map[string][]refAttr{}
-		for _, child := range iter.Children {
-			if !iter.Nested {
-				break
-			}
-			key, _ := child.Match.(string)
-			if key == "" || len(child.Children) == 0 || !child.Nested {
-				continue
-			}
-			if inner := collectRefAttrs(child.Children[0].Attributes); len(inner) > 0 {
-				nested[key] = inner
-			}
-		}
-		if len(refs) == 0 && len(nested) == 0 {
+		nested := iter.Nested && nestedHasRefs(iter.Children)
+		if len(refs) == 0 && !nested {
 			continue
 		}
 
@@ -141,38 +129,97 @@ func (r *decompileRefs) Process(ct transform.Context[object.Refrence], scope obj
 					return nil, err
 				}
 			}
-			if len(nested) == 0 {
+			if !nested {
 				continue
 			}
 			inst, err := sel.Object()
 			if err != nil {
 				return nil, fmt.Errorf("fetching %s/%s failed with %w", groupKey, instName, err)
 			}
-			for key, inner := range nested {
-				entries, err := inst.Child(key).Object()
-				if err == object.ErrNotExist {
-					continue
-				}
-				if err != nil {
-					return nil, fmt.Errorf("fetching %s/%s/%s failed with %w", groupKey, instName, key, err)
-				}
-				for _, entryName := range entries.Children() {
-					// Under a container that is also a resource this key holds both: skip
-					// the ones that are resources it holds, which the scope walk inverts.
-					if heldUnder(r.groups, r.idField, key, entryName) {
-						continue
-					}
-					entry := entries.Child(entryName)
-					for _, ra := range inner {
-						if err := invertRefAttr(entry, ra, getMap); err != nil {
-							return nil, err
-						}
-					}
-				}
+			if err := invertNestedRefs(inst, iter.Children, r.groups, r.idField, getMap); err != nil {
+				return nil, err
 			}
 		}
 	}
 	return scope, nil
+}
+
+// nestedHasRefs reports a reference anywhere in a resource's own groups and blocks.
+func nestedHasRefs(children []*engine.Node) bool {
+	for _, c := range children {
+		if !c.Nested || c.Sequence {
+			continue
+		}
+		if engine.IsBlock(c) {
+			if len(collectRefAttrs(c.Attributes)) > 0 || nestedHasRefs(c.Children) {
+				return true
+			}
+			continue
+		}
+		if len(c.Children) > 0 && len(collectRefAttrs(c.Children[0].Attributes)) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// invertNestedRefs turns the ids in a resource's own groups and blocks back into
+// names. groups is the vocabulary's, for a container that also holds resources at one
+// of these keys; inside a block nothing is held, so it is nil there.
+func invertNestedRefs(inst object.Object[object.Refrence], children, groups []*engine.Node, idField string, getMap func(string) map[string]string) error {
+	for _, c := range children {
+		key, _ := c.Match.(string)
+		if key == "" || !c.Nested || c.Sequence {
+			continue
+		}
+		if engine.IsBlock(c) {
+			sel := inst.Child(key)
+			blockObj, err := sel.Object()
+			if err == object.ErrNotExist {
+				continue
+			}
+			if err != nil {
+				return fmt.Errorf("fetching %s failed with %w", key, err)
+			}
+			for _, ra := range collectRefAttrs(c.Attributes) {
+				if err := invertRefAttr(sel, ra, getMap); err != nil {
+					return err
+				}
+			}
+			if err := invertNestedRefs(blockObj, c.Children, nil, idField, getMap); err != nil {
+				return err
+			}
+			continue
+		}
+		if len(c.Children) == 0 {
+			continue
+		}
+		inner := collectRefAttrs(c.Children[0].Attributes)
+		if len(inner) == 0 {
+			continue
+		}
+		entries, err := inst.Child(key).Object()
+		if err == object.ErrNotExist {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("fetching %s failed with %w", key, err)
+		}
+		for _, entryName := range entries.Children() {
+			// Under a container that is also a resource this key holds both: skip the
+			// ones that are resources it holds, which the scope walk inverts.
+			if heldUnder(groups, idField, key, entryName) {
+				continue
+			}
+			entry := entries.Child(entryName)
+			for _, ra := range inner {
+				if err := invertRefAttr(entry, ra, getMap); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // buildIdToNameMap maps every compiled
@@ -352,6 +399,12 @@ func (ri *decompileResource) Process(ct transform.Context[object.Refrence], o ob
 func applyNestedInverse(inst object.Object[object.Refrence], children, groups []*engine.Node, idField string) error {
 	for _, g := range children {
 		key, _ := g.Match.(string)
+		if engine.IsBlock(g) && g.Nested {
+			if err := applyBlockInverse(inst, g, idField); err != nil {
+				return err
+			}
+			continue
+		}
 		if key == "" || len(g.Children) == 0 || !g.Nested {
 			continue
 		}
@@ -384,6 +437,33 @@ func applyNestedInverse(inst object.Object[object.Refrence], children, groups []
 				}
 			}
 		}
+	}
+	return nil
+}
+
+// applyBlockInverse undoes a block's own wire projections, then those of the groups
+// beneath it. Nothing is held inside a block, so its groups are walked without the
+// vocabulary's.
+func applyBlockInverse(inst object.Object[object.Refrence], b *engine.Node, idField string) error {
+	key := b.Match.(string)
+	sel := inst.Child(key)
+	blockObj, err := sel.Object()
+	if err == object.ErrNotExist {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("fetching %s failed with %w", key, err)
+	}
+	for _, a := range b.Attributes {
+		if sc, ok := a.Meta["scalar"].(engine.ScalarSpec); ok {
+			holder, field := holderOf(sel, a)
+			if err := sc.Format(holder, field); err != nil {
+				return fmt.Errorf("%s: %w", key, err)
+			}
+		}
+	}
+	if err := applyNestedInverse(blockObj, b.Children, nil, idField); err != nil {
+		return fmt.Errorf("%s/%w", key, err)
 	}
 	return nil
 }

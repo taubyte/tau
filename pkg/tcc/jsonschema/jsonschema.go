@@ -307,6 +307,27 @@ func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node, ti
 	// no type of its own and nothing else can reference it.
 	for _, node := range iter.Children {
 		name, _ := node.Match.(string)
+		// A block is one object of this kind's own, emitted inline like a group but with
+		// properties rather than entries. A field the kind declares under the same key
+		// joins it.
+		if engine.IsBlock(node) {
+			block := g.objectSchema(node, nil, "")
+			if prev, had := props.get(name); had {
+				if obj := objectMember(prev); obj != nil {
+					if declared, ok := obj["properties"].(*omap); ok {
+						into := block["properties"].(*omap)
+						for _, k := range declared.keys {
+							if _, taken := into.get(k); !taken {
+								v, _ := declared.get(k)
+								into.set(k, v)
+							}
+						}
+					}
+				}
+			}
+			props.set(name, block)
+			continue
+		}
 		if name == "" || len(node.Children) == 0 {
 			continue
 		}

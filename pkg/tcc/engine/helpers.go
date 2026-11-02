@@ -160,6 +160,38 @@ func Nested(children ...*Node) NodeOption {
 	}
 }
 
+// DefineBlock declares one object inside a resource's own document: its fields, and
+// groups and lists of its own beneath it.
+//
+//	DefineBlock("build", []*Attribute{String(Key("dockerfile", "path"))},
+//	    DefineList("steps", stepAttrs),
+//	    DefineGroup("inputs", DefineIter(inputAttrs)),
+//	)
+//
+//	build:
+//	    dockerfile: {path: Dockerfile}
+//	    steps:
+//	        - name: site
+//	    inputs:
+//	        ui: {name: ui}
+//
+// A field alone needs no block: Key("build", "image") already nests it. A block is
+// for a group or a list that belongs under a key rather than at the document root.
+func DefineBlock(name string, attrs []*Attribute, children ...*Node) *Node {
+	mustBeKey("block", name)
+	return Define(name, attrs).With(Nested(children...))
+}
+
+// IsBlock reports a node that is one object under a fixed key, as DefineBlock makes:
+// neither a group of named entries nor a list.
+func IsBlock(n *Node) bool {
+	if n == nil || n.Group || n.Sequence {
+		return false
+	}
+	_, named := n.Match.(string)
+	return named
+}
+
 // DefineList declares an ordered list of objects, a group authored as a YAML
 // sequence:
 //

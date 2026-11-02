@@ -244,9 +244,23 @@ func shape(role, key string, list bool, depth int, fields []Located, groups []Gr
 		}
 	}
 
-	prefixes := make([]string, 0, len(blocks))
+	// A group declared inside a block is a member of that block's type, read at its
+	// whole path.
+	blockGroups := map[string][]Group{}
+	for _, g := range groups {
+		if len(g.At) > 0 {
+			blockGroups[g.At[0]] = append(blockGroups[g.At[0]], g)
+		}
+	}
+
+	prefixes := make([]string, 0, len(blocks)+len(blockGroups))
 	for prefix := range blocks {
 		prefixes = append(prefixes, prefix)
+	}
+	for prefix := range blockGroups {
+		if _, has := blocks[prefix]; !has {
+			prefixes = append(prefixes, prefix)
+		}
 	}
 	sort.Strings(prefixes)
 	for _, prefix := range prefixes {
@@ -263,6 +277,14 @@ func shape(role, key string, list bool, depth int, fields []Located, groups []Gr
 				b.declared = append(b.declared, l.Key)
 			}
 		}
+		for _, g := range blockGroups[prefix] {
+			key := append(append([]string(nil), g.At...), g.Key)
+			e := shape("entry", g.Key, g.List, depth+2, g.Fields, g.Groups, all)
+			e.owners = []*typeDef{b}
+			*all = append(*all, e)
+			b.members = append(b.members, member{name: goIdent(strings.Join(key[1:], "/")), key: key, sub: e})
+			b.declared = append(b.declared, key)
+		}
 		b.hasDeclared = len(b.declared) > 0
 		b.finish()
 		*all = append(*all, b)
@@ -270,6 +292,9 @@ func shape(role, key string, list bool, depth int, fields []Located, groups []Gr
 	}
 
 	for _, g := range groups {
+		if len(g.At) > 0 {
+			continue
+		}
 		e := shape("entry", g.Key, g.List, depth+1, g.Fields, g.Groups, all)
 		e.owners = []*typeDef{t}
 		*all = append(*all, e)

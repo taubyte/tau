@@ -73,6 +73,10 @@ type Group struct {
 	// List marks a sequence: the entries are ordered and have no names.
 	List bool
 
+	// At is the blocks the group sits under, from its owner: `build` for a package's
+	// `build: {steps: [...]}`. Empty for a group at the owner's own root.
+	At []string
+
 	Fields []Located
 	Groups []Group
 }
@@ -129,6 +133,19 @@ func shapeOf(node *engine.Node, held map[string]bool) ([]Located, []Group) {
 			if held[name] {
 				continue
 			}
+			// A BLOCK IS MORE FIELDS OF THIS NODE, one key down, and its groups sit
+			// under that key.
+			if engine.IsBlock(c) && name != "" {
+				f, g := shapeOf(c, held)
+				for _, l := range f {
+					fields = append(fields, under(name, l))
+				}
+				for _, sub := range g {
+					sub.At = append([]string{name}, sub.At...)
+					groups = append(groups, sub)
+				}
+				continue
+			}
 			// A GROUP WITH AN ITERATOR IS ENTRIES, not more fields of this node.
 			if c.Group && name != "" && len(c.Children) == 1 && !c.Children[0].Group {
 				f, g := shapeOf(c.Children[0], held)
@@ -141,8 +158,18 @@ func shapeOf(node *engine.Node, held map[string]bool) ([]Located, []Group) {
 	walk(node)
 
 	sort.Slice(fields, func(i, j int) bool { return fields[i].Path() < fields[j].Path() })
-	sort.Slice(groups, func(i, j int) bool { return groups[i].Key < groups[j].Key })
+	sort.Slice(groups, func(i, j int) bool { return groups[i].Path() < groups[j].Path() })
 	return fields, groups
+}
+
+// Path is where the group sits from its owner, its blocks and its key, joined.
+func (g Group) Path() string { return strings.Join(append(append([]string(nil), g.At...), g.Key), "/") }
+
+// under is a block's field addressed from the node holding the block.
+func under(block string, l Located) Located {
+	l.Key = append([]string{block}, l.Key...)
+	l.Authored = append([]string{block}, l.Authored...)
+	return l
 }
 
 func locate(a *engine.Attribute) Located {

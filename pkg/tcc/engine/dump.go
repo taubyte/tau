@@ -176,6 +176,12 @@ func (s *instance) dumpNested(n *Node, obj object.Object[object.Refrence], query
 		if !child.Nested {
 			continue
 		}
+		if IsBlock(child) {
+			if err := s.dumpBlock(child, obj, query); err != nil {
+				return err
+			}
+			continue
+		}
 		groupName, ok := child.Match.(string)
 		if !ok || len(child.Children) == 0 {
 			continue
@@ -215,6 +221,24 @@ func (s *instance) dumpNested(n *Node, obj object.Object[object.Refrence], query
 		}
 	}
 	return nil
+}
+
+// dumpBlock writes a block's fields and its own groups under its key, the way load
+// read them.
+func (s *instance) dumpBlock(block *Node, obj object.Object[object.Refrence], query *yaseer.Query) error {
+	name := block.Match.(string)
+	blockObj, err := obj.Child(name).Object()
+	if err == object.ErrNotExist {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("fetching %s failed: %w", name, err)
+	}
+	at := query.Get(name)
+	if err := s.dumpAttributes(block, blockObj, at); err != nil {
+		return fmt.Errorf("dumping %s failed: %w", name, err)
+	}
+	return s.dumpNested(block, blockObj, at)
 }
 
 // dumpApplications writes appsObj, keyed by name, under query.

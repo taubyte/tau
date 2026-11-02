@@ -288,24 +288,35 @@ func listAt(root *engine.Node, kind string, path []string) bool {
 		if a := attrNamed(iter, path[i]); a != nil {
 			return a.Type == engine.TypeStringSlice
 		}
-		child := childGroup(iter, path[i])
+		child, entries := childGroup(iter, path[i])
 		if child == nil {
 			return false
 		}
 		iter = child
-		i++ // the next segment names the entry, and every entry shares this iterator
+		if entries {
+			i++ // the next segment names the entry, and every entry shares this iterator
+		}
 	}
 	return false
 }
 
-// childGroup is the iterator of a nested group of this kind, by its key.
-func childGroup(iter *engine.Node, key string) *engine.Node {
+// childGroup is the iterator of a nested group of this kind, by its key, and whether
+// the path's next segment names one of its entries. A block is one object, so its
+// fields follow its key directly.
+func childGroup(iter *engine.Node, key string) (*engine.Node, bool) {
 	for _, child := range iter.Children {
-		if k, _ := child.Match.(string); k == key && len(child.Children) > 0 {
-			return child.Children[0]
+		k, _ := child.Match.(string)
+		if k != key {
+			continue
+		}
+		if engine.IsBlock(child) {
+			return child, false
+		}
+		if len(child.Children) > 0 {
+			return child.Children[0], true
 		}
 	}
-	return nil
+	return nil, false
 }
 
 func attrNamed(iter *engine.Node, name string) *engine.Attribute {

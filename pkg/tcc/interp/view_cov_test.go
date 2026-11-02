@@ -163,7 +163,8 @@ func TestListAtFollowsTheSchema(t *testing.T) {
 	assert.Assert(t, !listAt(root, "job", []string{"nothing", "main", "on"}))
 	assert.Assert(t, !listAt(root, "job", []string{"hooks", "main"}))
 	assert.Assert(t, !listAt(root, "nokind", []string{"runs"}))
-	assert.Assert(t, childGroup(iterOfKind(root, "job"), "runs") == nil)
+	runs, _ := childGroup(iterOfKind(root, "job"), "runs")
+	assert.Assert(t, runs == nil)
 }
 
 func TestGrantNeverReplacesAnAuthorsValue(t *testing.T) {

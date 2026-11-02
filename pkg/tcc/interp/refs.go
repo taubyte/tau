@@ -74,6 +74,12 @@ func (r *resolveRefs) Process(ct transform.Context[object.Refrence], scope objec
 func resolveGroups(ct transform.Context[object.Refrence], scope object.Object[object.Refrence], groups []*engine.Node, idField, nameField string) error {
 	for _, g := range groups {
 		groupKey, _ := g.Match.(string)
+		if engine.IsBlock(g) {
+			if err := resolveBlock(ct, scope, g, idField, nameField); err != nil {
+				return err
+			}
+			continue
+		}
 		if len(g.Children) == 0 {
 			continue
 		}
@@ -117,6 +123,29 @@ func resolveGroups(ct transform.Context[object.Refrence], scope object.Object[ob
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+// resolveBlock resolves a block's own references and those of the groups beneath it,
+// with the context of the resource holding it.
+func resolveBlock(ct transform.Context[object.Refrence], scope object.Object[object.Refrence], b *engine.Node, idField, nameField string) error {
+	key := b.Match.(string)
+	sel := scope.Child(key)
+	blockObj, err := sel.Object()
+	if err == object.ErrNotExist {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("fetching %s failed with %w", key, err)
+	}
+	for _, ra := range collectRefAttrs(b.Attributes) {
+		if err := resolveRefAttr(ct, sel, ra, nameField); err != nil {
+			return err
+		}
+	}
+	if own := ownGroups(b); len(own) > 0 {
+		return resolveGroups(ct, blockObj, own, idField, nameField)
 	}
 	return nil
 }
