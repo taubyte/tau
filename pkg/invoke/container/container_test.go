@@ -955,3 +955,53 @@ func echoOn(port int, say string) (closer, error) {
 	}()
 	return closerFn(func() error { return l.Close() }), nil
 }
+
+// A host port taken between choosing it and the container binding it is chosen
+// again, rather than failing a start nothing else was wrong with.
+func TestAPortTakenBeforeTheContainerBindsIsChosenAgain(t *testing.T) {
+	taken, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer taken.Close()
+	occupied := taken.Addr().(*net.TCPAddr).Port
+
+	asked := 0
+	rt := newFakeBackend()
+	rt.imagePresent = true
+	e := newRuntime(t, rt, Image{Ref: "acme/shop:1"}, func() []Option {
+		return []Option{WithPortAllocator(func() (int, error) {
+			asked++
+			if asked == 1 {
+				return occupied, nil
+			}
+			return freePort()
+		})}
+	})
+
+	inst, err := e.Start(context.Background(), spec())
+	require.NoError(t, err)
+	defer inst.Close()
+	require.Equal(t, 2, asked)
+}
+
+// A port that stays taken is not chosen forever: the start gives up and says why.
+func TestAPortThatStaysTakenEndsTheStart(t *testing.T) {
+	taken, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer taken.Close()
+	occupied := taken.Addr().(*net.TCPAddr).Port
+
+	asked := 0
+	rt := newFakeBackend()
+	rt.imagePresent = true
+	e := newRuntime(t, rt, Image{Ref: "acme/shop:1"}, func() []Option {
+		return []Option{WithPortAllocator(func() (int, error) {
+			asked++
+			return occupied, nil
+		})}
+	})
+
+	inst, err := e.Start(context.Background(), spec())
+	require.ErrorContains(t, err, "address already in use")
+	require.Nil(t, inst)
+	require.Equal(t, startAttempts, asked)
+}

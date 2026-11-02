@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/taubyte/tau/pkg/specs"
@@ -297,6 +298,44 @@ func (e *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 		return e.startJob(ctx, spec, img, mounts)
 	}
 
+	// Pull before create. A backend whose create auto-pulls does this twice and
+	// the second is free; one whose create does not would otherwise fail on
+	// every genuinely cold node, which is the case this exists for.
+	if im := e.opts.backend.Image(img.Ref); im != nil {
+		if !im.Exists(ctx) {
+			if err := im.Pull(ctx); err != nil {
+				return nil, fmt.Errorf("container: pulling %s: %w", img.Ref, err)
+			}
+		}
+	}
+
+	for attempt := 1; ; attempt++ {
+		inst, err := e.startOnce(ctx, spec, img, mounts)
+		if err == nil {
+			return inst, nil
+		}
+		if attempt == startAttempts || !portTaken(err) {
+			return nil, err
+		}
+	}
+}
+
+// startAttempts bounds the starts of one workload whose host port was taken between
+// choosing it and binding it. Nothing can hold a port across that gap for a backend,
+// so the start chooses again.
+const startAttempts = 3
+
+// portTaken says a start failed because its host port was bound in the meantime.
+func portTaken(err error) bool {
+	if errors.Is(err, syscall.EADDRINUSE) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "address already in use") || strings.Contains(msg, "port is already allocated")
+}
+
+// startOnce chooses ports, creates the container and waits for it to be ready.
+func (e *Runtime) startOnce(ctx context.Context, spec invoke.Spec, img Image, mounts []core.VolumeMount) (*instance, error) {
 	// A workload that declared ports binds those numbers, as off-the-shelf images do;
 	// one that declared none is told a number in $PORT.
 	ports, port, err := e.portsFor(spec)
@@ -309,17 +348,6 @@ func (e *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 	reachable := make(map[string]int, len(spec.Ports))
 	for i, name := range sortedPortNames(spec.Ports) {
 		reachable[name] = ports[i].HostPort
-	}
-
-	// Pull before create. A backend whose create auto-pulls does this twice and
-	// the second is free; one whose create does not would otherwise fail on
-	// every genuinely cold node, which is the case this exists for.
-	if im := e.opts.backend.Image(img.Ref); im != nil {
-		if !im.Exists(ctx) {
-			if err := im.Pull(ctx); err != nil {
-				return nil, fmt.Errorf("container: pulling %s: %w", img.Ref, err)
-			}
-		}
 	}
 
 	// THE RUNTIME API IS BOUND BEFORE THE CONTAINER IS CREATED, because the
@@ -478,8 +506,8 @@ func (i *instance) Dial(ctx context.Context, name string) (net.Conn, error) {
 }
 
 // freePort asks the kernel for a port and gives it back. Something else may take it
-// before the container binds; that surfaces as a failed readiness, and there is no
-// way to read an ephemeral port back from either backend.
+// before the container binds, and there is no way to read an ephemeral port back
+// from either backend; a start that loses the port chooses again (startAttempts).
 func freePort() (int, error) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
