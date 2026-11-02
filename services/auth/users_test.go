@@ -144,8 +144,9 @@ func TestLocalUsers(t *testing.T) {
 	require.ElementsMatch(t, []authv2.Capability{authv2.Capability_CAPABILITY_LOGIN, authv2.Capability_CAPABILITY_APIKEY}, u.GetCapabilities())
 
 	// The stored hash is peppered and names the pepper.
-	var h passwordRow
-	require.NoError(t, f.s.store.get(ctx, userKey(u.GetId(), fieldPassword), &h))
+	var row authv2.PasswordRow
+	require.NoError(t, f.s.store.get(ctx, userKey(u.GetId(), fieldPassword), &row))
+	h := passwordFrom(&row)
 	require.Contains(t, h.Pepper, secretPepper+f.s.host.ID().String())
 	require.Equal(t, cheap, h.Params)
 
@@ -228,17 +229,17 @@ func TestConcurrentNameClaimsResolveTheSameEverywhere(t *testing.T) {
 	// The second node's write, which its guard could not see.
 	f.now = f.now.Add(time.Second)
 	second := newID()
-	require.NoError(t, f.s.store.put(ctx, userKey(second, fieldProfile), profileRow{Name: "shared", Local: true, Capabilities: []string{capLogin}, Created: f.now.UnixNano()}))
-	require.NoError(t, f.s.store.put(ctx, nameKey("shared")+second, claim{Created: f.now.UnixNano()}))
+	require.NoError(t, f.s.store.put(ctx, userKey(second, fieldProfile), &authv2.ProfileRow{Name: "shared", Local: true, Capabilities: []string{capLogin}, Created: f.now.UnixNano()}))
+	require.NoError(t, f.s.store.put(ctx, nameKey("shared")+second, &authv2.ClaimRow{Created: f.now.UnixNano()}))
 
 	got, err := f.s.byName(ctx, "shared")
 	require.NoError(t, err)
 	require.Equal(t, first.GetId(), got.ID)
 
 	// A tie on time goes to the lower id.
-	var c claim
+	var c authv2.ClaimRow
 	require.NoError(t, f.s.store.get(ctx, nameKey("shared")+first.GetId(), &c))
-	require.NoError(t, f.s.store.put(ctx, nameKey("shared")+second, c))
+	require.NoError(t, f.s.store.put(ctx, nameKey("shared")+second, &c))
 	got, err = f.s.byName(ctx, "shared")
 	require.NoError(t, err)
 	require.Equal(t, min(first.GetId(), second), got.ID)
@@ -257,7 +258,7 @@ func TestAPITokens(t *testing.T) {
 	require.Regexp(t, `^tau_[0-9a-f]{24}_`, secret)
 
 	// Only the digest is stored.
-	var row apiKeyRow
+	var row authv2.ApiKeyRow
 	require.NoError(t, f.s.store.get(ctx, prefixAPIKeys+made.Msg.GetId(), &row))
 	require.NotContains(t, string(row.Sum), secret)
 

@@ -256,8 +256,8 @@ type KeySet struct {
 // rewrites wrappings and nothing else: the ciphertext they unlock is never
 // touched, so re-encryption never needs the plaintext.
 type Wrapping struct {
-	R          []byte `cbor:"r"`
-	WrappedDEK []byte `cbor:"wrapped_dek"`
+	R          []byte
+	WrappedDEK []byte
 }
 
 // Seal generates a data key and encrypts plaintext under it. The data key
@@ -320,8 +320,8 @@ func Wrap(public group.Element, dek, aad []byte) (*Wrapping, error) {
 // Partial is one holder's contribution to opening one wrapping. It reveals
 // nothing about the holder's share.
 type Partial struct {
-	ID []byte `cbor:"id"`
-	D  []byte `cbor:"d"`
+	ID []byte
+	D  []byte
 }
 
 // PartialDecrypt computes this holder's x_i*R for the wrapping. The holder must

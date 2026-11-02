@@ -20,7 +20,7 @@ var (
 
 func getLatestAssetVersion() (string, error) {
 	var latest struct {
-		Version string `json:"tag_name" cbor:"4,keyasint"`
+		Version string `json:"tag_name"`
 	}
 
 	req, err := http.NewRequest("GET", releasesLatest, nil)

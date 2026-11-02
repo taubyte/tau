@@ -360,7 +360,7 @@ func (h *userHandler) SetRole(ctx context.Context, req *connect.Request[authv2.S
 	if u.Builtin {
 		return nil, errBuiltin
 	}
-	if err := h.s.store.put(ctx, userKey(u.ID, fieldRole), roleRow{Role: role(req.Msg.GetRole())}); err != nil {
+	if err := h.s.store.put(ctx, userKey(u.ID, fieldRole), &authv2.RoleRow{Role: role(req.Msg.GetRole())}); err != nil {
 		return nil, err
 	}
 	return h.reply(ctx, u.ID)
@@ -377,7 +377,7 @@ func (h *userHandler) SetDisabled(ctx context.Context, req *connect.Request[auth
 	if u.Builtin {
 		return nil, errBuiltin
 	}
-	if err := h.s.store.put(ctx, userKey(u.ID, fieldDisabled), flagRow{Set: req.Msg.GetDisabled()}); err != nil {
+	if err := h.s.store.put(ctx, userKey(u.ID, fieldDisabled), &authv2.FlagRow{Set: req.Msg.GetDisabled()}); err != nil {
 		return nil, err
 	}
 	return h.reply(ctx, u.ID)

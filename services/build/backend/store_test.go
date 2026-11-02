@@ -210,7 +210,7 @@ func TestADecodedRecordMustBeTheOneItsKeyNames(t *testing.T) {
 	_, err = decodeJobRecord(jobRecordKey(id), id, anonymous)
 	require.ErrorContains(t, err, "it says it is job")
 
-	_, err = decodeJobRecord(jobRecordKey(id), id, []byte("not cbor at all"))
+	_, err = decodeJobRecord(jobRecordKey(id), id, []byte("not a record at all"))
 	require.ErrorContains(t, err, "corrupt")
 }
 

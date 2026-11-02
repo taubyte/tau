@@ -330,7 +330,7 @@ func TestRetryReportsAStoreThatRefusedTheWrite(t *testing.T) {
 func TestACorruptRecordIsInternalOnEveryRead(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
-	h.store.put(t, jobRecordKey(id), []byte("not cbor"))
+	h.store.put(t, jobRecordKey(id), []byte("not a record"))
 
 	_, err := h.job(id)
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))

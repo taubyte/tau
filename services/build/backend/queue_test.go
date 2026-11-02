@@ -263,7 +263,7 @@ func TestACorruptRecordIsInternalRatherThanASecondJob(t *testing.T) {
 	h := newHarness(t)
 	key, _ := parseRepositoryKey(testRepo)
 	id := jobID(key, testRef, testCommit)
-	h.store.put(t, jobRecordKey(id), []byte("not cbor"))
+	h.store.put(t, jobRecordKey(id), []byte("not a record"))
 
 	_, err := enqueue(t, h, testRepo, testRef, testCommit)
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
@@ -628,7 +628,7 @@ func TestWhatADeliveryFindsWhenItComesBackFromAuth(t *testing.T) {
 		}()
 
 		<-gate.entered
-		h.store.put(t, jobRecordKey(jobID(key, testRef, testCommit)), []byte("not cbor"))
+		h.store.put(t, jobRecordKey(jobID(key, testRef, testCommit)), []byte("not a record"))
 		close(gate.release)
 
 		require.Equal(t, connect.CodeInternal, connect.CodeOf(<-done))

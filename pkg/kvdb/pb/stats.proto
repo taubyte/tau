@@ -1,0 +1,11 @@
+syntax = "proto3";
+package crdt.pb;
+
+option go_package = ".;pb";
+
+// Stats is a kvdb's heads, as cid bytes, its greatest height and its queued jobs.
+message Stats {
+  repeated bytes heads = 1;
+  uint64 max_height = 2;
+  int64 queued_jobs = 3;
+}

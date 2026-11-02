@@ -404,7 +404,7 @@ func TestClaimReportsAForeignKey(t *testing.T) {
 
 func TestClaimReportsACorruptRecord(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.store.put("queue/build/ready/00000000000000000001/job", []byte("not cbor"))
+	h.store.put("queue/build/ready/00000000000000000001/job", []byte("not a record"))
 	if _, err := h.Claim(); !errors.Is(err, ErrCorruptRecord) {
 		t.Fatalf("Claim: got %v, want ErrCorruptRecord", err)
 	}
@@ -440,7 +440,7 @@ func TestAnIndexPointingOutsideTheQueueIsForeign(t *testing.T) {
 
 func TestSweepReportsACorruptClaimedRecord(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.store.put("queue/build/claimed/00000000000000000001/job", []byte("not cbor"))
+	h.store.put("queue/build/claimed/00000000000000000001/job", []byte("not a record"))
 
 	if err := h.Sweep(); !errors.Is(err, ErrCorruptRecord) {
 		t.Fatalf("Sweep: got %v, want ErrCorruptRecord", err)

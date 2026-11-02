@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fxamacker/cbor/v2"
 	cid "github.com/ipfs/go-cid"
 	"github.com/taubyte/tau/core/kvdb"
+	pb "github.com/taubyte/tau/pkg/kvdb/pb"
 	"gotest.tools/v3/assert"
 )
 
@@ -34,13 +34,13 @@ func TestStats(t *testing.T) {
 	// Test Encode method
 	encodedStats := fakeStats.Encode()
 
-	var decodedStats statsCbor
-	err := cbor.Unmarshal(encodedStats, &decodedStats)
+	var decodedStats pb.Stats
+	err := decodedStats.UnmarshalVT(encodedStats)
 	assert.NilError(t, err)
 
 	// Verify the decoded stats
 	assert.Equal(t, uint64(10), decodedStats.MaxHeight)
-	assert.Equal(t, 5, decodedStats.QueuedJobs)
+	assert.Equal(t, int64(5), decodedStats.QueuedJobs)
 
 	// Convert decoded Heads from [][]byte to []cid.Cid for comparison
 	var decodedHeads []cid.Cid
@@ -66,4 +66,12 @@ func TestStats(t *testing.T) {
 	assert.Assert(t, slices.CompareFunc(newStats.heads, fakeStats.heads, func(a, b cid.Cid) int {
 		return strings.Compare(a.String(), b.String())
 	}) == 0)
+}
+
+func TestStatsDecodeRefusesWhatIsNotStats(t *testing.T) {
+	assert.ErrorContains(t, (&stats{}).Decode([]byte{0xff}), "decoding stats")
+
+	notACid, err := (&pb.Stats{Heads: [][]byte{[]byte("nope")}}).MarshalVT()
+	assert.NilError(t, err)
+	assert.ErrorContains(t, (&stats{}).Decode(notACid), "parsing cid")
 }

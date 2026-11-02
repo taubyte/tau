@@ -83,7 +83,7 @@ func (s *Service) user(ctx context.Context, id string) (user, error) {
 		return user{}, ErrNotFound
 	}
 	st := s.store
-	var p profileRow
+	var p authv2.ProfileRow
 	if err := st.get(ctx, userKey(id, fieldProfile), &p); err != nil {
 		return user{}, err
 	}
@@ -95,14 +95,14 @@ func (s *Service) user(ctx context.Context, id string) (user, error) {
 		return user{}, ErrNotFound
 	}
 	u := user{ID: id, Name: p.Name, Email: p.Email, Local: p.Local, Caps: p.Capabilities, Created: p.Created, Role: roleMember}
-	var r roleRow
+	var r authv2.RoleRow
 	switch err := st.get(ctx, userKey(id, fieldRole), &r); {
 	case err == nil:
 		u.Role = r.Role
 	case !errors.Is(err, ErrNotFound):
 		return user{}, err
 	}
-	var d flagRow
+	var d authv2.FlagRow
 	switch err := st.get(ctx, userKey(id, fieldDisabled), &d); {
 	case err == nil:
 		u.Disabled = d.Set
@@ -166,21 +166,21 @@ func (s *Service) create(ctx context.Context, n newUser) (user, error) {
 	}
 	id := newID()
 	now := s.now().UnixNano()
-	if err := st.put(ctx, userKey(id, fieldProfile), profileRow{Name: n.Name, Email: n.Email, Local: n.Local, Capabilities: n.Caps, Created: now}); err != nil {
+	if err := st.put(ctx, userKey(id, fieldProfile), &authv2.ProfileRow{Name: n.Name, Email: n.Email, Local: n.Local, Capabilities: n.Caps, Created: now}); err != nil {
 		return user{}, err
 	}
 	if n.Role == roleAdmin {
-		if err := st.put(ctx, userKey(id, fieldRole), roleRow{Role: roleAdmin}); err != nil {
+		if err := st.put(ctx, userKey(id, fieldRole), &authv2.RoleRow{Role: roleAdmin}); err != nil {
 			return user{}, err
 		}
 	}
 	if n.Claim {
-		if err := st.put(ctx, nameKey(n.Name)+id, claim{Created: now}); err != nil {
+		if err := st.put(ctx, nameKey(n.Name)+id, &authv2.ClaimRow{Created: now}); err != nil {
 			return user{}, err
 		}
 	}
 	if n.Email != "" {
-		if err := st.put(ctx, emailKey(n.Email)+id, claim{Created: now}); err != nil {
+		if err := st.put(ctx, emailKey(n.Email)+id, &authv2.ClaimRow{Created: now}); err != nil {
 			return user{}, err
 		}
 	}
@@ -207,7 +207,7 @@ func (s *Service) byName(ctx context.Context, name string) (user, error) {
 // so two users linking one identity are two rows and the identity resolves
 // to the earlier; the copy under the user is for listing.
 func (s *Service) link(ctx context.Context, id, issuer, subject, login string) error {
-	c := claim{Created: s.now().UnixNano(), Issuer: issuer, Subject: subject, Login: login}
+	c := &authv2.ClaimRow{Created: s.now().UnixNano(), Issuer: issuer, Subject: subject, Login: login}
 	if err := s.store.put(ctx, linkKey(issuer, subject)+id, c); err != nil {
 		return err
 	}
@@ -230,7 +230,7 @@ func (s *Service) links(ctx context.Context, id string) ([]*authv2.Link, error) 
 	}
 	var out []*authv2.Link
 	for _, d := range ds {
-		var c claim
+		var c authv2.ClaimRow
 		if err := s.store.get(ctx, prefix+d, &c); err != nil {
 			continue
 		}
@@ -243,7 +243,7 @@ func (s *Service) links(ctx context.Context, id string) ([]*authv2.Link, error) 
 // fields cannot bring it back, and then the claims it held.
 func (s *Service) remove(ctx context.Context, u user) error {
 	st := s.store
-	if err := st.put(ctx, userKey(u.ID, fieldDeleted), flagRow{Set: true}); err != nil {
+	if err := st.put(ctx, userKey(u.ID, fieldDeleted), &authv2.FlagRow{Set: true}); err != nil {
 		return err
 	}
 	if u.Local && u.Name != "" {
@@ -262,7 +262,7 @@ func (s *Service) remove(ctx context.Context, u user) error {
 		return err
 	}
 	for _, d := range ds {
-		var c claim
+		var c authv2.ClaimRow
 		if err := st.get(ctx, prefix+d, &c); err == nil {
 			if err := st.del(ctx, linkKey(c.Issuer, c.Subject)+u.ID); err != nil {
 				return err
@@ -311,7 +311,7 @@ func (s *Service) setPassword(ctx context.Context, id, pw string) error {
 	if err != nil {
 		return err
 	}
-	return s.store.put(ctx, userKey(id, fieldPassword), h)
+	return s.store.put(ctx, userKey(id, fieldPassword), passwordRow(h))
 }
 
 // hash waits for one of the bounded Argon2 slots.
@@ -342,9 +342,11 @@ func (s *Service) checkPassword(ctx context.Context, u user, pw string) error {
 			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("auth: the admin's password in the secrets service is not a hash: %w", err))
 		}
 	} else {
-		if err := s.store.get(ctx, userKey(u.ID, fieldPassword), &h); err != nil {
+		var row authv2.PasswordRow
+		if err := s.store.get(ctx, userKey(u.ID, fieldPassword), &row); err != nil {
 			return err
 		}
+		h = passwordFrom(&row)
 		if h.Pepper != "" {
 			p, err := s.keys.PepperNamed(ctx, h.Pepper)
 			if err != nil {

@@ -1,20 +1,15 @@
 package raft
 
 import (
-	"errors"
 	"sync"
 	"time"
 
 	"github.com/hashicorp/raft"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/taubyte/tau/pkg/proto/codec"
 	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 )
-
-// errUndecodable is bytes that are not the record they were read as. Protobuf takes
-// unknown fields and an empty input without complaint, so both are refused here, and
-// a corrupt entry stays an error rather than reading as an empty one.
-var errUndecodable = errors.New("raft: bytes are not the record they were read as")
 
 // pool reuses messages of one type; a message is Reset before it goes back, so it
 // holds nothing of the last caller's.
@@ -63,24 +58,6 @@ func encodeSet(key string, value []byte) ([]byte, error) {
 	return out, err
 }
 
-// decode reads raw into an empty m; emptyOK is for a record whose zero value can
-// be real.
-func decode[M interface {
-	proto.Message
-	UnmarshalVT([]byte) error
-}](raw []byte, m M, emptyOK bool) error {
-	if len(raw) == 0 && !emptyOK {
-		return errUndecodable
-	}
-	if err := m.UnmarshalVT(raw); err != nil {
-		return err
-	}
-	if len(m.ProtoReflect().GetUnknown()) > 0 {
-		return errUndecodable
-	}
-	return nil
-}
-
 // encodeCommand writes a command for the log. A shape the FSM refuses is written as
 // one it still refuses: no operation, or an empty batch or merge.
 func encodeCommand(cmd Command) ([]byte, error) {
@@ -127,7 +104,7 @@ func setProto(s *SetCommand) *raftv2.Set { return &raftv2.Set{Key: s.Key, Value:
 func decodeCommand(raw []byte) (Command, error) {
 	m := commands.get()
 	defer commands.put(m)
-	if err := decode(raw, m, true); err != nil {
+	if err := codec.Decode(raw, m); err != nil {
 		return Command{}, err
 	}
 	switch op := m.Op.(type) {
@@ -173,7 +150,7 @@ func encodeFSMEntry(e CRDTEntry) ([]byte, error) {
 func decodeFSMEntry(raw []byte) (CRDTEntry, error) {
 	m := entries.get()
 	defer entries.put(m)
-	if err := decode(raw, m, false); err != nil {
+	if err := codec.DecodeNonEmpty(raw, m); err != nil {
 		return CRDTEntry{}, err
 	}
 	return entryFrom(m), nil
@@ -202,7 +179,7 @@ func encodeSnapshot(entries map[string]CRDTEntry, clock uint64) ([]byte, error) 
 // decodeSnapshot reads a snapshot. An empty FSM at clock zero encodes to nothing.
 func decodeSnapshot(raw []byte) (map[string]CRDTEntry, uint64, error) {
 	var m raftv2.Snapshot
-	if err := decode(raw, &m, true); err != nil {
+	if err := codec.Decode(raw, &m); err != nil {
 		return nil, 0, err
 	}
 	return entriesFrom(m.GetEntries()), m.GetClock(), nil
@@ -248,7 +225,7 @@ func encodeLog(l *raft.Log) ([]byte, error) {
 func decodeLog(raw []byte, l *raft.Log) error {
 	m := logs.get()
 	defer logs.put(m)
-	if err := decode(raw, m, false); err != nil {
+	if err := codec.DecodeNonEmpty(raw, m); err != nil {
 		return err
 	}
 	*l = *logFrom(m)
@@ -275,7 +252,7 @@ func encodeMeta(meta *snapshotMeta) ([]byte, error) {
 // are not one.
 func decodeMeta(raw []byte) (snapshotMeta, error) {
 	var m raftv2.SnapshotMeta
-	if err := decode(raw, &m, false); err != nil {
+	if err := codec.DecodeNonEmpty(raw, &m); err != nil {
 		return snapshotMeta{}, err
 	}
 	var servers []raft.Server

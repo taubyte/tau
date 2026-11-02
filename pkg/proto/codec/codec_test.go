@@ -124,3 +124,27 @@ func TestAStringCarriesItsBytesAsTheyAre(t *testing.T) {
 	require.NoError(t, Codec.Unmarshal(raw, &back))
 	require.Equal(t, "\xff/k", back.Prefix)
 }
+
+func TestDecodeReadsARecordBack(t *testing.T) {
+	raw, err := (&raftv2.Entry{Value: []byte("v"), Timestamp: 3}).MarshalVT()
+	require.NoError(t, err)
+	var back raftv2.Entry
+	require.NoError(t, Decode(raw, &back))
+	require.Equal(t, uint64(3), back.Timestamp)
+
+	var zero raftv2.Entry
+	require.NoError(t, Decode(nil, &zero), "empty bytes are the zero record")
+	require.ErrorIs(t, DecodeNonEmpty(nil, &raftv2.Entry{}), ErrNotTheRecord)
+	require.NoError(t, DecodeNonEmpty(raw, &raftv2.Entry{}))
+}
+
+// Another record's bytes parse as protobuf; the field this one does not declare
+// is what gives them away.
+func TestDecodeRefusesAFieldTheRecordDoesNotDeclare(t *testing.T) {
+	raw, err := (&raftv2.ExportFSMResponse{Clock: 9}).MarshalVT()
+	require.NoError(t, err)
+	var keys raftv2.KeysRequest
+	require.ErrorIs(t, Decode(raw, &keys), ErrNotTheRecord)
+
+	require.Error(t, Decode([]byte{0xff}, &raftv2.Entry{}), "bytes that are not protobuf")
+}

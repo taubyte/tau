@@ -3,32 +3,33 @@ package queue
 import (
 	"fmt"
 
-	"github.com/fxamacker/cbor/v2"
+	"github.com/taubyte/tau/pkg/proto/codec"
+	queuev2 "github.com/taubyte/tau/pkg/proto/gen/tau/queue/v2"
 )
 
 // record is what a ready or claimed key holds: the payload, so a transition never
-// reads a second key, and the attempt count. cbor with integer keys, as pkg/raft
-// stores its values; it never crosses a wire.
+// reads a second key, and the attempt count. Stored as queuev2.Record.
 type record struct {
-	ID        string `cbor:"1,keyasint"`
-	Data      []byte `cbor:"2,keyasint"`
-	Attempts  uint32 `cbor:"3,keyasint"`
-	DeliverAt int64  `cbor:"4,keyasint"`
-	Deadline  int64  `cbor:"5,keyasint,omitempty"`
-	Token     string `cbor:"6,keyasint,omitempty"`
+	ID        string
+	Data      []byte
+	Attempts  uint32
+	DeliverAt int64
+	Deadline  int64
+	Token     string
 }
 
 func (r record) encode() ([]byte, error) {
-	return cbor.Marshal(r)
+	m := queuev2.Record{Id: r.ID, Data: r.Data, Attempts: r.Attempts, DeliverAt: r.DeliverAt, Deadline: r.Deadline, Token: r.Token}
+	return m.MarshalVT()
 }
 
 func decodeRecord(key string, raw []byte) (record, error) {
-	var r record
-	if err := cbor.Unmarshal(raw, &r); err != nil {
+	var m queuev2.Record
+	if err := codec.Decode(raw, &m); err != nil {
 		return record{}, fmt.Errorf("%w at %q: %w", ErrCorruptRecord, key, err)
 	}
-	if r.ID == "" {
+	if m.Id == "" {
 		return record{}, fmt.Errorf("%w at %q: no id", ErrCorruptRecord, key)
 	}
-	return r, nil
+	return record{ID: m.Id, Data: m.Data, Attempts: m.Attempts, DeliverAt: m.DeliverAt, Deadline: m.Deadline, Token: m.Token}, nil
 }

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/services/auth/token"
 )
 
@@ -142,7 +143,7 @@ func (k *keyring) Signer(ctx context.Context, issuer string) (*token.Signer, err
 	}
 	// PUBLISHED BEFORE ANYTHING IS SIGNED, so no token names a kid no node
 	// can find. The row is immutable once written: its key is the kid.
-	if err := k.store.put(ctx, prefixKeys+s.KeyID(), keyRow{Public: priv.Public().(ed25519.PublicKey), Node: k.node, Created: k.now()}); err != nil {
+	if err := k.store.put(ctx, prefixKeys+s.KeyID(), &authv2.KeyRow{Public: priv.Public().(ed25519.PublicKey), Node: k.node, Created: k.now()}); err != nil {
 		return nil, err
 	}
 	k.signer = s
@@ -150,7 +151,7 @@ func (k *keyring) Signer(ctx context.Context, issuer string) (*token.Signer, err
 }
 
 func (k *keyring) PublicKey(ctx context.Context, kid string) (ed25519.PublicKey, error) {
-	var row keyRow
+	var row authv2.KeyRow
 	if err := k.store.get(ctx, prefixKeys+kid, &row); err != nil {
 		return nil, err
 	}

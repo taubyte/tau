@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+// queue is what a queue writes for itself. None of it is an RPC.
+package tau.queue.v2;
+
+// Record is what a ready or claimed key holds: the payload, so a transition never
+// reads a second key, and the attempt count. Times are unix nanoseconds.
+message Record {
+  string id = 1;
+  bytes data = 2;
+  uint32 attempts = 3;
+  int64 deliver_at = 4;
+  int64 deadline = 5;
+  string token = 6;
+}

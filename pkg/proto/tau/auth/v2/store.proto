@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+// store is every row the auth service keeps. None of it is an RPC. Times are
+// unix nanoseconds.
+package tau.auth.v2;
+
+// ClaimRow is one claim on a name, an email or an identity link. issuer,
+// subject and login are a link's, kept so a user's links can be listed without
+// reversing a hash.
+message ClaimRow {
+  int64 created = 1;
+  string issuer = 2;
+  string subject = 3;
+  string login = 4;
+}
+
+message ProfileRow {
+  string name = 1;
+  string email = 2;
+  bool local = 3;
+  repeated string capabilities = 4;
+  int64 created = 5;
+}
+
+message RoleRow {
+  string role = 1;
+}
+
+message FlagRow {
+  bool set = 1;
+}
+
+// PasswordRow is an argon2id hash. pepper is the id of the pepper it was made
+// with; empty is none.
+message PasswordRow {
+  string pepper = 1;
+  uint32 time = 2;
+  uint32 memory_kib = 3;
+  uint32 threads = 4;
+  uint32 key_len = 5;
+  bytes salt = 6;
+  bytes sum = 7;
+}
+
+message SessionRow {
+  string user = 1;
+  int64 created = 2;
+  int64 expires = 3;
+}
+
+// ApiKeyRow is an API token, keyed by its id. sum is the SHA-256 of the secret;
+// the secret itself is never stored.
+message ApiKeyRow {
+  string user = 1;
+  string name = 2;
+  bytes sum = 3;
+  int64 created = 4;
+  int64 expires = 5;
+}
+
+// RevokedRow marks a credential revoked. expires says when the marker may be
+// forgotten, since the credential stops verifying then anyway.
+message RevokedRow {
+  int64 at = 1;
+  int64 expires = 2;
+}
+
+// InviteRow is an invite, keyed by the digest of its code.
+message InviteRow {
+  string id = 1;
+  string role = 2;
+  string note = 3;
+  string created_by = 4;
+  int64 created = 5;
+  int64 expires = 6;
+}
+
+// PendingRow is a browser sign-in between Authorize and Exchange.
+message PendingRow {
+  string provider = 1;
+  string redirect = 2;
+  string verifier = 3;
+  string nonce = 4;
+  string binding = 5;
+  string invite = 6;
+  string client_id = 7;
+  int64 created = 8;
+  int64 expires = 9;
+  bool exchanged = 10;
+}
+
+// DeviceRow is a device sign-in between DeviceStart and DevicePoll. interval is
+// seconds.
+message DeviceRow {
+  string provider = 1;
+  int64 interval = 2;
+  int64 expires = 3;
+}
+
+// KeyRow is a node's published signing key.
+message KeyRow {
+  bytes public = 1;
+  string node = 2;
+  int64 created = 3;
+}

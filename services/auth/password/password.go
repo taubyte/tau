@@ -29,10 +29,10 @@ import (
 )
 
 type Params struct {
-	Time    uint32 `cbor:"t"`
-	Memory  uint32 `cbor:"m"` // KiB
-	Threads uint8  `cbor:"p"`
-	KeyLen  uint32 `cbor:"k"`
+	Time    uint32
+	Memory  uint32 // KiB
+	Threads uint8
+	KeyLen  uint32
 }
 
 // Default is RFC 9106's second recommended option (64 MiB, three passes),
@@ -41,10 +41,10 @@ var Default = Params{Time: 3, Memory: 64 * 1024, Threads: 2, KeyLen: 32}
 
 type Hash struct {
 	// Pepper is the id of the pepper the hash was made with; empty is none.
-	Pepper string `cbor:"pepper"`
-	Params Params `cbor:"params"`
-	Salt   []byte `cbor:"salt"`
-	Sum    []byte `cbor:"sum"`
+	Pepper string
+	Params Params
+	Salt   []byte
+	Sum    []byte
 }
 
 var ErrMismatch = errors.New("password: mismatch")

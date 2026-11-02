@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/fxamacker/cbor/v2"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
+
+	"github.com/taubyte/tau/pkg/proto/codec"
+	storagev2 "github.com/taubyte/tau/pkg/proto/gen/tau/storage/v2"
 )
 
 // There is no stored pointer. "The current version of object X" is a derived
@@ -37,47 +39,58 @@ import (
 // TestTheKeyOrderAndTheResolutionOrderAreOneOrder holds this.
 
 // VersionRecord is the value of a version row: everything head needs, so resolution
-// never fetches a block. cbor with integer keys; it never crosses a wire.
+// never fetches a block. Stored as storagev2.VersionRecord; it never crosses a wire.
 type VersionRecord struct {
 	// RootCID is the UnixFS root of the object's bytes. It is an ADDRESS, not
 	// a credential — a caller is authorized on the bucket, never on knowing
 	// this. It never crosses the RPC boundary to a guest.
-	RootCID string `cbor:"1,keyasint"`
+	RootCID string
 
 	// Size is the object's byte length, carried so head and the usage sum
 	// never touch a block.
-	Size uint64 `cbor:"2,keyasint"`
+	Size uint64
 
-	ContentType string `cbor:"3,keyasint,omitempty"`
+	ContentType string
 
 	// CreatedMS is wall-clock milliseconds, for display only: ordering is the stamp and
 	// the grace window is timed from local observation.
-	CreatedMS uint64 `cbor:"4,keyasint"`
+	CreatedMS uint64
 
 	// Writer names the node that wrote this row, duplicating the key's last segment. The
 	// key is authoritative; a disagreeing record is caught on decode.
-	Writer string `cbor:"5,keyasint"`
+	Writer string
 
 	// Tombstone marks this version as a delete. The row is a row like any
 	// other: it has a stamp, it is acked on K, and a re-create with a later
 	// stamp wins over it visibly.
-	Tombstone bool `cbor:"6,keyasint,omitempty"`
+	Tombstone bool
 
 	// Exclusive records that every block of this object was new to this bucket
 	// instance when it was imported. It is the GC fast path: deleting an
 	// exclusive object frees its DAG with no mark phase at all. It is only
 	// ever a HINT THAT SAVES WORK — false means "walk", never "keep".
-	Exclusive bool `cbor:"7,keyasint,omitempty"`
+	Exclusive bool
 }
 
-func (r VersionRecord) encode() ([]byte, error) { return cbor.Marshal(r) }
+func (r VersionRecord) encode() ([]byte, error) {
+	m := storagev2.VersionRecord{
+		RootCid: r.RootCID, Size: r.Size, ContentType: r.ContentType, CreatedMs: r.CreatedMS,
+		Writer: r.Writer, Tombstone: r.Tombstone, Exclusive: r.Exclusive,
+	}
+	return m.MarshalVT()
+}
 
+// decodeVersionRecord refuses an empty row: every record written carries a root or a
+// tombstone.
 func decodeVersionRecord(raw []byte) (VersionRecord, error) {
-	var r VersionRecord
-	if err := cbor.Unmarshal(raw, &r); err != nil {
+	var m storagev2.VersionRecord
+	if err := codec.DecodeNonEmpty(raw, &m); err != nil {
 		return VersionRecord{}, fmt.Errorf("%w: %w", ErrNotThisServicesRow, err)
 	}
-	return r, nil
+	return VersionRecord{
+		RootCID: m.RootCid, Size: m.Size, ContentType: m.ContentType, CreatedMS: m.CreatedMs,
+		Writer: m.Writer, Tombstone: m.Tombstone, Exclusive: m.Exclusive,
+	}, nil
 }
 
 // Version is one row, key and value together, derived entirely from the row.

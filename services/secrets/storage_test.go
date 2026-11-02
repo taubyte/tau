@@ -3,11 +3,11 @@ package secrets
 import (
 	"testing"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/ipfs/go-datastore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/pkg/secrets/tdh"
 )
 
@@ -92,23 +92,23 @@ func TestAShareThatCannotBeOpenedIsNotAShare(t *testing.T) {
 	require.NoError(t, err)
 	id, err := share.ID.MarshalBinary()
 	require.NoError(t, err)
-	encode := func(s storedShare) []byte {
-		b, err := cbor.Marshal(s)
+	encode := func(s *secretsv2.StoredShare) []byte {
+		b, err := s.MarshalVT()
 		require.NoError(t, err)
 		return b
 	}
 
 	require.NoError(t, srv.shares.ds.Put(ctx, datastore.NewKey(sharePrefix+"unsealed"), []byte("plaintext on disk")))
-	put(t, "not-cbor", []byte{0xff})
-	put(t, "bad-id", encode(storedShare{ID: []byte("x"), Value: value}))
-	put(t, "bad-value", encode(storedShare{ID: id, Value: []byte("x")}))
+	put(t, "not-a-share", []byte{0xff})
+	put(t, "bad-id", encode(&secretsv2.StoredShare{Id: []byte("x"), Value: value}))
+	put(t, "bad-value", encode(&secretsv2.StoredShare{Id: id, Value: []byte("x")}))
 
 	for name, want := range map[string]string{
-		"unsealed":  "share for key unsealed",
-		"not-cbor":  "unmarshaling share",
-		"bad-id":    "share id",
-		"bad-value": "share value",
-		"absent":    "getting share",
+		"unsealed":    "share for key unsealed",
+		"not-a-share": "unmarshaling share",
+		"bad-id":      "share id",
+		"bad-value":   "share value",
+		"absent":      "getting share",
 	} {
 		_, err := srv.shares.Get(ctx, name)
 		require.ErrorContains(t, err, want, name)

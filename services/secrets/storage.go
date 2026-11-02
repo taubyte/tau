@@ -12,11 +12,12 @@ import (
 
 	"github.com/cloudflare/circl/group"
 	"github.com/cloudflare/circl/secretsharing"
-	"github.com/fxamacker/cbor/v2"
 	"github.com/ipfs/go-datastore"
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/p2p/helpers"
+	"github.com/taubyte/tau/pkg/proto/codec"
+	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/pkg/secrets/tdh"
 )
 
@@ -34,9 +35,9 @@ const (
 // bytes. Nothing here may become node-specific -- a wall clock, a coordinator
 // id -- or the record would be a key two nodes write differently.
 type KeyMeta struct {
-	KeyID  string `cbor:"key_id"`
-	Epoch  uint64 `cbor:"epoch"`
-	Public []byte `cbor:"public"`
+	KeyID  string
+	Epoch  uint64
+	Public []byte
 
 	// Verification is the summed Feldman commitment for the round, one element
 	// per coefficient. Public is its first element.
@@ -46,10 +47,10 @@ type KeyMeta struct {
 	// constant term, change a higher coefficient, and hand back something that
 	// passes the Feldman check and reproduces the published public key while
 	// putting the recipient's share off the polynomial everyone else is on.
-	Verification [][]byte `cbor:"verification"`
+	Verification [][]byte
 
-	Threshold uint     `cbor:"threshold"`
-	Members   []string `cbor:"members"`
+	Threshold uint
+	Members   []string
 }
 
 // VerificationVector deserializes the summed Feldman commitment.
@@ -76,22 +77,6 @@ func (k *KeyMeta) PublicKey() (group.Element, error) {
 	return pub, nil
 }
 
-// storedRecord is one version of a secret at rest: the ciphertext and when it
-// was written. The service never holds the plaintext: clients encrypt under the
-// group public key before storing.
-//
-// It is written once, under the CID of its own ciphertext, and never changed:
-// rotation rewrites wrappings, never this. Two nodes writing the same version
-// write the same bytes, and two writing different values write different keys,
-// so no record is a key two nodes write differently (AGENTS.md, rule 1).
-type storedRecord struct {
-	Ciphertext []byte `cbor:"ciphertext"`
-
-	// WrittenAt is unix nanoseconds. It orders versions of one name; the CID
-	// breaks a tie (rule 3).
-	WrittenAt int64 `cbor:"written_at"`
-}
-
 // entry is one stored version of a secret.
 type entry struct {
 	version
@@ -109,7 +94,14 @@ func versionPath(v version) string { return namePath(v.Ref) + v.CID }
 type keyStore struct{ db kvdb.KVDB }
 
 func (s *keyStore) Put(ctx context.Context, key *KeyMeta) error {
-	data, err := cbor.Marshal(key)
+	m := secretsv2.StoredKey{
+		Key: &secretsv2.GroupKey{
+			KeyId: key.KeyID, Epoch: key.Epoch, Public: key.Public,
+			Threshold: uint32(key.Threshold), Members: key.Members,
+		},
+		Verification: key.Verification,
+	}
+	data, err := m.MarshalVT()
 	if err != nil {
 		return fmt.Errorf("marshaling key metadata: %w", err)
 	}
@@ -123,12 +115,16 @@ func (s *keyStore) Get(ctx context.Context, keyID string) (*KeyMeta, error) {
 		return nil, fmt.Errorf("getting key %s: %w", keyID, err)
 	}
 
-	var key KeyMeta
-	if err := cbor.Unmarshal(data, &key); err != nil {
+	var m secretsv2.StoredKey
+	if err := codec.DecodeNonEmpty(data, &m); err != nil {
 		return nil, fmt.Errorf("unmarshaling key %s: %w", keyID, err)
 	}
 
-	return &key, nil
+	k := m.GetKey()
+	return &KeyMeta{
+		KeyID: k.GetKeyId(), Epoch: k.GetEpoch(), Public: k.GetPublic(),
+		Verification: m.Verification, Threshold: uint(k.GetThreshold()), Members: k.GetMembers(),
+	}, nil
 }
 
 func (s *keyStore) List(ctx context.Context) ([]*KeyMeta, error) {
@@ -187,7 +183,15 @@ func (s *keyStore) Epoch(ctx context.Context) (uint64, error) {
 }
 
 // recordStore holds encrypted secrets in the shared database, one key per
-// version: /records/<scope>/<name>/<cid>.
+// version: /records/<scope>/<name>/<cid>, holding a secretsv2.StoredSecret. The
+// service never holds the plaintext: clients encrypt under the group public key
+// before storing.
+//
+// A version is written once, under the CID of its own ciphertext, and never
+// changed: rotation rewrites wrappings, never this. Two nodes writing the same
+// version write the same bytes, and two writing different values write different
+// keys, so no record is a key two nodes write differently (AGENTS.md, rule 1). Its
+// written-at orders versions of one name; the CID breaks a tie (rule 3).
 type recordStore struct{ db kvdb.KVDB }
 
 func (s *recordStore) Put(ctx context.Context, v version, ciphertext []byte, writtenAt int64) error {
@@ -198,7 +202,8 @@ func (s *recordStore) Put(ctx context.Context, v version, ciphertext []byte, wri
 		return fmt.Errorf("%w: %s does not name its ciphertext", ErrInvalidRef, v)
 	}
 
-	data, err := cbor.Marshal(storedRecord{Ciphertext: ciphertext, WrittenAt: writtenAt})
+	m := secretsv2.StoredSecret{Ciphertext: ciphertext, WrittenAt: writtenAt}
+	data, err := m.MarshalVT()
 	if err != nil {
 		return fmt.Errorf("marshaling record: %w", err)
 	}
@@ -225,8 +230,8 @@ func (s *recordStore) Versions(ctx context.Context, ref Ref) ([]*entry, error) {
 			continue // deleted between the list and the read
 		}
 
-		var record storedRecord
-		if err := cbor.Unmarshal(data, &record); err != nil {
+		var record secretsv2.StoredSecret
+		if err := codec.DecodeNonEmpty(data, &record); err != nil {
 			continue
 		}
 		out = append(out, &entry{version: version{Ref: ref, CID: path.Base(p)}, Ciphertext: record.Ciphertext, WrittenAt: record.WrittenAt})
@@ -318,7 +323,8 @@ func (s *wrappingStore) Put(ctx context.Context, v version, keyID, writer string
 		return err
 	}
 
-	data, err := cbor.Marshal(w)
+	m := secretsv2.Wrapping{R: w.R, WrappedDek: w.WrappedDEK}
+	data, err := m.MarshalVT()
 	if err != nil {
 		return fmt.Errorf("marshaling wrapping: %w", err)
 	}
@@ -354,12 +360,12 @@ func (s *wrappingStore) Get(ctx context.Context, v version, keyID string) (*tdh.
 			continue
 		}
 
-		var w tdh.Wrapping
-		if err := cbor.Unmarshal(data, &w); err != nil {
+		w, err := decodeWrapping(data)
+		if err != nil {
 			continue
 		}
 
-		return &w, path.Base(p), nil
+		return w, path.Base(p), nil
 	}
 
 	return nil, "", fmt.Errorf("secret %s has no wrapping under key %s", v, keyID)
@@ -377,12 +383,20 @@ func (s *wrappingStore) GetFrom(ctx context.Context, v version, keyID, writer st
 		return nil, fmt.Errorf("secret %s has no wrapping from %s under key %s", v, writer, keyID)
 	}
 
-	var w tdh.Wrapping
-	if err := cbor.Unmarshal(data, &w); err != nil {
+	w, err := decodeWrapping(data)
+	if err != nil {
 		return nil, fmt.Errorf("unmarshaling wrapping: %w", err)
 	}
 
-	return &w, nil
+	return w, nil
+}
+
+func decodeWrapping(data []byte) (*tdh.Wrapping, error) {
+	var m secretsv2.Wrapping
+	if err := codec.DecodeNonEmpty(data, &m); err != nil {
+		return nil, err
+	}
+	return &tdh.Wrapping{R: m.R, WrappedDEK: m.WrappedDek}, nil
 }
 
 // KeyIDs lists the keys a version currently has wrappings under.
@@ -432,20 +446,14 @@ func (s *wrappingStore) deletePrefix(ctx context.Context, prefix string) error {
 // shareStore holds this node's key shares, on this node only. A share never
 // leaves the node that derived it, so this is deliberately not the shared
 // database.
+//
+// A share's stored-at is this node's own clock, read only by this node. It is what
+// ages a key out for rotation; a timestamp in the shared key record would be a
+// value two nodes write differently.
 type shareStore struct {
 	ds     datastore.Batching
 	atRest *atRest
 	now    func() time.Time
-}
-
-type storedShare struct {
-	ID    []byte `cbor:"id"`
-	Value []byte `cbor:"value"`
-
-	// StoredAt is this node's own clock, read only by this node. It is what
-	// ages a key out for rotation; a timestamp in the shared key record would
-	// be a value two nodes write differently.
-	StoredAt time.Time `cbor:"stored_at"`
 }
 
 func newShareStore(root string, atRest *atRest, now func() time.Time) (*shareStore, error) {
@@ -468,7 +476,8 @@ func (s *shareStore) Put(ctx context.Context, keyID string, share secretsharing.
 		return fmt.Errorf("marshaling share value: %w", err)
 	}
 
-	data, err := cbor.Marshal(storedShare{ID: id, Value: value, StoredAt: s.now()})
+	m := secretsv2.StoredShare{Id: id, Value: value, StoredAt: s.now().UnixNano()}
+	data, err := m.MarshalVT()
 	if err != nil {
 		return fmt.Errorf("marshaling share: %w", err)
 	}
@@ -497,21 +506,20 @@ func (s *shareStore) Put(ctx context.Context, keyID string, share secretsharing.
 	return nil
 }
 
-func (s *shareStore) stored(ctx context.Context, keyID string) (storedShare, error) {
-	var stored storedShare
-
+func (s *shareStore) stored(ctx context.Context, keyID string) (*secretsv2.StoredShare, error) {
 	sealed, err := s.ds.Get(ctx, datastore.NewKey(sharePrefix+keyID))
 	if err != nil {
-		return stored, fmt.Errorf("getting share for key %s: %w", keyID, err)
+		return nil, fmt.Errorf("getting share for key %s: %w", keyID, err)
 	}
 
 	data, err := s.atRest.open(sealed)
 	if err != nil {
-		return stored, fmt.Errorf("share for key %s: %w", keyID, err)
+		return nil, fmt.Errorf("share for key %s: %w", keyID, err)
 	}
 
-	if err := cbor.Unmarshal(data, &stored); err != nil {
-		return stored, fmt.Errorf("unmarshaling share: %w", err)
+	stored := new(secretsv2.StoredShare)
+	if err := codec.DecodeNonEmpty(data, stored); err != nil {
+		return nil, fmt.Errorf("unmarshaling share: %w", err)
 	}
 
 	return stored, nil
@@ -526,7 +534,7 @@ func (s *shareStore) Get(ctx context.Context, keyID string) (secretsharing.Share
 	}
 
 	share.ID = tdh.Group.NewScalar()
-	if err := share.ID.UnmarshalBinary(stored.ID); err != nil {
+	if err := share.ID.UnmarshalBinary(stored.Id); err != nil {
 		return share, fmt.Errorf("deserializing share id: %w", err)
 	}
 
@@ -545,7 +553,7 @@ func (s *shareStore) StoredAt(ctx context.Context, keyID string) (time.Time, err
 		return time.Time{}, err
 	}
 
-	return stored.StoredAt, nil
+	return time.Unix(0, stored.StoredAt), nil
 }
 
 func (s *shareStore) Delete(ctx context.Context, keyID string) error {

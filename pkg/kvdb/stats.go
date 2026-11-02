@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/ipfs/go-cid"
 	"github.com/taubyte/tau/core/kvdb"
+	pb "github.com/taubyte/tau/pkg/kvdb/pb"
+	"github.com/taubyte/tau/pkg/proto/codec"
 )
 
 func (kvd *kvDatabase) Stats(ctx context.Context) kvdb.Stats {
@@ -35,33 +36,30 @@ func (s *stats) Heads() []cid.Cid {
 }
 
 func (s *stats) Encode() []byte {
-	encoded := statsCbor{
-		Heads:      make([][]byte, 0, len(s.heads)),
+	m := pb.Stats{
+		Heads:      make([][]byte, len(s.heads)),
 		MaxHeight:  s.maxHeight,
-		QueuedJobs: s.queuedJobs,
+		QueuedJobs: int64(s.queuedJobs),
 	}
-
-	for _, c := range s.heads {
-		encoded.Heads = append(encoded.Heads, c.Bytes())
+	for i, c := range s.heads {
+		m.Heads[i] = c.Bytes()
 	}
-
-	data, _ := cbor.Marshal(encoded)
-
+	// MarshalVT fails only on a message too large to size, which stats never is.
+	data, _ := m.MarshalVT()
 	return data
 }
 
 func (s *stats) Decode(data []byte) error {
-	var decoded statsCbor
-	err := cbor.Unmarshal(data, &decoded)
-	if err != nil {
+	var m pb.Stats
+	if err := codec.Decode(data, &m); err != nil {
 		return fmt.Errorf("decoding stats data failed with %w", err)
 	}
 
-	s.maxHeight = decoded.MaxHeight
-	s.queuedJobs = decoded.QueuedJobs
+	s.maxHeight = m.MaxHeight
+	s.queuedJobs = int(m.QueuedJobs)
 
-	s.heads = make([]cid.Cid, len(decoded.Heads))
-	for i, headBytes := range decoded.Heads {
+	s.heads = make([]cid.Cid, len(m.Heads))
+	for i, headBytes := range m.Heads {
 		c, err := cid.Cast(headBytes)
 		if err != nil {
 			return fmt.Errorf("parsing cid failed with %w", err)

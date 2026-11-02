@@ -90,7 +90,7 @@ func TestReconcileReportsWhatItCannotRead(t *testing.T) {
 	t.Run("a record that does not decode", func(t *testing.T) {
 		h := newHarness(t)
 		id := h.push(t, testRef, testCommit)
-		h.store.put(t, jobRecordKey(id), []byte("not cbor"))
+		h.store.put(t, jobRecordKey(id), []byte("not a record"))
 
 		require.Equal(t, connect.CodeInternal, connect.CodeOf(h.reconcile()))
 	})
@@ -131,7 +131,7 @@ func TestReconcileReportsWhatItCannotRead(t *testing.T) {
 		applied, exists := stale.fakeStore.Get(jobRecordKey(id))
 		require.True(t, exists)
 		stale.fakeStore.put(t, openIndexKey(testRepo, id), nil)
-		stale.fakeStore.put(t, jobRecordKey(id), []byte("not cbor"))
+		stale.fakeStore.put(t, jobRecordKey(id), []byte("not a record"))
 		stale.behindFrom(openIndexRoot(), jobRecordKey(id), applied)
 
 		require.Equal(t, connect.CodeInternal, connect.CodeOf(h.reconcile()))

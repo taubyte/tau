@@ -389,7 +389,7 @@ func TestStepReportsAStoreThatRefusesTheClaimWrite(t *testing.T) {
 func TestStepReportsACorruptRecordRatherThanRunningIt(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
-	h.store.put(t, jobRecordKey(id), []byte("not cbor"))
+	h.store.put(t, jobRecordKey(id), []byte("not a record"))
 
 	_, err := h.step(t.Context())
 	require.Error(t, err)
@@ -465,7 +465,7 @@ func TestSettleReportsARecordItCannotRead(t *testing.T) {
 	id := h.push(t, testRef, testCommit)
 
 	h.runner.run = func(context.Context, Work, Output) error {
-		h.store.put(t, jobRecordKey(id), []byte("not cbor"))
+		h.store.put(t, jobRecordKey(id), []byte("not a record"))
 		return nil
 	}
 
@@ -564,7 +564,7 @@ func TestTheDeadLetterDrainReportsACorruptRecord(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 	require.NoError(t, h.dead.Push(id, nil))
-	h.store.put(t, jobRecordKey(id), []byte("not cbor"))
+	h.store.put(t, jobRecordKey(id), []byte("not a record"))
 
 	_, err := h.step(t.Context())
 	require.ErrorContains(t, err, "corrupt job record")

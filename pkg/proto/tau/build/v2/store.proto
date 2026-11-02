@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+// store is what the build backend writes for itself. None of it is an RPC.
+package tau.build.v2;
+
+import "tau/build/v2/build.proto";
+
+// JobRecord is what build/job/<id>/record holds: the whole job, including its
+// runs' cids. created_at and updated_at are unix seconds, claimed_until unix
+// nanoseconds.
+message JobRecord {
+  string id = 1;
+  JobStatus status = 2;
+  string repository_key = 3;
+  string ref = 4;
+  string commit_sha = 5;
+  string project_id = 6;
+  int64 created_at = 7;
+  uint32 attempt = 8;
+  int64 updated_at = 9;
+  int64 claimed_until = 10;
+  string holder = 11;
+  string reason = 12;
+  map<string, string> logs = 13;
+  map<string, string> assets = 14;
+}

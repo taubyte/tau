@@ -7,8 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fxamacker/cbor/v2"
-
+	"github.com/taubyte/tau/pkg/proto/codec"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
@@ -164,42 +163,41 @@ func idFromIndexKey(key string) (string, error) {
 // jobRecord is what build/job/<id>/record holds: the whole job, including its
 // runs' cids. The maps are fields despite AGENTS.md rule 1 because every write of
 // this record is made by the body that read it, inside its section, so there is
-// one writer. cbor with integer keys, as pkg/raft and pkg/queue store theirs; it
-// never crosses a wire.
+// one writer. Stored as buildv2.JobRecord; it never crosses a wire.
 type jobRecord struct {
-	ID            string `cbor:"1,keyasint"`
-	Status        int32  `cbor:"2,keyasint"`
-	RepositoryKey string `cbor:"3,keyasint"`
-	Ref           string `cbor:"4,keyasint"`
-	CommitSHA     string `cbor:"5,keyasint"`
-	ProjectID     string `cbor:"6,keyasint"`
+	ID            string
+	Status        int32
+	RepositoryKey string
+	Ref           string
+	CommitSHA     string
+	ProjectID     string
 	// CreatedAt is unix seconds, and is what the proto's Job.timestamp
 	// carries.
-	CreatedAt int64 `cbor:"7,keyasint"`
+	CreatedAt int64
 	// Attempt counts the deliveries this record has seen: the record's own counter,
 	// since a Retry after an Ack starts a new queue item, and a run's log is filed
 	// under it.
-	Attempt uint32 `cbor:"8,keyasint"`
+	Attempt uint32
 	// UpdatedAt is unix seconds at the last transition. reconcile's age gate
 	// reads it.
-	UpdatedAt int64 `cbor:"9,keyasint"`
+	UpdatedAt int64
 	// ClaimedUntil is unix nanoseconds, set while Claimed.
-	ClaimedUntil int64 `cbor:"10,keyasint,omitempty"`
+	ClaimedUntil int64
 	// Holder is the peer id running this job, set while Claimed. It is
 	// diagnostic: nothing routes on it, because a cancel is a record write
 	// that the holder itself notices.
-	Holder string `cbor:"11,keyasint,omitempty"`
+	Holder string
 	// Reason is why a job reached Failed. The proto's Job has no field for it,
 	// so it is stored and not served — it is what distinguishes a runner's own
 	// error from "attempts exhausted" when someone reads the store.
-	Reason string `cbor:"12,keyasint,omitempty"`
+	Reason string
 	// Logs is the cid of each attempt's log, keyed by the attempt of the run that
 	// wrote it (carried by produced, not re-read from the record), zero-padded so
 	// attempt 10 sorts after 2.
-	Logs map[string]string `cbor:"13,keyasint,omitempty"`
+	Logs map[string]string
 	// Assets is the cid of the artifact built per resource; a later attempt replaces
 	// an earlier one.
-	Assets map[string]string `cbor:"14,keyasint,omitempty"`
+	Assets map[string]string
 }
 
 // with is this record plus what a run produced. The maps are copied: the record is
@@ -236,20 +234,33 @@ func merged(into, from map[string]string) map[string]string {
 	return out
 }
 
-func (r jobRecord) encode() ([]byte, error) { return cbor.Marshal(r) }
+func (r jobRecord) encode() ([]byte, error) {
+	m := buildv2.JobRecord{
+		Id: r.ID, Status: buildv2.JobStatus(r.Status), RepositoryKey: r.RepositoryKey, Ref: r.Ref,
+		CommitSha: r.CommitSHA, ProjectId: r.ProjectID, CreatedAt: r.CreatedAt, Attempt: r.Attempt,
+		UpdatedAt: r.UpdatedAt, ClaimedUntil: r.ClaimedUntil, Holder: r.Holder, Reason: r.Reason,
+		Logs: r.Logs, Assets: r.Assets,
+	}
+	return m.MarshalVT()
+}
 
 // decodeJobRecord reads one record back and checks it is the record the key names:
 // a row saying it is another job is refused. key is for the message, id what it
 // must match; an empty id never matches.
 func decodeJobRecord(key, id string, raw []byte) (jobRecord, error) {
-	var r jobRecord
-	if err := cbor.Unmarshal(raw, &r); err != nil {
+	var m buildv2.JobRecord
+	if err := codec.Decode(raw, &m); err != nil {
 		return jobRecord{}, fmt.Errorf("corrupt job record at %q: %w", key, err)
 	}
-	if r.ID != id {
-		return jobRecord{}, fmt.Errorf("corrupt job record at %q: it says it is job %q", key, r.ID)
+	if m.Id != id {
+		return jobRecord{}, fmt.Errorf("corrupt job record at %q: it says it is job %q", key, m.Id)
 	}
-	return r, nil
+	return jobRecord{
+		ID: m.Id, Status: int32(m.Status), RepositoryKey: m.RepositoryKey, Ref: m.Ref,
+		CommitSHA: m.CommitSha, ProjectID: m.ProjectId, CreatedAt: m.CreatedAt, Attempt: m.Attempt,
+		UpdatedAt: m.UpdatedAt, ClaimedUntil: m.ClaimedUntil, Holder: m.Holder, Reason: m.Reason,
+		Logs: m.Logs, Assets: m.Assets,
+	}, nil
 }
 
 func (r jobRecord) status() buildv2.JobStatus { return buildv2.JobStatus(r.Status) }

@@ -10,10 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fxamacker/cbor/v2"
 	ds "github.com/ipfs/go-datastore"
 
 	"github.com/taubyte/tau/core/kvdb"
+	"github.com/taubyte/tau/pkg/proto/codec"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/services/auth/password"
 )
 
@@ -34,7 +35,8 @@ import (
 //     emails. An issuer and a subject are not, since OIDC compares them
 //     exactly; they are hashed, so any byte they carry is a safe segment.
 //
-// Every row below is in its own prefix, and every prefix is a path segment.
+// Every row below is in its own prefix, and every prefix is a path segment. A row's
+// value is one of authv2's *Row messages (store.proto).
 const (
 	prefixUsers    = "/users/"
 	prefixNames    = "/names/"
@@ -63,8 +65,8 @@ func digest(parts ...string) string {
 
 type store struct{ db kvdb.KVDB }
 
-func (s store) put(ctx context.Context, key string, v any) error {
-	b, err := cbor.Marshal(v)
+func (s store) put(ctx context.Context, key string, v codec.Record) error {
+	b, err := v.MarshalVT()
 	if err != nil {
 		return fmt.Errorf("auth: encoding %s: %w", key, err)
 	}
@@ -74,9 +76,9 @@ func (s store) put(ctx context.Context, key string, v any) error {
 	return nil
 }
 
-// get reads key into v; a missing row is ErrNotFound and anything else is an
-// error, so "not there" and "could not look" stay apart.
-func (s store) get(ctx context.Context, key string, v any) error {
+// get reads key into v, which must be empty; a missing row is ErrNotFound and
+// anything else is an error, so "not there" and "could not look" stay apart.
+func (s store) get(ctx context.Context, key string, v codec.Record) error {
 	b, err := s.db.Get(ctx, key)
 	switch {
 	case errors.Is(err, ds.ErrNotFound):
@@ -84,7 +86,7 @@ func (s store) get(ctx context.Context, key string, v any) error {
 	case err != nil:
 		return fmt.Errorf("auth: reading %s: %w", key, err)
 	}
-	if err := cbor.Unmarshal(b, v); err != nil {
+	if err := codec.Decode(b, v); err != nil {
 		return fmt.Errorf("auth: decoding %s: %w", key, err)
 	}
 	return nil
@@ -128,34 +130,25 @@ func (s store) children(ctx context.Context, prefix string) ([]string, error) {
 	return slices.Compact(out), nil
 }
 
-type claim struct {
-	Created int64 `cbor:"created"` // unix nanoseconds
-	// Issuer, Subject and Login are an identity link's, kept so a user's
-	// links can be listed without reversing a hash.
-	Issuer  string `cbor:"issuer,omitempty"`
-	Subject string `cbor:"subject,omitempty"`
-	Login   string `cbor:"login,omitempty"`
-}
-
 // winner resolves the claims under prefix to one user: earliest creation,
 // lowest user id on a tie, skipping users that are gone. Every node computes
 // the same answer from the same replicated rows.
-func (s store) winner(ctx context.Context, prefix string, live func(string) bool) (string, claim, error) {
+func (s store) winner(ctx context.Context, prefix string, live func(string) bool) (string, *authv2.ClaimRow, error) {
 	ids, err := s.children(ctx, prefix)
 	if err != nil {
-		return "", claim{}, err
+		return "", nil, err
 	}
 	var (
 		best   string
-		bestAt claim
+		bestAt *authv2.ClaimRow
 	)
 	for _, id := range ids {
-		var c claim
-		if err := s.get(ctx, prefix+id, &c); err != nil {
+		c := new(authv2.ClaimRow)
+		if err := s.get(ctx, prefix+id, c); err != nil {
 			if errors.Is(err, ErrNotFound) {
 				continue
 			}
-			return "", claim{}, err
+			return "", nil, err
 		}
 		if live != nil && !live(id) {
 			continue
@@ -165,7 +158,7 @@ func (s store) winner(ctx context.Context, prefix string, live func(string) bool
 		}
 	}
 	if best == "" {
-		return "", claim{}, ErrNotFound
+		return "", nil, ErrNotFound
 	}
 	return best, bestAt, nil
 }
@@ -189,45 +182,19 @@ const (
 
 func userKey(id, field string) string { return prefixUsers + id + "/" + field }
 
-type profileRow struct {
-	Name         string   `cbor:"name"`
-	Email        string   `cbor:"email,omitempty"`
-	Local        bool     `cbor:"local,omitempty"`
-	Capabilities []string `cbor:"caps,omitempty"`
-	Created      int64    `cbor:"created"`
+func passwordRow(h password.Hash) *authv2.PasswordRow {
+	return &authv2.PasswordRow{
+		Pepper: h.Pepper, Time: h.Params.Time, MemoryKib: h.Params.Memory, Threads: uint32(h.Params.Threads),
+		KeyLen: h.Params.KeyLen, Salt: h.Salt, Sum: h.Sum,
+	}
 }
 
-type roleRow struct {
-	Role string `cbor:"role"`
-}
-
-type flagRow struct {
-	Set bool `cbor:"set"`
-}
-
-type passwordRow = password.Hash
-
-type sessionRow struct {
-	User    string `cbor:"user"`
-	Created int64  `cbor:"created"`
-	Expires int64  `cbor:"expires"`
-}
-
-// apiKeyRow is an API token, keyed by its id. Sum is the SHA-256 of the
-// secret; the secret itself is never stored.
-type apiKeyRow struct {
-	User    string `cbor:"user"`
-	Name    string `cbor:"name"`
-	Sum     []byte `cbor:"sum"`
-	Created int64  `cbor:"created"`
-	Expires int64  `cbor:"expires,omitempty"`
-}
-
-// revokedRow marks a credential revoked. Expires says when the marker may be
-// forgotten, since the credential stops verifying then anyway.
-type revokedRow struct {
-	At      int64 `cbor:"at"`
-	Expires int64 `cbor:"expires,omitempty"`
+func passwordFrom(r *authv2.PasswordRow) password.Hash {
+	return password.Hash{
+		Pepper: r.Pepper,
+		Params: password.Params{Time: r.Time, Memory: r.MemoryKib, Threads: uint8(r.Threads), KeyLen: r.KeyLen},
+		Salt:   r.Salt, Sum: r.Sum,
+	}
 }
 
 // Revocations are namespaced by what they revoke.
@@ -242,43 +209,5 @@ func (s store) revoked(ctx context.Context, kind, id string) (bool, error) {
 }
 
 func (s store) revoke(ctx context.Context, kind, id string, now time.Time, expires int64) error {
-	return s.put(ctx, prefixRevoked+kind+id, revokedRow{At: now.UnixNano(), Expires: expires})
-}
-
-// inviteRow is an invite, keyed by the digest of its code.
-type inviteRow struct {
-	ID        string `cbor:"id"`
-	Role      string `cbor:"role"`
-	Note      string `cbor:"note,omitempty"`
-	CreatedBy string `cbor:"by"`
-	Created   int64  `cbor:"created"`
-	Expires   int64  `cbor:"expires"`
-}
-
-// pendingRow is a browser sign-in between Authorize and Exchange.
-type pendingRow struct {
-	Provider  string `cbor:"provider"`
-	Redirect  string `cbor:"redirect"`
-	Verifier  string `cbor:"verifier"`
-	Nonce     string `cbor:"nonce,omitempty"`
-	Binding   string `cbor:"binding"`
-	Invite    string `cbor:"invite,omitempty"`
-	ClientID  string `cbor:"client"`
-	Created   int64  `cbor:"created"`
-	Expires   int64  `cbor:"expires"`
-	Exchanged bool   `cbor:"exchanged,omitempty"`
-}
-
-// deviceRow is a device sign-in between DeviceStart and DevicePoll.
-type deviceRow struct {
-	Provider string `cbor:"provider"`
-	Interval int64  `cbor:"interval"`
-	Expires  int64  `cbor:"expires"`
-}
-
-// keyRow is a node's published signing key.
-type keyRow struct {
-	Public  []byte `cbor:"pub"`
-	Node    string `cbor:"node"`
-	Created int64  `cbor:"created"`
+	return s.put(ctx, prefixRevoked+kind+id, &authv2.RevokedRow{At: now.UnixNano(), Expires: expires})
 }

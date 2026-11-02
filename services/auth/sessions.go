@@ -61,7 +61,7 @@ func (s *Service) issue(ctx context.Context, u user) (*authv2.Session, error) {
 	random := refreshPrefix + randomToken()
 	sid := digest(random)
 	expires := now.Add(s.cfg.RefreshTTL)
-	if err := s.store.put(ctx, prefixSessions+sid, sessionRow{User: u.ID, Created: now.UnixNano(), Expires: expires.UnixNano()}); err != nil {
+	if err := s.store.put(ctx, prefixSessions+sid, &authv2.SessionRow{User: u.ID, Created: now.UnixNano(), Expires: expires.UnixNano()}); err != nil {
 		return nil, err
 	}
 	sess, err := s.access(ctx, u, sid, expires)
@@ -182,7 +182,7 @@ func (s *Service) verifyAPIKey(ctx context.Context, raw string) (principal, erro
 	if !ok {
 		return principal{}, errUnauthenticated
 	}
-	var row apiKeyRow
+	var row authv2.ApiKeyRow
 	switch err := s.store.get(ctx, prefixAPIKeys+id, &row); {
 	case errors.Is(err, ErrNotFound):
 		return principal{}, errUnauthenticated
@@ -211,9 +211,9 @@ func (s *Service) verifyAPIKey(ctx context.Context, raw string) (principal, erro
 }
 
 // session is the live session sid: not expired, not revoked.
-func (s *Service) session(ctx context.Context, sid string) (sessionRow, error) {
-	var row sessionRow
-	switch err := s.store.get(ctx, prefixSessions+sid, &row); {
+func (s *Service) session(ctx context.Context, sid string) (*authv2.SessionRow, error) {
+	row := new(authv2.SessionRow)
+	switch err := s.store.get(ctx, prefixSessions+sid, row); {
 	case errors.Is(err, ErrNotFound):
 		return row, errUnauthenticated
 	case err != nil:
@@ -254,7 +254,7 @@ func (s *Service) refresh(ctx context.Context, raw string) (*authv2.Session, err
 
 func (s *Service) logout(ctx context.Context, raw string) error {
 	d := digest(raw)
-	var row sessionRow
+	var row authv2.SessionRow
 	if err := s.store.get(ctx, prefixSessions+d, &row); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return nil
@@ -275,14 +275,14 @@ func (s *Service) createAPIKey(ctx context.Context, u user, name string, ttl tim
 	raw := apiKeyPrefix + id + "_" + randomToken()
 	sum := sha256.Sum256([]byte(raw))
 	now := s.now()
-	row := apiKeyRow{User: u.ID, Name: name, Sum: sum[:], Created: now.UnixNano()}
+	row := &authv2.ApiKeyRow{User: u.ID, Name: name, Sum: sum[:], Created: now.UnixNano()}
 	if ttl > 0 {
 		row.Expires = now.Add(ttl).UnixNano()
 	}
 	if err := s.store.put(ctx, prefixAPIKeys+id, row); err != nil {
 		return nil, err
 	}
-	if err := s.store.put(ctx, userKey(u.ID, fieldAPIKeys)+"/"+id, claim{Created: row.Created}); err != nil {
+	if err := s.store.put(ctx, userKey(u.ID, fieldAPIKeys)+"/"+id, &authv2.ClaimRow{Created: row.Created}); err != nil {
 		return nil, err
 	}
 	t := apiKeyProto(id, row)
@@ -290,7 +290,7 @@ func (s *Service) createAPIKey(ctx context.Context, u user, name string, ttl tim
 	return t, nil
 }
 
-func apiKeyProto(id string, row apiKeyRow) *authv2.Token {
+func apiKeyProto(id string, row *authv2.ApiKeyRow) *authv2.Token {
 	t := &authv2.Token{Id: id, Name: row.Name, User: row.User, CreatedUnix: row.Created / 1e9}
 	if row.Expires != 0 {
 		t.ExpiresUnix = row.Expires / 1e9
@@ -310,11 +310,11 @@ func (s *Service) listAPIKeys(ctx context.Context, userID string) ([]*authv2.Tok
 		if err != nil {
 			return nil, err
 		}
-		var row apiKeyRow
+		var row authv2.ApiKeyRow
 		if revoked || s.store.get(ctx, prefixAPIKeys+id, &row) != nil {
 			continue
 		}
-		out = append(out, apiKeyProto(id, row))
+		out = append(out, apiKeyProto(id, &row))
 	}
 	return out, nil
 }
@@ -322,7 +322,7 @@ func (s *Service) listAPIKeys(ctx context.Context, userID string) ([]*authv2.Tok
 // revokeAPIKey revokes an API token; by is who asks, and must own it or be an
 // admin.
 func (s *Service) revokeAPIKey(ctx context.Context, by user, id string) error {
-	var row apiKeyRow
+	var row authv2.ApiKeyRow
 	switch err := s.store.get(ctx, prefixAPIKeys+id, &row); {
 	case errors.Is(err, ErrNotFound):
 		return connect.NewError(connect.CodeNotFound, errors.New("auth: no such token"))

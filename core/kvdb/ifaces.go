@@ -71,6 +71,6 @@ const (
 type Stats interface {
 	Type() Type
 	Heads() []cid.Cid
-	Encode() []byte // CBOR encoding
+	Encode() []byte // protobuf, as pkg/kvdb/pb.Stats
 	Decode(data []byte) error
 }

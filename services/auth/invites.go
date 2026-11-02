@@ -32,8 +32,8 @@ func (s *Service) createInvite(ctx context.Context, by user, role string, ttl ti
 	}
 	code := inviteCodePrefix + randomToken()
 	now := s.now()
-	row := inviteRow{ID: digest(code)[:apiKeyIDLen], Role: role, Note: note, CreatedBy: by.ID, Created: now.UnixNano(), Expires: now.Add(ttl).UnixNano()}
-	if err := s.store.put(ctx, prefixInvites+row.ID, row); err != nil {
+	row := &authv2.InviteRow{Id: digest(code)[:apiKeyIDLen], Role: role, Note: note, CreatedBy: by.ID, Created: now.UnixNano(), Expires: now.Add(ttl).UnixNano()}
+	if err := s.store.put(ctx, prefixInvites+row.Id, row); err != nil {
 		return nil, err
 	}
 	p := inviteProto(row)
@@ -41,38 +41,38 @@ func (s *Service) createInvite(ctx context.Context, by user, role string, ttl ti
 	return p, nil
 }
 
-func inviteProto(r inviteRow) *authv2.Invite {
-	p := &authv2.Invite{Id: r.ID, Role: authv2.Role_ROLE_MEMBER, ExpiresUnix: r.Expires / 1e9, Note: r.Note, CreatedBy: r.CreatedBy}
+func inviteProto(r *authv2.InviteRow) *authv2.Invite {
+	p := &authv2.Invite{Id: r.Id, Role: authv2.Role_ROLE_MEMBER, ExpiresUnix: r.Expires / 1e9, Note: r.Note, CreatedBy: r.CreatedBy}
 	if r.Role == roleAdmin {
 		p.Role = authv2.Role_ROLE_ADMIN
 	}
 	return p
 }
 
-func (s *Service) invite(ctx context.Context, code string) (inviteRow, error) {
+func (s *Service) invite(ctx context.Context, code string) (*authv2.InviteRow, error) {
 	if code == "" {
-		return inviteRow{}, ErrNotFound
+		return nil, ErrNotFound
 	}
 	id := digest(code)[:apiKeyIDLen]
-	var row inviteRow
-	if err := s.store.get(ctx, prefixInvites+id, &row); err != nil {
-		return inviteRow{}, err
+	row := new(authv2.InviteRow)
+	if err := s.store.get(ctx, prefixInvites+id, row); err != nil {
+		return nil, err
 	}
 	if s.now().UnixNano() >= row.Expires {
-		return inviteRow{}, ErrNotFound
+		return nil, ErrNotFound
 	}
 	used, err := s.store.children(ctx, prefixInvites+id+"/redeemed/")
 	if err != nil {
-		return inviteRow{}, err
+		return nil, err
 	}
 	if len(used) > 0 {
-		return inviteRow{}, ErrNotFound
+		return nil, ErrNotFound
 	}
 	return row, nil
 }
 
-func (s *Service) redeem(ctx context.Context, row inviteRow, userID string) error {
-	return s.store.put(ctx, prefixInvites+row.ID+"/redeemed/"+userID, claim{Created: s.now().UnixNano()})
+func (s *Service) redeem(ctx context.Context, row *authv2.InviteRow, userID string) error {
+	return s.store.put(ctx, prefixInvites+row.Id+"/redeemed/"+userID, &authv2.ClaimRow{Created: s.now().UnixNano()})
 }
 
 func (s *Service) listInvites(ctx context.Context) ([]*authv2.Invite, error) {
@@ -82,8 +82,8 @@ func (s *Service) listInvites(ctx context.Context) ([]*authv2.Invite, error) {
 	}
 	var out []*authv2.Invite
 	for _, id := range ids {
-		var row inviteRow
-		if err := s.store.get(ctx, prefixInvites+id, &row); err != nil {
+		row := new(authv2.InviteRow)
+		if err := s.store.get(ctx, prefixInvites+id, row); err != nil {
 			continue
 		}
 		out = append(out, inviteProto(row))

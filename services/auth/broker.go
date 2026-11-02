@@ -193,9 +193,9 @@ func (s *Service) authorize(ctx context.Context, req *authv2.AuthorizeRequest) (
 	}
 	now := s.now()
 	state := randomToken()
-	row := pendingRow{
+	row := &authv2.PendingRow{
 		Provider: p.id, Redirect: req.GetRedirectUri(), Verifier: oauth2.GenerateVerifier(), Binding: req.GetBindingChallenge(),
-		Invite: req.GetInvite(), ClientID: p.oauth.ClientID, Created: now.UnixNano(), Expires: now.Add(pendingTTL).UnixNano(),
+		Invite: req.GetInvite(), ClientId: p.oauth.ClientID, Created: now.UnixNano(), Expires: now.Add(pendingTTL).UnixNano(),
 	}
 	opts := []oauth2.AuthCodeOption{}
 	if p.pkce {
@@ -217,7 +217,7 @@ type signedInAs struct {
 
 func (s *Service) exchange(ctx context.Context, as *principal, req *authv2.ExchangeRequest) (*authv2.SignedIn, error) {
 	key := prefixPending + digest(req.GetState())
-	var row pendingRow
+	var row authv2.PendingRow
 	switch err := s.store.get(ctx, key, &row); {
 	case errors.Is(err, ErrNotFound):
 		return nil, invalid("no sign-in is waiting on that state")
@@ -231,14 +231,14 @@ func (s *Service) exchange(ctx context.Context, as *principal, req *authv2.Excha
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("auth: the binding verifier does not match the sign-in"))
 	}
 	row.Exchanged = true
-	if err := s.store.put(ctx, key, row); err != nil {
+	if err := s.store.put(ctx, key, &row); err != nil {
 		return nil, err
 	}
 	p, err := s.resolve(ctx, row.Provider, row.Redirect)
 	if err != nil {
 		return nil, err
 	}
-	if p.oauth.ClientID != row.ClientID {
+	if p.oauth.ClientID != row.ClientId {
 		return nil, invalid("the provider's configuration changed during the sign-in")
 	}
 	if err := s.withSecret(ctx, p); err != nil {
@@ -383,7 +383,7 @@ func (s *Service) signIn(ctx context.Context, who signedInAs, invite string) (us
 	if err := s.link(ctx, u.ID, who.issuer, who.subject, who.login); err != nil {
 		return user{}, err
 	}
-	if inv.ID != "" {
+	if inv != nil {
 		if err := s.redeem(ctx, inv, u.ID); err != nil {
 			return user{}, err
 		}
@@ -413,7 +413,7 @@ func (s *Service) deviceStart(ctx context.Context, req *authv2.DeviceStartReques
 		ttl = time.Until(da.Expiry)
 	}
 	expires := s.now().Add(ttl)
-	if err := s.store.put(ctx, prefixDevice+digest(da.DeviceCode), deviceRow{Provider: p.id, Interval: da.Interval, Expires: expires.UnixNano()}); err != nil {
+	if err := s.store.put(ctx, prefixDevice+digest(da.DeviceCode), &authv2.DeviceRow{Provider: p.id, Interval: da.Interval, Expires: expires.UnixNano()}); err != nil {
 		return nil, err
 	}
 	return &authv2.DeviceStartResponse{
@@ -424,7 +424,7 @@ func (s *Service) deviceStart(ctx context.Context, req *authv2.DeviceStartReques
 
 func (s *Service) devicePoll(ctx context.Context, as *principal, req *authv2.DevicePollRequest) (*authv2.DevicePollResponse, error) {
 	key := prefixDevice + digest(req.GetDeviceCode())
-	var row deviceRow
+	var row authv2.DeviceRow
 	switch err := s.store.get(ctx, key, &row); {
 	case errors.Is(err, ErrNotFound):
 		return nil, invalid("no device sign-in is waiting on that code")

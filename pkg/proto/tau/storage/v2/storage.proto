@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+// storage is what the storage service writes for itself. None of it is an RPC.
+package tau.storage.v2;
+
+// VersionRecord is the value of a version row: everything head needs, so
+// resolution never fetches a block.
+message VersionRecord {
+  string root_cid = 1;
+  uint64 size = 2;
+  string content_type = 3;
+  uint64 created_ms = 4;
+  string writer = 5;
+  bool tombstone = 6;
+  bool exclusive = 7;
+}

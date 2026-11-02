@@ -21,9 +21,3 @@ type stats struct {
 	maxHeight  uint64
 	queuedJobs int
 }
-
-type statsCbor struct {
-	Heads      [][]byte `cbor:"1,keyasint"`
-	MaxHeight  uint64   `cbor:"2,keyasint"`
-	QueuedJobs int      `cbor:"3,keyasint"`
-}
