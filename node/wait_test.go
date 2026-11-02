@@ -205,21 +205,8 @@ func TestAGossipReportSaysWhichWayEachStreamRuns(t *testing.T) {
 
 	late, deaf := newHost(t, mn), newHost(t, mn)
 
-	// deaf's router says when an RPC from late reaches it, which is late's
-	// stream up at both ends. late lists deaf among its peers sooner, while
-	// that stream is still being opened.
-	reached := make(chan struct{})
-	var once sync.Once
-	refused := &refusals{Host: deaf, of: late.ID(), refused: make(chan struct{})}
-	_, err := pubsub.NewGossipSub(t.Context(), refused, pubsub.WithAppSpecificRpcInspector(func(from peer.ID, _ *pubsub.RPC) error {
-		if from == late.ID() {
-			once.Do(func() { close(reached) })
-		}
-		return nil
-	}))
-	require.NoError(t, err)
 	deaf.RemoveStreamHandler(identify.IDPush)
-	_, err = mn.ConnectPeers(late.ID(), deaf.ID())
+	_, err := mn.ConnectPeers(late.ID(), deaf.ID())
 	require.NoError(t, err)
 
 	// deaf has identified late before late gossips, so only the push it
@@ -228,8 +215,23 @@ func TestAGossipReportSaysWhichWayEachStreamRuns(t *testing.T) {
 		protos, err := deaf.Peerstore().GetProtocols(late.ID())
 		return err == nil && slices.Contains(protos, identify.ID)
 	}, 10*time.Second, 10*time.Millisecond)
-	// AND deaf's own stream to late was refused. Opened at connect, it can still be
-	// negotiating once late gossips, and would then be the stream to late.
+
+	// deaf's router starts after the connection, so its first look at its peers
+	// finds late and tries a stream, which late refuses. Started before, it may look
+	// first and never try; and a try not yet refused when late gossips succeeds.
+	// It also says when an RPC from late reaches it, which is late's stream up at
+	// both ends. late lists deaf among its peers sooner, while that stream is still
+	// being opened.
+	reached := make(chan struct{})
+	var once sync.Once
+	refused := &refusals{Host: deaf, of: late.ID(), refused: make(chan struct{})}
+	_, err = pubsub.NewGossipSub(t.Context(), refused, pubsub.WithAppSpecificRpcInspector(func(from peer.ID, _ *pubsub.RPC) error {
+		if from == late.ID() {
+			once.Do(func() { close(reached) })
+		}
+		return nil
+	}))
+	require.NoError(t, err)
 	select {
 	case <-refused.refused:
 	case <-time.After(10 * time.Second):
