@@ -5,6 +5,7 @@ import (
 	"context"
 	"debug/elf"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -27,7 +28,7 @@ func (v values) Read(_ context.Context, label string) ([]byte, error) {
 	}
 	value, ok := v[label]
 	if !ok {
-		return nil, ErrNotGranted
+		return nil, fmt.Errorf("%w: nothing here names %s", ErrNotGranted, label)
 	}
 	return []byte(value), nil
 }
@@ -69,7 +70,7 @@ func TestWhatIsNotGrantedIsRefusedAndNeverTold(t *testing.T) {
 
 	status, body := ask(t, s, "stripe")
 	require.Equal(t, http.StatusForbidden, status)
-	require.Contains(t, body, "stripe is not granted here")
+	require.Contains(t, body, "vault: not granted: nothing here names stripe")
 
 	status, body = ask(t, s, "down")
 	require.Equal(t, http.StatusServiceUnavailable, status)

@@ -1,0 +1,10 @@
+id: QmR9QxnfmaWfcFrfpMzNTJgBXgKDvDehrLcv83hV8oYD4R
+description: busybox running the script it is handed on stdin, granted the token and nothing else
+package:
+    name: exporter_code
+execution:
+    timeout: 20s
+    memory: 32MB
+secret:
+    token:
+        ops: [get]

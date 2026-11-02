@@ -170,7 +170,7 @@ test-acme-live:
 	go test -exec '$(LEAKCHECK) $(AS_ROOT)' -tags docker_integration -count=1 -v -timeout 10m -run '^(TestARealCAIssuesThroughARealDelegation|TestTheLeftoverSweepTakesTheAnonymousVolumes)$$' ./node/boot/
 
 test-application:
-	go test -exec '$(LEAKCHECK) $(AS_ROOT)' -tags 'dreaming docker_integration' -count=1 -v -timeout 10m -run '^(TestAnApplicationAnswersThroughTheGateway|TestAContainerWorkerRunsToCompletionPerInvocation|TestAChannelServedByAContainerDeliversToItsNamedPort)$$' ./node/dream/
+	go test -exec '$(LEAKCHECK) $(AS_ROOT)' -tags 'dreaming docker_integration' -count=1 -v -timeout 10m -run '^(TestAnApplicationAnswersThroughTheGateway|TestAContainerWorkerRunsToCompletionPerInvocation|TestAContainerWorkerReadsItsSecretThroughTheHelper|TestAChannelServedByAContainerDeliversToItsNamedPort)$$' ./node/dream/
 
 # test-build runs the build service's builds in real containers, for the same
 # reason and under the same privilege as test-application: a build runs a

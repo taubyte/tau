@@ -66,3 +66,64 @@ func TestAContainerWorkerRunsToCompletionPerInvocation(t *testing.T) {
 	require.ErrorIs(t, err, container.ErrJobTimedOut)
 	require.Less(t, time.Since(start), 90*time.Second)
 }
+
+func TestAContainerWorkerReadsItsSecretThroughTheHelper(t *testing.T) {
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
+		Services:  []string{node.Register, node.Worker, node.Discovery, node.Secrets},
+		Container: node.BackendDocker,
+	})
+	require.NoError(t, err)
+	t.Cleanup(u.Close)
+	pids := u.Pids()
+	require.NotEmpty(t, pids)
+
+	at := publish(t, pids[:1], deployed{project: "shop", name: "with/worker/vault", host: "exporter.example.com"}, artifacts{})[0]
+	exporter := specs.Address{Project: "shop", Environment: "prod", Kind: "worker", Name: "exporter"}
+	token := at.idOf(t, "secret", "token")
+
+	// SET THE WAY A DEVELOPER SETS ONE; the first run retries until it lands.
+	ctx := t.Context()
+	require.NoError(t, at.node.Vault().Set(ctx, "shop", "prod", token, []byte("sk_live_1")))
+
+	run := func(script string) (string, error) {
+		res, err := at.onCarrying(ctx, exporter, http.MethodPost, "/", script)
+		if err != nil {
+			return "", err
+		}
+		return string(res.Body), nil
+	}
+
+	var last string
+	var answer string
+	require.Eventually(t, func() bool {
+		answer, err = run(`/.taubyte/secret token`)
+		if err != nil {
+			last = err.Error()
+			return false
+		}
+		return true
+	}, 3*time.Minute, time.Second, "the worker never read its secret: %s", &lastSaid{&last})
+	require.Equal(t, "sk_live_1", answer, "the value as stored, read when the run asked")
+
+	said, err := run(`env | grep -q sk_live_1 && echo leaked || echo clean`)
+	require.NoError(t, err)
+	require.Equal(t, "clean", strings.TrimSpace(said), "never in the environment")
+
+	// A RUN THAT FAILS SAYING ITS SECRET has it masked in the failure it is refused with.
+	_, err = run(`echo "rejected key $(/.taubyte/secret token)" >&2; exit 3`)
+	require.ErrorIs(t, err, container.ErrJobFailed)
+	require.ErrorContains(t, err, "rejected key ***")
+	require.NotContains(t, err.Error(), "sk_live_1")
+
+	// WHAT IT WAS NOT GRANTED is refused, with the vault's reason.
+	_, err = run(`/.taubyte/secret dbcreds`)
+	require.ErrorIs(t, err, container.ErrJobFailed)
+	require.ErrorContains(t, err, `names no secret "dbcreds"`)
+
+	// A ROTATION is what the next run reads; nothing restarts.
+	require.NoError(t, at.node.Vault().Set(ctx, "shop", "prod", token, []byte("sk_live_2")))
+	require.Eventually(t, func() bool {
+		answer, err = run(`/.taubyte/secret token`)
+		return err == nil && answer == "sk_live_2"
+	}, time.Minute, time.Second, "the rotated value was never read")
+}

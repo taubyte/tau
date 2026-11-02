@@ -1,0 +1,6 @@
+id: QmPj31BFun4XoXMynxo2Ec1fmFQii3f4mjC2qFRAECfFus
+name: vaultworker
+description: a container worker granted one secret, which it reads through the helper the platform mounts beside it - never from its environment
+environments:
+    prod:
+        branches: ["*"]

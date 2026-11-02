@@ -76,7 +76,7 @@ func (c ContainerConfig) declared() bool { return c.Backend != "" }
 
 // containerTier builds the runtime a ContainerConfig describes. A function, not a
 // method: config is inert data that constructs nothing (config_test.go's census).
-func containerTier(c ContainerConfig, disks container.Volumes) (invoke.Runtime, error) {
+func containerTier(c ContainerConfig, disks container.Volumes, secrets container.Secrets) (invoke.Runtime, error) {
 	backend, err := containerBackend(c)
 	if err != nil {
 		return nil, err
@@ -89,6 +89,7 @@ func containerTier(c ContainerConfig, disks container.Volumes) (invoke.Runtime, 
 		// operator whose author wrote one is told rather than left to assume
 		// it took effect.
 		container.WithWarn(func(format string, args ...any) { logger.Warnf(format, args...) }),
+		container.WithSecrets(secrets),
 	}
 	// A NODE WITH NOWHERE TO PUT A DIRECTORY MOUNTS NOTHING, and the tier says
 	// so on the workload that declared one rather than starting it with an

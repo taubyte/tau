@@ -183,7 +183,7 @@ func TestARealBuildReadsItsSecretThroughTheHelper(t *testing.T) {
 	require.Contains(t, said, "not in the environment")
 	require.Contains(t, said, "token is ***")
 	require.Contains(t, said, "still ***")
-	require.Contains(t, said, "slack is not granted here")
+	require.Contains(t, said, "secret: vault: not granted")
 	require.Contains(t, said, "refused with 1")
 	require.Contains(t, said, "the vault is read-only")
 }

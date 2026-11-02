@@ -80,6 +80,7 @@ type options struct {
 	port          func() (int, error)
 	dial          func(ctx context.Context, network, addr string) (net.Conn, error)
 	warn          func(format string, args ...any)
+	secrets       Secrets
 }
 
 // Volumes gives this tier the host directory a mount grant names; where volumes
@@ -283,6 +284,23 @@ func (e *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 	}
 	e.egressGap(spec)
 	e.unserved(spec)
+
+	held, secretMounts, err := e.vaultFor(spec)
+	if err != nil {
+		return nil, err
+	}
+	inst, err := e.launch(ctx, spec, append(mounts, secretMounts...))
+	if err != nil {
+		return nil, errors.Join(err, held.closeVault())
+	}
+	// HELD ONCE THE INSTANCE EXISTS: a start retried for a taken port closes the
+	// attempt that failed, and that close must not take the vault with it.
+	inst.(vaultHolder).hold(held)
+	return inst, nil
+}
+
+// launch is Start once its mounts are known.
+func (e *Runtime) launch(ctx context.Context, spec invoke.Spec, mounts []core.VolumeMount) (invoke.Instance, error) {
 
 	img, err := e.image(spec)
 	if err != nil {
@@ -537,6 +555,8 @@ type instance struct {
 	// listened, which is what makes this a Lambda image rather than a server.
 	polls bool
 
+	vaulted
+
 	mu     sync.Mutex
 	closed bool
 }
@@ -705,7 +725,7 @@ func (i *instance) Close() error {
 	apiErr := i.lambda.Close()
 	stopErr := i.eng.opts.backend.Stop(ctx, i.id)
 	removeErr := i.eng.opts.backend.Remove(ctx, i.id)
-	return errors.Join(apiErr, stopErr, removeErr)
+	return errors.Join(apiErr, stopErr, removeErr, i.closeVault())
 }
 
 // serveLambda renders the request as an event, hands it to the polling client,
@@ -792,9 +812,10 @@ func (e *Runtime) unserved(spec invoke.Spec) {
 
 	kinds := map[string]bool{}
 	for _, g := range spec.Reaches {
-		if g.Kind != invoke.MountKind {
-			kinds[g.Kind] = true
+		if g.Kind == invoke.MountKind || (g.Kind == secretKind && e.opts.secrets != nil) {
+			continue
 		}
+		kinds[g.Kind] = true
 	}
 	if len(kinds) == 0 {
 		return

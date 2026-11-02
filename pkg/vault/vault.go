@@ -93,7 +93,9 @@ func (s *Server) start(r Reader, served func([]byte)) error {
 		value, err := r.Read(req.Context(), label)
 		switch {
 		case errors.Is(err, ErrNotGranted):
-			http.Error(w, label+" is not granted here", http.StatusForbidden)
+			// The reader's reason, which says why: never declared, refused, or a verb
+			// not asked for.
+			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		case err != nil:
 			http.Error(w, "reading "+label+": "+err.Error(), http.StatusServiceUnavailable)

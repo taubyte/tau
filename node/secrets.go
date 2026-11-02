@@ -50,6 +50,17 @@ func newVault(n *Node) *vault {
 	return &vault{client: client}
 }
 
+// sharedVault is the node's one vault, made on first use. One, not one per consumer: it
+// holds a stream to a remote secrets service, and a second would be a second stream
+// to the same peer.
+func (n *Node) sharedVault() *vault {
+	if n.vault == nil {
+		n.vault = newVault(n)
+		n.closers = append(n.closers, n.vault)
+	}
+	return n.vault
+}
+
 // absent turns a vault with nobody to ask into this node's own refusal.
 func absent(err error) error {
 	if errors.Is(err, secretsService.ErrNoMembers) {

@@ -57,6 +57,8 @@ type job struct {
 	spec   invoke.Spec
 	img    Image
 	mounts []core.VolumeMount
+
+	vaulted
 }
 
 var _ invoke.Instance = (*job)(nil)
@@ -107,7 +109,7 @@ func (j *job) Serve(ctx context.Context, req *invoke.Request) (*invoke.Response,
 	}
 
 	if info.ExitCode != 0 {
-		tail := stderr
+		tail := j.granted.mask(stderr)
 		if len(tail) > stderrTail {
 			tail = tail[len(tail)-stderrTail:]
 		}
@@ -116,8 +118,8 @@ func (j *job) Serve(ctx context.Context, req *invoke.Request) (*invoke.Response,
 	return &invoke.Response{Status: 200, Body: stdout}, nil
 }
 
-// Close has nothing to release: every run removed its own container.
-func (j *job) Close() error { return nil }
+// Close releases the vault; every run removed its own container.
+func (j *job) Close() error { return j.closeVault() }
 
 // output is a finished run's stdout and stderr, demultiplexed: both backends
 // frame logs the way docker does.

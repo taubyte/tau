@@ -399,7 +399,7 @@ func (n *Node) openWorker() error {
 		if err != nil {
 			return err
 		}
-		tier, err := containerTier(n.cfg.Container, disks)
+		tier, err := containerTier(n.cfg.Container, disks, n.sharedVault())
 		if err != nil {
 			return err
 		}
@@ -466,11 +466,7 @@ func (n *Node) openWorker() error {
 			return err
 		}
 
-		// ONE VAULT FOR THE NODE, not one per consumer. It holds a stream to a
-		// remote secrets service and opening a second would be a second stream
-		// to the same peer; the worker below is handed this same value.
-		n.vault = newVault(n)
-		n.closers = append(n.closers, n.vault)
+		n.sharedVault()
 
 		// THE PEER THIS INSTANCE RUNS ON, for `taubyte:workload/identity`. It is
 		// the host's own id rather than anything derived: what a workload is
@@ -570,9 +566,7 @@ func (n *Node) openWorker() error {
 	case n.secrets != nil || n.discovery != nil:
 		// A worker with no wasm tier — an injected one, or a node with no
 		// asset store — never built the shared vault above.
-		n.vault = newVault(n)
-		n.closers = append(n.closers, n.vault)
-		options = append(options, worker.WithSecrets(n.vault))
+		options = append(options, worker.WithSecrets(n.sharedVault()))
 	}
 	if n.opts.now != nil {
 		options = append(options, worker.WithClock(n.opts.now))
