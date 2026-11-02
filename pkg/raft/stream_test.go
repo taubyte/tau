@@ -12,10 +12,11 @@ import (
 )
 
 func TestProtocol(t *testing.T) {
-	tests := []struct {
+	type testCase struct {
 		namespace string
 		expected  string
-	}{
+	}
+	tests := []testCase{
 		{"/raft/test", "/tau/raft/v2/raft/test"},
 		{"/raft/my-service", "/tau/raft/v2/raft/my-service"},
 		{"/raft/complex/path", "/tau/raft/v2/raft/complex/path"},
@@ -30,10 +31,11 @@ func TestProtocol(t *testing.T) {
 }
 
 func TestTransportProtocol(t *testing.T) {
-	tests := []struct {
+	type testCase struct {
 		namespace string
 		expected  string
-	}{
+	}
+	tests := []testCase{
 		{"/raft/test", "/tau/raft/v2/raft/test/transport"},
 		{"/raft/my-service", "/tau/raft/v2/raft/my-service/transport"},
 		{"/raft/complex/path", "/tau/raft/v2/raft/complex/path/transport"},

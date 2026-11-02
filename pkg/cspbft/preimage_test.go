@@ -101,10 +101,11 @@ func TestAJournalRecordSurvivesARoundTrip(t *testing.T) {
 
 func TestACorruptJournalRecordIsRefusedRatherThanSkipped(t *testing.T) {
 	good := Record{Kind: RecordMessage, Message: signed("a", Message{Kind: KindCommit, View: 1, Seq: 2})}.Encode()
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		b    []byte
-	}{
+	}
+	for _, tc := range []testCase{
 		{"empty", nil},
 		{"wrong domain", append([]byte("cspbft/other/v1\x00"), good[len(recordDomain):]...)},
 		{"truncated", good[:len(good)-4]},

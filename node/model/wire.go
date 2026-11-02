@@ -62,14 +62,18 @@ type openaiToolSchema struct {
 }
 
 type openaiAnswer struct {
-	Choices []struct {
-		Message      openaiMessage `json:"message"`
-		FinishReason string        `json:"finish_reason"`
-	} `json:"choices"`
-	Usage struct {
-		PromptTokens     uint32 `json:"prompt_tokens"`
-		CompletionTokens uint32 `json:"completion_tokens"`
-	} `json:"usage"`
+	Choices []openaiChoice `json:"choices"`
+	Usage   openaiUsage    `json:"usage"`
+}
+
+type openaiUsage struct {
+	PromptTokens     uint32 `json:"prompt_tokens"`
+	CompletionTokens uint32 `json:"completion_tokens"`
+}
+
+type openaiChoice struct {
+	Message      openaiMessage `json:"message"`
+	FinishReason string        `json:"finish_reason"`
 }
 
 // anthropicRequest keeps the system turn out of the message list.
@@ -115,18 +119,22 @@ type anthropicToolResult struct {
 }
 
 type anthropicAnswer struct {
-	Content []struct {
-		Type  string          `json:"type"`
-		Text  string          `json:"text"`
-		ID    string          `json:"id"`
-		Name  string          `json:"name"`
-		Input json.RawMessage `json:"input"`
-	} `json:"content"`
-	StopReason string `json:"stop_reason"`
-	Usage      struct {
-		InputTokens  uint32 `json:"input_tokens"`
-		OutputTokens uint32 `json:"output_tokens"`
-	} `json:"usage"`
+	Content    []anthropicContent `json:"content"`
+	StopReason string             `json:"stop_reason"`
+	Usage      anthropicUsage     `json:"usage"`
+}
+
+type anthropicUsage struct {
+	InputTokens  uint32 `json:"input_tokens"`
+	OutputTokens uint32 `json:"output_tokens"`
+}
+
+type anthropicContent struct {
+	Type  string          `json:"type"`
+	Text  string          `json:"text"`
+	ID    string          `json:"id"`
+	Name  string          `json:"name"`
+	Input json.RawMessage `json:"input"`
 }
 
 // anthropicDefaultMaxTokens is what is sent when neither the resource nor the

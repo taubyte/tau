@@ -140,10 +140,11 @@ func TestNew_ValidNamespace(t *testing.T) {
 func TestNew_InvalidNamespace(t *testing.T) {
 	node := newMockNode(t)
 
-	tests := []struct {
+	type testCase struct {
 		name      string
 		namespace string
-	}{
+	}
+	tests := []testCase{
 		{"empty", ""},
 	}
 

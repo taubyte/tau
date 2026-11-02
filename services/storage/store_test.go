@@ -285,7 +285,8 @@ func TestTheZeroAddressBuildsNoKey(t *testing.T) {
 }
 
 func TestAnEmptyIdentityIsRefusedAtEveryDoor(t *testing.T) {
-	for _, c := range []struct{ p, e, b, i string }{
+	type testCase struct{ p, e, b, i string }
+	for _, c := range []testCase{
 		{"", "prod", "receipts", "shop"},
 		{"proj", "", "receipts", "shop"},
 		{"proj", "prod", "", "shop"},

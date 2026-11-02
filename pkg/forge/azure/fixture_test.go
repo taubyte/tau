@@ -320,12 +320,14 @@ func (f *fixture) getProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (f *fixture) createRepo(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Name    string `json:"name"`
-		Project struct {
-			ID string `json:"id"`
-		} `json:"project"`
+	type projectRef struct {
+		ID string `json:"id"`
 	}
+	type requestBody struct {
+		Name    string     `json:"name"`
+		Project projectRef `json:"project"`
+	}
+	var body requestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
 		f.fail(w, http.StatusBadRequest, "invalid request")
 		return
@@ -376,13 +378,15 @@ func (f *fixture) deleteRepo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (f *fixture) evaluate(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Evaluations []struct {
-			SecurityNamespaceID string `json:"securityNamespaceId"`
-			Token               string `json:"token"`
-			Permissions         int    `json:"permissions"`
-		} `json:"evaluations"`
+	type evaluation struct {
+		SecurityNamespaceID string `json:"securityNamespaceId"`
+		Token               string `json:"token"`
+		Permissions         int    `json:"permissions"`
 	}
+	type requestBody struct {
+		Evaluations []evaluation `json:"evaluations"`
+	}
+	var body requestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		f.fail(w, http.StatusBadRequest, "invalid request")
 		return

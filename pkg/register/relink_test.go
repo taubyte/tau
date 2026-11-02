@@ -54,7 +54,8 @@ func TestARelinkKeepingTheConfigDropsOnlyWhatItLeavesOut(t *testing.T) {
 }
 
 func TestARelinkOverAFailingStore(t *testing.T) {
-	for _, c := range []struct{ op, sub string }{
+	type testCase struct{ op, sub string }
+	for _, c := range []testCase{
 		{"list", codePrefix}, {"list", claimPrefix + pid}, {"put", claimPrefix}, {"put", codePrefix}, {"put", repoPrefix},
 	} {
 		store := &on{MemStore: NewMemStore()}

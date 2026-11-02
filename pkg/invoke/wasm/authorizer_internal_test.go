@@ -8,10 +8,11 @@ import (
 )
 
 func TestAMalformedDecisionIsNeverAGrant(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name  string
 		value component.Value
-	}{
+	}
+	for _, tc := range []testCase{
 		{"not a variant at all", "granted"},
 		{"a bare list", []component.Value{"get"}},
 		{"nil", nil},

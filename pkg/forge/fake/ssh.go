@@ -106,7 +106,8 @@ func (c *core) sshSession(ch gossh.Channel, reqs <-chan *gossh.Request, pub []by
 			req.Reply(false, nil)
 			continue
 		}
-		var cmd struct{ Command string }
+		type execRequest struct{ Command string }
+		var cmd execRequest
 		if err := gossh.Unmarshal(req.Payload, &cmd); err != nil {
 			req.Reply(false, nil)
 			return
@@ -117,7 +118,8 @@ func (c *core) sshSession(ch gossh.Channel, reqs <-chan *gossh.Request, pub []by
 			fmt.Fprintln(ch.Stderr(), err)
 			status = 1
 		}
-		ch.SendRequest("exit-status", false, gossh.Marshal(struct{ Status uint32 }{status}))
+		type exitStatus struct{ Status uint32 }
+		ch.SendRequest("exit-status", false, gossh.Marshal(exitStatus{status}))
 		return
 	}
 }

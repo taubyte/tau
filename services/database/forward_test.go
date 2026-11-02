@@ -390,10 +390,11 @@ func TestAVoterThatAnswersEndsTheWalk(t *testing.T) {
 }
 
 func TestAHopCountThisNodeCannotReadIsTheCeiling(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		header string
 		want   int
-	}{
+	}
+	for _, tc := range []testCase{
 		{"", 0},
 		{"1", 1},
 		{"banana", maxHops},

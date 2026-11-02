@@ -648,12 +648,13 @@ func TestInstallingOnARepositoryTheCredentialCannotAdministerFails(t *testing.T)
 }
 
 func TestTheWireStringGoesInTheAttributeTheSchemeNames(t *testing.T) {
-	for _, testCase := range []struct {
+	type optionCase struct {
 		name      string
 		options   []Option
 		attribute string
 		other     string
-	}{
+	}
+	for _, testCase := range []optionCase{
 		{"standard webhooks", []Option{Signing()}, "signing_token", "token"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -677,11 +678,12 @@ func TestTheWireStringGoesInTheAttributeTheSchemeNames(t *testing.T) {
 }
 
 func TestTheHookSubscribesToPushesAndNothingElse(t *testing.T) {
-	for _, testCase := range []struct {
+	type optionCase struct {
 		name      string
 		options   []Option
 		attribute string
-	}{
+	}
+	for _, testCase := range []optionCase{
 		{"standard webhooks", []Option{Signing()}, "signing_token"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -915,10 +917,11 @@ func TestMembershipSpendsTheDeploymentsCredential(t *testing.T) {
 }
 
 func TestTheMembershipWalkKeepsEachHalfInsideOneSegment(t *testing.T) {
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		namespace, username string
 		refused             bool
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"a nested subgroup, which is the ordinary case": {namespace: "acme/team", username: "alice"},
 		"a namespace carrying a query and a fragment":   {namespace: "acme?admin=1#x", username: "alice"},
 		"a username carrying a query":                   {namespace: "acme", username: "alice?private_token=x"},

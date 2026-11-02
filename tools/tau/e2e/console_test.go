@@ -65,7 +65,8 @@ func TestTheConsolePathAgainstARealFleet(t *testing.T) {
 
 	code, out := call(http.MethodGet, "/cloud", nil)
 	require.Equal(t, http.StatusOK, code, string(out))
-	var named struct{ Fqdn string }
+	type fqdnAnswer struct{ Fqdn string }
+	var named fqdnAnswer
 	require.NoError(t, json.Unmarshal(out, &named))
 	require.Equal(t, e2eCloud, named.Fqdn)
 

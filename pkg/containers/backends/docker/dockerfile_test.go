@@ -353,9 +353,10 @@ func TestCheckDockerfile(t *testing.T) {
 		directive = "whether it is a parser directive"
 		parse     = "parsing the Dockerfile"
 	)
-	for _, test := range []struct {
+	type testCase struct {
 		name, dockerfile, refused string
-	}{
+	}
+	for _, test := range []testCase{
 		{"a local ADD", "FROM alpine\nADD ./src /app\n", ""},
 		{"COPY is never remote", "FROM alpine\nCOPY ./src /app\n", ""},
 		{"a COPY of a variable", "FROM alpine\nCOPY $SRC /app\n", ""},
@@ -521,7 +522,8 @@ func TestPinRefusesABaseItCannotCheck(t *testing.T) {
 
 func TestPinRefusesAFromTheDaemonWouldNotBuild(t *testing.T) {
 	backend, daemon := newFakeDaemonBackend(t, nil)
-	for _, test := range []struct{ dockerfile, refused string }{
+	type testCase struct{ dockerfile, refused string }
+	for _, test := range []testCase{
 		{"FROM alpine extra\n", "is not `FROM image [AS name]`"},
 		{"FROM alpine AS 1bad\n", "names its stage"},
 		{"FROM scratch AS a\nFROM scratch AS A\n", "names its stage"},

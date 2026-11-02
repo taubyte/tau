@@ -41,11 +41,12 @@ const envDoc = "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n" +
 	"    memory_preview: 16MB\n"
 
 func TestAnEnvironmentReadsItsOwnValue(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		env     string
 		timeout any
 		memory  any
-	}{
+	}
+	for _, tc := range []testCase{
 		{"", "20s", "32MB"},
 		{"production", "20s", "32MB"}, // declared nowhere in the document: the base
 		{"preview", "5s", "16MB"},
@@ -92,10 +93,11 @@ func TestAPlacementDiffersPerEnvironment(t *testing.T) {
 		"execution:\n    call: c\n    timeout: 1s\n    memory: 1MB\n" +
 		"regions:\n    pinned: [region-1]\n    pinned_preview: [region-2]\n"
 
-	for _, tc := range []struct {
+	type testCase struct {
 		env  string
 		want []string
-	}{
+	}
+	for _, tc := range []testCase{
 		{"production", []string{"region-1"}}, // declared nowhere in the document: the base
 		{"preview", []string{"region-2"}},
 	} {

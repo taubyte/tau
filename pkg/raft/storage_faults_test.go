@@ -24,10 +24,11 @@ func storedLogs(t *testing.T, logs *datastoreLogStore, indexes ...uint64) {
 // raft takes index zero for an empty log and a missing entry for one compacted
 // away; a failed disk is neither.
 func TestLogStore_ALogTheStoreCannotReadIsNotAnEmptyOne(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name  string
 		fault func(*faultStore, error)
-	}{
+	}
+	for _, tc := range []testCase{
 		{"refused query", func(s *faultStore, err error) { s.failQuery(logFaultsPrefix, err) }},
 		{"scan that fails partway", func(s *faultStore, err error) { s.failScan(logFaultsPrefix, err) }},
 	} {
@@ -59,10 +60,11 @@ func TestLogStore_ALogTheStoreCannotReadIsNotAnEmptyOne(t *testing.T) {
 }
 
 func TestLogStore_AWriteTheStoreRefusesStoresNothing(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name  string
 		fault func(*faultStore, error)
-	}{
+	}
+	for _, tc := range []testCase{
 		{"store that will not open a batch", func(s *faultStore, err error) { s.failBatches(err) }},
 		{"entry that will not stage", func(s *faultStore, err error) { s.failStaging(logKeyOf(2), err) }},
 	} {
@@ -84,10 +86,11 @@ func TestLogStore_AWriteTheStoreRefusesStoresNothing(t *testing.T) {
 }
 
 func TestLogStore_ADeleteTheStoreRefusesDeletesNothing(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name  string
 		fault func(*faultStore, error)
-	}{
+	}
+	for _, tc := range []testCase{
 		{"store that will not open a batch", func(s *faultStore, err error) { s.failBatches(err) }},
 		{"entry that will not stage", func(s *faultStore, err error) { s.failStaging(logKeyOf(3), err) }},
 	} {

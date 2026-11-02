@@ -94,10 +94,11 @@ func TestTheLocalSurfaceSaysWhyItRefuses(t *testing.T) {
 }
 
 func TestTheWireCodeSaysWhatToDoAboutIt(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		err  error
 		want connect.Code
-	}{
+	}
+	for _, c := range []testCase{
 		{ErrNoProject, connect.CodeInvalidArgument},
 		{ErrNoEnvironment, connect.CodeInvalidArgument},
 		{ErrNoID, connect.CodeInvalidArgument},

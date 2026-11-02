@@ -46,11 +46,12 @@ func TestSchemaRefusesWhatTheCompilerRefuses(t *testing.T) {
 		return doc("function", "checkout", body)
 	}
 
-	for _, tc := range []struct {
+	type testCase struct {
 		name  string
 		doc   map[string]any
 		valid bool
-	}{
+	}
+	for _, tc := range []testCase{
 		{"source absent", fn(nil), true},
 		{"a bare path", fn("pkg/checkout"), true},
 		{"a component", fn(map[string]any{"component": "paylib"}), true},
@@ -85,10 +86,11 @@ func TestSchemaAcceptsAnOptionalSwitchLeftOut(t *testing.T) {
 
 func TestSchemaRefusesAScalarWhereABlockBelongs(t *testing.T) {
 	r := resolved(t)
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		doc  map[string]any
-	}{
+	}
+	for _, tc := range []testCase{
 		{"a proxy's forward", doc("proxy", "pg", map[string]any{
 			"id": "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR", "protocol": "tcp",
 			"service": "postgres", "forward": "db"})},

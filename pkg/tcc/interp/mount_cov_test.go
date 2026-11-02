@@ -174,11 +174,12 @@ func TestAFillIsCompiledAsIfAuthoredAndRecorded(t *testing.T) {
 }
 
 func TestAFillThatSaysWhatItMayNotIsRefused(t *testing.T) {
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		files map[string]string
 		fill  map[string]string
 		want  string
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"undelegated key": {
 			map[string]string{"/site/blog.yaml": blogSite},
 			map[string]string{"tb.yaml": "title: mine\n"},
@@ -285,10 +286,11 @@ func TestAMounterThatFailsFailsTheCompile(t *testing.T) {
 	_, _, err = c.Compile(context.Background())
 	assert.ErrorContains(t, err, "id")
 
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		f    *mounter
 		want string
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"fetch error": {&mounter{err: fmt.Errorf("no route")}, "mounting site/blog reads tb.yaml from https://x/blog: no route"},
 		"no fs":       {&mounter{nofs: true}, "was answered with no filesystem"},
 		"bad fill":    {&mounter{fill: "title: mine\n"}, `sets "title", which is not delegated`},

@@ -352,7 +352,8 @@ func TestDatabaseConsensusIsUnderTheDistributedEngineOnly(t *testing.T) {
 
 	// Every data model, under its own type block, with the type's own extra fields —
 	// and both answers, since a set of one is a field nobody has to write.
-	for _, tc := range []struct{ typ, body, want string }{
+	type testCase struct{ typ, body, want string }
+	for _, tc := range []testCase{
 		{"kv", "kv:\n    distributed:\n        size: 1MB\n        consensus: crdt\n", "crdt"},
 		{"document", "document:\n    distributed:\n        size: 1MB\n        consensus: raft\n", "raft"},
 		{"sql", "sql:\n    distributed:\n        size: 1MB\n        consensus: raft\n", "raft"},
@@ -510,7 +511,8 @@ func TestDatabaseConsensusIsRequiredAndClosed(t *testing.T) {
 
 	// WRITING NOTHING IS REFUSED, on every type, and the error names the field rather
 	// than the resource: the author is told which line to add and where.
-	for _, tc := range []struct{ typ, body string }{
+	type testCase struct{ typ, body string }
+	for _, tc := range []testCase{
 		{"kv", "kv:\n    distributed:\n        size: 1MB\n"},
 		{"document", "document:\n    distributed:\n        size: 1MB\n"},
 		{"sql", "sql:\n    distributed:\n        size: 1MB\n"},
@@ -712,9 +714,10 @@ func TestDeepNamespaceRefsAreNotResolved(t *testing.T) {
 }
 
 func TestEffectClasses(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		kind, verb, effect string
-	}{
+	}
+	for _, c := range []testCase{
 		{"cache", "get", schema.Read},
 		{"cache", "put", schema.Write},
 		{"cache", "watch", schema.Read}, // observes writes it cannot cause

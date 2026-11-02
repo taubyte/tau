@@ -37,17 +37,19 @@ func containerRoot(singular bool) []*engine.Node {
 func TestAContainerIsADefOfItsOwn(t *testing.T) {
 	raw, err := GenerateJSONSchema(containerRoot(true), JSONSchemaOptions{ID: "https://example.test/s"})
 	assert.NilError(t, err)
-	var doc struct {
+	type schemaDoc struct {
 		ID         string                     `json:"$id"`
 		Defs       map[string]json.RawMessage `json:"$defs"`
 		Properties map[string]json.RawMessage `json:"properties"`
 	}
+	var doc schemaDoc
 	assert.NilError(t, json.Unmarshal(raw, &doc))
 	assert.Equal(t, doc.ID, "https://example.test/s")
 
-	var scope struct {
+	type scopeSchema struct {
 		Properties map[string]json.RawMessage `json:"properties"`
 	}
+	var scope scopeSchema
 	assert.NilError(t, json.Unmarshal(doc.Defs["Scope"], &scope))
 	var held map[string]any
 	assert.NilError(t, json.Unmarshal(scope.Properties["things"], &held))
@@ -69,11 +71,13 @@ func TestAContainerIsADefOfItsOwn(t *testing.T) {
 func TestDerivedFieldsAndBareValuesArePublished(t *testing.T) {
 	raw, err := GenerateJSONSchema(containerRoot(true), JSONSchemaOptions{ExtPrefix: "x-t-"})
 	assert.NilError(t, err)
-	var doc struct {
-		Defs map[string]struct {
-			Properties map[string]map[string]any `json:"properties"`
-		} `json:"$defs"`
+	type defSchema struct {
+		Properties map[string]map[string]any `json:"properties"`
 	}
+	type schemaDoc struct {
+		Defs map[string]defSchema `json:"$defs"`
+	}
+	var doc schemaDoc
 	assert.NilError(t, json.Unmarshal(raw, &doc))
 	label := doc.Defs["Thing"].Properties["label"]
 	assert.Equal(t, label["x-t-derived"], engine.DeriveDNSLabel)

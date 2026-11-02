@@ -125,10 +125,11 @@ func TestEveryRPCOverTheWireAuthorizesOnTheCallingPeer(t *testing.T) {
 }
 
 func TestADeniedCallerIsRefusedOnEveryRPC(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		act  Action
 		call func(*wireHarness, string) error
-	}{
+	}
+	for _, tc := range []testCase{
 		{ActEnqueue, func(h *wireHarness, _ string) error {
 			_, err := h.Queue.Enqueue(context.Background(), connect.NewRequest(&buildv2.PushEvent{
 				RepositoryKey: testRepo, Ref: testRef, CommitSha: testCommit,

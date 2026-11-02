@@ -154,13 +154,15 @@ func TestLinkManualPrintsWhatToInstall(t *testing.T) {
 	x, f := linkTester(t)
 	id := projectYAMLID(t, x.dir)
 
-	var out struct {
-		ProjectID string `json:"project_id"`
-		Install   []struct {
-			Repository, Webhook, Secret string
-			DeployKey                   string `json:"deploy_key"`
-		} `json:"install"`
+	type installJSON struct {
+		Repository, Webhook, Secret string
+		DeployKey                   string `json:"deploy_key"`
 	}
+	type linkAnswer struct {
+		ProjectID string        `json:"project_id"`
+		Install   []installJSON `json:"install"`
+	}
+	var out linkAnswer
 	cfg := f.Keys().Admin
 	require.NoError(t, json.Unmarshal([]byte(x.ok("link", "--manual", "--dir", x.dir, "--config-repo", cfg.String(), "-o", "json")), &out))
 	require.Equal(t, id, out.ProjectID)

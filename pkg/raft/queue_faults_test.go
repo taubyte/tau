@@ -104,11 +104,12 @@ func TestQueue_APopThatCannotRemoveItsItemReturnsNothing(t *testing.T) {
 
 // An entry is a length, an id of that length, then data.
 func TestQueue_ACorruptEntryIsNeitherPoppedNorPeeked(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		raw  []byte
 		says string
-	}{
+	}
+	for _, tc := range []testCase{
 		{"too short for its length", []byte{0, 0}, "entry too short"},
 		{"shorter than its id", []byte{0, 0, 0, 9, 'a', 'b'}, "entry truncated"},
 	} {

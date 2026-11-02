@@ -15,11 +15,12 @@ import (
 func TestNewRefusesEveryMissingDependency(t *testing.T) {
 	hooks, deliveries, projects, backend, callers := &fakeHooks{}, &fakeDeliveries{}, &fakeProjects{}, &fakeBackend{}, &fakeCallers{}
 
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		call func() (*Service, error)
 		want string
-	}{
+	}
+	for _, tc := range []testCase{
 		// Omitted entirely: the option was never passed.
 		{"no hooks", func() (*Service, error) {
 			return New(Config{}, WithDeliveries(deliveries), WithProjects(projects), WithBackend(backend), WithCallers(callers))
@@ -54,11 +55,12 @@ func TestNewRefusesEveryMissingDependency(t *testing.T) {
 }
 
 func TestNewRefusesAnUnusableConfig(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		cfg  Config
 		want string
-	}{
+	}
+	for _, tc := range []testCase{
 		{"negative body cap", Config{MaxBodyBytes: -1}, "maxBodyBytes"},
 		{"negative header timeout", Config{ReadHeaderTimeout: -time.Second}, "readHeaderTimeout"},
 		{"negative idle timeout", Config{IdleTimeout: -time.Second}, "idleTimeout"},
@@ -86,10 +88,11 @@ func TestNewRefusesAnUnusableConfig(t *testing.T) {
 }
 
 func TestNewRefusesANilOption(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		opt  Option
-	}{
+	}
+	for _, tc := range []testCase{
 		{"clock", WithClock(nil)},
 		{"logger", WithLogger(nil)},
 		{"http server", WithHTTPServer(nil)},

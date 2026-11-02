@@ -136,7 +136,7 @@ func (s Spec) Digest() string {
 	}
 	sort.Strings(secrets)
 
-	named, _ := json.Marshal(struct {
+	type digestInput struct {
 		Image     string            `json:"image"`
 		Path      string            `json:"path"`
 		Commands  []string          `json:"commands"`
@@ -144,7 +144,8 @@ func (s Spec) Digest() string {
 		Secrets   []string          `json:"secrets"`
 		Output    string            `json:"output"`
 		Runtime   string            `json:"runtime,omitempty"`
-	}{s.Image, filepath.ToSlash(s.Path), s.Commands, s.Variables, secrets, s.Output, s.Runtime})
+	}
+	named, _ := json.Marshal(digestInput{s.Image, filepath.ToSlash(s.Path), s.Commands, s.Variables, secrets, s.Output, s.Runtime})
 	sum := sha256.Sum256(named)
 	return hex.EncodeToString(sum[:])
 }

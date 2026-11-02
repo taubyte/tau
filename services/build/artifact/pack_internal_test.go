@@ -120,11 +120,12 @@ func TestOnlyAJSProductIsPacked(t *testing.T) {
 }
 
 func TestWhatAJSBuildCannotBePackedFrom(t *testing.T) {
-	cases := map[string]struct {
+	type testCase struct {
 		prepare func(t *testing.T, dir string)
 		output  string
 		says    string
-	}{
+	}
+	cases := map[string]testCase{
 		"nothing at the output": {
 			func(*testing.T, string) {}, "dist/worker.js", `the build left nothing at "dist/worker.js"`,
 		},

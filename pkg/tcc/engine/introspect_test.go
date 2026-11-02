@@ -87,11 +87,12 @@ func TestCheckFieldsListsEveryPlainPath(t *testing.T) {
 }
 
 func TestBranchPrefixNeedsACapturedFiniteTail(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		attr *Attribute
 		ok   bool
 		at   []string
-	}{
+	}
+	for _, tc := range []testCase{
 		{String("k", Path("a", Either("x")), Captures()), true, []string{"a"}},
 		{String("k", Path(Either("x")), Captures()), true, []string{}},
 		{String("k", Path("a", Either("x"))), false, nil},
@@ -114,11 +115,12 @@ func TestValidateFieldEnforcesTheDeclaredType(t *testing.T) {
 		StringSlice("list"),
 		String("s"),
 	}))}
-	for _, tc := range []struct {
+	type testCase struct {
 		field []string
 		value any
 		ok    bool
-	}{
+	}
+	for _, tc := range []testCase{
 		{[]string{"on"}, true, true},
 		{[]string{"on"}, "true", false},
 		{[]string{"n"}, 3, true},
@@ -251,10 +253,11 @@ func TestAnnotationsAreWhatGeneratorsRead(t *testing.T) {
 
 func TestLocatedErrorRendersWhatItKnows(t *testing.T) {
 	inner := errors.New("boom")
-	for _, tc := range []struct {
+	type testCase struct {
 		err  *LocatedError
 		want string
-	}{
+	}
+	for _, tc := range []testCase{
 		{&LocatedError{Err: inner}, "boom"},
 		{&LocatedError{File: "/a.yaml", Line: 3, Column: 4, Err: inner}, "/a.yaml:3:4: boom"},
 		{&LocatedError{File: "/a.yaml", Line: 3, Err: inner}, "/a.yaml:3: boom"},

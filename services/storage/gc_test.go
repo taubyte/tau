@@ -31,12 +31,13 @@ func TestEveryGateClosesByName(t *testing.T) {
 	require.NoError(t, openGates(observed).Open(DeadObject, now, grace, Policy{Replicas: 3, Known: true}))
 	require.NoError(t, openGates(observed).Open(MisplacementDrop, now, grace, Policy{Replicas: 3, Known: true}))
 
-	for _, c := range []struct {
+	type testCase struct {
 		name    string
 		mutate  func(*Gates)
 		purpose Purpose
 		says    string
-	}{
+	}
+	for _, c := range []testCase{
 		{"no shard", func(g *Gates) { g.HoldsShard = false }, DeadObject, "does not hold the referencing shard"},
 		{"not desired", func(g *Gates) { g.DesiredUnderStable = false }, DeadObject, "not HRW-desired"},
 		{"co-holder behind", func(g *Gates) { g.CoHoldersMerged = false }, DeadObject, "has not merged"},

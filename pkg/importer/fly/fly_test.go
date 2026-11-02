@@ -91,7 +91,8 @@ app = "shop"
 }
 
 func TestFlySizesAreRespelled(t *testing.T) {
-	for _, c := range []struct{ in, want string }{
+	type testCase struct{ in, want string }
+	for _, c := range []testCase{
 		{"512mb", "512MB"},
 		{"512MB", "512MB"},
 		{"1gb", "1GB"},

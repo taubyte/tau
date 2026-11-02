@@ -381,10 +381,11 @@ func TestAnAnswerAboutAnotherRepositoryIsRefused(t *testing.T) {
 }
 
 func TestAccessMapsGogssFlagsOntoTausRungs(t *testing.T) {
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		perms string
 		want  forge.Access
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"admin":          {`{"admin":true,"push":true,"pull":true}`, forge.AccessAdmin},
 		"push":           {`{"push":true,"pull":true}`, forge.AccessWrite},
 		"pull only":      {`{"pull":true}`, forge.AccessRead},
@@ -724,16 +725,18 @@ func TestAKeyTheForgeReportsWritableIsTakenBackOff(t *testing.T) {
 }
 
 func TestTheHookSubscribesToPushesAndNothingElse(t *testing.T) {
-	var body struct {
-		Type   string   `json:"type"`
-		Events []string `json:"events"`
-		Active bool     `json:"active"`
-		Config struct {
-			URL         string `json:"url"`
-			ContentType string `json:"content_type"`
-			Secret      string `json:"secret"`
-		} `json:"config"`
+	type hookConfigBody struct {
+		URL         string `json:"url"`
+		ContentType string `json:"content_type"`
+		Secret      string `json:"secret"`
 	}
+	type hookBody struct {
+		Type   string         `json:"type"`
+		Events []string       `json:"events"`
+		Active bool           `json:"active"`
+		Config hookConfigBody `json:"config"`
+	}
+	var body hookBody
 	sess, key := sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewDecoder(r.Body).Decode(&body)
 		w.WriteHeader(http.StatusCreated)

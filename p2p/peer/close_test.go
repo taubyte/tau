@@ -77,11 +77,12 @@ func TestCleanupGoesOnPastAFailingStepAndReportsEveryFailure(t *testing.T) {
 }
 
 func TestAPeerThatFailsToStartLeavesNoRepositoryBehind(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		name   string
 		key    []byte
 		listen []string
-	}{
+	}
+	for _, c := range []testCase{
 		{"a key that cannot be read", []byte("not a key"), localListenAddr},
 		{"an address that cannot be listened on", keypair.NewRaw(), []string{"not a multiaddr"}},
 	} {

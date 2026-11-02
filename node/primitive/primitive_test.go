@@ -125,16 +125,15 @@ func backing(t *testing.T) (*primitive.Backing, *reaching, *answering) {
 	return b, reach, service
 }
 
-// every call the seam carries, so the two rules below are asserted about all of
-// them rather than about whichever one somebody wrote a test for.
-func everyCall() []struct {
+type namedCall struct {
 	name string
 	call func(context.Context, *primitive.Backing) error
-} {
-	return []struct {
-		name string
-		call func(context.Context, *primitive.Backing) error
-	}{
+}
+
+// every call the seam carries, so the two rules below are asserted about all of
+// them rather than about whichever one somebody wrote a test for.
+func everyCall() []namedCall {
+	return []namedCall{
 		{"send", func(ctx context.Context, b *primitive.Backing) error {
 			return b.Send(ctx, jobs(), "order-1", []byte("ship it"))
 		}},

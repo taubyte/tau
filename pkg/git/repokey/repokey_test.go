@@ -68,9 +68,10 @@ func TestScpFormHasNoPort(t *testing.T) {
 }
 
 func TestParts(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		url, host, owner, name, full, ns string
-	}{
+	}
+	for _, tc := range []testCase{
 		{"https://github.com/Acme/Pay.git", "github.com", "acme", "pay", "acme/pay", "acme"},
 		{"git@gitlab.com:acme/team/widget", "gitlab.com", "acme/team", "widget", "acme/team/widget", "acme"},
 		{"https://g/x", "g", "", "x", "x", ""},
@@ -94,7 +95,8 @@ func TestParts(t *testing.T) {
 }
 
 func TestRefusals(t *testing.T) {
-	for _, tc := range []struct{ url, contains string }{
+	type testCase struct{ url, contains string }
+	for _, tc := range []testCase{
 		{"", "names no repository"},
 		{"acme/pay", "no scheme"},
 		{"https://u:ghp_secret@github.com/a/b", "carries a credential"},

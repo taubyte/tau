@@ -42,10 +42,12 @@ type OIDC struct {
 // CM is how the cloud issues certificates and proves custom domains
 // (cloud.cm).
 type CM struct {
-	ACME    ACME `yaml:"acme"`
-	Domains struct {
-		Trusted bool `yaml:"trusted"`
-	} `yaml:"domains"`
+	ACME    ACME    `yaml:"acme"`
+	Domains Domains `yaml:"domains"`
+}
+
+type Domains struct {
+	Trusted bool `yaml:"trusted"`
 }
 
 // ACME is the CA certificates are issued from. AccountKey is the path of the

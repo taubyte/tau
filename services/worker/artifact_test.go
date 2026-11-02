@@ -62,7 +62,7 @@ func source(fields ...string) specs.Resource {
 }
 
 func TestArtifactOf(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name     string
 		resource specs.Resource
 		seam     *asked
@@ -73,7 +73,8 @@ func TestArtifactOf(t *testing.T) {
 		asks     bool   // the seam was asked exactly once
 		askedFor string // ...about this id
 		askedAs  string // ...under this kind
-	}{
+	}
+	for _, tc := range []testCase{
 		// A component's id is asked about, not answered with, and asked about as a
 		// `component`, since the artifact is published under the component's own id.
 		{

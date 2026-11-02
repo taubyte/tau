@@ -94,10 +94,11 @@ func TestAnUnpublishedEnvironmentIsNotFound(t *testing.T) {
 func TestMalformedRequestsAreInvalidArgument(t *testing.T) {
 	h := newHarness(t, pkgregister.NewMemStore())
 
-	for _, c := range []struct {
+	type testCase struct {
 		name string
 		req  *registerv2.PublishRequest
-	}{
+	}
+	for _, c := range []testCase{
 		{"no project", &registerv2.PublishRequest{Environment: "prod", Revision: 1, Compiled: []byte("x")}},
 		{"no environment", &registerv2.PublishRequest{Project: "shop", Revision: 1, Compiled: []byte("x")}},
 		{"nothing compiled", &registerv2.PublishRequest{Project: "shop", Environment: "prod", Revision: 1}},
@@ -172,7 +173,8 @@ func TestEnvironmentsAndProjectsDoNotShareAPointer(t *testing.T) {
 	publish(t, h, "shop", "staging", 1, "shop staging")
 	publish(t, h, "blog", "prod", 1, "blog prod")
 
-	for _, c := range []struct{ project, env, want string }{
+	type testCase struct{ project, env, want string }
+	for _, c := range []testCase{
 		{"shop", "prod", "shop prod"},
 		{"shop", "staging", "shop staging"},
 		{"blog", "prod", "blog prod"},

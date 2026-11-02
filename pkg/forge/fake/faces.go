@@ -651,11 +651,8 @@ func newDriver(c *core) forge.Driver {
 }
 
 type payload struct {
-	Repository struct {
-		CloneURL string `json:"clone_url"`
-		FullName string `json:"full_name"`
-	} `json:"repository"`
-	Ref string `json:"ref"`
+	Repository payloadRepo `json:"repository"`
+	Ref        string      `json:"ref"`
 	// BaseRef is the branch a change was aimed at, which every forge carrying
 	// one puts right beside the ref that actually moved. It is here so that
 	// reading the wrong one is a fault a driver can have.
@@ -665,6 +662,11 @@ type payload struct {
 	// a mistake a driver can make, so the payload has to offer it.
 	Before string `json:"before"`
 	After  string `json:"after"`
+}
+
+type payloadRepo struct {
+	CloneURL string `json:"clone_url"`
+	FullName string `json:"full_name"`
 }
 
 // Delivery builds a REAL, correctly signed push delivery for a hook this forge

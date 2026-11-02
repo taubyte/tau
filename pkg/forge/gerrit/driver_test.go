@@ -305,11 +305,12 @@ func TestACreateWhoseRecordCannotBeReadIsAnError(t *testing.T) {
 }
 
 func TestMembershipRefusesAnAnswerAboutSomebodyElse(t *testing.T) {
-	cases := map[string]struct {
+	type testCase struct {
 		group, member func(w http.ResponseWriter)
 		user          string
 		want          string
-	}{
+	}
+	cases := map[string]testCase{
 		"another group": {
 			group: func(w http.ResponseWriter) { json200(w, `{"name":"other"}`) },
 			user:  "alice", want: "another group",

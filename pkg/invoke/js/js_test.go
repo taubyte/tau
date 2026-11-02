@@ -65,10 +65,11 @@ func TestNewRefusesWhatItCannotUse(t *testing.T) {
 
 func TestStartRefusesBeforeFetchingAnything(t *testing.T) {
 	f := newFixture(t, hello)
-	cases := map[string]struct {
+	type testCase struct {
 		adjust func(*invoke.Spec)
 		want   error
-	}{
+	}
+	cases := map[string]testCase{
 		"another tier's spec": {func(s *invoke.Spec) { s.Runtime = "wasm" }, invoke.ErrNoRuntime},
 		"no artifact":         {func(s *invoke.Spec) { s.Artifact = "" }, js.ErrNoArtifact},
 		"another world": {func(s *invoke.Spec) {
@@ -135,11 +136,12 @@ func TestUnservedGrantsAreSaidOutLoud(t *testing.T) {
 }
 
 func TestAnEntryWithoutAHandlerIsRefusedByName(t *testing.T) {
-	cases := map[string]struct {
+	type testCase struct {
 		worker string
 		call   string
 		want   string
-	}{
+	}
+	cases := map[string]testCase{
 		"no default export":       {`export const fetch = () => new Response("x");`, "", "the entry has no default export"},
 		"a default that is 42":    {`export default 42;`, "", "its default export is not an object"},
 		"a default with no fetch": {`export default { handle() {} };`, "", "its default export has no fetch method"},
@@ -167,7 +169,8 @@ func TestAnEntryWithoutAHandlerIsRefusedByName(t *testing.T) {
 }
 
 func TestAnEntryThatDoesNotEvaluateIsRefused(t *testing.T) {
-	cases := map[string]struct{ worker, want string }{
+	type testCase struct{ worker, want string }
+	cases := map[string]testCase{
 		"a syntax error":    {`export default {`, "SyntaxError"},
 		"a top-level throw": {`throw new Error("refusing to load");`, "refusing to load"},
 		"an unknown import": {`import x from "./missing.js"; export default x;`, `"./missing.js"`},
@@ -292,11 +295,12 @@ func TestACorruptArchiveIsRefusedByName(t *testing.T) {
 		return buf.Bytes()
 	}
 
-	cases := map[string]struct {
+	type testCase struct {
 		data []byte
 		want error
 		says string
-	}{
+	}
+	cases := map[string]testCase{
 		"not a zip":            {[]byte("this is not a zip"), js.ErrBadArchive, "zip"},
 		"no manifest":          {zipOf(t, map[string][]byte{"worker.js": worker}, zip.Deflate), js.ErrBadArchive, "no manifest.json"},
 		"a manifest not JSON":  {zipOf(t, map[string][]byte{archive.ManifestName: []byte("{"), "worker.js": worker}, zip.Deflate), js.ErrBadArchive, "its manifest"},
@@ -337,7 +341,8 @@ func TestAnArchiveLargerThanTheCeilingIsRefused(t *testing.T) {
 func TestAnArchiveFromAnotherToolStillReads(t *testing.T) {
 	var buf bytes.Buffer
 	z := zip.NewWriter(&buf)
-	for _, m := range []struct{ name, body string }{
+	type testCase struct{ name, body string }
+	for _, m := range []testCase{
 		{"lib/", ""}, {archive.ManifestName, string(manifest("worker.js", 1))}, {"worker.js", hello},
 	} {
 		w, err := z.Create(m.name)

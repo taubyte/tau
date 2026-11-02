@@ -558,11 +558,12 @@ func TestTwoProjectsNamingTheirKvTheSameThingNeverSeeEachOthersWrites(t *testing
 
 	// Each still answers its own value, asked again now both are live on this node: two
 	// values for one key from one node is what a single store cannot do.
-	for _, at := range []struct {
+	type testCase struct {
 		fleet   []*running
 		project string
 		value   string
-	}{{shop, "shop", "shop-kept"}, {market, "market", "market-kept"}} {
+	}
+	for _, at := range []testCase{{shop, "shop", "shop-kept"}, {market, "market", "market-kept"}} {
 		got, err := read(at.fleet[2], at.project, "token-1")
 		require.NoError(t, err)
 		require.Equal(t, 200, got.Status, "%s lost its own key: %s", at.project, got.Body)

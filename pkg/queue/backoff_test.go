@@ -7,12 +7,13 @@ import (
 )
 
 func TestBackoff(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name     string
 		cfg      Config
 		attempts uint32
 		want     time.Duration
-	}{
+	}
+	for _, tc := range []testCase{
 		{"no interval is no wait", Config{RetryFactor: 2}, 3, 0},
 		{"first failure uses the interval", Config{RetryInterval: time.Second, RetryFactor: 2}, 1, time.Second},
 		{"a zeroth attempt is the first", Config{RetryInterval: time.Second, RetryFactor: 2}, 0, time.Second},

@@ -109,11 +109,12 @@ func TestARevocationWins(t *testing.T) {
 
 func TestGrantRefusals(t *testing.T) {
 	r := ownedBy(t, NewMemStore())
-	for _, c := range []struct {
+	type testCase struct {
 		project, grantee string
 		role             Role
 		want             error
-	}{
+	}
+	for _, c := range []testCase{
 		{"", "bob", RoleViewer, ErrNoProject},
 		{pid, " ", RoleViewer, ErrNoGrantee},
 		{pid, "bob", Role("admin"), ErrNoRole},
@@ -163,10 +164,11 @@ func TestUnreadableGrantRowsGrantNothing(t *testing.T) {
 }
 
 func TestAStoreThatFailsUnderGrants(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		op, sub string
 		call    func(r *Register) error
-	}{
+	}
+	for _, c := range []testCase{
 		{"put", grantPrefix, func(r *Register) error { _, err := r.GrantRole(ctx, pid, "bob", RoleViewer, alice); return err }},
 		{"list", claimPrefix, func(r *Register) error { _, err := r.GrantRole(ctx, pid, "bob", RoleViewer, alice); return err }},
 		{"list", grantPrefix, func(r *Register) error { _, err := r.Grants(ctx, pid); return err }},

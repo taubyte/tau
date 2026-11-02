@@ -75,7 +75,8 @@ func (f *fakeDeliveries) Verify(hook Hook, header http.Header, body []byte) (Pus
 		if len(repo.Secret) == 0 || header.Get(testSignatureHeader) != string(repo.Secret) {
 			continue
 		}
-		var p struct{ Ref, After string }
+		type pushBody struct{ Ref, After string }
+		var p pushBody
 		if err := json.Unmarshal(body, &p); err != nil {
 			return Push{}, err
 		}

@@ -141,10 +141,11 @@ func TestARefusedModelIsDeniedWithItsReason(t *testing.T) {
 }
 
 func TestARefusalAndAnOutageAreDifferentArms(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		err  error
 		says string
-	}{
+	}
+	for _, c := range []testCase{
 		{wasm.ErrRefusedByProvider, "refused:"},
 		{errors.New("dial tcp: no route to host"), "unavailable:"},
 	} {

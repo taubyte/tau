@@ -131,10 +131,11 @@ func TestARebuiltShareIsCheckedBeforeItIsKept(t *testing.T) {
 		change(&copied)
 		return &copied
 	}
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		key  *KeyMeta
 		want string
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"not a member":       {tamper(func(k *KeyMeta) { k.Members = []string{"someone-else"} }), "not a member"},
 		"no verification":    {tamper(func(k *KeyMeta) { k.Verification = nil }), "no verification vector"},
 		"bad verification":   {tamper(func(k *KeyMeta) { k.Verification = [][]byte{[]byte("x")} }), "verification coefficient"},

@@ -422,7 +422,8 @@ func TestEnvironmentsOfAProjectNobodyPublished(t *testing.T) {
 func TestOneProjectDoesNotCollectAnothersDeployments(t *testing.T) {
 	r, _ := newRegister(t)
 
-	for _, p := range []struct{ project, environment string }{
+	type testCase struct{ project, environment string }
+	for _, p := range []testCase{
 		{"shop", "production"},
 		{"shopfront", "production"},
 		{"shopfront", "staging"},

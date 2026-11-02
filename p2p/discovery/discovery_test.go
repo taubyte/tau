@@ -139,12 +139,13 @@ func (f *fakeRouting) calls() []string {
 func TestNewRejectsWhatItCannotWatch(t *testing.T) {
 	h := newHost(t)
 
-	for _, c := range []struct {
+	type testCase struct {
 		name string
 		host host.Host
 		id   protocol.ID
 		opt  discovery.Option
-	}{
+	}
+	for _, c := range []testCase{
 		{name: "no host", id: testProtocol},
 		{name: "no protocol", host: h},
 		{name: "retry interval of zero", host: h, id: testProtocol, opt: discovery.WithRetryInterval(0)},

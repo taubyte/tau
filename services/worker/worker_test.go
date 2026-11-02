@@ -232,11 +232,12 @@ func TestAFailedLoadIsNotRemembered(t *testing.T) {
 func TestWhatIsMissingSaysWhichKindOfMissing(t *testing.T) {
 	h := newHarness(t)
 
-	for _, c := range []struct {
+	type testCase struct {
 		name string
 		req  *workerv2.InvokeRequest
 		want connect.Code
-	}{
+	}
+	for _, c := range []testCase{
 		{"no target at all", &workerv2.InvokeRequest{}, connect.CodeInvalidArgument},
 		{"an empty target", &workerv2.InvokeRequest{Target: &workerv2.Target{}}, connect.CodeInvalidArgument},
 		{"no such resource", &workerv2.InvokeRequest{Target: target("application", "nope")}, connect.CodeNotFound},
@@ -254,10 +255,11 @@ func TestWhatIsMissingSaysWhichKindOfMissing(t *testing.T) {
 }
 
 func TestTheCodeTable(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		err  error
 		want connect.Code
-	}{
+	}
+	for _, c := range []testCase{
 		{ErrNoTarget, connect.CodeInvalidArgument},
 		{register.ErrNotPublished, connect.CodeNotFound},
 		{register.ErrNoObject, connect.CodeNotFound},

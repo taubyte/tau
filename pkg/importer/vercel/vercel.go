@@ -73,11 +73,13 @@ type rule struct {
 }
 
 type headerRule struct {
-	Source  string `json:"source"`
-	Headers []struct {
-		Key   string `json:"key"`
-		Value string `json:"value"`
-	} `json:"headers"`
+	Source  string   `json:"source"`
+	Headers []header `json:"headers"`
+}
+
+type header struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 func Import(data []byte) (importer.Result, error) {

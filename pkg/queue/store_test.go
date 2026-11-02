@@ -8,7 +8,8 @@ import (
 )
 
 func TestEscape(t *testing.T) {
-	for _, tc := range []struct{ in, want string }{
+	type testCase struct{ in, want string }
+	for _, tc := range []testCase{
 		{"job-1", "job-1"},
 		{"a_b", "a_b"},
 		{"", ""},
@@ -49,7 +50,8 @@ func TestEscapeProducesASafeSegment(t *testing.T) {
 
 func TestStampIsOrderedAndFixedWidth(t *testing.T) {
 	base := time.Unix(0, 1)
-	for _, tc := range []struct{ a, b time.Time }{
+	type testCase struct{ a, b time.Time }
+	for _, tc := range []testCase{
 		{base, base.Add(time.Nanosecond)},
 		{base, base.Add(time.Hour)},
 		{time.Unix(0, 0), base},

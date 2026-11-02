@@ -55,9 +55,10 @@ func modes() []js.Mode {
 }
 
 func BenchmarkColdStart(b *testing.B) {
-	for _, size := range []struct {
+	type testCase struct {
 		name, src string
-	}{{"small", workers}, {"150KiB", bundle()}} {
+	}
+	for _, size := range []testCase{{"small", workers}, {"150KiB", bundle()}} {
 		for _, mode := range modes() {
 			b.Run(size.name+"/"+string(mode), func(b *testing.B) {
 				f := newFixture(b, size.src, js.WithMode(mode))
@@ -274,10 +275,11 @@ func (r *realm) time(b *testing.B) {
 }
 
 func BenchmarkEngine(b *testing.B) {
-	for _, k := range []struct {
+	type testCase struct {
 		name string
 		n    int
-	}{{"loop", loopN}, {"strings", stringsN}, {"arrays", arraysN}, {"closures", closuresN}} {
+	}
+	for _, k := range []testCase{{"loop", loopN}, {"strings", stringsN}, {"arrays", arraysN}, {"closures", closuresN}} {
 		for _, mode := range modes() {
 			var r *realm
 			b.Run(k.name+"/"+string(mode), func(b *testing.B) {
@@ -296,10 +298,11 @@ func BenchmarkEngine(b *testing.B) {
 func BenchmarkCall(b *testing.B) {
 	bounded, cancel := context.WithTimeout(context.Background(), time.Hour)
 	defer cancel()
-	for _, c := range []struct {
+	type testCase struct {
 		name string
 		run  context.Context
-	}{{"empty", nil}, {"empty-deadline", bounded}} {
+	}
+	for _, c := range []testCase{{"empty", nil}, {"empty-deadline", bounded}} {
 		for _, mode := range modes() {
 			var r *realm
 			b.Run(c.name+"/"+string(mode), func(b *testing.B) {
@@ -401,11 +404,12 @@ func BenchmarkServe(b *testing.B) {
 		}
 		return out
 	}
-	for _, c := range []struct {
+	type testCase struct {
 		name, src string
 		req       *invoke.Request
 		echo      bool
-	}{
+	}
+	for _, c := range []testCase{
 		{"empty", empty, get("/"), false},
 		{"workers", workers, get("/"), false},
 		{"bytes-1KiB", echoBytes, &invoke.Request{Method: "POST", Path: "/", Body: body(1 << 10)}, true},

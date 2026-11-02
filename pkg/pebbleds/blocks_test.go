@@ -204,11 +204,12 @@ func BenchmarkBlockstoreHas(b *testing.B) {
 				held[i] = block(b, fmt.Sprint(i*97), cid.Raw).Cid()
 				absent[i] = block(b, fmt.Sprint("absent", i), cid.Raw).Cid()
 			}
-			for _, c := range []struct {
+			type testCase struct {
 				name string
 				cids []cid.Cid
 				want bool
-			}{{"hit", held, true}, {"miss", absent, false}} {
+			}
+			for _, c := range []testCase{{"hit", held, true}, {"miss", absent, false}} {
 				b.Run(c.name, func(b *testing.B) {
 					b.ReportAllocs()
 					for i := range b.N {

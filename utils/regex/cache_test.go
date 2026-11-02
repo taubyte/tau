@@ -36,7 +36,8 @@ func TestAPatternIsCompiledOnce(t *testing.T) {
 
 func TestItAgreesWithTheStdlibOneShotForm(t *testing.T) {
 	reset()
-	cases := []struct{ pattern, subject string }{
+	type testCase struct{ pattern, subject string }
+	cases := []testCase{
 		{`^/api/v[0-9]+/.*$`, "/api/v2/users"},
 		{`^/api/v[0-9]+/.*$`, "/static/app.js"},
 		{`^room/[a-z0-9]+$`, "room/lobby42"},

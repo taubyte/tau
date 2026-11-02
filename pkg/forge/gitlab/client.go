@@ -45,11 +45,12 @@ type project struct {
 // Whoami is who this credential is, and it is the only honest token check GitLab
 // offers: every other endpoint can fail for a second reason.
 func (c *client) Whoami(ctx context.Context) (forge.Identity, error) {
-	var user struct {
+	type userJSON struct {
 		ID       int64  `json:"id"`
 		Username string `json:"username"`
 		Email    string `json:"email"`
 	}
+	var user userJSON
 	if _, err := c.get(ctx, routeCurrentUser.at(), nil, &user); err != nil {
 		return forge.Identity{}, err
 	}
@@ -83,20 +84,25 @@ const accessQuery = `query($fullPath: ID!) {
 // project GraphQL will not resolve is *NotFoundError. The errors array is
 // counted, not quoted: it is prose the instance composed.
 func (c *client) Access(ctx context.Context, key repokey.Key) (forge.Access, error) {
-	var answer struct {
-		Data struct {
-			Project *struct {
-				FullPath        string `json:"fullPath"`
-				UserPermissions struct {
-					PushCode     bool `json:"pushCode"`
-					AdminProject bool `json:"adminProject"`
-				} `json:"userPermissions"`
-			} `json:"project"`
-		} `json:"data"`
-		Errors []struct {
-			Message string `json:"message"`
-		} `json:"errors"`
+	type permissionsJSON struct {
+		PushCode     bool `json:"pushCode"`
+		AdminProject bool `json:"adminProject"`
 	}
+	type projectJSON struct {
+		FullPath        string          `json:"fullPath"`
+		UserPermissions permissionsJSON `json:"userPermissions"`
+	}
+	type projectData struct {
+		Project *projectJSON `json:"project"`
+	}
+	type graphqlError struct {
+		Message string `json:"message"`
+	}
+	type projectAnswer struct {
+		Data   projectData    `json:"data"`
+		Errors []graphqlError `json:"errors"`
+	}
+	var answer projectAnswer
 
 	// GraphQL answers 200 for failures, so anything unrecognised is an error, never
 	// a level.
@@ -261,10 +267,11 @@ func isPageNumber(s string) bool {
 // stored nowhere. The resolved namespace's path is compared with the one asked
 // for, because the lookup follows a renamed path's redirect.
 func (c *client) Create(ctx context.Context, key repokey.Key, opts forge.CreateOptions) (forge.Repository, error) {
-	var namespace struct {
+	type namespaceJSON struct {
 		ID       int64  `json:"id"`
 		FullPath string `json:"full_path"`
 	}
+	var namespace namespaceJSON
 	if _, err := c.get(ctx, routeNamespace.at(key.Owner), nil, &namespace); err != nil {
 		return forge.Repository{}, err
 	}
@@ -320,10 +327,11 @@ func (c *client) Delete(ctx context.Context, key repokey.Key) error {
 // and removing it detaches it from this project only.
 func (c *client) InstallDeployKey(ctx context.Context, key repokey.Key, title, publicKey string) (forge.Handle, error) {
 	body := map[string]any{"title": title, "key": publicKey, "can_push": false}
-	var installed struct {
+	type deployKeyJSON struct {
 		ID      int64 `json:"id"`
 		CanPush bool  `json:"can_push"`
 	}
+	var installed deployKeyJSON
 	if err := c.send(ctx, routeInstallDeployKey.at(key.FullName()), &key, body, &installed); err != nil {
 		return "", err
 	}
@@ -348,11 +356,12 @@ func (c *client) InstallDeployKey(ctx context.Context, key repokey.Key, title, p
 func (c *client) ListDeployKeys(ctx context.Context, key repokey.Key) ([]forge.InstalledDeployKey, error) {
 	var out []forge.InstalledDeployKey
 	err := c.pages(ctx, routeListDeployKeys, key, func(raw json.RawMessage) error {
-		var got []struct {
+		type existing struct {
 			ID    int64  `json:"id"`
 			Title string `json:"title"`
 			Key   string `json:"key"`
 		}
+		var got []existing
 		if err := json.Unmarshal(raw, &got); err != nil {
 			return err
 		}
@@ -374,10 +383,11 @@ type hookClient struct{ *client }
 func (c *hookClient) ListPushHooks(ctx context.Context, key repokey.Key) ([]forge.InstalledPushHook, error) {
 	var out []forge.InstalledPushHook
 	err := c.pages(ctx, routeListPushHooks, key, func(raw json.RawMessage) error {
-		var got []struct {
+		type existing struct {
 			ID  int64  `json:"id"`
 			URL string `json:"url"`
 		}
+		var got []existing
 		if err := json.Unmarshal(raw, &got); err != nil {
 			return err
 		}
@@ -448,9 +458,10 @@ func (c *hookClient) RegisterPushHook(ctx context.Context, key repokey.Key, call
 		"signing_token":            wire,
 	}
 
-	var registered struct {
+	type hookJSON struct {
 		ID int64 `json:"id"`
 	}
+	var registered hookJSON
 	if err := c.send(ctx, routeRegisterPushHook.at(key.FullName()), &key, body, &registered); err != nil {
 		return "", err
 	}

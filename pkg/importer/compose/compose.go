@@ -59,17 +59,18 @@ type file struct {
 // platform's decision — it places, it reconciles, it re-places when a node
 // dies. A replica count carried across would be a number nothing honours.
 type deploy struct {
-	Replicas  *int `yaml:"replicas"`
-	Resources struct {
-		Limits struct {
-			Memory string `yaml:"memory"`
-			CPUs   string `yaml:"cpus"`
-		} `yaml:"limits"`
-		Reservations struct {
-			Memory string `yaml:"memory"`
-			CPUs   string `yaml:"cpus"`
-		} `yaml:"reservations"`
-	} `yaml:"resources"`
+	Replicas  *int            `yaml:"replicas"`
+	Resources deployResources `yaml:"resources"`
+}
+
+type deployResources struct {
+	Limits       resourceAmount `yaml:"limits"`
+	Reservations resourceAmount `yaml:"reservations"`
+}
+
+type resourceAmount struct {
+	Memory string `yaml:"memory"`
+	CPUs   string `yaml:"cpus"`
 }
 
 func (d deploy) isZero() bool {
@@ -348,10 +349,11 @@ func importService(r *importer.Result, kind, source string, s service, volumes m
 
 	// Everything the runtime has no field for. Each names what would unblock
 	// it, so the list is a contract to-do rather than a shrug.
-	for _, b := range []struct {
+	type buildCheck struct {
 		key, needs, detail string
 		present            bool
-	}{
+	}
+	for _, b := range []buildCheck{
 		// READINESS AND LIVENESS EXIST, and a compose healthcheck still does
 		// not fit them: tau probes over HTTP or through a function, and a
 		// compose check is a command run inside the container. The Needs names
@@ -588,11 +590,12 @@ func buildToDockerfile(n yaml.Node) map[string]any {
 		out["context"] = n.Value
 		return out
 	}
-	var m struct {
+	type buildSpec struct {
 		Context    string `yaml:"context"`
 		Dockerfile string `yaml:"dockerfile"`
 		Target     string `yaml:"target"`
 	}
+	var m buildSpec
 	if err := n.Decode(&m); err != nil {
 		return out
 	}
@@ -674,9 +677,10 @@ func dependsOn(n yaml.Node) []string {
 	if n.Kind == yaml.SequenceNode {
 		return stringsOf(n)
 	}
-	var m map[string]struct {
+	type dependsOnCondition struct {
 		Condition string `yaml:"condition"`
 	}
+	var m map[string]dependsOnCondition
 	if err := n.Decode(&m); err != nil {
 		return nil
 	}

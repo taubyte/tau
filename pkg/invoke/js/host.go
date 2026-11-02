@@ -24,10 +24,11 @@ var errWindow = errors.New("js: the prelude's window does not hold what it was t
 
 func (i *instance) hostObject(stdout, stderr io.Writer) (engine.Value, error) {
 	host := i.rt.NewObject()
-	for _, f := range []struct {
+	type hostFunc struct {
 		name string
 		fn   engine.HostFunction
-	}{
+	}
+	for _, f := range []hostFunc{
 		{"window", engine.Fn1(func(buf engine.Value) bool {
 			i.window = buf
 			return true

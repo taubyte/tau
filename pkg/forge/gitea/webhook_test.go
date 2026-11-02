@@ -125,11 +125,13 @@ func TestTheWireStringThisDriverHandsGiteaIsTheVector(t *testing.T) {
 
 	raw, err := c.sent[0].GetBody()
 	require.NoError(t, err)
-	var body struct {
-		Config struct {
-			Secret string `json:"secret"`
-		} `json:"config"`
+	type hookConfigBody struct {
+		Secret string `json:"secret"`
 	}
+	type hookBody struct {
+		Config hookConfigBody `json:"config"`
+	}
+	var body hookBody
 	require.NoError(t, json.NewDecoder(raw).Decode(&body))
 
 	assert.Equal(t, vectorWire, body.Config.Secret,

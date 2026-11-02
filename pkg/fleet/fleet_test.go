@@ -75,11 +75,12 @@ func TestResolvedFillsEachZeroSeparately(t *testing.T) {
 }
 
 func TestAPairThatCannotBeCorrectIsRefused(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		name string
 		in   fleet.Storage
 		says string
-	}{
+	}
+	for _, c := range []testCase{
 		{"barrier above replicas", fleet.Storage{Replicas: 2, Barrier: 3}, "every write would fail"},
 		{"barrier above the default replicas", fleet.Storage{Barrier: 5}, "every write would fail"},
 		{"negative replicas", fleet.Storage{Replicas: -1}, "places nothing"},

@@ -185,11 +185,12 @@ func (c closing) Join(topic string, opts ...pubsub.TopicOpt) (*pubsub.Topic, err
 }
 
 func TestACopyThatCannotGossipIsNotOpened(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name   string
 		router func(*pubsub.PubSub) swarm.PubSub
 		err    error
-	}{
+	}
+	for _, tc := range []testCase{
 		{"the topic cannot be joined", func(*pubsub.PubSub) swarm.PubSub { return refusing{} }, errRefused},
 		{"the topic cannot be subscribed to", func(ps *pubsub.PubSub) swarm.PubSub { return closing{ps} }, pubsub.ErrTopicClosed},
 	} {

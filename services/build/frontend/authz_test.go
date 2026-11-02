@@ -86,12 +86,13 @@ func TestOnlyABearerSchemeIsRead(t *testing.T) {
 }
 
 func TestAuthsAnswersAboutACaller(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		name string
 		err  error
 		user string
 		want int
-	}{
+	}
+	for _, c := range []testCase{
 		{"unauthenticated", connect.NewError(connect.CodeUnauthenticated, errors.New("revoked")), "", http.StatusUnauthorized},
 		{"no user", nil, "", http.StatusUnauthorized},
 		{"auth is down", errors.New("dial"), "", http.StatusBadGateway},

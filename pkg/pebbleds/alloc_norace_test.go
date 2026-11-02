@@ -26,11 +26,12 @@ func TestAllocs(t *testing.T) {
 	r, err := s.NewReader()
 	must(t, err)
 	defer r.Close()
-	cases := []struct {
+	type testCase struct {
 		name string
 		max  float64
 		fn   func()
-	}{
+	}
+	cases := []testCase{
 		{"View", 0, func() { must(t, s.View(key, view)) }},
 		{"Scan", 0, func() { must(t, s.Scan(prefix, scan)) }},
 		{"Range", 0, func() { must(t, s.Range(prefix, nil, scan)) }},

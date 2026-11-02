@@ -160,17 +160,23 @@ func (c *client) classifyResource(err error) error {
 }
 
 type repoJSON struct {
-	FullName   string `json:"full_name"`
-	IsPrivate  bool   `json:"is_private"`
-	MainBranch *struct {
-		Name string `json:"name"`
-	} `json:"mainbranch"`
-	Links struct {
-		Clone []struct {
-			Name string `json:"name"`
-			Href string `json:"href"`
-		} `json:"clone"`
-	} `json:"links"`
+	FullName   string        `json:"full_name"`
+	IsPrivate  bool          `json:"is_private"`
+	MainBranch *branchJSON   `json:"mainbranch"`
+	Links      repoLinksJSON `json:"links"`
+}
+
+type repoLinksJSON struct {
+	Clone []cloneLinkJSON `json:"clone"`
+}
+
+type cloneLinkJSON struct {
+	Name string `json:"name"`
+	Href string `json:"href"`
+}
+
+type branchJSON struct {
+	Name string `json:"name"`
 }
 
 func (r repoJSON) clone(name string) string {

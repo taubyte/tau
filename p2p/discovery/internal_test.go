@@ -44,7 +44,8 @@ func someone(t *testing.T) peer.ID {
 func TestAnEventOfSomeOtherKind(t *testing.T) {
 	d, _ := guarded(t)
 
-	d.onEvent(struct{ Peer peer.ID }{Peer: someone(t)})
+	type testCase struct{ Peer peer.ID }
+	d.onEvent(testCase{Peer: someone(t)})
 
 	assert.Empty(t, d.Known())
 }

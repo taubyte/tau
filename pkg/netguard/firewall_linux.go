@@ -236,10 +236,11 @@ func InstallBridgeFilter(bridge string) error {
 		// FORWARD covers container -> external. INPUT covers container -> a host
 		// service reached via the bridge gateway IP (delivered locally, not
 		// forwarded), which the forward rule alone would miss.
-		for _, hk := range []struct {
+		type chainHook struct {
 			name string
 			hook *nftables.ChainHook
-		}{{"forward", nftables.ChainHookForward}, {"input", nftables.ChainHookInput}} {
+		}
+		for _, hk := range []chainHook{{"forward", nftables.ChainHookForward}, {"input", nftables.ChainHookInput}} {
 			ch := c.AddChain(&nftables.Chain{
 				Name:     "egress_" + hk.name,
 				Table:    t,
@@ -255,10 +256,11 @@ func InstallBridgeFilter(bridge string) error {
 			}
 			c.AddRule(&nftables.Rule{Table: t, Chain: ch, Exprs: acceptAnswersExprs()})
 			c.AddRule(&nftables.Rule{Table: t, Chain: ch, Exprs: append(fromBridge(), dropLocalExprs()...)})
-			for _, fam := range []struct {
+			type familySet struct {
 				v6  bool
 				set *nftables.Set
-			}{{false, v4}, {true, v6}} {
+			}
+			for _, fam := range []familySet{{false, v4}, {true, v6}} {
 				c.AddRule(&nftables.Rule{Table: t, Chain: ch, Exprs: append(fromBridge(), dropDeniedExprs(fam.v6, fam.set)...)})
 			}
 		}
@@ -297,10 +299,11 @@ func InstallCgroupFilter(cgroupID uint64, level uint32) error {
 		}
 		c.AddRule(&nftables.Rule{Table: t, Chain: ch, Exprs: acceptAnswersExprs()})
 		c.AddRule(&nftables.Rule{Table: t, Chain: ch, Exprs: append(inCgroup(), dropLocalExprs()...)})
-		for _, fam := range []struct {
+		type familySet struct {
 			v6  bool
 			set *nftables.Set
-		}{{false, v4}, {true, v6}} {
+		}
+		for _, fam := range []familySet{{false, v4}, {true, v6}} {
 			c.AddRule(&nftables.Rule{Table: t, Chain: ch, Exprs: append(inCgroup(), dropDeniedExprs(fam.v6, fam.set)...)})
 		}
 	})

@@ -609,7 +609,7 @@ func checkMountedSites(all []compiled) []Finding {
 // clean, fails on live traffic" into an error at compile.
 func checkHostWorlds(all []compiled) []Finding {
 	// "scope\x00name" -> declared world and the function's own compiled id.
-	world := map[string]struct{ w, id string }{}
+	world := map[string]hostWorld{}
 	for _, res := range all {
 		if res.kind != "function" {
 			continue
@@ -618,7 +618,7 @@ func checkHostWorlds(all []compiled) []Finding {
 		if w == "" {
 			w = "handler"
 		}
-		world[res.scope+"\x00"+res.name] = struct{ w, id string }{w, res.id}
+		world[res.scope+"\x00"+res.name] = hostWorld{w, res.id}
 	}
 
 	// A use names a function and expects one world of it.
@@ -705,14 +705,17 @@ func checkHostWorlds(all []compiled) []Finding {
 	return out
 }
 
+// hostWorld is a function's declared world and its own compiled id.
+type hostWorld struct{ w, id string }
+
 // lookupWorld resolves a named function the way every name is resolved.
-func lookupWorld(world map[string]struct{ w, id string }, name, own, ns string) (struct{ w, id string }, bool) {
+func lookupWorld(world map[string]hostWorld, name, own, ns string) (hostWorld, bool) {
 	for _, scope := range scopeChain(own, ns) {
 		if w, ok := world[scope+"\x00"+name]; ok {
 			return w, true
 		}
 	}
-	return struct{ w, id string }{}, false
+	return hostWorld{}, false
 }
 
 // checkWorkflows: what only a workflow can get wrong. A step naming a function that

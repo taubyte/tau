@@ -100,7 +100,8 @@ func TestTheServerAnswersOnlyUploadPack(t *testing.T) {
 	}
 	require.False(t, ask("shell", nil), "a shell was granted")
 	require.False(t, ask("exec", []byte{0xff}), "a malformed exec was granted")
-	require.False(t, ask("exec", gossh.Marshal(struct{ Command string }{"git-receive-pack '/x/y.git'"})), "a push was granted")
+	type testCase struct{ Command string }
+	require.False(t, ask("exec", gossh.Marshal(testCase{"git-receive-pack '/x/y.git'"})), "a push was granted")
 	require.Equal(t, 0, s.Served())
 }
 

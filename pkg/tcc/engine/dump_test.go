@@ -196,10 +196,11 @@ func TestDump_SkipsDefaultAttributeValues(t *testing.T) {
 }
 
 func TestDump_KeepsADefaultItsBranchDoesNotTake(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		tier    string
 		written bool
-	}{
+	}
+	for _, tc := range []testCase{
 		{"b", false},
 		{"a", true},
 		{"", true},

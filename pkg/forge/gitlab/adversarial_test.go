@@ -225,10 +225,11 @@ func TestAdvNoInstanceChosenSentenceReachesAnError(t *testing.T) {
 		_, err := s.Repository(context.Background(), k)
 		return err
 	}
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		answer string
 		call   func(*forge.Session, repokey.Key) error
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"a graphql errors array": {
 			answer: `{"data":{"project":null},"errors":[{"message":"could not authenticate $TOKEN"}]}`,
 			call: func(s *forge.Session, k repokey.Key) error {

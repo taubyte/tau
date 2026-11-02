@@ -221,9 +221,10 @@ func TestASecretMissingEitherHalfIsRefusedByName(t *testing.T) {
 	blob, _ := selfSigned(t, "db.tau.example.io")
 	cert, key := split(t, blob)
 
-	for _, c := range []struct {
+	type testCase struct {
 		name, value, says string
-	}{
+	}
+	for _, c := range []testCase{
 		{"only the chain", cert, "holds no private key"},
 		{"only the key", key, "holds no certificate"},
 		{"neither", "not pem at all", "holds no certificate"},

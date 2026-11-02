@@ -22,11 +22,12 @@ const maxPages = 1000
 // Whoami is who this credential belongs to, and the only honest check that it
 // is still good.
 func (c *client) Whoami(ctx context.Context) (forge.Identity, error) {
-	var a struct {
+	type accountJSON struct {
 		ID       int64  `json:"_account_id"`
 		Username string `json:"username"`
 		Email    string `json:"email"`
 	}
+	var a accountJSON
 	if err := c.send(ctx, routeSelf.at(), nil, &a); err != nil {
 		return forge.Identity{}, c.classify(err, repokey.Key{})
 	}

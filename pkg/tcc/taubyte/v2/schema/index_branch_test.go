@@ -9,11 +9,13 @@ import (
 	"gotest.tools/v3/assert"
 )
 
+type branchCase struct {
+	branch, segment string
+}
+
 // Branch shapes that turn up in real repositories: the default, a topic branch, a
 // release line, a bot's, and one holding the escape character.
-var branchShapes = []struct {
-	branch, segment string
-}{
+var branchShapes = []branchCase{
 	{"main", "main"},
 	{"feature/x", "feature%2Fx"},
 	{"release/1.2", "release%2F1.2"},

@@ -61,10 +61,11 @@ func TestLevelDoesNotAllocate(t *testing.T) {
 
 // Frozen roots: a change to any is a change of format profile.
 func TestRootVectors(t *testing.T) {
-	cases := []struct {
+	type testCase struct {
 		n    int
 		root string
-	}{
+	}
+	cases := []testCase{
 		{1, "bafkreigfxagkuku67pxqtorelkigv3zgndvinkn5nbflbmd74egziuamui"},
 		{2, "bafkreiglxjqkfln22dkvopct5uhbv4ccdlq7434vhxjd4jqc2bnxiuriwu"},
 		{100, "bafkreidzclbrhic5gkd6tviefyukwtsywf7dwwjmuub3zv7xfhh62iywfe"},
@@ -166,11 +167,12 @@ func TestDecodeRefuses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, c := range map[string]struct {
+	type testCase struct {
 		nd    ipld.Node
 		below uint32
 		want  error
-	}{
+	}
+	for name, c := range map[string]testCase{
 		"format 0":            {block(t, &pb.Node{Entries: []*pb.Entry{{Suffix: []byte("a")}}}), noLevel, ErrFormat},
 		"format 1":            {block(t, &pb.Node{Format: 1, Entries: []*pb.Entry{{Suffix: []byte("a")}}}), noLevel, ErrFormat},
 		"no entries":          {block(t, &pb.Node{Format: 2}), noLevel, ErrMalformed},

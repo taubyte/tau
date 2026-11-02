@@ -40,11 +40,12 @@ func TestARequiredTableMustHoldAnEntry(t *testing.T) {
 		}
 		return map[string]any{"one": body}
 	}
-	for _, tc := range []struct {
+	type testCase struct {
 		name  string
 		doc   map[string]any
 		valid bool
-	}{
+	}
+	for _, tc := range []testCase{
 		{"one stage", map[string]any{"stages": stages}, true},
 		{"one stage, a thing with a part", map[string]any{"stages": stages, "things": thing(map[string]any{"a": map[string]any{"size": "1"}})}, true},
 		{"no stages", map[string]any{}, false},

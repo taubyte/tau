@@ -288,10 +288,11 @@ func (f *fixture) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
-	var body struct {
+	type requestBody struct {
 		Name   string   `json:"name"`
 		Owners []string `json:"owners"`
 	}
+	var body requestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || (body.Name != "" && body.Name != name) {
 		fail(w, http.StatusBadRequest, "name must match URL")
 		return
@@ -318,13 +319,16 @@ func (f *fixture) restrict(w http.ResponseWriter, r *http.Request) {
 	if !f.user(w, r) {
 		return
 	}
-	var body struct {
-		Add map[string]struct {
-			Permissions map[string]struct {
-				Exclusive bool `json:"exclusive"`
-			} `json:"permissions"`
-		} `json:"add"`
+	type permissionBody struct {
+		Exclusive bool `json:"exclusive"`
 	}
+	type accessBody struct {
+		Permissions map[string]permissionBody `json:"permissions"`
+	}
+	type requestBody struct {
+		Add map[string]accessBody `json:"add"`
+	}
+	var body requestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		fail(w, http.StatusBadRequest, "bad request")
 		return

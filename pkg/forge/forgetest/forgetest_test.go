@@ -8,10 +8,11 @@ import (
 )
 
 func TestEveryShapePasses(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name  string
 		shape fake.Shape
-	}{
+	}
+	for _, tc := range []testCase{
 		{"github-like", fake.GitHubLike},
 		{"gitlab-like-nested-standard-webhooks", fake.GitLabLike},
 		{"gitea-like", fake.GiteaLike},

@@ -175,10 +175,11 @@ func TestQuery(t *testing.T) {
 	for i, k := range []string{"/q/a", "/q/b", "/q/c", "/q/d", "/r/a"} {
 		must(t, s.Put(ctx, ds.RawKey(k), bytes.Repeat([]byte{'x'}, 5-i)))
 	}
-	cases := []struct {
+	type testCase struct {
 		q    query.Query
 		want []string
-	}{
+	}
+	cases := []testCase{
 		{query.Query{Prefix: "/q"}, []string{"/q/a", "/q/b", "/q/c", "/q/d"}},
 		{query.Query{Prefix: "/q", Orders: []query.Order{&query.OrderByKey{}}}, []string{"/q/a", "/q/b", "/q/c", "/q/d"}},
 		{query.Query{Prefix: "/q", Orders: []query.Order{query.OrderByKeyDescending{}}}, []string{"/q/d", "/q/c", "/q/b", "/q/a"}},

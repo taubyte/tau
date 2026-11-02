@@ -191,12 +191,13 @@ func TestNoJobRouteSpendsTheCloudOnceForEveryRequest(t *testing.T) {
 		}
 	}
 
-	for _, tc := range []struct {
+	type testCase struct {
 		name   string
 		method string
 		path   string
 		count  func(*harness, *int)
-	}{
+	}
+	for _, tc := range []testCase{
 		{"GET /job", http.MethodGet, "/job/" + testJobID, countGets},
 		{"POST /cancel", http.MethodPost, "/cancel/" + testJobID, countGets},
 		{"POST /retry", http.MethodPost, "/retry/" + testJobID, countGets},
@@ -296,10 +297,11 @@ func TestOneCredentialsBurstDoesNotSpendTheWholeJobAPI(t *testing.T) {
 }
 
 func TestARequestThatCostsNothingSpendsNoLimit(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name    string
 		request func() *http.Request
-	}{
+	}
+	for _, tc := range []testCase{
 		{"no credential", func() *http.Request {
 			return authed(http.MethodGet, "/job/"+testJobID, "")
 		}},

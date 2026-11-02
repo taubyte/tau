@@ -59,12 +59,13 @@ func churn(t *testing.T, replicas []*Datastore, dagsyncs []*fetchThroughDAGSvc, 
 
 func TestStorageIsBoundedUnderChurn(t *testing.T) {
 	const cycles = 400
-	for _, tc := range []struct {
+	type testCase struct {
 		name      string
 		replicas  int
 		key       func(int) string
 		overwrite bool
-	}{
+	}
+	for _, tc := range []testCase{
 		{"same key, one replica", 1, func(int) string { return "k" }, false},
 		{"unique keys, one replica", 1, func(c int) string { return fmt.Sprintf("k%d", c) }, false},
 		{"same key, three replicas", 3, func(int) string { return "k" }, false},

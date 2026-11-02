@@ -67,10 +67,11 @@ func (c Config) withDefaults() (Config, error) {
 	if c.Name == "" {
 		return c, ErrNoName
 	}
-	for _, d := range []struct {
+	type namedDuration struct {
 		name  string
 		value time.Duration
-	}{
+	}
+	for _, d := range []namedDuration{
 		{"visibilityTimeout", c.VisibilityTimeout},
 		{"delay", c.Delay},
 		{"retryInterval", c.RetryInterval},

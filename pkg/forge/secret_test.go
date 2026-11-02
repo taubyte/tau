@@ -18,10 +18,11 @@ func TestASecretHasNoRendering(t *testing.T) {
 	require.Len(t, s.Expose(), SecretSize)
 
 	raw := string(s.Expose())
-	enclosing := struct {
+	type hookWithSecret struct {
 		Name   string
 		Secret Secret
-	}{Name: "hook", Secret: s}
+	}
+	enclosing := hookWithSecret{Name: "hook", Secret: s}
 
 	for _, rendered := range []string{
 		fmt.Sprint(s),

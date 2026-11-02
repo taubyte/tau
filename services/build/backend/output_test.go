@@ -320,11 +320,12 @@ func TestAnAssetStoreThatReturnsNoCidIsRefused(t *testing.T) {
 func TestNothingIsLeftFollowableAfterARun(t *testing.T) {
 	h := newHarness(t)
 
-	for _, tc := range []struct {
+	type testCase struct {
 		name   string
 		commit string
 		run    func(context.Context, Work, Output) error
-	}{
+	}
+	for _, tc := range []testCase{
 		{"a build that succeeded", "1111111111111111111111111111111111111111",
 			func(context.Context, Work, Output) error { return nil }},
 		{"a build that failed", "2222222222222222222222222222222222222222",

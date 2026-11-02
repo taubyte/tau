@@ -20,29 +20,41 @@ func (d *driver) Scheme() forge.Scheme { return forge.SchemeBitbucketSHA256 }
 var zeroCommit = strings.Repeat("0", 40)
 
 type refJSON struct {
-	Type   string `json:"type"`
-	Name   string `json:"name"`
-	Target struct {
-		Hash string `json:"hash"`
-	} `json:"target"`
+	Type   string     `json:"type"`
+	Name   string     `json:"name"`
+	Target targetJSON `json:"target"`
+}
+
+type targetJSON struct {
+	Hash string `json:"hash"`
 }
 
 // pushPayload reads only what a Push needs: every field kept is one more thing
 // downstream comes to trust.
 type pushPayload struct {
-	Repository struct {
-		Links struct {
-			HTML struct {
-				Href string `json:"href"`
-			} `json:"html"`
-		} `json:"links"`
-	} `json:"repository"`
-	Push struct {
-		Changes []struct {
-			New *refJSON `json:"new"`
-			Old *refJSON `json:"old"`
-		} `json:"changes"`
-	} `json:"push"`
+	Repository pushRepoJSON `json:"repository"`
+	Push       pushJSON     `json:"push"`
+}
+
+type pushJSON struct {
+	Changes []changeJSON `json:"changes"`
+}
+
+type changeJSON struct {
+	New *refJSON `json:"new"`
+	Old *refJSON `json:"old"`
+}
+
+type pushRepoJSON struct {
+	Links webhookLinksJSON `json:"links"`
+}
+
+type webhookLinksJSON struct {
+	HTML hrefJSON `json:"html"`
+}
+
+type hrefJSON struct {
+	Href string `json:"href"`
 }
 
 // Push reads a delivery the core has verified and returns what it claims; the

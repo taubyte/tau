@@ -1036,10 +1036,11 @@ func (store *Datastore) openGC(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	for _, br := range []struct {
+	type branchRoot struct {
 		c    cid.Cid
 		kind rootKind
-	}{{store.base.elems, elemsRootKind}, {store.base.pending, pendingRootKind}} {
+	}
+	for _, br := range []branchRoot{{store.base.elems, elemsRootKind}, {store.base.pending, pendingRootKind}} {
 		if br.c.Defined() {
 			r := gc.roots[keyOf(br.c)]
 			if r == nil {

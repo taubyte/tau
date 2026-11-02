@@ -45,10 +45,11 @@ func TestDefaultWhenReadsAValuedDiscriminator(t *testing.T) {
 			Int("never", Default(1), DefaultWhen("nobody", "x")),
 		}))))
 
-	for _, tc := range []struct {
+	type testCase struct {
 		doc            string
 		retries, depth any
-	}{
+	}
+	for _, tc := range []testCase{
 		{"id: one\nmode: queue\nspec:\n    pick: deep\n", 3, 9},
 		{"id: one\nmode: log\n", nil, nil},
 		{"id: one\n", nil, nil},

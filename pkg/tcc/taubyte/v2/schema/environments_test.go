@@ -138,12 +138,13 @@ func TestOneCompilerReadsEveryEnvironment(t *testing.T) {
 		second = int64(1e9)
 		mb     = int64(1e6)
 	)
-	for _, tc := range []struct {
+	type testCase struct {
 		env                 string
 		timeout, memory     int64
 		cacheSize, cacheTTL int64
 		whyItReadsThatWay   string
-	}{
+	}
+	for _, tc := range []testCase{
 		// no environment at all, and the one that overrides nothing, read the same
 		// document the same way — production is not a special case, it is the default.
 		{"", 30 * second, 64 * mb, 128 * mb, 24 * 3600 * second, "the unsuffixed lines"},

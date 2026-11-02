@@ -104,9 +104,10 @@ func TestANotificationIsAcceptedWithNothingInIt(t *testing.T) {
 }
 
 func TestTheListingsCacheScopeReachesTheAnswer(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		scope, ttl, want string
-	}{
+	}
+	for _, c := range []testCase{
 		{"", "", "no-store"},
 		{"none", "5m", "no-store"},
 		{"public", "5m", "public, max-age=300"},

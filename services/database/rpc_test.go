@@ -221,11 +221,12 @@ func TestAnIdThisDeploymentDoesNotDeclareIsNotFound(t *testing.T) {
 func TestAnAddressWithAHoleInItSaysWhichPart(t *testing.T) {
 	client, _ := serving(t)
 
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		ref  *databasev2.Ref
 		says string
-	}{
+	}
+	for _, tc := range []testCase{
 		{"no project", &databasev2.Ref{Environment: "prod", Id: kvID}, "no project"},
 		{"no environment", &databasev2.Ref{Project: "shop", Id: kvID}, "no environment"},
 		{"no id", &databasev2.Ref{Project: "shop", Environment: "prod"}, "no database id"},

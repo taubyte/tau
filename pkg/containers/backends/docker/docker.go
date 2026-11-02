@@ -98,9 +98,10 @@ func resolveDockerHost(configHost string) (host string, use bool) {
 	if err != nil {
 		return "", false
 	}
-	var cfg struct {
+	type cliConfig struct {
 		CurrentContext string `json:"currentContext"`
 	}
+	var cfg cliConfig
 	if err := json.Unmarshal(data, &cfg); err != nil || cfg.CurrentContext == "" {
 		return "", false
 	}
@@ -124,14 +125,17 @@ func resolveDockerHost(configHost string) (host string, use bool) {
 			if err != nil {
 				continue
 			}
-			var meta struct {
-				Name      string `json:"Name"`
-				Endpoints struct {
-					Docker struct {
-						Host string `json:"Host"`
-					} `json:"docker"`
-				} `json:"Endpoints"`
+			type contextDockerEndpoint struct {
+				Host string `json:"Host"`
 			}
+			type contextEndpoints struct {
+				Docker contextDockerEndpoint `json:"docker"`
+			}
+			type contextMeta struct {
+				Name      string           `json:"Name"`
+				Endpoints contextEndpoints `json:"Endpoints"`
+			}
+			var meta contextMeta
 			if json.Unmarshal(data, &meta) != nil || meta.Name != cfg.CurrentContext || meta.Endpoints.Docker.Host == "" {
 				continue
 			}
@@ -139,13 +143,16 @@ func resolveDockerHost(configHost string) (host string, use bool) {
 		}
 		return "", false
 	}
-	var meta struct {
-		Endpoints struct {
-			Docker struct {
-				Host string `json:"Host"`
-			} `json:"docker"`
-		} `json:"Endpoints"`
+	type contextDockerEndpoint struct {
+		Host string `json:"Host"`
 	}
+	type contextEndpoints struct {
+		Docker contextDockerEndpoint `json:"docker"`
+	}
+	type contextMeta struct {
+		Endpoints contextEndpoints `json:"Endpoints"`
+	}
+	var meta contextMeta
 	if err := json.Unmarshal(data, &meta); err != nil || meta.Endpoints.Docker.Host == "" {
 		return "", false
 	}

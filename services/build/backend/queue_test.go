@@ -119,7 +119,8 @@ func TestARedeliveryRepairsARecordWhosePushWasLost(t *testing.T) {
 func TestEnqueueRefusesStrangerAuthoredNonsense(t *testing.T) {
 	h := newHarness(t)
 
-	for name, tc := range map[string]struct{ key, ref, commit string }{
+	type testCase struct{ key, ref, commit string }
+	for name, tc := range map[string]testCase{
 		"no repository":        {"", testRef, testCommit},
 		"non-canonical key":    {"GitHub.com/Acme/Pay", testRef, testCommit},
 		"key with a scheme":    {"https://github.com/acme/pay", testRef, testCommit},
@@ -648,11 +649,12 @@ func (c *confirmer) Confirm(_ context.Context, key, ref, commit string) error {
 }
 
 func TestEnqueueConfirmsThePushAtTheRepository(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		err  error
 		code connect.Code
-	}{
+	}
+	for _, tc := range []testCase{
 		{"not at the commit", fmt.Errorf("%w: moved on", ErrNotAtCommit), connect.CodeFailedPrecondition},
 		{"forge unreachable", errors.New("dial"), connect.CodeUnavailable},
 	} {

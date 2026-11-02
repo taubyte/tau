@@ -153,14 +153,20 @@ func (c *client) classify(err error, key repokey.Key) error {
 }
 
 type connectionData struct {
-	AuthenticatedUser struct {
-		ID         string `json:"id"`
-		Properties struct {
-			Account struct {
-				Value string `json:"$value"`
-			} `json:"Account"`
-		} `json:"properties"`
-	} `json:"authenticatedUser"`
+	AuthenticatedUser connectionUser `json:"authenticatedUser"`
+}
+
+type connectionUser struct {
+	ID         string               `json:"id"`
+	Properties connectionProperties `json:"properties"`
+}
+
+type connectionProperties struct {
+	Account connectionAccount `json:"Account"`
+}
+
+type connectionAccount struct {
+	Value string `json:"$value"`
 }
 
 // Whoami asks the first organization this deployment answers in. Login is the
@@ -183,15 +189,17 @@ func (c *client) Whoami(ctx context.Context) (forge.Identity, error) {
 }
 
 type repoJSON struct {
-	ID            string `json:"id"`
-	RemoteURL     string `json:"remoteUrl"`
-	SSHURL        string `json:"sshUrl"`
-	DefaultBranch string `json:"defaultBranch"`
-	IsDisabled    bool   `json:"isDisabled"`
-	Project       struct {
-		ID         string `json:"id"`
-		Visibility string `json:"visibility"`
-	} `json:"project"`
+	ID            string      `json:"id"`
+	RemoteURL     string      `json:"remoteUrl"`
+	SSHURL        string      `json:"sshUrl"`
+	DefaultBranch string      `json:"defaultBranch"`
+	IsDisabled    bool        `json:"isDisabled"`
+	Project       projectJSON `json:"project"`
+}
+
+type projectJSON struct {
+	ID         string `json:"id"`
+	Visibility string `json:"visibility"`
 }
 
 // repository derives the key from the remote URL the forge returned, refuses
@@ -350,16 +358,13 @@ func (c *client) ListRepositories(ctx context.Context, yield func(forge.Reposito
 	return nil
 }
 
-type projectJSON struct {
-	ID         string `json:"id"`
-	Visibility string `json:"visibility"`
+type createRequest struct {
+	Name    string         `json:"name"`
+	Project projectRefJSON `json:"project"`
 }
 
-type createRequest struct {
-	Name    string `json:"name"`
-	Project struct {
-		ID string `json:"id"`
-	} `json:"project"`
+type projectRefJSON struct {
+	ID string `json:"id"`
 }
 
 // Visibility is the project's on Azure DevOps, so a request for the other one

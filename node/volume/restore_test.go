@@ -35,11 +35,12 @@ func restorer(t *testing.T, root string, archive []byte) (*volume.Volumes, *said
 }
 
 func TestARestoreOverItsQuotaIsServedAndSaid(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		name   string
 		files  map[string]string
 		warned []string
-	}{
+	}
+	for _, c := range []testCase{
 		{"one file over it", map[string]string{"rows": "123456789"},
 			[]string{"volume: shop/prod/QmData restored 9 bytes and declared a quota of 8"}},
 		{"files that add up to more", map[string]string{"a": "12345", "b": "12345"},
@@ -96,12 +97,13 @@ func noise(n int) string {
 }
 
 func TestARestoreLeavesTheDiskItsReserve(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		name    string
 		files   map[string]string
 		inodes  int64
 		refused reserve.Error
-	}{
+	}
+	for _, c := range []testCase{
 		// Half of a 100MiB disk is held back, and 51MiB is free: the first
 		// MiB fits and the second does not.
 		{"bytes", map[string]string{"rows": noise(2 << 20)}, 100,
@@ -163,10 +165,11 @@ func (p *partway) Read(b []byte) (int, error) {
 }
 
 func TestWhatElseFillsTheDiskWhileARestoreRunsCounts(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		name     string
 		meantime bool
-	}{{"alone", false}, {"with another writer", true}} {
+	}
+	for _, c := range []testCase{{"alone", false}, {"with another writer", true}} {
 		t.Run(c.name, func(t *testing.T) {
 			root := t.TempDir()
 			store, index := newBlobs(), newRows()

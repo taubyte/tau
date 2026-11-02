@@ -9,10 +9,11 @@ func TestIsVariableName(t *testing.T) {
 	option := IsVariableName()
 	option(attr)
 
-	tests := []struct {
+	type testCase struct {
 		val     string
 		isValid bool
-	}{
+	}
+	tests := []testCase{
 		{"validVarName", true},
 		{"_validVarName", true},
 		{"2invalidVarName", false},
@@ -37,10 +38,11 @@ func TestIsCID(t *testing.T) {
 	option := IsCID()
 	option(attr)
 
-	tests := []struct {
+	type testCase struct {
 		val     string
 		isValid bool
-	}{
+	}
+	tests := []testCase{
 		{"QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG", true},
 		{"invalidCID", false},
 	}
@@ -61,10 +63,11 @@ func TestInSet(t *testing.T) {
 	option := InSet("test", "sample")
 	option(attr)
 
-	tests := []struct {
+	type testCase struct {
 		val     string
 		isValid bool
-	}{
+	}
+	tests := []testCase{
 		{"test", true},
 		{"notInSet", false},
 	}
@@ -95,10 +98,11 @@ func TestIsFqdn(t *testing.T) {
 	option := IsFqdn()
 	option(attr)
 
-	tests := []struct {
+	type testCase struct {
 		val     string
 		isValid bool
-	}{
+	}
+	tests := []testCase{
 		{"example.com", true},
 		{"subdomain.example.com", true},
 		{"just_a_string", true},
@@ -124,10 +128,11 @@ func TestMinInt(t *testing.T) {
 	option := MinInt(1)
 	option(attr)
 
-	tests := []struct {
+	type testCase struct {
 		val     int
 		isValid bool
-	}{
+	}
+	tests := []testCase{
 		{1, true},
 		{2, true},
 		{3, true},
@@ -147,10 +152,11 @@ func TestMinInt(t *testing.T) {
 }
 
 func TestIsDomainName(t *testing.T) {
-	tests := []struct {
+	type testCase struct {
 		domain   string
 		expected bool
-	}{
+	}
+	tests := []testCase{
 		{"example.com", true},
 		{"sub.example.com", true},
 		{"a.b.c.d.example.com", true},

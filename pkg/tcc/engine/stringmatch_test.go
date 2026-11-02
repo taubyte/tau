@@ -3,10 +3,11 @@ package engine
 import "testing"
 
 func TestStringMatchAll(t *testing.T) {
-	tests := []struct {
+	type testCase struct {
 		input    string
 		expected bool
-	}{
+	}
+	tests := []testCase{
 		{"", true},
 		{"test", true},
 		{"any_string", true},
@@ -23,10 +24,11 @@ func TestStringMatchAll(t *testing.T) {
 func TestAll(t *testing.T) {
 	matchFunc := All()
 
-	tests := []struct {
+	type testCase struct {
 		input    string
 		expected bool
-	}{
+	}
+	tests := []testCase{
 		{"", true},
 		{"test", true},
 		{"any_string", true},
@@ -40,11 +42,12 @@ func TestAll(t *testing.T) {
 }
 
 func TestEither(t *testing.T) {
-	tests := []struct {
+	type testCase struct {
 		values   []string
 		input    string
 		expected bool
-	}{
+	}
+	tests := []testCase{
 		{[]string{"apple", "banana", "cherry"}, "apple", true},
 		{[]string{"apple", "banana", "cherry"}, "pear", false},
 		{[]string{}, "any_string", false},

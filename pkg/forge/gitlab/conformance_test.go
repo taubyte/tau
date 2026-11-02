@@ -101,11 +101,12 @@ func withMembership(s forge.Set) forge.Set {
 
 func TestConformance(t *testing.T) {
 	deploy := Deployment(forge.Token(deployToken))
-	for _, tc := range []struct {
+	type testCase struct {
 		name   string
 		opts   []Option
 		expect forge.Set
-	}{
+	}
+	for _, tc := range []testCase{
 		{"gitlab/unsigned", nil, unsigned(baseCapabilities())},
 		{"gitlab/unsigned+deployment", []Option{deploy}, withMembership(unsigned(baseCapabilities()))},
 		{"gitlab/signing", []Option{Signing()}, baseCapabilities()},

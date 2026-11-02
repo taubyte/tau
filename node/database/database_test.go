@@ -924,10 +924,11 @@ func TestKvDatabasesAreIsolated(t *testing.T) {
 	require.NoError(t, theirs.Put(ctx, "k", []byte("theirs")))
 	require.NoError(t, staging.Put(ctx, "k", []byte("staging")))
 
-	for _, c := range []struct {
+	type testCase struct {
 		db   wasmtier.KV
 		want string
-	}{{mine, "mine"}, {theirs, "theirs"}, {staging, "staging"}} {
+	}
+	for _, c := range []testCase{{mine, "mine"}, {theirs, "theirs"}, {staging, "staging"}} {
 		value, err := c.db.Get(ctx, "k")
 		require.NoError(t, err)
 		require.Equal(t, c.want, string(value))
@@ -1193,12 +1194,13 @@ type closeOnly struct{}
 func (closeOnly) Close() error { return nil }
 
 func TestAConnectionWithoutItsModelsSurfaceIsRefused(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		model   database.Type
 		probe   database.Conn
 		open    func(*backing.Databases, invoke.Grant) error
 		surface string
-	}{
+	}
+	for _, c := range []testCase{
 		{
 			model: database.SQL, probe: &fakeConn{},
 			open: func(d *backing.Databases, g invoke.Grant) error {

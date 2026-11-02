@@ -115,11 +115,12 @@ func TestAccess(t *testing.T) {
 		_, err := s.Access(ctx, k)
 		require.ErrorContains(t, err, "answered about")
 	})
-	for _, tc := range []struct {
+	type testCase struct {
 		name, method, suffix string
 		status               int
 		cred                 bool
-	}{
+	}
+	for _, tc := range []testCase{
 		{"settings answering 500", http.MethodGet, "/setting", 500, false},
 		{"the advertisement answering 401", http.MethodGet, "/info/refs", 401, true},
 		{"the default branch answering 500", http.MethodGet, "/default-branch", 500, false},

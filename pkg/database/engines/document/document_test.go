@@ -215,10 +215,11 @@ func TestEachDatabaseIsItsOwnCollection(t *testing.T) {
 	require.NoError(t, users.Put(ctx, "1", map[string]any{"where": "users"}))
 	require.NoError(t, staging.Put(ctx, "1", map[string]any{"where": "staging"}))
 
-	for _, c := range []struct {
+	type testCase struct {
 		conn database.DocumentConn
 		want string
-	}{{orders, "orders"}, {users, "users"}, {staging, "staging"}} {
+	}
+	for _, c := range []testCase{{orders, "orders"}, {users, "users"}, {staging, "staging"}} {
 		all, err := c.conn.Query(ctx, nil)
 		require.NoError(t, err)
 		require.Len(t, all, 1)

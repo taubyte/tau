@@ -71,10 +71,11 @@ type taskIO struct {
 func (t *taskIO) drain() {
 	t.grew = make(chan struct{})
 	t.done = make(chan struct{})
-	for _, s := range []struct {
+	type drainedStream struct {
 		reader io.Reader
 		stream byte
-	}{
+	}
+	for _, s := range []drainedStream{
 		{t.stdout, streamStdout},
 		{t.stderr, streamStderr},
 	} {

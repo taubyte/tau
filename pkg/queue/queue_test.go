@@ -9,11 +9,12 @@ import (
 )
 
 func TestOpenRejects(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		cfg  Config
 		want error
-	}{
+	}
+	for _, tc := range []testCase{
 		{"no name", Config{}, ErrNoName},
 		{"negative visibility timeout", Config{Name: "b", VisibilityTimeout: -time.Second}, ErrInvalidConfig},
 		{"negative delay", Config{Name: "b", Delay: -time.Second}, ErrInvalidConfig},
@@ -345,10 +346,11 @@ func TestEveryMutationBarriersBeforeItReads(t *testing.T) {
 	// withdraw whichever one the Claim step took.
 	h.mustPush(t, "job-keep", "kept")
 
-	for _, step := range []struct {
+	type testCase struct {
 		name string
 		call func() error
-	}{
+	}
+	for _, step := range []testCase{
 		{"Push", func() error { return h.Push("job-2", nil) }},
 		{"Sweep", h.Sweep},
 		{"Nack", func() error { return h.Nack(d) }},

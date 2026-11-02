@@ -150,12 +150,14 @@ func (s *streamer) StreamPushes(ctx context.Context, ready func(), emit func(for
 }
 
 type refUpdatedJSON struct {
-	Type      string `json:"type"`
-	RefUpdate struct {
-		NewRev  string `json:"newRev"`
-		RefName string `json:"refName"`
-		Project string `json:"project"`
-	} `json:"refUpdate"`
+	Type      string        `json:"type"`
+	RefUpdate refUpdateJSON `json:"refUpdate"`
+}
+
+type refUpdateJSON struct {
+	NewRev  string `json:"newRev"`
+	RefName string `json:"refName"`
+	Project string `json:"project"`
 }
 
 // claim reads one event line. Anything that is not a ref update on a project

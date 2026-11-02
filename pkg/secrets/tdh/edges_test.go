@@ -67,12 +67,13 @@ func TestPartialsThatCannotBeUsedAreRefused(t *testing.T) {
 	zero, err := Group.NewScalar().MarshalBinary()
 	require.NoError(t, err)
 
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		w         *Wrapping
 		parts     []*Partial
 		threshold uint
 		want      string
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"zero threshold": {w, parts, 0, "at least 1"},
 		"bad index":      {w, []*Partial{{ID: []byte("x"), D: parts[0].D}, parts[1]}, 2, "partial 0 id"},
 		"zero index":     {w, []*Partial{{ID: zero, D: parts[0].D}, parts[1]}, 2, "zero share index"},

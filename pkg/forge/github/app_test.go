@@ -25,14 +25,15 @@ func appRegistry(t *testing.T, h http.Handler) (*forge.Registry, string) {
 }
 
 func TestOnlyA404OnTheMembershipItselfIsANonMember(t *testing.T) {
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		handler    http.HandlerFunc
 		wantMember bool
 		wantErr    bool
 		// wantRequests, when set, is how many requests the walk may make before
 		// it gives up. Zero means this case does not say.
 		wantRequests int
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"the app is not installed on this namespace": {
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
@@ -139,10 +140,11 @@ func TestAnUnacceptedInvitationIsNotMembership(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		user string
 		want bool
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"an active member":         {member, true},
 		"an unaccepted invitation": {pending, false},
 		"a stranger":               {nonMember, false},
@@ -243,10 +245,11 @@ func mustDriver(t *testing.T, host string, opts ...github.Option) forge.Driver {
 }
 
 func TestTheMembershipWalkKeepsEachHalfInsideOneSegment(t *testing.T) {
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		namespace, username string
 		refused             bool
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"a namespace carrying a query and a fragment": {namespace: "acme?per_page=1#x", username: "alice"},
 		"a username carrying a query":                 {namespace: "acme", username: "alice?access_token=x"},
 		"a namespace that would walk out of its path": {namespace: "acme/../../user", username: "alice", refused: true},

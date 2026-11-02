@@ -45,7 +45,7 @@ func TestABuilderQueuesABuildByHand(t *testing.T) {
 }
 
 func TestWhatAManualBuildRefuses(t *testing.T) {
-	for name, c := range map[string]struct {
+	type testCase struct {
 		token   string
 		project string
 		body    any
@@ -53,7 +53,8 @@ func TestWhatAManualBuildRefuses(t *testing.T) {
 		owner   func(key string) (string, error)
 		status  int
 		says    string
-	}{
+	}
+	for name, c := range map[string]testCase{
 		"a viewer": {
 			role: func(string, string) (register.Role, error) { return register.RoleViewer, nil },
 			body: buildRequest{Repository: testRepoKey, Ref: "refs/heads/main", Commit: testSHA}, status: http.StatusNotFound,

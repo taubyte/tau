@@ -147,9 +147,10 @@ func TestAV1NodesDataIsMovedAside(t *testing.T) {
 	d := driveFor(p)
 	d.now = func() time.Time { return fixedNow }
 
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		storage, v2, fails, moved bool
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"no data":       {},
 		"v1's data":     {storage: true, moved: true},
 		"a v2 node's":   {storage: true, v2: true},

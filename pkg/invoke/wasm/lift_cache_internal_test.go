@@ -17,11 +17,12 @@ func TestTwoStringsRefusesAnythingElse(t *testing.T) {
 	require.Equal(t, "sessions", first)
 	require.Equal(t, "abc", second)
 
-	for _, one := range []struct {
+	type testCase struct {
 		name string
 		args []component.Value
 		says string
-	}{
+	}
+	for _, one := range []testCase{
 		{"no arguments", nil, "got 0"},
 		{"one argument", []component.Value{"sessions"}, "got 1"},
 		{"first is not a string", []component.Value{uint32(1), "abc"}, "first argument is uint32"},
@@ -35,11 +36,12 @@ func TestTwoStringsRefusesAnythingElse(t *testing.T) {
 }
 
 func TestLiftU32TakesEveryShapeThatCrossesTheABI(t *testing.T) {
-	for _, one := range []struct {
+	type testCase struct {
 		name  string
 		value component.Value
 		want  uint32
-	}{
+	}
+	for _, one := range []testCase{
 		{"u32", uint32(7), 7},
 		{"widened to u64", uint64(7), 7},
 		{"signed 32", int32(7), 7},

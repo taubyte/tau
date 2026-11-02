@@ -374,10 +374,11 @@ func (f *fixture) createRepo(w http.ResponseWriter, r *http.Request) {
 		f.fail(w, http.StatusForbidden, "You do not have permission to create repositories in this workspace.")
 		return
 	}
-	var body struct {
+	type requestBody struct {
 		SCM       string `json:"scm"`
 		IsPrivate bool   `json:"is_private"`
 	}
+	var body requestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.SCM != "git" {
 		f.fail(w, http.StatusBadRequest, "scm: a git repository is the only kind")
 		return
@@ -453,10 +454,11 @@ func (f *fixture) createKey(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var body struct {
+	type requestBody struct {
 		Key   string `json:"key"`
 		Label string `json:"label"`
 	}
+	var body requestBody
 	if err := strictBody(r, &body); err != nil || body.Key == "" {
 		f.fail(w, http.StatusBadRequest, "key: invalid")
 		return
@@ -522,13 +524,14 @@ func (f *fixture) createHook(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var body struct {
+	type requestBody struct {
 		Description string   `json:"description"`
 		URL         string   `json:"url"`
 		Active      bool     `json:"active"`
 		Events      []string `json:"events"`
 		Secret      string   `json:"secret"`
 	}
+	var body requestBody
 	if err := strictBody(r, &body); err != nil || body.URL == "" || !slices.Equal(body.Events, []string{"repo:push"}) {
 		f.fail(w, http.StatusBadRequest, "url: invalid")
 		return

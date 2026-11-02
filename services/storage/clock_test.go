@@ -9,10 +9,11 @@ import (
 )
 
 func TestPackAndUnpackRoundTrip(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		ms  uint64
 		log uint16
-	}{{0, 0}, {1, 1}, {1_700_000_000_000, 0}, {1_700_000_000_000, 65535}, {stampMaxPhysical, 65535}} {
+	}
+	for _, c := range []testCase{{0, 0}, {1, 1}, {1_700_000_000_000, 0}, {1_700_000_000_000, 65535}, {stampMaxPhysical, 65535}} {
 		s, err := PackStamp(c.ms, c.log)
 		require.NoError(t, err)
 		ms, log := UnpackStamp(s)

@@ -69,11 +69,12 @@ func findingsTitled(found []schema.Finding, sev schema.Severity) []string {
 
 func TestNoRegionsRefusesAndPlacesInDefault(t *testing.T) {
 	r, severity := schema.WithNoRegions(), schema.Broken
-	for _, tc := range []struct {
+	type testCase struct {
 		name  string
 		p     schema.Placement
 		title string
-	}{
+	}
+	for _, tc := range []testCase{
 		{"pinned", schema.Placement{Policy: "pinned", In: []string{"region-1", "region-2"}},
 			`is placed in regions "region-1", "region-2", which this build does not serve; it runs in "default"`},
 		{"cdn", schema.Placement{Policy: "cdn", In: []string{"region-1"}},
@@ -223,10 +224,11 @@ func TestWithRegionIsOneRegionOfMany(t *testing.T) {
 	require.Equal(t, []string{"region-1"}, r.Serves())
 	require.Empty(t, r.Allow([]string{"region-1", "region-2"}))
 
-	for _, tc := range []struct {
+	type testCase struct {
 		p    schema.Placement
 		want []string
-	}{
+	}
+	for _, tc := range []testCase{
 		{schema.Placement{}, []string{"region-1"}},
 		{schema.Placement{Allowed: []string{"region-2"}}, []string{"region-2"}},
 		{schema.Placement{Policy: "pinned", In: []string{"region-2"}}, []string{"region-2"}},

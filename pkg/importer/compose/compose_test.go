@@ -538,7 +538,8 @@ services:
 }
 
 func TestSizesAreRespelled(t *testing.T) {
-	for _, c := range []struct{ in, want string }{
+	type testCase struct{ in, want string }
+	for _, c := range []testCase{
 		{"512M", "512MB"},
 		{"512MB", "512MB"},
 		{"2G", "2GB"},

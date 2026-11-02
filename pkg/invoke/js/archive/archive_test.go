@@ -73,11 +73,12 @@ func TestOneBuildIsOneDigest(t *testing.T) {
 }
 
 func TestWriteRefusesWhatAReaderCouldNotUse(t *testing.T) {
-	cases := map[string]struct {
+	type testCase struct {
 		entry string
 		files map[string][]byte
 		want  error
-	}{
+	}
+	cases := map[string]testCase{
 		"no entry":            {"worker.js", map[string][]byte{"other.js": nil}, ErrNoEntry},
 		"a compiled entry":    {"worker.js.warp", map[string][]byte{"worker.js": nil, "worker.js.warp": nil}, ErrCompiledEntry},
 		"an orphaned compile": {"worker.js", map[string][]byte{"worker.js": nil, "gone.js.warp": nil}, ErrOrphanCompile},

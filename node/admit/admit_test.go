@@ -213,11 +213,12 @@ func TestAnAdmitterWithoutItsCollaboratorsIsRefused(t *testing.T) {
 	functions := func() admit.Functions { return &resolving{} }
 	stores := &opening{rows: &storing{}}
 
-	for _, one := range []struct {
+	type testCase struct {
 		name  string
 		build func() (*admit.Admissions, error)
 		says  string
-	}{
+	}
+	for _, one := range []testCase{
 		{"no tier", func() (*admit.Admissions, error) { return admit.New(nil, functions, stores) }, "control"},
 		{"no functions", func() (*admit.Admissions, error) { return admit.New(tier, nil, stores) }, "function"},
 		{"nowhere to record", func() (*admit.Admissions, error) { return admit.New(tier, functions, nil) }, "record"},
@@ -290,10 +291,11 @@ func TestAdmittingInvokesTheValidator(t *testing.T) {
 }
 
 func TestTheValidatorIsLookedForInTheNamespaceTheBlockNames(t *testing.T) {
-	for _, one := range []struct {
+	type testCase struct {
 		namespace string
 		scope     []string
-	}{
+	}
+	for _, one := range []testCase{
 		{"", nil},
 		{"/", nil},
 		{"/billing", []string{"billing"}},
@@ -357,12 +359,13 @@ func TestAValidatorThatCannotBeResolvedIsNotARefusal(t *testing.T) {
 }
 
 func TestNoFailureHereIsEverAYes(t *testing.T) {
-	for _, one := range []struct {
+	type testCase struct {
 		name  string
 		tier  *deciding
 		rows  *storing
 		found error
-	}{
+	}
+	for _, one := range []testCase{
 		{name: "refused", tier: &deciding{verdict: wasmtier.Verdict{Refused: "no"}}},
 		{name: "undecided", tier: &deciding{verdict: wasmtier.Verdict{Undecided: "nothing answered"}}},
 		{name: "could not run", tier: &deciding{err: errors.New("would not start")}},
@@ -511,11 +514,12 @@ func TestAStoreWithNoValidatorIsRefused(t *testing.T) {
 func TestANodeThatCannotRunAValidatorRefusesByName(t *testing.T) {
 	answers := saysYes()
 
-	for _, one := range []struct {
+	type testCase struct {
 		name      string
 		tier      func() admit.Tier
 		functions func() admit.Functions
-	}{
+	}
+	for _, one := range []testCase{
 		{"no component tier", func() admit.Tier { return nil }, func() admit.Functions { return &resolving{} }},
 		{"no worker", func() admit.Tier { return answers }, func() admit.Functions { return nil }},
 		{"neither", func() admit.Tier { return nil }, func() admit.Functions { return nil }},
@@ -614,11 +618,12 @@ func TestAGuardedRouteAsksTheFunctionItNames(t *testing.T) {
 func TestARouteGuardedByAFunctionThisNodeCannotRun(t *testing.T) {
 	answers := saysYes()
 
-	for _, one := range []struct {
+	type testCase struct {
 		name      string
 		tier      func() admit.Tier
 		functions func() admit.Functions
-	}{
+	}
+	for _, one := range []testCase{
 		{"no component tier", func() admit.Tier { return nil }, func() admit.Functions { return &resolving{} }},
 		{"no worker", func() admit.Tier { return answers }, func() admit.Functions { return nil }},
 	} {

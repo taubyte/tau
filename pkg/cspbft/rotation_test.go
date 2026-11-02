@@ -86,10 +86,11 @@ func TestAScorerThatPanicsFallsBackToRoundRobin(t *testing.T) {
 }
 
 func TestAScorerReturningSomethingThatIsNotAPermutationIsRejectedBeforeItReachesTheRotation(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name  string
 		order []ReplicaID
-	}{
+	}
+	for _, tc := range []testCase{
 		{"a duplicate", []ReplicaID{"a", "b", "b", "c"}},
 		{"too short", []ReplicaID{"a", "b", "c"}},
 		{"an unknown id", []ReplicaID{"a", "b", "c", "zz"}},

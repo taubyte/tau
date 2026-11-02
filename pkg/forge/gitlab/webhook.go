@@ -37,9 +37,11 @@ type pushPayload struct {
 	// commit.
 	CheckoutSHA string `json:"checkout_sha"`
 
-	Project struct {
-		GitHTTPURL string `json:"git_http_url"`
-	} `json:"project"`
+	Project pushProjectJSON `json:"project"`
+}
+
+type pushProjectJSON struct {
+	GitHTTPURL string `json:"git_http_url"`
 }
 
 // push reads a delivery the core has verified and returns what it claims. The

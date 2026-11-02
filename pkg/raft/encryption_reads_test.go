@@ -51,10 +51,11 @@ func TestEncryptedConn_AFrameCutShortIsAnError(t *testing.T) {
 	_, err := rand.Read(key)
 	require.NoError(t, err)
 
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		sent []byte
-	}{
+	}
+	for _, tc := range []testCase{
 		{"inside the nonce", []byte{0, 0, 0, 32, 1, 2, 3}},
 		{"inside the sealed payload", append([]byte{0, 0, 0, 32}, make([]byte, nonceSize+5)...)},
 	} {
@@ -80,10 +81,11 @@ func TestEncryptedConn_AWriteToAPeerThatLeftFails(t *testing.T) {
 	_, err := rand.Read(key)
 	require.NoError(t, err)
 
-	for _, tc := range []struct {
+	type testCase struct {
 		name    string
 		readsOf int
-	}{
+	}
+	for _, tc := range []testCase{
 		{"before the nonce", 4},
 		{"before the payload", 4 + nonceSize},
 	} {

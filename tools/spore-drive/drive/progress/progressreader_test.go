@@ -173,11 +173,12 @@ func TestReader_WithoutPercentage(t *testing.T) {
 }
 
 func TestReader_ReportsByItsClock(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		opts []Option
 		want []int
-	}{
+	}
+	for _, tc := range []testCase{
 		{"percentage", []Option{Percentage()}, []int{40, 80, 100}},
 		{"bytes", nil, []int{4, 8, 10}},
 	} {
@@ -206,10 +207,11 @@ func TestReader_ReportsByItsClock(t *testing.T) {
 }
 
 func TestReader_RefusesWhatItCannotUse(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		opt  Option
 		want string
-	}{
+	}
+	for _, tc := range []testCase{
 		{WithClock(nil), "clock cannot be nil"},
 		{WithReader(nil, 1), "reader cannot be nil"},
 		{WithReader(bytes.NewReader(nil), 0), "length must be greater than 0"},

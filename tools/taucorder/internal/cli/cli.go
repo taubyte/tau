@@ -120,7 +120,8 @@ func config(c *cli.Context) (bridge.Config, Profile, error) {
 		return bridge.Config{}, p, err
 	}
 	var files [3][]byte
-	for i, f := range []struct{ flag, profile string }{
+	type profileFlag struct{ flag, profile string }
+	for i, f := range []profileFlag{
 		{"private-key", p.PrivateKey},
 		{"ca", p.CA},
 		{"certificate", p.Certificate},

@@ -14,10 +14,11 @@ import (
 // The properties net/http's ServeMux gives and pkg/http does not.
 
 func TestAPathValueCannotBeOverriddenFromAnywhereElse(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name   string
 		mangle func(*http.Request)
-	}{
+	}
+	for _, tc := range []testCase{
 		{"query", func(r *http.Request) { r.URL.RawQuery = "jid=forged&projectId=forged&hook=forged" }},
 		{"header", func(r *http.Request) {
 			r.Header.Set("jid", "forged")
@@ -54,7 +55,8 @@ func TestAWildcardIsOneSegment(t *testing.T) {
 func TestTheMethodIsPartOfTheRoute(t *testing.T) {
 	h := newHarness(t, Config{})
 
-	for _, tc := range []struct{ method, path string }{
+	type testCase struct{ method, path string }
+	for _, tc := range []testCase{
 		{http.MethodGet, "/hook/" + testHookID},
 		{http.MethodPut, "/hook/" + testHookID},
 		{http.MethodPost, "/job/" + testJobID},

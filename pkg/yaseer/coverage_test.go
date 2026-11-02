@@ -123,11 +123,12 @@ func TestOpToWireUnknownHandler(t *testing.T) {
 }
 
 func TestOpToWireAllValid(t *testing.T) {
-	cases := []struct {
+	type testCase struct {
 		name string
 		o    op
 		want byte
-	}{
+	}
+	cases := []testCase{
 		{"Get → wireOpGet", op{opType: opTypeGet, handler: opGetOrCreate}, wireOpGet},
 		{"GetOrCreate → wireOpGetOrCreate", op{opType: opTypeGetOrCreate, handler: opGetOrCreate}, wireOpGetOrCreate},
 		{"CreateDocument → wireOpCreateDocument", op{opType: opTypeCreateDocument, handler: opCreateDocument}, wireOpCreateDocument},

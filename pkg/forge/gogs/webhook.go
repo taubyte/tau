@@ -18,11 +18,13 @@ func (d *driver) Scheme() forge.Scheme { return forge.SchemeGogsSHA256 }
 // pushPayload reads only what a Push needs: every field kept is one more thing
 // downstream comes to trust.
 type pushPayload struct {
-	Ref        string `json:"ref"`
-	After      string `json:"after"`
-	Repository struct {
-		CloneURL string `json:"clone_url"`
-	} `json:"repository"`
+	Ref        string       `json:"ref"`
+	After      string       `json:"after"`
+	Repository pushRepoJSON `json:"repository"`
+}
+
+type pushRepoJSON struct {
+	CloneURL string `json:"clone_url"`
 }
 
 // Push reads a delivery the core has verified and returns what it claims; the

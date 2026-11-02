@@ -81,10 +81,11 @@ func TestAServedForgeAnswersOnlySmartHTTP(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 	base := "http://" + s.Host()
-	for _, c := range []struct {
+	type testCase struct {
 		method, path string
 		status       int
-	}{
+	}
+	for _, c := range []testCase{
 		{http.MethodGet, "/acme/pay", http.StatusNotFound},
 		{http.MethodPut, "/acme/pay.git/git-upload-pack", http.StatusNotFound},
 		{http.MethodGet, "/acme/pay.git/info/refs?service=git-archive", http.StatusForbidden},

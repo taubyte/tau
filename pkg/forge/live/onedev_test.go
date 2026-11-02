@@ -159,9 +159,10 @@ func bootOneDev(t *testing.T) *onedevInstance {
 	api(t, http.MethodPost, base+"/~api/access-tokens", asAdmin, map[string]any{
 		"ownerId": userID, "name": "harness", "hasOwnerPermissions": true,
 	}, nil)
-	var tokens []struct {
+	type accessToken struct {
 		Value string `json:"value"`
 	}
+	var tokens []accessToken
 	api(t, http.MethodGet, fmt.Sprintf("%s/~api/users/%d/access-tokens", base, userID), asAdmin, nil, &tokens)
 	require.Len(t, tokens, 1)
 	token := tokens[0].Value
@@ -177,10 +178,11 @@ func bootOneDev(t *testing.T) *onedevInstance {
 		return id
 	}
 	role := func(name string) int64 {
-		var roles []struct {
+		type roleJSON struct {
 			ID   int64  `json:"id"`
 			Name string `json:"name"`
 		}
+		var roles []roleJSON
 		api(t, http.MethodGet, base+"/~api/roles?offset=0&count=100", asAdmin, nil, &roles)
 		for _, r := range roles {
 			if r.Name == name {

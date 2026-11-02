@@ -131,10 +131,11 @@ func TestExtractContext(t *testing.T) {
 	// Whatever links the tar has made, nothing after them may be written
 	// beside the context.
 	t.Run("no entry lands outside the context, whatever links precede it", func(t *testing.T) {
-		for _, last := range []struct {
+		type testCase struct {
 			what   string
 			header *tar.Header
-		}{
+		}
+		for _, last := range []testCase{
 			{"a file", file("y/escaped")},
 			{"a directory", &tar.Header{Name: "y/escaped", Typeflag: tar.TypeDir, Mode: 0o755}},
 			{"a symlink", &tar.Header{Name: "y/escaped", Typeflag: tar.TypeSymlink, Linkname: "anything"}},
@@ -161,11 +162,12 @@ func TestExtractContext(t *testing.T) {
 	// Nor may an entry write through such a link, or make a hard link to what
 	// lies beyond one.
 	t.Run("no entry reaches outside the context through a link", func(t *testing.T) {
-		for _, c := range []struct {
+		type headerCase struct {
 			what   string
 			via    string
 			header *tar.Header
-		}{
+		}
+		for _, c := range []headerCase{
 			{"a file written over the link", "../victim", file("y")},
 			{"a hard link made through it", "..", &tar.Header{Name: "h", Typeflag: tar.TypeLink, Linkname: "y/victim"}},
 		} {
@@ -205,10 +207,11 @@ func TestExtractContext(t *testing.T) {
 			return &tar.Header{Name: name, Typeflag: tar.TypeLink, Linkname: target}
 		}
 
-		for _, c := range []struct {
+		type entriesCase struct {
 			what    string
 			entries []*tar.Header
-		}{
+		}
+		for _, c := range []entriesCase{
 			{"under a link to the context", []*tar.Header{symlink("x", "."), symlink("x/y", "..")}},
 			{"through a link made after it", []*tar.Header{symlink("l", "x/.."), symlink("x", ".")}},
 			{"hard linked into another directory", []*tar.Header{directory("a/b"), symlink("a/b/s", "../.."), hardlink("h", "a/b/s")}},
@@ -389,11 +392,12 @@ func TestExtractContext(t *testing.T) {
 			return &tar.Header{Name: name, Typeflag: tar.TypeLink, Linkname: "a"}
 		}
 
-		for _, c := range []struct {
+		type keptCase struct {
 			what    string
 			entries []*tar.Header
 			kept    os.FileMode // the type the first entry gave a, which must survive
-		}{
+		}
+		for _, c := range []keptCase{
 			{"a directory under a file", []*tar.Header{file("a"), directory("a/b")}, 0},
 			{"a file under a file", []*tar.Header{file("a"), file("a/b")}, 0},
 			{"a link under a file", []*tar.Header{file("a"), link("a/b")}, 0},
@@ -659,12 +663,13 @@ func TestExtractContextLeavesTheDiskItsReserve(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, writer.Close())
 
-	for _, c := range []struct {
+	type testCase struct {
 		name    string
 		context io.Reader
 		inodes  int64
 		refused reserve.Error
-	}{
+	}
+	for _, c := range []testCase{
 		{"bytes", &buf, 100, reserve.Error{Unit: "bytes", Free: 50 << 20, Want: 1 << 20, Reserve: 50 << 20}},
 		{"inodes", tarOf(t, file("a"), file("b"), file("c")), 7, reserve.Error{Unit: "inodes", Free: 5, Want: 1, Reserve: 5}},
 	} {

@@ -41,12 +41,14 @@ func (b *DockerBackend) pull(ctx context.Context, name string, platforms []ocisp
 
 	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
-		var status struct {
-			Error       string `json:"error"`
-			ErrorDetail struct {
-				Message string `json:"message"`
-			} `json:"errorDetail"`
+		type streamErrorDetail struct {
+			Message string `json:"message"`
 		}
+		type streamStatus struct {
+			Error       string            `json:"error"`
+			ErrorDetail streamErrorDetail `json:"errorDetail"`
+		}
+		var status streamStatus
 		if err := json.Unmarshal(scanner.Bytes(), &status); err == nil {
 			if status.Error != "" {
 				return fmt.Errorf("docker pull failed: %s", status.Error)
@@ -138,13 +140,15 @@ func (b *DockerBackend) build(ctx context.Context, buildContext io.Reader, build
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		var status struct {
-			Stream      string `json:"stream"`
-			Error       string `json:"error"`
-			ErrorDetail struct {
-				Message string `json:"message"`
-			} `json:"errorDetail"`
+		type streamErrorDetail struct {
+			Message string `json:"message"`
 		}
+		type streamStatus struct {
+			Stream      string            `json:"stream"`
+			Error       string            `json:"error"`
+			ErrorDetail streamErrorDetail `json:"errorDetail"`
+		}
+		var status streamStatus
 
 		if err := json.Unmarshal([]byte(line), &status); err != nil {
 			continue

@@ -25,13 +25,14 @@ func TestValidateFieldRefusesWhatTheVocabularyRefuses(t *testing.T) {
 	s := session(t)
 	fn := []string{"function", "checkout"}
 
-	for _, c := range []struct {
+	type testCase struct {
 		what  string
 		res   []string
 		field []string
 		bad   any
 		good  any
-	}{
+	}
+	for _, c := range []testCase{
 		// An id is a CID, and "an id" that is not one is how a resource ends up
 		// addressed by something no other consumer can resolve.
 		{"an id that is not a CID", fn, []string{"id"}, "not-a-cid", "QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh"},

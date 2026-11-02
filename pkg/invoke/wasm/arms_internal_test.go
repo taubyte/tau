@@ -27,11 +27,12 @@ func TestEveryGoErrorLandsOnItsArm(t *testing.T) {
 	wrap := func(err error) error { return fmt.Errorf("wrapped: %w", err) }
 	other := errors.New("down")
 
-	for _, c := range []struct {
+	type testCase struct {
 		name string
 		got  *component.VariantValue
 		disc uint32
-	}{
+	}
+	for _, c := range []testCase{
 		{"log not writable", logArm(wrap(ErrNotWritable)), errLogNotWritable},
 		{"log too large", logArm(wrap(ErrRecordTooLarge)), errLogTooLarge},
 		{"log bad cursor", logArm(wrap(ErrBadCursor)), errBadCursor},
@@ -265,10 +266,11 @@ func TestAVerdictThatIsNotOne(t *testing.T) {
 }
 
 func TestSQLValuesCrossBothWays(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		in   any
 		want component.Value
-	}{
+	}
+	for _, c := range []testCase{
 		{nil, component.VariantValue{Disc: valNull}},
 		{"s", component.VariantValue{Disc: valText, Payload: "s"}},
 		{[]byte("b"), component.VariantValue{Disc: valBlob, Payload: []byte("b")}},

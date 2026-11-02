@@ -19,11 +19,12 @@ func TestParseDuration_Success(t *testing.T) {
 }
 
 func TestParseDuration_VariousDurations(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name     string
 		duration string
 		expected int64
-	}{
+	}
+	for _, tc := range []testCase{
 		{"1 hour", "1h", 3600000000000},
 		{"30 minutes", "30m", 1800000000000},
 		{"2 seconds", "2s", 2000000000},
@@ -77,11 +78,12 @@ func TestParseBytes_Success(t *testing.T) {
 }
 
 func TestParseBytes_VariousSizes(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name     string
 		size     string
 		expected int64
-	}{
+	}
+	for _, tc := range []testCase{
 		{"1 GB", "1GB", 1000000000},
 		{"512 MB", "512MB", 512000000},
 		{"2 KB", "2KB", 2000},
@@ -134,11 +136,12 @@ func TestFormatDuration_Success(t *testing.T) {
 }
 
 func TestFormatDuration_VariousTypes(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name     string
 		value    interface{}
 		expected string
-	}{
+	}
+	for _, tc := range []testCase{
 		{"int64", int64(3600000000000), "1h0m0s"},
 		{"int", int(1800000000000), "30m0s"},
 		{"int32", int32(2000000000), "2s"},
@@ -184,10 +187,11 @@ func TestFormatBytes_Success(t *testing.T) {
 }
 
 func TestFormatBytes_VariousTypes(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name  string
 		value interface{}
-	}{
+	}
+	for _, tc := range []testCase{
 		{"int64", int64(1000000000)},
 		{"int", int(512000000)},
 		{"int32", int32(2000)},

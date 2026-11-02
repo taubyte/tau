@@ -135,11 +135,12 @@ func key(t *testing.T, spelling string) repokey.Key {
 func TestNewRefusesADeploymentThatIsWrong(t *testing.T) {
 	good := &stub{host: stubHost, scheme: SchemeHubSHA256}
 
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		policy   Policy
 		bindings []Binding
 		saying   string
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"a binding with no driver": {
 			bindings: []Binding{{Host: stubHost}},
 			saying:   "has no driver",
@@ -615,10 +616,11 @@ func TestCapabilitySetRenders(t *testing.T) {
 
 func TestErrorsSayWhichQuestionWentUnanswered(t *testing.T) {
 	k := key(t, "https://"+stubHost+"/acme/pay")
-	for _, tc := range []struct {
+	type testCase struct {
 		err    error
 		saying string
-	}{
+	}
+	for _, tc := range []testCase{
 		{&NoDriverError{Host: stubHost}, "no driver for host"},
 		{&UnsupportedError{Host: stubHost, Capability: CapPushHooks}, "cannot answer push-hooks"},
 		{&UnaddressableError{Host: stubHost, Key: k, Reason: "one owner"}, "cannot address"},
@@ -662,11 +664,12 @@ func TestEverySchemeRefusesEveryWayADeliveryCanBeWrong(t *testing.T) {
 			wrongScheme := hook
 			wrongScheme.Scheme = otherImplemented(scheme)
 
-			for _, tc := range []struct {
+			type testCase struct {
 				name string
 				hook Hook
 				d    Delivery
-			}{
+			}
+			for _, tc := range []testCase{
 				{name: "a body with one byte changed", hook: hook,
 					d: Delivery{Header: good.Header.Clone(), Body: flipOne(good.Body)}},
 				{name: "a body with one byte appended", hook: hook,

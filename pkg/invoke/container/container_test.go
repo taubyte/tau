@@ -700,10 +700,11 @@ func TestTheFreePortAllocatorReturnsSomethingBindable(t *testing.T) {
 func TestEveryOptionRefusesWhatItCannotUse(t *testing.T) {
 	resolve := func(invoke.Spec) (Image, error) { return Image{}, nil }
 
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		opt  Option
-	}{
+	}
+	for _, tc := range []testCase{
 		{"a nil backend", WithBackend(nil)},
 		{"a ready timeout of zero", WithReadyTimeout(0)},
 		{"a negative ready timeout", WithReadyTimeout(-time.Second)},

@@ -9,11 +9,12 @@ import (
 )
 
 func TestDecodeUTF8IsTheWHATWGDecoder(t *testing.T) {
-	cases := []struct {
+	type testCase struct {
 		name string
 		in   []byte
 		want string
-	}{
+	}
+	cases := []testCase{
 		{"ascii", []byte("abc"), "abc"},
 		{"every width", []byte("é€😀"), "é€😀"},
 		{"a stray continuation", []byte{0x80}, "�"},

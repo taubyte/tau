@@ -248,10 +248,11 @@ func TestTheOwnerRelinkReplacesTheRepositories(t *testing.T) {
 func TestLinkingRefusals(t *testing.T) {
 	h, l := registered(t)
 
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		token, id, body string
 		want            int
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"no token":           {"", "QmPay", linkBody, http.StatusUnauthorized},
 		"a bad token":        {"nope", "QmPay", linkBody, http.StatusUnauthorized},
 		"not json":           {"tok-alice", "QmPay", "{", http.StatusBadRequest},

@@ -402,13 +402,14 @@ func (f *fixture) create(w http.ResponseWriter, r *http.Request) {
 		f.fail(w, http.StatusUnauthorized, "Not authenticated")
 		return
 	}
-	var body struct {
+	type requestBody struct {
 		Name         string           `json:"name"`
 		ParentID     int64            `json:"parentId"`
 		GitPack      *json.RawMessage `json:"gitPackConfig"`
 		CodeIndexing *json.RawMessage `json:"codeIndexingSetting"`
 		Description  string           `json:"description"`
 	}
+	var body requestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" || body.GitPack == nil || body.CodeIndexing == nil {
 		f.fail(w, http.StatusBadRequest, "createProject.arg0.gitPackConfig: must not be null")
 		return

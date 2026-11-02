@@ -76,7 +76,8 @@ func TestABuildMustSayHow(t *testing.T) {
 }
 
 func TestAWrongPairIsRefusedByShape(t *testing.T) {
-	for _, tc := range []struct{ name, path, body, want string }{
+	type testCase struct{ name, path, body, want string }
+	for _, tc := range []testCase{
 		{"a script has no install step", "/function/probe.yaml",
 			probeFn + "build:\n    script:\n        image: g\n        path: b.sh\n        install: npm ci\n",
 			"unknown key 'install'"},

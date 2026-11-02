@@ -102,9 +102,10 @@ func bootGitea(t *testing.T, name, image string) *instance {
 	api(t, http.MethodPost, base+"/api/v1/admin/users", asAdmin, map[string]any{
 		"username": user, "email": user + "@example.invalid", "password": password, "must_change_password": false,
 	}, nil)
-	var minted struct {
+	type mintedToken struct {
 		SHA1 string `json:"sha1"`
 	}
+	var minted mintedToken
 	req := http.Header{}
 	req.Set("Authorization", "Basic "+basic(user, password))
 	api(t, http.MethodPost, base+"/api/v1/users/"+user+"/tokens", req, map[string]any{
@@ -113,10 +114,11 @@ func bootGitea(t *testing.T, name, image string) *instance {
 	require.NotEmpty(t, minted.SHA1)
 
 	api(t, http.MethodPost, base+"/api/v1/orgs", asAdmin, map[string]any{"username": "acme-live"}, nil)
-	for _, r := range []struct {
+	type testCase struct {
 		name    string
 		private bool
-	}{{"public", false}, {"secret", true}} {
+	}
+	for _, r := range []testCase{{"public", false}, {"secret", true}} {
 		api(t, http.MethodPost, base+"/api/v1/user/repos", asAdmin, map[string]any{
 			"name": r.name, "private": r.private, "auto_init": true,
 		}, nil)

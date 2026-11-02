@@ -89,10 +89,11 @@ func TestACacheNeedsSomethingToReadFromAndAWayToReadIt(t *testing.T) {
 }
 
 func TestTheOptionsRefuseWhatWouldMakeTheCacheUseless(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		opt  CacheOption
-	}{
+	}
+	for _, tc := range []testCase{
 		{"a negative deploy budget", WithTTL(-time.Second)},
 		{"a cache that holds nothing", WithMax(0)},
 		{"a nil clock", WithClock(nil)},

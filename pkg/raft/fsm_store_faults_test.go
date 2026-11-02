@@ -24,10 +24,11 @@ func timestampOf(t *testing.T, store ds.Batching, key string) uint64 {
 }
 
 func TestAMergeThatCannotLandWritesNoneOfIt(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name  string
 		fault func(*faultStore, string, error)
-	}{
+	}
+	for _, tc := range []testCase{
 		{"refused at commit", (*faultStore).failPut},
 		{"refused while staging", (*faultStore).failStaging},
 	} {
@@ -93,12 +94,13 @@ func TestAMergeKeepsWhatItLoses(t *testing.T) {
 
 func TestAMergeOverAnEntryItCannotReadIsRefused(t *testing.T) {
 	garbage := []byte("not an entry")
-	for _, tc := range []struct {
+	type testCase struct {
 		name    string
 		fault   func(*testing.T, *faultStore)
 		refusal func(*testing.T, error)
 		left    func(*testing.T, *faultStore)
-	}{
+	}
+	for _, tc := range []testCase{
 		{
 			"a read the store refuses",
 			func(t *testing.T, s *faultStore) { s.failGet(faultPrefix+"/data/held", errDisk) },
@@ -176,10 +178,11 @@ func TestABatchTheStoreWillNotOpenWritesNothing(t *testing.T) {
 // raft compacts the log behind every snapshot, so a snapshot of what the store
 // returned before it failed forgets the rest for good.
 func TestASnapshotOfAStoreThatCannotBeReadFails(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name  string
 		fault func(*faultStore, error)
-	}{
+	}
+	for _, tc := range []testCase{
 		{"refused query", func(s *faultStore, err error) { s.failQuery(faultPrefix+"/data", err) }},
 		{"scan that fails partway", func(s *faultStore, err error) { s.failScan(faultPrefix+"/data", err) }},
 	} {
@@ -238,10 +241,11 @@ func snapshotOf(t *testing.T, data map[string]CRDTEntry, clock uint64) io.ReadCl
 // raft takes a failed Restore to mean the snapshot is not held, and installs it
 // again; a false success would serve whatever was left.
 func TestARestoreTheStoreRefusesSaysSo(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name  string
 		fault func(*faultStore, error)
-	}{
+	}
+	for _, tc := range []testCase{
 		{"refused query", func(s *faultStore, err error) { s.failQuery(faultPrefix+"/data", err) }},
 		{"scan that fails partway", func(s *faultStore, err error) { s.failScan(faultPrefix+"/data", err) }},
 		{"refused delete", func(s *faultStore, err error) { s.failDelete(faultPrefix+"/data/old", err) }},

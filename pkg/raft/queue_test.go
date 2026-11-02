@@ -283,10 +283,11 @@ func TestQueue_SnapshotRestoreRoundTrip(t *testing.T) {
 	q1 := NewQueue(mc1, "test")
 	defer q1.Close()
 
-	items := []struct {
+	type queueItem struct {
 		id   string
 		data []byte
-	}{
+	}
+	items := []queueItem{
 		{"job-1", []byte("data-1")},
 		{"job-2", []byte("data-2")},
 		{"job-3", []byte("data-3")},

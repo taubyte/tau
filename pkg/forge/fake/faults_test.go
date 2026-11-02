@@ -91,13 +91,14 @@ func TestEachFaultIsTheMistakeItNames(t *testing.T) {
 	cb, err := url.Parse("https://cloud.invalid/hook")
 	require.NoError(t, err)
 
-	for _, tc := range []struct {
+	type testCase struct {
 		fault   fake.Fault
 		shape   *fake.Shape // GitHubLike when nil
 		observe func(e env) string
 		right   string
 		wrong   string
-	}{
+	}
+	for _, tc := range []testCase{
 		{fault: fake.FaultWhoamiHasNoLogin,
 			observe: func(e env) string { id, err := e.c.Whoami(e.ctx); return o(id.Login, err) },
 			right:   "fake-user nil", wrong: " nil"},

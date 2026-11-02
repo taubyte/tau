@@ -93,10 +93,11 @@ func TestRetryBackoffSchedule(t *testing.T) {
 	})
 	h.mustPush(t, "job-1", "one")
 
-	for _, step := range []struct {
+	type testCase struct {
 		attempt uint32
 		wait    time.Duration
-	}{
+	}
+	for _, step := range []testCase{
 		{1, time.Second},
 		{2, 2 * time.Second},
 		{3, 4 * time.Second},
@@ -132,10 +133,11 @@ func TestRetryCeilingCapsTheBackoff(t *testing.T) {
 
 	// Uncapped the second delay would be 10s and the third 100s; the ceiling
 	// makes both 3s.
-	for _, step := range []struct {
+	type testCase struct {
 		attempt uint32
 		wait    time.Duration
-	}{
+	}
+	for _, step := range []testCase{
 		{1, time.Second},
 		{2, 3 * time.Second},
 		{3, 3 * time.Second},

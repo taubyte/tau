@@ -51,14 +51,17 @@ func (c *client) Access(ctx context.Context, key repokey.Key) (forge.Access, err
 		return forge.AccessNone, fmt.Errorf("forge/bitbucket: %s named the repository %q as %q, which is not the repository its clone link names", c.d.host, key, bounded(full))
 	}
 
-	var out struct {
-		Values []struct {
-			Permission string `json:"permission"`
-			Repository struct {
-				FullName string `json:"full_name"`
-			} `json:"repository"`
-		} `json:"values"`
+	type permissionRepoJSON struct {
+		FullName string `json:"full_name"`
 	}
+	type repoPermissionJSON struct {
+		Permission string             `json:"permission"`
+		Repository permissionRepoJSON `json:"repository"`
+	}
+	type repoPermissionsPage struct {
+		Values []repoPermissionJSON `json:"values"`
+	}
+	var out repoPermissionsPage
 	q := url.Values{"q": {`repository.full_name="` + full + `"`}}
 	if err := c.send(ctx, routePermission.at().with(q), nil, &out); err != nil {
 		return forge.AccessNone, c.classify(err, repokey.Key{})

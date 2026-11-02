@@ -42,10 +42,11 @@ func client(t *testing.T, drv forge.Driver) forge.Client {
 }
 
 func TestNewRefusesAnIncompleteDeployment(t *testing.T) {
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		host string
 		opts []azure.Option
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"no host":              {"", []azure.Option{azure.Organizations(org)}},
 		"not a host spelling":  {"Dev.Azure.com", []azure.Option{azure.Organizations(org)}},
 		"no organization":      {"dev.azure.com", nil},

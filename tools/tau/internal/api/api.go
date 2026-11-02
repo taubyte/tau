@@ -113,9 +113,10 @@ func (c *Client) do(ctx context.Context, method string, path []string, query url
 	}
 	if resp.StatusCode >= 300 {
 		defer resp.Body.Close()
-		var refusal struct {
+		type refusalJSON struct {
 			Error string `json:"error"`
 		}
+		var refusal refusalJSON
 		json.NewDecoder(io.LimitReader(resp.Body, 4<<10)).Decode(&refusal)
 		return nil, &Error{Status: resp.StatusCode, Message: refusal.Error, Header: resp.Header}
 	}
@@ -264,9 +265,10 @@ func (c *Client) Projects(ctx context.Context) ([]Project, error) {
 // Fqdn is the name the cloud serves under; its build frontend is
 // build-frontend.<fqdn>.
 func (c *Client) Fqdn(ctx context.Context) (string, error) {
-	var out struct {
+	type domainAnswer struct {
 		Fqdn string `json:"fqdn"`
 	}
+	var out domainAnswer
 	if err := c.json(ctx, http.MethodGet, []string{"cloud"}, nil, &out); err != nil {
 		return "", err
 	}
@@ -298,9 +300,10 @@ func (c *Client) GrantRole(ctx context.Context, projectID, user, role string) (s
 	if err != nil {
 		return "", err
 	}
-	var out struct {
+	type domainAnswer struct {
 		ID string `json:"id"`
 	}
+	var out domainAnswer
 	err = c.json(ctx, http.MethodPost, []string{"projects", projectID, "grants"}, bytes.NewReader(body), &out)
 	return out.ID, err
 }

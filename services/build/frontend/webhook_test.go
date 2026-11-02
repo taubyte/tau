@@ -25,12 +25,13 @@ func TestAVerifiedPushIsQueuedAndTheCallerIsToldNothing(t *testing.T) {
 }
 
 func TestEachAnswerAboutADeliveryHasItsOwnStatus(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name   string
 		err    error
 		status int
 		says   string
-	}{
+	}
+	for _, tc := range []testCase{
 		{"not genuine", fmt.Errorf("%w: signature", ErrUnverified), http.StatusNotFound, ""},
 		{"a ping", ErrNotAPush, http.StatusAccepted, "not a push event"},
 		{"a deleted branch", ErrRefDeleted, http.StatusAccepted, "ref deleted"},
@@ -175,11 +176,12 @@ func TestTheEligibleRefListIsTheOperatorsAndNotV1s(t *testing.T) {
 }
 
 func TestABackendRefusalReachesTheCallerAsAStatusAndNotAsWords(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		err  error
 		want int
-	}{
+	}
+	for _, tc := range []testCase{
 		{"queue full", connect.NewError(connect.CodeResourceExhausted, errors.New("build queue is full (10000)")), http.StatusServiceUnavailable},
 		{"no leader", connect.NewError(connect.CodeUnavailable, errors.New("not the leader of build/queue")), http.StatusServiceUnavailable},
 		{"unregistered", connect.NewError(connect.CodeFailedPrecondition, errors.New("repository is not registered")), http.StatusConflict},

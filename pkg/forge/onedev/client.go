@@ -22,10 +22,11 @@ const listPageSize = 100
 // Whoami is who this credential belongs to, and the only honest check that it
 // is still good.
 func (c *client) Whoami(ctx context.Context) (forge.Identity, error) {
-	var u struct {
+	type userJSON struct {
 		ID   int64  `json:"id"`
 		Name string `json:"name"`
 	}
+	var u userJSON
 	if err := c.send(ctx, routeCurrentUser.at(), nil, &u); err != nil {
 		return forge.Identity{}, c.classify(err, repokey.Key{})
 	}

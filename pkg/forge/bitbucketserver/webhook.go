@@ -15,17 +15,19 @@ import (
 func (d *driver) Scheme() forge.Scheme { return forge.SchemeBitbucketSHA256 }
 
 type pushPayload struct {
-	Repository struct {
-		Slug    string `json:"slug"`
-		Project struct {
-			Key string `json:"key"`
-		} `json:"project"`
-	} `json:"repository"`
-	Changes []struct {
-		RefID  string `json:"refId"`
-		ToHash string `json:"toHash"`
-		Type   string `json:"type"`
-	} `json:"changes"`
+	Repository pushRepoJSON `json:"repository"`
+	Changes    []changeJSON `json:"changes"`
+}
+
+type changeJSON struct {
+	RefID  string `json:"refId"`
+	ToHash string `json:"toHash"`
+	Type   string `json:"type"`
+}
+
+type pushRepoJSON struct {
+	Slug    string         `json:"slug"`
+	Project projectKeyJSON `json:"project"`
 }
 
 // Push reads a delivery the core has verified. A deletion carries the all-zero

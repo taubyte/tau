@@ -36,11 +36,12 @@ func (c *client) Whoami(ctx context.Context) (forge.Identity, error) {
 	if slug == "" || len(slug) > maxHostString-1 {
 		return forge.Identity{}, errors.New("forge/bitbucketserver: the forge answered no user, so this credential belongs to nobody")
 	}
-	var u struct {
+	type userJSON struct {
 		Slug  string `json:"slug"`
 		ID    int64  `json:"id"`
 		Email string `json:"emailAddress"`
 	}
+	var u userJSON
 	if err := c.send(ctx, routeUser.at(slug), nil, &u); err != nil {
 		return forge.Identity{}, c.classify(err, repokey.Key{})
 	}
@@ -61,10 +62,11 @@ func (c *client) Access(ctx context.Context, key repokey.Key) (forge.Access, err
 	if repo.Key != key {
 		return forge.AccessNone, fmt.Errorf("forge/bitbucketserver: %s was asked what this credential may do to %q and answered about %q", c.d.host, key, repo.Key)
 	}
-	for _, rung := range []struct {
+	type accessRung struct {
 		perm  string
 		level forge.Access
-	}{{permAdmin, forge.AccessAdmin}, {permWrite, forge.AccessWrite}} {
+	}
+	for _, rung := range []accessRung{{permAdmin, forge.AccessAdmin}, {permWrite, forge.AccessWrite}} {
 		held, err := c.holds(ctx, r, key, rung.perm)
 		if err != nil {
 			return forge.AccessNone, err
@@ -127,9 +129,10 @@ func (c *client) get(ctx context.Context, key repokey.Key) (repoJSON, forge.Repo
 // the ones the caller did. A repository with no commits has none, which
 // Bitbucket answers 404 for, and the record then carries none.
 func (c *client) defaultBranch(ctx context.Context, r repoJSON, repo *forge.Repository) error {
-	var b struct {
+	type defaultBranchJSON struct {
 		DisplayID string `json:"displayId"`
 	}
+	var b defaultBranchJSON
 	err := c.send(ctx, routeDefaultBranch.at(r.Project.Key, r.Slug), nil, &b)
 	var se *statusError
 	if errors.As(err, &se) && se.Status == 404 {

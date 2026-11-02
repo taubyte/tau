@@ -130,11 +130,12 @@ func TestVerifyRefusesEveryWrongDelivery(t *testing.T) {
 		return verify(SchemeHubSHA256, s, Delivery{Header: h, Body: body}, vectorAt, time.Minute)
 	}
 
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		header http.Header
 		body   []byte
 		reason string
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"no header at all": {
 			header: http.Header{}, body: vectorBody, reason: "no signature header",
 		},

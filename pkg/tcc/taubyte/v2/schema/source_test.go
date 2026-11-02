@@ -31,11 +31,12 @@ func sourceOf(t *testing.T, doc string) (any, error) {
 }
 
 func TestSourceSwitch(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		doc  string
 		want any
-	}{
+	}
+	for _, tc := range []testCase{
 		{"absent means here", "", nil},
 		{"a bare path is this repository", "source: pkg/checkout\n", "pkg/checkout"},
 		{"a single dot is the repository root", "source: \".\"\n", "."},
@@ -53,7 +54,8 @@ func TestSourceSwitch(t *testing.T) {
 }
 
 func TestSourceSwitchRefuses(t *testing.T) {
-	for _, tc := range []struct{ name, doc, contains string }{
+	type testCase struct{ name, doc, contains string }
+	for _, tc := range []testCase{
 		{"two branches at once", "source:\n    builtin: agent\n    component: paylib\n", "only one may be set"},
 		{"a provider that is not a branch", "source:\n    github:\n        id: \"1\"\n", "unknown key 'github'"},
 		{"git named as a block", "source:\n    git:\n        url: https://x/y\n", "takes a value, not a block"},
@@ -87,7 +89,8 @@ func TestSourceSwitchRefuses(t *testing.T) {
 
 func TestAScalarWhereABlockBelongsIsStillAnError(t *testing.T) {
 	const gwID = "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zg\n"
-	for _, tc := range []struct{ name, path, doc, contains string }{
+	type testCase struct{ name, path, doc, contains string }
+	for _, tc := range []testCase{
 		{"a database engine", "/database/orders.yaml",
 			"id: QmPChzsSKcAiSFqNqrH7LM4t9GhqfHmi3ihn7C9hNc8Vgd\nsql: postgres\n", "sql/engine has an empty key"},
 		{"a model's inference", "/model/opus.yaml",
@@ -125,11 +128,12 @@ func TestAnEmptyValueIsToldOnlyWhatTheFieldTakes(t *testing.T) {
 }
 
 func TestRepoPathPatternAndCheckerAgree(t *testing.T) {
-	for _, g := range []struct {
+	type testCase struct {
 		name    string
 		pattern string
 		check   func(string) error
-	}{
+	}
+	for _, g := range []testCase{
 		{"path", schema.RepoPathPattern(), schema.RepoPathChecker()},
 		{"location", schema.RepoLocationPattern(), schema.RepoLocationChecker()},
 	} {

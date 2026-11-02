@@ -217,7 +217,8 @@ func TestAStoreThatHoldsManyInstancesCarriesItsAdmission(t *testing.T) {
 	h := newHarness(t)
 	spec := resolveIn(t, h, nil, "function", "checkout")
 
-	for _, want := range []struct{ kind, label string }{
+	type testCase struct{ kind, label string }
+	for _, want := range []testCase{
 		{databaseKind, "tokens"},
 		{storageKind, "receipts"},
 	} {

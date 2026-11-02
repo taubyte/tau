@@ -59,20 +59,24 @@ func (c *client) Delete(ctx context.Context, key repokey.Key) error {
 // accessKeyRequest is an access key: the public half, a label, and the
 // permission, which this driver only ever sends as REPO_READ.
 type accessKeyRequest struct {
-	Key struct {
-		Text  string `json:"text"`
-		Label string `json:"label"`
-	} `json:"key"`
-	Permission string `json:"permission"`
+	Key        newKeyJSON `json:"key"`
+	Permission string     `json:"permission"`
+}
+
+type newKeyJSON struct {
+	Text  string `json:"text"`
+	Label string `json:"label"`
 }
 
 type accessKeyJSON struct {
-	Key struct {
-		ID    int64  `json:"id"`
-		Text  string `json:"text"`
-		Label string `json:"label"`
-	} `json:"key"`
-	Permission string `json:"permission"`
+	Key        keyJSON `json:"key"`
+	Permission string  `json:"permission"`
+}
+
+type keyJSON struct {
+	ID    int64  `json:"id"`
+	Text  string `json:"text"`
+	Label string `json:"label"`
 }
 
 func (c *client) InstallDeployKey(ctx context.Context, key repokey.Key, title, publicKey string) (forge.Handle, error) {

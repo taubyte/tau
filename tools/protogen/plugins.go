@@ -91,10 +91,12 @@ func checkPluginVersions(repoRoot, absDir string) error {
 // bufGenYAML is the slice of buf.gen.yaml's shape checkPluginVersions needs:
 // which local plugins a module actually invokes.
 type bufGenYAML struct {
-	Plugins []struct {
-		Local string `yaml:"local"`
-		Out   string `yaml:"out"`
-	} `yaml:"plugins"`
+	Plugins []plugin `yaml:"plugins"`
+}
+
+type plugin struct {
+	Local string `yaml:"local"`
+	Out   string `yaml:"out"`
 }
 
 // modulePlugins reads absDir/buf.gen.yaml and returns the set of `local:`

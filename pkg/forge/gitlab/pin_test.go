@@ -95,15 +95,17 @@ func TestACleartextInstanceIsNeverSentTheDeploymentCredential(t *testing.T) {
 	assert.Empty(t, rec.sent, "the deployment's credential went on a cleartext wire: %v", rec.sent)
 }
 
-// pinClients names each http.Client this driver builds, because there are two
-// and they are built in two places: one per Bind, one per driver holding a
-// deployment credential.
-var pinClients = map[string]struct {
+type pinClient struct {
 	opts   []Option
 	client func(*testing.T, forge.Driver) *http.Client
 	header string
 	value  string
-}{
+}
+
+// pinClients names each http.Client this driver builds, because there are two
+// and they are built in two places: one per Bind, one per driver holding a
+// deployment credential.
+var pinClients = map[string]pinClient{
 	"the client a caller's token is bound to": {
 		client: pinCallerClient,
 		header: "PRIVATE-TOKEN",

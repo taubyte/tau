@@ -72,7 +72,8 @@ func TestAProjectWithNoEnvironmentsIsRefused(t *testing.T) {
 }
 
 func TestAFunctionWithoutATierItRunsOnIsRefused(t *testing.T) {
-	for _, tc := range []struct{ project, id, reason string }{
+	type testCase struct{ project, id, reason string }
+	for _, tc := range []testCase{
 		{"refused/function/noruntime", "QmckTZTPqB6a5thN1vZNAjoXUBdEUXWL3vA1gFxcx3xBk9", "required attribute 'runtime'"},
 		{"refused/function/unknownruntime", "QmTSpD9SVJriUVp9EHdp1okVF71Ua9FvmeCYXwFABkQiD7", `invalid value "nodejs"; valid values here: wasm, js`},
 	} {

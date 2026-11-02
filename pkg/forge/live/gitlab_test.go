@@ -90,23 +90,26 @@ gitlab_rails['usage_ping_enabled'] = false
 	api(t, http.MethodPut, base+"/api/v4/application/settings?allow_local_requests_from_web_hooks_and_services=true", asAdmin, nil, nil)
 
 	const user = "tau-dev"
-	var created struct {
+	type createdJSON struct {
 		ID int64 `json:"id"`
 	}
+	var created createdJSON
 	api(t, http.MethodPost, base+"/api/v4/users", asAdmin, map[string]any{
 		"username": user, "name": user, "email": user + "@example.invalid",
 		"password": "Dev-" + randomHex(t, 12), "skip_confirmation": true,
 	}, &created)
-	var pat struct {
+	type personalToken struct {
 		Token string `json:"token"`
 	}
+	var pat personalToken
 	api(t, http.MethodPost, fmt.Sprintf("%s/api/v4/users/%d/personal_access_tokens", base, created.ID), asAdmin, map[string]any{
 		"name": "harness", "scopes": []string{"api"}, "expires_at": time.Now().AddDate(0, 0, 7).Format("2006-01-02"),
 	}, &pat)
 	require.NotEmpty(t, pat.Token)
 
 	api(t, http.MethodPost, base+"/api/v4/groups", asAdmin, map[string]any{"name": "acme-live", "path": "acme-live"}, nil)
-	for _, r := range []struct{ name, visibility string }{{"public", "public"}, {"secret", "private"}} {
+	type testCase struct{ name, visibility string }
+	for _, r := range []testCase{{"public", "public"}, {"secret", "private"}} {
 		api(t, http.MethodPost, base+"/api/v4/projects", asAdmin, map[string]any{
 			"name": r.name, "visibility": r.visibility, "initialize_with_readme": true,
 		}, nil)

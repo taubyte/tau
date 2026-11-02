@@ -411,7 +411,8 @@ func TestAuditAuthoredBuiltin(t *testing.T) {
 }
 
 func TestATargetWithNoNameIsRefused(t *testing.T) {
-	for _, tc := range []struct{ name, path, doc, contains string }{
+	type testCase struct{ name, path, doc, contains string }
+	for _, tc := range []testCase{
 		{"a gateway's handler", "/gateway/ask.yaml",
 			"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zg\nhost:\n    generated:\n        name: ask\nroute:\n    path: /\n    handler:\n        agent: {}\n",
 			"route/handler/agent/name"},

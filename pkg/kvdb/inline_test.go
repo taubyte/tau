@@ -232,10 +232,11 @@ func TestATamperedCarriedStateIsRefused(t *testing.T) {
 
 	flipped := slices.Clone(good.GetInline()[1])
 	flipped[len(flipped)/2] ^= 1
-	cases := map[string]struct {
+	type testCase struct {
 		edit func(d *pb.Delta)
 		want error
-	}{
+	}
+	cases := map[string]testCase{
 		"no root":        {func(d *pb.Delta) { d.Root = nil }, errStateMismatch},
 		"swapped trees":  {func(d *pb.Delta) { d.Trees[0], d.Trees[1] = d.Trees[1], d.Trees[0] }, errStateMismatch},
 		"missing tree":   {func(d *pb.Delta) { d.Root.Context, d.Trees = false, d.Trees[:1] }, errStateMismatch},

@@ -34,11 +34,12 @@ func TestResolveDockerHost(t *testing.T) {
 		assert.Equal(t, "unix:///env.sock", host)
 	})
 
-	cases := []struct {
+	type testCase struct {
 		name  string
 		files map[string]string
 		host  string
-	}{
+	}
+	cases := []testCase{
 		{name: "no config file"},
 		{name: "malformed config", files: map[string]string{"config.json": "{"}},
 		{name: "no current context", files: map[string]string{"config.json": `{}`}},

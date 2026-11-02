@@ -574,9 +574,10 @@ func (f *sweepForge) answer(w http.ResponseWriter, r *http.Request) {
 // "the forge created something else" check is therefore not what fails a
 // redirect row.
 func (f *sweepForge) created(r *http.Request) string {
-	var body struct {
+	type requestBody struct {
 		Name string `json:"name"`
 	}
+	var body requestBody
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil || body.Name == "" {
 		return f.name
 	}

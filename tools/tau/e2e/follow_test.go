@@ -234,9 +234,10 @@ func queueBehind(t *testing.T, f *fake.Served, work string, repo repokey.Key) st
 	gitOK(t, work, "commit", "-q", "--allow-empty", "-m", "queued behind the held build")
 	gitOK(t, work, "-c", "http.extraHeader=Authorization: Basic "+basic(addr.HTTPUsername, f.TokenString()), "push", "-q", addr.URL, "HEAD:refs/heads/main")
 
-	var queued struct {
+	type queuedJob struct {
 		Job string `json:"job"`
 	}
+	var queued queuedJob
 	require.NoError(t, json.Unmarshal([]byte(ok(t, "ci", "run", "--detach", "--dir", work, "-o", "json")), &queued))
 	require.NotEmpty(t, queued.Job)
 	return queued.Job

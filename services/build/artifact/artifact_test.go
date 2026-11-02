@@ -682,10 +682,11 @@ func TestAnUnreadDelegatedBlockIsRefusedByName(t *testing.T) {
 
 func TestABarePathIsTheMainRepositoryNotACodeRepository(t *testing.T) {
 	r := deployed(t, oneEnvironment(t))
-	for _, c := range []struct {
+	type testCase struct {
 		pushed string
 		images []string
-	}{
+	}
+	for _, c := range []testCase{
 		{mainRepo, []string{"rust:1.83"}},
 		{"github.com/acme/shop-code", nil},
 		{"github.com/acme/another-code", nil},

@@ -113,7 +113,8 @@ func decrypt(w *Wrapping, ciphertext []byte, public group.Element, parts []*Part
 func TestRoundTrip(t *testing.T) {
 	// The protocol must not change with cluster size: one node runs the same
 	// scheme at threshold 1 that twenty run at threshold 11.
-	for _, tc := range []struct{ n, threshold int }{
+	type testCase struct{ n, threshold int }
+	for _, tc := range []testCase{
 		{1, 1}, {2, 1}, {2, 2}, {3, 2}, {3, 3}, {5, 3}, {7, 4},
 	} {
 		t.Run(fmt.Sprintf("%dof%d", tc.threshold, tc.n), func(t *testing.T) {
@@ -306,12 +307,13 @@ func TestDealingIsDeterministic(t *testing.T) {
 }
 
 func TestNewDealerRejectsBadRosters(t *testing.T) {
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		self      string
 		members   []string
 		threshold uint
 		wantErr   string
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"zero threshold":       {"a", []string{"a", "b"}, 0, "at least 1"},
 		"threshold above n":    {"a", []string{"a", "b"}, 3, "exceeds 2 members"},
 		"self not a member":    {"z", []string{"a", "b"}, 1, `"z" is not a member`},

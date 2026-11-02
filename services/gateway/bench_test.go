@@ -59,10 +59,11 @@ func benchGateway(b *testing.B) http.Handler {
 func BenchmarkServeHTTP(b *testing.B) {
 	gw := benchGateway(b)
 	noop := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	for _, c := range []struct {
+	type testCase struct {
 		name, method, url, body string
 		h                       http.Handler
-	}{
+	}
+	for _, c := range []testCase{
 		{"baseline", http.MethodGet, "http://nobody.example.com/", "", noop},
 		{"invoke", http.MethodPost, "http://mcp.example.com/", `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`, gw},
 		{"routed", http.MethodGet, "http://api.example.com/v1/orders", "", gw},

@@ -542,11 +542,12 @@ func TestAFailingCheckpointDoesNotStopTheOthers(t *testing.T) {
 }
 
 func TestOnlyVolumesWhoseIntervalHasElapsedAreWalked(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		name     string
 		declared string
 		every    time.Duration
-	}{
+	}
+	for _, c := range []testCase{
 		{"a declared interval", "10s", 10 * time.Second},
 		{"an hour", "1h0m0s", time.Hour},
 		// A COMPILED OBJECT THAT CARRIED NONE, and one that carried something
@@ -732,11 +733,12 @@ func TestARestoreSaysWhereItCameFrom(t *testing.T) {
 func TestARestoreThatCannotBeCompletedRefusesTheMount(t *testing.T) {
 	handle := "shop/prod/QmData"
 
-	for _, c := range []struct {
+	type testCase struct {
 		name  string
 		setup func(t *testing.T, store *blobs, index *rows) string
 		says  string
-	}{
+	}
+	for _, c := range []testCase{
 		{
 			name: "the object is not an archive",
 			setup: func(t *testing.T, store *blobs, index *rows) string {
@@ -809,10 +811,11 @@ func TestAFrameWiderThanACheckpointIsRefusedBeforeItIsAllocated(t *testing.T) {
 	// The last block, repeating a zero 1024 times: an archive with nothing in it.
 	empty := []byte{0x03, 0x20, 0x00, 0x00}
 
-	for _, c := range []struct {
+	type testCase struct {
 		name   string
 		header []byte
-	}{
+	}
+	for _, c := range []testCase{
 		// No content size, and a window of 1<<29: exponent 19, mantissa 0.
 		{"a window", []byte{0x00, 0x98}},
 		// One segment, whose window is its content size: 1<<29, in four bytes.
@@ -847,10 +850,11 @@ func TestAFrameWiderThanACheckpointIsRefusedBeforeItIsAllocated(t *testing.T) {
 func TestARestoreThatFailsLeavesNothingALaterMountTakes(t *testing.T) {
 	handle := "shop/prod/QmData"
 
-	for _, c := range []struct {
+	type testCase struct {
 		name string
 		node func(t *testing.T, root string) *volume.Volumes
-	}{
+	}
+	for _, c := range []testCase{
 		{
 			name: "the archive stops halfway",
 			node: func(t *testing.T, root string) *volume.Volumes {
@@ -1234,12 +1238,13 @@ func (p *pausing) Write(b []byte) (int, error) {
 }
 
 func TestACheckpointHoldsOnlyWhatItOpened(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		name    string
 		prepare func(t *testing.T, dir, outside string)
 		swap    func(t *testing.T, dir, outside string)
 		kept    bool
-	}{
+	}
+	for _, c := range []testCase{
 		{
 			name: "a file that becomes a link",
 			prepare: func(t *testing.T, dir, outside string) {
@@ -1338,11 +1343,12 @@ func TestARestorePutsBackWhatTheWalkTook(t *testing.T) {
 func TestACheckpointCannotWriteOutsideTheVolume(t *testing.T) {
 	handle := "shop/prod/QmData"
 
-	for _, c := range []struct {
+	type testCase struct {
 		name    string
 		archive func(t *testing.T) []byte
 		says    string
-	}{
+	}
+	for _, c := range []testCase{
 		{
 			name:    "a name that climbs out",
 			archive: func(t *testing.T) []byte { return tarOf(t, map[string]string{"../../stolen": "x"}) },
@@ -1415,10 +1421,11 @@ func TestAnEscapingEntryWritesNothing(t *testing.T) {
 }
 
 func TestNoEntryLandsOutsideTheVolumeWhateverLinksPrecedeIt(t *testing.T) {
-	for _, last := range []struct {
+	type testCase struct {
 		name  string
 		entry tar.Header
-	}{
+	}
+	for _, last := range []testCase{
 		{"a file", tar.Header{Name: "y/escaped", Typeflag: tar.TypeReg, Mode: 0o640}},
 		{"a directory", tar.Header{Name: "y/escaped", Typeflag: tar.TypeDir, Mode: 0o750}},
 		{"a link", linkEntry("y/escaped", "anything")},
@@ -1454,10 +1461,11 @@ func TestNothingIsWrittenThroughALinkThatLeadsOut(t *testing.T) {
 }
 
 func TestALinkThatLeadsOutFromWhereItLandsIsRefused(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		name  string
 		links []tar.Header
-	}{
+	}
+	for _, c := range []testCase{
 		{"under a link to the volume", []tar.Header{linkEntry("x", "."), linkEntry("x/y", "..")}},
 		{"through a link made after it", []tar.Header{linkEntry("l", "x/.."), linkEntry("x", ".")}},
 		{"in a loop", []tar.Header{linkEntry("a", "b"), linkEntry("b", "a")}},
@@ -1666,11 +1674,12 @@ func TestARestoredFileKeepsItsMode(t *testing.T) {
 func TestAnArchiveThatCannotBeUnpackedIsRefused(t *testing.T) {
 	handle := "shop/prod/QmData"
 
-	for _, c := range []struct {
+	type testCase struct {
 		name    string
 		entries []tar.Header
 		body    string
-	}{
+	}
+	for _, c := range []testCase{
 		{
 			name: "a directory under a file",
 			entries: []tar.Header{

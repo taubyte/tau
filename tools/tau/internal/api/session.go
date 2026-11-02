@@ -144,10 +144,11 @@ func orderOf(token string) (order, bool) {
 	if err != nil {
 		return order{}, false
 	}
-	var c struct {
+	type cachedSession struct {
 		Session string `json:"sid"`
 		Issued  int64  `json:"iat"`
 	}
+	var c cachedSession
 	if json.Unmarshal(payload, &c) != nil || c.Session == "" {
 		return order{}, false
 	}

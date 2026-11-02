@@ -31,7 +31,8 @@ func TestTheMostSpecificRouteWins(t *testing.T) {
 		gw("deep", map[string]any{"path": "/api/v2", "match": "prefix", "handler": handler("function", "v2")}),
 	}
 
-	for _, c := range []struct{ path, want string }{
+	type testCase struct{ path, want string }
+	for _, c := range []testCase{
 		{"/", "shop"},
 		{"/about", "shop"},
 		{"/api", "api"},

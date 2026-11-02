@@ -42,28 +42,32 @@ func hookQuery(wire string) (string, error) {
 // pushPayload is the whole of what this driver reads out of a delivery: the
 // fields hookQuery asked for and nothing else.
 type pushPayload struct {
-	Data struct {
-		Webhook struct {
-			Event      string `json:"event"`
-			Repository *struct {
-				Name  string `json:"name"`
-				Owner struct {
-					CanonicalName string `json:"canonicalName"`
-				} `json:"owner"`
-			} `json:"repository"`
-			Updates []*struct {
-				Ref *struct {
-					Name string `json:"name"`
-				} `json:"ref"`
-				Old *struct {
-					ID string `json:"id"`
-				} `json:"old"`
-				New *struct {
-					ID string `json:"id"`
-				} `json:"new"`
-			} `json:"updates"`
-		} `json:"webhook"`
-	} `json:"data"`
+	Data webhookData `json:"data"`
+}
+
+type webhookData struct {
+	Webhook webhookJSON `json:"webhook"`
+}
+
+type webhookJSON struct {
+	Event      string           `json:"event"`
+	Repository *webhookRepoJSON `json:"repository"`
+	Updates    []*refUpdateJSON `json:"updates"`
+}
+
+type refUpdateJSON struct {
+	Ref *refJSON      `json:"ref"`
+	Old *objectIDJSON `json:"old"`
+	New *objectIDJSON `json:"new"`
+}
+
+type objectIDJSON struct {
+	ID string `json:"id"`
+}
+
+type webhookRepoJSON struct {
+	Name  string    `json:"name"`
+	Owner ownerJSON `json:"owner"`
 }
 
 // Push reads a delivery the core has verified and returns what it claims. A

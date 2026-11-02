@@ -61,22 +61,28 @@ func (c *Client) Close() error {
 }
 
 type PullStatus struct {
-	Status         string `json:"status"`
-	ProgressDetail struct {
-		Current int `json:"current"`
-		Total   int `json:"total"`
-	} `json:"progressDetail"`
-	Id          string `json:"id"`
-	Error       string `json:"error"`
-	ErrorDetail struct {
-		Message string `json:"message"`
-	} `json:"errorDetail"`
+	Status         string          `json:"status"`
+	ProgressDetail ProgressDetail  `json:"progressDetail"`
+	Id             string          `json:"id"`
+	Error          string          `json:"error"`
+	ErrorDetail    PullErrorDetail `json:"errorDetail"`
+}
+
+type PullErrorDetail struct {
+	Message string `json:"message"`
+}
+
+type ProgressDetail struct {
+	Current int `json:"current"`
+	Total   int `json:"total"`
 }
 
 type BuildStatus struct {
-	Stream      string `json:"stream"`
-	Error       string `json:"error"`
-	ErrorDetail struct {
-		Message string `json:"message"`
-	} `json:"errorDetail"`
+	Stream      string           `json:"stream"`
+	Error       string           `json:"error"`
+	ErrorDetail BuildErrorDetail `json:"errorDetail"`
+}
+
+type BuildErrorDetail struct {
+	Message string `json:"message"`
 }

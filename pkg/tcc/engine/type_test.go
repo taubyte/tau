@@ -7,10 +7,11 @@ import (
 )
 
 func TestTypeString(t *testing.T) {
-	tests := []struct {
+	type testCase struct {
 		typ    Type
 		expect string
-	}{
+	}
+	tests := []testCase{
 		{TypeInt, "Int"},
 		{TypeBool, "Bool"},
 		{TypeFloat, "Float"},

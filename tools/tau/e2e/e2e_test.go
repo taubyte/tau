@@ -157,10 +157,11 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 		link = tau("link", "--profile", "owner", "--create", "--dir", dir, "--config-repo", configRepo.String(), "-o", "json")
 		return link.code == 0
 	}, 2*time.Minute, time.Second, "link never succeeded: %s", link.stderr)
-	var linked struct {
+	type linkAnswer struct {
 		config.Link
 		Pushed string `json:"pushed"`
 	}
+	var linked linkAnswer
 	require.NoError(t, json.Unmarshal([]byte(link.stdout), &linked))
 	require.NotEmpty(t, linked.ProjectID)
 	wire := f.LastHookWire()
@@ -202,10 +203,11 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 	}, time.Minute, time.Second, "the pushed commit was never confirmed")
 	require.Equal(t, http.StatusAccepted, deliver(t, f.Forge, otherCloud+"/hook/"+linked.ProjectID, configRepo, wire, linked.Pushed).StatusCode)
 
-	var jobs []struct {
+	type job struct {
 		ID     string `json:"id"`
 		Status string `json:"status"`
 	}
+	var jobs []job
 	require.Eventually(t, func() bool {
 		jobs = nil
 		return json.Unmarshal([]byte(ok(t, "jobs", "--profile", "owner", "--dir", dir, "-o", "json")), &jobs) == nil && len(jobs) == 1
@@ -219,9 +221,10 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 	// project is a 404 again.
 	r := tauIn(adminPassword+"\n", "login", "--profile", "admin", "--cloud", cloud, "--name", "root", "--password-stdin")
 	require.Equal(t, 0, r.code, r.stderr)
-	var bob struct {
+	type createdUser struct {
 		ID string `json:"id"`
 	}
+	var bob createdUser
 	r = tauIn("bobs-password-1\n", "users", "create", "bob", "--profile", "admin", "--login", "--password-stdin", "-o", "json")
 	require.Equal(t, 0, r.code, r.stderr)
 	require.NoError(t, json.Unmarshal([]byte(r.stdout), &bob))
@@ -241,9 +244,10 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 	require.Contains(t, r.stderr, "not found")
 	require.Equal(t, "[]\n", ok(t, "projects", "--profile", "bob", "-o", "json"))
 
-	var grant struct {
+	type createdGrant struct {
 		ID string `json:"id"`
 	}
+	var grant createdGrant
 	require.NoError(t, json.Unmarshal([]byte(ok(t, "grants", "add", bob.ID, "viewer", "--profile", "owner", "--dir", dir, "-o", "json")), &grant))
 	require.Contains(t, tau("grants", "list", "--profile", "bob", "--project", linked.ProjectID).stderr, "not found", "a viewer does not see the grants")
 	require.Eventually(t, func() bool {

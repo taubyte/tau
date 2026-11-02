@@ -86,11 +86,12 @@ func TestPinnedTransportKnowsADefaultPortIsTheSameServer(t *testing.T) {
 		return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
 	})
 
-	for _, tc := range []struct {
+	type testCase struct {
 		host string
 		url  string
 		want bool
-	}{
+	}
+	for _, tc := range []testCase{
 		{"git.example.invalid", "https://git.example.invalid/x", true},
 		{"git.example.invalid", "https://git.example.invalid:443/x", true},
 		{"git.example.invalid:8443", "https://git.example.invalid:8443/x", true},

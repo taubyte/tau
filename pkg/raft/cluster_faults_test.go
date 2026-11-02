@@ -175,11 +175,12 @@ func TestNew_RefusesWhatItCannotRun(t *testing.T) {
 	badTimeouts := testTimeoutConfig()
 	badTimeouts.LeaderLeaseTimeout = 2 * badTimeouts.HeartbeatTimeout
 
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		opt  Option
 		says string
-	}{
+	}
+	for _, tc := range []testCase{
 		{"an empty snapshot dir", WithSnapshotDir(""), "snapshot dir cannot be empty"},
 		{"an empty snapshot root", WithSnapshotRoot(""), "snapshot root cannot be empty"},
 		{"a key shorter than AES-256 takes", WithEncryptionKey(make([]byte, 16)), "encryption key must be"},

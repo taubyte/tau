@@ -12,10 +12,11 @@ import (
 )
 
 func TestTranslateIsTheWholeCodeTable(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		code connect.Code
 		want int
-	}{
+	}
+	for _, tc := range []testCase{
 		{connect.CodeNotFound, http.StatusNotFound},
 		{connect.CodePermissionDenied, http.StatusNotFound},
 		{connect.CodeInvalidArgument, http.StatusBadRequest},

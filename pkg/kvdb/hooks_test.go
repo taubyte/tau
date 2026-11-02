@@ -159,11 +159,12 @@ func TestCRDTHooks(t *testing.T) {
 	// a and b each write k and delete their own version, never having seen
 	// the other's; c holds both versions and merges the two deletes one at a
 	// time. The key is present until the second.
-	for _, tc := range []struct {
+	type testCase struct {
 		name   string
 		first  int
 		before []string
-	}{
+	}
+	for _, tc := range []testCase{
 		{"removing the losing version", 0, nil},
 		{"removing the winning version", 1, []string{"put /k a"}},
 	} {

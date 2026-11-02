@@ -14,11 +14,12 @@ import (
 
 func TestDocPathAddresses(t *testing.T) {
 	s := newSession(t, fullBindings(), nil)
-	cases := []struct {
+	type testCase struct {
 		res  []string
 		want []string
 		err  string
-	}{
+	}
+	cases := []testCase{
 		{res: nil, err: "empty resource address"},
 		{res: []string{"project"}, want: []string{"project"}},
 		{res: []string{"pipeline"}, err: "a group and a name"},
@@ -167,11 +168,12 @@ func TestNoContainerKind(t *testing.T) {
 
 func TestResourceAt(t *testing.T) {
 	s := newSession(t, fullBindings(), nil)
-	cases := []struct {
+	type testCase struct {
 		path string
 		want []string
 		ok   bool
-	}{
+	}
+	cases := []testCase{
 		{"project.yaml", []string{"project"}, true},
 		{"/other.yaml", []string{"other"}, false},
 		{"pipeline/x.yml", nil, false},

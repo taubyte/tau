@@ -22,9 +22,10 @@ func (m *memberDriver) IsActiveMember(ctx context.Context, namespace, username s
 	}
 	c := m.bind(m.member)
 
-	var g struct {
+	type groupJSON struct {
 		Name string `json:"name"`
 	}
+	var g groupJSON
 	if err := c.send(ctx, routeGroup.at(namespace), nil, &g); err != nil {
 		return false, fmt.Errorf("forge/gerrit: membership of %q in %q could not be established: %w", bounded(username), bounded(namespace), err)
 	}
@@ -32,9 +33,10 @@ func (m *memberDriver) IsActiveMember(ctx context.Context, namespace, username s
 		return false, fmt.Errorf("forge/gerrit: asked about the group %q and %s answered with another group", bounded(namespace), m.host)
 	}
 
-	var a struct {
+	type memberJSON struct {
 		Username string `json:"username"`
 	}
+	var a memberJSON
 	err := c.send(ctx, routeGroupMember.at(namespace, username), nil, &a)
 	switch {
 	case statusOf(err) == http.StatusNotFound:

@@ -258,10 +258,11 @@ func TestABodyLargerThanTheBudgetIsRefused(t *testing.T) {
 }
 
 func TestWhatTheWorkerSaysBecomesWhatTheClientIsTold(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		err  error
 		want int
-	}{
+	}
+	for _, c := range []testCase{
 		{specs.ErrNotFound, http.StatusNotFound},
 		{register.ErrNotPublished, http.StatusNotFound},
 		{invoke.ErrAtCapacity, http.StatusServiceUnavailable},
@@ -359,10 +360,11 @@ func TestARequestWithNoHostIsRefused(t *testing.T) {
 }
 
 func TestStatusFor(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		err  error
 		want int
-	}{
+	}
+	for _, c := range []testCase{
 		{specs.ErrNotFound, http.StatusNotFound},
 		{register.ErrNotPublished, http.StatusNotFound},
 		{invoke.ErrAtCapacity, http.StatusServiceUnavailable},

@@ -19,9 +19,10 @@ var (
 )
 
 func getLatestAssetVersion() (string, error) {
-	var latest struct {
+	type latestRelease struct {
 		Version string `json:"tag_name"`
 	}
+	var latest latestRelease
 
 	req, err := http.NewRequest("GET", releasesLatest, nil)
 	if err != nil {

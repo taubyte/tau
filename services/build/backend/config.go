@@ -111,10 +111,11 @@ func defaultLogDir() string {
 // withDefaults fills in the zero values and refuses the combinations that have
 // no honest reading.
 func (c Config) withDefaults() (Config, error) {
-	for _, d := range []struct {
+	type namedDuration struct {
 		name  string
 		value time.Duration
-	}{
+	}
+	for _, d := range []namedDuration{
 		{"buildTimeout", c.BuildTimeout},
 		{"claimMargin", c.ClaimMargin},
 		{"claimInterval", c.ClaimInterval},
@@ -125,10 +126,11 @@ func (c Config) withDefaults() (Config, error) {
 			return c, fmt.Errorf("build: %s must not be negative", d.name)
 		}
 	}
-	for _, n := range []struct {
+	type namedCount struct {
 		name  string
 		value int64
-	}{
+	}
+	for _, n := range []namedCount{
 		{"maxQueueDepth", int64(c.MaxQueueDepth)},
 		{"maxOpenPerRepo", int64(c.MaxOpenPerRepo)},
 		{"maxMessageBytes", int64(c.MaxMessageBytes)},

@@ -12,12 +12,13 @@ func TestAStepSaysWhichKindOfFailureStoppedIt(t *testing.T) {
 	const question = "asking the question this step was on its way to"
 	refusal := &forge.UnsupportedError{Host: "forge.invalid", Capability: forge.CapPushHooks}
 
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		take    func(t tb)
 		fires   bool
 		says    string
 		refusal bool
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"mustReach on nothing": {
 			take: func(t tb) { mustReach(t, nil, question) },
 		},

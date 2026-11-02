@@ -11,11 +11,12 @@ import (
 )
 
 func TestConformance(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		opts []gerrit.Option
 		caps []forge.Capability
-	}{
+	}
+	for _, tc := range []testCase{
 		{
 			name: "with the deployment's membership credential",
 			opts: []gerrit.Option{gerrit.Membership(memberToken)},

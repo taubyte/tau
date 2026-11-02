@@ -137,7 +137,8 @@ func (s *Server) session(ch gossh.Channel, requests <-chan *gossh.Request) {
 			req.Reply(false, nil)
 			continue
 		}
-		var payload struct{ Command string }
+		type execRequest struct{ Command string }
+		var payload execRequest
 		if err := gossh.Unmarshal(req.Payload, &payload); err != nil {
 			req.Reply(false, nil)
 			return
@@ -153,7 +154,8 @@ func (s *Server) session(ch gossh.Channel, requests <-chan *gossh.Request) {
 			ch.Stderr().Write([]byte(err.Error() + "\n"))
 			status = 1
 		}
-		ch.SendRequest("exit-status", false, gossh.Marshal(struct{ Status uint32 }{status}))
+		type exitStatus struct{ Status uint32 }
+		ch.SendRequest("exit-status", false, gossh.Marshal(exitStatus{status}))
 		return
 	}
 }

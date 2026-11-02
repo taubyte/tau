@@ -47,8 +47,9 @@ func TestTheRepositoryKeyAndTheRefCannotBeRecut(t *testing.T) {
 
 func TestATripleRecutAtTheKeyRefBoundaryDoesNotCollide(t *testing.T) {
 	sha := strings.Repeat("a", 40)
-	left := struct{ key, ref string }{"github.com/o/n", "refs/heads/arefs/heads/x"}
-	right := struct{ key, ref string }{"github.com/o/nrefs/heads/a", "refs/heads/x"}
+	type keyRef struct{ key, ref string }
+	left := keyRef{"github.com/o/n", "refs/heads/arefs/heads/x"}
+	right := keyRef{"github.com/o/nrefs/heads/a", "refs/heads/x"}
 
 	// Unframed the two are indistinguishable, or this test proves nothing.
 	require.Equal(t, left.key+left.ref+sha, right.key+right.ref+sha)

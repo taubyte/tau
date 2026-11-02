@@ -7,10 +7,11 @@ import (
 
 func TestAMessageCarryingFieldsThatDoNotBelongToItsKindIsMalformed(t *testing.T) {
 	sig := []byte("s")
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		m    Message
-	}{
+	}
+	for _, tc := range []testCase{
 		{"no signature", Message{Kind: KindPrepare, From: "a", Seq: 1}},
 		{"unknown kind", Message{Kind: Kind(42), Signature: sig}},
 		{"a request naming a replica", Message{Kind: KindRequest, From: "a", Client: "c", Signature: sig}},
@@ -97,11 +98,12 @@ func TestAnEquivocationProofIsCheckableBySomeoneWhoWasNotThere(t *testing.T) {
 	if err := (Equivocation{A: a, B: b}).Verify(replicaVerifier()); err != nil {
 		t.Fatalf("a genuine proof did not verify: %v", err)
 	}
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		e    Equivocation
 		want error
-	}{
+	}
+	for _, tc := range []testCase{
 		{"two senders", Equivocation{A: a, B: signed("y", Message{Kind: KindPrePrepare, View: 1, Seq: 2, Digest: Digest{2}})}, ErrBadCertificate},
 		{"no sender", Equivocation{A: Message{}, B: Message{}}, ErrBadCertificate},
 		{"two kinds", Equivocation{A: a, B: signed("x", Message{Kind: KindPrepare, View: 1, Seq: 2, Digest: Digest{2}})}, ErrBadCertificate},

@@ -142,11 +142,12 @@ func TestNothingReadyIsSaidPlainly(t *testing.T) {
 }
 
 func TestOnlyAnUnreachableNodeIsRetried(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		name    string
 		err     error
 		retried bool
-	}{
+	}
+	for _, c := range []testCase{
 		{"no route", errors.New("no route to peer"), true},
 		{"stream reset", errors.New("stream reset"), true},
 
@@ -283,10 +284,11 @@ func (f *full) Conn(context.Context, worker.Target, string) (net.Conn, error) {
 }
 
 func TestEveryVerbIsPlacedTheSameWay(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		call func(*Workers) error
-	}{
+	}
+	for _, tc := range []testCase{
 		{"transform", func(w *Workers) error {
 			out, err := w.Transform(t.Context(), at(), &invoke.Request{})
 			if err == nil && out.Answer.Status != 204 {
@@ -332,11 +334,12 @@ func TestEveryVerbIsPlacedTheSameWay(t *testing.T) {
 }
 
 func TestAWorkerThatServesNoSuchWorldSaysSo(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		call func(*Workers) error
 		says string
-	}{
+	}
+	for _, tc := range []testCase{
 		{"transformer", func(w *Workers) error {
 			_, err := w.Transform(t.Context(), at(), &invoke.Request{})
 			return err

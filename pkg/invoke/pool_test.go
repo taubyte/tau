@@ -627,10 +627,11 @@ func (e *gatedStartRuntime) Start(ctx context.Context, spec Spec) (Instance, err
 }
 
 func TestEveryPoolOptionRefusesWhatItCannotUse(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		opt  Option
-	}{
+	}
+	for _, tc := range []testCase{
 		{"a nil runtime", WithRuntime(nil)},
 		{"zero idle timeout", WithIdleTimeout(0)},
 		{"a negative idle timeout", WithIdleTimeout(-time.Second)},
@@ -912,10 +913,11 @@ func TestAPooledConnectionReportsAnImpossibleHalfClose(t *testing.T) {
 }
 
 func TestASettingReadAsANumber(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		setting string
 		want    int64
-	}{
+	}
+	for _, c := range []testCase{
 		{"size", 1024},
 		{"negative", -1},
 		{"zero", 0},

@@ -93,7 +93,8 @@ func (d *sshd) session(ch gossh.Channel, requests <-chan *gossh.Request) {
 			req.Reply(false, nil)
 			continue
 		}
-		var payload struct{ Command string }
+		type execRequest struct{ Command string }
+		var payload execRequest
 		gossh.Unmarshal(req.Payload, &payload)
 		d.mu.Lock()
 		d.commands = append(d.commands, payload.Command)
@@ -102,7 +103,8 @@ func (d *sshd) session(ch gossh.Channel, requests <-chan *gossh.Request) {
 		req.Reply(true, nil)
 		if refuse != "" {
 			ch.Stderr().Write([]byte(refuse + "\n"))
-			ch.SendRequest("exit-status", false, gossh.Marshal(struct{ Status uint32 }{1}))
+			type testCase struct{ Status uint32 }
+			ch.SendRequest("exit-status", false, gossh.Marshal(testCase{1}))
 			return
 		}
 		for line := range d.lines {

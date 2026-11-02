@@ -151,10 +151,11 @@ type Config struct {
 }
 
 func (c Config) withDefaults() (Config, error) {
-	for _, d := range []struct {
+	type namedDuration struct {
 		name  string
 		value time.Duration
-	}{
+	}
+	for _, d := range []namedDuration{
 		{"readHeaderTimeout", c.ReadHeaderTimeout},
 		{"idleTimeout", c.IdleTimeout},
 		{"shutdownTimeout", c.ShutdownTimeout},

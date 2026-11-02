@@ -140,10 +140,11 @@ const clientPreface = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 func TestAnUnfinishedPrefaceIsDropped(t *testing.T) {
 	const timeout = 500 * time.Millisecond
 
-	for _, tc := range []struct {
+	type testCase struct {
 		name  string
 		speak func(net.Conn)
-	}{
+	}
+	for _, tc := range []testCase{
 		{"nothing at all", func(net.Conn) {}},
 		{"one byte", func(c net.Conn) { c.Write([]byte(clientPreface[:1])) }},
 		{"the http/2 magic and no more", func(c net.Conn) { c.Write([]byte(clientPreface[:14])) }},
@@ -279,11 +280,12 @@ func acceptCounter(t testing.TB, h host.Host, opts ...rpc.ServerOption) func() i
 }
 
 func TestWithHTTPServerTunesTheServer(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name  string
 		idle  time.Duration
 		conns int
-	}{
+	}
+	for _, tc := range []testCase{
 		{"with an idle timeout, the second call redials", 250 * time.Millisecond, 2},
 		{"without one, both calls ride the same connection", 0, 1},
 	} {

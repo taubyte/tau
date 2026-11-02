@@ -34,10 +34,11 @@ func TestKeysAreTheirSegments(t *testing.T) {
 	}
 	c := cid.NewCidV1(cid.DagProtobuf, h)
 	for _, k := range []string{"", "/a", "/a/b", "x\x00y"} {
-		cases := []struct {
+		type testCase struct {
 			got  func() ds.Key
 			want ds.Key
-		}{
+		}
+		cases := []testCase{
 			{func() ds.Key { return s.keyElemsPrefix(k) }, ds.NewKey(s.elems).ChildString(keySegment(k))},
 			{func() ds.Key { return s.elemKey(k, d) }, ds.NewKey(s.elems).ChildString(keySegment(k)).ChildString(d.segment())},
 			{func() ds.Key { return s.pendingKey(k, d) }, ds.NewKey(s.pending).ChildString(d.segment()).ChildString(keySegment(k))},

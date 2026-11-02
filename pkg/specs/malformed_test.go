@@ -34,10 +34,11 @@ func TestBytesThatAreNotACompiledProject(t *testing.T) {
 }
 
 func TestAnIndexEntryThatNamesNothing(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		name string
 		doc  string
-	}{
+	}
+	for _, c := range []testCase{
 		{"not a path at all", `{"object":{"id":"p1"},"indexes":{"projects/p1/function/f/links":["nonsense"]}}`},
 		{"the wrong prefix", `{"object":{"id":"p1"},"indexes":{"projects/p1/function/f/links":["a/b/c/d/e"]}}`},
 		{"a path into an empty object", `{"object":{"id":"p1"},"indexes":{"projects/p1/function/f/links":["branches/main/projects/p1/function/rid"]}}`},

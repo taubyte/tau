@@ -281,10 +281,11 @@ func newFrontend(t *testing.T) *frontend {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	mux.HandleFunc("POST /projects/{projectId}", authed(func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
+		type hookBody struct {
 			Config string   `json:"config_repository_key"`
 			Code   []string `json:"code_repository_keys"`
 		}
+		var body hookBody
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
@@ -331,11 +332,12 @@ func newFrontend(t *testing.T) *frontend {
 		json.NewEncoder(w).Encode(map[string]string{"job_id": id})
 	}
 	mux.HandleFunc("POST /build/{projectId}", authed(func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
+		type pushBody struct {
 			Repository string `json:"repository_key"`
 			Ref        string `json:"ref"`
 			Commit     string `json:"commit_sha"`
 		}
+		var body pushBody
 		json.NewDecoder(r.Body).Decode(&body)
 		if body.Ref == "refs/heads/feature" {
 			w.WriteHeader(http.StatusUnprocessableEntity)
@@ -419,7 +421,8 @@ func newFrontend(t *testing.T) *frontend {
 		json.NewEncoder(w).Encode(out)
 	}))
 	mux.HandleFunc("POST /projects/{projectId}/grants", authed(func(w http.ResponseWriter, r *http.Request) {
-		var body struct{ User, Role string }
+		type grantBody struct{ User, Role string }
+		var body grantBody
 		json.NewDecoder(r.Body).Decode(&body)
 		if body.Role == "emperor" {
 			w.WriteHeader(http.StatusBadRequest)

@@ -204,11 +204,12 @@ func TestACheckpointProofThatDoesNotHoldUpIsRefused(t *testing.T) {
 	forged.Signature = []byte("nope")
 	known := func(id ReplicaID) bool { return contains(ids(4), id) }
 
-	for _, tc := range []struct {
+	type testCase struct {
 		name  string
 		proof []Message
 		seq   Sequence
-	}{
+	}
+	for _, tc := range []testCase{
 		{"a proof for sequence zero", []Message{good("a", 0, Digest{1})}, 0},
 		{"short of a quorum", []Message{good("a", 8, Digest{1}), good("b", 8, Digest{1})}, 8},
 		{"certifying two states", []Message{good("a", 8, Digest{1}), good("b", 8, Digest{2}), good("c", 8, Digest{1})}, 8},

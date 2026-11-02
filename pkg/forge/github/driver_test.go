@@ -360,10 +360,11 @@ func TestAnAnswerAboutAnotherRepositoryIsRefused(t *testing.T) {
 }
 
 func TestAccessMapsGitHubsRolesOntoTausRungs(t *testing.T) {
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		perms string
 		want  forge.Access
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"admin":    {`{"admin":true,"maintain":true,"push":true,"pull":true}`, forge.AccessAdmin},
 		"maintain": {`{"maintain":true,"push":true,"pull":true}`, forge.AccessWrite},
 		// GitHub sends push:true with maintain; this row keeps maintain alone in the
@@ -709,16 +710,18 @@ func TestTheDeployKeyGoesOutReadOnly(t *testing.T) {
 }
 
 func TestTheHookSubscribesToPushesAndNothingElse(t *testing.T) {
-	var body struct {
-		Events []string `json:"events"`
-		Active bool     `json:"active"`
-		Config struct {
-			URL         string `json:"url"`
-			ContentType string `json:"content_type"`
-			InsecureSSL string `json:"insecure_ssl"`
-			Secret      string `json:"secret"`
-		} `json:"config"`
+	type hookConfigBody struct {
+		URL         string `json:"url"`
+		ContentType string `json:"content_type"`
+		InsecureSSL string `json:"insecure_ssl"`
+		Secret      string `json:"secret"`
 	}
+	type hookBody struct {
+		Events []string       `json:"events"`
+		Active bool           `json:"active"`
+		Config hookConfigBody `json:"config"`
+	}
+	var body hookBody
 	sess, key := sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewDecoder(r.Body).Decode(&body)
 		w.WriteHeader(http.StatusCreated)

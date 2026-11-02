@@ -136,11 +136,12 @@ func merge(t *testing.T, a, b *MemStore) {
 }
 
 func TestTwoNodesRacingForOneIdAgreeOnTheOwner(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name         string
 		atA, atB     time.Time
 		wantOwnerCfg string
-	}{
+	}
+	for _, tc := range []testCase{
 		{"the earlier claim wins", time.Unix(200, 0), time.Unix(100, 0), "github.com/b/config"},
 		{"a tie goes to the smaller repository", time.Unix(100, 0), time.Unix(100, 0), "github.com/a/config"},
 	} {
@@ -251,10 +252,11 @@ func (s *racingStore) Put(c context.Context, key string, v []byte) error {
 
 func TestALinkIsRefusedWhenItNamesNothing(t *testing.T) {
 	r := linked(t, NewMemStore(), nil)
-	for _, tc := range []struct {
+	type testCase struct {
 		link Link
 		want error
-	}{
+	}
+	for _, tc := range []testCase{
 		{Link{Config: cfg, Claimant: alice}, ErrNoProject},
 		{Link{Project: "a/b", Config: cfg, Claimant: alice}, ErrSeparator},
 		{Link{Project: pid, Config: " / ", Claimant: alice}, ErrNoRepository},

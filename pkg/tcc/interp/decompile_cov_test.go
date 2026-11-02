@@ -187,10 +187,11 @@ func testDecompileWritesWhatWasAuthored(t *testing.T, containerFirst bool) {
 
 func TestDecompileRefusesAnObjectItCannotInvert(t *testing.T) {
 	project, root := dcSchema()
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		mutate func(fn object.Object[object.Refrence])
 		want   string
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"unknown listed id": {func(fn object.Object[object.Refrence]) { fn.Set("domains", []string{"D9"}) }, "domain ID D9 not found"},
 		"list that is not":  {func(fn object.Object[object.Refrence]) { fn.Set("domains", "D1") }, "is not a []string"},
 		"unknown id":        {func(fn object.Object[object.Refrence]) { fn.Set("uses", "L9") }, "lib ID L9 not found"},

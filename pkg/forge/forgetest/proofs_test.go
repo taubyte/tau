@@ -370,10 +370,11 @@ func subjectProofs() []proof {
 
 	// One proof per capability the driver has and the Subject does not declare:
 	// each takes a different absent branch.
-	for _, tc := range []struct {
+	type testCase struct {
 		cap   forge.Capability
 		calls []string
-	}{
+	}
+	for _, tc := range []testCase{
 		{forge.CapList, []string{"so ListRepositories must be"}},
 		{forge.CapCreate, []string{"so Create must be"}},
 		{forge.CapDelete, []string{"so Delete must be", "so Delete under a same-host redirect must be"}},

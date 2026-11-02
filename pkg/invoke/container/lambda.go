@@ -298,13 +298,14 @@ func lambdaResponse(raw []byte) *invoke.Response {
 		return res
 	}
 
-	var shaped struct {
+	type lambdaResponse struct {
 		StatusCode      int                 `json:"statusCode"`
 		Headers         map[string]string   `json:"headers"`
 		MultiValue      map[string][]string `json:"multiValueHeaders"`
 		Body            string              `json:"body"`
 		IsBase64Encoded bool                `json:"isBase64Encoded"`
 	}
+	var shaped lambdaResponse
 	if err := json.Unmarshal(raw, &shaped); err != nil || shaped.StatusCode == 0 {
 		return res
 	}

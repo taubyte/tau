@@ -109,10 +109,11 @@ func TestInitValidateViews(t *testing.T) {
 	golden(t, "validate-starter", x.ok("validate", "--dir", x.dir))
 	golden(t, "views-starter", x.ok("views", "--dir", x.dir))
 
-	var report struct {
+	type lintReport struct {
 		Error    string `json:"error"`
 		Findings []any  `json:"findings"`
 	}
+	var report lintReport
 	require.NoError(t, json.Unmarshal([]byte(x.ok("validate", "--dir", x.dir, "-o", "json")), &report))
 	require.Empty(t, report.Error)
 

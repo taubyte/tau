@@ -67,14 +67,16 @@ func (v viewOf) String() string {
 	return b.String()
 }
 
+type stallCounter struct {
+	parent    bool
+	file, key string
+}
+
 // stallCounters are what the kernel counts against this test's cgroup and its
 // parent, which under scripts/cap are the run's scope and the shared slice: how
 // often memory.high was crossed, how long tasks waited on memory and on a CPU,
 // and how long the slice's CPU quota held them back.
-var stallCounters = []struct {
-	parent    bool
-	file, key string
-}{
+var stallCounters = []stallCounter{
 	{false, "memory.events.local", "high"},
 	{true, "memory.events.local", "high"},
 	{false, "memory.pressure", "some"},

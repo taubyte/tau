@@ -54,10 +54,11 @@ func (d *memberDriver) IsActiveMember(ctx context.Context, namespace, username s
 		return false, err
 	}
 
-	var member struct {
+	type memberJSON struct {
 		AccessLevel int    `json:"access_level"`
 		State       string `json:"state"`
 	}
+	var member memberJSON
 	if err := decode(r, &member); err != nil {
 		return false, err
 	}
@@ -78,10 +79,11 @@ func (d *memberDriver) userID(ctx context.Context, username string) (int64, bool
 	if err := fault(d.cfg.host, r, nil); err != nil {
 		return 0, false, err
 	}
-	var users []struct {
+	type userJSON struct {
 		ID    int64  `json:"id"`
 		State string `json:"state"`
 	}
+	var users []userJSON
 	if err := decode(r, &users); err != nil {
 		return 0, false, err
 	}

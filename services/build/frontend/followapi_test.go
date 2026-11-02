@@ -159,13 +159,14 @@ func TestFollowIsAuthorizedLikeTheRest(t *testing.T) {
 }
 
 func TestTheResponseIsOneRunAndSaysWhich(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name    string
 		status  buildv2.JobStatus
 		attempt int32
 		query   string
 		run     int32
-	}{
+	}
+	for _, tc := range []testCase{
 		{"claimed", buildv2.JobStatus_JobStatusClaimed, 2, "", 2},
 		{"queued again", buildv2.JobStatus_JobStatusOpen, 2, "", 3},
 		{"queued", buildv2.JobStatus_JobStatusOpen, 0, "", 1},
@@ -300,7 +301,8 @@ func TestAFollowWhoseRunWasLostIsCut(t *testing.T) {
 	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?attempt=1&offset=8", testToken))
 	require.Equal(t, http.StatusGone, w.Code)
 	require.Equal(t, "1", w.Header().Get("X-Job-Attempt"))
-	var refusal struct{ Error string }
+	type refusalJSON struct{ Error string }
+	var refusal refusalJSON
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &refusal))
 	require.Equal(t, "this run's log was not kept", refusal.Error)
 }
@@ -467,10 +469,11 @@ func TestAnEndedJobsLogIsTheStoredOne(t *testing.T) {
 }
 
 func TestAnEndedJobsLogThatCannotBeRead(t *testing.T) {
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		h      *harness
 		status int
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"no asset store": {newHarness(t, quick), http.StatusServiceUnavailable},
 		"not stored":     {newHarness(t, quick, WithAssets(fakeAssets{})), http.StatusBadGateway},
 	} {

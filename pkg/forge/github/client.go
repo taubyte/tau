@@ -228,10 +228,12 @@ func (c *client) ListDeployKeys(ctx context.Context, key repokey.Key) ([]forge.I
 }
 
 type hookJSON struct {
-	ID     int64 `json:"id"`
-	Config struct {
-		URL string `json:"url"`
-	} `json:"config"`
+	ID     int64          `json:"id"`
+	Config hookConfigJSON `json:"config"`
+}
+
+type hookConfigJSON struct {
+	URL string `json:"url"`
 }
 
 func (c *client) ListPushHooks(ctx context.Context, key repokey.Key) ([]forge.InstalledPushHook, error) {

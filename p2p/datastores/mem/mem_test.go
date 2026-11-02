@@ -211,11 +211,12 @@ func TestDatastore_QueryWithLimitOffset(t *testing.T) {
 		}
 	}
 
-	tests := []struct {
+	type testCase struct {
 		limit  int
 		offset int
 		expect int
-	}{
+	}
+	tests := []testCase{
 		{limit: 5, offset: 0, expect: 5},
 		{limit: 0, offset: 5, expect: 5},
 		{limit: 3, offset: 3, expect: 3},
@@ -432,10 +433,11 @@ func TestClosedDatastoreOperations(t *testing.T) {
 	ds := New()
 	ds.Close()
 
-	operations := []struct {
+	type namedOperation struct {
 		name string
 		fn   func() error
-	}{
+	}
+	operations := []namedOperation{
 		{"Put", func() error { return ds.Put(ctx, datastore.NewKey("key"), []byte("value")) }},
 		{"Get", func() error { _, err := ds.Get(ctx, datastore.NewKey("key")); return err }},
 		{"GetSize", func() error { _, err := ds.GetSize(ctx, datastore.NewKey("key")); return err }},

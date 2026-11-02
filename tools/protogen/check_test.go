@@ -525,10 +525,11 @@ func TestModuleOut(t *testing.T) {
 	if out, err := moduleOut(dir); err != nil || out != "gen" {
 		t.Fatalf("no buf.gen.yaml: got %q, %v", out, err)
 	}
-	for _, c := range []struct {
+	type testCase struct {
 		yaml, want string
 		fails      bool
-	}{
+	}
+	for _, c := range []testCase{
 		{yaml: testBufGenYAML, want: "gen"},
 		{yaml: besideBufGenYAML, want: "."},
 		{yaml: "version: v2\nplugins: []\n", want: "gen"},

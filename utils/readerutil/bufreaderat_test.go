@@ -24,12 +24,13 @@ func (t *trackingReader) Read(p []byte) (n int, err error) {
 func TestBufferingReaderAt(t *testing.T) {
 	tr := new(trackingReader)
 	ra := NewBufferingReaderAt(tr)
-	for i, tt := range []struct {
+	type testCase struct {
 		off           int64
 		want          string
 		wantReads     int
 		wantReadBytes int
-	}{
+	}
+	for i, tt := range []testCase{
 		{off: 0, want: "0123456789", wantReads: 1, wantReadBytes: 10},
 		{off: 5, want: "56789", wantReads: 1, wantReadBytes: 10},      // already buffered
 		{off: 6, want: "67890", wantReads: 2, wantReadBytes: 11},      // need 1 more byte

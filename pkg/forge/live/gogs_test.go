@@ -117,18 +117,20 @@ func bootGogs(t *testing.T) *instance {
 	api(t, http.MethodPost, base+"/api/v1/admin/users", asAdmin, map[string]any{
 		"username": user, "email": user + "@example.invalid", "password": password, "send_notify": false,
 	}, nil)
-	var minted struct {
+	type mintedToken struct {
 		SHA1 string `json:"sha1"`
 	}
+	var minted mintedToken
 	asUser := http.Header{"Authorization": {"Basic " + basic(user, password)}}
 	api(t, http.MethodPost, base+"/api/v1/users/"+user+"/tokens", asUser, map[string]any{"name": "harness"}, &minted)
 	require.NotEmpty(t, minted.SHA1)
 
 	api(t, http.MethodPost, base+"/api/v1/admin/users/warden/orgs", asAdmin, map[string]any{"username": "acme-live"}, nil)
-	for _, r := range []struct {
+	type testCase struct {
 		name    string
 		private bool
-	}{{"public", false}, {"secret", true}} {
+	}
+	for _, r := range []testCase{{"public", false}, {"secret", true}} {
 		api(t, http.MethodPost, base+"/api/v1/user/repos", asAdmin, map[string]any{
 			"name": r.name, "private": r.private, "auto_init": true, "readme": "Default",
 		}, nil)

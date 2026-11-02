@@ -154,7 +154,8 @@ func (c *buildContext) finish() (io.Reader, error) {
 	}
 	// Not the file itself: the HTTP client closes a body it can, and the
 	// spool is removed after the build answers, not when it is sent.
-	return struct{ io.Reader }{c.file}, nil
+	type spooledBody struct{ io.Reader }
+	return spooledBody{c.file}, nil
 }
 
 func (c *buildContext) remove() {

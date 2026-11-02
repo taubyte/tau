@@ -155,10 +155,11 @@ func listing(tools []Tool) map[string]any {
 }
 
 func callTool(ctx context.Context, tools Tools, req request) []byte {
-	var params struct {
+	type callParams struct {
 		Name      string          `json:"name"`
 		Arguments json.RawMessage `json:"arguments"`
 	}
+	var params callParams
 	if err := json.Unmarshal(req.Params, &params); err != nil || params.Name == "" {
 		return reply(req.ID, nil, &rpcError{Code: codeInvalidParams, Message: "a call needs a tool name"})
 	}

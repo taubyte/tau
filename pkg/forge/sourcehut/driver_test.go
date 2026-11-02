@@ -68,10 +68,11 @@ func repoBody(field, owner, name string) string {
 }
 
 func TestNewRefusesWhatIsNotADeployment(t *testing.T) {
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		host string
 		opts []sourcehut.Option
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"no host":           {host: ""},
 		"a host spelled up": {host: "Git.Example.org"},
 		"no transport":      {host: "git.example.org", opts: []sourcehut.Option{sourcehut.Transport(nil)}},
@@ -152,7 +153,8 @@ func TestAccessReadsTheGrantAndTheOwner(t *testing.T) {
 func TestAnswersThatAreNotAnswers(t *testing.T) {
 	r := newRig(t)
 	s, k := r.sess(t, "~tau/pay")
-	for name, tc := range map[string]struct{ op, body, want string }{
+	type testCase struct{ op, body, want string }
+	for name, tc := range map[string]testCase{
 		"no user":                 {"Me", `{"data":{"me":null}}`, "belongs to nobody"},
 		"no data":                 {"Me", `{"data":null}`, "answered no data"},
 		"not json":                {"Me", `garbage`, "cannot read"},

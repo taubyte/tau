@@ -8,11 +8,12 @@ import (
 )
 
 func TestAMalformedAnswerIsNeverAnAnswer(t *testing.T) {
-	for _, one := range []struct {
+	type testCase struct {
 		name  string
 		value component.Value
 		says  string
-	}{
+	}
+	for _, one := range []testCase{
 		{
 			name:  "not a variant at all",
 			value: "geo 60 IN A 203.0.113.9",

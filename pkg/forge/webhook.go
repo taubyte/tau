@@ -515,9 +515,10 @@ func verifyWith(s Scheme, secret Secret, d Delivery, now time.Time, tolerance ti
 		if err != nil {
 			return fail("secret cannot key this scheme")
 		}
-		var top struct {
+		type envelope struct {
 			Data map[string]json.RawMessage `json:"data"`
 		}
+		var top envelope
 		if err := json.Unmarshal(d.Body, &top); err != nil {
 			return fail("signed body is not a GraphQL response")
 		}

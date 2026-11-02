@@ -35,12 +35,14 @@ import (
 	"github.com/taubyte/tau/services/worker"
 )
 
-// runtimes are the tiers nodes in this process run on, process-wide since a tier is
-// a live object every node shares.
-var runtimes struct {
+type tierList struct {
 	sync.Mutex
 	list []invoke.Runtime
 }
+
+// runtimes are the tiers nodes in this process run on, process-wide since a tier is
+// a live object every node shares.
+var runtimes tierList
 
 // Runtimes sets the tiers, and returns what it replaced so a test can put it
 // back.
@@ -52,13 +54,15 @@ func Runtimes(rts ...invoke.Runtime) []invoke.Runtime {
 	return was
 }
 
-// clock is what nodes in this process believe the time is, process-wide like
-// runtimes; nil is the wall clock. It lets tests advance scheduled work rather than
-// wait for it.
-var clock struct {
+type processClock struct {
 	sync.Mutex
 	now func() time.Time
 }
+
+// clock is what nodes in this process believe the time is, process-wide like
+// runtimes; nil is the wall clock. It lets tests advance scheduled work rather than
+// wait for it.
+var clock processClock
 
 // Clock sets what nodes in this process believe the time is, and returns what it
 // replaced so a test can put it back. A nil clock is the wall clock.
@@ -70,12 +74,14 @@ func Clock(now func() time.Time) func() time.Time {
 	return was
 }
 
-// built is every node this process is running, by peer id, so a test can reach
-// one. Nothing in production reads it.
-var built = struct {
+type builtNodes struct {
 	sync.Mutex
 	byPeer map[string]running
-}{byPeer: map[string]running{}}
+}
+
+// built is every node this process is running, by peer id, so a test can reach
+// one. Nothing in production reads it.
+var built = builtNodes{byPeer: map[string]running{}}
 
 type running struct {
 	node      *node.Node

@@ -305,11 +305,12 @@ func TestAttrValuesAndString(t *testing.T) {
 	attr := func(name string, segs ...string) *engine.Attribute {
 		return &engine.Attribute{Name: name, Segments: segs}
 	}
-	cases := []struct {
+	type testCase struct {
 		a    *engine.Attribute
 		vals []string
 		str  string
-	}{
+	}
+	cases := []testCase{
 		{attr("one"), []string{"x"}, "x"},
 		{attr("empty"), nil, ""},
 		{attr("many"), []string{"a", "b"}, ""},

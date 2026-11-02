@@ -99,9 +99,11 @@ type gqlRequest struct {
 
 type gqlResponse struct {
 	Data   json.RawMessage `json:"data"`
-	Errors []struct {
-		Message string `json:"message"`
-	} `json:"errors"`
+	Errors []gqlError      `json:"errors"`
+}
+
+type gqlError struct {
+	Message string `json:"message"`
 }
 
 func (c *client) send(ctx context.Context, doc document, vars map[string]any, out any) error {
@@ -168,17 +170,21 @@ func bounded(s string) string {
 const repoFields = `id rid name visibility access owner { canonicalName } HEAD { name }`
 
 type repoJSON struct {
-	ID         int64  `json:"id"`
-	RID        string `json:"rid"`
-	Name       string `json:"name"`
-	Visibility string `json:"visibility"`
-	Access     string `json:"access"`
-	Owner      struct {
-		CanonicalName string `json:"canonicalName"`
-	} `json:"owner"`
-	HEAD *struct {
-		Name string `json:"name"`
-	} `json:"HEAD"`
+	ID         int64     `json:"id"`
+	RID        string    `json:"rid"`
+	Name       string    `json:"name"`
+	Visibility string    `json:"visibility"`
+	Access     string    `json:"access"`
+	Owner      ownerJSON `json:"owner"`
+	HEAD       *refJSON  `json:"HEAD"`
+}
+
+type refJSON struct {
+	Name string `json:"name"`
+}
+
+type ownerJSON struct {
+	CanonicalName string `json:"canonicalName"`
 }
 
 // keyOf derives the key a repository answer DESCRIBES, from its owner and

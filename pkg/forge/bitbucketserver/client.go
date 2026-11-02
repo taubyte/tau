@@ -88,9 +88,11 @@ func (e *statusError) Error() string {
 }
 
 type errorBody struct {
-	Errors []struct {
-		ExceptionName string `json:"exceptionName"`
-	} `json:"errors"`
+	Errors []errorJSON `json:"errors"`
+}
+
+type errorJSON struct {
+	ExceptionName string `json:"exceptionName"`
 }
 
 func (b errorBody) authz() bool {
@@ -194,15 +196,19 @@ type link struct {
 }
 
 type repoJSON struct {
-	Slug    string `json:"slug"`
-	Name    string `json:"name"`
-	Public  bool   `json:"public"`
-	Project struct {
-		Key string `json:"key"`
-	} `json:"project"`
-	Links struct {
-		Clone []link `json:"clone"`
-	} `json:"links"`
+	Slug    string         `json:"slug"`
+	Name    string         `json:"name"`
+	Public  bool           `json:"public"`
+	Project projectKeyJSON `json:"project"`
+	Links   repoLinksJSON  `json:"links"`
+}
+
+type repoLinksJSON struct {
+	Clone []link `json:"clone"`
+}
+
+type projectKeyJSON struct {
+	Key string `json:"key"`
 }
 
 func (r repoJSON) clone(name string) string {

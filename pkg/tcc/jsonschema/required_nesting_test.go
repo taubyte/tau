@@ -23,15 +23,17 @@ func TestRequiredIsRecordedAtTheLevelTheFieldLivesAt(t *testing.T) {
 	raw, err := GenerateJSONSchema(root, JSONSchemaOptions{ExtPrefix: "x-t-"})
 	assert.NilError(t, err)
 
-	var doc struct {
+	type schemaDoc struct {
 		Defs map[string]json.RawMessage `json:"$defs"`
 	}
+	var doc schemaDoc
 	assert.NilError(t, json.Unmarshal(raw, &doc))
 
-	var thing struct {
+	type thingSchema struct {
 		Required   []string                   `json:"required"`
 		Properties map[string]json.RawMessage `json:"properties"`
 	}
+	var thing thingSchema
 	assert.NilError(t, json.Unmarshal(doc.Defs["Thing"], &thing))
 
 	// the root lists the top-level field and the CONTAINERS of the nested ones —
@@ -52,9 +54,10 @@ func TestRequiredIsRecordedAtTheLevelTheFieldLivesAt(t *testing.T) {
 	}
 
 	// ...and the leaf is required on its own object, one level down
-	var exec struct {
+	type execSchema struct {
 		Required []string `json:"required"`
 	}
+	var exec execSchema
 	assert.NilError(t, json.Unmarshal(thing.Properties["execution"], &exec))
 	assert.DeepEqual(t, exec.Required, []string{"call"})
 }
@@ -74,11 +77,13 @@ func TestAConditionalDefaultCarriesItsCondition(t *testing.T) {
 	raw, err := GenerateJSONSchema(root, JSONSchemaOptions{ExtPrefix: "x-t-"})
 	assert.NilError(t, err)
 
-	var doc struct {
-		Defs map[string]struct {
-			Properties map[string]map[string]any `json:"properties"`
-		} `json:"$defs"`
+	type defSchema struct {
+		Properties map[string]map[string]any `json:"properties"`
 	}
+	type schemaDoc struct {
+		Defs map[string]defSchema `json:"$defs"`
+	}
+	var doc schemaDoc
 	assert.NilError(t, json.Unmarshal(raw, &doc))
 
 	entry := doc.Defs["Thing"].Properties["entry"]

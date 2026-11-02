@@ -20,12 +20,14 @@ import (
 	"github.com/taubyte/tau/services/worker"
 )
 
-// runtimes are the tiers a universe's workers run on, package-level because a tier
-// is a live object shared by every worker a test starts.
-var runtimes struct {
+type tierList struct {
 	sync.Mutex
 	list []invoke.Runtime
 }
+
+// runtimes are the tiers a universe's workers run on, package-level because a tier
+// is a live object shared by every worker a test starts.
+var runtimes tierList
 
 // Runtimes sets the tiers, and returns what it replaced so a test can put it back.
 func Runtimes(rts ...invoke.Runtime) []invoke.Runtime {

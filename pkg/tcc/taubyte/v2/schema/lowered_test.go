@@ -146,9 +146,10 @@ func TestWhatALoweringBecomesKeepsItsKindAndTakesTheContainerRole(t *testing.T) 
 	// ...so it is not in the document an editor validates against either.
 	js, err := jsonschema.GenerateJSONSchema(schema.GenerationRoot(), jsonschema.JSONSchemaOptions{})
 	assert.NilError(t, err)
-	var doc struct {
+	type schemaDoc struct {
 		Properties map[string]any `json:"properties"`
 	}
+	var doc schemaDoc
 	assert.NilError(t, json.Unmarshal(js, &doc))
 	_, offered := doc.Properties["workflow"]
 	assert.Assert(t, offered, "the JSON Schema lost the authored workflow kind")

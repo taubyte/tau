@@ -202,10 +202,11 @@ func TestAMalformedReportDoesNotDeafenTheNode(t *testing.T) {
 // answers with a load outside 0..1, produces silence rather than a lie —
 // readers can see the row aging, which is the honest signal.
 func TestAReportThisNodeCannotMakeIsNotSent(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		r    Reporter
-	}{
+	}
+	for _, tc := range []testCase{
 		{"the reporter failed", ReporterFunc(func(context.Context) (Snapshot, error) {
 			return Snapshot{}, errors.New("cannot measure myself")
 		})},

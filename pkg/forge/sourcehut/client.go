@@ -63,9 +63,10 @@ var (
 const maxPages = 1000
 
 func (c *client) Whoami(ctx context.Context) (forge.Identity, error) {
-	var out struct {
+	type gqlAnswer struct {
 		Me *userJSON `json:"me"`
 	}
+	var out gqlAnswer
 	if err := c.send(ctx, docMe, nil, &out); err != nil {
 		return forge.Identity{}, c.classify(err)
 	}
@@ -90,12 +91,14 @@ type userJSON struct {
 // caller's own canonical name. A repository the credential cannot see is null
 // on sourcehut exactly as a missing one is, so both are NotFoundError.
 func (c *client) lookup(ctx context.Context, key repokey.Key, doc document) (repoJSON, forge.Repository, string, error) {
-	var out struct {
-		Me   *userJSON `json:"me"`
-		User *struct {
-			Repository *repoJSON `json:"repository"`
-		} `json:"user"`
+	type userRepoJSON struct {
+		Repository *repoJSON `json:"repository"`
 	}
+	type gqlAnswer struct {
+		Me   *userJSON     `json:"me"`
+		User *userRepoJSON `json:"user"`
+	}
+	var out gqlAnswer
 	vars := map[string]any{"owner": strings.TrimPrefix(key.Owner, "~"), "name": key.Name}
 	if err := c.send(ctx, doc, vars, &out); err != nil {
 		return repoJSON{}, forge.Repository{}, "", c.classify(err)
@@ -162,14 +165,17 @@ func (c *client) Repository(ctx context.Context, key repokey.Key) (forge.Reposit
 func (c *client) ListRepositories(ctx context.Context, yield func(forge.Repository) bool) error {
 	stopped := false
 	err := c.pages(func(cursor *string) (*string, error) {
-		var out struct {
-			Me *struct {
-				Repositories struct {
-					Results []repoJSON `json:"results"`
-					Cursor  *string    `json:"cursor"`
-				} `json:"repositories"`
-			} `json:"me"`
+		type repoPage struct {
+			Results []repoJSON `json:"results"`
+			Cursor  *string    `json:"cursor"`
 		}
+		type meJSON struct {
+			Repositories repoPage `json:"repositories"`
+		}
+		type gqlAnswer struct {
+			Me *meJSON `json:"me"`
+		}
+		var out gqlAnswer
 		if err := c.send(ctx, docList, map[string]any{"cursor": cursor}, &out); err != nil {
 			return nil, c.classify(err)
 		}
@@ -236,9 +242,10 @@ func (c *client) Create(ctx context.Context, key repokey.Key, opts forge.CreateO
 	if opts.Description != "" {
 		vars["description"] = opts.Description
 	}
-	var out struct {
+	type gqlAnswer struct {
 		Created *repoJSON `json:"createRepository"`
 	}
+	var out gqlAnswer
 	if err := c.send(ctx, docCreate, vars, &out); err != nil {
 		return forge.Repository{}, c.classify(err)
 	}
@@ -260,9 +267,10 @@ func (c *client) Delete(ctx context.Context, key repokey.Key) error {
 	if err != nil {
 		return err
 	}
-	var out struct {
+	type gqlAnswer struct {
 		Deleted *repoJSON `json:"deleteRepository"`
 	}
+	var out gqlAnswer
 	if err := c.send(ctx, docDelete, map[string]any{"id": r.ID}, &out); err != nil {
 		return c.classify(err)
 	}
@@ -293,18 +301,19 @@ func (c *client) InstallDeployKey(ctx context.Context, key repokey.Key, title, p
 	if err != nil {
 		return "", err
 	}
-	var out struct {
-		Key *struct {
-			RID    string `json:"rid"`
-			Access string `json:"access"`
-			Repo   struct {
-				Name  string `json:"name"`
-				Owner struct {
-					CanonicalName string `json:"canonicalName"`
-				} `json:"owner"`
-			} `json:"repo"`
-		} `json:"createDeployKey"`
+	type keyRepoJSON struct {
+		Name  string    `json:"name"`
+		Owner ownerJSON `json:"owner"`
 	}
+	type deployKeyJSON struct {
+		RID    string      `json:"rid"`
+		Access string      `json:"access"`
+		Repo   keyRepoJSON `json:"repo"`
+	}
+	type gqlAnswer struct {
+		Key *deployKeyJSON `json:"createDeployKey"`
+	}
+	var out gqlAnswer
 	vars := map[string]any{"repo": r.RID, "key": fields[0] + " " + fields[1] + " " + title}
 	if err := c.send(ctx, docInstallKey, vars, &out); err != nil {
 		return "", c.classify(err)
@@ -324,11 +333,13 @@ func (c *client) InstallDeployKey(ctx context.Context, key repokey.Key, title, p
 }
 
 func (c *client) undo(ctx context.Context, key repokey.Key, h forge.Handle, why string) error {
-	var out struct {
-		Removed *struct {
-			RID string `json:"rid"`
-		} `json:"deleteDeployKey"`
+	type removedJSON struct {
+		RID string `json:"rid"`
 	}
+	type gqlAnswer struct {
+		Removed *removedJSON `json:"deleteDeployKey"`
+	}
+	var out gqlAnswer
 	if err := c.send(ctx, docRemoveKey, map[string]any{"rid": string(h)}, &out); err != nil {
 		return fmt.Errorf("forge/sourcehut: %s installed a deploy key for %q %s, and it could not be removed again: %w", c.d.host, key, why, c.classify(err))
 	}
@@ -344,20 +355,22 @@ type deployKeyJSON struct {
 func (c *client) ListDeployKeys(ctx context.Context, key repokey.Key) ([]forge.InstalledDeployKey, error) {
 	var out []forge.InstalledDeployKey
 	err := c.pages(func(cursor *string) (*string, error) {
-		var got struct {
-			User *struct {
-				Repository *struct {
-					Name  string `json:"name"`
-					Owner struct {
-						CanonicalName string `json:"canonicalName"`
-					} `json:"owner"`
-					DeployKeys struct {
-						Results []deployKeyJSON `json:"results"`
-						Cursor  *string         `json:"cursor"`
-					} `json:"deployKeys"`
-				} `json:"repository"`
-			} `json:"user"`
+		type deployKeyPage struct {
+			Results []deployKeyJSON `json:"results"`
+			Cursor  *string         `json:"cursor"`
 		}
+		type repoKeysJSON struct {
+			Name       string        `json:"name"`
+			Owner      ownerJSON     `json:"owner"`
+			DeployKeys deployKeyPage `json:"deployKeys"`
+		}
+		type userKeysJSON struct {
+			Repository *repoKeysJSON `json:"repository"`
+		}
+		type hooksAnswer struct {
+			User *userKeysJSON `json:"user"`
+		}
+		var got hooksAnswer
 		vars := map[string]any{"owner": strings.TrimPrefix(key.Owner, "~"), "name": key.Name, "cursor": cursor}
 		if err := c.send(ctx, docKeys, vars, &got); err != nil {
 			return nil, c.classify(err)
@@ -400,11 +413,13 @@ func (c *client) RemoveDeployKey(ctx context.Context, key repokey.Key, h forge.H
 	if !slices.ContainsFunc(keys, func(k forge.InstalledDeployKey) bool { return k.Handle == h }) {
 		return fmt.Errorf("forge/sourcehut: %q has no deploy key %q", key, bounded(string(h)))
 	}
-	var out struct {
-		Removed *struct {
-			RID string `json:"rid"`
-		} `json:"deleteDeployKey"`
+	type removedJSON struct {
+		RID string `json:"rid"`
 	}
+	type gqlAnswer struct {
+		Removed *removedJSON `json:"deleteDeployKey"`
+	}
+	var out gqlAnswer
 	if err := c.send(ctx, docRemoveKey, map[string]any{"rid": string(h)}, &out); err != nil {
 		return c.classify(err)
 	}
@@ -426,9 +441,10 @@ func (c *client) RegisterPushHook(ctx context.Context, key repokey.Key, callback
 	if err != nil {
 		return "", err
 	}
-	var out struct {
+	type gqlAnswer struct {
 		Hook *hookJSON `json:"createGitWebhook"`
 	}
+	var out gqlAnswer
 	config := map[string]any{
 		"repositoryID": r.ID,
 		"url":          callback.String(),
@@ -456,12 +472,14 @@ func (c *client) ListPushHooks(ctx context.Context, key repokey.Key) ([]forge.In
 	}
 	var out []forge.InstalledPushHook
 	err = c.pages(func(cursor *string) (*string, error) {
-		var got struct {
-			Hooks struct {
-				Results []hookJSON `json:"results"`
-				Cursor  *string    `json:"cursor"`
-			} `json:"gitWebhooks"`
+		type hookPage struct {
+			Results []hookJSON `json:"results"`
+			Cursor  *string    `json:"cursor"`
 		}
+		type hooksAnswer struct {
+			Hooks hookPage `json:"gitWebhooks"`
+		}
+		var got hooksAnswer
 		if err := c.send(ctx, docHooks, map[string]any{"id": r.ID, "cursor": cursor}, &got); err != nil {
 			return nil, c.classify(err)
 		}
@@ -496,9 +514,10 @@ func (c *client) RemovePushHook(ctx context.Context, key repokey.Key, h forge.Ha
 	if !slices.ContainsFunc(hooks, func(k forge.InstalledPushHook) bool { return k.Handle == h }) {
 		return fmt.Errorf("forge/sourcehut: %q has no webhook %q", key, bounded(string(h)))
 	}
-	var out struct {
+	type gqlAnswer struct {
 		Removed *hookJSON `json:"deleteGitWebhook"`
 	}
+	var out gqlAnswer
 	if err := c.send(ctx, docRemoveHook, map[string]any{"id": id}, &out); err != nil {
 		return c.classify(err)
 	}

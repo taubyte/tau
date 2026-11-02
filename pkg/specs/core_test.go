@@ -115,11 +115,12 @@ func TestAHostIsMatchedCaseInsensitively(t *testing.T) {
 // TestANamespaceIsScopeOfReadBackwards: what a consumer renders is what an
 // author would have typed, and what ScopeOf resolves it back to.
 func TestANamespaceIsScopeOfReadBackwards(t *testing.T) {
-	for _, one := range []struct {
+	type testCase struct {
 		scope []string
 		name  string
 		want  string
-	}{
+	}
+	for _, one := range []testCase{
 		{nil, "nightly", "/nightly"},
 		{[]string{"billing"}, "nightly", "/billing/nightly"},
 		{[]string{"shop", "billing"}, "nightly", "/shop/billing/nightly"},
@@ -139,7 +140,8 @@ func TestANamespaceIsScopeOfReadBackwards(t *testing.T) {
 // on the first edit to either — which is the argument Handle already makes about
 // being here at all.
 func TestAHandleReadsBackAsWhatItWasBuiltFrom(t *testing.T) {
-	for _, one := range []struct{ project, environment, id string }{
+	type testCase struct{ project, environment, id string }
+	for _, one := range []testCase{
 		{"shop", "prod", "QmSessions"},
 		{"shop", "prod-shadow", "QmA"},
 		{"a", "b", "c"},
@@ -155,10 +157,11 @@ func TestAHandleReadsBackAsWhatItWasBuiltFrom(t *testing.T) {
 // that means: a name that resolves to nothing is a bug to report where the
 // resource can be named.
 func TestASplitHandleThatNamesNoDeployment(t *testing.T) {
-	for _, one := range []struct {
+	type testCase struct {
 		handle                   string
 		project, environment, id string
-	}{
+	}
+	for _, one := range []testCase{
 		{"", "", "", ""},
 		{"nonsense", "nonsense", "", ""},
 		{"shop/prod", "shop", "prod", ""},

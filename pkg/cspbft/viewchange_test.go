@@ -150,11 +150,12 @@ func TestANewViewThatIsShortOfAQuorumOrMisattributedIsRefused(t *testing.T) {
 	primary := mkReplica(t, 4, "b")
 	nv := newViewBuiltBy(t, primary, []ReplicaID{"c", "d"}, 1, certFor(0, 1, Digest{7}, "a", "c", "d"))
 
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		make func(Message) Message
 		want error
-	}{
+	}
+	for _, tc := range []testCase{
 		{"short of a quorum", func(m Message) Message {
 			m.ViewChanges = m.ViewChanges[:1]
 			return signed("b", m)
@@ -206,10 +207,11 @@ func TestANewViewThatIsShortOfAQuorumOrMisattributedIsRefused(t *testing.T) {
 
 func TestAViewChangeWhoseCertificatesDoNotHoldUpIsRefused(t *testing.T) {
 	good := certFor(0, 1, Digest{7}, "a", "c", "d")
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		vc   Message
-	}{
+	}
+	for _, tc := range []testCase{
 		{"a certificate short of a quorum", viewChangeFrom("c", 1, certFor(0, 1, Digest{7}, "a", "c"))},
 		{"a certificate counting one replica twice", viewChangeFrom("c", 1, certFor(0, 1, Digest{7}, "a", "c", "c"))},
 		{"a certificate counting the primary's own prepare", viewChangeFrom("c", 1, certFor(0, 1, Digest{7}, "a", "a", "c"))},

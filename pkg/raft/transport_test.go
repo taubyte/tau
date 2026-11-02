@@ -76,10 +76,11 @@ func TestTransportLogger_LogsEachLevelAtItsOwn(t *testing.T) {
 	captured := captureTransportLog(t)
 	var lg hclog.Logger = &hcLogToLogger{}
 
-	for _, tc := range []struct {
+	type testCase struct {
 		level hclog.Level
 		want  string
-	}{
+	}
+	for _, tc := range []testCase{
 		{hclog.Trace, "debug"},
 		{hclog.Debug, "debug"},
 		{hclog.NoLevel, "info"},
@@ -94,11 +95,12 @@ func TestTransportLogger_LogsEachLevelAtItsOwn(t *testing.T) {
 		require.Equal(t, tc.want, level, "hclog level %d", tc.level)
 	}
 
-	for _, tc := range []struct {
+	type levelCase struct {
 		name string
 		log  func(string, ...interface{})
 		want string
-	}{
+	}
+	for _, tc := range []levelCase{
 		{"trace", lg.Trace, "debug"},
 		{"debug", lg.Debug, "debug"},
 		{"info", lg.Info, "info"},

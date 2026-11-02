@@ -20,10 +20,11 @@ func TestNewPoolRefusesWhatItCannotDialWith(t *testing.T) {
 	h := newHost(t, mn)
 	r := discovery.Static()
 
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		call func() (*Pool, error)
-	}{
+	}
+	for _, tc := range []testCase{
 		{"no host", func() (*Pool, error) { return NewPool(nil, r, AuthProtocol, 4) }},
 		{"no resolver", func() (*Pool, error) { return NewPool(h, nil, AuthProtocol, 4) }},
 		{"no protocol", func() (*Pool, error) { return NewPool(h, r, "", 4) }},

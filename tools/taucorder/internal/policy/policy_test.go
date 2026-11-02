@@ -61,11 +61,12 @@ func TestParse(t *testing.T) {
 }
 
 func TestPermits(t *testing.T) {
-	cases := []struct {
+	type testCase struct {
 		a    Allow
 		c    Class
 		want bool
-	}{
+	}
+	cases := []testCase{
 		{Allow{}, Read, true},
 		{Allow{}, Sensitive, false},
 		{Allow{}, Write, false},

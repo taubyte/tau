@@ -361,10 +361,11 @@ func stateRootOf(msg *pb.StateRoot, n int, link func(int) (cid.Cid, error)) (sta
 	}
 	var s stateRoot
 	i := 0
-	for _, slot := range [...]struct {
+	type stateSlot struct {
 		present bool
 		c       *cid.Cid
-	}{{msg.Elements, &s.elems}, {msg.Removals, &s.pending}, {msg.Context, &s.ctx}} {
+	}
+	for _, slot := range [...]stateSlot{{msg.Elements, &s.elems}, {msg.Removals, &s.pending}, {msg.Context, &s.ctx}} {
 		if !slot.present {
 			continue
 		}

@@ -40,12 +40,13 @@ func TestAStoreAndADAGShareALog(t *testing.T) {
 	defer pst.Close()
 	other := dssync.MutexWrap(ds.NewMapDatastore())
 	dag := newFetchThrough()
-	for _, c := range []struct {
+	type testCase struct {
 		name  string
 		store ds.Datastore
 		dags  ipld.DAGService
 		want  bool
-	}{
+	}
+	for _, c := range []testCase{
 		{"pebbleds and its blocks", pst, loggingDAG{dag, pst}, true},
 		{"blocks in another store", pst, loggingDAG{dag, other}, false},
 		{"blocks kept apart until synced", pst, loggingSyncingDAG{loggingDAG{dag, pst}}, false},
@@ -105,11 +106,12 @@ func TestASharedLogSurvivesAPowerLossOnPebble(t *testing.T) {
 	put(t, peer, "/d", "peer")
 
 	states := []map[string][]byte{{"/a": []byte("old"), "/b": []byte("old")}}
-	steps := []struct {
+	type step struct {
 		name string
 		do   func()
 		then map[string][]byte
-	}{
+	}
+	steps := []step{
 		{"put", func() { put(t, r, "/a", "new") }, map[string][]byte{"/a": []byte("new"), "/b": []byte("old")}},
 		{"delete", func() { del(t, r, "/b") }, map[string][]byte{"/a": []byte("new")}},
 		{"put", func() { put(t, r, "/c", "x") }, map[string][]byte{"/a": []byte("new"), "/c": []byte("x")}},

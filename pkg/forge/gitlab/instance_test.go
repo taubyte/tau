@@ -309,11 +309,13 @@ func (in *instance) serveUser(w http.ResponseWriter, token string, presented boo
 }
 
 func (in *instance) serveGraphQL(w http.ResponseWriter, r *http.Request, token string) {
-	var query struct {
-		Variables struct {
-			FullPath string `json:"fullPath"`
-		} `json:"variables"`
+	type queryVariables struct {
+		FullPath string `json:"fullPath"`
 	}
+	type graphqlQuery struct {
+		Variables queryVariables `json:"variables"`
+	}
+	var query graphqlQuery
 	if err := json.NewDecoder(r.Body).Decode(&query); err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"errors": []any{map[string]any{"message": "unparseable query"}}})
 		return
@@ -398,11 +400,12 @@ func (in *instance) serveList(w http.ResponseWriter, r *http.Request, token stri
 }
 
 func (in *instance) serveCreate(w http.ResponseWriter, r *http.Request, token string) {
-	var body struct {
+	type requestBody struct {
 		Path        string `json:"path"`
 		NamespaceID int64  `json:"namespace_id"`
 		Visibility  string `json:"visibility"`
 	}
+	var body requestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"message": "400 Bad request"})
 		return
@@ -530,12 +533,13 @@ func (in *instance) createHook(w http.ResponseWriter, r *http.Request, full stri
 		writeJSON(w, http.StatusForbidden, map[string]any{"message": "403 Forbidden"})
 		return
 	}
-	var body struct {
+	type requestBody struct {
 		URL          string `json:"url"`
 		PushEvents   bool   `json:"push_events"`
 		Token        string `json:"token"`
 		SigningToken string `json:"signing_token"`
 	}
+	var body requestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"message": "400 Bad request"})
 		return
@@ -555,11 +559,12 @@ func (in *instance) createDeployKey(w http.ResponseWriter, r *http.Request, full
 		writeJSON(w, http.StatusForbidden, map[string]any{"message": "403 Forbidden"})
 		return
 	}
-	var body struct {
+	type requestBody struct {
 		Title   string `json:"title"`
 		Key     string `json:"key"`
 		CanPush bool   `json:"can_push"`
 	}
+	var body requestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"message": "400 Bad request"})
 		return
@@ -670,21 +675,23 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 // fields the driver reads and a couple it deliberately does not, so that
 // "reading this little" is a property the fixture can actually test.
 type deliveryPayload struct {
-	ObjectKind   string  `json:"object_kind"`
-	EventName    string  `json:"event_name"`
-	Before       string  `json:"before"`
-	After        string  `json:"after"`
-	Ref          string  `json:"ref"`
-	CheckoutSHA  *string `json:"checkout_sha"`
-	UserUsername string  `json:"user_username"`
-	Project      struct {
-		Name              string `json:"name"`
-		PathWithNamespace string `json:"path_with_namespace"`
-		GitHTTPURL        string `json:"git_http_url"`
-		GitSSHURL         string `json:"git_ssh_url"`
-		DefaultBranch     string `json:"default_branch"`
-	} `json:"project"`
-	TotalCommitsCount int `json:"total_commits_count"`
+	ObjectKind        string          `json:"object_kind"`
+	EventName         string          `json:"event_name"`
+	Before            string          `json:"before"`
+	After             string          `json:"after"`
+	Ref               string          `json:"ref"`
+	CheckoutSHA       *string         `json:"checkout_sha"`
+	UserUsername      string          `json:"user_username"`
+	Project           deliveryProject `json:"project"`
+	TotalCommitsCount int             `json:"total_commits_count"`
+}
+
+type deliveryProject struct {
+	Name              string `json:"name"`
+	PathWithNamespace string `json:"path_with_namespace"`
+	GitHTTPURL        string `json:"git_http_url"`
+	GitSSHURL         string `json:"git_ssh_url"`
+	DefaultBranch     string `json:"default_branch"`
 }
 
 func (in *instance) Delivery(h forge.Hook, ref, commit string) (forge.Delivery, error) {

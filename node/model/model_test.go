@@ -179,10 +179,11 @@ func TestAnAnthropicModelGetsItsOwnShape(t *testing.T) {
 }
 
 func TestTheCredentialIsSentTheWayEachFormatWants(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		format string
 		check  func(*testing.T, http.Header)
-	}{
+	}
+	for _, c := range []testCase{
 		{"openai", func(t *testing.T, h http.Header) {
 			require.Equal(t, "Bearer s3cret", h.Get("authorization"))
 			require.Empty(t, h.Get("x-api-key"))
@@ -250,10 +251,11 @@ func TestACallersStopSequencesAreAddedToTheResources(t *testing.T) {
 }
 
 func TestA4xxIsRefusedAndA5xxIsNot(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		status  int
 		refused bool
-	}{
+	}
+	for _, c := range []testCase{
 		{http.StatusBadRequest, true},
 		{http.StatusUnauthorized, true},
 		{http.StatusUnprocessableEntity, true},

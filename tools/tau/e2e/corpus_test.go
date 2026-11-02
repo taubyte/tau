@@ -434,11 +434,13 @@ func initialised(t *testing.T) string {
 }
 
 type built struct {
-	Built []struct {
-		Environment, Kind, Name, ID, Recipe string
-	} `json:"built"`
-	Job    string `json:"job"`
-	Status string `json:"status"`
+	Built  []builtResource `json:"built"`
+	Job    string          `json:"job"`
+	Status string          `json:"status"`
+}
+
+type builtResource struct {
+	Environment, Kind, Name, ID, Recipe string
 }
 
 // underTest is a universe a developer is signed in to, at a forge it serves.
@@ -540,7 +542,8 @@ func (u *underTest) bothWays(t *testing.T, c corpusCase) {
 	}
 
 	ci := tau("ci", "run", "--dir", work, "-o", "json")
-	var ran struct{ Job, Status string }
+	type ranJob struct{ Job, Status string }
+	var ran ranJob
 	if c.refused != "" {
 		require.NotZero(t, ci.code)
 		require.NoError(t, json.Unmarshal([]byte(ci.stdout), &ran), ci.stderr)
@@ -558,7 +561,8 @@ func (u *underTest) bothWays(t *testing.T, c corpusCase) {
 	for _, r := range code {
 		res := tau("ci", "run", "--dir", r.dir, "--project", id, "--repo", r.key.String(), "-o", "json")
 		require.Equal(t, 0, res.code, "tau ci run of %s\nstdout: %s\nstderr: %s", r.key, res.stdout, res.stderr)
-		var ran struct{ Job, Status string }
+		type ranJob struct{ Job, Status string }
+		var ran ranJob
 		require.NoError(t, json.Unmarshal([]byte(res.stdout), &ran))
 		require.Equal(t, "success", ran.Status)
 		jobs = append(jobs, ran.Job)
@@ -606,9 +610,10 @@ func (u *underTest) bothWays(t *testing.T, c corpusCase) {
 // assetsOf is a job's artifacts, by the key its record files them under.
 func assetsOf(t *testing.T, job string) map[string]string {
 	t.Helper()
-	var view struct {
+	type buildView struct {
 		Built map[string]string `json:"asset_cid"`
 	}
+	var view buildView
 	require.NoError(t, json.Unmarshal([]byte(ok(t, "job", "-o", "json", "--", job)), &view))
 	return view.Built
 }

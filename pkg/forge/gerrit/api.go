@@ -201,9 +201,11 @@ type accessJSON struct {
 }
 
 type accessSection struct {
-	Permissions map[string]struct {
-		Exclusive bool `json:"exclusive"`
-	} `json:"permissions"`
+	Permissions map[string]permissionJSON `json:"permissions"`
+}
+
+type permissionJSON struct {
+	Exclusive bool `json:"exclusive"`
 }
 
 // restricted is whether the project's own config makes reads exclusive on the

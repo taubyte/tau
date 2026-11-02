@@ -361,11 +361,12 @@ func (f *fixture) createOrgRepo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (f *fixture) create(w http.ResponseWriter, r *http.Request, owner string) {
-	var body struct {
+	type requestBody struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
 		Private     bool   `json:"private"`
 	}
+	var body requestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
 		f.fail(w, http.StatusUnprocessableEntity, "Invalid request")
 		return
@@ -435,11 +436,12 @@ func (f *fixture) createKey(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var body struct {
+	type requestBody struct {
 		Title    string `json:"title"`
 		Key      string `json:"key"`
 		ReadOnly bool   `json:"read_only"`
 	}
+	var body requestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Key == "" {
 		f.fail(w, http.StatusUnprocessableEntity, "Invalid request")
 		return
@@ -521,16 +523,18 @@ func (f *fixture) createHook(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var body struct {
-		Type   string   `json:"type"`
-		Active bool     `json:"active"`
-		Events []string `json:"events"`
-		Config struct {
-			URL         string `json:"url"`
-			ContentType string `json:"content_type"`
-			Secret      string `json:"secret"`
-		} `json:"config"`
+	type hookConfigBody struct {
+		URL         string `json:"url"`
+		ContentType string `json:"content_type"`
+		Secret      string `json:"secret"`
 	}
+	type requestBody struct {
+		Type   string         `json:"type"`
+		Active bool           `json:"active"`
+		Events []string       `json:"events"`
+		Config hookConfigBody `json:"config"`
+	}
+	var body requestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Config.URL == "" || body.Type != "gogs" {
 		f.fail(w, http.StatusUnprocessableEntity, "Invalid request")
 		return

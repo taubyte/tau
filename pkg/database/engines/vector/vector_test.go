@@ -156,10 +156,11 @@ func TestTheThreeMetrics(t *testing.T) {
 	//
 	// cosine: close 0.995 beats long 0.894. dot: long 10 beats close 1.
 	// euclidean: close is 0.1 away and long is 10.3.
-	for _, c := range []struct {
+	type testCase struct {
 		metric string
 		first  string
-	}{
+	}
+	for _, c := range []testCase{
 		{vector.Cosine, "close"},
 		{vector.Dot, "long"},
 		{vector.Euclidean, "close"},

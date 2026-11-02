@@ -18,10 +18,11 @@ func BenchmarkAnswer(b *testing.B) {
 	}
 	s, err := New(Config{}, WithRouter(serving("shop.example.com", nodes...)))
 	require.NoError(b, err)
-	for _, c := range []struct {
+	type testCase struct {
 		name  string
 		qtype uint16
-	}{{"A", dns.TypeA}, {"AAAA", dns.TypeAAAA}, {"miss", dns.TypeA}} {
+	}
+	for _, c := range []testCase{{"A", dns.TypeA}, {"AAAA", dns.TypeAAAA}, {"miss", dns.TypeA}} {
 		name := "shop.example.com"
 		if c.name == "miss" {
 			name = "nobody.example.com"

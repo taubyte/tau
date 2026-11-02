@@ -25,11 +25,12 @@ func TestConfigDefaults(t *testing.T) {
 }
 
 func TestConfigRefusesWhatCannotBeCorrect(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		name string
 		cfg  Config
 		says string
-	}{
+	}
+	for _, c := range []testCase{
 		// R and K are the cloud's; an impossible pair is refused where it is read
 		// (pkg/fleet.Storage.Resolved).
 		{"negative grace", Config{GraceGC: -time.Hour}, "must be positive"},

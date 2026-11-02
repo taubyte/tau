@@ -133,11 +133,12 @@ func TestWhoamiRefusesACredentialBelongingToNobody(t *testing.T) {
 }
 
 func TestAccessMapsBitbucketsPermissionOntoTausRungs(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name   string
 		values string
 		want   forge.Access
-	}{
+	}
+	for _, tc := range []testCase{
 		{"admin", `[{"permission":"admin","repository":{"full_name":"acme/pay"}}]`, forge.AccessAdmin},
 		{"write", `[{"permission":"write","repository":{"full_name":"acme/pay"}}]`, forge.AccessWrite},
 		{"read", `[{"permission":"read","repository":{"full_name":"acme/pay"}}]`, forge.AccessRead},
@@ -156,7 +157,8 @@ func TestAccessMapsBitbucketsPermissionOntoTausRungs(t *testing.T) {
 }
 
 func TestAccessRefusesAnAnswerItCannotStandBehind(t *testing.T) {
-	for _, tc := range []struct{ name, repo, perm string }{
+	type testCase struct{ name, repo, perm string }
+	for _, tc := range []testCase{
 		{"a permission this driver does not know", repoPay, `{"values":[{"permission":"owner","repository":{"full_name":"acme/pay"}}]}`},
 		{"a grant on another repository", repoPay, `{"values":[{"permission":"admin","repository":{"full_name":"acme/other"}}]}`},
 		{"a full name disagreeing with the clone link", strings.Replace(repoPay, `"full_name":"acme/pay"`, `"full_name":"acme/other"`, 1), `{"values":[]}`},
@@ -361,10 +363,11 @@ func TestAResourceWithNoUsableHandleIsRefused(t *testing.T) {
 		return err
 	}
 
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		route, body string
 		call        func(*forge.Session, repokey.Key) error
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"a deploy key with id zero": {"POST /2.0/repositories/acme/pay/deploy-keys", `{"id":0}`, func(s *forge.Session, k repokey.Key) error {
 			_, err := s.InstallDeployKey(ctx(), k, "t", "ssh-ed25519 AAAA")
 			return err

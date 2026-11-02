@@ -88,11 +88,12 @@ func (f *fixture) deliver(h forge.Hook, names repokey.Key, ref, commit, event st
 }
 
 func TestConformance(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		opts []github.Option
 		caps []forge.Capability
-	}{
+	}
+	for _, tc := range []testCase{
 		{
 			name: "with the deployment's app credential",
 			opts: []github.Option{github.App(appClientID, testKeyPEM())},

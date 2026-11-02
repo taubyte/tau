@@ -78,18 +78,21 @@ func TestWorkflowValuesReadBackFromWhatItBecame(t *testing.T) {
 
 	got := schema.ReadBack(schema.LoweringPlan(obj.Flat()), schema.Carriages("workflow"))
 
-	var authored struct {
-		Steps []struct {
-			Name     string `yaml:"name"`
-			Wait     string `yaml:"wait"`
-			Attempts int    `yaml:"attempts"`
-			Backoff  struct {
-				Interval string  `yaml:"interval"`
-				Factor   float64 `yaml:"factor"`
-				Ceiling  string  `yaml:"ceiling"`
-			} `yaml:"backoff"`
-		} `yaml:"steps"`
+	type authoredBackoff struct {
+		Interval string  `yaml:"interval"`
+		Factor   float64 `yaml:"factor"`
+		Ceiling  string  `yaml:"ceiling"`
 	}
+	type authoredStep struct {
+		Name     string          `yaml:"name"`
+		Wait     string          `yaml:"wait"`
+		Attempts int             `yaml:"attempts"`
+		Backoff  authoredBackoff `yaml:"backoff"`
+	}
+	type authoredWorkflow struct {
+		Steps []authoredStep `yaml:"steps"`
+	}
+	var authored authoredWorkflow
 	body, err := os.ReadFile("../fixtures/basic/workflow/checkout.yaml")
 	assert.NilError(t, err)
 	assert.NilError(t, yaml.Unmarshal(body, &authored))
@@ -137,12 +140,14 @@ func TestAgentValuesReadBackInAuthoredForm(t *testing.T) {
 	delete(got, "limits/timeout")
 	delete(got, "limits/memory")
 
-	var authored struct {
-		Memory struct {
-			Dimensions int    `yaml:"dimensions"`
-			Size       string `yaml:"size"`
-		} `yaml:"memory"`
+	type authoredMemory struct {
+		Dimensions int    `yaml:"dimensions"`
+		Size       string `yaml:"size"`
 	}
+	type authoredAgent struct {
+		Memory authoredMemory `yaml:"memory"`
+	}
+	var authored authoredAgent
 	body, err := os.ReadFile("../fixtures/basic/agent/support.yaml")
 	assert.NilError(t, err)
 	assert.NilError(t, yaml.Unmarshal(body, &authored))

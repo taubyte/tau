@@ -167,10 +167,11 @@ func TestAnUncutPublicationIsWholeEverywhere(t *testing.T) {
 
 func TestViewsRefuseWhatAddressesNothing(t *testing.T) {
 	r, store := newRegister(t)
-	for _, tc := range []struct {
+	type testCase struct {
 		views []View
 		want  error
-	}{
+	}
+	for _, tc := range []testCase{
 		{[]View{{Destination: "", Compiled: []byte("x")}}, ErrNoDestination},
 		{[]View{{Destination: "a/b", Compiled: []byte("x")}}, ErrSeparator},
 		{[]View{{Destination: "region-1"}}, ErrEmptyObject},

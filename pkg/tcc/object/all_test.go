@@ -29,11 +29,12 @@ func TestMatch(t *testing.T) {
 	o.Child("applepie").Set("attr", Opaque{})
 	o.Child("pieapple").Set("attr", Opaque{})
 
-	tests := []struct {
+	type testCase struct {
 		expr  string
 		mtype MatchType
 		want  int
-	}{
+	}
+	tests := []testCase{
 		{"apple", ExactMatch, 1},
 		{"apple", PrefixMatch, 2},
 		{"apple", SuffixMatch, 2},

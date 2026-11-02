@@ -51,7 +51,8 @@ func TestRequiredWhenReadsAKeysBranch(t *testing.T) {
 		})),
 	))
 
-	for _, tc := range []struct{ name, doc, wantErr string }{
+	type testCase struct{ name, doc, wantErr string }
+	for _, tc := range []testCase{
 		{"branch that requires it, missing", "id: one\nengine:\n    remote: {}\n", "required attribute 'engine/remote/host'"},
 		{"branch that requires it, present", "id: one\nengine:\n    remote:\n        host: h\n", ""},
 		{"the other branch", "id: one\nengine:\n    local: {}\n", ""},
@@ -85,7 +86,8 @@ func TestKeySwitchOnAnOptionalBlock(t *testing.T) {
 		})),
 	))
 
-	for _, tc := range []struct{ name, doc, wantErr, wantProbe string }{
+	type testCase struct{ name, doc, wantErr, wantProbe string }
+	for _, tc := range []testCase{
 		{"optional block absent", "id: one\nround: {}\n", "", ""},
 		{"optional block present", "id: one\nround: {}\nprobe:\n    http:\n        path: /x\n", "", "http"},
 		{"optional block present, unlisted key", "id: one\nround: {}\nprobe:\n    telepathy: {}\n", "unknown key 'telepathy'", ""},

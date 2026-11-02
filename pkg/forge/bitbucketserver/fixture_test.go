@@ -386,12 +386,13 @@ func (f *fixture) createRepo(w http.ResponseWriter, r *http.Request) {
 		f.forbid(w)
 		return
 	}
-	var body struct {
+	type requestBody struct {
 		Name        string `json:"name"`
 		SCMID       string `json:"scmId"`
 		Description string `json:"description"`
 		Public      bool   `json:"public"`
 	}
+	var body requestBody
 	if err := strictBody(r, &body); err != nil || body.SCMID != "git" || body.Name == "" {
 		f.fail(w, http.StatusBadRequest, "com.atlassian.bitbucket.validation.ArgumentValidationException", "name: required")
 		return
@@ -455,13 +456,15 @@ func (f *fixture) createKey(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var body struct {
-		Key struct {
-			Text  string `json:"text"`
-			Label string `json:"label"`
-		} `json:"key"`
-		Permission string `json:"permission"`
+	type keyBody struct {
+		Text  string `json:"text"`
+		Label string `json:"label"`
 	}
+	type requestBody struct {
+		Key        keyBody `json:"key"`
+		Permission string  `json:"permission"`
+	}
+	var body requestBody
 	if err := strictBody(r, &body); err != nil || body.Key.Text == "" || (body.Permission != "REPO_READ" && body.Permission != "REPO_WRITE") {
 		f.fail(w, http.StatusBadRequest, "com.atlassian.bitbucket.validation.ArgumentValidationException", "key: invalid")
 		return
@@ -532,13 +535,14 @@ func (f *fixture) createHook(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var body struct {
+	type requestBody struct {
 		Name          string            `json:"name"`
 		URL           string            `json:"url"`
 		Active        bool              `json:"active"`
 		Events        []string          `json:"events"`
 		Configuration map[string]string `json:"configuration"`
 	}
+	var body requestBody
 	if err := strictBody(r, &body); err != nil || body.URL == "" || !slices.Equal(body.Events, []string{"repo:refs_changed"}) {
 		f.fail(w, http.StatusBadRequest, "com.atlassian.bitbucket.validation.ArgumentValidationException", "url: invalid")
 		return

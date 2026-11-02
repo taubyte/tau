@@ -162,10 +162,11 @@ type resourceJSON struct {
 // InstallDeployKey installs a READ-ONLY machine credential. See
 // deployKeyReadOnly: there is no parameter, and there is none on purpose.
 func (c *client) InstallDeployKey(ctx context.Context, key repokey.Key, title, publicKey string) (forge.Handle, error) {
-	var out struct {
+	type deployKeyJSON struct {
 		ID       int64 `json:"id"`
 		ReadOnly bool  `json:"read_only"`
 	}
+	var out deployKeyJSON
 	body := createKeyRequest{Title: title, Key: publicKey, ReadOnly: deployKeyReadOnly}
 	if err := c.send(ctx, routeInstallDeployKey.at(key.Owner, key.Name), body, &out); err != nil {
 		return "", c.classify(err, key)
@@ -220,10 +221,12 @@ func (c *client) ListDeployKeys(ctx context.Context, key repokey.Key) ([]forge.I
 }
 
 type hookJSON struct {
-	ID     int64 `json:"id"`
-	Config struct {
-		URL string `json:"url"`
-	} `json:"config"`
+	ID     int64          `json:"id"`
+	Config hookConfigJSON `json:"config"`
+}
+
+type hookConfigJSON struct {
+	URL string `json:"url"`
 }
 
 func (c *client) ListPushHooks(ctx context.Context, key repokey.Key) ([]forge.InstalledPushHook, error) {

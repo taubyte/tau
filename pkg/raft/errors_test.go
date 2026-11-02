@@ -6,10 +6,11 @@ import (
 )
 
 func TestErrors_Defined(t *testing.T) {
-	errs := []struct {
+	type namedError struct {
 		name string
 		err  error
-	}{
+	}
+	errs := []namedError{
 		{"ErrNotLeader", ErrNotLeader},
 		{"ErrNoLeader", ErrNoLeader},
 		{"ErrShutdown", ErrShutdown},

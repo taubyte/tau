@@ -32,11 +32,12 @@ func TestTheQueueNameIsForcedToTheConsistencyDomain(t *testing.T) {
 }
 
 func TestALeaseThatDoesNotOutlastABuildIsRefused(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name              string
 		buildTimeout      time.Duration
 		visibilityTimeout time.Duration
-	}{
+	}
+	for _, tc := range []testCase{
 		{"equal", time.Hour, time.Hour},
 		{"shorter", time.Hour, time.Minute},
 	} {

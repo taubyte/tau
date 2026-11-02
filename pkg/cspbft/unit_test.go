@@ -128,11 +128,12 @@ func TestAReplicaThatIsNotInItsOwnConfigurationIsRefused(t *testing.T) {
 }
 
 func TestAReplicaWithoutTheThreeThingsItCannotWorkWithoutIsRefused(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		opts []Option
 		want error
-	}{
+	}
+	for _, tc := range []testCase{
 		{"no signer", []Option{WithVerifier(replicaVerifier()), WithClientVerifier(clientVerifier())}, ErrNoSigner},
 		{"no verifier", []Option{WithSigner(signAs("a")), WithClientVerifier(clientVerifier())}, ErrNoVerifier},
 		{"no client verifier", []Option{WithSigner(signAs("a")), WithVerifier(replicaVerifier())}, ErrNoClientVerifier},
@@ -152,11 +153,12 @@ func TestAReplicaWithoutTheThreeThingsItCannotWorkWithoutIsRefused(t *testing.T)
 
 func TestAnOptionValidatesItsOwnArgumentRatherThanFailingOnTheFirstVote(t *testing.T) {
 	base := []Option{WithSigner(signAs("a")), WithVerifier(replicaVerifier()), WithClientVerifier(clientVerifier())}
-	for _, tc := range []struct {
+	type testCase struct {
 		name string
 		opt  Option
 		want error
-	}{
+	}
+	for _, tc := range []testCase{
 		{"interval zero", WithCheckpointInterval(0), ErrInvalidInterval},
 		{"base timeout zero", WithBaseTimeout(0), ErrInvalidTimeout},
 		{"max timeout zero", WithMaxTimeout(0), ErrInvalidTimeout},

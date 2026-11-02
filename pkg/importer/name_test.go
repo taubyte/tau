@@ -9,11 +9,12 @@ import (
 )
 
 func TestASourceNameBecomesAV2Name(t *testing.T) {
-	for _, c := range []struct {
+	type testCase struct {
 		in      string
 		want    string
 		renamed bool
-	}{
+	}
+	for _, c := range []testCase{
 		{"api", "api", false},
 		{"my_api", "my_api", false},
 		{"_internal", "_internal", false},

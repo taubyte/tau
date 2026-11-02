@@ -74,12 +74,13 @@ solo_a1: for the other value
 }
 
 func TestAnAttributeMayVaryByMoreThanOneVariable(t *testing.T) {
-	for _, tc := range []struct {
+	type testCase struct {
 		bound Bound
 		doc   string
 		want  string
 		why   string
-	}{
+	}
+	for _, tc := range []testCase{
 		{Bound{"alpha": "a1"}, "both: base\nboth_a1: by alpha\n", "by alpha", "the first variable's variant is written"},
 		{Bound{"beta": "b1"}, "both: base\nboth_b1: by beta\n", "by beta", "the second variable's is, and nothing about the first applies"},
 		{Bound{"alpha": "a1", "beta": "b1"}, "both: base\nboth_b1: by beta\n", "by beta", "both are bound and only one is written, so there is no contest"},

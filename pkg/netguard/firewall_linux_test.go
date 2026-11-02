@@ -14,10 +14,11 @@ import (
 // the kernel; that the encoding is the one the kernel accepts is the
 // integration test's job.
 func TestDeniedElementsIntervals(t *testing.T) {
-	for _, fam := range []struct {
+	type testCase struct {
 		v6    bool
 		width int
-	}{{false, net.IPv4len}, {true, net.IPv6len}} {
+	}
+	for _, fam := range []testCase{{false, net.IPv4len}, {true, net.IPv6len}} {
 		els := deniedElements(fam.v6)
 		if len(els) == 0 {
 			t.Fatalf("v6=%v: expected some elements", fam.v6)

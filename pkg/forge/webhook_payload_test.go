@@ -80,10 +80,11 @@ func TestPayloadEd25519RefusesEveryWrongDelivery(t *testing.T) {
 	}
 	good := signed(payloadBody, payloadNonce, priv)
 
-	for name, tc := range map[string]struct {
+	type testCase struct {
 		d   Delivery
 		key ed25519.PublicKey
-	}{
+	}
+	for name, tc := range map[string]testCase{
 		"a body one byte different": {d: Delivery{Header: good.Header, Body: []byte(strings.Replace(payloadBody, "GIT_", "GIT-", 1))}, key: pub},
 		"another nonce":             {d: Delivery{Header: http.Header{"X-Payload-Signature": good.Header["X-Payload-Signature"], "X-Payload-Nonce": {"other"}}, Body: good.Body}, key: pub},
 		"no nonce":                  {d: Delivery{Header: http.Header{"X-Payload-Signature": good.Header["X-Payload-Signature"]}, Body: good.Body}, key: pub},

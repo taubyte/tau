@@ -180,10 +180,11 @@ func TestEachDatabaseIsItsOwnKeySpace(t *testing.T) {
 	require.NoError(t, tokens.Put(ctx, "k", []byte("tokens")))
 	require.NoError(t, staging.Put(ctx, "k", []byte("staging")))
 
-	for _, c := range []struct {
+	type testCase struct {
 		conn database.KVConn
 		want string
-	}{{ledger, "ledger"}, {tokens, "tokens"}, {staging, "staging"}} {
+	}
+	for _, c := range []testCase{{ledger, "ledger"}, {tokens, "tokens"}, {staging, "staging"}} {
 		value, err := c.conn.Get(ctx, "k")
 		require.NoError(t, err)
 		require.Equal(t, c.want, string(value))
