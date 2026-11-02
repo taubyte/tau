@@ -60,7 +60,7 @@ func TestEveryWayOfBuildingCompiles(t *testing.T) {
 	assert.Equal(t, nested(site, "build", "inputs", "pay", "name"), paylib, "an input resolves to the package it names")
 	assert.DeepEqual(t, step["cache"], []string{"~/.pnpm-store"})
 	assert.Equal(t, site["output"], "dist")
-	assert.Equal(t, site["type"], "static")
+	assert.Equal(t, site["type"], "assets")
 
 	// dockerfile: an oci package built HERE rather than pulled
 	pool := namedResource(t, pkgs, "worker_pool_code")
@@ -106,7 +106,7 @@ func TestAWrongPairIsRefusedByShape(t *testing.T) {
 		{"an empty output is not one of the three states", probePkg + "output: \"\"\n",
 			"empty: write a path, or \".\" for the repository root"},
 		{"a type nothing runs", "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLi\ntype: nodejs\n",
-			`invalid value "nodejs"; valid values here: wasm, warp, oci, static`},
+			`invalid value "nodejs"; valid values here: wasm, warp, oci, assets`},
 		{"a package says what it is", "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLi\n",
 			"required attribute 'type'"},
 	} {
@@ -118,7 +118,7 @@ func TestAWrongPairIsRefusedByShape(t *testing.T) {
 }
 
 func TestABuildMayPublishToTheRoot(t *testing.T) {
-	const head = "id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVt\ntype: static\n"
+	const head = "id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVt\ntype: assets\n"
 	const steps = "build:\n    steps:\n        - name: b\n          image: node:22\n          commands: [npm ci, npm run build]\n"
 
 	flat, err := buildDoc(t, "/package/publishroot.yaml", head+steps+"output: \".\"\n")
@@ -217,8 +217,8 @@ func TestAuditPackages(t *testing.T) {
 	has(t, audit(id+"type: oci\nsource:\n    image: img\nbuild:\n    dockerfile:\n        path: Dockerfile\n"),
 		schema.Broken, "takes its artifact from an image and also declares a build")
 	has(t, audit(id+"type: wasm\nsource:\n    image: img\n"), schema.Broken, "names an image and is of type wasm")
-	has(t, audit(id+"type: static\nsource: s\nbuild:\n    dockerfile:\n        path: Dockerfile\n"),
-		schema.Broken, "is built from a Dockerfile and is of type static")
+	has(t, audit(id+"type: assets\nsource: s\nbuild:\n    dockerfile:\n        path: Dockerfile\n"),
+		schema.Broken, "is built from a Dockerfile and is of type assets")
 	has(t, audit(id+"type: oci\nsource: s\n"), schema.Broken, "is of type oci and names no image and no build")
 	has(t, audit(id+"type: wasm\nbuild:\n    steps:\n        - name: b\n          image: g\n          commands: [make]\n"),
 		schema.Broken, "is built with steps and names no output")
@@ -230,7 +230,7 @@ func TestAuditPackages(t *testing.T) {
 		id + "type: oci\nsource:\n    image: img\n",
 		id + "type: oci\nsource: api\nbuild:\n    dockerfile:\n        path: Dockerfile\n",
 		id + "type: wasm\n" + probeSteps,
-		id + "type: static\nsource: site\n",
+		id + "type: assets\nsource: site\n",
 	} {
 		found := audit(ok)
 		for _, f := range found {

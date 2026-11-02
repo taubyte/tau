@@ -18,7 +18,7 @@ func compileSourceIn(t *testing.T, env, body string) map[string]any {
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\nname: shop\nregions: [region-1]\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/package/docs.yaml",
-		[]byte("id: QmRgVLmWTBpgTbCPnHRUvKGnHqHf7Yd7t8ZffKeRXPkRLL\ntype: static\n"+body), 0o644))
+		[]byte("id: QmRgVLmWTBpgTbCPnHRUvKGnHqHf7Yd7t8ZffKeRXPkRLL\ntype: assets\n"+body), 0o644))
 
 	opts := []schema.Option{schema.WithVirtual(fs, "/"), schema.WithBranch("main"),
 		schema.WithEnvironments("production", "staging")}

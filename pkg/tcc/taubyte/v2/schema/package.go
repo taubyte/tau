@@ -5,7 +5,7 @@ package schema
 // `build` how it is made. A function, worker, application or sandbox names a
 // package and says nothing about any of the three.
 //
-//	type: static                     type: oci
+//	type: assets                     type: oci
 //	source: .                        source: api
 //	output: web/dist                 variables:
 //	build:                               MODE: {value: production}
@@ -27,10 +27,10 @@ const (
 	wasmPackage   = "wasm"
 	warpPackage   = "warp"
 	ociPackage    = "oci"
-	staticPackage = "static"
+	assetsPackage = "assets"
 )
 
-var packageTypes = []string{wasmPackage, warpPackage, ociPackage, staticPackage}
+var packageTypes = []string{wasmPackage, warpPackage, ociPackage, assetsPackage}
 
 // PackageTypes is every type a package may be.
 func PackageTypes() []string { return append([]string(nil), packageTypes...) }
@@ -45,7 +45,7 @@ const (
 func packageAttributes() []*Attribute {
 	return append(contentSource("source", "git", "image", "builtin"),
 		String("type", InSet(packageTypes...), Required(), InSection("source"),
-			Doc("Type", "What the artifact is. wasm: a component-model component. warp: a JS bundle. oci: a container image. static: a directory of files, served as they are.")),
+			Doc("Type", "What the artifact is. wasm: a component-model component. warp: a JS bundle. oci: a container image. assets: a directory of files, served as they are.")),
 
 		// IsRepoLocation because omitted and `.` differ: omitted is the source as it is,
 		// `.` the whole of it once built.

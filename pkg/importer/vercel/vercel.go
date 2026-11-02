@@ -90,7 +90,7 @@ func Import(data []byte) (importer.Result, error) {
 
 	r := importer.Result{Source: Source}
 
-	// What the file describes is a website, running a static package built with one
+	// What the file describes is a website, running an assets package built with one
 	// step.
 	var commands []string
 	for _, c := range []*string{f.InstallCommand, f.BuildCommand} {
@@ -103,7 +103,7 @@ func Import(data []byte) (importer.Result, error) {
 		output = *f.OutputDirectory
 	}
 	if len(commands) > 0 || output != "" {
-		pkg := map[string]any{"type": "static"}
+		pkg := map[string]any{"type": "assets"}
 		if output != "" {
 			pkg["output"] = output
 		}

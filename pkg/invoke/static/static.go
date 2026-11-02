@@ -29,7 +29,7 @@ import (
 )
 
 // Name is the string the config vocabulary uses for this tier.
-const Name = "static"
+const Name = specs.PackageTypeAssets
 
 // Settings this tier reads off a Spec, spelled as the vocabulary spells them.
 const (

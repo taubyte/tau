@@ -19,7 +19,7 @@ func mountedProject(t *testing.T, siteBody string) afero.Fs {
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\nname: shop\nregions: [region-1]\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/package/docs.yaml",
-		[]byte("id: QmRgVLmWTBpgTbCPnHRUvKGnHqHf7Yd7t8ZffKeRXPkRLL\ntype: static\n"+siteBody), 0o644))
+		[]byte("id: QmRgVLmWTBpgTbCPnHRUvKGnHqHf7Yd7t8ZffKeRXPkRLL\ntype: assets\n"+siteBody), 0o644))
 	return fs
 }
 

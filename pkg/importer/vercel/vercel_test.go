@@ -43,7 +43,7 @@ func TestTheBuildHalfIsWhatTheFileIsFor(t *testing.T) {
 	pkg, ok := r.Doc("package", built)
 	require.True(t, ok)
 	require.Equal(t, map[string]any{
-		"type":   "static",
+		"type":   "assets",
 		"output": ".next",
 		"build": map[string]any{"steps": []any{map[string]any{
 			"name": "build",

@@ -38,7 +38,7 @@ func TestAHoleInTheOutputIsNamedInTheReport(t *testing.T) {
 	result := importer.Result{Source: "test"}
 	site := map[string]any{}
 	result.Runs(site, "site", map[string]any{
-		"type": "static", "output": "dist",
+		"type": "assets", "output": "dist",
 		"build": map[string]any{"steps": []any{map[string]any{"name": "build", "commands": []string{"npm run build"}}}},
 	})
 	result.Set("website", "site", site)

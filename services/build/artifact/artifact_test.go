@@ -638,7 +638,7 @@ func TestAnInputIsRefusedByName(t *testing.T) {
 	config := projectConfig(t, everyBranch, map[string]string{
 		"package/paylib.yaml": "id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv\ntype: wasm\n" +
 			"source:\n    git: https://github.com/acme/paylib\noutput: paylib.wasm\n" + steps("go:1.23", "make"),
-		"package/reserve_code.yaml": "id: QmbB2PpNzfnQ3wAJykt9UZU2SRrFNSzawU16yo9mdpM2Wh\ntype: static\n" +
+		"package/reserve_code.yaml": "id: QmbB2PpNzfnQ3wAJykt9UZU2SRrFNSzawU16yo9mdpM2Wh\ntype: assets\n" +
 			"source: services/reserve\noutput: dist\n" +
 			"build:\n    inputs:\n        pay:\n            name: paylib\n" +
 			"    steps:\n        - name: site\n          image: node:22\n          commands: [npm run build]\n",

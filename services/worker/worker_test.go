@@ -375,7 +375,7 @@ func TestTheServeBlockReachesTheTier(t *testing.T) {
 	invokeOver(t, h, target("website", "shop"))
 	spec := h.Static.specs()[0]
 
-	require.Equal(t, "static", spec.Runtime, "read off the kind's Engines()")
+	require.Equal(t, "assets", spec.Runtime, "read off the package's type")
 	require.Equal(t, "spa", spec.Settings["serve/mode"])
 
 	// A resource with none of the three carries no settings, rather than an

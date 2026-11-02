@@ -765,7 +765,7 @@ const (
 	PackageTypeWasm       = "wasm"
 	PackageTypeWarp       = "warp"
 	PackageTypeOci        = "oci"
-	PackageTypeStatic     = "static"
+	PackageTypeAssets     = "assets"
 )
 
 // PackageBuild is the "build" block of Package, read from a compiled object.

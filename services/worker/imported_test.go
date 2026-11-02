@@ -184,7 +184,7 @@ func assertRunnable(t *testing.T, specs map[string]invoke.Spec) {
 
 // implementedTiers restates pkg/importer/emit/runnable_test's set; here it is the
 // resolved spec, not the kind, that must name one.
-var implementedTiers = []string{"oci", "static", "warp", "wasm"}
+var implementedTiers = []string{"assets", "oci", "warp", "wasm"}
 
 func TestAFlyAppIsRunnable(t *testing.T) {
 	result, err := fly.Import([]byte(theFlyFile))

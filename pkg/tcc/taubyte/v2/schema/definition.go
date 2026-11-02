@@ -391,7 +391,7 @@ var secPlacement = Section("placement", "Placement", "Where this may run, within
 //	wasm    a component-model component; WIT is the author contract
 //	warp    a JS bundle, run by the JS engine embedded in the worker
 //	oci     an OCI image, so a workload built elsewhere arrives unchanged
-//	static  a directory of files, served rather than executed
+//	assets  a directory of files, served rather than executed
 //
 // Another tier is a package type and the word in each kind's Engines(); consumers
 // ask EnginesOf.
@@ -1000,7 +1000,7 @@ var V2Resources = []*Node{
 				String(Key("serve", "not_found"), InSection("serving"), ShowWhen(Key("serve", "mode"), "static"),
 					Doc("Not Found Document", "Returned with 404 for a path the site does not have. Omitted means a bare 404.")),
 			)...),
-			GroupDoc("A static website: a package of type static, served. What serves it is an inbound domain edge."), Icon("globe"), Category("compute"), Engines(staticPackage),
+			GroupDoc("A static website: a package of type assets, served. What serves it is an inbound domain edge."), Icon("globe"), Category("compute"), Engines(assetsPackage),
 			secIdentity, secAccess, secCode,
 			Section("serving", "Serving", "What the site returns for a path it does not have."),
 			Resource("website", "Website", "Website", "website"),

@@ -87,7 +87,7 @@ func build(t testing.TB, cfg Config, opts ...Option) *harness {
 	// decides which runs a resource.
 	rt := &fakeRuntime{name: "oci"}
 	wasm := &fakeRuntime{name: "wasm"}
-	site := &fakeRuntime{name: "static"}
+	site := &fakeRuntime{name: "assets"}
 
 	pool, err := invoke.NewPool(invoke.WithRuntime(rt, wasm, site))
 	require.NoError(t, err)

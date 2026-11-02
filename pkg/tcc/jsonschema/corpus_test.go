@@ -116,5 +116,5 @@ func TestCorpusPackageWithoutATypeIsRefused(t *testing.T) {
 
 	unknown := docs["refused/function/unknownruntime"]
 	assert.Assert(t, unknown != nil)
-	assert.ErrorContains(t, r.Validate(unknown), "properties/type: enum: nodejs does not equal any of: [wasm warp oci static]")
+	assert.ErrorContains(t, r.Validate(unknown), "properties/type: enum: nodejs does not equal any of: [wasm warp oci assets]")
 }

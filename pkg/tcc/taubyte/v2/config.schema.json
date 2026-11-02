@@ -15437,12 +15437,12 @@
           "x-tau-section": "source"
         },
         "type": {
-          "description": "What the artifact is. wasm: a component-model component. warp: a JS bundle. oci: a container image. static: a directory of files, served as they are.",
+          "description": "What the artifact is. wasm: a component-model component. warp: a JS bundle. oci: a container image. assets: a directory of files, served as they are.",
           "enum": [
             "wasm",
             "warp",
             "oci",
-            "static"
+            "assets"
           ],
           "title": "Type",
           "type": "string",
@@ -25201,7 +25201,7 @@
       ]
     },
     "Website": {
-      "description": "A static website: a package of type static, served. What serves it is an inbound domain edge.",
+      "description": "A static website: a package of type assets, served. What serves it is an inbound domain edge.",
       "oneOf": [
         {
           "properties": {

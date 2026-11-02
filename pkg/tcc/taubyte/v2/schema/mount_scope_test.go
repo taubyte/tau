@@ -15,7 +15,7 @@ func TestABuildIsReadForAPackageInANamespace(t *testing.T) {
 	assert.NilError(t, afero.WriteFile(fs, "/namespace/local/meta.yaml",
 		[]byte("id: QmQt1CwQTMMBWhPDHmNUzd81oCd21PuxkrxJzSh2SnoUQM\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/namespace/local/package/docs.yaml",
-		[]byte("id: QmRgVLmWTBpgTbCPnHRUvKGnHqHf7Yd7t8ZffKeRXPkRLL\ntype: static\n"+delegating), 0o644))
+		[]byte("id: QmRgVLmWTBpgTbCPnHRUvKGnHqHf7Yd7t8ZffKeRXPkRLL\ntype: assets\n"+delegating), 0o644))
 
 	mounts := mountsOf(t, fs, "production")
 	assert.Equal(t, len(mounts), 1)

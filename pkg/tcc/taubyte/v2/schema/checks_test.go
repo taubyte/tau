@@ -37,7 +37,7 @@ var standingPackages = map[string]string{
 	"/package/img.yaml":  "id: " + cidFor("img") + "\ntype: oci\nsource:\n    image: img\n",
 	"/package/wasm.yaml": "id: " + cidFor("wasm") + "\ntype: wasm\n",
 	"/package/warp.yaml": "id: " + cidFor("warp") + "\ntype: warp\n",
-	"/package/site.yaml": "id: " + cidFor("site") + "\ntype: static\n",
+	"/package/site.yaml": "id: " + cidFor("site") + "\ntype: assets\n",
 }
 
 func has(t *testing.T, found []schema.Finding, sev schema.Severity, substr string) {
