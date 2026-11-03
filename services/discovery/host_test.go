@@ -67,6 +67,8 @@ func (i *instance) Peer() peer.Node            { return i.Node }
 func (i *instance) Running() []service.Running { return i.running }
 func (i *instance) Root() string               { return "" }
 func (i *instance) Cloud() string              { return "test" }
+func (*instance) Region() string               { return "" }
+func (*instance) Now() time.Time               { return time.Now() }
 func (i *instance) Config(into any) error {
 	if i.config != nil {
 		return i.config(into)

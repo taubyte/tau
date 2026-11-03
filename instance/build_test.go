@@ -418,12 +418,12 @@ func TestWithRegions(t *testing.T) {
 	require.Equal(t, schema.WithNoRegions(), o.regions)
 }
 
-func TestAsDestination(t *testing.T) {
-	var o options
-	require.Error(t, AsDestination("")(&o))
-	require.Equal(t, schema.DefaultRegion, (&Instance{Node: mockPeer(t), opts: o}).destination())
-	require.NoError(t, AsDestination("region-1")(&o))
-	require.Equal(t, "region-1", (&Instance{Node: mockPeer(t), opts: o}).destination())
+func TestTheRegionANodeReadsIsTheOneItsConfigNames(t *testing.T) {
+	n := &Instance{Node: mockPeer(t)}
+	require.Equal(t, schema.DefaultRegion, n.destination())
+	n.cfg.Region = "region-1"
+	require.Equal(t, "region-1", n.destination())
+	require.Equal(t, "region-1", (&added{node: n}).Region(), "and the region its services are told")
 }
 
 func TestBuildSeamsAreLayeredOverTheNodesOwn(t *testing.T) {

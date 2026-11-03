@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
@@ -105,6 +106,8 @@ func (a *added) Peer() peer.Node            { return a.node.Node }
 func (a *added) Root() string               { return a.node.cfg.Root }
 func (a *added) Running() []service.Running { return a.node.runningNow() }
 func (a *added) Cloud() string              { return a.node.cfg.Cloud }
+func (a *added) Region() string             { return a.node.cfg.Region }
+func (a *added) Now() time.Time             { return a.node.clock() }
 
 // Peers is every node discovery currently says runs service, this one included
 // when it does.

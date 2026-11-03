@@ -504,11 +504,11 @@ func signedIn(t *testing.T, configure func(*instance.Config), opts ...instance.O
 }
 
 func bothWays(t *testing.T, c corpusCase) {
-	var opts []instance.Option
-	if c.region != "" {
-		opts = append(opts, instance.WithRegions(schema.WithRegion(c.region)), instance.AsDestination(c.region))
+	if c.region == "" {
+		signedIn(t, nil).bothWays(t, c)
+		return
 	}
-	signedIn(t, nil, opts...).bothWays(t, c)
+	signedIn(t, func(cfg *instance.Config) { cfg.Region = c.region }, instance.WithRegions(schema.WithRegion(c.region))).bothWays(t, c)
 }
 
 func (u *underTest) bothWays(t *testing.T, c corpusCase) {

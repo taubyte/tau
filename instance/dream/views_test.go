@@ -21,7 +21,7 @@ import (
 )
 
 // projects/with/views and projects/refused/views: a project cut into one view per
-// region (schema.Views), each node reading its own (node.AsDestination). region-1
+// region (schema.Views), each node reading its own (its Config.Region). region-1
 // answers the route; region-2 holds the cache and zone and no route.
 var twoRegions = schema.Preview("region-1", "region-2")
 
@@ -30,8 +30,8 @@ var twoRegions = schema.Preview("region-1", "region-2")
 func inRegion(t *testing.T, region, name string) (*running, *instance.Instance) {
 	t.Helper()
 	u, err := nodeDream.Start(t.Context(), t.Name()+"-"+region, nodeDream.Config{
-		Services: []string{instance.Register, instance.Worker, instance.Discovery, instance.Gateway, instance.Database, instance.Primitives},
-		Options:  []instance.Option{instance.AsDestination(region)},
+		Services:  []string{instance.Register, instance.Worker, instance.Discovery, instance.Gateway, instance.Database, instance.Primitives},
+		Configure: func(_ int, c *instance.Config) { c.Region = region },
 	})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)

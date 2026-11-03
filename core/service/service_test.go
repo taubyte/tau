@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
@@ -22,6 +23,8 @@ type fake struct {
 func (f *fake) Peer() peer.Node    { return f.Node }
 func (f *fake) Running() []Running { return f.running }
 func (f *fake) Cloud() string      { return "test" }
+func (*fake) Region() string       { return "" }
+func (*fake) Now() time.Time       { return time.Now() }
 func (f *fake) Root() string       { return "" }
 func (f *fake) Config(any) error   { return nil }
 
@@ -100,7 +103,9 @@ func TestALonePeerRunsServicesBesideEachOther(t *testing.T) {
 	require.Equal(t, p, h.Peer())
 	require.Equal(t, "cloud", h.Cloud())
 	require.Empty(t, h.Root())
-	require.NoError(t, h.Config(&struct{}{}))
+	require.Empty(t, h.Region(), "a lone peer is in a cloud with no regions")
+	require.WithinDuration(t, time.Now(), h.Now(), time.Minute)
+	require.NoError(t, h.Config(new(answer)))
 	got, ok := Get[*recorder](h)
 	require.True(t, ok)
 	require.Same(t, first, got, "what started before it")

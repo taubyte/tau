@@ -61,8 +61,8 @@ func TestADroppedRegionStopsResolving(t *testing.T) {
 	for _, region := range []string{"region-1", "region-2"} {
 		t.Run(region, func(t *testing.T) {
 			u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-				Services: []string{instance.Register},
-				Options:  []instance.Option{instance.AsDestination(region)},
+				Services:  []string{instance.Register},
+				Configure: func(_ int, c *instance.Config) { c.Region = region },
 			})
 			require.NoError(t, err)
 			t.Cleanup(u.Close)

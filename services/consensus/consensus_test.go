@@ -24,6 +24,8 @@ type instance struct {
 func (i instance) Peer() peer.Node          { return i.Node }
 func (instance) Running() []service.Running { return nil }
 func (instance) Cloud() string              { return "consensus-test" }
+func (instance) Region() string             { return "" }
+func (instance) Now() time.Time             { return time.Now() }
 func (i instance) Root() string             { return i.root }
 func (i instance) Config(into any) error {
 	if i.config == nil {

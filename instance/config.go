@@ -98,6 +98,11 @@ type Config struct {
 	// each other's traffic.
 	Cloud string
 
+	// Region is the region this node serves: every project it serves is read as
+	// that region's view of it, and nothing placed elsewhere reaches it. Empty is
+	// schema.DefaultRegion, the one destination of a build with no regions.
+	Region string
+
 	// Tenancy are the forge namespaces this cloud serves, each written
 	// host/namespace ("github.com/acme"). A repository outside them is
 	// refused by name wherever one is registered, linked to a project or
@@ -176,8 +181,6 @@ type options struct {
 	// buildSeams and uploads are a development cloud's; see WithBuildSeams.
 	buildSeams func(BuildSeams) BuildSeams
 	uploads    frontend.Uploads
-	// destination is the region whose views this node reads; see AsDestination.
-	destination string
 
 	// terminates says whatever serves Handler serves it over TLS too, with
 	// TLSConfig. See WithTLS.

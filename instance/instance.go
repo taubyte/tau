@@ -982,8 +982,8 @@ func (s *source) Resolve(ctx context.Context, name, environment string) (pkgregi
 
 // destination is the region whose views this node reads.
 func (n *Instance) destination() string {
-	if n.opts.destination != "" {
-		return n.opts.destination
+	if n.cfg.Region != "" {
+		return n.cfg.Region
 	}
 	return schema.DefaultRegion
 }

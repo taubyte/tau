@@ -41,6 +41,8 @@ func (v *vaultNode) runs(name string, s any) {
 }
 func (v *vaultNode) Root() string  { return v.root }
 func (v *vaultNode) Cloud() string { return "test" }
+func (*vaultNode) Region() string  { return "" }
+func (*vaultNode) Now() time.Time  { return time.Now() }
 func (v *vaultNode) Config(into any) error {
 	if v.config != nil {
 		return v.config(into)

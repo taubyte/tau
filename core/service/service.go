@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
@@ -46,6 +47,12 @@ type Host interface {
 
 	// Cloud is the cloud this instance belongs to, which scopes what it gossips.
 	Cloud() string
+
+	// Region is the region this instance serves, empty in a cloud with no regions.
+	Region() string
+
+	// Now is the instance's clock, so a test that moves time moves everything on it.
+	Now() time.Time
 }
 
 // Running is one service running on an instance. A Name is empty for something the
@@ -130,3 +137,5 @@ func (h loneHost) Running() []Running {
 func (loneHost) Config(any) error { return nil }
 func (loneHost) Root() string     { return "" }
 func (h loneHost) Cloud() string  { return h.l.cloud }
+func (loneHost) Region() string   { return "" }
+func (loneHost) Now() time.Time   { return time.Now() }

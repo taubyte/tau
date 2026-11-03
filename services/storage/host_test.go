@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ipfs/go-cid"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
@@ -65,6 +66,8 @@ func (i *storageNode) Config(into any) error {
 }
 
 func (i *storageNode) Cloud() string { return "storage-test" }
+func (*storageNode) Region() string  { return "" }
+func (*storageNode) Now() time.Time  { return time.Now() }
 func (i *storageNode) Root() string  { return i.t.TempDir() }
 
 var _ service.Host = (*storageNode)(nil)
