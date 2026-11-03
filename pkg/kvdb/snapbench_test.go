@@ -609,7 +609,7 @@ func (g *getterMeter) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.
 
 type netSnapNode struct {
 	snapReplica
-	node   taupeer.Node
+	taupeer.Node
 	meter  *dagMeter
 	cancel context.CancelFunc
 }
@@ -630,7 +630,7 @@ func newNetSnapNode(b *testing.B, name string, opts *Options) *netSnapNode {
 		b.Fatal(err)
 	}
 	m := &dagMeter{DAGService: node.DAG()}
-	n := &netSnapNode{node: node, meter: m, cancel: cancel}
+	n := &netSnapNode{Node: node, meter: m, cancel: cancel}
 	n.snapReplica = openSnap(b, snapEnv{name: name, dir: b.TempDir(), dag: &sessionMeter{dagMeter: m, sessions: node.DAG()}, opts: replicaOptions(opts, name)})
 	return n
 }
@@ -651,11 +651,14 @@ func recordReprovided(b *testing.B, repo string) {
 	}
 }
 
+// Close is the replica's: the peer under it is closed by close.
+func (n *netSnapNode) Close() error { return n.snapReplica.Close() }
+
 func (n *netSnapNode) close(b *testing.B) {
-	if err := n.Close(); err != nil {
+	if err := n.snapReplica.Close(); err != nil {
 		b.Error(err)
 	}
-	n.node.Close()
+	n.Node.Close()
 	n.cancel()
 }
 
@@ -664,13 +667,13 @@ func (n *netSnapNode) connect(b *testing.B, peer *netSnapNode) {
 	b.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := n.node.Peer().Connect(ctx, peercore.AddrInfo{ID: peer.node.ID(), Addrs: peer.node.Peer().Addrs()}); err != nil {
+	if err := n.Host().Connect(ctx, peercore.AddrInfo{ID: peer.ID(), Addrs: peer.Host().Addrs()}); err != nil {
 		b.Fatal(err)
 	}
 	tick := time.NewTicker(10 * time.Millisecond)
 	defer tick.Stop()
 	for {
-		speaks, err := n.node.Peer().Peerstore().SupportsProtocols(peer.node.ID(), bsnet.ProtocolBitswap)
+		speaks, err := n.Host().Peerstore().SupportsProtocols(peer.ID(), bsnet.ProtocolBitswap)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -679,7 +682,7 @@ func (n *netSnapNode) connect(b *testing.B, peer *netSnapNode) {
 		}
 		select {
 		case <-ctx.Done():
-			b.Fatalf("identify never told %s that %s speaks bitswap", n.node.ID(), peer.node.ID())
+			b.Fatalf("identify never told %s that %s speaks bitswap", n.ID(), peer.ID())
 		case <-tick.C:
 		}
 	}
@@ -687,9 +690,9 @@ func (n *netSnapNode) connect(b *testing.B, peer *netSnapNode) {
 
 func (n *netSnapNode) bitswap(b *testing.B) *bitswap.Stat {
 	b.Helper()
-	bs, ok := n.node.DAG().Exchange().(*bitswap.Bitswap)
+	bs, ok := n.DAG().Exchange().(*bitswap.Bitswap)
 	if !ok {
-		b.Fatalf("the node's exchange is a %T, not bitswap", n.node.DAG().Exchange())
+		b.Fatalf("the node's exchange is a %T, not bitswap", n.DAG().Exchange())
 	}
 	st, err := bs.Stat()
 	if err != nil {

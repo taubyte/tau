@@ -215,13 +215,13 @@ func supportsRaftProtocol(h host.Host, pid peer.ID, raftProtocol protocol.ID) bo
 // client until ctx is done. A yield replaces the cluster's client while the
 // round under way finishes, so it uses only the one it is handed.
 func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster, client internalClient) {
-	host := c.node.Peer()
+	host := c.Host()
 	raftProtocol := protocol.ID(Protocol(c.namespace))
 
 	discoveryLogger.Infof("[%s] starting peer discovery for namespace %s (interval=%v)",
 		pt.selfID.ShortString(), c.namespace, pt.getDiscoveryInterval())
 
-	if d := c.node.Discovery(); d != nil {
+	if d := c.Discovery(); d != nil {
 		go pt.runLookups(ctx, c, d, raftProtocol)
 	}
 
@@ -234,7 +234,7 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster, 
 		case <-time.After(pt.getDiscoveryInterval()):
 			connectedPeers := host.Network().Peers()
 			for _, pid := range connectedPeers {
-				if pid == c.node.ID() {
+				if pid == c.ID() {
 					continue
 				}
 				if supportsRaftProtocol(host, pid, raftProtocol) {
@@ -270,12 +270,12 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster, 
 // takes longer than a tick of the tracker, and one called off with nothing
 // found is cached as nothing found until its backoff expires.
 func (pt *peerTracker) runLookups(ctx context.Context, c *cluster, d discovery.Discovery, raftProtocol protocol.ID) {
-	host := c.node.Peer()
+	host := c.Host()
 	for {
 		peerCh, err := d.FindPeers(ctx, string(raftProtocol))
 		if err == nil {
 			for p := range peerCh {
-				if p.ID != c.node.ID() && c.connectFound(ctx, p) && supportsRaftProtocol(host, p.ID, raftProtocol) {
+				if p.ID != c.ID() && c.connectFound(ctx, p) && supportsRaftProtocol(host, p.ID, raftProtocol) {
 					pt.addPeer(p.ID)
 				}
 			}
@@ -294,9 +294,9 @@ func (pt *peerTracker) runLookups(ctx context.Context, c *cluster, d discovery.D
 func (c *cluster) connectFound(ctx context.Context, p peer.AddrInfo) bool {
 	ctx, cancel := context.WithTimeout(ctx, sendToPeerTimeout)
 	defer cancel()
-	if err := c.node.Peer().Connect(ctx, p); err != nil {
+	if err := c.Host().Connect(ctx, p); err != nil {
 		discoveryLogger.Infof("[%s] connecting to discovered peer %s failed: %v",
-			c.node.ID().ShortString(), p.ID.ShortString(), err)
+			c.ID().ShortString(), p.ID.ShortString(), err)
 		return false
 	}
 	return true
@@ -304,5 +304,5 @@ func (c *cluster) connectFound(ctx context.Context, p peer.AddrInfo) bool {
 
 func (c *cluster) dialPeer(ctx context.Context, pid peer.ID) {
 	peerInfo := peer.AddrInfo{ID: pid}
-	c.node.Peer().Connect(ctx, peerInfo)
+	c.Host().Connect(ctx, peerInfo)
 }

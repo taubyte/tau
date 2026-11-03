@@ -174,7 +174,7 @@ func TestANodeThatLetTheKernelPickAnnouncesThePortItBound(t *testing.T) {
 	require.NoError(t, err)
 	defer node.Close()
 
-	addrs := node.Peer().Addrs()
+	addrs := node.Host().Addrs()
 	require.NotEmpty(t, addrs, "a node listening on tcp/0 announced nothing")
 	for _, addr := range addrs {
 		port, err := addr.ValueForProtocol(ma.P_TCP)
@@ -187,7 +187,7 @@ func TestANodeThatLetTheKernelPickAnnouncesThePortItBound(t *testing.T) {
 
 	// ListenAddresses also carries /p2p-circuit, which names no tcp port.
 	var bound string
-	for _, addr := range node.Peer().Network().ListenAddresses() {
+	for _, addr := range node.Host().Network().ListenAddresses() {
 		if port, err := addr.ValueForProtocol(ma.P_TCP); err == nil {
 			bound = port
 		}

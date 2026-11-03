@@ -3,7 +3,6 @@ package instance
 import (
 	"testing"
 
-	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/instance/cache"
@@ -49,23 +48,6 @@ func TestEveryCacheSharesOneDatabase(t *testing.T) {
 		}
 	}
 	require.Equal(t, 1, caches, "three caches, one database: %v", opened)
-}
-
-func TestACacheNeedsADatabaseFactory(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-
-	n, err := New(Config{Services: []string{Worker, Discovery}},
-		WithHost(h), WithPubSub(newPubSub(t, h)), WithRuntimes(&tier{name: "wasm"}))
-	require.NoError(t, err)
-	t.Cleanup(func() { n.Close() })
-
-	c, err := cache.New(cacheStores{node: n})
-	require.NoError(t, err)
-
-	_, err = c.Open(t.Context(), grant("shop/prod/QmA", nil))
-	require.ErrorIs(t, err, ErrNoCacheStore)
 }
 
 func TestTheCacheDatabaseIsClosedWithTheNode(t *testing.T) {

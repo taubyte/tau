@@ -716,24 +716,19 @@ func TestKVDatabaseSurface(t *testing.T) {
 	ctx := context.Background()
 	node := peer.Mock(ctx)
 	defer node.Close()
-	f := New(node)
+	f := opener{node}
 	db, err := f.New(logging.Logger("kv"), "surface", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if db.Factory() != f {
-		t.Fatal("factory")
-	}
 	if err := db.Put(ctx, "/x/a", []byte("1")); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Delete(ctx, "/x/a"); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := db.(interface {
-		Compact(context.Context) (int, error)
-	}).Compact(ctx); err != nil || n == 0 {
+	if n, err := db.Compact(ctx); err != nil || n == 0 {
 		t.Fatalf("compact dropped %d: %v", n, err)
 	}
 	if err := db.Put(ctx, "/x/b", []byte("2")); err != nil {
@@ -752,11 +747,11 @@ func TestKVDatabaseSurface(t *testing.T) {
 	if NewStats().Type() != 0 {
 		t.Fatal("type")
 	}
-	held, err := f.(*factory).Holding(ctx, "surface")
+	held, err := Holding(ctx, node, "surface")
 	if err != nil || !held {
 		t.Fatalf("holding: %v %v", held, err)
 	}
-	paths, err := f.(*factory).Paths(ctx, "", 1)
+	paths, err := Paths(ctx, node, "", 1)
 	if err != nil || len(paths) == 0 {
 		t.Fatalf("paths: %v %v", paths, err)
 	}

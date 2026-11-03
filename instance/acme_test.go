@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"testing"
 
-	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/certificate"
@@ -17,14 +16,11 @@ import (
 )
 
 func TestACloudIssuingCertificatesNeedsItsZoneAndAWorkableConfig(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
 	on := cm.Config{Certificate: cm.CertificateConfig{ACME: certificate.ACME{Enabled: true}}}
 
 	// A GATEWAY OR A GLOBALS NODE with no zone cannot say what it issues.
 	for _, services := range [][]string{{Register, Discovery, Gateway}, {Discovery, Secrets, CM}} {
-		h := newHost(t, mn)
-		_, err := New(Config{Services: services, CM: on}, WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}), WithRoot(t.TempDir()))
+		_, err := New(mockPeer(t), rootedIn(t, Config{Services: services, CM: on}, t.TempDir()), withKVDB(&memFactory{}))
 		require.ErrorIs(t, err, ErrNoZoneForCertificates, services)
 	}
 
@@ -34,14 +30,8 @@ func TestACloudIssuingCertificatesNeedsItsZoneAndAWorkableConfig(t *testing.T) {
 	require.NotNil(t, n.certs, "and its gateway and dns server take the client")
 
 	cfg.CM.Certificate.ACME.EAB.KeyID = "half"
-	h := newHost(t, mn)
-	_, err := New(cfg, WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}), WithRoot(t.TempDir()))
+	_, err := New(mockPeer(t), rootedIn(t, cfg, t.TempDir()), withKVDB(&memFactory{}))
 	require.ErrorContains(t, err, "external account binding")
-
-	// A GLOBALS NODE KEEPS ITS CHAINS IN A DATABASE.
-	h = newHost(t, mn)
-	_, err = New(Config{Services: []string{Discovery, CM}, CM: on, Gateway: gateway.Config{CloudFqdn: "tau.example.io"}}, WithHost(h), WithPubSub(newPubSub(t, h)))
-	require.ErrorIs(t, err, ErrNoDatabases)
 }
 
 func accountKey(t *testing.T) string {
@@ -80,16 +70,4 @@ func TestTheBuildFrontendServesTLSWhenTheCloudIssues(t *testing.T) {
 	secure, err = plain.ServiceTLS()
 	require.NoError(t, err)
 	require.Nil(t, secure)
-}
-
-func TestADNSNodeOfAnIssuingCloudNeedsTheChallengeStore(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-	_, err := New(Config{
-		Services: []string{Discovery, DNS},
-		Gateway:  gateway.Config{CloudFqdn: "tau.example.io"},
-		CM:       cm.Config{Certificate: cm.CertificateConfig{ACME: certificate.ACME{Enabled: true}}},
-	}, WithHost(h), WithPubSub(newPubSub(t, h)), WithRoot(t.TempDir()))
-	require.ErrorIs(t, err, ErrNoDatabases)
 }

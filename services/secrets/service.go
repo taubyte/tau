@@ -67,7 +67,7 @@ type Config struct {
 // threshold of nodes. See the package doc for what that defends against.
 type Service struct {
 	host      host.Host
-	db        kvdb.KVDB
+	db        kvdb.Instance
 	keys      *keyStore
 	records   *recordStore
 	wrappings *wrappingStore
@@ -251,7 +251,7 @@ var (
 
 // New validates and opens this node's share store. It binds nothing and
 // starts nothing until Start.
-func New(h host.Host, db kvdb.KVDB, opts ...Option) (*Service, error) {
+func New(h host.Host, db kvdb.Instance, opts ...Option) (*Service, error) {
 	if h == nil {
 		return nil, ErrNoHost
 	}

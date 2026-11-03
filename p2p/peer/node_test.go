@@ -22,7 +22,7 @@ func TestMock(t *testing.T) {
 	id := node.ID()
 	assert.NotEmpty(t, id, "ID should not be empty")
 
-	host := node.Peer()
+	host := node.Host()
 	assert.NotNil(t, host, "Peer should return a non-nil host")
 
 	messaging := node.Messaging()

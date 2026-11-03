@@ -43,7 +43,7 @@ func Runtimes(rts ...invoke.Runtime) []invoke.Runtime {
 // before its peer.
 func Start(m *mesh.Mesh, registerAt libp2ppeer.ID) (peer.Node, error) {
 	return m.Add(func(node peer.Node) error {
-		svc, err := create(m.Context(), node.Peer(), registerAt)
+		svc, err := create(m.Context(), node.Host(), registerAt)
 		if err != nil {
 			return err
 		}

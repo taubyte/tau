@@ -20,7 +20,7 @@ func TestAtRestSealsWithTheConfiguredKey(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, key)
 
-	configured, err := newAtRest(node.Peer(), key)
+	configured, err := newAtRest(node.Host(), key)
 	require.NoError(t, err)
 	assert.Contains(t, configured.posture(), "configured at-rest key")
 
@@ -38,7 +38,7 @@ func TestAtRestSealsWithTheConfiguredKey(t *testing.T) {
 	// lives outside the data directory, so taking the directory is not enough.
 	other, err := GenerateAtRestKey()
 	require.NoError(t, err)
-	wrong, err := newAtRest(node.Peer(), other)
+	wrong, err := newAtRest(node.Host(), other)
 	require.NoError(t, err)
 
 	_, err = wrong.open(sealed)
@@ -52,7 +52,7 @@ func TestAtRestFallsBackToTheNodeAndSaysSo(t *testing.T) {
 	node := peerNode.Mock(ctx)
 	t.Cleanup(func() { node.Close() })
 
-	fallback, err := newAtRest(node.Peer(), "")
+	fallback, err := newAtRest(node.Host(), "")
 	require.NoError(t, err)
 
 	// Weaker, and it must not be quiet about it: the key sits in the same

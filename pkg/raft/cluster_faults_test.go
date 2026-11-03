@@ -200,7 +200,7 @@ func TestNew_RefusesWhatItCannotRun(t *testing.T) {
 
 func groupProtocols(node taupeer.Node, namespace string) []protocol.ID {
 	var served []protocol.ID
-	for _, id := range node.Peer().Mux().Protocols() {
+	for _, id := range node.Host().Mux().Protocols() {
 		if id == protocol.ID(Protocol(namespace)) || id == protocol.ID(TransportProtocol(namespace)) {
 			served = append(served, id)
 		}
@@ -262,7 +262,7 @@ func TestNew_ANamespaceTheNodeAlreadyRunsIsRefused(t *testing.T) {
 	require.True(t, found)
 	require.Equal(t, []byte("v"), value)
 
-	require.NoError(t, nodeB.Peer().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Peer().Addrs()}))
+	require.NoError(t, nodeB.Host().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Host().Addrs()}))
 	b, err := New(nodeB, namespace, WithTimeouts(timeouts), WithBootstrapTimeout(5*time.Second), WithSnapshotRoot(t.TempDir()))
 	require.NoError(t, err)
 	defer b.Close()
@@ -290,7 +290,7 @@ func TestNew_AFailedNewLeavesNothingRunning(t *testing.T) {
 		route, handler := raftv2connect.NewRaftServiceHandler(raftv2connect.UnimplementedRaftServiceHandler{})
 		mux := http.NewServeMux()
 		mux.Handle(route, handler)
-		other, err := rpc.Listen(t.Context(), node.Peer(), protocol.ID(Protocol(namespace)), mux)
+		other, err := rpc.Listen(t.Context(), node.Host(), protocol.ID(Protocol(namespace)), mux)
 		require.NoError(t, err)
 
 		cl, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))

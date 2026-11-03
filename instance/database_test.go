@@ -24,7 +24,7 @@ type releasing struct {
 	byPath map[string]*releasable
 }
 
-func (f *releasing) New(_ log.StandardLogger, path string, _ int) (kvdb.KVDB, error) {
+func (f *releasing) New(_ log.StandardLogger, path string, _ int) (kvdb.Instance, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -49,7 +49,7 @@ func (f *releasing) held(path string) (*releasable, bool) {
 }
 
 type releasable struct {
-	kvdb.KVDB
+	kvdb.Instance
 	factory *releasing
 	path    string
 
@@ -66,7 +66,7 @@ func (r *releasable) Destroy(context.Context) error {
 
 func TestTheRootReleasesThroughTheFactoryItWasGiven(t *testing.T) {
 	factory := &releasing{}
-	n := &Instance{opts: options{databases: factory}}
+	n := &Instance{Node: mockPeer(t), opts: options{kvdbOpen: kvdbOf(factory)}}
 	seam := databaseStores{node: n}
 	const name = "databases/shop/prod/kv/QmA"
 
@@ -98,26 +98,4 @@ func TestAStoreThatCannotBeReleasedIsNamed(t *testing.T) {
 
 	opened, _ := factory.counts()
 	require.Contains(t, opened, "databases/shop/prod/kv/QmA")
-}
-
-func TestTheStoreSeamNeedsAFactory(t *testing.T) {
-	seam := databaseStores{node: &Instance{opts: options{}}}
-
-	_, err := seam.Store("databases/shop/prod/kv/QmA")
-	require.ErrorIs(t, err, ErrNoCacheStore)
-	require.ErrorIs(t, seam.Release(t.Context(), "databases/shop/prod/kv/QmA"), ErrNoCacheStore)
-}
-
-func TestTheDiskSurfaceIsAssertedAndMayBeAbsent(t *testing.T) {
-	require.Nil(t, databaseDisk(nil), "a node with no factory has no disk to ask")
-	require.Nil(t, databaseDisk(&memFactory{}), "a factory that keeps no bytes answered as a disk")
-	require.NotNil(t, databaseDisk(&probing{}))
-}
-
-// probing is a factory that can be asked what it holds, which pkg/kvdb's is.
-type probing struct{ memFactory }
-
-func (p *probing) Holding(context.Context, string) (bool, error) { return false, nil }
-func (p *probing) Paths(context.Context, string, int) ([]string, error) {
-	return nil, nil
 }

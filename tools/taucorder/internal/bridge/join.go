@@ -56,7 +56,7 @@ func Join(ctx context.Context, cfg Config) (*Joined, error) {
 	if err != nil {
 		return nil, err
 	}
-	b, err := New(ctx, n.Peer(), n.Messaging(), n.Discovery(), cfg.Cloud)
+	b, err := New(ctx, n.Host(), n.Messaging(), n.Discovery(), cfg.Cloud)
 	if err != nil {
 		n.Close()
 		return nil, err

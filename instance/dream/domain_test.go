@@ -85,7 +85,7 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 		require.NoError(t, err)
 		members = append(members, id)
 	}
-	domains, err := cm.NewDomains(u.Peers()[1].Peer(), func() []libp2ppeer.ID { return slices.Clone(members) },
+	domains, err := cm.NewDomains(u.Peers()[1].Host(), func() []libp2ppeer.ID { return slices.Clone(members) },
 		func() *cm.Service { return nil })
 	require.NoError(t, err)
 	t.Cleanup(func() { domains.Close() })

@@ -78,7 +78,7 @@ func (v *vault) Set(_ context.Context, n string, value []byte) error {
 
 type fleet struct {
 	mn      mocknet.Mocknet
-	db      kvdb.KVDB
+	db      kvdb.Instance
 	vault   *vault
 	cfg     Config
 	chStore *pkgcache.MemStore

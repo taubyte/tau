@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/instance/placement"
@@ -315,15 +314,9 @@ func TestTheClaimLoopStopsWhenTheNodeCloses(t *testing.T) {
 }
 
 func TestAWorkerWithNoRaftStillRunsTheClaimLoop(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-
 	// BUILT WITHOUT THE HARNESS, which always hands a node a raft opener: what
 	// is under test is the composition that has none.
-	n, err := New(Config{Services: []string{Worker, Discovery}},
-		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}),
-		WithRuntimes(&answering{name: "wasm", status: 200}))
+	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Worker, Discovery}}), withKVDB(&memFactory{}), WithRuntimes(&answering{name: "wasm", status: 200}))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.NoError(t, n.Start(t.Context()))
@@ -410,7 +403,7 @@ func TestADeliveryIsPlacedRatherThanRunWhereItWasClaimed(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}
 	n, d := consuming(t, answers, withConsumer(consumer{}))
 
-	placed, err := placement.New(n.opts.host, nowhere{})
+	placed, err := placement.New(n.Host(), nowhere{})
 	require.NoError(t, err)
 	n.workers = placed
 

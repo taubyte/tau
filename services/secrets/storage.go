@@ -91,7 +91,7 @@ func namePath(ref Ref) string { return scopePath(ref.Scope) + ref.Name + "/" }
 func versionPath(v version) string { return namePath(v.Ref) + v.CID }
 
 // keyStore holds distributed key metadata in the shared database.
-type keyStore struct{ db kvdb.KVDB }
+type keyStore struct{ db kvdb.Instance }
 
 func (s *keyStore) Put(ctx context.Context, key *KeyMeta) error {
 	m := secretsv2.StoredKey{
@@ -192,7 +192,7 @@ func (s *keyStore) Epoch(ctx context.Context) (uint64, error) {
 // version write the same bytes, and two writing different values write different
 // keys, so no record is a key two nodes write differently (AGENTS.md, rule 1). Its
 // written-at orders versions of one name; the CID breaks a tie (rule 3).
-type recordStore struct{ db kvdb.KVDB }
+type recordStore struct{ db kvdb.Instance }
 
 func (s *recordStore) Put(ctx context.Context, v version, ciphertext []byte, writtenAt int64) error {
 	if err := v.Validate(); err != nil {
@@ -312,7 +312,7 @@ func refOfPath(p string) (Ref, bool) {
 // wrappings rather than one contended one. The writer is a stable identity, so
 // re-running reconciliation replaces a node's own wrapping instead of appending
 // another forever.
-type wrappingStore struct{ db kvdb.KVDB }
+type wrappingStore struct{ db kvdb.Instance }
 
 func wrappingPath(v version, keyID, writer string) string {
 	return wrappingPrefix + versionPath(v) + "/" + keyID + "/" + writer

@@ -238,7 +238,7 @@ type leader interface {
 // stores is pkg/kvdb/mock answering a miss with ds.ErrNotFound, as core/kvdb does,
 // and able to fail outright: log.go reads the two differently.
 type stores struct {
-	kvdb.Factory
+	*kvdbmock.Factory
 
 	mu   sync.Mutex
 	sick bool
@@ -259,16 +259,16 @@ func (s *stores) failing() bool {
 	return s.sick
 }
 
-func (s *stores) New(logger log.StandardLogger, path string, rebroadcastIntervalSec int) (kvdb.KVDB, error) {
-	db, err := s.Factory.New(logger, path, rebroadcastIntervalSec)
+func (s *stores) open(path string) (kvdb.Instance, error) {
+	db, err := s.Factory.New(log.Logger("primitives"), path, 5)
 	if err != nil {
 		return nil, err
 	}
-	return &storeDB{KVDB: db, stores: s}, nil
+	return &storeDB{Instance: db, stores: s}, nil
 }
 
 type storeDB struct {
-	kvdb.KVDB
+	kvdb.Instance
 
 	stores *stores
 }
@@ -277,7 +277,7 @@ func (d *storeDB) Get(ctx context.Context, key string) ([]byte, error) {
 	if d.stores.failing() {
 		return nil, errors.New("the record store cannot answer")
 	}
-	raw, err := d.KVDB.Get(ctx, key)
+	raw, err := d.Instance.Get(ctx, key)
 	if errors.Is(err, kvdbmock.ErrNotFound) {
 		return nil, ds.ErrNotFound
 	}
@@ -347,7 +347,7 @@ func startingOn(t *testing.T, cluster leader, opts ...Option) *harness {
 	s, err := New(host, append([]Option{
 		WithRegister(&published{revision: 1, object: compiled()}),
 		WithConsensus(func(string) (raft.Cluster, error) { return cluster, nil }),
-		WithRecords(records),
+		WithRecords(records.open),
 		WithClock(tick.now),
 
 		// A period long enough never to fire; tests drive the pass directly.
@@ -384,4 +384,10 @@ func (h *harness) stored(t *testing.T, id string) []string {
 	keys, err := db.List(t.Context(), at.Prefix()+"/records/")
 	require.NoError(t, err)
 	return keys
+}
+
+// mockRecords is pkg/kvdb/mock as the opener the service is given.
+func mockRecords() Records {
+	f := kvdbmock.New()
+	return func(name string) (kvdb.Instance, error) { return f.New(log.Logger("primitives"), name, 5) }
 }

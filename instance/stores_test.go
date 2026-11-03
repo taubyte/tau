@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/kvdb"
@@ -20,15 +19,12 @@ func TestEveryBackingOpensItsDatabaseByName(t *testing.T) {
 		volumeDatabase:    func(n *Instance) (any, error) { return volumeStores{node: n}.Store() },
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := open(&Instance{})
-			require.ErrorIs(t, err, ErrNoCacheStore, "no factory is said, not panicked on")
-
 			refused := errors.New("disk full")
-			_, err = open(&Instance{opts: options{databases: &memFactory{err: refused}}})
+			_, err := open(&Instance{Node: mockPeer(t), opts: options{kvdbOpen: kvdbOf(&memFactory{err: refused})}})
 			require.ErrorIs(t, err, refused)
 
 			factory := &memFactory{}
-			n := &Instance{opts: options{databases: factory}}
+			n := &Instance{Node: mockPeer(t), opts: options{kvdbOpen: kvdbOf(factory)}}
 			rows, err := open(n)
 			require.NoError(t, err)
 			require.NotNil(t, rows)
@@ -42,7 +38,7 @@ func TestEveryBackingOpensItsDatabaseByName(t *testing.T) {
 // failingKV is a database that answers every read and delete with a failure
 // that is not "not there".
 type failingKV struct {
-	kvdb.KVDB
+	kvdb.Instance
 	err error
 }
 
@@ -75,11 +71,11 @@ func TestACacheStoreSeparatesAbsentFromUnreadable(t *testing.T) {
 }
 
 func TestTheVolumeBackingIsOnePerNode(t *testing.T) {
-	none, err := (&Instance{}).disksOrNil()
+	none, err := (&Instance{Node: mockPeer(t)}).disksOrNil()
 	require.NoError(t, err)
 	require.Nil(t, none)
 
-	n := &Instance{opts: options{root: t.TempDir()}}
+	n := &Instance{Node: mockPeer(t), cfg: Config{Root: t.TempDir()}}
 	first, err := n.disksOrNil()
 	require.NoError(t, err)
 	require.NotNil(t, first)
@@ -91,20 +87,16 @@ func TestTheVolumeBackingIsOnePerNode(t *testing.T) {
 
 func TestADatabaseStoreIsOpenedAndReleasedByName(t *testing.T) {
 	ctx := t.Context()
-	_, err := databaseStores{node: &Instance{}}.Store("orders")
-	require.ErrorIs(t, err, ErrNoCacheStore)
-	require.ErrorIs(t, databaseStores{node: &Instance{}}.Release(ctx, "orders"), ErrNoCacheStore)
-
 	refused := errors.New("disk full")
-	broken := databaseStores{node: &Instance{opts: options{databases: &memFactory{err: refused}}}}
-	_, err = broken.Store("orders")
+	broken := databaseStores{node: &Instance{Node: mockPeer(t), opts: options{kvdbOpen: kvdbOf(&memFactory{err: refused})}}}
+	_, err := broken.Store("orders")
 	require.ErrorIs(t, err, refused)
 	require.ErrorContains(t, err, "orders")
 	require.ErrorIs(t, broken.Release(ctx, "orders"), refused)
 
 	// A STORE THAT CANNOT BE DESTROYED IS NOT RELEASED QUIETLY: the copy
 	// would stay on disk while the node believed it gone.
-	require.ErrorContains(t, databaseStores{node: &Instance{opts: options{databases: &memFactory{}}}}.Release(ctx, "orders"),
+	require.ErrorContains(t, databaseStores{node: &Instance{Node: mockPeer(t), opts: options{kvdbOpen: kvdbOf(&memFactory{})}}}.Release(ctx, "orders"),
 		"cannot release")
 }
 
@@ -112,12 +104,4 @@ func TestADatabaseCredentialNeedsAVault(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register}})
 	_, err := databaseSecrets{node: n}.Secret(t.Context(), "shop", "prod", "dbpass")
 	require.ErrorIs(t, err, ErrNoSecrets)
-}
-
-func TestADatabaseNodeNeedsAFactory(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-	_, err := New(Config{Services: []string{Database}}, WithHost(h), WithPubSub(newPubSub(t, h)))
-	require.ErrorIs(t, err, ErrNoCacheStore)
 }

@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/require"
 
@@ -123,12 +122,7 @@ func TestANameNothingServesIsServfail(t *testing.T) {
 }
 
 func TestDnsWithoutStatsIsRefusedAtConstruction(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-
-	_, err := New(Config{Services: []string{Register, DNS}},
-		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}))
+	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Register, DNS}}), withKVDB(&memFactory{}))
 	require.ErrorIs(t, err, ErrNoDiscoveryForDNS)
 }
 
@@ -233,7 +227,7 @@ func TestANameDeepInAZoneFindsIt(t *testing.T) {
 }
 
 func TestEveryServiceANodeCanRunIsAName(t *testing.T) {
-	n := &Instance{opts: options{extra: []Service{{Name: "billing"}}}}
+	n := &Instance{Node: mockPeer(t), opts: options{extra: []Service{{Name: "billing"}}}}
 	names := n.knownServices()
 	for _, want := range append(append([]string(nil), All...), BuildFrontend, "billing") {
 		require.Contains(t, names, want)

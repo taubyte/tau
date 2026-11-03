@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/rpc"
@@ -58,13 +57,11 @@ func TestWhatWithServiceRefuses(t *testing.T) {
 		"misspelled": {WithService(Service{Name: addedName, Start: start})},
 	} {
 		t.Run(name, func(t *testing.T) {
-			mn := mocknet.New()
-			t.Cleanup(func() { mn.Close() })
 			services := []string{addedName}
 			if name == "misspelled" {
 				services = []string{"addd"}
 			}
-			_, err := New(Config{Services: services}, append(opts, WithHost(newHost(t, mn)))...)
+			_, err := New(mockPeer(t), rooted(t, Config{Services: services}), opts...)
 			require.Error(t, err)
 		})
 	}
@@ -89,14 +86,19 @@ func TestAnAddedServiceTheConfigDoesNotNameDoesNotStart(t *testing.T) {
 func TestAnAddedServiceGetsTheNodesResources(t *testing.T) {
 	r := &recording{}
 	n, h, factory := makeNode(t, Config{Services: []string{Discovery, Secrets, addedName}},
-		WithService(r.service()), WithRoot(t.TempDir()))
+		WithService(r.service()))
 	require.NoError(t, n.Start(t.Context()))
 	host := r.host
 	require.NotNil(t, host)
 
 	require.Equal(t, addedName, host.Name())
-	require.Equal(t, h, host.Peer())
-	require.NotNil(t, host.PubSub())
+	require.Equal(t, h, host.Peer().Host())
+	require.NotNil(t, host.Peer().Messaging())
+
+	// A HANDLE ONE SERVICE PROVIDES IS WHAT ANOTHER ON THIS INSTANCE REACHES.
+	require.Nil(t, host.Local("elsewhere"), "nothing on this instance provided it")
+	host.Provide("handle")
+	require.Equal(t, "handle", host.Local(addedName))
 	require.NotEmpty(t, host.Root())
 	require.NotNil(t, host.Logger())
 
@@ -147,16 +149,13 @@ func TestAnAddedServiceAnswersOverRPCAndHTTP(t *testing.T) {
 		}))
 	}}
 
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-	n, err := New(Config{Services: []string{addedName}}, WithHost(h), WithService(svc))
+	p := mockPeer(t)
+	n, err := New(p, rooted(t, Config{Services: []string{addedName}}), WithService(svc))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.NoError(t, n.Start(t.Context()))
 
-	caller := newHost(t, mn)
-	client, err := rpc.NewClient(caller, h.ID(), echoProtocol)
+	client, err := rpc.NewClient(callerOf(t, p), p.ID(), echoProtocol)
 	require.NoError(t, err)
 	defer client.Close()
 	echo := echov1connect.NewEchoServiceClient(client.HTTP(), client.URL())
@@ -182,9 +181,6 @@ func TestAnAddedServiceAnswersOverRPCAndHTTP(t *testing.T) {
 
 	// A node without a discovery view knows nobody.
 	require.Nil(t, host.Peers(addedName))
-	// Nor any database factory.
-	_, err = host.Database("x")
-	require.ErrorIs(t, err, ErrNoDatabases)
 	// A second listener on the same protocol is refused.
 	require.Error(t, host.Listen(echoProtocol, http.NotFoundHandler()))
 }
@@ -257,8 +253,6 @@ func TestAnAddedServiceDecodesItsOwnConfig(t *testing.T) {
 }
 
 func TestConfigForAServiceNotAddedIsRefused(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	_, err := New(Config{Added: map[string]any{"mail": map[string]any{}}}, WithHost(newHost(t, mn)))
+	_, err := New(mockPeer(t), rooted(t, Config{Added: map[string]any{"mail": map[string]any{}}}))
 	require.ErrorContains(t, err, `"mail"`)
 }

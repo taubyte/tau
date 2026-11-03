@@ -29,11 +29,11 @@ func single(t *testing.T, opts ...Option) (*Service, *Client, peerNode.Node) {
 
 	node := peerNode.Mock(ctx)
 	t.Cleanup(func() { node.Close() })
-	db, err := kvdb.New(node).New(logging.Logger("secrets-test"), fmt.Sprintf("secrets-%d", clusters.Add(1)), 1)
+	db, err := kvdb.Open(node, fmt.Sprintf("secrets-%d", clusters.Add(1)), kvdb.WithLogger(logging.Logger("secrets-test")), kvdb.WithRebroadcast(time.Second))
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 
-	srv, err := New(node.Peer(), db, append([]Option{
+	srv, err := New(node.Host(), db, append([]Option{
 		WithRoot(t.TempDir()), WithBootstrapDelay(never), WithConfig(Config{}),
 		WithMembers(func() []peerCore.ID { return nil }), WithServerOptions(),
 		WithReconcileInterval(time.Hour), WithReplacedRetention(0),
@@ -42,7 +42,7 @@ func single(t *testing.T, opts ...Option) (*Service, *Client, peerNode.Node) {
 	require.NoError(t, srv.Start(ctx))
 	t.Cleanup(func() { srv.Close() })
 
-	client, err := NewClient(node.Peer(), nil, func() *Service { return srv })
+	client, err := NewClient(node.Host(), nil, func() *Service { return srv })
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
 	return srv, client, node
@@ -75,7 +75,7 @@ func TestALocalClientNeedsNoStreamAndFormsAKeyOnFirstWrite(t *testing.T) {
 func TestAClientWithNobodyToAskSaysSo(t *testing.T) {
 	node := peerNode.Mock(t.Context())
 	t.Cleanup(func() { node.Close() })
-	client, err := NewClient(node.Peer(), nil, nil)
+	client, err := NewClient(node.Host(), nil, nil)
 	require.NoError(t, err)
 
 	require.ErrorIs(t, client.Set(t.Context(), Ref{Scope: Project("p", "e"), Name: "n"}, []byte("v")), ErrNoMembers)
@@ -87,7 +87,7 @@ func TestAClientWithNobodyToAskSaysSo(t *testing.T) {
 	// A member named but unreachable is unavailable, not absent.
 	unreachable := peerNode.Mock(t.Context())
 	t.Cleanup(func() { unreachable.Close() })
-	client, err = NewClient(node.Peer(), func() []peerCore.ID { return []peerCore.ID{unreachable.ID(), node.ID()} }, nil)
+	client, err = NewClient(node.Host(), func() []peerCore.ID { return []peerCore.ID{unreachable.ID(), node.ID()} }, nil)
 	require.NoError(t, err)
 	err = client.Delete(t.Context(), Ref{Scope: Project("p", "e"), Name: "n"})
 	require.ErrorIs(t, err, ErrUnavailable)
@@ -99,15 +99,15 @@ func TestAClientWithNobodyToAskSaysSo(t *testing.T) {
 func TestWhatNewAndItsOptionsRefuse(t *testing.T) {
 	node := peerNode.Mock(t.Context())
 	t.Cleanup(func() { node.Close() })
-	db, err := kvdb.New(node).New(logging.Logger("secrets-test"), fmt.Sprintf("secrets-%d", clusters.Add(1)), 1)
+	db, err := kvdb.Open(node, fmt.Sprintf("secrets-%d", clusters.Add(1)), kvdb.WithLogger(logging.Logger("secrets-test")), kvdb.WithRebroadcast(time.Second))
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 
 	_, err = New(nil, db)
 	require.ErrorIs(t, err, ErrNoHost)
-	_, err = New(node.Peer(), nil)
+	_, err = New(node.Host(), nil)
 	require.ErrorIs(t, err, ErrNoDB)
-	_, err = New(node.Peer(), db)
+	_, err = New(node.Host(), db)
 	require.ErrorIs(t, err, ErrNoRoot)
 
 	for name, opt := range map[string]Option{
@@ -119,7 +119,7 @@ func TestWhatNewAndItsOptionsRefuse(t *testing.T) {
 		"reconcile": WithReconcileInterval(0),
 		"clock":     WithClock(nil),
 	} {
-		_, err := New(node.Peer(), db, WithRoot(t.TempDir()), opt)
+		_, err := New(node.Host(), db, WithRoot(t.TempDir()), opt)
 		require.Error(t, err, name)
 	}
 }
@@ -180,9 +180,9 @@ func TestReplayOverTheWireNamesTheCaller(t *testing.T) {
 	caller := peerNode.Mock(t.Context())
 	t.Cleanup(func() { caller.Close() })
 	require.NoError(t, peerNode.LinkAllPeers())
-	require.NoError(t, caller.Peer().Connect(t.Context(), server.Peer().Peerstore().PeerInfo(server.ID())))
+	require.NoError(t, caller.Host().Connect(t.Context(), server.Host().Peerstore().PeerInfo(server.ID())))
 
-	c, err := rpc.NewClient(caller.Peer(), server.ID(), Protocol)
+	c, err := rpc.NewClient(caller.Host(), server.ID(), Protocol)
 	require.NoError(t, err)
 	defer c.Close()
 	dealer := newDealerClient(c)
@@ -238,7 +238,7 @@ func newDealerClient(c *rpc.Client) secretsv2connect.DealerServiceClient {
 // broken is a database whose writes, lists and deletes fail, the way a store
 // that is closing does.
 type broken struct {
-	coreKvdb.KVDB
+	coreKvdb.Instance
 }
 
 var errBroken = errors.New("store is broken")
@@ -260,7 +260,7 @@ func TestRetiringCompactsTheRealStore(t *testing.T) {
 		require.NoError(t, srv.db.Put(ctx, key, []byte("v")))
 		require.NoError(t, srv.db.Delete(ctx, key))
 	}
-	counted := &countingCompactor{KVDB: srv.db}
+	counted := &countingCompactor{Instance: srv.db}
 	srv.db = counted
 	require.NoError(t, srv.compact(ctx))
 	require.Equal(t, 1, counted.calls)
@@ -268,13 +268,13 @@ func TestRetiringCompactsTheRealStore(t *testing.T) {
 }
 
 type countingCompactor struct {
-	coreKvdb.KVDB
+	coreKvdb.Instance
 	calls, dropped int
 }
 
 func (c *countingCompactor) Compact(ctx context.Context) (int, error) {
 	c.calls++
-	n, err := c.KVDB.(coreKvdb.Compactor).Compact(ctx)
+	n, err := c.Instance.(coreKvdb.Compactor).Compact(ctx)
 	c.dropped += n
 	return n, err
 }
@@ -329,7 +329,7 @@ func TestTheBootTimerFormsTheFirstKey(t *testing.T) {
 func TestTheAtRestKeyIsDerivedPerNode(t *testing.T) {
 	node := peerNode.Mock(t.Context())
 	t.Cleanup(func() { node.Close() })
-	a, err := newAtRest(node.Peer(), "configured")
+	a, err := newAtRest(node.Host(), "configured")
 	require.NoError(t, err)
 	_, err = a.open([]byte("short"))
 	require.Error(t, err)

@@ -4,11 +4,9 @@ import (
 	"testing"
 	"time"
 
-	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	primitivesService "github.com/taubyte/tau/services/primitives"
 )
@@ -86,28 +84,6 @@ func TestTheDefaultShapeRunsPrimitives(t *testing.T) {
 	n, _, _ := makeNode(t, Config{})
 	require.Contains(t, n.Services(), Primitives)
 	require.NotNil(t, n.Primitives())
-}
-
-func TestAPrimitivesNodeWithNoConsensusIsRefusedAtConstruction(t *testing.T) {
-	// BUILT WITHOUT THE HARNESS, which always hands a node a raft opener: what
-	// is under test is the composition that has none.
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-
-	_, err := New(Config{Services: []string{Primitives}},
-		WithHost(h), WithDatabases(&memFactory{}))
-	require.ErrorIs(t, err, ErrNoRaft)
-}
-
-func TestAPrimitivesNodeWithNoRecordStoreIsRefusedAtConstruction(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-
-	_, err := New(Config{Services: []string{Primitives}}, WithHost(h),
-		WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }))
-	require.ErrorIs(t, err, ErrNoCacheStore)
 }
 
 func TestASendThroughTheNodeLandsInThePrimitivesNamespace(t *testing.T) {
@@ -235,7 +211,7 @@ func TestAWindowHandedToAnotherNodeReachesItsPrimitivesService(t *testing.T) {
 	// DIALLED DIRECTLY rather than through the clock's reach, because the
 	// reach's whole job is to decide WHO gets the window and this test is about
 	// what happens once it has been handed over.
-	client, err := primitivesService.NewClient(clock.opts.host, holder.opts.host.ID())
+	client, err := primitivesService.NewClient(clock.Host(), holder.Host().ID())
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
 
@@ -278,7 +254,7 @@ func TestAFireIsPlacedWhereThereIsDiscovery(t *testing.T) {
 }
 
 func TestAMinuteNeedsAPrimitivesService(t *testing.T) {
-	_, err := (&Instance{}).clockNow(t.Context())
+	_, err := (&Instance{Node: mockPeer(t)}).clockNow(t.Context())
 	require.ErrorIs(t, err, ErrNoPrimitives)
 	require.ErrorContains(t, err, "runs no service to take one")
 }

@@ -71,8 +71,8 @@ func TestClient_ExchangePeers(t *testing.T) {
 	require.NoError(t, taupeer.LinkAllPeers())
 
 	_, theirPeers, err := cli.ExchangePeers(time.Now(), map[string]int64{
-		cli.node.ID().String(): 0,
-		seen.ID().String():     100,
+		cli.ID().String():  0,
+		seen.ID().String(): 100,
 	}, idOf(cl))
 	require.NoError(t, err)
 	require.Contains(t, theirPeers, idOf(cl).String())

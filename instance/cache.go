@@ -12,13 +12,8 @@ import (
 	pkgcache "github.com/taubyte/tau/pkg/cache"
 )
 
-// The caches are instance/cache's; the root reaches the database factory, names the
-// database, and registers what it opened to close.
-
-// ErrNoCacheStore is a node asked for a cache with no database factory. It is
-// a composition fault: WithDatabases is what a node is given, and a node
-// running a worker without one can run nothing that reaches state.
-var ErrNoCacheStore = errors.New("node: no database factory to open a cache with")
+// The caches are instance/cache's; the instance opens the database, names it, and
+// registers what it opened to close.
 
 // cacheDatabase is the one database's name. It is not a service name — no node
 // "runs caches" — so it is spelled here rather than taken from the Services
@@ -31,10 +26,7 @@ type cacheStores struct{ node *Instance }
 var _ cache.Stores = cacheStores{}
 
 func (s cacheStores) Store() (pkgcache.Store, error) {
-	if s.node.opts.databases == nil {
-		return nil, ErrNoCacheStore
-	}
-	db, err := s.node.opts.databases.New(logger, cacheDatabase, rebroadcastSeconds)
+	db, err := s.node.kvdb(cacheDatabase)
 	if err != nil {
 		return nil, fmt.Errorf("node: opening the cache database: %w", err)
 	}
@@ -46,7 +38,7 @@ func isNotFound(err error) bool { return errors.Is(err, ds.ErrNotFound) }
 
 // cacheStore adapts a kvdb to the four methods a cache needs, separating "not there"
 // from "could not look". instance/database.go and instance/admit use it too.
-type cacheStore struct{ db kvdb.KVDB }
+type cacheStore struct{ db kvdb.Instance }
 
 func (s cacheStore) Get(ctx context.Context, key string) ([]byte, bool, error) {
 	v, err := s.db.Get(ctx, key)

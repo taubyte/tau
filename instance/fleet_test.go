@@ -8,11 +8,10 @@ import (
 	"testing"
 	"time"
 
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	"github.com/libp2p/go-libp2p/core/host"
-	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
+	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/raft"
@@ -29,34 +28,31 @@ import (
 func fleet(t *testing.T, configs ...Config) []*Instance {
 	t.Helper()
 
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-
-	// Every host gossips before it is connected: a pubsub stream is opened at start or
+	// Every peer gossips before it is connected: a pubsub stream is opened at start or
 	// when identify reports gossip, never retried, and a late identify push is limited
 	// per subnet (every mocknet peer shares one).
-	hosts := make([]host.Host, len(configs))
-	gossip := make([]*pubsub.PubSub, len(configs))
+	peers := make([]peer.Node, len(configs))
 	for i := range configs {
-		h, err := mn.GenPeer()
-		require.NoError(t, err)
-		hosts[i] = h
-		gossip[i] = newPubSub(t, h)
+		peers[i] = mockPeer(t)
 	}
-	require.NoError(t, mn.LinkAll())
-	require.NoError(t, mn.ConnectAllButSelf())
+	require.NoError(t, peer.LinkAllPeers())
+	for i, a := range peers {
+		for _, b := range peers[i+1:] {
+			require.NoError(t, a.Host().Connect(t.Context(), libp2ppeer.AddrInfo{ID: b.ID(), Addrs: b.Host().Addrs()}))
+		}
+	}
 
 	// Every stream is up before a node is built; building nodes would spend the identify
 	// push budget.
 	stalled := stallSince()
-	for i, ps := range gossip {
-		for j, h := range hosts {
+	for i, a := range peers {
+		for j, b := range peers {
 			if i == j {
 				continue
 			}
 			require.Eventually(t, func() bool {
-				return slices.Contains(ps.ListPeers(""), h.ID())
-			}, 30*time.Second, 10*time.Millisecond, "node %d never opened a stream to node %d%s%s", i, j, gossipWith{hosts[i]}, stalled)
+				return slices.Contains(a.Messaging().ListPeers(""), b.ID())
+			}, 30*time.Second, 10*time.Millisecond, "node %d never opened a stream to node %d%s%s", i, j, gossipWith{a.Host()}, stalled)
 		}
 	}
 
@@ -70,15 +66,7 @@ func fleet(t *testing.T, configs ...Config) []*Instance {
 
 		// Every fleet node can resolve artifacts, since these tests are about finding what a
 		// node does not run.
-		n, err := New(cfg,
-			WithHost(hosts[i]),
-			WithPubSub(gossip[i]),
-			WithDatabases(&memFactory{}),
-			WithRuntimes(&tier{name: "wasm"}),
-			WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
-			WithRoot(t.TempDir()),
-			prebuilt(),
-		)
+		n, err := New(peers[i], rootedIn(t, cfg, t.TempDir()), withKVDB(&memFactory{}), WithRuntimes(&tier{name: "wasm"}), withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }), prebuilt())
 		require.NoError(t, err)
 		t.Cleanup(func() { n.Close() })
 
@@ -95,7 +83,7 @@ func sees(t *testing.T, watcher *Instance, name string) {
 	stalled := stallSince()
 	require.Eventually(t, func() bool {
 		return len(watcher.Discovery().Route(name, time.Minute)) > 0
-	}, 30*time.Second, 100*time.Millisecond, "%s never appeared in the view%s%s%s", name, viewOf{watcher}, gossipWith{watcher.opts.host}, stalled)
+	}, 30*time.Second, 100*time.Millisecond, "%s never appeared in the view%s%s%s", name, viewOf{watcher}, gossipWith{watcher.Host()}, stalled)
 }
 
 func TestEveryNodeOfALargeFleetHasAStreamToEveryOther(t *testing.T) {
@@ -106,10 +94,10 @@ func TestEveryNodeOfALargeFleetHasAStreamToEveryOther(t *testing.T) {
 	nodes := fleet(t, configs...)
 
 	for i, from := range nodes {
-		peers := from.opts.pubsub.(*pubsub.PubSub).ListPeers("")
+		peers := from.Messaging().ListPeers("")
 		for j, to := range nodes {
 			if i != j {
-				require.Contains(t, peers, to.opts.host.ID(), "node %d has no stream to node %d", i, j)
+				require.Contains(t, peers, to.Host().ID(), "node %d has no stream to node %d", i, j)
 			}
 		}
 	}
@@ -241,20 +229,11 @@ func TestOneNodeRunningEverythingNeedsNoStream(t *testing.T) {
 }
 
 func TestTheSeamsReachTheWorker(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-
 	asked := make(chan string, 4)
-	n, err := New(Config{Services: []string{Register, Worker}},
-		WithHost(h),
-		WithDatabases(&memFactory{}),
-		WithRuntimes(&tier{name: "wasm"}),
-		WithArtifacts(artifactFunc(func(_ context.Context, _, _, kind, id string) (string, error) {
-			asked <- "artifact"
-			return "registry/built@sha256:" + id, nil
-		})),
-	)
+	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Register, Worker}}), withKVDB(&memFactory{}), WithRuntimes(&tier{name: "wasm"}), WithArtifacts(artifactFunc(func(_ context.Context, _, _, kind, id string) (string, error) {
+		asked <- "artifact"
+		return "registry/built@sha256:" + id, nil
+	})))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 
@@ -343,7 +322,7 @@ func TestADatabaseServiceIsReachableFromAnotherNode(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	client, err := databaseService.NewClient(caller.opts.host, holder.opts.host.ID())
+	client, err := databaseService.NewClient(caller.Host(), holder.Host().ID())
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
 

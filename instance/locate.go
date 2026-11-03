@@ -99,7 +99,7 @@ func (n *Instance) rowsFor(service string) []pkgstats.Node {
 // below reads a field of the node at CALL time, so a service opened after this
 // is still found by a reach built before it.
 func (n *Instance) openReach() {
-	n.registers = rpc.Reach(n.opts.host, Register,
+	n.registers = rpc.Reach(n.Host(), Register,
 		n.routeTo(Register, ErrNoRegister, "this node runs neither a register nor discovery to find one"),
 		func() (registerSeam, bool) {
 			// A LOCAL REGISTER IS NOT A CACHE, IT IS THE ABSENCE OF A HOP.
@@ -109,7 +109,7 @@ func (n *Instance) openReach() {
 			return n.register.Local(), true
 		},
 		func(id libp2ppeer.ID) (registerSeam, error) {
-			c, err := registerService.NewClient(n.opts.host, id)
+			c, err := registerService.NewClient(n.Host(), id)
 			if err != nil {
 				return nil, err
 			}

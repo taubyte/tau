@@ -181,8 +181,8 @@ func TestAnAddressAlreadyTaken(t *testing.T) {
 
 func TestAnUnstartedRunningAnswersNothing(t *testing.T) {
 	var r Running
-	require.Nil(t, r.Host())
 	require.Empty(t, r.Address(), "nothing is being served")
+	require.Empty(t, r.SecureAddress())
 }
 
 func TestANodeThatCannotBeBuiltClosesWhatWasOpened(t *testing.T) {

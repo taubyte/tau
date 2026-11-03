@@ -23,7 +23,7 @@ func (c *cluster) localClient(t *testing.T, i int) *Client {
 	t.Helper()
 
 	srv := c.services[i]
-	client, err := NewClient(c.nodes[i].Peer(), func() []peerCore.ID { return nil }, func() *Service { return srv })
+	client, err := NewClient(c.nodes[i].Host(), func() []peerCore.ID { return nil }, func() *Service { return srv })
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
 	return client
@@ -252,7 +252,7 @@ func TestAnUnreadableSecretDoesNotStopRetirement(t *testing.T) {
 func initOn(t *testing.T, ctx context.Context, c *cluster, i int, bundle *secretsv2.InitBundle) {
 	t.Helper()
 
-	srv, err := New(c.nodes[i].Peer(), c.dbs[i], WithRoot(c.paths[i]))
+	srv, err := New(c.nodes[i].Host(), c.dbs[i], WithRoot(c.paths[i]))
 	require.NoError(t, err)
 	require.NoError(t, srv.Init(ctx, bundle))
 	require.NoError(t, srv.Close())
@@ -276,7 +276,7 @@ func TestInitOnEveryNodeSurvivesOneLostBeforeStart(t *testing.T) {
 
 	c := newMesh(t, ctx, 3)
 	for _, node := range c.nodes {
-		db, err := kvdb.New(node).New(logging.Logger("secrets-test"), c.db, 1)
+		db, err := kvdb.Open(node, c.db, kvdb.WithLogger(logging.Logger("secrets-test")), kvdb.WithRebroadcast(time.Second))
 		require.NoError(t, err)
 		t.Cleanup(func() { db.Close() })
 		c.dbs = append(c.dbs, db)
@@ -450,7 +450,7 @@ func TestAVersionStillHeldByARosterMemberIsNotAbandoned(t *testing.T) {
 func ownerAway(t *testing.T, ctx context.Context, away bool) {
 	c := newMesh(t, ctx, 3)
 	open := func(i int) {
-		db, err := kvdb.New(c.nodes[i]).New(logging.Logger("secrets-test"), c.db, 1)
+		db, err := kvdb.Open(c.nodes[i], c.db, kvdb.WithLogger(logging.Logger("secrets-test")), kvdb.WithRebroadcast(time.Second))
 		require.NoError(t, err)
 		t.Cleanup(func() { db.Close() })
 		if i < len(c.dbs) {
@@ -505,7 +505,7 @@ func ownerAway(t *testing.T, ctx context.Context, away bool) {
 		open(2)
 		// Its first look is stale: v2 only under its own one-member key, v1
 		// under every node's. That must not prune v1.
-		returning, err := New(c.nodes[2].Peer(), c.dbs[2], WithRoot(c.paths[2]), WithReplacedRetention(0))
+		returning, err := New(c.nodes[2].Host(), c.dbs[2], WithRoot(c.paths[2]), WithReplacedRetention(0))
 		require.NoError(t, err)
 		require.NoError(t, returning.prune(ctx))
 		assert.Equal(t, 2, versionsOn(t, ctx, returning, r), "a stale view pruned the older version")

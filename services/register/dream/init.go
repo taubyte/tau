@@ -6,6 +6,7 @@ package dream
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -28,7 +29,7 @@ var logger = log.Logger("tau.register.dream")
 // closed with the mesh, before its peer.
 func Start(m *mesh.Mesh) (peer.Node, error) {
 	return m.Add(func(node peer.Node) error {
-		svc, err := create(m.Context(), node.Peer(), node)
+		svc, err := create(m.Context(), node.Host(), node)
 		if err != nil {
 			return err
 		}
@@ -38,7 +39,7 @@ func Start(m *mesh.Mesh) (peer.Node, error) {
 }
 
 func create(ctx context.Context, h host.Host, node peer.Node) (io.Closer, error) {
-	db, err := kvdb.New(node).New(logger, name, rebroadcastSeconds)
+	db, err := kvdb.Open(node, name, kvdb.WithLogger(logger), kvdb.WithRebroadcast(rebroadcastSeconds*time.Second))
 	if err != nil {
 		return nil, err
 	}

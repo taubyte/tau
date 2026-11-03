@@ -183,11 +183,11 @@ func TestAnInjectedForgeRegistryWins(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, WithForges(reg)(&o))
 
-	got, err := (&Instance{opts: o}).forgeRegistry()
+	got, err := (&Instance{Node: mockPeer(t), opts: o}).forgeRegistry()
 	require.NoError(t, err)
 	require.Same(t, reg, got)
 
-	got, err = (&Instance{}).forgeRegistry()
+	got, err = (&Instance{Node: mockPeer(t)}).forgeRegistry()
 	require.NoError(t, err)
 	require.NotSame(t, reg, got)
 }

@@ -13,11 +13,11 @@ import (
 	kvdbmock "github.com/taubyte/tau/pkg/kvdb/mock"
 )
 
-// fakeKV is a kvdb.KVDB with only the two methods this adapter uses. The
+// fakeKV is a kvdb.Instance with only the two methods this adapter uses. The
 // embedded interface is nil: anything else this file starts calling panics
 // loudly in a test rather than quietly widening what the adapter depends on.
 type fakeKV struct {
-	kvdb.KVDB
+	kvdb.Instance
 	rows map[string][]byte
 	err  error
 }

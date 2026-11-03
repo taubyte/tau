@@ -17,7 +17,7 @@ import (
 // closed with the mesh, before its peer.
 func Start(m *mesh.Mesh) (peer.Node, error) {
 	return m.Add(func(node peer.Node) error {
-		svc, err := create(m.Context(), node.Peer(), node, m.Name())
+		svc, err := create(m.Context(), node.Host(), node, m.Name())
 		if err != nil {
 			return err
 		}

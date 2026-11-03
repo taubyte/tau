@@ -14,8 +14,8 @@ var otelDefault = otel.GetTracerProvider()
 func TestNewInstallsTracerProvider(t *testing.T) {
 	require.True(t, isOtelDefault(otelDefault), "otel's default provider is the one a node replaces")
 
-	_, err := New(Config{})
-	require.ErrorIs(t, err, ErrNoHost)
+	_, err := New(nil, Config{})
+	require.ErrorIs(t, err, ErrNoPeer)
 	require.False(t, isOtelDefault(otel.GetTracerProvider()),
 		"after a node is built, a block operation's span does not go through otel's one mutex")
 }
@@ -28,7 +28,7 @@ func TestNewKeepsInstalledTracerProvider(t *testing.T) {
 
 	own := &ownTracerProvider{}
 	otel.SetTracerProvider(own)
-	_, err := New(Config{})
-	require.ErrorIs(t, err, ErrNoHost)
+	_, err := New(nil, Config{})
+	require.ErrorIs(t, err, ErrNoPeer)
 	require.Same(t, own, otel.GetTracerProvider(), "a provider the process installed is the one it keeps")
 }

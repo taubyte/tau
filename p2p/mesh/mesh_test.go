@@ -27,14 +27,14 @@ func TestAMeshAdmitsOnlyItsOwn(t *testing.T) {
 	require.NoError(t, err)
 	second, err := a.Add(func(peer.Node) error { return nil })
 	require.NoError(t, err)
-	require.Equal(t, network.Connected, second.Peer().Network().Connectedness(first.ID()))
+	require.Equal(t, network.Connected, second.Host().Network().Connectedness(first.ID()))
 	require.Len(t, a.Peers(), 2)
 
 	stranger, err := b.Add(nil)
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	require.Error(t, stranger.Peer().Connect(ctx, peercore.AddrInfo{ID: first.ID(), Addrs: first.Peer().Addrs()}))
+	require.Error(t, stranger.Host().Connect(ctx, peercore.AddrInfo{ID: first.ID(), Addrs: first.Host().Addrs()}))
 
 	_, err = a.Credentials([]byte("not a key"))
 	require.Error(t, err)

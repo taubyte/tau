@@ -65,7 +65,7 @@ func TestADispatcherWithNoWorkerDeliversNothing(t *testing.T) {
 func TestARefusedClaimEndsTheDrain(t *testing.T) {
 	for _, err := range []error{errors.New("disk full"), ErrNoPrimitives} {
 		seam := &refusingSeam{err: err}
-		d := &dispatcher{node: &Instance{}}
+		d := &dispatcher{node: &Instance{Node: mockPeer(t)}}
 		require.Zero(t, d.drain(t.Context(), worker.Consumer{Queue: invoke.Grant{Label: "jobs"}}, seam))
 		require.Equal(t, 1, seam.claims, err.Error())
 	}
@@ -73,7 +73,7 @@ func TestARefusedClaimEndsTheDrain(t *testing.T) {
 
 func TestARefusedSettlementIsNotRetried(t *testing.T) {
 	seam := &refusingSeam{err: errors.New("not the leader")}
-	d := &dispatcher{node: &Instance{}}
+	d := &dispatcher{node: &Instance{Node: mockPeer(t)}}
 	consumer := worker.Consumer{Queue: invoke.Grant{Label: "jobs", Settings: map[string]string{settingRetryEvery: "1s"}}}
 	item := primitivesService.Delivery{ID: "1"}
 
@@ -92,12 +92,12 @@ func TestAHandleThatNamesNoQueueHasNoDepth(t *testing.T) {
 }
 
 func TestAStepWithNoBackingCannotSendOn(t *testing.T) {
-	err := (&dispatcher{node: &Instance{}}).sendOn(t.Context(), invoke.Grant{Label: "next"}, "1", nil)
+	err := (&dispatcher{node: &Instance{Node: mockPeer(t)}}).sendOn(t.Context(), invoke.Grant{Label: "next"}, "1", nil)
 	require.ErrorIs(t, err, ErrNoPrimitives)
 }
 
 func TestAStreamBackingIsOneOfTwoKinds(t *testing.T) {
-	n := &Instance{}
+	n := &Instance{Node: mockPeer(t)}
 	_, err := n.streamBacking("queue")
 	require.ErrorContains(t, err, `"queue"`)
 	require.Empty(t, n.closers)

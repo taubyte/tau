@@ -263,7 +263,7 @@ func TestDiscovery_AGroupOnlyDiscoveryFindsIsJoined(t *testing.T) {
 	nodeA, nodeB := newMockNode(t), newMockNode(t)
 	require.NoError(t, taupeer.LinkAllPeers())
 
-	b, err := New(discoveryNode{Node: nodeB, discovery: meeting.pointOf(nodeB.Peer())}, namespace,
+	b, err := New(discoveryNode{Node: nodeB, discovery: meeting.pointOf(nodeB.Host())}, namespace,
 		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
 	require.NoError(t, err)
 	t.Cleanup(func() { b.Close() })
@@ -272,9 +272,9 @@ func TestDiscovery_AGroupOnlyDiscoveryFindsIsJoined(t *testing.T) {
 		5*time.Second, 10*time.Millisecond, "b never advertised the group")
 	unreachable := strangerID(t)
 	meeting.register(Protocol(namespace), peer.AddrInfo{ID: unreachable})
-	require.NotContains(t, nodeA.Peer().Network().Peers(), nodeB.ID())
+	require.NotContains(t, nodeA.Host().Network().Peers(), nodeB.ID())
 
-	a, err := New(discoveryNode{Node: nodeA, discovery: meeting.pointOf(nodeA.Peer())}, namespace,
+	a, err := New(discoveryNode{Node: nodeA, discovery: meeting.pointOf(nodeA.Host())}, namespace,
 		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second), WithSnapshotRoot(t.TempDir()))
 	require.NoError(t, err)
 	t.Cleanup(func() { a.Close() })
@@ -326,16 +326,16 @@ func TestDiscovery_ASearchSlowerThanATickFindsTheGroup(t *testing.T) {
 	nodeA, nodeB := newMockNode(t), newMockNode(t)
 	require.NoError(t, taupeer.LinkAllPeers())
 
-	b, err := New(discoveryNode{Node: nodeB, discovery: meeting.pointOf(nodeB.Peer())}, namespace,
+	b, err := New(discoveryNode{Node: nodeB, discovery: meeting.pointOf(nodeB.Host())}, namespace,
 		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
 	require.NoError(t, err)
 	t.Cleanup(func() { b.Close() })
 	waitLeader(t, b, 5*time.Second)
 	require.Eventually(t, func() bool { return meeting.holds(Protocol(namespace), nodeB.ID()) },
 		5*time.Second, 10*time.Millisecond, "b never advertised the group")
-	require.NotContains(t, nodeA.Peer().Network().Peers(), nodeB.ID())
+	require.NotContains(t, nodeA.Host().Network().Peers(), nodeB.ID())
 
-	slow := slowPoint{Discovery: meeting.pointOf(nodeA.Peer()), delay: 300 * time.Millisecond}
+	slow := slowPoint{Discovery: meeting.pointOf(nodeA.Host()), delay: 300 * time.Millisecond}
 	a, err := New(discoveryNode{Node: nodeA, discovery: slow}, namespace,
 		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second), WithSnapshotRoot(t.TempDir()))
 	require.NoError(t, err)
@@ -351,7 +351,7 @@ func TestDiscovery_ASearchSlowerThanATickFindsTheGroup(t *testing.T) {
 // peer serves is what the identify run on connecting told it.
 func pushless(t *testing.T) taupeer.Node {
 	node := newMockNode(t)
-	node.Peer().RemoveStreamHandler(identify.IDPush)
+	node.Host().RemoveStreamHandler(identify.IDPush)
 	return node
 }
 
@@ -360,7 +360,7 @@ func connectAllOf(t *testing.T, nodes ...taupeer.Node) {
 	require.NoError(t, taupeer.LinkAllPeers())
 	for i, a := range nodes {
 		for _, b := range nodes[i+1:] {
-			require.NoError(t, a.Peer().Connect(t.Context(), peer.AddrInfo{ID: b.ID(), Addrs: b.Peer().Addrs()}))
+			require.NoError(t, a.Host().Connect(t.Context(), peer.AddrInfo{ID: b.ID(), Addrs: b.Host().Addrs()}))
 		}
 	}
 }

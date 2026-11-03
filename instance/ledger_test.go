@@ -33,7 +33,7 @@ func TestTheRootPicksBetweenACrdtStoreAndAGroup(t *testing.T) {
 	cluster := &closing{MockCluster: raft.NewMockCluster()}
 
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery}},
-		WithRaft(func(string) (raft.Cluster, error) { return cluster, nil }))
+		withRaft(func(string) (raft.Cluster, error) { return cluster, nil }))
 	d, err := newDatabases(n)
 	require.NoError(t, err)
 
@@ -66,19 +66,6 @@ func TestTheRootPicksBetweenACrdtStoreAndAGroup(t *testing.T) {
 	// using any more.
 	require.NoError(t, d.Close())
 	require.True(t, cluster.shut(), "the backing closed without closing the group it opened")
-}
-
-func TestANodeWithNowhereToOpenAGroupKeepsNoLedger(t *testing.T) {
-	// BUILT WITHOUT THE HARNESS, which always hands a node a raft opener: what
-	// is under test here is the composition that has none.
-	d, err := newDatabases(&Instance{opts: options{}})
-	require.NoError(t, err)
-
-	_, err = d.holdings.Entries(t.Context(), ledgerSpec())
-	require.ErrorIs(t, err, ErrNoRaft)
-
-	// AND CLOSING ONE IS NOT A PANIC OVER A TABLE THAT WAS NEVER BUILT.
-	require.NoError(t, d.Close())
 }
 
 func ledgerSpec() database.Spec {

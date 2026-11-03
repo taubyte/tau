@@ -32,7 +32,7 @@ type Service struct {
 	// raft.New takes a peer node — a host, a DHT, a datastore and a lifetime —
 	// and none of that is this package's to assemble.
 	open   func(namespace string) (raft.Cluster, error)
-	stores kvdb.Factory
+	stores Records
 
 	records *records
 	work    *work
@@ -84,7 +84,7 @@ type Option func(*options) error
 type options struct {
 	source register.Registry
 	open   func(namespace string) (raft.Cluster, error)
-	stores kvdb.Factory
+	stores Records
 
 	now   func() time.Time
 	sweep time.Duration
@@ -122,14 +122,17 @@ func WithConsensus(open func(namespace string) (raft.Cluster, error)) Option {
 	}
 }
 
+// Records opens one of this service's replicated stores by name.
+type Records func(name string) (kvdb.Instance, error)
+
 // WithRecords is where a log's records live. Required: raft orders, the replicated
 // store carries the bytes.
-func WithRecords(f kvdb.Factory) Option {
+func WithRecords(open Records) Option {
 	return func(o *options) error {
-		if f == nil {
+		if open == nil {
 			return ErrNoRecords
 		}
-		o.stores = f
+		o.stores = open
 		return nil
 	}
 }

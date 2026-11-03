@@ -161,7 +161,7 @@ func TestTransport_DialsOnlyAPeer(t *testing.T) {
 	_, err := (&namespaceStreamLayer{}).Dial(raft.ServerAddress(newMockNode(t).ID().String()), time.Second)
 	require.ErrorContains(t, err, "not initialized")
 
-	layer, err := newNamespaceStreamLayer(newMockNode(t).Peer(), "transport-dial", nil)
+	layer, err := newNamespaceStreamLayer(newMockNode(t).Host(), "transport-dial", nil)
 	require.NoError(t, err)
 	defer layer.Close()
 
@@ -185,7 +185,7 @@ func TestCluster_AnEncryptedPairReplicates(t *testing.T) {
 	require.NoError(t, err)
 	defer a.Close()
 	waitLeader(t, a, 5*time.Second)
-	require.NoError(t, nodeB.Peer().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Peer().Addrs()}))
+	require.NoError(t, nodeB.Host().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Host().Addrs()}))
 
 	b, err := New(nodeB, namespace, WithEncryptionKey(key), WithTimeouts(testTimeoutConfig()),
 		WithBootstrapTimeout(2*time.Second), WithSnapshotRoot(t.TempDir()))

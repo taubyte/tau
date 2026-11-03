@@ -47,7 +47,7 @@ func TestAWorkerResolvesAgainstARegisterAcrossTheSwarm(t *testing.T) {
 	nodes := nodesByID(m)
 
 	// Publish, over the wire, into the register the worker will have to find.
-	publisher, err := registerService.NewClient(nodes[workers[0]].Peer(), decode(t, registers[0]))
+	publisher, err := registerService.NewClient(nodes[workers[0]].Host(), decode(t, registers[0]))
 	require.NoError(t, err)
 	defer publisher.Close()
 
@@ -99,7 +99,7 @@ func TestAUniverseWithNoTierSaysSo(t *testing.T) {
 	workers := []string{workerNode.ID().String()}
 	nodes := nodesByID(m)
 
-	publisher, err := registerService.NewClient(nodes[workers[0]].Peer(), decode(t, registers[0]))
+	publisher, err := registerService.NewClient(nodes[workers[0]].Host(), decode(t, registers[0]))
 	require.NoError(t, err)
 	defer publisher.Close()
 
@@ -140,7 +140,7 @@ func decode(t *testing.T, id string) libp2ppeer.ID {
 
 func dialWorker(t *testing.T, from peer.Node, to string) workerv2connect.WorkerServiceClient {
 	t.Helper()
-	c, err := rpc.NewClient(from.Peer(), decode(t, to), worker.Protocol)
+	c, err := rpc.NewClient(from.Host(), decode(t, to), worker.Protocol)
 	require.NoError(t, err)
 	t.Cleanup(c.Close)
 	return workerv2connect.NewWorkerServiceClient(c.HTTP(), c.URL())

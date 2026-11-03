@@ -94,15 +94,15 @@ func benchTransports(b *testing.B) (raft.Transport, raft.Transport) {
 	if err := taupeer.LinkAllPeers(); err != nil {
 		b.Fatal(err)
 	}
-	if err := a.Peer().Connect(b.Context(), peer.AddrInfo{ID: f.ID(), Addrs: f.Peer().Addrs()}); err != nil {
+	if err := a.Host().Connect(b.Context(), peer.AddrInfo{ID: f.ID(), Addrs: f.Host().Addrs()}); err != nil {
 		b.Fatal(err)
 	}
-	near, err := newNamespaceTransport(a.Peer(), "bench", 5*time.Second, nil)
+	near, err := newNamespaceTransport(a.Host(), "bench", 5*time.Second, nil)
 	if err != nil {
 		b.Fatal(err)
 	}
 	b.Cleanup(func() { near.Close() })
-	far, err := newNamespaceTransport(f.Peer(), "bench", 5*time.Second, nil)
+	far, err := newNamespaceTransport(f.Host(), "bench", 5*time.Second, nil)
 	if err != nil {
 		b.Fatal(err)
 	}

@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -29,7 +28,6 @@ import (
 	"github.com/taubyte/tau/pkg/assets"
 	"github.com/taubyte/tau/pkg/certificate/acme"
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/discovery"
 	"github.com/taubyte/tau/services/worker"
@@ -316,7 +314,7 @@ func (u *Universe) Close() { u.mesh.Close() }
 
 func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secretsv2.InitSecret, held *uploads, folders *local) error {
 	ctx := m.Context()
-	h := p.Peer()
+	h := p.Host()
 
 	runtimes.Lock()
 	tiers := append([]invoke.Runtime(nil), runtimes.list...)
@@ -371,25 +369,14 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		return err
 	}
 
+	// THE UNIVERSE'S OWN DIRECTORY, so a volume in a dream is a volume: a real
+	// directory, checkpointed and restored the way it is on a machine; and raft
+	// timed for nodes one process apart.
+	nodeConfig.Root = root
+	nodeConfig.Raft = instance.RaftConfig{Timeouts: dreamTimeouts, BootstrapTimeout: dreamBootstrapTimeout}
+
 	options := []instance.Option{
-		instance.WithHost(h),
-		instance.WithPubSub(p.Messaging()),
-		instance.WithDatabases(kvdb.New(p)),
-		// The same raft a machine opens, over the universe's own peer.
-		instance.WithRaft(func(namespace string) (raft.Cluster, error) {
-			// Snapshots under this node's own root: the default /tmp path is keyed by namespace
-			// alone, so nodes would share one store.
-			return raft.New(p, namespace,
-				raft.WithSnapshotRoot(filepath.Join(root, "raft")),
-				raft.WithTimeouts(dreamTimeouts),
-				raft.WithBootstrapTimeout(dreamBootstrapTimeout),
-			)
-		}),
-		instance.WithAssets(store),
 		instance.WithArtifacts(staged),
-		// THE UNIVERSE'S OWN DIRECTORY, so a volume in a dream is a volume: a
-		// real directory, checkpointed and restored the way it is on a machine.
-		instance.WithRoot(root),
 		instance.WithDatabaseEngines(engines),
 		instance.WithRuntimes(tiers...),
 		// A DEVELOPMENT CLOUD'S DOOR for a developer's own build — see uploads.
@@ -406,14 +393,14 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		bundle.Secrets = append(account, cfg.Secrets...)
 	}
 	if len(bundle.Secrets) > 0 {
-		err := instance.InitSecrets(ctx, nodeConfig, root, h, kvdb.New(p), bundle)
+		err := instance.InitSecrets(ctx, p, nodeConfig, bundle)
 		if err != nil && !errors.Is(err, instance.ErrNoSecretsHere) {
 			os.RemoveAll(root)
 			return err
 		}
 	}
 
-	n, err := instance.New(nodeConfig, options...)
+	n, err := instance.New(p, nodeConfig, options...)
 	if err != nil {
 		os.RemoveAll(root)
 		return err

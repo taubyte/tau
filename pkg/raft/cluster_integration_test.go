@@ -140,7 +140,7 @@ func waitForKeyAbsent(t *testing.T, cl Cluster, key string, timeout time.Duratio
 	}
 }
 
-func nodeOf(cl Cluster) taupeer.Node { return cl.(*cluster).node }
+func nodeOf(cl Cluster) taupeer.Node { return cl.(*cluster).Node }
 
 func followerOf(t *testing.T, clusters ...Cluster) Cluster {
 	t.Helper()

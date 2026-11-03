@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
-	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/p2p/peer"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 )
 
@@ -38,36 +38,19 @@ func TestAnEmptyServiceListIsEveryService(t *testing.T) {
 }
 
 func TestAMisspelledServiceIsRefused(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-
-	_, err := New(Config{Services: []string{"registry"}}, WithHost(h))
+	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{"registry"}}))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "registry")
 	require.Contains(t, err.Error(), Register, "and it says what this node can run")
 }
 
 func TestEachServiceSaysWhatItCannotStartWithout(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-
-	_, err := New(Config{}, WithPubSub(newPubSub(t, h)))
-	require.ErrorIs(t, err, ErrNoHost, "a node does not mint its own identity")
-
-	_, err = New(Config{Services: []string{Register}}, WithHost(h))
-	require.ErrorIs(t, err, ErrNoDatabases)
-
-	_, err = New(Config{Services: []string{Discovery}}, WithHost(h))
-	require.ErrorIs(t, err, ErrNoPubSub)
-
-	_, err = New(Config{Services: []string{Worker}}, WithHost(h))
-	require.Error(t, err, "a worker with no compute tier can run nothing")
+	_, err := New(nil, rooted(t, Config{}))
+	require.ErrorIs(t, err, ErrNoPeer, "an instance does not mint its own identity")
 
 	// A GATEWAY ROUTES FROM STATS. Without one it has no way to choose a
 	// worker, and saying so at construction beats a 502 on the first request.
-	_, err = New(Config{Services: []string{Gateway}}, WithHost(h))
+	_, err = New(mockPeer(t), rooted(t, Config{Services: []string{Gateway}}))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "discovery")
 }
@@ -87,20 +70,15 @@ func TestWhatWasBuiltIsClosed(t *testing.T) {
 }
 
 func TestAHalfBuiltNodeClosesWhatItMade(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-
-	h := newHost(t, mn)
 	factory := &memFactory{}
 
-	// No runtimes: the worker fails, after the register has opened a database.
-	_, err := New(Config{Services: []string{Register, Worker}},
-		WithHost(h), WithDatabases(factory))
+	// No discovery: the gateway fails, after the register has opened a database.
+	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Register, Gateway}}), withKVDB(factory))
 	require.Error(t, err)
 
 	opened, closed := factory.counts()
 	require.Len(t, opened, 1, "the register got as far as opening one")
-	require.Equal(t, 1, closed, "and it was closed when the worker failed")
+	require.Equal(t, 1, closed, "and it was closed when the gateway failed")
 }
 
 func TestStartIsOnce(t *testing.T) {
@@ -169,12 +147,7 @@ func TestANodeWithNoRegisterSaysSo(t *testing.T) {
 }
 
 func TestANodeWithNoWayToFindARegister(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-
-	n, err := New(Config{Services: []string{Worker}},
-		WithHost(h), WithRuntimes(&tier{name: "wasm"}))
+	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Worker}}), WithRuntimes(&tier{name: "wasm"}))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 
@@ -228,27 +201,16 @@ func TestTheClockReachesEverything(t *testing.T) {
 }
 
 func TestWhatTheOptionsRefuse(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-
 	for _, opt := range []Option{
-		WithHost(nil), WithPubSub(nil), WithDatabases(nil),
 		WithRuntimes(nil), WithArtifacts(nil), WithSecrets(nil), WithClock(nil),
-		WithRoot(""),
 	} {
-		_, err := New(Config{Services: []string{Discovery}}, WithHost(h), WithPubSub(newPubSub(t, h)), opt)
+		_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Discovery}}), opt)
 		require.Error(t, err)
 	}
 }
 
 func TestADatabaseThatWillNotOpen(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-
-	_, err := New(Config{Services: []string{Register}},
-		WithHost(h), WithDatabases(&memFactory{err: errors.New("the disk is full")}))
+	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Register}}), withKVDB(&memFactory{err: errors.New("the disk is full")}))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "disk is full")
 }
@@ -277,7 +239,7 @@ func listeningOn(t *testing.T, on ...string) []ma.Multiaddr {
 func TestWhatThisNodePublishesAsItsAddress(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register}})
 
-	n.opts.host = addrsOnly{addrs: listeningOn(t,
+	n.Node = withHost{Node: n.Node, host: addrsOnly{addrs: listeningOn(t,
 		// Not an address with an IP in it: nothing a client can be handed.
 		"/unix/tmp/tau.sock",
 		// "Every address" is not an address. A client handed 0.0.0.0 has been
@@ -289,18 +251,26 @@ func TestWhatThisNodePublishesAsItsAddress(t *testing.T) {
 		"/ip4/203.0.113.9/udp/4001/quic-v1",
 		// Present, and outranked.
 		"/ip4/127.0.0.1/tcp/4001",
-	)}
+	)}}
 
 	require.Equal(t, []string{"203.0.113.9"}, n.addresses())
 }
 
+// withHost is a peer whose libp2p host a test chose.
+type withHost struct {
+	peer.Node
+	host host.Host
+}
+
+func (w withHost) Host() host.Host { return w.host }
+
 func TestLoopbackIsAnAnswerOnlyWhenThereIsNoOther(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register}})
 
-	n.opts.host = addrsOnly{addrs: listeningOn(t, "/ip4/127.0.0.1/tcp/4001", "/ip6/::1/tcp/4001")}
+	n.Node = withHost{Node: n.Node, host: addrsOnly{addrs: listeningOn(t, "/ip4/127.0.0.1/tcp/4001", "/ip6/::1/tcp/4001")}}
 	require.Equal(t, []string{"127.0.0.1", "::1"}, n.addresses())
 
-	n.opts.host = addrsOnly{addrs: listeningOn(t, "/ip4/0.0.0.0/tcp/4001")}
+	n.Node = withHost{Node: n.Node, host: addrsOnly{addrs: listeningOn(t, "/ip4/0.0.0.0/tcp/4001")}}
 	require.Empty(t, n.addresses(), "every address is no address")
 }
 
@@ -311,7 +281,7 @@ func TestTheAccessorsAreTheServicesItRuns(t *testing.T) {
 	require.Nil(t, bare.TLSConfig(), "no gateway, nothing to answer a handshake with")
 	_, _, ok := bare.QueueDepth("shop/prod/QmAnything")
 	require.False(t, ok, "a node with no sync backing knows no queue")
-	require.Same(t, bare.opts.pubsub, bare.PubSub())
+	require.Same(t, bare.Messaging(), bare.PubSub())
 
 	full, _, _ := makeNode(t, Config{Services: []string{Register, Discovery, Secrets, Database, Gateway}, Gateway: gatewayConfig()})
 	require.Same(t, full.secrets, full.Secrets())

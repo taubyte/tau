@@ -12,7 +12,6 @@ import (
 
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
-	kvdbmock "github.com/taubyte/tau/pkg/kvdb/mock"
 	"github.com/taubyte/tau/pkg/raft"
 )
 
@@ -43,7 +42,7 @@ func wiredWith(t *testing.T, opts ...Option) (*Client, *harness) {
 	s, err := New(server, append([]Option{
 		WithRegister(&published{revision: 1, object: compiled()}),
 		WithConsensus(func(string) (raft.Cluster, error) { return cluster, nil }),
-		WithRecords(kvdbmock.New()),
+		WithRecords(mockRecords()),
 		WithClock(tick.now),
 		WithSweep(time.Hour),
 	}, opts...)...)
@@ -159,7 +158,7 @@ func TestACallBeforeTheConsensusHasFormedIsToldSoRatherThanHeld(t *testing.T) {
 	s, err := New(host,
 		WithRegister(&published{revision: 1, object: compiled()}),
 		WithConsensus(func(string) (raft.Cluster, error) { return newCluster(), nil }),
-		WithRecords(kvdbmock.New()))
+		WithRecords(mockRecords()))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 

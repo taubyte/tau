@@ -27,10 +27,11 @@ import (
 	"github.com/taubyte/tau/instance/cache"
 	"github.com/taubyte/tau/instance/model"
 	"github.com/taubyte/tau/instance/primitive"
-	"github.com/taubyte/tau/instance/storage"
 	"github.com/taubyte/tau/instance/stream"
 	"github.com/taubyte/tau/instance/volume"
+	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/rpc"
+	"github.com/taubyte/tau/pkg/assets"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/invoke/js"
 	"github.com/taubyte/tau/pkg/invoke/wasm"
@@ -43,6 +44,7 @@ import (
 	"github.com/taubyte/tau/services/build/frontend"
 
 	"github.com/taubyte/tau/instance/placement"
+	"github.com/taubyte/tau/instance/storage"
 	authService "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/cm"
 	cmService "github.com/taubyte/tau/services/cm"
@@ -62,6 +64,17 @@ type Instance struct {
 	cfg  Config
 	opts options
 
+	// peer is what this instance is made from; host and pubsub are its, dbs the
+	// replicated databases opened over it, assets the blocks a build is kept in.
+	peer.Node
+
+	dbs    *databases
+	assets Assets
+
+	// locals is what each service on this instance provided the others.
+	localsMu sync.Mutex
+	locals   map[string]any
+
 	discovery *discovery.Service
 	register  *registerService.Service
 	worker    *worker.Service
@@ -77,7 +90,7 @@ type Instance struct {
 	cm               *cmService.Service
 	certs            *cmService.Client
 	domainClaims     *cmService.Domains
-	challengeDB      kvdb.KVDB
+	challengeDB      kvdb.Instance
 	challengeAnswers *cm.Challenges
 
 	// database is the service that owns this project's engines, when this node
@@ -157,6 +170,7 @@ type Instance struct {
 	dispatchDone   chan struct{}
 	proxyDone      chan struct{}
 	checkpointDone chan struct{}
+	retentionDone  chan struct{}
 
 	startMu   sync.Mutex
 	started   bool
@@ -165,7 +179,7 @@ type Instance struct {
 }
 
 // New builds the services this node runs. It binds nothing and starts nothing.
-func New(cfg Config, opts ...Option) (*Instance, error) {
+func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 	installTracerProvider()
 
 	var o options
@@ -183,11 +197,17 @@ func New(cfg Config, opts ...Option) (*Instance, error) {
 	if err != nil {
 		return nil, err
 	}
-	if o.host == nil {
-		return nil, ErrNoHost
+	if p == nil {
+		return nil, ErrNoPeer
+	}
+	store, err := assets.New(p)
+	if err != nil {
+		return nil, err
 	}
 
-	n := &Instance{cfg: cfg, opts: o}
+	n := &Instance{cfg: cfg, opts: o, Node: p, dbs: newDatabaseSet(p), assets: store}
+	// Closed last: every service closes the databases it opened before them.
+	n.closers = append(n.closers, n.dbs)
 	if err := n.open(); err != nil {
 		n.Close()
 		return nil, err
@@ -269,11 +289,7 @@ func (n *Instance) openStats() error {
 	if !n.cfg.runs(Discovery) {
 		return nil
 	}
-	if n.opts.pubsub == nil {
-		return ErrNoPubSub
-	}
-
-	bus, err := discovery.NewBus(n.opts.pubsub, n.cfg.Cloud)
+	bus, err := discovery.NewBus(n.Messaging(), n.cfg.Cloud)
 	if err != nil {
 		return err
 	}
@@ -283,7 +299,7 @@ func (n *Instance) openStats() error {
 		options = append(options, discovery.WithClock(n.opts.now))
 	}
 
-	svc, err := discovery.New(n.opts.host, n.cfg.Discovery, options...)
+	svc, err := discovery.New(n.Host(), n.cfg.Discovery, options...)
 	if err != nil {
 		return err
 	}
@@ -296,11 +312,8 @@ func (n *Instance) openRegister() error {
 	if !n.cfg.runs(Register) {
 		return nil
 	}
-	if n.opts.databases == nil {
-		return ErrNoDatabases
-	}
 
-	db, err := n.opts.databases.New(logger, Register, rebroadcastSeconds)
+	db, err := n.kvdb(Register)
 	if err != nil {
 		return err
 	}
@@ -311,7 +324,7 @@ func (n *Instance) openRegister() error {
 		return err
 	}
 
-	svc, err := registerService.New(n.opts.host, registerService.WithStore(store))
+	svc, err := registerService.New(n.Host(), registerService.WithStore(store))
 	if err != nil {
 		return err
 	}
@@ -326,24 +339,21 @@ func (n *Instance) openSecrets() error {
 	if !n.cfg.runs(Secrets) {
 		return nil
 	}
-	if n.opts.databases == nil {
-		return ErrNoDatabases
-	}
 
 	// A SHARE IS THE ONE PIECE OF KEY MATERIAL A NODE CANNOT RE-DERIVE, so
 	// it lives on this machine's disk, and a node with no directory of its
 	// own runs no secrets rather than holding shares that die with it.
-	if n.opts.root == "" {
+	if n.cfg.Root == "" {
 		return secretsService.ErrNoRoot
 	}
 
-	db, err := n.opts.databases.New(logger, Secrets, rebroadcastSeconds)
+	db, err := n.kvdb(Secrets)
 	if err != nil {
 		return err
 	}
 	n.closers = append(n.closers, closerFunc(db.Close))
 
-	options := secretsOptions(n.cfg, n.opts.root)
+	options := secretsOptions(n.cfg, n.cfg.Root)
 	// WHO ELSE HOLDS A SHARE IS DISCOVERY'S ANSWER on a node that has one,
 	// asked each time a roster is formed; without it, the connected peers that
 	// speak the protocol.
@@ -352,14 +362,14 @@ func (n *Instance) openSecrets() error {
 			return (&fromDiscovery{node: n, name: Secrets}).Known()
 		}))
 	}
-	if n.opts.pubsub != nil {
-		options = append(options, secretsService.WithPubSub(n.opts.pubsub))
+	if n.Messaging() != nil {
+		options = append(options, secretsService.WithPubSub(n.Messaging()))
 	}
 	if n.opts.now != nil {
 		options = append(options, secretsService.WithClock(n.opts.now))
 	}
 
-	svc, err := secretsService.New(n.opts.host, db, options...)
+	svc, err := secretsService.New(n.Host(), db, options...)
 	if err != nil {
 		return err
 	}
@@ -405,127 +415,119 @@ func (n *Instance) openWorker() error {
 		tiers = append(tiers, tier)
 	}
 
-	// Components and scripts cold-start from the asset store with no daemon, so a node
-	// with one serves both. An injected tier wins over a built one of the same name. A
+	// Components and scripts cold-start from the asset store with no daemon, so every
+	// node serves both. An injected tier wins over a built one of the same name. A
 	// site's files are the gateway's to read, not a tier's to run.
-	if n.opts.assets != nil {
-		// A function's println goes to the node's log. The backings are always given and open
-		// nothing until reached; without them the tier would refuse resources the node could
-		// serve.
-		publisher, err := n.streamBacking(stream.Stream)
-		if err != nil {
-			return err
-		}
-
-		if err := n.registerSQL(); err != nil {
-			return err
-		}
-		servers, err := newDatabases(n)
-		if err != nil {
-			return err
-		}
-		n.closers = append(n.closers, servers)
-
-		objects, err := storage.New(n.opts.assets, storageStores{node: n}, n.opts.now)
-		if err != nil {
-			return err
-		}
-		n.closers = append(n.closers, objects)
-
-		stores, err := cache.New(cacheStores{node: n})
-		if err != nil {
-			return err
-		}
-
-		bus, err := n.busStreams()
-		if err != nil {
-			return err
-		}
-
-		// INFERENCE IS ALWAYS OFFERED, even on a node that resolves no secret:
-		// a model served by something needing no credential — ollama on this
-		// machine — is a legitimate resource, and refusing to start a workload
-		// that reaches one would make the credential the thing that decides
-		// whether inference exists.
-		infer, err := n.inference()
-		if err != nil {
-			return err
-		}
-
-		// WHO MAY OPEN ONE INSTANCE OF A STORE THAT HOLDS MANY. It invokes the
-		// validator the target named, which is why it is here and not in the
-		// tier: the tier runs one workload and cannot reach another.
-		admits, err := n.admissions()
-		if err != nil {
-			return err
-		}
-
-		n.sharedVault()
-
-		// THE PEER THIS INSTANCE RUNS ON, for `taubyte:workload/identity`. It is
-		// the host's own id rather than anything derived: what a workload is
-		// told about where it is running has to be the name the swarm knows it
-		// by, or a log line naming it cannot be followed to a machine.
-		var self string
-		if n.opts.host != nil {
-			self = n.opts.host.ID().String()
-		}
-
-		component, err := wasm.New(n.opts.assets,
-			wasm.WithMode(wasm.Mode(n.cfg.Worker.Engines.Wasm)),
-			wasm.WithOutput(workloadLog),
-			// THE SAME REPORT THE CONTAINER TIER MAKES. The composer hands every
-			// tier a grant for every kind so it can say what it cannot do; this
-			// is where the wasm tier says it, instead of dropping the grant.
-			wasm.WithWarn(func(format string, args ...any) { logger.Warnf(format, args...) }),
-			wasm.WithNode(self),
-			wasm.WithCaches(stores),
-			wasm.WithStreams(publisher),
-			wasm.WithBus(bus),
-			wasm.WithSQL(servers),
-			// KV goes through the database service; the other models do not yet.
-			wasm.WithKV(n.kvBacking(servers)),
-			wasm.WithDocuments(servers),
-			wasm.WithVectors(servers),
-			// The `sync` kind goes through the primitives service with no local fallback, which
-			// would be two queues that cannot see each other.
-			wasm.WithQueues(syncs),
-			wasm.WithLogs(syncs),
-			wasm.WithStorage(objects),
-			wasm.WithAdmission(admits),
-			wasm.WithChannels(&channels{node: n}),
-			wasm.WithAuthorizers(&authorizers{node: n}),
-			wasm.WithSecrets(n.vault),
-			wasm.WithInference(infer))
-		if err != nil {
-			return err
-		}
-		n.closers = append(n.closers, closerFunc(func() { component.Close() }))
-
-		// KEPT, because a guard is run through it. An authorizer is a second
-		// world instantiated from the same tier, and the node is the only thing
-		// that holds both the tier and the worker that can resolve which
-		// function to instantiate. See authorizer.go.
-		n.decider = component
-
-		// A JS function reaches what is written as a host module, the vault so
-		// far, and the tier warns for each other capability a workload declares
-		// rather than refusing it.
-		script, err := js.New(n.opts.assets,
-			js.WithMode(js.Mode(n.cfg.Worker.Engines.JS)),
-			js.WithOutput(workloadLog),
-			js.WithSecrets(n.vault),
-			js.WithWarn(func(format string, args ...any) { logger.Warnf(format, args...) }))
-		if err != nil {
-			return err
-		}
-
-		tiers = appendUnnamed(tiers, component, script)
+	//
+	// A function's println goes to the node's log. The backings are always given and open
+	// nothing until reached; without them the tier would refuse resources the node could
+	// serve.
+	publisher, err := n.streamBacking(stream.Stream)
+	if err != nil {
+		return err
 	}
 
-	if len(tiers) == 0 {
-		return errors.New("node: a worker with no compute tier can run nothing; declare a container backend, give it an asset store, or inject one")
+	if err := n.registerSQL(); err != nil {
+		return err
 	}
+	servers, err := newDatabases(n)
+	if err != nil {
+		return err
+	}
+	n.closers = append(n.closers, servers)
+
+	objects, err := storage.New(n.assets, storageStores{node: n}, n.opts.now)
+	if err != nil {
+		return err
+	}
+	n.closers = append(n.closers, objects)
+
+	stores, err := cache.New(cacheStores{node: n})
+	if err != nil {
+		return err
+	}
+
+	bus, err := n.busStreams()
+	if err != nil {
+		return err
+	}
+
+	// INFERENCE IS ALWAYS OFFERED, even on a node that resolves no secret:
+	// a model served by something needing no credential — ollama on this
+	// machine — is a legitimate resource, and refusing to start a workload
+	// that reaches one would make the credential the thing that decides
+	// whether inference exists.
+	infer, err := n.inference()
+	if err != nil {
+		return err
+	}
+
+	// WHO MAY OPEN ONE INSTANCE OF A STORE THAT HOLDS MANY. It invokes the
+	// validator the target named, which is why it is here and not in the
+	// tier: the tier runs one workload and cannot reach another.
+	admits, err := n.admissions()
+	if err != nil {
+		return err
+	}
+
+	n.sharedVault()
+
+	// THE PEER THIS INSTANCE RUNS ON, for `taubyte:workload/identity`. It is
+	// the host's own id rather than anything derived: what a workload is
+	// told about where it is running has to be the name the swarm knows it
+	// by, or a log line naming it cannot be followed to a machine.
+	self := n.Host().ID().String()
+
+	component, err := wasm.New(n.assets,
+		wasm.WithMode(wasm.Mode(n.cfg.Worker.Engines.Wasm)),
+		wasm.WithOutput(workloadLog),
+		// THE SAME REPORT THE CONTAINER TIER MAKES. The composer hands every
+		// tier a grant for every kind so it can say what it cannot do; this
+		// is where the wasm tier says it, instead of dropping the grant.
+		wasm.WithWarn(func(format string, args ...any) { logger.Warnf(format, args...) }),
+		wasm.WithNode(self),
+		wasm.WithCaches(stores),
+		wasm.WithStreams(publisher),
+		wasm.WithBus(bus),
+		wasm.WithSQL(servers),
+		// KV goes through the database service; the other models do not yet.
+		wasm.WithKV(n.kvBacking(servers)),
+		wasm.WithDocuments(servers),
+		wasm.WithVectors(servers),
+		// The `sync` kind goes through the primitives service with no local fallback, which
+		// would be two queues that cannot see each other.
+		wasm.WithQueues(syncs),
+		wasm.WithLogs(syncs),
+		wasm.WithStorage(objects),
+		wasm.WithAdmission(admits),
+		wasm.WithChannels(&channels{node: n}),
+		wasm.WithAuthorizers(&authorizers{node: n}),
+		wasm.WithSecrets(n.vault),
+		wasm.WithInference(infer))
+	if err != nil {
+		return err
+	}
+	n.closers = append(n.closers, closerFunc(func() { component.Close() }))
+
+	// KEPT, because a guard is run through it. An authorizer is a second
+	// world instantiated from the same tier, and the node is the only thing
+	// that holds both the tier and the worker that can resolve which
+	// function to instantiate. See authorizer.go.
+	n.decider = component
+
+	// A JS function reaches what is written as a host module, the vault so
+	// far, and the tier warns for each other capability a workload declares
+	// rather than refusing it.
+	script, err := js.New(n.assets,
+		js.WithMode(js.Mode(n.cfg.Worker.Engines.JS)),
+		js.WithOutput(workloadLog),
+		js.WithSecrets(n.vault),
+		js.WithWarn(func(format string, args ...any) { logger.Warnf(format, args...) }))
+	if err != nil {
+		return err
+	}
+
+	tiers = appendUnnamed(tiers, component, script)
 
 	pool, err := invoke.NewPool(invoke.WithRuntime(tiers...))
 	if err != nil {
@@ -564,7 +566,7 @@ func (n *Instance) openWorker() error {
 		options = append(options, worker.WithClock(n.opts.now))
 	}
 
-	svc, err := worker.New(n.opts.host, n.cfg.Worker, options...)
+	svc, err := worker.New(n.Host(), n.cfg.Worker, options...)
 	if err != nil {
 		return err
 	}
@@ -643,7 +645,7 @@ func (n *Instance) openPlacement() error {
 		options = append(options, placement.WithLocal(n.worker))
 	}
 
-	workers, err := placement.New(n.opts.host, n.discovery, options...)
+	workers, err := placement.New(n.Host(), n.discovery, options...)
 	if err != nil {
 		return err
 	}
@@ -672,7 +674,7 @@ func (n *Instance) openGateway() error {
 	// offering the option at all — the gateway then refuses a bus's name with
 	// "not available here" rather than accepting the connection and never
 	// delivering anything.
-	if n.opts.pubsub != nil {
+	if n.Messaging() != nil {
 		backing, err := n.busStreams()
 		if err != nil {
 			return err
@@ -723,8 +725,8 @@ func (n *Instance) openGateway() error {
 
 	// A PACKAGE HANDLER'S FILES are read from the build's artifact, as a worker
 	// reads one: the same lookup, the same asset store.
-	if a := n.artifactSource(); a != nil && n.opts.assets != nil {
-		gatewayOptions = append(gatewayOptions, gateway.WithFiles(a, n.opts.assets))
+	if a := n.artifactSource(); a != nil {
+		gatewayOptions = append(gatewayOptions, gateway.WithFiles(a, n.assets))
 	}
 
 	svc, err := gateway.New(n.cfg.Gateway, gatewayOptions...)
@@ -844,7 +846,7 @@ func (n *Instance) Start(ctx context.Context) error {
 
 	// THE BACKGROUND LOOPS LAST. They outlive the call that started them, so
 	// they take a context of their own that Close cancels.
-	needsLoops := n.proxy != nil || n.worker != nil || n.disks != nil
+	needsLoops := n.proxy != nil || n.worker != nil || n.disks != nil || n.register != nil
 	if !needsLoops {
 		n.started = true
 		return nil
@@ -852,6 +854,14 @@ func (n *Instance) Start(ctx context.Context) error {
 
 	loopCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
 	n.loopsStop = stop
+
+	if n.register != nil {
+		n.retentionDone = make(chan struct{})
+		go func() {
+			defer close(n.retentionDone)
+			n.followRetention(loopCtx)
+		}()
+	}
 
 	// THE PROXY SWEEPS WITHOUT RAFT, unlike everything below it: every node
 	// holding a deployment serves its proxies, so there is no slot to claim and
@@ -949,6 +959,9 @@ func (n *Instance) Close() error {
 			if n.checkpointDone != nil {
 				<-n.checkpointDone
 			}
+			if n.retentionDone != nil {
+				<-n.retentionDone
+			}
 		}
 		// THE LOCATORS BEFORE THE SERVICES THEY REACH, because a stream held
 		// onto another node is this node's to give back and nothing below
@@ -1001,7 +1014,7 @@ func (n *Instance) addresses() []string {
 	seen := map[string]bool{}
 	var routable, loopback []string
 
-	for _, a := range n.opts.host.Addrs() {
+	for _, a := range n.Host().Addrs() {
 		ip, err := manet.ToIP(a)
 		if err != nil {
 			// Not an address with an IP in it — a unix socket, a circuit
@@ -1088,7 +1101,7 @@ func (n *Instance) Discovery() *discovery.Service { return n.discovery }
 // PubSub is the gossip this node was given, for a composer that has to attach
 // something to it — a stream subscriber, a test listening for what a workload
 // published.
-func (n *Instance) PubSub() discovery.PubSub { return n.opts.pubsub }
+func (n *Instance) PubSub() discovery.PubSub { return n.Messaging() }
 
 // QueueDepth is what one declared queue holds: items waiting and claimed. For
 // operators and tests; it reads local state without a barrier. `ok` is false for an

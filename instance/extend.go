@@ -10,14 +10,13 @@ import (
 	"sync"
 
 	"github.com/ipfs/go-log/v2"
-	"github.com/libp2p/go-libp2p/core/host"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"gopkg.in/yaml.v3"
 
 	"github.com/taubyte/tau/core/kvdb"
+	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/rpc"
-	"github.com/taubyte/tau/services/discovery"
 )
 
 // Lets a composer add a service this package does not name, registered by name with
@@ -42,16 +41,13 @@ type Host interface {
 	// Name is the name the service was added under.
 	Name() string
 
-	// Peer is the node's libp2p host.
-	Peer() host.Host
-
-	// PubSub is the node's gossip, or nil when it was composed without one.
-	PubSub() discovery.PubSub
+	// Peer is the instance's peer: its host, gossip, blockstore and datastore.
+	Peer() peer.Node
 
 	// Database opens one of the service's own replicated databases. Its path
 	// is under the service's name, so no added service can open a built-in
 	// one by naming it. It is closed with the node.
-	Database(name string) (kvdb.KVDB, error)
+	Database(name string) (kvdb.Instance, error)
 
 	// Listen serves handler to other nodes over p2p/rpc on id. The listener
 	// is closed with the node.
@@ -65,6 +61,12 @@ type Host interface {
 	// Peers is every node discovery currently says runs service, this one
 	// included when it does. Nil when the node has no discovery view.
 	Peers(service string) []libp2ppeer.ID
+
+	// Local is the handle the service named provided on this instance, nil when
+	// this instance runs none. Provide is this service's own, for the others on
+	// this instance to reach it without a hop.
+	Local(service string) any
+	Provide(handle any)
 
 	// Secrets is the cloud's vault: this node's own when it runs one,
 	// otherwise whichever node discovery names.
@@ -141,22 +143,20 @@ type added struct {
 }
 
 func (a *added) Name() string             { return a.name }
-func (a *added) Peer() host.Host          { return a.node.opts.host }
-func (a *added) PubSub() discovery.PubSub { return a.node.opts.pubsub }
-func (a *added) Root() string             { return a.node.opts.root }
+func (a *added) Peer() peer.Node          { return a.node.Node }
+func (a *added) Root() string             { return a.node.cfg.Root }
+func (a *added) Local(service string) any { return a.node.local(service) }
+func (a *added) Provide(handle any)       { a.node.provide(a.name, handle) }
 func (a *added) Logger() log.StandardLogger {
 	return log.Logger("tau.node." + a.name)
 }
 
-func (a *added) Database(name string) (kvdb.KVDB, error) {
-	if a.node.opts.databases == nil {
-		return nil, ErrNoDatabases
-	}
+func (a *added) Database(name string) (kvdb.Instance, error) {
 	path := a.name
 	if name != "" {
 		path += "/" + name
 	}
-	db, err := a.node.opts.databases.New(a.Logger(), path, rebroadcastSeconds)
+	db, err := a.node.kvdb(path)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +165,7 @@ func (a *added) Database(name string) (kvdb.KVDB, error) {
 }
 
 func (a *added) Listen(id protocol.ID, handler http.Handler) error {
-	server, err := rpc.Listen(context.Background(), a.node.opts.host, id, handler)
+	server, err := rpc.Listen(context.Background(), a.node.Host(), id, handler)
 	if err != nil {
 		return err
 	}
@@ -203,6 +203,23 @@ func (a *added) Config(into any) error {
 		return fmt.Errorf("node: %s: config: %w", a.name, err)
 	}
 	return nil
+}
+
+// provide records what service offers the others on this instance.
+func (n *Instance) provide(service string, handle any) {
+	n.localsMu.Lock()
+	defer n.localsMu.Unlock()
+	if n.locals == nil {
+		n.locals = map[string]any{}
+	}
+	n.locals[service] = handle
+}
+
+// local is what service provided on this instance, nil when it runs none.
+func (n *Instance) local(service string) any {
+	n.localsMu.Lock()
+	defer n.localsMu.Unlock()
+	return n.locals[service]
 }
 
 // public is what added services serve on the node's public listener, in front

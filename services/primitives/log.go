@@ -39,7 +39,7 @@ type records struct {
 	service *Service
 
 	mu sync.Mutex
-	db kvdb.KVDB
+	db kvdb.Instance
 
 	// writing serialises appends per log WITHIN this process. Raft gives one
 	// leader; this gives one appender on it, which is what makes read-then-write
@@ -272,7 +272,7 @@ func (r *records) sweep(ctx context.Context, spec Spec, keep retention) (int, er
 // floor, retiring positions and moving the floor in one raft entry before deleting
 // bytes. Deleting bytes first and then losing that entry would leave surviving
 // records behind positions whose bytes are gone, and reads would stop there forever.
-func (r *records) drop(ctx context.Context, cluster raft.Cluster, db kvdb.KVDB, prefix string, from, floor uint64) (int, error) {
+func (r *records) drop(ctx context.Context, cluster raft.Cluster, db kvdb.Instance, prefix string, from, floor uint64) (int, error) {
 	gone := make(map[uint64]string, from-floor+1)
 	ops := make([]raft.BatchOp, 0, from-floor+2)
 	for at := from; ; at-- {
@@ -311,7 +311,7 @@ func (r *records) drop(ctx context.Context, cluster raft.Cluster, db kvdb.KVDB, 
 // orphaned removes a record whose position was never published: only the writer
 // knows its key. A process dying between the two writes still leaks one record, until
 // something compacts the store.
-func (r *records) orphaned(ctx context.Context, db kvdb.KVDB, prefix string, at uint64, digest string) {
+func (r *records) orphaned(ctx context.Context, db kvdb.Instance, prefix string, at uint64, digest string) {
 	if err := db.Delete(ctx, recordKey(prefix, at, digest)); err != nil {
 		logger.Warnf("primitives: %s left the record it could not publish at %d: %s", prefix, at, err)
 	}
@@ -340,7 +340,7 @@ func logsIn(cluster raft.Cluster) []Spec {
 }
 
 // ready opens what a log needs, once.
-func (r *records) ready() (raft.Cluster, kvdb.KVDB, error) {
+func (r *records) ready() (raft.Cluster, kvdb.Instance, error) {
 	cluster, err := r.service.consensus()
 	if err != nil {
 		return nil, nil, err
@@ -350,7 +350,7 @@ func (r *records) ready() (raft.Cluster, kvdb.KVDB, error) {
 	defer r.mu.Unlock()
 
 	if r.db == nil {
-		db, err := r.service.stores.New(logger, recordStore, rebroadcastSeconds)
+		db, err := r.service.stores(recordStore)
 		if err != nil {
 			return nil, nil, fmt.Errorf("primitives: opening the record store: %w", err)
 		}

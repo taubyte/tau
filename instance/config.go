@@ -8,8 +8,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/libp2p/go-libp2p/core/host"
-
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/forge"
@@ -82,6 +80,14 @@ type Config struct {
 	// single-node development shape.
 	Services []string
 
+	// Root is where this instance keeps what has to be a real directory: its raft
+	// snapshots, a secrets share, volumes, the SQL engine's files. Empty, what
+	// needs one is refused by name.
+	Root string
+
+	// Raft is how this instance's consensus groups time out; zero is raft's defaults.
+	Raft RaftConfig
+
 	// Cloud scopes what this node gossips with. Two clouds sharing a machine,
 	// or bridged by a stray peer, must not pool their load figures and route
 	// each other's traffic.
@@ -138,13 +144,7 @@ type Config struct {
 }
 
 var (
-	ErrNoHost      = errors.New("node: no host to answer on")
-	ErrNoDatabases = errors.New("node: a register needs somewhere to keep what is published")
-	ErrNoPubSub    = errors.New("node: discovery needs somewhere to gossip")
-	// ErrNoRaft is a node that needs consensus and was given none: the build backend's
-	// queue, the primitives service, a project's queue, or a raft database. It names none
-	// of them, since the fix is the same: a composition that opens a group.
-	ErrNoRaft = errors.New("node: this needs raft consensus, and nothing here opens a group")
+	ErrNoPeer = errors.New("instance: no peer to be made from")
 
 	// ErrBothHalves is the one service combination this composition refuses.
 	ErrBothHalves = errors.New("node: " + build.Frontend.Name + " and " + build.Backend.Name +
@@ -154,13 +154,13 @@ var (
 type Option func(*options) error
 
 type options struct {
-	host      host.Host
-	pubsub    discovery.PubSub
-	databases kvdb.Factory
+	// kvdbOpen and raftOpen stand in for the peer's own, for a test that has to
+	// see what was opened or make an open fail. Nothing outside this package's
+	// tests can set them.
+	kvdbOpen func(name string) (kvdb.Instance, error)
+	raftOpen func(namespace string) (raft.Cluster, error)
+
 	engines   *database.Registry
-	raft      func(namespace string) (raft.Cluster, error)
-	assets    Assets
-	root      string
 	runtimes  []invoke.Runtime
 	artifacts worker.Artifacts
 	secrets   worker.Secrets
@@ -181,29 +181,6 @@ type options struct {
 	terminates bool
 }
 
-// WithHost is the libp2p host every p2p service answers on. Required; a node never
-// mints its own identity.
-func WithHost(h host.Host) Option {
-	return func(o *options) error {
-		if h == nil {
-			return ErrNoHost
-		}
-		o.host = h
-		return nil
-	}
-}
-
-// WithPubSub is where discovery gossips. Required when this node runs discovery.
-func WithPubSub(ps discovery.PubSub) Option {
-	return func(o *options) error {
-		if ps == nil {
-			return ErrNoPubSub
-		}
-		o.pubsub = ps
-		return nil
-	}
-}
-
 // WithDatabaseEngines is what a workload's `database:` access is served from: a
 // registry, since a deployment imports and registers the drivers it wants and this
 // repository links none.
@@ -217,69 +194,16 @@ func WithDatabaseEngines(r *database.Registry) Option {
 	}
 }
 
-func WithDatabases(f kvdb.Factory) Option {
-	return func(o *options) error {
-		if f == nil {
-			return ErrNoDatabases
-		}
-		o.databases = f
-		return nil
-	}
-}
-
-// WithRaft is how the build backend opens the replicated log its queue and job
-// records live in. Required when this node runs that role.
-//
-// IT IS A FUNCTION OF A NAMESPACE, injected for the same reason the host is:
-// raft.New takes a peer.Node — a host, a DHT, a datastore and a lifetime —
-// which is one machine's resource. A composition that built its own could not
-// put two nodes in one process, which is exactly what dream does.
-func WithRaft(open func(namespace string) (raft.Cluster, error)) Option {
-	return func(o *options) error {
-		if open == nil {
-			return ErrNoRaft
-		}
-		o.raft = open
-		return nil
-	}
-}
-
 // Assets is the byte store this node writes builds into and reads sites out of.
-//
-// IT IS BOTH HALVES BECAUSE THIS NODE IS BOTH. The build backend only puts
-// (backend.Assets) and the static tier only gets (static.Assets); the
-// composition that has one has the other, and declaring the pair here is what
-// lets a single store be handed to both instead of the same object arriving
-// through two options.
 type Assets interface {
 	Put(ctx context.Context, content io.Reader) (string, error)
 	Get(ctx context.Context, id string) (io.ReadSeekCloser, error)
 }
 
-// WithAssets is where a build's output goes and a built site is read from. Optional:
-// without it a backend still builds, and logs and artifacts live and die with the
-// run.
-func WithAssets(a Assets) Option {
-	return func(o *options) error {
-		if a == nil {
-			return errors.New("node: a nil asset store")
-		}
-		o.assets = a
-		return nil
-	}
-}
-
-// WithRoot is where this node keeps what has to be a real directory: volumes, the one
-// POSIX filesystem a container mounts. Without it a container declaring a volume is
-// refused rather than started on an empty layer.
-func WithRoot(dir string) Option {
-	return func(o *options) error {
-		if dir == "" {
-			return errors.New("node: an empty root is not a directory")
-		}
-		o.root = dir
-		return nil
-	}
+// RaftConfig is how long this instance's raft groups wait.
+type RaftConfig struct {
+	Timeouts         raft.TimeoutConfig
+	BootstrapTimeout time.Duration
 }
 
 // WithTLS says the composer serves this node's gateway over TLS as well, answering

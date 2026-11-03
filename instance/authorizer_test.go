@@ -42,7 +42,7 @@ func keyFor(spec invoke.Spec, grant invoke.Grant) string {
 
 func TestAKeptAnswerNeedsNoTier(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Worker}})
-	require.Nil(t, n.wasmTier(), "this node runs no components")
+	n.decider = nil
 
 	a := &authorizers{node: n}
 	grant := guardedGrant()
@@ -55,6 +55,7 @@ func TestAKeptAnswerNeedsNoTier(t *testing.T) {
 
 func TestANewRevisionIsANewQuestion(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Worker}})
+	n.decider = nil
 
 	a := &authorizers{node: n}
 	grant := guardedGrant()

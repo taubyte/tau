@@ -32,24 +32,16 @@ func keysUnder(t *testing.T, node peer.Node, path string) int {
 func TestDestroyRemovesOnlyThisDatabase(t *testing.T) {
 	logger := logging.Logger("test")
 	node := mockPeer(t)
-	f := New(node)
+	f := opener{node}
 
 	opened, err := f.New(logger, "databases/shop/prod/kv/QmGoing", 10)
 	require.NoError(t, err)
 
-	// Destroy is deliberately not on core/kvdb.KVDB: it speaks of bytes a node
-	// holds, and handles that hold none implement that interface too.
-	going, canDestroy := opened.(interface {
-		Destroy(context.Context) error
-	})
-	require.True(t, canDestroy)
 	staying, err := f.New(logger, "databases/shop/prod/kv/QmStaying", 10)
 	require.NoError(t, err)
 
 	ctx := t.Context()
-	for i, db := range []interface {
-		Put(context.Context, string, []byte) error
-	}{opened, staying} {
+	for i, db := range []*kvDatabase{opened, staying} {
 		require.NoError(t, db.Put(ctx, "k", []byte{byte(i)}))
 	}
 
@@ -57,7 +49,7 @@ func TestDestroyRemovesOnlyThisDatabase(t *testing.T) {
 	before := keysUnder(t, node, "databases/shop/prod/kv/QmStaying")
 	require.NotZero(t, before)
 
-	require.NoError(t, going.Destroy(ctx))
+	require.NoError(t, opened.Destroy(ctx))
 
 	require.Zero(t, keysUnder(t, node, "databases/shop/prod/kv/QmGoing"),
 		"this node still holds a database it let go of")

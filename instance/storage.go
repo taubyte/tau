@@ -19,10 +19,7 @@ type storageStores struct{ node *Instance }
 var _ storage.Stores = storageStores{}
 
 func (s storageStores) Store() (storage.Rows, error) {
-	if s.node.opts.databases == nil {
-		return nil, ErrNoCacheStore
-	}
-	db, err := s.node.opts.databases.New(logger, storageDatabase, rebroadcastSeconds)
+	db, err := s.node.kvdb(storageDatabase)
 	if err != nil {
 		return nil, fmt.Errorf("node: opening the storage database: %w", err)
 	}

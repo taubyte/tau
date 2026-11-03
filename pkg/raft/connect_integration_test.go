@@ -25,7 +25,7 @@ import (
 const connectWait = 10 * time.Second
 
 func addrOf(node taupeer.Node) peercore.AddrInfo {
-	return peercore.AddrInfo{ID: node.ID(), Addrs: node.Peer().Addrs()}
+	return peercore.AddrInfo{ID: node.ID(), Addrs: node.Host().Addrs()}
 }
 
 func listsAll(listed, want []protocol.ID) bool {
@@ -51,7 +51,7 @@ func identifiesAll(ctx context.Context, node taupeer.Node) error {
 
 	deadline := time.Now().Add(connectWait)
 	for {
-		served := node.Peer().Mux().Protocols()
+		served := node.Host().Mux().Protocols()
 		if probe.Connect(ctx, addrOf(node)) == nil {
 			listed, err := probe.Peerstore().GetProtocols(node.ID())
 			if err == nil && listsAll(listed, served) {
@@ -87,7 +87,7 @@ func connectAll(ctx context.Context, node taupeer.Node, members ...taupeer.Node)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := node.Peer().Connect(ctx, addrOf(member)); err != nil {
+			if err := node.Host().Connect(ctx, addrOf(member)); err != nil {
 				errs[i] = fmt.Errorf("connecting %s to %s: %w", node.ID(), member.ID(), err)
 			}
 		}()
@@ -106,7 +106,7 @@ func linkTo(t *testing.T, node taupeer.Node, members ...taupeer.Node) {
 func serves(ctx context.Context, node taupeer.Node, namespace string) error {
 	group := []protocol.ID{protocol.ID(Protocol(namespace)), protocol.ID(TransportProtocol(namespace))}
 	deadline := time.Now().Add(connectWait)
-	for !listsAll(node.Peer().Mux().Protocols(), group) {
+	for !listsAll(node.Host().Mux().Protocols(), group) {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -174,7 +174,7 @@ func startTogether(t *testing.T, namespace string, nodes []taupeer.Node, delays 
 // peer serves is what the identify run on connecting told it.
 func pushlessNode(t *testing.T) taupeer.Node {
 	node := newTestNode(t)
-	node.Peer().RemoveStreamHandler(identify.IDPush)
+	node.Host().RemoveStreamHandler(identify.IDPush)
 	return node
 }
 
@@ -200,7 +200,7 @@ func TestCluster_AGroupFormsWithNoIdentifyPush_Integration(t *testing.T) {
 
 	t.Run("connected before the group exists, a node joins it", func(t *testing.T) {
 		leaderNode, joinerNode := pushlessNode(t), pushlessNode(t)
-		assert.NilError(t, joinerNode.Peer().Connect(t.Context(), addrOf(leaderNode)))
+		assert.NilError(t, joinerNode.Host().Connect(t.Context(), addrOf(leaderNode)))
 
 		leader := leading(t, leaderNode)
 		joiner := joining(t, joinerNode)

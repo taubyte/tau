@@ -8,8 +8,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
-
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 )
@@ -131,28 +129,17 @@ func TestANodeDoesNotListenForAProxyItCannotServe(t *testing.T) {
 }
 
 func TestAProxyWithoutAWorkerIsRefusedAtConstruction(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-
-	_, err := New(Config{Services: []string{Register, Discovery, Proxy}},
-		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}))
+	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Register, Discovery, Proxy}}), withKVDB(&memFactory{}))
 	require.ErrorContains(t, err, "a worker holds")
 }
 
 func TestAProxyWithoutPlacementIsRefusedAtConstruction(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-
-	_, err := New(Config{Services: []string{Register, Worker, Proxy}},
-		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}),
-		WithRuntimes(&tier{name: "oci"}))
+	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Register, Worker, Proxy}}), withKVDB(&memFactory{}), WithRuntimes(&tier{name: "oci"}))
 	require.ErrorContains(t, err, "through placement")
 }
 
 func TestANodeWithNoWorkerHoldsNoProxy(t *testing.T) {
-	require.Nil(t, (&proxies{node: &Instance{}}).Proxies(t.Context()))
+	require.Nil(t, (&proxies{node: &Instance{Node: mockPeer(t)}}).Proxies(t.Context()))
 }
 
 func TestAProxyTakesTheInjectedResolver(t *testing.T) {

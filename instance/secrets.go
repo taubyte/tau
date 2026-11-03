@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/libp2p/go-libp2p/core/host"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
-	"github.com/taubyte/tau/core/kvdb"
+	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/invoke"
 	invokesecret "github.com/taubyte/tau/pkg/invoke/secret"
+	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/pkg/specs"
 	secretsService "github.com/taubyte/tau/services/secrets"
@@ -40,7 +40,7 @@ type vault struct {
 // CALL time, so a vault made during composition finds services that start
 // after it.
 func newVault(n *Instance) *vault {
-	client, err := secretsService.NewClient(n.opts.host,
+	client, err := secretsService.NewClient(n.Host(),
 		func() []libp2ppeer.ID { return (&fromDiscovery{node: n, name: Secrets}).Known() },
 		func() *secretsService.Service { return n.secrets })
 	if err != nil {
@@ -168,21 +168,21 @@ func secretsOptions(cfg Config, root string) []secretsService.Option {
 // running: its own database and share store, through a service that never
 // serves. No services named is all of them, secrets among them. See
 // services/secrets' Init for what it writes.
-func InitSecrets(ctx context.Context, cfg Config, root string, h host.Host, databases kvdb.Factory, bundle *secretsv2.InitBundle) error {
+func InitSecrets(ctx context.Context, p peer.Node, cfg Config, bundle *secretsv2.InitBundle) error {
 	if len(cfg.Services) > 0 && !cfg.runs(Secrets) {
 		return ErrNoSecretsHere
 	}
-	if root == "" {
+	if cfg.Root == "" {
 		return secretsService.ErrNoRoot
 	}
 
-	db, err := databases.New(logger, Secrets, rebroadcastSeconds)
+	db, err := pkgkvdb.Open(p, Secrets, pkgkvdb.WithLogger(logger), pkgkvdb.WithRebroadcast(rebroadcastSeconds*time.Second))
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
-	svc, err := secretsService.New(h, db, secretsOptions(cfg, root)...)
+	svc, err := secretsService.New(p.Host(), db, secretsOptions(cfg, cfg.Root)...)
 	if err != nil {
 		return err
 	}

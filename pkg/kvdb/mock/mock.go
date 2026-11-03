@@ -20,7 +20,7 @@ var (
 	ErrNotFound = ds.ErrNotFound
 )
 
-type KVDB struct {
+type Instance struct {
 	data    map[string][]byte
 	mutex   sync.RWMutex
 	logger  log.StandardLogger
@@ -31,12 +31,12 @@ type KVDB struct {
 }
 
 type Factory struct {
-	databases map[string]*KVDB
+	databases map[string]*Instance
 	mutex     sync.RWMutex
 }
 
 type Batch struct {
-	kvdb       *KVDB
+	kvdb       *Instance
 	operations []batchOp
 	mutex      sync.Mutex
 }
@@ -51,9 +51,9 @@ type batchOp struct {
 	value []byte
 }
 
-func New() kvdb.Factory {
+func New() *Factory {
 	return &Factory{
-		databases: make(map[string]*KVDB),
+		databases: make(map[string]*Instance),
 	}
 }
 
@@ -67,7 +67,7 @@ func (f *Factory) Close() {
 	f.databases = nil
 }
 
-func (f *Factory) New(logger log.StandardLogger, path string, rebroadcastIntervalSec int) (kvdb.KVDB, error) {
+func (f *Factory) New(logger log.StandardLogger, path string, rebroadcastIntervalSec int) (kvdb.Instance, error) {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 
@@ -75,7 +75,7 @@ func (f *Factory) New(logger log.StandardLogger, path string, rebroadcastInterva
 		return db, nil
 	}
 
-	db := &KVDB{
+	db := &Instance{
 		data:    make(map[string][]byte),
 		logger:  logger,
 		path:    path,
@@ -87,7 +87,7 @@ func (f *Factory) New(logger log.StandardLogger, path string, rebroadcastInterva
 	return db, nil
 }
 
-func (m *KVDB) Get(ctx context.Context, key string) ([]byte, error) {
+func (m *Instance) Get(ctx context.Context, key string) ([]byte, error) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
@@ -101,7 +101,7 @@ func (m *KVDB) Get(ctx context.Context, key string) ([]byte, error) {
 	return nil, ErrNotFound
 }
 
-func (m *KVDB) Put(ctx context.Context, key string, v []byte) error {
+func (m *Instance) Put(ctx context.Context, key string, v []byte) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -113,7 +113,7 @@ func (m *KVDB) Put(ctx context.Context, key string, v []byte) error {
 	return nil
 }
 
-func (m *KVDB) Delete(ctx context.Context, key string) error {
+func (m *Instance) Delete(ctx context.Context, key string) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -125,7 +125,7 @@ func (m *KVDB) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-func (m *KVDB) List(ctx context.Context, prefix string) ([]string, error) {
+func (m *Instance) List(ctx context.Context, prefix string) ([]string, error) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
@@ -142,7 +142,7 @@ func (m *KVDB) List(ctx context.Context, prefix string) ([]string, error) {
 	return keys, nil
 }
 
-func (m *KVDB) ListAsync(ctx context.Context, prefix string) (chan string, error) {
+func (m *Instance) ListAsync(ctx context.Context, prefix string) (chan string, error) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
@@ -175,7 +175,7 @@ func (m *KVDB) ListAsync(ctx context.Context, prefix string) (chan string, error
 	return ch, nil
 }
 
-func (m *KVDB) ListRegEx(ctx context.Context, prefix string, regexs ...string) ([]string, error) {
+func (m *Instance) ListRegEx(ctx context.Context, prefix string, regexs ...string) ([]string, error) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
@@ -209,7 +209,7 @@ func (m *KVDB) ListRegEx(ctx context.Context, prefix string, regexs ...string) (
 	return keys, nil
 }
 
-func (m *KVDB) ListRegExAsync(ctx context.Context, prefix string, regexs ...string) (chan string, error) {
+func (m *Instance) ListRegExAsync(ctx context.Context, prefix string, regexs ...string) (chan string, error) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
@@ -262,7 +262,7 @@ func (m *KVDB) ListRegExAsync(ctx context.Context, prefix string, regexs ...stri
 	return ch, nil
 }
 
-func (m *KVDB) Batch(ctx context.Context) (kvdb.Batch, error) {
+func (m *Instance) Batch(ctx context.Context) (kvdb.Batch, error) {
 	if m.closed {
 		return nil, ErrClosed
 	}
@@ -273,22 +273,22 @@ func (m *KVDB) Batch(ctx context.Context) (kvdb.Batch, error) {
 	}, nil
 }
 
-func (m *KVDB) Sync(ctx context.Context, key string) error {
+func (m *Instance) Sync(ctx context.Context, key string) error {
 	if m.closed {
 		return ErrClosed
 	}
 	return nil
 }
 
-func (m *KVDB) Factory() kvdb.Factory {
+func (m *Instance) Factory() *Factory {
 	return m.factory
 }
 
-func (m *KVDB) Stats(ctx context.Context) kvdb.Stats {
+func (m *Instance) Stats(ctx context.Context) kvdb.Stats {
 	return m.stats
 }
 
-func (m *KVDB) Close() {
+func (m *Instance) Close() {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 

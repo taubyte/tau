@@ -112,7 +112,7 @@ func TestUsersIdentityAdmits(t *testing.T) {
 
 	// A store that cannot answer is an error, never a refusal.
 	f.s.cfg.SignUp = SignUpInvite
-	f.s.store.db = &failing{KVDB: f.db, fail: true}
+	f.s.store.db = &failing{Instance: f.db, fail: true}
 	_, err = f.identity().Admit(ctx, req(&authv2.Caller{Forge: testHost, Subject: "77"}, ""))
 	require.Error(t, err)
 	_, err = f.identity().Admit(ctx, req(&authv2.Caller{Forge: testHost, Subject: "77", Token: "tau_000000000000000000000000_x"}, ""))
@@ -125,7 +125,7 @@ func TestUsersIdentityAdmits(t *testing.T) {
 
 // failing is a kvdb that stops answering when told to.
 type failing struct {
-	kvdb.KVDB
+	kvdb.Instance
 	fail     bool
 	failPuts bool
 }
@@ -136,28 +136,28 @@ func (f *failing) Get(ctx context.Context, k string) ([]byte, error) {
 	if f.fail {
 		return nil, errStore
 	}
-	return f.KVDB.Get(ctx, k)
+	return f.Instance.Get(ctx, k)
 }
 
 func (f *failing) Put(ctx context.Context, k string, v []byte) error {
 	if f.fail || f.failPuts {
 		return errStore
 	}
-	return f.KVDB.Put(ctx, k, v)
+	return f.Instance.Put(ctx, k, v)
 }
 
 func (f *failing) Delete(ctx context.Context, k string) error {
 	if f.fail || f.failPuts {
 		return errStore
 	}
-	return f.KVDB.Delete(ctx, k)
+	return f.Instance.Delete(ctx, k)
 }
 
 func (f *failing) List(ctx context.Context, p string) ([]string, error) {
 	if f.fail {
 		return nil, errStore
 	}
-	return f.KVDB.List(ctx, p)
+	return f.Instance.List(ctx, p)
 }
 
 func TestStoreOutagesAreErrors(t *testing.T) {
@@ -180,7 +180,7 @@ func TestStoreOutagesAreErrors(t *testing.T) {
 	dev, err := f.sessions().DeviceStart(ctx, req(&authv2.DeviceStartRequest{Provider: testHost}, ""))
 	require.NoError(t, err)
 
-	db := &failing{KVDB: f.db}
+	db := &failing{Instance: f.db}
 	f.s.store.db = db
 	other := newTestService(t, WithUsers(db, f.vault, f.s.cfg), WithForges(f.reg), WithClock(func() time.Time { return f.now }))
 

@@ -47,7 +47,7 @@ func TestAdmittedNodesMeetAndKeepEachOtherAlive(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	require.NoError(t, b.Peer().Connect(ctx, peercore.AddrInfo{ID: a.ID(), Addrs: a.Peer().Addrs()}))
+	require.NoError(t, b.Host().Connect(ctx, peercore.AddrInfo{ID: a.ID(), Addrs: a.Host().Addrs()}))
 
 	keepCtx, keepCancel := context.WithCancel(t.Context())
 	defer keepCancel()
@@ -55,7 +55,7 @@ func TestAdmittedNodesMeetAndKeepEachOtherAlive(t *testing.T) {
 	require.NoError(t, b.NewPubSubKeepAlive(keepCtx, keepCancel, "keep"))
 	require.Eventually(t, func() bool {
 		b.PubSubPublish(ctx, "keep", []byte("keep"))
-		return a.Peer().ConnManager().IsProtected(b.ID(), "/keep/keep")
+		return a.Host().ConnManager().IsProtected(b.ID(), "/keep/keep")
 	}, 10*time.Second, 100*time.Millisecond)
 
 	got := make(chan *pubsub.Message, 1)
@@ -80,8 +80,8 @@ func TestAdmittedNodesMeetAndKeepEachOtherAlive(t *testing.T) {
 	other, err := sectls.NewCA("cloud", time.Hour)
 	require.NoError(t, err)
 	stranger := admittedNode(t, other)
-	require.Error(t, stranger.Peer().Connect(ctx, peercore.AddrInfo{ID: a.ID(), Addrs: a.Peer().Addrs()}))
-	require.NotEqual(t, network.Connected, a.Peer().Network().Connectedness(stranger.ID()))
+	require.Error(t, stranger.Host().Connect(ctx, peercore.AddrInfo{ID: a.ID(), Addrs: a.Host().Addrs()}))
+	require.NotEqual(t, network.Connected, a.Host().Network().Connectedness(stranger.ID()))
 }
 
 func TestABackoffGrowsAndIsCapped(t *testing.T) {
@@ -124,10 +124,10 @@ func TestABootstrapPeerGossipsToANodeThatJoins(t *testing.T) {
 	seed, err := New(t.Context(), t.TempDir(), keypair.NewRaw(), nil, []string{"/ip4/127.0.0.1/tcp/0"}, nil, true, false)
 	require.NoError(t, err)
 	t.Cleanup(seed.Close)
-	seed.Peer().RemoveStreamHandler(identify.IDPush)
+	seed.Host().RemoveStreamHandler(identify.IDPush)
 
 	joiner, err := NewWithBootstrapList(t.Context(), t.TempDir(), keypair.NewRaw(), nil, []string{"/ip4/127.0.0.1/tcp/0"}, nil, true,
-		[]peercore.AddrInfo{{ID: seed.ID(), Addrs: seed.Peer().Addrs()}})
+		[]peercore.AddrInfo{{ID: seed.ID(), Addrs: seed.Host().Addrs()}})
 	require.NoError(t, err)
 	t.Cleanup(joiner.Close)
 

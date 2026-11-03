@@ -3,7 +3,6 @@ package instance
 import (
 	"testing"
 
-	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/instance/stream"
@@ -30,20 +29,4 @@ func TestOneBusBackingIsSharedByBothConsumers(t *testing.T) {
 
 	require.Same(t, first, again)
 	require.Same(t, n.bus, first, "and it is the one the composition kept")
-}
-
-func TestABackingOverNoPubSubRefusesByName(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-
-	n, err := New(Config{Services: []string{Worker}},
-		WithHost(newHost(t, mn)), WithDatabases(&memFactory{}), WithRuntimes(&tier{name: "wasm"}))
-	require.NoError(t, err)
-	t.Cleanup(func() { n.Close() })
-
-	publisher, err := n.streamBacking(stream.Stream)
-	require.NoError(t, err)
-
-	err = publisher.Publish(t.Context(), "shop/prod/QmOrders", []byte("x"))
-	require.ErrorIs(t, err, stream.ErrNoPubSub)
 }

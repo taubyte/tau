@@ -63,7 +63,7 @@ func digest(parts ...string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-type store struct{ db kvdb.KVDB }
+type store struct{ db kvdb.Instance }
 
 func (s store) put(ctx context.Context, key string, v codec.Record) error {
 	b, err := v.MarshalVT()

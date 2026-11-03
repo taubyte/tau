@@ -165,7 +165,7 @@ func WithClock(now func() time.Time) Option { return func(s *Service) { s.now = 
 type Service struct {
 	cfg    CertificateConfig
 	host   host.Host
-	db     kvdb.KVDB
+	db     kvdb.Instance
 	now    func() time.Time
 	server *rpc.Server
 
@@ -175,7 +175,7 @@ type Service struct {
 }
 
 // New builds a service.
-func New(h host.Host, db kvdb.KVDB, whole Config, opts ...Option) (*Service, error) {
+func New(h host.Host, db kvdb.Instance, whole Config, opts ...Option) (*Service, error) {
 	switch {
 	case h == nil:
 		return nil, ErrNoHost

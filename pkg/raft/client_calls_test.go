@@ -21,8 +21,8 @@ import (
 func connected(t *testing.T, n taupeer.Node, clusters ...Cluster) {
 	t.Helper()
 	for _, cl := range clusters {
-		host := cl.(*cluster).node.Peer()
-		require.NoError(t, n.Peer().Connect(t.Context(), peer.AddrInfo{ID: host.ID(), Addrs: host.Addrs()}))
+		host := cl.(*cluster).Host()
+		require.NoError(t, n.Host().Connect(t.Context(), peer.AddrInfo{ID: host.ID(), Addrs: host.Addrs()}))
 	}
 }
 
@@ -155,7 +155,7 @@ func TestClient_ExchangePeersWithNoneOfItsOwn(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, theirStart.IsZero())
 	require.Contains(t, theirPeers, idOf(cl).String())
-	require.Contains(t, theirPeers, cli.node.ID().String(), "the member did not learn its caller")
+	require.Contains(t, theirPeers, cli.ID().String(), "the member did not learn its caller")
 }
 
 // garbledExport answers ExportFSM with bytes that are not a protobuf message.
@@ -169,11 +169,11 @@ func TestClient_AStateThatWillNotDecodeIsAnError(t *testing.T) {
 	server := newMockNode(t)
 	caller := newMockNode(t)
 	require.NoError(t, taupeer.LinkAllPeers())
-	require.NoError(t, caller.Peer().Connect(t.Context(), peer.AddrInfo{ID: server.ID(), Addrs: server.Peer().Addrs()}))
+	require.NoError(t, caller.Host().Connect(t.Context(), peer.AddrInfo{ID: server.ID(), Addrs: server.Host().Addrs()}))
 
 	mux := http.NewServeMux()
 	mux.HandleFunc(raftv2connect.RaftServiceExportFSMProcedure, garbledExport)
-	srv, err := rpc.Listen(t.Context(), server.Peer(), protocol.ID(Protocol(namespace)), mux)
+	srv, err := rpc.Listen(t.Context(), server.Host(), protocol.ID(Protocol(namespace)), mux)
 	require.NoError(t, err)
 	defer srv.Close()
 
@@ -238,7 +238,7 @@ func TestStream_AConsistentReadFromAMemberThatCannotBarrierIsRefused(t *testing.
 func TestStream_JoinVoterNamingNobodyJoinsTheCaller(t *testing.T) {
 	a, b := joinedPair(t, "stream-join-caller", sameStore)
 
-	fromB, err := newInternalClient(b.(*cluster).node, "stream-join-caller", nil)
+	fromB, err := newInternalClient(b.(*cluster).Node, "stream-join-caller", nil)
 	require.NoError(t, err)
 	defer fromB.Close()
 	require.NoError(t, fromB.JoinVoter(t.Context(), peer.ID(""), 5*time.Second, idOf(a)))
@@ -364,8 +364,8 @@ func TestStream_AJoinAskedOfAMemberLetInBeforeItsLogWaitsForTheLeader(t *testing
 	store.failPut(firstLog, errNoSpace)
 	store.failPut(vote, errNoSpace)
 	require.NoError(t, taupeer.LinkAllPeers())
-	founder := group[0].(*cluster).node.Peer()
-	require.NoError(t, node.Peer().Connect(t.Context(), peer.AddrInfo{ID: founder.ID(), Addrs: founder.Addrs()}))
+	founder := group[0].(*cluster).Host()
+	require.NoError(t, node.Host().Connect(t.Context(), peer.AddrInfo{ID: founder.ID(), Addrs: founder.Addrs()}))
 	late, err := New(storeNode{Node: node, store: store}, namespace,
 		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second), WithSnapshotRoot(t.TempDir()))
 	require.NoError(t, err)

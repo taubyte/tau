@@ -98,12 +98,12 @@ func TestCluster_FoundersBootstrapWithinTheirTimeout(t *testing.T) {
 	}
 	for _, node := range nodes {
 		require.Eventually(t, func() bool {
-			return slices.Contains(node.Peer().Mux().Protocols(), protocol.ID(Protocol(namespace)))
+			return slices.Contains(node.Host().Mux().Protocols(), protocol.ID(Protocol(namespace)))
 		}, 5*time.Second, 5*time.Millisecond, "a founder never served the group")
 	}
 	for i, a := range nodes {
 		for _, b := range nodes[i+1:] {
-			require.NoError(t, a.Peer().Connect(t.Context(), peer.AddrInfo{ID: b.ID(), Addrs: b.Peer().Addrs()}))
+			require.NoError(t, a.Host().Connect(t.Context(), peer.AddrInfo{ID: b.ID(), Addrs: b.Host().Addrs()}))
 		}
 	}
 
@@ -267,7 +267,7 @@ func agreedLeader(clusters []Cluster) Cluster {
 	return leader
 }
 
-func idOf(cl Cluster) peer.ID { return cl.(*cluster).node.ID() }
+func idOf(cl Cluster) peer.ID { return cl.(*cluster).ID() }
 
 // onLeader runs write on whichever of clusters leads, and again on the next
 // leader while leadership moves under it. A write lost mid-commit may land
@@ -311,7 +311,7 @@ func joinedGroup(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batch
 
 	group := []Cluster{first}
 	for _, node := range nodes[1:] {
-		require.NoError(t, node.Peer().Connect(t.Context(), peer.AddrInfo{ID: nodes[0].ID(), Addrs: nodes[0].Peer().Addrs()}))
+		require.NoError(t, node.Host().Connect(t.Context(), peer.AddrInfo{ID: nodes[0].ID(), Addrs: nodes[0].Host().Addrs()}))
 		joiner, err := New(storeNode{Node: node, store: wrap(node.Store())}, namespace,
 			append([]Option{WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2 * time.Second), WithSnapshotRoot(t.TempDir())}, opts...)...)
 		require.NoError(t, err)
@@ -381,7 +381,7 @@ func TestCluster_CloseWaitsForALeaderThatRemovedItself(t *testing.T) {
 	namespace := "close-after-self-removal"
 	key := ds.NewKey(path.Join(RaftStoragePrefix, namespace, "data", "held"))
 	a, b := joinedPair(t, namespace, func(store ds.Batching) ds.Batching { return newHeldStore(store, key) })
-	heldOf := func(cl Cluster) *heldStore { return cl.(*cluster).node.Store().(*heldStore) }
+	heldOf := func(cl Cluster) *heldStore { return cl.(*cluster).Store().(*heldStore) }
 	defer heldOf(a).letGo()
 	defer heldOf(b).letGo()
 
@@ -1590,7 +1590,7 @@ func TestCluster_TwoMembersThatStartTogetherFormOneGroup(t *testing.T) {
 	const namespace = "start-together"
 	nodes := []taupeer.Node{newMockNode(t), newMockNode(t)}
 	require.NoError(t, taupeer.LinkAllPeers())
-	require.NoError(t, nodes[1].Peer().Connect(t.Context(), peer.AddrInfo{ID: nodes[0].ID(), Addrs: nodes[0].Peer().Addrs()}))
+	require.NoError(t, nodes[1].Host().Connect(t.Context(), peer.AddrInfo{ID: nodes[0].ID(), Addrs: nodes[0].Host().Addrs()}))
 
 	type started struct {
 		cl  Cluster

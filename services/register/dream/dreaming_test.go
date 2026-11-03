@@ -91,7 +91,7 @@ func dial(t *testing.T, from peer.Node, to string) registerv2connect.RegisterSer
 	id, err := libp2ppeer.Decode(to)
 	require.NoError(t, err)
 
-	c, err := rpc.NewClient(from.Peer(), id, register.Protocol)
+	c, err := rpc.NewClient(from.Host(), id, register.Protocol)
 	require.NoError(t, err)
 	t.Cleanup(c.Close)
 

@@ -41,14 +41,11 @@ func (n *Instance) openCM() error {
 	if !n.cfg.runs(CM) {
 		return nil
 	}
-	if n.opts.databases == nil {
-		return ErrNoDatabases
-	}
 	if n.cfg.Gateway.CloudFqdn == "" {
 		return ErrNoZoneForCertificates
 	}
 
-	db, err := n.opts.databases.New(logger, CM, rebroadcastSeconds)
+	db, err := n.kvdb(CM)
 	if err != nil {
 		return err
 	}
@@ -68,7 +65,7 @@ func (n *Instance) openCM() error {
 	if n.opts.now != nil {
 		options = append(options, cm.WithClock(n.opts.now))
 	}
-	svc, err := cm.New(n.opts.host, db, cfg, options...)
+	svc, err := cm.New(n.Host(), db, cfg, options...)
 	if err != nil {
 		return err
 	}
@@ -107,7 +104,7 @@ func (n *Instance) certificates() (*cm.Client, error) {
 		return nil, err
 	}
 	options = append(options, cm.WithProver(d))
-	c, err := cm.NewClient(n.opts.host,
+	c, err := cm.NewClient(n.Host(),
 		func() []libp2ppeer.ID { return (&fromDiscovery{node: n, name: CM}).Known() },
 		func() *cm.Service { return n.cm },
 		n.certVault(), cfg, options...)
@@ -139,10 +136,7 @@ func (n *Instance) challengeStore() (cacheStore, error) {
 	if n.challengeDB != nil {
 		return cacheStore{n.challengeDB}, nil
 	}
-	if n.opts.databases == nil {
-		return cacheStore{}, ErrNoDatabases
-	}
-	db, err := n.opts.databases.New(logger, challengeDatabase, rebroadcastSeconds)
+	db, err := n.kvdb(challengeDatabase)
 	if err != nil {
 		return cacheStore{}, err
 	}
@@ -151,12 +145,8 @@ func (n *Instance) challengeStore() (cacheStore, error) {
 	return cacheStore{db}, nil
 }
 
-// answers is this node's copy of the challenge store, opened once, or nil on
-// a node with no databases.
+// answers is this instance's copy of the challenge store, opened once.
 func (n *Instance) answers() (*cm.Challenges, error) {
-	if n.opts.databases == nil {
-		return nil, nil
-	}
 	st, err := n.challengeStore()
 	if err != nil {
 		return nil, err
@@ -181,9 +171,6 @@ func (n *Instance) challengeReader() (dns.Challenges, error) {
 	if err != nil {
 		return nil, err
 	}
-	if local == nil {
-		return nil, ErrNoDatabases
-	}
 	return local, nil
 }
 
@@ -206,7 +193,7 @@ func (n *Instance) domains() (*cm.Domains, error) {
 	if n.domainClaims != nil {
 		return n.domainClaims, nil
 	}
-	d, err := cm.NewDomains(n.opts.host,
+	d, err := cm.NewDomains(n.Host(),
 		func() []libp2ppeer.ID { return (&fromDiscovery{node: n, name: CM}).Known() },
 		func() *cm.Service { return n.cm })
 	if err != nil {

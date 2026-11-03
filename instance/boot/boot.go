@@ -21,13 +21,10 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
-	"sync/atomic"
 	"time"
 
 	"github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/crypto"
-	"github.com/libp2p/go-libp2p/core/host"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"gopkg.in/yaml.v3"
@@ -35,10 +32,7 @@ import (
 	"github.com/taubyte/tau/instance"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/sectls"
-	"github.com/taubyte/tau/pkg/assets"
-	"github.com/taubyte/tau/pkg/kvdb"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
-	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/pkg/stats"
 )
 
@@ -149,7 +143,6 @@ type Running struct {
 	// it nil.
 	Found []stats.Node
 
-	peer   peer.Node
 	server *http.Server
 
 	// secure is the TLS listener, when the file names one.
@@ -197,14 +190,6 @@ func Start(ctx context.Context, f File, added ...instance.Option) (*Running, err
 		return nil, fmt.Errorf("boot: libp2p: %w", err)
 	}
 
-	// The asset store is over the same peer, for the same reason raft is: the
-	// content-addressed store IS the DAG, and only this layer has one.
-	store, err := assets.New(p)
-	if err != nil {
-		p.Close()
-		return nil, err
-	}
-
 	// WHAT THIS MACHINE CAN CONNECT TO, built before the node so that a build
 	// with a broken engine refuses to start rather than serving every database
 	// query with a message about a registry. See engines.go.
@@ -222,47 +207,25 @@ func Start(ctx context.Context, f File, added ...instance.Option) (*Running, err
 		serving = append(serving, instance.WithTLS())
 	}
 
-	// THE RETENTION EVERY DATABASE WRITES UNDER IS THE CLOUD'S, read from the
-	// fleet document once this node's register is up; until then, and on a
-	// node that runs none, the default.
-	var running atomic.Pointer[instance.Instance]
-	databases := kvdb.New(p, kvdb.WithFleet(fleetDocument(&running), retentionPoll))
+	// The instance's directory is the file's, so its raft snapshots, volumes and
+	// secrets share live on this machine's disk.
+	cfg := f.Node
+	cfg.Root = f.Root
 
-	n, err := instance.New(f.Node, append(append(serving,
-		instance.WithHost(p.Peer()),
+	n, err := instance.New(p, cfg, append(append(serving,
 		instance.WithDatabaseEngines(dbEngines),
-		instance.WithPubSub(p.Messaging()),
-		instance.WithDatabases(databases),
-		// RAFT IS OPENED HERE BECAUSE raft.New TAKES A peer.Node — a host, a
-		// DHT, a datastore and a lifetime — and this is the layer that has one.
-		// The node is handed a function so a composition that is not a machine
-		// (dream) can hand it something else.
-		instance.WithRaft(func(namespace string) (raft.Cluster, error) {
-			// SNAPSHOTS GO UNDER THIS NODE'S OWN ROOT. The default is a
-			// machine-wide /tmp path keyed by namespace alone, so two nodes
-			// that open the same group name share one snapshot store and
-			// write each other's state — latent while there was one group
-			// per node, and multiplied by a group per database.
-			return raft.New(p, namespace, raft.WithSnapshotRoot(filepath.Join(f.Root, "raft")))
-		}),
-		instance.WithAssets(store),
-		// A VOLUME IS THE ONE THING A NODE KEEPS AS A DIRECTORY, so it gets the
-		// root the rest of this file already has. Without it a container that
-		// declares a mount is refused rather than started with an empty layer.
-		instance.WithRoot(f.Root),
 	), added...)...)
 	if err != nil {
 		p.Close()
 		return nil, err
 	}
-	running.Store(n)
 	if err := n.Start(ctx); err != nil {
 		n.Close()
 		p.Close()
 		return nil, err
 	}
 
-	r := &Running{Instance: n, peer: p}
+	r := &Running{Instance: n}
 	if err := r.serve(f.HTTP, f.HTTPS); err != nil {
 		r.Close()
 		return nil, err
@@ -346,15 +309,6 @@ func listen(address string, handler http.Handler, config *tls.Config) (*http.Ser
 	return server, nil
 }
 
-// Host is the libp2p host this node answers on, for a caller that started one
-// to find the fleet and now has to dial what it found.
-func (r *Running) Host() host.Host {
-	if r.peer == nil {
-		return nil
-	}
-	return r.peer.Peer()
-}
-
 // Address is where the gateway is being served in the clear, or "".
 func (r *Running) Address() string {
 	if r.server == nil {
@@ -382,13 +336,13 @@ func (r *Running) Close() error {
 			err = closeErr
 		}
 	}
+	// The instance first, then the peer it was made from, which this process
+	// started and owns.
 	if r.Instance != nil {
 		if closeErr := r.Instance.Close(); err == nil {
 			err = closeErr
 		}
-	}
-	if r.peer != nil {
-		r.peer.Close()
+		r.Instance.Node.Close()
 	}
 	if r.temporary != "" {
 		os.RemoveAll(r.temporary)
@@ -518,7 +472,9 @@ func Init(ctx context.Context, f File, bundle *secretsv2.InitBundle) error {
 	}
 	defer p.Close()
 
-	return instance.InitSecrets(ctx, f.Node, f.Root, p.Peer(), kvdb.New(p), bundle)
+	cfg := f.Node
+	cfg.Root = f.Root
+	return instance.InitSecrets(ctx, p, cfg, bundle)
 }
 
 // initListen keeps init off the ports the node itself binds.

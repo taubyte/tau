@@ -17,14 +17,14 @@ import (
 // if it ever changed.
 
 // NewKVStore adapts a kvdb to what pkg/register needs.
-func NewKVStore(db kvdb.KVDB) (pkgregister.Store, error) {
+func NewKVStore(db kvdb.Instance) (pkgregister.Store, error) {
 	if db == nil {
 		return nil, errors.New("register: no database to store into")
 	}
 	return kvStore{db}, nil
 }
 
-type kvStore struct{ db kvdb.KVDB }
+type kvStore struct{ db kvdb.Instance }
 
 // Get separates "not there" from "could not look", so Resolve never reports an
 // unreachable swarm as never deployed.

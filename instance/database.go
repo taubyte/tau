@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/taubyte/tau/core/kvdb"
 	nodeDatabase "github.com/taubyte/tau/instance/database"
 	"github.com/taubyte/tau/instance/ledger"
 	"github.com/taubyte/tau/pkg/database"
@@ -40,21 +39,18 @@ type databaseBacking struct {
 func newDatabases(n *Instance) (*databaseBacking, error) {
 	b := &databaseBacking{}
 
-	if n.opts.raft != nil {
-		ledgers, err := ledger.New(n.opts.raft, ledger.Budget)
-		if err != nil {
-			return nil, fmt.Errorf("node: %s: %w", Database, err)
-		}
-		b.ledgers = ledgers
+	ledgers, err := ledger.New(n.raftGroup, ledger.Budget)
+	if err != nil {
+		return nil, fmt.Errorf("node: %s: %w", Database, err)
 	}
+	b.ledgers = ledgers
 
 	holdings, err := nodeDatabase.NewHoldings(
 		databaseStores{node: n},
-		databaseLedgers{ledgers: b.ledgers},
-		// THE DISK-LEVEL SURFACE IS ASSERTED rather than required of
-		// kvdb.Factory: holding is a fact about a NODE's bytes, and the shared
-		// interface is also implemented by handles that keep none.
-		databaseDisk(n.opts.databases),
+		b.ledgers,
+		// Holding is a fact about this instance's bytes, so it is its own set
+		// that answers it.
+		n.dbs,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("node: %s: %w", Database, err)
@@ -106,10 +102,7 @@ type databaseStores struct{ node *Instance }
 var _ nodeDatabase.Stores = databaseStores{}
 
 func (s databaseStores) Store(name string) (database.Store, error) {
-	if s.node.opts.databases == nil {
-		return nil, ErrNoCacheStore
-	}
-	db, err := s.node.opts.databases.New(logger, name, rebroadcastSeconds)
+	db, err := s.node.kvdb(name)
 	if err != nil {
 		return nil, fmt.Errorf("node: opening the store for %s: %w", name, err)
 	}
@@ -128,10 +121,7 @@ func (s databaseStores) Store(name string) (database.Store, error) {
 // there was one. Destroying closes it and drops it from the factory, so a later
 // open builds a new one from whatever the fleet still holds.
 func (s databaseStores) Release(ctx context.Context, name string) error {
-	if s.node.opts.databases == nil {
-		return ErrNoCacheStore
-	}
-	db, err := s.node.opts.databases.New(logger, name, rebroadcastSeconds)
+	db, err := s.node.kvdb(name)
 	if err != nil {
 		return err
 	}
@@ -143,31 +133,6 @@ func (s databaseStores) Release(ctx context.Context, name string) error {
 		return fmt.Errorf("node: this store cannot release a database it holds")
 	}
 	return destroyer.Destroy(ctx)
-}
-
-// databaseLedgers is the root's answer for `consensus: raft`.
-//
-// THE REFUSAL IS HERE AND NOT IN THE ADAPTER, because ErrNoRaft is the one
-// sentinel every consumer of consensus on this node shares and names none of
-// them — see config.go.
-type databaseLedgers struct{ ledgers *ledger.Ledgers }
-
-var _ nodeDatabase.Ledgers = databaseLedgers{}
-
-func (l databaseLedgers) Store(spec database.Spec) (database.Store, error) {
-	if l.ledgers == nil {
-		return nil, ErrNoRaft
-	}
-	return l.ledgers.Store(spec)
-}
-
-// databaseDisk is the factory's own disk-level surface, or nil when it has none.
-func databaseDisk(factory kvdb.Factory) nodeDatabase.Disk {
-	disk, ok := factory.(nodeDatabase.Disk)
-	if !ok {
-		return nil
-	}
-	return disk
 }
 
 // openDatabase starts this node's database service, when it runs one.
@@ -182,9 +147,6 @@ func (n *Instance) openDatabase(ctx context.Context) error {
 
 	// Both consensus resolutions, from the replicated store and the raft opener; a node
 	// missing one refuses what it cannot keep, so a raft ledger is never merged.
-	if n.opts.databases == nil {
-		return fmt.Errorf("node: %s: %w", Database, ErrNoCacheStore)
-	}
 
 	// The group is opened on first use, not here: raft finds peers over a swarm not yet
 	// up, and a group opened now would abort its election. One store table for the
@@ -206,12 +168,9 @@ func (n *Instance) openDatabase(ctx context.Context) error {
 	// the service implements. Both resolutions are served there; raft needs a
 	// group to be opened in, and a node composed without one must refuse a
 	// ledger BY NAME rather than answer "unavailable" about it forever.
-	kept := []string{database.CRDT}
-	if n.opts.raft != nil {
-		kept = append(kept, database.Raft)
-	}
+	kept := []string{database.CRDT, database.Raft}
 
-	svc, err := databaseService.New(n.opts.host,
+	svc, err := databaseService.New(n.Host(),
 		databaseService.WithEngines(registry),
 		databaseService.WithConsensus(kept...),
 		databaseService.WithRegister(n.registerSource()),

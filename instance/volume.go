@@ -9,7 +9,7 @@ import (
 )
 
 // The directories are instance/volume's; the root reaches the root directory, the asset
-// store and the factory, names the database, and registers it to close.
+// store and its databases, names the database, and registers it to close.
 
 // volumeDatabase is the one database's name, for cacheDatabase's reason.
 const volumeDatabase = "volumes"
@@ -28,16 +28,12 @@ const checkpointTick = 5 * time.Second
 // A NIL RETURN IS THE STATEMENT. A tier handed nothing refuses a workload that
 // declares a mount, which is the only unserved capability that would lose data
 // rather than fail.
-//
-// THE ASSET STORE MAY BE ABSENT and the adapter is built anyway: a node with a
-// disk and no DAG mounts what it holds and says so on every checkpoint, which is
-// the adapter's own sentence to make and not this one's.
 func (n *Instance) disksOrNil() (container.Volumes, error) {
-	if n.opts.root == "" {
+	if n.cfg.Root == "" {
 		return nil, nil
 	}
 	if n.disks == nil {
-		disks, err := volume.New(n.opts.root, n.opts.assets, volumeStores{node: n}, logger)
+		disks, err := volume.New(n.cfg.Root, n.assets, volumeStores{node: n}, logger)
 		if err != nil {
 			return nil, err
 		}
@@ -54,10 +50,7 @@ type volumeStores struct{ node *Instance }
 var _ volume.Stores = volumeStores{}
 
 func (s volumeStores) Store() (volume.Rows, error) {
-	if s.node.opts.databases == nil {
-		return nil, ErrNoCacheStore
-	}
-	db, err := s.node.opts.databases.New(logger, volumeDatabase, rebroadcastSeconds)
+	db, err := s.node.kvdb(volumeDatabase)
 	if err != nil {
 		return nil, fmt.Errorf("node: opening the volumes database: %w", err)
 	}

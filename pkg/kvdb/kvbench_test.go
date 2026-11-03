@@ -16,14 +16,12 @@ func benchDB(b *testing.B) (*kvDatabase, func()) {
 	logger := logging.Logger("bench")
 	ctx, cancel := context.WithCancel(context.Background())
 	node := peer.Mock(ctx)
-	f := New(node)
-	kv, err := f.New(logger, "bench", 10)
+	db, err := opener{node}.New(logger, "bench", 10)
 	if err != nil {
 		node.Close()
 		cancel()
 		b.Fatalf("new kvdb: %v", err)
 	}
-	db := kv.(*kvDatabase)
 	return db, func() { db.Close(); node.Close(); cancel() }
 }
 

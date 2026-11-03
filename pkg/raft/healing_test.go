@@ -99,7 +99,7 @@ func TestHealing_TwoSplitClusters_MergesFSM(t *testing.T) {
 		loser = cl1
 	}
 
-	winner.current().healer.Load().executeMerge(t.Context(), loser.node.ID())
+	winner.current().healer.Load().executeMerge(t.Context(), loser.ID())
 
 	v, ok := winner.Get("from-c1")
 	assert.True(t, ok)
@@ -235,7 +235,7 @@ func splitPair(t *testing.T, namespace string) (a, b Cluster) {
 	require.NoError(t, b.Set("from-b", []byte("b"), time.Second))
 
 	require.NoError(t, taupeer.LinkAllPeers())
-	require.NoError(t, nodeB.Peer().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Peer().Addrs()}))
+	require.NoError(t, nodeB.Host().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Host().Addrs()}))
 	a.(*cluster).current().tracker.addPeer(nodeB.ID())
 	b.(*cluster).current().tracker.addPeer(nodeA.ID())
 	return a, b
@@ -243,7 +243,7 @@ func splitPair(t *testing.T, namespace string) (a, b Cluster) {
 
 func winnerOf(a, b Cluster) (winner, loser *cluster) {
 	ca, cb := a.(*cluster), b.(*cluster)
-	if negotiateWinner(ca.current().healer.Load().localClusterInfo(), cb.current().healer.Load().localClusterInfo()) == ca.node.ID().String() {
+	if negotiateWinner(ca.current().healer.Load().localClusterInfo(), cb.current().healer.Load().localClusterInfo()) == ca.ID().String() {
 		return ca, cb
 	}
 	return cb, ca
@@ -259,7 +259,7 @@ func TestHealing_ALoserRejoinsTheGroupItYieldedTo(t *testing.T) {
 	a, b := splitPair(t, "heal-rejoin")
 	winner, loser := winnerOf(a, b)
 
-	winner.current().healer.Load().executeMerge(t.Context(), loser.node.ID())
+	winner.current().healer.Load().executeMerge(t.Context(), loser.ID())
 
 	require.Eventually(t, func() bool {
 		members, err := winner.Members()
@@ -404,11 +404,11 @@ func TestHealing_AnExchangeAYieldCutsShortKeepsToItsMembersClient(t *testing.T) 
 		route, handler := raftv2connect.NewRaftServiceHandler(held)
 		mux := http.NewServeMux()
 		mux.Handle(route, handler)
-		srv, err := rpc.Listen(t.Context(), other.Peer(), protocol.ID(Protocol(namespace)), mux)
+		srv, err := rpc.Listen(t.Context(), other.Host(), protocol.ID(Protocol(namespace)), mux)
 		require.NoError(t, err)
 		t.Cleanup(func() { srv.Close() })
 		require.NoError(t, taupeer.LinkAllPeers())
-		require.NoError(t, node.Peer().Connect(t.Context(), peer.AddrInfo{ID: other.ID(), Addrs: other.Peer().Addrs()}))
+		require.NoError(t, node.Host().Connect(t.Context(), peer.AddrInfo{ID: other.ID(), Addrs: other.Host().Addrs()}))
 	}
 
 	c, err := New(node, namespace,
@@ -529,7 +529,7 @@ func formedPair(t *testing.T, namespace string) (a, b Cluster) {
 	waitLeader(t, a, 5*time.Second)
 
 	require.NoError(t, taupeer.LinkAllPeers())
-	require.NoError(t, nodeB.Peer().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Peer().Addrs()}))
+	require.NoError(t, nodeB.Host().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Host().Addrs()}))
 	b, err = New(nodeB, namespace,
 		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second), WithSnapshotRoot(t.TempDir()))
 	require.NoError(t, err)
@@ -553,7 +553,7 @@ func TestHealing_AnOrphanThePeerstoreDoesNotListIsAbsorbed(t *testing.T) {
 	tracker := left.(*cluster).current().tracker
 	tracker.addPeer(idOf(removed))
 	tracker.firstProbe(idOf(removed))
-	require.NoError(t, left.(*cluster).node.Peer().Peerstore().RemoveProtocols(idOf(removed), protocol.ID(Protocol(namespace))))
+	require.NoError(t, left.(*cluster).Host().Peerstore().RemoveProtocols(idOf(removed), protocol.ID(Protocol(namespace))))
 
 	require.Eventually(t, func() bool {
 		members, err := left.Members()
@@ -602,8 +602,8 @@ func TestHealing_AGroupWithoutQuorumYieldsToTheGroupAheadOfIt(t *testing.T) {
 	}
 
 	require.NoError(t, gone.Close())
-	require.NoError(t, nodeOfCluster(stranded).Peer().Connect(t.Context(),
-		peer.AddrInfo{ID: idOf(ahead), Addrs: nodeOfCluster(ahead).Peer().Addrs()}))
+	require.NoError(t, nodeOfCluster(stranded).Host().Connect(t.Context(),
+		peer.AddrInfo{ID: idOf(ahead), Addrs: nodeOfCluster(ahead).Host().Addrs()}))
 	stranded.(*cluster).current().tracker.addPeer(idOf(ahead))
 
 	require.Eventually(t, func() bool {
@@ -624,7 +624,7 @@ func TestHealing_AGroupWithoutQuorumYieldsToTheGroupAheadOfIt(t *testing.T) {
 	}, 10*time.Second, 50*time.Millisecond, "the stranded member does not hold the group's writes")
 }
 
-func nodeOfCluster(cl Cluster) taupeer.Node { return cl.(*cluster).node }
+func nodeOfCluster(cl Cluster) taupeer.Node { return cl.(*cluster).Node }
 
 func TestHealing_AVoteFromANonMemberIsReported(t *testing.T) {
 	node := newMockNode(t)
@@ -813,12 +813,12 @@ func facing(t *testing.T, namespace string, store ds.Batching, other raftv2conne
 	route, handler := raftv2connect.NewRaftServiceHandler(other)
 	mux := http.NewServeMux()
 	mux.Handle(route, handler)
-	srv, err := rpc.Listen(t.Context(), otherNode.Peer(), protocol.ID(Protocol(namespace)), mux)
+	srv, err := rpc.Listen(t.Context(), otherNode.Host(), protocol.ID(Protocol(namespace)), mux)
 	require.NoError(t, err)
 	t.Cleanup(func() { srv.Close() })
 
 	require.NoError(t, taupeer.LinkAllPeers())
-	require.NoError(t, winnerNode.Peer().Connect(t.Context(), peer.AddrInfo{ID: otherNode.ID(), Addrs: otherNode.Peer().Addrs()}))
+	require.NoError(t, winnerNode.Host().Connect(t.Context(), peer.AddrInfo{ID: otherNode.ID(), Addrs: otherNode.Host().Addrs()}))
 	winner := w.(*cluster)
 	winner.current().tracker.addPeer(otherNode.ID())
 	require.Equal(t, []peer.ID{otherNode.ID()}, winner.current().healer.Load().findForeignPeers())

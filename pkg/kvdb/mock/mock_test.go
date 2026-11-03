@@ -292,7 +292,7 @@ func TestMockKVDB(t *testing.T) {
 		assert.NilError(t, err)
 		defer db.Close()
 
-		retrievedFactory := db.Factory()
+		retrievedFactory := db.(*Instance).Factory()
 		assert.Assert(t, retrievedFactory != nil)
 
 		// Test creating another database through factory

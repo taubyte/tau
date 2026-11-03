@@ -676,7 +676,7 @@ func TestTwoProjectsNamingTheirLedgerTheSameThingAreTwoGroups(t *testing.T) {
 		domain + "/market/prod/kv/" + ledger: false,
 	}
 	for _, peer := range u.dream.Peers() {
-		for _, id := range peer.Peer().Mux().Protocols() {
+		for _, id := range peer.Host().Mux().Protocols() {
 			namespace, isRaft := strings.CutPrefix(string(id), raft.ProtocolRaftPrefix)
 			if !isRaft || !strings.HasPrefix(namespace, domain+"/") {
 				continue

@@ -11,7 +11,7 @@ import (
 func TestKVDatabase_PutAndGet(t *testing.T) {
 	logger := logging.Logger("test")
 	mockNode := mockPeer(t)
-	f := New(mockNode)
+	f := opener{mockNode}
 	db, _ := f.New(logger, "testpath", 10)
 
 	key := "testkey"
@@ -36,7 +36,7 @@ func TestKVDatabase_PutAndGet(t *testing.T) {
 func TestKVDatabase_Delete(t *testing.T) {
 	logger := logging.Logger("test")
 	mockNode := mockPeer(t)
-	f := New(mockNode)
+	f := opener{mockNode}
 	db, _ := f.New(logger, "testpath", 10)
 
 	key := "testkey"
@@ -58,7 +58,7 @@ func TestKVDatabase_Delete(t *testing.T) {
 func TestKVDatabase_List(t *testing.T) {
 	logger := logging.Logger("test")
 	mockNode := mockPeer(t)
-	f := New(mockNode)
+	f := opener{mockNode}
 	db, _ := f.New(logger, "testpath", 10)
 
 	keys := []string{"key1", "key2", "key3"}
@@ -84,7 +84,7 @@ func TestKVDatabase_List(t *testing.T) {
 func TestKVDatabase_Batch(t *testing.T) {
 	logger := logging.Logger("test")
 	mockNode := mockPeer(t)
-	f := New(mockNode)
+	f := opener{mockNode}
 	db, _ := f.New(logger, "testpath", 10)
 
 	batch, err := db.Batch(context.Background())
@@ -118,7 +118,7 @@ func TestKVDatabase_Batch(t *testing.T) {
 func TestKVDatabase_Get_NonExistentKey(t *testing.T) {
 	logger := logging.Logger("test")
 	mockNode := mockPeer(t)
-	f := New(mockNode)
+	f := opener{mockNode}
 	db, _ := f.New(logger, "testpath", 10)
 
 	_, err := db.Get(context.Background(), "nonexistentkey")
@@ -132,7 +132,7 @@ func TestKVDatabase_Get_NonExistentKey(t *testing.T) {
 func TestKVDatabase_Put_EmptyKeyOrValue(t *testing.T) {
 	logger := logging.Logger("test")
 	mockNode := mockPeer(t)
-	f := New(mockNode)
+	f := opener{mockNode}
 	db, _ := f.New(logger, "testpath", 10)
 
 	err := db.Put(context.Background(), "", []byte("value"))
@@ -151,7 +151,7 @@ func TestKVDatabase_Put_EmptyKeyOrValue(t *testing.T) {
 func TestKVDatabase_List_SpecificPrefix(t *testing.T) {
 	logger := logging.Logger("test")
 	mockNode := mockPeer(t)
-	f := New(mockNode)
+	f := opener{mockNode}
 	db, _ := f.New(logger, "testpath", 10)
 
 	prefix := "myprefix/"

@@ -13,11 +13,6 @@ const namespace = "/tau/primitives/v2"
 // nothing acts on yet.
 const recordStore = "primitive-logs"
 
-// rebroadcastSeconds is how often the CRDT under the record store re-announces
-// its heads. It is instance/locate.go's number, for the same reason: a store that
-// re-announced slower would take longer to heal a node that missed a write.
-const rebroadcastSeconds = 5
-
 // applyTimeout bounds one replicated write: a bound on a request, not the cluster.
 const applyTimeout = 5 * time.Second
 

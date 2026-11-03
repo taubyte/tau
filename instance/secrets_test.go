@@ -2,11 +2,9 @@ package instance
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
-	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
@@ -128,10 +126,7 @@ func TestAnInjectedResolverOutranksTheNodesOwnVault(t *testing.T) {
 
 func TestInitWritesTheCloudsSecretsTheNodeThenServes(t *testing.T) {
 	ctx := t.Context()
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-	factory := &memFactory{}
+	p := mockPeer(t)
 	root := t.TempDir()
 
 	ref := secretsService.Ref{Scope: secretsService.Cloud("auth"), Name: "pepper"}
@@ -139,21 +134,15 @@ func TestInitWritesTheCloudsSecretsTheNodeThenServes(t *testing.T) {
 	require.NoError(t, err)
 	bundle := &secretsv2.InitBundle{Secrets: []*secretsv2.InitSecret{sealed}}
 
-	require.ErrorIs(t, InitSecrets(ctx, Config{Services: []string{Register}}, root, h, factory, bundle), ErrNoSecretsHere)
+	require.ErrorIs(t, InitSecrets(ctx, p, Config{Services: []string{Register}, Root: root}, bundle), ErrNoSecretsHere)
 	cfg := Config{Services: []string{Register, Discovery, Secrets}}
-	failing := &memFactory{err: errors.New("no database")}
-	require.ErrorContains(t, InitSecrets(ctx, cfg, root, h, failing, bundle), "no database")
-	require.ErrorIs(t, InitSecrets(ctx, cfg, "", h, factory, bundle), secretsService.ErrNoRoot)
-	require.ErrorIs(t, InitSecrets(ctx, Config{}, "", h, factory, bundle), secretsService.ErrNoRoot, "no services named runs secrets")
-	require.NoError(t, InitSecrets(ctx, cfg, root, h, factory, bundle))
+	require.ErrorIs(t, InitSecrets(ctx, p, cfg, bundle), secretsService.ErrNoRoot)
+	require.ErrorIs(t, InitSecrets(ctx, p, Config{}, bundle), secretsService.ErrNoRoot, "no services named runs secrets")
+	cfg.Root = root
+	require.NoError(t, InitSecrets(ctx, p, cfg, bundle))
 
-	n, err := New(cfg,
-		WithHost(h),
-		WithPubSub(newPubSub(t, h)),
-		WithDatabases(factory),
-		WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
-		WithRoot(root),
-	)
+	// THE SAME PEER, so the node opens the database init wrote into.
+	n, err := New(p, rootedIn(t, cfg, root), withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.NoError(t, n.Start(ctx))

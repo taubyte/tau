@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
-	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/rpc"
@@ -27,21 +26,17 @@ func (l *linked) Close() error { l.closed = true; return nil }
 func TestAComposedIdentityIsWhatAuthAnswersWith(t *testing.T) {
 	id := &linked{}
 	var handed Host
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-	n, err := New(Config{Services: []string{Auth}},
-		WithHost(h), WithDatabases(&memFactory{}),
-		WithIdentity(func(host Host) (authService.Identity, error) {
-			handed = host
-			return id, nil
-		}))
+	p := mockPeer(t)
+	n, err := New(p, rooted(t, Config{Services: []string{Auth}}), withKVDB(&memFactory{}), WithIdentity(func(host Host) (authService.Identity, error) {
+		handed = host
+		return id, nil
+	}))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.NoError(t, n.Start(t.Context()))
 	require.Equal(t, Auth, handed.Name())
 
-	client, err := rpc.NewClient(newHost(t, mn), h.ID(), authService.Protocol)
+	client, err := rpc.NewClient(callerOf(t, p), p.ID(), authService.Protocol)
 	require.NoError(t, err)
 	defer client.Close()
 	identities := authv2connect.NewIdentityServiceClient(client.HTTP(), client.URL())
@@ -56,11 +51,7 @@ func TestAComposedIdentityIsWhatAuthAnswersWith(t *testing.T) {
 }
 
 func TestWhatWithIdentityRefuses(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-
-	_, err := New(Config{Services: []string{Discovery}}, WithHost(h), WithIdentity(nil))
+	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Discovery}}), WithIdentity(nil))
 	require.Error(t, err)
 
 	for name, build := range map[string]func(Host) (authService.Identity, error){
@@ -68,7 +59,7 @@ func TestWhatWithIdentityRefuses(t *testing.T) {
 		"nothing": func(Host) (authService.Identity, error) { return nil, nil },
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := New(Config{Services: []string{Auth}}, WithHost(newHost(t, mn)), WithDatabases(&memFactory{}), WithIdentity(build))
+			_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Auth}}), withKVDB(&memFactory{}), WithIdentity(build))
 			require.Error(t, err)
 		})
 	}
@@ -80,7 +71,7 @@ func TestConsoleOriginsAreTheCallbacksOrigins(t *testing.T) {
 }
 
 func TestAuthConfigDefaultsTheIssuer(t *testing.T) {
-	n := &Instance{cfg: Config{Cloud: "example.com"}}
+	n := &Instance{Node: mockPeer(t), cfg: Config{Cloud: "example.com"}}
 	require.Equal(t, "tau:example.com", n.authConfig().Issuer)
 	n.cfg.Auth.Issuer = "tau:set"
 	require.Equal(t, "tau:set", n.authConfig().Issuer)

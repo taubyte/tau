@@ -60,7 +60,7 @@ func TestPeeringConnectionRefusal(t *testing.T) {
 				defer wg.Done()
 				peers[from].Peering().AddPeer(peercore.AddrInfo{
 					ID:    peers[to].ID(),
-					Addrs: peers[to].Peer().Addrs(),
+					Addrs: peers[to].Host().Addrs(),
 				})
 			}(i, j)
 		}
@@ -80,7 +80,7 @@ func TestPeeringConnectionRefusal(t *testing.T) {
 				if i == j {
 					continue
 				}
-				connectedness := peers[i].Peer().Network().Connectedness(peers[j].ID())
+				connectedness := peers[i].Host().Network().Connectedness(peers[j].ID())
 				if connectedness.String() != "Connected" {
 					allConnected = false
 					break
@@ -104,7 +104,7 @@ func TestPeeringConnectionRefusal(t *testing.T) {
 			if i == j {
 				continue
 			}
-			connectedness := peers[i].Peer().Network().Connectedness(peers[j].ID())
+			connectedness := peers[i].Host().Network().Connectedness(peers[j].ID())
 			if connectedness.String() == "Connected" {
 				connectedCount++
 			} else {
@@ -142,7 +142,7 @@ func TestPeeringConnectionRefusal(t *testing.T) {
 					if i == j {
 						continue
 					}
-					if peers[i].Peer().Network().Connectedness(peers[j].ID()).String() == "Connected" {
+					if peers[i].Host().Network().Connectedness(peers[j].ID()).String() == "Connected" {
 						anyConnected = true
 						break
 					}
@@ -162,7 +162,7 @@ func TestPeeringConnectionRefusal(t *testing.T) {
 				}
 				peers[i].Peering().AddPeer(peercore.AddrInfo{
 					ID:    peers[j].ID(),
-					Addrs: peers[j].Peer().Addrs(),
+					Addrs: peers[j].Host().Addrs(),
 				})
 			}
 		}
@@ -176,7 +176,7 @@ func TestPeeringConnectionRefusal(t *testing.T) {
 					if i == j {
 						continue
 					}
-					connectedness := peers[i].Peer().Network().Connectedness(peers[j].ID())
+					connectedness := peers[i].Host().Network().Connectedness(peers[j].ID())
 					if connectedness.String() != "Connected" {
 						allReconnected = false
 						break
@@ -199,7 +199,7 @@ func TestPeeringConnectionRefusal(t *testing.T) {
 				if i == j {
 					continue
 				}
-				connectedness := peers[i].Peer().Network().Connectedness(peers[j].ID())
+				connectedness := peers[i].Host().Network().Connectedness(peers[j].ID())
 				if connectedness.String() == "Connected" {
 					roundConnectedCount++
 				} else {
@@ -267,14 +267,14 @@ func TestPeeringLongNegotiation(t *testing.T) {
 	startTime := time.Now()
 	p1.Peering().AddPeer(peercore.AddrInfo{
 		ID:    p2.ID(),
-		Addrs: p2.Peer().Addrs(),
+		Addrs: p2.Host().Addrs(),
 	})
 
 	// Wait for connection with timeout
 	timeout := 30 * time.Second
 	connected := false
 	for time.Since(startTime) < timeout {
-		if p1.Peer().Network().Connectedness(p2.ID()).String() == "Connected" {
+		if p1.Host().Network().Connectedness(p2.ID()).String() == "Connected" {
 			connected = true
 			break
 		}
@@ -305,12 +305,12 @@ func TestPeeringLongNegotiation(t *testing.T) {
 			time.Sleep(500 * time.Millisecond)
 			p1.Peering().AddPeer(peercore.AddrInfo{
 				ID:    p2.ID(),
-				Addrs: p2.Peer().Addrs(),
+				Addrs: p2.Host().Addrs(),
 			})
 
 			// Wait for reconnection
 			for time.Since(start) < 15*time.Second {
-				if p1.Peer().Network().Connectedness(p2.ID()).String() == "Connected" {
+				if p1.Host().Network().Connectedness(p2.ID()).String() == "Connected" {
 					mu.Lock()
 					successCount++
 					mu.Unlock()
@@ -384,7 +384,7 @@ func TestPeeringRaceCondition(t *testing.T) {
 			// Add peer
 			p1.Peering().AddPeer(peercore.AddrInfo{
 				ID:    p2.ID(),
-				Addrs: p2.Peer().Addrs(),
+				Addrs: p2.Host().Addrs(),
 			})
 			time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
 			// Remove peer
@@ -399,13 +399,13 @@ func TestPeeringRaceCondition(t *testing.T) {
 	// Final state: add peer and verify connection
 	p1.Peering().AddPeer(peercore.AddrInfo{
 		ID:    p2.ID(),
-		Addrs: p2.Peer().Addrs(),
+		Addrs: p2.Host().Addrs(),
 	})
 
 	timeout := 10 * time.Second
 	start := time.Now()
 	for time.Since(start) < timeout {
-		if p1.Peer().Network().Connectedness(p2.ID()).String() == "Connected" {
+		if p1.Host().Network().Connectedness(p2.ID()).String() == "Connected" {
 			return // Success
 		}
 		time.Sleep(100 * time.Millisecond)

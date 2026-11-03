@@ -8,7 +8,6 @@ import (
 
 	"connectrpc.com/connect"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
-	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
 	kvdbmock "github.com/taubyte/tau/pkg/kvdb/mock"
@@ -42,15 +41,20 @@ type noTXT struct{}
 func (noTXT) LookupTXT(context.Context, string) ([]string, error) { return nil, errors.New("none") }
 
 func TestADevelopmentCloudTrustsItsZones(t *testing.T) {
-	n := &Instance{}
+	n := &Instance{Node: mockPeer(t)}
 	n.cfg.CM.Domains.Trusted = true
 	p, err := n.domainProver()
 	require.NoError(t, err)
 	require.NoError(t, p.Prove(t.Context(), "anything", "example.com"))
 
+	// UNTRUSTED, A ZONE IS PROVEN through the cm service, built once.
 	n.cfg.CM.Domains.Trusted = false
-	_, err = n.domainProver()
-	require.ErrorIs(t, err, cm.ErrNoHost, "without a host there is nothing to prove against")
+	p, err = n.domainProver()
+	require.NoError(t, err)
+	again, err := n.domainProver()
+	require.NoError(t, err)
+	require.Same(t, p, again)
+	t.Cleanup(func() { n.Close() })
 
 	require.Error(t, WithResolver(nil)(&options{}))
 	var o options
@@ -59,17 +63,14 @@ func TestADevelopmentCloudTrustsItsZones(t *testing.T) {
 }
 
 func TestTheClaimRouteSeamSaysWhatIsMalformed(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h, err := mn.GenPeer()
-	require.NoError(t, err)
+	p := mockPeer(t)
+	h := p.Host()
 	db, err := kvdbmock.New().New(nil, "cm", 0)
 	require.NoError(t, err)
 	svc, err := cm.New(h, db, cm.Config{Certificate: cm.CertificateConfig{Zone: "tau.example"}}, cm.WithVault(&memVault{m: map[string][]byte{}}))
 	require.NoError(t, err)
 
-	n := &Instance{cm: svc}
-	n.opts.host = h
+	n := &Instance{Node: p, cm: svc}
 	n.opts.resolver = noTXT{}
 	d, err := cm.NewDomains(h, func() []libp2ppeer.ID { return nil }, func() *cm.Service { return n.cm })
 	require.NoError(t, err)

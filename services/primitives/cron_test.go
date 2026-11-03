@@ -356,7 +356,7 @@ func TestAServiceGivenHalfAClockIsRefused(t *testing.T) {
 	_, err = New(h.host,
 		WithRegister(&published{revision: 1, object: compiled()}),
 		WithConsensus(func(string) (raft.Cluster, error) { return newCluster(), nil }),
-		WithRecords(newStores()),
+		WithRecords(newStores().open),
 		WithSchedules(func(context.Context) []Schedule { return nil }))
 	require.ErrorIs(t, err, ErrHalfAClock)
 }

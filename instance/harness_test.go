@@ -13,10 +13,12 @@ import (
 	"github.com/ipfs/go-log/v2"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
+	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/kvdb"
+	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 )
@@ -54,7 +56,7 @@ type memFactory struct {
 	byPath map[string]*memKV
 }
 
-func (f *memFactory) New(_ log.StandardLogger, path string, _ int) (kvdb.KVDB, error) {
+func (f *memFactory) New(_ log.StandardLogger, path string, _ int) (kvdb.Instance, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -83,7 +85,7 @@ func (f *memFactory) counts() (opened []string, closed int) {
 }
 
 type memKV struct {
-	kvdb.KVDB
+	kvdb.Instance
 	factory *memFactory
 
 	mu   sync.Mutex
@@ -222,37 +224,87 @@ func prebuilt() Option {
 	}))
 }
 
-// makeNode is a node over fresh resources, not started.
-func makeNode(t *testing.T, cfg Config, extra ...Option) (*Instance, host.Host, *memFactory) {
+// opensDatabases is what a test's database double does.
+type opensDatabases interface {
+	New(logger log.StandardLogger, path string, rebroadcastIntervalSec int) (kvdb.Instance, error)
+}
+
+// withKVDB and withRaft open what the instance would open over its peer from
+// something a test can see into or make fail.
+func withKVDB(f opensDatabases) Option {
+	return func(o *options) error {
+		o.kvdbOpen = kvdbOf(f)
+		return nil
+	}
+}
+
+// kvdbOf is a test's database double as the seam an instance opens through.
+func kvdbOf(f opensDatabases) func(string) (kvdb.Instance, error) {
+	return func(name string) (kvdb.Instance, error) { return f.New(nil, name, 0) }
+}
+
+func withRaft(open func(namespace string) (raft.Cluster, error)) Option {
+	return func(o *options) error {
+		o.raftOpen = open
+		return nil
+	}
+}
+
+// mockRaft is a raft group of one, in memory. What a composition is asked to prove is
+// the wiring; that raft replicates is pkg/raft's own test.
+func mockRaft() Option {
+	return withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil })
+}
+
+// mockPeer is a peer for one test, on the process's mocknet.
+// callerOf is a host of another peer, linked and connected to p, to call what p
+// serves.
+func callerOf(t testing.TB, p peer.Node) host.Host {
 	t.Helper()
+	caller := mockPeer(t)
+	require.NoError(t, peer.LinkAllPeers())
+	require.NoError(t, caller.Host().Connect(t.Context(), libp2ppeer.AddrInfo{ID: p.ID(), Addrs: p.Host().Addrs()}))
+	return caller.Host()
+}
 
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
+func mockPeer(t testing.TB) peer.Node {
+	t.Helper()
+	p := peer.Mock(t.Context())
+	t.Cleanup(p.Close)
+	return p
+}
 
-	h := newHost(t, mn)
-	factory := &memFactory{}
-
-	// A DNS node gets an ephemeral loopback port: :53 needs privilege and would answer for
-	// the developer's resolver. An empty Services list means All, so ask as withDefaults
-	// does.
+// rooted is cfg with a directory of the test's own and, on a DNS node, an
+// ephemeral loopback port: :53 needs privilege and would answer for the
+// developer's resolver. An empty Services list means All, so ask as
+// withDefaults does.
+func rooted(t testing.TB, cfg Config) Config {
+	t.Helper()
+	if cfg.Root == "" {
+		cfg.Root = t.TempDir()
+	}
 	if (len(cfg.Services) == 0 || cfg.runs(DNS)) && cfg.DNSListen == "" {
 		cfg.DNSListen = "127.0.0.1:0"
 	}
+	return cfg
+}
 
-	opts := append([]Option{
-		WithHost(h),
-		WithPubSub(newPubSub(t, h)),
-		WithDatabases(factory),
-		WithRuntimes(&tier{name: "oci"}),
-		// A raft cluster of one, in memory. What this composition is asked to
-		// prove is the wiring; that raft replicates is pkg/raft's own test.
-		WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
-		// A secrets node keeps its shares on this machine's disk.
-		WithRoot(t.TempDir()),
-	}, extra...)
+// rootedIn is rooted, in the directory a test named.
+func rootedIn(t testing.TB, cfg Config, root string) Config {
+	t.Helper()
+	cfg.Root = root
+	return rooted(t, cfg)
+}
 
-	n, err := New(cfg, opts...)
+// makeNode is an instance over a fresh peer, its databases a factory the test can
+// see into and its raft groups in memory, not started.
+func makeNode(t *testing.T, cfg Config, extra ...Option) (*Instance, host.Host, *memFactory) {
+	t.Helper()
+	p := mockPeer(t)
+	factory := &memFactory{}
+	opts := append([]Option{withKVDB(factory), mockRaft(), WithRuntimes(&tier{name: "oci"})}, extra...)
+	n, err := New(p, rooted(t, cfg), opts...)
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
-	return n, h, factory
+	return n, p.Host(), factory
 }

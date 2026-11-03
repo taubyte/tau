@@ -8,13 +8,8 @@ import (
 // cloud, and that a bus has one backing shared by the wasm tier and the gateway.
 
 // streamBacking is a backing for one kind over this node's gossip.
-//
-// A NIL GOSSIP IS PASSED THROUGH rather than refused here. The tier is handed a
-// publisher on every node, so a workload that reaches a stream on a node with no
-// pubsub is refused by name when it sends — not at start, for a resource it may
-// never touch.
 func (n *Instance) streamBacking(kind string) (*stream.Streams, error) {
-	s, err := stream.New(n.opts.pubsub, kind, n.cfg.Cloud)
+	s, err := stream.New(n.Messaging(), kind, n.cfg.Cloud)
 	if err != nil {
 		return nil, err
 	}

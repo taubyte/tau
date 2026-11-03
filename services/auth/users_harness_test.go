@@ -274,7 +274,7 @@ const testHost = "forge.example"
 type fx struct {
 	t      *testing.T
 	s      *Service
-	db     kvdb.KVDB
+	db     kvdb.Instance
 	vault  *memVault
 	forge  *testDriver
 	oauth  *oauthServer

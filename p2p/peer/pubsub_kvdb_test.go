@@ -64,18 +64,18 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 	time.Sleep(2 * time.Second)
 	p1.Peering().AddPeer(peercore.AddrInfo{
 		ID:    p2.ID(),
-		Addrs: p2.Peer().Addrs(),
+		Addrs: p2.Host().Addrs(),
 	})
 	p2.Peering().AddPeer(peercore.AddrInfo{
 		ID:    p1.ID(),
-		Addrs: p1.Peer().Addrs(),
+		Addrs: p1.Host().Addrs(),
 	})
 
 	timeout := 10 * time.Second
 	start := time.Now()
 	for time.Since(start) < timeout {
-		if p1.Peer().Network().Connectedness(p2.ID()).String() == "Connected" &&
-			p2.Peer().Network().Connectedness(p1.ID()).String() == "Connected" {
+		if p1.Host().Network().Connectedness(p2.ID()).String() == "Connected" &&
+			p2.Host().Network().Connectedness(p1.ID()).String() == "Connected" {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -165,8 +165,8 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 	disconnectTimeout := 4 * time.Second
 	disconnectStart := time.Now()
 	for time.Since(disconnectStart) < disconnectTimeout {
-		p1Conn := p1.Peer().Network().Connectedness(p2.ID()).String() == "Connected"
-		p2Conn := p2.Peer().Network().Connectedness(p1.ID()).String() == "Connected"
+		p1Conn := p1.Host().Network().Connectedness(p2.ID()).String() == "Connected"
+		p2Conn := p2.Host().Network().Connectedness(p1.ID()).String() == "Connected"
 		if !p1Conn && !p2Conn {
 			break
 		}
@@ -183,18 +183,18 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 
 	p1.Peering().AddPeer(peercore.AddrInfo{
 		ID:    p2.ID(),
-		Addrs: p2.Peer().Addrs(),
+		Addrs: p2.Host().Addrs(),
 	})
 	p2.Peering().AddPeer(peercore.AddrInfo{
 		ID:    p1.ID(),
-		Addrs: p1.Peer().Addrs(),
+		Addrs: p1.Host().Addrs(),
 	})
 
 	reconnectTimeout := 6 * time.Second
 	reconnectStart := time.Now()
 	for time.Since(reconnectStart) < reconnectTimeout {
-		p1Conn := p1.Peer().Network().Connectedness(p2.ID()).String() == "Connected"
-		p2Conn := p2.Peer().Network().Connectedness(p1.ID()).String() == "Connected"
+		p1Conn := p1.Host().Network().Connectedness(p2.ID()).String() == "Connected"
+		p2Conn := p2.Host().Network().Connectedness(p1.ID()).String() == "Connected"
 		if p1Conn && p2Conn {
 			break
 		}

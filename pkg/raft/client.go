@@ -46,7 +46,7 @@ type internalClient interface {
 
 // client holds one connection per peer of one group.
 type client struct {
-	node     taupeer.Node
+	taupeer.Node
 	protocol protocol.ID
 	codec    connect.ClientOption
 
@@ -68,7 +68,7 @@ func newInternalClient(node taupeer.Node, namespace string, encryptionCipher cip
 	}
 	ctx, cancel := context.WithCancel(node.Context())
 	return &client{
-		node:     node,
+		Node:     node,
 		protocol: protocol.ID(Protocol(namespace)),
 		codec:    codecOption(encryptionCipher),
 		ctx:      ctx,
@@ -94,7 +94,7 @@ func (c *client) to(pid peer.ID) (raftv2connect.RaftServiceClient, error) {
 	if pc, ok := c.peers[pid]; ok {
 		return pc.svc, nil
 	}
-	conn, err := rpc.NewClient(c.node.Peer(), pid, c.protocol)
+	conn, err := rpc.NewClient(c.Host(), pid, c.protocol)
 	if err != nil {
 		return nil, err
 	}

@@ -50,7 +50,7 @@ func TestSignInAcrossAFleet(t *testing.T) {
 	dial := func(i int) (authv2connect.SessionServiceClient, authv2connect.UserServiceClient, authv2connect.IdentityServiceClient) {
 		target, err := libp2ppeer.Decode(pids[i])
 		require.NoError(t, err)
-		c, err := rpc.NewClient(u.Peers()[1-i].Peer(), target, auth.Protocol)
+		c, err := rpc.NewClient(u.Peers()[1-i].Host(), target, auth.Protocol)
 		require.NoError(t, err)
 		t.Cleanup(c.Close)
 		return authv2connect.NewSessionServiceClient(c.HTTP(), c.URL()),
@@ -137,7 +137,7 @@ func TestTheAdminSignsInOnceItsPasswordIsWritten(t *testing.T) {
 		targets[i], err = libp2ppeer.Decode(p)
 		require.NoError(t, err)
 	}
-	c, err := rpc.NewClient(u.Peers()[1].Peer(), targets[0], auth.Protocol)
+	c, err := rpc.NewClient(u.Peers()[1].Host(), targets[0], auth.Protocol)
 	require.NoError(t, err)
 	defer c.Close()
 	sessions := authv2connect.NewSessionServiceClient(c.HTTP(), c.URL())
@@ -155,7 +155,7 @@ func TestTheAdminSignsInOnceItsPasswordIsWritten(t *testing.T) {
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(last), "%v", last)
 	require.ErrorContains(t, last, "the admin has no password in the secrets service yet")
 
-	vault, err := secrets.NewClient(u.Peers()[1].Peer(), func() []libp2ppeer.ID { return targets }, nil)
+	vault, err := secrets.NewClient(u.Peers()[1].Host(), func() []libp2ppeer.ID { return targets }, nil)
 	require.NoError(t, err)
 	defer vault.Close()
 	hash, err := auth.HashAdminPassword("correct horse battery")

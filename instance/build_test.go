@@ -10,7 +10,6 @@ import (
 	"connectrpc.com/connect"
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
-	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
@@ -51,20 +50,6 @@ func TestTheRoleNamesAreTheBuildServicesOwn(t *testing.T) {
 	require.Equal(t, "build-backend", BuildBackend)
 }
 
-func TestTheBackendNeedsARaft(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-
-	_, err := New(Config{Services: []string{BuildBackend, Discovery}},
-		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}))
-	require.ErrorIs(t, err, ErrNoRaft)
-
-	// And a nil opener is refused where it is given rather than where it is
-	// used, so the failure names the wiring and not the first build.
-	require.ErrorIs(t, WithRaft(nil)(&options{}), ErrNoRaft)
-}
-
 func TestANodeAdvertisesTheRolesItRuns(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Discovery, Auth, BuildBackend}})
 	require.NoError(t, n.Start(t.Context()))
@@ -97,7 +82,7 @@ func TestTheFrontendHoldsNeitherStore(t *testing.T) {
 }
 
 func TestANodeWithNoFrontendHasNoFrontendAddress(t *testing.T) {
-	require.Nil(t, (&Instance{}).BuildFrontendAddr())
+	require.Nil(t, (&Instance{Node: mockPeer(t)}).BuildFrontendAddr())
 }
 
 func TestTheResolverReadsTheSameViewAsEverythingElse(t *testing.T) {
@@ -115,7 +100,7 @@ func TestTheResolverReadsTheSameViewAsEverythingElse(t *testing.T) {
 	peers, err := from.Peers(ctx, 4)
 	require.NoError(t, err)
 	require.Len(t, peers, 1)
-	require.Equal(t, holder.opts.host.ID(), peers[0])
+	require.Equal(t, holder.Host().ID(), peers[0])
 
 	one, err := from.Any(ctx)
 	require.NoError(t, err)
@@ -155,7 +140,7 @@ func TestTheResolverOnANodeWithNoStats(t *testing.T) {
 }
 
 func TestARowThatIsNotAPeerIsSkipped(t *testing.T) {
-	require.Equal(t, []libp2ppeer.ID(nil), (&fromDiscovery{node: &Instance{}, name: Auth}).Known())
+	require.Equal(t, []libp2ppeer.ID(nil), (&fromDiscovery{node: &Instance{Node: mockPeer(t)}, name: Auth}).Known())
 }
 
 func TestThePublisherIsLocalWhenThisNodeHasTheRegister(t *testing.T) {
@@ -227,41 +212,17 @@ func TestABuildBackendWithNoContainerBackend(t *testing.T) {
 }
 
 func TestABuildBackendWithABackendThatIsNotOne(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-
-	_, err := New(Config{
+	_, err := New(mockPeer(t), rooted(t, Config{
 		Services:  []string{Discovery, BuildBackend},
 		Container: ContainerConfig{Backend: "not-a-backend"},
-	},
-		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}),
-		WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
-	)
+	}), withKVDB(&memFactory{}), withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }))
 	require.ErrorIs(t, err, ErrUnknownBackend)
 }
 
-func TestWithAssets(t *testing.T) {
-	require.ErrorContains(t, WithAssets(nil)(&options{}), "asset store")
-
-	store := &countingAssets{}
-	n, _, _ := makeNode(t, Config{Services: []string{Discovery, BuildBackend}}, WithAssets(store))
-	require.NoError(t, n.Start(t.Context()))
-	require.NotNil(t, n.buildBackend)
-}
-
 func TestAnAssetStoreIsEnoughToRunCode(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-
 	// No container backend, no injected runtime — and a worker still starts,
 	// with every tier that needs only the asset store.
-	n, err := New(Config{Services: []string{Discovery, Worker}},
-		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}),
-		WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
-		WithAssets(&countingAssets{}),
-	)
+	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Discovery, Worker}}), withKVDB(&memFactory{}), withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.NotNil(t, n.worker)
@@ -269,31 +230,6 @@ func TestAnAssetStoreIsEnoughToRunCode(t *testing.T) {
 	// Both: a wasm component and a js function are what the smallest possible cloud
 	// runs, and neither needs a daemon. A site's files are its gateway's to serve.
 	require.ElementsMatch(t, []string{"wasm", "warp"}, tierNames(n))
-
-	// And with neither, it refuses rather than starting a worker that can run
-	// nothing.
-	_, err = New(Config{Services: []string{Discovery, Worker}},
-		WithHost(newHost(t, mn)), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}),
-		WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
-	)
-	require.ErrorContains(t, err, "no compute tier")
-}
-
-// countingAssets is both halves, because this node is both: the build backend
-// puts and the static tier gets.
-type countingAssets struct {
-	puts int
-	gets int
-}
-
-func (c *countingAssets) Put(context.Context, io.Reader) (string, error) {
-	c.puts++
-	return "bafy", nil
-}
-
-func (c *countingAssets) Get(context.Context, string) (io.ReadSeekCloser, error) {
-	c.gets++
-	return nil, errors.New("nothing stored")
 }
 
 func TestTheContainerBackendIsTheOperatorsChoice(t *testing.T) {
@@ -387,16 +323,7 @@ func tierNames(n *Instance) []string {
 }
 
 func TestAnInjectedTierWins(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-
-	n, err := New(Config{Services: []string{Discovery, Worker}},
-		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}),
-		WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
-		WithAssets(&countingAssets{}),
-		WithRuntimes(&tier{name: "wasm"}),
-	)
+	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Discovery, Worker}}), withKVDB(&memFactory{}), withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }), WithRuntimes(&tier{name: "wasm"}))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 
@@ -491,9 +418,9 @@ func TestWithRegions(t *testing.T) {
 func TestAsDestination(t *testing.T) {
 	var o options
 	require.Error(t, AsDestination("")(&o))
-	require.Equal(t, schema.DefaultRegion, (&Instance{opts: o}).destination())
+	require.Equal(t, schema.DefaultRegion, (&Instance{Node: mockPeer(t), opts: o}).destination())
 	require.NoError(t, AsDestination("region-1")(&o))
-	require.Equal(t, "region-1", (&Instance{opts: o}).destination())
+	require.Equal(t, "region-1", (&Instance{Node: mockPeer(t), opts: o}).destination())
 }
 
 func TestBuildSeamsAreLayeredOverTheNodesOwn(t *testing.T) {
@@ -556,7 +483,7 @@ func (following) IsLeader() bool { return false }
 
 func TestAFollowerAsksTheFleetForAnArtifact(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{BuildBackend}},
-		WithRaft(func(string) (raft.Cluster, error) { return following{raft.NewMockCluster()}, nil }))
+		withRaft(func(string) (raft.Cluster, error) { return following{raft.NewMockCluster()}, nil }))
 	require.NoError(t, n.Start(t.Context()))
 
 	_, err := n.BuildArtifacts().Artifact(t.Context(), "shop", "prod", "function", "QmNothing")

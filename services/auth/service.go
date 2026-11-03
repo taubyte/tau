@@ -66,7 +66,7 @@ func WithServerOptions(opts ...rpc.ServerOption) Option {
 // keys are, and the configuration that names the admin and the sign-in
 // providers. Without it auth answers admission only, admitting whoever a forge
 // vouched for.
-func WithUsers(db kvdb.KVDB, v Vault, cfg Config) Option {
+func WithUsers(db kvdb.Instance, v Vault, cfg Config) Option {
 	return func(s *Service) error {
 		if db == nil || v == nil {
 			return errors.New("auth: users need a store and a vault")

@@ -73,7 +73,7 @@ func TestBridgesADreamFleet(t *testing.T) {
 		"certificate": cert,
 	}
 	first := u.Peers()[0]
-	boot := first.Peer().Addrs()[0].String() + "/p2p/" + first.ID().String()
+	boot := first.Host().Addrs()[0].String() + "/p2p/" + first.ID().String()
 	base := []string{"taucorder", "--bootstrap", boot, "--cloud", u.Name()}
 	for flag, content := range files {
 		path := filepath.Join(dir, flag)

@@ -83,8 +83,8 @@ func TestAKeyOfAnyBytesRoundTrips(t *testing.T) {
 // A netPeer is a replica on its own libp2p node over loopback TCP, fetching
 // blocks through bitswap.
 type netPeer struct {
-	r    *Datastore
-	node taupeer.Node
+	r *Datastore
+	taupeer.Node
 }
 
 func netReplica(t *testing.T, name string) *netPeer {
@@ -113,7 +113,7 @@ func netReplica(t *testing.T, name string) *netPeer {
 			t.Error(err)
 		}
 	})
-	return &netPeer{r: r, node: node}
+	return &netPeer{r: r, Node: node}
 }
 
 // connect returns once identify has told n that peer speaks bitswap.
@@ -121,13 +121,13 @@ func (n *netPeer) connect(t *testing.T, peer *netPeer) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := n.node.Peer().Connect(ctx, peercore.AddrInfo{ID: peer.node.ID(), Addrs: peer.node.Peer().Addrs()}); err != nil {
+	if err := n.Host().Connect(ctx, peercore.AddrInfo{ID: peer.ID(), Addrs: peer.Host().Addrs()}); err != nil {
 		t.Fatal(err)
 	}
 	tick := time.NewTicker(10 * time.Millisecond)
 	defer tick.Stop()
 	for {
-		speaks, err := n.node.Peer().Peerstore().SupportsProtocols(peer.node.ID(), bsnet.ProtocolBitswap)
+		speaks, err := n.Host().Peerstore().SupportsProtocols(peer.ID(), bsnet.ProtocolBitswap)
 		if err != nil {
 			t.Fatal(err)
 		}

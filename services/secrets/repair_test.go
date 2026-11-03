@@ -90,10 +90,10 @@ func TestWithoutStatedMembersTheRosterIsWhoSpeaksTheProtocol(t *testing.T) {
 	for range 2 {
 		node := peerNode.Mock(ctx)
 		t.Cleanup(func() { node.Close() })
-		db, err := kvdb.New(node).New(logging.Logger("secrets-test"), name, 1)
+		db, err := kvdb.Open(node, name, kvdb.WithLogger(logging.Logger("secrets-test")), kvdb.WithRebroadcast(time.Second))
 		require.NoError(t, err)
 		t.Cleanup(func() { db.Close() })
-		srv, err := New(node.Peer(), db, WithRoot(t.TempDir()), WithBootstrapDelay(never))
+		srv, err := New(node.Host(), db, WithRoot(t.TempDir()), WithBootstrapDelay(never))
 		require.NoError(t, err)
 		require.NoError(t, srv.Start(ctx))
 		t.Cleanup(func() { srv.Close() })
@@ -106,7 +106,7 @@ func TestWithoutStatedMembersTheRosterIsWhoSpeaksTheProtocol(t *testing.T) {
 
 	require.NoError(t, peerNode.LinkAllPeers())
 	for _, other := range []peerNode.Node{nodes[1], bystander} {
-		require.NoError(t, nodes[0].Peer().Connect(ctx, other.Peer().Peerstore().PeerInfo(other.ID())))
+		require.NoError(t, nodes[0].Host().Connect(ctx, other.Host().Peerstore().PeerInfo(other.ID())))
 	}
 
 	want := []string{nodes[0].ID().String(), nodes[1].ID().String()}
@@ -176,7 +176,7 @@ func TestAClientRefusesBadReferencesBeforeAskingAnyone(t *testing.T) {
 	t.Cleanup(func() { node.Close() })
 
 	// Named as a member, but this node runs no service, so it is not a target.
-	client, err := NewClient(node.Peer(), func() []peerCore.ID { return []peerCore.ID{node.ID()} }, func() *Service { return nil })
+	client, err := NewClient(node.Host(), func() []peerCore.ID { return []peerCore.ID{node.ID()} }, func() *Service { return nil })
 	require.NoError(t, err)
 	ctx := t.Context()
 

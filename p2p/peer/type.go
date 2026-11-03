@@ -42,7 +42,7 @@ type Node interface {
 	NewChildContextWithCancel() (context.Context, context.CancelFunc)
 	NewFolder(name string) (dir.Directory, error)
 	NewPubSubKeepAlive(ctx context.Context, cancel context.CancelFunc, name string) error
-	Peer() host.Host
+	Host() host.Host
 	Peering() PeeringService
 	Ping(ctx context.Context, pid string, count int) (int, time.Duration, error)
 	PubSubPublish(ctx context.Context, name string, data []byte) error
@@ -82,7 +82,7 @@ func (p *node) Peering() PeeringService {
 	return p.peering
 }
 
-func (p *node) Peer() host.Host {
+func (p *node) Host() host.Host {
 	return p.host
 }
 

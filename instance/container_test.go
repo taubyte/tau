@@ -3,7 +3,6 @@ package instance
 import (
 	"testing"
 
-	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -11,27 +10,15 @@ import (
 // is pkg/invoke/container's test.
 
 func TestAnUnknownBackendIsRefusedAtBoot(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-
-	_, err := New(Config{
+	_, err := New(mockPeer(t), rooted(t, Config{
 		Services:  []string{Worker},
 		Container: ContainerConfig{Backend: "podman"},
-	}, WithHost(newHost(t, mn)))
+	}))
 
 	require.ErrorIs(t, err, ErrUnknownBackend)
 	require.Contains(t, err.Error(), "podman")
 	require.Contains(t, err.Error(), BackendDocker, "and it says what it can build")
 	require.Contains(t, err.Error(), BackendContainerd)
-}
-
-func TestAWorkerWithNoTier(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-
-	_, err := New(Config{Services: []string{Worker}}, WithHost(newHost(t, mn)))
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "declare a container backend, give it an asset store, or inject one")
 }
 
 func TestAnInjectedTierIsEnough(t *testing.T) {
@@ -40,16 +27,10 @@ func TestAnInjectedTierIsEnough(t *testing.T) {
 }
 
 func TestNoWorkerMeansNoBackend(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-
-	n, err := New(Config{
+	n, err := New(mockPeer(t), rooted(t, Config{
 		Services:  []string{Register, Discovery},
 		Container: ContainerConfig{Backend: "podman"},
-	},
-		WithHost(newHost(t, mn)),
-		WithPubSub(newPubSub(t, newHost(t, mn))),
-		WithDatabases(&memFactory{}))
+	}), withKVDB(&memFactory{}))
 	require.NoError(t, err, "a node with no worker never asked for a tier")
 	t.Cleanup(func() { n.Close() })
 }

@@ -167,9 +167,9 @@ func (m *Mesh) dial(n peer.Node, existing []peer.Node) {
 		go func() {
 			defer wg.Done()
 			for range 3 {
-				info := peercore.AddrInfo{ID: n1.ID(), Addrs: n1.Peer().Addrs()}
+				info := peercore.AddrInfo{ID: n1.ID(), Addrs: n1.Host().Addrs()}
 				if len(info.Addrs) > 0 {
-					if err := n0.Peer().Connect(ctx, info); err == nil {
+					if err := n0.Host().Connect(ctx, info); err == nil {
 						return
 					}
 				}
@@ -180,7 +180,7 @@ func (m *Mesh) dial(n peer.Node, existing []peer.Node) {
 				case <-time.After(time.Second):
 				}
 			}
-			n0.Peering().AddPeer(peercore.AddrInfo{ID: n1.ID(), Addrs: n1.Peer().Addrs()})
+			n0.Peering().AddPeer(peercore.AddrInfo{ID: n1.ID(), Addrs: n1.Host().Addrs()})
 		}()
 	}
 	wg.Wait()

@@ -23,7 +23,7 @@ import (
 // in a temporary directory loses every row with the process, and one with no
 // router can reach no copy but its own.
 func (n *Instance) registerSQL() error {
-	if n.opts.root == "" || n.opts.host == nil || n.opts.pubsub == nil {
+	if n.cfg.Root == "" || n.Host() == nil || n.Messaging() == nil {
 		return nil
 	}
 	if n.opts.engines == nil {
@@ -35,13 +35,13 @@ func (n *Instance) registerSQL() error {
 		}
 	}
 
-	mesh, err := swarm.New(context.Background(), n.opts.host, n.opts.pubsub)
+	mesh, err := swarm.New(context.Background(), n.Host(), n.Messaging())
 	if err != nil {
 		return fmt.Errorf("node: sql: %w", err)
 	}
 	n.closers = append(n.closers, mesh)
 
-	engine, err := distributed.New(distributed.UnderRoot(n.opts.root), distributed.WithSync(mesh.Sync))
+	engine, err := distributed.New(distributed.UnderRoot(n.cfg.Root), distributed.WithSync(mesh.Sync))
 	if err != nil {
 		return fmt.Errorf("node: sql: %w", err)
 	}

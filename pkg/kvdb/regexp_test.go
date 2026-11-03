@@ -23,7 +23,7 @@ func equalStringSlices(a, b []string) bool {
 }
 
 func TestAsyncRegExp(t *testing.T) {
-	testDB, err := New(mockPeer(t)).New(logger, "test", 5)
+	testDB, err := opener{mockPeer(t)}.New(logger, "test", 5)
 	if err != nil {
 		t.Fatal(err)
 	}

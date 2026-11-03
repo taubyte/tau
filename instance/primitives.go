@@ -42,7 +42,7 @@ func (n *Instance) openPrimitivesReach() {
 	// locate.go's sentence about the register and services/database's about an
 	// engine: a node holding the namespace that dialled itself to reach it
 	// would add a stream and a serialization to every send.
-	n.sends = rpc.Reach(n.opts.host, Primitives, pick,
+	n.sends = rpc.Reach(n.Host(), Primitives, pick,
 		func() (primitive.Seam, bool) {
 			if n.primitives == nil {
 				return nil, false
@@ -50,14 +50,14 @@ func (n *Instance) openPrimitivesReach() {
 			return n.primitives.Local(), true
 		},
 		func(id libp2ppeer.ID) (primitive.Seam, error) {
-			c, err := primitivesService.NewClient(n.opts.host, id)
+			c, err := primitivesService.NewClient(n.Host(), id)
 			if err != nil {
 				return nil, err
 			}
 			return c, nil
 		})
 
-	n.clocks = rpc.ReachRouted(n.opts.host, Primitives, pick,
+	n.clocks = rpc.ReachRouted(n.Host(), Primitives, pick,
 		func() (primitivesService.Clocks, bool) {
 			if n.primitives == nil {
 				return nil, false
@@ -65,7 +65,7 @@ func (n *Instance) openPrimitivesReach() {
 			return n.primitives.Local(), true
 		},
 		func(id libp2ppeer.ID) (primitivesService.Clocks, error) {
-			c, err := primitivesService.NewClient(n.opts.host, id)
+			c, err := primitivesService.NewClient(n.Host(), id)
 			if err != nil {
 				return nil, err
 			}
@@ -101,21 +101,13 @@ func (n *Instance) openPrimitives() error {
 	if !n.cfg.runs(Primitives) {
 		return nil
 	}
-	// BOTH HALVES, AND REFUSED AT CONSTRUCTION RATHER THAN PER CALL: a queue's
-	// items and a log's head are ordered by a raft group, and a log's records
-	// live in the replicated store beside every other kind's bytes. A node
-	// missing either can serve neither of this kind's two types.
-	if n.opts.raft == nil {
-		return fmt.Errorf("node: %s: %w", Primitives, ErrNoRaft)
-	}
-	if n.opts.databases == nil {
-		return fmt.Errorf("node: %s: %w", Primitives, ErrNoCacheStore)
-	}
-
+	// A queue's items and a log's head are ordered by a raft group, and a log's
+	// records live in the replicated store beside every other kind's bytes; both
+	// are this instance's.
 	options := []primitivesService.Option{
 		primitivesService.WithRegister(n.registerSource()),
-		primitivesService.WithConsensus(n.opts.raft),
-		primitivesService.WithRecords(n.opts.databases),
+		primitivesService.WithConsensus(n.raftGroup),
+		primitivesService.WithRecords(n.kvdb),
 	}
 
 	// And the clock, on a node that also runs a worker: which crons exist and how to
@@ -145,7 +137,7 @@ func (n *Instance) openPrimitives() error {
 		options = append(options, primitivesService.WithClock(n.opts.now))
 	}
 
-	svc, err := primitivesService.New(n.opts.host, options...)
+	svc, err := primitivesService.New(n.Host(), options...)
 	if err != nil {
 		return err
 	}

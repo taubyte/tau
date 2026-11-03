@@ -29,7 +29,7 @@ const (
 )
 
 type cluster struct {
-	node      taupeer.Node
+	taupeer.Node
 	namespace string
 
 	ctx    context.Context
@@ -92,7 +92,7 @@ func New(node taupeer.Node, namespace string, opts ...Option) (Cluster, error) {
 	}
 
 	c := &cluster{
-		node:               node,
+		Node:               node,
 		namespace:          namespace,
 		timeoutConfig:      DefaultTimeoutConfig,
 		forceBootstrap:     false,
@@ -127,14 +127,14 @@ func New(node taupeer.Node, namespace string, opts ...Option) (Cluster, error) {
 // it replaces. The member is published before its stream service listens, so a
 // call the new service answers reads the new member.
 func (c *cluster) initialize() (err error) {
-	store := c.node.Store()
+	store := c.Store()
 	storagePrefix := path.Join(RaftStoragePrefix, c.namespace)
 
-	clusterLogger.Infof("[%s] initializing raft (storage_prefix=%s)", c.node.ID().ShortString(), storagePrefix)
+	clusterLogger.Infof("[%s] initializing raft (storage_prefix=%s)", c.ID().ShortString(), storagePrefix)
 
 	snapDir := c.snapshotDir
 	if snapDir == "" {
-		folder, err := c.node.NewFolder(path.Join("raft", strings.ReplaceAll(c.namespace, "/", "_")))
+		folder, err := c.NewFolder(path.Join("raft", strings.ReplaceAll(c.namespace, "/", "_")))
 		if err != nil {
 			return fmt.Errorf("failed to create snapshot store: %w", err)
 		}
@@ -156,7 +156,7 @@ func (c *cluster) initialize() (err error) {
 
 	timeouts := c.getTimeoutConfig()
 	clusterLogger.Infof("[%s] raft config: heartbeat=%v election=%v commit=%v lease=%v snap_interval=%v snap_threshold=%d prevote=enabled",
-		c.node.ID().ShortString(),
+		c.ID().ShortString(),
 		timeouts.HeartbeatTimeout, timeouts.ElectionTimeout,
 		timeouts.CommitTimeout, timeouts.LeaderLeaseTimeout,
 		timeouts.SnapshotInterval, timeouts.SnapshotThreshold)
@@ -176,12 +176,12 @@ func (c *cluster) initialize() (err error) {
 		}
 	}()
 
-	m.raftClient, err = newInternalClient(c.node, c.namespace, c.encryptionCipher)
+	m.raftClient, err = newInternalClient(c.Node, c.namespace, c.encryptionCipher)
 	if err != nil {
 		return fmt.Errorf("failed to create raft client: %w", err)
 	}
 
-	m.tracker = newPeerTracker(c.node.ID())
+	m.tracker = newPeerTracker(c.ID())
 	var trackerCtx context.Context
 	trackerCtx, m.stopTracker = context.WithCancel(c.ctx)
 
@@ -204,7 +204,7 @@ func (c *cluster) initialize() (err error) {
 	go h.run(c.ctx)
 
 	clusterLogger.Infof("[%s] raft initialization complete for namespace %s",
-		c.node.ID().ShortString(), c.namespace)
+		c.ID().ShortString(), c.namespace)
 
 	return nil
 }
@@ -222,12 +222,12 @@ func (c *cluster) handleBootstrap(m *member, raftConfig *raft.Config, transport 
 		if successfullyCompleted {
 			m.tracker.setDiscoveryInterval(settledDiscoveryInterval)
 			clusterLogger.Infof("[%s] bootstrap completed successfully, discovery interval set to %v",
-				c.node.ID().ShortString(), settledDiscoveryInterval)
+				c.ID().ShortString(), settledDiscoveryInterval)
 		}
 	}()
 
 	if c.forceBootstrap {
-		clusterLogger.Infof("[%s] force bootstrap enabled — bootstrapping self", c.node.ID().ShortString())
+		clusterLogger.Infof("[%s] force bootstrap enabled — bootstrapping self", c.ID().ShortString())
 		err := c.bootstrapSelf(m.raft, raftConfig, transport)
 		if err == nil {
 			successfullyCompleted = true
@@ -236,7 +236,7 @@ func (c *cluster) handleBootstrap(m *member, raftConfig *raft.Config, transport 
 	}
 
 	clusterLogger.Infof("[%s] waiting up to %v for existing cluster to join",
-		c.node.ID().ShortString(), c.bootstrapTimeout)
+		c.ID().ShortString(), c.bootstrapTimeout)
 
 	ctx, cancel := context.WithTimeout(c.ctx, c.bootstrapTimeout)
 	defer cancel()
@@ -256,22 +256,22 @@ func (c *cluster) handleBootstrap(m *member, raftConfig *raft.Config, transport 
 		peers := c.raftProtocolPeers()
 		if len(peers) > 0 {
 			clusterLogger.Infof("[%s] found %d raft-protocol peers — attempting join",
-				c.node.ID().ShortString(), len(peers))
+				c.ID().ShortString(), len(peers))
 			if successfullyCompleted, _ = c.tryJoinExistingCluster(ctx, m, peers, 1*time.Second); successfullyCompleted {
 				clusterLogger.Infof("[%s] joined existing cluster during discovery phase",
-					c.node.ID().ShortString())
+					c.ID().ShortString())
 				return nil
 			}
 		}
 	}
 	clusterLogger.Infof("[%s] bootstrap timeout reached — proceeding to bootstrap decision",
-		c.node.ID().ShortString())
+		c.ID().ShortString())
 
 	threshold := time.Duration(float64(c.bootstrapTimeout) * c.bootstrapThreshold)
 
 	if m.tracker.isLateJoiner(threshold) {
 		clusterLogger.Infof("[%s] detected as late joiner (all peers seen after %v) — requesting voter join",
-			c.node.ID().ShortString(), threshold)
+			c.ID().ShortString(), threshold)
 		c.requestVoterJoin(m, VoterJoinTimeout)
 		return nil
 	}
@@ -280,33 +280,33 @@ func (c *cluster) handleBootstrap(m *member, raftConfig *raft.Config, transport 
 	allPeers := m.tracker.allPeers()
 
 	clusterLogger.Infof("[%s] bootstrap decision: %d founding members, %d total peers, threshold=%v",
-		c.node.ID().ShortString(), len(founders), len(allPeers), threshold)
+		c.ID().ShortString(), len(founders), len(allPeers), threshold)
 
 	if len(founders) > 1 {
 		clusterLogger.Infof("[%s] multiple founders detected — trying to join existing cluster first",
-			c.node.ID().ShortString())
+			c.ID().ShortString())
 		if successfullyCompleted, noLeader = c.tryJoinExistingCluster(c.ctx, m, founders, 5*time.Second); successfullyCompleted {
 			return nil
 		}
 		if !noLeader {
 			clusterLogger.Infof("[%s] cluster exists but join was rejected — requesting voter join",
-				c.node.ID().ShortString())
+				c.ID().ShortString())
 			c.requestVoterJoin(m, VoterJoinTimeout)
 			return nil
 		}
 		// Only the lexicographically lowest founder bootstraps; others join.
-		if founders[0] != c.node.ID() {
+		if founders[0] != c.ID() {
 			clusterLogger.Infof("[%s] not the lowest founder (%s is) — requesting voter join",
-				c.node.ID().ShortString(), founders[0].ShortString())
+				c.ID().ShortString(), founders[0].ShortString())
 			c.requestVoterJoin(m, VoterJoinTimeout)
 			return nil
 		}
 		clusterLogger.Infof("[%s] we are the lowest founder — bootstrapping with %d peers",
-			c.node.ID().ShortString(), len(founders))
+			c.ID().ShortString(), len(founders))
 		if err := c.bootstrapWithPeers(m.raft, transport, founders); err != nil {
 			if err == raft.ErrCantBootstrap {
 				clusterLogger.Warnf("[%s] can't bootstrap (already bootstrapped?) — requesting voter join",
-					c.node.ID().ShortString())
+					c.ID().ShortString())
 				c.requestVoterJoin(m, VoterJoinTimeout)
 				return nil
 			}
@@ -320,7 +320,7 @@ func (c *cluster) handleBootstrap(m *member, raftConfig *raft.Config, transport 
 		peers := c.raftProtocolPeers()
 		if len(peers) > 0 {
 			clusterLogger.Infof("[%s] single founder with %d raft-protocol peers — attempting join",
-				c.node.ID().ShortString(), len(peers))
+				c.ID().ShortString(), len(peers))
 			successfullyCompleted, noLeader = c.tryJoinExistingCluster(c.ctx, m, peers, 5*time.Second)
 
 			if successfullyCompleted {
@@ -328,23 +328,23 @@ func (c *cluster) handleBootstrap(m *member, raftConfig *raft.Config, transport 
 			}
 			if !noLeader {
 				clusterLogger.Infof("[%s] cluster exists but join was rejected — requesting voter join",
-					c.node.ID().ShortString())
+					c.ID().ShortString())
 				c.requestVoterJoin(m, VoterJoinTimeout)
 				return nil
 			}
 		}
 		clusterLogger.Infof("[%s] no cluster found among peers — requesting late joiner vote",
-			c.node.ID().ShortString())
+			c.ID().ShortString())
 		c.requestVoterJoin(m, LateJoinerTimeout)
 		return nil
 	}
 
 	clusterLogger.Infof("[%s] no peers found — bootstrapping as single-node cluster",
-		c.node.ID().ShortString())
+		c.ID().ShortString())
 	if err := c.bootstrapSelf(m.raft, raftConfig, transport); err != nil {
 		if err == raft.ErrCantBootstrap {
 			clusterLogger.Warnf("[%s] can't bootstrap (already bootstrapped?) — requesting voter join",
-				c.node.ID().ShortString())
+				c.ID().ShortString())
 			c.requestVoterJoin(m, VoterJoinTimeout)
 			return nil
 		}
@@ -359,7 +359,7 @@ func (c *cluster) bootstrapWithPeers(r *raft.Raft, transport raft.Transport, pee
 
 	for _, p := range peers {
 		var addr raft.ServerAddress
-		if p == c.node.ID() {
+		if p == c.ID() {
 			addr = transport.LocalAddr()
 		} else {
 			addr = raft.ServerAddress(p.String())
@@ -371,24 +371,24 @@ func (c *cluster) bootstrapWithPeers(r *raft.Raft, transport raft.Transport, pee
 		})
 	}
 
-	clusterLogger.Infof("[%s] bootstrapping cluster with %d servers", c.node.ID().ShortString(), len(servers))
+	clusterLogger.Infof("[%s] bootstrapping cluster with %d servers", c.ID().ShortString(), len(servers))
 	for i, s := range servers {
-		clusterLogger.Infof("[%s]   server[%d]: id=%s addr=%s", c.node.ID().ShortString(), i, s.ID, s.Address)
+		clusterLogger.Infof("[%s]   server[%d]: id=%s addr=%s", c.ID().ShortString(), i, s.ID, s.Address)
 	}
 
 	f := r.BootstrapCluster(raft.Configuration{Servers: servers})
 	if err := f.Error(); err != nil {
-		clusterLogger.Warnf("[%s] bootstrap failed: %v", c.node.ID().ShortString(), err)
+		clusterLogger.Warnf("[%s] bootstrap failed: %v", c.ID().ShortString(), err)
 		return err
 	}
 
-	clusterLogger.Infof("[%s] bootstrap succeeded with %d servers", c.node.ID().ShortString(), len(servers))
+	clusterLogger.Infof("[%s] bootstrap succeeded with %d servers", c.ID().ShortString(), len(servers))
 	return nil
 }
 
 func (c *cluster) bootstrapSelf(r *raft.Raft, raftConfig *raft.Config, transport raft.Transport) error {
 	clusterLogger.Infof("[%s] bootstrapping as single-node (id=%s addr=%s)",
-		c.node.ID().ShortString(), raftConfig.LocalID, transport.LocalAddr())
+		c.ID().ShortString(), raftConfig.LocalID, transport.LocalAddr())
 
 	f := r.BootstrapCluster(raft.Configuration{
 		Servers: []raft.Server{
@@ -400,7 +400,7 @@ func (c *cluster) bootstrapSelf(r *raft.Raft, raftConfig *raft.Config, transport
 		},
 	})
 	if err := f.Error(); err != nil {
-		clusterLogger.Warnf("[%s] self-bootstrap failed: %v", c.node.ID().ShortString(), err)
+		clusterLogger.Warnf("[%s] self-bootstrap failed: %v", c.ID().ShortString(), err)
 		return err
 	}
 	return nil
@@ -408,7 +408,7 @@ func (c *cluster) bootstrapSelf(r *raft.Raft, raftConfig *raft.Config, transport
 
 func (c *cluster) buildRaftConfig() *raft.Config {
 	cfg := raft.DefaultConfig()
-	cfg.LocalID = raft.ServerID(c.node.ID().String())
+	cfg.LocalID = raft.ServerID(c.ID().String())
 	cfg.PreVoteDisabled = false
 	// A leader that commits its own removal steps down instead of shutting
 	// itself down. raft drops the future of a shutdown it starts itself, so
@@ -441,7 +441,7 @@ const minTransportTimeout = time.Second
 
 func (c *cluster) createTransport() (*raft.NetworkTransport, error) {
 	timeout := max(c.getTimeoutConfig().HeartbeatTimeout, minTransportTimeout)
-	transport, err := newNamespaceTransport(c.node.Peer(), c.namespace, timeout, c.encryptionCipher)
+	transport, err := newNamespaceTransport(c.Host(), c.namespace, timeout, c.encryptionCipher)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create namespace transport: %w", err)
 	}
@@ -449,7 +449,7 @@ func (c *cluster) createTransport() (*raft.NetworkTransport, error) {
 }
 
 func (c *cluster) requestVoterJoin(m *member, timeout time.Duration) {
-	clusterLogger.Infof("[%s] starting voter join request loop (timeout=%v)", c.node.ID().ShortString(), timeout)
+	clusterLogger.Infof("[%s] starting voter join request loop (timeout=%v)", c.ID().ShortString(), timeout)
 
 	go c.askToJoin(m, timeout)
 }
@@ -467,34 +467,34 @@ func (c *cluster) askToJoin(m *member, timeout time.Duration) {
 	for {
 		select {
 		case <-ctx.Done():
-			clusterLogger.Infof("[%s] voter join request loop ended (context done)", c.node.ID().ShortString())
+			clusterLogger.Infof("[%s] voter join request loop ended (context done)", c.ID().ShortString())
 			return
 		case <-ticker.C:
 		}
 		if m.raft.State() == raft.Shutdown {
-			clusterLogger.Infof("[%s] voter join request loop ended (member taken down)", c.node.ID().ShortString())
+			clusterLogger.Infof("[%s] voter join request loop ended (member taken down)", c.ID().ShortString())
 			return
 		}
 		var targets []peer.ID
-		if leader, err := leaderKnownTo(m.raft); err == nil && leader != c.node.ID() {
+		if leader, err := leaderKnownTo(m.raft); err == nil && leader != c.ID() {
 			targets = []peer.ID{leader}
 			clusterLogger.Infof("[%s] requesting voter join from leader %s",
-				c.node.ID().ShortString(), leader.ShortString())
+				c.ID().ShortString(), leader.ShortString())
 		} else {
 			targets = c.voterJoinTargets(m.tracker)
 			clusterLogger.Infof("[%s] requesting voter join from %d targets (no known leader)",
-				c.node.ID().ShortString(), len(targets))
+				c.ID().ShortString(), len(targets))
 		}
 		if len(targets) == 0 {
 			continue
 		}
-		if err := m.raftClient.JoinVoter(ctx, c.node.ID(), timeout, targets...); err != nil {
-			clusterLogger.Infof("[%s] voter join request failed: %v", c.node.ID().ShortString(), err)
+		if err := m.raftClient.JoinVoter(ctx, c.ID(), timeout, targets...); err != nil {
+			clusterLogger.Infof("[%s] voter join request failed: %v", c.ID().ShortString(), err)
 			continue
 		}
 		m.joined.Store(true)
 		m.tracker.setDiscoveryInterval(settledDiscoveryInterval)
-		clusterLogger.Infof("[%s] voter join request accepted", c.node.ID().ShortString())
+		clusterLogger.Infof("[%s] voter join request accepted", c.ID().ShortString())
 		return
 	}
 }
@@ -514,16 +514,16 @@ func (c *cluster) tryJoinExistingCluster(ctx context.Context, m *member, peers [
 		case <-ticker.C:
 		}
 		if ctx.Err() != nil {
-			clusterLogger.Infof("[%s] tryJoinExistingCluster timed out", c.node.ID().ShortString())
+			clusterLogger.Infof("[%s] tryJoinExistingCluster timed out", c.ID().ShortString())
 			return false, false
 		}
 		var targets []peer.ID
-		if leader, err := leaderKnownTo(m.raft); err == nil && leader != c.node.ID() {
+		if leader, err := leaderKnownTo(m.raft); err == nil && leader != c.ID() {
 			targets = []peer.ID{leader}
 		} else {
 			targets = make([]peer.ID, 0, len(peers))
 			for _, pid := range peers {
-				if pid != c.node.ID() {
+				if pid != c.ID() {
 					targets = append(targets, pid)
 				}
 			}
@@ -531,10 +531,10 @@ func (c *cluster) tryJoinExistingCluster(ctx context.Context, m *member, peers [
 		if len(targets) == 0 {
 			continue
 		}
-		err := m.raftClient.JoinVoter(ctx, c.node.ID(), timeout, targets...)
+		err := m.raftClient.JoinVoter(ctx, c.ID(), timeout, targets...)
 		if err == nil {
 			m.joined.Store(true)
-			clusterLogger.Infof("[%s] successfully joined existing cluster", c.node.ID().ShortString())
+			clusterLogger.Infof("[%s] successfully joined existing cluster", c.ID().ShortString())
 			return true, false
 		}
 		if errors.Is(err, ErrNoLeader) || strings.Contains(err.Error(), ErrNoLeader.Error()) {
@@ -549,21 +549,21 @@ func (c *cluster) protocolPeers(protocolID protocol.ID, tracker *peerTracker) []
 
 	if tracker != nil {
 		for _, pid := range tracker.allPeers() {
-			if pid == c.node.ID() {
+			if pid == c.ID() {
 				continue
 			}
 			targets[pid] = struct{}{}
 		}
 	}
 
-	for _, pid := range c.node.Peer().Network().Peers() {
-		if pid == c.node.ID() {
+	for _, pid := range c.Host().Network().Peers() {
+		if pid == c.ID() {
 			continue
 		}
 		targets[pid] = struct{}{}
 	}
 
-	host := c.node.Peer()
+	host := c.Host()
 	result := make([]peer.ID, 0, len(targets))
 
 	for pid := range targets {
@@ -592,7 +592,7 @@ func (c *cluster) Close() error {
 		return ErrAlreadyClosed
 	}
 
-	clusterLogger.Infof("[%s] closing raft cluster for namespace %s", c.node.ID().ShortString(), c.namespace)
+	clusterLogger.Infof("[%s] closing raft cluster for namespace %s", c.ID().ShortString(), c.namespace)
 
 	if c.cancel != nil {
 		c.cancel()
@@ -965,20 +965,20 @@ func (c *cluster) AddVoter(id peer.ID, timeout time.Duration) error {
 	for _, server := range configFuture.Configuration().Servers {
 		if server.ID == serverID {
 			clusterLogger.Infof("[%s] peer %s already in configuration — skipping AddVoter",
-				c.node.ID().ShortString(), id.ShortString())
+				c.ID().ShortString(), id.ShortString())
 			return nil
 		}
 	}
 
-	clusterLogger.Infof("[%s] adding voter %s to cluster", c.node.ID().ShortString(), id.ShortString())
+	clusterLogger.Infof("[%s] adding voter %s to cluster", c.ID().ShortString(), id.ShortString())
 
 	future := m.raft.AddVoter(serverID, serverAddr, 0, timeout)
 	if err := m.wait(future); err != nil {
-		clusterLogger.Warnf("[%s] AddVoter %s failed: %v", c.node.ID().ShortString(), id.ShortString(), err)
+		clusterLogger.Warnf("[%s] AddVoter %s failed: %v", c.ID().ShortString(), id.ShortString(), err)
 		return mapNotLeader(err)
 	}
 
-	clusterLogger.Infof("[%s] voter %s added successfully", c.node.ID().ShortString(), id.ShortString())
+	clusterLogger.Infof("[%s] voter %s added successfully", c.ID().ShortString(), id.ShortString())
 	return nil
 }
 
@@ -992,12 +992,12 @@ func (c *cluster) RemoveServer(id peer.ID, timeout time.Duration) error {
 		return ErrNotLeader
 	}
 
-	clusterLogger.Infof("[%s] removing server %s from cluster", c.node.ID().ShortString(), id.ShortString())
+	clusterLogger.Infof("[%s] removing server %s from cluster", c.ID().ShortString(), id.ShortString())
 
 	serverID := raft.ServerID(id.String())
 	future := m.raft.RemoveServer(serverID, 0, timeout)
 	if err := m.wait(future); err != nil {
-		clusterLogger.Warnf("[%s] RemoveServer %s failed: %v", c.node.ID().ShortString(), id.ShortString(), err)
+		clusterLogger.Warnf("[%s] RemoveServer %s failed: %v", c.ID().ShortString(), id.ShortString(), err)
 		return mapNotLeader(err)
 	}
 	return nil
@@ -1008,6 +1008,6 @@ func (c *cluster) TransferLeadership() error {
 		return ErrShutdown
 	}
 
-	clusterLogger.Infof("[%s] transferring leadership", c.node.ID().ShortString())
+	clusterLogger.Infof("[%s] transferring leadership", c.ID().ShortString())
 	return mapNotLeader(c.current().raft.LeadershipTransfer().Error())
 }

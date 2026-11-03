@@ -63,7 +63,7 @@ func TestAnAddedServiceJoinsAFleet(t *testing.T) {
 
 	target, err := libp2ppeer.Decode(pids[1])
 	require.NoError(t, err)
-	client, err := rpc.NewClient(u.Peers()[0].Peer(), target, protocol)
+	client, err := rpc.NewClient(u.Peers()[0].Host(), target, protocol)
 	require.NoError(t, err)
 	defer client.Close()
 

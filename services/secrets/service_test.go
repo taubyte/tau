@@ -55,7 +55,7 @@ type cluster struct {
 	consumer peerNode.Node // runs no service, the way a real client node does not
 	services []*Service
 	stopped  []int
-	dbs      []coreKvdb.KVDB
+	dbs      []coreKvdb.Instance
 	paths    []string
 }
 
@@ -100,7 +100,7 @@ func newMesh(t *testing.T, ctx context.Context, n int, opts ...Option) *cluster 
 	mesh := append(c.nodes, c.consumer)
 	for i, node := range mesh {
 		for _, other := range mesh[i+1:] {
-			require.NoError(t, node.Peer().Connect(ctx, other.Peer().Peerstore().PeerInfo(other.ID())))
+			require.NoError(t, node.Host().Connect(ctx, other.Host().Peerstore().PeerInfo(other.ID())))
 		}
 	}
 
@@ -131,7 +131,7 @@ func (c *cluster) awaitMesh(t *testing.T, ctx context.Context) {
 func (c *cluster) start(t *testing.T, node peerNode.Node) int {
 	t.Helper()
 
-	db, err := kvdb.New(node).New(logging.Logger("secrets-test"), c.db, 1)
+	db, err := kvdb.Open(node, c.db, kvdb.WithLogger(logging.Logger("secrets-test")), kvdb.WithRebroadcast(time.Second))
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 
@@ -146,7 +146,7 @@ func (c *cluster) start(t *testing.T, node peerNode.Node) int {
 
 // launch starts one service instance over an existing node, database and share
 // store, so a node can be restarted onto the state it already had.
-func (c *cluster) launch(t *testing.T, node peerNode.Node, db coreKvdb.KVDB, path string) *Service {
+func (c *cluster) launch(t *testing.T, node peerNode.Node, db coreKvdb.Instance, path string) *Service {
 	t.Helper()
 
 	srv := c.serve(t, node, db, path)
@@ -159,13 +159,13 @@ func (c *cluster) launch(t *testing.T, node peerNode.Node, db coreKvdb.KVDB, pat
 
 // serve builds and starts one service over a node, a database and a share
 // store, announcing epochs on the node's own gossip.
-func (c *cluster) serve(t *testing.T, node peerNode.Node, db coreKvdb.KVDB, path string) *Service {
+func (c *cluster) serve(t *testing.T, node peerNode.Node, db coreKvdb.Instance, path string) *Service {
 	t.Helper()
 
 	// Membership is stated, as discovery states it on a node, rather than read off
 	// identify, whose record of a late-listening service arrives only by a push.
 	opts := append([]Option{WithRoot(path), WithPubSub(node.Messaging()), WithBootstrapDelay(never), WithMembers(c.memberIDs), WithReplacedRetention(0)}, c.opts...)
-	srv, err := New(node.Peer(), db, opts...)
+	srv, err := New(node.Host(), db, opts...)
 	require.NoError(t, err)
 	require.NoError(t, srv.Start(context.Background()))
 	t.Cleanup(func() { srv.Close() })
@@ -183,7 +183,7 @@ func (c *cluster) grow(t *testing.T, ctx context.Context) {
 
 	require.NoError(t, peerNode.LinkAllPeers())
 	for _, other := range append(c.nodes, c.consumer) {
-		require.NoError(t, node.Peer().Connect(ctx, other.Peer().Peerstore().PeerInfo(other.ID())))
+		require.NoError(t, node.Host().Connect(ctx, other.Host().Peerstore().PeerInfo(other.ID())))
 	}
 
 	c.mu.Lock()
@@ -298,7 +298,7 @@ func (r refClient) List(ctx context.Context, project string) ([]Ref, error) {
 func (c *cluster) client(t *testing.T) refClient {
 	t.Helper()
 
-	secrets, err := NewClient(c.consumer.Peer(), c.memberIDs, nil)
+	secrets, err := NewClient(c.consumer.Host(), c.memberIDs, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { secrets.Close() })
 

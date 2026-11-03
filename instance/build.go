@@ -126,7 +126,7 @@ func (f *fromDiscovery) Failed(libp2ppeer.ID) {}
 
 // dial opens a pool onto whichever node runs `service`, on `p`.
 func (n *Instance) dial(p protocol.ID, service string) (*clients.Pool, error) {
-	pool, err := clients.NewPool(n.opts.host, &fromDiscovery{node: n, name: service}, p, maxAuthConnections)
+	pool, err := clients.NewPool(n.Host(), &fromDiscovery{node: n, name: service}, p, maxAuthConnections)
 	if err != nil {
 		return nil, err
 	}
@@ -140,10 +140,7 @@ func (n *Instance) openAuth() error {
 	}
 
 	// Auth keeps users in its own database and keys and OAuth client secrets in the vault.
-	if n.opts.databases == nil {
-		return ErrNoDatabases
-	}
-	db, err := n.opts.databases.New(logger, Auth, rebroadcastSeconds)
+	db, err := n.kvdb(Auth)
 	if err != nil {
 		return err
 	}
@@ -166,7 +163,7 @@ func (n *Instance) openAuth() error {
 		authOptions = append(authOptions, identity)
 	}
 
-	svc, err := authService.New(n.opts.host, authOptions...)
+	svc, err := authService.New(n.Host(), authOptions...)
 	if err != nil {
 		return err
 	}
@@ -200,11 +197,7 @@ func (n *Instance) openBuildBackend() error {
 	if !n.cfg.runs(BuildBackend) {
 		return nil
 	}
-	if n.opts.raft == nil {
-		return ErrNoRaft
-	}
-
-	cluster, err := n.opts.raft(BuildBackend)
+	cluster, err := n.raftGroup(BuildBackend)
 	if err != nil {
 		return fmt.Errorf("node: %s: %w", BuildBackend, err)
 	}
@@ -307,7 +300,7 @@ func (n *Instance) openBuildBackend() error {
 	}
 
 	service := []backend.Option{
-		backend.WithHost(n.opts.host),
+		backend.WithHost(n.Host()),
 		backend.WithStore(cluster),
 		backend.WithRepositories(projects),
 		backend.WithRunner(runner),
@@ -315,8 +308,8 @@ func (n *Instance) openBuildBackend() error {
 		// at the forge over the repository's deploy key before it is queued.
 		backend.WithConfirmer(seams.Confirm),
 	}
-	if n.opts.assets != nil {
-		service = append(service, backend.WithAssets(n.opts.assets))
+	if n.assets != nil {
+		service = append(service, backend.WithAssets(n.assets))
 	}
 
 	svc, err := backend.New(n.cfg.BuildBackend, service...)
@@ -389,8 +382,8 @@ func (n *Instance) openBuildFrontend() error {
 	// A forge with no signed webhook reports pushes on its own feed (Gerrit's
 	// stream-events), subscribed to as a second source (frontend/streams.go). A finished
 	// job's logs and artifacts are read by cid from the backend's store.
-	if n.opts.assets != nil {
-		frontendOptions = append(frontendOptions, frontend.WithAssets(n.opts.assets))
+	if n.assets != nil {
+		frontendOptions = append(frontendOptions, frontend.WithAssets(n.assets))
 	}
 	if len(registry.EventHosts()) > 0 {
 		frontendOptions = append(frontendOptions, frontend.WithStreams(forges, projects))
