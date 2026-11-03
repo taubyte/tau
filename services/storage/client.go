@@ -39,6 +39,10 @@ func (c *Client) Close() error { c.conn.Close(); return nil }
 // Put stores content as the next version of name, and returns once the cloud's
 // barrier of nodes hold it.
 func (c *Client) Put(ctx context.Context, at Address, name string, o Object, content io.Reader) (Version, error) {
+	// A SOURCE THAT FAILS CANCELS THE STREAM rather than closing it: a closed
+	// stream is a whole object to the server, and it would keep the prefix.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	stream := c.svc.Put(ctx)
 	head := &storagev2.PutRequest{Part: &storagev2.PutRequest_Head{Head: &storagev2.PutHead{
 		At: wireAddress(at), Name: []byte(name), ContentType: o.ContentType, Metadata: o.Metadata,
@@ -58,6 +62,7 @@ func (c *Client) Put(ctx context.Context, at Address, name string, o Object, con
 			break
 		}
 		if err != nil {
+			cancel()
 			stream.CloseAndReceive()
 			return Version{}, err
 		}

@@ -330,7 +330,7 @@ func (n *Instance) openRegister() error {
 		return err
 	}
 	n.register = svc
-	n.provide(Register, svc)
+	n.provide(Register, svc.Local())
 	n.closers = append(n.closers, svc)
 	return nil
 }

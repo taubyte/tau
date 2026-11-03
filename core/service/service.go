@@ -5,6 +5,8 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -12,8 +14,10 @@ import (
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 
+	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/rpc"
 )
 
 // Service is one service an instance can run.
@@ -76,4 +80,28 @@ type Vault interface {
 	Set(ctx context.Context, project, environment, name string, value []byte) error
 	Delete(ctx context.Context, project, environment, name string) error
 	List(ctx context.Context, project, environment string) ([]string, error)
+}
+
+// ErrNoneRuns is a service no node is known to run.
+var ErrNoneRuns = errors.New("service: no node is known to run it")
+
+// Reach is the service named as h reaches it: the handle it provided on this
+// instance when it runs here, otherwise a client dial opens to a node discovery
+// names. See p2p/rpc's Reach for why the local case is no client at all.
+func Reach[T any](h Host, name string, dial func(host.Host, libp2ppeer.ID) (T, error)) *rpc.Reacher[T] {
+	self := h.Peer().Host()
+	return rpc.Reach(self, name,
+		func() (libp2ppeer.ID, error) {
+			for _, id := range h.Peers(name) {
+				if id != self.ID() {
+					return id, nil
+				}
+			}
+			return "", fmt.Errorf("%w: %s", ErrNoneRuns, name)
+		},
+		func() (T, bool) {
+			t, ok := h.Local(name).(T)
+			return t, ok
+		},
+		func(id libp2ppeer.ID) (T, error) { return dial(self, id) })
 }

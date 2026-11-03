@@ -176,19 +176,18 @@ func TestTheStorageBriefsSurfaceIsWhatIsExported(t *testing.T) {
 	require.Equal(t, []string{
 		"Accounted", "Address", "AssetsBucket", "Blocks", "Bucket", "Bytes", "Catalog", "Client",
 		"Clock", "Config", "Datastore", "DeadObject", "DefaultBarrier", "DefaultMaxSkew",
-		"DefaultReplicas", "DefaultSweep", "Descriptor", "ErrEmptyIdentity",
+		"DefaultReplicas", "DefaultSweep", "Descriptor", "Dial", "ErrEmptyIdentity",
 		"ErrEmptyObjectName", "ErrGateClosed", "ErrLocalClockSkew", "ErrLogicalOverflow",
 		"ErrNoAddress", "ErrNoBytes", "ErrNoCatalog", "ErrNoShards", "ErrNotFound",
 		"ErrNotThisServicesRow", "ErrRemoteClockSkew", "ErrStampRange", "ErrUnderHeld",
-		"ErrWriterMismatch", "Gates", "Host", "Local", "Marker", "Meter", "MisplacementDrop",
-		"New", "NewAddress", "NewBloomMarker", "NewBucket", "NewClient", "NewClock",
-		"NewExactMarker", "NewLocal", "NewReach", "NewSweeper", "Newest", "Object", "Op",
-		"OpAdd", "OpRefuse", "OpRemove", "Option", "Order", "PackStamp", "ParseVersionKey",
-		"Policy", "Protocol", "Purpose", "Reach", "Reference", "Role", "Service", "ShardOpener",
-		"Shards", "Start", "Store", "SweepResult", "Sweeper", "UnpackStamp", "Usage", "Version",
-		"VersionKey", "VersionRecord", "WithBytes", "WithCatalog", "WithClock", "WithFleet",
-		"WithLocal", "WithLogger", "WithMembers", "WithMeter", "WithServerOptions", "WithShards",
-		"WithSweep",
+		"ErrWriterMismatch", "Gates", "Local", "Marker", "Meter", "MisplacementDrop", "New",
+		"NewAddress", "NewBloomMarker", "NewBucket", "NewClient", "NewClock", "NewExactMarker",
+		"NewLocal", "NewSweeper", "Newest", "Object", "Op", "OpAdd", "OpRefuse", "OpRemove",
+		"Option", "Order", "PackStamp", "ParseVersionKey", "Policy", "Protocol", "Purpose",
+		"Reference", "Role", "Service", "ShardOpener", "Shards", "Start", "Store", "SweepResult",
+		"Sweeper", "UnpackStamp", "Usage", "Version", "VersionKey", "VersionRecord", "WithBytes",
+		"WithCatalog", "WithClock", "WithFleet", "WithLocal", "WithLogger", "WithMembers",
+		"WithMeter", "WithServerOptions", "WithShards", "WithSweep",
 	}, dedupe(names))
 }
 

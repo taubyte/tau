@@ -17,7 +17,6 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	echov1 "github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1"
 	"github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1/echov1connect"
-	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/storage"
 )
 
@@ -273,22 +272,22 @@ func (s started) Start(ctx context.Context, h Host) (io.Closer, error) { return 
 
 func TestStorageRunsBesideTheServicesItReaches(t *testing.T) {
 	ctx := t.Context()
-	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Register, Discovery, storage.Descriptor.Name}}),
-		withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
-		WithService(storage.Role))
+	p := mockPeer(t)
+	n, err := New(p, rooted(t, Config{Services: []string{Register, Discovery, storage.Descriptor.Name}}), WithService(storage.Role))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.NoError(t, n.Start(ctx))
 
-	s, ok := n.local(storage.Descriptor.Name).(*storage.Service)
-	require.True(t, ok, "it provided itself")
+	// FROM ANOTHER PEER, the way any service reaches it. The fleet is read from the
+	// register on the instance, which is why a write can be acknowledged at all.
+	client, err := storage.NewClient(callerOf(t, p), p.ID())
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
 	at, err := storage.NewAddress("shop", "prod", storage.AssetsBucket, "QmPackage")
 	require.NoError(t, err)
-	// THE FLEET IS READ FROM THE REGISTER ON THIS INSTANCE, which is why a write
-	// can be acknowledged at all.
-	v, err := s.Put(ctx, at, "job-1", storage.Object{}, strings.NewReader("an artifact"))
+	v, err := client.Put(ctx, at, "job-1", storage.Object{}, strings.NewReader("an artifact"))
 	require.NoError(t, err)
-	r, err := s.Read(ctx, v.Record.RootCID)
+	r, err := client.Read(ctx, v.Record.RootCID)
 	require.NoError(t, err)
 	body, err := io.ReadAll(r)
 	require.NoError(t, r.Close())

@@ -48,7 +48,7 @@ func newStorageNode(t *testing.T) *storageNode {
 	require.NoError(t, err)
 	t.Cleanup(func() { reg.Close() })
 
-	return &storageNode{Node: p, t: t, locals: map[string]any{register.Descriptor.Name: reg}}
+	return &storageNode{Node: p, t: t, locals: map[string]any{register.Descriptor.Name: reg.Local()}}
 }
 
 func (i *storageNode) Name() string    { return Descriptor.Name }
@@ -92,7 +92,12 @@ func (i *storageNode) Config(into any) error {
 	return nil
 }
 
-var _ Host = (*storageNode)(nil)
+func (*storageNode) Listen(protocol.ID, http.Handler) error { return nil }
+func (*storageNode) Handle(string, http.Handler) error      { return nil }
+func (*storageNode) Secrets() service.Vault                 { return nil }
+func (i *storageNode) Root() string                         { return i.t.TempDir() }
+
+var _ service.Host = (*storageNode)(nil)
 
 // placed is a discovery that places on the members it is given.
 type placed func() []placement.Member
@@ -111,7 +116,7 @@ func TestStorageRunsFromWhatItsInstanceGivesIt(t *testing.T) {
 	i := newStorageNode(t)
 
 	require.Equal(t, Descriptor.Name, Role.Name())
-	closer, err := Role.Start(ctx, serviceHost{i})
+	closer, err := Role.Start(ctx, i)
 	require.NoError(t, err)
 	t.Cleanup(func() { closer.Close() })
 
@@ -228,13 +233,3 @@ func TestAPeersBlocksAreReadOnlyWhereTheyAre(t *testing.T) {
 	_, err = bytes.Fetch(ctx, root, "not-a-peer")
 	require.Error(t, err)
 }
-
-// serviceHost is a storageNode as the service contract types it.
-type serviceHost struct{ *storageNode }
-
-var _ service.Host = serviceHost{}
-
-func (serviceHost) Listen(protocol.ID, http.Handler) error { return nil }
-func (serviceHost) Handle(string, http.Handler) error      { return nil }
-func (serviceHost) Secrets() service.Vault                 { return nil }
-func (h serviceHost) Root() string                         { return h.t.TempDir() }

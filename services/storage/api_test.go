@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/ipfs/go-cid"
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	mh "github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/require"
 
@@ -99,66 +98,36 @@ func TestABlockIsReadFromWhoeverHoldsIt(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestAReachAsksTheServiceHereThenAnyStorageNode(t *testing.T) {
+func TestAStoreIsDialledAsTheStore(t *testing.T) {
 	ctx := t.Context()
 	at := assetsOf(t, "objects")
 	c := newCluster(t, 3, fixedCatalog{at})
 
-	// NOT A STORAGE NODE: the first id answers nothing, so the next one is asked
-	// before any of the content was read.
-	unreachable := libp2ppeer.ID("not-a-storage-node")
-	remote := NewReach(c.caller, func() (Store, bool) { return nil, false },
-		func() []libp2ppeer.ID { return append([]libp2ppeer.ID{unreachable}, c.ids...) })
-	t.Cleanup(func() { remote.Close() })
-
-	v, err := remote.Put(ctx, at, "o", Object{ContentType: "text/plain"}, strings.NewReader("over the wire"))
+	s, err := Dial(c.caller, c.ids[0])
 	require.NoError(t, err)
-	got, err := remote.Current(ctx, at, "o")
+	t.Cleanup(func() { s.(*Client).Close() })
+	v, err := s.Put(ctx, at, "o", Object{}, strings.NewReader("over the wire"))
 	require.NoError(t, err)
-	require.Equal(t, v.Stamp, got.Stamp)
-	vs, err := remote.Versions(ctx, at, "o", 0)
+	vs, err := s.Versions(ctx, at, "o", 0)
 	require.NoError(t, err)
 	require.Len(t, vs, 1)
-	listed, err := remote.List(ctx, at, "", "", 0)
+
+	// A SOURCE THAT FAILS is the put's failure, and nothing is written.
+	_, err = s.Put(ctx, at, "broken", Object{}, io.MultiReader(strings.NewReader("some"), erroring{}))
+	require.Error(t, err)
+	_, err = s.Current(ctx, at, "broken")
+	require.ErrorIs(t, err, ErrNotFound)
+
+	// AND IN PROCESS, the same store.
+	here := c.nodes[1]
+	vs, err = here.Versions(ctx, at, "o", 0)
+	require.NoError(t, err)
+	require.Equal(t, v.Stamp, vs[0].Stamp)
+	listed, err := here.List(ctx, at, "", "", 0)
 	require.NoError(t, err)
 	require.Equal(t, []string{"o"}, names(listed))
-	r, err := remote.Read(ctx, v.Record.RootCID)
+	_, err = here.Delete(ctx, at, "o")
 	require.NoError(t, err)
-	body, err := io.ReadAll(r)
-	require.NoError(t, r.Close())
-	require.NoError(t, err)
-	require.Equal(t, "over the wire", string(body))
-	_, err = remote.Delete(ctx, at, "o")
-	require.NoError(t, err)
-	_, err = remote.Current(ctx, at, "o")
-	require.ErrorIs(t, err, ErrNotFound, "an answer is the answer, not a reason to ask the next node")
-
-	// THE SERVICE ON THIS INSTANCE is asked without a hop, and no other.
-	local := NewReach(c.caller, func() (Store, bool) { return c.nodes[0], true }, func() []libp2ppeer.ID { return nil })
-	t.Cleanup(func() { local.Close() })
-	here, err := local.Put(ctx, at, "here", Object{}, strings.NewReader("in process"))
-	require.NoError(t, err)
-	vs, err = local.Versions(ctx, at, "here", 0)
-	require.NoError(t, err)
-	require.Len(t, vs, 1)
-	listed, err = local.List(ctx, at, "h", "", 0)
-	require.NoError(t, err)
-	require.Equal(t, []string{"here"}, names(listed))
-	r, err = local.Read(ctx, here.Record.RootCID)
-	require.NoError(t, err)
-	require.NoError(t, r.Close())
-	_, err = local.Delete(ctx, at, "here")
-	require.NoError(t, err)
-
-	// A PUT THAT CONSUMED ITS STREAM is not offered to another node.
-	failing := NewReach(c.caller, func() (Store, bool) { return nil, false }, func() []libp2ppeer.ID { return c.ids })
-	t.Cleanup(func() { failing.Close() })
-	_, err = failing.Put(ctx, at, "broken", Object{}, io.MultiReader(strings.NewReader("some"), erroring{}))
-	require.Error(t, err)
-
-	nobody := NewReach(c.caller, func() (Store, bool) { return nil, false }, func() []libp2ppeer.ID { return nil })
-	_, err = nobody.Current(ctx, at, "o")
-	require.Error(t, err, "no storage node is known")
 }
 
 type erroring struct{}
