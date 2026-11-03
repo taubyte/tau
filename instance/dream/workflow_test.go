@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	storageService "github.com/taubyte/tau/services/storage"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/instance"
@@ -121,7 +123,7 @@ func TestAWorkflowRunsEndToEnd(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services: []string{instance.Register, instance.Worker, instance.Discovery, instance.Primitives},
+		Services: []string{instance.Register, instance.Worker, instance.Discovery, instance.Primitives, storageService.Descriptor.Name},
 	})
 	require.NoError(t, err)
 	defer u.Close()

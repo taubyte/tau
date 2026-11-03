@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	storageService "github.com/taubyte/tau/services/storage"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/instance"
@@ -94,7 +96,7 @@ func TestAnInstanceIsAdmittedByARealFunction(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services: []string{instance.Register, instance.Worker, instance.Discovery},
+		Services: []string{instance.Register, instance.Worker, instance.Discovery, storageService.Descriptor.Name},
 	})
 	require.NoError(t, err)
 	defer u.Close()
@@ -167,7 +169,7 @@ func TestTheInstanceLimitHoldsEndToEnd(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services: []string{instance.Register, instance.Worker, instance.Discovery},
+		Services: []string{instance.Register, instance.Worker, instance.Discovery, storageService.Descriptor.Name},
 	})
 	require.NoError(t, err)
 	defer u.Close()

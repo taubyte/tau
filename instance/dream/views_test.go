@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	storageService "github.com/taubyte/tau/services/storage"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/instance"
@@ -30,7 +32,7 @@ var twoRegions = schema.Preview("region-1", "region-2")
 func inRegion(t *testing.T, region, name string) (*running, *instance.Instance) {
 	t.Helper()
 	u, err := nodeDream.Start(t.Context(), t.Name()+"-"+region, nodeDream.Config{
-		Services:  []string{instance.Register, instance.Worker, instance.Discovery, instance.Gateway, instance.Database, instance.Primitives},
+		Services:  []string{instance.Register, instance.Worker, instance.Discovery, instance.Gateway, instance.Database, instance.Primitives, storageService.Descriptor.Name},
 		Configure: func(_ int, c *instance.Config) { c.Region = region },
 	})
 	require.NoError(t, err)

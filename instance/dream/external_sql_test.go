@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	storageService "github.com/taubyte/tau/services/storage"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/instance"
@@ -128,7 +130,7 @@ func externalSQL(t *testing.T, name string, s server, port int) {
 	s.start(t, port)
 
 	r := deployServing(t, pointedAt(t, name, port), "orders.example.com", kitchenSinkWASM(t), nil,
-		instance.Register, instance.Worker, instance.Discovery, instance.Gateway, instance.Database, instance.Primitives, instance.Secrets)
+		instance.Register, instance.Worker, instance.Discovery, instance.Gateway, instance.Database, instance.Primitives, instance.Secrets, storageService.Descriptor.Name)
 
 	// The credentials are a secret set the way a developer sets one; the first exec
 	// retries until it lands.

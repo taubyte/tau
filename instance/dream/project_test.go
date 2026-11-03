@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	storageService "github.com/taubyte/tau/services/storage"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/instance"
@@ -277,7 +279,7 @@ func deploy(t *testing.T, name, host string, wasm []byte) *running {
 func deployWith(t *testing.T, name, host string, wasm []byte, extra map[string][]byte) *running {
 	t.Helper()
 	return deployServing(t, name, host, wasm, extra,
-		instance.Register, instance.Worker, instance.Discovery, instance.Gateway, instance.Database, instance.Primitives)
+		instance.Register, instance.Worker, instance.Discovery, instance.Gateway, instance.Database, instance.Primitives, storageService.Descriptor.Name)
 }
 
 // deployServing is deployWith over a chosen set of services: a zone answered by a
@@ -726,7 +728,7 @@ func deployFleetOf(t *testing.T, copies int, wasm []byte, extra map[string][]byt
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Services: []string{
 			instance.Register, instance.Worker, instance.Discovery, instance.Gateway,
-			instance.Database, instance.Primitives},
+			instance.Database, instance.Primitives, storageService.Descriptor.Name},
 		Copies: copies,
 	})
 	require.NoError(t, err)

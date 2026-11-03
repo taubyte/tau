@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	storageService "github.com/taubyte/tau/services/storage"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/instance"
@@ -19,7 +21,7 @@ import (
 
 func TestAContainerWorkerRunsToCompletionPerInvocation(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services:  []string{instance.Register, instance.Worker, instance.Discovery},
+		Services:  []string{instance.Register, instance.Worker, instance.Discovery, storageService.Descriptor.Name},
 		Container: instance.BackendDocker,
 	})
 	require.NoError(t, err)
@@ -69,7 +71,7 @@ func TestAContainerWorkerRunsToCompletionPerInvocation(t *testing.T) {
 
 func TestAContainerWorkerReadsItsSecretThroughTheHelper(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services:  []string{instance.Register, instance.Worker, instance.Discovery, instance.Secrets},
+		Services:  []string{instance.Register, instance.Worker, instance.Discovery, instance.Secrets, storageService.Descriptor.Name},
 		Container: instance.BackendDocker,
 	})
 	require.NoError(t, err)
