@@ -308,7 +308,7 @@ func TestAnEmptyProjectHasNoFindings(t *testing.T) {
 
 func corpusProject(t *testing.T, name string) *Project {
 	t.Helper()
-	p, err := Open(filepath.Join("..", "..", "..", "..", "node", "dream", "projects", filepath.FromSlash(name)))
+	p, err := Open(filepath.Join("..", "..", "..", "..", "instance", "dream", "projects", filepath.FromSlash(name)))
 	require.NoError(t, err)
 	require.True(t, p.IsProject(), name)
 	return p

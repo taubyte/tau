@@ -24,7 +24,7 @@
 //
 // New binds no port and opens nothing; it takes a host, one replicated store
 // (pkg/queue's Store) and one question for auth. The node supplies the Runner
-// and the Assets store (node/build.go).
+// and the Assets store (instance/build.go).
 //
 // A log is a file, and only its cid is replicated: while the build runs it is an
 // append-only file this node owns (services/build/livelog); followers read it at

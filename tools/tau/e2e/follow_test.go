@@ -17,7 +17,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/node"
+	"github.com/taubyte/tau/instance"
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
 	"github.com/taubyte/tau/pkg/git/repokey"
@@ -78,7 +78,7 @@ func TestTauCIRunFollowsALiveBuild(t *testing.T) {
 	f, err := fake.Serve(fake.GitHubLike)
 	require.NoError(t, err)
 	t.Cleanup(func() { f.Close() })
-	cloud, _ := fleet(t, f, node.WithBuildSeams(func(s node.BuildSeams) node.BuildSeams {
+	cloud, _ := fleet(t, f, instance.WithBuildSeams(func(s instance.BuildSeams) instance.BuildSeams {
 		s.Engine = engine
 		return s
 	}))
@@ -89,7 +89,7 @@ func TestTauCIRunFollowsALiveBuild(t *testing.T) {
 	}, 2*time.Minute, time.Second, "login never succeeded: %s", login.stderr)
 
 	work := t.TempDir()
-	require.NoError(t, copyProject(filepath.Join("..", "..", "..", "node", "dream", "projects", "with", "function", "wasm"), work))
+	require.NoError(t, copyProject(filepath.Join("..", "..", "..", "instance", "dream", "projects", "with", "function", "wasm"), work))
 	configRepo := repokey.Key{Host: f.Host(), Owner: fake.Namespace, Name: "follow"}
 	var link result
 	require.Eventually(t, func() bool {

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/taubyte/tau/node"
+	"github.com/taubyte/tau/instance"
 	"github.com/taubyte/tau/pkg/certificate"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	authService "github.com/taubyte/tau/services/auth"
@@ -18,7 +18,7 @@ import (
 type cloudServices struct {
 	auth    authService.Config
 	cm      cm.Config
-	forges  []node.Forge
+	forges  []instance.Forge
 	secrets []cloudSecret
 }
 
@@ -69,7 +69,7 @@ func servicesOf(p config.Parser) (*cloudServices, error) {
 	}
 	for _, f := range a.Forges {
 		if f.Driver != "" {
-			out.forges = append(out.forges, node.Forge{Host: f.Host, Driver: f.Driver})
+			out.forges = append(out.forges, instance.Forge{Host: f.Host, Driver: f.Driver})
 		}
 		if f.ClientID != "" {
 			out.auth.Forges = append(out.auth.Forges, authService.ForgeApp{Host: f.Host, ClientID: f.ClientID})

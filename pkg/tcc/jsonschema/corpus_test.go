@@ -13,7 +13,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-const corpus = "../../../node/dream/projects"
+const corpus = "../../../instance/dream/projects"
 
 func published(t *testing.T) *gjs.Resolved {
 	t.Helper()

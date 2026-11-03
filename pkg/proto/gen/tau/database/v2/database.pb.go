@@ -81,7 +81,7 @@ const (
 // THE ID AND NEVER THE AUTHOR'S LABEL. A label is local to the resource that
 // wrote it: two workloads may call one database different things, and two
 // different databases may both be called `tokens`. The id is what ADDRESSES the
-// resource — node/database.go already says so where it builds a Spec — and it
+// resource — instance/database.go already says so where it builds a Spec — and it
 // is what a reference compiles to.
 type Ref struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`

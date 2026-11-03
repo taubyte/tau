@@ -69,7 +69,7 @@ test-cli:
 	cd tools/tau && GOMEMLIMIT=$(GOMEMLIMIT) go test -exec $(LEAKCHECK) -tags dreaming -timeout 20m $(FLAGS) ./e2e/
 	$(MAKE) test-corpus
 
-# test-corpus puts every project under node/dream/projects through `tau build`
+# test-corpus puts every project under instance/dream/projects through `tau build`
 # and `tau ci run` against a universe that builds in containers, so it needs a
 # docker daemon and, for the cloud's restricted build egress, root. The first
 # run on a machine builds the toolchain image the corpus names. RUN= replaces
@@ -158,7 +158,7 @@ AS_ROOT := $(CURDIR)/scripts/as-root
 # store and reading them back, and a node's https listeners presenting them.
 # It needs nothing installed, so make test runs it too.
 test-acme:
-	go test -exec $(LEAKCHECK) -count=1 -v -timeout 10m ./pkg/certificate/acme/ ./services/cm/ && go test -exec $(LEAKCHECK) -count=1 -v -timeout 10m -run '^(TestAGeneratedNameIsIssuedByACMEAndServedOverTLS|TestTheZoneIsProvedByDNS01AndItsWildcardAnswersEveryService)$$' ./node/boot/
+	go test -exec $(LEAKCHECK) -count=1 -v -timeout 10m ./pkg/certificate/acme/ ./services/cm/ && go test -exec $(LEAKCHECK) -count=1 -v -timeout 10m -run '^(TestAGeneratedNameIsIssuedByACMEAndServedOverTLS|TestTheZoneIsProvedByDNS01AndItsWildcardAnswersEveryService)$$' ./instance/boot/
 
 # test-acme-live issues from pebble in a container, a CA tau does not share a
 # process with, whose resolver is bind9 finding the cloud's zone by real NS and
@@ -167,10 +167,10 @@ test-acme:
 # build frontend verified to pebble's root. A delegation names port 53, so the
 # node's dns needs root; containers are host-networked, at pinned images.
 test-acme-live:
-	go test -exec '$(LEAKCHECK) $(AS_ROOT)' -tags docker_integration -count=1 -v -timeout 10m -run '^(TestARealCAIssuesThroughARealDelegation|TestTheLeftoverSweepTakesTheAnonymousVolumes)$$' ./node/boot/
+	go test -exec '$(LEAKCHECK) $(AS_ROOT)' -tags docker_integration -count=1 -v -timeout 10m -run '^(TestARealCAIssuesThroughARealDelegation|TestTheLeftoverSweepTakesTheAnonymousVolumes)$$' ./instance/boot/
 
 test-application:
-	go test -exec '$(LEAKCHECK) $(AS_ROOT)' -tags 'dreaming docker_integration' -count=1 -v -timeout 10m -run '^(TestAnApplicationAnswersThroughTheGateway|TestAContainerWorkerRunsToCompletionPerInvocation|TestAContainerWorkerReadsItsSecretThroughTheHelper|TestAChannelServedByAContainerDeliversToItsNamedPort)$$' ./node/dream/
+	go test -exec '$(LEAKCHECK) $(AS_ROOT)' -tags 'dreaming docker_integration' -count=1 -v -timeout 10m -run '^(TestAnApplicationAnswersThroughTheGateway|TestAContainerWorkerRunsToCompletionPerInvocation|TestAContainerWorkerReadsItsSecretThroughTheHelper|TestAChannelServedByAContainerDeliversToItsNamedPort)$$' ./instance/dream/
 
 # test-build runs the build service's builds in real containers, for the same
 # reason and under the same privilege as test-application: a build runs a
@@ -183,7 +183,7 @@ test-build:
 # against real servers the test starts in docker. No firewall is installed for a
 # server the TEST runs, so it needs a docker daemon and no sudo.
 test-external-databases:
-	go test -exec $(LEAKCHECK) -tags 'dreaming docker_integration' -run '^TestAnExternal' -count=1 -timeout 15m $(FLAGS) ./node/dream/
+	go test -exec $(LEAKCHECK) -tags 'dreaming docker_integration' -run '^TestAnExternal' -count=1 -timeout 15m $(FLAGS) ./instance/dream/
 
 # test-forges runs the forge drivers against real servers in docker: Gitea and
 # Forgejo for the gitea driver, GitLab CE for the gitlab driver, at the images
@@ -206,7 +206,7 @@ forge-images:
 
 # test-taucorder runs tools/taucorder, which is its own module (the root never
 # imports it, so `make test` does not sweep it). It includes the end-to-end
-# test against a node/dream fleet, and prints coverage over the whole module so
+# test against a instance/dream fleet, and prints coverage over the whole module so
 # the e2e run counts toward the code it exercises.
 TAUCORDER_COVER ?= $${TMPDIR:-/tmp}/taucorder.cover
 test-taucorder:

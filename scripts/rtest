@@ -2,7 +2,7 @@
 # Run a test command on a build server instead of on this machine.
 #
 #   scripts/rtest go test ./services/database/ -race -count=1
-#   scripts/rtest go test ./node/dream/ -tags dreaming -count=1
+#   scripts/rtest go test ./instance/dream/ -tags dreaming -count=1
 #   TAU_REMOTE=192.168.29.11 TAU_CAP_MEM=20G scripts/rtest make test-dreaming
 #
 # ★ WHY THIS EXISTS. The suites here are heavy enough to make the machine

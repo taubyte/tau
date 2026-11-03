@@ -22,7 +22,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/taubyte/tau/node/boot"
+	"github.com/taubyte/tau/instance/boot"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	authService "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/secrets"

@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/taubyte/tau/node/boot"
+	"github.com/taubyte/tau/instance/boot"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	secretsService "github.com/taubyte/tau/services/secrets"
 )
@@ -67,7 +67,7 @@ func TestInitWritesWhatStartThenServes(t *testing.T) {
 	}
 	for project, want := range map[string]string{"from-stdin": "a", "from-file": "b"} {
 		require.Eventually(t, func() bool {
-			got, err := r.Node.Vault().Secret(ctx, project, "e", "n")
+			got, err := r.Vault().Secret(ctx, project, "e", "n")
 			return err == nil && got == want
 		}, 30*time.Second, 50*time.Millisecond, project)
 	}

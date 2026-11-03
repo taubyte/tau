@@ -117,7 +117,7 @@ func tierError(err error) error {
 }
 
 // splitHandle takes a grant's handle apart. It is the same three segments
-// node/database.go reads, spelled once here because this package is the other
+// instance/database.go reads, spelled once here because this package is the other
 // end of that move.
 func splitHandle(handle string) (project, environment, id string) {
 	var parts []string

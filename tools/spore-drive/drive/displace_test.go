@@ -18,7 +18,7 @@ import (
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/mock"
-	"github.com/taubyte/tau/node/boot"
+	"github.com/taubyte/tau/instance/boot"
 	"github.com/taubyte/tau/p2p/sectls"
 	host "github.com/taubyte/tau/pkg/mycelium/host"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"

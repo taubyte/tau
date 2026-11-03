@@ -1,6 +1,6 @@
 // Command taud runs a v2 node from the file an operator wrote.
 //
-// It is node/boot and a signal handler. Everything a node is configured with
+// It is instance/boot and a signal handler. Everything a node is configured with
 // lives in that file (see boot.File); the only thing a flag adds is --root,
 // because the data directory is where a machine put its disk, which the
 // installer knows and the file might not.
@@ -19,8 +19,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
-	"github.com/taubyte/tau/node"
-	"github.com/taubyte/tau/node/boot"
+	"github.com/taubyte/tau/instance"
+	"github.com/taubyte/tau/instance/boot"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 )
 
@@ -35,7 +35,7 @@ var logger = log.Logger("tau")
 
 // composed are node options a build adds to every node this binary starts —
 // a file built under a tag appends to it in init. The default build adds none.
-var composed []node.Option
+var composed []instance.Option
 
 func main() {
 	os.Exit(run(os.Args, os.Stdout, os.Stderr))
@@ -98,7 +98,7 @@ func startCommand(started func(*boot.Running)) *cli.Command {
 			}
 			defer running.Close()
 
-			logger.Info("node running: ", running.Node.Services())
+			logger.Info("node running: ", running.Services())
 			if address := running.Address(); address != "" {
 				logger.Info("gateway on ", address)
 			}
@@ -175,14 +175,14 @@ func configCommand() *cli.Command {
 
 func printExample(w io.Writer) error {
 	out, err := yaml.Marshal(boot.File{
-		Node: node.Config{
-			Services:  node.All,
+		Node: instance.Config{
+			Services:  instance.All,
 			Cloud:     "acme",
-			Container: node.ContainerConfig{Backend: node.BackendContainerd},
+			Container: instance.ContainerConfig{Backend: instance.BackendContainerd},
 			// Written out although it is the default: :53 needs root or
 			// CAP_NET_BIND_SERVICE, and the file should show the number that
 			// will fail on a laptop.
-			DNSListen: node.DefaultDNSListen,
+			DNSListen: instance.DefaultDNSListen,
 		},
 		Root:        boot.DefaultRoot,
 		Listen:      []string{boot.DefaultListen},

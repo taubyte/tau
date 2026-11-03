@@ -14,7 +14,7 @@ const namespace = "/tau/primitives/v2"
 const recordStore = "primitive-logs"
 
 // rebroadcastSeconds is how often the CRDT under the record store re-announces
-// its heads. It is node/locate.go's number, for the same reason: a store that
+// its heads. It is instance/locate.go's number, for the same reason: a store that
 // re-announced slower would take longer to heal a node that missed a write.
 const rebroadcastSeconds = 5
 

@@ -15,7 +15,7 @@ import (
 
 // Handler is served by a composer; Certificate is its tls.Config GetCertificate,
 // asked per handshake by server name, because only the gateway can read which
-// certificate the gateway answering that name declares. node/boot binds it.
+// certificate the gateway answering that name declares. instance/boot binds it.
 //
 // `certificate.source` defaults to `generated` on every zone-hosted gateway:
 //

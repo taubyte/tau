@@ -216,7 +216,7 @@ func relayUpload(ctx context.Context, pCh <-chan int, eCh <-chan error, progress
 
 // uploadConfig writes a node's file to /tmp/<instance>.yaml. Its keys travel
 // inline, as boot.File reads them, so there are no key files beside it.
-func (d *sporedrive) uploadConfig(h remoteHost, inst instance) error {
+func (d *sporedrive) uploadConfig(h remoteHost, inst unit) error {
 	path := "/tmp/" + inst.name + ".yaml"
 	f, err := h.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0600)
 	if err != nil {
@@ -282,7 +282,7 @@ func (d *sporedrive) moveAsideV1(ctx context.Context, h remoteHost, instance str
 
 // initSecrets streams the bundle to the node's `tau init`, on stdin, while it
 // is stopped.
-func (d *sporedrive) initSecrets(ctx context.Context, h remoteHost, inst instance, bundle []byte) error {
+func (d *sporedrive) initSecrets(ctx context.Context, h remoteHost, inst unit, bundle []byte) error {
 	out, err := h.SudoInput(ctx, bundle, d.binary(), "init", "--config", d.configOf(inst.name), "--root", d.storageOf(inst.name), "-")
 	if err != nil {
 		return fmt.Errorf("initializing tau@%s's secrets: %w: %s", inst.name, err, out)

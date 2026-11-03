@@ -25,8 +25,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/node"
-	"github.com/taubyte/tau/node/dream"
+	"github.com/taubyte/tau/instance"
+	"github.com/taubyte/tau/instance/dream"
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
 	"github.com/taubyte/tau/pkg/git/repokey"
@@ -40,7 +40,7 @@ import (
 	"github.com/taubyte/tau/tools/tau/internal/config"
 )
 
-// Every project under node/dream/projects/ goes through both ways a project reaches
+// Every project under instance/dream/projects/ goes through both ways a project reaches
 // a cloud: `tau build` (built here, handed to a universe) and `tau ci run` (the
 // universe's CI builds the pushed commit). Each must deploy and serve, a refused
 // project must be refused by name both ways, and both must build the same recipe.
@@ -64,7 +64,7 @@ func assemble(t *testing.T, name string) string {
 	t.Helper()
 	root := repoRoot(t)
 	dir := t.TempDir()
-	from := filepath.Join(root, "node", "dream", "projects", filepath.FromSlash(name))
+	from := filepath.Join(root, "instance", "dream", "projects", filepath.FromSlash(name))
 	require.NoError(t, copyTree(from, dir))
 
 	sources := map[string]bool{}
@@ -149,7 +149,7 @@ func copyFile(from, to string) error {
 // service with a container daemon to build and run in, and one running the
 // public build frontend. It answers the frontend's address and the node that
 // serves.
-func universe(t *testing.T, f *fake.Served, configure func(*node.Config), opts ...node.Option) (string, *node.Node) {
+func universe(t *testing.T, f *fake.Served, configure func(*instance.Config), opts ...instance.Option) (string, *instance.Instance) {
 	t.Helper()
 	var err error
 	forges, err = f.Registry(forge.Policy{AllowInsecureCallback: true})
@@ -162,18 +162,18 @@ func universe(t *testing.T, f *fake.Served, configure func(*node.Config), opts .
 
 	u, err := dream.Start(t.Context(), strings.ReplaceAll(t.Name(), "/", "-"), dream.Config{
 		Copies:    2,
-		Container: node.BackendDocker,
-		Options:   append([]node.Option{node.WithForges(forges)}, opts...),
+		Container: instance.BackendDocker,
+		Options:   append([]instance.Option{instance.WithForges(forges)}, opts...),
 		Secrets:   []*secretsv2.InitSecret{adminSecret},
-		Configure: func(index int, c *node.Config) {
+		Configure: func(index int, c *instance.Config) {
 			c.Gateway.CloudFqdn = e2eCloud
-			c.Forges = []node.Forge{{Host: f.Host(), Driver: node.ForgeGitHub, HostKeys: []string{f.HostKey()}}}
+			c.Forges = []instance.Forge{{Host: f.Host(), Driver: instance.ForgeGitHub, HostKeys: []string{f.HostKey()}}}
 			c.Auth.Admin = auth.Admin{Name: "root"}
 			if configure != nil {
 				configure(c)
 			}
 			if index > 0 {
-				c.Services = []string{node.Discovery, node.BuildFrontend}
+				c.Services = []string{instance.Discovery, instance.BuildFrontend}
 				c.BuildFrontend.Listen = "127.0.0.1:0"
 			}
 		},
@@ -220,7 +220,7 @@ type corpusCase struct {
 	// region is the one region the universe is, for a project that says where
 	// it runs; empty is a cloud of one unnamed region.
 	region string
-	// from writes the project somewhere other than node/dream/projects and
+	// from writes the project somewhere other than instance/dream/projects and
 	// answers where; nil assembles the corpus project the name names.
 	from func(t *testing.T) string
 }
@@ -478,11 +478,11 @@ type builtResource struct {
 // underTest is a universe a developer is signed in to, at a forge it serves.
 type underTest struct {
 	f       *fake.Served
-	serving *node.Node
+	serving *instance.Instance
 }
 
 // signedIn starts a forge and a universe and signs in to it.
-func signedIn(t *testing.T, configure func(*node.Config), opts ...node.Option) *underTest {
+func signedIn(t *testing.T, configure func(*instance.Config), opts ...instance.Option) *underTest {
 	t.Helper()
 	t.Setenv(config.EnvConfig, filepath.Join(t.TempDir(), "config.yaml"))
 	t.Setenv(config.EnvToken, "")
@@ -503,9 +503,9 @@ func signedIn(t *testing.T, configure func(*node.Config), opts ...node.Option) *
 }
 
 func bothWays(t *testing.T, c corpusCase) {
-	var opts []node.Option
+	var opts []instance.Option
 	if c.region != "" {
-		opts = append(opts, node.WithRegions(schema.WithRegion(c.region)), node.AsDestination(c.region))
+		opts = append(opts, instance.WithRegions(schema.WithRegion(c.region)), instance.AsDestination(c.region))
 	}
 	signedIn(t, nil, opts...).bothWays(t, c)
 }
@@ -651,7 +651,7 @@ func assetsOf(t *testing.T, job string) map[string]string {
 }
 
 // answered asks the serving node what the internet would, until it answers.
-func answered(t *testing.T, n *node.Node, project string, p probe) {
+func answered(t *testing.T, n *instance.Instance, project string, p probe) {
 	t.Helper()
 	budget := p.budget
 	if budget == 0 {
@@ -669,7 +669,7 @@ func answered(t *testing.T, n *node.Node, project string, p probe) {
 	}, budget, time.Second, "%+v never answered: %s", p, said{&last})
 }
 
-func ask(t *testing.T, n *node.Node, project string, p probe) (int, string, error) {
+func ask(t *testing.T, n *instance.Instance, project string, p probe) (int, string, error) {
 	switch {
 	case p.host != "":
 		req := httptest.NewRequest(p.method, "http://"+p.host+p.path, strings.NewReader(p.body))
@@ -694,7 +694,7 @@ func ask(t *testing.T, n *node.Node, project string, p probe) (int, string, erro
 
 // lookup asks the node's own DNS server for name's A record over UDP, the one
 // interface a resolver has, and answers 200 and the address when it has one.
-func lookup(t *testing.T, n *node.Node, name string) (int, string, error) {
+func lookup(t *testing.T, n *instance.Instance, name string) (int, string, error) {
 	var at string
 	for _, a := range n.DNSAddrs() {
 		if _, ok := a.(*net.UDPAddr); ok {
@@ -742,10 +742,10 @@ func (z *txtZone) LookupTXT(_ context.Context, name string) ([]string, error) {
 
 func TestTheDomainCorpusBuildsBothWays(t *testing.T) {
 	dns := &txtZone{m: map[string][]string{}}
-	u := signedIn(t, func(c *node.Config) {
+	u := signedIn(t, func(c *instance.Config) {
 		c.CM.Domains.Trusted = false
-		c.Services = append(append([]string(nil), node.All...), node.CM)
-	}, node.WithResolver(dns))
+		c.Services = append(append([]string(nil), instance.All...), instance.CM)
+	}, instance.WithResolver(dns))
 
 	claim := func(t *testing.T, work, fqdn string) api.DomainClaim {
 		t.Helper()

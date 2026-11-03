@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/afero"
 	"gotest.tools/v3/assert"
 
-	"github.com/taubyte/tau/node"
+	"github.com/taubyte/tau/instance"
 	"github.com/taubyte/tau/p2p/sectls"
 	"github.com/taubyte/tau/tools/spore-drive/config"
 	"github.com/taubyte/tau/tools/spore-drive/config/fixtures"
@@ -29,7 +29,7 @@ func TestAHostWithoutBothBuildHalvesIsOneNode(t *testing.T) {
 	assert.Equal(t, len(nodes.instances), 1)
 	assert.Equal(t, nodes.instances[0].name, "shape1", "the main node is named after the primary shape")
 	assert.DeepEqual(t, nodes.instances[0].file.Node.Services,
-		[]string{node.Auth, node.Secrets, node.Discovery, node.DNS, node.Gateway, node.BuildBackend, node.Proxy})
+		[]string{instance.Auth, instance.Secrets, instance.Discovery, instance.DNS, instance.Gateway, instance.BuildBackend, instance.Proxy})
 }
 
 func TestEveryNodeRunsDiscovery(t *testing.T) {
@@ -40,7 +40,7 @@ func TestEveryNodeRunsDiscovery(t *testing.T) {
 	nodes, err := driveFor(p).nodesFor("host1")
 	assert.NilError(t, err)
 	assert.DeepEqual(t, nodes.instances[0].file.Node.Services,
-		[]string{node.Register, node.Database, node.Primitives, node.Worker, node.Gateway, node.Discovery})
+		[]string{instance.Register, instance.Database, instance.Primitives, instance.Worker, instance.Gateway, instance.Discovery})
 }
 
 func TestAnUnknownServiceIsRefused(t *testing.T) {
@@ -73,9 +73,9 @@ func TestTheSplitIdentityIsStable(t *testing.T) {
 	_, p := fixtures.VirtConfig()
 	primary := p.Hosts().Host("host1").Shapes().Instance("shape1").Key()
 
-	a, err := derivedKey(primary, node.BuildFrontend)
+	a, err := derivedKey(primary, instance.BuildFrontend)
 	assert.NilError(t, err)
-	b, err := derivedKey(primary, node.BuildFrontend)
+	b, err := derivedKey(primary, instance.BuildFrontend)
 	assert.NilError(t, err)
 	assert.Equal(t, a, b)
 	assert.Assert(t, a != primary)
@@ -85,7 +85,7 @@ func TestTheSplitIdentityIsStable(t *testing.T) {
 	_, err = crypto.UnmarshalPrivateKey(raw)
 	assert.NilError(t, err)
 
-	_, err = derivedKey("not base64!", node.BuildFrontend)
+	_, err = derivedKey("not base64!", instance.BuildFrontend)
 	assert.ErrorContains(t, err, "decode")
 }
 
@@ -135,7 +135,7 @@ func TestNodesIsThePlanOfOneHost(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, len(plan.Nodes), 2)
 	assert.Equal(t, plan.Nodes[0].Name, "shape1")
-	assert.Equal(t, plan.Nodes[1].Name, node.BuildFrontend)
+	assert.Equal(t, plan.Nodes[1].Name, instance.BuildFrontend)
 	assert.Equal(t, plan.Nodes[1].Port, plan.Nodes[0].Port+1)
 	assert.Assert(t, slices.Contains(plan.Ignored, "shapes.shape2.plugins"))
 
@@ -190,9 +190,9 @@ func TestIssueRefusesAKeyThatIsNotOne(t *testing.T) {
 
 func TestAShapeMustNameAUnitAndADirectory(t *testing.T) {
 	for shape, want := range map[string]string{
-		node.BuildFrontend: "cannot be named",
-		"a b":              "letters, digits",
-		"../up":            "letters, digits",
+		instance.BuildFrontend: "cannot be named",
+		"a b":                  "letters, digits",
+		"../up":                "letters, digits",
 	} {
 		_, p := fixtures.VirtConfig()
 		p.Shapes().Shape(shape).Ports().Set("main", 5242)

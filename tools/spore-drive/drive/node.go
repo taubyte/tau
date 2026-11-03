@@ -14,8 +14,8 @@ import (
 	"github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/crypto"
 
-	"github.com/taubyte/tau/node"
-	"github.com/taubyte/tau/node/boot"
+	"github.com/taubyte/tau/instance"
+	"github.com/taubyte/tau/instance/boot"
 	"github.com/taubyte/tau/p2p/sectls"
 	"github.com/taubyte/tau/pkg/tenancy"
 	"github.com/taubyte/tau/tools/spore-drive/config"
@@ -37,25 +37,25 @@ var logger = log.Logger("tau.spore-drive")
 // accounts is absent on purpose: it has no v2 counterpart in this tree, and is
 // reported as ignored.
 var v1Services = map[string][]string{
-	"auth":      {node.Auth, node.Secrets},
-	"tns":       {node.Register},
-	"seer":      {node.Discovery, node.DNS},
-	"substrate": {node.Worker, node.Gateway},
-	"gateway":   {node.Gateway},
-	"hoarder":   {node.Database, node.Primitives},
-	"patrick":   {node.BuildFrontend},
-	"monkey":    {node.BuildBackend},
+	"auth":      {instance.Auth, instance.Secrets},
+	"tns":       {instance.Register},
+	"seer":      {instance.Discovery, instance.DNS},
+	"substrate": {instance.Worker, instance.Gateway},
+	"gateway":   {instance.Gateway},
+	"hoarder":   {instance.Database, instance.Primitives},
+	"patrick":   {instance.BuildFrontend},
+	"monkey":    {instance.BuildBackend},
 }
 
 // dropped are v1 service names that are read and run nothing in v2.
 var dropped = []string{"accounts"}
 
-// instance is one v2 node a host runs. The main one is named after the host's
+// unit is one tau instance a host runs. The main one is named after the host's
 // primary shape, as its key and port already are: its systemd unit is
 // tau@<shape>, its file <root>/config/<shape>.yaml and its data
 // <root>/storage/<shape>. A split-off build-frontend node is named after that
 // service.
-type instance struct {
+type unit struct {
 	name string
 	port int
 	file boot.File
@@ -63,7 +63,7 @@ type instance struct {
 
 // keepsSecrets is whether this node runs the secrets service, and so is
 // initialized with the cloud's secrets before it starts.
-func (i instance) keepsSecrets() bool { return slices.Contains(i.file.Node.Services, node.Secrets) }
+func (i unit) keepsSecrets() bool { return slices.Contains(i.file.Node.Services, instance.Secrets) }
 
 // safeName is what an instance or path may be spelled with: it names a unit, a
 // file and a directory on the host, and reaches a remote shell unquoted.
@@ -72,7 +72,7 @@ var safeName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 // hostNodes is what a host runs, and which of its config's fields have no v2
 // home.
 type hostNodes struct {
-	instances []instance
+	instances []unit
 	ignored   []string
 }
 
@@ -101,7 +101,7 @@ func v2Services(p config.Parser, hostName string) ([]string, []string, error) {
 			}
 			mapped, ok := v1Services[svc]
 			if !ok {
-				if !slices.Contains(node.All, svc) && svc != node.BuildFrontend && svc != node.CM {
+				if !slices.Contains(instance.All, svc) && svc != instance.BuildFrontend && svc != instance.CM {
 					return nil, nil, fmt.Errorf("shape %s: %q is neither a v1 service nor a v2 one", shape, svc)
 				}
 				mapped = []string{svc}
@@ -210,8 +210,8 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 		return nil, err
 	}
 	for _, shape := range hc.Shapes().List() {
-		if shape == node.BuildFrontend {
-			return nil, fmt.Errorf("host %s: a shape cannot be named %s, the name of the node split off for it", hostName, node.BuildFrontend)
+		if shape == instance.BuildFrontend {
+			return nil, fmt.Errorf("host %s: a shape cannot be named %s, the name of the node split off for it", hostName, instance.BuildFrontend)
 		}
 		if !safeName.MatchString(shape) {
 			return nil, fmt.Errorf("host %s: shape %q names a unit and a directory, so it is letters, digits, '.', '_' and '-'", hostName, shape)
@@ -224,8 +224,8 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 
 	// EVERY NODE RUNS STATS. It is how a v2 node is seen by the fleet at all:
 	// a node that does not gossip its services is never routed to.
-	if !slices.Contains(services, node.Discovery) {
-		services = append(services, node.Discovery)
+	if !slices.Contains(services, instance.Discovery) {
+		services = append(services, instance.Discovery)
 	}
 
 	ca, err := p.Cloud().P2P().CA().Load()
@@ -265,7 +265,7 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 			announce[i] = fmt.Sprintf("/ip4/%s/tcp/%d", ip, port)
 		}
 		f := boot.File{
-			Node: node.Config{
+			Node: instance.Config{
 				Services: services,
 				Cloud:    cloud,
 				// ADDED SERVICES' CONFIGURATION IS COPIED, NEVER READ. Each
@@ -286,10 +286,10 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 			CA:          string(ca.CertificatePEM()),
 			Certificate: string(certificate),
 		}
-		if slices.Contains(services, node.Gateway) || slices.Contains(services, node.DNS) || slices.Contains(services, node.CM) {
+		if slices.Contains(services, instance.Gateway) || slices.Contains(services, instance.DNS) || slices.Contains(services, instance.CM) {
 			f.Node.Gateway.CloudFqdn = p.Cloud().Domain().Generated()
 		}
-		if slices.Contains(services, node.Gateway) {
+		if slices.Contains(services, instance.Gateway) {
 			f.HTTP = ":80"
 			f.HTTPS = ":443"
 		}
@@ -298,23 +298,23 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 
 	out := &hostNodes{ignored: d.ignoredFields(hostName, droppedHere)}
 
-	if slices.Contains(services, node.BuildFrontend) && slices.Contains(services, node.BuildBackend) {
-		frontendKey, err := derivedKey(key, node.BuildFrontend)
+	if slices.Contains(services, instance.BuildFrontend) && slices.Contains(services, instance.BuildBackend) {
+		frontendKey, err := derivedKey(key, instance.BuildFrontend)
 		if err != nil {
 			return nil, err
 		}
-		services = slices.DeleteFunc(services, func(s string) bool { return s == node.BuildFrontend })
-		frontend, err := file([]string{node.BuildFrontend, node.Discovery}, mainPort+1, frontendKey)
+		services = slices.DeleteFunc(services, func(s string) bool { return s == instance.BuildFrontend })
+		frontend, err := file([]string{instance.BuildFrontend, instance.Discovery}, mainPort+1, frontendKey)
 		if err != nil {
 			return nil, err
 		}
-		out.instances = append(out.instances, instance{name: node.BuildFrontend, port: mainPort + 1, file: frontend})
+		out.instances = append(out.instances, unit{name: instance.BuildFrontend, port: mainPort + 1, file: frontend})
 	}
 	main, err := file(services, mainPort, key)
 	if err != nil {
 		return nil, err
 	}
-	out.instances = append([]instance{{name: primary, port: mainPort, file: main}}, out.instances...)
+	out.instances = append([]unit{{name: primary, port: mainPort, file: main}}, out.instances...)
 	return out, nil
 }
 

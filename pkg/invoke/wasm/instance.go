@@ -15,7 +15,7 @@ import (
 // unambiguous since a label cannot contain a slash. An admitted instance is the
 // grant's handle with the instance appended, so every backing isolates instances
 // with the mechanism it already uses. Admission runs a function this tier cannot
-// reach, so it asks an Admitter (node/admit).
+// reach, so it asks an Admitter (instance/admit).
 
 // Admitter decides whether a caller may open one instance of a store, asked per
 // open on the request path, so repeat admissions should be cheap.

@@ -146,7 +146,7 @@ wasi-clocks, wasi-random and a complete wasi-cli) under a proxy fixture.
 
 ## The toolchain as an image
 
-The corpus projects under `node/dream/projects/` build these crates with the
+The corpus projects under `instance/dream/projects/` build these crates with the
 published Rust build image, `ghcr.io/samyfodil/wazy-build-rust:1.99.1-cc0.21.1`
 (Rust 1.99.1 with `wasm32-wasip1` and `wasm32-wasip2`, cargo-component 0.21.1),
 so a project there is built — by `tau build` on a machine and by a cloud's

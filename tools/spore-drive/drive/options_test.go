@@ -211,5 +211,5 @@ func TestUploadsReportAHostThatCannotBeWritten(t *testing.T) {
 	d := &sporedrive{tauBinary: []byte("tau"), now: time.Now}
 	_, _, err := d.uploadTau(context.Background(), ro, "/tb/bin/tau")
 	assert.ErrorContains(t, err, "failed to open")
-	assert.ErrorContains(t, d.uploadConfig(ro, instance{name: "node"}), "failed to open")
+	assert.ErrorContains(t, d.uploadConfig(ro, unit{name: "node"}), "failed to open")
 }

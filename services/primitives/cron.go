@@ -155,7 +155,7 @@ const (
 
 	// fireRetry spaces a redelivery after a fire that failed.
 	//
-	// WITHOUT ONE A FAILURE IS IMMEDIATE, which node/dispatch.go records as a
+	// WITHOUT ONE A FAILURE IS IMMEDIATE, which instance/dispatch.go records as a
 	// real defect: a consumer failing in a millisecond burns every attempt in a
 	// millisecond and the work is in the dead letter before anybody could have
 	// fixed anything.

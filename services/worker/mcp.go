@@ -16,7 +16,7 @@ import (
 )
 
 // `mcp` declares no engine: an MCP server is a protocol in front of functions that
-// already run, so it is answered here, as node/step.go answers a workflow driver.
+// already run, so it is answered here, as instance/step.go answers a workflow driver.
 // Its tools are its access block; a separate tool list would be a grant path the
 // target's authorizer never sees. A tool's arguments are the POST body, published
 // with a property-less object schema.

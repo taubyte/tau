@@ -112,8 +112,8 @@ git commit -m "[node] add new testing scenarios"
 
 ### 6. Testing
 
-`node/dream` runs a multi-node cloud in-process and deploys the projects under
-`node/dream/projects/` through it; a change to a resource kind belongs in a
+`instance/dream` runs a multi-node cloud in-process and deploys the projects under
+`instance/dream/projects/` through it; a change to a resource kind belongs in a
 project there (see [AGENTS.md](AGENTS.md)).
 
 ### 7. Push to Your Fork

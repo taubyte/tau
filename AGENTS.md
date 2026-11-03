@@ -107,7 +107,7 @@ A test project per resource kind, and projects that **combine** kinds, is how th
 logic gets validated and how the v2 schema gets refined. Both halves matter, and the
 second is the one that is easy to skip.
 
-`node/dream/projects/` is the **only** thing in this repo that runs a declaration all
+`instance/dream/projects/` is the **only** thing in this repo that runs a declaration all
 the way through: yaml → tcc → compile → publish → resolve → grant. A test that builds
 a compiled object in Go and publishes that has skipped every step where the schema has
 an opinion.
@@ -122,7 +122,7 @@ rule, and it is easy to lose in a status table.
 
 ### Why this is a rule and not a preference
 
-`node/dream/queue_test.go` used to hand-build its compiled object. Converting it to a
+`instance/dream/queue_test.go` used to hand-build its compiled object. Converting it to a
 real corpus project showed the fixture had been describing **a different deployment
 than the one under test**:
 
@@ -159,7 +159,7 @@ project is part of finishing them.
 
 ### Checklist
 
-- [ ] Does this kind have a project under `node/dream/projects/`?
+- [ ] Does this kind have a project under `instance/dream/projects/`?
 - [ ] Does the test DEPLOY that project, rather than publish a Go literal?
 - [ ] Is there a project combining this kind with the kinds it references?
 - [ ] Is there a project that must be REFUSED, covering each constraint the schema

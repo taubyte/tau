@@ -27,8 +27,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/taubyte/tau/node"
-	"github.com/taubyte/tau/node/dream"
+	"github.com/taubyte/tau/instance"
+	"github.com/taubyte/tau/instance/dream"
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
 	"github.com/taubyte/tau/pkg/git/repokey"
@@ -73,7 +73,7 @@ const e2eCloud = "tau.e2e.test"
 // the others only a build frontend. The fake forge serves git over https and
 // ssh, and every node pins its ssh host key, so a build confirms and clones
 // over the deploy key the CLI installed.
-func fleet(t *testing.T, f *fake.Served, opts ...node.Option) (front, otherFront string) {
+func fleet(t *testing.T, f *fake.Served, opts ...instance.Option) (front, otherFront string) {
 	t.Helper()
 	var err error
 	forges, err = f.Registry(forge.Policy{AllowInsecureCallback: true})
@@ -86,14 +86,14 @@ func fleet(t *testing.T, f *fake.Served, opts ...node.Option) (front, otherFront
 
 	u, err := dream.Start(t.Context(), t.Name(), dream.Config{
 		Copies:  3,
-		Options: append([]node.Option{node.WithForges(forges)}, opts...),
+		Options: append([]instance.Option{instance.WithForges(forges)}, opts...),
 		Secrets: []*secretsv2.InitSecret{adminSecret},
-		Configure: func(index int, c *node.Config) {
+		Configure: func(index int, c *instance.Config) {
 			c.Gateway.CloudFqdn = e2eCloud
-			c.Forges = []node.Forge{{Host: f.Host(), Driver: node.ForgeGitHub, HostKeys: []string{f.HostKey()}}}
+			c.Forges = []instance.Forge{{Host: f.Host(), Driver: instance.ForgeGitHub, HostKeys: []string{f.HostKey()}}}
 			c.Auth.Admin = auth.Admin{Name: "root"}
 			if index > 0 {
-				c.Services = []string{node.Discovery, node.BuildFrontend}
+				c.Services = []string{instance.Discovery, instance.BuildFrontend}
 				c.BuildFrontend.Listen = "127.0.0.1:0"
 			}
 		},
@@ -168,7 +168,7 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 	wire := f.LastHookWire()
 	hooks := installed(t, f.Forge, configRepo)
 	require.Len(t, hooks, 1)
-	require.Equal(t, "https://"+node.BuildFrontend+"."+e2eCloud+"/hook/"+linked.ProjectID, hooks[0].Callback)
+	require.Equal(t, "https://"+instance.BuildFrontend+"."+e2eCloud+"/hook/"+linked.ProjectID, hooks[0].Callback)
 	require.True(t, f.LastDeployKeyReadOnly())
 
 	// Relinking keeps the config repository's hook, creates and wires the

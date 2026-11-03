@@ -220,7 +220,7 @@ func TestAGatewayLevelRouterIsUnchanged(t *testing.T) {
 }
 
 func TestARoutesOwnAuthorizerIsReadWhereTheCompilerPutsIt(t *testing.T) {
-	c, err := schema.New(schema.WithLocal("../../node/dream/projects/with/bus"), schema.WithBranch("main"))
+	c, err := schema.New(schema.WithLocal("../../instance/dream/projects/with/bus"), schema.WithBranch("main"))
 	require.NoError(t, err)
 	obj, _, err := c.Compile(context.Background())
 	require.NoError(t, err)

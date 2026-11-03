@@ -13,7 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"gotest.tools/v3/assert"
 
-	"github.com/taubyte/tau/node"
+	"github.com/taubyte/tau/instance"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/auth/password"
@@ -65,7 +65,7 @@ func TestSignInAndCertificatesReachEveryNodeAndTheirSecretsOnlyTheBundle(t *test
 		assert.DeepEqual(t, n.Auth.Redirects, []string{"https://console.test.com/callback"})
 		assert.DeepEqual(t, n.Auth.Forges, []auth.ForgeApp{{Host: "github.com", ClientID: "gh-id"}})
 		assert.DeepEqual(t, n.Auth.OIDC, []auth.OIDCProvider{{Name: "corp", Issuer: "https://id.test.com", ClientID: "corp-id", Scopes: []string{"email"}}})
-		assert.DeepEqual(t, n.Forges, []node.Forge{{Host: "github.com", Driver: "github"}, {Host: "git.test.com", Driver: "gitea"}})
+		assert.DeepEqual(t, n.Forges, []instance.Forge{{Host: "github.com", Driver: "github"}, {Host: "git.test.com", Driver: "gitea"}})
 		acme := n.CM.Certificate.ACME
 		assert.Assert(t, acme.Enabled)
 		assert.Equal(t, acme.Directory, "https://ca.test.com/dir")
@@ -130,7 +130,7 @@ func TestTheSecretsReachInitOnStdinAndNowhereElse(t *testing.T) {
 		got, stdin = append([]string{name}, args...), in
 		return nil
 	}}
-	inst := instance{name: "shape1"}
+	inst := unit{name: "shape1"}
 	assert.NilError(t, d.initSecrets(t.Context(), h, inst, []byte("sealed")))
 	assert.DeepEqual(t, got, []string{"/tb/bin/tau", "init", "--config", "/tb/config/shape1.yaml", "--root", "/tb/storage/shape1", "-"})
 	assert.Equal(t, string(stdin), "sealed")
@@ -225,7 +225,7 @@ func TestACertificateNodeKnowsTheZone(t *testing.T) {
 	nodes, err := driveFor(p).nodesFor("host1")
 	assert.NilError(t, err)
 	f := nodes.instances[0].file
-	assert.DeepEqual(t, f.Node.Services, []string{node.CM, node.Register, node.Discovery})
+	assert.DeepEqual(t, f.Node.Services, []string{instance.CM, instance.Register, instance.Discovery})
 	assert.Equal(t, f.Node.Gateway.CloudFqdn, "gtest.com")
 	assert.Equal(t, f.HTTP, "", "only a gateway serves http")
 }

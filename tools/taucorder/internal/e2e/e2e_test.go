@@ -1,4 +1,4 @@
-// Package e2e runs taucorder against a real v2 fleet: node/dream nodes
+// Package e2e runs taucorder against a real v2 fleet: instance/dream nodes
 // running register, discovery and worker, joined from outside the universe
 // with nothing but a certificate from its CA and a bootstrap address.
 package e2e
@@ -19,8 +19,8 @@ import (
 	"connectrpc.com/connect"
 	"github.com/libp2p/go-libp2p/core/crypto"
 
-	"github.com/taubyte/tau/node"
-	nodeDream "github.com/taubyte/tau/node/dream"
+	"github.com/taubyte/tau/instance"
+	nodeDream "github.com/taubyte/tau/instance/dream"
 	registerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/register/v2/registerv2connect"
 	pkgregister "github.com/taubyte/tau/pkg/register"
@@ -33,7 +33,7 @@ func TestBridgesADreamFleet(t *testing.T) {
 	defer cancel()
 
 	u, err := nodeDream.Start(ctx, "taucorder-e2e", nodeDream.Config{
-		Services: []string{node.Register, node.Discovery, node.Worker},
+		Services: []string{instance.Register, instance.Discovery, instance.Worker},
 		Copies:   2,
 	})
 	if err != nil {
@@ -157,7 +157,7 @@ func TestBridgesADreamFleet(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &svcs); err != nil {
 		t.Fatal(err, out.String())
 	}
-	for _, want := range []string{node.Register, node.Worker, node.Discovery} {
+	for _, want := range []string{instance.Register, instance.Worker, instance.Discovery} {
 		if !slices.ContainsFunc(svcs, func(s query.Service) bool { return s.Name == want && len(s.Nodes) == 2 }) {
 			t.Fatalf("service %s not on both nodes: %+v", want, svcs)
 		}

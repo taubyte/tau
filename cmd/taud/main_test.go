@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	"github.com/taubyte/tau/node/boot"
+	"github.com/taubyte/tau/instance/boot"
 	"github.com/taubyte/tau/p2p/sectls"
 )
 

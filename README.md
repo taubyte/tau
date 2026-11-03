@@ -15,7 +15,7 @@ go build ./cmd/taud
 ./taud start -c node.yaml     # run a node from it (--root overrides the data directory)
 ```
 
-Everything a node runs is decided by its config file (`node/boot`). Its
+Everything a node runs is decided by its config file (`instance/boot`). Its
 `services` list picks from the services this tree ships:
 
 | service          | package              | what it does                                              |
@@ -34,7 +34,7 @@ Everything a node runs is decided by its config file (`node/boot`). Its
 | `build-backend`  | `services/build`     | the queue, job records, clones and runners                |
 
 The two build roles must run in different processes. `node/` composes the
-services into a node; `node/placement` is its request router. Services talk to
+services into a node; `instance/placement` is its request router. Services talk to
 each other over ConnectRPC carried on libp2p streams; their schemas are the
 `.proto` files under `pkg/proto` (regenerate with `make proto-v2`).
 
@@ -44,7 +44,7 @@ JavaScript and Python clients under `tools/spore-drive/clients`.
 ## Projects
 
 A project is declared in yaml and compiled by `pkg/tcc`. The projects under
-`node/dream/projects/` are run end to end by the tests in `node/dream`: compile,
+`instance/dream/projects/` are run end to end by the tests in `instance/dream`: compile,
 publish, resolve and serve, on an in-process multi-node cloud.
 
 ## Tests
