@@ -213,6 +213,6 @@ func TestARealHandshakeReachesTheRoute(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, http.StatusOK, res.StatusCode, string(body))
-	require.Equal(t, "website/shop", res.Header.Get("X-Served"))
+	require.Equal(t, "<h1>storefront</h1>", string(body), "the website's files, over TLS")
 	require.Equal(t, name, res.TLS.PeerCertificates[0].DNSNames[0], "the wildcard the gateway chose")
 }

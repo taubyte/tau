@@ -428,7 +428,7 @@ func EnginesOf(kind string) []string {
 // error. An agent answers a request like a function. A bus is reached through a
 // route like everything else, so it gets the whole pipeline (path, CORS, rate
 // limit, transformers, authorizer) rather than owning a name of its own.
-var handlerKinds = []string{"function", "application", "website", "gateway", "mcp", "agent", "bus"}
+var handlerKinds = []string{"function", "application", "package", "gateway", "mcp", "agent", "bus"}
 
 // externalStreamEngines are pubsub clusters reached over the network, and
 // streamEngines adds tau's own. Closed: each is a wire protocol and a client, a
@@ -987,23 +987,56 @@ var V2Resources = []*Node{
 			Resource("package", "Package", "Package", "package"),
 		)),
 
-	// A built static site, served because a domain edges to it. `mode` exists because
+	// A built static site at a name: written as one thing, compiled into the gateway that
+	// serves its package's files. Nothing at run time is a website. `mode` exists because
 	// SPA and 404 serve a fallback with opposite statuses: index.html with 200 for a
 	// client-side router, the 404 page with 404 otherwise.
 	DefineGroup("website",
 		resource(
-			commonAttributes(append(packageRef(),
+			commonAttributes(append(append(packageRef(), hostAttributes("naming")...),
+				String(Key("certificate", "source"), InSet("generated", "provided"), Default("generated"), Field("CertSource"), InSection("naming"), ShowWhen(Key("host", "kind"), "zone"), Doc("Certificate", "generated: issued on demand for this name. provided: from the secret below. A host under the cloud's own zone needs neither — that zone has a wildcard.")),
+				certificateSecret("naming")[0], certificateSecret("naming")[1],
+				String(Key("path"), Default("/"), InSection("serving"),
+					Doc("Path", "Where on that name the site is mounted. Anything but / is stripped before a file is looked up, so the site is built for / either way.")),
 				String(Key("serve", "index"), Default("index.html"), InSection("serving"),
 					Doc("Index Document", "What a request for a directory returns, e.g. \"/docs/\" -> /docs/index.html.")),
-				String(Key("serve", "mode"), InSet("static", "spa"), Default("static"), InSection("serving"),
+				String(Key("serve", "mode"), InSet(staticServing, spaServing), Default(staticServing), InSection("serving"),
 					Doc("Mode", "static: an unmatched path returns the not-found document with 404. spa: it returns the index document with 200, because the page's own router renders the route.")),
-				String(Key("serve", "not_found"), InSection("serving"), ShowWhen(Key("serve", "mode"), "static"),
+				String(Key("serve", "not_found"), InSection("serving"), ShowWhen(Key("serve", "mode"), staticServing),
 					Doc("Not Found Document", "Returned with 404 for a path the site does not have. Omitted means a bare 404.")),
 			)...),
-			GroupDoc("A static website: a package of type assets, served. What serves it is an inbound domain edge."), Icon("globe"), Category("compute"), Engines(assetsPackage),
+			GroupDoc("A static website: a package of type assets, served at a name. It compiles into the gateway that serves it."), Icon("globe"), Category("internet"),
 			secIdentity, secAccess, secCode,
-			Section("serving", "Serving", "What the site returns for a path it does not have."),
+			Section("naming", "Naming", "The name the site answers on, and where its certificate comes from."),
+			Section("serving", "Serving", "Where the site is mounted, and what it returns for a path it does not have."),
 			Resource("website", "Website", "Website", "website"),
+
+			// The gateway is the whole of it: the package's files, served at the name.
+			Lowers(
+				Into("gateway",
+					Named(Attr("name")),
+					Carries(Concat(Text("serves website "), Attr("name"))),
+					Sets(Key("host", "kind"), Attr(Key("host", "kind"))),
+					Sets(Key("host", "name"), Attr(Key("host", "name"))),
+					Sets(Key("host", "zone", "in", "namespace"), Attr(Key("host", "zone", "in", "namespace"))),
+					Sets(Key("host", "zone", "in", "name"), Attr(Key("host", "zone", "in", "name"))),
+					Sets(Key("certificate", "source"), Attr(Key("certificate", "source"))),
+					Sets(Key("certificate", "secret", "namespace"), Attr(Key("certificate", "secret", "namespace"))),
+					Sets(Key("certificate", "secret", "name"), Attr(Key("certificate", "secret", "name"))),
+					Sets(Key("routing"), Text("route")),
+					Sets(Key("route", "path"), Attr("path")),
+					Sets(Key("route", "match"), Text("prefix")),
+					// A no-op at /, and what a site built for / needs anywhere else.
+					Sets(Key("route", "strip_prefix"), Text("true")),
+					Sets(Key("route", "target"), Text("handler")),
+					Sets(Key("route", "handler", "kind"), Text("package")),
+					Sets(Key("route", "handler", "namespace"), Attr(Key("package", "namespace"))),
+					Sets(Key("route", "handler", "name"), Attr(Key("package", "name"))),
+					Sets(Key("route", "handler", "index"), Attr(Key("serve", "index"))),
+					Sets(Key("route", "handler", "mode"), Attr(Key("serve", "mode"))),
+					Sets(Key("route", "handler", "not_found"), Attr(Key("serve", "not_found"))),
+				),
+			),
 		)),
 
 	// A cache: entries have a lifetime and losing one costs a recomputation; it is
@@ -1171,7 +1204,7 @@ var V2Resources = []*Node{
 	// policy. The handler switches on the target kind:
 	//
 	//	handler:
-	//	    function:                 # or application / website / gateway / mcp
+	//	    function:                 # or application / package / gateway / mcp
 	//	        namespace: /shop/eu   # omitted means the project root
 	//	        name: checkout
 	DefineGroup("gateway",
@@ -1194,11 +1227,11 @@ var V2Resources = []*Node{
 				// (engine/keys.go).
 				String(Key("route", "path"), RequiredWhen(Key("routing"), "route"), InSection("route"), Doc("Path", "The path served, e.g. \"/checkout\" or \"/\". Required when this gateway declares a route; a gateway with a router has no paths of its own.")),
 				String(Key("route", "match"), InSet("prefix", "exact", "regex"), Default("prefix"), InSection("route"), Doc("Match", "How the path is compared: prefix, exact, or regex.")),
-				// A website built for / mounted at /docs 404s on every page unless the prefix is
+				// A site built for / mounted at /docs 404s on every page unless the prefix is
 				// stripped; an application usually wants it kept. False by default; the audit
-				// reports a website mounted at a prefix without it.
+				// reports a package mounted at a prefix without it.
 				Bool(Key("route", "strip_prefix"), InSection("route"),
-					Doc("Strip Prefix", "Remove the matched path prefix before handing the request on. A website mounted anywhere but / usually wants this.")),
+					Doc("Strip Prefix", "Remove the matched path prefix before handing the request on. A package's files mounted anywhere but / usually want this.")),
 				StringSlice(Key("route", "methods"), EachInSet(HttpMethods...), InSection("route"), Doc("Methods", "HTTP methods answered. Omit for any. GET/HEAD/OPTIONS read, the rest write.")),
 
 				// One handler and no weight: traffic splitting is not expressible here.
@@ -1208,6 +1241,15 @@ var V2Resources = []*Node{
 				// resource; not outright, since a router has no handler block.
 				String(Key("route", "handler", "name"), Path("route", "handler", Either(handlerKinds...), "name"), RequiredWhen(Key("route", "target"), "handler"), IsVariableName(), Ref("", KindFrom(Key("route", "handler", "kind")), ByName(), Serves()), InSection("handler"), Doc("Name", "The handler resource's name within that namespace.")),
 				String(Key("route", "handler", "port"), Path("route", "handler", Either(handlerKinds...), "port"), IsVariableName(), InSection("handler"), Doc("Port", "Which of the handler's ports to reach, by name. A workload listening on more than one has to be told which, and the number is never written here — the platform assigns the external one, and there may be several instances of the workload on one host.")),
+
+				// A package handler is its built files, served by the gateway itself: only an
+				// assets package has files to serve (checkServedPackages).
+				String(Key("route", "handler", "index"), Path("route", "handler", "package", "index"), InSection("handler"), ShowWhen(Key("route", "handler", "kind"), "package"),
+					Doc("Index Document", "What a request for a directory returns. Omitted means index.html.")),
+				String(Key("route", "handler", "mode"), Path("route", "handler", "package", "mode"), InSet(staticServing, spaServing), InSection("handler"), ShowWhen(Key("route", "handler", "kind"), "package"),
+					Doc("Mode", "static: an unmatched path returns the not-found document with 404. spa: it returns the index document with 200. Omitted means static.")),
+				String(Key("route", "handler", "not_found"), Path("route", "handler", "package", "not_found"), InSection("handler"), ShowWhen(Key("route", "handler", "kind"), "package"),
+					Doc("Not Found Document", "Returned with 404 for a path the package does not have, in static mode. Omitted means a bare 404.")),
 
 				// The gateway's own name, unknowable when a generated host is written, so cors
 				// can allow it.

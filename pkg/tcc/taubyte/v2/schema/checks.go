@@ -132,6 +132,7 @@ func Audit(obj map[string]any, r Resolver, opts ...AuditOption) []Finding {
 	out = append(out, checkBusIsGuarded(all, byKind)...)
 	out = append(out, checkDelegatedFills(obj, all)...)
 	out = append(out, checkMountedSites(all)...)
+	out = append(out, checkServedPackages(all, pkgs, in.lowered)...)
 	out = append(out, checkHostWorlds(all)...)
 	out = append(out, checkHandlerPorts(all)...)
 	out = append(out, checkAccessDuplicates(all)...)
@@ -343,7 +344,9 @@ func checkReachable(all []compiled, byKind map[string][]compiled) []Finding {
 
 	var out []Finding
 	for _, res := range all {
-		if !ServedByRoute(res.kind) || res.kind == "gateway" || res.kind == "function" {
+		// A package is reached through what runs it, or a route serving its files; one
+		// nothing names is unused, not something answering no one.
+		if !ServedByRoute(res.kind) || res.kind == "gateway" || res.kind == "function" || res.kind == "package" {
 			continue
 		}
 		if fronted[res.kind+"/"+res.name] {
@@ -597,7 +600,11 @@ func checkWorkloadPackages(all []compiled, pkgs map[string]compiled) []Finding {
 			continue // nothing named, or unresolved: the reference's to refuse
 		}
 		tier := p.str("type")
-		if engines := EnginesOf(res.kind); !slices.Contains(engines, tier) {
+		engines := EnginesOf(res.kind)
+		if len(engines) == 0 {
+			continue // names a package it runs nothing of: a website is its files (checkServedPackages)
+		}
+		if !slices.Contains(engines, tier) {
 			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 				fmt.Sprintf("runs package %s, which is of type %s", p.name, p.str("type")),
 				fmt.Sprintf("A %s runs on %s. Name a package that one of those runs.", res.kind, strings.Join(engines, " or ")), res.id})
@@ -614,12 +621,12 @@ func checkWorkloadPackages(all []compiled, pkgs map[string]compiled) []Finding {
 
 // checkMountedSites: a static site built for / and mounted at /docs answers every page
 // with a 404 unless the prefix is stripped, and the config looks entirely correct while
-// it does. tcc knows both halves — the route's path and that the handler is a website —
-// so it is the one that can say.
+// it does. tcc knows both halves — the route's path and that the handler is a package's
+// files — so it is the one that can say.
 func checkMountedSites(all []compiled) []Finding {
 	var out []Finding
 	for _, res := range all {
-		if res.at("route", "handler", "kind") != "website" {
+		if res.at("route", "handler", "kind") != "package" {
 			continue
 		}
 		path := res.at("route", "path")
@@ -630,8 +637,43 @@ func checkMountedSites(all []compiled) []Finding {
 			continue
 		}
 		out = append(out, Finding{Check, res.kind, res.name, res.scope,
-			fmt.Sprintf("serves a website at %q and does not strip the prefix", path),
+			fmt.Sprintf("serves a package's files at %q and does not strip the prefix", path),
 			fmt.Sprintf("The site receives %s/... and was almost certainly built for /, so every page is a file it does not have. Set route.strip-prefix, or build the site with %s as its base.", path, path), res.id})
+	}
+	return out
+}
+
+// checkServedPackages: a gateway serves a package's built files itself, and only an
+// assets package is files; any other type is something to run, which a route reaches
+// through the workload that runs it. A website is said where it was written; the gateway
+// it became would only say it again.
+func checkServedPackages(all []compiled, pkgs map[string]compiled, lowered interp.Lowered) []Finding {
+	named := map[string]compiled{}
+	for _, p := range all {
+		if p.kind == "package" {
+			named[p.scope+"\x00"+p.name] = p
+		}
+	}
+	var out []Finding
+	for _, res := range all {
+		if res.kind == "website" {
+			if p, ok := pkgs[res.at("package", "name")]; ok && p.str("type") != assetsPackage {
+				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+					fmt.Sprintf("serves package %s, which is of type %s", p.name, p.str("type")),
+					"A website is the files of an assets package. Name one, or route to the workload that runs this package.", res.id})
+			}
+			continue
+		}
+		if res.at("route", "handler", "kind") != "package" || lowered.Produced(res.id) {
+			continue
+		}
+		p, ok := servedPackage(named, res)
+		if !ok || p.str("type") == assetsPackage {
+			continue // unresolved is the reference's to refuse
+		}
+		out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+			fmt.Sprintf("serves package %s, which is of type %s", p.name, p.str("type")),
+			fmt.Sprintf("A route serves the files of an assets package. A %s package runs: route to the function or application that runs it.", p.str("type")), res.id})
 	}
 	return out
 }
@@ -735,6 +777,18 @@ func checkHostWorlds(all []compiled) []Finding {
 			"Those are different host interfaces. The function will be handed a world it was not built to read, which compiles clean and fails on live traffic.", found.id})
 	}
 	return out
+}
+
+// servedPackage is the package a route's handler names, resolved by name the way a route
+// is: in the namespace it says, else outward from the gateway's own scope.
+func servedPackage(named map[string]compiled, gateway compiled) (compiled, bool) {
+	name := gateway.at("route", "handler", "name")
+	for _, scope := range scopeChain(gateway.scope, gateway.at("route", "handler", "namespace")) {
+		if p, ok := named[scope+"\x00"+name]; ok {
+			return p, true
+		}
+	}
+	return compiled{}, false
 }
 
 // hostWorld is a function's declared world and its own compiled id.

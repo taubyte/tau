@@ -1,0 +1,6 @@
+id: QmXfNESr4a7hHHAHtb2xrV7QVEYkcnv67kUe6ozCfPTyUX
+name: notfiles
+description: a website naming a wasm package - a website is the files of an assets package, and a component is something to run, so it is refused where it was written
+environments:
+    prod:
+        branches: ["*"]

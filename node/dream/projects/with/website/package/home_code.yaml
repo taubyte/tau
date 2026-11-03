@@ -1,0 +1,13 @@
+id: QmRd1fKynBXAJt2aahbVe6v3sHsQW4ALRGVCA56C4EpTjq
+description: the home site's files, written by its build - an index and a not-found page
+type: assets
+source: .
+output: dist
+build:
+    steps:
+        - name: build
+          image: ghcr.io/samyfodil/wazy-build-js:1.39.0-cjs0.23.0-node22.23.4
+          commands:
+              - mkdir -p dist
+              - printf '<h1>home</h1>' > dist/index.html
+              - printf '<h1>gone</h1>' > dist/404.html

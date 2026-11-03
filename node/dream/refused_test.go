@@ -43,6 +43,32 @@ func TestAnApplicationWithNothingToRunIsBroken(t *testing.T) {
 	require.Empty(t, envs, "nothing is published for a refused project")
 }
 
+func TestAWebsiteOfSomethingThatRunsIsRefusedWhereItWasWritten(t *testing.T) {
+	broken := brokenIn(t, "refused/website/notfiles")
+	require.Equal(t, []string{"website: serves package module, which is of type wasm"}, broken,
+		"said once, on the website, not again on the gateway it became")
+	require.Empty(t, brokenIn(t, "with/website"), "the websites that serve have nothing broken")
+
+	const id = "QmXfNESr4a7hHHAHtb2xrV7QVEYkcnv67kUe6ozCfPTyUX"
+	r, err := pkgregister.New(pkgregister.WithStore(pkgregister.NewMemStore()))
+	require.NoError(t, err)
+	d, err := buildDeploy.New(
+		buildDeploy.WithProjects(configures{}),
+		buildDeploy.WithCheckout(corpus{filepath.Join("projects", "refused/website/notfiles")}),
+		buildDeploy.WithLocalRegister(r),
+		buildDeploy.WithCloudFqdn("tau.dream.test"),
+	)
+	require.NoError(t, err)
+	err = d.Run(t.Context(), backend.Work{JobID: "j", RepositoryKey: "github.com/acme/" + id,
+		Ref: "refs/heads/main", CommitSHA: "c", ProjectID: id}, &buildLog{})
+	require.ErrorIs(t, err, buildDeploy.ErrBroken)
+	require.ErrorContains(t, err, "serves package module, which is of type wasm")
+
+	envs, err := r.Environments(t.Context(), id)
+	require.NoError(t, err)
+	require.Empty(t, envs, "nothing is published for a refused project")
+}
+
 func TestAProjectWithNoEnvironmentsIsRefused(t *testing.T) {
 	const id = "QmZDqydqrb5sFAbuqHeNPuQQpAHWbBHLUcPkM9gDeuSY6D"
 	dir := filepath.Join("projects", "refused/environments/missing")

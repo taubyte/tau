@@ -1,0 +1,12 @@
+id: QmTdb7ztt3dHfdL33WSLmJbETfo13RjFAVDbHJg5uJYXU5
+description: the site at the root of www - a path it does not have is its own not-found page, with 404
+package:
+    name: home_code
+host:
+    zone:
+        in:
+            name: example_com
+        name: www
+serve:
+    mode: static
+    not_found: 404.html

@@ -258,6 +258,10 @@ func (t Term) String() string {
 type env struct {
 	res, each, next map[string]any
 	scope           string
+
+	// names is every resource's name by id, so a reference read out of the compiled
+	// object, which holds the id, is written back as an author names it.
+	names map[string]string
 }
 
 // value is this term's value with its type intact, which only a term reading one

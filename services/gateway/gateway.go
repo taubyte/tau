@@ -66,6 +66,12 @@ type Service struct {
 	owner map[string]ownerEntry
 	order []string
 
+	// artifacts and assets are where a package handler's files come from, and files
+	// what is unpacked of them. See files.go.
+	artifacts Artifacts
+	assets    Assets
+	files     *unpacked
+
 	// cands memoises candidatesAt per compiled project, which never changes once
 	// loaded; the candidates are shared, so nothing may write through them.
 	candMu sync.Mutex
@@ -137,6 +143,10 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		secrets:    o.secrets,
 		issuer:     o.issuer,
 		terminates: o.terminates,
+
+		artifacts: o.artifacts,
+		assets:    o.assets,
+		files:     newUnpacked(cfg.FilesBudget),
 	}, nil
 }
 
@@ -293,6 +303,19 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// route's path, methods, CORS, rate limit and chain like any handler.
 	if m.handler().HandlerKind == busKind {
 		s.attachRouted(w, r, billed, m, proj, projectName, environment)
+		return
+	}
+
+	// A package's files are read here rather than run: the same place in the order,
+	// and nothing is invoked.
+	if m.handler().HandlerKind == packageKind {
+		res, code, why := s.serveFiles(ctx, m, proj, projectName, environment, req)
+		if why != "" {
+			refuse(w, code, why)
+			return
+		}
+		billed.served = true
+		writeTo(w, res)
 		return
 	}
 

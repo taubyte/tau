@@ -250,7 +250,7 @@ func TestWithAssets(t *testing.T) {
 	require.NotNil(t, n.buildBackend)
 }
 
-func TestAnAssetStoreIsEnoughToServeASite(t *testing.T) {
+func TestAnAssetStoreIsEnoughToRunCode(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
 	h := newHost(t, mn)
@@ -266,9 +266,9 @@ func TestAnAssetStoreIsEnoughToServeASite(t *testing.T) {
 	t.Cleanup(func() { n.Close() })
 	require.NotNil(t, n.worker)
 
-	// All three: a static site, a wasm component and a js function are what
-	// the smallest possible cloud runs, and none of them needs a daemon.
-	require.ElementsMatch(t, []string{"assets", "wasm", "warp"}, tierNames(n))
+	// Both: a wasm component and a js function are what the smallest possible cloud
+	// runs, and neither needs a daemon. A site's files are its gateway's to serve.
+	require.ElementsMatch(t, []string{"wasm", "warp"}, tierNames(n))
 
 	// And with neither, it refuses rather than starting a worker that can run
 	// nothing.
@@ -400,9 +400,9 @@ func TestAnInjectedTierWins(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 
-	// One wasm, and it is the injected one; static and js are still built,
-	// because nothing else answers for them.
-	require.ElementsMatch(t, []string{"wasm", "assets", "warp"}, tierNames(n))
+	// One wasm, and it is the injected one; js is still built, because nothing
+	// else answers for it.
+	require.ElementsMatch(t, []string{"wasm", "warp"}, tierNames(n))
 	require.Same(t, n.opts.runtimes[0], n.tiers()[0])
 }
 

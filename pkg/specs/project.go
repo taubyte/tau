@@ -376,7 +376,7 @@ func (p *Project) scopeAt(cursor []string, name string) (kind, id string, ok boo
 // scopeKinds is every kind that may be a scope, the namespace first — baked
 // from the vocabulary at generation rather than asked for at runtime.
 func scopeKinds() []string {
-	return []string{"namespace", "agent", "workflow"}
+	return []string{"namespace", "agent", "website", "workflow"}
 }
 
 // Scopes are the names of every scope container directly under one scope,

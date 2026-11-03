@@ -667,7 +667,7 @@ route:
 	// An unlisted handler key is refused as unknown, at the offending line.
 	assert.ErrorContains(t, err, "unknown key 'kv'",
 		"a real but non-HTTP kind must not be a handler")
-	assert.ErrorContains(t, err, "agent, application, bus, function, gateway, mcp, website",
+	assert.ErrorContains(t, err, "agent, application, bus, function, gateway, mcp, package",
 		"the refusal has to say what a handler may be")
 	// the position is the value's, so for a key holding a block it lands on the
 	// first line inside that block rather than on the key
@@ -738,7 +738,7 @@ func TestEffectClasses(t *testing.T) {
 
 	// and an HTTP method is a route's, never a kind's: a workload nameable by GET
 	// would be a second door into it that no gateway knows about
-	for _, kind := range []string{"function", "application", "website", "gateway", "mcp"} {
+	for _, kind := range []string{"function", "application", "package", "gateway", "mcp"} {
 		for _, m := range []string{"GET", "POST"} {
 			_, ok := schema.EffectOf(kind, m)
 			assert.Assert(t, !ok, "%s must not carry the HTTP method %q as an op", kind, m)

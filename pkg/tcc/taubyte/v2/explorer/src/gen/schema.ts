@@ -29,7 +29,9 @@ export type PackageKind = "git" | "image" | "builtin";
 export type PackageRegionsPolicy = "pinned" | "cdn" | "failover";
 export type PackageBuildKind = "steps" | "dockerfile";
 export type PackageType = "wasm" | "warp" | "oci" | "assets";
+export type WebsiteHostKind = "generated" | "zone";
 export type WebsiteRegionsPolicy = "pinned" | "cdn" | "failover";
+export type WebsiteCertSource = "generated" | "provided";
 export type WebsiteMode = "static" | "spa";
 export type CacheInstancesAdmission = "validator";
 export type CacheRegionsPolicy = "pinned" | "cdn" | "failover";
@@ -63,11 +65,12 @@ export type ZoneRegionsPolicy = "pinned" | "cdn" | "failover";
 export type GatewayHostKind = "generated" | "zone";
 export type GatewayRouting = "route" | "router";
 export type GatewayRouteTarget = "handler" | "router";
-export type GatewayHandlerKind = "function" | "application" | "website" | "gateway" | "mcp" | "agent" | "bus";
+export type GatewayHandlerKind = "function" | "application" | "package" | "gateway" | "mcp" | "agent" | "bus";
 export type GatewayRegionsPolicy = "pinned" | "cdn" | "failover";
 export type GatewayCertSource = "generated" | "provided";
 export type GatewayMatch = "prefix" | "exact" | "regex";
 export type GatewayMethods = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "CONNECT" | "OPTIONS" | "TRACE" | "PATCH";
+export type GatewayMode = "static" | "spa";
 export type ProxyHostKind = "generated" | "zone";
 export type ProxyRouting = "forward" | "router";
 export type ProxyHandlerKind = "application";
@@ -1407,6 +1410,66 @@ export class WebsiteConfig extends ResourceConfig {
   }
   unsetNamespace(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["package", "namespace"]);
+  }
+
+  /** Which website this is — the key its settings live under. */
+  async hostKind(): Promise<WebsiteHostKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["host"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["generated", "zone"] as readonly string[]) if (k in block) return k as WebsiteHostKind;
+    return undefined;
+  }
+
+  /** Lives under the website's kind, so the branch is explicit. */
+  async hostName(hostKind: WebsiteHostKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["host", hostKind, "name"])) as string | undefined;
+  }
+  setHostName(hostKind: WebsiteHostKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["host", hostKind, "name"], v);
+  }
+  unsetHostName(hostKind: WebsiteHostKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["host", hostKind, "name"]);
+  }
+
+  /** Lives under the website's kind, so the branch is explicit. */
+  async hostZoneInName(hostKind: WebsiteHostKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["host", hostKind, "in", "name"])) as string | undefined;
+  }
+  setHostZoneInName(hostKind: WebsiteHostKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["host", hostKind, "in", "name"], v);
+  }
+  unsetHostZoneInName(hostKind: WebsiteHostKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["host", hostKind, "in", "name"]);
+  }
+
+  async certSource(): Promise<WebsiteCertSource | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["certificate", "source"])) as WebsiteCertSource | undefined;
+  }
+  setCertSource(v: WebsiteCertSource): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["certificate", "source"], v);
+  }
+  unsetCertSource(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["certificate", "source"]);
+  }
+
+  async certSecret(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["certificate", "secret", "name"])) as string | undefined;
+  }
+  setCertSecret(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["certificate", "secret", "name"], v);
+  }
+  unsetCertSecret(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["certificate", "secret", "name"]);
+  }
+
+  async path(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["path"])) as string | undefined;
+  }
+  setPath(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["path"], v);
+  }
+  unsetPath(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["path"]);
   }
 
   async index(): Promise<string | undefined> {
@@ -2954,7 +3017,7 @@ export class GatewayConfig extends ResourceConfig {
   async handlerKind(): Promise<GatewayHandlerKind | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, ["route", "handler"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["function", "application", "website", "gateway", "mcp", "agent", "bus"] as readonly string[]) if (k in block) return k as GatewayHandlerKind;
+    for (const k of ["function", "application", "package", "gateway", "mcp", "agent", "bus"] as readonly string[]) if (k in block) return k as GatewayHandlerKind;
     return undefined;
   }
 
@@ -2989,6 +3052,36 @@ export class GatewayConfig extends ResourceConfig {
   }
   unsetRouteHandlerPort(handlerKind: GatewayHandlerKind): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["route", "handler", handlerKind, "port"]);
+  }
+
+  async index(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["route", "handler", "package", "index"])) as string | undefined;
+  }
+  setIndex(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["route", "handler", "package", "index"], v);
+  }
+  unsetIndex(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["route", "handler", "package", "index"]);
+  }
+
+  async mode(): Promise<GatewayMode | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["route", "handler", "package", "mode"])) as GatewayMode | undefined;
+  }
+  setMode(v: GatewayMode): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["route", "handler", "package", "mode"], v);
+  }
+  unsetMode(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["route", "handler", "package", "mode"]);
+  }
+
+  async not_found(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["route", "handler", "package", "not_found"])) as string | undefined;
+  }
+  setNot_found(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["route", "handler", "package", "not_found"], v);
+  }
+  unsetNot_found(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["route", "handler", "package", "not_found"]);
   }
 
   async allow_self(): Promise<boolean | undefined> {
@@ -4673,6 +4766,12 @@ export interface Website {
   "regions/main"?: string;
   "regions/standby"?: string;
   namespace?: string;
+  hostkind?: string;
+  hostname?: string;
+  hostzoneinname?: string;
+  certsource?: WebsiteCertSource;
+  certsecret?: string;
+  path?: string;
   index?: string;
   mode?: WebsiteMode;
   not_found?: string;
@@ -4859,6 +4958,9 @@ export interface Gateway {
   routehandlernamespace?: string;
   routehandlername?: string;
   routehandlerport?: string;
+  index?: string;
+  mode?: GatewayMode;
+  not_found?: string;
   allow_self?: boolean;
   origins?: string[];
   rpm?: number;

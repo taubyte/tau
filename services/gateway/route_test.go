@@ -26,7 +26,7 @@ func handler(kind, name string) map[string]any {
 
 func TestTheMostSpecificRouteWins(t *testing.T) {
 	candidates := []candidate{
-		gw("site", map[string]any{"path": "/", "match": "prefix", "handler": handler("website", "shop")}),
+		gw("site", map[string]any{"path": "/", "match": "prefix", "handler": handler("package", "shop")}),
 		gw("api", map[string]any{"path": "/api", "match": "prefix", "handler": handler("application", "api")}),
 		gw("deep", map[string]any{"path": "/api/v2", "match": "prefix", "handler": handler("function", "v2")}),
 	}
@@ -148,7 +148,7 @@ func TestAGatewayWithNoRouteBlockIsNotACandidate(t *testing.T) {
 func TestStripPrefix(t *testing.T) {
 	stripping := []candidate{
 		gw("docs", map[string]any{"path": "/docs", "match": "prefix", "strip_prefix": true,
-			"handler": handler("website", "docs")}),
+			"handler": handler("package", "docs")}),
 	}
 	m, found, _ := pick(stripping, "/docs/guide", "GET")
 	require.True(t, found)
@@ -162,7 +162,7 @@ func TestStripPrefix(t *testing.T) {
 	require.Equal(t, "/docs/guide", m.stripped("/docs/guide"), "passing it through unchanged surprises nobody")
 
 	root := []candidate{
-		gw("root", map[string]any{"path": "/", "strip_prefix": true, "handler": handler("website", "shop")}),
+		gw("root", map[string]any{"path": "/", "strip_prefix": true, "handler": handler("package", "shop")}),
 	}
 	m, _, _ = pick(root, "/about", "GET")
 	require.Equal(t, "/about", m.stripped("/about"), "there is nothing to strip off the root")

@@ -868,7 +868,7 @@ func cacheSettings(target specs.Resource) map[string]string {
 
 // settingsOf is what a tier needs off the resource beyond what every tier gets:
 //
-//	serve/*          how a thing is served: a static site's mode and index.
+//	serve/*          what a served block points at: its kind, name, namespace and port.
 //	execution/call   the exported symbol a wasm component is entered at.
 //	implements       which host interface it was built against.
 //
@@ -881,9 +881,6 @@ func settingsOf(w specs.WorkloadBlock) map[string]string {
 		}
 	}
 
-	put(specs.WorkloadBlockKeyServeIndex, w.ServeIndex)
-	put(specs.WorkloadBlockKeyServeMode, w.ServeMode)
-	put(specs.WorkloadBlockKeyServeNotFound, w.ServeNotFound)
 	put(specs.WorkloadBlockKeyServeKind, w.ServeKind)
 	put(specs.WorkloadBlockKeyServeName, w.ServeName)
 	put(specs.WorkloadBlockKeyServeNamespace, w.ServeNamespace)

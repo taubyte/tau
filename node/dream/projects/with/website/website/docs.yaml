@@ -1,0 +1,12 @@
+id: QmT6ebDVtnXzTZMsaw86YHtMaJ5wrKmccMzgLVMnCwwu6t
+description: a single-page app mounted at /docs on the same name, built for / - every route under it is its one page
+package:
+    name: docs_code
+host:
+    zone:
+        in:
+            name: example_com
+        name: www
+path: /docs
+serve:
+    mode: spa

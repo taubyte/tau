@@ -923,10 +923,13 @@ const (
 
 // Website is that kind, read from a compiled object.
 type Website struct {
+	Certificate Certificate
 	Description string
+	Host        HostBlock
 	Id          string
 	Name        string
 	Package     PackageBlock
+	Path        string // defaulted
 	Regions     Regions
 	Serve       WebsiteServe
 	Tags        []string
@@ -935,10 +938,13 @@ type Website struct {
 // ReadWebsite decodes one from a resource.
 func ReadWebsite(r Resource) Website {
 	var out Website
+	out.Certificate = ReadCertificate(r)
 	out.Description = r.String("description")
+	out.Host = ReadHostBlock(r)
 	out.Id = r.String("id")
 	out.Name = r.String("name")
 	out.Package = ReadPackageBlock(r)
+	out.Path = r.String("path")
 	out.Regions = ReadRegions(r)
 	out.Serve = ReadWebsiteServe(r)
 	out.Tags = r.Strings("tags")
@@ -947,13 +953,83 @@ func ReadWebsite(r Resource) Website {
 
 // Website's keys, and the values its fields may hold.
 const (
+	WebsiteKeyCertificate = "certificate"
 	WebsiteKeyDescription = "description"
+	WebsiteKeyHost        = "host"
 	WebsiteKeyId          = "id"
 	WebsiteKeyName        = "name"
 	WebsiteKeyPackage     = "package"
+	WebsiteKeyPath        = "path"
 	WebsiteKeyRegions     = "regions"
 	WebsiteKeyServe       = "serve"
 	WebsiteKeyTags        = "tags"
+)
+
+// Certificate is the "certificate" block of Gateway, Proxy, Website, read from a compiled object.
+type Certificate struct {
+	SecretName      string
+	SecretNamespace string
+	Source          string // defaulted
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadCertificate decodes one from a resource.
+func ReadCertificate(r Resource) Certificate {
+	var out Certificate
+	out.SecretName = r.String("certificate", "secret", "name")
+	out.SecretNamespace = r.String("certificate", "secret", "namespace")
+	out.Source = r.String("certificate", "source")
+	out.Declared = r.Has("certificate", "secret", "name") ||
+		r.Has("certificate", "secret", "namespace")
+	return out
+}
+
+// Certificate's keys, and the values its fields may hold.
+const (
+	CertificateKeySecretName      = "certificate/secret/name"
+	CertificateKeySecretNamespace = "certificate/secret/namespace"
+	CertificateKeySource          = "certificate/source"
+	CertificateSourceGenerated    = "generated"
+	CertificateSourceProvided     = "provided"
+)
+
+// HostBlock is the "host" block of Gateway, Proxy, Website, read from a compiled object.
+type HostBlock struct {
+	Kind            string // which of generated, zone was written
+	Name            string // authored at host/{generated|zone}/name
+	ZoneInName      string // authored at host/{generated|zone}/in/name
+	ZoneInNamespace string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadHostBlock decodes one from a resource.
+func ReadHostBlock(r Resource) HostBlock {
+	var out HostBlock
+	out.Kind = r.String("host", "kind")
+	out.Name = r.String("host", "name")
+	out.ZoneInName = r.String("host", "zone", "in", "name")
+	out.ZoneInNamespace = r.String("host", "zone", "in", "namespace")
+	out.Declared = r.Has("host", "kind") ||
+		r.Has("host", "name") ||
+		r.Has("host", "zone", "in", "name") ||
+		r.Has("host", "zone", "in", "namespace")
+	return out
+}
+
+// HostBlock's keys, and the values its fields may hold.
+const (
+	HostBlockKeyKind            = "host/kind"
+	HostBlockKeyName            = "host/name"
+	HostBlockKeyZoneInName      = "host/zone/in/name"
+	HostBlockKeyZoneInNamespace = "host/zone/in/namespace"
+	HostBlockKindGenerated      = "generated"
+	HostBlockKindZone           = "zone"
 )
 
 // WebsiteServe is the "serve" block of Website, read from a compiled object.
@@ -1803,37 +1879,6 @@ const (
 	GatewayRoutingRouter   = "router"
 )
 
-// Certificate is the "certificate" block of Gateway, Proxy, read from a compiled object.
-type Certificate struct {
-	SecretName      string
-	SecretNamespace string
-	Source          string // defaulted
-
-	// Declared says the author wrote this block: a field the compiler does not
-	// default is present. A block whose fields are all defaults reads false.
-	Declared bool
-}
-
-// ReadCertificate decodes one from a resource.
-func ReadCertificate(r Resource) Certificate {
-	var out Certificate
-	out.SecretName = r.String("certificate", "secret", "name")
-	out.SecretNamespace = r.String("certificate", "secret", "namespace")
-	out.Source = r.String("certificate", "source")
-	out.Declared = r.Has("certificate", "secret", "name") ||
-		r.Has("certificate", "secret", "namespace")
-	return out
-}
-
-// Certificate's keys, and the values its fields may hold.
-const (
-	CertificateKeySecretName      = "certificate/secret/name"
-	CertificateKeySecretNamespace = "certificate/secret/namespace"
-	CertificateKeySource          = "certificate/source"
-	CertificateSourceGenerated    = "generated"
-	CertificateSourceProvided     = "provided"
-)
-
 // GatewayCors is the "cors" block of Gateway, read from a compiled object.
 type GatewayCors struct {
 	AllowSelf *bool
@@ -1873,42 +1918,6 @@ const (
 	GatewayCorsMethodsPATCH   = "PATCH"
 )
 
-// HostBlock is the "host" block of Gateway, Proxy, read from a compiled object.
-type HostBlock struct {
-	Kind            string // which of generated, zone was written
-	Name            string // authored at host/{generated|zone}/name
-	ZoneInName      string // authored at host/{generated|zone}/in/name
-	ZoneInNamespace string
-
-	// Declared says the author wrote this block: a field the compiler does not
-	// default is present. A block whose fields are all defaults reads false.
-	Declared bool
-}
-
-// ReadHostBlock decodes one from a resource.
-func ReadHostBlock(r Resource) HostBlock {
-	var out HostBlock
-	out.Kind = r.String("host", "kind")
-	out.Name = r.String("host", "name")
-	out.ZoneInName = r.String("host", "zone", "in", "name")
-	out.ZoneInNamespace = r.String("host", "zone", "in", "namespace")
-	out.Declared = r.Has("host", "kind") ||
-		r.Has("host", "name") ||
-		r.Has("host", "zone", "in", "name") ||
-		r.Has("host", "zone", "in", "namespace")
-	return out
-}
-
-// HostBlock's keys, and the values its fields may hold.
-const (
-	HostBlockKeyKind            = "host/kind"
-	HostBlockKeyName            = "host/name"
-	HostBlockKeyZoneInName      = "host/zone/in/name"
-	HostBlockKeyZoneInNamespace = "host/zone/in/namespace"
-	HostBlockKindGenerated      = "generated"
-	HostBlockKindZone           = "zone"
-)
-
 // GatewayRateLimit is the "rate_limit" block of Gateway, read from a compiled object.
 type GatewayRateLimit struct {
 	Burst *int64
@@ -1943,10 +1952,13 @@ const (
 type GatewayRoute struct {
 	AuthorizerName      string
 	AuthorizerNamespace string
-	HandlerKind         string // which of function, application, website, gateway, mcp, agent, bus was written
-	HandlerName         string // authored at route/handler/{function|application|website|gateway|mcp|agent|bus}/name
-	HandlerNamespace    string // authored at route/handler/{function|application|website|gateway|mcp|agent|bus}/namespace
-	HandlerPort         string // authored at route/handler/{function|application|website|gateway|mcp|agent|bus}/port
+	HandlerIndex        string // authored at route/handler/package/index
+	HandlerKind         string // which of function, application, package, gateway, mcp, agent, bus was written
+	HandlerMode         string // authored at route/handler/package/mode
+	HandlerName         string // authored at route/handler/{function|application|package|gateway|mcp|agent|bus}/name
+	HandlerNamespace    string // authored at route/handler/{function|application|package|gateway|mcp|agent|bus}/namespace
+	HandlerNotFound     string // authored at route/handler/package/not_found
+	HandlerPort         string // authored at route/handler/{function|application|package|gateway|mcp|agent|bus}/port
 	Match               string // defaulted
 	Methods             []string
 	Path                string
@@ -1965,9 +1977,12 @@ func ReadGatewayRoute(r Resource) GatewayRoute {
 	var out GatewayRoute
 	out.AuthorizerName = r.String("route", "authorizer", "name")
 	out.AuthorizerNamespace = r.String("route", "authorizer", "namespace")
+	out.HandlerIndex = r.String("route", "handler", "index")
 	out.HandlerKind = r.String("route", "handler", "kind")
+	out.HandlerMode = r.String("route", "handler", "mode")
 	out.HandlerName = r.String("route", "handler", "name")
 	out.HandlerNamespace = r.String("route", "handler", "namespace")
+	out.HandlerNotFound = r.String("route", "handler", "not_found")
 	out.HandlerPort = r.String("route", "handler", "port")
 	out.Match = r.String("route", "match")
 	out.Methods = r.Strings("route", "methods")
@@ -1978,9 +1993,12 @@ func ReadGatewayRoute(r Resource) GatewayRoute {
 	out.Target = r.String("route", "target")
 	out.Declared = r.Has("route", "authorizer", "name") ||
 		r.Has("route", "authorizer", "namespace") ||
+		r.Has("route", "handler", "index") ||
 		r.Has("route", "handler", "kind") ||
+		r.Has("route", "handler", "mode") ||
 		r.Has("route", "handler", "name") ||
 		r.Has("route", "handler", "namespace") ||
+		r.Has("route", "handler", "not_found") ||
 		r.Has("route", "handler", "port") ||
 		r.Has("route", "methods") ||
 		r.Has("route", "path") ||
@@ -1995,9 +2013,12 @@ func ReadGatewayRoute(r Resource) GatewayRoute {
 const (
 	GatewayRouteKeyAuthorizerName      = "route/authorizer/name"
 	GatewayRouteKeyAuthorizerNamespace = "route/authorizer/namespace"
+	GatewayRouteKeyHandlerIndex        = "route/handler/index"
 	GatewayRouteKeyHandlerKind         = "route/handler/kind"
+	GatewayRouteKeyHandlerMode         = "route/handler/mode"
 	GatewayRouteKeyHandlerName         = "route/handler/name"
 	GatewayRouteKeyHandlerNamespace    = "route/handler/namespace"
+	GatewayRouteKeyHandlerNotFound     = "route/handler/not_found"
 	GatewayRouteKeyHandlerPort         = "route/handler/port"
 	GatewayRouteKeyMatch               = "route/match"
 	GatewayRouteKeyMethods             = "route/methods"
@@ -2008,11 +2029,13 @@ const (
 	GatewayRouteKeyTarget              = "route/target"
 	GatewayRouteHandlerKindFunction    = "function"
 	GatewayRouteHandlerKindApplication = "application"
-	GatewayRouteHandlerKindWebsite     = "website"
+	GatewayRouteHandlerKindPackage     = "package"
 	GatewayRouteHandlerKindGateway     = "gateway"
 	GatewayRouteHandlerKindMcp         = "mcp"
 	GatewayRouteHandlerKindAgent       = "agent"
 	GatewayRouteHandlerKindBus         = "bus"
+	GatewayRouteHandlerModeStatic      = "static"
+	GatewayRouteHandlerModeSpa         = "spa"
 	GatewayRouteMatchPrefix            = "prefix"
 	GatewayRouteMatchExact             = "exact"
 	GatewayRouteMatchRegex             = "regex"

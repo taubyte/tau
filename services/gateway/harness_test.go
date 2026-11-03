@@ -30,6 +30,7 @@ type harness struct {
 	Gateway *Service
 	Reg     *register.Register
 	Workers *recordingWorkers
+	Files   *builtFiles
 	clock   *fakeClock
 }
 
@@ -71,14 +72,16 @@ func newHarnessOf(t testing.TB, bytes []byte, cfg Config, opts ...Option) *harne
 	require.NoError(t, err)
 
 	workers := &recordingWorkers{}
+	files := &builtFiles{artifacts: map[string][]byte{shopArtifact: tarball(t, shopSite)}}
 	clock := &fakeClock{at: time.Unix(1_700_000_000, 0)}
 
 	s, err := New(cfg, append([]Option{
-		WithHosts(reg), WithSource(reg), WithWorkers(workers), WithClock(clock.Now),
+		WithHosts(reg), WithSource(reg), WithWorkers(workers), WithClock(clock.Now), WithFiles(files, files),
 	}, opts...)...)
 	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
 
-	return &harness{Gateway: s, Reg: reg, Workers: workers, clock: clock}
+	return &harness{Gateway: s, Reg: reg, Workers: workers, Files: files, clock: clock}
 }
 
 // do makes one request against the gateway.

@@ -31,7 +31,6 @@ type harness struct {
 	Worker   *Service
 	Register *countingRegister
 	Runtime  *fakeRuntime
-	Static   *fakeRuntime
 	Client   workerv2connect.WorkerServiceClient
 
 	CallerHost host.Host
@@ -83,13 +82,12 @@ func build(t testing.TB, cfg Config, opts ...Option) *harness {
 	require.NoError(t, err)
 
 	counting := &countingRegister{Register: reg}
-	// Three of the tiers, named by the package types they run, so a package's type
+	// Two of the tiers, named by the package types they run, so a package's type
 	// decides which runs a resource.
 	rt := &fakeRuntime{name: "oci"}
 	wasm := &fakeRuntime{name: "wasm"}
-	site := &fakeRuntime{name: "assets"}
 
-	pool, err := invoke.NewPool(invoke.WithRuntime(rt, wasm, site))
+	pool, err := invoke.NewPool(invoke.WithRuntime(rt, wasm))
 	require.NoError(t, err)
 	t.Cleanup(func() { pool.Close() })
 
@@ -121,7 +119,6 @@ func build(t testing.TB, cfg Config, opts ...Option) *harness {
 		Worker:   s,
 		Register: counting,
 		Runtime:  rt,
-		Static:   site,
 		Client:   workerv2connect.NewWorkerServiceClient(c.HTTP(), c.URL()),
 
 		CallerHost: caller,

@@ -331,6 +331,16 @@ var corpus = []corpusCase{
 		{host: "vault.example.com", method: http.MethodGet, path: "/", status: 200, answer: fingerprintOf(signingKey)},
 		{host: "reader.example.com", method: http.MethodGet, path: "/", status: 200, answer: fingerprintOf(signingKey)},
 	}},
+	// TWO WEBSITES ON ONE NAME, each compiled into the gateway that serves its package's
+	// files: the static one answers a path it lacks with its own page and 404, the
+	// single-page app at /docs answers every route under it with its one page.
+	{name: "with/website", probes: []probe{
+		{host: "www.example.com", method: http.MethodGet, path: "/", status: 200, answer: "<h1>home</h1>"},
+		{host: "www.example.com", method: http.MethodGet, path: "/nope", status: 404, answer: "<h1>gone</h1>"},
+		{host: "www.example.com", method: http.MethodGet, path: "/docs/", status: 200, answer: "<div id=docs></div>"},
+		{host: "www.example.com", method: http.MethodGet, path: "/docs/guide/intro", status: 200, answer: "<div id=docs></div>"},
+		{host: "www.example.com", method: http.MethodPost, path: "/", status: 405},
+	}},
 	// ONE HOST, A FUNCTION ON EACH TIER: the componentized one says it is js
 	// compiled to wasm, and the packed one answers on the js tier.
 	{name: "with/function/runtimes", probes: []probe{
@@ -421,6 +431,7 @@ var corpus = []corpusCase{
 	{name: "refused/function/noruntime", refused: "required attribute 'type'"},
 	{name: "refused/function/unknownruntime", refused: "valid values here: wasm, warp, oci, assets"},
 	{name: "refused/views/across", region: "region-2", refused: `reaches cache/sessions_r1, which is not placed in "region-2" where this is`},
+	{name: "refused/website/notfiles", refused: "serves package module, which is of type wasm"},
 }
 
 // signingKey is with/package/vault's secret, and fingerprintOf what its build bakes in.

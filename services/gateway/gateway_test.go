@@ -82,7 +82,7 @@ func TestAGeneratedNameLosesTheCloudsSegment(t *testing.T) {
 
 	w := h.do(t, http.MethodGet, "http://"+generated+".tau.example.io/", "")
 	require.Equal(t, http.StatusOK, w.Code)
-	require.Equal(t, "website/shop", w.Header().Get("X-Served"))
+	require.Equal(t, "<h1>storefront</h1>", w.Body.String(), "the website's files, at its generated name")
 }
 
 func TestTheHandlerResolvesInTheRightScope(t *testing.T) {

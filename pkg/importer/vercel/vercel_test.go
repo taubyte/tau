@@ -40,6 +40,8 @@ func TestTheBuildHalfIsWhatTheFileIsFor(t *testing.T) {
 	require.True(t, ok, "got %v", r.Resources)
 	built := SiteName + "_code"
 	require.Equal(t, map[string]any{"name": built}, doc["package"])
+	require.Equal(t, map[string]any{"generated": map[string]any{"name": SiteName}}, doc["host"],
+		"it answers at a generated name, as a Vercel project does before a domain is added")
 	pkg, ok := r.Doc("package", built)
 	require.True(t, ok)
 	require.Equal(t, map[string]any{

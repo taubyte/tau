@@ -107,7 +107,13 @@ func Import(data []byte) (importer.Result, error) {
 		if output != "" {
 			pkg["output"] = output
 		}
-		site := map[string]any{"description": "imported from vercel.json"}
+		// A Vercel project always answers at a generated *.vercel.app name; here that is
+		// a generated name under the cloud's own zone, so the import answers before any
+		// domain is moved.
+		site := map[string]any{
+			"description": "imported from vercel.json",
+			"host":        map[string]any{"generated": map[string]any{"name": SiteName}},
+		}
 		if len(commands) > 0 {
 			// The build image is required and Vercel does not name one, so one is written and
 			// reported: emitted without, the project imported with an empty to-do list and

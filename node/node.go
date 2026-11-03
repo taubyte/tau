@@ -33,7 +33,6 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/invoke/js"
-	"github.com/taubyte/tau/pkg/invoke/static"
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/register"
 
@@ -406,15 +405,10 @@ func (n *Node) openWorker() error {
 		tiers = append(tiers, tier)
 	}
 
-	// Static sites, components and scripts cold-start from the asset store with no daemon,
-	// so a node with one serves all three. An injected tier wins over a built one of the
-	// same name.
+	// Components and scripts cold-start from the asset store with no daemon, so a node
+	// with one serves both. An injected tier wins over a built one of the same name. A
+	// site's files are the gateway's to read, not a tier's to run.
 	if n.opts.assets != nil {
-		site, err := static.New(n.opts.assets)
-		if err != nil {
-			return err
-		}
-
 		// A function's println goes to the node's log. The backings are always given and open
 		// nothing until reached; without them the tier would refuse resources the node could
 		// serve.
@@ -526,7 +520,7 @@ func (n *Node) openWorker() error {
 			return err
 		}
 
-		tiers = appendUnnamed(tiers, site, component, script)
+		tiers = appendUnnamed(tiers, component, script)
 	}
 
 	if len(tiers) == 0 {
@@ -549,11 +543,8 @@ func (n *Node) openWorker() error {
 	// composer injected something else. An injected one wins because it is the
 	// more specific statement: somebody who handed this node an artifact
 	// resolver meant that one.
-	switch {
-	case n.opts.artifacts != nil:
-		options = append(options, worker.WithArtifacts(n.opts.artifacts))
-	case n.discovery != nil:
-		options = append(options, worker.WithArtifacts(n.BuildArtifacts()))
+	if a := n.artifactSource(); a != nil {
+		options = append(options, worker.WithArtifacts(a))
 	}
 	// A SECRET IS RESOLVED THE SAME WAY AN ARTIFACT IS, and by the same rule:
 	// an injected resolver wins, then this node's own vault or one in the
@@ -730,11 +721,30 @@ func (n *Node) openGateway() error {
 		gatewayOptions = append(gatewayOptions, gateway.WithIssuer(certs))
 	}
 
+	// A PACKAGE HANDLER'S FILES are read from the build's artifact, as a worker
+	// reads one: the same lookup, the same asset store.
+	if a := n.artifactSource(); a != nil && n.opts.assets != nil {
+		gatewayOptions = append(gatewayOptions, gateway.WithFiles(a, n.opts.assets))
+	}
+
 	svc, err := gateway.New(n.cfg.Gateway, gatewayOptions...)
 	if err != nil {
 		return err
 	}
 	n.gateway = svc
+	n.closers = append(n.closers, closerFunc(func() { svc.Close() }))
+	return nil
+}
+
+// artifactSource is where a built resource's artifact is looked up: an injected
+// resolver, then the build service. Nil when neither is here.
+func (n *Node) artifactSource() worker.Artifacts {
+	switch {
+	case n.opts.artifacts != nil:
+		return n.opts.artifacts
+	case n.discovery != nil:
+		return n.BuildArtifacts()
+	}
 	return nil
 }
 

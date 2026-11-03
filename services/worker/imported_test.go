@@ -150,7 +150,7 @@ func runnable(t *testing.T, reg *register.Register) map[string]invoke.Spec {
 	require.NoError(t, err)
 
 	out := map[string]invoke.Spec{}
-	for _, kind := range []string{"website", "function", "application", "worker", "sandbox"} {
+	for _, kind := range []string{"function", "application", "worker", "sandbox"} {
 		names, err := proj.Names(nil, kind)
 		require.NoError(t, err)
 
@@ -184,7 +184,7 @@ func assertRunnable(t *testing.T, specs map[string]invoke.Spec) {
 
 // implementedTiers restates pkg/importer/emit/runnable_test's set; here it is the
 // resolved spec, not the kind, that must name one.
-var implementedTiers = []string{"assets", "oci", "warp", "wasm"}
+var implementedTiers = []string{"oci", "warp", "wasm"}
 
 func TestAFlyAppIsRunnable(t *testing.T) {
 	result, err := fly.Import([]byte(theFlyFile))

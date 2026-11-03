@@ -74,6 +74,7 @@ var (
 
 	agentLowered = excuse{handled, "consumed by the agent's lowering: limits/timeout and limits/memory become the loop function's execution/timeout and execution/memory, and the memory block becomes a vector database's dimensions and size. The interpreter keeps its lowering terms unexported, so this test cannot see that consumption."}
 
+	websiteLowered  = excuse{handled, "consumed by the website's lowering: host/* and certificate/* become its gateway's, and serve/* the package handler's index, mode and not_found, which the gateway reads. The interpreter keeps its lowering terms unexported, so this test cannot see that consumption."}
 	workflowLowered = excuse{handled, "consumed by the workflow's lowering: a step's retry budget becomes its queue's max_attempts, delay and retry/*, `on_error` becomes its dead-letter queue, `call/*` becomes the step driver's grant on the function it calls, and `start` becomes the entry record worker reads at entry/start/*. The interpreter keeps its lowering terms unexported, so this test cannot see that consumption."}
 )
 
@@ -120,6 +121,17 @@ var unread = map[string]excuse{
 	"agent/memory/embedder/name":      agentLowered,
 	"agent/memory/embedder/namespace": agentLowered,
 
+	"website/host/kind":                    websiteLowered,
+	"website/host/name":                    websiteLowered,
+	"website/host/zone/in/name":            websiteLowered,
+	"website/host/zone/in/namespace":       websiteLowered,
+	"website/certificate/source":           websiteLowered,
+	"website/certificate/secret/name":      websiteLowered,
+	"website/certificate/secret/namespace": websiteLowered,
+	"website/serve/index":                  websiteLowered,
+	"website/serve/mode":                   websiteLowered,
+	"website/serve/not_found":              websiteLowered,
+
 	"workflow/attempts":         workflowLowered,
 	"workflow/backoff/interval": workflowLowered,
 	"workflow/backoff/factor":   workflowLowered,
@@ -157,6 +169,7 @@ var readers = map[string][]string{
 
 	// A gateway's server. bus.go is the arm that serves a bus reached through
 	// one, and it reads the bus.
+	"services/gateway/files.go":   {"gateway"},
 	"services/gateway/gateway.go": {"gateway"},
 	"services/gateway/policy.go":  {"gateway"},
 	"services/gateway/route.go":   {"gateway"},

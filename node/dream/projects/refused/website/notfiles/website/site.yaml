@@ -1,0 +1,7 @@
+id: QmfH6wcHkDAw76erQUmN7S6JaoNUDJZR72jvnR41hdQQZj
+description: names the component as if it were files
+package:
+    name: module
+host:
+    generated:
+        name: site

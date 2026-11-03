@@ -1,0 +1,12 @@
+id: QmVoW2sZRE7bLi5XHMvfrt6VacdaBxGqvzu1DvW8fLjK4N
+description: the docs app's files, built for / - one page whose router renders every route
+type: assets
+source: .
+output: dist
+build:
+    steps:
+        - name: build
+          image: ghcr.io/samyfodil/wazy-build-js:1.39.0-cjs0.23.0-node22.23.4
+          commands:
+              - mkdir -p dist
+              - printf '<div id=docs></div>' > dist/index.html

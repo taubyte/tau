@@ -536,7 +536,7 @@ func authored(root *engine.Node, d Derived) map[string]any {
 			branches = append(branches, name)
 			continue
 		}
-		place(tree, authoredPath(iter, name, d.Fields), v)
+		place(tree, authoredPath(iter, name, d.Fields), typedFor(iter, name, v))
 	}
 	// A captured branch is stated by its key being there, so it is written only when no
 	// field inside it already put it there.
@@ -643,6 +643,28 @@ func captures(iter *engine.Node, name string) bool {
 	return false
 }
 
+// typedFor is a value as the attribute it lands on reads it. A lowering's fixed text is
+// a string, and the engine reads a string as a bool for no author, so text the
+// vocabulary states for a bool is turned into one here.
+func typedFor(iter *engine.Node, name string, v any) any {
+	s, ok := v.(string)
+	if !ok || iter == nil {
+		return v
+	}
+	for _, a := range iter.Attributes {
+		if a.Name != name {
+			continue
+		}
+		if a.Type == engine.TypeBool {
+			if b, err := strconv.ParseBool(s); err == nil {
+				return b
+			}
+		}
+		return v
+	}
+	return v
+}
+
 func has(tree map[string]any, path []string) bool {
 	for i, seg := range path {
 		v, ok := tree[seg]
@@ -682,15 +704,20 @@ func LoweringPlan(root *engine.Node, obj map[string]any) []Derived {
 		scope = inner
 	}
 
+	names := map[string]string{}
+	walkResources(root, scope, "", func(_ string, _ *engine.Node, id, name string, _ map[string]any, _ string) {
+		names[id] = name
+	})
+
 	var out []Derived
 	walkResources(root, scope, "", func(kind string, iter *engine.Node, id, name string, res map[string]any, at string) {
 		src := Source{Kind: kind, Name: name, ID: id, Scope: at}
-		out = append(out, from(root, iter, kind, name, id, res, at, src, nil)...)
+		out = append(out, from(root, iter, kind, name, id, res, at, src, nil, names)...)
 	})
 
 	// A lowering may lower again: what a construct becomes can itself be a construct.
 	// Each round reads the fields the round above produced, which is why Set exists.
-	out = append(out, nest(root, out)...)
+	out = append(out, nest(root, out, names)...)
 
 	// A total order: a pair two derived resources can share would leave the rest to
 	// map iteration.
@@ -734,6 +761,16 @@ func setFor(root *engine.Node, into string, fields map[string]Term, e env) map[s
 		if _, ok := out[a.Name]; !ok {
 			continue
 		}
+		// A reference read out of the compiled object is the id it resolved to; the
+		// produced document says it as an author would, by name, and compiles it again.
+		if _, isRef := a.Meta["ref"].(engine.RefSpec); isRef {
+			if id, ok := out[a.Name].(string); ok {
+				if name, known := e.names[id]; known && name != "" {
+					out[a.Name] = name
+				}
+			}
+			continue
+		}
 		sc, isScalar := a.Meta["scalar"].(engine.ScalarSpec)
 		if !isScalar {
 			continue
@@ -768,7 +805,7 @@ func setFor(root *engine.Node, into string, fields map[string]Term, e env) map[s
 // from is everything one resource lowers into, inside the source when it
 // declares Lowerable, beside it otherwise. The scope is produced only when
 // something goes into it.
-func from(root, iter *engine.Node, kind, name, id string, res map[string]any, at string, src Source, via []string) []Derived {
+func from(root, iter *engine.Node, kind, name, id string, res map[string]any, at string, src Source, via []string, names map[string]string) []Derived {
 	ls := LoweringsOf(iter)
 	if len(ls) == 0 {
 		return nil
@@ -781,12 +818,12 @@ func from(root, iter *engine.Node, kind, name, id string, res map[string]any, at
 
 	var out []Derived
 	for _, l := range ls {
-		out = append(out, plan(root, l, kind, name, id, res, into, src, via)...)
+		out = append(out, plan(root, l, kind, name, id, res, into, src, via, names)...)
 	}
 	return out
 }
 
-func plan(root *engine.Node, l Lowering, kind, name, srcID string, res map[string]any, scope string, src Source, via []string) []Derived {
+func plan(root *engine.Node, l Lowering, kind, name, srcID string, res map[string]any, scope string, src Source, via []string, names map[string]string) []Derived {
 	// What a thing is CALLED is the schema's word, and a list element uses it too.
 	_, nameField := engine.IdentityOf(root)
 	if !l.when.Empty() {
@@ -799,7 +836,7 @@ func plan(root *engine.Node, l Lowering, kind, name, srcID string, res map[strin
 	if l.perEach == "" {
 		// No scope here: a name reading its own scope would be circular, so it fills
 		// empty and the compile refuses it (see lower()).
-		e := env{res: res}
+		e := env{res: res, names: names}
 		named, _ := l.name.fill(e)
 		return []Derived{{
 			Kind: l.into, Name: named, Of: of, Scope: scope,
@@ -831,7 +868,7 @@ func plan(root *engine.Node, l Lowering, kind, name, srcID string, res map[strin
 		if part == "" {
 			part = at.Path // no name of its own: its position is the only handle
 		}
-		e := env{res: res, each: el, next: next}
+		e := env{res: res, each: el, next: next, names: names}
 		named, _ := l.name.fill(e)
 		out = append(out, Derived{
 			Kind: l.into, Name: named, Of: of, Scope: scope,
@@ -860,7 +897,7 @@ func derivedID(srcID, kind, part string) string {
 // nest lowers again the derived resources that are themselves of a lowering kind, carrying
 // the trail down so the innermost one still names what the author wrote. New refuses a
 // cyclic vocabulary, so this ends.
-func nest(root *engine.Node, parents []Derived) []Derived {
+func nest(root *engine.Node, parents []Derived, names map[string]string) []Derived {
 	if len(parents) == 0 {
 		return nil
 	}
@@ -877,9 +914,9 @@ func nest(root *engine.Node, parents []Derived) []Derived {
 		}
 		res[nameField] = p.Name
 		via := append(append([]string{}, p.Via...), p.Kind+"/"+p.Name)
-		out = append(out, from(root, iter, p.Kind, p.Name, p.ID, res, p.Scope, p.Source, via)...)
+		out = append(out, from(root, iter, p.Kind, p.Name, p.ID, res, p.Scope, p.Source, via, names)...)
 	}
-	return append(out, nest(root, out)...)
+	return append(out, nest(root, out, names)...)
 }
 
 // iterOfKind finds a kind's iterator anywhere in the schema, including inside the scope

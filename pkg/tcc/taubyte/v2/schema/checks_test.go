@@ -136,41 +136,99 @@ func TestAuditOfTheExample(t *testing.T) {
 	}
 }
 
-func TestAuditMountedWebsite(t *testing.T) {
-	site := "id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv\npackage:\n    name: site\n"
+func TestAuditMountedSite(t *testing.T) {
 	gw := func(extra string) string {
-		return "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nroute:\n    path: /docs\n" + extra + "    handler:\n        website:\n            name: docs\n"
+		return "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nroute:\n    path: /docs\n" + extra + "    handler:\n        package:\n            name: site\n"
 	}
 
-	found := auditDocs(t, nil, map[string]string{"/website/docs.yaml": site, "/gateway/g.yaml": gw("")})
+	found := auditDocs(t, nil, map[string]string{"/gateway/g.yaml": gw("")})
 	has(t, found, schema.Check, "does not strip the prefix")
 
-	found = auditDocs(t, nil, map[string]string{"/website/docs.yaml": site, "/gateway/g.yaml": gw("    strip_prefix: true\n")})
+	found = auditDocs(t, nil, map[string]string{"/gateway/g.yaml": gw("    strip_prefix: true\n")})
 	hasNo(t, found, "strip the prefix")
 
 	// and at the root there is no prefix to strip
 	found = auditDocs(t, nil, map[string]string{
-		"/website/docs.yaml": site,
-		"/gateway/g.yaml":    "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nroute:\n    path: /\n    handler:\n        website:\n            name: docs\n",
+		"/gateway/g.yaml": "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nroute:\n    path: /\n    handler:\n        package:\n            name: site\n",
 	})
 	hasNo(t, found, "strip the prefix")
 }
 
-func TestWebsiteServingMode(t *testing.T) {
+func TestAuditServedPackages(t *testing.T) {
+	gw := func(pkg string) string {
+		return "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nroute:\n    path: /\n    handler:\n        package:\n            name: " + pkg + "\n"
+	}
+	for _, pkg := range []string{"wasm", "warp", "img"} {
+		has(t, auditDocs(t, nil, map[string]string{"/gateway/g.yaml": gw(pkg)}), schema.Broken, "serves package "+pkg)
+	}
+	hasNo(t, auditDocs(t, nil, map[string]string{"/gateway/g.yaml": gw("site")}), "serves package")
+}
+
+func TestAWebsiteOfAnythingButFilesIsRefusedWhereItWasWritten(t *testing.T) {
+	found := auditDocs(t, nil, map[string]string{
+		"/website/app.yaml": "id: " + cidFor("app") + "\npackage:\n    name: wasm\nhost:\n    generated:\n        name: www\n",
+	})
+	has(t, found, schema.Broken, "serves package wasm")
+	n := 0
+	for _, f := range found {
+		if strings.Contains(f.Title, "serves package") {
+			n++
+			assert.Equal(t, f.Kind, "website", "said on the website, not on the gateway it became")
+		}
+	}
+	assert.Equal(t, n, 1)
+}
+
+// loweredGateway is the gateway a website became, in the website's own scope.
+func loweredGateway(t *testing.T, flat map[string]any) map[string]any {
+	t.Helper()
+	site := only(t, resources(t, flat, "website"))
+	gateways, ok := site["gateway"].(map[string]any)
+	assert.Assert(t, ok, "the website produced no gateway: %v", site)
+	return only(t, gateways)
+}
+
+// compileWebsite compiles one website beside the standing packages.
+func compileWebsite(t *testing.T, website string) map[string]any {
+	t.Helper()
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
-	assert.NilError(t, afero.WriteFile(fs, "/package/site.yaml", []byte(standingPackages["/package/site.yaml"]), 0o644))
-	assert.NilError(t, afero.WriteFile(fs, "/website/app.yaml", []byte(
-		"id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv\npackage:\n    name: site\nserve:\n    mode: spa\n"), 0o644))
+	for name, body := range standingPackages {
+		assert.NilError(t, afero.WriteFile(fs, name, []byte(body), 0o644))
+	}
+	assert.NilError(t, afero.WriteFile(fs, "/zone/example_com.yaml", []byte("id: "+cidFor("example_com")+"\nfqdn: example.com\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/website/app.yaml", []byte(website), 0o644))
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
 	obj, _, err := c.Compile(context.Background())
 	assert.NilError(t, err)
+	return obj.Flat()
+}
 
-	site := only(t, resources(t, obj.Flat(), "website"))
-	assert.Equal(t, nested(site, "serve", "mode"), "spa")
-	assert.Equal(t, nested(site, "serve", "index"), "index.html", "the default a directory request returns")
+func TestAWebsiteCompilesIntoTheGatewayThatServesItsPackage(t *testing.T) {
+	flat := compileWebsite(t, "id: "+cidFor("app")+"\npackage:\n    name: site\nhost:\n    zone:\n        in:\n            name: example_com\n        name: www\npath: /docs\nserve:\n    mode: spa\n")
+
+	gw := loweredGateway(t, flat)
+	assert.Equal(t, gw["name"], "app", "the gateway is the website's, under its name")
+	assert.Equal(t, nested(gw, "host", "kind"), "zone")
+	assert.Equal(t, nested(gw, "host", "name"), "www")
+	assert.Equal(t, nested(gw, "host", "zone", "in", "name"), cidFor("example_com"))
+	assert.Equal(t, nested(gw, "route", "path"), "/docs")
+	assert.Equal(t, nested(gw, "route", "strip_prefix"), true, "a site is built for /")
+	assert.Equal(t, nested(gw, "route", "handler", "kind"), "package")
+	assert.Equal(t, nested(gw, "route", "handler", "name"), "site", "the handler is the website's package, by name as a route names it")
+	assert.Equal(t, nested(gw, "route", "handler", "mode"), "spa")
+	assert.Equal(t, nested(gw, "route", "handler", "index"), "index.html", "the website's default carries over")
+}
+
+func TestAWebsiteAtTheRootTakesTheDefaults(t *testing.T) {
+	flat := compileWebsite(t, "id: "+cidFor("app")+"\npackage:\n    name: site\nhost:\n    generated:\n        name: www\n")
+
+	gw := loweredGateway(t, flat)
+	assert.Equal(t, nested(gw, "host", "kind"), "generated")
+	assert.Equal(t, nested(gw, "route", "path"), "/")
+	assert.Equal(t, nested(gw, "route", "handler", "mode"), "static")
 }
 
 func TestAuditHostWorlds(t *testing.T) {
@@ -246,10 +304,9 @@ func TestAuditHostWorldsReachesEveryUse(t *testing.T) {
 
 func TestAuditHandlerPorts(t *testing.T) {
 	found := auditDocs(t, nil, map[string]string{
-		"/website/w.yaml": "id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv\npackage:\n    name: site\n",
-		"/gateway/g.yaml": "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nroute:\n    path: /\n    handler:\n        website:\n            name: w\n            port: http\n",
+		"/gateway/g.yaml": "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nroute:\n    path: /\n    handler:\n        package:\n            name: site\n            port: http\n",
 	})
-	has(t, found, schema.Broken, "names port \"http\" on a website")
+	has(t, found, schema.Broken, "names port \"http\" on a package")
 }
 
 func TestAuditVariableAsFile(t *testing.T) {

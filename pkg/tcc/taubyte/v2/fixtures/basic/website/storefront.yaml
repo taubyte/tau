@@ -1,0 +1,9 @@
+id: QmNYxqozc5Jv2x8RcpMZmazweD85hUyX5295LZ2csGSN3i
+description: the storefront - a build that arrived from another platform's descriptor and needed no file written into the repository, at a generated name, so no zone record and no certificate
+package:
+    name: shop_site
+host:
+    generated:
+        name: storefront
+serve:
+    mode: spa

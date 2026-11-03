@@ -32,6 +32,12 @@ const (
 
 var packageTypes = []string{wasmPackage, warpPackage, ociPackage, assetsPackage}
 
+// How an assets package's files are served, by what an unmatched path returns.
+const (
+	staticServing = "static"
+	spaServing    = "spa"
+)
+
 // PackageTypes is every type a package may be.
 func PackageTypes() []string { return append([]string(nil), packageTypes...) }
 

@@ -333,7 +333,6 @@ func TestAFunctionOnATierThisNodeLacksIsRefusedByName(t *testing.T) {
 	require.ErrorIs(t, err, invoke.ErrNoRuntime)
 	require.ErrorContains(t, err, `"warp"`)
 	require.Empty(t, h.Runtime.specs(), "nothing was started on another tier")
-	require.Empty(t, h.Static.specs())
 }
 
 func TestEverySentinelSurvivesTheWireToTheClient(t *testing.T) {
@@ -369,20 +368,21 @@ func TestEverySentinelSurvivesTheWireToTheClient(t *testing.T) {
 		connect.CodeOf(unwire(connect.NewError(connect.CodeUnavailable, errors.New("something else")))))
 }
 
-func TestTheServeBlockReachesTheTier(t *testing.T) {
+func TestAWebsiteIsServedAtItsGatewayAndNeverRun(t *testing.T) {
 	h := newHarness(t)
 
-	invokeOver(t, h, target("website", "shop"))
-	spec := h.Static.specs()[0]
+	// What a website is is the gateway it compiled into, which reads its package's
+	// files; nothing runs one, so asking the worker to is refused by name.
+	_, err := newWorkerClient(t, h).Invoke(t.Context(),
+		specs.Address{Project: "shop", Environment: "prod", Kind: "website", Name: "storefront"},
+		&invoke.Request{Method: "GET", Path: "/"})
+	require.ErrorIs(t, err, ErrNoRuntime)
+	require.Empty(t, h.Runtime.specs(), "nothing was started")
 
-	require.Equal(t, "assets", spec.Runtime, "read off the package's type")
-	require.Equal(t, "spa", spec.Settings["serve/mode"])
-
-	// A resource with none of the three carries no settings, rather than an
-	// empty map every tier has to check for.
-	h2 := newHarness(t)
-	invokeOver(t, h2, target("application", "api"))
-	require.Nil(t, h2.Runtime.specs()[0].Settings)
+	// A resource with no settings carries none, rather than an empty map every
+	// tier has to check for.
+	invokeOver(t, h, target("application", "api"))
+	require.Nil(t, h.Runtime.specs()[0].Settings)
 }
 
 func TestTheEntrypointAndTheWorldReachTheTier(t *testing.T) {

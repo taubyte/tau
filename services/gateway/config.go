@@ -153,6 +153,10 @@ type Config struct {
 	// unbounded allocation on a public listener.
 	MaxBody int64
 
+	// FilesBudget bounds the bytes of package files this gateway keeps unpacked
+	// on disk at once. Default DefaultFilesBudget.
+	FilesBudget int64
+
 	// Wildcard is the certificate for this cloud's own zone, which is what a
 	// generated name answers a handshake with.
 	//
@@ -192,6 +196,9 @@ type options struct {
 	secrets    Secrets
 	issuer     Issuer
 	terminates bool
+
+	artifacts Artifacts
+	assets    Assets
 }
 
 // Issuer issues a certificate for a generated name the operator's wildcard
@@ -352,6 +359,9 @@ func (c Config) withDefaults() (Config, error) {
 	if c.MaxBody == 0 {
 		c.MaxBody = DefaultMaxBody
 	}
+	if c.FilesBudget == 0 {
+		c.FilesBudget = DefaultFilesBudget
+	}
 	switch {
 	case c.HostTTL < 0:
 		return Config{}, fmt.Errorf("gateway: host ttl %s is not a duration to remember for", c.HostTTL)
@@ -361,6 +371,8 @@ func (c Config) withDefaults() (Config, error) {
 		return Config{}, fmt.Errorf("gateway: timeout %s: a request needs a budget", c.Timeout)
 	case c.MaxBody < 1:
 		return Config{}, fmt.Errorf("gateway: %d bytes: a body limit of nothing refuses every request with a body", c.MaxBody)
+	case c.FilesBudget < 1:
+		return Config{}, fmt.Errorf("gateway: %d bytes: a files budget of nothing unpacks nothing", c.FilesBudget)
 	}
 	return c, nil
 }

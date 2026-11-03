@@ -1,0 +1,6 @@
+id: Qmc6L63ScdqzSkfgN8q8cTteux93c58zDQFj4MDvjTHBYj
+name: websites
+description: two websites on one name, each the files of an assets package its build writes, compiled into the gateway that serves them - one static with its own not-found page at the root, one a single-page app mounted at /docs
+environments:
+    prod:
+        branches: ["*"]

@@ -16,7 +16,6 @@ import (
 	"github.com/taubyte/tau/pkg/importer/vercel"
 	"github.com/taubyte/tau/pkg/invoke/container"
 	"github.com/taubyte/tau/pkg/invoke/js"
-	"github.com/taubyte/tau/pkg/invoke/static"
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
@@ -30,7 +29,6 @@ import (
 var implemented = map[string]bool{
 	container.Name: true,
 	js.Name:        true,
-	static.Name:    true,
 	wasm.Name:      true,
 }
 
