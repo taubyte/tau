@@ -3,6 +3,7 @@ package frontend
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/build/livelog"
 )
 
 // jobapi.go is the job API a person or the CLI calls. Every route authorizes
@@ -162,12 +164,18 @@ func (s *Service) storedLog(ctx context.Context, jobID string, run int32, from i
 	case s.assets == nil:
 		return problem(http.StatusServiceUnavailable, "this node reads no asset store")
 	}
-	content, err := s.assets.Get(ctx, cid)
+	stored, err := s.assets.Read(ctx, cid)
 	if err != nil {
 		return err
 	}
+	content := livelog.Decompressed(stored)
 	defer content.Close()
-	if _, err := content.Seek(from, io.SeekStart); err != nil {
+	// A compressed log has no offsets to seek to, so the bytes before from are
+	// read and dropped.
+	if _, err := io.CopyN(io.Discard, content, from); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
 		return err
 	}
 	_, err = io.Copy(w, content)

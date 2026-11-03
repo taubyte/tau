@@ -82,6 +82,9 @@ func (s *Service) job(id string) (*buildv2.Job, error) {
 		Attempt:       int32(rec.Attempt),
 		Logs:          merged(rec.Logs, nil),
 		AssetCid:      merged(rec.Assets, nil),
+		Environment:   rec.Environment,
+		Children:      slices.Clone(rec.Children),
+		Reason:        rec.Reason,
 	}, nil
 }
 

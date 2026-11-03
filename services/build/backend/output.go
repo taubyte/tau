@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/taubyte/tau/services/build/livelog"
+	"github.com/taubyte/tau/services/storage"
 )
 
 // output.go is what a run writes. No replicated row is written outside a section;
@@ -38,16 +39,27 @@ type produced struct {
 	attempt uint32
 	logCID  string
 	assets  map[assetRef]string
+	// children is the environment jobs a plan enqueued.
+	children []string
 }
+
+// LogsInstance is the instance of an environment's assets bucket its builds' logs
+// are kept in, one version per run. A package's artifacts are the instance named by
+// its id, a CID, so the two never meet.
+const LogsInstance = "logs"
+
+// logEncoding is how a log is compressed before it is stored; see livelog.Compressed.
+const logEncoding = livelog.Encoding
 
 // runOutput is one run's Output: its log file and the assets it hands over. It
 // reaches no replicated store, only the asset store.
 type runOutput struct {
-	s       *Service
-	job     string
-	project string
-	attempt uint32
-	log     *livelog.Log
+	s           *Service
+	job         string
+	project     string
+	environment string
+	attempt     uint32
+	log         *livelog.Log
 
 	// mu guards built, because Asset may be called from whatever goroutine the
 	// runner builds a resource on while another writes the log.
@@ -79,7 +91,7 @@ func (s *Service) output(w Work) (*runOutput, error) {
 	s.logsMu.Unlock()
 
 	return &runOutput{
-		s: s, job: w.JobID, project: w.ProjectID, attempt: w.Attempt, log: log,
+		s: s, job: w.JobID, project: w.ProjectID, environment: w.Environment, attempt: w.Attempt, log: log,
 		built: map[assetRef]string{},
 	}, nil
 }
@@ -98,9 +110,9 @@ func (o *runOutput) Write(p []byte) (int, error) {
 // Storing is content-addressed, so a failing run costs nothing; the record is
 // written once, by the settling section. Called only by the runner; only publish
 // reads o.built.
-func (o *runOutput) Asset(ctx context.Context, environment, resourceID string, content io.Reader) error {
-	if environment == "" {
-		return errors.New("build: an asset needs the deployment it was built for")
+func (o *runOutput) Asset(ctx context.Context, resourceID string, content io.Reader) error {
+	if o.environment == "" {
+		return errors.New("build: a plan builds nothing, so it has no asset to store")
 	}
 	if resourceID == "" {
 		return errors.New("build: an asset needs a resource id")
@@ -116,23 +128,27 @@ func (o *runOutput) Asset(ctx context.Context, environment, resourceID string, c
 	// an artifact's bytes are what a plan bills, and a cid says nothing about
 	// size. Its error half is unused here — an artifact that failed to read is
 	// already the runner's failure, which is where it is raised.
-	counted := &handover{from: content}
-	cid, err := o.s.assetStore.Put(ctx, counted)
+	at, err := storage.NewAddress(o.project, o.environment, storage.AssetsBucket, resourceID)
 	if err != nil {
 		return fmt.Errorf("build: job %s: storing %s: %w", o.job, resourceID, err)
 	}
-	if cid == "" {
+	counted := &handover{from: content}
+	v, err := o.s.assetStore.Put(ctx, at, o.job, storage.Object{}, counted)
+	if err != nil {
+		return fmt.Errorf("build: job %s: storing %s: %w", o.job, resourceID, err)
+	}
+	if v.Record.RootCID == "" {
 		return errInternal("build: job %s: the asset store returned no cid for %s", o.job, resourceID)
 	}
 
 	o.mu.Lock()
-	o.built[assetRef{environment: environment, resource: resourceID}] = cid
+	o.built[assetRef{environment: o.environment, resource: resourceID}] = v.Record.RootCID
 	o.mu.Unlock()
 
 	// Counted where stored: a cid says nothing about size.
 	o.s.emit(ctx, Accounted{
 		Project:     o.project,
-		Environment: environment,
+		Environment: o.environment,
 		Job:         o.job,
 		Attempt:     o.attempt,
 		Op:          OpArtifact,
@@ -164,7 +180,8 @@ func (o *runOutput) publish(ctx context.Context) (produced, error) {
 	p := produced{attempt: o.attempt, assets: copied(o.built)}
 	o.mu.Unlock()
 
-	if o.s.assetStore == nil {
+	// A plan keeps no log: what it said opens each environment job's.
+	if o.s.assetStore == nil || o.environment == "" {
 		return p, nil
 	}
 
@@ -183,28 +200,44 @@ func (o *runOutput) publish(ctx context.Context) (produced, error) {
 	ctx, stop := context.WithTimeout(context.WithoutCancel(ctx), o.s.cfg.PublishTimeout)
 	defer stop()
 
+	at, err := storage.NewAddress(o.project, o.environment, storage.AssetsBucket, LogsInstance)
+	if err != nil {
+		return p, errInternal("build: job %s: %v", o.job, err)
+	}
 	source := &handover{from: whole}
-	cid, err := o.s.assetStore.Put(ctx, source)
+	stream := livelog.Compressed(source)
+	v, err := o.s.assetStore.Put(ctx, at, o.job+"/"+stamp(int64(o.attempt)),
+		storage.Object{ContentType: "text/plain", Metadata: map[string]string{"encoding": logEncoding}},
+		stream)
+	// A store that stopped reading early leaves the compressor writing into the
+	// pipe; closing it ends that.
+	stream.Close()
 	if source.err != nil {
 		return p, errInternal("build: job %s: reading back the log it wrote: %v", o.job, source.err)
 	}
 	if err != nil {
 		return p, nil
 	}
-	// A Put that succeeded with less than the whole log stored a prefix.
+	// A Put that succeeded with less than the whole log stored a prefix: the store
+	// stopped before the compressed stream ended, whatever the compressor had read.
+	if !stream.Ended() {
+		return p, errInternal("build: job %s: the asset store took %d bytes of its compressed log and stopped before its end",
+			o.job, stream.Taken())
+	}
 	if size := o.log.Size(); source.n != size {
 		return p, errInternal("build: job %s: the asset store took %d of the %d bytes of its log",
 			o.job, source.n, size)
 	}
 	o.s.emit(ctx, Accounted{
-		Project: o.project,
-		Job:     o.job,
-		Attempt: o.attempt,
-		Op:      OpLog,
-		Bytes:   uint64(source.n),
+		Project:     o.project,
+		Environment: o.environment,
+		Job:         o.job,
+		Attempt:     o.attempt,
+		Op:          OpLog,
+		Bytes:       uint64(source.n),
 	})
 
-	p.logCID = cid
+	p.logCID = v.Record.RootCID
 	return p, nil
 }
 

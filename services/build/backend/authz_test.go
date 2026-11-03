@@ -41,7 +41,7 @@ func TestACallerWithNoStreamIsUnauthenticated(t *testing.T) {
 
 func TestTheseHandlersCannotBeServedOnAnHTTPIngress(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	srv := httptest.NewServer(h.mount())
 	t.Cleanup(srv.Close)

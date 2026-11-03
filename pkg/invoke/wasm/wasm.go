@@ -136,7 +136,7 @@ func (m Mode) config() wazy.RuntimeConfig {
 
 // Assets is where a built component is fetched from.
 type Assets interface {
-	Get(ctx context.Context, id string) (io.ReadSeekCloser, error)
+	Read(ctx context.Context, id string) (io.ReadCloser, error)
 }
 
 // Runtime is the wasm tier.
@@ -358,7 +358,7 @@ func (r *Runtime) instantiate(ctx context.Context, spec invoke.Spec, world strin
 		return nil, nil, err
 	}
 
-	content, err := r.assets.Get(ctx, spec.Artifact)
+	content, err := r.assets.Read(ctx, spec.Artifact)
 	if err != nil {
 		return nil, nil, fmt.Errorf("wasm: fetching %s: %w", spec.Artifact, err)
 	}

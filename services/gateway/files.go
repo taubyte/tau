@@ -28,7 +28,7 @@ type Artifacts interface {
 
 // Assets is where an artifact's bytes are read.
 type Assets interface {
-	Get(ctx context.Context, id string) (io.ReadSeekCloser, error)
+	Read(ctx context.Context, id string) (io.ReadCloser, error)
 }
 
 // ErrNoFiles is a route serving a package's files on a gateway given nothing to read
@@ -77,7 +77,7 @@ func newUnpacked(budget int64) *unpacked {
 
 // acquire is the artifact's files, unpacked once whoever asks first; release when the
 // request is answered.
-func (u *unpacked) acquire(ctx context.Context, id string, open func() (io.ReadSeekCloser, error)) (*site.Files, func(), error) {
+func (u *unpacked) acquire(ctx context.Context, id string, open func() (io.ReadCloser, error)) (*site.Files, func(), error) {
 	u.mu.Lock()
 	e, ok := u.held[id]
 	if !ok {
@@ -115,7 +115,7 @@ func (u *unpacked) acquire(ctx context.Context, id string, open func() (io.ReadS
 	return e.files, func() { u.release(e) }, nil
 }
 
-func (u *unpacked) unpack(id string, open func() (io.ReadSeekCloser, error)) (*site.Files, error) {
+func (u *unpacked) unpack(id string, open func() (io.ReadCloser, error)) (*site.Files, error) {
 	content, err := open()
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", id, err)
@@ -204,7 +204,7 @@ func (s *Service) serveFiles(ctx context.Context, m match, proj *specs.Project, 
 		s.logf("gateway: %s/%s package %s has no artifact: %v", projectName, environment, at.Name, err)
 		return nil, statusFor(err), "this package has not been built"
 	}
-	files, release, err := s.files.acquire(ctx, cid, func() (io.ReadSeekCloser, error) { return s.assets.Get(ctx, cid) })
+	files, release, err := s.files.acquire(ctx, cid, func() (io.ReadCloser, error) { return s.assets.Read(ctx, cid) })
 	if err != nil {
 		s.logf("gateway: %s/%s package %s, artifact %s: %v", projectName, environment, at.Name, cid, err)
 		return nil, statusFor(err), "this package's files could not be read"

@@ -16,7 +16,6 @@ func TestEveryBackingOpensItsDatabaseByName(t *testing.T) {
 	for name, open := range map[string]opener{
 		cacheDatabase:     func(n *Instance) (any, error) { return cacheStores{node: n}.Store() },
 		admissionDatabase: func(n *Instance) (any, error) { return admissionStores{node: n}.Store() },
-		storageDatabase:   func(n *Instance) (any, error) { return storageStores{node: n}.Store() },
 		volumeDatabase:    func(n *Instance) (any, error) { return volumeStores{node: n}.Store() },
 	} {
 		t.Run(name, func(t *testing.T) {

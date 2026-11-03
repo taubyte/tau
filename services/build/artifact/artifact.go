@@ -201,31 +201,38 @@ func New(opts ...Option) (*Builder, error) {
 	}, nil
 }
 
-// Build runs every build this push touches.
+// Plan is which published environments a push to this branch feeds.
+func (b *Builder) Plan(ctx context.Context, w backend.Work, out io.Writer) ([]string, error) {
+	branch, ok := strings.CutPrefix(w.Ref, branchRef)
+	if !ok || branch == "" {
+		return nil, fmt.Errorf("%w: %s", ErrNotABranch, w.Ref)
+	}
+	deployments, err := b.deployments(ctx, w.ProjectID, branch)
+	if err != nil {
+		return nil, err
+	}
+	say(out, "%s feeds %s", branch, strings.Join(deployments, ", "))
+	return deployments, nil
+}
+
+// Build runs every build this push touches in the job's environment.
 func (b *Builder) Build(ctx context.Context, w backend.Work, out backend.Output) error {
 	branch, ok := strings.CutPrefix(w.Ref, branchRef)
 	if !ok || branch == "" {
 		return fmt.Errorf("%w: %s", ErrNotABranch, w.Ref)
 	}
-
-	deployments, err := b.deployments(ctx, w.ProjectID, branch)
-	if err != nil {
-		return err
-	}
+	deployments := []string{w.Environment}
 
 	main, err := b.projects.MainRepository(ctx, w.ProjectID)
 	if err != nil {
 		return fmt.Errorf("artifact: %w", err)
 	}
 
-	compiled := make([]Deployment, 0, len(deployments))
-	for _, environment := range deployments {
-		p, err := b.projectAt(ctx, w.ProjectID, environment)
-		if err != nil {
-			return err
-		}
-		compiled = append(compiled, Deployment{Environment: environment, Project: p})
+	p, err := b.projectAt(ctx, w.ProjectID, w.Environment)
+	if err != nil {
+		return err
 	}
+	compiled := []Deployment{{Environment: w.Environment, Project: p}}
 
 	// WHAT TO BUILD IS DECIDED BEFORE ANYTHING IS CLONED, so a push that
 	// touches nothing costs no network and says so.
@@ -274,7 +281,7 @@ func (b *Builder) Build(ctx context.Context, w backend.Work, out backend.Output)
 			return fmt.Errorf("artifact: building package/%s for %s: %w", item.Name, item.Environment, err)
 		}
 
-		err = out.Asset(ctx, item.Environment, item.ID, product)
+		err = out.Asset(ctx, item.ID, product)
 		product.Close()
 		if err != nil {
 			return fmt.Errorf("artifact: storing package/%s for %s: %w", item.Name, item.Environment, err)

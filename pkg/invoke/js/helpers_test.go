@@ -30,7 +30,7 @@ type asset struct{ *bytes.Reader }
 
 func (asset) Close() error { return nil }
 
-func (s *store) Get(_ context.Context, id string) (io.ReadSeekCloser, error) {
+func (s *store) Read(_ context.Context, id string) (io.ReadCloser, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.err != nil {

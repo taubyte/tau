@@ -14,7 +14,7 @@ func TestEveryLazyOpenerAppendsItsCloserSafely(t *testing.T) {
 	// excludes another; each is reached through its seam.
 	openers := []func() error{
 		func() error { _, err := admissionStores{node: n}.Store(); return err },
-		func() error { _, err := storageStores{node: n}.Store(); return err },
+		func() error { _, err := volumeStores{node: n}.Store(); return err },
 		func() error {
 			_, err := databaseStores{node: n}.Store("databases/shop/prod/kv/QmA")
 			return err

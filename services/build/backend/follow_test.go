@@ -79,7 +79,7 @@ func running(t *testing.T, s *Service, jobID string, attempt uint32) *livelog.Lo
 
 func TestFollowStreamsARunningBuild(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	log := running(t, h.Service, id, 1)
 
 	_, err := log.Write([]byte("cloning\n"))
@@ -110,7 +110,7 @@ func TestFollowStreamsARunningBuild(t *testing.T) {
 
 func TestFollowResumesAtAnOffset(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	log := running(t, h.Service, id, 1)
 
 	_, err := log.Write([]byte("first\nsecond\n"))
@@ -124,7 +124,7 @@ func TestFollowResumesAtAnOffset(t *testing.T) {
 
 func TestFollowOnANodeThatIsNotTheWriter(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	err := h.follow(t.Context(), &buildv2.FollowRequest{JobId: id, Attempt: 1}, (&collector{}).send)
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
@@ -146,7 +146,7 @@ func TestFollowOnANodeThatIsNotTheWriter(t *testing.T) {
 
 func TestFollowEndsWhenTheViewerGoesAway(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	log := running(t, h.Service, id, 1)
 
 	_, err := log.Write([]byte("started\n"))
@@ -174,7 +174,7 @@ func TestFollowEndsWhenTheViewerGoesAway(t *testing.T) {
 
 func TestFollowStopsWhenItCannotSend(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	log := running(t, h.Service, id, 1)
 
 	_, err := log.Write([]byte("output\n"))
@@ -239,7 +239,7 @@ func snapshotOf(t *testing.T, h *harness, id string, from int64) *collector {
 
 func TestASnapshotEndsAtWhatTheBuildHasWrittenAndAFollowEndsWithTheBuild(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	build := hold(t, h, "cloning\n")
 
 	soFar := snapshotOf(t, h, id, 0)
@@ -288,7 +288,7 @@ func TestASnapshotEndsAtWhatTheBuildHasWrittenAndAFollowEndsWithTheBuild(t *test
 
 func TestALogNoNodeIsWritingIsComingUntilTheJobEnds(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	ask := func(jobID string, snapshot bool) error {
 		return h.follow(t.Context(), &buildv2.FollowRequest{JobId: jobID, Attempt: 1, Snapshot: snapshot}, (&collector{}).send)
 	}
@@ -321,7 +321,7 @@ func TestALogNoNodeIsWritingIsComingUntilTheJobEnds(t *testing.T) {
 
 func TestAnEndedLogIsWholeToAFollowAndASnapshot(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	log := running(t, h.Service, id, 1)
 
 	_, err := log.Write([]byte("cloning\ncompiling\n"))
@@ -338,7 +338,7 @@ func TestAnEndedLogIsWholeToAFollowAndASnapshot(t *testing.T) {
 
 func TestASnapshotIsRefusedWhereAFollowIs(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	ask := func(jobID string, offset int64) error {
 		return h.follow(t.Context(), &buildv2.FollowRequest{JobId: jobID, Attempt: 1, Offset: offset, Snapshot: true}, (&collector{}).send)
 	}
@@ -361,7 +361,7 @@ func ask(t *testing.T, h *harness, jobID string, attempt int32, from int64, snap
 
 func TestAResumeIsNeverAnotherRunsLog(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	first := "first run, line one\nfirst run, line two\n"
 	h.runner.run = func(_ context.Context, _ Work, out Output) error {
@@ -395,7 +395,7 @@ func TestAResumeIsNeverAnotherRunsLog(t *testing.T) {
 
 func TestWhetherARunHasEndedIsTheRecords(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	code := func(attempt int32) connect.Code {
 		_, err := ask(t, h, id, attempt, 0, false)
 		return connect.CodeOf(err)
@@ -441,7 +441,7 @@ func storing(t *testing.T, h *harness) (reached chan struct{}, release func()) {
 
 func TestALogIsWholeWhileItIsHandedToTheStore(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	h.runner.run = func(_ context.Context, _ Work, out Output) error {
 		fmt.Fprint(out, "cloning\ncompiling\n")
 		return nil
@@ -470,7 +470,7 @@ func TestALogIsWholeWhileItIsHandedToTheStore(t *testing.T) {
 
 func TestACancelledRunsLogIsFollowedUntilItIsStored(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	h.runner.run = func(_ context.Context, _ Work, out Output) error {
 		fmt.Fprint(out, "the first run\n")
 		return errors.New("flaky")

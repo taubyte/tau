@@ -248,15 +248,15 @@ func (s stated) artifacts(p produced) stated {
 }
 
 // anchor is the "before" of the next build of this ref: the one row a job owns not
-// keyed by its id, keyed by (repository, ref) because the next build of that ref is
-// another job. All parts come off the record this section read; no record, no
+// keyed by its id, keyed by (repository, ref, environment) because the next build of
+// that ref there is another job. All parts come off the record this section read; no record, no
 // anchor.
 func (s stated) anchor() stated {
 	if !s.h.found() {
 		s.err = errInternal("job %s: a ref anchor decided on a record this section did not find", s.h.id())
 		return s
 	}
-	s.ops.Set(refLastKey(s.h.rec().RepositoryKey, s.h.rec().Ref), []byte(s.h.rec().CommitSHA))
+	s.ops.Set(refLastKey(s.h.rec().RepositoryKey, s.h.rec().Ref, s.h.rec().Environment), []byte(s.h.rec().CommitSHA))
 	return s
 }
 
@@ -373,6 +373,12 @@ func (h *held) fail(reason string, p produced) error {
 // entry.
 func (h *held) succeed(p produced) error {
 	return h.ends(buildv2.JobStatus_JobStatusSuccess, "", p).artifacts(p).anchor().commit("finishing")
+}
+
+// planned ends a plan as a success naming the environment jobs it enqueued. A plan
+// builds nothing, so it moves no artifact and no ref anchor.
+func (h *held) planned(children []string) error {
+	return h.ends(buildv2.JobStatus_JobStatusSuccess, "", produced{children: children}).commit("finishing")
 }
 
 // logged records what a run produced without moving the status: for a cancelled

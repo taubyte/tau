@@ -8,6 +8,7 @@ package dream
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strings"
@@ -26,7 +27,6 @@ import (
 	"github.com/taubyte/tau/p2p/mesh"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/sectls"
-	"github.com/taubyte/tau/pkg/assets"
 	"github.com/taubyte/tau/pkg/certificate/acme"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
@@ -84,7 +84,7 @@ var built = builtNodes{byPeer: map[string]running{}}
 
 type running struct {
 	node      *instance.Instance
-	assets    *assets.Store
+	assets    Components
 	artifacts *Built
 }
 
@@ -147,9 +147,21 @@ func Node(peerID string) (*instance.Instance, bool) {
 	return r.node, ok
 }
 
-// Assets is the content store that node reads components from, exposed so a test
-// can put a real component in (see Artifacts).
-func Assets(peerID string) (*assets.Store, bool) {
+// Components is a node's own blocks, where a test puts a real component the node
+// then reads by cid, as it reads what a build stored (see Artifacts).
+type Components struct{ node peer.Node }
+
+// Put writes content into the node's blocks and answers its cid.
+func (c Components) Put(ctx context.Context, content io.Reader) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return c.node.AddFile(content)
+}
+
+// Assets is the blocks that node reads components from, exposed so a test can put a
+// real component in (see Artifacts).
+func Assets(peerID string) (Components, bool) {
 	built.Lock()
 	defer built.Unlock()
 	r, ok := built.byPeer[peerID]
@@ -330,10 +342,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		tiers = []invoke.Runtime{absent{}}
 	}
 
-	store, err := assets.New(p)
-	if err != nil {
-		return err
-	}
+	store := Components{node: p}
 
 	// The artifact seam, filled by staged components and otherwise by the build service
 	// (Built).

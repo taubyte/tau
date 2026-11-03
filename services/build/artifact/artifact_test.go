@@ -93,6 +93,8 @@ type out struct {
 	log    bytes.Buffer
 	assets map[string]string
 	err    error
+	// environment is the one the job being run builds, as the backend's output knows.
+	environment string
 }
 
 func newOut() *out { return &out{assets: map[string]string{}} }
@@ -103,7 +105,7 @@ func (o *out) Write(p []byte) (int, error) {
 	return o.log.Write(p)
 }
 
-func (o *out) Asset(_ context.Context, environment, resourceID string, content io.Reader) error {
+func (o *out) Asset(_ context.Context, resourceID string, content io.Reader) error {
 	if o.err != nil {
 		return o.err
 	}
@@ -115,7 +117,7 @@ func (o *out) Asset(_ context.Context, environment, resourceID string, content i
 	defer o.mu.Unlock()
 	// The same shape the backend composes, so what these tests read back is
 	// what a real record holds.
-	o.assets[environment+"/"+resourceID] = string(body)
+	o.assets[o.environment+"/"+resourceID] = string(body)
 	return nil
 }
 
@@ -239,6 +241,25 @@ func deployed(t *testing.T, dir string, environments ...string) *pkgregister.Reg
 	return r
 }
 
+// planned is a push as the backend runs it: the plan, then one job per environment
+// it names, each told its own.
+func planned(ctx context.Context, b *artifact.Builder, w backend.Work, o *out) error {
+	environments, err := b.Plan(ctx, w, o)
+	if err != nil {
+		return err
+	}
+	for _, environment := range environments {
+		o.mu.Lock()
+		o.environment = environment
+		o.mu.Unlock()
+		w.Environment = environment
+		if err := b.Build(ctx, w, o); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func work(repository string) backend.Work {
 	return backend.Work{
 		JobID:         "job",
@@ -275,8 +296,7 @@ func TestAPushBuildsWhatTheConfigurationSaysItMakes(t *testing.T) {
 	c := &checkout{dir: source(t)}
 	o := newOut()
 
-	require.NoError(t, builder(t, deployed(t, oneEnvironment(t)), c, e, mainRepo).
-		Build(t.Context(), work(mainRepo), o))
+	require.NoError(t, planned(t.Context(), builder(t, deployed(t, oneEnvironment(t)), c, e, mainRepo), work(mainRepo), o))
 
 	// Every resource whose source is a bare path in the project's own code
 	// repository, and nothing else.
@@ -310,8 +330,7 @@ func TestTheBuildIsToldWhatThePackageIs(t *testing.T) {
 			steps("node:22", "npx esbuild src/index.js --bundle --format=esm --outfile=dist/worker.js"),
 	})
 	e := &engine{}
-	require.NoError(t, builder(t, deployed(t, dir), &checkout{dir: source(t)}, e, mainRepo).
-		Build(t.Context(), work(mainRepo), newOut()))
+	require.NoError(t, planned(t.Context(), builder(t, deployed(t, dir), &checkout{dir: source(t)}, e, mainRepo), work(mainRepo), newOut()))
 
 	types := map[string]string{}
 	for _, spec := range e.seen() {
@@ -333,8 +352,7 @@ func TestEachStepNamesItsOwnToolchain(t *testing.T) {
 			"        - name: compile\n          image: tinygo/tinygo:0.34\n          commands: [tinygo build -o out.wasm]\n",
 	})
 	e := &engine{}
-	require.NoError(t, builder(t, deployed(t, dir), &checkout{dir: source(t)}, e, mainRepo).
-		Build(t.Context(), work(mainRepo), newOut()))
+	require.NoError(t, planned(t.Context(), builder(t, deployed(t, dir), &checkout{dir: source(t)}, e, mainRepo), work(mainRepo), newOut()))
 
 	seen := e.seen()
 	require.Len(t, seen, 1, "one package is one build")
@@ -348,8 +366,7 @@ func TestAPackageWithItsOwnRepository(t *testing.T) {
 	e := &engine{}
 	o := newOut()
 
-	require.NoError(t, builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: source(t)}, e, mainRepo).
-		Build(t.Context(), work(paylibRepo), o))
+	require.NoError(t, planned(t.Context(), builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: source(t)}, e, mainRepo), work(paylibRepo), o))
 
 	specs := e.seen()
 	require.Len(t, specs, 1)
@@ -363,8 +380,7 @@ func TestTheBuildCommandsAreTheAuthors(t *testing.T) {
 	e := &engine{}
 	o := newOut()
 
-	require.NoError(t, builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: source(t)}, e, mainRepo).
-		Build(t.Context(), work(mainRepo), o))
+	require.NoError(t, planned(t.Context(), builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: source(t)}, e, mainRepo), work(mainRepo), o))
 
 	for _, spec := range e.seen() {
 		switch imageOf(spec) {
@@ -382,8 +398,7 @@ func TestOnePackageBuildsOncePerDeployment(t *testing.T) {
 	o := newOut()
 
 	r := deployed(t, perEnvironment(t), "production", "preview", "staging", "ab")
-	require.NoError(t, builder(t, r, &checkout{dir: t.TempDir()}, e, mainRepo).
-		Build(t.Context(), work(mainRepo), o))
+	require.NoError(t, planned(t.Context(), builder(t, r, &checkout{dir: t.TempDir()}, e, mainRepo), work(mainRepo), o))
 
 	// main feeds production, its shadow, and preview — but not staging.
 	stored := o.stored()
@@ -418,8 +433,7 @@ func TestAProjectThatWasNeverDeployed(t *testing.T) {
 	r, err := pkgregister.New(pkgregister.WithStore(pkgregister.NewMemStore()))
 	require.NoError(t, err)
 
-	err = builder(t, r, &checkout{dir: t.TempDir()}, &engine{}, mainRepo).
-		Build(t.Context(), work(mainRepo), newOut())
+	err = planned(t.Context(), builder(t, r, &checkout{dir: t.TempDir()}, &engine{}, mainRepo), work(mainRepo), newOut())
 	require.ErrorIs(t, err, artifact.ErrNeverDeployed)
 }
 
@@ -428,8 +442,7 @@ func TestAPushThatTouchesNothing(t *testing.T) {
 	c := &checkout{dir: t.TempDir()}
 	o := newOut()
 
-	require.NoError(t, builder(t, deployed(t, oneEnvironment(t)), c, e, mainRepo).
-		Build(t.Context(), work("github.com/acme/somebody-elses"), o))
+	require.NoError(t, planned(t.Context(), builder(t, deployed(t, oneEnvironment(t)), c, e, mainRepo), work("github.com/acme/somebody-elses"), o))
 
 	require.Empty(t, e.seen(), "nothing was built")
 	require.Empty(t, o.stored())
@@ -443,35 +456,30 @@ func TestWhatItRefuses(t *testing.T) {
 	// A tag is not a deployment.
 	w := work(mainRepo)
 	w.Ref = "refs/tags/v1.0.0"
-	err := builder(t, r, &checkout{dir: t.TempDir()}, &engine{}, mainRepo).
-		Build(t.Context(), w, newOut())
+	err := planned(t.Context(), builder(t, r, &checkout{dir: t.TempDir()}, &engine{}, mainRepo), w, newOut())
 	require.ErrorIs(t, err, artifact.ErrNotABranch)
 
 	// A checkout that could not read the repository names the commit, so a
 	// rewritten branch is diagnosable.
-	err = builder(t, r, &checkout{err: errors.New("no such ref")}, &engine{}, mainRepo).
-		Build(t.Context(), work(mainRepo), newOut())
+	err = planned(t.Context(), builder(t, r, &checkout{err: errors.New("no such ref")}, &engine{}, mainRepo), work(mainRepo), newOut())
 	require.ErrorContains(t, err, "no such ref")
 	require.ErrorContains(t, err, "0f1e2d3c")
 
 	// An engine that could not run says which resource.
-	err = builder(t, r, &checkout{dir: source(t)}, &engine{err: errors.New("the daemon is down")}, mainRepo).
-		Build(t.Context(), work(mainRepo), newOut())
+	err = planned(t.Context(), builder(t, r, &checkout{dir: source(t)}, &engine{err: errors.New("the daemon is down")}, mainRepo), work(mainRepo), newOut())
 	require.ErrorContains(t, err, "the daemon is down")
 
 	// A store that could not keep what was built fails the job: an artifact
 	// nobody kept is a build that reported success and produced nothing.
 	broken := newOut()
 	broken.err = errors.New("no space left")
-	err = builder(t, r, &checkout{dir: source(t)}, &engine{}, mainRepo).
-		Build(t.Context(), work(mainRepo), broken)
+	err = planned(t.Context(), builder(t, r, &checkout{dir: source(t)}, &engine{}, mainRepo), work(mainRepo), broken)
 	require.ErrorContains(t, err, "no space left")
 }
 
 func TestNoMainRepositoryKnown(t *testing.T) {
 	e := &engine{}
-	require.NoError(t, builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: t.TempDir()}, e, "").
-		Build(t.Context(), work(mainRepo), newOut()))
+	require.NoError(t, planned(t.Context(), builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: t.TempDir()}, e, ""), work(mainRepo), newOut()))
 	require.Empty(t, e.seen())
 }
 
@@ -508,8 +516,7 @@ func TestADockerfileBuildIsRefusedByName(t *testing.T) {
 			"source: services/pool\nbuild:\n    dockerfile:\n        target: runtime\n",
 	})
 
-	err := builder(t, deployed(t, config), &checkout{dir: source(t)}, e, mainRepo).
-		Build(t.Context(), work(mainRepo), newOut())
+	err := planned(t.Context(), builder(t, deployed(t, config), &checkout{dir: source(t)}, e, mainRepo), work(mainRepo), newOut())
 
 	require.ErrorIs(t, err, artifact.ErrNotBuiltHere)
 	require.ErrorContains(t, err, "package/worker_pool_code is built from a Dockerfile")
@@ -519,8 +526,7 @@ func TestADockerfileBuildIsRefusedByName(t *testing.T) {
 func TestAPackageWithNoSourceIsNotBuilt(t *testing.T) {
 	e := &engine{}
 
-	require.NoError(t, builder(t, deployed(t, envsFixture, "production"), &checkout{dir: t.TempDir()}, e, mainRepo).
-		Build(t.Context(), work(mainRepo), newOut()))
+	require.NoError(t, planned(t.Context(), builder(t, deployed(t, envsFixture, "production"), &checkout{dir: t.TempDir()}, e, mainRepo), work(mainRepo), newOut()))
 	require.Empty(t, e.seen())
 }
 
@@ -583,8 +589,7 @@ func TestABranchWhoseDeploymentIsNotLive(t *testing.T) {
 	w := work(mainRepo)
 	w.Ref = "refs/heads/release/1.4"
 
-	err := builder(t, r, &checkout{dir: t.TempDir()}, &engine{}, mainRepo).
-		Build(t.Context(), w, newOut())
+	err := planned(t.Context(), builder(t, r, &checkout{dir: t.TempDir()}, &engine{}, mainRepo), w, newOut())
 	require.ErrorIs(t, err, artifact.ErrNoDeployment)
 	require.ErrorContains(t, err, "none of those is deployed")
 }
@@ -595,8 +600,7 @@ func TestABranchThatFeedsNoDeployment(t *testing.T) {
 	w := work(mainRepo)
 	w.Ref = "refs/heads/wip"
 
-	err := builder(t, r, &checkout{dir: t.TempDir()}, &engine{}, mainRepo).
-		Build(t.Context(), w, newOut())
+	err := planned(t.Context(), builder(t, r, &checkout{dir: t.TempDir()}, &engine{}, mainRepo), w, newOut())
 	require.ErrorIs(t, err, artifact.ErrNoDeployment)
 	require.ErrorContains(t, err, `"wip" feeds none of production`)
 }
@@ -614,8 +618,7 @@ func TestAPackagesValuesAreItsBuildsEnvironment(t *testing.T) {
 	})
 
 	e := &engine{}
-	require.NoError(t, builder(t, deployed(t, config), &checkout{dir: t.TempDir()}, e, mainRepo).
-		Build(t.Context(), work(mainRepo), newOut()))
+	require.NoError(t, planned(t.Context(), builder(t, deployed(t, config), &checkout{dir: t.TempDir()}, e, mainRepo), work(mainRepo), newOut()))
 
 	specs := e.seen()
 	require.Len(t, specs, 1)
@@ -657,8 +660,7 @@ const stripeID = "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy"
 func TestASecretIsNeverInTheBuildsEnvironment(t *testing.T) {
 	e := &engine{}
 	secrets := &vaultOf{}
-	require.NoError(t, builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, mainRepo, artifact.WithSecrets(secrets)).
-		Build(t.Context(), work(paylibRepo), newOut()))
+	require.NoError(t, planned(t.Context(), builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, mainRepo, artifact.WithSecrets(secrets)), work(paylibRepo), newOut()))
 
 	specs := e.seen()
 	require.Len(t, specs, 1)
@@ -671,8 +673,7 @@ func TestASecretIsNeverInTheBuildsEnvironment(t *testing.T) {
 func TestTheBuildsVaultReadsWhatThePackageIsGranted(t *testing.T) {
 	e := &engine{}
 	secrets := &vaultOf{}
-	require.NoError(t, builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, mainRepo, artifact.WithSecrets(secrets)).
-		Build(t.Context(), work(paylibRepo), newOut()))
+	require.NoError(t, planned(t.Context(), builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, mainRepo, artifact.WithSecrets(secrets)), work(paylibRepo), newOut()))
 	v := e.seen()[0].Vault
 	require.NotNil(t, v)
 
@@ -706,8 +707,7 @@ func TestAGrantChangesTheRecipe(t *testing.T) {
 
 func TestAGrantedPackageInACloudWithNoSecretsIsRefused(t *testing.T) {
 	e := &engine{}
-	err := builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, mainRepo).
-		Build(t.Context(), work(paylibRepo), newOut())
+	err := planned(t.Context(), builder(t, deployed(t, basicFixture), &checkout{dir: source(t)}, e, mainRepo), work(paylibRepo), newOut())
 	require.ErrorIs(t, err, artifact.ErrNoSecrets)
 	require.ErrorContains(t, err, "package/paylib is granted stripe")
 	require.Empty(t, e.seen())
@@ -723,8 +723,7 @@ func TestAnInputIsRefusedByName(t *testing.T) {
 			"    steps:\n        - name: site\n          image: node:22\n          commands: [npm run build]\n",
 	})
 	e := &engine{}
-	err := builder(t, deployed(t, config), &checkout{dir: source(t)}, e, mainRepo).
-		Build(t.Context(), work(mainRepo), newOut())
+	err := planned(t.Context(), builder(t, deployed(t, config), &checkout{dir: source(t)}, e, mainRepo), work(mainRepo), newOut())
 	require.ErrorIs(t, err, artifact.ErrNotBuiltHere)
 	require.ErrorContains(t, err, "package/reserve_code reads other packages' artifacts as inputs")
 	require.Empty(t, e.seen())
@@ -749,8 +748,7 @@ func TestAnUnreadDelegatedBlockIsRefusedByName(t *testing.T) {
 	})
 	e := &engine{}
 
-	err := builder(t, deployed(t, delegated), &checkout{dir: source(t)}, e, mainRepo).
-		Build(t.Context(), work(paylibRepo), newOut())
+	err := planned(t.Context(), builder(t, deployed(t, delegated), &checkout{dir: source(t)}, e, mainRepo), work(paylibRepo), newOut())
 	require.ErrorIs(t, err, artifact.ErrUnfilled)
 	require.ErrorContains(t, err, `package/paylib names source.config "taubyte.yaml"`)
 	require.Empty(t, e.seen())
@@ -769,8 +767,7 @@ func TestABarePathIsTheMainRepositoryNotACodeRepository(t *testing.T) {
 		{paylibRepo, []string{"taubyte/go-wasi:v2"}},
 	} {
 		e := &engine{}
-		require.NoError(t, builder(t, r, &checkout{dir: source(t)}, e, mainRepo).
-			Build(t.Context(), work(c.pushed), newOut()), c.pushed)
+		require.NoError(t, planned(t.Context(), builder(t, r, &checkout{dir: source(t)}, e, mainRepo), work(c.pushed), newOut()), c.pushed)
 		var images []string
 		for _, s := range e.seen() {
 			images = append(images, imageOf(s))
@@ -783,8 +780,7 @@ func TestABuildTheEngineDeclinesIsReportedUnbuilt(t *testing.T) {
 	e := &engine{err: fmt.Errorf("%w: this universe runs no containers", artifact.ErrNoEngine)}
 	o := newOut()
 
-	require.NoError(t, builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: source(t)}, e, mainRepo).
-		Build(t.Context(), work(mainRepo), o))
+	require.NoError(t, planned(t.Context(), builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: source(t)}, e, mainRepo), work(mainRepo), o))
 	require.NotEmpty(t, e.seen())
 	require.Empty(t, o.stored())
 	require.Contains(t, o.text(), "not built: package/reserve_code for prod")

@@ -57,7 +57,7 @@ type blobs struct {
 
 func newBlobs() *blobs { return &blobs{held: map[string][]byte{}} }
 
-func (b *blobs) Put(_ context.Context, content io.Reader) (string, error) {
+func (b *blobs) Put(_ context.Context, _ string, content io.Reader) (string, error) {
 	b.mu.Lock()
 	refuse := b.refuseUnread
 	b.mu.Unlock()
@@ -86,7 +86,7 @@ func (b *blobs) Put(_ context.Context, content io.Reader) (string, error) {
 	return id, nil
 }
 
-func (b *blobs) Get(_ context.Context, id string) (io.ReadSeekCloser, error) {
+func (b *blobs) Read(_ context.Context, id string) (io.ReadCloser, error) {
 	b.mu.Lock()
 	b.gets++
 	gate, err := b.gate, b.getErr
@@ -112,7 +112,7 @@ func (b *blobs) Get(_ context.Context, id string) (io.ReadSeekCloser, error) {
 // checkpoint is, under its own id.
 func (b *blobs) put(t *testing.T, archive []byte) string {
 	t.Helper()
-	id, err := b.Put(context.Background(), bytes.NewReader(packed(t, archive)))
+	id, err := b.Put(context.Background(), "", bytes.NewReader(packed(t, archive)))
 	require.NoError(t, err)
 	return id
 }
@@ -749,7 +749,7 @@ func TestARestoreThatCannotBeCompletedRefusesTheMount(t *testing.T) {
 		{
 			name: "the object is not compressed",
 			setup: func(t *testing.T, store *blobs, index *rows) string {
-				id, err := store.Put(t.Context(), bytes.NewReader(tarOf(t, map[string]string{"rows": "alice"})))
+				id, err := store.Put(t.Context(), "", bytes.NewReader(tarOf(t, map[string]string{"rows": "alice"})))
 				require.NoError(t, err)
 				return id
 			},
@@ -759,7 +759,7 @@ func TestARestoreThatCannotBeCompletedRefusesTheMount(t *testing.T) {
 			name: "the compressed stream stops halfway",
 			setup: func(t *testing.T, store *blobs, index *rows) string {
 				whole := packed(t, tarOf(t, map[string]string{"rows": noise(256 << 10)}))
-				id, err := store.Put(t.Context(), bytes.NewReader(whole[:len(whole)/2]))
+				id, err := store.Put(t.Context(), "", bytes.NewReader(whole[:len(whole)/2]))
 				require.NoError(t, err)
 				return id
 			},
@@ -824,7 +824,7 @@ func TestAFrameWiderThanACheckpointIsRefusedBeforeItIsAllocated(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			root := t.TempDir()
 			store, index := newBlobs(), newRows()
-			id, err := store.Put(t.Context(), bytes.NewReader(slices.Concat(magic, c.header, empty)))
+			id, err := store.Put(t.Context(), "", bytes.NewReader(slices.Concat(magic, c.header, empty)))
 			require.NoError(t, err)
 			require.NoError(t, index.Put(t.Context(), recordedAt+handle, []byte(id)))
 			v, err := volume.New(root, store, &opening{rows: index}, &said{})
@@ -1158,7 +1158,7 @@ type handed struct {
 	reads int
 }
 
-func (h *handed) Put(ctx context.Context, content io.Reader) (string, error) {
+func (h *handed) Put(ctx context.Context, handle string, content io.Reader) (string, error) {
 	var body bytes.Buffer
 	buf := make([]byte, 1<<20)
 	for {
@@ -1175,7 +1175,7 @@ func (h *handed) Put(ctx context.Context, content io.Reader) (string, error) {
 		}
 	}
 	h.bytes += int64(body.Len())
-	return h.blobs.Put(ctx, &body)
+	return h.blobs.Put(ctx, handle, &body)
 }
 
 func TestASparseFileCostsTheStoreWhatItHolds(t *testing.T) {

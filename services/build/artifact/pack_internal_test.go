@@ -57,13 +57,9 @@ func members(t *testing.T, packed []byte) map[string]string {
 
 type held []byte
 
-func (h held) Get(context.Context, string) (io.ReadSeekCloser, error) {
-	return readSeekCloser{bytes.NewReader(h)}, nil
+func (h held) Read(context.Context, string) (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(h)), nil
 }
-
-type readSeekCloser struct{ *bytes.Reader }
-
-func (readSeekCloser) Close() error { return nil }
 
 func TestAJSBundleIsPackedIntoTheArchiveTheTierRuns(t *testing.T) {
 	dir := t.TempDir()

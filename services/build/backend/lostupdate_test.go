@@ -178,7 +178,7 @@ func (s *readGatedStore) Get(key string) ([]byte, bool) {
 func requireCancelKept(t *testing.T, h *harness, id string, err error) {
 	t.Helper()
 	t.Logf("cancel=%v status=%s anchor=%q builds=%d",
-		err, h.status(t, id), h.lastCommit(testRepo, testRef), len(h.runner.seen()))
+		err, h.status(t, id), h.lastCommit(testRepo, testRef, testEnvironment), len(h.runner.seen()))
 	if err != nil {
 		require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err),
 			"the only honest refusal is a job that had already finished")
@@ -190,13 +190,13 @@ func requireCancelKept(t *testing.T, h *harness, id string, err error) {
 	}
 	require.Equal(t, buildv2.JobStatus_JobStatusCancelled, h.status(t, id),
 		"a cancel that answered nil must not be overwritten")
-	require.Empty(t, h.lastCommit(testRepo, testRef),
+	require.Empty(t, h.lastCommit(testRepo, testRef, testEnvironment),
 		"and a cancelled build must not advance the ref anchor")
 }
 
 func TestACancelIsNotLostToTheClaimThatOverlapsIt(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	d, err := h.work.Claim()
 	require.NoError(t, err)
@@ -233,7 +233,7 @@ func TestACancelIsNotLostToTheClaimThatOverlapsIt(t *testing.T) {
 
 func TestACancelIsNotLostToTheSettleThatOverlapsIt(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	// The state settle runs in: the record Claimed by this node, the delivery
 	// still held, the build finished cleanly.
@@ -258,7 +258,7 @@ func TestACancelIsNotLostToTheSettleThatOverlapsIt(t *testing.T) {
 
 func TestACancelIsNotLostToTheDeadLetterDrainThatOverlapsIt(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	exhaust(t, h)
 
 	var cancelErr error
@@ -353,7 +353,7 @@ func TestAReopenIsNotLostToTheReconcileThatOverlapsIt(t *testing.T) {
 func finishedAndStillListed(t *testing.T, h *harness, commit string) string {
 	t.Helper()
 
-	id := h.push(t, testRef, commit)
+	id := h.planned(t, testRef, commit)
 	d, err := h.work.Claim()
 	require.NoError(t, err)
 	require.NoError(t, h.work.Ack(d))
@@ -363,6 +363,8 @@ func finishedAndStillListed(t *testing.T, h *harness, commit string) string {
 }
 
 func TestAWithdrawnItemIsNotPutBackByTheDeliveryThatOverlapsIt(t *testing.T) {
+	// THE PUSH'S OWN JOB, the plan, since a second delivery of the push is what
+	// overlaps the cancel.
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 

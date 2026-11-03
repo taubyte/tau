@@ -33,7 +33,7 @@ func (n *Instance) disksOrNil() (container.Volumes, error) {
 		return nil, nil
 	}
 	if n.disks == nil {
-		disks, err := volume.New(n.cfg.Root, n.assets, volumeStores{node: n}, logger)
+		disks, err := volume.New(n.cfg.Root, volume.Checkpoints(n.store), volumeStores{node: n}, logger)
 		if err != nil {
 			return nil, err
 		}

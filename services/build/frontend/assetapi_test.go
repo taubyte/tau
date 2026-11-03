@@ -1,32 +1,37 @@
 package frontend
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/taubyte/tau/services/build/livelog"
 )
 
 type fakeAssets map[string]string
 
-type readSeekNopCloser struct{ *bytes.Reader }
-
-func (readSeekNopCloser) Close() error { return nil }
-
-func (f fakeAssets) Get(_ context.Context, cid string) (io.ReadSeekCloser, error) {
+func (f fakeAssets) Read(_ context.Context, cid string) (io.ReadCloser, error) {
 	v, ok := f[cid]
 	if !ok {
 		return nil, errors.New("no such content")
 	}
-	return readSeekNopCloser{bytes.NewReader([]byte(v))}, nil
+	return io.NopCloser(strings.NewReader(v)), nil
+}
+
+// lzwOf is a log as the backend stores it.
+func lzwOf(t *testing.T, log string) string {
+	t.Helper()
+	stored, err := io.ReadAll(livelog.Compressed(strings.NewReader(log)))
+	require.NoError(t, err)
+	return string(stored)
 }
 
 func TestJobAssets(t *testing.T) {
-	h := newHarness(t, Config{}, WithAssets(fakeAssets{"bafylog": "built ok\n", "bafyasset": "\x00wasm"}))
+	h := newHarness(t, Config{}, WithAssets(fakeAssets{"bafylog": lzwOf(t, "built ok\n"), "bafyasset": "\x00wasm"}))
 
 	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs/2026-01-01T00:00:00Z", testToken))
 	require.Equal(t, http.StatusOK, w.Code)

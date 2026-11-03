@@ -399,7 +399,7 @@ var ErrBadCredential = errors.New("build: the credential is not accepted")
 
 // Assets reads what a build stored, by the content id a job records.
 type Assets interface {
-	Get(ctx context.Context, cid string) (io.ReadSeekCloser, error)
+	Read(ctx context.Context, cid string) (io.ReadCloser, error)
 }
 
 // accepting is the hook as a delivery is verified against now: each

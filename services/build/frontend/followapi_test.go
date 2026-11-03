@@ -190,7 +190,7 @@ func TestTheResponseIsOneRunAndSaysWhich(t *testing.T) {
 
 func TestAResumeIsNeverAnotherRunsLog(t *testing.T) {
 	first, second := "first run, line one\nfirst run, line two\n", "second run, line one\nsecond run, line two\n"
-	h := newHarness(t, quick, WithAssets(fakeAssets{"bafy1": first}))
+	h := newHarness(t, quick, WithAssets(fakeAssets{"bafy1": lzwOf(t, first)}))
 	h.backend.get = jobAt(buildv2.JobStatus_JobStatusClaimed, 2, map[string]string{key(1): "bafy1"})
 	byRun := func(id string, run int32, from int64, emit func([]byte, int64) error) (int64, error) {
 		if run == 2 {
@@ -218,7 +218,7 @@ func TestAResumeIsNeverAnotherRunsLog(t *testing.T) {
 }
 
 func TestAnEndedRunIsNeverAnotherRunsStoredLog(t *testing.T) {
-	h := newHarness(t, quick, WithAssets(fakeAssets{"bafy1": "the first run\n", "bafy2": "the second run\n"}))
+	h := newHarness(t, quick, WithAssets(fakeAssets{"bafy1": lzwOf(t, "the first run\n"), "bafy2": lzwOf(t, "the second run\n")}))
 	h.backend.get = jobAt(buildv2.JobStatus_JobStatusCancelled, 2, map[string]string{key(1): "bafy1"})
 	h.backend.follow, h.backend.snapshot = endedAt, endedAt
 
@@ -432,7 +432,7 @@ func retried(id string) (*buildv2.Job, error) {
 }
 
 func TestAnEndedJobsLogIsTheStoredOne(t *testing.T) {
-	h := newHarness(t, quick, WithAssets(fakeAssets{"bafy9": "the attempt before\n", "bafy10": "cloning\nerror: failed\n"}))
+	h := newHarness(t, quick, WithAssets(fakeAssets{"bafy9": lzwOf(t, "the attempt before\n"), "bafy10": lzwOf(t, "cloning\nerror: failed\n")}))
 	h.backend.get = retried
 	asks := 0
 	h.backend.snapshot = notWritten
@@ -483,7 +483,7 @@ func TestAnEndedJobsLogThatCannotBeRead(t *testing.T) {
 		require.Equal(t, tc.status, w.Code, name)
 	}
 
-	h := newHarness(t, quick, WithAssets(fakeAssets{"bafy10": "x"}))
+	h := newHarness(t, quick, WithAssets(fakeAssets{"bafy10": lzwOf(t, "x")}))
 	authorized := false
 	h.backend.get = func(id string) (*buildv2.Job, error) {
 		if !authorized {

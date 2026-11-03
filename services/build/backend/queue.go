@@ -133,6 +133,44 @@ func (s *Service) create(id, repositoryKey, ref, commitSHA, projectID string) er
 	})
 }
 
+// createEnvironment enqueues the build of one environment of plan's push, or finds
+// the one already there. It is a push of its own, admitted by the plan's.
+func (s *Service) createEnvironment(plan jobRecord, environment, prelude string) (string, error) {
+	key, ok := parseRepositoryKey(plan.RepositoryKey)
+	if !ok {
+		return "", errInternal("plan %s: repository key %q is not canonical", plan.ID, plan.RepositoryKey)
+	}
+	if environment == "" {
+		return "", errInternal("plan %s: an environment with no name", plan.ID)
+	}
+	id := environmentJobID(key, plan.Ref, plan.CommitSHA, environment)
+	return id, s.withJob(id, func(j *held) error {
+		if j.found() {
+			return j.requeue()
+		}
+		now := s.now()
+		rec := jobRecord{
+			ID:            id,
+			Status:        int32(buildv2.JobStatus_JobStatusOpen),
+			RepositoryKey: plan.RepositoryKey,
+			Ref:           plan.Ref,
+			CommitSHA:     plan.CommitSHA,
+			ProjectID:     plan.ProjectID,
+			Environment:   environment,
+			Prelude:       prelude,
+			CreatedAt:     now.Unix(),
+			UpdatedAt:     now.Unix(),
+		}
+		if err := j.writes().record(rec).inProject().open().commit("writing"); err != nil {
+			return err
+		}
+		if err := j.push(); err != nil {
+			return refused(err, "queue push")
+		}
+		return nil
+	})
+}
+
 // admit is the bound on stranger-authored input. Both limits are per this
 // consistency domain, both are cheap listings of keys this service already
 // keeps, and both answer CodeResourceExhausted — which a frontend can turn

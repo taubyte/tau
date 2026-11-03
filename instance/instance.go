@@ -21,11 +21,12 @@ import (
 	"strings"
 	"sync"
 
+	storageService "github.com/taubyte/tau/services/storage"
+
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/rpc"
-	"github.com/taubyte/tau/pkg/assets"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/invoke/js"
 	"github.com/taubyte/tau/pkg/invoke/wasm"
@@ -52,7 +53,7 @@ import (
 	registerService "github.com/taubyte/tau/services/register"
 	secretsService "github.com/taubyte/tau/services/secrets"
 	"github.com/taubyte/tau/services/worker"
-	"github.com/taubyte/tau/services/worker/storage"
+	"github.com/taubyte/tau/services/worker/objects"
 )
 
 // Node is everything this machine runs.
@@ -61,11 +62,14 @@ type Instance struct {
 	opts options
 
 	// peer is what this instance is made from; host and pubsub are its, dbs the
-	// replicated databases opened over it, assets the blocks a build is kept in.
+	// replicated databases opened over it.
 	peer.Node
 
-	dbs    *databases
-	assets Assets
+	dbs *databases
+
+	// store is the storage service as this node's services reach it: builds,
+	// their logs, checkpoints and objects are kept there, and read back by cid.
+	store *storageService.Reached
 
 	// services is what this instance runs beside its built-ins; running is every
 	// service running here, for the others to Get.
@@ -190,12 +194,7 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 	if p == nil {
 		return nil, ErrNoPeer
 	}
-	store, err := assets.New(p)
-	if err != nil {
-		return nil, err
-	}
-
-	n := &Instance{cfg: cfg, opts: o, Node: p, dbs: newDatabaseSet(p), assets: store}
+	n := &Instance{cfg: cfg, opts: o, Node: p, dbs: newDatabaseSet(p)}
 	// IN THE CATALOG'S ORDER, which is the order they start in, not the file's.
 	for _, name := range o.serviceNames() {
 		if !cfg.runs(name) {
@@ -344,11 +343,10 @@ func (n *Instance) openWorker() error {
 	}
 	n.closers = append(n.closers, servers)
 
-	objects, err := storage.New(n.assets, storageStores{node: n}, n.opts.now)
+	buckets, err := objects.New(n.store)
 	if err != nil {
 		return err
 	}
-	n.closers = append(n.closers, objects)
 
 	stores, err := cache.New(cacheStores{node: n})
 	if err != nil {
@@ -386,7 +384,7 @@ func (n *Instance) openWorker() error {
 	// by, or a log line naming it cannot be followed to a machine.
 	self := n.Host().ID().String()
 
-	component, err := wasm.New(n.assets,
+	component, err := wasm.New(n.store,
 		wasm.WithMode(wasm.Mode(n.cfg.Worker.Engines.Wasm)),
 		wasm.WithOutput(workloadLog),
 		// THE SAME REPORT THE CONTAINER TIER MAKES. The composer hands every
@@ -406,7 +404,7 @@ func (n *Instance) openWorker() error {
 		// would be two queues that cannot see each other.
 		wasm.WithQueues(syncs),
 		wasm.WithLogs(syncs),
-		wasm.WithStorage(objects),
+		wasm.WithStorage(buckets),
 		wasm.WithAdmission(admits),
 		wasm.WithChannels(&channels{node: n}),
 		wasm.WithAuthorizers(&authorizers{node: n}),
@@ -426,7 +424,7 @@ func (n *Instance) openWorker() error {
 	// A JS function reaches what is written as a host module, the vault so
 	// far, and the tier warns for each other capability a workload declares
 	// rather than refusing it.
-	script, err := js.New(n.assets,
+	script, err := js.New(n.store,
 		js.WithMode(js.Mode(n.cfg.Worker.Engines.JS)),
 		js.WithOutput(workloadLog),
 		js.WithSecrets(n.vault),
@@ -632,9 +630,9 @@ func (n *Instance) openGateway() error {
 	}
 
 	// A PACKAGE HANDLER'S FILES are read from the build's artifact, as a worker
-	// reads one: the same lookup, the same asset store.
+	// reads one: the same lookup, the same storage service.
 	if a := n.artifactSource(); a != nil {
-		gatewayOptions = append(gatewayOptions, gateway.WithFiles(a, n.assets))
+		gatewayOptions = append(gatewayOptions, gateway.WithFiles(a, n.store))
 	}
 
 	svc, err := gateway.New(n.cfg.Gateway, gatewayOptions...)

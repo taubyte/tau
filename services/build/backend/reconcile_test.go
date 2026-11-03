@@ -13,7 +13,7 @@ import (
 
 func TestReconcileReQueuesARecordWhosePushWasLost(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	// The state a crash between the record's entry and the queue's leaves.
 	d, err := h.work.Claim()
@@ -38,7 +38,7 @@ func TestReconcileReQueuesARecordWhosePushWasLost(t *testing.T) {
 
 func TestReconcileCannotDisturbAClaimedJob(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	d, err := h.work.Claim()
 	require.NoError(t, err)
@@ -58,7 +58,7 @@ func TestReconcileCannotDisturbAClaimedJob(t *testing.T) {
 func TestReconcileDropsStaleOpenRows(t *testing.T) {
 	h := newHarness(t)
 
-	finished := h.push(t, testRef, testCommit)
+	finished := h.planned(t, testRef, testCommit)
 	require.NoError(t, h.finishNow(t, finished, buildv2.JobStatus_JobStatusSuccess, ""))
 	// finish already removed the row; put it back to stand for a crash between
 	// the two halves of some earlier transition.
@@ -73,7 +73,7 @@ func TestReconcileDropsStaleOpenRows(t *testing.T) {
 
 func TestReconcileIsLeaderOnly(t *testing.T) {
 	h := newHarness(t)
-	h.push(t, testRef, testCommit)
+	h.planned(t, testRef, testCommit)
 	h.store.stepDown()
 
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(h.reconcile()))
@@ -89,7 +89,7 @@ func TestReconcileReportsWhatItCannotRead(t *testing.T) {
 
 	t.Run("a record that does not decode", func(t *testing.T) {
 		h := newHarness(t)
-		id := h.push(t, testRef, testCommit)
+		id := h.planned(t, testRef, testCommit)
 		h.store.put(t, jobRecordKey(id), []byte("not a record"))
 
 		require.Equal(t, connect.CodeInternal, connect.CodeOf(h.reconcile()))
@@ -122,7 +122,7 @@ func TestReconcileReportsWhatItCannotRead(t *testing.T) {
 	// would delete the row of a job whose record is merely corrupt.
 	t.Run("a record that does not decode on the deciding read", func(t *testing.T) {
 		h, stale := staleHarness(t)
-		id := h.push(t, testRef, testCommit)
+		id := h.planned(t, testRef, testCommit)
 		d, err := h.work.Claim()
 		require.NoError(t, err)
 		require.NoError(t, h.work.Ack(d))
@@ -139,7 +139,7 @@ func TestReconcileReportsWhatItCannotRead(t *testing.T) {
 
 	t.Run("a store that refuses the re-queue", func(t *testing.T) {
 		h := newHarness(t)
-		id := h.push(t, testRef, testCommit)
+		id := h.planned(t, testRef, testCommit)
 		d, err := h.work.Claim()
 		require.NoError(t, err)
 		require.NoError(t, h.work.Ack(d))
@@ -156,7 +156,7 @@ func TestTheStartedLoopReconciles(t *testing.T) {
 		c.ClaimInterval = time.Hour // only reconcile may fire
 		c.ReconcileEvery = time.Millisecond
 	})
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	d, err := h.work.Claim()
 	require.NoError(t, err)
@@ -181,7 +181,7 @@ func staleHarness(t testing.TB) (*harness, *staleStore) {
 
 func TestMendDoesNotDropAnOpenRowItReadAtAnOlderPrefix(t *testing.T) {
 	h, stale := staleHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	// What this node has APPLIED: the job lost its item and finished, so its
 	// open row is gone.

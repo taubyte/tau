@@ -63,7 +63,23 @@ func (c corpus) Checkout(context.Context, string, string, string) (string, func(
 
 type buildLog struct{ strings.Builder }
 
-func (*buildLog) Asset(context.Context, string, string, io.Reader) error { return nil }
+func (*buildLog) Asset(context.Context, string, io.Reader) error { return nil }
+
+// planThenRun is a push as the backend runs it: the plan, then one job per environment
+// it names.
+func planThenRun(ctx context.Context, d *buildDeploy.Deploy, w backend.Work, out backend.Output) error {
+	environments, err := d.Plan(ctx, w, out)
+	if err != nil {
+		return err
+	}
+	for _, environment := range environments {
+		w.Environment = environment
+		if err := d.Run(ctx, w, out); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 	dns := &txtZone{m: map[string][]string{}}
@@ -101,7 +117,7 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 			buildDeploy.WithDomains(domains),
 		)
 		require.NoError(t, err)
-		return r, d.Run(t.Context(), backend.Work{JobID: "j", RepositoryKey: "github.com/acme/" + id, Ref: "refs/heads/main", CommitSHA: "c", ProjectID: id}, &buildLog{})
+		return r, planThenRun(t.Context(), d, backend.Work{JobID: "j", RepositoryKey: "github.com/acme/" + id, Ref: "refs/heads/main", CommitSHA: "c", ProjectID: id}, &buildLog{})
 	}
 
 	_, err = run("with/domain/apex", customDomainID)

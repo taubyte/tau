@@ -143,7 +143,7 @@ func (m Mode) options() []engine.Option {
 
 // Assets is where a built archive is fetched from.
 type Assets interface {
-	Get(ctx context.Context, id string) (io.ReadSeekCloser, error)
+	Read(ctx context.Context, id string) (io.ReadCloser, error)
 }
 
 //go:embed prelude.js
@@ -296,7 +296,7 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 }
 
 func (r *Runtime) fetch(ctx context.Context, artifact string) (*bundle, error) {
-	content, err := r.assets.Get(ctx, artifact)
+	content, err := r.assets.Read(ctx, artifact)
 	if err != nil {
 		return nil, fmt.Errorf("js: fetching %s: %w", artifact, err)
 	}

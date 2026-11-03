@@ -36,7 +36,7 @@ func (anyZone) Prove(context.Context, string, string) error { return nil }
 
 type deployLog struct{ strings.Builder }
 
-func (*deployLog) Asset(context.Context, string, string, io.Reader) error { return nil }
+func (*deployLog) Asset(context.Context, string, io.Reader) error { return nil }
 
 // deployAs runs the config push a cloud serving regions makes, into one universe's register.
 func deployAs(t *testing.T, n *instance.Instance, regions schema.Regions) string {
@@ -50,7 +50,7 @@ func deployAs(t *testing.T, n *instance.Instance, regions schema.Regions) string
 	)
 	require.NoError(t, err)
 	var log deployLog
-	require.NoError(t, d.Run(t.Context(), backend.Work{
+	require.NoError(t, planThenRun(t.Context(), d, backend.Work{
 		JobID: "job", RepositoryKey: "github.com/acme/views-config", Ref: "refs/heads/main",
 		CommitSHA: "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c", ProjectID: viewsID, Attempt: 1,
 	}, &log))

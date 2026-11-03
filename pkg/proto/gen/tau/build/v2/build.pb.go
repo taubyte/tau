@@ -427,7 +427,14 @@ type Job struct {
 	// (v1's services/monkey/jobs/helpers.go's handleCompressedBuild) and what
 	// v1's HTTP `/download/{jobId}/{resourceId}` route reads back by that
 	// same resource id.
-	AssetCid      map[string]string `protobuf:"bytes,9,rep,name=asset_cid,json=assetCid,proto3" json:"asset_cid,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	AssetCid map[string]string `protobuf:"bytes,9,rep,name=asset_cid,json=assetCid,proto3" json:"asset_cid,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// environment is the one deployment this job builds. Empty is the plan job a
+	// push makes first: it reads which environments the pushed commit feeds and
+	// enqueues one job for each, named in children.
+	Environment string   `protobuf:"bytes,10,opt,name=environment,proto3" json:"environment,omitempty"`
+	Children    []string `protobuf:"bytes,11,rep,name=children,proto3" json:"children,omitempty"`
+	// reason is why a job failed, empty otherwise.
+	Reason        string `protobuf:"bytes,12,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -523,6 +530,27 @@ func (x *Job) GetAssetCid() map[string]string {
 		return x.AssetCid
 	}
 	return nil
+}
+
+func (x *Job) GetEnvironment() string {
+	if x != nil {
+		return x.Environment
+	}
+	return ""
+}
+
+func (x *Job) GetChildren() []string {
+	if x != nil {
+		return x.Children
+	}
+	return nil
+}
+
+func (x *Job) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
 }
 
 type ProjectRef struct {
@@ -877,7 +905,7 @@ const file_tau_build_v2_build_proto_rawDesc = "" +
 	"\n" +
 	"commit_sha\x18\x03 \x01(\tR\tcommitSha\"\x18\n" +
 	"\x06JobRef\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xbb\x03\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x91\x04\n" +
 	"\x03Job\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12/\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x17.tau.build.v2.JobStatusR\x06status\x12%\n" +
@@ -888,7 +916,11 @@ const file_tau_build_v2_build_proto_rawDesc = "" +
 	"\ttimestamp\x18\x06 \x01(\x03R\ttimestamp\x12\x18\n" +
 	"\aattempt\x18\a \x01(\x05R\aattempt\x12/\n" +
 	"\x04logs\x18\b \x03(\v2\x1b.tau.build.v2.Job.LogsEntryR\x04logs\x12<\n" +
-	"\tasset_cid\x18\t \x03(\v2\x1f.tau.build.v2.Job.AssetCidEntryR\bassetCid\x1a7\n" +
+	"\tasset_cid\x18\t \x03(\v2\x1f.tau.build.v2.Job.AssetCidEntryR\bassetCid\x12 \n" +
+	"\venvironment\x18\n" +
+	" \x01(\tR\venvironment\x12\x1a\n" +
+	"\bchildren\x18\v \x03(\tR\bchildren\x12\x16\n" +
+	"\x06reason\x18\f \x01(\tR\x06reason\x1a7\n" +
 	"\tLogsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a;\n" +

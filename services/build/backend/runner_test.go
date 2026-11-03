@@ -19,13 +19,13 @@ import (
 
 func TestOneStepClaimsRunsAcksAndFinishes(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	var during buildv2.JobStatus
 	h.runner.run = func(_ context.Context, w Work, out Output) error {
 		during = h.status(t, w.JobID)
 		fmt.Fprintf(out, "building %s\n", w.CommitSHA)
-		return out.Asset(context.Background(), "prod", "website/home", strings.NewReader("the artifact"))
+		return out.Asset(context.Background(), "website/home", strings.NewReader("the artifact"))
 	}
 
 	require.True(t, h.mustStep(t))
@@ -49,7 +49,7 @@ func TestOneStepClaimsRunsAcksAndFinishes(t *testing.T) {
 	require.Len(t, work, 1)
 	require.Equal(t, Work{
 		JobID: id, RepositoryKey: testRepo, Ref: testRef, CommitSHA: testCommit,
-		Before: "", ProjectID: "project-of-" + testRepo, Attempt: 1,
+		Before: "", ProjectID: "project-of-" + testRepo, Attempt: 1, Environment: testEnvironment,
 	}, work[0])
 
 	job, err := h.job(id)
@@ -73,11 +73,11 @@ func TestOneStepClaimsRunsAcksAndFinishes(t *testing.T) {
 func TestBeforeIsWhatThisServiceItselfLastFinished(t *testing.T) {
 	h := newHarness(t)
 
-	h.push(t, testRef, testCommit)
+	h.planned(t, testRef, testCommit)
 	require.True(t, h.mustStep(t))
 
 	next := "89abcdef0123456789abcdef0123456789abcdef"
-	h.push(t, testRef, next)
+	h.planned(t, testRef, next)
 	require.True(t, h.mustStep(t))
 
 	work := h.runner.seen()
@@ -86,14 +86,14 @@ func TestBeforeIsWhatThisServiceItselfLastFinished(t *testing.T) {
 	require.Equal(t, testCommit, work[1].Before)
 
 	// A different ref of the same repository has its own anchor.
-	h.push(t, "refs/heads/other", testCommit)
+	h.planned(t, "refs/heads/other", testCommit)
 	require.True(t, h.mustStep(t))
 	require.Empty(t, h.runner.seen()[2].Before)
 }
 
 func TestARunThatFailsIsTerminalRatherThanRetried(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	h.runner.run = func(context.Context, Work, Output) error { return errors.New("compile error") }
 
 	require.True(t, h.mustStep(t))
@@ -108,12 +108,12 @@ func TestARunThatFailsIsTerminalRatherThanRetried(t *testing.T) {
 
 	// And no anchor: a failed build must not become the commit the next one
 	// diffs from.
-	require.Empty(t, h.lastCommit(testRepo, testRef))
+	require.Empty(t, h.lastCommit(testRepo, testRef, testEnvironment))
 }
 
 func TestARunnerThatPanicsIsAFailedBuild(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	h.runner.run = func(context.Context, Work, Output) error { panic("nil map write") }
 
 	require.True(t, h.mustStep(t))
@@ -123,7 +123,7 @@ func TestARunnerThatPanicsIsAFailedBuild(t *testing.T) {
 
 func TestCancelWhileRunningStopsTheRunAndKeepsTheCancelledStatus(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	var ctxErr error
 	h.runner.run = func(ctx context.Context, w Work, _ Output) error {
@@ -138,7 +138,7 @@ func TestCancelWhileRunningStopsTheRunAndKeepsTheCancelledStatus(t *testing.T) {
 	require.Equal(t, context.Canceled, ctxErr)
 	require.Equal(t, buildv2.JobStatus_JobStatusCancelled, h.status(t, id),
 		"a cancelled job must not be overwritten with the outcome of the run that was cancelled")
-	require.Empty(t, h.lastCommit(testRepo, testRef))
+	require.Empty(t, h.lastCommit(testRepo, testRef, testEnvironment))
 }
 
 func TestTheRunIsBoundedByWhicheverOfTheLeaseAndThePolicyIsShorter(t *testing.T) {
@@ -147,7 +147,7 @@ func TestTheRunIsBoundedByWhicheverOfTheLeaseAndThePolicyIsShorter(t *testing.T)
 			c.BuildTimeout = time.Hour
 			c.ClaimMargin = time.Minute
 		})
-		h.push(t, testRef, testCommit)
+		h.planned(t, testRef, testCommit)
 
 		var left time.Duration
 		h.runner.run = func(ctx context.Context, _ Work, _ Output) error {
@@ -169,7 +169,7 @@ func TestTheRunIsBoundedByWhicheverOfTheLeaseAndThePolicyIsShorter(t *testing.T)
 			c.BuildTimeout = time.Minute
 			c.Queue.VisibilityTimeout = 24 * time.Hour
 		})
-		h.push(t, testRef, testCommit)
+		h.planned(t, testRef, testCommit)
 
 		var left time.Duration
 		h.runner.run = func(ctx context.Context, _ Work, _ Output) error {
@@ -186,7 +186,7 @@ func TestTheRunIsBoundedByWhicheverOfTheLeaseAndThePolicyIsShorter(t *testing.T)
 
 func TestARunWhoseClaimExpiredMidRunPublishesNothing(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	h.runner.run = func(_ context.Context, _ Work, out Output) error {
 		fmt.Fprint(out, "a build whose claim went\n")
@@ -204,7 +204,7 @@ func TestARunWhoseClaimExpiredMidRunPublishesNothing(t *testing.T) {
 	rec := h.mustRecord(t, id)
 	require.Equal(t, buildv2.JobStatus_JobStatusClaimed, rec.status(),
 		"the loser must not write a terminal status")
-	require.Empty(t, h.lastCommit(testRepo, testRef), "and must not move the anchor")
+	require.Empty(t, h.lastCommit(testRepo, testRef, testEnvironment), "and must not move the anchor")
 	require.Zero(t, h.assets.count(),
 		"and must ship nothing: an ack it cannot make is a log no record will ever name, "+
 			"which is the orphan the shutdown path already declines to create")
@@ -212,7 +212,7 @@ func TestARunWhoseClaimExpiredMidRunPublishesNothing(t *testing.T) {
 
 func TestLeadershipLostMidRunPublishesNothing(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	h.runner.run = func(_ context.Context, _ Work, out Output) error {
 		fmt.Fprint(out, "a build whose node stopped leading\n")
@@ -224,7 +224,7 @@ func TestLeadershipLostMidRunPublishesNothing(t *testing.T) {
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
 	require.ErrorContains(t, err, "not the leader of "+build.QueueDomain)
 	require.Equal(t, buildv2.JobStatus_JobStatusClaimed, h.status(t, id))
-	require.Empty(t, h.lastCommit(testRepo, testRef))
+	require.Empty(t, h.lastCommit(testRepo, testRef, testEnvironment))
 
 	_, claimed := h.work.Depth()
 	require.Equal(t, 1, claimed, "and the delivery a follower could not settle comes back")
@@ -233,7 +233,7 @@ func TestLeadershipLostMidRunPublishesNothing(t *testing.T) {
 
 func TestAWorkerThatDiedCostsAnAttemptAndTheJobComesBack(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	// A dead worker is a claim nobody ever acknowledges.
 	d, err := h.work.Claim()
@@ -258,7 +258,7 @@ func TestAnExhaustedJobIsDeadLetteredAndTheDrainMarksItFailed(t *testing.T) {
 	h := newHarnessCfg(t, func(c *Config) {
 		c.Queue.MaxAttempts = 1
 	})
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	// One delivery nobody acknowledges, then the lease elapses.
 	_, err := h.work.Claim()
@@ -290,7 +290,7 @@ func TestAnExhaustedJobIsDeadLetteredAndTheDrainMarksItFailed(t *testing.T) {
 
 func TestDrainingADeadLetterEntryForAFinishedJobJustAcksIt(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusCancelled, "cancelled"))
 
 	require.NoError(t, h.dead.Push(id, nil))
@@ -315,7 +315,7 @@ func TestAnItemWithNoRecordIsAckedAndDropped(t *testing.T) {
 
 func TestARedeliveredJobThatIsAlreadyFinishedIsDropped(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusSuccess, ""))
 
 	require.True(t, h.mustStep(t))
@@ -328,7 +328,7 @@ func TestARedeliveredJobThatIsAlreadyFinishedIsDropped(t *testing.T) {
 
 func TestOnlyTheLeaderOfTheDomainClaims(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	follower, err := New(Config{}, WithHost(newHost(t, newMocknet(t))), WithStore(h.store), WithRepositories(h.repos),
 		WithClock(h.clock.now), WithRunner(&fakeRunner{}))
@@ -376,7 +376,7 @@ func TestANodeWithNoRunnerKeepsTheQueueSweptAndClaimsNothing(t *testing.T) {
 
 func TestStepReportsAStoreThatRefusesTheClaimWrite(t *testing.T) {
 	h := newHarness(t)
-	h.push(t, testRef, testCommit)
+	h.planned(t, testRef, testCommit)
 
 	// The record's Claimed write is the first Batch after the queue's own.
 	h.store.onBatch(func() { h.store.failBatches(errors.New("log is full")) })
@@ -388,7 +388,7 @@ func TestStepReportsAStoreThatRefusesTheClaimWrite(t *testing.T) {
 
 func TestStepReportsACorruptRecordRatherThanRunningIt(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	h.store.put(t, jobRecordKey(id), []byte("not a record"))
 
 	_, err := h.step(t.Context())
@@ -400,7 +400,7 @@ func TestTheStartedLoopEventuallyRunsAQueuedJob(t *testing.T) {
 	h := newHarnessCfg(t, func(c *Config) {
 		c.ClaimInterval = time.Millisecond
 	})
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	done := make(chan struct{})
 	h.runner.run = func(context.Context, Work, Output) error { close(done); return nil }
@@ -437,7 +437,7 @@ func TestStepReportsEachOfTheStoresRefusals(t *testing.T) {
 
 	t.Run("the sweep cannot write", func(t *testing.T) {
 		h := newHarness(t)
-		h.push(t, testRef, testCommit)
+		h.planned(t, testRef, testCommit)
 
 		// An expired claim, so the sweep has something to move.
 		_, err := h.work.Claim()
@@ -451,7 +451,7 @@ func TestStepReportsEachOfTheStoresRefusals(t *testing.T) {
 
 	t.Run("the claim cannot be written", func(t *testing.T) {
 		h := newHarness(t)
-		h.push(t, testRef, testCommit)
+		h.planned(t, testRef, testCommit)
 		h.store.failBatches(errors.New("log is full"))
 
 		_, err := h.step(t.Context())
@@ -462,7 +462,7 @@ func TestStepReportsEachOfTheStoresRefusals(t *testing.T) {
 
 func TestSettleReportsARecordItCannotRead(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	h.runner.run = func(context.Context, Work, Output) error {
 		h.store.put(t, jobRecordKey(id), []byte("not a record"))
@@ -479,7 +479,7 @@ func TestSettleReportsARecordItCannotRead(t *testing.T) {
 
 func TestTheDeadLetterDrainReportsAnAckItCannotMake(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusCancelled, "cancelled"))
 	require.NoError(t, h.dead.Push(id, nil))
 
@@ -492,7 +492,7 @@ func TestTheDeadLetterDrainReportsAnAckItCannotMake(t *testing.T) {
 
 func TestTheDeadLetterDrainReportsARecordItCannotWrite(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	require.NoError(t, h.dead.Push(id, nil))
 
 	h.store.onBatch(func() { h.store.failBatches(errors.New("log is full")) })
@@ -509,7 +509,7 @@ func TestTheDeadLetterDrainReportsARecordItCannotWrite(t *testing.T) {
 func TestASectionThatCannotBarrierDecidesNothing(t *testing.T) {
 	t.Run("the claim's section", func(t *testing.T) {
 		h := newHarness(t)
-		id := h.push(t, testRef, testCommit)
+		id := h.planned(t, testRef, testCommit)
 
 		// The queue's own claim commits; begin's barrier is then refused.
 		h.store.onBatch(func() { h.store.failBarrier(errors.New("timed out")) })
@@ -523,7 +523,7 @@ func TestASectionThatCannotBarrierDecidesNothing(t *testing.T) {
 
 	t.Run("the settle's section", func(t *testing.T) {
 		h := newHarness(t)
-		id := h.push(t, testRef, testCommit)
+		id := h.planned(t, testRef, testCommit)
 
 		// begin's barrier is taken and the build runs; settle's is refused.
 		h.runner.run = func(context.Context, Work, Output) error {
@@ -537,14 +537,14 @@ func TestASectionThatCannotBarrierDecidesNothing(t *testing.T) {
 		h.store.failBarrier(nil)
 		require.Equal(t, buildv2.JobStatus_JobStatusClaimed, h.status(t, id),
 			"a section that could not barrier must not decide the outcome of the run")
-		require.Empty(t, h.lastCommit(testRepo, testRef))
+		require.Empty(t, h.lastCommit(testRepo, testRef, testEnvironment))
 		_, claimed := h.work.Depth()
 		require.Equal(t, 1, claimed, "and the delivery it did not ack comes back")
 	})
 
 	t.Run("the dead letter drain's section", func(t *testing.T) {
 		h := newHarness(t)
-		id := h.push(t, testRef, testCommit)
+		id := h.planned(t, testRef, testCommit)
 		require.NoError(t, h.dead.Push(id, nil))
 
 		h.store.onBatch(func() { h.store.failBarrier(errors.New("timed out")) })
@@ -562,7 +562,7 @@ func TestASectionThatCannotBarrierDecidesNothing(t *testing.T) {
 
 func TestTheDeadLetterDrainReportsACorruptRecord(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	require.NoError(t, h.dead.Push(id, nil))
 	h.store.put(t, jobRecordKey(id), []byte("not a record"))
 
@@ -602,25 +602,27 @@ func (m *meter) of(op Op) []Accounted {
 func TestASuccessfulBuildIsAccounted(t *testing.T) {
 	m := &meter{}
 	h := newHarness(t, WithMeter(m), WithAssets(newAssets()))
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	h.runner.run = func(ctx context.Context, w Work, out Output) error {
 		fmt.Fprintln(out, "building")
 		h.clock.advance(90 * time.Second)
-		return out.Asset(ctx, "prod", "website/home", strings.NewReader("the artifact"))
+		return out.Asset(ctx, "website/home", strings.NewReader("the artifact"))
 	}
 	require.True(t, h.mustStep(t))
 
-	// THE MINUTE, and what kind of minute it was.
+	// THE MINUTE, and what kind of minute it was: the plan's, then the build of the
+	// one environment it fed.
 	builds := m.of(OpBuild)
-	require.Len(t, builds, 1)
-	require.Equal(t, 90*time.Second, builds[0].Duration, "what it occupied a builder for")
-	require.True(t, builds[0].Succeeded)
-	require.Equal(t, id, builds[0].Job)
-	require.Equal(t, testRepo, builds[0].Repository)
-	require.NotEmpty(t, builds[0].Project, "with the tenant on it")
-	require.Empty(t, builds[0].Environment,
-		"a RUN is not per-deployment: one clone, one set of commands")
+	require.Len(t, builds, 2)
+	require.Empty(t, builds[0].Environment, "a plan builds no environment")
+	build := builds[1]
+	require.Equal(t, 90*time.Second, build.Duration, "what it occupied a builder for")
+	require.True(t, build.Succeeded)
+	require.Equal(t, id, build.Job)
+	require.Equal(t, testRepo, build.Repository)
+	require.NotEmpty(t, build.Project, "with the tenant on it")
+	require.Equal(t, testEnvironment, build.Environment, "a run builds one environment")
 
 	// THE BYTES, separately for the artifact and the log, because they have
 	// different lifetimes and, in every pricing model that exists, different
@@ -638,7 +640,7 @@ func TestASuccessfulBuildIsAccounted(t *testing.T) {
 func TestAFailedBuildIsAccounted(t *testing.T) {
 	m := &meter{}
 	h := newHarness(t, WithMeter(m), WithAssets(newAssets()))
-	h.push(t, testRef, testCommit)
+	h.planned(t, testRef, testCommit)
 
 	h.runner.run = func(context.Context, Work, Output) error {
 		h.clock.advance(30 * time.Second)
@@ -647,17 +649,17 @@ func TestAFailedBuildIsAccounted(t *testing.T) {
 	require.True(t, h.mustStep(t))
 
 	builds := m.of(OpBuild)
-	require.Len(t, builds, 1)
-	require.Equal(t, 30*time.Second, builds[0].Duration)
-	require.False(t, builds[0].Succeeded)
+	require.Len(t, builds, 2, "the plan's and the build's")
+	require.Equal(t, 30*time.Second, builds[1].Duration)
+	require.False(t, builds[1].Succeeded)
 }
 
 func TestNoMeterIsTheOrdinaryCase(t *testing.T) {
 	h := newHarness(t, WithAssets(newAssets()))
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	h.runner.run = func(ctx context.Context, w Work, out Output) error {
-		return out.Asset(ctx, "prod", "website/home", strings.NewReader("the artifact"))
+		return out.Asset(ctx, "website/home", strings.NewReader("the artifact"))
 	}
 	require.True(t, h.mustStep(t))
 	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))

@@ -3,6 +3,7 @@ package backend
 import (
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -35,7 +36,7 @@ func TestEveryJobRPCRefusesAMalformedIDBeforeReadingAnything(t *testing.T) {
 
 func TestEveryJobRPCIsLeaderOnly(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	h.store.stepDown()
 
 	_, err := h.job(id)
@@ -48,7 +49,7 @@ func TestEveryJobRPCIsLeaderOnly(t *testing.T) {
 
 func TestGetCarriesTheCidsOfEveryAttemptAndResource(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	rec := h.mustRecord(t, id)
 	rec.Attempt = 2
@@ -75,7 +76,7 @@ func TestGetCarriesTheCidsOfEveryAttemptAndResource(t *testing.T) {
 
 func TestGetHandsOutACopyOfTheMapsAndNotTheRecords(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	rec := h.mustRecord(t, id)
 	rec.Logs = map[string]string{stamp(1): "cid-log-1"}
@@ -95,7 +96,7 @@ func TestGetHandsOutACopyOfTheMapsAndNotTheRecords(t *testing.T) {
 func TestGetAnswersAJobThatHasProducedNothingWithEmptyMaps(t *testing.T) {
 	h := newHarness(t)
 
-	job, err := h.job(h.push(t, testRef, testCommit))
+	job, err := h.job(h.planned(t, testRef, testCommit))
 	require.NoError(t, err)
 	require.NotNil(t, job.GetLogs())
 	require.Empty(t, job.GetLogs())
@@ -132,7 +133,7 @@ func TestListStreamsAProjectsJobIDs(t *testing.T) {
 
 func TestListRefusesAnEmptyProjectAndPropagatesASendFailure(t *testing.T) {
 	h := newHarness(t)
-	h.push(t, testRef, testCommit)
+	h.planned(t, testRef, testCommit)
 
 	require.Equal(t, connect.CodeInvalidArgument,
 		connect.CodeOf(h.list("", func(*buildv2.JobRef) error { return nil })))
@@ -151,12 +152,12 @@ func TestListReportsAnIndexRowItCannotDecode(t *testing.T) {
 
 func TestCancelWritesTheRecordAndTakesTheItemOutOfTheQueue(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	require.NoError(t, h.cancel(id))
 	require.Equal(t, buildv2.JobStatus_JobStatusCancelled, h.status(t, id))
 	require.Empty(t, h.store.Keys(openIndexPrefix(testRepo)), "a finished job is not open")
-	require.Len(t, h.store.Keys(rootSegment+"/"+indexSegment+"/"+terminalSegment+"/"), 1)
+	require.Len(t, h.terminal(id), 1)
 
 	// The open row and the queue item are the two halves of one fact, so both
 	// go: a repository told it has nothing outstanding, with a delivery still
@@ -172,12 +173,9 @@ func TestCancelWritesTheRecordAndTakesTheItemOutOfTheQueue(t *testing.T) {
 func TestACancelledJobLeavesNoWorkBehindItInTheQueue(t *testing.T) {
 	t.Run("the builder reaches the live job in the very next cycle", func(t *testing.T) {
 		h := newHarness(t)
-		cancelled := h.push(t, testRef, testCommit)
-
-		// A second later, so the ready keys order by push and the cancelled job
-		// is the one a claim would reach first.
-		h.clock.advance(time.Second)
-		live := h.push(t, "refs/heads/other", testCommit)
+		// IN PUSH ORDER, so the cancelled job is the one a claim would reach first.
+		jobs := h.plannedEach(t, testRef, "refs/heads/other")
+		cancelled, live := jobs[0], jobs[1]
 
 		require.NoError(t, h.cancel(cancelled))
 
@@ -208,7 +206,7 @@ func TestACancelledJobLeavesNoWorkBehindItInTheQueue(t *testing.T) {
 
 func TestCancellingACancelledJobIsTheOutcomeTheCallerAskedFor(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	require.NoError(t, h.cancel(id))
 	require.NoError(t, h.cancel(id))
@@ -220,7 +218,7 @@ func TestCancellingAFinishedJobIsAFailedPrecondition(t *testing.T) {
 	} {
 		t.Run(status.String(), func(t *testing.T) {
 			h := newHarness(t)
-			id := h.push(t, testRef, testCommit)
+			id := h.planned(t, testRef, testCommit)
 			require.NoError(t, h.finishNow(t, id, status, ""))
 
 			require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(h.cancel(id)))
@@ -230,7 +228,7 @@ func TestCancellingAFinishedJobIsAFailedPrecondition(t *testing.T) {
 
 func TestCancellingAJobWhoseItemIsAlreadyGoneIsNotAnError(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	d, err := h.work.Claim()
 	require.NoError(t, err)
@@ -242,7 +240,7 @@ func TestCancellingAJobWhoseItemIsAlreadyGoneIsNotAnError(t *testing.T) {
 
 func TestCancelReportsAWithdrawalThatFailedAndTheNextCancelFinishesIt(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	// The record's entry commits, and the withdrawal's does not.
 	h.store.onBatch(func() { h.store.failBatches(errors.New("log is full")) })
@@ -263,7 +261,7 @@ func TestCancelReportsAWithdrawalThatFailedAndTheNextCancelFinishesIt(t *testing
 
 func TestCancelReportsAStoreThatRefusedTheWrite(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	h.store.failBatches(errors.New("log is full"))
 
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(h.cancel(id)))
@@ -271,7 +269,7 @@ func TestCancelReportsAStoreThatRefusedTheWrite(t *testing.T) {
 
 func TestRetryOnANonTerminalJobIsRefusedRatherThanSilentlyIgnored(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(h.retry(id)))
 
@@ -286,7 +284,7 @@ func TestRetryOnANonTerminalJobIsRefusedRatherThanSilentlyIgnored(t *testing.T) 
 
 func TestRetryReopensAndReQueuesWithoutLosingHistory(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	rec := h.mustRecord(t, id)
 	rec.Attempt = 1
@@ -320,7 +318,7 @@ func TestRetryReopensAndReQueuesWithoutLosingHistory(t *testing.T) {
 
 func TestRetryReportsAStoreThatRefusedTheWrite(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusFailed, "x"))
 
 	h.store.failBatches(errors.New("log is full"))
@@ -329,7 +327,7 @@ func TestRetryReportsAStoreThatRefusedTheWrite(t *testing.T) {
 
 func TestACorruptRecordIsInternalOnEveryRead(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	h.store.put(t, jobRecordKey(id), []byte("not a record"))
 
 	_, err := h.job(id)
@@ -340,7 +338,7 @@ func TestACorruptRecordIsInternalOnEveryRead(t *testing.T) {
 
 func TestRetryReportsAPushThatFailsAfterTheRecordWasReopened(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusFailed, "x"))
 
 	d, err := h.work.Claim()
@@ -353,15 +351,14 @@ func TestRetryReportsAPushThatFailsAfterTheRecordWasReopened(t *testing.T) {
 
 func TestRetryRemovesTheRetentionRowItActuallyWrote(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	h.clock.advance(5 * time.Minute)
 	require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusFailed, "x"))
 
-	terminal := rootSegment + "/" + indexSegment + "/" + terminalSegment + "/"
 	rec := h.mustRecord(t, id)
 	require.NotEqual(t, rec.CreatedAt, rec.UpdatedAt, "a build that took no time proves nothing here")
-	require.Equal(t, []string{terminalIndexKey(time.Unix(rec.UpdatedAt, 0), id)}, h.store.Keys(terminal),
+	require.Equal(t, []string{terminalIndexKey(time.Unix(rec.UpdatedAt, 0), id)}, h.terminal(id),
 		"the retention row is keyed by the second the record says the job finished")
 
 	d, err := h.work.Claim()
@@ -371,15 +368,15 @@ func TestRetryRemovesTheRetentionRowItActuallyWrote(t *testing.T) {
 	h.clock.advance(time.Hour)
 	require.NoError(t, h.retry(id))
 
-	require.Empty(t, h.store.Keys(terminal), "a reopened job is not retained history")
+	require.Empty(t, h.terminal(id), "a reopened job is not retained history")
 }
 
 func TestASuccessfulBuildPointsTheDeploymentAtWhatItMade(t *testing.T) {
 	h := newWireHarness(t, WithAssets(newAssets()))
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	h.runner.run = func(ctx context.Context, w Work, out Output) error {
-		return out.Asset(ctx, "prod", "website/home", strings.NewReader("the artifact"))
+		return out.Asset(ctx, "website/home", strings.NewReader("the artifact"))
 	}
 	require.True(t, h.mustStep(t))
 
@@ -394,17 +391,22 @@ func TestASuccessfulBuildPointsTheDeploymentAtWhatItMade(t *testing.T) {
 
 func TestADeploymentsArtifactIsItsOwn(t *testing.T) {
 	h := newWireHarness(t, WithAssets(newAssets()))
-	id := h.push(t, testRef, testCommit)
-
-	h.runner.run = func(ctx context.Context, w Work, out Output) error {
-		if err := out.Asset(ctx, "prod", "website/home", strings.NewReader("production")); err != nil {
-			return err
-		}
-		return out.Asset(ctx, "preview", "website/home", strings.NewReader("preview"))
+	h.runner.plan = func(context.Context, Work, io.Writer) ([]string, error) {
+		return []string{"prod", "preview"}, nil
 	}
+	plan := h.push(t, testRef, testCommit)
+
+	// ONE JOB PER ENVIRONMENT, each building only its own.
+	h.runner.run = func(ctx context.Context, w Work, out Output) error {
+		content := map[string]string{"prod": "production", "preview": "preview"}[w.Environment]
+		return out.Asset(ctx, "website/home", strings.NewReader(content))
+	}
+	require.True(t, h.mustStep(t), "the plan")
+	require.Len(t, h.mustRecord(t, plan).Children, 2)
+	require.True(t, h.mustStep(t))
 	require.True(t, h.mustStep(t))
 
-	project := h.mustRecord(t, id).ProjectID
+	project := h.mustRecord(t, plan).ProjectID
 	production, err := h.built(t, project, "prod", "website/home")
 	require.NoError(t, err)
 	preview, err := h.built(t, project, "preview", "website/home")
@@ -424,10 +426,10 @@ func TestADeploymentsArtifactIsItsOwn(t *testing.T) {
 
 func TestAFailedBuildDoesNotMoveWhatADeploymentRuns(t *testing.T) {
 	h := newWireHarness(t, WithAssets(newAssets()))
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	h.runner.run = func(ctx context.Context, w Work, out Output) error {
-		if err := out.Asset(ctx, "prod", "website/home", strings.NewReader("half a build")); err != nil {
+		if err := out.Asset(ctx, "website/home", strings.NewReader("half a build")); err != nil {
 			return err
 		}
 		return errors.New("the toolchain fell over")

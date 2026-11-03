@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sort"
 
+	storageService "github.com/taubyte/tau/services/storage"
+
 	"github.com/ipfs/go-log/v2"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
@@ -100,6 +102,7 @@ func (n *Instance) rowsFor(service string) []pkgstats.Node {
 // is still found by a reach built before it.
 func (n *Instance) openReach() {
 	n.views = registerService.ViewsOn(&added{node: n})
+	n.store = storageService.StoreOn(&added{node: n})
 	n.registers = rpc.Reach(n.Host(), Register,
 		n.routeTo(Register, ErrNoRegister, "this node runs neither a register nor discovery to find one"),
 		func() (registerSeam, bool) {
@@ -131,6 +134,9 @@ func (n *Instance) closeReach() {
 	}
 	if n.views != nil {
 		n.views.Close()
+	}
+	if n.store != nil {
+		n.store.Close()
 	}
 	if n.sends != nil {
 		n.sends.Close()

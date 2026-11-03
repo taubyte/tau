@@ -33,7 +33,7 @@ type store struct {
 	err     error
 }
 
-func (s *store) Get(context.Context, string) (io.ReadSeekCloser, error) {
+func (s *store) Read(context.Context, string) (io.ReadCloser, error) {
 	if s.err != nil {
 		return nil, s.err
 	}

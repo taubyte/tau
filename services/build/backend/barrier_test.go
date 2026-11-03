@@ -39,7 +39,7 @@ func TestWhatTheSectionsBarriersCost(t *testing.T) {
 	// jobLock, and the second section reads a newer prefix so takes its own barrier.
 	t.Run("a cycle that claims, runs and settles a job", func(t *testing.T) {
 		h := newHarness(t)
-		id := h.push(t, testRef, testCommit)
+		id := h.planned(t, testRef, testCommit)
 
 		n := spent(h, func() { require.True(t, h.mustStep(t)) })
 		t.Logf("barriers=%d", n)
@@ -52,7 +52,7 @@ func TestWhatTheSectionsBarriersCost(t *testing.T) {
 	// runs when a job has spent every delivery it had.
 	t.Run("a dead-letter drain", func(t *testing.T) {
 		h := newHarness(t)
-		id := h.push(t, testRef, testCommit)
+		id := h.planned(t, testRef, testCommit)
 		exhaust(t, h)
 
 		n := spent(h, func() {

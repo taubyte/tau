@@ -1,10 +1,8 @@
 package instance
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"io"
 	"slices"
 	"time"
 
@@ -198,12 +196,6 @@ func WithDatabaseEngines(r *database.Registry) Option {
 		o.engines = r
 		return nil
 	}
-}
-
-// Assets is the byte store this node writes builds into and reads sites out of.
-type Assets interface {
-	Put(ctx context.Context, content io.Reader) (string, error)
-	Get(ctx context.Context, id string) (io.ReadSeekCloser, error)
 }
 
 // WithTLS says the composer serves this node's gateway over TLS as well, answering

@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -19,6 +20,8 @@ import (
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/pkg/raft"
+	"github.com/taubyte/tau/services/build/livelog"
+	"github.com/taubyte/tau/services/storage"
 )
 
 // fakeStore exists because raft.MockCluster's IsLeader is always true, its Barrier
@@ -287,10 +290,28 @@ func (f *fakeRepositories) fail(err error) {
 // fakeRunner is a build. It records what it was given and does whatever the
 // test set it to do.
 type fakeRunner struct {
-	mu   sync.Mutex
-	work []Work
+	mu      sync.Mutex
+	work    []Work
+	planned []Work
 
 	run func(ctx context.Context, w Work, out Output) error
+	// plan is which environments a push feeds; nil is testEnvironment alone.
+	plan func(ctx context.Context, w Work, out io.Writer) ([]string, error)
+}
+
+// testEnvironment is the one environment a push feeds unless a test plans others.
+const testEnvironment = "prod"
+
+func (f *fakeRunner) Plan(ctx context.Context, w Work, out io.Writer) ([]string, error) {
+	f.mu.Lock()
+	f.planned = append(f.planned, w)
+	plan := f.plan
+	f.mu.Unlock()
+
+	if plan == nil {
+		return []string{testEnvironment}, nil
+	}
+	return plan(ctx, w, out)
 }
 
 func (f *fakeRunner) Run(ctx context.Context, w Work, out Output) error {
@@ -327,11 +348,23 @@ type fakeAssets struct {
 	// names them. It is where a store that answers and then trips a leadership
 	// flap is built.
 	onStored func()
+	// encodings is what each kept object said it was encoded as.
+	encodings map[string]string
 }
 
-func newAssets() *fakeAssets { return &fakeAssets{stored: map[string][]byte{}} }
+func newAssets() *fakeAssets {
+	return &fakeAssets{stored: map[string][]byte{}, encodings: map[string]string{}}
+}
 
-func (f *fakeAssets) Put(ctx context.Context, content io.Reader) (string, error) {
+func (f *fakeAssets) Put(ctx context.Context, at storage.Address, name string, o storage.Object, content io.Reader) (storage.Version, error) {
+	id, err := f.put(ctx, content, o)
+	if err != nil {
+		return storage.Version{}, err
+	}
+	return storage.Version{Name: name, Record: storage.VersionRecord{RootCID: id, ContentType: o.ContentType, Metadata: o.Metadata}}, nil
+}
+
+func (f *fakeAssets) put(ctx context.Context, content io.Reader, o storage.Object) (string, error) {
 	f.mu.Lock()
 	block, err := f.block, f.err
 	onPut := f.onPut
@@ -357,6 +390,14 @@ func (f *fakeAssets) Put(ctx context.Context, content io.Reader) (string, error)
 	if readErr != nil {
 		return "", readErr
 	}
+	// A LOG IS KEPT COMPRESSED; what a test reads back is what was logged.
+	if o.Metadata["encoding"] == logEncoding {
+		plain, err := io.ReadAll(livelog.Decompressed(io.NopCloser(bytes.NewReader(raw))))
+		if err != nil {
+			return "", err
+		}
+		raw = plain
+	}
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -365,6 +406,7 @@ func (f *fakeAssets) Put(ctx context.Context, content io.Reader) (string, error)
 	}
 	id := assetCID(raw)
 	f.stored[id] = raw
+	f.encodings[id] = o.Metadata["encoding"]
 	if f.onStored != nil {
 		f.onStored()
 	}
@@ -524,6 +566,50 @@ func (h *harness) push(t testing.TB, ref, commit string) string {
 	})
 	require.NoError(t, err)
 	return id
+}
+
+// planned is a push whose plan has run: the id of the one environment job it
+// enqueued, ready to be claimed.
+func (h *harness) planned(t testing.TB, ref, commit string) string {
+	t.Helper()
+	plan := h.push(t, ref, commit)
+	require.True(t, h.mustStep(t), "the plan ran")
+	children := h.mustRecord(t, plan).Children
+	require.Len(t, children, 1, "a push feeding one environment is one job")
+	return children[0]
+}
+
+// plannedEach is several pushes whose plans have all run, each an environment job
+// queued in push order. The plans are pushed first and the clock moved past them, so
+// every plan is claimed before any job it enqueues.
+func (h *harness) plannedEach(t testing.TB, refs ...string) []string {
+	t.Helper()
+	plans := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		plans = append(plans, h.push(t, ref, testCommit))
+	}
+	h.clock.advance(time.Second)
+	for range plans {
+		require.True(t, h.mustStep(t), "a plan ran")
+	}
+	out := make([]string, 0, len(plans))
+	for _, plan := range plans {
+		children := h.mustRecord(t, plan).Children
+		require.Len(t, children, 1, "a push feeding one environment is one job")
+		out = append(out, children[0])
+	}
+	return out
+}
+
+// terminal is the retention rows of one job: its plan has rows of its own.
+func (h *harness) terminal(id string) []string {
+	var out []string
+	for _, key := range h.store.Keys(rootSegment + "/" + indexSegment + "/" + terminalSegment + "/") {
+		if strings.HasSuffix(key, "/"+seg(id)) {
+			out = append(out, key)
+		}
+	}
+	return out
 }
 
 func (h *harness) mustRecord(t testing.TB, id string) jobRecord {

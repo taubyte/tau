@@ -23,7 +23,7 @@ const queueKeyRoot = "queue/"
 
 func TestARetryBetweenACancelAndTheSettleOfTheRunItCancelledSurvives(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	d, err := h.work.Claim()
 	require.NoError(t, err)
@@ -69,12 +69,12 @@ func TestARetryBetweenACancelAndTheSettleOfTheRunItCancelledSurvives(t *testing.
 	require.True(t, h.mustStep(t))
 	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
 	require.Len(t, h.runner.seen(), 2, "the retry is a second build, not the first one re-reported")
-	require.Equal(t, testCommit, h.lastCommit(testRepo, testRef))
+	require.Equal(t, testCommit, h.lastCommit(testRepo, testRef, testEnvironment))
 }
 
 func TestTheDropDecisionAndItsAckAreOneSection(t *testing.T) {
 	h, gate := gatedHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	d, err := h.work.Claim()
 	require.NoError(t, err)

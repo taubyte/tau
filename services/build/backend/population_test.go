@@ -123,7 +123,7 @@ func sampleKeys() map[string]string {
 		"openIndexPrefix":    openIndexPrefix(testRepo),
 		"openIndexKey":       openIndexKey(testRepo, sampleID),
 		"openIndexRoot":      openIndexRoot(),
-		"refLastKey":         refLastKey(testRepo, testRef),
+		"refLastKey":         refLastKey(testRepo, testRef, testEnvironment),
 		"terminalIndexKey":   terminalIndexKey(at, sampleID),
 	}
 }
@@ -779,10 +779,12 @@ func TestEveryReadModifyWriteOfAJobRecordIsOneSection(t *testing.T) {
 		"Service.cancel": {record: true, queue: true, index: true},
 		"Service.retry":  {record: true, queue: true, index: true},
 		// queue.go
-		"Service.resume": {queue: true},
-		"Service.create": {record: true, queue: true, index: true},
+		"Service.resume":            {queue: true},
+		"Service.create":            {record: true, queue: true, index: true},
+		"Service.createEnvironment": {record: true, queue: true, index: true},
 		// runner.go
 		"Service.begin":           {record: true, queue: true},
+		"Service.plan":            {record: true, queue: true, index: true},
 		"Service.settle":          {record: true, queue: true, index: true},
 		"Service.drainDeadLetter": {record: true, queue: true, index: true},
 		// reconcile.go — the one section that reads without a barrier. mend
@@ -1164,7 +1166,7 @@ func TestEveryWriteOfAJobRecordIsInsideASection(t *testing.T) {
 	// ends() is the shared terminal write, so it is a method on the handle and
 	// its callers are the ones that must open the section.
 	require.ElementsMatch(t,
-		[]string{"Service.create", "Service.begin", "Service.retry", "held.ends", "held.logged"},
+		[]string{"Service.create", "Service.createEnvironment", "Service.begin", "Service.retry", "held.ends", "held.logged"},
 		names(callers(all, "record")))
 	for name := range callers(all, "record") {
 		held, chain := inBody(all, name, "record")

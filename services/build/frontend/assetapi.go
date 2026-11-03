@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/build/livelog"
 )
 
 // assetapi.go reads back what a finished build left: a log by its record key and
@@ -14,15 +15,18 @@ import (
 
 // handleJobLog is GET /job/{jid}/logs/{key}: one finished log.
 func (s *Service) handleJobLog(w http.ResponseWriter, r *http.Request, token, jobID string) {
-	s.serveJobAsset(w, r, token, jobID, "key", func(_, logs map[string]string, key string) string { return logs[key] }, "text/plain; charset=utf-8")
+	s.serveJobAsset(w, r, token, jobID, "key", func(_, logs map[string]string, key string) string { return logs[key] }, "text/plain; charset=utf-8", livelog.Decompressed)
 }
 
 // handleJobAsset is GET /job/{jid}/assets/{resource}: one built artifact.
 func (s *Service) handleJobAsset(w http.ResponseWriter, r *http.Request, token, jobID string) {
-	s.serveJobAsset(w, r, token, jobID, "resource", func(assets, _ map[string]string, key string) string { return assets[key] }, "application/octet-stream")
+	s.serveJobAsset(w, r, token, jobID, "resource", func(assets, _ map[string]string, key string) string { return assets[key] }, "application/octet-stream", asStored)
 }
 
-func (s *Service) serveJobAsset(w http.ResponseWriter, r *http.Request, token, jobID, name string, pick func(assets, logs map[string]string, key string) string, contentType string) {
+// asStored is an artifact, served as its build stored it.
+func asStored(stored io.ReadCloser) io.ReadCloser { return stored }
+
+func (s *Service) serveJobAsset(w http.ResponseWriter, r *http.Request, token, jobID, name string, pick func(assets, logs map[string]string, key string) string, contentType string, decode func(io.ReadCloser) io.ReadCloser) {
 	if s.assets == nil {
 		respond(w, problem(http.StatusServiceUnavailable, "this node reads no asset store"))
 		return
@@ -46,12 +50,13 @@ func (s *Service) serveJobAsset(w http.ResponseWriter, r *http.Request, token, j
 	}
 	// The read outlives BackendTimeout: an artifact is as large as its build
 	// made it, and the transfer is bounded by the caller hanging up.
-	content, err := s.assets.Get(r.Context(), cid)
+	stored, err := s.assets.Read(r.Context(), cid)
 	if err != nil {
 		s.log("reading %s of job %s: %v", cid, jobID, err)
 		respond(w, errUpstream)
 		return
 	}
+	content := decode(stored)
 	defer content.Close()
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("X-Content-Type-Options", "nosniff")

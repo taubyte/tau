@@ -23,4 +23,11 @@ message JobRecord {
   string reason = 12;
   map<string, string> logs = 13;
   map<string, string> assets = 14;
+  // environment is the one deployment this job builds; empty for the plan job a
+  // push makes first, which enqueues one job per environment it feeds.
+  string environment = 15;
+  // prelude is what the plan said, which opens each environment job's log.
+  string prelude = 16;
+  // children is the environment jobs a plan enqueued, in environment order.
+  repeated string children = 17;
 }

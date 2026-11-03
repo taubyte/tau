@@ -23,21 +23,18 @@ func (s spelled) Key(cloneURL string) (repokey.Key, error) {
 
 func TestASourceIsKeyedTheWayTheForgeSpellsIt(t *testing.T) {
 	e := &engine{}
-	require.NoError(t, builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: source(t)}, e, mainRepo,
-		artifact.WithKeys(spelled{})).
-		Build(t.Context(), work("forge.example/acme/paylib"), newOut()))
+	require.NoError(t, planned(t.Context(), builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: source(t)}, e, mainRepo,
+		artifact.WithKeys(spelled{})), work("forge.example/acme/paylib"), newOut()))
 	require.Len(t, e.seen(), 1)
 
 	e = &engine{}
-	require.NoError(t, builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: source(t)}, e, mainRepo,
-		artifact.WithKeys(spelled{})).
-		Build(t.Context(), work(paylibRepo), newOut()))
+	require.NoError(t, planned(t.Context(), builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: source(t)}, e, mainRepo,
+		artifact.WithKeys(spelled{})), work(paylibRepo), newOut()))
 	require.Empty(t, e.seen(), "repokey's parse is not the key once a forge spells it otherwise")
 
 	boom := errors.New("no such spelling")
-	err := builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: source(t)}, &engine{}, mainRepo,
-		artifact.WithKeys(spelled{err: boom})).
-		Build(t.Context(), work(paylibRepo), newOut())
+	err := planned(t.Context(), builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: source(t)}, &engine{}, mainRepo,
+		artifact.WithKeys(spelled{err: boom})), work(paylibRepo), newOut())
 	require.ErrorIs(t, err, boom)
 
 	_, err = artifact.New(artifact.WithKeys(nil))

@@ -50,12 +50,12 @@ import (
 
 // Assets is the content-addressed store a checkpoint's bytes go into.
 //
-// TWO METHODS, WHICH IS ALL A CHECKPOINT IS: put a tar, get it back. The id is
-// a function of the content, which is not a detail — see the package doc on why
-// a node whose workload has moved away writes nothing.
+// TWO METHODS, WHICH IS ALL A CHECKPOINT IS: put a volume's tar, read it back.
+// The id is a function of the content, which is not a detail — see the package
+// doc on why a node whose workload has moved away writes no pointer.
 type Assets interface {
-	Put(ctx context.Context, content io.Reader) (string, error)
-	Get(ctx context.Context, id string) (io.ReadSeekCloser, error)
+	Put(ctx context.Context, handle string, content io.Reader) (string, error)
+	Read(ctx context.Context, id string) (io.ReadCloser, error)
 }
 
 // Rows is where a checkpoint's pointer is recorded: read one row, write one row. "Not
@@ -289,7 +289,7 @@ func (v *Volumes) restore(ctx context.Context, handle, dir string, quota int64) 
 		return ErrNoStore
 	}
 
-	content, err := v.assets.Get(ctx, string(recorded))
+	content, err := v.assets.Read(ctx, string(recorded))
 	if err != nil {
 		return fmt.Errorf("volume: reading the checkpoint for %s: %w", handle, err)
 	}
@@ -343,7 +343,7 @@ func (v *Volumes) checkpoint(ctx context.Context, held *volume) (int64, error) {
 		write.CloseWithError(err)
 	}()
 
-	id, err := v.assets.Put(ctx, read)
+	id, err := v.assets.Put(ctx, held.handle, read)
 	read.Close()
 	size := <-walked
 	if err != nil {

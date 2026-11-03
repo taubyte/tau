@@ -271,6 +271,13 @@ message Job {
   // v1's HTTP `/download/{jobId}/{resourceId}` route reads back by that
   // same resource id.
   map<string, string> asset_cid = 9;
+  // environment is the one deployment this job builds. Empty is the plan job a
+  // push makes first: it reads which environments the pushed commit feeds and
+  // enqueues one job for each, named in children.
+  string environment = 10;
+  repeated string children = 11;
+  // reason is why a job failed, empty otherwise.
+  string reason = 12;
 }
 
 message ProjectRef {

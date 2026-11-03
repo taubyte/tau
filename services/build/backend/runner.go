@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"strings"
 	"time"
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
@@ -74,15 +76,20 @@ func (s *Service) run(ctx context.Context, d queue.Delivery) error {
 		RepositoryKey: rec.RepositoryKey,
 		Ref:           rec.Ref,
 		CommitSHA:     rec.CommitSHA,
-		Before:        s.lastCommit(rec.RepositoryKey, rec.Ref),
+		Before:        s.lastCommit(rec.RepositoryKey, rec.Ref, rec.Environment),
 		ProjectID:     rec.ProjectID,
 		Attempt:       rec.Attempt,
+		Environment:   rec.Environment,
 	}
 
 	// The build minute starts after the claim, before the run.
 	started := s.now()
 
-	out, runErr := s.invoke(runCtx, work)
+	if rec.Environment == "" {
+		return s.plan(ctx, runCtx, d, rec, work, started)
+	}
+
+	out, runErr := s.invoke(runCtx, work, rec.Prelude)
 	if out == nil {
 		// The run never started (no log could be opened): a failed build, which hands the
 		// job to another node.
@@ -112,11 +119,13 @@ func (s *Service) accountBuild(ctx context.Context, rec jobRecord, started time.
 	s.emit(ctx, Accounted{
 		Project:    rec.ProjectID,
 		Repository: rec.RepositoryKey,
-		Job:        rec.ID,
-		Attempt:    rec.Attempt,
-		Op:         OpBuild,
-		Duration:   s.now().Sub(started),
-		Succeeded:  runErr == nil,
+		// The environment a run built, and none for a plan, which builds nothing.
+		Environment: rec.Environment,
+		Job:         rec.ID,
+		Attempt:     rec.Attempt,
+		Op:          OpBuild,
+		Duration:    s.now().Sub(started),
+		Succeeded:   runErr == nil,
 	})
 }
 
@@ -171,9 +180,14 @@ func (s *Service) forget(id string) {
 
 // invoke opens the run's output and runs the job, returning the output even when
 // the run failed: those are the lines somebody wants.
-func (s *Service) invoke(ctx context.Context, work Work) (out *runOutput, err error) {
+func (s *Service) invoke(ctx context.Context, work Work, prelude string) (out *runOutput, err error) {
 	if out, err = s.output(work); err != nil {
 		return nil, err
+	}
+	if prelude != "" {
+		if _, err := io.WriteString(out, prelude); err != nil {
+			return out, err
+		}
 	}
 
 	// A panicking runner is a failed build, not a dead loop or a lingering claim. Why a
@@ -189,6 +203,97 @@ func (s *Service) invoke(ctx context.Context, work Work) (out *runOutput, err er
 
 	return out, s.runner.Run(ctx, work, out)
 }
+
+// maxPrelude bounds what a plan says, which every environment job's record carries.
+const maxPrelude = 64 << 10
+
+// plan runs a plan job: which environments the commit feeds, one job enqueued for
+// each, then the plan settled as their parent. The environment jobs are created
+// between its two sections, each in its own, like a push's: a section writes only
+// the job it read. Creating one is idempotent, so a plan run twice makes them once.
+func (s *Service) plan(ctx, runCtx context.Context, d queue.Delivery, rec jobRecord, work Work, started time.Time) error {
+	said := &capped{max: maxPrelude}
+	environments, runErr := s.planned(runCtx, work, said)
+	if runErr != nil && errors.Is(context.Cause(ctx), errShuttingDown) {
+		return fmt.Errorf("job %s abandoned: %w", rec.ID, errShuttingDown)
+	}
+	s.accountBuild(ctx, rec, started, runErr)
+
+	var wanted bool
+	err := s.withJob(d.ID, func(j *held) error {
+		if err := j.ack(s.work, d); err != nil {
+			return err
+		}
+		if !j.found() {
+			return nil
+		}
+		if !j.rec().terminal() && j.rec().status() != buildv2.JobStatus_JobStatusClaimed {
+			return j.requeue()
+		}
+		wanted = true
+		return nil
+	})
+	if err != nil || !wanted {
+		return err
+	}
+
+	var children []string
+	if runErr == nil {
+		if len(environments) == 0 {
+			runErr = errors.New("the commit feeds no environment")
+		}
+		for _, environment := range environments {
+			id, err := s.createEnvironment(rec, environment, said.String())
+			if err != nil {
+				runErr = fmt.Errorf("enqueueing %s: %w", environment, err)
+				break
+			}
+			children = append(children, id)
+		}
+	}
+
+	return s.withJob(d.ID, func(j *held) error {
+		if !j.found() || j.rec().terminal() {
+			return nil
+		}
+		if j.rec().status() != buildv2.JobStatus_JobStatusClaimed {
+			return j.requeue()
+		}
+		if runErr != nil {
+			return j.fail(strings.TrimSpace(said.String()+"\nerror: "+runErr.Error()), produced{})
+		}
+		return j.planned(children)
+	})
+}
+
+// planned runs the runner's plan; a panic is a failed plan, as for a build.
+func (s *Service) planned(ctx context.Context, work Work, out io.Writer) (environments []string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("runner panicked: %v", r)
+		}
+	}()
+	return s.runner.Plan(ctx, work, out)
+}
+
+// capped keeps what is written up to max bytes and drops the rest, saying so once.
+type capped struct {
+	max  int
+	buf  strings.Builder
+	full bool
+}
+
+func (c *capped) Write(p []byte) (int, error) {
+	if room := c.max - c.buf.Len(); room > 0 {
+		c.buf.Write(p[:min(len(p), room)])
+	} else if !c.full {
+		c.full = true
+		c.buf.WriteString("\n... the plan said more than this\n")
+	}
+	return len(p), nil
+}
+
+func (c *capped) String() string { return c.buf.String() }
 
 // settle acks, hands off the log, then writes the record: two sections with the
 // network call between them.
@@ -282,11 +387,11 @@ func (s *Service) claimDeadline(d queue.Delivery) time.Time {
 }
 
 // lastCommit is the "before" of the next diff: the commit this service itself
-// last FINISHED for this exact (repository, ref). Absent means there is nothing
+// last FINISHED for this exact (repository, ref, environment). Absent means there is nothing
 // to diff against and the Runner must treat it as a full build — exactly what a
 // GitHub payload's all-zero `before` signals for a newly created branch.
-func (s *Service) lastCommit(repositoryKey, ref string) string {
-	raw, exists := s.store.Get(refLastKey(repositoryKey, ref))
+func (s *Service) lastCommit(repositoryKey, ref, environment string) string {
+	raw, exists := s.store.Get(refLastKey(repositoryKey, ref, environment))
 	if !exists {
 		return ""
 	}

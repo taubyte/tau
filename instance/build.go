@@ -308,9 +308,7 @@ func (n *Instance) openBuildBackend() error {
 		// at the forge over the repository's deploy key before it is queued.
 		backend.WithConfirmer(seams.Confirm),
 	}
-	if n.assets != nil {
-		service = append(service, backend.WithAssets(n.assets))
-	}
+	service = append(service, backend.WithAssets(n.store))
 
 	svc, err := backend.New(n.cfg.BuildBackend, service...)
 	if err != nil {
@@ -381,10 +379,8 @@ func (n *Instance) openBuildFrontend() error {
 	}
 	// A forge with no signed webhook reports pushes on its own feed (Gerrit's
 	// stream-events), subscribed to as a second source (frontend/streams.go). A finished
-	// job's logs and artifacts are read by cid from the backend's store.
-	if n.assets != nil {
-		frontendOptions = append(frontendOptions, frontend.WithAssets(n.assets))
-	}
+	// job's logs and artifacts are read by cid from the storage service.
+	frontendOptions = append(frontendOptions, frontend.WithAssets(n.store))
 	if len(registry.EventHosts()) > 0 {
 		frontendOptions = append(frontendOptions, frontend.WithStreams(forges, projects))
 	}

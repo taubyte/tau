@@ -45,7 +45,7 @@ func requireRefused(t *testing.T, h *harness, id string, err error) {
 
 func TestAWriteMadeByTheBodyThatReadItIsAllowed(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	require.NoError(t, h.withJob(id, func(j *held) error {
 		return j.finish(buildv2.JobStatus_JobStatusCancelled, "cancelled")
@@ -55,7 +55,7 @@ func TestAWriteMadeByTheBodyThatReadItIsAllowed(t *testing.T) {
 
 func TestAHandleAssembledOutsideAHoldingIsDead(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	forged := &held{s: h.Service}
 	requireRefused(t, h, id, forged.writes().commit("forging"))
@@ -72,7 +72,7 @@ func TestAHandleAssembledOutsideAHoldingIsDead(t *testing.T) {
 
 func TestAGoroutineThatHoldsNothingHasNothingToWriteWith(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	done := make(chan error, 1)
 	entered := make(chan struct{})
@@ -104,13 +104,13 @@ func TestAGoroutineThatHoldsNothingHasNothingToWriteWith(t *testing.T) {
 
 func TestAHandleSpentInsideALaterSectionIsRefused(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	stale := escapee(t, h, id)
 
 	// The real work the section was released for, and the window in which
 	// anything at all may write this record.
-	h.lastCommit(testRepo, testRef)
+	h.lastCommit(testRepo, testRef, testEnvironment)
 
 	var err error
 	var heldAtTheWrite bool
@@ -128,7 +128,7 @@ func TestAHandleSpentInsideALaterSectionIsRefused(t *testing.T) {
 
 func TestAWriteFromACallDeferredAfterTheSectionHasNoSectionAtAll(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	var err error
 	func() {
@@ -147,7 +147,7 @@ func TestAWriteFromACallDeferredAfterTheSectionHasNoSectionAtAll(t *testing.T) {
 
 func TestAClosureBuiltInASectionAndInvokedOutsideItIsRefused(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	var pending func() error
 	require.NoError(t, h.withJob(id, func(j *held) error {
@@ -161,7 +161,7 @@ func TestAClosureBuiltInASectionAndInvokedOutsideItIsRefused(t *testing.T) {
 
 func TestAWriteInAnotherFunctionTakesTheHandleOrIsRefused(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	// The helper. It reads nothing and decides nothing; it is handed a handle
 	// and writes what that handle's read decided.
@@ -178,7 +178,7 @@ func TestAWriteInAnotherFunctionTakesTheHandleOrIsRefused(t *testing.T) {
 
 func TestTheQueueWritesAreRefusedInsideADifferentLiveSection(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	stale := escapee(t, h, id)
 
@@ -228,7 +228,7 @@ func TestTheQueueWritesAreRefusedInsideADifferentLiveSection(t *testing.T) {
 
 func TestAStopCarriedOutOfItsSectionCannotKillALaterRun(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	// The cancel's handle, escaped from the section that decided the stop.
 	stale := escapee(t, h, id)
@@ -254,7 +254,7 @@ func TestAStopCarriedOutOfItsSectionCannotKillALaterRun(t *testing.T) {
 
 func TestTheHandleDiesBeforeTheExclusionIsReleased(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	stale := escapee(t, h, id)
 	require.False(t, jobLock.Held(), "the exclusion is released when the body returns")
@@ -296,8 +296,13 @@ func TestEveryTransitionWritesInTheSectionItReadIn(t *testing.T) {
 	h := newHarness(t)
 
 	// create, and then resume: the same push twice.
-	id := h.push(t, testRef, testCommit)
-	require.Equal(t, id, h.push(t, testRef, testCommit))
+	plan := h.push(t, testRef, testCommit)
+	require.Equal(t, plan, h.push(t, testRef, testCommit))
+
+	// the plan, and the environment job it creates.
+	require.True(t, h.mustStep(t))
+	require.Len(t, h.mustRecord(t, plan).Children, 1)
+	id := h.mustRecord(t, plan).Children[0]
 
 	// begin and settle.
 	require.True(t, h.mustStep(t))
@@ -309,7 +314,7 @@ func TestEveryTransitionWritesInTheSectionItReadIn(t *testing.T) {
 	require.Equal(t, buildv2.JobStatus_JobStatusCancelled, h.status(t, id))
 
 	// the dead-letter drain.
-	second := h.push(t, testRef, shaOf(1))
+	second := h.planned(t, testRef, shaOf(1))
 	exhaust(t, h)
 	drained, err := h.drainDeadLetter()
 	require.NoError(t, err)
@@ -325,7 +330,7 @@ func TestEveryTransitionWritesInTheSectionItReadIn(t *testing.T) {
 
 func TestACancelStopsTheRunTheClaimRegistered(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	// Reaching the fallback is the failure: the cancel should have ended the build.
 	building, stopped := make(chan struct{}), make(chan error, 1)
@@ -369,8 +374,8 @@ func rowsOf(h *harness, id string) map[string]string {
 
 func TestAnEntryCannotNameAJobItsSectionWasNotEnteredOn(t *testing.T) {
 	h := newHarness(t)
-	a := h.push(t, testRef, testCommit)
-	b := h.push(t, testRef, shaOf(1))
+	a := h.planned(t, testRef, testCommit)
+	b := h.planned(t, testRef, shaOf(1))
 	require.NotEqual(t, a, b)
 
 	before := rowsOf(h, b)
@@ -392,7 +397,7 @@ func TestAnEntryCannotNameAJobItsSectionWasNotEnteredOn(t *testing.T) {
 	// still decides what the record SAYS, which is what a read-modify-write is,
 	// and no longer decides which job it is.
 	require.Equal(t, a, h.mustRecord(t, a).ID)
-	require.Equal(t, testCommit, h.lastCommit(testRepo, testRef),
+	require.Equal(t, testCommit, h.lastCommit(testRepo, testRef, testEnvironment),
 		"and the ref anchor is the commit the SECTION READ, not the one the body handed over")
 }
 
@@ -418,8 +423,8 @@ func TestAHandleCannotBePointedAtAnotherJob(t *testing.T) {
 	// that has closed, handed a live holding, writes the LIVE section's job —
 	// it does not resurrect its own.
 	h := newHarness(t)
-	a := h.push(t, testRef, testCommit)
-	b := h.push(t, testRef, shaOf(1))
+	a := h.planned(t, testRef, testCommit)
+	b := h.planned(t, testRef, shaOf(1))
 
 	ghost := escapee(t, h, b)
 	requireRefused(t, h, b, ghost.finish(buildv2.JobStatus_JobStatusCancelled, "cancelled"))
@@ -438,8 +443,8 @@ func TestAHandleCannotBePointedAtAnotherJob(t *testing.T) {
 
 func TestAnAckOfAnotherJobsDeliveryIsRefused(t *testing.T) {
 	h := newHarness(t)
-	a := h.push(t, testRef, testCommit)
-	b := h.push(t, testRef, shaOf(1))
+	a := h.planned(t, testRef, testCommit)
+	b := h.planned(t, testRef, shaOf(1))
 
 	first, err := h.work.Claim()
 	require.NoError(t, err)
@@ -463,7 +468,7 @@ func TestAnAckOfAnotherJobsDeliveryIsRefused(t *testing.T) {
 
 func TestAnEntryThatCouldNotBeBuiltWritesNothing(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	before := rowsOf(h, id)
 
 	require.NoError(t, h.withJob(unknownJobID, func(j *held) error {
@@ -523,7 +528,7 @@ func (benchSource) Again() (jobRecord, bool, error) { return jobRecord{}, true, 
 
 func BenchmarkTheEntry(b *testing.B) {
 	h := newHarness(b)
-	id := h.push(b, testRef, testCommit)
+	id := h.planned(b, testRef, testCommit)
 	rec := h.mustRecord(b, id)
 
 	b.Run("the slice literal an entry replaced", func(b *testing.B) {

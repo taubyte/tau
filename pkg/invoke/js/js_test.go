@@ -105,13 +105,12 @@ func TestStartSaysWhenTheAssetCannotBeHad(t *testing.T) {
 
 type broken struct{}
 
-func (broken) Read([]byte) (int, error)       { return 0, errors.New("the disk went away") }
-func (broken) Seek(int64, int) (int64, error) { return 0, nil }
-func (broken) Close() error                   { return nil }
+func (broken) Read([]byte) (int, error) { return 0, errors.New("the disk went away") }
+func (broken) Close() error             { return nil }
 
-type readerStore struct{ r io.ReadSeekCloser }
+type readerStore struct{ r io.ReadCloser }
 
-func (s readerStore) Get(context.Context, string) (io.ReadSeekCloser, error) { return s.r, nil }
+func (s readerStore) Read(context.Context, string) (io.ReadCloser, error) { return s.r, nil }
 
 func TestStartSaysWhenTheAssetCannotBeRead(t *testing.T) {
 	tier, err := js.New(readerStore{broken{}})

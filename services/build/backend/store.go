@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -116,11 +117,12 @@ func openIndexRoot() string {
 	return rootSegment + "/" + indexSegment + "/" + openSegment + "/"
 }
 
-// refLastKey holds the last commit this service finished for a ref, the diff
-// anchor it computes itself rather than taking from the webhook.
-func refLastKey(repositoryKey, ref string) string {
+// refLastKey holds the last commit this service finished for a ref in one
+// environment, the diff anchor it computes itself rather than taking from the
+// webhook. Per environment, since each builds on its own.
+func refLastKey(repositoryKey, ref, environment string) string {
 	return rootSegment + "/" + indexSegment + "/" + refSegment + "/" +
-		seg(repositoryKey) + "/" + seg(ref) + "/" + lastSegment
+		seg(repositoryKey) + "/" + seg(ref) + "/" + seg(environment) + "/" + lastSegment
 }
 
 // terminalIndexKey is the retention row, unix seconds first so a listing is
@@ -198,6 +200,12 @@ type jobRecord struct {
 	// Assets is the cid of the artifact built per resource; a later attempt replaces
 	// an earlier one.
 	Assets map[string]string
+	// Environment is the one deployment this job builds; empty is a plan.
+	Environment string
+	// Prelude is what the plan said, written first into this job's log.
+	Prelude string
+	// Children is the environment jobs a plan enqueued.
+	Children []string
 }
 
 // with is this record plus what a run produced. The maps are copied: the record is
@@ -205,6 +213,9 @@ type jobRecord struct {
 func (r jobRecord) with(p produced) jobRecord {
 	if p.logCID != "" {
 		r.Logs = merged(r.Logs, map[string]string{stamp(int64(p.attempt)): p.logCID})
+	}
+	if len(p.children) > 0 {
+		r.Children = slices.Clone(p.children)
 	}
 	if len(p.assets) > 0 {
 		named := make(map[string]string, len(p.assets))
@@ -239,7 +250,7 @@ func (r jobRecord) encode() ([]byte, error) {
 		Id: r.ID, Status: buildv2.JobStatus(r.Status), RepositoryKey: r.RepositoryKey, Ref: r.Ref,
 		CommitSha: r.CommitSHA, ProjectId: r.ProjectID, CreatedAt: r.CreatedAt, Attempt: r.Attempt,
 		UpdatedAt: r.UpdatedAt, ClaimedUntil: r.ClaimedUntil, Holder: r.Holder, Reason: r.Reason,
-		Logs: r.Logs, Assets: r.Assets,
+		Logs: r.Logs, Assets: r.Assets, Environment: r.Environment, Prelude: r.Prelude, Children: r.Children,
 	}
 	return m.MarshalVT()
 }
@@ -259,7 +270,7 @@ func decodeJobRecord(key, id string, raw []byte) (jobRecord, error) {
 		ID: m.Id, Status: int32(m.Status), RepositoryKey: m.RepositoryKey, Ref: m.Ref,
 		CommitSHA: m.CommitSha, ProjectID: m.ProjectId, CreatedAt: m.CreatedAt, Attempt: m.Attempt,
 		UpdatedAt: m.UpdatedAt, ClaimedUntil: m.ClaimedUntil, Holder: m.Holder, Reason: m.Reason,
-		Logs: m.Logs, Assets: m.Assets,
+		Logs: m.Logs, Assets: m.Assets, Environment: m.Environment, Prelude: m.Prelude, Children: m.Children,
 	}, nil
 }
 

@@ -69,17 +69,7 @@ func (c *checkout) Checkout(context.Context, string, string, string) (string, fu
 // out collects the build log a developer watches.
 type out struct{ strings.Builder }
 
-func (o *out) Asset(context.Context, string, string, io.Reader) error { return nil }
-
-// backend.Output's Asset takes an io.Reader; this deploy produces no assets, so
-// it is here only to satisfy the interface.
-type output struct{ *out }
-
-func (output) Asset(context.Context, string, ioReader) error { return nil }
-
-type ioReader = interface {
-	Read(p []byte) (n int, err error)
-}
+func (o *out) Asset(context.Context, string, io.Reader) error { return nil }
 
 // fixture copies a config tree onto disk, because that is what a checkout hands
 // back — a directory on this machine, for the same reason a build needs one.
@@ -129,6 +119,22 @@ func envsWork() backend.Work {
 	return w
 }
 
+// pushed is a push as the backend runs it: the plan, then one job per environment
+// it names, each told its own.
+func pushed(ctx context.Context, d *deploy.Deploy, w backend.Work, out backend.Output) error {
+	environments, err := d.Plan(ctx, w, out)
+	if err != nil {
+		return err
+	}
+	for _, environment := range environments {
+		w.Environment = environment
+		if err := d.Run(ctx, w, out); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func work() backend.Work {
 	return backend.Work{
 		JobID:         "job",
@@ -161,7 +167,7 @@ func TestAPushPublishes(t *testing.T) {
 	r := registry(t)
 
 	var log out
-	require.NoError(t, runner(t, c, r).Run(t.Context(), work(), &log))
+	require.NoError(t, pushed(t.Context(), runner(t, c, r), work(), &log))
 
 	pointer, err := r.Resolve(t.Context(), shopID, "prod")
 	require.NoError(t, err)
@@ -182,7 +188,7 @@ func TestTheBranchDecidesTheDeployments(t *testing.T) {
 	r := registry(t)
 
 	var log out
-	require.NoError(t, runner(t, c, r).Run(t.Context(), envsWork(), &log))
+	require.NoError(t, pushed(t.Context(), runner(t, c, r), envsWork(), &log))
 
 	for _, name := range []string{"production", "ab", "preview"} {
 		pointer, err := r.Resolve(t.Context(), envsID, name)
@@ -196,7 +202,7 @@ func TestTheBranchDecidesTheDeployments(t *testing.T) {
 	// A release branch feeds the other set.
 	w := envsWork()
 	w.Ref = "refs/heads/release/1.4"
-	require.NoError(t, runner(t, c, r).Run(t.Context(), w, &log))
+	require.NoError(t, pushed(t.Context(), runner(t, c, r), w, &log))
 
 	pointer, err := r.Resolve(t.Context(), envsID, "staging")
 	require.NoError(t, err)
@@ -208,7 +214,7 @@ func TestEachDeploymentIsItsOwnObject(t *testing.T) {
 	r := registry(t)
 
 	var log out
-	require.NoError(t, runner(t, &checkout{dir: dir}, r).Run(t.Context(), envsWork(), &log))
+	require.NoError(t, pushed(t.Context(), runner(t, &checkout{dir: dir}, r), envsWork(), &log))
 
 	production, err := r.Resolve(t.Context(), envsID, "production")
 	require.NoError(t, err)
@@ -224,8 +230,8 @@ func TestAnUnchangedPushDoesNotMoveThePointer(t *testing.T) {
 	r := registry(t)
 
 	var log out
-	require.NoError(t, runner(t, c, r).Run(t.Context(), work(), &log))
-	require.NoError(t, runner(t, c, r).Run(t.Context(), work(), &log))
+	require.NoError(t, pushed(t.Context(), runner(t, c, r), work(), &log))
+	require.NoError(t, pushed(t.Context(), runner(t, c, r), work(), &log))
 
 	pointer, err := r.Resolve(t.Context(), shopID, "prod")
 	require.NoError(t, err)
@@ -238,13 +244,13 @@ func TestAGeneratedNameNeedsTheCloudsZone(t *testing.T) {
 	r := registry(t)
 
 	var without out
-	require.NoError(t, runner(t, &checkout{dir: dir}, r).Run(t.Context(), work(), &without))
+	require.NoError(t, pushed(t.Context(), runner(t, &checkout{dir: dir}, r), work(), &without))
 	require.Contains(t, without.String(), "<cloud fqdn>")
 
 	told := registry(t)
 	var with out
-	require.NoError(t, runner(t, &checkout{dir: dir}, told,
-		deploy.WithCloudFqdn("acme.example")).Run(t.Context(), work(), &with))
+	require.NoError(t, pushed(t.Context(), runner(t, &checkout{dir: dir}, told,
+		deploy.WithCloudFqdn("acme.example")), work(), &with))
 
 	require.Contains(t, with.String(), "acme.example")
 	require.NotContains(t, with.String(), "<cloud fqdn>")
@@ -263,7 +269,7 @@ func TestACodeRepositoryIsRefusedByName(t *testing.T) {
 	w := work()
 	w.RepositoryKey = "github.com/acme/shop-code"
 
-	err := runner(t, &checkout{dir: dir}, registry(t)).Run(t.Context(), w, &out{})
+	err := pushed(t.Context(), runner(t, &checkout{dir: dir}, registry(t)), w, &out{})
 	require.ErrorIs(t, err, deploy.ErrNotConfiguration)
 }
 
@@ -274,7 +280,7 @@ func TestWhatElseItRefuses(t *testing.T) {
 	// A tag is not a deployment: nothing in an environment table matches one.
 	w := work()
 	w.Ref = "refs/tags/v1.0.0"
-	err := runner(t, &checkout{dir: dir}, r).Run(t.Context(), w, &out{})
+	err := pushed(t.Context(), runner(t, &checkout{dir: dir}, r), w, &out{})
 	require.ErrorIs(t, err, deploy.ErrNotABranch)
 
 	// A branch no deployment claims, on a project whose table claims some.
@@ -289,12 +295,12 @@ func TestWhatElseItRefuses(t *testing.T) {
 
 	w = work()
 	w.Ref = "refs/heads/wip"
-	err = runner(t, &checkout{dir: narrow}, r).Run(t.Context(), w, &out{})
+	err = pushed(t.Context(), runner(t, &checkout{dir: narrow}, r), w, &out{})
 	require.ErrorIs(t, err, deploy.ErrNoDeployment)
 	require.ErrorContains(t, err, "production")
 
 	// A checkout that could not read the repository.
-	err = runner(t, &checkout{err: errors.New("no such ref")}, r).Run(t.Context(), work(), &out{})
+	err = pushed(t.Context(), runner(t, &checkout{err: errors.New("no such ref")}, r), work(), &out{})
 	require.ErrorContains(t, err, "no such ref")
 	require.ErrorContains(t, err, "0f1e2d3c", "the commit is named, so a rewritten branch is diagnosable")
 }
@@ -330,12 +336,12 @@ func TestConfigThatDoesNotCompile(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(broken, "zone", "bad.yaml"),
 		[]byte("id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Za\nnot_a_key: 1\n"), 0o644))
 
-	err := runner(t, &checkout{dir: broken}, registry(t)).Run(t.Context(), work(), &out{})
+	err := pushed(t.Context(), runner(t, &checkout{dir: broken}, registry(t)), work(), &out{})
 	require.ErrorContains(t, err, "not_a_key")
 
 	// A directory with no project at all.
-	err = runner(t, &checkout{dir: filepath.Join(t.TempDir(), "nothing")}, registry(t)).
-		Run(t.Context(), work(), &out{})
+	err = pushed(t.Context(), runner(t, &checkout{dir: filepath.Join(t.TempDir(), "nothing")}, registry(t)),
+		work(), &out{})
 	require.Error(t, err)
 }
 
@@ -351,7 +357,7 @@ func TestAuthFailingIsNotARefusal(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	err = d.Run(t.Context(), work(), &out{})
+	err = pushed(t.Context(), d, work(), &out{})
 	require.ErrorContains(t, err, "auth is down")
 	require.NotErrorIs(t, err, deploy.ErrNotConfiguration)
 }
@@ -371,7 +377,7 @@ func TestNoRegisterFailsAfterTheCompile(t *testing.T) {
 	require.NoError(t, err)
 
 	var log out
-	err = d.Run(t.Context(), work(), &log)
+	err = pushed(t.Context(), d, work(), &log)
 	require.ErrorContains(t, err, "no register is reachable")
 	require.Contains(t, log.String(), "compiled ", "the compile ran and said so before the fleet was needed")
 }
@@ -388,7 +394,7 @@ func TestAPublishThatFails(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	require.ErrorContains(t, d.Run(t.Context(), work(), &out{}), "refused")
+	require.ErrorContains(t, pushed(t.Context(), d, work(), &out{}), "refused")
 
 	// And a register that cannot even be read.
 	d, err = deploy.New(
@@ -399,7 +405,7 @@ func TestAPublishThatFails(t *testing.T) {
 		deploy.WithLocalRegister(unreadable{}),
 	)
 	require.NoError(t, err)
-	require.ErrorContains(t, d.Run(t.Context(), work(), &out{}), "unreadable")
+	require.ErrorContains(t, pushed(t.Context(), d, work(), &out{}), "unreadable")
 }
 
 type refusing struct{}
@@ -444,7 +450,7 @@ func TestACodePushIsDelegated(t *testing.T) {
 	w.RepositoryKey = "github.com/acme/shop-code"
 
 	var log out
-	require.NoError(t, d.Run(t.Context(), w, &log))
+	require.NoError(t, pushed(t.Context(), d, w, &log))
 	require.Equal(t, 1, b.calls, "the code push went to the builder")
 	require.Equal(t, w.RepositoryKey, b.saw.RepositoryKey)
 	require.Contains(t, log.String(), "delegated")
@@ -454,7 +460,7 @@ func TestACodePushIsDelegated(t *testing.T) {
 	// the deployments it reads are published.
 	b.calls = 0
 	log = out{}
-	require.NoError(t, d.Run(t.Context(), work(), &log))
+	require.NoError(t, pushed(t.Context(), d, work(), &log))
 	require.Equal(t, 1, b.calls)
 	require.Equal(t, work().RepositoryKey, b.saw.RepositoryKey)
 	require.Less(t, strings.Index(log.String(), "published"), strings.Index(log.String(), "delegated"), "published before it built")
@@ -473,7 +479,7 @@ func TestACodePushThatFails(t *testing.T) {
 
 	w := work()
 	w.RepositoryKey = "github.com/acme/shop-code"
-	require.ErrorContains(t, d.Run(t.Context(), w, &out{}), "the toolchain is not installed")
+	require.ErrorContains(t, pushed(t.Context(), d, w, &out{}), "the toolchain is not installed")
 }
 
 func TestWithBuilderRefusesNil(t *testing.T) {
@@ -485,6 +491,13 @@ type builderStub struct {
 	calls int
 	saw   backend.Work
 	err   error
+}
+
+// Plan is the deployments a code push feeds, as the builder reads them from what the
+// project publishes.
+func (b *builderStub) Plan(_ context.Context, w backend.Work, out io.Writer) ([]string, error) {
+	fmt.Fprintln(out, "planned")
+	return []string{"prod"}, nil
 }
 
 func (b *builderStub) Build(_ context.Context, w backend.Work, out backend.Output) error {
@@ -503,7 +516,7 @@ func TestAConfigNamingAnIdItDidNotClaimPublishesNothing(t *testing.T) {
 
 	w := work()
 	w.ProjectID = "QmSomebodyElsesProject"
-	err := runner(t, c, r, deploy.WithProjects(projects{config: w.RepositoryKey})).Run(t.Context(), w, &out{})
+	err := pushed(t.Context(), runner(t, c, r, deploy.WithProjects(projects{config: w.RepositoryKey})), w, &out{})
 	require.ErrorIs(t, err, deploy.ErrNotClaimed)
 	require.Contains(t, err.Error(), shopID)
 
@@ -516,7 +529,7 @@ func TestAConfigNamingAnIdItDidNotClaimPublishesNothing(t *testing.T) {
 func TestAnUnprovenZoneIsRefusedBeforeAnythingPublishes(t *testing.T) {
 	r := registry(t)
 	none := &domains{}
-	err := runner(t, &checkout{dir: fixture(t, basicFixture)}, r, deploy.WithDomains(none)).Run(t.Context(), work(), &out{})
+	err := pushed(t.Context(), runner(t, &checkout{dir: fixture(t, basicFixture)}, r, deploy.WithDomains(none)), work(), &out{})
 	require.ErrorIs(t, err, deploy.ErrUnproven)
 	require.ErrorContains(t, err, "example.com: no TXT record")
 	require.ErrorContains(t, err, "tau domain claim example.com")
@@ -530,7 +543,7 @@ func TestAnUnprovenZoneIsRefusedBeforeAnythingPublishes(t *testing.T) {
 		deploy.WithLocalRegister(r),
 	)
 	require.NoError(t, err)
-	err = d.Run(t.Context(), work(), &out{})
+	err = pushed(t.Context(), d, work(), &out{})
 	require.ErrorIs(t, err, deploy.ErrUnproven)
 	require.ErrorContains(t, err, "this cloud proves no domain")
 
@@ -540,6 +553,6 @@ func TestAnUnprovenZoneIsRefusedBeforeAnythingPublishes(t *testing.T) {
 
 func TestAProvenZonePublishes(t *testing.T) {
 	proven := provenAll()
-	require.NoError(t, runner(t, &checkout{dir: fixture(t, basicFixture)}, registry(t), deploy.WithDomains(proven)).Run(t.Context(), work(), &out{}))
+	require.NoError(t, pushed(t.Context(), runner(t, &checkout{dir: fixture(t, basicFixture)}, registry(t), deploy.WithDomains(proven)), work(), &out{}))
 	require.Equal(t, 1, proven.asked)
 }

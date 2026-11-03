@@ -356,6 +356,7 @@ func TestARedeliveryThatOverlapsTheFirstDeliveryDoesNotBuildTwice(t *testing.T) 
 	require.NoError(t, err)
 	require.True(t, h.mustStep(t), "the second delivery's job must run")
 	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
+	require.True(t, h.mustStep(t), "and the environment job it planned")
 
 	close(gate.release)
 	got := <-overlapped

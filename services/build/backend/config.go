@@ -15,6 +15,7 @@ import (
 	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/build"
+	"github.com/taubyte/tau/services/storage"
 )
 
 // Defaults, each a Config field set through New rather than a mutable package
@@ -272,6 +273,10 @@ type Work struct {
 	ProjectID string
 	// Attempt is which delivery this is, counting from one.
 	Attempt uint32
+	// Environment is the one deployment this run builds. Empty is a plan: the
+	// run reads which environments the commit feeds, and each becomes a job of
+	// its own.
+	Environment string
 }
 
 // Output is where a run puts what it produces, and is the log's writer. Nothing
@@ -282,34 +287,28 @@ type Work struct {
 type Output interface {
 	io.Writer
 
-	// Asset hands over one built artifact as bytes, read to EOF. The key composed from
-	// deployment and resource is this service's grammar, so a worker arrives at the
-	// same one.
-	Asset(ctx context.Context, environment, resourceID string, content io.Reader) error
+	// Asset hands over one built artifact of the run's environment as bytes, read
+	// to EOF. The key composed from deployment and resource is this service's
+	// grammar, so a worker arrives at the same one.
+	Asset(ctx context.Context, resourceID string, content io.Reader) error
 }
 
-// Assets is the byte store a build's output goes to (the storage service). A node
-// without one still builds, but its logs and artifacts die with the run. An
-// implementation owes:
-//
-//   - content addressing: the same bytes, the same id
-//   - durability on another node before it returns
-//   - one-pass streaming with no length known in advance
-//   - safety under concurrent calls
-//   - returning when ctx ends, which is a slice of the claim's margin
-//   - no identity: a cid is an address, and authorization is the frontend's
-//
-// Nothing unreferences an asset yet; that becomes a retention question once
-// terminal records are swept.
+// Assets is the storage service, where a build's artifacts and logs are kept in its
+// project's assets bucket for the job's environment: an artifact as a version of
+// its package's instance, a log as a version of the logs instance. A node without
+// one still builds, but its logs and artifacts die with the run.
 type Assets interface {
-	// Put stores content and returns the content id it is addressed by.
-	Put(ctx context.Context, content io.Reader) (cid string, err error)
+	Put(ctx context.Context, at storage.Address, name string, o storage.Object, content io.Reader) (storage.Version, error)
 }
 
 // Runner executes one job. A Service constructed without one serves and
 // replicates but claims nothing — which is what a node that holds the domain's
 // state but is not meant to run CI wants.
 type Runner interface {
+	// Plan reads which environments the pushed commit feeds, each of which
+	// becomes a job of its own. What it writes opens each of those jobs' logs.
+	Plan(ctx context.Context, w Work, out io.Writer) ([]string, error)
+
 	// Run executes one job and must return when ctx ends (Cancel, the claim deadline,
 	// Close). A run cut short by shutdown is abandoned, so the claim lapses and
 	// another node builds it. Leadership loss does not cancel it; the ack catches a

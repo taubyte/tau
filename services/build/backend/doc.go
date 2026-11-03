@@ -24,13 +24,19 @@
 //
 // New binds no port and opens nothing; it takes a host, one replicated store
 // (pkg/queue's Store) and one question for auth. The node supplies the Runner
-// and the Assets store (instance/build.go).
+// and the storage service as Assets (instance/build.go).
+//
+// A push is a plan job: the runner reads which environments the commit feeds, and
+// each becomes a job of its own (id over repository, ref, commit, environment),
+// since a build can depend on its environment. A plan keeps no log; what it said
+// opens each environment job's.
 //
 // A log is a file, and only its cid is replicated: while the build runs it is an
 // append-only file this node owns (services/build/livelog); followers read it at
-// an offset (Service.Follow); when the build ends it goes to the asset store
-// between settle's two sections and its cid lands on the record, only if the
-// whole log was stored.
+// an offset (Service.Follow); when the build ends it is LZW-compressed into the
+// logs instance of its environment's assets bucket between settle's two sections,
+// and its cid lands on the record, only if the whole log was stored. An artifact
+// is a version of its package's instance in the same bucket.
 //
 // Known gaps: a record's identity fields other than ID are whatever the body
 // hands over; a log can reach the asset store with no cid reaching any job if

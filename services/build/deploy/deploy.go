@@ -3,8 +3,9 @@
 // frontend, was authorized, and became a watched job.
 //
 // The pushed branch picks the deployments through the project's environment
-// table; the revision is the published one plus one. Each deployment is its own
-// compile, since per-environment keys resolve differently. A push to a code
+// table, each one a job of its own; the revision is the published one plus one.
+// Each deployment is its own compile, since per-environment keys resolve
+// differently. A push to a code
 // repository is delegated to services/build/artifact, and refused by name on a
 // node without a builder.
 package deploy
@@ -14,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 
@@ -81,6 +83,8 @@ type Checkout interface {
 // published (bare-path resources). An interface so this package does not import
 // the container runner.
 type Builder interface {
+	// Plan is which environments a code push feeds.
+	Plan(ctx context.Context, w backend.Work, out io.Writer) ([]string, error)
 	Build(ctx context.Context, w backend.Work, out backend.Output) error
 }
 
@@ -148,9 +152,43 @@ func New(opts ...Option) (*Deploy, error) {
 	}, nil
 }
 
-// Run publishes what the pushed commit compiles to. Every deployment compiles
-// before any publishes, so a project never goes half live; a compile error is
-// the runner's error.
+// Plan reads which environments the push feeds: a configuration push from the
+// pushed commit itself, so one that adds an environment builds it; a code push from
+// what the project publishes, through the builder.
+func (d *Deploy) Plan(ctx context.Context, w backend.Work, out io.Writer) ([]string, error) {
+	branch, ok := strings.CutPrefix(w.Ref, branchRef)
+	if !ok || branch == "" {
+		return nil, fmt.Errorf("%w: %s", ErrNotABranch, w.Ref)
+	}
+
+	configures, err := d.projects.Configures(ctx, w.ProjectID, w.RepositoryKey)
+	if err != nil {
+		return nil, fmt.Errorf("deploy: %w", err)
+	}
+	if !configures {
+		if d.builder == nil {
+			return nil, ErrNotConfiguration
+		}
+		return d.builder.Plan(ctx, w, out)
+	}
+
+	dir, done, err := d.checkout.Checkout(ctx, w.RepositoryKey, branch, w.CommitSHA)
+	if err != nil {
+		return nil, fmt.Errorf("deploy: reading %s at %s: %w", w.RepositoryKey, short(w.CommitSHA), err)
+	}
+	defer done()
+
+	names, err := deployments(afero.NewOsFs(), dir, branch)
+	if err != nil {
+		return nil, err
+	}
+	say(out, "%s feeds %s", branch, strings.Join(names, ", "))
+	return names, nil
+}
+
+// Run publishes what the pushed commit compiles to for the job's one environment,
+// then builds what it backs. Each environment is its own job, so one that fails to
+// compile does not hold back another.
 func (d *Deploy) Run(ctx context.Context, w backend.Work, out backend.Output) error {
 	branch, ok := strings.CutPrefix(w.Ref, branchRef)
 	if !ok || branch == "" {
@@ -176,48 +214,28 @@ func (d *Deploy) Run(ctx context.Context, w backend.Work, out backend.Output) er
 	}
 	defer done()
 
-	fs := afero.NewOsFs()
-	names, err := deployments(fs, dir, branch)
+	name := w.Environment
+	compiled, p, flat, err := compileFor(afero.NewOsFs(), dir, branch, name)
 	if err != nil {
 		return err
 	}
-	say(out, "%s feeds %s", branch, strings.Join(names, ", "))
-
-	type compiled struct {
-		name    string
-		bytes   []byte
-		project *specs.Project
-		views   []register.View
+	views, err := d.cut(flat, name, out)
+	if err != nil {
+		return err
 	}
-	plan := make([]compiled, 0, len(names))
-	for _, name := range names {
-		bytes, p, flat, err := compileFor(fs, dir, branch, name)
-		if err != nil {
-			return err
-		}
-		views, err := d.cut(flat, name, out)
-		if err != nil {
-			return err
-		}
-		plan = append(plan, compiled{name: name, bytes: bytes, project: p, views: views})
-		say(out, "compiled %s", name)
-	}
+	say(out, "compiled %s", name)
 
-	// Every compiled deployment must name w.ProjectID, the project this repository
+	// The compiled deployment must name w.ProjectID, the project this repository
 	// configures, or nothing is written.
-	for _, c := range plan {
-		if id := c.project.ID(); id != w.ProjectID {
-			return fmt.Errorf("%w: project.yaml names %q, and %s is linked as the configuration of %q — run `tau link` for this id, or put %q back",
-				ErrNotClaimed, id, w.RepositoryKey, w.ProjectID, w.ProjectID)
-		}
+	if id := p.ID(); id != w.ProjectID {
+		return fmt.Errorf("%w: project.yaml names %q, and %s is linked as the configuration of %q — run `tau link` for this id, or put %q back",
+			ErrNotClaimed, id, w.RepositoryKey, w.ProjectID, w.ProjectID)
 	}
 
 	proven := map[string]bool{}
-	for _, c := range plan {
-		for _, z := range c.project.Zones() {
-			if err := d.prove(ctx, w.ProjectID, z.Fqdn, proven); err != nil {
-				return err
-			}
+	for _, z := range p.Zones() {
+		if err := d.prove(ctx, w.ProjectID, z.Fqdn, proven); err != nil {
+			return err
 		}
 	}
 
@@ -226,30 +244,26 @@ func (d *Deploy) Run(ctx context.Context, w backend.Work, out backend.Output) er
 		return err
 	}
 
-	for _, c := range plan {
-		hosts, incomplete := hostsOf(c.project, d.cloudFqdn)
-
-		object, revision, unchanged, err := d.put(ctx, r, w.ProjectID, c.name, c.bytes, c.views, hosts)
-		if err != nil {
-			return err
-		}
-		if unchanged {
-			say(out, "%s unchanged at revision %d (%s)", c.name, revision, object)
-		} else {
-			say(out, "%s published as revision %d (%s)", c.name, revision, object)
-		}
-
-		for _, host := range hosts {
-			say(out, "    %s", host)
-		}
-		for _, host := range incomplete {
-			say(out, "    %s.<cloud fqdn> — not published; this cloud was not told its own zone", host)
-		}
+	hosts, incomplete := hostsOf(p, d.cloudFqdn)
+	object, revision, unchanged, err := d.put(ctx, r, w.ProjectID, name, compiled, views, hosts)
+	if err != nil {
+		return err
+	}
+	if unchanged {
+		say(out, "%s unchanged at revision %d (%s)", name, revision, object)
+	} else {
+		say(out, "%s published as revision %d (%s)", name, revision, object)
+	}
+	for _, host := range hosts {
+		say(out, "    %s", host)
+	}
+	for _, host := range incomplete {
+		say(out, "    %s.<cloud fqdn> — not published; this cloud was not told its own zone", host)
 	}
 
 	// A BARE PATH IS IN THIS REPOSITORY, so what it backs is built from this
 	// commit — after publishing, because the builder reads what to build from
-	// the deployments just published.
+	// the deployment just published.
 	if d.builder != nil {
 		return d.builder.Build(ctx, w, out)
 	}
@@ -456,7 +470,7 @@ func hostsOf(p *specs.Project, cloudFqdn string) (hosts, incomplete []string) {
 
 // say writes one line of the build log. A write that fails is not a build that
 // failed: the log is somebody watching, and the deploy is the point.
-func say(out backend.Output, format string, args ...any) {
+func say(out io.Writer, format string, args ...any) {
 	fmt.Fprintf(out, format+"\n", args...)
 }
 

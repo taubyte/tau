@@ -61,7 +61,7 @@ func TestAHostileRefCannotReachAnotherJobsRows(t *testing.T) {
 	victim := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	hostileRef := "refs/heads/../../../job/" + seg(victim) + "/attempt"
 
-	key := refLastKey("github.com/a/b", hostileRef)
+	key := refLastKey("github.com/a/b", hostileRef, testEnvironment)
 	require.NotContains(t, strings.TrimPrefix(key, rootSegment+"/"+indexSegment+"/"+refSegment+"/"),
 		"..", "a ref must not survive into a key as path syntax")
 	require.False(t, strings.HasPrefix(key, jobPrefix(victim)))

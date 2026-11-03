@@ -140,22 +140,22 @@ type arriving struct {
 	then  func()
 }
 
-func (a *arriving) Get(ctx context.Context, id string) (io.ReadSeekCloser, error) {
-	content, err := a.blobs.Get(ctx, id)
+func (a *arriving) Read(ctx context.Context, id string) (io.ReadCloser, error) {
+	content, err := a.blobs.Read(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	return &partway{ReadSeekCloser: content, after: a.after, then: a.then}, nil
+	return &partway{ReadCloser: content, after: a.after, then: a.then}, nil
 }
 
 type partway struct {
-	io.ReadSeekCloser
+	io.ReadCloser
 	after, read int
 	then        func()
 }
 
 func (p *partway) Read(b []byte) (int, error) {
-	n, err := p.ReadSeekCloser.Read(b)
+	n, err := p.ReadCloser.Read(b)
 	p.read += n
 	if p.then != nil && p.read >= p.after {
 		p.then()

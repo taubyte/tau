@@ -120,7 +120,7 @@ func TestCloseStopsTheClaimLoop(t *testing.T) {
 
 func TestCloseLeavesTheStoreAlone(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	require.NoError(t, h.Close())
 
@@ -149,7 +149,7 @@ func TestCloseAbandonsTheRunInFlightRatherThanFailingTheJob(t *testing.T) {
 	h := newHarnessCfg(t, func(c *Config) {
 		c.ClaimInterval = time.Millisecond
 	})
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	started := make(chan struct{})
 	h.runner.run = func(ctx context.Context, _ Work, _ Output) error {
@@ -185,7 +185,7 @@ func TestCloseAbandonsTheRunInFlightRatherThanFailingTheJob(t *testing.T) {
 
 func TestARunThatFinishedDuringAShutdownIsStillSettled(t *testing.T) {
 	h := newHarness(t)
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 
 	// The loop's context as Close leaves it, while a Runner that does not watch
 	// it finishes anyway.
@@ -197,7 +197,7 @@ func TestARunThatFinishedDuringAShutdownIsStillSettled(t *testing.T) {
 	require.True(t, worked)
 
 	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
-	require.Equal(t, testCommit, h.lastCommit(testRepo, testRef))
+	require.Equal(t, testCommit, h.lastCommit(testRepo, testRef, testEnvironment))
 
 	ready, claimed := h.work.Depth()
 	require.Equal(t, 0, ready)

@@ -151,7 +151,7 @@ func TestADeniedCallerIsRefusedOnEveryRPC(t *testing.T) {
 	} {
 		t.Run(tc.act.String(), func(t *testing.T) {
 			h := newWireHarness(t)
-			id := h.push(t, testRef, testCommit)
+			id := h.planned(t, testRef, testCommit)
 
 			h.authorizer.deny, h.authorizer.denyOn = tc.act, true
 			require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(tc.call(h, id)))
@@ -160,7 +160,7 @@ func TestADeniedCallerIsRefusedOnEveryRPC(t *testing.T) {
 
 	t.Run("list", func(t *testing.T) {
 		h := newWireHarness(t)
-		h.push(t, testRef, testCommit)
+		h.planned(t, testRef, testCommit)
 		h.authorizer.deny, h.authorizer.denyOn = ActRead, true
 
 		stream, err := h.Jobs.List(t.Context(), connect.NewRequest(&buildv2.ProjectRef{Id: "p"}))
@@ -231,7 +231,7 @@ func TestASnapshotEndsOverTheWireWhileAFollowStaysOpen(t *testing.T) {
 	finish := func() { once.Do(func() { close(lines) }) }
 	t.Cleanup(finish)
 
-	id := h.push(t, testRef, testCommit)
+	id := h.planned(t, testRef, testCommit)
 	select {
 	case <-started:
 	case <-time.After(10 * time.Second):

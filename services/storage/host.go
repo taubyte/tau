@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	ds "github.com/ipfs/go-datastore"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
+	"github.com/taubyte/tau/p2p/rpc"
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/placement"
 	"github.com/taubyte/tau/services/register"
@@ -89,3 +91,65 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 	}
 	return s.serve(ctx)
 }
+
+// Reached is the storage service as the services of an instance reach it: the one
+// beside them, else a node discovery names.
+type Reached struct{ reach *rpc.Reacher[Store] }
+
+var _ Store = (*Reached)(nil)
+
+// StoreOn is the storage service as services on h reach it.
+func StoreOn(h service.Host) *Reached {
+	return &Reached{reach: service.Reach(h, Descriptor.Name, Dial)}
+}
+
+func (r *Reached) Put(ctx context.Context, at Address, name string, o Object, content io.Reader) (Version, error) {
+	s, err := r.reach.Now(ctx)
+	if err != nil {
+		return Version{}, err
+	}
+	return s.Put(ctx, at, name, o, content)
+}
+
+func (r *Reached) Current(ctx context.Context, at Address, name string) (Version, error) {
+	s, err := r.reach.Now(ctx)
+	if err != nil {
+		return Version{}, err
+	}
+	return s.Current(ctx, at, name)
+}
+
+func (r *Reached) Versions(ctx context.Context, at Address, name string, limit int) ([]Version, error) {
+	s, err := r.reach.Now(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.Versions(ctx, at, name, limit)
+}
+
+func (r *Reached) List(ctx context.Context, at Address, prefix, after string, limit int) ([]Version, error) {
+	s, err := r.reach.Now(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.List(ctx, at, prefix, after, limit)
+}
+
+func (r *Reached) Delete(ctx context.Context, at Address, name string) (Version, error) {
+	s, err := r.reach.Now(ctx)
+	if err != nil {
+		return Version{}, err
+	}
+	return s.Delete(ctx, at, name)
+}
+
+func (r *Reached) Read(ctx context.Context, root string) (io.ReadCloser, error) {
+	s, err := r.reach.Now(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.Read(ctx, root)
+}
+
+// Close releases the stream to a storage node elsewhere, if one was opened.
+func (r *Reached) Close() error { return r.reach.Close() }

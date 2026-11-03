@@ -9,7 +9,7 @@ import (
 	"github.com/taubyte/tau/services/worker/admit"
 	"github.com/taubyte/tau/services/worker/cache"
 	nodeDatabase "github.com/taubyte/tau/services/worker/database"
-	"github.com/taubyte/tau/services/worker/storage"
+	"github.com/taubyte/tau/services/worker/objects"
 	"github.com/taubyte/tau/services/worker/volume"
 )
 
@@ -17,7 +17,7 @@ func TestEverySettingKeyNamesAnAttribute(t *testing.T) {
 	for kind, keys := range map[string][]string{
 		"cache":   append(append([]string(nil), cache.Settings...), admit.Settings...),
 		"volume":  volume.Settings,
-		"storage": storage.Settings,
+		"storage": objects.Settings,
 		// One key left: every other queue and log setting is read by services/primitives from
 		// the declaration; this is the consumer's own decision (instance/dispatch.go).
 		"sync":     {settingRetryEvery},

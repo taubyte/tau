@@ -42,6 +42,13 @@ type JobRecord struct {
 	Reason        string                 `protobuf:"bytes,12,opt,name=reason,proto3" json:"reason,omitempty"`
 	Logs          map[string]string      `protobuf:"bytes,13,rep,name=logs,proto3" json:"logs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Assets        map[string]string      `protobuf:"bytes,14,rep,name=assets,proto3" json:"assets,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// environment is the one deployment this job builds; empty for the plan job a
+	// push makes first, which enqueues one job per environment it feeds.
+	Environment string `protobuf:"bytes,15,opt,name=environment,proto3" json:"environment,omitempty"`
+	// prelude is what the plan said, which opens each environment job's log.
+	Prelude string `protobuf:"bytes,16,opt,name=prelude,proto3" json:"prelude,omitempty"`
+	// children is the environment jobs a plan enqueued, in environment order.
+	Children      []string `protobuf:"bytes,17,rep,name=children,proto3" json:"children,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -174,11 +181,32 @@ func (x *JobRecord) GetAssets() map[string]string {
 	return nil
 }
 
+func (x *JobRecord) GetEnvironment() string {
+	if x != nil {
+		return x.Environment
+	}
+	return ""
+}
+
+func (x *JobRecord) GetPrelude() string {
+	if x != nil {
+		return x.Prelude
+	}
+	return ""
+}
+
+func (x *JobRecord) GetChildren() []string {
+	if x != nil {
+		return x.Children
+	}
+	return nil
+}
+
 var File_tau_build_v2_store_proto protoreflect.FileDescriptor
 
 const file_tau_build_v2_store_proto_rawDesc = "" +
 	"\n" +
-	"\x18tau/build/v2/store.proto\x12\ftau.build.v2\x1a\x18tau/build/v2/build.proto\"\xd8\x04\n" +
+	"\x18tau/build/v2/store.proto\x12\ftau.build.v2\x1a\x18tau/build/v2/build.proto\"\xb0\x05\n" +
 	"\tJobRecord\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12/\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x17.tau.build.v2.JobStatusR\x06status\x12%\n" +
@@ -198,7 +226,10 @@ const file_tau_build_v2_store_proto_rawDesc = "" +
 	"\x06holder\x18\v \x01(\tR\x06holder\x12\x16\n" +
 	"\x06reason\x18\f \x01(\tR\x06reason\x125\n" +
 	"\x04logs\x18\r \x03(\v2!.tau.build.v2.JobRecord.LogsEntryR\x04logs\x12;\n" +
-	"\x06assets\x18\x0e \x03(\v2#.tau.build.v2.JobRecord.AssetsEntryR\x06assets\x1a7\n" +
+	"\x06assets\x18\x0e \x03(\v2#.tau.build.v2.JobRecord.AssetsEntryR\x06assets\x12 \n" +
+	"\venvironment\x18\x0f \x01(\tR\venvironment\x12\x18\n" +
+	"\aprelude\x18\x10 \x01(\tR\aprelude\x12\x1a\n" +
+	"\bchildren\x18\x11 \x03(\tR\bchildren\x1a7\n" +
 	"\tLogsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a9\n" +

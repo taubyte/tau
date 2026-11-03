@@ -20,9 +20,19 @@ import (
 // Deterministic so queue dedup and Enqueue idempotency are one mechanism; being
 // guessable, it is never a bearer token.
 func jobID(key repokey.Key, ref, commitSHA string) string {
+	return framed(key.String(), ref, commitSHA)
+}
+
+// environmentJobID names the build of one environment of one push: the same framing
+// over a fourth field, so it is never the push's own plan job.
+func environmentJobID(key repokey.Key, ref, commitSHA, environment string) string {
+	return framed(key.String(), ref, commitSHA, environment)
+}
+
+func framed(fields ...string) string {
 	h := sha256.New()
 	h.Write([]byte(jobIDDomain))
-	for _, field := range []string{key.String(), ref, commitSHA} {
+	for _, field := range fields {
 		var length [8]byte
 		binary.BigEndian.PutUint64(length[:], uint64(len(field)))
 		h.Write(length[:])

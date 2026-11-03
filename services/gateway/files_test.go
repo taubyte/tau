@@ -66,7 +66,7 @@ func (b *builtFiles) Artifact(_ context.Context, project, environment, kind, id 
 	return shopArtifact, nil
 }
 
-func (b *builtFiles) Get(_ context.Context, id string) (io.ReadSeekCloser, error) {
+func (b *builtFiles) Read(_ context.Context, id string) (io.ReadCloser, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.gets++
@@ -74,12 +74,8 @@ func (b *builtFiles) Get(_ context.Context, id string) (io.ReadSeekCloser, error
 	if !ok {
 		return nil, errors.New("no provider for that cid")
 	}
-	return nopSeeker{bytes.NewReader(content)}, nil
+	return io.NopCloser(bytes.NewReader(content)), nil
 }
-
-type nopSeeker struct{ *bytes.Reader }
-
-func (nopSeeker) Close() error { return nil }
 
 // storefront is the website's generated name, under the given cloud.
 func storefront(t *testing.T, cloud string) string {
@@ -164,8 +160,8 @@ func TestUnpackedFilesStayWithinTheirBudget(t *testing.T) {
 		"one": tarball(t, map[string]string{"a": "aaaa"}),
 		"two": tarball(t, map[string]string{"b": "bbbb"}),
 	}}
-	open := func(id string) func() (io.ReadSeekCloser, error) {
-		return func() (io.ReadSeekCloser, error) { return store.Get(t.Context(), id) }
+	open := func(id string) func() (io.ReadCloser, error) {
+		return func() (io.ReadCloser, error) { return store.Read(t.Context(), id) }
 	}
 
 	first, release, err := u.acquire(t.Context(), "one", open("one"))
@@ -199,10 +195,10 @@ func TestAWaitThatEndsLeavesTheArtifactToOthers(t *testing.T) {
 	store := &builtFiles{artifacts: map[string][]byte{"one": tarball(t, map[string]string{"a": "aaaa"})}}
 	opened := make(chan struct{})
 	go func() {
-		_, release, err := u.acquire(context.Background(), "one", func() (io.ReadSeekCloser, error) {
+		_, release, err := u.acquire(context.Background(), "one", func() (io.ReadCloser, error) {
 			close(opened)
 			<-gate
-			return store.Get(t.Context(), "one")
+			return store.Read(t.Context(), "one")
 		})
 		if err == nil {
 			release()
