@@ -3,7 +3,7 @@ package wasm
 import (
 	"errors"
 
-	"github.com/samyfodil/wazy/component"
+	"github.com/samyfodil/warpjs/hostmod"
 
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/invoke/secret"
@@ -12,7 +12,7 @@ import (
 // secret.go serves `taubyte:secret/vault` from pkg/invoke/secret, the host module
 // every engine attaches.
 
-var secretInterface = secret.Definition.Name()
+const secretInterface = secret.Interface
 
 // ErrNoSecrets is a spec that grants a secret on a tier composed without a backing.
 var ErrNoSecrets = errors.New("wasm: this resource reads a secret and this tier has nothing to read one with")
@@ -28,6 +28,6 @@ func WithSecrets(s Secrets) Option {
 
 func secretGrantsOf(spec invoke.Spec) map[string]invoke.Grant { return secret.GrantsOf(spec) }
 
-func (r *Runtime) secretImports(spec invoke.Spec) []component.Option {
-	return attach(secret.Module(spec, r.secrets))
+func (r *Runtime) secretModule(reg *hostmod.Registry, spec invoke.Spec) error {
+	return secret.Register(reg, spec, r.secrets)
 }

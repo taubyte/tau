@@ -6,7 +6,10 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/samyfodil/warpjs/hostmod"
 	"github.com/stretchr/testify/require"
+
+	"github.com/taubyte/tau/pkg/invoke"
 )
 
 // Holds wit/deps and host.go's rows to each other: a world import nothing registers
@@ -49,7 +52,15 @@ func TestEveryImportedInterfaceHasAHostComponent(t *testing.T) {
 	var registered []string
 	for _, c := range hostComponents() {
 		require.NotEmpty(t, c.iface, "%s names no interface", c.name)
-		require.NotNil(t, c.register, "%s registers nothing", c.name)
+		require.True(t, (c.register == nil) != (c.module == nil), "%s must register imports or define a module, one of the two", c.name)
+		if c.module != nil {
+			reg := hostmod.New()
+			require.NoError(t, c.module(&Runtime{}, reg, invoke.Spec{}))
+			provided, err := reg.Interfaces()
+			require.NoError(t, err)
+			require.Len(t, provided, 1, "%s's module provides more than its interface", c.name)
+			require.Equal(t, c.iface, provided[0].Name, "%s's module provides another interface", c.name)
+		}
 		registered = append(registered, c.iface)
 	}
 	sort.Strings(registered)

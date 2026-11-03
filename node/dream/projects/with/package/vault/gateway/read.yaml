@@ -1,0 +1,14 @@
+id: QmRn597Cx5cXWQ8BPS4JMMbq4LEv9bMVzhtmuGrjKonTL8
+description: the reader's own host
+host:
+    zone:
+        in:
+            name: example_com
+        name: reader
+route:
+    path: /
+    match: prefix
+    methods: [GET]
+    handler:
+        function:
+            name: reader

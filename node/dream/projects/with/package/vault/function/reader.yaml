@@ -1,0 +1,11 @@
+id: QmSSumLpvBM8vHPASQuwdRwi1YyuXTwdR3opsg5VqzowuH
+description: answers with a fingerprint of signing_key as it reads it at the call, through the vault module, so a rotation is seen by the next request
+package:
+    name: fingerprint_code
+execution:
+    call: reader
+    timeout: 15s
+    memory: 64MB
+secret:
+    signing_key:
+        ops: [get]

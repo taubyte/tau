@@ -1,7 +1,7 @@
 package js
 
 import (
-	"warpjs/engine"
+	"github.com/samyfodil/warpjs/engine"
 
 	"github.com/taubyte/tau/pkg/invoke"
 )

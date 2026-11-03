@@ -7,9 +7,11 @@
 //
 // The handler is the Workers shape: the entry's default export (or the one
 // `execution/call` names) is an object with `fetch(request, env, ctx)`. The prelude
-// supplies Request, Response, Headers, TextEncoder, TextDecoder and console. `env`
-// is empty until host capabilities reach JS; `ctx.waitUntil` keeps the instance
-// checked out until its work settles or the deadline hits.
+// supplies Request, Response, Headers, TextEncoder, TextDecoder and console. A host
+// capability written as a host module is an ES module the function imports by its
+// WIT name (`import { get } from "taubyte:secret/vault"`), with jco's binding
+// profile; `env` is empty. `ctx.waitUntil` keeps the instance checked out until its
+// work settles or the deadline hits.
 //
 // `execution/memory` is the arena cap and `execution/timeout` the deadline; a call
 // hitting either retires the instance. The deadline is armed three ways until
@@ -30,11 +32,13 @@ import (
 	"strings"
 	"time"
 
-	"warpjs/engine"
+	"github.com/samyfodil/warpjs/engine"
+	"github.com/samyfodil/warpjs/hostmod"
 
 	_ "embed"
 
 	"github.com/taubyte/tau/pkg/invoke"
+	"github.com/taubyte/tau/pkg/invoke/secret"
 	"github.com/taubyte/tau/pkg/specs"
 )
 
@@ -80,6 +84,10 @@ var (
 	// ErrNoMounts is a function that declared a filesystem. A realm has none,
 	// so what it wrote would vanish with the instance.
 	ErrNoMounts = errors.New("js: a realm is given no filesystem, and the workload declared a mount")
+
+	// ErrNoSecrets is a function granted a secret on a tier composed without a
+	// vault.
+	ErrNoSecrets = errors.New("js: this resource reads a secret and this tier has nothing to read one with")
 
 	// ErrNoHandler is an entry module that does not export a handler.
 	ErrNoHandler = errors.New("js: the entry exports no handler")
@@ -161,6 +169,8 @@ type Runtime struct {
 
 	warn func(format string, args ...any)
 
+	secrets secret.Reader
+
 	// realm installs more into each realm before its bundle runs. Only tests
 	// set it, to give a handler a host-async call to wait on.
 	realm func(*engine.Runtime) error
@@ -195,6 +205,11 @@ func WithOutput(sink func(spec invoke.Spec) (stdout, stderr io.Writer)) Option {
 // not a reason to refuse a workload.
 func WithWarn(warn func(format string, args ...any)) Option {
 	return func(r *Runtime) { r.warn = warn }
+}
+
+// WithSecrets is what backs `taubyte:secret/vault`.
+func WithSecrets(s secret.Reader) Option {
+	return func(r *Runtime) { r.secrets = s }
 }
 
 // New builds the tier.
@@ -258,6 +273,9 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 	if mounted := spec.Mounted(); len(mounted) > 0 {
 		return nil, fmt.Errorf("%w: %s wants %s", ErrNoMounts, spec.Name, mounted[0].Label)
 	}
+	if len(secret.GrantsOf(spec)) > 0 && r.secrets == nil {
+		return nil, fmt.Errorf("%w: %s", ErrNoSecrets, spec.Name)
+	}
 	r.unserved(spec)
 
 	b, err := r.fetch(ctx, spec.Artifact)
@@ -294,12 +312,24 @@ func (r *Runtime) fetch(ctx context.Context, artifact string) (*bundle, error) {
 	return readBundle(data, r.maxArchive)
 }
 
-// unserved says which of the workload's grants have no host interface in
-// JS yet. None does until the WIT bridge lands, so the handler's env is empty.
+// modules is spec's host modules, one registry per realm since each closes over
+// what its spec is granted.
+func (r *Runtime) modules(spec invoke.Spec) (*hostmod.Registry, error) {
+	reg := hostmod.New()
+	if err := secret.Register(reg, spec, r.secrets); err != nil {
+		return nil, err
+	}
+	return reg, nil
+}
+
+// served is every kind a host module here answers.
+var served = map[string]bool{specs.KindSecret: true}
+
+// unserved says which of the workload's grants have no host module in JS yet.
 func (r *Runtime) unserved(spec invoke.Spec) {
 	kinds := map[string]bool{}
 	for _, g := range spec.Reaches {
-		if g.Kind != invoke.MountKind {
+		if g.Kind != invoke.MountKind && !served[g.Kind] {
 			kinds[g.Kind] = true
 		}
 	}
@@ -311,7 +341,7 @@ func (r *Runtime) unserved(spec invoke.Spec) {
 		names = append(names, kind)
 	}
 	sort.Strings(names)
-	r.say("js: %s declares access this tier has no host interface for yet (%s); its env is empty",
+	r.say("js: %s declares access this tier has no host module for yet (%s)",
 		spec.Name, strings.Join(names, ", "))
 }
 

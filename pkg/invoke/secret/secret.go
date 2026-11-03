@@ -8,15 +8,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+
+	"github.com/samyfodil/warpjs/hostmod"
+	"github.com/samyfodil/wazy/component"
+	"github.com/samyfodil/wazy/component/wit"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/invoke/hostmodule"
 	witfs "github.com/taubyte/tau/pkg/invoke/wasm/wit"
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// Definition is the interface, read from the WIT guests are built against.
-var Definition = hostmodule.MustDefine(witfs.FS, "deps/taubyte-secret", "taubyte:secret/vault@0.1.0")
+// Interface is the vault as a guest imports it.
+const Interface = "taubyte:secret/vault@0.1.0"
 
 // The vocabulary declares one verb for this kind, and it is a read.
 const opGet = "get"
@@ -28,6 +32,10 @@ const (
 	caseNotSet       = "not-set"
 	caseUnavailable  = "unavailable"
 )
+
+// definition is the WIT guests are built against, read once, and cases its error
+// variant's case indices by name.
+var definition, cases = define()
 
 // ErrNotSet is a declared secret with no value: its own arm, never an empty string.
 var ErrNotSet = errors.New("secret: nothing is set under that name")
@@ -52,11 +60,15 @@ func GrantsOf(spec invoke.Spec) map[string]invoke.Grant {
 	return out
 }
 
-// Module is spec's vault: what it is granted, read through r. A nil r answers
-// unavailable, so the guest is told rather than trapped.
-func Module(spec invoke.Spec, r Reader) hostmodule.Module {
+// Register defines the vault in reg and implements it as spec's: what it is granted,
+// read through r. A nil r answers unavailable, so the guest is told rather than
+// trapped.
+func Register(reg *hostmod.Registry, spec invoke.Spec, r Reader) error {
+	if err := reg.Define(definition); err != nil {
+		return err
+	}
 	grants := GrantsOf(spec)
-	get := func(ctx context.Context, args []hostmodule.Value) (hostmodule.Value, error) {
+	get := func(ctx context.Context, args []hostmod.Value) ([]hostmod.Value, error) {
 		label, ok := args[0].(string)
 		if !ok {
 			return nil, fmt.Errorf("secret.get: argument is %T, want string", args[0])
@@ -77,22 +89,38 @@ func Module(spec invoke.Spec, r Reader) hostmodule.Module {
 		value, err := r.SecretFor(ctx, grant)
 		switch {
 		case errors.Is(err, ErrNotSet):
-			return hostmodule.Fail(hostmodule.Variant{Case: caseNotSet}), nil
+			return failure(caseNotSet, nil), nil
 		case err != nil:
 			// The value never appears in a message.
 			return failure(caseUnavailable, err.Error()), nil
 		}
-		return hostmodule.Ok(value), nil
+		return []hostmod.Value{hostmod.ResultValue{Payload: value}}, nil
 	}
-
-	m, err := Definition.Implement(map[string]hostmodule.Func{"get": get})
-	if err != nil {
-		// The definition is this package's own WIT, and get is all it declares.
-		panic(err)
-	}
-	return m
+	return reg.Implement(Interface, "get", get)
 }
 
-func failure(c, detail string) hostmodule.Result {
-	return hostmodule.Fail(hostmodule.Variant{Case: c, Payload: detail})
+func failure(c string, detail hostmod.Value) []hostmod.Value {
+	return []hostmod.Value{hostmod.ResultValue{IsErr: true, Payload: hostmod.VariantValue{Disc: cases[c], Payload: detail}}}
+}
+
+// define is the vault's WIT and its error's case indices, which the WIT orders.
+func define() (*wit.Package, map[string]uint32) {
+	pkg, err := wit.ParseFS(witfs.FS, "deps/taubyte-secret")
+	if err != nil {
+		panic(err)
+	}
+	iface := pkg.Interface(Interface)
+	i := slices.IndexFunc(iface.Funcs, func(f *wit.Func) bool { return f.Name == opGet })
+	sig, err := iface.Funcs[i].Signature(nil)
+	if err != nil {
+		panic(err)
+	}
+	resolve := sig.Types.Resolver()
+	result := resolve(*sig.Desc.Results.Unnamed.TypeIndex).(component.ResultDesc)
+	variant := resolve(*result.Err.TypeIndex).(component.VariantDesc)
+	out := map[string]uint32{}
+	for i, c := range variant.Cases {
+		out[c.Name] = uint32(i)
+	}
+	return pkg, out
 }

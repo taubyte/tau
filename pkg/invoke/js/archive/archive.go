@@ -17,7 +17,7 @@ import (
 	"sort"
 	"strings"
 
-	"warpjs/engine"
+	"github.com/samyfodil/warpjs/engine"
 )
 
 const (
@@ -37,7 +37,7 @@ const (
 	DefaultMax = 64 << 20
 
 	// modulePath is the engine's module path in a binary's build info.
-	modulePath = "warpjs"
+	modulePath = "github.com/samyfodil/warpjs"
 )
 
 var (

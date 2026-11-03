@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"warpjs/engine"
+	"github.com/samyfodil/warpjs/engine"
 
 	"github.com/taubyte/tau/pkg/invoke"
 	js "github.com/taubyte/tau/pkg/invoke/js"

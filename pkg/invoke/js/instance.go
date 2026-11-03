@@ -10,7 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"warpjs/engine"
+	"github.com/samyfodil/warpjs/engine"
+	"github.com/samyfodil/warpjs/hostmod"
 
 	"github.com/taubyte/tau/pkg/invoke"
 )
@@ -65,6 +66,10 @@ type instance struct {
 var _ invoke.Instance = (*instance)(nil)
 
 func (r *Runtime) instantiate(ctx context.Context, spec invoke.Spec, b *bundle, export string) (*instance, error) {
+	modules, err := r.modules(spec)
+	if err != nil {
+		return nil, fmt.Errorf("js: %s's host modules: %w", spec.Name, err)
+	}
 	memory := spec.Memory
 	if memory <= 0 {
 		memory = DefaultMemory
@@ -86,7 +91,7 @@ func (r *Runtime) instantiate(ctx context.Context, spec invoke.Spec, b *bundle, 
 	a := i.arm(deadline)
 	run, stop := i.bound(ctx, deadline)
 	err = facade(func() error {
-		return rt.RunContext(run, func() error { return i.boot(r, b, export, stdout, stderr, run, deadline) })
+		return rt.RunContext(run, func() error { return i.boot(r, b, modules, export, stdout, stderr, run, deadline) })
 	})
 	stop()
 	if a.disarm() && err == nil {
@@ -108,8 +113,14 @@ func newRealm(opts ...engine.Option) (rt *engine.Runtime, err error) {
 	return rt, err
 }
 
+// glueFunc is one function the prelude hands back, and where the instance keeps it.
+type glueFunc struct {
+	name string
+	into *engine.Value
+}
+
 // boot runs the prelude, evaluates the entry and binds its handler.
-func (i *instance) boot(r *Runtime, b *bundle, export string, stdout, stderr io.Writer, ctx context.Context, deadline time.Time) error {
+func (i *instance) boot(r *Runtime, b *bundle, modules *hostmod.Registry, export string, stdout, stderr io.Writer, ctx context.Context, deadline time.Time) error {
 	install, err := i.rt.RunProgram(r.prelude)
 	if err != nil {
 		return fmt.Errorf("js: running the prelude: %w", err)
@@ -122,16 +133,20 @@ func (i *instance) boot(r *Runtime, b *bundle, export string, stdout, stderr io.
 	if err != nil {
 		return fmt.Errorf("js: running the prelude: %w", err)
 	}
-	i.answer = glue.Get("answer")
-	i.settleWork = glue.Get("settle")
-	i.guard = glue.Get("guard")
-	i.reserve = glue.Get("reserve")
+	for _, f := range []glueFunc{{"answer", &i.answer}, {"settle", &i.settleWork}, {"guard", &i.guard}, {"reserve", &i.reserve}} {
+		if *f.into, err = glue.Get(f.name); err != nil {
+			return fmt.Errorf("js: running the prelude: %w", err)
+		}
+	}
 	if r.realm != nil {
 		if err := r.realm(i.rt); err != nil {
 			return err
 		}
 	}
 
+	if err := i.rt.SetHostModules(modules); err != nil {
+		return fmt.Errorf("js: %s's host modules: %w", i.name, err)
+	}
 	i.rt.SetModuleHost(b.host())
 	imported, err := i.rt.ImportModule("", b.entry, nil)
 	if err != nil {
@@ -142,7 +157,15 @@ func (i *instance) boot(r *Runtime, b *bundle, export string, stdout, stderr io.
 		return fmt.Errorf("evaluating %s: %w", b.entry, err)
 	}
 
-	bound, err := i.rt.Call(glue.Get("bind"), engine.Value{}, ns, i.rt.ToValue(export))
+	bind, err := glue.Get("bind")
+	if err != nil {
+		return fmt.Errorf("js: running the prelude: %w", err)
+	}
+	name, err := i.rt.ToValue(export)
+	if err != nil {
+		return err
+	}
+	bound, err := i.rt.Call(bind, engine.Value{}, ns, name)
 	if err != nil {
 		return fmt.Errorf("%w: %s: %w", ErrNoHandler, b.entry, err)
 	}
@@ -164,7 +187,11 @@ func (i *instance) Serve(ctx context.Context, req *invoke.Request) (*invoke.Resp
 	a := i.arm(deadline)
 
 	resp, waiting, err := i.handle(ctx, req, deadline)
-	if err != nil || !i.pending(waiting) {
+	pending := false
+	if err == nil {
+		pending, err = i.pending(waiting)
+	}
+	if err != nil || !pending {
 		if err := i.leave(err, a); err != nil {
 			return nil, err
 		}
@@ -260,7 +287,10 @@ func pairs(headers map[string][]string) []string {
 // wait runs posted work and promise jobs until p settles, the deadline passes
 // or ctx ends.
 func (i *instance) wait(ctx context.Context, p engine.Value, deadline time.Time) (engine.Value, error) {
-	state, result, ok := i.rt.PromiseState(p)
+	state, result, ok, err := i.rt.PromiseState(p)
+	if err != nil {
+		return engine.Value{}, err
+	}
 	if !ok {
 		return p, nil
 	}
@@ -274,7 +304,14 @@ func (i *instance) wait(ctx context.Context, p engine.Value, deadline time.Time)
 	if err != nil {
 		return engine.Value{}, err
 	}
-	cancel := guarded.Get("1")
+	cancel, err := guarded.Get("1")
+	if err != nil {
+		return engine.Value{}, err
+	}
+	race, err := guarded.Get("0")
+	if err != nil {
+		return engine.Value{}, err
+	}
 	stop := context.AfterFunc(ctx, func() {
 		i.rt.Post(func() {
 			// Outside ctx, which is over and would interrupt the very call
@@ -288,16 +325,16 @@ func (i *instance) wait(ctx context.Context, p engine.Value, deadline time.Time)
 	})
 	defer stop()
 
-	v, err := i.rt.Await(guarded.Get("0"), deadline)
+	v, err := i.rt.Await(race, deadline)
 	if err != nil && ctx.Err() != nil {
 		return engine.Value{}, ctx.Err()
 	}
 	return v, err
 }
 
-func (i *instance) pending(v engine.Value) bool {
-	state, _, ok := i.rt.PromiseState(v)
-	return ok && state == engine.PromisePending
+func (i *instance) pending(v engine.Value) (bool, error) {
+	state, _, ok, err := i.rt.PromiseState(v)
+	return ok && state == engine.PromisePending, err
 }
 
 // enter takes the gate: one request at a time, whatever concurrency the spec

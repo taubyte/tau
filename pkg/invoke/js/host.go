@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"warpjs/engine"
+	"github.com/samyfodil/warpjs/engine"
 
 	"github.com/taubyte/tau/pkg/invoke"
 )
@@ -23,7 +23,10 @@ import (
 var errWindow = errors.New("js: the prelude's window does not hold what it was told")
 
 func (i *instance) hostObject(stdout, stderr io.Writer) (engine.Value, error) {
-	host := i.rt.NewObject()
+	host, err := i.rt.NewObject()
+	if err != nil {
+		return engine.Value{}, err
+	}
 	type hostFunc struct {
 		name string
 		fn   engine.HostFunction
@@ -166,7 +169,11 @@ func (i *instance) fit(body []byte) error {
 		return nil
 	}
 	if room, ok := i.rt.Bytes(i.window); !ok || len(room) < len(body) {
-		if _, err := i.rt.Call(i.reserve, engine.Value{}, i.rt.ToValue(len(body))); err != nil {
+		size, err := i.rt.ToValue(len(body))
+		if err != nil {
+			return err
+		}
+		if _, err := i.rt.Call(i.reserve, engine.Value{}, size); err != nil {
 			return err
 		}
 	}

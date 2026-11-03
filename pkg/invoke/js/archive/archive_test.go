@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"warpjs/engine"
+	"github.com/samyfodil/warpjs/engine"
 )
 
 func unpack(t *testing.T, data []byte) (*zip.Reader, map[string][]byte) {

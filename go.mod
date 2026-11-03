@@ -88,7 +88,7 @@ require (
 	gopkg.in/ini.v1 v1.67.0
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools/v3 v3.5.2
-	warpjs v0.0.0
+	github.com/samyfodil/warpjs v0.0.0
 )
 
 require (
@@ -294,9 +294,8 @@ require (
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
 
-// warpjs is built from a local export until it publishes a module path a public
-// module can require (its go.mod says `module warpjs`). scripts/warpjs-sync
+// warpjs is built from a local export, never fetched. scripts/warpjs-sync
 // exports the commit pinned in scripts/warpjs.commit into .deps/warpjs, never
 // the warpjs working tree, and scripts/rtest runs it and ships the export, so a
 // clean worktree builds on a build server too.
-replace warpjs => ./.deps/warpjs
+replace github.com/samyfodil/warpjs => ./.deps/warpjs

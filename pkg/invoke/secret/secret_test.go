@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/samyfodil/warpjs/hostmod"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/invoke/hostmodule"
 	"github.com/taubyte/tau/pkg/invoke/secret"
 )
 
@@ -28,12 +28,35 @@ func (v vault) SecretFor(_ context.Context, grant invoke.Grant) ([]byte, error) 
 	}
 }
 
-func get(t *testing.T, spec invoke.Spec, r secret.Reader, label string) hostmodule.Value {
+func vaultOf(t *testing.T, spec invoke.Spec, r secret.Reader) hostmod.Func {
 	t.Helper()
-	m := secret.Module(spec, r)
-	out, err := m.Funcs["get"](t.Context(), []hostmodule.Value{label})
+	reg := hostmod.New()
+	require.NoError(t, secret.Register(reg, spec, r))
+	in, err := reg.Interface(secret.Interface)
 	require.NoError(t, err)
-	return out
+	require.Len(t, in.Funcs, 1)
+	require.Equal(t, "get", in.Funcs[0].Name)
+	return in.Funcs[0].Impl
+}
+
+func get(t *testing.T, spec invoke.Spec, r secret.Reader, label string) hostmod.Value {
+	t.Helper()
+	out, err := vaultOf(t, spec, r)(t.Context(), []hostmod.Value{label})
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	return out[0]
+}
+
+// The cases of the WIT's error, in its order.
+const (
+	noSuchSecret uint32 = iota
+	denied
+	notSet
+	unavailable
+)
+
+func fail(disc uint32, detail hostmod.Value) hostmod.Value {
+	return hostmod.ResultValue{IsErr: true, Payload: hostmod.VariantValue{Disc: disc, Payload: detail}}
 }
 
 func grant(label, handle string, ops ...string) invoke.Grant {
@@ -53,28 +76,31 @@ func TestEachArmOfARead(t *testing.T) {
 
 	type testCase struct {
 		label string
-		want  hostmodule.Value
+		want  hostmod.Value
 	}
 	for _, tc := range []testCase{
-		{"stripe", hostmodule.Ok([]byte("sk_live_1"))},
-		{"unset", hostmodule.Fail(hostmodule.Variant{Case: "not-set"})},
-		{"down", hostmodule.Fail(hostmodule.Variant{Case: "unavailable", Payload: errDown.Error()})},
-		{"put", hostmodule.Fail(hostmodule.Variant{Case: "denied", Payload: "put cannot get"})},
-		{"aws", hostmodule.Fail(hostmodule.Variant{Case: "denied", Payload: "this cloud does not serve that store"})},
-		{"sessions", hostmodule.Fail(hostmodule.Variant{Case: "no-such-secret", Payload: "sessions"})},
+		{"stripe", hostmod.ResultValue{Payload: []byte("sk_live_1")}},
+		{"unset", fail(notSet, nil)},
+		{"down", fail(unavailable, errDown.Error())},
+		{"put", fail(denied, "put cannot get")},
+		{"aws", fail(denied, "this cloud does not serve that store")},
+		{"sessions", fail(noSuchSecret, "sessions")},
 	} {
 		require.Equal(t, tc.want, get(t, spec, v, tc.label), tc.label)
 	}
 
-	require.Equal(t,
-		hostmodule.Fail(hostmodule.Variant{Case: "unavailable", Payload: "this node has nothing to read a secret with"}),
-		get(t, spec, nil, "stripe"))
+	require.Equal(t, fail(unavailable, "this node has nothing to read a secret with"), get(t, spec, nil, "stripe"))
 }
 
 func TestAnArgumentThatIsNotALabelTraps(t *testing.T) {
-	m := secret.Module(invoke.Spec{}, vault{})
-	_, err := m.Funcs["get"](t.Context(), []hostmodule.Value{uint32(1)})
+	_, err := vaultOf(t, invoke.Spec{}, vault{})(t.Context(), []hostmod.Value{uint32(1)})
 	require.ErrorContains(t, err, "want string")
+}
+
+func TestARegistryARuntimeHoldsIsRefused(t *testing.T) {
+	reg := hostmod.New()
+	require.NoError(t, reg.Freeze())
+	require.ErrorIs(t, secret.Register(reg, invoke.Spec{}, vault{}), hostmod.ErrFrozen)
 }
 
 func TestOnlySecretGrantsAreTheVaults(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	"path"
 	"strings"
 
-	"warpjs/engine"
+	"github.com/samyfodil/warpjs/engine"
 
 	"github.com/taubyte/tau/pkg/invoke/js/archive"
 )

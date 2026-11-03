@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"warpjs/engine"
+	"github.com/samyfodil/warpjs/engine"
 
 	"github.com/taubyte/tau/pkg/invoke"
 	js "github.com/taubyte/tau/pkg/invoke/js"
@@ -102,14 +102,24 @@ func (l *logs) option() js.Option {
 // later(ms) is a promise resolved from another goroutine, the shape every
 // host-async capability will have.
 func later(rt *engine.Runtime) error {
-	return rt.Set("later", rt.NewFunction("later", func(call engine.FunctionCall) (engine.Value, error) {
-		wait := time.Duration(call.Argument(0).ToInteger()) * time.Millisecond
-		p, resolve, _ := rt.NewPromise()
-		time.AfterFunc(wait, func() {
+	fn, err := rt.NewFunction("later", func(call engine.FunctionCall) (engine.Value, error) {
+		ms, err := call.Argument(0).ToInteger()
+		if err != nil {
+			return engine.Value{}, err
+		}
+		p, resolve, _, err := rt.NewPromise()
+		if err != nil {
+			return engine.Value{}, err
+		}
+		time.AfterFunc(time.Duration(ms)*time.Millisecond, func() {
 			rt.Post(func() { resolve(nil) })
 		})
 		return p, nil
-	}))
+	})
+	if err != nil {
+		return err
+	}
+	return rt.Set("later", fn)
 }
 
 type fixture struct {

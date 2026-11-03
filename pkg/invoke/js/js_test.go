@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"warpjs/engine"
+	"github.com/samyfodil/warpjs/engine"
 
 	"github.com/taubyte/tau/pkg/invoke"
 	js "github.com/taubyte/tau/pkg/invoke/js"
@@ -122,16 +122,19 @@ func TestStartSaysWhenTheAssetCannotBeRead(t *testing.T) {
 
 func TestUnservedGrantsAreSaidOutLoud(t *testing.T) {
 	var said []string
-	f := newFixture(t, hello, js.WithWarn(func(format string, args ...any) {
+	f := newFixture(t, hello, js.WithSecrets(reader{}), js.WithWarn(func(format string, args ...any) {
 		said = append(said, format)
 		for _, a := range args {
 			said = append(said, a.(string))
 		}
 	}))
-	f.spec.Reaches = []invoke.Grant{{Kind: "storage", Label: "files"}, {Kind: "cache", Label: "hot"}, {Kind: "cache", Label: "cold"}}
+	f.spec.Reaches = []invoke.Grant{
+		{Kind: "storage", Label: "files"}, {Kind: "cache", Label: "hot"}, {Kind: "cache", Label: "cold"},
+		{Kind: "secret", Label: "key", Handle: "h1", Ops: []string{"get"}},
+	}
 	f.start()
 	require.Len(t, said, 3)
-	require.Contains(t, said[0], "no host interface for yet")
+	require.Contains(t, said[0], "no host module for yet")
 	require.Equal(t, []string{f.spec.Name, "cache, storage"}, said[1:])
 }
 

@@ -1,5 +1,5 @@
 id: QmaxmLjMLRLH39smhqNKdNnNHgCRuq4xGih5pvzHMCtHFK
-description: the build reads signing_key when its step asks, never from its environment, and writes only a fingerprint of it into the bundle
+description: the build reads signing_key when its step asks, never from its environment, and writes only a fingerprint of it into the bundle; the vault module the reader imports is the host's, so the bundle leaves it out
 type: warp
 source: services/fingerprint
 output: dist/worker.js
@@ -10,7 +10,7 @@ build:
           commands:
               - key=$(/.taubyte/secret signing_key)
               - printf 'export const fingerprint = "%s";\n' "$(printf %s "$key" | sha256sum | cut -c1-16)" > src/fingerprint.js
-              - rolldown src/index.js --format esm --platform neutral --file dist/worker.js
+              - rolldown src/index.js --format esm --platform neutral --external taubyte:secret/vault --file dist/worker.js
 secret:
     signing_key:
         ops: [get]

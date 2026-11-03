@@ -514,12 +514,13 @@ func (n *Node) openWorker() error {
 		// function to instantiate. See authorizer.go.
 		n.decider = component
 
-		// A JS FUNCTION REACHES NOTHING YET: its env is empty until host
-		// capabilities have a JS binding, and the tier says so for each one a
-		// workload declares rather than refusing it.
+		// A JS function reaches what is written as a host module, the vault so
+		// far, and the tier warns for each other capability a workload declares
+		// rather than refusing it.
 		script, err := js.New(n.opts.assets,
 			js.WithMode(js.Mode(n.cfg.Worker.Engines.JS)),
 			js.WithOutput(workloadLog),
+			js.WithSecrets(n.vault),
 			js.WithWarn(func(format string, args ...any) { logger.Warnf(format, args...) }))
 		if err != nil {
 			return err

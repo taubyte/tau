@@ -322,12 +322,14 @@ var corpus = []corpusCase{
 	}},
 	// A BUILD READS A SECRET through the helper, set the way a developer sets one: both
 	// builds bake in the fingerprint of the value set, and neither has it in its
-	// environment.
+	// environment. A function of the same package reads it at the call, through the
+	// vault module.
 	{name: "with/package/vault", prepare: func(t *testing.T, work string) {
 		t.Setenv("TAU_SECRET_SIGNING_KEY", signingKey)
 		ok(t, "secrets", "set", "signing_key", signingKey, "--dir", work, "--env", "prod")
 	}, probes: []probe{
 		{host: "vault.example.com", method: http.MethodGet, path: "/", status: 200, answer: fingerprintOf(signingKey)},
+		{host: "reader.example.com", method: http.MethodGet, path: "/", status: 200, answer: fingerprintOf(signingKey)},
 	}},
 	// ONE HOST, A FUNCTION ON EACH TIER: the componentized one says it is js
 	// compiled to wasm, and the packed one answers on the js tier.

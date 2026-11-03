@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/samyfodil/warpjs/hostmod"
 	"github.com/samyfodil/wazy/component"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -38,6 +39,10 @@ type hostComponent struct {
 
 	// register is the imports for one instantiation.
 	register func(*Runtime, invoke.Spec) []component.Option
+
+	// module, for a capability written as a host module, defines it in the one
+	// registry an instantiation's host modules share, in place of register.
+	module func(*Runtime, *hostmod.Registry, invoke.Spec) error
 }
 
 // hostComponents is every capability served, in the order a guest meets them; a
@@ -148,12 +153,12 @@ func hostComponents() []hostComponent {
 			register: (*Runtime).channelImports,
 		},
 		{
-			name:     "secret",
-			iface:    secretInterface,
-			reaches:  secretGrantsOf,
-			backed:   func(r *Runtime) bool { return r.secrets != nil },
-			missing:  ErrNoSecrets,
-			register: (*Runtime).secretImports,
+			name:    "secret",
+			iface:   secretInterface,
+			reaches: secretGrantsOf,
+			backed:  func(r *Runtime) bool { return r.secrets != nil },
+			missing: ErrNoSecrets,
+			module:  (*Runtime).secretModule,
 		},
 		{
 			name:     "model",
@@ -177,13 +182,24 @@ func hostComponents() []hostComponent {
 // capability with no backing is refused at Start rather than failing per request.
 func (r *Runtime) imports(spec invoke.Spec) ([]component.Option, error) {
 	var out []component.Option
+	reg := hostmod.New()
 	for _, c := range hostComponents() {
 		if c.reaches != nil && len(c.reaches(spec)) > 0 && !c.backed(r) {
 			return nil, fmt.Errorf("%w: %s", c.missing, spec.Name)
 		}
+		if c.module != nil {
+			if err := c.module(r, reg, spec); err != nil {
+				return nil, fmt.Errorf("%s: %s: %w", spec.Name, c.name, err)
+			}
+			continue
+		}
 		out = append(out, c.register(r, spec)...)
 	}
-	return out, nil
+	modules, err := reg.ComponentOptions()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", spec.Name, err)
+	}
+	return append(out, modules...), nil
 }
 
 // unserved warns about every declared capability no row here answers. The composer

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"warpjs/engine"
+	"github.com/samyfodil/warpjs/engine"
 
 	"github.com/taubyte/tau/pkg/invoke"
 	js "github.com/taubyte/tau/pkg/invoke/js"
@@ -213,6 +213,21 @@ func newRealm(b *testing.B, mode js.Mode, kernel string, n int, run context.Cont
 	return r
 }
 
+// bind is the kernel to call and its argument.
+func (r *realm) bind(b testing.TB, kernel string, n int) {
+	b.Helper()
+	kernels, err := r.rt.Get("kernels")
+	if err != nil {
+		b.Fatal(err)
+	}
+	if r.fn, err = kernels.Get(kernel); err != nil {
+		b.Fatal(err)
+	}
+	if r.arg, err = r.rt.ToValue(n); err != nil {
+		b.Fatal(err)
+	}
+}
+
 func (r *realm) start(b *testing.B) {
 	for {
 		inst, err := r.f.tier.Start(context.Background(), r.f.spec)
@@ -220,8 +235,7 @@ func (r *realm) start(b *testing.B) {
 			b.Fatal(err)
 		}
 		r.inst, r.rt = inst, js.Realm(inst)
-		r.fn = r.rt.Get("kernels").Get(r.kernel)
-		r.arg = r.rt.ToValue(r.n)
+		r.bind(b, r.kernel, r.n)
 		least := minWarm
 		if r.replaced > 0 {
 			least = 0
@@ -488,7 +502,7 @@ func BenchmarkWarmup(b *testing.B) {
 			f := newFixture(b, kernels, js.WithMode(mode))
 			inst := f.start()
 			r := &realm{inst: inst, rt: js.Realm(inst)}
-			r.fn, r.arg = r.rt.Get("kernels").Get("loop"), r.rt.ToValue(loopN)
+			r.bind(b, "loop", loopN)
 			took := make([]time.Duration, 500)
 			for i := range took {
 				t := time.Now()
