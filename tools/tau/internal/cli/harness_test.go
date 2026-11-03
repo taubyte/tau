@@ -81,6 +81,8 @@ type frontend struct {
 	// gone is the runs whose log was not kept.
 	runLogs map[string]string
 	gone    map[string]bool
+	// planFails is the reason a push's plan fails with; empty plans it.
+	planFails string
 	// rerunOnDrop makes the job a dropped follow was reading run again: the
 	// run it was on loses its log and the next one starts. refused is the runs
 	// whose read is a 503, which with rerunOnDrop run again too.
@@ -329,6 +331,9 @@ func newFrontend(t *testing.T) *frontend {
 		built := id + "-prod"
 		f.queued = append(f.queued, what)
 		f.jobs[id] = &buildv2.Job{Id: id, Status: buildv2.JobStatus_JobStatusSuccess, Timestamp: 1700000300, Attempt: 1, Children: []string{built}}
+		if f.planFails != "" {
+			f.jobs[id].Status, f.jobs[id].Children, f.jobs[id].Reason = buildv2.JobStatus_JobStatusFailed, nil, f.planFails
+		}
 		f.jobs[built] = &buildv2.Job{Id: built, Status: f.finish, Timestamp: 1700000300, Attempt: 1, Environment: "prod", Logs: map[string]string{"1": "bafylog"}}
 		f.logs[built] = "built " + what + "\n"
 		f.mu.Unlock()

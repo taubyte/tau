@@ -217,6 +217,7 @@ func logsCommand(env Env) *cobra.Command {
 	}
 	cmd.Flags().BoolP("follow", "f", false, "follow while the job runs, reconnecting at the offset reached")
 	cmd.Flags().Int64("offset", 0, "start at this byte of the log")
+	cmd.Flags().Duration("interval", 2*time.Second, "how often a followed push's plan is looked at until it has queued its builds")
 	return cmd
 }
 

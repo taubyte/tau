@@ -111,6 +111,23 @@ func (c *Client) do(ctx context.Context, method string, path []string, query url
 	if err != nil {
 		return nil, err
 	}
+	// A REQUEST REFUSED FOR ITS RATE IS SENT AGAIN WHEN THE CLOUD SAYS, if it can be
+	// sent again: one with a body has spent it.
+	for tries := 0; resp.StatusCode == http.StatusTooManyRequests && body == nil && tries < MaxRateRetries; tries++ {
+		wait, ok := retryAfter(resp.Header)
+		if !ok {
+			break
+		}
+		resp.Body.Close()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(wait):
+		}
+		if resp, err = c.authed.Do(req.Clone(ctx)); err != nil {
+			return nil, err
+		}
+	}
 	if resp.StatusCode >= 300 {
 		defer resp.Body.Close()
 		type refusalJSON struct {
@@ -121,6 +138,19 @@ func (c *Client) do(ctx context.Context, method string, path []string, query url
 		return nil, &Error{Status: resp.StatusCode, Message: refusal.Error, Header: resp.Header}
 	}
 	return resp, nil
+}
+
+// MaxRateRetries is how many times a request the cloud refused for its rate is sent
+// again, each after the Retry-After it was answered with.
+const MaxRateRetries = 5
+
+// retryAfter is how long a refusal says to wait, in whole seconds.
+func retryAfter(h http.Header) (time.Duration, bool) {
+	seconds, err := strconv.Atoi(h.Get("Retry-After"))
+	if err != nil || seconds < 0 {
+		return 0, false
+	}
+	return time.Duration(seconds) * time.Second, true
 }
 
 func (c *Client) json(ctx context.Context, method string, path []string, body io.Reader, out any) error {

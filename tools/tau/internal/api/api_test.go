@@ -443,3 +443,67 @@ func TestBuildsTheCloudRefuses(t *testing.T) {
 	_, err = c.Deployments(t.Context(), "p")
 	require.Error(t, err)
 }
+
+func TestARefusalForRateIsSentAgainWhenTheCloudSays(t *testing.T) {
+	var hits atomic.Int32
+	c := server(t, func(w http.ResponseWriter, r *http.Request) {
+		if hits.Add(1) == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Write([]byte(`["job-1"]`))
+	})
+	ids, err := c.Jobs(t.Context(), "proj")
+	require.NoError(t, err)
+	require.Equal(t, []string{"job-1"}, ids)
+	require.Equal(t, int32(2), hits.Load())
+
+	// ONE THAT SAYS NOTHING, or keeps refusing, is the refusal it was.
+	for _, header := range []string{"", "soon"} {
+		hits.Store(0)
+		c := server(t, func(w http.ResponseWriter, r *http.Request) {
+			hits.Add(1)
+			if header != "" {
+				w.Header().Set("Retry-After", header)
+			}
+			w.WriteHeader(http.StatusTooManyRequests)
+		})
+		_, err := c.Jobs(t.Context(), "proj")
+		require.True(t, IsStatus(err, http.StatusTooManyRequests))
+		require.Equal(t, int32(1), hits.Load())
+	}
+	hits.Store(0)
+	c = server(t, func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+	})
+	_, err = c.Jobs(t.Context(), "proj")
+	require.True(t, IsStatus(err, http.StatusTooManyRequests))
+	require.Equal(t, int32(1+MaxRateRetries), hits.Load(), "and it is sent again a bounded number of times")
+}
+
+func TestARequestWithABodyIsNotSentAgain(t *testing.T) {
+	var hits atomic.Int32
+	c := server(t, func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+	})
+	_, err := c.Upload(t.Context(), "proj", "", "refs/heads/main", bytes.NewReader([]byte("bundle")))
+	require.True(t, IsStatus(err, http.StatusTooManyRequests))
+	require.Equal(t, int32(1), hits.Load(), "its body is spent")
+}
+
+func TestAWaitForTheRateEndsWithTheCaller(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	c := server(t, func(w http.ResponseWriter, r *http.Request) {
+		// The caller gives up while it waits out the hour it was told.
+		cancel()
+		w.Header().Set("Retry-After", "3600")
+		w.WriteHeader(http.StatusTooManyRequests)
+	})
+	_, err := c.Jobs(ctx, "proj")
+	require.ErrorIs(t, err, context.Canceled)
+}

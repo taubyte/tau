@@ -505,3 +505,56 @@ func TestSecrets(t *testing.T) {
 	require.Equal(t, []byte("s3cret"), x.f.secrets["proj-1/prod"][idOf("api_key")])
 	require.Equal(t, []string{"Environment", "Value of api_key"}, x.prompter.asked)
 }
+
+// A PUSH'S PLAN KEEPS NO LOG: tau logs names the jobs it queued, and following it
+// follows them.
+func TestTheLogsOfAPlanAreItsJobs(t *testing.T) {
+	x := newTester(t)
+	x.login()
+	x.f.mu.Lock()
+	x.f.jobs["plan"] = &buildv2.Job{Id: "plan", Status: buildv2.JobStatus_JobStatusSuccess, Attempt: 1, Children: []string{"job-1"}}
+	x.f.jobs["planning"] = &buildv2.Job{Id: "planning", Status: buildv2.JobStatus_JobStatusClaimed, Attempt: 1}
+	x.f.jobs["waiting"] = &buildv2.Job{Id: "waiting", Status: buildv2.JobStatus_JobStatusOpen}
+	x.f.jobs["broken"] = &buildv2.Job{Id: "broken", Status: buildv2.JobStatus_JobStatusFailed, Attempt: 1, Reason: "the commit feeds no environment"}
+	x.f.mu.Unlock()
+
+	r := x.run("logs", "plan")
+	require.Zero(t, r.code, r.stderr)
+	require.Empty(t, r.stdout)
+	require.Contains(t, r.stderr, "job plan is a push's plan and keeps no log; it built as job-1")
+	require.Contains(t, x.run("logs", "planning").stderr, "it has queued no build yet")
+	require.Contains(t, x.run("logs", "waiting").stderr, "job waiting is queued: it has logged nothing yet")
+
+	followed := x.run("logs", "plan", "--follow")
+	require.Zero(t, followed.code, followed.stderr)
+	require.Contains(t, followed.stderr, "job plan: building as job job-1")
+	require.Equal(t, "stored: step one\nstep two\n", followed.stdout)
+
+	broke := x.run("logs", "broken", "--follow")
+	require.Zero(t, broke.code, broke.stderr)
+	require.Contains(t, broke.stderr, "job broken: the commit feeds no environment")
+	require.Empty(t, broke.stdout)
+
+	// A plan that ends while it is followed is waited for.
+	go func() {
+		x.f.mu.Lock()
+		defer x.f.mu.Unlock()
+		x.f.jobs["planning"].Status, x.f.jobs["planning"].Children = buildv2.JobStatus_JobStatusSuccess, []string{"job-1"}
+	}()
+	planned := x.run("logs", "planning", "--follow", "--interval", "10ms")
+	require.Zero(t, planned.code, planned.stderr)
+	require.Equal(t, "stored: step one\nstep two\n", planned.stdout)
+}
+
+// tau ci run of a push whose plan failed says why, and fails.
+func TestCIRunOfAFailedPlanSaysWhy(t *testing.T) {
+	x := newTester(t)
+	x.login()
+	x.link("proj-1")
+	x.f.mu.Lock()
+	x.f.planFails = "the commit feeds no environment"
+	x.f.mu.Unlock()
+	r := x.run("ci", "run", "--dir", x.dir, "--commit", strings.Repeat("c", 40), "--branch", "main", "--interval", "10ms")
+	require.Equal(t, 1, r.code, r.stderr)
+	require.Contains(t, r.stderr, "the commit feeds no environment")
+}
