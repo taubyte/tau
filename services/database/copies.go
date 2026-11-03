@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/taubyte/tau/pkg/database"
-	databaseService "github.com/taubyte/tau/services/database"
 )
 
 // The copies of a database this node keeps, the half below the engines.
@@ -55,9 +54,9 @@ type Ledgers interface {
 	Store(spec database.Spec) (database.Store, error)
 }
 
-// Holdings is the copies of a database this node keeps: where each one's entries
-// go, what it has on disk, and letting go of one. Construct it with NewHoldings.
-type Holdings struct {
+// Copies is the copies of a database this node keeps: where each one's entries
+// go, what it has on disk, and letting go of one. Construct it with NewCopies.
+type Copies struct {
 	stores  Stores
 	ledgers Ledgers
 	disk    Disk
@@ -67,21 +66,21 @@ type Holdings struct {
 }
 
 var (
-	_ databaseService.Holdings = (*Holdings)(nil)
-	_ database.Stores          = (*Holdings)(nil).Entries
+	_ Holdings        = (*Copies)(nil)
+	_ database.Stores = (*Copies)(nil).Entries
 )
 
-// NewHoldings wires the adapter. disk may be nil (the factory cannot say what it
+// NewCopies wires the adapter. disk may be nil (the factory cannot say what it
 // holds): it then holds nothing as far as peers know. stores and ledgers may not be
 // nil.
-func NewHoldings(stores Stores, ledgers Ledgers, disk Disk) (*Holdings, error) {
+func NewCopies(stores Stores, ledgers Ledgers, disk Disk) (*Copies, error) {
 	if stores == nil {
 		return nil, errors.New("database: nowhere to keep a database's entries")
 	}
 	if ledgers == nil {
 		return nil, errors.New("database: no answer for a raft database, not even a refusal")
 	}
-	return &Holdings{stores: stores, ledgers: ledgers, disk: disk}, nil
+	return &Copies{stores: stores, ledgers: ledgers, disk: disk}, nil
 }
 
 // Entries is the provider every resident engine on this node is handed: the
@@ -89,7 +88,7 @@ func NewHoldings(stores Stores, ledgers Ledgers, disk Disk) (*Holdings, error) {
 //
 // The store is kept, so two opens of one database share it and a node carries as
 // many as it HOLDS rather than as many as exist.
-func (h *Holdings) Entries(_ context.Context, spec database.Spec) (database.Store, error) {
+func (h *Copies) Entries(_ context.Context, spec database.Spec) (database.Store, error) {
 	// Which store is the database's own `consensus` declaration. A ledger is a store too,
 	// so pkg/database's kv engine serves both unchanged.
 	if spec.Consensus == database.Raft {
@@ -118,7 +117,7 @@ func (h *Holdings) Entries(_ context.Context, spec database.Spec) (database.Stor
 	return store, nil
 }
 
-func (h *Holdings) Held(ctx context.Context, spec database.Spec) bool {
+func (h *Copies) Held(ctx context.Context, spec database.Spec) bool {
 	name, err := Name(spec)
 	if err != nil {
 		return false
@@ -132,7 +131,7 @@ func (h *Holdings) Held(ctx context.Context, spec database.Spec) bool {
 
 // Destroy drops this node's copy, and drops it from the table first: see the
 // package doc for what serving from a destroyed store did.
-func (h *Holdings) Destroy(ctx context.Context, spec database.Spec) error {
+func (h *Copies) Destroy(ctx context.Context, spec database.Spec) error {
 	name, err := Name(spec)
 	if err != nil {
 		return err
@@ -145,7 +144,7 @@ func (h *Holdings) Destroy(ctx context.Context, spec database.Spec) error {
 	return h.stores.Release(ctx, name)
 }
 
-func (h *Holdings) OnDisk(ctx context.Context) []database.Spec {
+func (h *Copies) OnDisk(ctx context.Context) []database.Spec {
 	if h.disk == nil {
 		return nil
 	}

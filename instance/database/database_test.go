@@ -16,10 +16,10 @@ import (
 	docengine "github.com/taubyte/tau/pkg/database/engines/document"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	copies "github.com/taubyte/tau/services/database"
 )
 
-// The copies a node keeps: which store a database's entries go into, what it holds,
-// and what releasing one does to the table.
+// The fakes the adapter's tau-backed engines keep their entries in.
 
 // stores is a Stores double: one store per NAME, which is what a real factory
 // gives — a database is named, and opening it twice is opening the same rows. A
@@ -200,287 +200,12 @@ func unaddressable() database.Spec {
 	return database.Spec{Type: database.KV, Name: "ledger"}
 }
 
-func holdings(t *testing.T, s backing.Stores, l backing.Ledgers, d backing.Disk) *backing.Holdings {
+func holdings(t *testing.T, s copies.Stores, l copies.Ledgers, d copies.Disk) *copies.Copies {
 	t.Helper()
-	h, err := backing.NewHoldings(s, l, d)
+	h, err := copies.NewCopies(s, l, d)
 	require.NoError(t, err)
 	return h
 }
-
-func TestOneNameAddressesADatabaseAndNamesItsTopic(t *testing.T) {
-	name, err := backing.Name(kvSpec("shop", "QmSessions"))
-	require.NoError(t, err)
-	require.Equal(t, backing.Prefix+"/shop/prod/kv/QmSessions", name)
-
-	// AND A SPEC THAT ADDRESSES NOTHING NAMES NOTHING.
-	_, err = backing.Name(unaddressable())
-	require.ErrorIs(t, err, database.ErrUnaddressable)
-}
-
-func TestADatabaseIsNamedUnderItsOwnPrefix(t *testing.T) {
-	require.Equal(t, "databases", backing.Prefix)
-}
-
-func TestNewHoldingsRefusesWhatItCannotDoWithout(t *testing.T) {
-	_, err := backing.NewHoldings(nil, &ledgers{}, nil)
-	require.ErrorContains(t, err, "nowhere to keep")
-
-	_, err = backing.NewHoldings(newStores(), nil, nil)
-	require.ErrorContains(t, err, "not even a refusal")
-
-	// AND A FACTORY THAT CANNOT BE ASKED WHAT IT HOLDS IS ALLOWED, because the
-	// interface a composer satisfies is also satisfied by handles that keep no
-	// bytes at all.
-	_, err = backing.NewHoldings(newStores(), &ledgers{}, nil)
-	require.NoError(t, err)
-}
-
-func TestAStoreIsOpenedPerDatabaseAndKept(t *testing.T) {
-	kept := newStores()
-	h := holdings(t, kept, &ledgers{}, nil)
-
-	for _, spec := range []database.Spec{
-		kvSpec("shop", "QmA"), kvSpec("shop", "QmB"), kvSpec("other", "QmA"),
-	} {
-		store, err := h.Entries(t.Context(), spec)
-		require.NoError(t, err)
-		require.NoError(t, store.Put(t.Context(), "k", []byte("v")))
-	}
-
-	opened, _ := kept.did()
-	require.Equal(t, []string{
-		backing.Prefix + "/shop/prod/kv/QmA",
-		backing.Prefix + "/shop/prod/kv/QmB",
-		backing.Prefix + "/other/prod/kv/QmA",
-	}, opened)
-
-	// AND ASKING AGAIN OPENS NOTHING MORE: a database this node already holds
-	// costs no second topic and no second subscription.
-	for range 3 {
-		_, err := h.Entries(t.Context(), kvSpec("shop", "QmA"))
-		require.NoError(t, err)
-	}
-	opened, _ = kept.did()
-	require.Len(t, opened, 3, "reopening a held database opened another store: %v", opened)
-}
-
-func TestTwoDatabasesAreTwoSetsOfRows(t *testing.T) {
-	h := holdings(t, newStores(), &ledgers{}, nil)
-
-	mine, err := h.Entries(t.Context(), kvSpec("shop", "QmA"))
-	require.NoError(t, err)
-	theirs, err := h.Entries(t.Context(), kvSpec("shop", "QmB"))
-	require.NoError(t, err)
-	elsewhere, err := h.Entries(t.Context(), kvSpec("market", "QmA"))
-	require.NoError(t, err)
-
-	require.NoError(t, mine.Put(t.Context(), "k", []byte("mine")))
-	require.NoError(t, theirs.Put(t.Context(), "k", []byte("theirs")))
-	require.NoError(t, elsewhere.Put(t.Context(), "k", []byte("elsewhere")))
-
-	for want, store := range map[string]database.Store{
-		"mine": mine, "theirs": theirs, "elsewhere": elsewhere,
-	} {
-		value, held, err := store.Get(t.Context(), "k")
-		require.NoError(t, err)
-		require.True(t, held)
-		require.Equal(t, want, string(value))
-	}
-}
-
-func TestTheConsensusPicksTheStoreAndNotASecondEngine(t *testing.T) {
-	kept, ordered := newStores(), &ledgers{store: &rows{held: map[string][]byte{}}}
-	h := holdings(t, kept, ordered, nil)
-
-	ledger, err := h.Entries(t.Context(), ledgerSpec())
-	require.NoError(t, err)
-	require.Same(t, ordered.store, ledger)
-	require.Equal(t, 1, ordered.count())
-
-	opened, _ := kept.did()
-	require.Empty(t, opened, "a ledger opened a crdt store as well: %v", opened)
-
-	// AND A DATABASE THAT DECLARED NOTHING IS A CRDT ONE, which is what every
-	// caller that predates the field keeps getting.
-	silent := kvSpec("shop", "QmSessions")
-	silent.Consensus = ""
-	_, err = h.Entries(t.Context(), silent)
-	require.NoError(t, err)
-	require.Equal(t, 1, ordered.count(), "a database with no consensus was sent to a group")
-
-	// AND A LEDGER IS ASKED EVERY TIME rather than cached here: which group is
-	// open, and whether it has elected, is the ledger table's to answer.
-	_, err = h.Entries(t.Context(), ledgerSpec())
-	require.NoError(t, err)
-	require.Equal(t, 2, ordered.count())
-
-	ordered.err = errors.New("no group")
-	_, err = h.Entries(t.Context(), ledgerSpec())
-	require.ErrorContains(t, err, "no group")
-}
-
-func TestAnUnaddressableSpecOpensNoStore(t *testing.T) {
-	kept := newStores()
-	h := holdings(t, kept, &ledgers{}, nil)
-
-	_, err := h.Entries(t.Context(), unaddressable())
-	require.ErrorIs(t, err, database.ErrUnaddressable)
-
-	opened, _ := kept.did()
-	require.Empty(t, opened)
-}
-
-func TestAStoreThatCouldNotBeOpenedIsNotKept(t *testing.T) {
-	kept := newStores()
-	kept.openErr = errors.New("no database factory")
-	h := holdings(t, kept, &ledgers{}, nil)
-
-	_, err := h.Entries(t.Context(), kvSpec("shop", "QmA"))
-	require.ErrorContains(t, err, "no database factory")
-
-	kept.openErr = nil
-	store, err := h.Entries(t.Context(), kvSpec("shop", "QmA"))
-	require.NoError(t, err)
-	require.NotNil(t, store)
-}
-
-func TestHeldIsAnsweredFromTheDiskAndNotTheTable(t *testing.T) {
-	has := &disk{holds: map[string]bool{backing.Prefix + "/shop/prod/kv/QmA": true}}
-	h := holdings(t, newStores(), &ledgers{}, has)
-
-	require.True(t, h.Held(t.Context(), kvSpec("shop", "QmA")),
-		"a copy this node has never opened in this run was reported as not held")
-	require.False(t, h.Held(t.Context(), kvSpec("shop", "QmB")))
-
-	// A SPEC THAT ADDRESSES NOTHING IS NOT HELD, because there is no path to
-	// ask about.
-	require.False(t, h.Held(t.Context(), unaddressable()))
-
-	// AND A DISK THAT COULD NOT BE READ HOLDS NOTHING, as far as anybody else is
-	// concerned: answering "yes" on a failed read would let a peer drop the last
-	// copy.
-	has.holdErr = errors.New("the datastore is closed")
-	require.False(t, h.Held(t.Context(), kvSpec("shop", "QmA")))
-}
-
-func TestAFactoryThatCannotBeAskedHoldsNothing(t *testing.T) {
-	h := holdings(t, newStores(), &ledgers{}, nil)
-
-	require.False(t, h.Held(t.Context(), kvSpec("shop", "QmA")))
-	require.Nil(t, h.OnDisk(t.Context()))
-}
-
-func TestOnDiskReadsBackWhatTheNameWrote(t *testing.T) {
-	has := &disk{paths: []string{
-		backing.Prefix + "/shop/prod/kv/QmA",
-		backing.Prefix + "/shop/staging/document/QmOrders",
-		// Not four segments: the CRDT's own bookkeeping, and a database at the
-		// wrong depth is not a database.
-		backing.Prefix + "/shop/prod/kv",
-		backing.Prefix + "/shop/prod/kv/QmA/heads/one",
-		// Another kind's store entirely, which Paths already filters by prefix.
-		"caches/shop/prod/QmCache",
-	}}
-	h := holdings(t, newStores(), &ledgers{}, has)
-
-	require.Equal(t, []database.Spec{
-		{Project: "shop", Environment: "prod", Type: database.KV, Name: "QmA"},
-		{Project: "shop", Environment: "staging", Type: database.Document, Name: "QmOrders"},
-	}, h.OnDisk(t.Context()))
-
-	// AND A DISK THAT COULD NOT BE WALKED IS NOT AN EMPTY NODE. A sweep told
-	// this node holds nothing would move everything off it.
-	has.pathErr = errors.New("the datastore is closed")
-	require.Nil(t, h.OnDisk(t.Context()))
-}
-
-func TestAReleasedDatabaseIsNotServedFromTheTableAgain(t *testing.T) {
-	kept := newStores()
-	h := holdings(t, kept, &ledgers{}, nil)
-	spec := kvSpec("shop", "QmA")
-
-	first, err := h.Entries(t.Context(), spec)
-	require.NoError(t, err)
-
-	require.NoError(t, h.Destroy(t.Context(), spec))
-	require.True(t, first.(*rows).gone(),
-		"the release destroyed a store the node was not serving from")
-
-	_, released := kept.did()
-	require.Equal(t, []string{backing.Prefix + "/shop/prod/kv/QmA"}, released)
-
-	again, err := h.Entries(t.Context(), spec)
-	require.NoError(t, err)
-	require.False(t, again.(*rows).gone(), "the node went on serving the store it destroyed")
-	require.NotSame(t, first, again)
-}
-
-func TestADatabaseThatWasNeverOpenedIsStillReleased(t *testing.T) {
-	kept := newStores()
-	h := holdings(t, kept, &ledgers{}, nil)
-
-	require.NoError(t, h.Destroy(t.Context(), kvSpec("shop", "QmNeverOpened")))
-
-	opened, released := kept.did()
-	require.Empty(t, opened, "the release served the request path a store: %v", opened)
-	require.Equal(t, []string{backing.Prefix + "/shop/prod/kv/QmNeverOpened"}, released)
-}
-
-func TestAReleaseThatFailedSaysSo(t *testing.T) {
-	kept := newStores()
-	kept.releaseErr = errors.New("this store cannot release a database it holds")
-	h := holdings(t, kept, &ledgers{}, nil)
-
-	require.ErrorContains(t, h.Destroy(t.Context(), kvSpec("shop", "QmA")),
-		"cannot release a database it holds")
-
-	// AND A SPEC THAT ADDRESSES NOTHING IS REFUSED BEFORE ANYTHING IS TOUCHED.
-	require.ErrorIs(t, h.Destroy(t.Context(), unaddressable()), database.ErrUnaddressable)
-	_, released := kept.did()
-	require.Empty(t, released)
-}
-
-func TestAReleaseRacingTheRequestPath(t *testing.T) {
-	stores := newStores()
-	h := holdings(t, stores, &ledgers{}, nil)
-
-	specs := []database.Spec{kvSpec("shop", "QmA"), kvSpec("shop", "QmB"), kvSpec("other", "QmA")}
-
-	var wg sync.WaitGroup
-	for range 8 {
-		for _, spec := range specs {
-			wg.Add(2)
-			go func(spec database.Spec) {
-				defer wg.Done()
-				store, err := h.Entries(t.Context(), spec)
-				if err == nil {
-					store.Put(t.Context(), "k", []byte("v"))
-				}
-			}(spec)
-			go func(spec database.Spec) {
-				defer wg.Done()
-				h.Destroy(t.Context(), spec)
-			}(spec)
-		}
-	}
-	wg.Wait()
-
-	// Every database still answers, and every release that ran named a database
-	// rather than a torn fragment of one.
-	for _, spec := range specs {
-		store, err := h.Entries(t.Context(), spec)
-		require.NoError(t, err)
-		require.NotNil(t, store)
-	}
-	_, released := stores.did()
-	require.NotEmpty(t, released)
-	for _, name := range released {
-		require.True(t, strings.HasPrefix(name, backing.Prefix+"/"), "released %q", name)
-	}
-}
-
-// A fake engine, not a fake driver: this tests the composition (grant to Spec,
-// credential resolved, connection kept); DSN building is pkg/database's test.
 
 type fakeEngine struct {
 	name string
@@ -882,7 +607,7 @@ func TestTheKvStoreIsLazyAndPerDatabase(t *testing.T) {
 	d, kept := tauOnly(t)
 
 	opened, _ := kept.did()
-	require.NotContains(t, opened, backing.Prefix, "nothing has asked for a database yet")
+	require.NotContains(t, opened, copies.Prefix, "nothing has asked for a database yet")
 
 	for _, handle := range []string{"shop/prod/QmA", "shop/prod/QmB", "other/prod/QmA"} {
 		db, err := d.OpenKV(t.Context(), kvGrantFor(handle))
@@ -892,13 +617,13 @@ func TestTheKvStoreIsLazyAndPerDatabase(t *testing.T) {
 
 	opened, _ = kept.did()
 	for _, want := range []string{
-		backing.Prefix + "/shop/prod/kv/QmA",
-		backing.Prefix + "/shop/prod/kv/QmB",
-		backing.Prefix + "/other/prod/kv/QmA",
+		copies.Prefix + "/shop/prod/kv/QmA",
+		copies.Prefix + "/shop/prod/kv/QmB",
+		copies.Prefix + "/other/prod/kv/QmA",
 	} {
 		require.Contains(t, opened, want, "%v", opened)
 	}
-	require.NotContains(t, opened, backing.Prefix, "a store holding all three: %v", opened)
+	require.NotContains(t, opened, copies.Prefix, "a store holding all three: %v", opened)
 
 	// AND ASKING AGAIN OPENS NOTHING MORE: the factory caches by path, so a
 	// database this node already holds costs no second topic.
@@ -945,7 +670,7 @@ func TestARegisteredKvEngineIsNotReplaced(t *testing.T) {
 	require.Equal(t, 1, engine.opened, "the composer's engine served it")
 
 	opened, _ := kept.did()
-	require.NotContains(t, opened, backing.Prefix, "and the node's own store was never opened")
+	require.NotContains(t, opened, copies.Prefix, "and the node's own store was never opened")
 }
 
 func TestAKvDatabaseNeedsAStore(t *testing.T) {
@@ -1062,9 +787,9 @@ func TestKvAndDocumentsDoNotCollide(t *testing.T) {
 	// which is a pubsub topic each, so which replicas a write or a delete reaches
 	// is decided per database rather than per node.
 	opened, _ := kept.did()
-	require.Contains(t, opened, backing.Prefix+"/shop/prod/kv/QmTokens")
-	require.Contains(t, opened, backing.Prefix+"/shop/prod/document/QmOrders")
-	require.NotContains(t, opened, backing.Prefix,
+	require.Contains(t, opened, copies.Prefix+"/shop/prod/kv/QmTokens")
+	require.Contains(t, opened, copies.Prefix+"/shop/prod/document/QmOrders")
+	require.NotContains(t, opened, copies.Prefix,
 		"a store holding every database was opened after all: %v", opened)
 }
 

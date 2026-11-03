@@ -11,10 +11,10 @@ import (
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/instance/ledger"
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/raft"
 	databaseService "github.com/taubyte/tau/services/database"
+	"github.com/taubyte/tau/services/database/ledger"
 )
 
 // The gating, not the consensus: a node that may not answer says so, names who may,

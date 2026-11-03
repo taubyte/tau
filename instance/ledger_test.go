@@ -7,10 +7,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	nodeDatabase "github.com/taubyte/tau/instance/database"
-	"github.com/taubyte/tau/instance/ledger"
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/raft"
+	databaseService "github.com/taubyte/tau/services/database"
+	"github.com/taubyte/tau/services/database/ledger"
 )
 
 // What the root decides about `consensus: raft`: which held thing keeps a database's
@@ -24,9 +24,9 @@ func TestTheGroupAndTheStoreAgreeOnTheNameADatabaseHas(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, ledger.Domain+"/shop/prod/kv/QmLedger", group)
 
-	store, err := nodeDatabase.Name(spec)
+	store, err := databaseService.Name(spec)
 	require.NoError(t, err)
-	require.Equal(t, nodeDatabase.Prefix+"/shop/prod/kv/QmLedger", store)
+	require.Equal(t, databaseService.Prefix+"/shop/prod/kv/QmLedger", store)
 }
 
 func TestTheRootPicksBetweenACrdtStoreAndAGroup(t *testing.T) {

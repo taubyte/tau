@@ -6,12 +6,12 @@ import (
 	"fmt"
 
 	nodeDatabase "github.com/taubyte/tau/instance/database"
-	"github.com/taubyte/tau/instance/ledger"
 	"github.com/taubyte/tau/pkg/database"
 	kvengine "github.com/taubyte/tau/pkg/database/engines/kv"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/placement"
 	databaseService "github.com/taubyte/tau/services/database"
+	"github.com/taubyte/tau/services/database/ledger"
 )
 
 // The database adapters are instance/database's; the root reaches the factory, names
@@ -26,7 +26,7 @@ import (
 type databaseBacking struct {
 	*nodeDatabase.Databases
 
-	holdings *nodeDatabase.Holdings
+	holdings *databaseService.Copies
 	ledgers  *ledger.Ledgers
 }
 
@@ -45,7 +45,7 @@ func newDatabases(n *Instance) (*databaseBacking, error) {
 	}
 	b.ledgers = ledgers
 
-	holdings, err := nodeDatabase.NewHoldings(
+	holdings, err := databaseService.NewCopies(
 		databaseStores{node: n},
 		b.ledgers,
 		// Holding is a fact about this instance's bytes, so it is its own set
@@ -99,7 +99,7 @@ func (s databaseSecrets) Secret(ctx context.Context, project, environment, name 
 // a node carries one store per database rather than one for all of them.
 type databaseStores struct{ node *Instance }
 
-var _ nodeDatabase.Stores = databaseStores{}
+var _ databaseService.Stores = databaseStores{}
 
 func (s databaseStores) Store(name string) (database.Store, error) {
 	db, err := s.node.kvdb(name)
