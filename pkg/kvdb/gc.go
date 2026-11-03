@@ -863,6 +863,7 @@ func (ch *rootChange) apply() {
 	}
 	for _, k := range ch.plan.gone {
 		delete(gc.members, k)
+		ch.store.trees.Forget(k)
 	}
 	for _, rs := range ch.plan.rescued {
 		for _, k := range rs.keys {

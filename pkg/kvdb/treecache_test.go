@@ -25,8 +25,8 @@ func TestAMergeReadsItsBaseFromTheCacheOfTreeNodes(t *testing.T) {
 	b.dagService = counting
 	b.gc.recent.DAGService = counting
 
-	const rounds, changed = 8, 3
-	leaves, upper := 0, 0
+	const rounds, changed = 32, 3
+	leaves, upper, first, peak := 0, 0, 0, 0
 	for round := range rounds {
 		for i := range changed {
 			put(t, a, fmt.Sprintf("/k%04d", (round*changed+i)*397%3000), fmt.Sprintf("r%d", round))
@@ -50,6 +50,10 @@ func TestAMergeReadsItsBaseFromTheCacheOfTreeNodes(t *testing.T) {
 		if b.IsDirty(ctx) {
 			t.Fatal("the merge did not finish")
 		}
+		if round == 0 {
+			first = b.trees.Used()
+		}
+		peak = max(peak, b.trees.Used())
 		for c, n := range counting.take() {
 			if !closure.Has(c) {
 				continue
@@ -62,6 +66,11 @@ func TestAMergeReadsItsBaseFromTheCacheOfTreeNodes(t *testing.T) {
 		}
 	}
 	t.Logf("%d merges of %d changed keys: %d reads of the base's nodes of level 0, %d of the others", rounds, changed, leaves, upper)
+	// The cache holds the base, not every base it had: kept, superseded nodes
+	// fill it and push out the live ones a later merge reads.
+	if peak > 2*first {
+		t.Fatalf("the cache grew from %d bytes after the first merge to %d", first, peak)
+	}
 	if upper > 0 {
 		t.Fatalf("%d merges read the base's upper levels from the store %d times", rounds, upper)
 	}

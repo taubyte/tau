@@ -141,6 +141,18 @@ func (c *Cache) add(id cid.Cid, n *node, size int) {
 	c.used += size
 }
 
+// Forget drops the node of the block with this digest, which no tree reaches
+// any more: left in place it would outlive nodes still read.
+func (c *Cache) Forget(digest [32]byte) {
+	var k cacheKey
+	copy(k[copy(k[:], BlockPrefix):], digest[:])
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if i, ok := c.index[k]; ok {
+		c.evict(i)
+	}
+}
+
 func (c *Cache) evict(i int32) {
 	s := &c.slots[i]
 	c.unlink(i)

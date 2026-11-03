@@ -172,6 +172,51 @@ func TestACachedTreeReadsOnlyItsLowestLevel(t *testing.T) {
 	}
 }
 
+func TestAForgottenNodeLeavesTheCache(t *testing.T) {
+	ctx := context.Background()
+	s := newStore()
+	tr := build(t, s, randomEntries(rand.New(rand.NewPCG(5, 6)), 3000))
+	c := NewCache(1 << 20)
+	ct := Load(s, tr.Root(), WithCache(c))
+	all := func() {
+		if err := ct.Range(ctx, nil, nil, func(_, _ []byte) error { return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	all()
+	held := c.held()
+	if len(held) < 2 {
+		t.Fatalf("the cache holds %d nodes", len(held))
+	}
+	var digest [32]byte
+	var gone cid.Cid
+	for id := range held {
+		gone = id
+		copy(digest[:], id.KeyString()[len(BlockPrefix):])
+		break
+	}
+	used := c.Used()
+
+	c.Forget(digest)
+	if _, ok := c.held()[gone]; ok {
+		t.Fatalf("%s is still cached", gone)
+	}
+	if c.Used() >= used {
+		t.Fatalf("the cache uses %d bytes after forgetting a node, %d before", c.Used(), used)
+	}
+	c.check(t)
+	c.Forget(digest)
+	c.check(t)
+
+	all()
+	if _, ok := c.held()[gone]; !ok {
+		t.Fatalf("%s was not cached again when read", gone)
+	}
+	if c.Used() != used {
+		t.Fatalf("the cache uses %d bytes, %d before", c.Used(), used)
+	}
+}
+
 func TestACacheKeepsTheUpperLevelsWithinItsBudget(t *testing.T) {
 	ctx := context.Background()
 	r := rand.New(rand.NewPCG(5, 6))
