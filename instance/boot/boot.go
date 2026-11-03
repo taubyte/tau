@@ -400,11 +400,20 @@ func decode(name, value string) ([]byte, error) {
 	return out, nil
 }
 
+// sectionOf is cfg's section for one service alone, or none.
+func sectionOf(cfg instance.Config, name string) map[string]any {
+	section, ok := cfg.Sections[name]
+	if !ok {
+		return nil
+	}
+	return map[string]any{name: section}
+}
+
 // Reach starts the smallest node that can find the fleet: discovery only, joined to
 // the swarm, waiting until it sees a node running the service. A node rather than a
 // dial, so it asks the same view as everything else.
 func Reach(ctx context.Context, f File, service string, within time.Duration) (*Running, error) {
-	f.Node = instance.Config{Services: []string{instance.Discovery}, Cloud: f.Node.Cloud, Discovery: f.Node.Discovery}
+	f.Node = instance.Config{Services: []string{instance.Discovery}, Cloud: f.Node.Cloud, Sections: sectionOf(f.Node, instance.Discovery)}
 	f.HTTP = ""
 
 	// A CLIENT DOES NOT KEEP THE FLEET'S DATA. Its own directory, removed with
@@ -424,7 +433,7 @@ func Reach(ctx context.Context, f File, service string, within time.Duration) (*
 
 	deadline := time.After(within)
 	for {
-		if found := running.Discovery().Route(service, f.Node.Discovery.Freshness()); len(found) > 0 {
+		if found := running.Discovery().Routes(service); len(found) > 0 {
 			running.Found = found
 			return running, nil
 		}

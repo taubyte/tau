@@ -6,11 +6,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
 	"github.com/taubyte/tau/instance"
+	"github.com/taubyte/tau/pkg/stats"
 )
 
 func write(t *testing.T, content string) string {
@@ -135,11 +137,15 @@ func TestANodeStartsAndServes(t *testing.T) {
 	require.NotNil(t, running.Handler())
 
 	// It reports itself, which is what the rest of the fleet routes on.
-	snapshot, err := running.Snapshot(t.Context())
-	require.NoError(t, err)
-	require.True(t, snapshot.Ready)
-	require.NotEmpty(t, snapshot.Addresses)
-	require.Contains(t, snapshot.Serving, instance.Register)
+	var self stats.Node
+	require.Eventually(t, func() bool {
+		var ok bool
+		self, ok = running.Discovery().Get(running.Host().ID().String())
+		return ok
+	}, 10*time.Second, 20*time.Millisecond)
+	require.True(t, self.Ready)
+	require.NotEmpty(t, self.Addresses)
+	require.Contains(t, self.Serving, instance.Register)
 
 	require.NoError(t, running.Close())
 	require.NoError(t, running.Close(), "close is idempotent enough to be deferred")

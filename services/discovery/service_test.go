@@ -85,13 +85,13 @@ func fixedSnapshot(s Snapshot) Reporter {
 	return ReporterFunc(func(context.Context) (Snapshot, error) { return s, nil })
 }
 
-func newService(t *testing.T, bus Bus, r Reporter, adjust func(*Config)) *Service {
+func newService(t *testing.T, bus Bus, r Reporter, adjust func(*Config)) *server {
 	t.Helper()
 	cfg := Config{Interval: 20 * time.Millisecond}
 	if adjust != nil {
 		adjust(&cfg)
 	}
-	s, err := New(newHost(t), cfg, WithBus(bus), WithReporter(r))
+	s, err := build(newHost(t), cfg, withBus(bus), withReporter(r))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	return s
@@ -119,7 +119,7 @@ func TestANodeIsRoutableBeforeTheFirstIntervalElapses(t *testing.T) {
 	s := newService(t, bus, fixedSnapshot(Snapshot{Load: 0.25, Ready: true, Serving: []string{"shop"}}), func(c *Config) {
 		c.Interval = time.Hour // the first report cannot be a tick
 	})
-	require.NoError(t, s.Start(context.Background()))
+	require.NoError(t, s.serve(context.Background()))
 
 	eventually(t, "the first report to be sent immediately", func() bool {
 		return len(bus.published()) == 1
@@ -135,7 +135,7 @@ func TestThisNodeSeesItselfWithoutWaitingForTheBusToEchoIt(t *testing.T) {
 	// A bus that never echoes: Publish records, and fans out to nobody.
 	silent := &noEchoBus{}
 	s := newService(t, silent, fixedSnapshot(Snapshot{Load: 0.5, Ready: true, Serving: []string{"shop"}}), nil)
-	require.NoError(t, s.Start(context.Background()))
+	require.NoError(t, s.serve(context.Background()))
 
 	eventually(t, "this node to appear in its own view", func() bool {
 		return len(s.Route("shop", time.Minute)) == 1
@@ -158,7 +158,7 @@ func (b *noEchoBus) Publish(_ context.Context, data []byte) error {
 func TestAnotherNodesReportIsFoldedIn(t *testing.T) {
 	bus := &memBus{}
 	s := newService(t, bus, fixedSnapshot(Snapshot{Load: 0.9, Ready: true, Serving: []string{"shop"}}), nil)
-	require.NoError(t, s.Start(context.Background()))
+	require.NoError(t, s.serve(context.Background()))
 
 	b, err := proto.Marshal(&discoveryv2.Report{
 		Peer: "other", Incarnation: 1, Load: 0.1, Ready: true, Serving: []string{"shop"},
@@ -184,7 +184,7 @@ func TestAnotherNodesReportIsFoldedIn(t *testing.T) {
 func TestAMalformedReportDoesNotDeafenTheNode(t *testing.T) {
 	bus := &memBus{}
 	s := newService(t, bus, fixedSnapshot(Snapshot{Ready: true}), nil)
-	require.NoError(t, s.Start(context.Background()))
+	require.NoError(t, s.serve(context.Background()))
 
 	bus.deliver([]byte("this is not a protobuf at all, not even close"))
 
@@ -216,7 +216,7 @@ func TestAReportThisNodeCannotMakeIsNotSent(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			bus := &memBus{}
 			s := newService(t, bus, tc.r, nil)
-			require.NoError(t, s.Start(context.Background()))
+			require.NoError(t, s.serve(context.Background()))
 
 			time.Sleep(80 * time.Millisecond) // several intervals
 			require.Empty(t, bus.published(), "silence is the honest answer")
@@ -229,7 +229,7 @@ func TestAReportThisNodeCannotMakeIsNotSent(t *testing.T) {
 func TestAFailingBusIsNotFatal(t *testing.T) {
 	bus := &memBus{failOn: errors.New("no peers")}
 	s := newService(t, bus, fixedSnapshot(Snapshot{Load: 0.1, Ready: true, Serving: []string{"shop"}}), nil)
-	require.NoError(t, s.Start(context.Background()))
+	require.NoError(t, s.serve(context.Background()))
 
 	eventually(t, "this node to know its own numbers even though nothing left the box", func() bool {
 		return len(s.Route("shop", time.Minute)) == 1
@@ -246,7 +246,7 @@ func TestAFailingBusIsNotFatal(t *testing.T) {
 // degraded mode — a router that hears nothing routes everything to itself.
 func TestSubscribeFailureIsAStartFailure(t *testing.T) {
 	s := newService(t, &deafBus{}, fixedSnapshot(Snapshot{Ready: true}), nil)
-	err := s.Start(context.Background())
+	err := s.serve(context.Background())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "subscribing")
 
@@ -264,12 +264,12 @@ func TestStartTwiceIsRefusedAndCloseIsIdempotent(t *testing.T) {
 	bus := &memBus{}
 	s := newService(t, bus, fixedSnapshot(Snapshot{Ready: true}), nil)
 
-	require.NoError(t, s.Start(context.Background()))
-	require.Error(t, s.Start(context.Background()))
+	require.NoError(t, s.serve(context.Background()))
+	require.Error(t, s.serve(context.Background()))
 
 	require.NoError(t, s.Close())
 	require.NoError(t, s.Close())
-	require.Error(t, s.Start(context.Background()), "a closed service does not come back")
+	require.Error(t, s.serve(context.Background()), "a closed service does not come back")
 }
 
 func TestCloseBeforeStartIsFine(t *testing.T) {
@@ -282,7 +282,7 @@ func TestCloseBeforeStartIsFine(t *testing.T) {
 func TestAClosedSubscriptionEndsTheListener(t *testing.T) {
 	bus := &closingBus{ch: make(chan []byte, 1)}
 	s := newService(t, bus, fixedSnapshot(Snapshot{Ready: true}), nil)
-	require.NoError(t, s.Start(context.Background()))
+	require.NoError(t, s.serve(context.Background()))
 
 	close(bus.ch)
 	require.NoError(t, s.Close())
@@ -303,8 +303,8 @@ func TestAnIncarnationIsChosenPerRun(t *testing.T) {
 	require.NotZero(t, old.incarnation, "it comes from the clock")
 
 	at := time.Unix(1_700_000_000, 0)
-	pinned, err := New(newHost(t), Config{Interval: time.Second},
-		WithBus(bus), WithReporter(fixedSnapshot(Snapshot{})), WithClock(func() time.Time { return at }))
+	pinned, err := build(newHost(t), Config{Interval: time.Second},
+		withBus(bus), withReporter(fixedSnapshot(Snapshot{})), withClock(func() time.Time { return at }))
 	require.NoError(t, err)
 	t.Cleanup(func() { pinned.Close() })
 	require.Equal(t, uint64(at.UnixNano()), pinned.incarnation,
@@ -314,31 +314,31 @@ func TestAnIncarnationIsChosenPerRun(t *testing.T) {
 func TestConfigRefusesWhatItCannotWorkWithout(t *testing.T) {
 	h := newHost(t)
 
-	_, err := New(h, Config{}, WithReporter(fixedSnapshot(Snapshot{})))
+	_, err := build(h, Config{}, withReporter(fixedSnapshot(Snapshot{})))
 	require.ErrorIs(t, err, ErrNoBus)
 
-	_, err = New(h, Config{}, WithBus(&memBus{}))
+	_, err = build(h, Config{}, withBus(&memBus{}))
 	require.ErrorIs(t, err, ErrNoReporter)
 
-	_, err = New(h, Config{}, WithBus(nil))
+	_, err = build(h, Config{}, withBus(nil))
 	require.ErrorIs(t, err, ErrNoBus, "an option refuses its own bad argument")
 
-	_, err = New(h, Config{}, WithReporter(nil))
+	_, err = build(h, Config{}, withReporter(nil))
 	require.ErrorIs(t, err, ErrNoReporter)
 
-	_, err = New(h, Config{}, WithBus(&memBus{}), WithReporter(fixedSnapshot(Snapshot{})), WithClock(nil))
+	_, err = build(h, Config{}, withBus(&memBus{}), withReporter(fixedSnapshot(Snapshot{})), withClock(nil))
 	require.Error(t, err)
 
-	_, err = New(nil, Config{}, WithBus(&memBus{}), WithReporter(fixedSnapshot(Snapshot{})))
+	_, err = build(nil, Config{}, withBus(&memBus{}), withReporter(fixedSnapshot(Snapshot{})))
 	require.Error(t, err, "a service with no host does not know who it is")
 
-	_, err = New(h, Config{Interval: -time.Second}, WithBus(&memBus{}), WithReporter(fixedSnapshot(Snapshot{})))
+	_, err = build(h, Config{Interval: -time.Second}, withBus(&memBus{}), withReporter(fixedSnapshot(Snapshot{})))
 	require.Error(t, err)
 
 	// Fresh shorter than the interval would make every row stale before its
 	// replacement was even sent.
-	_, err = New(h, Config{Interval: time.Minute, Fresh: time.Second},
-		WithBus(&memBus{}), WithReporter(fixedSnapshot(Snapshot{})))
+	_, err = build(h, Config{Interval: time.Minute, Fresh: time.Second},
+		withBus(&memBus{}), withReporter(fixedSnapshot(Snapshot{})))
 	require.Error(t, err)
 }
 
@@ -346,7 +346,7 @@ func TestConfigRefusesWhatItCannotWorkWithout(t *testing.T) {
 // make a healthy node vanish.
 func TestTheFreshnessWindowIsAMultipleOfTheInterval(t *testing.T) {
 	h := newHost(t)
-	s, err := New(h, Config{Interval: time.Second}, WithBus(&memBus{}), WithReporter(fixedSnapshot(Snapshot{})))
+	s, err := build(h, Config{Interval: time.Second}, withBus(&memBus{}), withReporter(fixedSnapshot(Snapshot{})))
 	require.NoError(t, err)
 	require.Equal(t, freshIntervals*time.Second, s.cfg.Fresh)
 	require.Equal(t, forgetIntervals*time.Second, s.cfg.Forget)
@@ -355,7 +355,7 @@ func TestTheFreshnessWindowIsAMultipleOfTheInterval(t *testing.T) {
 func TestFreshAndAllReadThrough(t *testing.T) {
 	bus := &memBus{}
 	s := newService(t, bus, fixedSnapshot(Snapshot{Load: 0.3, Ready: true, Serving: []string{"shop"}}), nil)
-	require.NoError(t, s.Start(context.Background()))
+	require.NoError(t, s.serve(context.Background()))
 
 	eventually(t, "this node to report", func() bool { return len(s.All()) == 1 })
 	require.Len(t, s.Fresh(), 1)
@@ -371,7 +371,7 @@ func TestAddressesReachTheWireAndComeBack(t *testing.T) {
 		Load: 0.2, Ready: true, Serving: []string{"shop"},
 		Addresses: []string{"203.0.113.7", "2001:db8::1"},
 	}), nil)
-	require.NoError(t, s.Start(context.Background()))
+	require.NoError(t, s.serve(context.Background()))
 
 	eventually(t, "a report to be published", func() bool { return len(bus.published()) > 0 })
 
@@ -399,7 +399,7 @@ func TestSocketsReachTheWireAndComeBack(t *testing.T) {
 		Load: 0.9, Ready: true, Serving: []string{"db.example.com"},
 		Sockets: []stats.Socket{mine},
 	}), nil)
-	require.NoError(t, s.Start(context.Background()))
+	require.NoError(t, s.serve(context.Background()))
 
 	eventually(t, "a report to be published", func() bool { return len(bus.published()) > 0 })
 
@@ -434,7 +434,7 @@ func TestSocketsReachTheWireAndComeBack(t *testing.T) {
 func TestASocketWithAnImpossiblePortIsDropped(t *testing.T) {
 	bus := &memBus{}
 	s := newService(t, bus, fixedSnapshot(Snapshot{Ready: true, Serving: []string{"db.example.com"}}), nil)
-	require.NoError(t, s.Start(context.Background()))
+	require.NoError(t, s.serve(context.Background()))
 
 	b, err := proto.Marshal(&discoveryv2.Report{
 		Peer: "other", Incarnation: 1, Ready: true, Serving: []string{"db.example.com"},

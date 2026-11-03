@@ -24,8 +24,8 @@ func TestPlacementIsTheStableSetAndNotTheFreshOne(t *testing.T) {
 		mu.Unlock()
 	}
 
-	s, err := New(newHost(t), Config{Interval: time.Second},
-		WithClock(clock), WithBus(&memBus{}), WithReporter(fixedSnapshot(Snapshot{Ready: true})))
+	s, err := build(newHost(t), Config{Interval: time.Second},
+		withClock(clock), withBus(&memBus{}), withReporter(fixedSnapshot(Snapshot{Ready: true})))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 
@@ -76,8 +76,8 @@ func TestTheStabilizeWindowIsTheMinuteFloorUnlessTheConfigSaysOtherwise(t *testi
 }
 
 func TestAStabilizeShorterThanFreshnessIsRefused(t *testing.T) {
-	_, err := New(newHost(t), Config{Interval: time.Second, Stabilize: time.Second},
-		WithBus(&memBus{}), WithReporter(fixedSnapshot(Snapshot{Ready: true})))
+	_, err := build(newHost(t), Config{Interval: time.Second, Stabilize: time.Second},
+		withBus(&memBus{}), withReporter(fixedSnapshot(Snapshot{Ready: true})))
 	require.ErrorContains(t, err, "stabilize")
 	require.ErrorContains(t, err, "faster than acknowledgement")
 }
@@ -91,8 +91,8 @@ func TestAConfiguredStabilizeIsWhatPlacementRunsOn(t *testing.T) {
 		return now
 	}
 
-	s, err := New(newHost(t), Config{Interval: time.Second, Stabilize: 10 * time.Second},
-		WithClock(clock), WithBus(&memBus{}), WithReporter(fixedSnapshot(Snapshot{Ready: true})))
+	s, err := build(newHost(t), Config{Interval: time.Second, Stabilize: 10 * time.Second},
+		withClock(clock), withBus(&memBus{}), withReporter(fixedSnapshot(Snapshot{Ready: true})))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 
@@ -126,8 +126,8 @@ func TestARolesPlacementIsOnlyTheNodesRunningIt(t *testing.T) {
 		return now
 	}
 
-	s, err := New(newHost(t), Config{Interval: time.Second},
-		WithClock(clock), WithBus(&memBus{}), WithReporter(fixedSnapshot(Snapshot{Ready: true})))
+	s, err := build(newHost(t), Config{Interval: time.Second},
+		withClock(clock), withBus(&memBus{}), withReporter(fixedSnapshot(Snapshot{Ready: true})))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 

@@ -89,7 +89,7 @@ func (n *Instance) startServices(ctx context.Context) error {
 		if err := s.service.Start(ctx, &added{node: n, name: s.name}); err != nil {
 			return fmt.Errorf("node: %s: %w", s.name, err)
 		}
-		n.provide(s.service)
+		n.provide(s.name, s.service)
 	}
 	return nil
 }
@@ -100,9 +100,10 @@ type added struct {
 	name string
 }
 
-func (a *added) Peer() peer.Node { return a.node.Node }
-func (a *added) Root() string    { return a.node.cfg.Root }
-func (a *added) Running() []any  { return a.node.runningNow() }
+func (a *added) Peer() peer.Node            { return a.node.Node }
+func (a *added) Root() string               { return a.node.cfg.Root }
+func (a *added) Running() []service.Running { return a.node.runningNow() }
+func (a *added) Cloud() string              { return a.node.cfg.Cloud }
 
 // Peers is every node discovery currently says runs service, this one included
 // when it does.
@@ -111,7 +112,7 @@ func (n *Instance) Peers(service string) []libp2ppeer.ID {
 }
 
 func (a *added) Config(into any) error {
-	entry, ok := a.node.cfg.Added[a.name]
+	entry, ok := a.node.cfg.Sections[a.name]
 	if !ok {
 		return nil
 	}
@@ -128,14 +129,15 @@ func (a *added) Config(into any) error {
 	return nil
 }
 
-// provide adds a running service to what the others on this instance can Get.
-func (n *Instance) provide(handle any) {
+// provide adds a running service, under its name, to what the others on this
+// instance can Get.
+func (n *Instance) provide(name string, handle any) {
 	n.runningMu.Lock()
 	defer n.runningMu.Unlock()
-	n.running = append(n.running, handle)
+	n.running = append(n.running, service.Running{Name: name, Service: handle})
 }
 
-func (n *Instance) runningNow() []any {
+func (n *Instance) runningNow() []service.Running {
 	n.runningMu.Lock()
 	defer n.runningMu.Unlock()
 	return slices.Clone(n.running)

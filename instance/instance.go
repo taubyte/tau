@@ -23,6 +23,7 @@ import (
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/core/kvdb"
+	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/instance/admit"
 	"github.com/taubyte/tau/instance/cache"
 	"github.com/taubyte/tau/instance/model"
@@ -37,7 +38,6 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/register"
 
-	manet "github.com/multiformats/go-multiaddr/net"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/services/build/backend"
@@ -75,9 +75,9 @@ type Instance struct {
 	// service running here, for the others to Get.
 	services  []named
 	runningMu sync.Mutex
-	running   []any
+	running   []service.Running
 
-	discovery *discovery.Service
+	discovery discovery.Service
 	register  *registerService.Service
 	worker    *worker.Service
 	gateway   *gateway.Service
@@ -203,8 +203,15 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 	for _, name := range cfg.Services {
 		if s, ok := o.serviceNamed(name); ok {
 			n.services = append(n.services, named{name: name, service: s})
+			// THE BUILT-INS STILL TAKE DISCOVERY AT CONSTRUCTION, until they are
+			// services and reach it themselves.
+			if d, ok := s.(discovery.Service); ok {
+				n.discovery = d
+			}
 		}
 	}
+	// What the built-ins add to this node's report.
+	n.provide("", builtIns{n})
 	// Closed last: every service closes the databases it opened before them.
 	n.closers = append(n.closers, n.dbs)
 	if err := n.open(); err != nil {
@@ -224,9 +231,6 @@ func (n *Instance) open() error {
 	// STATS NEXT. Everything else routes on the view it maintains, including
 	// the locators above, so a node that runs it must have it before anything
 	// asks one of them who does what.
-	if err := n.openStats(); err != nil {
-		return err
-	}
 	if err := n.openRegister(); err != nil {
 		return err
 	}
@@ -284,30 +288,6 @@ func (n *Instance) open() error {
 	return n.openBuildFrontend()
 }
 
-func (n *Instance) openStats() error {
-	if !n.cfg.runs(Discovery) {
-		return nil
-	}
-	bus, err := discovery.NewBus(n.Messaging(), n.cfg.Cloud)
-	if err != nil {
-		return err
-	}
-
-	options := []discovery.Option{discovery.WithBus(bus), discovery.WithReporter(n)}
-	if n.opts.now != nil {
-		options = append(options, discovery.WithClock(n.opts.now))
-	}
-
-	svc, err := discovery.New(n.Host(), n.cfg.Discovery, options...)
-	if err != nil {
-		return err
-	}
-	n.discovery = svc
-	n.provide(svc)
-	n.closers = append(n.closers, svc)
-	return nil
-}
-
 func (n *Instance) openRegister() error {
 	if !n.cfg.runs(Register) {
 		return nil
@@ -329,7 +309,7 @@ func (n *Instance) openRegister() error {
 		return err
 	}
 	n.register = svc
-	n.provide(svc.Local())
+	n.provide(Register, svc.Local())
 	n.closers = append(n.closers, svc)
 	return nil
 }
@@ -782,12 +762,14 @@ func (n *Instance) Start(ctx context.Context) error {
 		return errors.New("node: already started")
 	}
 
-	// STATS FIRST, for the same reason it is built first: everything else
-	// routes on the view it maintains.
-	var order []starter
-	if n.discovery != nil {
-		order = append(order, n.discovery)
+	// THE CONFIGURED SERVICES FIRST: discovery among them, and everything else
+	// routes on the view it maintains. What they reach on the built-ins beside
+	// them they reach lazily.
+	if err := n.startServices(ctx); err != nil {
+		return err
 	}
+
+	var order []starter
 	if n.register != nil {
 		order = append(order, n.register)
 	}
@@ -835,13 +817,6 @@ func (n *Instance) Start(ctx context.Context) error {
 	// different failures, and a node that took :53 before it could answer
 	// would be answering with an empty view.
 	if err := n.listenDNS(); err != nil {
-		return err
-	}
-
-	// ADDED SERVICES AFTER EVERY BUILT-IN ONE, so whatever they reach on this
-	// node is answering, and closed before them because their closers are the
-	// last recorded.
-	if err := n.startServices(ctx); err != nil {
 		return err
 	}
 
@@ -973,71 +948,22 @@ func (n *Instance) Close() error {
 	return n.closeErr
 }
 
-// Snapshot is what this node says about itself, which is what everything else
-// routes on.
-//
-// LOAD IS ZERO AND SAID TO BE. Nothing here measures it yet, and a made-up
-// number would steer traffic on fiction — zero says "as available as anything
-// else", which in a fleet of nodes that all report zero is true.
-func (n *Instance) Snapshot(context.Context) (discovery.Snapshot, error) {
-	snapshot := discovery.Snapshot{
-		Ready:     true,
-		Serving:   n.serving(),
-		Addresses: n.addresses(),
-		Sockets:   n.proxySockets(),
-	}
+// builtIns is what the services this instance still builds itself add to its
+// report: their names, the sockets the proxy accepts, and what the database knows
+// about placement. Load is zero and said to be; discovery adds the addresses.
+type builtIns struct{ n *Instance }
 
-	// WHAT THIS NODE'S OWN SERVICES SAY ABOUT PLACEMENT. The fleet revision is
-	// how a node computing with a stale floor becomes visible to every other
-	// node; the pending count is how much repair this node knows is outstanding
-	// among the databases it holds.
+func (b builtIns) Report(snap *discovery.Snapshot) {
+	n := b.n
+	snap.Serving = append(snap.Serving, n.serving()...)
+	snap.Sockets = append(snap.Sockets, n.proxySockets()...)
+	// The fleet revision is how a node computing with a stale floor becomes
+	// visible to every other node; the pending count is how much repair this
+	// node knows is outstanding among the databases it holds.
 	if n.database != nil {
-		snapshot.FleetRevision = n.database.FleetRevision()
-		snapshot.DatabasesPending = n.database.Pending()
+		snap.FleetRevision = n.database.FleetRevision()
+		snap.DatabasesPending = n.database.Pending()
 	}
-
-	return snapshot, nil
-}
-
-// addresses is where clients reach this node, the IPs a DNS answer is made of, not the
-// multiaddrs the fleet gossips over. It is the IP half of what this host listens on,
-// which behind NAT or a bridge may be unreachable: a claim, like the load figure.
-func (n *Instance) addresses() []string {
-	seen := map[string]bool{}
-	var routable, loopback []string
-
-	for _, a := range n.Host().Addrs() {
-		ip, err := manet.ToIP(a)
-		if err != nil {
-			// Not an address with an IP in it — a unix socket, a circuit
-			// relay. Nothing a client can be handed in an A record.
-			continue
-		}
-		if ip.IsUnspecified() {
-			// 0.0.0.0 AND :: ARE NOT ADDRESSES, they are "every address". A
-			// client handed one has been told nothing.
-			continue
-		}
-
-		s := ip.String()
-		if seen[s] {
-			continue
-		}
-		seen[s] = true
-
-		if ip.IsLoopback() {
-			loopback = append(loopback, s)
-			continue
-		}
-		routable = append(routable, s)
-	}
-
-	// Loopback only when nothing else is available, so a node with a real address never
-	// publishes 127.0.0.1, while a loopback-only development cloud still resolves.
-	if len(routable) > 0 {
-		return routable
-	}
-	return loopback
 }
 
 // serving is every name this node answers to: the services it runs, plus what
@@ -1088,7 +1014,7 @@ func (n *Instance) Database() *databaseService.Service { return n.database }
 func (n *Instance) Primitives() *primitivesService.Service { return n.primitives }
 
 // Discovery is this node's view of the fleet, or nil.
-func (n *Instance) Discovery() *discovery.Service { return n.discovery }
+func (n *Instance) Discovery() discovery.Service { return n.discovery }
 
 // PubSub is the gossip this node was given, for a composer that has to attach
 // something to it — a stream subscriber, a test listening for what a workload

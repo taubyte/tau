@@ -125,7 +125,7 @@ func TestAddedServicesConfigurationReachesEveryNode(t *testing.T) {
 	assert.Assert(t, len(nodes.instances) == 2)
 	want := map[string]any{"svc": map[string]any{"host": "example.com", "admins": []any{"a", "b"}}}
 	for _, inst := range nodes.instances {
-		assert.DeepEqual(t, inst.file.Node.Added, want)
+		assert.DeepEqual(t, inst.file.Node.Sections, want)
 	}
 }
 

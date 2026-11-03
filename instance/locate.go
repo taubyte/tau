@@ -89,7 +89,7 @@ func (n *Instance) rowsFor(service string) []pkgstats.Node {
 	if n.discovery == nil {
 		return nil
 	}
-	return n.discovery.Route(service, n.cfg.Discovery.Freshness())
+	return n.discovery.Routes(service)
 }
 
 // openReach wires every locator this node has, BEFORE anything that uses one.

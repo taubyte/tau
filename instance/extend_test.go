@@ -105,7 +105,7 @@ func TestAServiceIsGivenItsInstance(t *testing.T) {
 	reg, ok := service.Get[*pkgregister.Register](host)
 	require.False(t, ok, "no register runs here")
 	require.Nil(t, reg)
-	_, ok = service.Get[*discovery.Service](host)
+	_, ok = service.Get[discovery.Service](host)
 	require.True(t, ok, "discovery runs here")
 	_, ok = service.Get[started](host)
 	require.True(t, ok, "and so does the service itself, once started")
@@ -174,7 +174,7 @@ func TestAnAddedServiceDecodesItsOwnConfig(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := &recording{}
-			n, _, _ := makeNode(t, Config{Services: []string{addedName}, Added: map[string]any{addedName: entry}}, r.service())
+			n, _, _ := makeNode(t, Config{Services: []string{addedName}, Sections: map[string]any{addedName: entry}}, r.service())
 			require.NoError(t, n.Start(t.Context()))
 			got := settings{Port: 1}
 			require.NoError(t, r.host.Config(&got))
@@ -193,7 +193,7 @@ func TestAnAddedServiceDecodesItsOwnConfig(t *testing.T) {
 
 	t.Run("an entry of the wrong shape is an error", func(t *testing.T) {
 		r := &recording{}
-		n, _, _ := makeNode(t, Config{Services: []string{addedName}, Added: map[string]any{addedName: map[string]any{"port": "many"}}}, r.service())
+		n, _, _ := makeNode(t, Config{Services: []string{addedName}, Sections: map[string]any{addedName: map[string]any{"port": "many"}}}, r.service())
 		require.NoError(t, n.Start(t.Context()))
 		var got settings
 		require.ErrorContains(t, r.host.Config(&got), addedName)
@@ -202,7 +202,7 @@ func TestAnAddedServiceDecodesItsOwnConfig(t *testing.T) {
 }
 
 func TestConfigForAServiceNotAddedIsRefused(t *testing.T) {
-	_, err := New(mockPeer(t), rooted(t, Config{Added: map[string]any{"mail": map[string]any{}}}))
+	_, err := New(mockPeer(t), rooted(t, Config{Sections: map[string]any{"mail": map[string]any{}}}))
 	require.ErrorContains(t, err, `"mail"`)
 }
 

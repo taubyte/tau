@@ -23,7 +23,6 @@ import (
 	"github.com/taubyte/tau/services/build/deploy"
 	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/cm"
-	"github.com/taubyte/tau/services/discovery"
 	"github.com/taubyte/tau/services/dns"
 	gateway "github.com/taubyte/tau/services/gateway"
 	"github.com/taubyte/tau/services/primitives"
@@ -69,7 +68,7 @@ var (
 )
 
 // All is every service this composition knows how to start.
-var All = []string{Register, Worker, Discovery, Gateway, Auth, Secrets, Database, Primitives, Proxy, DNS, BuildBackend}
+var All = []string{Register, Worker, Gateway, Auth, Secrets, Database, Primitives, Proxy, DNS, BuildBackend}
 
 // BuildFrontend is NOT in All. All is what a single-node development cloud
 // starts, and that node runs the backend; putting the public half in the
@@ -111,10 +110,9 @@ type Config struct {
 
 	// Per-service operator configuration. Each is that service's own; nothing
 	// here reinterprets it.
-	Discovery discovery.Config
-	Worker    worker.Config
-	Gateway   gateway.Config
-	Secrets   secrets.Config
+	Worker  worker.Config
+	Gateway gateway.Config
+	Secrets secrets.Config
 
 	// CM is what the cloud keeps once for every region: today its
 	// certificates — the ACME CA, the challenge type and whether the zone's
@@ -137,11 +135,11 @@ type Config struct {
 	BuildFrontend frontend.Config
 	BuildBackend  backend.Config
 
-	// Added is the configuration of each service added with WithService, under
-	// the name it was added by. Nothing here reads it: the service decodes its
-	// own entry with Host.Config. An entry naming no added service is refused,
-	// for the reason a misspelled service name is.
-	Added map[string]any
+	// Sections is each service's own configuration, under its name, at the top
+	// level of the file beside the instance's own keys. Nothing here reads it: the
+	// service decodes its own with Host.Config. A section naming no service is
+	// refused, for the reason a misspelled service name is.
+	Sections map[string]any `yaml:",inline"`
 }
 
 var (
@@ -315,9 +313,9 @@ func (c Config) withDefaults(added ...string) (Config, error) {
 		return Config{}, fmt.Errorf("node: %w", err)
 	}
 	c.Tenancy = served.Namespaces()
-	for name := range c.Added {
+	for name := range c.Sections {
 		if !slices.Contains(added, name) {
-			return Config{}, fmt.Errorf("node: there is configuration for %q, which is not a service added to this node; it adds %v", name, added)
+			return Config{}, fmt.Errorf("node: there is configuration for %q, which is not a service this node can run; it runs %v", name, added)
 		}
 	}
 	return c, nil

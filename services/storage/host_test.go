@@ -26,7 +26,7 @@ type storageNode struct {
 	t *testing.T
 
 	mu      sync.Mutex
-	running []any
+	running []service.Running
 	started *server
 	members func() []placement.Member
 	config  func(into any) error
@@ -43,17 +43,17 @@ func newStorageNode(t *testing.T) *storageNode {
 	require.NoError(t, err)
 	t.Cleanup(func() { reg.Close() })
 
-	return &storageNode{Node: p, t: t, running: []any{reg.Local()}}
+	return &storageNode{Node: p, t: t, running: []service.Running{{Name: register.Descriptor.Name, Service: reg.Local()}}}
 }
 
 func (i *storageNode) Peer() peer.Node { return i.Node }
 
-func (i *storageNode) Running() []any {
+func (i *storageNode) Running() []service.Running {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	out := slices.Clone(i.running)
 	if i.members != nil {
-		out = append(out, placed(i.members))
+		out = append(out, service.Running{Name: "discovery", Service: placed(i.members)})
 	}
 	return out
 }
@@ -65,7 +65,8 @@ func (i *storageNode) Config(into any) error {
 	return nil
 }
 
-func (i *storageNode) Root() string { return i.t.TempDir() }
+func (i *storageNode) Cloud() string { return "storage-test" }
+func (i *storageNode) Root() string  { return i.t.TempDir() }
 
 var _ service.Host = (*storageNode)(nil)
 

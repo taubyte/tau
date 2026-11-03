@@ -14,13 +14,14 @@ import (
 // discovery names.
 type fake struct {
 	peer.Node
-	running []any
+	running []Running
 }
 
-func (f *fake) Peer() peer.Node  { return f.Node }
-func (f *fake) Running() []any   { return f.running }
-func (f *fake) Root() string     { return "" }
-func (f *fake) Config(any) error { return nil }
+func (f *fake) Peer() peer.Node    { return f.Node }
+func (f *fake) Running() []Running { return f.running }
+func (f *fake) Cloud() string      { return "test" }
+func (f *fake) Root() string       { return "" }
+func (f *fake) Config(any) error   { return nil }
 
 var _ Host = (*fake)(nil)
 
@@ -29,7 +30,7 @@ type answer string
 func TestTheServiceHereIsReachedWithNoClient(t *testing.T) {
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	h := &fake{Node: p, running: []any{7, answer("here")}}
+	h := &fake{Node: p, running: []Running{{Service: 7}, {Name: "store", Service: answer("here")}}}
 
 	dialled := 0
 	r := Reach(h, "store", func(host.Host, libp2ppeer.ID) (answer, error) { dialled++; return "far", nil })
@@ -42,7 +43,7 @@ func TestTheServiceHereIsReachedWithNoClient(t *testing.T) {
 func TestAServiceElsewhereIsDialledOnANodeDiscoveryNames(t *testing.T) {
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	h := &fake{Node: p, running: []any{directory{p.ID(), "far"}}}
+	h := &fake{Node: p, running: []Running{{Name: "discovery", Service: directory{p.ID(), "far"}}}}
 
 	var at libp2ppeer.ID
 	r := Reach(h, "store", func(_ host.Host, id libp2ppeer.ID) (answer, error) { at = id; return "far", nil })
@@ -52,11 +53,11 @@ func TestAServiceElsewhereIsDialledOnANodeDiscoveryNames(t *testing.T) {
 	require.Equal(t, libp2ppeer.ID("far"), at, "never itself")
 
 	// A SERVICE OF ANOTHER TYPE is not the one asked for.
-	h.running = []any{7, directory{"far"}}
+	h.running = []Running{{Service: 7}, {Name: "discovery", Service: directory{"far"}}}
 	_, err = r.Now(t.Context())
 	require.NoError(t, err)
 
-	h.running = []any{directory{p.ID()}}
+	h.running = []Running{{Name: "discovery", Service: directory{p.ID()}}}
 	nowhere := Reach(h, "store", func(host.Host, libp2ppeer.ID) (answer, error) { return "", nil })
 	_, err = nowhere.Now(t.Context())
 	require.ErrorIs(t, err, ErrNoneRuns)

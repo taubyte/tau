@@ -13,6 +13,8 @@ import (
 	"github.com/taubyte/tau/core/service"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
+	"github.com/taubyte/tau/pkg/stats"
+	"github.com/taubyte/tau/services/discovery"
 )
 
 // The proxy's port, carried by discovery, comes back from a real resolver query.
@@ -28,7 +30,7 @@ func serving(t *testing.T, compiled []byte, hosts ...string) *Instance {
 
 	// Both timers (proxy sweep and discovery tick) are wound down rather than waited out.
 	cfg.Proxy.Sweep = 100 * time.Millisecond
-	cfg.Discovery.Interval = 200 * time.Millisecond
+	cfg.Sections = map[string]any{Discovery: discovery.Config{Interval: 200 * time.Millisecond}}
 
 	n, _, _ := makeNode(t, cfg)
 	require.NoError(t, n.Start(t.Context()))
@@ -146,8 +148,7 @@ func TestTheReportCarriesAddressesAndNotMultiaddrs(t *testing.T) {
 	n, h, _ := makeNode(t, Config{Services: []string{Register, Discovery}})
 	require.NoError(t, n.Start(t.Context()))
 
-	snap, err := n.Snapshot(t.Context())
-	require.NoError(t, err)
+	snap := reported(t, n, func(stats.Node) bool { return true })
 	require.NotEmpty(t, snap.Addresses, "a node that reports nowhere is routed to nowhere")
 
 	for _, a := range snap.Addresses {

@@ -89,8 +89,8 @@ type Config struct {
 	Stabilize time.Duration
 }
 
-// Option injects what this service is built from.
-type Option func(*options) error
+// option injects what this service is built from.
+type option func(*options) error
 
 type options struct {
 	bus      Bus
@@ -99,7 +99,7 @@ type options struct {
 }
 
 // WithBus is where reports go and come from. Required.
-func WithBus(b Bus) Option {
+func withBus(b Bus) option {
 	return func(o *options) error {
 		if b == nil {
 			return ErrNoBus
@@ -110,7 +110,7 @@ func WithBus(b Bus) Option {
 }
 
 // WithReporter is this node's own numbers. Required.
-func WithReporter(r Reporter) Option {
+func withReporter(r Reporter) option {
 	return func(o *options) error {
 		if r == nil {
 			return ErrNoReporter
@@ -121,7 +121,7 @@ func WithReporter(r Reporter) Option {
 }
 
 // WithClock injects the local clock. Tests use it; production does not.
-func WithClock(now func() time.Time) Option {
+func withClock(now func() time.Time) option {
 	return func(o *options) error {
 		if now == nil {
 			return errors.New("discovery: a nil clock")

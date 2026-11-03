@@ -9,12 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/libp2p/go-libp2p/core/host"
-	ma "github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/p2p/peer"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/stats"
 	"github.com/taubyte/tau/services"
 )
 
@@ -92,9 +90,9 @@ func TestStartIsOnce(t *testing.T) {
 
 func TestANodeReportsWhatItRuns(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery}})
+	require.NoError(t, n.Start(t.Context()))
 
-	snapshot, err := n.Snapshot(t.Context())
-	require.NoError(t, err)
+	snapshot := reported(t, n, func(stats.Node) bool { return true })
 	require.True(t, snapshot.Ready)
 	require.NotEmpty(t, snapshot.Addresses, "a node nothing can dial is not routable")
 
@@ -121,9 +119,7 @@ func TestAWorkerAdvertisesWhatItHolds(t *testing.T) {
 	_, err = n.Worker().Resolve(t.Context(), workerTarget())
 	require.NoError(t, err)
 
-	snapshot, err := n.Snapshot(t.Context())
-	require.NoError(t, err)
-	require.Contains(t, snapshot.Serving, Worker+"/shop/prod")
+	reported(t, n, func(row stats.Node) bool { return slices.Contains(row.Serving, Worker+"/shop/prod") })
 }
 
 func TestALocalRegisterNeedsNoStream(t *testing.T) {
@@ -216,65 +212,6 @@ func TestADatabaseThatWillNotOpen(t *testing.T) {
 	require.Contains(t, err.Error(), "disk is full")
 }
 
-// addrsOnly is a host that only answers what it is listening on. addresses()
-// asks nothing else of it, and a full fake would be nine methods nothing calls.
-type addrsOnly struct {
-	host.Host
-	addrs []ma.Multiaddr
-}
-
-func (a addrsOnly) Addrs() []ma.Multiaddr { return a.addrs }
-
-func listeningOn(t *testing.T, on ...string) []ma.Multiaddr {
-	t.Helper()
-
-	out := make([]ma.Multiaddr, 0, len(on))
-	for _, s := range on {
-		a, err := ma.NewMultiaddr(s)
-		require.NoError(t, err)
-		out = append(out, a)
-	}
-	return out
-}
-
-func TestWhatThisNodePublishesAsItsAddress(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register}})
-
-	n.Node = withHost{Node: n.Node, host: addrsOnly{addrs: listeningOn(t,
-		// Not an address with an IP in it: nothing a client can be handed.
-		"/unix/tmp/tau.sock",
-		// "Every address" is not an address. A client handed 0.0.0.0 has been
-		// told nothing.
-		"/ip4/0.0.0.0/tcp/4001",
-		"/ip6/::/tcp/4001",
-		// The same IP on two transports is one address.
-		"/ip4/203.0.113.9/tcp/4001",
-		"/ip4/203.0.113.9/udp/4001/quic-v1",
-		// Present, and outranked.
-		"/ip4/127.0.0.1/tcp/4001",
-	)}}
-
-	require.Equal(t, []string{"203.0.113.9"}, n.addresses())
-}
-
-// withHost is a peer whose libp2p host a test chose.
-type withHost struct {
-	peer.Node
-	host host.Host
-}
-
-func (w withHost) Host() host.Host { return w.host }
-
-func TestLoopbackIsAnAnswerOnlyWhenThereIsNoOther(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register}})
-
-	n.Node = withHost{Node: n.Node, host: addrsOnly{addrs: listeningOn(t, "/ip4/127.0.0.1/tcp/4001", "/ip6/::1/tcp/4001")}}
-	require.Equal(t, []string{"127.0.0.1", "::1"}, n.addresses())
-
-	n.Node = withHost{Node: n.Node, host: addrsOnly{addrs: listeningOn(t, "/ip4/0.0.0.0/tcp/4001")}}
-	require.Empty(t, n.addresses(), "every address is no address")
-}
-
 func TestTheAccessorsAreTheServicesItRuns(t *testing.T) {
 	bare, _, _ := makeNode(t, Config{Services: []string{Register}})
 	require.Nil(t, bare.Secrets())
@@ -317,4 +254,17 @@ func TestWithTLSReachesTheGateway(t *testing.T) {
 
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Discovery, Gateway}, Gateway: gatewayConfig()}, WithTLS())
 	require.NotNil(t, n.TLSConfig())
+}
+
+// reported is this node's own row in its discovery's view once it satisfies ok:
+// what the rest of the fleet routes on, as it arrived.
+func reported(t *testing.T, n *Instance, ok func(stats.Node) bool) stats.Node {
+	t.Helper()
+	var row stats.Node
+	require.Eventually(t, func() bool {
+		var held bool
+		row, held = n.Discovery().Get(n.Host().ID().String())
+		return held && ok(row)
+	}, 20*time.Second, 20*time.Millisecond)
+	return row
 }

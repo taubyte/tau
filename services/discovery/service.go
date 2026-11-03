@@ -20,25 +20,61 @@ import (
 	"math"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/pkg/membership"
 	"github.com/taubyte/tau/pkg/placement"
 	discoveryv2 "github.com/taubyte/tau/pkg/proto/gen/tau/discovery/v2"
 	"github.com/taubyte/tau/pkg/stats"
 )
 
-// Service is a node's discovery participation: it broadcasts this node's own
+// Service is discovery as an instance runs it: this node's numbers broadcast, and a
+// view of everyone else's.
+type Service interface {
+	service.Service
+
+	// Peer is this node's identity, as it reports it.
+	Peer() string
+	// Route is who can answer for a name, no older than maxAge, least loaded first.
+	Route(name string, maxAge time.Duration) []stats.Node
+	// Routes is Route at this service's own freshness.
+	Routes(name string) []stats.Node
+	// Fresh is every node whose report arrived within that window.
+	Fresh() []stats.Node
+	// All is every row the view holds, however old.
+	All() []stats.Node
+	// Get is one node by peer id, however old its row.
+	Get(peer string) (stats.Node, bool)
+	// Peers is every node this view says runs service, freshest first.
+	Peers(service string) []libp2ppeer.ID
+	// Placement is the stable member set placement runs over; PlacementOf narrows it
+	// to the members serving role.
+	Placement() []placement.Member
+	PlacementOf(role string) []placement.Member
+	// Pending is how many databases the fleet knows to be below their floor.
+	Pending(maxAge time.Duration) int
+}
+
+// New is the discovery service, unstarted; Start builds it from its instance.
+func New() Service { return &server{} }
+
+// server is a node's discovery participation: it broadcasts this node's own
 // numbers and keeps a view of everyone else's.
-type Service struct {
+type server struct {
 	cfg  Config
 	opts options
 	peer string
 	view *stats.View
+
+	// built is set once the view exists. Before it, every read answers nothing:
+	// the instance's other services may ask before this one has started.
+	built atomic.Bool
 
 	// members is the PLACEMENT view, which runs on a longer timescale than the
 	// routing one — see beat. Nil only in a service composed without one.
@@ -54,32 +90,37 @@ type Service struct {
 	done    chan struct{}
 }
 
-// New builds the service. It does not start it — Start does, so a caller can
-// construct, inspect and then decide.
-//
-// It takes a host.Host and never a peer.Node: the host is here for one thing,
-// this node's identity, and taking the bundle to get an id is what makes dream
-// parity a retrofit instead of an adapter.
-func New(h host.Host, cfg Config, opts ...Option) (*Service, error) {
+// build is a server over what it is given, not yet serving.
+func build(h host.Host, cfg Config, opts ...option) (*server, error) {
+	s := &server{}
+	if err := s.assemble(h, cfg, opts...); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// assemble validates and allocates; serve serves. It takes the host for one thing,
+// this node's identity.
+func (s *server) assemble(h host.Host, cfg Config, opts ...option) error {
 	if h == nil {
-		return nil, errors.New("discovery: a service with no host does not know who it is reporting as")
+		return errors.New("discovery: a service with no host does not know who it is reporting as")
 	}
 	c, err := cfg.withDefaults()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	var o options
 	for _, apply := range opts {
 		if err := apply(&o); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	if o.bus == nil {
-		return nil, ErrNoBus
+		return ErrNoBus
 	}
 	if o.reporter == nil {
-		return nil, ErrNoReporter
+		return ErrNoReporter
 	}
 	if o.now == nil {
 		o.now = time.Now
@@ -87,7 +128,7 @@ func New(h host.Host, cfg Config, opts ...Option) (*Service, error) {
 
 	view, err := stats.New(c.viewOptions(o.now))
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// THE PLACEMENT VIEW'S LIVENESS IS THIS SERVICE'S FRESHNESS, because both
@@ -100,22 +141,20 @@ func New(h host.Host, cfg Config, opts ...Option) (*Service, error) {
 		Liveness: c.Fresh, Stabilize: c.Stabilize, Now: o.now,
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return &Service{
-		cfg:         c,
-		opts:        o,
-		peer:        h.ID().String(),
-		view:        view,
-		members:     members,
-		incarnation: uint64(o.now().UnixNano()),
-		done:        make(chan struct{}),
-	}, nil
+	s.cfg, s.opts, s.peer = c, o, h.ID().String()
+	s.view, s.members = view, members
+	s.incarnation = uint64(o.now().UnixNano())
+	s.done = make(chan struct{})
+	// AFTER EVERY FIELD ABOVE: a reader that sees it set sees them.
+	s.built.Store(true)
+	return nil
 }
 
-// Start begins broadcasting and listening. It returns once both are running.
-func (s *Service) Start(ctx context.Context) error {
+// serve begins broadcasting and listening. It returns once both are running.
+func (s *server) serve(ctx context.Context) error {
 	s.mu.Lock()
 	if s.stopped {
 		s.mu.Unlock()
@@ -148,7 +187,7 @@ func (s *Service) Start(ctx context.Context) error {
 }
 
 // Close stops the service and waits for it to finish. It is safe to call twice.
-func (s *Service) Close() error {
+func (s *server) Close() error {
 	s.mu.Lock()
 	if s.stopped {
 		s.mu.Unlock()
@@ -171,7 +210,7 @@ func (s *Service) Close() error {
 // A REPORT THAT DOES NOT DECODE IS DROPPED AND THE LOOP CONTINUES. The bus is
 // a broadcast medium: one malformed message must not be able to stop a node
 // from hearing every subsequent one, which is what returning here would do.
-func (s *Service) listen(ctx context.Context, reports <-chan []byte) {
+func (s *server) listen(ctx context.Context, reports <-chan []byte) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -218,7 +257,7 @@ func Decode(b []byte) (stats.Report, error) {
 // broadcast sends this node's own report on every tick, and once immediately so
 // a fresh node is routable before the first interval elapses rather than after
 // it.
-func (s *Service) broadcast(ctx context.Context) {
+func (s *server) broadcast(ctx context.Context) {
 	t := time.NewTicker(s.cfg.Interval)
 	defer t.Stop()
 
@@ -239,7 +278,7 @@ func (s *Service) broadcast(ctx context.Context) {
 // shortly, and every reader already knows how old the row it holds is — that is
 // what Age is for. Retrying inside a tick would only make a struggling node
 // send more.
-func (s *Service) report(ctx context.Context) {
+func (s *server) report(ctx context.Context) {
 	snap, err := s.opts.reporter.Snapshot(ctx)
 	if err != nil {
 		return
@@ -291,23 +330,49 @@ func (s *Service) report(ctx context.Context) {
 }
 
 // Peer is this node's identity, as it reports it.
-func (s *Service) Peer() string { return s.peer }
+func (s *server) Peer() string { return s.peer }
 
 // Route is the read dns and gateway make: who can answer for this name, no
 // older than maxAge, least loaded first. The caller states the tolerance — see
 // pkg/stats for why there is no default.
-func (s *Service) Route(name string, maxAge time.Duration) []stats.Node {
+func (s *server) Route(name string, maxAge time.Duration) []stats.Node {
+	if !s.built.Load() {
+		return nil
+	}
 	return s.view.Route(name, maxAge)
 }
 
+// Routes is Route judged by this service's own freshness.
+func (s *server) Routes(name string) []stats.Node {
+	if !s.built.Load() {
+		return nil
+	}
+	return s.view.Route(name, s.cfg.Freshness())
+}
+
 // Fresh is every node whose report arrived within the configured window.
-func (s *Service) Fresh() []stats.Node { return s.view.Fresh() }
+func (s *server) Fresh() []stats.Node {
+	if !s.built.Load() {
+		return nil
+	}
+	return s.view.Fresh()
+}
 
 // All is every remembered node, at any age.
-func (s *Service) All() []stats.Node { return s.view.All() }
+func (s *server) All() []stats.Node {
+	if !s.built.Load() {
+		return nil
+	}
+	return s.view.All()
+}
 
 // Get is one node's row, however old.
-func (s *Service) Get(peer string) (stats.Node, bool) { return s.view.Get(peer) }
+func (s *server) Get(peer string) (stats.Node, bool) {
+	if !s.built.Load() {
+		return stats.Node{}, false
+	}
+	return s.view.Get(peer)
+}
 
 // socketsOf and wireSockets convert one message per direction.
 //
@@ -353,7 +418,7 @@ func wireSockets(in []stats.Socket) []*discoveryv2.Socket {
 // that on a blip is how a fleet spends its day rebalancing. pkg/membership is
 // written for exactly this split: Live is the acknowledgement target, Stable is
 // "who owns data", and it requires continuous presence in both directions.
-func (s *Service) beat(peer string, incarnation uint64, accepts bool) {
+func (s *server) beat(peer string, incarnation uint64, accepts bool) {
 	if s.members == nil || peer == "" {
 		return
 	}
@@ -366,8 +431,8 @@ func (s *Service) beat(peer string, incarnation uint64, accepts bool) {
 // IT IS THE STABLE SET AND NOT THE FRESH ONE — see beat. The routing view
 // answers a different question and is the wrong input here: it would move data
 // on a blip.
-func (s *Service) Placement() []placement.Member {
-	if s.members == nil {
+func (s *server) Placement() []placement.Member {
+	if !s.built.Load() || s.members == nil {
 		return nil
 	}
 	return s.members.StablePlacement()
@@ -376,8 +441,8 @@ func (s *Service) Placement() []placement.Member {
 // Peers is every node this view says runs service, freshest first, judged by this
 // service's own freshness. A row whose peer does not decode is skipped, so one bad row
 // cannot hide the good ones beside it.
-func (s *Service) Peers(service string) []libp2ppeer.ID {
-	rows := s.Route(service, s.cfg.Freshness())
+func (s *server) Peers(service string) []libp2ppeer.ID {
+	rows := s.Routes(service)
 	out := make([]libp2ppeer.ID, 0, len(rows))
 	for _, row := range rows {
 		if id, err := libp2ppeer.Decode(row.Peer); err == nil {
@@ -389,7 +454,7 @@ func (s *Service) Peers(service string) []libp2ppeer.ID {
 
 // PlacementOf is the placement set narrowed to the members whose last report says
 // they serve role: data a role holds is placed only on nodes running it.
-func (s *Service) PlacementOf(role string) []placement.Member {
+func (s *server) PlacementOf(role string) []placement.Member {
 	var out []placement.Member
 	for _, m := range s.Placement() {
 		if node, ok := s.view.Get(m.ID); ok && slices.Contains(node.Serving, role) {
@@ -408,7 +473,10 @@ func (s *Service) PlacementOf(role string) []placement.Member {
 //
 // It is a number an operator watches, not one anything acts on — a node acts on
 // its own copies, which it can see exactly.
-func (s *Service) Pending(maxAge time.Duration) int {
+func (s *server) Pending(maxAge time.Duration) int {
+	if !s.built.Load() {
+		return 0
+	}
 	total := 0
 	for _, node := range s.view.Within(maxAge) {
 		total += node.DatabasesPending

@@ -354,7 +354,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		Container: instance.ContainerConfig{Backend: cfg.Container},
 	}
 	nodeConfig.DNSListen = "127.0.0.1:0"
-	nodeConfig.Discovery.Stabilize = dreamStabilize
+	nodeConfig.Sections = map[string]any{discovery.Descriptor.Name: discovery.Config{Stabilize: dreamStabilize}}
 	// A universe is one developer's cloud, so sign-up is open.
 	nodeConfig.Auth.SignUp = auth.SignUpOpen
 	// A development cloud serves declared zones unproven.

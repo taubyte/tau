@@ -129,7 +129,7 @@ func TestADeployWritesTheNodeFileItPlanned(t *testing.T) {
 		assert.Equal(t, f.Node.Cloud, "test.com")
 		assert.Equal(t, f.Node.Gateway.CloudFqdn, "g.test.com")
 		assert.DeepEqual(t, f.Node.Tenancy, []string{"github.com/acme"})
-		assert.DeepEqual(t, f.Node.Added, map[string]any{"example": map[string]any{"greeting": "hello", "replicas": 2}})
+		assert.DeepEqual(t, f.Node.Sections, map[string]any{"example": map[string]any{"greeting": "hello", "replicas": 2}})
 		assert.Assert(t, f.CA != "" && f.Certificate != "" && f.PrivateKey != "")
 		assert.DeepEqual(t, f.Listen, []string{"/ip4/0.0.0.0/tcp/4242"})
 		assert.Equal(t, len(f.Bootstrap), 1, "a host bootstraps from the others")

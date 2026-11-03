@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
+	"github.com/taubyte/tau/services"
 
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
@@ -23,14 +25,14 @@ import (
 )
 
 func TestANodeRefusesBothHalvesOfTheBuildService(t *testing.T) {
-	_, err := Config{Services: []string{BuildFrontend, BuildBackend}}.withDefaults()
+	_, err := Config{Services: []string{BuildFrontend, BuildBackend}}.withDefaults(services.Names()...)
 	require.ErrorIs(t, err, ErrBothHalves)
 	require.ErrorContains(t, err, BuildFrontend)
 	require.ErrorContains(t, err, BuildBackend)
 
 	// Either one alone is fine.
 	for _, only := range []string{BuildFrontend, BuildBackend} {
-		_, err := Config{Services: []string{only, Discovery}}.withDefaults()
+		_, err := Config{Services: []string{only, Discovery}}.withDefaults(services.Names()...)
 		require.NoError(t, err, only)
 	}
 }
@@ -40,9 +42,9 @@ func TestTheDefaultShapeStarts(t *testing.T) {
 	require.Contains(t, All, BuildBackend)
 	require.Contains(t, All, Auth)
 
-	cfg, err := Config{}.withDefaults()
+	cfg, err := Config{}.withDefaults(services.Names()...)
 	require.NoError(t, err)
-	require.Equal(t, All, cfg.Services)
+	require.Equal(t, append(slices.Clone(All), services.Names()...), cfg.Services, "and every service tau ships")
 }
 
 func TestTheRoleNamesAreTheBuildServicesOwn(t *testing.T) {

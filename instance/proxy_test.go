@@ -10,6 +10,7 @@ import (
 
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
+	"github.com/taubyte/tau/pkg/stats"
 )
 
 // The wiring: a node holding a deployment finds its proxies, listens, and reports the
@@ -106,9 +107,7 @@ func TestANodeListensForItsHeldProxiesAndReportsThem(t *testing.T) {
 	require.Equal(t, "tcp", sock.Transport)
 	require.NotZero(t, sock.Port, "the kernel allocated one")
 
-	snap, err := n.Snapshot(t.Context())
-	require.NoError(t, err)
-
+	snap := reported(t, n, func(row stats.Node) bool { return len(row.Sockets) > 0 })
 	require.Len(t, snap.Sockets, 1, "the port is in the report")
 	require.Equal(t, sock.Host, snap.Sockets[0].Host)
 	require.Equal(t, sock.Port, snap.Sockets[0].Port)
@@ -123,8 +122,7 @@ func TestANodeDoesNotListenForAProxyItCannotServe(t *testing.T) {
 
 	require.Never(t, func() bool { return len(n.proxy.Serving()) > 0 }, time.Second, 50*time.Millisecond)
 
-	snap, err := n.Snapshot(t.Context())
-	require.NoError(t, err)
+	snap := reported(t, n, func(stats.Node) bool { return true })
 	require.Empty(t, snap.Sockets)
 }
 

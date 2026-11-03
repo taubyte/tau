@@ -6,13 +6,15 @@ import (
 	"sort"
 
 	"github.com/taubyte/tau/core/service"
+	"github.com/taubyte/tau/services/discovery"
 	"github.com/taubyte/tau/services/storage"
 )
 
 // shipped is every service tau ships, by name, each its package's New.
 func shipped() map[string]func() service.Service {
 	return map[string]func() service.Service{
-		storage.Descriptor.Name: func() service.Service { return storage.New() },
+		discovery.Descriptor.Name: func() service.Service { return discovery.New() },
+		storage.Descriptor.Name:   func() service.Service { return storage.New() },
 	}
 }
 

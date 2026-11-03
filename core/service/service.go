@@ -31,8 +31,9 @@ type Host interface {
 	// which everything a service runs on is built from.
 	Peer() peer.Node
 
-	// Running is every service running on this instance, for Get.
-	Running() []any
+	// Running is every service running on this instance, under the name the
+	// config gave it.
+	Running() []Running
 
 	// Config decodes the service's section of the instance's config into into,
 	// by yaml. With no section it leaves into as it was.
@@ -40,6 +41,16 @@ type Host interface {
 
 	// Root is the instance's own directory.
 	Root() string
+
+	// Cloud is the cloud this instance belongs to, which scopes what it gossips.
+	Cloud() string
+}
+
+// Running is one service running on an instance. A Name is empty for something the
+// instance runs that is not a service it was configured with.
+type Running struct {
+	Name    string
+	Service any
 }
 
 // Directory says which nodes run a service: what discovery answers.
@@ -53,8 +64,8 @@ var ErrNoneRuns = errors.New("service: no node is known to run it")
 // Get is the service running on this instance that is a T: how one service reaches
 // another beside it, with no hop and no name.
 func Get[T any](h Host) (T, bool) {
-	for _, s := range h.Running() {
-		if t, ok := s.(T); ok {
+	for _, r := range h.Running() {
+		if t, ok := r.Service.(T); ok {
 			return t, true
 		}
 	}

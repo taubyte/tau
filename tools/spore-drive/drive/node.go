@@ -271,7 +271,7 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 				// ADDED SERVICES' CONFIGURATION IS COPIED, NEVER READ. Each
 				// service decodes its own entry; a node built without one
 				// refuses the entry by name.
-				Added: added,
+				Sections: added,
 				// The tenancy is cloud-wide: every node carries it, and the
 				// ones that register, link or build a repository apply it.
 				Tenancy: served.Namespaces(),
