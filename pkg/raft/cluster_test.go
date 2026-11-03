@@ -2,6 +2,7 @@ package raft
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -394,10 +395,14 @@ func TestCluster_CloseWaitsForALeaderThatRemovedItself(t *testing.T) {
 				time.Sleep(10 * time.Millisecond)
 				continue
 			}
-			if err := l.Set("held", []byte("v"), 5*time.Second); !leadershipMoved(err) {
-				setDone <- err
-				return
+			// A leader that removed itself and closed answers ErrShutdown rather than
+			// ErrNotLeader; either way the write goes to the member that is left.
+			err := l.Set("held", []byte("v"), 5*time.Second)
+			if leadershipMoved(err) || (errors.Is(err, ErrShutdown) && l.(*cluster).closed.Load()) {
+				continue
 			}
+			setDone <- err
+			return
 		}
 	}()
 	for _, cl := range []Cluster{a, b} {
