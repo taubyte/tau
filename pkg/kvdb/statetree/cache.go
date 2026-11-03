@@ -17,9 +17,11 @@ type Cache struct {
 	mu     sync.Mutex
 	budget int
 	used   int
-	index  map[cacheKey]int32
-	slots  []cacheSlot
-	free   []int32
+	// pressed counts the nodes that arrived to a full budget.
+	pressed int
+	index   map[cacheKey]int32
+	slots   []cacheSlot
+	free    []int32
 	// Per level, the first and last slot, most recently used first; -1 for none.
 	mru, lru [cacheLevels]int32
 }
@@ -56,6 +58,14 @@ func (c *Cache) Used() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.used
+}
+
+// Pressed is how many nodes arrived when the budget was full, each taking another's
+// place or turned away.
+func (c *Cache) Pressed() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.pressed
 }
 
 func keyFor(id cid.Cid) (cacheKey, bool) {
@@ -119,6 +129,9 @@ func (c *Cache) add(id cid.Cid, n *node, size int) {
 	defer c.mu.Unlock()
 	if _, ok := c.index[k]; ok {
 		return
+	}
+	if c.used+size > c.budget {
+		c.pressed++
 	}
 	for c.used+size > c.budget {
 		l := c.lowest()

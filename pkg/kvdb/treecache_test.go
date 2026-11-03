@@ -82,8 +82,9 @@ func TestAMergeReadsItsBaseFromTheCacheOfTreeNodes(t *testing.T) {
 
 func TestTheCacheOfTreeNodesStaysWithinItsBudget(t *testing.T) {
 	// The tree's live upper levels alone outgrow the small budget: the cache forgets what
-	// no root reaches, so a smaller tree would never press it.
-	const small, keys = 16 << 10, 6000
+	// no root reaches, so a smaller tree would never press it. At 6000 keys a loaded
+	// box pressed it as few as four times in a run; at 12000 never fewer than 2000.
+	const small, keys = 16 << 10, 12000
 	replicas, dagsyncs, done := makeSeparateStoresWith(t, 2, func(i int) *Options {
 		o := noAutoCompact()
 		if i == 1 {
@@ -116,9 +117,9 @@ func TestTheCacheOfTreeNodesStaysWithinItsBudget(t *testing.T) {
 			peak[i] = max(peak[i], used)
 		}
 	}
-	t.Logf("peak use: %d of %d, %d of %d", peak[0], treeCacheBytes, peak[1], small)
-	if peak[1] < small/2 {
-		t.Fatalf("the small cache never held more than %d bytes: the run does not test its budget", peak[1])
+	t.Logf("peak use: %d of %d, %d of %d; the small one pressed %d times", peak[0], treeCacheBytes, peak[1], small, b.trees.Pressed())
+	if b.trees.Pressed() == 0 {
+		t.Fatalf("no node ever arrived to the small cache full, peak %d: the run does not test its budget", peak[1])
 	}
 	if got, want := queryAll(t, b), queryAll(t, a); !sameKV(got, want) {
 		t.Fatalf("b holds %d keys, a %d", len(got), len(want))
