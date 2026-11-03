@@ -22,7 +22,7 @@ import (
 // pending is how many of this node's databases are below their floor as far as it
 // can tell (a co-holder said no or was unreachable). One number, so the fleet total
 // is cheap; which ones is asked of the node.
-func (s *Service) pending() int {
+func (s *server) pending() int {
 	s.pendingMu.Lock()
 	defer s.pendingMu.Unlock()
 	return s.pendingAt
@@ -30,13 +30,13 @@ func (s *Service) pending() int {
 
 // FleetRevision is the revision of the cloud document this node last computed
 // with. A node behind is behind by a number every other node can see.
-func (s *Service) FleetRevision() uint64 { return s.floor.revisionSeen() }
+func (s *server) FleetRevision() uint64 { return s.floor.revisionSeen() }
 
 // Pending is how many databases this node holds that are below their floor.
-func (s *Service) Pending() int { return s.pending() }
+func (s *server) Pending() int { return s.pending() }
 
 // run reconsiders what this node holds, on an interval, until the context ends.
-func (s *Service) run(ctx context.Context) {
+func (s *server) run(ctx context.Context) {
 	if s.holdings == nil || s.members == nil {
 		// A node that cannot see a fleet, or cannot let go of anything, has
 		// nothing to reconsider. It still serves.
@@ -56,7 +56,7 @@ func (s *Service) run(ctx context.Context) {
 }
 
 // reconsider walks this node's copies once.
-func (s *Service) reconsider(ctx context.Context) {
+func (s *server) reconsider(ctx context.Context) {
 	floor, known := s.floor.read(ctx)
 	members := s.members()
 
@@ -84,7 +84,7 @@ func (s *Service) reconsider(ctx context.Context) {
 // leader, so without this a node whose peers were booting would lead a group of one
 // forever, acking writes nothing replicated. It walks opened groups, not OnDisk,
 // which never names a ledger. Cost: one call per other voter per ledger per sweep.
-func (s *Service) reconsiderLedgers(ctx context.Context) {
+func (s *server) reconsiderLedgers(ctx context.Context) {
 	for _, at := range s.ledgers() {
 		select {
 		case <-ctx.Done():
@@ -107,7 +107,7 @@ func (s *Service) reconsiderLedgers(ctx context.Context) {
 
 // reconsiderOne decides about one copy, and reports whether it is below its
 // floor as far as this node can tell.
-func (s *Service) reconsiderOne(ctx context.Context, members []placement.Member, spec database.Spec, floor int, known bool) (short bool) {
+func (s *server) reconsiderOne(ctx context.Context, members []placement.Member, spec database.Spec, floor int, known bool) (short bool) {
 	// THE ADDRESS ROUND-TRIPS THROUGH THE SPEC. Name is what storeName wrote,
 	// so reading it back as the id reproduces the same key and the same prefix.
 	at := address{project: spec.Project, environment: spec.Environment, id: spec.Name}
@@ -184,7 +184,7 @@ func (s *Service) reconsiderOne(ctx context.Context, members []placement.Member,
 // the floor is met as far as this node can tell. A peer saying no opens only on its
 // own placement answer. Unreachable counts as short: this number is advisory, unlike
 // release.
-func (s *Service) repair(ctx context.Context, at address, members []placement.Member, floor int) (short bool) {
+func (s *server) repair(ctx context.Context, at address, members []placement.Member, floor int) (short bool) {
 	held := 1 // this node
 	others := 0
 	for _, id := range holders(at, members, floor) {
@@ -204,7 +204,7 @@ func (s *Service) repair(ctx context.Context, at address, members []placement.Me
 }
 
 // nudge is the cheap ask: has this peer got the database, and does it keep it.
-func (s *Service) nudge(ctx context.Context, peer string, at address) (keeper, error) {
+func (s *server) nudge(ctx context.Context, peer string, at address) (keeper, error) {
 	id, err := libp2ppeer.Decode(peer)
 	if err != nil {
 		return keeper{}, err
@@ -220,7 +220,7 @@ func (s *Service) nudge(ctx context.Context, peer string, at address) (keeper, e
 }
 
 // mayGo is this node's own digest, compared against its replacements'.
-func (s *Service) mayGo(ctx context.Context, at address, desired []string, floor int) bool {
+func (s *server) mayGo(ctx context.Context, at address, desired []string, floor int) bool {
 	kv, err := s.kv(ctx, at)
 	if err != nil {
 		return false
@@ -234,7 +234,7 @@ func (s *Service) mayGo(ctx context.Context, at address, desired []string, floor
 
 // ask is one peer's answer about one database, dialled per ask so a gone node is an
 // error rather than a cached yes.
-func (s *Service) ask(ctx context.Context, peer string, at address) (keeper, error) {
+func (s *server) ask(ctx context.Context, peer string, at address) (keeper, error) {
 	id, err := libp2ppeer.Decode(peer)
 	if err != nil {
 		return keeper{}, err

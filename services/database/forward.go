@@ -61,7 +61,7 @@ func hopsOf(ctx context.Context) int {
 
 // voters is every node that should be in this database's raft group, in the
 // order placement ranked them.
-func (s *Service) voters(ctx context.Context, at address) []string {
+func (s *server) voters(ctx context.Context, at address) []string {
 	members := s.fleet()
 	if len(members) == 0 {
 		// A node that sees no fleet is the whole fleet as far as it knows, and keeps its own
@@ -81,7 +81,7 @@ func (s *Service) voters(ctx context.Context, at address) []string {
 
 // fleet is this node's membership view, or nothing when it has no way to have
 // one.
-func (s *Service) fleet() []placement.Member {
+func (s *server) fleet() []placement.Member {
 	if s.members == nil {
 		return nil
 	}
@@ -91,7 +91,7 @@ func (s *Service) fleet() []placement.Member {
 // desired splits this database's voters into this node and the others. One predicate
 // serves routing and answering, so a node never opens a group it then denies
 // holding.
-func (s *Service) desired(ctx context.Context, at address, d declared) (others []string, mine bool) {
+func (s *server) desired(ctx context.Context, at address, d declared) (others []string, mine bool) {
 	voters := s.voters(ctx, at)
 
 	others = make([]string, 0, len(voters))
@@ -108,7 +108,7 @@ func (s *Service) desired(ctx context.Context, at address, d declared) (others [
 
 // route is a raft database as this node can reach it: its own group when it is a
 // voter, otherwise the node that should answer.
-func (s *Service) route(ctx context.Context, at address, d declared) (database.KVConn, error) {
+func (s *server) route(ctx context.Context, at address, d declared) (database.KVConn, error) {
 	others, mine := s.desired(ctx, at, d)
 
 	// A group this node already opened is answered from, whatever placement says today.
@@ -137,7 +137,7 @@ func (s *Service) route(ctx context.Context, at address, d declared) (database.K
 // opening records that this node has a group for one raft database. A group outlives
 // the answer that opened it: neither eviction nor a new placement removes a voter,
 // so this set is what the sweep asks about and route answers from.
-func (s *Service) opening(at address) {
+func (s *server) opening(at address) {
 	s.ledgerMu.Lock()
 	defer s.ledgerMu.Unlock()
 	if s.ledgersOpen == nil {
@@ -147,7 +147,7 @@ func (s *Service) opening(at address) {
 }
 
 // opened is whether this node is already a voter in a database's group.
-func (s *Service) opened(key string) bool {
+func (s *server) opened(key string) bool {
 	s.ledgerMu.Lock()
 	defer s.ledgerMu.Unlock()
 	_, open := s.ledgersOpen[key]
@@ -155,7 +155,7 @@ func (s *Service) opened(key string) bool {
 }
 
 // ledgers is every raft database this node has opened a group for.
-func (s *Service) ledgers() []address {
+func (s *server) ledgers() []address {
 	s.ledgerMu.Lock()
 	defer s.ledgerMu.Unlock()
 
@@ -169,7 +169,7 @@ func (s *Service) ledgers() []address {
 // routed is one raft database: this node's own group when it has one, and the
 // node that answers when it does not.
 type routed struct {
-	service *Service
+	service *server
 	at      address
 
 	// local is this node's own connection, nil when placement says this node is
@@ -304,7 +304,7 @@ func (r *routed) Close() error { return nil }
 // warm asks this database's other desired voters about it, which makes each open its
 // own group. One round at a time and off the caller's path. The answer is discarded:
 // a peer opens on its own placement answer.
-func (s *Service) warm(ctx context.Context, at address, peers []string) {
+func (s *server) warm(ctx context.Context, at address, peers []string) {
 	if len(peers) == 0 {
 		return
 	}
@@ -342,7 +342,7 @@ func (s *Service) warm(ctx context.Context, at address, peers []string) {
 
 // voting is what this node answers about a raft database, and the one place it may
 // become a voter: on its own placement answer, never the asker's.
-func (s *Service) voting(ctx context.Context, at address, d declared) *databasev2.Holding {
+func (s *server) voting(ctx context.Context, at address, d declared) *databasev2.Holding {
 	_, mine := s.desired(ctx, at, d)
 	if !mine && !s.opened(at.key()) {
 		return &databasev2.Holding{}

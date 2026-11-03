@@ -24,7 +24,7 @@ import (
 
 // ledgers is n database services on one mocknet, each with its own engine, all
 // reading the same deployment and all able to keep raft.
-func ledgers(t *testing.T, n int) ([]*Service, []*accounting) {
+func ledgers(t *testing.T, n int) ([]*server, []*accounting) {
 	t.Helper()
 
 	mn := mocknet.New()
@@ -39,7 +39,7 @@ func ledgers(t *testing.T, n int) ([]*Service, []*accounting) {
 	require.NoError(t, mn.LinkAll())
 	require.NoError(t, mn.ConnectAllButSelf())
 
-	services := make([]*Service, 0, n)
+	services := make([]*server, 0, n)
 	engines := make([]*accounting, 0, n)
 	for _, h := range hosts {
 		engine := &accounting{}
@@ -47,13 +47,13 @@ func ledgers(t *testing.T, n int) ([]*Service, []*accounting) {
 		require.NoError(t, registry.Register(t.Context(), engine))
 		engine.forgetProbe()
 
-		s, err := New(h,
-			WithEngines(registry),
-			WithRegister(&published{revision: 1, object: compiled()}),
-			WithConsensus(database.CRDT, database.Raft),
-			WithIdle(time.Hour))
+		s, err := build(h,
+			withEngines(registry),
+			withRegister(&published{revision: 1, object: compiled()}),
+			withConsensus(database.CRDT, database.Raft),
+			withIdle(time.Hour))
 		require.NoError(t, err)
-		require.NoError(t, s.Start(t.Context()))
+		require.NoError(t, s.serve(t.Context()))
 		t.Cleanup(func() { s.Close() })
 
 		services = append(services, s)
@@ -233,10 +233,10 @@ func TestAnUnnamedConsensusIsRefusedAtConstruction(t *testing.T) {
 	registry := database.NewRegistry()
 	require.NoError(t, registry.Register(t.Context(), &accounting{}))
 
-	_, err = New(h,
-		WithEngines(registry),
-		WithRegister(&published{revision: 1, object: compiled()}),
-		WithConsensus(database.CRDT, ""))
+	_, err = build(h,
+		withEngines(registry),
+		withRegister(&published{revision: 1, object: compiled()}),
+		withConsensus(database.CRDT, ""))
 	require.ErrorContains(t, err, "unnamed consensus")
 }
 

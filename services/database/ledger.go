@@ -16,7 +16,7 @@
 //
 // Nothing forwards: the store names the leader so services/database can send the
 // operation there.
-package ledger
+package database
 
 import (
 	"context"
@@ -28,39 +28,38 @@ import (
 
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/raft"
-	databaseService "github.com/taubyte/tau/services/database"
 )
 
-// Groups opens the raft group a namespace's entries are ordered in.
+// GroupOpener opens the raft group a namespace's entries are ordered in.
 //
 // A FUNCTION AND NOT AN INTERFACE, because it is one question and because it is
 // the shape the answer already has: raft.New takes a peer node — a host, a DHT,
 // a datastore and a lifetime — none of which a ledger has an opinion about, and
 // all of which only the composition root holds.
-type Groups func(namespace string) (raft.Cluster, error)
+type GroupOpener func(namespace string) (raft.Cluster, error)
 
-// Domain is where a ledger's group lives, apart from the queues' namespace: a system
+// LedgerDomain is where a ledger's group lives, apart from the queues' namespace: a system
 // of record has a different lifetime and blast radius.
-const Domain = "/tau/databases/v2"
+const LedgerDomain = "/tau/databases/v2"
 
-// Budget is what one write or one barrier may cost.
+// LedgerBudget is what one write or one barrier may cost.
 //
 // IT IS A REQUEST'S BUDGET AND NOT AN ELECTION'S. A group that has no leader is
 // refused immediately and the caller retries; this bounds the round trip to a
 // leader that exists, which is a commit to a quorum.
-const Budget = 10 * time.Second
+const LedgerBudget = 10 * time.Second
 
 // Namespace is the raft namespace one database's group lives in — the same name
 // instance/database gives its crdt store, under a different root, so the group and
 // the store agree by construction rather than by two expressions that happen to
 // match. Spec.Prefix already refuses a separator in any segment, which is what a
 // protocol id needs.
-func Namespace(spec database.Spec) (string, error) {
+func LedgerNamespace(spec database.Spec) (string, error) {
 	prefix, err := spec.Prefix()
 	if err != nil {
 		return "", err
 	}
-	return Domain + "/" + strings.TrimSuffix(prefix, "/"), nil
+	return LedgerDomain + "/" + strings.TrimSuffix(prefix, "/"), nil
 }
 
 // forming is one database's cluster and how far along opening it is.
@@ -73,10 +72,10 @@ type forming struct {
 	err     error
 }
 
-// Ledgers is every group this node opened, and the store over each. Construct it
+// RaftLedgers is every group this node opened, and the store over each. Construct it
 // with New.
-type Ledgers struct {
-	open   Groups
+type RaftLedgers struct {
+	open   GroupOpener
 	budget time.Duration
 
 	mu     sync.Mutex
@@ -96,21 +95,21 @@ type Ledgers struct {
 // and a node composed that way keeps no ledger at all — which is what makes the
 // service's refusal by name true rather than a guess.
 //
-// budget is what one write or one barrier may cost; ZERO IS [Budget], and a
+// budget is what one write or one barrier may cost; ZERO IS [LedgerBudget], and a
 // caller that will not wait that long says so on its context instead.
-func New(open Groups, budget time.Duration) (*Ledgers, error) {
+func NewRaftLedgers(open GroupOpener, budget time.Duration) (*RaftLedgers, error) {
 	if open == nil {
 		return nil, errors.New("ledger: no way to open a group, so no ledger can be kept")
 	}
 	if budget <= 0 {
-		budget = Budget
+		budget = LedgerBudget
 	}
-	return &Ledgers{open: open, budget: budget}, nil
+	return &RaftLedgers{open: open, budget: budget}, nil
 }
 
 // Store is where a `consensus: raft` database keeps its entries.
-func (l *Ledgers) Store(spec database.Spec) (database.Store, error) {
-	namespace, err := Namespace(spec)
+func (l *RaftLedgers) Store(spec database.Spec) (database.Store, error) {
+	namespace, err := LedgerNamespace(spec)
 	if err != nil {
 		return nil, err
 	}
@@ -129,11 +128,11 @@ func (l *Ledgers) Store(spec database.Spec) (database.Store, error) {
 // group answers a database's group, starting its formation if needed. It never
 // blocks: raft.New waits up to thirty seconds for peers, so the group opens in the
 // background and an early call is refused by name.
-func (l *Ledgers) group(namespace string) (raft.Cluster, error) {
+func (l *RaftLedgers) group(namespace string) (raft.Cluster, error) {
 	l.mu.Lock()
 	if l.gone {
 		l.mu.Unlock()
-		return nil, databaseService.ErrGroupClosed
+		return nil, ErrGroupClosed
 	}
 	g, opening := l.groups[namespace]
 	if !opening {
@@ -157,7 +156,7 @@ func (l *Ledgers) group(namespace string) (raft.Cluster, error) {
 	select {
 	case <-g.done:
 	default:
-		return nil, databaseService.ErrGroupForming
+		return nil, ErrGroupForming
 	}
 
 	l.mu.Lock()
@@ -172,14 +171,14 @@ func (l *Ledgers) group(namespace string) (raft.Cluster, error) {
 		// Closed underneath us, which is a node on its way out. It is NOT
 		// "still forming": a caller told that retries here for a group that
 		// will never form, and what it should do is ask another voter.
-		return nil, databaseService.ErrGroupClosed
+		return nil, ErrGroupClosed
 	}
 	return g.cluster, nil
 }
 
 // Close releases every group this node opened, once each has finished opening;
 // tearing one down mid-bootstrap would write into a closed store.
-func (l *Ledgers) Close() error {
+func (l *RaftLedgers) Close() error {
 	l.mu.Lock()
 	groups := l.groups
 	l.groups = nil
@@ -273,7 +272,7 @@ func missed(cluster raft.Cluster) error {
 	if cluster.IsLeader() {
 		return nil
 	}
-	return databaseService.NotLeading{}
+	return NotLeading{}
 }
 
 // leading is this node's group, if it may answer for it. A group with no leader yet is
@@ -295,9 +294,9 @@ func (s *Ledger) leading(ctx context.Context) (raft.Cluster, time.Duration, erro
 
 	leader, err := cluster.Leader()
 	if err != nil {
-		return nil, 0, databaseService.NotLeading{}
+		return nil, 0, NotLeading{}
 	}
-	return nil, 0, databaseService.NotLeading{Leader: leader.String()}
+	return nil, 0, NotLeading{Leader: leader.String()}
 }
 
 // remaining is what one operation may cost: this ledger's ceiling, cut short by
@@ -343,7 +342,7 @@ func (s *Ledger) current(ctx context.Context) (raft.Cluster, error) {
 // same arm, rather than as a store failure it would give up on.
 func (s *Ledger) wrote(key string, err error) error {
 	if errors.Is(err, raft.ErrNotLeader) {
-		return databaseService.NotLeading{}
+		return NotLeading{}
 	}
 	return fmt.Errorf("ledger: writing %s: %w", key, err)
 }

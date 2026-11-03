@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/services/consensus"
+	"github.com/taubyte/tau/services/database"
 	"github.com/taubyte/tau/services/discovery"
 	"github.com/taubyte/tau/services/primitives"
 	"github.com/taubyte/tau/services/register"
@@ -14,7 +15,7 @@ import (
 )
 
 func TestANameIsTheServiceItRuns(t *testing.T) {
-	require.Equal(t, []string{consensus.Descriptor.Name, discovery.Descriptor.Name, register.Descriptor.Name, secrets.Descriptor.Name, primitives.Descriptor.Name, storage.Descriptor.Name}, Names(), "in start order")
+	require.Equal(t, []string{consensus.Descriptor.Name, discovery.Descriptor.Name, register.Descriptor.Name, secrets.Descriptor.Name, primitives.Descriptor.Name, database.Descriptor.Name, storage.Descriptor.Name}, Names(), "in start order")
 
 	s, ok := New(storage.Descriptor.Name)
 	require.True(t, ok)
@@ -36,6 +37,7 @@ func TestANameIsTheServiceItRuns(t *testing.T) {
 
 func TestAServiceNeedsWhatItCannotStartWithout(t *testing.T) {
 	require.Equal(t, []string{consensus.Descriptor.Name}, Needs(primitives.Descriptor.Name))
+	require.Equal(t, []string{consensus.Descriptor.Name}, Needs(database.Descriptor.Name))
 	require.Empty(t, Needs(consensus.Descriptor.Name))
 	require.Empty(t, Needs("nothing"))
 }

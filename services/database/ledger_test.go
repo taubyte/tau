@@ -1,4 +1,4 @@
-package ledger_test
+package database_test
 
 import (
 	"context"
@@ -13,8 +13,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/raft"
-	databaseService "github.com/taubyte/tau/services/database"
-	"github.com/taubyte/tau/services/database/ledger"
+	backing "github.com/taubyte/tau/services/database"
 )
 
 // The gating, not the consensus: a node that may not answer says so, names who may,
@@ -55,7 +54,7 @@ type follower struct {
 	lost                     bool
 
 	// wrote is what a Set or a Delete answered, and is where a lost lease shows
-	// up for a ledger.
+	// up for a backing.
 	wrote error
 
 	// closeErr is a group that would not shut down cleanly, which Close has to
@@ -177,7 +176,7 @@ func (f *follower) did() (barriers int, budgets []time.Duration, closed bool) {
 	return f.barriers, append([]time.Duration(nil), f.budgets...), f.closed
 }
 
-func ledgerSpec() database.Spec {
+func raftSpec() database.Spec {
 	return database.Spec{
 		Type: database.KV, Engine: database.Tau, Consensus: database.Raft,
 		Project: "shop", Environment: "prod", Name: "QmLedger",
@@ -219,18 +218,18 @@ func (o *opens) asked() int {
 // design — see Ledgers.group. It is polled through a Delete rather than a read:
 // Delete takes no barrier, so waiting for the group does not spend the count the
 // barrier tests are about.
-func formed(t *testing.T, open ledger.Groups, budget time.Duration) (*ledger.Ledgers, database.Store) {
+func formed(t *testing.T, open backing.GroupOpener, budget time.Duration) (*backing.RaftLedgers, database.Store) {
 	t.Helper()
 
-	l, err := ledger.New(open, budget)
+	l, err := backing.NewRaftLedgers(open, budget)
 	require.NoError(t, err)
 	t.Cleanup(func() { l.Close() })
 
-	store, err := l.Store(ledgerSpec())
+	store, err := l.Store(raftSpec())
 	require.NoError(t, err)
 
 	require.Eventually(t, func() bool {
-		return !errors.Is(store.Delete(t.Context(), "probe"), databaseService.ErrGroupForming)
+		return !errors.Is(store.Delete(t.Context(), "probe"), backing.ErrGroupForming)
 	}, 5*time.Second, time.Millisecond, "the group never finished forming")
 	return l, store
 }
@@ -243,18 +242,18 @@ func over(t *testing.T, c raft.Cluster) database.Store {
 }
 
 func TestTheGroupIsNamedByWhatAddressesTheDatabase(t *testing.T) {
-	name, err := ledger.Namespace(ledgerSpec())
+	name, err := backing.LedgerNamespace(raftSpec())
 	require.NoError(t, err)
-	require.Equal(t, ledger.Domain+"/shop/prod/kv/QmLedger", name)
+	require.Equal(t, backing.LedgerDomain+"/shop/prod/kv/QmLedger", name)
 
 	// AND A SPEC THAT ADDRESSES NOTHING NAMES NOTHING. A separator in a segment
-	// is a readable path into somebody else's ledger.
-	_, err = ledger.Namespace(database.Spec{Type: database.KV, Name: "ledger"})
+	// is a readable path into somebody else's backing.
+	_, err = backing.LedgerNamespace(database.Spec{Type: database.KV, Name: "ledger"})
 	require.ErrorIs(t, err, database.ErrUnaddressable)
 
 	// AND THE TABLE REFUSES IT FOR THE SAME REASON, rather than opening a group
 	// on a name it could not build.
-	l, err := ledger.New(answering(leading()).Groups, time.Second)
+	l, err := backing.NewRaftLedgers(answering(leading()).Groups, time.Second)
 	require.NoError(t, err)
 	t.Cleanup(func() { l.Close() })
 
@@ -263,7 +262,7 @@ func TestTheGroupIsNamedByWhatAddressesTheDatabase(t *testing.T) {
 }
 
 func TestANodeWithNowhereToOpenAGroupKeepsNoLedger(t *testing.T) {
-	_, err := ledger.New(nil, 0)
+	_, err := backing.NewRaftLedgers(nil, 0)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "no way to open a group")
 }
@@ -273,27 +272,27 @@ func TestALedgerRefusesAWriteOffItsLeaderAndSaysWhoLeads(t *testing.T) {
 	cluster.leaderID = followerLeader(t)
 	store := over(t, cluster)
 
-	var elsewhere databaseService.NotLeading
+	var elsewhere backing.NotLeading
 	err := store.Put(t.Context(), "entry-1", []byte("one"))
-	require.ErrorIs(t, err, databaseService.ErrNotLeading)
+	require.ErrorIs(t, err, backing.ErrNotLeading)
 	require.True(t, errors.As(err, &elsewhere))
 	require.Equal(t, cluster.leaderID.String(), elsewhere.Leader,
 		"the refusal did not carry the one thing that makes the call re-issuable")
 
-	require.ErrorIs(t, store.Delete(t.Context(), "entry-1"), databaseService.ErrNotLeading)
+	require.ErrorIs(t, store.Delete(t.Context(), "entry-1"), backing.ErrNotLeading)
 
 	_, _, err = store.Get(t.Context(), "entry-1")
-	require.ErrorIs(t, err, databaseService.ErrNotLeading)
+	require.ErrorIs(t, err, backing.ErrNotLeading)
 
 	keys, err := store.List(t.Context(), "")
-	require.ErrorIs(t, err, databaseService.ErrNotLeading)
+	require.ErrorIs(t, err, backing.ErrNotLeading)
 	require.Nil(t, keys)
 
 	// A GROUP WITH NO LEADER AT ALL IS THE SAME ARM WITH NOBODY IN IT, so a
 	// caller is told to ask again rather than to ask a node that does not exist.
 	cluster.leaderError = errors.New("no leader")
 	err = store.Put(t.Context(), "entry-1", []byte("one"))
-	require.ErrorIs(t, err, databaseService.ErrNotLeading)
+	require.ErrorIs(t, err, backing.ErrNotLeading)
 	require.True(t, errors.As(err, &elsewhere))
 	require.Empty(t, elsewhere.Leader)
 }
@@ -311,8 +310,8 @@ func TestLosingLeadershipMidWriteIsStillNotLeading(t *testing.T) {
 	cluster.wrote = raft.ErrNotLeader
 	store := over(t, cluster)
 
-	require.ErrorIs(t, store.Put(t.Context(), "entry-1", []byte("one")), databaseService.ErrNotLeading)
-	require.ErrorIs(t, store.Delete(t.Context(), "entry-1"), databaseService.ErrNotLeading)
+	require.ErrorIs(t, store.Put(t.Context(), "entry-1", []byte("one")), backing.ErrNotLeading)
+	require.ErrorIs(t, store.Delete(t.Context(), "entry-1"), backing.ErrNotLeading)
 
 	// And a write that failed for any other reason is a write that failed.
 	cluster.wrote = errors.New("the log is full")
@@ -387,7 +386,7 @@ func TestAMissFromAGroupThatIsGoneIsNotAMiss(t *testing.T) {
 	cluster.stopsLeadingAfterBarrier = true
 
 	_, _, err = store.Get(t.Context(), "entry-1")
-	require.ErrorIs(t, err, databaseService.ErrNotLeading,
+	require.ErrorIs(t, err, backing.ErrNotLeading,
 		"a group that went away between the barrier and the read answered an empty ledger")
 
 	// AND THE SAME WINDOW FOR List, which is where it matters most: Keys cannot
@@ -395,7 +394,7 @@ func TestAMissFromAGroupThatIsGoneIsNotAMiss(t *testing.T) {
 	// gone, and only the check after the read tells them apart.
 	cluster.relead()
 	keys, err := store.List(t.Context(), "")
-	require.ErrorIs(t, err, databaseService.ErrNotLeading)
+	require.ErrorIs(t, err, backing.ErrNotLeading)
 	require.Nil(t, keys)
 }
 
@@ -447,7 +446,7 @@ func TestACallerWithNoDeadlinePaysTheLedgersBudget(t *testing.T) {
 
 	_, budgets, _ := cluster.did()
 	require.NotEmpty(t, budgets)
-	require.Equal(t, ledger.Budget, budgets[len(budgets)-1])
+	require.Equal(t, backing.LedgerBudget, budgets[len(budgets)-1])
 }
 
 func TestAGroupThatHasNotFormedIsRefusedAndNeverWaitedOn(t *testing.T) {
@@ -455,11 +454,11 @@ func TestAGroupThatHasNotFormedIsRefusedAndNeverWaitedOn(t *testing.T) {
 	asked := answering(cluster)
 	asked.hold = make(chan struct{})
 
-	l, err := ledger.New(asked.Groups, time.Second)
+	l, err := backing.NewRaftLedgers(asked.Groups, time.Second)
 	require.NoError(t, err)
 	t.Cleanup(func() { l.Close() })
 
-	store, err := l.Store(ledgerSpec())
+	store, err := l.Store(raftSpec())
 	require.NoError(t, err)
 
 	// THE FIRST ASK ANSWERS IMMEDIATELY, which is the whole claim.
@@ -467,7 +466,7 @@ func TestAGroupThatHasNotFormedIsRefusedAndNeverWaitedOn(t *testing.T) {
 	go func() { done <- store.Put(t.Context(), "entry-1", []byte("one")) }()
 	select {
 	case err := <-done:
-		require.ErrorIs(t, err, databaseService.ErrGroupForming)
+		require.ErrorIs(t, err, backing.ErrGroupForming)
 	case <-time.After(5 * time.Second):
 		t.Fatal("a caller waited on a group that was still forming")
 	}
@@ -480,7 +479,7 @@ func TestAGroupThatHasNotFormedIsRefusedAndNeverWaitedOn(t *testing.T) {
 	// ONE GROUP PER DATABASE AND ONE OPEN PER GROUP: a second ask joins the
 	// first rather than starting an election beside it.
 	for range 5 {
-		second, err := l.Store(ledgerSpec())
+		second, err := l.Store(raftSpec())
 		require.NoError(t, err)
 		require.NoError(t, second.Put(t.Context(), "entry-2", []byte("two")))
 	}
@@ -497,16 +496,16 @@ func TestAGroupThatHasNotFormedIsRefusedAndNeverWaitedOn(t *testing.T) {
 func TestAGroupThatCouldNotBeOpenedSaysSoAndIsTriedAgain(t *testing.T) {
 	asked := &opens{answer: func() (raft.Cluster, error) { return nil, errors.New("no disk") }}
 
-	l, err := ledger.New(asked.Groups, time.Second)
+	l, err := backing.NewRaftLedgers(asked.Groups, time.Second)
 	require.NoError(t, err)
 	t.Cleanup(func() { l.Close() })
 
-	store, err := l.Store(ledgerSpec())
+	store, err := l.Store(raftSpec())
 	require.NoError(t, err)
 
 	require.Eventually(t, func() bool {
 		err := store.Put(t.Context(), "entry-1", []byte("one"))
-		return err != nil && !errors.Is(err, databaseService.ErrGroupForming) &&
+		return err != nil && !errors.Is(err, backing.ErrGroupForming) &&
 			strings.Contains(err.Error(), "no disk")
 	}, 10*time.Second, 10*time.Millisecond, "the reason the group could not be opened never reached a caller")
 
@@ -521,15 +520,15 @@ func TestAGroupThatCouldNotBeOpenedSaysSoAndIsTriedAgain(t *testing.T) {
 func TestAGroupThatOpenedToNothingIsRefusedAsClosed(t *testing.T) {
 	asked := &opens{answer: func() (raft.Cluster, error) { return nil, nil }}
 
-	l, err := ledger.New(asked.Groups, time.Second)
+	l, err := backing.NewRaftLedgers(asked.Groups, time.Second)
 	require.NoError(t, err)
 	t.Cleanup(func() { l.Close() })
 
-	store, err := l.Store(ledgerSpec())
+	store, err := l.Store(raftSpec())
 	require.NoError(t, err)
 
 	require.Eventually(t, func() bool {
-		return errors.Is(store.Put(t.Context(), "k", nil), databaseService.ErrGroupClosed)
+		return errors.Is(store.Put(t.Context(), "k", nil), backing.ErrGroupClosed)
 	}, 10*time.Second, 10*time.Millisecond)
 
 	// AND CLOSING A TABLE WHOSE GROUP IS NOTHING IS NOT AN ERROR: there is
@@ -554,14 +553,14 @@ func TestANodeOnItsWayOutOpensNoMoreGroups(t *testing.T) {
 	require.NoError(t, err)
 
 	err = other.Put(t.Context(), "entry-1", []byte("one"))
-	require.ErrorIs(t, err, databaseService.ErrGroupClosed)
-	require.NotErrorIs(t, err, databaseService.ErrGroupForming)
-	require.ErrorIs(t, err, databaseService.ErrNotHere,
+	require.ErrorIs(t, err, backing.ErrGroupClosed)
+	require.NotErrorIs(t, err, backing.ErrGroupForming)
+	require.ErrorIs(t, err, backing.ErrNotHere,
 		"a node on its way out did not send the caller anywhere else")
 
 	// The one this node already had is refused the same way, and no second
 	// election was started for either.
-	require.ErrorIs(t, store.Put(t.Context(), "entry-1", []byte("one")), databaseService.ErrGroupClosed)
+	require.ErrorIs(t, store.Put(t.Context(), "entry-1", []byte("one")), backing.ErrGroupClosed)
 	require.Equal(t, 1, asked.asked(), "a node that had shut down opened another raft group")
 }
 
@@ -578,10 +577,10 @@ func TestClosingWaitsForAGroupThatIsStillForming(t *testing.T) {
 	asked := answering(cluster)
 	asked.hold = make(chan struct{})
 
-	l, err := ledger.New(asked.Groups, time.Second)
+	l, err := backing.NewRaftLedgers(asked.Groups, time.Second)
 	require.NoError(t, err)
 
-	_, err = l.Store(ledgerSpec())
+	_, err = l.Store(raftSpec())
 	require.NoError(t, err)
 
 	closed := make(chan error, 1)

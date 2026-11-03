@@ -16,7 +16,7 @@ import (
 
 // local builds a service without starting a listener, because the whole point
 // of this surface is that nothing is dialled.
-func local(t *testing.T, opts ...Option) *Service {
+func local(t *testing.T, opts ...option) *server {
 	t.Helper()
 
 	mn := mocknet.New()
@@ -27,9 +27,9 @@ func local(t *testing.T, opts ...Option) *Service {
 	registry := database.NewRegistry()
 	require.NoError(t, registry.Register(t.Context(), &accounting{}))
 
-	s, err := New(host, append([]Option{
-		WithEngines(registry),
-		WithRegister(&published{revision: 1, object: compiled()}),
+	s, err := build(host, append([]option{
+		withEngines(registry),
+		withRegister(&published{revision: 1, object: compiled()}),
 	}, opts...)...)
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
@@ -132,33 +132,33 @@ func TestTheServiceRefusesOptionsItCannotHonour(t *testing.T) {
 
 	registry := database.NewRegistry()
 	require.NoError(t, registry.Register(t.Context(), &accounting{}))
-	good := []Option{WithEngines(registry), WithRegister(&published{revision: 1, object: compiled()})}
+	good := []option{withEngines(registry), withRegister(&published{revision: 1, object: compiled()})}
 
-	for _, bad := range []Option{
-		WithIdle(0),
-		WithIdle(-time.Second),
-		WithClock(nil),
+	for _, bad := range []option{
+		withIdle(0),
+		withIdle(-time.Second),
+		withClock(nil),
 	} {
-		_, err := New(host, append(append([]Option{}, good...), bad)...)
+		_, err := build(host, append(append([]option{}, good...), bad)...)
 		require.Error(t, err)
 	}
 
 	// A service with no engines can answer nothing, and says so here rather
 	// than answering every call with the same refusal.
-	_, err = New(host, WithRegister(&published{revision: 1, object: compiled()}))
+	_, err = build(host, withRegister(&published{revision: 1, object: compiled()}))
 	require.ErrorIs(t, err, ErrNoEngines)
 
 	// And one that cannot read declarations would be a service any caller
 	// could point somewhere else.
-	_, err = New(host, WithEngines(registry))
+	_, err = build(host, withEngines(registry))
 	require.ErrorIs(t, err, ErrNoRegister)
 }
 
 func TestTheServiceTakesWhatItIsGiven(t *testing.T) {
 	s := local(t,
-		WithSweep(17*time.Second),
-		WithMaxResident(3),
-		WithClock(func() time.Time { return time.Unix(0, 0) }),
+		withSweep(17*time.Second),
+		withMaxResident(3),
+		withClock(func() time.Time { return time.Unix(0, 0) }),
 	)
 
 	require.Equal(t, 17*time.Second, s.sweep)

@@ -7,17 +7,14 @@ import (
 
 	nodeDatabase "github.com/taubyte/tau/instance/database"
 	"github.com/taubyte/tau/pkg/database"
-	kvengine "github.com/taubyte/tau/pkg/database/engines/kv"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
-	"github.com/taubyte/tau/pkg/placement"
 	databaseService "github.com/taubyte/tau/services/database"
-	"github.com/taubyte/tau/services/database/ledger"
 )
 
 // The database adapters are instance/database's; the root reaches the factory, names
 // stores, registers closers, and hands over raft, the vault and the composer's
-// registry. It also starts the database service; a node without one falls back to
-// these engines (see kvBacking).
+// registry. A node running the database service serves kv from it; one without falls
+// back to these engines (see kvBacking).
 
 // databaseBacking is one consumer's databases: connections, their stores, and the
 // groups ledgers are ordered in. One per consumer, so the wasm tier's fallback and the
@@ -27,7 +24,7 @@ type databaseBacking struct {
 	*nodeDatabase.Databases
 
 	holdings *databaseService.Copies
-	ledgers  *ledger.Ledgers
+	ledgers  *databaseService.RaftLedgers
 }
 
 // newDatabases wires one backing over what this node was given.
@@ -39,7 +36,7 @@ type databaseBacking struct {
 func newDatabases(n *Instance) (*databaseBacking, error) {
 	b := &databaseBacking{}
 
-	ledgers, err := ledger.New(n.raftGroup, ledger.Budget)
+	ledgers, err := databaseService.NewRaftLedgers(n.raftGroup, databaseService.LedgerBudget)
 	if err != nil {
 		return nil, fmt.Errorf("node: %s: %w", Database, err)
 	}
@@ -133,75 +130,6 @@ func (s databaseStores) Release(ctx context.Context, name string) error {
 		return fmt.Errorf("node: this store cannot release a database it holds")
 	}
 	return destroyer.Destroy(ctx)
-}
-
-// openDatabase starts this node's database service, when it runs one.
-//
-// THE ENGINES ARE THIS NODE'S AND THE DECLARATIONS ARE THE REGISTER'S, which is
-// the split the service was built for: it opens what a project declared, and it
-// reads what a project declared rather than being told.
-func (n *Instance) openDatabase(ctx context.Context) error {
-	if !n.cfg.runs(Database) {
-		return nil
-	}
-
-	// Both consensus resolutions, from the replicated store and the raft opener; a node
-	// missing one refuses what it cannot keep, so a raft ledger is never merged.
-
-	// The group is opened on first use, not here: raft finds peers over a swarm not yet
-	// up, and a group opened now would abort its election. One store table for the
-	// engine and holdings, so a destroyed store cannot stay warm in another table.
-	stores, err := newDatabases(n)
-	if err != nil {
-		return err
-	}
-	engine, err := kvengine.New(stores.holdings.Entries)
-	if err != nil {
-		return fmt.Errorf("node: %s: %w", Database, err)
-	}
-	registry := database.NewRegistry()
-	if err := registry.Register(ctx, engine); err != nil {
-		return fmt.Errorf("node: %s: %w", Database, err)
-	}
-
-	// WHAT THIS NODE CAN ACTUALLY KEEP, which is a narrower question than what
-	// the service implements. Both resolutions are served there; raft needs a
-	// group to be opened in, and a node composed without one must refuse a
-	// ledger BY NAME rather than answer "unavailable" about it forever.
-	kept := []string{database.CRDT, database.Raft}
-
-	svc, err := databaseService.New(n.Host(),
-		databaseService.WithEngines(registry),
-		databaseService.WithConsensus(kept...),
-		databaseService.WithRegister(n.views),
-		// WHAT THIS NODE ACTUALLY HOLDS, which is a different question from what
-		// it can open: a node answers "do you hold this" from its disk, and is
-		// the only thing that can let go of a copy.
-		databaseService.WithHoldings(stores.holdings),
-
-		// THE FLEET AS THIS NODE SEES IT, asked each sweep rather than taken
-		// once: a snapshot at construction would place every database on the
-		// fleet as it was when the process started. A node running no discovery
-		// sees no fleet and moves nothing, which is the honest answer for a
-		// node that cannot tell who else is there.
-		databaseService.WithMembers(func() []placement.Member {
-			if n.discovery == nil {
-				return nil
-			}
-			return n.discovery.Placement()
-		}),
-	)
-	if err != nil {
-		return err
-	}
-
-	n.database = svc
-	// THE GROUPS THIS NODE OPENED GO WITH THE SERVICE THAT OPENED THEM. A raft
-	// cluster left running after the node stopped keeps a protocol handler, a
-	// heartbeat and a log open on a peer nobody is using any more.
-	n.closers = append(n.closers, stores)
-	n.closers = append(n.closers, svc)
-	return nil
 }
 
 // kvBacking is what the wasm tier opens a kv through: the local database service

@@ -10,7 +10,6 @@ import (
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/raft"
 	databaseService "github.com/taubyte/tau/services/database"
-	"github.com/taubyte/tau/services/database/ledger"
 )
 
 // What the root decides about `consensus: raft`: which held thing keeps a database's
@@ -20,9 +19,9 @@ import (
 func TestTheGroupAndTheStoreAgreeOnTheNameADatabaseHas(t *testing.T) {
 	spec := ledgerSpec()
 
-	group, err := ledger.Namespace(spec)
+	group, err := databaseService.LedgerNamespace(spec)
 	require.NoError(t, err)
-	require.Equal(t, ledger.Domain+"/shop/prod/kv/QmLedger", group)
+	require.Equal(t, databaseService.LedgerDomain+"/shop/prod/kv/QmLedger", group)
 
 	store, err := databaseService.Name(spec)
 	require.NoError(t, err)

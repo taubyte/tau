@@ -24,13 +24,13 @@ import (
 const maxKeys = 512
 
 // mount is the one handler rpc.Listen serves.
-func (s *Service) mount() http.Handler {
+func (s *server) mount() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle(databasev2connect.NewDatabaseServiceHandler(&handler{s}, codec.Option()))
 	return mux
 }
 
-type handler struct{ s *Service }
+type handler struct{ s *server }
 
 var _ databasev2connect.DatabaseServiceHandler = (*handler)(nil)
 

@@ -98,13 +98,13 @@ func asking(t *testing.T, holds *says) (databasev2connect.DatabaseServiceClient,
 	engine.opened, engine.live = 0, 0 // registration's probe is not a caller's
 	engine.mu.Unlock()
 
-	s, err := New(server,
-		WithEngines(registry),
-		WithRegister(&published{revision: 1, object: compiled()}),
-		WithHoldings(holds),
-		WithIdle(time.Hour))
+	s, err := build(server,
+		withEngines(registry),
+		withRegister(&published{revision: 1, object: compiled()}),
+		withHoldings(holds),
+		withIdle(time.Hour))
 	require.NoError(t, err)
-	require.NoError(t, s.Start(t.Context()))
+	require.NoError(t, s.serve(t.Context()))
 	t.Cleanup(func() { s.Close() })
 
 	conn, err := rpc.NewClient(caller, server.ID(), Protocol)

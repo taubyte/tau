@@ -94,7 +94,7 @@ type Instance struct {
 	// database is the service that owns this project's engines, when this node
 	// runs it. A node that does not runs no database of its own — it reaches
 	// one in the fleet, which is the whole reason the service exists.
-	database *databaseService.Service
+	database databaseService.Service
 
 	// primitives is the service that owns this project's `sync` kind — its
 	// queues and its logs — when this node runs it. A node that does not
@@ -217,6 +217,9 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 			if p, ok := s.(primitivesService.Service); ok {
 				n.primitives = p
 			}
+			if d, ok := s.(databaseService.Service); ok {
+				n.database = d
+			}
 		}
 	}
 	// What the built-ins add to this node's report.
@@ -251,12 +254,6 @@ func (n *Instance) open() error {
 	// the vault as a collaborator rather than looking one up per invocation.
 	// AFTER THE SECRETS SERVICE, which keeps its keys.
 	if err := n.openCM(); err != nil {
-		return err
-	}
-	// BEFORE THE WORKER, for the reason the vault is: the wasm tier takes its kv
-	// backing as a collaborator when the worker is composed, so a service opened
-	// afterwards would be one the tier never saw.
-	if err := n.openDatabase(context.Background()); err != nil {
 		return err
 	}
 	if err := n.openWorker(); err != nil {
@@ -697,11 +694,6 @@ func (n *Instance) Start(ctx context.Context) error {
 	if n.cm != nil {
 		order = append(order, n.cm)
 	}
-	// The database before the worker that reads through it; Start binds its listener and
-	// runs its maintenance sweep.
-	if n.database != nil {
-		order = append(order, n.database)
-	}
 	if n.worker != nil {
 		order = append(order, n.worker)
 	}
@@ -870,13 +862,6 @@ func (b builtIns) Report(snap *discovery.Snapshot) {
 	n := b.n
 	snap.Serving = append(snap.Serving, n.serving()...)
 	snap.Sockets = append(snap.Sockets, n.proxySockets()...)
-	// The fleet revision is how a node computing with a stale floor becomes
-	// visible to every other node; the pending count is how much repair this
-	// node knows is outstanding among the databases it holds.
-	if n.database != nil {
-		snap.FleetRevision = n.database.FleetRevision()
-		snap.DatabasesPending = n.database.Pending()
-	}
 }
 
 // serving is every name this node answers to: the services it runs, plus what
@@ -921,7 +906,7 @@ func (n *Instance) Worker() *worker.Service { return n.worker }
 func (n *Instance) Secrets() secretsService.Service { return n.secrets }
 
 // Database is this node's database service, or nil if it runs none.
-func (n *Instance) Database() *databaseService.Service { return n.database }
+func (n *Instance) Database() databaseService.Service { return n.database }
 
 // Primitives is this node's primitives service, or nil if it runs none.
 func (n *Instance) Primitives() primitivesService.Service { return n.primitives }

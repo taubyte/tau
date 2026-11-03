@@ -13,7 +13,7 @@ import (
 )
 
 // sweeping builds a service that holds one database and can see a fleet.
-func sweeping(t *testing.T, holds *says, at []placement.Member, floor int) *Service {
+func sweeping(t *testing.T, holds *says, at []placement.Member, floor int) *server {
 	t.Helper()
 
 	mn := mocknet.New()
@@ -25,12 +25,12 @@ func sweeping(t *testing.T, holds *says, at []placement.Member, floor int) *Serv
 	registry := database.NewRegistry()
 	require.NoError(t, registry.Register(t.Context(), engine))
 
-	s, err := New(server,
-		WithEngines(registry),
-		WithRegister(declaringFloor(t, compiled(), floor)),
-		WithHoldings(holds),
-		WithMembers(func() []placement.Member { return at }),
-		WithIdle(time.Hour))
+	s, err := build(server,
+		withEngines(registry),
+		withRegister(declaringFloor(t, compiled(), floor)),
+		withHoldings(holds),
+		withMembers(func() []placement.Member { return at }),
+		withIdle(time.Hour))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	return s
@@ -93,11 +93,11 @@ func TestASweepWithoutAFleetDoesNothing(t *testing.T) {
 	registry := database.NewRegistry()
 	require.NoError(t, registry.Register(t.Context(), engine))
 
-	s, err := New(server,
-		WithEngines(registry),
-		WithRegister(&published{revision: 1, object: compiled()}),
-		WithHoldings(holds),
-		WithIdle(time.Hour))
+	s, err := build(server,
+		withEngines(registry),
+		withRegister(&published{revision: 1, object: compiled()}),
+		withHoldings(holds),
+		withIdle(time.Hour))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 

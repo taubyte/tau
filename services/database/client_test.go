@@ -29,13 +29,13 @@ func reaching(t *testing.T, holds *says) *Client {
 	registry := database.NewRegistry()
 	require.NoError(t, registry.Register(t.Context(), &accounting{}))
 
-	s, err := New(server,
-		WithEngines(registry),
-		WithRegister(&published{revision: 1, object: compiled()}),
-		WithHoldings(holds),
-		WithIdle(time.Hour))
+	s, err := build(server,
+		withEngines(registry),
+		withRegister(&published{revision: 1, object: compiled()}),
+		withHoldings(holds),
+		withIdle(time.Hour))
 	require.NoError(t, err)
-	require.NoError(t, s.Start(t.Context()))
+	require.NoError(t, s.serve(t.Context()))
 	t.Cleanup(func() { s.Close() })
 
 	client, err := NewClient(caller, server.ID())

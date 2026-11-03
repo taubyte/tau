@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -37,7 +38,7 @@ import (
 
 // Service is the engines this node holds, the declarations it reads them from,
 // and the host it answers on.
-type Service struct {
+type server struct {
 	host    host.Host
 	engines *engines
 	declare *declarations
@@ -94,10 +95,13 @@ type Service struct {
 	closeOnce sync.Once
 	closeErr  error
 	closed    atomic.Bool
+
+	// owned is what Start opened for this service, closed after it.
+	owned []io.Closer
 }
 
-// Option injects what this service is built from.
-type Option func(*options) error
+// option injects what this service is built from.
+type option func(*options) error
 
 type options struct {
 	registry *database.Registry
@@ -114,18 +118,18 @@ type options struct {
 	serverOptions []rpc.ServerOption
 }
 
-// WithMembers is the member set a placement runs over, a function since membership
+// withMembers is the member set a placement runs over, a function since membership
 // changes under the service.
-func WithMembers(members func() []placement.Member) Option {
+func withMembers(members func() []placement.Member) option {
 	return func(o *options) error {
 		o.members = members
 		return nil
 	}
 }
 
-// WithConsensus is what this node can keep. A node without a group opener cannot keep
+// withConsensus is what this node can keep. A node without a group opener cannot keep
 // a ledger and refuses it by name. The default is crdt alone.
-func WithConsensus(kinds ...string) Option {
+func withConsensus(kinds ...string) option {
 	return func(o *options) error {
 		for _, kind := range kinds {
 			if kind == "" {
@@ -137,29 +141,29 @@ func WithConsensus(kinds ...string) Option {
 	}
 }
 
-// WithSweep is how often this node reconsiders what it holds. Zero means
+// withSweep is how often this node reconsiders what it holds. Zero means
 // DefaultSweep.
-func WithSweep(d time.Duration) Option {
+func withSweep(d time.Duration) option {
 	return func(o *options) error {
 		o.sweep = d
 		return nil
 	}
 }
 
-// WithHoldings is what this node has on disk. A service without one answers
+// withHoldings is what this node has on disk. A service without one answers
 // held=false to every ask and can let go of nothing — which is the truth for a
 // node that composes no local store.
-func WithHoldings(h Holdings) Option {
+func withHoldings(h Holdings) option {
 	return func(o *options) error {
 		o.holdings = h
 		return nil
 	}
 }
 
-// WithEngines is what this node can connect to. Required: a database service
+// withEngines is what this node can connect to. Required: a database service
 // with no engines can answer nothing, and saying so at construction is better
 // than answering every call with the same refusal.
-func WithEngines(r *database.Registry) Option {
+func withEngines(r *database.Registry) option {
 	return func(o *options) error {
 		if r == nil {
 			return ErrNoEngines
@@ -169,9 +173,9 @@ func WithEngines(r *database.Registry) Option {
 	}
 }
 
-// WithRegister is where declarations are read from. Required, and it is the
+// withRegister is where declarations are read from. Required, and it is the
 // whole of why a caller cannot describe a database — see declarations.go.
-func WithRegister(source register.Registry) Option {
+func withRegister(source register.Registry) option {
 	return func(o *options) error {
 		if source == nil {
 			return ErrNoRegister
@@ -181,8 +185,8 @@ func WithRegister(source register.Registry) Option {
 	}
 }
 
-// WithMaxResident bounds how many engines this node holds at once.
-func WithMaxResident(n int) Option {
+// withMaxResident bounds how many engines this node holds at once.
+func withMaxResident(n int) option {
 	return func(o *options) error {
 		if n < 1 {
 			return fmt.Errorf("database: %d resident databases is not a bound", n)
@@ -192,8 +196,8 @@ func WithMaxResident(n int) Option {
 	}
 }
 
-// WithIdle is how long an engine nobody has asked for stays open.
-func WithIdle(d time.Duration) Option {
+// withIdle is how long an engine nobody has asked for stays open.
+func withIdle(d time.Duration) option {
 	return func(o *options) error {
 		if d <= 0 {
 			return fmt.Errorf("database: idle %s: an engine closed immediately is never warm", d)
@@ -203,7 +207,7 @@ func WithIdle(d time.Duration) Option {
 	}
 }
 
-func WithClock(now func() time.Time) Option {
+func withClock(now func() time.Time) option {
 	return func(o *options) error {
 		if now == nil {
 			return errors.New("database: a nil clock")
@@ -213,37 +217,48 @@ func WithClock(now func() time.Time) Option {
 	}
 }
 
-// WithServerOptions passes p2p/rpc.ServerOption values through to rpc.Listen.
-func WithServerOptions(opts ...rpc.ServerOption) Option {
+// withServerOptions passes p2p/rpc.ServerOption values through to rpc.Listen.
+func withServerOptions(opts ...rpc.ServerOption) option {
 	return func(o *options) error {
 		o.serverOptions = append(o.serverOptions, opts...)
 		return nil
 	}
 }
 
-// New validates and allocates. It binds nothing and opens nothing until Start or a
-// call.
-func New(h host.Host, opts ...Option) (*Service, error) {
+// New is the database service, unstarted; Start builds it from its instance.
+func New() Service { return &server{} }
+
+// build is a service from options alone, as the tests compose one.
+func build(h host.Host, opts ...option) (*server, error) {
+	s := &server{}
+	if err := s.assemble(h, opts...); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// assemble validates and allocates. It binds nothing until serve.
+func (s *server) assemble(h host.Host, opts ...option) error {
 	if h == nil {
-		return nil, ErrNoHost
+		return ErrNoHost
 	}
 
 	o := options{max: DefaultMaxResident, idle: DefaultIdle}
 	for _, apply := range opts {
 		if err := apply(&o); err != nil {
-			return nil, fmt.Errorf("database: option: %w", err)
+			return fmt.Errorf("database: option: %w", err)
 		}
 	}
 	if o.registry == nil {
-		return nil, ErrNoEngines
+		return ErrNoEngines
 	}
 	if o.source == nil {
-		return nil, ErrNoRegister
+		return ErrNoRegister
 	}
 
 	projects, err := register.NewCache(o.source, specs.Load)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	sweep := o.sweep
@@ -256,24 +271,23 @@ func New(h host.Host, opts ...Option) (*Service, error) {
 		consensus = servedConsensus
 	}
 
-	return &Service{
-		host:          h,
-		engines:       newEngines(o.registry, o.now, o.max, o.idle),
-		declare:       &declarations{projects: projects},
-		holdings:      o.holdings,
-		members:       o.members,
-		peer:          h.ID().String(),
-		consensus:     consensus,
-		floor:         &fleetFloor{from: fleetFrom(o.source)},
-		sweep:         sweep,
-		own:           newHoldings(),
-		serverOptions: o.serverOptions,
-	}, nil
+	s.host = h
+	s.engines = newEngines(o.registry, o.now, o.max, o.idle)
+	s.declare = &declarations{projects: projects}
+	s.holdings = o.holdings
+	s.members = o.members
+	s.peer = h.ID().String()
+	s.consensus = consensus
+	s.floor = &fleetFloor{from: fleetFrom(o.source)}
+	s.sweep = sweep
+	s.own = newHoldings()
+	s.serverOptions = o.serverOptions
+	return nil
 }
 
-// Start listens and serves. Calling it twice, or after Close, is an error
+// serve listens and serves. Calling it twice, or after Close, is an error
 // rather than a second listener leaking or a silent no-op.
-func (s *Service) Start(ctx context.Context) error {
+func (s *server) serve(ctx context.Context) error {
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
 
@@ -299,7 +313,7 @@ func (s *Service) Start(ctx context.Context) error {
 }
 
 // Close stops serving and releases every engine this node holds.
-func (s *Service) Close() error {
+func (s *server) Close() error {
 	s.closeOnce.Do(func() {
 		s.closed.Store(true)
 
@@ -318,19 +332,22 @@ func (s *Service) Close() error {
 			s.closeErr = server.Close()
 		}
 		s.closeErr = errors.Join(s.closeErr, s.engines.closeAll())
+		for _, c := range s.owned {
+			s.closeErr = errors.Join(s.closeErr, c.Close())
+		}
 	})
 	return s.closeErr
 }
 
 // Held is how many engines this node has open. It exists for an operator asking
 // what a node is holding, and for a test of the bound.
-func (s *Service) Held() int { return s.engines.held() }
+func (s *server) Held() int { return s.engines.held() }
 
 // declared resolves one database to what its author wrote, without opening it: for a
 // holding ask, the maintenance sweep, and a write before the release fence. What this
 // cloud serves is checked before what the caller asked, so a postgres via KVGet
 // reports the unserved model.
-func (s *Service) declared(ctx context.Context, at address) (declared, error) {
+func (s *server) declared(ctx context.Context, at address) (declared, error) {
 	declaration, err := s.declare.of(ctx, at)
 	if err != nil {
 		return declared{}, err
@@ -345,7 +362,7 @@ func (s *Service) declared(ctx context.Context, at address) (declared, error) {
 }
 
 // kv resolves one database and answers its kv surface, or says why it cannot.
-func (s *Service) kv(ctx context.Context, at address) (database.KVConn, error) {
+func (s *server) kv(ctx context.Context, at address) (database.KVConn, error) {
 	declaration, err := s.declared(ctx, at)
 	if err != nil {
 		return nil, err
@@ -355,7 +372,7 @@ func (s *Service) kv(ctx context.Context, at address) (database.KVConn, error) {
 
 // open answers the kv surface of a resolved database. Its consensus alone decides
 // where it is answered from (see forward.go).
-func (s *Service) open(ctx context.Context, at address, declaration declared) (database.KVConn, error) {
+func (s *server) open(ctx context.Context, at address, declaration declared) (database.KVConn, error) {
 	if declaration.spec.Consensus == database.Raft {
 		return s.route(ctx, at, declaration)
 	}
@@ -363,7 +380,7 @@ func (s *Service) open(ctx context.Context, at address, declaration declared) (d
 }
 
 // here is this node's own connection to a database, warm.
-func (s *Service) here(ctx context.Context, at address, declaration declared) (database.KVConn, error) {
+func (s *server) here(ctx context.Context, at address, declaration declared) (database.KVConn, error) {
 	conn, err := s.engines.open(ctx, at.key(), declaration.revision, declaration.spec)
 	if err != nil {
 		return nil, err
@@ -385,7 +402,7 @@ func (s *Service) here(ctx context.Context, at address, declaration declared) (d
 // mutate runs one write behind the release fence, which protects the gate's answer,
 // not the store. The fence is up before the store is opened. Resolving comes first,
 // so a peer cannot grow the fence table with undeclared names.
-func (s *Service) mutate(ctx context.Context, at address, do func(database.KVConn) error) error {
+func (s *server) mutate(ctx context.Context, at address, do func(database.KVConn) error) error {
 	declaration, err := s.declared(ctx, at)
 	if err != nil {
 		return err
@@ -406,9 +423,9 @@ func (s *Service) mutate(ctx context.Context, at address, do func(database.KVCon
 
 // Local is this service as the compute tier's seam, with no stream; a node not
 // running the service uses Client.
-func (s *Service) Local() wasmtier.KVs { return &localKV{service: s} }
+func (s *server) Local() wasmtier.KVs { return &localKV{service: s} }
 
-type localKV struct{ service *Service }
+type localKV struct{ service *server }
 
 var _ wasmtier.KVs = (*localKV)(nil)
 
@@ -427,7 +444,7 @@ func (l *localKV) OpenKV(_ context.Context, grant invoke.Grant) (wasmtier.KV, er
 // and whether a newer deployment has replaced it, is decided in one place for
 // both callers.
 type localOne struct {
-	service *Service
+	service *server
 	at      address
 }
 

@@ -69,7 +69,7 @@ var (
 )
 
 // All is every service this composition knows how to start.
-var All = []string{Worker, Gateway, Auth, Database, Proxy, DNS, BuildBackend}
+var All = []string{Worker, Gateway, Auth, Proxy, DNS, BuildBackend}
 
 // Everything is every service a node can be configured to run: the ones this
 // package still starts itself and the ones services.New makes. All, the default

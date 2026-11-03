@@ -18,7 +18,7 @@ import (
 // database. The fleet is built before the services, since the sweep runs from Start.
 type pair struct {
 	at      address
-	nodes   map[string]*Service
+	nodes   map[string]*server
 	holds   map[string]*says
 	engines map[string]*accounting
 	fleet   []placement.Member
@@ -55,7 +55,7 @@ func pairOf(t *testing.T, floor int) *pair {
 		keeping[id] = true
 	}
 
-	out := &pair{at: at, fleet: fleet, nodes: map[string]*Service{},
+	out := &pair{at: at, fleet: fleet, nodes: map[string]*server{},
 		holds: map[string]*says{}, engines: map[string]*accounting{}}
 	for _, h := range hosts {
 		peer := h.ID().String()
@@ -65,17 +65,17 @@ func pairOf(t *testing.T, floor int) *pair {
 		registry := database.NewRegistry()
 		require.NoError(t, registry.Register(t.Context(), engine))
 
-		s, err := New(h,
-			WithEngines(registry),
-			WithRegister(declaringFloor(t, compiled(), floor)),
-			WithHoldings(holds),
-			WithMembers(func() []placement.Member { return fleet }),
-			WithIdle(time.Hour),
+		s, err := build(h,
+			withEngines(registry),
+			withRegister(declaringFloor(t, compiled(), floor)),
+			withHoldings(holds),
+			withMembers(func() []placement.Member { return fleet }),
+			withIdle(time.Hour),
 			// LONG, so the only sweep in these tests is the one the test runs.
 			// A ticking one would be a second actor racing the assertion.
-			WithSweep(time.Hour))
+			withSweep(time.Hour))
 		require.NoError(t, err)
-		require.NoError(t, s.Start(t.Context()))
+		require.NoError(t, s.serve(t.Context()))
 		t.Cleanup(func() { s.Close() })
 
 		out.nodes[peer], out.holds[peer], out.engines[peer] = s, holds, engine
@@ -130,15 +130,15 @@ func TestTheSweepRunsOnItsInterval(t *testing.T) {
 	require.NoError(t, registry.Register(t.Context(), &accounting{}))
 
 	fleet := []placement.Member{{ID: h.ID().String(), Accepts: true}}
-	s, err := New(h,
-		WithEngines(registry),
-		WithRegister(declaringFloor(t, compiled(), 1)),
-		WithHoldings(holds),
-		WithMembers(func() []placement.Member { return fleet }),
-		WithIdle(time.Hour),
-		WithSweep(5*time.Millisecond))
+	s, err := build(h,
+		withEngines(registry),
+		withRegister(declaringFloor(t, compiled(), 1)),
+		withHoldings(holds),
+		withMembers(func() []placement.Member { return fleet }),
+		withIdle(time.Hour),
+		withSweep(5*time.Millisecond))
 	require.NoError(t, err)
-	require.NoError(t, s.Start(t.Context()))
+	require.NoError(t, s.serve(t.Context()))
 	t.Cleanup(func() { s.Close() })
 
 	require.Eventually(t, func() bool { return holds.reads() > 0 },
@@ -147,7 +147,7 @@ func TestTheSweepRunsOnItsInterval(t *testing.T) {
 
 // bothDesired is two nodes that BOTH hold a database and both should, which is
 // the shape repair runs in: a holder checking its co-holder is still there.
-func bothDesired(t *testing.T, otherHolds bool) (*Service, *says) {
+func bothDesired(t *testing.T, otherHolds bool) (*server, *says) {
 	t.Helper()
 
 	mn := mocknet.New()
@@ -166,20 +166,20 @@ func bothDesired(t *testing.T, otherHolds bool) (*Service, *says) {
 		{ID: hosts[1].ID().String(), Accepts: true},
 	}
 
-	build := func(h host.Host, holds *says) *Service {
+	build := func(h host.Host, holds *says) *server {
 		registry := database.NewRegistry()
 		require.NoError(t, registry.Register(t.Context(), &accounting{}))
 
 		// FLOOR TWO OVER TWO NODES, so both are desired and neither is leaving.
-		s, err := New(h,
-			WithEngines(registry),
-			WithRegister(declaringFloor(t, compiled(), 2)),
-			WithHoldings(holds),
-			WithMembers(func() []placement.Member { return fleet }),
-			WithIdle(time.Hour),
-			WithSweep(time.Hour))
+		s, err := build(h,
+			withEngines(registry),
+			withRegister(declaringFloor(t, compiled(), 2)),
+			withHoldings(holds),
+			withMembers(func() []placement.Member { return fleet }),
+			withIdle(time.Hour),
+			withSweep(time.Hour))
 		require.NoError(t, err)
-		require.NoError(t, s.Start(t.Context()))
+		require.NoError(t, s.serve(t.Context()))
 		t.Cleanup(func() { s.Close() })
 		return s
 	}
