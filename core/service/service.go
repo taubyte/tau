@@ -1,13 +1,12 @@
-// Package service is what an instance and the services it runs agree on: an
-// instance is made from its peer and starts the services it is given, each with a
-// Host, the instance's facilities, from which it builds what it runs on.
+// Package service is what an instance and the services it runs agree on: a
+// service's package New creates it, Start starts it on an instance's Host, from
+// which it builds what it runs on, and Close stops it.
 package service
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 
 	"github.com/ipfs/go-log/v2"
@@ -20,15 +19,14 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 )
 
-// Service is one service an instance can run.
+// Service is one service an instance runs. Each service's own interface embeds it.
 type Service interface {
-	// Name is what an operator writes in an instance's service list, and what
-	// the instance reports to discovery while it runs it.
-	Name() string
+	// Start brings the service up on h.
+	Start(ctx context.Context, h Host) error
 
-	// Start brings the service up on h. What it returns is closed with the
-	// instance, before what started earlier.
-	Start(ctx context.Context, h Host) (io.Closer, error)
+	// Close stops it. The instance closes its services in the reverse of the
+	// order it started them.
+	Close() error
 }
 
 // Host is what an instance gives each service it runs.
@@ -55,11 +53,8 @@ type Host interface {
 	// it does.
 	Peers(service string) []libp2ppeer.ID
 
-	// Local is the handle the service named provided on this instance, nil when
-	// it runs none. Provide is this service's own, for the others here to reach
-	// it without a hop.
-	Local(service string) any
-	Provide(handle any)
+	// Running is every service running on this instance, for Get.
+	Running() []any
 
 	// Secrets is the cloud's vault.
 	Secrets() Vault
@@ -99,9 +94,18 @@ func Reach[T any](h Host, name string, dial func(host.Host, libp2ppeer.ID) (T, e
 			}
 			return "", fmt.Errorf("%w: %s", ErrNoneRuns, name)
 		},
-		func() (T, bool) {
-			t, ok := h.Local(name).(T)
-			return t, ok
-		},
+		func() (T, bool) { return Get[T](h) },
 		func(id libp2ppeer.ID) (T, error) { return dial(self, id) })
+}
+
+// Get is the service running on this instance that is a T: how one service reaches
+// another beside it, with no hop and no name.
+func Get[T any](h Host) (T, bool) {
+	for _, s := range h.Running() {
+		if t, ok := s.(T); ok {
+			return t, true
+		}
+	}
+	var zero T
+	return zero, false
 }

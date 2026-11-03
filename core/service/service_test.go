@@ -19,8 +19,8 @@ import (
 // discovery names.
 type fake struct {
 	peer.Node
-	locals map[string]any
-	peers  []libp2ppeer.ID
+	running []any
+	peers   []libp2ppeer.ID
 }
 
 func (f *fake) Name() string                           { return "caller" }
@@ -29,8 +29,7 @@ func (f *fake) Database(string) (kvdb.Instance, error) { return nil, errors.New(
 func (f *fake) Listen(protocol.ID, http.Handler) error { return nil }
 func (f *fake) Handle(string, http.Handler) error      { return nil }
 func (f *fake) Peers(string) []libp2ppeer.ID           { return f.peers }
-func (f *fake) Local(name string) any                  { return f.locals[name] }
-func (f *fake) Provide(any)                            {}
+func (f *fake) Running() []any                         { return f.running }
 func (f *fake) Secrets() Vault                         { return nil }
 func (f *fake) Root() string                           { return "" }
 func (f *fake) Logger() log.StandardLogger             { return log.Logger("test") }
@@ -43,7 +42,7 @@ type answer string
 func TestTheServiceHereIsReachedWithNoClient(t *testing.T) {
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	h := &fake{Node: p, locals: map[string]any{"store": answer("here")}}
+	h := &fake{Node: p, running: []any{7, answer("here")}}
 
 	dialled := 0
 	r := Reach(h, "store", func(host.Host, libp2ppeer.ID) (answer, error) { dialled++; return "far", nil })
@@ -65,8 +64,8 @@ func TestAServiceElsewhereIsDialledOnANodeDiscoveryNames(t *testing.T) {
 	require.Equal(t, answer("far"), got)
 	require.Equal(t, libp2ppeer.ID("far"), at, "never itself")
 
-	// A HANDLE OF ANOTHER TYPE is not the service.
-	h.locals = map[string]any{"store": 7}
+	// A SERVICE OF ANOTHER TYPE is not the one asked for.
+	h.running = []any{7}
 	_, err = r.Now(t.Context())
 	require.NoError(t, err)
 

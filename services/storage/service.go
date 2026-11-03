@@ -14,6 +14,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
+	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/placement"
 	"github.com/taubyte/tau/pkg/proto/codec"
@@ -53,9 +54,18 @@ var (
 	ErrUnderHeld = errors.New("storage: fewer nodes hold it than the cloud promises")
 )
 
-// Service is this node's part of the store: the index shards placement gives it, the
+// Service is the storage service: the store, as an instance runs it.
+type Service interface {
+	service.Service
+	Store
+}
+
+// New is the storage service, unstarted. Start builds it from its instance.
+func New() Service { return &server{} }
+
+// server is this node's part of the store: the index shards placement gives it, the
 // blocks it holds, and the RPC that writes and reads both.
-type Service struct {
+type server struct {
 	host    host.Host
 	self    string
 	cfg     Config
@@ -73,6 +83,9 @@ type Service struct {
 
 	serverOptions []rpc.ServerOption
 
+	// also is what Start opened for this service beside it, closed with it.
+	also []io.Closer
+
 	peersMu sync.Mutex
 	peers   map[libp2ppeer.ID]*storagePeer
 
@@ -89,8 +102,8 @@ type storagePeer struct {
 	svc  storagev2connect.StorageServiceClient
 }
 
-// Option injects what this service is built from.
-type Option func(*options) error
+// option injects what this service is built from.
+type option func(*options) error
 
 type options struct {
 	bytes   Bytes
@@ -108,7 +121,7 @@ type options struct {
 }
 
 // WithBytes is this node's blockstore. Required.
-func WithBytes(b Bytes) Option {
+func withBytes(b Bytes) option {
 	return func(o *options) error {
 		if b == nil {
 			return ErrNoBytes
@@ -119,7 +132,7 @@ func WithBytes(b Bytes) Option {
 }
 
 // WithLocal is the node-local store the never-replicated rows live in. Required.
-func WithLocal(store Datastore) Option {
+func withLocal(store Datastore) option {
 	return func(o *options) error {
 		if store == nil {
 			return errors.New("storage: no local store")
@@ -130,7 +143,7 @@ func WithLocal(store Datastore) Option {
 }
 
 // WithShards opens and closes this node's index shards. Required.
-func WithShards(opener ShardOpener) Option {
+func withShards(opener ShardOpener) option {
 	return func(o *options) error {
 		if opener == nil {
 			return ErrNoShards
@@ -141,7 +154,7 @@ func WithShards(opener ShardOpener) Option {
 }
 
 // WithCatalog is which buckets exist, so a shard's holders keep it open. Required.
-func WithCatalog(c Catalog) Option {
+func withCatalog(c Catalog) option {
 	return func(o *options) error {
 		if c == nil {
 			return ErrNoCatalog
@@ -153,7 +166,7 @@ func WithCatalog(c Catalog) Option {
 
 // WithMembers is the storage nodes placement runs over, a function since membership
 // changes under the service. Without it this node is the whole store.
-func WithMembers(members func() []placement.Member) Option {
+func withMembers(members func() []placement.Member) option {
 	return func(o *options) error {
 		o.members = members
 		return nil
@@ -161,7 +174,7 @@ func WithMembers(members func() []placement.Member) Option {
 }
 
 // WithFleet is where R and K are read. Without it they are the defaults.
-func WithFleet(source fleetSource) Option {
+func withFleet(source fleetSource) option {
 	return func(o *options) error {
 		o.fleet = source
 		return nil
@@ -169,7 +182,7 @@ func WithFleet(source fleetSource) Option {
 }
 
 // WithMeter is told what this service accounted for.
-func WithMeter(m Meter) Option {
+func withMeter(m Meter) option {
 	return func(o *options) error {
 		o.meter = m
 		return nil
@@ -177,7 +190,7 @@ func WithMeter(m Meter) Option {
 }
 
 // WithClock is the wall clock stamps and local rows are taken from.
-func WithClock(now func() time.Time) Option {
+func withClock(now func() time.Time) option {
 	return func(o *options) error {
 		o.now = now
 		return nil
@@ -185,7 +198,7 @@ func WithClock(now func() time.Time) Option {
 }
 
 // WithSweep is how often this node reconsiders which shards it holds.
-func WithSweep(d time.Duration) Option {
+func withSweep(d time.Duration) option {
 	return func(o *options) error {
 		if d <= 0 {
 			return fmt.Errorf("storage: a sweep of %s never runs", d)
@@ -196,7 +209,7 @@ func WithSweep(d time.Duration) Option {
 }
 
 // WithLogger is where a failure no caller is told about is said.
-func WithLogger(logf func(format string, args ...any)) Option {
+func withLogger(logf func(format string, args ...any)) option {
 	return func(o *options) error {
 		if logf == nil {
 			return errors.New("storage: a nil logger")
@@ -207,72 +220,69 @@ func WithLogger(logf func(format string, args ...any)) Option {
 }
 
 // WithServerOptions tunes the RPC server.
-func WithServerOptions(opts ...rpc.ServerOption) Option {
+func withServerOptions(opts ...rpc.ServerOption) option {
 	return func(o *options) error {
 		o.serverOptions = append(o.serverOptions, opts...)
 		return nil
 	}
 }
 
-// New validates and allocates; Start serves.
-func New(h host.Host, cfg Config, opts ...Option) (*Service, error) {
-	if h == nil {
-		return nil, errors.New("storage: no host")
-	}
-	cfg, err := cfg.withDefaults()
-	if err != nil {
+// build is a server over what it is given, not yet serving.
+func build(h host.Host, cfg Config, opts ...option) (*server, error) {
+	s := &server{}
+	if err := s.assemble(h, cfg, opts...); err != nil {
 		return nil, err
-	}
-	o := options{now: time.Now, sweep: DefaultSweep, logf: func(string, ...any) {}}
-	for _, apply := range opts {
-		if err := apply(&o); err != nil {
-			return nil, err
-		}
-	}
-	switch {
-	case o.bytes == nil:
-		return nil, ErrNoBytes
-	case o.local == nil:
-		return nil, errors.New("storage: no local store")
-	case o.shards == nil:
-		return nil, ErrNoShards
-	case o.catalog == nil:
-		return nil, ErrNoCatalog
-	}
-
-	local, err := NewLocal(o.local, o.now)
-	if err != nil {
-		return nil, err
-	}
-	shards, err := newShardSet(o.shards)
-	if err != nil {
-		return nil, err
-	}
-	s := &Service{
-		host:          h,
-		self:          h.ID().String(),
-		cfg:           cfg,
-		bytes:         o.bytes,
-		local:         local,
-		shards:        shards,
-		catalog:       o.catalog,
-		members:       o.members,
-		clock:         NewClock(o.now, cfg.MaxSkew),
-		now:           o.now,
-		meter:         o.meter,
-		sweep:         o.sweep,
-		logf:          o.logf,
-		serverOptions: o.serverOptions,
-		peers:         map[libp2ppeer.ID]*storagePeer{},
-	}
-	if o.fleet != nil {
-		s.fleet = &fleetPolicy{from: o.fleet}
 	}
 	return s, nil
 }
 
-// Start serves and begins keeping this node's shards.
-func (s *Service) Start(ctx context.Context) error {
+// assemble validates and allocates; serve serves.
+func (s *server) assemble(h host.Host, cfg Config, opts ...option) error {
+	if h == nil {
+		return errors.New("storage: no host")
+	}
+	cfg, err := cfg.withDefaults()
+	if err != nil {
+		return err
+	}
+	o := options{now: time.Now, sweep: DefaultSweep, logf: func(string, ...any) {}}
+	for _, apply := range opts {
+		if err := apply(&o); err != nil {
+			return err
+		}
+	}
+	switch {
+	case o.bytes == nil:
+		return ErrNoBytes
+	case o.local == nil:
+		return errors.New("storage: no local store")
+	case o.shards == nil:
+		return ErrNoShards
+	case o.catalog == nil:
+		return ErrNoCatalog
+	}
+
+	local, err := NewLocal(o.local, o.now)
+	if err != nil {
+		return err
+	}
+	shards, err := newShardSet(o.shards)
+	if err != nil {
+		return err
+	}
+	s.host, s.self, s.cfg = h, h.ID().String(), cfg
+	s.bytes, s.local, s.shards, s.catalog, s.members = o.bytes, local, shards, o.catalog, o.members
+	s.clock, s.now, s.meter, s.sweep, s.logf = NewClock(o.now, cfg.MaxSkew), o.now, o.meter, o.sweep, o.logf
+	s.serverOptions = o.serverOptions
+	s.peers = map[libp2ppeer.ID]*storagePeer{}
+	if o.fleet != nil {
+		s.fleet = &fleetPolicy{from: o.fleet}
+	}
+	return nil
+}
+
+// serve serves and begins keeping this node's shards.
+func (s *server) serve(ctx context.Context) error {
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
 	if s.closed.Load() {
@@ -295,7 +305,7 @@ func (s *Service) Start(ctx context.Context) error {
 }
 
 // Close stops serving and closes every shard this node holds.
-func (s *Service) Close() error {
+func (s *server) Close() error {
 	s.closeOnce.Do(func() {
 		s.closed.Store(true)
 		s.startMu.Lock()
@@ -308,8 +318,13 @@ func (s *Service) Close() error {
 		if server != nil {
 			s.closeErr = server.Close()
 		}
-		_, _, err := s.shards.reconcile(context.Background(), nil)
-		s.closeErr = errors.Join(s.closeErr, err)
+		if s.shards != nil {
+			_, _, err := s.shards.reconcile(context.Background(), nil)
+			s.closeErr = errors.Join(s.closeErr, err)
+		}
+		for _, c := range s.also {
+			s.closeErr = errors.Join(s.closeErr, c.Close())
+		}
 
 		s.peersMu.Lock()
 		for _, p := range s.peers {
@@ -321,7 +336,7 @@ func (s *Service) Close() error {
 	return s.closeErr
 }
 
-func (s *Service) run(ctx context.Context) {
+func (s *server) run(ctx context.Context) {
 	ticker := time.NewTicker(s.sweep)
 	defer ticker.Stop()
 	for {
@@ -338,7 +353,7 @@ func (s *Service) run(ctx context.Context) {
 
 // reconcile opens the shards placement gives this node for every bucket the catalog
 // or a write has shown it, and closes the rest.
-func (s *Service) reconcile(ctx context.Context) error {
+func (s *server) reconcile(ctx context.Context) error {
 	buckets, err := s.catalog.Buckets(ctx)
 	if err != nil {
 		return err
@@ -357,7 +372,7 @@ func (s *Service) reconcile(ctx context.Context) error {
 }
 
 // placement is the storage nodes, and this one alone when nothing says otherwise.
-func (s *Service) placement() []placement.Member {
+func (s *server) placement() []placement.Member {
 	if s.members != nil {
 		if members := s.members(); len(members) > 0 {
 			return members
@@ -368,7 +383,7 @@ func (s *Service) placement() []placement.Member {
 
 // indexOf is the instance's index on this node, opening its shard if placement gives
 // it here; ok is false when it does not.
-func (s *Service) indexOf(ctx context.Context, a Address) (index, bool, error) {
+func (s *server) indexOf(ctx context.Context, a Address) (index, bool, error) {
 	if i, ok, err := s.shards.index(a.Bucket()); ok || err != nil {
 		i.meter = s.meter
 		return i, ok, err
@@ -390,7 +405,7 @@ func (s *Service) indexOf(ctx context.Context, a Address) (index, bool, error) {
 }
 
 // peer is a client of another storage node.
-func (s *Service) peer(id string) (storagev2connect.StorageServiceClient, error) {
+func (s *server) peer(id string) (storagev2connect.StorageServiceClient, error) {
 	pid, err := libp2ppeer.Decode(id)
 	if err != nil {
 		return nil, fmt.Errorf("storage: %q is not a peer: %w", id, err)

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -20,7 +21,6 @@ import (
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/placement"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/discovery"
 	"github.com/taubyte/tau/services/register"
 )
 
@@ -31,7 +31,8 @@ type storageNode struct {
 	t *testing.T
 
 	mu       sync.Mutex
-	locals   map[string]any
+	running  []any
+	started  *server
 	members  func() []placement.Member
 	config   func(into any) error
 	refusing error
@@ -48,7 +49,7 @@ func newStorageNode(t *testing.T) *storageNode {
 	require.NoError(t, err)
 	t.Cleanup(func() { reg.Close() })
 
-	return &storageNode{Node: p, t: t, locals: map[string]any{register.Descriptor.Name: reg.Local()}}
+	return &storageNode{Node: p, t: t, running: []any{reg.Local()}}
 }
 
 func (i *storageNode) Name() string    { return Descriptor.Name }
@@ -68,19 +69,14 @@ func (i *storageNode) Database(name string) (kvdb.Instance, error) {
 
 func (i *storageNode) Peers(string) []libp2ppeer.ID { return nil }
 
-func (i *storageNode) Local(name string) any {
+func (i *storageNode) Running() []any {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	if name == discovery.Descriptor.Name && i.members != nil {
-		return placed(i.members)
+	out := slices.Clone(i.running)
+	if i.members != nil {
+		out = append(out, placed(i.members))
 	}
-	return i.locals[name]
-}
-
-func (i *storageNode) Provide(handle any) {
-	i.mu.Lock()
-	defer i.mu.Unlock()
-	i.locals[Descriptor.Name] = handle
+	return out
 }
 
 func (i *storageNode) Logger() log.StandardLogger { return log.Logger("storage-test") }
@@ -104,24 +100,23 @@ type placed func() []placement.Member
 
 func (p placed) PlacementOf(string) []placement.Member { return p() }
 
-func (i *storageNode) service() *Service {
-	i.mu.Lock()
-	defer i.mu.Unlock()
-	s, _ := i.locals[Descriptor.Name].(*Service)
+// start runs storage on this instance, as the instance would.
+func (i *storageNode) start(t *testing.T) *server {
+	t.Helper()
+	s := New().(*server)
+	t.Cleanup(func() { s.Close() })
+	require.NoError(t, s.Start(t.Context(), i))
+	i.started = s
 	return s
 }
+
+func (i *storageNode) service() *server { return i.started }
 
 func TestStorageRunsFromWhatItsInstanceGivesIt(t *testing.T) {
 	ctx := t.Context()
 	i := newStorageNode(t)
 
-	require.Equal(t, Descriptor.Name, Role.Name())
-	closer, err := Role.Start(ctx, i)
-	require.NoError(t, err)
-	t.Cleanup(func() { closer.Close() })
-
-	s := i.service()
-	require.NotNil(t, s, "it provided itself to the services beside it")
+	s := i.start(t)
 
 	at := assetsOf(t, "logs")
 	v, err := s.Put(ctx, at, "job-1", Object{ContentType: "text/plain", Metadata: map[string]string{"encoding": "lzw"}}, strings.NewReader("a log"))
@@ -147,12 +142,12 @@ func TestStorageRunsFromWhatItsInstanceGivesIt(t *testing.T) {
 func TestStorageRefusesWhatItCannotStartWith(t *testing.T) {
 	i := newStorageNode(t)
 	i.config = func(any) error { return errors.New("no such key") }
-	_, err := Start(t.Context(), i)
+	err := New().Start(t.Context(), i)
 	require.ErrorContains(t, err, "no such key")
 
 	i = newStorageNode(t)
 	i.refusing = errors.New("disk full")
-	_, err = Start(t.Context(), i)
+	err = New().Start(t.Context(), i)
 	require.ErrorContains(t, err, "disk full")
 
 	i = newStorageNode(t)
@@ -160,7 +155,7 @@ func TestStorageRefusesWhatItCannotStartWith(t *testing.T) {
 		into.(*Config).Stabilize, into.(*Config).Liveness = 1, 2
 		return nil
 	}
-	_, err = Start(t.Context(), i)
+	err = New().Start(t.Context(), i)
 	require.ErrorContains(t, err, "stabilize")
 }
 
@@ -175,9 +170,7 @@ func TestTwoStorageNodesHoldOneWrite(t *testing.T) {
 	require.NoError(t, a.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: b.ID(), Addrs: b.Host().Addrs()}))
 
 	for _, i := range []*storageNode{a, b} {
-		closer, err := Start(ctx, i)
-		require.NoError(t, err)
-		t.Cleanup(func() { closer.Close() })
+		i.start(t)
 	}
 
 	// TWO NODES ARE BOTH THE HOLDERS AND THE BARRIER: the write returns only once

@@ -166,7 +166,7 @@ type options struct {
 	artifacts worker.Artifacts
 	secrets   worker.Secrets
 	now       func() time.Time
-	extra     []service.Service
+	extra     map[string]service.Service
 	identity  func(Host) (auth.Identity, error)
 	regions   schema.Regions
 	resolver  cm.Resolver
@@ -295,8 +295,8 @@ func WithClock(now func() time.Time) Option {
 	}
 }
 
-// withDefaults fills and checks the service list. added are the names of services
-// added with WithService: an empty list runs them, and a list may name them.
+// withDefaults fills and checks the service list. added are the names of the services
+// tau ships beside the built-ins: an empty list runs them, and a list may name them.
 func (c Config) withDefaults(added ...string) (Config, error) {
 	if len(c.Services) == 0 {
 		c.Services = append(append([]string(nil), All...), added...)

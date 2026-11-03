@@ -71,9 +71,11 @@ type Instance struct {
 	dbs    *databases
 	assets Assets
 
-	// locals is what each service on this instance provided the others.
-	localsMu sync.Mutex
-	locals   map[string]any
+	// services is what this instance runs beside its built-ins; running is every
+	// service running here, for the others to Get.
+	services  []named
+	runningMu sync.Mutex
+	running   []any
 
 	discovery *discovery.Service
 	register  *registerService.Service
@@ -189,11 +191,7 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 		}
 	}
 
-	added := make([]string, 0, len(o.extra))
-	for _, s := range o.extra {
-		added = append(added, s.Name())
-	}
-	cfg, err := cfg.withDefaults(added...)
+	cfg, err := cfg.withDefaults(o.serviceNames()...)
 	if err != nil {
 		return nil, err
 	}
@@ -206,6 +204,11 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 	}
 
 	n := &Instance{cfg: cfg, opts: o, Node: p, dbs: newDatabaseSet(p), assets: store}
+	for _, name := range cfg.Services {
+		if s, ok := o.serviceNamed(name); ok {
+			n.services = append(n.services, named{name: name, service: s})
+		}
+	}
 	// Closed last: every service closes the databases it opened before them.
 	n.closers = append(n.closers, n.dbs)
 	if err := n.open(); err != nil {
@@ -304,7 +307,7 @@ func (n *Instance) openStats() error {
 		return err
 	}
 	n.discovery = svc
-	n.provide(Discovery, svc)
+	n.provide(svc)
 	n.closers = append(n.closers, svc)
 	return nil
 }
@@ -330,7 +333,7 @@ func (n *Instance) openRegister() error {
 		return err
 	}
 	n.register = svc
-	n.provide(Register, svc.Local())
+	n.provide(svc.Local())
 	n.closers = append(n.closers, svc)
 	return nil
 }
@@ -842,7 +845,7 @@ func (n *Instance) Start(ctx context.Context) error {
 	// ADDED SERVICES AFTER EVERY BUILT-IN ONE, so whatever they reach on this
 	// node is answering, and closed before them because their closers are the
 	// last recorded.
-	if err := n.startAdded(ctx); err != nil {
+	if err := n.startServices(ctx); err != nil {
 		return err
 	}
 
@@ -924,10 +927,8 @@ func (n *Instance) Handler() http.Handler {
 	if n.gateway != nil {
 		gateway = n.gateway.Handler()
 	}
-	for _, s := range n.opts.extra {
-		if n.cfg.runs(s.Name()) {
-			return n.public.front(gateway)
-		}
+	if len(n.services) > 0 {
+		return n.public.front(gateway)
 	}
 	return gateway
 }

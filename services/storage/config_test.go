@@ -183,11 +183,9 @@ func TestTheStorageBriefsSurfaceIsWhatIsExported(t *testing.T) {
 		"ErrWriterMismatch", "Gates", "Local", "Marker", "Meter", "MisplacementDrop", "New",
 		"NewAddress", "NewBloomMarker", "NewBucket", "NewClient", "NewClock", "NewExactMarker",
 		"NewLocal", "NewSweeper", "Newest", "Object", "Op", "OpAdd", "OpRefuse", "OpRemove",
-		"Option", "Order", "PackStamp", "ParseVersionKey", "Policy", "Protocol", "Purpose",
-		"Reference", "Role", "Service", "ShardOpener", "Shards", "Start", "Store", "SweepResult",
-		"Sweeper", "UnpackStamp", "Usage", "Version", "VersionKey", "VersionRecord", "WithBytes",
-		"WithCatalog", "WithClock", "WithFleet", "WithLocal", "WithLogger", "WithMembers",
-		"WithMeter", "WithServerOptions", "WithShards", "WithSweep",
+		"Order", "PackStamp", "ParseVersionKey", "Policy", "Protocol", "Purpose", "Reference",
+		"Service", "ShardOpener", "Shards", "Store", "SweepResult", "Sweeper", "UnpackStamp",
+		"Usage", "Version", "VersionKey", "VersionRecord",
 	}, dedupe(names))
 }
 

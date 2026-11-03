@@ -143,7 +143,7 @@ func (c fixedCatalog) Buckets(context.Context) ([]Address, error) { return c, ni
 
 // cluster is n storage nodes on one mocknet, each the others' peer.
 type cluster struct {
-	nodes  []*Service
+	nodes  []*server
 	shards []*memShards
 	swarm  *swarm
 	ids    []libp2ppeer.ID
@@ -151,7 +151,7 @@ type cluster struct {
 	caller host.Host
 }
 
-func newCluster(t *testing.T, n int, catalog Catalog, opts ...Option) *cluster {
+func newCluster(t *testing.T, n int, catalog Catalog, opts ...option) *cluster {
 	t.Helper()
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -177,16 +177,16 @@ func newCluster(t *testing.T, n int, catalog Catalog, opts ...Option) *cluster {
 	for _, id := range c.ids {
 		h := mn.Host(id)
 		shards := &memShards{}
-		s, err := New(h, Config{}, append([]Option{
-			WithBytes(&nodeBytes{memBlocks: newMemBlocks(), swarm: c.swarm, self: h.ID()}),
-			WithLocal(newOrderedMem()),
-			WithShards(shards),
-			WithCatalog(catalog),
-			WithMembers(members),
-			WithSweep(time.Hour),
+		s, err := build(h, Config{}, append([]option{
+			withBytes(&nodeBytes{memBlocks: newMemBlocks(), swarm: c.swarm, self: h.ID()}),
+			withLocal(newOrderedMem()),
+			withShards(shards),
+			withCatalog(catalog),
+			withMembers(members),
+			withSweep(time.Hour),
 		}, opts...)...)
 		require.NoError(t, err)
-		require.NoError(t, s.Start(t.Context()))
+		require.NoError(t, s.serve(t.Context()))
 		t.Cleanup(func() { s.Close() })
 		c.nodes = append(c.nodes, s)
 		c.shards = append(c.shards, shards)
@@ -195,7 +195,7 @@ func newCluster(t *testing.T, n int, catalog Catalog, opts ...Option) *cluster {
 }
 
 // node is the cluster's member with this id.
-func (c *cluster) node(id string) *Service {
+func (c *cluster) node(id string) *server {
 	for _, n := range c.nodes {
 		if n.self == id {
 			return n
@@ -360,9 +360,9 @@ func TestWhatNewRefuses(t *testing.T) {
 	h, err := mn.GenPeer()
 	require.NoError(t, err)
 
-	full := []Option{
-		WithBytes(&nodeBytes{memBlocks: newMemBlocks(), swarm: newSwarm(), self: h.ID()}),
-		WithLocal(newOrderedMem()), WithShards(&memShards{}), WithCatalog(fixedCatalog{}),
+	full := []option{
+		withBytes(&nodeBytes{memBlocks: newMemBlocks(), swarm: newSwarm(), self: h.ID()}),
+		withLocal(newOrderedMem()), withShards(&memShards{}), withCatalog(fixedCatalog{}),
 	}
 	type testCase struct {
 		drop int
@@ -370,22 +370,22 @@ func TestWhatNewRefuses(t *testing.T) {
 	}
 	for _, tc := range []testCase{{0, ErrNoBytes}, {2, ErrNoShards}, {3, ErrNoCatalog}} {
 		opts := slices.Delete(slices.Clone(full), tc.drop, tc.drop+1)
-		_, err := New(h, Config{}, opts...)
+		_, err := build(h, Config{}, opts...)
 		require.ErrorIs(t, err, tc.want)
 	}
-	_, err = New(h, Config{}, slices.Delete(slices.Clone(full), 1, 2)...)
+	_, err = build(h, Config{}, slices.Delete(slices.Clone(full), 1, 2)...)
 	require.ErrorContains(t, err, "no local store")
-	_, err = New(nil, Config{}, full...)
+	_, err = build(nil, Config{}, full...)
 	require.Error(t, err)
-	_, err = New(h, Config{}, append(full, WithSweep(0))...)
+	_, err = build(h, Config{}, append(full, withSweep(0))...)
 	require.Error(t, err)
 
-	s, err := New(h, Config{}, full...)
+	s, err := build(h, Config{}, full...)
 	require.NoError(t, err)
-	require.NoError(t, s.Start(t.Context()))
-	require.Error(t, s.Start(t.Context()), "started twice")
+	require.NoError(t, s.serve(t.Context()))
+	require.Error(t, s.serve(t.Context()), "started twice")
 	require.NoError(t, s.Close())
-	require.Error(t, s.Start(t.Context()), "started after close")
+	require.Error(t, s.serve(t.Context()), "started after close")
 }
 
 func TestAOneNodeStoreIsItsOwnBar(t *testing.T) {

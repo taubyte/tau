@@ -27,7 +27,7 @@ type written struct {
 }
 
 // put stores content as the next version of name.
-func (s *Service) put(ctx context.Context, a Address, name string, o Object, content io.Reader) (written, error) {
+func (s *server) put(ctx context.Context, a Address, name string, o Object, content io.Reader) (written, error) {
 	replicas, barrier, known := s.fleet.read(ctx)
 	if !known {
 		return written{}, fmt.Errorf("%w: this node has never learned how many copies the cloud promises", ErrUnderHeld)
@@ -74,7 +74,7 @@ func (s *Service) put(ctx context.Context, a Address, name string, o Object, con
 }
 
 // remove writes a tombstone, acknowledged like a put.
-func (s *Service) remove(ctx context.Context, a Address, name string) (Version, error) {
+func (s *server) remove(ctx context.Context, a Address, name string) (Version, error) {
 	replicas, barrier, known := s.fleet.read(ctx)
 	if !known {
 		return Version{}, fmt.Errorf("%w: this node has never learned how many copies the cloud promises", ErrUnderHeld)
@@ -105,7 +105,7 @@ func versionOf(a Address, name string, stamp uint64, rec VersionRecord) (Version
 
 // appendEverywhere appends the row on every holder of the instance's shard and
 // returns once barrier of them have it.
-func (s *Service) appendEverywhere(ctx context.Context, a Address, name string, stamp uint64, rec VersionRecord, replicas, barrier int) error {
+func (s *server) appendEverywhere(ctx context.Context, a Address, name string, stamp uint64, rec VersionRecord, replicas, barrier int) error {
 	shard, err := shardOf(a.Bucket())
 	if err != nil {
 		return err
@@ -124,7 +124,7 @@ func (s *Service) appendEverywhere(ctx context.Context, a Address, name string, 
 }
 
 // acks asks every holder at once and counts the ones that answered yes.
-func (s *Service) acks(ctx context.Context, holders []string, ask func(context.Context, string) error) int {
+func (s *server) acks(ctx context.Context, holders []string, ask func(context.Context, string) error) int {
 	var (
 		wg sync.WaitGroup
 		mu sync.Mutex
@@ -148,7 +148,7 @@ func (s *Service) acks(ctx context.Context, holders []string, ask func(context.C
 }
 
 // keep records blocks this node holds for a version.
-func (s *Service) keep(ctx context.Context, root cid.Cid, blocks []cid.Cid, a Address, name string, stamp uint64) error {
+func (s *server) keep(ctx context.Context, root cid.Cid, blocks []cid.Cid, a Address, name string, stamp uint64) error {
 	for _, b := range blocks {
 		if err := s.local.Imported(ctx, b); err != nil {
 			return err
@@ -158,7 +158,7 @@ func (s *Service) keep(ctx context.Context, root cid.Cid, blocks []cid.Cid, a Ad
 }
 
 // hold fetches a root from the node that has it and keeps it.
-func (s *Service) hold(ctx context.Context, root cid.Cid, from libp2ppeer.ID, a Address, name string, stamp uint64) error {
+func (s *server) hold(ctx context.Context, root cid.Cid, from libp2ppeer.ID, a Address, name string, stamp uint64) error {
 	blocks, err := s.bytes.Fetch(ctx, root, from)
 	if err != nil {
 		return fmt.Errorf("storage: fetching %s from %s: %w", root, from, err)
@@ -167,7 +167,7 @@ func (s *Service) hold(ctx context.Context, root cid.Cid, from libp2ppeer.ID, a 
 }
 
 // appendHere writes one row into this node's copy of the instance's index.
-func (s *Service) appendHere(ctx context.Context, a Address, name string, stamp uint64, rec VersionRecord) error {
+func (s *server) appendHere(ctx context.Context, a Address, name string, stamp uint64, rec VersionRecord) error {
 	i, ok, err := s.indexOf(ctx, a)
 	if err != nil {
 		return err
@@ -185,7 +185,7 @@ func (s *Service) appendHere(ctx context.Context, a Address, name string, stamp 
 	return err
 }
 
-func (s *Service) askHold(ctx context.Context, holder string, root cid.Cid, a Address, name string, stamp uint64) error {
+func (s *server) askHold(ctx context.Context, holder string, root cid.Cid, a Address, name string, stamp uint64) error {
 	svc, err := s.peer(holder)
 	if err != nil {
 		return err
@@ -196,7 +196,7 @@ func (s *Service) askHold(ctx context.Context, holder string, root cid.Cid, a Ad
 	return err
 }
 
-func (s *Service) askAppend(ctx context.Context, holder string, a Address, name string, stamp uint64, rec VersionRecord) error {
+func (s *server) askAppend(ctx context.Context, holder string, a Address, name string, stamp uint64, rec VersionRecord) error {
 	svc, err := s.peer(holder)
 	if err != nil {
 		return err

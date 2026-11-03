@@ -37,7 +37,7 @@ type Store interface {
 }
 
 var (
-	_ Store = (*Service)(nil)
+	_ Store = (*server)(nil)
 	_ Store = (*Client)(nil)
 )
 
@@ -48,28 +48,28 @@ type Object struct {
 	Metadata map[string]string
 }
 
-func (s *Service) Put(ctx context.Context, at Address, name string, o Object, content io.Reader) (Version, error) {
+func (s *server) Put(ctx context.Context, at Address, name string, o Object, content io.Reader) (Version, error) {
 	w, err := s.put(ctx, at, name, o, content)
 	return w.version, err
 }
 
-func (s *Service) Current(ctx context.Context, at Address, name string) (Version, error) {
+func (s *server) Current(ctx context.Context, at Address, name string) (Version, error) {
 	return s.current(ctx, at, name, false)
 }
 
-func (s *Service) Versions(ctx context.Context, at Address, name string, limit int) ([]Version, error) {
+func (s *server) Versions(ctx context.Context, at Address, name string, limit int) ([]Version, error) {
 	return s.versions(ctx, at, name, limit, false)
 }
 
-func (s *Service) List(ctx context.Context, at Address, prefix, after string, limit int) ([]Version, error) {
+func (s *server) List(ctx context.Context, at Address, prefix, after string, limit int) ([]Version, error) {
 	return s.list(ctx, at, prefix, after, limit, false)
 }
 
-func (s *Service) Delete(ctx context.Context, at Address, name string) (Version, error) {
+func (s *server) Delete(ctx context.Context, at Address, name string) (Version, error) {
 	return s.remove(ctx, at, name)
 }
 
-func (s *Service) Read(ctx context.Context, root string) (io.ReadCloser, error) {
+func (s *server) Read(ctx context.Context, root string) (io.ReadCloser, error) {
 	c, err := cid.Decode(root)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %q is not a root: %w", ErrNotFound, root, err)
@@ -79,7 +79,7 @@ func (s *Service) Read(ctx context.Context, root string) (io.ReadCloser, error) 
 
 // list is the live names of an instance, from this node's copy of the index or a
 // holder's.
-func (s *Service) list(ctx context.Context, a Address, prefix, after string, limit int, here bool) ([]Version, error) {
+func (s *server) list(ctx context.Context, a Address, prefix, after string, limit int, here bool) ([]Version, error) {
 	var out []Version
 	err := s.fromIndex(ctx, a, here, func(i index) error {
 		vs, err := i.List(ctx, a, prefix, after, limit)
@@ -107,7 +107,7 @@ func (s *Service) list(ctx context.Context, a Address, prefix, after string, lim
 
 // open is the bytes under root: this node's when it has them, otherwise a holder's
 // streamed through. A request that says here never leaves this node.
-func (s *Service) open(ctx context.Context, root cid.Cid, here bool) (io.ReadCloser, error) {
+func (s *server) open(ctx context.Context, root cid.Cid, here bool) (io.ReadCloser, error) {
 	held, err := s.bytes.Has(ctx, root)
 	if err != nil {
 		return nil, err

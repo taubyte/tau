@@ -17,13 +17,13 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/storage/v2/storagev2connect"
 )
 
-func (s *Service) mount() http.Handler {
+func (s *server) mount() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle(storagev2connect.NewStorageServiceHandler(&handler{s: s}, codec.Option()))
 	return mux
 }
 
-type handler struct{ s *Service }
+type handler struct{ s *server }
 
 // storagev2Client is another storage node, as this one calls it.
 type storagev2Client = storagev2connect.StorageServiceClient
@@ -168,7 +168,7 @@ func (h *handler) Append(ctx context.Context, req *connect.Request[storagev2.App
 
 // current is the newest version of name, from this node's copy of the index or a
 // holder's.
-func (s *Service) current(ctx context.Context, a Address, name string, here bool) (Version, error) {
+func (s *server) current(ctx context.Context, a Address, name string, here bool) (Version, error) {
 	var out Version
 	err := s.fromIndex(ctx, a, here, func(i index) error {
 		v, err := i.Current(ctx, a, name)
@@ -186,7 +186,7 @@ func (s *Service) current(ctx context.Context, a Address, name string, here bool
 }
 
 // versions is name's versions, newest first.
-func (s *Service) versions(ctx context.Context, a Address, name string, limit int, here bool) ([]Version, error) {
+func (s *server) versions(ctx context.Context, a Address, name string, limit int, here bool) ([]Version, error) {
 	var out []Version
 	err := s.fromIndex(ctx, a, here, func(i index) error {
 		vs, err := i.Versions(ctx, a, name, limit)
@@ -212,7 +212,7 @@ func (s *Service) versions(ctx context.Context, a Address, name string, limit in
 
 // fromIndex answers from this node's copy when it holds the shard, and otherwise from
 // the first holder that answers. A request that says here never leaves this node.
-func (s *Service) fromIndex(ctx context.Context, a Address, here bool, local func(index) error, remote func(storagev2Client) error) error {
+func (s *server) fromIndex(ctx context.Context, a Address, here bool, local func(index) error, remote func(storagev2Client) error) error {
 	i, ok, err := s.indexOf(ctx, a)
 	if err != nil {
 		return err

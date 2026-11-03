@@ -17,6 +17,7 @@ import (
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/rpc"
+	"github.com/taubyte/tau/services"
 )
 
 // Lets a composer add a service this package does not name, registered by name with
@@ -30,44 +31,66 @@ type Host = service.Host
 // Vault is what the cloud's secrets service answers.
 type Vault = service.Vault
 
-// WithService adds a service this instance can run when its config names it.
-func WithService(s service.Service) Option {
+// withService runs s under name when the config names it, beside the services
+// tau ships: what this package's own tests start.
+func withService(name string, s service.Service) Option {
 	return func(o *options) error {
 		switch {
 		case s == nil:
 			return errors.New("node: a nil service")
-		case s.Name() == "":
-			return errors.New("node: an added service needs a name")
-		case slices.Contains(builtIn(), s.Name()):
-			return fmt.Errorf("node: %q is a built-in service", s.Name())
+		case name == "":
+			return errors.New("node: a service needs a name")
+		case slices.Contains(builtIn(), name) || slices.Contains(services.Names(), name):
+			return fmt.Errorf("node: %q is a service already", name)
 		}
-		for _, have := range o.extra {
-			if have.Name() == s.Name() {
-				return fmt.Errorf("node: %q is added twice", s.Name())
-			}
+		if _, twice := o.extra[name]; twice {
+			return fmt.Errorf("node: %q is added twice", name)
 		}
-		o.extra = append(o.extra, s)
+		if o.extra == nil {
+			o.extra = map[string]service.Service{}
+		}
+		o.extra[name] = s
 		return nil
 	}
+}
+
+// named is one service this instance runs, under the name the config gave it.
+type named struct {
+	name    string
+	service service.Service
+}
+
+// serviceNamed is the service the config's name stands for: one tau ships, or one
+// this package's tests added.
+func (o options) serviceNamed(name string) (service.Service, bool) {
+	if s, ok := o.extra[name]; ok {
+		return s, true
+	}
+	return services.New(name)
+}
+
+// serviceNames is every name serviceNamed answers.
+func (o options) serviceNames() []string {
+	out := services.Names()
+	for name := range o.extra {
+		out = append(out, name)
+	}
+	slices.Sort(out)
+	return out
 }
 
 // builtIn is every name this package starts itself.
 func builtIn() []string { return append(append([]string(nil), All...), BuildFrontend, CM) }
 
-// startAdded starts every added service the config names, in the order they
-// were added.
-func (n *Instance) startAdded(ctx context.Context) error {
-	for _, s := range n.opts.extra {
-		if !n.cfg.runs(s.Name()) {
-			continue
+// startServices starts every service the config names, in its order. Each is closed
+// with the instance, a failed start included.
+func (n *Instance) startServices(ctx context.Context) error {
+	for _, s := range n.services {
+		n.addCloser(s.service)
+		if err := s.service.Start(ctx, &added{node: n, name: s.name}); err != nil {
+			return fmt.Errorf("node: %s: %w", s.name, err)
 		}
-		c, err := s.Start(ctx, &added{node: n, name: s.Name()})
-		if err != nil {
-			return fmt.Errorf("node: %s: %w", s.Name(), err)
-		}
-		if c != nil {
-			n.addCloser(c)
-		}
+		n.provide(s.service)
 	}
 	return nil
 }
@@ -78,11 +101,10 @@ type added struct {
 	name string
 }
 
-func (a *added) Name() string             { return a.name }
-func (a *added) Peer() peer.Node          { return a.node.Node }
-func (a *added) Root() string             { return a.node.cfg.Root }
-func (a *added) Local(service string) any { return a.node.local(service) }
-func (a *added) Provide(handle any)       { a.node.provide(a.name, handle) }
+func (a *added) Name() string    { return a.name }
+func (a *added) Peer() peer.Node { return a.node.Node }
+func (a *added) Root() string    { return a.node.cfg.Root }
+func (a *added) Running() []any  { return a.node.runningNow() }
 func (a *added) Logger() log.StandardLogger {
 	return log.Logger("tau.node." + a.name)
 }
@@ -141,21 +163,17 @@ func (a *added) Config(into any) error {
 	return nil
 }
 
-// provide records what service offers the others on this instance.
-func (n *Instance) provide(service string, handle any) {
-	n.localsMu.Lock()
-	defer n.localsMu.Unlock()
-	if n.locals == nil {
-		n.locals = map[string]any{}
-	}
-	n.locals[service] = handle
+// provide adds a running service to what the others on this instance can Get.
+func (n *Instance) provide(handle any) {
+	n.runningMu.Lock()
+	defer n.runningMu.Unlock()
+	n.running = append(n.running, handle)
 }
 
-// local is what service provided on this instance, nil when it runs none.
-func (n *Instance) local(service string) any {
-	n.localsMu.Lock()
-	defer n.localsMu.Unlock()
-	return n.locals[service]
+func (n *Instance) runningNow() []any {
+	n.runningMu.Lock()
+	defer n.runningMu.Unlock()
+	return slices.Clone(n.running)
 }
 
 // public is what added services serve on the node's public listener, in front

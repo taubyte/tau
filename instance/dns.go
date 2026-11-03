@@ -112,9 +112,5 @@ func (n *Instance) DNSAddrs() []net.Addr {
 // the built-in ones, the public build role All leaves out, and the ones added
 // with WithService.
 func (n *Instance) knownServices() []string {
-	out := builtIn()
-	for _, svc := range n.opts.extra {
-		out = append(out, svc.Name())
-	}
-	return out
+	return append(builtIn(), n.opts.serviceNames()...)
 }

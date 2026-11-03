@@ -15,6 +15,7 @@ import (
 
 	"github.com/taubyte/tau/p2p/peer"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services"
 )
 
 func TestANodeRunsWhatItWasToldTo(t *testing.T) {
@@ -30,7 +31,7 @@ func TestANodeRunsWhatItWasToldTo(t *testing.T) {
 func TestAnEmptyServiceListIsEveryService(t *testing.T) {
 	n, _, _ := makeNode(t, Config{})
 
-	require.ElementsMatch(t, All, n.Services())
+	require.ElementsMatch(t, append(slices.Clone(All), services.Names()...), n.Services(), "and every service tau ships")
 	require.NotNil(t, n.Register())
 	require.NotNil(t, n.Worker())
 	require.NotNil(t, n.Discovery())

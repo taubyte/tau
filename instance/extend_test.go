@@ -17,6 +17,8 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	echov1 "github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1"
 	"github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1/echov1connect"
+	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/discovery"
 	"github.com/taubyte/tau/services/storage"
 )
 
@@ -42,22 +44,25 @@ type recording struct {
 	closer *closed
 }
 
-func (r *recording) service() service.Service {
-	return started{name: addedName, start: func(_ context.Context, h Host) (io.Closer, error) {
-		r.host = h
-		r.closer = &closed{done: make(chan struct{})}
-		return r.closer, nil
-	}}
+func (r *recording) service() Option {
+	return withService(addedName, started{
+		start: func(_ context.Context, h Host) error {
+			r.host = h
+			r.closer = &closed{done: make(chan struct{})}
+			return nil
+		},
+		close: func() error { return r.closer.Close() },
+	})
 }
 
 func TestWhatWithServiceRefuses(t *testing.T) {
-	start := func(context.Context, Host) (io.Closer, error) { return nil, nil }
 	for name, opts := range map[string][]Option{
-		"no name":    {WithService(started{start: start})},
-		"nil":        {WithService(nil)},
-		"built-in":   {WithService(started{name: Register, start: start})},
-		"twice":      {WithService(started{name: addedName, start: start}), WithService(started{name: addedName, start: start})},
-		"misspelled": {WithService(started{name: addedName, start: start})},
+		"no name":    {withService("", started{})},
+		"nil":        {withService(addedName, nil)},
+		"built-in":   {withService(Register, started{})},
+		"shipped":    {withService(storage.Descriptor.Name, started{})},
+		"twice":      {withService(addedName, started{}), withService(addedName, started{})},
+		"misspelled": {withService(addedName, started{})},
 	} {
 		t.Run(name, func(t *testing.T) {
 			services := []string{addedName}
@@ -72,7 +77,7 @@ func TestWhatWithServiceRefuses(t *testing.T) {
 
 func TestAnEmptyServiceListRunsAddedServicesToo(t *testing.T) {
 	r := &recording{}
-	n, _, _ := makeNode(t, Config{}, WithService(r.service()))
+	n, _, _ := makeNode(t, Config{}, r.service())
 	require.Contains(t, n.Services(), addedName)
 	require.NoError(t, n.Start(t.Context()))
 	require.NotNil(t, r.host)
@@ -80,7 +85,7 @@ func TestAnEmptyServiceListRunsAddedServicesToo(t *testing.T) {
 
 func TestAnAddedServiceTheConfigDoesNotNameDoesNotStart(t *testing.T) {
 	r := &recording{}
-	n, _, _ := makeNode(t, Config{Services: []string{Discovery}}, WithService(r.service()))
+	n, _, _ := makeNode(t, Config{Services: []string{Discovery}}, r.service())
 	require.NoError(t, n.Start(t.Context()))
 	require.Nil(t, r.host)
 	require.Nil(t, n.Handler(), "nothing it serves runs here")
@@ -89,7 +94,7 @@ func TestAnAddedServiceTheConfigDoesNotNameDoesNotStart(t *testing.T) {
 func TestAnAddedServiceGetsTheNodesResources(t *testing.T) {
 	r := &recording{}
 	n, h, factory := makeNode(t, Config{Services: []string{Discovery, Secrets, addedName}},
-		WithService(r.service()))
+		r.service())
 	require.NoError(t, n.Start(t.Context()))
 	host := r.host
 	require.NotNil(t, host)
@@ -98,10 +103,12 @@ func TestAnAddedServiceGetsTheNodesResources(t *testing.T) {
 	require.Equal(t, h, host.Peer().Host())
 	require.NotNil(t, host.Peer().Messaging())
 
-	// A HANDLE ONE SERVICE PROVIDES IS WHAT ANOTHER ON THIS INSTANCE REACHES.
-	require.Nil(t, host.Local("elsewhere"), "nothing on this instance provided it")
-	host.Provide("handle")
-	require.Equal(t, "handle", host.Local(addedName))
+	// WHAT RUNS BESIDE IT, a service reaches by the type it wants.
+	reg, ok := service.Get[*pkgregister.Register](host)
+	require.False(t, ok, "no register runs here")
+	require.Nil(t, reg)
+	_, ok = service.Get[*discovery.Service](host)
+	require.True(t, ok, "discovery runs here")
 	require.NotEmpty(t, host.Root())
 	require.NotNil(t, host.Logger())
 
@@ -140,20 +147,20 @@ func TestAnAddedServiceGetsTheNodesResources(t *testing.T) {
 
 func TestAnAddedServiceAnswersOverRPCAndHTTP(t *testing.T) {
 	var host Host
-	svc := started{name: addedName, start: func(_ context.Context, h Host) (io.Closer, error) {
+	svc := started{start: func(_ context.Context, h Host) error {
 		host = h
 		mux := http.NewServeMux()
 		mux.Handle(echov1connect.NewEchoServiceHandler(echoes{}))
 		if err := h.Listen(echoProtocol, mux); err != nil {
-			return nil, err
+			return err
 		}
-		return nil, h.Handle("/added/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		return h.Handle("/added/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			io.WriteString(w, "added")
 		}))
 	}}
 
 	p := mockPeer(t)
-	n, err := New(p, rooted(t, Config{Services: []string{addedName}}), WithService(svc))
+	n, err := New(p, rooted(t, Config{Services: []string{addedName}}), withService(addedName, svc))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.NoError(t, n.Start(t.Context()))
@@ -189,12 +196,12 @@ func TestAnAddedServiceAnswersOverRPCAndHTTP(t *testing.T) {
 }
 
 func TestAddedPatternsAreServedInFrontOfTheGateway(t *testing.T) {
-	svc := started{name: addedName, start: func(_ context.Context, h Host) (io.Closer, error) {
-		return nil, h.Handle("mail.example.com/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	svc := started{start: func(_ context.Context, h Host) error {
+		return h.Handle("mail.example.com/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			io.WriteString(w, "added")
 		}))
 	}}
-	n, _, _ := makeNode(t, Config{}, WithService(svc))
+	n, _, _ := makeNode(t, Config{}, withService(addedName, svc))
 	require.NoError(t, n.Start(t.Context()))
 
 	w := httptest.NewRecorder()
@@ -209,8 +216,8 @@ func TestAddedPatternsAreServedInFrontOfTheGateway(t *testing.T) {
 
 func TestAnAddedServiceThatFailsToStartFailsTheNode(t *testing.T) {
 	refused := errors.New("refused")
-	svc := started{name: addedName, start: func(context.Context, Host) (io.Closer, error) { return nil, refused }}
-	n, _, _ := makeNode(t, Config{Services: []string{addedName}}, WithService(svc))
+	svc := started{start: func(context.Context, Host) error { return refused }}
+	n, _, _ := makeNode(t, Config{Services: []string{addedName}}, withService(addedName, svc))
 	err := n.Start(t.Context())
 	require.ErrorIs(t, err, refused)
 	require.Contains(t, err.Error(), addedName)
@@ -228,7 +235,7 @@ func TestAnAddedServiceDecodesItsOwnConfig(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := &recording{}
-			n, _, _ := makeNode(t, Config{Services: []string{addedName}, Added: map[string]any{addedName: entry}}, WithService(r.service()))
+			n, _, _ := makeNode(t, Config{Services: []string{addedName}, Added: map[string]any{addedName: entry}}, r.service())
 			require.NoError(t, n.Start(t.Context()))
 			got := settings{Port: 1}
 			require.NoError(t, r.host.Config(&got))
@@ -238,7 +245,7 @@ func TestAnAddedServiceDecodesItsOwnConfig(t *testing.T) {
 
 	t.Run("no entry keeps the defaults", func(t *testing.T) {
 		r := &recording{}
-		n, _, _ := makeNode(t, Config{Services: []string{addedName}}, WithService(r.service()))
+		n, _, _ := makeNode(t, Config{Services: []string{addedName}}, r.service())
 		require.NoError(t, n.Start(t.Context()))
 		got := settings{Port: 1}
 		require.NoError(t, r.host.Config(&got))
@@ -247,7 +254,7 @@ func TestAnAddedServiceDecodesItsOwnConfig(t *testing.T) {
 
 	t.Run("an entry of the wrong shape is an error", func(t *testing.T) {
 		r := &recording{}
-		n, _, _ := makeNode(t, Config{Services: []string{addedName}, Added: map[string]any{addedName: map[string]any{"port": "many"}}}, WithService(r.service()))
+		n, _, _ := makeNode(t, Config{Services: []string{addedName}, Added: map[string]any{addedName: map[string]any{"port": "many"}}}, r.service())
 		require.NoError(t, n.Start(t.Context()))
 		var got settings
 		require.ErrorContains(t, r.host.Config(&got), addedName)
@@ -260,20 +267,30 @@ func TestConfigForAServiceNotAddedIsRefused(t *testing.T) {
 	require.ErrorContains(t, err, `"mail"`)
 }
 
-// started is a service a test writes as a function.
+// started is a service a test writes as functions.
 type started struct {
-	name  string
-	start func(context.Context, Host) (io.Closer, error)
+	start func(context.Context, Host) error
+	close func() error
 }
 
-func (s started) Name() string { return s.name }
+func (s started) Start(ctx context.Context, h Host) error {
+	if s.start == nil {
+		return nil
+	}
+	return s.start(ctx, h)
+}
 
-func (s started) Start(ctx context.Context, h Host) (io.Closer, error) { return s.start(ctx, h) }
+func (s started) Close() error {
+	if s.close == nil {
+		return nil
+	}
+	return s.close()
+}
 
 func TestStorageRunsBesideTheServicesItReaches(t *testing.T) {
 	ctx := t.Context()
 	p := mockPeer(t)
-	n, err := New(p, rooted(t, Config{Services: []string{Register, Discovery, storage.Descriptor.Name}}), WithService(storage.Role))
+	n, err := New(p, rooted(t, Config{Services: []string{Register, Discovery, storage.Descriptor.Name}}))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.NoError(t, n.Start(ctx))

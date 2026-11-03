@@ -34,7 +34,6 @@ import (
 	"github.com/taubyte/tau/p2p/sectls"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/pkg/stats"
-	"github.com/taubyte/tau/services/storage"
 )
 
 // File is what an operator writes.
@@ -215,7 +214,6 @@ func Start(ctx context.Context, f File, added ...instance.Option) (*Running, err
 
 	n, err := instance.New(p, cfg, append(append(serving,
 		instance.WithDatabaseEngines(dbEngines),
-		instance.WithService(storage.Role),
 	), added...)...)
 	if err != nil {
 		p.Close()
