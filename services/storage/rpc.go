@@ -213,15 +213,16 @@ func (s *server) versions(ctx context.Context, a Address, name string, limit int
 // fromIndex answers from this node's copy when it holds the shard, and otherwise from
 // the first holder that answers. A request that says here never leaves this node.
 func (s *server) fromIndex(ctx context.Context, a Address, here bool, local func(index) error, remote func(storagev2Client) error) error {
-	i, ok, err := s.indexOf(ctx, a)
+	i, release, ok, err := s.indexOf(ctx, a)
 	if err != nil {
 		return err
 	}
-	if ok || here {
-		if !ok {
-			return fmt.Errorf("storage: this node does not hold %s's index", a)
-		}
+	if ok {
+		defer release()
 		return local(i)
+	}
+	if here {
+		return fmt.Errorf("storage: this node does not hold %s's index", a)
 	}
 
 	shard, err := shardOf(a.Bucket())

@@ -319,8 +319,7 @@ func (s *server) Close() error {
 			s.closeErr = server.Close()
 		}
 		if s.shards != nil {
-			_, _, err := s.shards.reconcile(context.Background(), nil)
-			s.closeErr = errors.Join(s.closeErr, err)
+			s.closeErr = errors.Join(s.closeErr, s.shards.closeAll(context.Background()))
 		}
 		for _, c := range s.also {
 			s.closeErr = errors.Join(s.closeErr, c.Close())
@@ -354,6 +353,7 @@ func (s *server) run(ctx context.Context) {
 // reconcile opens the shards placement gives this node for every bucket the catalog
 // or a write has shown it, and closes the rest.
 func (s *server) reconcile(ctx context.Context) error {
+	since := s.shards.mark()
 	buckets, err := s.catalog.Buckets(ctx)
 	if err != nil {
 		return err
@@ -367,7 +367,7 @@ func (s *server) reconcile(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	_, _, err = s.shards.reconcile(ctx, desired)
+	_, _, err = s.shards.reconcile(ctx, desired, since)
 	return err
 }
 
@@ -382,26 +382,23 @@ func (s *server) placement() []placement.Member {
 }
 
 // indexOf is the instance's index on this node, opening its shard if placement gives
-// it here; ok is false when it does not.
-func (s *server) indexOf(ctx context.Context, a Address) (index, bool, error) {
-	if i, ok, err := s.shards.index(a.Bucket()); ok || err != nil {
+// it here and held open until release; ok is false when placement does not.
+func (s *server) indexOf(ctx context.Context, a Address) (i index, release func(), ok bool, err error) {
+	if i, release, ok, err := s.shards.hold(ctx, a.Bucket(), false); ok || err != nil {
 		i.meter = s.meter
-		return i, ok, err
+		return i, release, ok, err
 	}
 	shard, err := shardOf(a.Bucket())
 	if err != nil {
-		return index{}, false, err
+		return index{}, nil, false, err
 	}
 	replicas, _, _ := s.fleet.read(ctx)
 	if !slices.Contains(indexHolders(shard, s.placement(), replicas), s.self) {
-		return index{}, false, nil
+		return index{}, nil, false, nil
 	}
-	if err := s.shards.ensure(ctx, shard); err != nil {
-		return index{}, false, err
-	}
-	i, ok, err := s.shards.index(a.Bucket())
+	i, release, ok, err = s.shards.hold(ctx, a.Bucket(), true)
 	i.meter = s.meter
-	return i, ok, err
+	return i, release, ok, err
 }
 
 // peer is a client of another storage node.

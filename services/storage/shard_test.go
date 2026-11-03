@@ -178,19 +178,19 @@ func TestShardSetOpensWhatIsDesiredAndClosesWhatIsNot(t *testing.T) {
 	set, err := newShardSet(opener)
 	require.NoError(t, err)
 
-	opened, closed, err := set.reconcile(ctx, shardSetOf(1, 2, 3))
+	opened, closed, err := set.reconcile(ctx, shardSetOf(1, 2, 3), set.mark())
 	require.NoError(t, err)
 	require.Equal(t, []uint16{1, 2, 3}, opened)
 	require.Empty(t, closed)
 	require.Equal(t, []uint16{1, 2, 3}, set.held())
 
 	// Idempotent: reconciling to the same answer opens nothing.
-	opened, closed, err = set.reconcile(ctx, shardSetOf(1, 2, 3))
+	opened, closed, err = set.reconcile(ctx, shardSetOf(1, 2, 3), set.mark())
 	require.NoError(t, err)
 	require.Empty(t, opened)
 	require.Empty(t, closed)
 
-	opened, closed, err = set.reconcile(ctx, shardSetOf(2, 4))
+	opened, closed, err = set.reconcile(ctx, shardSetOf(2, 4), set.mark())
 	require.NoError(t, err)
 	require.Equal(t, []uint16{4}, opened)
 	require.Equal(t, []uint16{1, 3}, closed)
@@ -206,11 +206,11 @@ func TestAFailedOpenClosesNothing(t *testing.T) {
 	set, err := newShardSet(opener)
 	require.NoError(t, err)
 
-	_, _, err = set.reconcile(ctx, shardSetOf(1, 2))
+	_, _, err = set.reconcile(ctx, shardSetOf(1, 2), set.mark())
 	require.NoError(t, err)
 
 	opener.failOpen[9] = errInjected
-	_, _, err = set.reconcile(ctx, shardSetOf(9))
+	_, _, err = set.reconcile(ctx, shardSetOf(9), set.mark())
 	require.ErrorIs(t, err, errInjected)
 	require.Equal(t, []uint16{1, 2}, set.held(), "the shards this node holds are still open")
 	require.Empty(t, opener.closed)
@@ -222,11 +222,11 @@ func TestAFailedCloseStillDropsTheShard(t *testing.T) {
 	set, err := newShardSet(opener)
 	require.NoError(t, err)
 
-	_, _, err = set.reconcile(ctx, shardSetOf(1, 2))
+	_, _, err = set.reconcile(ctx, shardSetOf(1, 2), set.mark())
 	require.NoError(t, err)
 
 	opener.failShut[1] = errInjected
-	_, closed, err := set.reconcile(ctx, shardSetOf(2))
+	_, closed, err := set.reconcile(ctx, shardSetOf(2), set.mark())
 	require.ErrorIs(t, err, errInjected, "and the failure is reported rather than swallowed")
 	require.Equal(t, []uint16{1}, closed)
 	require.Equal(t, []uint16{2}, set.held())
@@ -242,19 +242,77 @@ func TestTheIndexForABucketIsOnlyThereWhenTheShardIs(t *testing.T) {
 	shard, err := shardOf(b)
 	require.NoError(t, err)
 
-	_, ok, err := set.index(b)
+	_, _, ok, err := set.hold(ctx, b, false)
 	require.NoError(t, err)
 	require.False(t, ok, "a bucket whose shard is not open has no index here")
 
-	_, _, err = set.reconcile(ctx, shardSetOf(shard))
+	_, _, err = set.reconcile(ctx, shardSetOf(shard), set.mark())
 	require.NoError(t, err)
-	idx, ok, err := set.index(b)
+	idx, release, ok, err := set.hold(ctx, b, false)
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.NotNil(t, idx.store)
+	release()
 
-	_, _, err = set.index(Bucket{})
+	_, _, _, err = set.hold(ctx, Bucket{}, true)
 	require.ErrorIs(t, err, ErrNoAddress)
+
+	next := (shard + 1) % Shards
+	opener.failOpen[next] = errInjected
+	other := bucketIn(t, next)
+	_, _, _, err = set.hold(ctx, other, true)
+	require.ErrorIs(t, err, errInjected)
+}
+
+// A WRITE RACING A SWEEP keeps the shard it is appending to: the sweep that read
+// before the write opened it cannot close it, held or released, and the one after
+// the write was recorded may, once nothing holds it.
+func TestAShardAWriteOpenedIsNotClosedByASweepThatReadBeforeIt(t *testing.T) {
+	ctx := context.Background()
+	opener := newCountingOpener()
+	set, err := newShardSet(opener)
+	require.NoError(t, err)
+	b := bucket(t, "proj", "prod", "logs")
+	shard, err := shardOf(b)
+	require.NoError(t, err)
+
+	read := set.mark()
+	_, release, ok, err := set.hold(ctx, b, true)
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	_, closed, err := set.reconcile(ctx, shardSetOf(), read)
+	require.NoError(t, err)
+	require.Empty(t, closed, "closed under the write appending to it")
+	release()
+	release()
+	_, closed, err = set.reconcile(ctx, shardSetOf(), read)
+	require.NoError(t, err)
+	require.Empty(t, closed, "closed by a sweep that decided before the write was recorded")
+
+	// HELD ACROSS A LATER SWEEP, still not closed under its user.
+	_, again, ok, err := set.hold(ctx, b, false)
+	require.NoError(t, err)
+	require.True(t, ok)
+	_, closed, err = set.reconcile(ctx, shardSetOf(), set.mark())
+	require.NoError(t, err)
+	require.Empty(t, closed)
+	again()
+
+	_, closed, err = set.reconcile(ctx, shardSetOf(), set.mark())
+	require.NoError(t, err)
+	require.Equal(t, []uint16{shard}, closed, "idle and undesired, it closes")
+}
+
+// bucketIn is a bucket whose index lives in shard.
+func bucketIn(t *testing.T, shard uint16) Bucket {
+	t.Helper()
+	for i := 0; ; i++ {
+		b := bucket(t, "proj", "prod", fmt.Sprintf("b%d", i))
+		if got, err := shardOf(b); err == nil && got == shard {
+			return b
+		}
+	}
 }
 
 func TestAShardSetNeedsAnOpener(t *testing.T) {

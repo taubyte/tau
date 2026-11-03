@@ -75,24 +75,43 @@ type ShardOpener interface {
 
 // shardSet is the shards this node currently has open. It is the lazy half of
 // "opened lazily": desiredShards computes the answer, and this applies it.
+//
+// A SHARD IN USE IS NEVER CLOSED UNDER ITS USER, and neither is one used after the
+// view a reconcile decided from. A write opens its bucket's shard before the bucket
+// is anywhere a reconcile reads, so a reconcile that read before the write would
+// otherwise close the store the write is appending to. The next reconcile reads the
+// bucket and keeps it, or, if placement moved it away, closes it once it is idle.
 type shardSet struct {
 	opener ShardOpener
 
-	mu   sync.Mutex
-	open map[uint16]Datastore
+	mu    sync.Mutex
+	open  map[uint16]Datastore
+	users map[uint16]int
+	// used is the generation each shard was last held at; clock is the latest.
+	used  map[uint16]uint64
+	clock uint64
 }
 
 func newShardSet(opener ShardOpener) (*shardSet, error) {
 	if opener == nil {
 		return nil, errors.New("storage: no shard opener")
 	}
-	return &shardSet{opener: opener, open: map[uint16]Datastore{}}, nil
+	return &shardSet{opener: opener, open: map[uint16]Datastore{}, users: map[uint16]int{}, used: map[uint16]uint64{}}, nil
 }
 
-// reconcile brings the open set to `desired`. It opens before it closes, and closes
-// nothing if an open failed, since a dropped last-reachable shard reads as "not
-// found". A failed close still drops the shard from the set.
-func (s *shardSet) reconcile(ctx context.Context, desired map[uint16]struct{}) (opened, closed []uint16, err error) {
+// mark is the generation a reconcile decides from: taken before it reads what it
+// decides with.
+func (s *shardSet) mark() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.clock
+}
+
+// reconcile brings the open set to `desired`, as decided from what was read after
+// since. It opens before it closes, and closes nothing if an open failed, since a
+// dropped last-reachable shard reads as "not found". A shard held now, or since, is
+// left open for a later reconcile. A failed close still drops the shard from the set.
+func (s *shardSet) reconcile(ctx context.Context, desired map[uint16]struct{}, since uint64) (opened, closed []uint16, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -109,14 +128,13 @@ func (s *shardSet) reconcile(ctx context.Context, desired map[uint16]struct{}) (
 	}
 
 	var errs []error
-	for shard, store := range s.open {
-		if _, want := desired[shard]; want {
+	for shard := range s.open {
+		if _, want := desired[shard]; want || s.users[shard] > 0 || s.used[shard] > since {
 			continue
 		}
-		if cerr := s.opener.Close(ctx, shard, store); cerr != nil {
-			errs = append(errs, fmt.Errorf("storage: closing shard %d: %w", shard, cerr))
+		if cerr := s.drop(ctx, shard); cerr != nil {
+			errs = append(errs, cerr)
 		}
-		delete(s.open, shard)
 		closed = append(closed, shard)
 	}
 
@@ -125,35 +143,51 @@ func (s *shardSet) reconcile(ctx context.Context, desired map[uint16]struct{}) (
 	return opened, closed, errors.Join(errs...)
 }
 
-// ensure opens one shard now, for a write that reached a holder before the catalog
-// named its bucket. The next reconcile keeps it, since the write is also Saw.
-func (s *shardSet) ensure(ctx context.Context, shard uint16) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, have := s.open[shard]; have {
-		return nil
+// drop closes one shard and forgets it. The caller holds mu.
+func (s *shardSet) drop(ctx context.Context, shard uint16) error {
+	store := s.open[shard]
+	delete(s.open, shard)
+	delete(s.used, shard)
+	if err := s.opener.Close(ctx, shard, store); err != nil {
+		return fmt.Errorf("storage: closing shard %d: %w", shard, err)
 	}
-	store, err := s.opener.Open(ctx, shard)
-	if err != nil {
-		return fmt.Errorf("storage: opening shard %d: %w", shard, err)
-	}
-	s.open[shard] = store
 	return nil
 }
 
-// index returns the index for a bucket, if this node holds its shard.
-func (s *shardSet) index(b Bucket) (index, bool, error) {
+// hold is the index for a bucket, open until release is called; ok is false when
+// this node has not opened its shard. With open, a shard not yet open is opened now,
+// for a write that reached a holder before the catalog named its bucket.
+func (s *shardSet) hold(ctx context.Context, b Bucket, open bool) (i index, release func(), ok bool, err error) {
 	shard, err := shardOf(b)
 	if err != nil {
-		return index{}, false, err
+		return index{}, nil, false, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	store, ok := s.open[shard]
-	if !ok {
-		return index{}, false, nil
+	store, have := s.open[shard]
+	if !have && open {
+		store, err = s.opener.Open(ctx, shard)
+		if err != nil {
+			return index{}, nil, false, fmt.Errorf("storage: opening shard %d: %w", shard, err)
+		}
+		s.open[shard], have = store, true
 	}
-	return index{store: store}, true, nil
+	if !have {
+		return index{}, nil, false, nil
+	}
+	s.users[shard]++
+	s.clock++
+	s.used[shard] = s.clock
+	var once sync.Once
+	return index{store: store}, func() {
+		once.Do(func() {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			if s.users[shard]--; s.users[shard] == 0 {
+				delete(s.users, shard)
+			}
+		})
+	}, true, nil
 }
 
 // held lists the open shards, ordered.
@@ -168,8 +202,15 @@ func (s *shardSet) held() []uint16 {
 	return out
 }
 
-// closeAll drops every open shard. It is what a service shutdown calls.
+// closeAll drops every open shard, held or not. It is what a service shutdown calls.
 func (s *shardSet) closeAll(ctx context.Context) error {
-	_, _, err := s.reconcile(ctx, nil)
-	return err
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var errs []error
+	for shard := range s.open {
+		if err := s.drop(ctx, shard); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }

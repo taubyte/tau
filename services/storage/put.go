@@ -168,13 +168,14 @@ func (s *server) hold(ctx context.Context, root cid.Cid, from libp2ppeer.ID, a A
 
 // appendHere writes one row into this node's copy of the instance's index.
 func (s *server) appendHere(ctx context.Context, a Address, name string, stamp uint64, rec VersionRecord) error {
-	i, ok, err := s.indexOf(ctx, a)
+	i, release, ok, err := s.indexOf(ctx, a)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return fmt.Errorf("storage: this node does not hold %s's index", a)
 	}
+	defer release()
 	if err := s.local.Saw(ctx, a); err != nil {
 		return err
 	}
