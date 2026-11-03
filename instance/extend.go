@@ -4,19 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"slices"
-	"sync"
 
-	"github.com/ipfs/go-log/v2"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/protocol"
 	"gopkg.in/yaml.v3"
 
-	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
-	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/services"
 )
 
@@ -28,8 +22,13 @@ import (
 // Host is what an instance gives each service it runs; see core/service.
 type Host = service.Host
 
-// Vault is what the cloud's secrets service answers.
-type Vault = service.Vault
+// Vault is what the cloud's secrets service answers, from whichever node runs it.
+type Vault interface {
+	Secret(ctx context.Context, project, environment, secretID string) (string, error)
+	Set(ctx context.Context, project, environment, name string, value []byte) error
+	Delete(ctx context.Context, project, environment, name string) error
+	List(ctx context.Context, project, environment string) ([]string, error)
+}
 
 // withService runs s under name when the config names it, beside the services
 // tau ships: what this package's own tests start.
@@ -95,55 +94,21 @@ func (n *Instance) startServices(ctx context.Context) error {
 	return nil
 }
 
-// added is one service's view of the node.
+// added is one service's view of the instance.
 type added struct {
 	node *Instance
 	name string
 }
 
-func (a *added) Name() string    { return a.name }
 func (a *added) Peer() peer.Node { return a.node.Node }
 func (a *added) Root() string    { return a.node.cfg.Root }
 func (a *added) Running() []any  { return a.node.runningNow() }
-func (a *added) Logger() log.StandardLogger {
-	return log.Logger("tau.node." + a.name)
-}
-
-func (a *added) Database(name string) (kvdb.Instance, error) {
-	path := a.name
-	if name != "" {
-		path += "/" + name
-	}
-	db, err := a.node.kvdb(path)
-	if err != nil {
-		return nil, err
-	}
-	a.node.addCloser(closerFunc(db.Close))
-	return db, nil
-}
-
-func (a *added) Listen(id protocol.ID, handler http.Handler) error {
-	server, err := rpc.Listen(context.Background(), a.node.Host(), id, handler)
-	if err != nil {
-		return err
-	}
-	a.node.addCloser(server)
-	return nil
-}
-
-func (a *added) Handle(pattern string, handler http.Handler) error {
-	return a.node.public.handle(pattern, handler)
-}
-
-func (a *added) Peers(service string) []libp2ppeer.ID { return a.node.Peers(service) }
 
 // Peers is every node discovery currently says runs service, this one included
 // when it does.
 func (n *Instance) Peers(service string) []libp2ppeer.ID {
 	return (&fromDiscovery{node: n, name: service}).Known()
 }
-
-func (a *added) Secrets() Vault { return a.node.Vault() }
 
 func (a *added) Config(into any) error {
 	entry, ok := a.node.cfg.Added[a.name]
@@ -174,63 +139,4 @@ func (n *Instance) runningNow() []any {
 	n.runningMu.Lock()
 	defer n.runningMu.Unlock()
 	return slices.Clone(n.running)
-}
-
-// public is what added services serve on the node's public listener, in front
-// of the gateway.
-type public struct {
-	mu    sync.RWMutex
-	mux   *http.ServeMux
-	count int
-}
-
-func (p *public) handle(pattern string, handler http.Handler) (err error) {
-	if handler == nil {
-		return errors.New("node: a nil handler")
-	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.mux == nil {
-		p.mux = http.NewServeMux()
-	}
-	// ServeMux refuses a malformed or conflicting pattern by panicking, which
-	// for a pattern a service computed at start is an error to return.
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("node: pattern %q: %v", pattern, r)
-		}
-	}()
-	p.mux.Handle(pattern, handler)
-	p.count++
-	return nil
-}
-
-// route is the handler an added pattern names for r, or nil.
-func (p *public) route(r *http.Request) http.Handler {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.count == 0 {
-		return nil
-	}
-	h, pattern := p.mux.Handler(r)
-	if pattern == "" {
-		return nil
-	}
-	return h
-}
-
-// front serves an added pattern when one matches and next otherwise. A nil
-// next answers 404.
-func (p *public) front(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if h := p.route(r); h != nil {
-			h.ServeHTTP(w, r)
-			return
-		}
-		if next == nil {
-			http.NotFound(w, r)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }

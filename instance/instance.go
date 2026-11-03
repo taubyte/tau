@@ -150,10 +150,6 @@ type Instance struct {
 	closersMu sync.Mutex
 	closers   []io.Closer
 
-	// public is what services added with WithService serve on the public
-	// listener. See extend.go.
-	public public
-
 	// shared is the vault Vault hands out, made on first use.
 	sharedMu sync.Mutex
 	shared   *vault
@@ -919,18 +915,11 @@ func (n *Instance) addCloser(c io.Closer) {
 
 // Handler is what this node serves on the internet, or nil when it runs no
 // gateway.
-//
-// A node running a service added with WithService always has one: what that
-// service handles is served in front of the gateway.
 func (n *Instance) Handler() http.Handler {
-	var gateway http.Handler
-	if n.gateway != nil {
-		gateway = n.gateway.Handler()
+	if n.gateway == nil {
+		return nil
 	}
-	if len(n.services) > 0 {
-		return n.public.front(gateway)
-	}
-	return gateway
+	return n.gateway.Handler()
 }
 
 // TLSConfig is what a composer serving Handler over TLS answers handshakes

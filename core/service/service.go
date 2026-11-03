@@ -7,14 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
-
-	"github.com/ipfs/go-log/v2"
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/libp2p/go-libp2p/core/host"
-	"github.com/taubyte/tau/core/kvdb"
+	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
+
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/rpc"
 )
@@ -31,72 +27,28 @@ type Service interface {
 
 // Host is what an instance gives each service it runs.
 type Host interface {
-	// Name is the service's own name.
-	Name() string
-
-	// Peer is the instance's peer: its host, gossip, blockstore and datastore.
+	// Peer is the instance's peer: its host, gossip, blockstore and datastore,
+	// which everything a service runs on is built from.
 	Peer() peer.Node
-
-	// Database opens one of the service's own replicated databases, its path
-	// under the service's name. It is closed with the instance.
-	Database(name string) (kvdb.Instance, error)
-
-	// Listen serves handler to other nodes over p2p/rpc on id, until the
-	// instance closes.
-	Listen(id protocol.ID, handler http.Handler) error
-
-	// Handle serves handler on the instance's public listener for every request
-	// pattern matches, in net/http.ServeMux syntax.
-	Handle(pattern string, handler http.Handler) error
-
-	// Peers is every node discovery says runs service, this one included when
-	// it does.
-	Peers(service string) []libp2ppeer.ID
 
 	// Running is every service running on this instance, for Get.
 	Running() []any
 
-	// Secrets is the cloud's vault.
-	Secrets() Vault
+	// Config decodes the service's section of the instance's config into into,
+	// by yaml. With no section it leaves into as it was.
+	Config(into any) error
 
 	// Root is the instance's own directory.
 	Root() string
-
-	Logger() log.StandardLogger
-
-	// Config decodes the service's entry of the instance's config into into, by
-	// yaml. With no entry it leaves into as it was.
-	Config(into any) error
 }
 
-// Vault is what the cloud's secrets service answers, from whichever node runs it.
-type Vault interface {
-	Secret(ctx context.Context, project, environment, secretID string) (string, error)
-	Set(ctx context.Context, project, environment, name string, value []byte) error
-	Delete(ctx context.Context, project, environment, name string) error
-	List(ctx context.Context, project, environment string) ([]string, error)
+// Directory says which nodes run a service: what discovery answers.
+type Directory interface {
+	Peers(service string) []libp2ppeer.ID
 }
 
 // ErrNoneRuns is a service no node is known to run.
 var ErrNoneRuns = errors.New("service: no node is known to run it")
-
-// Reach is the service named as h reaches it: the handle it provided on this
-// instance when it runs here, otherwise a client dial opens to a node discovery
-// names. See p2p/rpc's Reach for why the local case is no client at all.
-func Reach[T any](h Host, name string, dial func(host.Host, libp2ppeer.ID) (T, error)) *rpc.Reacher[T] {
-	self := h.Peer().Host()
-	return rpc.Reach(self, name,
-		func() (libp2ppeer.ID, error) {
-			for _, id := range h.Peers(name) {
-				if id != self.ID() {
-					return id, nil
-				}
-			}
-			return "", fmt.Errorf("%w: %s", ErrNoneRuns, name)
-		},
-		func() (T, bool) { return Get[T](h) },
-		func(id libp2ppeer.ID) (T, error) { return dial(self, id) })
-}
 
 // Get is the service running on this instance that is a T: how one service reaches
 // another beside it, with no hop and no name.
@@ -108,4 +60,24 @@ func Get[T any](h Host) (T, bool) {
 	}
 	var zero T
 	return zero, false
+}
+
+// Reach is the service named as h reaches it: the T running on this instance when
+// there is one, otherwise a client dial opens to a node the directory beside it
+// names. See p2p/rpc's Reach for why the local case is no client at all.
+func Reach[T any](h Host, name string, dial func(host.Host, libp2ppeer.ID) (T, error)) *rpc.Reacher[T] {
+	self := h.Peer().Host()
+	return rpc.Reach(self, name,
+		func() (libp2ppeer.ID, error) {
+			if d, ok := Get[Directory](h); ok {
+				for _, id := range d.Peers(name) {
+					if id != self.ID() {
+						return id, nil
+					}
+				}
+			}
+			return "", fmt.Errorf("%w: %s", ErrNoneRuns, name)
+		},
+		func() (T, bool) { return Get[T](h) },
+		func(id libp2ppeer.ID) (T, error) { return dial(self, id) })
 }

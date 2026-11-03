@@ -3,22 +3,17 @@ package storage
 import (
 	"errors"
 	"io"
-	"net/http"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/ipfs/go-cid"
-	"github.com/ipfs/go-log/v2"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
-	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/placement"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/register"
@@ -30,12 +25,11 @@ type storageNode struct {
 	peer.Node
 	t *testing.T
 
-	mu       sync.Mutex
-	running  []any
-	started  *server
-	members  func() []placement.Member
-	config   func(into any) error
-	refusing error
+	mu      sync.Mutex
+	running []any
+	started *server
+	members func() []placement.Member
+	config  func(into any) error
 }
 
 func newStorageNode(t *testing.T) *storageNode {
@@ -52,22 +46,7 @@ func newStorageNode(t *testing.T) *storageNode {
 	return &storageNode{Node: p, t: t, running: []any{reg.Local()}}
 }
 
-func (i *storageNode) Name() string    { return Descriptor.Name }
 func (i *storageNode) Peer() peer.Node { return i.Node }
-
-func (i *storageNode) Database(name string) (kvdb.Instance, error) {
-	if i.refusing != nil {
-		return nil, i.refusing
-	}
-	db, err := pkgkvdb.Open(i.Node, Descriptor.Name+"/"+name)
-	if err != nil {
-		return nil, err
-	}
-	i.t.Cleanup(db.Close)
-	return db, nil
-}
-
-func (i *storageNode) Peers(string) []libp2ppeer.ID { return nil }
 
 func (i *storageNode) Running() []any {
 	i.mu.Lock()
@@ -79,8 +58,6 @@ func (i *storageNode) Running() []any {
 	return out
 }
 
-func (i *storageNode) Logger() log.StandardLogger { return log.Logger("storage-test") }
-
 func (i *storageNode) Config(into any) error {
 	if i.config != nil {
 		return i.config(into)
@@ -88,10 +65,7 @@ func (i *storageNode) Config(into any) error {
 	return nil
 }
 
-func (*storageNode) Listen(protocol.ID, http.Handler) error { return nil }
-func (*storageNode) Handle(string, http.Handler) error      { return nil }
-func (*storageNode) Secrets() service.Vault                 { return nil }
-func (i *storageNode) Root() string                         { return i.t.TempDir() }
+func (i *storageNode) Root() string { return i.t.TempDir() }
 
 var _ service.Host = (*storageNode)(nil)
 
@@ -144,11 +118,6 @@ func TestStorageRefusesWhatItCannotStartWith(t *testing.T) {
 	i.config = func(any) error { return errors.New("no such key") }
 	err := New().Start(t.Context(), i)
 	require.ErrorContains(t, err, "no such key")
-
-	i = newStorageNode(t)
-	i.refusing = errors.New("disk full")
-	err = New().Start(t.Context(), i)
-	require.ErrorContains(t, err, "disk full")
 
 	i = newStorageNode(t)
 	i.config = func(into any) error {

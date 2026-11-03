@@ -34,7 +34,7 @@ func TestAComposedIdentityIsWhatAuthAnswersWith(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.NoError(t, n.Start(t.Context()))
-	require.Equal(t, Auth, handed.Name())
+	require.Equal(t, p.Host(), handed.Peer().Host(), "handed the instance it runs on")
 
 	client, err := rpc.NewClient(callerOf(t, p), p.ID(), authService.Protocol)
 	require.NoError(t, err)

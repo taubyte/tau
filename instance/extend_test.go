@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -91,17 +90,16 @@ func TestAnAddedServiceTheConfigDoesNotNameDoesNotStart(t *testing.T) {
 	require.Nil(t, n.Handler(), "nothing it serves runs here")
 }
 
-func TestAnAddedServiceGetsTheNodesResources(t *testing.T) {
+func TestAServiceIsGivenItsInstance(t *testing.T) {
 	r := &recording{}
-	n, h, factory := makeNode(t, Config{Services: []string{Discovery, Secrets, addedName}},
-		r.service())
+	n, h, _ := makeNode(t, Config{Services: []string{Discovery, addedName}}, r.service())
 	require.NoError(t, n.Start(t.Context()))
 	host := r.host
 	require.NotNil(t, host)
 
-	require.Equal(t, addedName, host.Name())
 	require.Equal(t, h, host.Peer().Host())
 	require.NotNil(t, host.Peer().Messaging())
+	require.NotEmpty(t, host.Root())
 
 	// WHAT RUNS BESIDE IT, a service reaches by the type it wants.
 	reg, ok := service.Get[*pkgregister.Register](host)
@@ -109,55 +107,35 @@ func TestAnAddedServiceGetsTheNodesResources(t *testing.T) {
 	require.Nil(t, reg)
 	_, ok = service.Get[*discovery.Service](host)
 	require.True(t, ok, "discovery runs here")
-	require.NotEmpty(t, host.Root())
-	require.NotNil(t, host.Logger())
-
-	// ITS DATABASES ARE UNDER ITS NAME, so it cannot open a built-in one.
-	db, err := host.Database("state")
-	require.NoError(t, err)
-	require.NoError(t, db.Put(t.Context(), "/k", []byte("v")))
-	_, err = host.Database("")
-	require.NoError(t, err)
-	opened, _ := factory.counts()
-	require.Contains(t, opened, addedName+"/state")
-	require.Contains(t, opened, addedName)
-
-	// The vault is the node's own here, and one reach however often asked.
-	vault := host.Secrets()
-	require.Same(t, vault, host.Secrets())
-	require.NoError(t, vault.Set(t.Context(), "p", "e", "name", []byte("value")))
-	names, err := vault.List(t.Context(), "p", "e")
-	require.NoError(t, err)
-	require.Equal(t, []string{"name"}, names)
+	_, ok = service.Get[started](host)
+	require.True(t, ok, "and so does the service itself, once started")
 
 	// It is reported as running, and discovery finds it.
 	require.Contains(t, n.serving(), addedName)
-	require.Eventually(t, func() bool { return len(host.Peers(addedName)) == 1 }, 10*time.Second, 20*time.Millisecond)
-	require.Equal(t, h.ID(), host.Peers(addedName)[0])
+	d, _ := service.Get[service.Directory](host)
+	require.Eventually(t, func() bool { return len(d.Peers(addedName)) == 1 }, 10*time.Second, 20*time.Millisecond)
+	require.Equal(t, h.ID(), d.Peers(addedName)[0])
 
 	require.NoError(t, n.Close())
 	select {
 	case <-r.closer.done:
 	default:
-		t.Fatal("the node closed without closing what the service returned")
+		t.Fatal("the instance closed without closing the service")
 	}
-	_, closedCount := factory.counts()
-	require.Positive(t, closedCount)
 }
 
-func TestAnAddedServiceAnswersOverRPCAndHTTP(t *testing.T) {
-	var host Host
-	svc := started{start: func(_ context.Context, h Host) error {
-		host = h
-		mux := http.NewServeMux()
-		mux.Handle(echov1connect.NewEchoServiceHandler(echoes{}))
-		if err := h.Listen(echoProtocol, mux); err != nil {
+func TestAServiceListensOnItsInstancesPeer(t *testing.T) {
+	var server *rpc.Server
+	svc := started{
+		start: func(_ context.Context, h Host) error {
+			mux := http.NewServeMux()
+			mux.Handle(echov1connect.NewEchoServiceHandler(echoes{}))
+			var err error
+			server, err = rpc.Listen(context.Background(), h.Peer().Host(), echoProtocol, mux)
 			return err
-		}
-		return h.Handle("/added/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			io.WriteString(w, "added")
-		}))
-	}}
+		},
+		close: func() error { return server.Close() },
+	}
 
 	p := mockPeer(t)
 	n, err := New(p, rooted(t, Config{Services: []string{addedName}}), withService(addedName, svc))
@@ -172,46 +150,7 @@ func TestAnAddedServiceAnswersOverRPCAndHTTP(t *testing.T) {
 	resp, err := echo.Unary(t.Context(), connect.NewRequest(&echov1.EchoRequest{Payload: []byte("hi")}))
 	require.NoError(t, err)
 	require.Equal(t, []byte("hi"), resp.Msg.GetPayload())
-
-	handler := n.Handler()
-	require.NotNil(t, handler)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://x/added/thing", nil))
-	require.Equal(t, http.StatusOK, w.Code)
-	require.Equal(t, "added", w.Body.String())
-
-	// Whatever no added pattern matches is the gateway's, and there is none.
-	w = httptest.NewRecorder()
-	handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://x/other", nil))
-	require.Equal(t, http.StatusNotFound, w.Code)
-
-	// A conflicting or nil handler is an error rather than a panic.
-	require.Error(t, host.Handle("/added/", http.NotFoundHandler()))
-	require.Error(t, host.Handle("/nil/", nil))
-
-	// A node without a discovery view knows nobody.
-	require.Nil(t, host.Peers(addedName))
-	// A second listener on the same protocol is refused.
-	require.Error(t, host.Listen(echoProtocol, http.NotFoundHandler()))
-}
-
-func TestAddedPatternsAreServedInFrontOfTheGateway(t *testing.T) {
-	svc := started{start: func(_ context.Context, h Host) error {
-		return h.Handle("mail.example.com/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			io.WriteString(w, "added")
-		}))
-	}}
-	n, _, _ := makeNode(t, Config{}, withService(addedName, svc))
-	require.NoError(t, n.Start(t.Context()))
-
-	w := httptest.NewRecorder()
-	n.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://mail.example.com/x", nil))
-	require.Equal(t, "added", w.Body.String())
-
-	w = httptest.NewRecorder()
-	n.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://nobody.example.com/", nil))
-	require.Equal(t, http.StatusNotFound, w.Code)
-	require.NotEqual(t, "added", w.Body.String())
+	require.Nil(t, n.Handler(), "no gateway, nothing public")
 }
 
 func TestAnAddedServiceThatFailsToStartFailsTheNode(t *testing.T) {

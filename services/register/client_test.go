@@ -3,11 +3,13 @@ package register
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/fleet"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 )
 
@@ -222,4 +224,28 @@ func TestTheFleetIsDialledAsItsReader(t *testing.T) {
 	doc, err := f.Object(t.Context(), p.Object)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"replication":2}`, string(doc))
+}
+
+func TestTheFleetsRetentionIsTheDefaultUntilPublished(t *testing.T) {
+	h := newHarness(t, pkgregister.NewMemStore())
+	reg := h.Service.Local()
+
+	got, err := Retention(t.Context(), reg)
+	require.NoError(t, err)
+	require.Zero(t, got)
+
+	doc, err := fleet.Encode(fleet.Fleet{Retention: fleet.Duration(48 * time.Hour)})
+	require.NoError(t, err)
+	_, err = reg.PublishFleet(t.Context(), 1, doc)
+	require.NoError(t, err)
+	got, err = Retention(t.Context(), reg)
+	require.NoError(t, err)
+	require.Equal(t, 48*time.Hour, got)
+
+	// THE REGISTER STORES WHATEVER IT IS GIVEN, so a document that does not decode
+	// is the reader's to refuse.
+	_, err = reg.PublishFleet(t.Context(), 2, []byte("{not json"))
+	require.NoError(t, err)
+	_, err = Retention(t.Context(), reg)
+	require.Error(t, err, "a document that does not decode")
 }

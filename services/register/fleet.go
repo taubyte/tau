@@ -2,10 +2,13 @@ package register
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
+	"github.com/taubyte/tau/pkg/kvdb"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 )
 
@@ -22,3 +25,20 @@ var (
 
 // DialFleet is a client of the register at id, as the fleet's reader.
 func DialFleet(h host.Host, id libp2ppeer.ID) (Fleet, error) { return NewClient(h, id) }
+
+// Retention is the T the cloud's fleet document gives its replicated databases: 0,
+// the default, while nothing is published.
+func Retention(ctx context.Context, f Fleet) (time.Duration, error) {
+	p, err := f.ResolveFleet(ctx)
+	if errors.Is(err, pkgregister.ErrNotPublished) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	doc, err := f.Object(ctx, p.Object)
+	if err != nil {
+		return 0, err
+	}
+	return kvdb.RetentionOf(doc, true)
+}

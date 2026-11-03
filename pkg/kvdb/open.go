@@ -28,6 +28,10 @@ type openOptions struct {
 	// fallback is a T this database writes under only if it can hold it.
 	fallback bool
 	onClose  func()
+
+	// follow reads the cloud's T, every poll.
+	follow func(context.Context) (time.Duration, error)
+	poll   time.Duration
 }
 
 // WithLogger is where the database says what it does. Default the package's own.
@@ -51,6 +55,14 @@ func WithRetention(t time.Duration) OpenOption {
 // every node falls back alike.
 func WithFleetRetention(t time.Duration) OpenOption {
 	return func(o *openOptions) { o.retention, o.fallback = t, true }
+}
+
+// WithRetentionFrom has the database follow the cloud's T, read with read every
+// poll: 0 is the default, a T it cannot hold leaves it where it was, and a read that
+// fails keeps the last. Every database of one cloud reads one document, so every
+// node moves the same way.
+func WithRetentionFrom(read func(context.Context) (time.Duration, error), poll time.Duration) OpenOption {
+	return func(o *openOptions) { o.follow, o.poll = read, poll }
 }
 
 // WithOnClose runs once the database is closed, for whoever keeps the set of a peer's
@@ -116,7 +128,40 @@ func open(p peer.Node, path string, options ...OpenOption) (*kvDatabase, error) 
 		d.closeCtxC()
 		return nil, err
 	}
+	if o.follow != nil && o.poll > 0 {
+		go d.follow(o.follow, o.poll, o.logger)
+	}
 	return d, nil
+}
+
+// follow moves this database to the T read, until it closes.
+func (d *kvDatabase) follow(read func(context.Context) (time.Duration, error), poll time.Duration, logger logging.StandardLogger) {
+	ticker := time.NewTicker(poll)
+	defer ticker.Stop()
+	for {
+		if err := d.retainAsRead(read); err != nil && d.closeCtx.Err() == nil {
+			logger.Errorf("%s: the cloud's retention: %s", d.path, err)
+		}
+		select {
+		case <-d.closeCtx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (d *kvDatabase) retainAsRead(read func(context.Context) (time.Duration, error)) error {
+	t, err := read(d.closeCtx)
+	if err != nil {
+		return err
+	}
+	if t == 0 {
+		t = DefaultRetention()
+	}
+	if err := d.CanRetain(t); err != nil {
+		return err
+	}
+	return d.SetRetention(t)
 }
 
 func storeKey(path string) ds.Key { return ds.NewKey("crdt/" + path) }

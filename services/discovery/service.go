@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
+	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/taubyte/tau/pkg/membership"
@@ -370,6 +371,20 @@ func (s *Service) Placement() []placement.Member {
 		return nil
 	}
 	return s.members.StablePlacement()
+}
+
+// Peers is every node this view says runs service, freshest first, judged by this
+// service's own freshness. A row whose peer does not decode is skipped, so one bad row
+// cannot hide the good ones beside it.
+func (s *Service) Peers(service string) []libp2ppeer.ID {
+	rows := s.Route(service, s.cfg.Freshness())
+	out := make([]libp2ppeer.ID, 0, len(rows))
+	for _, row := range rows {
+		if id, err := libp2ppeer.Decode(row.Peer); err == nil {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // PlacementOf is the placement set narrowed to the members whose last report says
