@@ -17,7 +17,7 @@ func TestNewOpensNothing(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
 
-	s, err := New(newHost(t, mn), WithStore(pkgregister.NewMemStore()))
+	s, err := build(newHost(t, mn), withStore(pkgregister.NewMemStore()))
 	require.NoError(t, err)
 	require.Nil(t, s.server)
 	require.NoError(t, s.Close())
@@ -27,7 +27,7 @@ func TestNewOpensNothing(t *testing.T) {
 // for itself can be started two ways, and one of them is never how production
 // starts it.
 func TestNewRefusesToInventItsOwnIdentity(t *testing.T) {
-	_, err := New(nil, WithStore(pkgregister.NewMemStore()))
+	_, err := build(nil, withStore(pkgregister.NewMemStore()))
 	require.ErrorIs(t, err, ErrNoHost)
 }
 
@@ -36,10 +36,10 @@ func TestNewRefusesNoStore(t *testing.T) {
 	t.Cleanup(func() { mn.Close() })
 	h := newHost(t, mn)
 
-	_, err := New(h)
+	_, err := build(h)
 	require.ErrorIs(t, err, ErrNoStore)
 
-	_, err = New(h, WithStore(nil))
+	_, err = build(h, withStore(nil))
 	require.ErrorIs(t, err, ErrNoStore)
 }
 
@@ -50,14 +50,14 @@ func TestServerOptionsReachListen(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
 
-	s, err := New(newHost(t, mn),
-		WithStore(pkgregister.NewMemStore()),
-		WithServerOptions(rpc.WithHTTPServer(func(hs *http.Server) { hs.Handler = http.NotFoundHandler() })))
+	s, err := build(newHost(t, mn),
+		withStore(pkgregister.NewMemStore()),
+		withServerOptions(rpc.WithHTTPServer(func(hs *http.Server) { hs.Handler = http.NotFoundHandler() })))
 	require.NoError(t, err)
 
 	// rpc.Listen owns http.Server.Handler and refuses an option that sets it,
 	// which is how this test knows the option was not dropped on the floor.
-	err = s.Start(t.Context())
+	err = s.serve(t.Context())
 	require.ErrorIs(t, err, rpc.ErrServerFieldOwned)
 	require.NoError(t, s.Close())
 }
@@ -67,12 +67,12 @@ func TestStartingTwiceIsAnErrorNotASecondListener(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
 
-	s, err := New(newHost(t, mn), WithStore(pkgregister.NewMemStore()))
+	s, err := build(newHost(t, mn), withStore(pkgregister.NewMemStore()))
 	require.NoError(t, err)
-	require.NoError(t, s.Start(t.Context()))
+	require.NoError(t, s.serve(t.Context()))
 	t.Cleanup(func() { s.Close() })
 
-	require.Error(t, s.Start(t.Context()))
+	require.Error(t, s.serve(t.Context()))
 }
 
 // TestCloseIsIdempotentAndFinal.
@@ -80,13 +80,13 @@ func TestCloseIsIdempotentAndFinal(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
 
-	s, err := New(newHost(t, mn), WithStore(pkgregister.NewMemStore()))
+	s, err := build(newHost(t, mn), withStore(pkgregister.NewMemStore()))
 	require.NoError(t, err)
-	require.NoError(t, s.Start(t.Context()))
+	require.NoError(t, s.serve(t.Context()))
 
 	require.NoError(t, s.Close())
 	require.NoError(t, s.Close())
-	require.Error(t, s.Start(t.Context()), "a closed service does not start again")
+	require.Error(t, s.serve(t.Context()), "a closed service does not start again")
 }
 
 // TestTheProtocolIsDerived: the id is the proto package's, with its "tau."

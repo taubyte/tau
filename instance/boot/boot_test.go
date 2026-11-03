@@ -13,6 +13,7 @@ import (
 
 	"github.com/taubyte/tau/instance"
 	"github.com/taubyte/tau/pkg/stats"
+	"github.com/taubyte/tau/services"
 )
 
 func write(t *testing.T, content string) string {
@@ -102,7 +103,7 @@ func TestStartRefusesAnOpenNetworkItWasNotToldAbout(t *testing.T) {
 
 func TestTheExampleRoundTrips(t *testing.T) {
 	example := File{
-		Node:      instance.Config{Services: instance.All, Cloud: "acme"},
+		Node:      instance.Config{Services: append(append([]string(nil), instance.All...), services.Names()...), Cloud: "acme"},
 		Root:      DefaultRoot,
 		Listen:    []string{DefaultListen},
 		Open:      true,

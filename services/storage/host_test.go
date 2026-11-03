@@ -39,11 +39,10 @@ func newStorageNode(t *testing.T) *storageNode {
 
 	// The fleet document is the register's; an unpublished one is the defaults,
 	// which a write needs to have read.
-	reg, err := register.New(p.Host(), register.WithStore(pkgregister.NewMemStore()))
+	reg, err := pkgregister.New(pkgregister.WithStore(pkgregister.NewMemStore()))
 	require.NoError(t, err)
-	t.Cleanup(func() { reg.Close() })
 
-	return &storageNode{Node: p, t: t, running: []service.Running{{Name: register.Descriptor.Name, Service: reg.Local()}}}
+	return &storageNode{Node: p, t: t, running: []service.Running{{Name: register.Descriptor.Name, Service: reg}}}
 }
 
 func (i *storageNode) Peer() peer.Node { return i.Node }

@@ -23,13 +23,13 @@ import (
 // would depend on which door the request came through.
 
 // mount is the one handler rpc.Listen serves.
-func (s *Service) mount() http.Handler {
+func (s *server) mount() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle(registerv2connect.NewRegisterServiceHandler(&handler{s}, codec.Option()))
 	return mux
 }
 
-type handler struct{ s *Service }
+type handler struct{ s *server }
 
 var _ registerv2connect.RegisterServiceHandler = (*handler)(nil)
 

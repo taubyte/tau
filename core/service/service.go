@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"sync"
 
 	"github.com/libp2p/go-libp2p/core/host"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
@@ -92,3 +94,39 @@ func Reach[T any](h Host, name string, dial func(host.Host, libp2ppeer.ID) (T, e
 		func() (T, bool) { return Get[T](h) },
 		func(id libp2ppeer.ID) (T, error) { return dial(self, id) })
 }
+
+// Lone runs services on one peer outside an instance: what a test or a dream harness
+// composes. Each service started is beside the ones started before it.
+type Lone struct {
+	node  peer.Node
+	cloud string
+
+	mu      sync.Mutex
+	running []Running
+}
+
+// On is a Lone over p, in cloud.
+func On(p peer.Node, cloud string) *Lone { return &Lone{node: p, cloud: cloud} }
+
+// Start starts s under name, with no configuration and no directory of its own.
+func (l *Lone) Start(ctx context.Context, name string, s Service) error {
+	if err := s.Start(ctx, loneHost{l}); err != nil {
+		return err
+	}
+	l.mu.Lock()
+	l.running = append(l.running, Running{Name: name, Service: s})
+	l.mu.Unlock()
+	return nil
+}
+
+type loneHost struct{ l *Lone }
+
+func (h loneHost) Peer() peer.Node { return h.l.node }
+func (h loneHost) Running() []Running {
+	h.l.mu.Lock()
+	defer h.l.mu.Unlock()
+	return slices.Clone(h.l.running)
+}
+func (loneHost) Config(any) error { return nil }
+func (loneHost) Root() string     { return "" }
+func (h loneHost) Cloud() string  { return h.l.cloud }

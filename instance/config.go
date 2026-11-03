@@ -16,6 +16,7 @@ import (
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/pkg/tenancy"
+	"github.com/taubyte/tau/services"
 	auth "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/build/artifact"
@@ -68,7 +69,14 @@ var (
 )
 
 // All is every service this composition knows how to start.
-var All = []string{Register, Worker, Gateway, Auth, Secrets, Database, Primitives, Proxy, DNS, BuildBackend}
+var All = []string{Worker, Gateway, Auth, Secrets, Database, Primitives, Proxy, DNS, BuildBackend}
+
+// Everything is every service a node can be configured to run: the ones this
+// package still starts itself and the ones services.New makes. All, the default
+// shape, is the first half of it.
+func Everything() []string {
+	return append(append(append([]string(nil), All...), BuildFrontend, CM), services.Names()...)
+}
 
 // BuildFrontend is NOT in All. All is what a single-node development cloud
 // starts, and that node runs the backend; putting the public half in the

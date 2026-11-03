@@ -103,7 +103,7 @@ func (n *Instance) openReach() {
 		n.routeTo(Register, ErrNoRegister, "this node runs neither a register nor discovery to find one"),
 		func() (registerSeam, bool) {
 			// A LOCAL REGISTER IS NOT A CACHE, IT IS THE ABSENCE OF A HOP.
-			if n.register == nil {
+			if n.register == nil || n.register.Local() == nil {
 				return nil, false
 			}
 			return n.register.Local(), true

@@ -55,10 +55,10 @@ func TestEachServiceSaysWhatItCannotStartWithout(t *testing.T) {
 }
 
 func TestWhatWasBuiltIsClosed(t *testing.T) {
-	n, _, factory := makeNode(t, Config{Services: []string{Register}})
+	n, _, factory := makeNode(t, Config{Services: []string{Secrets}})
 
 	opened, closed := factory.counts()
-	require.Equal(t, []string{Register}, opened, "one database, named after the service that wanted it")
+	require.Equal(t, []string{Secrets}, opened, "one database, named after the service that wanted it")
 	require.Zero(t, closed)
 
 	require.NoError(t, n.Close())
@@ -71,12 +71,12 @@ func TestWhatWasBuiltIsClosed(t *testing.T) {
 func TestAHalfBuiltNodeClosesWhatItMade(t *testing.T) {
 	factory := &memFactory{}
 
-	// No discovery: the gateway fails, after the register has opened a database.
-	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Register, Gateway}}), withKVDB(factory))
+	// No discovery: the gateway fails, after secrets has opened a database.
+	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Secrets, Gateway}}), withKVDB(factory))
 	require.Error(t, err)
 
 	opened, closed := factory.counts()
-	require.Len(t, opened, 1, "the register got as far as opening one")
+	require.Len(t, opened, 1, "secrets got as far as opening one")
 	require.Equal(t, 1, closed, "and it was closed when the gateway failed")
 }
 
@@ -124,8 +124,8 @@ func TestAWorkerAdvertisesWhatItHolds(t *testing.T) {
 
 func TestALocalRegisterNeedsNoStream(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery}}, prebuilt())
+	require.NoError(t, n.Start(t.Context()))
 
-	// Nothing is started, so nothing is dialable — and the read still works.
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled(),
 	})
@@ -134,6 +134,8 @@ func TestALocalRegisterNeedsNoStream(t *testing.T) {
 	spec, err := n.Worker().Resolve(t.Context(), workerTarget())
 	require.NoError(t, err)
 	require.Equal(t, "wasm", spec.Runtime)
+	_, dialled := n.registers.At()
+	require.False(t, dialled, "the register here is read with no stream")
 }
 
 func TestANodeWithNoRegisterSaysSo(t *testing.T) {
@@ -207,7 +209,7 @@ func TestWhatTheOptionsRefuse(t *testing.T) {
 }
 
 func TestADatabaseThatWillNotOpen(t *testing.T) {
-	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Register}}), withKVDB(&memFactory{err: errors.New("the disk is full")}))
+	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Secrets}}), withKVDB(&memFactory{err: errors.New("the disk is full")}))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "disk is full")
 }
@@ -233,6 +235,7 @@ func TestTheAccessorsAreTheServicesItRuns(t *testing.T) {
 func TestTheFleetIsReadFromTheLocalRegister(t *testing.T) {
 	ctx := t.Context()
 	with, _, _ := makeNode(t, Config{Services: []string{Register}})
+	require.NoError(t, with.Start(ctx))
 	_, err := (&source{node: with}).ResolveFleet(ctx)
 	require.ErrorIs(t, err, pkgregister.ErrNotPublished, "nothing was published, and the register said so")
 

@@ -101,7 +101,7 @@ func v2Services(p config.Parser, hostName string) ([]string, []string, error) {
 			}
 			mapped, ok := v1Services[svc]
 			if !ok {
-				if !slices.Contains(instance.All, svc) && svc != instance.BuildFrontend && svc != instance.CM {
+				if !slices.Contains(instance.Everything(), svc) {
 					return nil, nil, fmt.Errorf("shape %s: %q is neither a v1 service nor a v2 one", shape, svc)
 				}
 				mapped = []string{svc}

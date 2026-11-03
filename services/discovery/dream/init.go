@@ -17,22 +17,6 @@ func Start(m *mesh.Mesh) (peer.Node, error) {
 		m.OnClose(svc)
 		// The gossip is scoped to this universe: two universes on one machine must
 		// not pool their load figures and route each other's traffic.
-		return svc.Start(m.Context(), &meshHost{Node: node, cloud: m.Name(), discovery: svc})
+		return service.On(node, m.Name()).Start(m.Context(), discovery.Descriptor.Name, svc)
 	})
 }
-
-// meshHost is the instance a mesh peer is: its peer, the one service it runs, in
-// the universe's cloud.
-type meshHost struct {
-	peer.Node
-	cloud     string
-	discovery discovery.Service
-}
-
-func (h *meshHost) Peer() peer.Node { return h.Node }
-func (h *meshHost) Running() []service.Running {
-	return []service.Running{{Name: discovery.Descriptor.Name, Service: h.discovery}}
-}
-func (h *meshHost) Config(any) error { return nil }
-func (h *meshHost) Root() string     { return "" }
-func (h *meshHost) Cloud() string    { return h.cloud }

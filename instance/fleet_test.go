@@ -236,6 +236,7 @@ func TestTheSeamsReachTheWorker(t *testing.T) {
 	})))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
+	require.NoError(t, n.Start(t.Context()))
 
 	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 1, Compiled: builtByThePlatform(),

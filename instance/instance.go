@@ -78,7 +78,7 @@ type Instance struct {
 	running   []service.Running
 
 	discovery discovery.Service
-	register  *registerService.Service
+	register  registerService.Service
 	worker    *worker.Service
 	gateway   *gateway.Service
 	proxy     *v2proxy.Service
@@ -208,6 +208,9 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 			if d, ok := s.(discovery.Service); ok {
 				n.discovery = d
 			}
+			if r, ok := s.(registerService.Service); ok {
+				n.register = r
+			}
 		}
 	}
 	// What the built-ins add to this node's report.
@@ -231,9 +234,6 @@ func (n *Instance) open() error {
 	// STATS NEXT. Everything else routes on the view it maintains, including
 	// the locators above, so a node that runs it must have it before anything
 	// asks one of them who does what.
-	if err := n.openRegister(); err != nil {
-		return err
-	}
 	if err := n.openAuth(); err != nil {
 		return err
 	}
@@ -286,32 +286,6 @@ func (n *Instance) open() error {
 		return err
 	}
 	return n.openBuildFrontend()
-}
-
-func (n *Instance) openRegister() error {
-	if !n.cfg.runs(Register) {
-		return nil
-	}
-
-	db, err := n.kvdb(Register)
-	if err != nil {
-		return err
-	}
-	n.closers = append(n.closers, closerFunc(db.Close))
-
-	store, err := registerService.NewKVStore(db)
-	if err != nil {
-		return err
-	}
-
-	svc, err := registerService.New(n.Host(), registerService.WithStore(store))
-	if err != nil {
-		return err
-	}
-	n.register = svc
-	n.provide(Register, svc.Local())
-	n.closers = append(n.closers, svc)
-	return nil
 }
 
 // openSecrets starts this node's vault, in its own database: different writers,
@@ -770,9 +744,6 @@ func (n *Instance) Start(ctx context.Context) error {
 	}
 
 	var order []starter
-	if n.register != nil {
-		order = append(order, n.register)
-	}
 	if n.secrets != nil {
 		order = append(order, n.secrets)
 	}
@@ -999,7 +970,7 @@ func (n *Instance) Vault() Vault {
 func (n *Instance) Services() []string { return append([]string(nil), n.cfg.Services...) }
 
 // Register is this node's register, or nil.
-func (n *Instance) Register() *registerService.Service { return n.register }
+func (n *Instance) Register() registerService.Service { return n.register }
 
 // Worker is this node's worker, or nil.
 func (n *Instance) Worker() *worker.Service { return n.worker }
@@ -1074,7 +1045,7 @@ func (s *source) Object(ctx context.Context, id pkgregister.ObjectID) ([]byte, e
 // the register's wire has no call for it, so a node without one falls back to the
 // default.
 func (s *source) ResolveFleet(ctx context.Context) (pkgregister.Pointer, error) {
-	if s.node.register == nil {
+	if s.node.register == nil || s.node.register.Local() == nil {
 		return pkgregister.Pointer{}, fmt.Errorf("%w: this node runs no register to read the fleet from", ErrNoRegister)
 	}
 	return s.node.register.Local().ResolveFleet(ctx)

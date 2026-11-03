@@ -34,6 +34,7 @@ import (
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/pkg/specs"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
+	"github.com/taubyte/tau/services"
 	"github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/secrets"
 	"github.com/taubyte/tau/tools/tau/internal/api"
@@ -744,7 +745,7 @@ func TestTheDomainCorpusBuildsBothWays(t *testing.T) {
 	dns := &txtZone{m: map[string][]string{}}
 	u := signedIn(t, func(c *instance.Config) {
 		c.CM.Domains.Trusted = false
-		c.Services = append(append([]string(nil), instance.All...), instance.CM)
+		c.Services = append(append(append([]string(nil), instance.All...), services.Names()...), instance.CM)
 	}, instance.WithResolver(dns))
 
 	claim := func(t *testing.T, work, fqdn string) api.DomainClaim {

@@ -24,6 +24,7 @@ import (
 	"github.com/taubyte/tau/instance"
 	nodeDream "github.com/taubyte/tau/instance/dream"
 	"github.com/taubyte/tau/pkg/certificate"
+	"github.com/taubyte/tau/services"
 	"github.com/taubyte/tau/services/cm"
 )
 
@@ -61,7 +62,7 @@ func TestAServiceNameIsIssuedOnceForTheFleet(t *testing.T) {
 			c.CM = cfg
 			switch index {
 			case 0, 1:
-				c.Services = append(slices.Clone(instance.All), instance.CM)
+				c.Services = append(append(slices.Clone(instance.All), services.Names()...), instance.CM)
 			default:
 				c.Services = []string{instance.Discovery, instance.BuildFrontend}
 				c.BuildFrontend.Listen = "127.0.0.1:0"

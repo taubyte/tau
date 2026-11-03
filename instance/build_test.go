@@ -147,6 +147,7 @@ func TestARowThatIsNotAPeerIsSkipped(t *testing.T) {
 
 func TestThePublisherIsLocalWhenThisNodeHasTheRegister(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Discovery}})
+	require.NoError(t, n.Start(t.Context()))
 
 	publisher, err := n.publisher(t.Context())
 	require.NoError(t, err)

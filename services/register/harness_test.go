@@ -25,7 +25,7 @@ import (
 // that a failure arrives as the right status code — neither of which a direct
 // handler call would show.
 type harness struct {
-	Service    *Service
+	Service    *server
 	Store      pkgregister.Store
 	Client     registerv2connect.RegisterServiceClient
 	CallerHost host.Host
@@ -38,15 +38,15 @@ func newHarness(t testing.TB, store pkgregister.Store) *harness {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
 
-	server := newHost(t, mn)
+	serverHost := newHost(t, mn)
 	caller := newHost(t, mn)
 
-	s, err := New(server, WithStore(store))
+	s, err := build(serverHost, withStore(store))
 	require.NoError(t, err)
-	require.NoError(t, s.Start(t.Context()))
+	require.NoError(t, s.serve(t.Context()))
 	t.Cleanup(func() { s.Close() })
 
-	c, err := rpc.NewClient(caller, server.ID(), Protocol)
+	c, err := rpc.NewClient(caller, serverHost.ID(), Protocol)
 	require.NoError(t, err)
 	t.Cleanup(c.Close)
 
@@ -55,7 +55,7 @@ func newHarness(t testing.TB, store pkgregister.Store) *harness {
 		Store:      store,
 		Client:     registerv2connect.NewRegisterServiceClient(c.HTTP(), c.URL()),
 		CallerHost: caller,
-		ServerHost: server,
+		ServerHost: serverHost,
 	}
 }
 

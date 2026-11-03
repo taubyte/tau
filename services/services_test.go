@@ -6,11 +6,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/services/discovery"
+	"github.com/taubyte/tau/services/register"
 	"github.com/taubyte/tau/services/storage"
 )
 
 func TestANameIsTheServiceItRuns(t *testing.T) {
-	require.Equal(t, []string{discovery.Descriptor.Name, storage.Descriptor.Name}, Names())
+	require.Equal(t, []string{discovery.Descriptor.Name, register.Descriptor.Name, storage.Descriptor.Name}, Names())
 
 	s, ok := New(storage.Descriptor.Name)
 	require.True(t, ok)

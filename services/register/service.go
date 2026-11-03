@@ -38,17 +38,35 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/host"
 
+	"github.com/taubyte/tau/core/kvdb"
+	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/register"
 )
 
-// Service is the register's state: the host it answers on and the register it
+// Service is the register as an instance runs it: the cloud's projects, what each
+// deployment runs, and the fleet's own document.
+type Service interface {
+	service.Service
+	Fleet
+
+	// Local is the register this service answers from, for the services beside it.
+	Local() *register.Register
+}
+
+// New is the register service, unstarted; Start builds it from its instance.
+func New() Service { return &server{} }
+
+// server is the register's state: the host it answers on and the register it
 // answers from.
-type Service struct {
+type server struct {
 	host host.Host
 	reg  *register.Register
 
 	serverOptions []rpc.ServerOption
+
+	// db is the database Start opened for the store, closed with the service.
+	db kvdb.Instance
 
 	// startMu guards server: Start and Close both read-then-write it, and
 	// nothing about this type promises one Service is only ever touched from
@@ -60,23 +78,23 @@ type Service struct {
 	closed    atomic.Bool
 }
 
-// Option injects what this service is built from. Operator declarations would
+// option injects what this service is built from. Operator declarations would
 // go in a Config; there are none, so everything here is a live collaborator.
-type Option func(*options) error
+type option func(*options) error
 
 type options struct {
 	store         register.Store
 	serverOptions []rpc.ServerOption
 }
 
-// WithStore is where objects and pointers live. Required.
+// withStore is where objects and pointers live. Required.
 //
 // It takes a STORE rather than a built *register.Register because the register
 // is a pure value over a store and there is nothing for a composer to decide
 // about it. What a composer does decide is where the rows go — a map for a
 // development node, a replicated store for a cluster — and that is this
 // argument.
-func WithStore(s register.Store) Option {
+func withStore(s register.Store) option {
 	return func(o *options) error {
 		if s == nil {
 			return ErrNoStore
@@ -88,7 +106,7 @@ func WithStore(s register.Store) Option {
 
 // WithServerOptions passes p2p/rpc.ServerOption values through to rpc.Listen
 // in Start without this package needing an option of its own for each one.
-func WithServerOptions(opts ...rpc.ServerOption) Option {
+func withServerOptions(opts ...rpc.ServerOption) option {
 	return func(o *options) error {
 		o.serverOptions = append(o.serverOptions, opts...)
 		return nil
@@ -100,42 +118,43 @@ var (
 	ErrNoHost  = errors.New("register: no host to answer on")
 )
 
-// New validates and allocates. It binds nothing and opens nothing — no
-// listener until Start — so a node can construct every service before starting
-// any of them.
-//
-// A nil host is an error rather than a node this service invents for itself: a
-// service that can mint its own libp2p identity can be started two ways, one of
-// which is never how production starts it.
-func New(h host.Host, opts ...Option) (*Service, error) {
-	if h == nil {
-		return nil, ErrNoHost
+// build is a server over a store, not yet serving. A nil host is an error rather
+// than a node this service invents for itself.
+func build(h host.Host, opts ...option) (*server, error) {
+	s := &server{}
+	if err := s.assemble(h, opts...); err != nil {
+		return nil, err
 	}
+	return s, nil
+}
 
+func (s *server) assemble(h host.Host, opts ...option) error {
+	if h == nil {
+		return ErrNoHost
+	}
 	var o options
 	for _, apply := range opts {
 		if err := apply(&o); err != nil {
-			return nil, fmt.Errorf("register: option: %w", err)
+			return fmt.Errorf("register: option: %w", err)
 		}
 	}
 	if o.store == nil {
-		return nil, ErrNoStore
+		return ErrNoStore
 	}
-
 	reg, err := register.New(register.WithStore(o.store))
 	if err != nil {
 		// Unreachable while o.store is checked above. Kept rather than
 		// dropped so a change to pkg/register's construction rules cannot
 		// pass silently through here.
-		return nil, err
+		return err
 	}
-
-	return &Service{host: h, reg: reg, serverOptions: o.serverOptions}, nil
+	s.host, s.reg, s.serverOptions = h, reg, o.serverOptions
+	return nil
 }
 
-// Start listens and serves. Calling it twice, or after Close, is an error
+// serve listens and serves. Calling it twice, or after Close, is an error
 // rather than a second listener leaking or a silent no-op.
-func (s *Service) Start(ctx context.Context) error {
+func (s *server) serve(ctx context.Context) error {
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
 
@@ -158,7 +177,7 @@ func (s *Service) Start(ctx context.Context) error {
 // It does not close the store, and cannot — register.Store has no Close,
 // because the store was handed in by whatever composed the node and is shared
 // with the services composed beside it.
-func (s *Service) Close() error {
+func (s *server) Close() error {
 	s.closeOnce.Do(func() {
 		s.closed.Store(true)
 		s.startMu.Lock()
@@ -166,6 +185,9 @@ func (s *Service) Close() error {
 			s.closeErr = s.server.Close()
 		}
 		s.startMu.Unlock()
+		if s.db != nil {
+			s.db.Close()
+		}
 	})
 	return s.closeErr
 }
@@ -180,4 +202,13 @@ func (s *Service) Close() error {
 // A caller that is NOT on this node has no way to reach this and must use a
 // Client, which is the point — the read surface is identical either way, so
 // nothing downstream can tell which it got.
-func (s *Service) Local() *register.Register { return s.reg }
+func (s *server) Local() *register.Register { return s.reg }
+
+// ResolveFleet and Object are the fleet's document as this register holds it.
+func (s *server) ResolveFleet(ctx context.Context) (register.Pointer, error) {
+	return s.reg.ResolveFleet(ctx)
+}
+
+func (s *server) Object(ctx context.Context, id register.ObjectID) ([]byte, error) {
+	return s.reg.Object(ctx, id)
+}

@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/linkcreds"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/build/frontend"
@@ -217,7 +219,7 @@ func TestADeployKeyIsReadFromTheVaultByRepository(t *testing.T) {
 }
 
 func TestLinkedRepositoriesIsEveryRepositoryOfEveryProject(t *testing.T) {
-	n, _, factory := makeNode(t, Config{Services: []string{Register, Discovery}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Discovery}})
 	require.NoError(t, n.Start(t.Context()))
 	p := projectTable{n}
 	ctx := t.Context()
@@ -243,10 +245,10 @@ func TestLinkedRepositoriesIsEveryRepositoryOfEveryProject(t *testing.T) {
 	// A table the register cannot scan is an error, not an empty listing a
 	// resync would read as "nothing to compare".
 	broken := errors.New("store unreachable")
-	db := factory.byPath[Register]
-	db.mu.Lock()
-	db.listErr = broken
-	db.mu.Unlock()
+	local := n.register.Local()
+	n.registers = rpc.Reach(n.Host(), Register, func() (libp2ppeer.ID, error) { return "", ErrNoRegister },
+		func() (registerSeam, bool) { return unlisting{registerSeam: local, err: broken}, true },
+		func(libp2ppeer.ID) (registerSeam, error) { return nil, ErrNoRegister })
 	repos, err = p.LinkedRepositories(ctx)
 	require.ErrorIs(t, err, broken)
 	require.Nil(t, repos)
@@ -293,4 +295,14 @@ func TestAHookCarriesTheSecretItsSecretReplaced(t *testing.T) {
 	vault.err = errors.New("vault unreachable")
 	_, err = linkSecrets{projects: p, vault: vault}.Hook(ctx, linkedID)
 	require.ErrorContains(t, err, "vault unreachable")
+}
+
+// unlisting is a register whose project table cannot be scanned.
+type unlisting struct {
+	registerSeam
+	err error
+}
+
+func (u unlisting) ListProjects(context.Context) ([]pkgregister.ProjectRecord, error) {
+	return nil, u.err
 }

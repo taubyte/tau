@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/libp2p/go-libp2p/core/host"
@@ -74,4 +76,37 @@ func TestNoDirectoryIsNobodyToAsk(t *testing.T) {
 	r := Reach(&fake{Node: p}, "store", func(host.Host, libp2ppeer.ID) (answer, error) { return "", nil })
 	_, err := r.Now(t.Context())
 	require.ErrorIs(t, err, ErrNoneRuns)
+}
+
+// recorder is a service that keeps the host it started with.
+type recorder struct {
+	host Host
+	err  error
+}
+
+func (r *recorder) Start(_ context.Context, h Host) error { r.host = h; return r.err }
+func (r *recorder) Close() error                          { return nil }
+
+func TestALonePeerRunsServicesBesideEachOther(t *testing.T) {
+	p := peer.Mock(t.Context())
+	t.Cleanup(p.Close)
+	l := On(p, "cloud")
+
+	first, second := &recorder{}, &recorder{}
+	require.NoError(t, l.Start(t.Context(), "first", first))
+	require.NoError(t, l.Start(t.Context(), "second", second))
+
+	h := second.host
+	require.Equal(t, p, h.Peer())
+	require.Equal(t, "cloud", h.Cloud())
+	require.Empty(t, h.Root())
+	require.NoError(t, h.Config(&struct{}{}))
+	got, ok := Get[*recorder](h)
+	require.True(t, ok)
+	require.Same(t, first, got, "what started before it")
+	require.Len(t, h.Running(), 2)
+
+	refused := &recorder{err: errors.New("no")}
+	require.Error(t, l.Start(t.Context(), "refused", refused))
+	require.Len(t, h.Running(), 2, "a service that failed to start is not running")
 }

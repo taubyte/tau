@@ -22,6 +22,7 @@ import (
 	"github.com/taubyte/tau/instance"
 	"github.com/taubyte/tau/instance/boot"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
+	"github.com/taubyte/tau/services"
 )
 
 // Set at release by -ldflags "-X main.version=… -X main.commit=… -X main.date=…".
@@ -176,7 +177,7 @@ func configCommand() *cli.Command {
 func printExample(w io.Writer) error {
 	out, err := yaml.Marshal(boot.File{
 		Node: instance.Config{
-			Services:  instance.All,
+			Services:  append(append([]string(nil), instance.All...), services.Names()...),
 			Cloud:     "acme",
 			Container: instance.ContainerConfig{Backend: instance.BackendContainerd},
 			// Written out although it is the default: :53 needs root or
