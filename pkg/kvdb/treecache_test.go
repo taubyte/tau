@@ -81,7 +81,9 @@ func TestAMergeReadsItsBaseFromTheCacheOfTreeNodes(t *testing.T) {
 }
 
 func TestTheCacheOfTreeNodesStaysWithinItsBudget(t *testing.T) {
-	const small = 16 << 10
+	// The tree's live upper levels alone outgrow the small budget: the cache forgets what
+	// no root reaches, so a smaller tree would never press it.
+	const small, keys = 16 << 10, 6000
 	replicas, dagsyncs, done := makeSeparateStoresWith(t, 2, func(i int) *Options {
 		o := noAutoCompact()
 		if i == 1 {
@@ -92,18 +94,18 @@ func TestTheCacheOfTreeNodesStaysWithinItsBudget(t *testing.T) {
 	defer done()
 	a, b := replicas[0], replicas[1]
 	from(dagsyncs, 0, 1)
-	seedKeys(t, a, 2000, "k")
+	seedKeys(t, a, keys, "k")
 	compact(t, a)
 	syncReplicaHeads(t, a, b)
 	peak := [2]int{}
 	for round := range 120 {
 		for i := range 10 {
-			put(t, a, fmt.Sprintf("/k%04d", (round*10+i)*131%2000), fmt.Sprintf("a%d", round))
+			put(t, a, fmt.Sprintf("/k%04d", (round*10+i)*131%keys), fmt.Sprintf("a%d", round))
 		}
 		compact(t, a)
 		syncReplicaHeads(t, a, b)
 		put(t, b, fmt.Sprintf("/b%04d", round%50), fmt.Sprintf("b%d", round))
-		del(t, b, fmt.Sprintf("/k%04d", round*7%2000))
+		del(t, b, fmt.Sprintf("/k%04d", round*7%keys))
 		compact(t, b)
 		syncReplicaHeads(t, b, a)
 		for i, r := range []*Datastore{a, b} {
