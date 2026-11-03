@@ -19,7 +19,7 @@ import (
 
 // work is the queue half of this service.
 type work struct {
-	service *Service
+	service *server
 
 	mu    sync.Mutex
 	group *queue.Group

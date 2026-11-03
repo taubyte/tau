@@ -17,7 +17,7 @@ import (
 
 // run is this service's one periodic turn, every WithSweep. It bounds how late a fire
 // is noticed; a cron's grain is a minute.
-func (s *Service) run(ctx context.Context) {
+func (s *server) run(ctx context.Context) {
 	t := time.NewTicker(s.sweep)
 	defer t.Stop()
 
@@ -32,7 +32,7 @@ func (s *Service) run(ctx context.Context) {
 }
 
 // cycle is one turn: the leader's tasking, and the lifecycle pass.
-func (s *Service) cycle(ctx context.Context) {
+func (s *server) cycle(ctx context.Context) {
 	cluster, err := s.consensus()
 	if err != nil {
 		return
@@ -49,7 +49,7 @@ func (s *Service) cycle(ctx context.Context) {
 	}
 	// The tasking reads nothing replicated, so it goes before the barrier; the tasked
 	// node's pass takes its own (crons.accept).
-	if s.schedules != nil {
+	if _, ok := s.workers(); ok {
 		s.crons.tick(ctx, s.clock())
 	}
 
@@ -64,7 +64,7 @@ func (s *Service) cycle(ctx context.Context) {
 }
 
 // retain is one lifecycle pass over everything this node's namespace declares.
-func (s *Service) retain(ctx context.Context, cluster raft.Cluster) {
+func (s *server) retain(ctx context.Context, cluster raft.Cluster) {
 	for _, spec := range logsIn(cluster) {
 		if ctx.Err() != nil {
 			return
@@ -90,7 +90,7 @@ func unresolved(spec Spec, err error) {
 }
 
 // retainLog drops what one log's retention no longer keeps.
-func (s *Service) retainLog(ctx context.Context, spec Spec) {
+func (s *server) retainLog(ctx context.Context, spec Spec) {
 	d, err := s.declared(ctx, spec.at(), logType)
 	if err != nil {
 		// A LOG THIS NODE CANNOT RESOLVE IS NOT ONE IT MAY TRUNCATE. A transport
@@ -115,7 +115,7 @@ func (s *Service) retainLog(ctx context.Context, spec Spec) {
 }
 
 // retainQueue moves one queue along and bounds its dead letter.
-func (s *Service) retainQueue(ctx context.Context, spec Spec) {
+func (s *server) retainQueue(ctx context.Context, spec Spec) {
 	d, err := s.declared(ctx, spec.at(), queueType)
 	if err != nil {
 		unresolved(spec, err)

@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	fleetdoc "github.com/taubyte/tau/pkg/fleet"
-	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/consensus"
 )
 
@@ -97,19 +96,8 @@ func TestANodeWithNoRegisterFollowsNoFleet(t *testing.T) {
 }
 
 func TestABuiltInsGroupIsTimedByTheConsensusSection(t *testing.T) {
-	quick := consensus.Config{
-		Timeouts: raft.TimeoutConfig{
-			HeartbeatTimeout:   50 * time.Millisecond,
-			ElectionTimeout:    50 * time.Millisecond,
-			CommitTimeout:      25 * time.Millisecond,
-			LeaderLeaseTimeout: 25 * time.Millisecond,
-			SnapshotInterval:   time.Minute,
-			SnapshotThreshold:  1000,
-		},
-		BootstrapTimeout: 200 * time.Millisecond,
-	}
 	root := t.TempDir()
-	n := &Instance{Node: mockPeer(t), cfg: Config{Root: root, Sections: map[string]any{consensus.Descriptor.Name: quick}}}
+	n := &Instance{Node: mockPeer(t), cfg: Config{Root: root, Sections: map[string]any{consensus.Descriptor.Name: quickConsensus}}}
 	c, err := n.raftGroup("built-in")
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })

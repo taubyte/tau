@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sync"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
@@ -13,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/rpc"
+	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	primitivesv2 "github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v2/primitivesv2connect"
@@ -143,4 +145,67 @@ func TestATaskingKeepsTheNameAndNotTheGuestsArm(t *testing.T) {
 	require.ErrorIs(t, refused, ErrNotLeading)
 	assert.Equal(t, connect.CodeAborted, connect.CodeOf(refused))
 	assert.Nil(t, armIn(refused), "a tasking was handed a variant meant for a guest")
+}
+
+// A GRANT WITH NO ADDRESS IN IT is refused at the door, by the tier and the client
+// alike, before anything is asked of a store or a stream.
+func TestAGrantThatNamesNothingIsRefusedOnEitherArm(t *testing.T) {
+	ctx := t.Context()
+	client, _ := refusing(t)
+	h := starting(t)
+	bad := invoke.Grant{Handle: "not-a-handle"}
+
+	for name, arm := range map[string]interface {
+		Send(context.Context, invoke.Grant, string, []byte) error
+		Claim(context.Context, invoke.Grant, int) ([]Delivery, error)
+		Settle(context.Context, invoke.Grant, Delivery, bool) error
+		Depth(context.Context, invoke.Grant) (Depth, error)
+		Append(context.Context, invoke.Grant, []byte) (string, error)
+		Read(context.Context, invoke.Grant, string, uint32) ([]wasmtier.Record, error)
+	}{"tier": h.Local(), "client": client} {
+		require.Error(t, arm.Send(ctx, bad, "1", nil), name)
+		_, err := arm.Claim(ctx, bad, 1)
+		require.Error(t, err, name)
+		require.Error(t, arm.Settle(ctx, bad, Delivery{}, true), name)
+		_, err = arm.Depth(ctx, bad)
+		require.Error(t, err, name)
+		_, err = arm.Append(ctx, bad, nil)
+		require.Error(t, err, name)
+		_, err = arm.Read(ctx, bad, "", 1)
+		require.Error(t, err, name)
+	}
+
+	// AND A NODE THAT SERVES NONE OF IT says so through the client.
+	_, err := client.Depth(ctx, grantFor(jobsID))
+	require.Error(t, err)
+	require.Error(t, client.Settle(ctx, grantFor(jobsID), Delivery{ID: "1"}, true))
+}
+
+func TestNoDeadlineTravelsAsNone(t *testing.T) {
+	require.True(t, nanos(0).IsZero())
+	require.Zero(t, unixNanos(time.Time{}))
+	at := time.Unix(0, 42)
+	require.True(t, at.Equal(nanos(unixNanos(at))))
+	require.NoError(t, wire(nil))
+	require.Contains(t, NotLeading{}.Error(), "no node leads it yet")
+	require.Contains(t, NotLeading{Leader: "QmLeader"}.Error(), "QmLeader does")
+}
+
+func TestAClosedServiceWaitsForNoLeader(t *testing.T) {
+	h := starting(t)
+	require.NoError(t, h.WaitForLeader(t.Context()))
+	require.NoError(t, h.Close())
+	require.ErrorIs(t, h.WaitForLeader(t.Context()), ErrClosed)
+
+	waiting := starting(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	waiting.formMu.Lock()
+	formed := waiting.forming
+	waiting.forming = make(chan struct{})
+	waiting.formMu.Unlock()
+	require.ErrorIs(t, waiting.WaitForLeader(ctx), context.Canceled, "a group still forming is waited for only as long as the caller waits")
+	waiting.formMu.Lock()
+	waiting.forming = formed
+	waiting.formMu.Unlock()
 }

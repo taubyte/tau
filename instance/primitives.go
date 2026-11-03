@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
@@ -15,26 +14,20 @@ import (
 	"github.com/taubyte/tau/services/worker"
 )
 
-// Starts the primitives service and decides how everything here reaches one: guest
-// sends and appends, the dispatcher's claims, and the leader's minute. The adapter is
-// instance/primitive.
+// How everything here reaches the primitives service: guest sends and appends, and the
+// dispatcher's claims. The adapter is instance/primitive.
 //
 // It is the local service or a node in the fleet, never a local fallback: a queue
 // answered either way would be two queues that cannot see each other. Which node is
-// asked per call from the discovery view. There are two reaches because a send
-// prefers this node and a window must be free to leave it. A routed node may be a
-// follower that refuses the write; the caller retries.
+// asked per call from the discovery view. A routed node may be a follower that
+// refuses the write; the caller retries.
 
 // ErrNoPrimitives is a node that needs the `sync` kind and can reach nothing
 // serving it. It is a composition that runs a worker without a primitives
 // service and has no view of the fleet to find one in.
 var ErrNoPrimitives = errors.New("node: no primitives service is reachable")
 
-// openPrimitivesReach wires the two reaches into the primitives service. They
-// are two because the CLOCK'S POLICY IS NOT THE SEND'S — see [Node.clockNow] —
-// and the pair costs nothing: a node that runs the service never dials for a
-// send, and a node that does not never dials for a clock, because it refuses
-// the window before asking. So at most one of the two ever holds a stream.
+// openPrimitivesReach wires the send reach into the primitives service.
 func (n *Instance) openPrimitivesReach() {
 	pick := n.routeTo(Primitives, ErrNoPrimitives, "this node runs neither one nor discovery to find one")
 
@@ -56,95 +49,23 @@ func (n *Instance) openPrimitivesReach() {
 			}
 			return c, nil
 		})
-
-	n.clocks = rpc.ReachRouted(n.Host(), Primitives, pick,
-		func() (primitivesService.Clocks, bool) {
-			if n.primitives == nil {
-				return nil, false
-			}
-			return n.primitives.Local(), true
-		},
-		func(id libp2ppeer.ID) (primitivesService.Clocks, error) {
-			c, err := primitivesService.NewClient(n.Host(), id)
-			if err != nil {
-				return nil, err
-			}
-			return c, nil
-		})
 }
 
-// taskCron hands one window of the clock to a node running the primitives service,
-// chosen from the discovery view rather than preferring this node. The same-node case
-// pays no round trip.
-func (n *Instance) taskCron(ctx context.Context, since, upto time.Time) error {
-	clock, err := n.clockNow(ctx)
-	if err != nil {
-		return err
-	}
-	return clock.CronTask(ctx, since, upto)
-}
+// workloads is the worker as the primitives clock fires through it: which crons
+// exist, read off the worker, and where a fire runs, through placement.
+type workloads struct{ n *Instance }
 
-// clockNow is the node this minute's window goes to, through rpc.ReachRouted: routed,
-// not local-first, and an empty route means this node, so a single-node cloud keeps
-// firing. A node with no service to take the window refuses here.
-func (n *Instance) clockNow(ctx context.Context) (primitivesService.Clocks, error) {
-	if n.primitives == nil {
-		return nil, fmt.Errorf("%w: this node hands out minutes and runs no service to take one", ErrNoPrimitives)
-	}
-	return n.clocks.Now(ctx)
-}
+var _ primitivesService.Workloads = workloads{}
 
-// openPrimitives starts this node's primitives service: the machine's resources are
-// the node's, the declarations the register's. The group opens on Start in the
-// background.
-func (n *Instance) openPrimitives() error {
-	if !n.cfg.runs(Primitives) {
+func (w workloads) Schedules(ctx context.Context) []primitivesService.Schedule {
+	if w.n.worker == nil {
 		return nil
 	}
-	// A queue's items and a log's head are ordered by a raft group, and a log's
-	// records live in the replicated store beside every other kind's bytes; both
-	// are this instance's.
-	options := []primitivesService.Option{
-		primitivesService.WithRegister(n.views),
-		primitivesService.WithConsensus(n.raftGroup),
-		primitivesService.WithRecords(n.kvdb),
-	}
+	return primitive.Schedules(ctx, w.n.worker)
+}
 
-	// And the clock, on a node that also runs a worker: which crons exist and how to
-	// reach a workload are read through fields, since openWorker has not run yet. Where a
-	// minute goes is Node.taskCron. A fire is a write, so a tasked follower forwards the
-	// window; a leader running no worker refuses it (ErrNoClock) until another election.
-	if n.cfg.runs(Worker) {
-		options = append(options,
-			// THE NIL CHECK IS THAT FIELD READ, and it is made here where the
-			// type is still concrete: a nil *worker.Service handed over as an
-			// interface is not a nil interface, so the adapter could not make
-			// it on the other side of the call.
-			primitivesService.WithSchedules(func(ctx context.Context) []primitivesService.Schedule {
-				if n.worker == nil {
-					return nil
-				}
-				return primitive.Schedules(ctx, n.worker)
-			}),
-			primitivesService.WithFire(n.fire),
-			primitivesService.WithTasking(n.taskCron))
-	}
-	// THE NODE'S CLOCK, when it was given one. Everything the lifecycle pass
-	// decides — what retention has outlived, what a claim has outlasted — is
-	// decided against it, so a universe driving the clock has to drive this
-	// one too.
-	if n.opts.now != nil {
-		options = append(options, primitivesService.WithClock(n.opts.now))
-	}
-
-	svc, err := primitivesService.New(n.Host(), options...)
-	if err != nil {
-		return err
-	}
-
-	n.primitives = svc
-	n.closers = append(n.closers, svc)
-	return nil
+func (w workloads) Fire(ctx context.Context, at primitivesService.Target, req *invoke.Request) (*invoke.Response, error) {
+	return w.n.fire(ctx, at, req)
 }
 
 // syncBacking is this node's one reach into the primitives service, built during

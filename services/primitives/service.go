@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -13,7 +14,6 @@ import (
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/p2p/rpc"
-	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/pkg/register"
@@ -24,7 +24,7 @@ var logger = log.Logger("tau.v2.primitives")
 
 // Service is the consensus this node holds, the declarations it reads
 // primitives out of, and the host it answers on.
-type Service struct {
+type server struct {
 	host    host.Host
 	declare *declarations
 
@@ -37,11 +37,10 @@ type Service struct {
 	records *records
 	work    *work
 
-	// crons is the clock. schedules, fire and task are the composer's; without schedules
-	// and fire no clock runs. See cron.go.
+	// crons is the clock. It fires through the workloads beside this service, and with
+	// none it runs no clock. See cron.go.
 	crons     *crons
-	schedules func(context.Context) []Schedule
-	fire      func(context.Context, Target, *invoke.Request) (*invoke.Response, error)
+	workloads func() (Workloads, bool)
 	task      func(context.Context, time.Time, time.Time) error
 
 	// deliveries is every fire still being invoked, so Close waits for them. The loop is
@@ -68,7 +67,8 @@ type Service struct {
 	cluster raft.Cluster
 	formErr error
 
-	serverOptions []rpc.ServerOption
+	// owned is what Start opened for this service, closed after it.
+	owned []io.Closer
 
 	startMu   sync.Mutex
 	server    *rpc.Server
@@ -78,8 +78,8 @@ type Service struct {
 	closed    atomic.Bool
 }
 
-// Option injects what this service is built from.
-type Option func(*options) error
+// option injects what this service is built from.
+type option func(*options) error
 
 type options struct {
 	source register.Registry
@@ -90,16 +90,13 @@ type options struct {
 	sweep time.Duration
 	dead  retention
 
-	schedules func(context.Context) []Schedule
-	fire      func(context.Context, Target, *invoke.Request) (*invoke.Response, error)
+	workloads func() (Workloads, bool)
 	task      func(context.Context, time.Time, time.Time) error
-
-	serverOptions []rpc.ServerOption
 }
 
-// WithRegister is where declarations are read from. Required, and it is the
+// withRegister is where declarations are read from. Required, and it is the
 // whole of why a caller cannot describe a queue — see declarations.go.
-func WithRegister(source register.Registry) Option {
+func withRegister(source register.Registry) option {
 	return func(o *options) error {
 		if source == nil {
 			return ErrNoRegister
@@ -109,10 +106,10 @@ func WithRegister(source register.Registry) Option {
 	}
 }
 
-// WithConsensus is how this node opens the group its primitives run in.
+// withConsensus is how this node opens the group its primitives run in.
 // Required: both of this kind's types are decisions about who writes next, and
 // a node that cannot hold an election can serve neither.
-func WithConsensus(open func(namespace string) (raft.Cluster, error)) Option {
+func withConsensus(open func(namespace string) (raft.Cluster, error)) option {
 	return func(o *options) error {
 		if open == nil {
 			return ErrNoConsensus
@@ -125,9 +122,9 @@ func WithConsensus(open func(namespace string) (raft.Cluster, error)) Option {
 // Records opens one of this service's replicated stores by name.
 type Records func(name string) (kvdb.Instance, error)
 
-// WithRecords is where a log's records live. Required: raft orders, the replicated
+// withRecords is where a log's records live. Required: raft orders, the replicated
 // store carries the bytes.
-func WithRecords(open Records) Option {
+func withRecords(open Records) option {
 	return func(o *options) error {
 		if open == nil {
 			return ErrNoRecords
@@ -137,9 +134,9 @@ func WithRecords(open Records) Option {
 	}
 }
 
-// WithSweep is how often this node runs the lifecycle pass. Zero means
+// withSweep is how often this node runs the lifecycle pass. Zero means
 // DefaultSweep.
-func WithSweep(d time.Duration) Option {
+func withSweep(d time.Duration) option {
 	return func(o *options) error {
 		if d < 0 {
 			return fmt.Errorf("primitives: a sweep of %s", d)
@@ -149,9 +146,9 @@ func WithSweep(d time.Duration) Option {
 	}
 }
 
-// WithDeadLetterRetention bounds what a dead letter keeps. An operator setting, since
+// withDeadLetterRetention bounds what a dead letter keeps. An operator setting, since
 // the vocabulary has no author word for it yet; see DefaultDeadLetterRetention.
-func WithDeadLetterRetention(age time.Duration, size int64) Option {
+func withDeadLetterRetention(age time.Duration, size int64) option {
 	return func(o *options) error {
 		if age < 0 || size < 0 {
 			return fmt.Errorf("primitives: a dead letter kept for %s or %d bytes", age, size)
@@ -161,10 +158,10 @@ func WithDeadLetterRetention(age time.Duration, size int64) Option {
 	}
 }
 
-// WithTasking is how a window leaves the leader, injected because the composer
+// withTasking is how a window leaves the leader, injected because the composer
 // already discovers primitives nodes and keeps streams to them. Without one the clock
 // tasks itself.
-func WithTasking(to func(ctx context.Context, since, upto time.Time) error) Option {
+func withTasking(to func(ctx context.Context, since, upto time.Time) error) option {
 	return func(o *options) error {
 		if to == nil {
 			return errors.New("primitives: a nil tasking")
@@ -174,7 +171,7 @@ func WithTasking(to func(ctx context.Context, since, upto time.Time) error) Opti
 	}
 }
 
-func WithClock(now func() time.Time) Option {
+func withClock(now func() time.Time) option {
 	return func(o *options) error {
 		if now == nil {
 			return errors.New("primitives: a nil clock")
@@ -184,49 +181,43 @@ func WithClock(now func() time.Time) Option {
 	}
 }
 
-// WithServerOptions passes p2p/rpc.ServerOption values through to rpc.Listen.
-func WithServerOptions(opts ...rpc.ServerOption) Option {
-	return func(o *options) error {
-		o.serverOptions = append(o.serverOptions, opts...)
-		return nil
+// New is the primitives service, unstarted; Start builds it from its instance.
+func New() Service { return &server{} }
+
+// build is a service from options alone, as the tests compose one.
+func build(h host.Host, opts ...option) (*server, error) {
+	s := &server{}
+	if err := s.assemble(h, opts...); err != nil {
+		return nil, err
 	}
+	return s, nil
 }
 
-// New validates and allocates. It binds nothing and opens nothing — no
-// listener until Start and no consensus group until then either — so a node can
-// construct every service before starting any of them.
-func New(h host.Host, opts ...Option) (*Service, error) {
+// assemble validates and allocates. It binds nothing and opens nothing — no
+// listener until serve and no consensus group until then either.
+func (s *server) assemble(h host.Host, opts ...option) error {
 	if h == nil {
-		return nil, ErrNoHost
+		return ErrNoHost
 	}
 
 	o := options{dead: DefaultDeadLetterRetention}
 	for _, apply := range opts {
 		if err := apply(&o); err != nil {
-			return nil, fmt.Errorf("primitives: option: %w", err)
+			return fmt.Errorf("primitives: option: %w", err)
 		}
 	}
 	switch {
 	case o.source == nil:
-		return nil, ErrNoRegister
+		return ErrNoRegister
 	case o.open == nil:
-		return nil, ErrNoConsensus
+		return ErrNoConsensus
 	case o.stores == nil:
-		return nil, ErrNoRecords
-	}
-
-	// THE CLOCK'S TWO HALVES ARE ONE DECISION. A service told which schedules
-	// exist and given no way to fire one would claim every slot in the cloud
-	// and deliver nothing; one given a way to fire and no schedules would run a
-	// pass over nothing. Either is a composition mistake worth refusing at
-	// construction rather than discovering as a cron that stopped.
-	if (o.schedules == nil) != (o.fire == nil) {
-		return nil, ErrHalfAClock
+		return ErrNoRecords
 	}
 
 	projects, err := register.NewCache(o.source, specs.Load)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	sweep := o.sweep
@@ -238,19 +229,11 @@ func New(h host.Host, opts ...Option) (*Service, error) {
 		now = time.Now
 	}
 
-	s := &Service{
-		host:          h,
-		declare:       &declarations{projects: projects},
-		open:          o.open,
-		stores:        o.stores,
-		now:           now,
-		sweep:         sweep,
-		dead:          o.dead,
-		schedules:     o.schedules,
-		fire:          o.fire,
-		task:          o.task,
-		serverOptions: o.serverOptions,
-	}
+	s.host = h
+	s.declare = &declarations{projects: projects}
+	s.open, s.stores = o.open, o.stores
+	s.now, s.sweep, s.dead = now, sweep, o.dead
+	s.workloads, s.task = o.workloads, o.task
 	s.records = &records{service: s}
 	s.work = &work{service: s}
 	s.crons = &crons{service: s}
@@ -262,13 +245,13 @@ func New(h host.Host, opts ...Option) (*Service, error) {
 	if s.task == nil {
 		s.task = s.Local().CronTask
 	}
-	return s, nil
+	return nil
 }
 
-// Start listens, begins forming the consensus group, and runs the lifecycle
+// serve listens, begins forming the consensus group, and runs the lifecycle
 // pass. Calling it twice, or after Close, is an error rather than a second
 // listener leaking or a silent no-op.
-func (s *Service) Start(ctx context.Context) error {
+func (s *server) serve(ctx context.Context) error {
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
 
@@ -279,7 +262,7 @@ func (s *Service) Start(ctx context.Context) error {
 		return errors.New("primitives: already started")
 	}
 
-	server, err := rpc.Listen(ctx, s.host, Protocol, s.mount(), s.serverOptions...)
+	server, err := rpc.Listen(ctx, s.host, Protocol, s.mount())
 	if err != nil {
 		return fmt.Errorf("primitives: listening: %w", err)
 	}
@@ -304,7 +287,7 @@ func (s *Service) Start(ctx context.Context) error {
 }
 
 // form opens the consensus group, once, in the background.
-func (s *Service) form() {
+func (s *server) form() {
 	s.formMu.Lock()
 	if s.forming != nil {
 		s.formMu.Unlock()
@@ -330,7 +313,7 @@ func (s *Service) form() {
 
 // consensus is the group this node's primitives live in, or why there is not
 // one yet. IT NEVER BLOCKS.
-func (s *Service) consensus() (raft.Cluster, error) {
+func (s *server) consensus() (raft.Cluster, error) {
 	if s.closed.Load() {
 		return nil, ErrClosed
 	}
@@ -363,15 +346,32 @@ func (s *Service) consensus() (raft.Cluster, error) {
 // Formed is closed once the consensus group has opened or failed; nil on a service
 // never started. The group forms off the request path, so a composer needs this to
 // tell "not yet" from "not ever".
-func (s *Service) Formed() <-chan struct{} {
+func (s *server) Formed() <-chan struct{} {
 	s.formMu.Lock()
 	defer s.formMu.Unlock()
 	return s.forming
 }
 
+func (s *server) WaitForLeader(ctx context.Context) error {
+	forming := s.Formed()
+	if forming == nil {
+		return ErrForming
+	}
+	select {
+	case <-forming:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	cluster, err := s.consensus()
+	if err != nil {
+		return err
+	}
+	return cluster.WaitForLeader(ctx)
+}
+
 // writable refuses a write on a node that is not the one that may make it, with
 // the leader's name on the refusal.
-func (s *Service) writable(cluster raft.Cluster) error {
+func (s *server) writable(cluster raft.Cluster) error {
 	if cluster.IsLeader() {
 		return nil
 	}
@@ -384,7 +384,7 @@ func (s *Service) writable(cluster raft.Cluster) error {
 // The fact the caller acts on is that this node may not write; which node may
 // is the part that helps, and its absence must not turn a retryable refusal
 // into something that reads like a broken cluster.
-func (s *Service) notLeading(cluster raft.Cluster) error {
+func (s *server) notLeading(cluster raft.Cluster) error {
 	leader, err := cluster.Leader()
 	if err != nil {
 		return NotLeading{}
@@ -397,7 +397,7 @@ func (s *Service) notLeading(cluster raft.Cluster) error {
 //
 // want is the type the CALL implies — `queue` for a send, `log` for an append —
 // and empty for a call that works on either.
-func (s *Service) declared(ctx context.Context, at address, want string) (declared, error) {
+func (s *server) declared(ctx context.Context, at address, want string) (declared, error) {
 	d, err := s.declare.of(ctx, at)
 	if err != nil {
 		return declared{}, err
@@ -412,7 +412,7 @@ func (s *Service) declared(ctx context.Context, at address, want string) (declar
 // tier and wire handler) call them. p2p/rpc's short-circuit makes the arm invisible
 // to callers, so the arms must share the implementation, not merely agree.
 
-func (s *Service) send(ctx context.Context, at address, id string, data []byte) error {
+func (s *server) send(ctx context.Context, at address, id string, data []byte) error {
 	d, err := s.declared(ctx, at, queueType)
 	if err != nil {
 		return err
@@ -423,7 +423,7 @@ func (s *Service) send(ctx context.Context, at address, id string, data []byte) 
 // claim hands items out exclusively. An empty answer is not a refusal: the
 // queue may still hold items that are delayed, backing off, or claimed by
 // somebody else.
-func (s *Service) claim(ctx context.Context, at address, max int) ([]Delivery, error) {
+func (s *server) claim(ctx context.Context, at address, max int) ([]Delivery, error) {
 	d, err := s.declared(ctx, at, queueType)
 	if err != nil {
 		return nil, err
@@ -431,7 +431,7 @@ func (s *Service) claim(ctx context.Context, at address, max int) ([]Delivery, e
 	return s.work.claim(d, max)
 }
 
-func (s *Service) settle(ctx context.Context, at address, delivery Delivery, done bool) error {
+func (s *server) settle(ctx context.Context, at address, delivery Delivery, done bool) error {
 	d, err := s.declared(ctx, at, queueType)
 	if err != nil {
 		return err
@@ -439,7 +439,7 @@ func (s *Service) settle(ctx context.Context, at address, delivery Delivery, don
 	return s.work.settle(d, delivery, done)
 }
 
-func (s *Service) depth(ctx context.Context, at address) (Depth, error) {
+func (s *server) depth(ctx context.Context, at address) (Depth, error) {
 	d, err := s.declared(ctx, at, queueType)
 	if err != nil {
 		return Depth{}, err
@@ -447,7 +447,7 @@ func (s *Service) depth(ctx context.Context, at address) (Depth, error) {
 	return s.work.depth(d)
 }
 
-func (s *Service) appendRecord(ctx context.Context, at address, data []byte) (string, error) {
+func (s *server) appendRecord(ctx context.Context, at address, data []byte) (string, error) {
 	d, err := s.declared(ctx, at, logType)
 	if err != nil {
 		return "", err
@@ -455,7 +455,7 @@ func (s *Service) appendRecord(ctx context.Context, at address, data []byte) (st
 	return s.records.append(ctx, d.spec, data)
 }
 
-func (s *Service) readRecords(ctx context.Context, at address, after string, limit uint32) ([]wasmtier.Record, error) {
+func (s *server) readRecords(ctx context.Context, at address, after string, limit uint32) ([]wasmtier.Record, error) {
 	d, err := s.declared(ctx, at, logType)
 	if err != nil {
 		return nil, err
@@ -463,15 +463,15 @@ func (s *Service) readRecords(ctx context.Context, at address, after string, lim
 	return s.records.read(ctx, d.spec, after, limit)
 }
 
-func (s *Service) clock() time.Time { return s.now() }
+func (s *server) clock() time.Time { return s.now() }
 
 // lifetime is how long work this service started on its own behalf may run.
 //
 // A SERVICE THAT WAS NEVER STARTED HAS NO LIFETIME AND NOT A DEAD ONE. Nothing
-// reaches this before Start — [Service.consensus] refuses first — and a
+// reaches this before Start — [server.consensus] refuses first — and a
 // cancelled context here would be a fire that ends before it begins rather than
 // a call that is told to come back.
-func (s *Service) lifetime() context.Context {
+func (s *server) lifetime() context.Context {
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
 	if s.working == nil {
@@ -486,7 +486,7 @@ func (s *Service) lifetime() context.Context {
 // leaves the goroutine writing into a closed store. The queues themselves hold
 // no state — everything is in the store, which is what lets a process die
 // mid-claim and the claim expire.
-func (s *Service) Close() error {
+func (s *server) Close() error {
 	s.closeOnce.Do(func() {
 		s.closed.Store(true)
 
@@ -536,6 +536,9 @@ func (s *Service) Close() error {
 		s.closeErr = errors.Join(s.closeErr, s.records.Close())
 		if cluster != nil {
 			s.closeErr = errors.Join(s.closeErr, cluster.Close())
+		}
+		for _, c := range s.owned {
+			s.closeErr = errors.Join(s.closeErr, c.Close())
 		}
 	})
 	return s.closeErr

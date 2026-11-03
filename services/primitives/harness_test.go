@@ -319,21 +319,21 @@ func (c *clock) set(at time.Time) {
 
 // harness is one started service and the pieces a test moves underneath it.
 type harness struct {
-	*Service
+	*server
 	cluster leader
 	stores  *stores
 	clock   *clock
 }
 
 // starting starts a service over a leader that always commits.
-func starting(t *testing.T, opts ...Option) *harness {
+func starting(t *testing.T, opts ...option) *harness {
 	t.Helper()
 	return startingOn(t, newCluster(), opts...)
 }
 
 // startingOn starts a service and waits for its consensus to form, since the group
 // forms off the request path. The cluster is the test's.
-func startingOn(t *testing.T, cluster leader, opts ...Option) *harness {
+func startingOn(t *testing.T, cluster leader, opts ...option) *harness {
 	t.Helper()
 
 	mn := mocknet.New()
@@ -344,18 +344,18 @@ func startingOn(t *testing.T, cluster leader, opts ...Option) *harness {
 	records := newStores()
 	tick := newClock()
 
-	s, err := New(host, append([]Option{
-		WithRegister(&published{revision: 1, object: compiled()}),
-		WithConsensus(func(string) (raft.Cluster, error) { return cluster, nil }),
-		WithRecords(records.open),
-		WithClock(tick.now),
+	s, err := build(host, append([]option{
+		withRegister(&published{revision: 1, object: compiled()}),
+		withConsensus(func(string) (raft.Cluster, error) { return cluster, nil }),
+		withRecords(records.open),
+		withClock(tick.now),
 
 		// A period long enough never to fire; tests drive the pass directly.
-		WithSweep(time.Hour),
+		withSweep(time.Hour),
 	}, opts...)...)
 	require.NoError(t, err)
 
-	require.NoError(t, s.Start(t.Context()))
+	require.NoError(t, s.serve(t.Context()))
 	t.Cleanup(func() { s.Close() })
 
 	s.formMu.Lock()
@@ -363,7 +363,7 @@ func startingOn(t *testing.T, cluster leader, opts ...Option) *harness {
 	s.formMu.Unlock()
 	<-forming
 
-	return &harness{Service: s, cluster: cluster, stores: records, clock: tick}
+	return &harness{server: s, cluster: cluster, stores: records, clock: tick}
 }
 
 // grantFor is what a compute tier hands a seam: the handle, and nothing else.

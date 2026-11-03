@@ -100,7 +100,7 @@ type Instance struct {
 	// queues and its logs — when this node runs it. A node that does not
 	// reaches one in the fleet; see instance/primitives.go for why there is no
 	// third answer.
-	primitives *primitivesService.Service
+	primitives primitivesService.Service
 
 	// decider is this node's component tier, narrowed to the two worlds its own
 	// policy drives — see decides in authorizer.go. Nil on a node with no asset
@@ -150,14 +150,12 @@ type Instance struct {
 	sharedMu sync.Mutex
 	shared   *secretsService.Vault
 
-	// The three locators, each one stream opened on first use: registers for
-	// configuration reads, sends for queues, logs and claims, clocks for the leader's
-	// minute, the one that does not prefer this node (Node.clockNow).
+	// The locators, each one stream opened on first use: registers for configuration
+	// reads, sends for queues, logs and claims.
 	registers *rpc.Reacher[registerSeam]
 	// views is the register as this node's services read what they serve.
-	views  *registerService.Views
-	sends  *rpc.Reacher[primitive.Seam]
-	clocks *rpc.Reacher[primitivesService.Clocks]
+	views *registerService.Views
+	sends *rpc.Reacher[primitive.Seam]
 
 	// loopsStop ends the background loops this node runs, and each Done is
 	// closed when that loop has stopped. All three are nil on a node that runs
@@ -216,10 +214,17 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 			if v, ok := s.(secretsService.Service); ok {
 				n.secrets = v
 			}
+			if p, ok := s.(primitivesService.Service); ok {
+				n.primitives = p
+			}
 		}
 	}
 	// What the built-ins add to this node's report.
 	n.provide("", builtIns{n})
+	// And the workloads the clock fires through, while the worker is one of them.
+	if cfg.runs(Worker) {
+		n.provide("", workloads{n})
+	}
 	// Closed last: every service closes the databases it opened before them.
 	n.closers = append(n.closers, n.dbs)
 	if err := n.open(); err != nil {
@@ -252,12 +257,6 @@ func (n *Instance) open() error {
 	// backing as a collaborator when the worker is composed, so a service opened
 	// afterwards would be one the tier never saw.
 	if err := n.openDatabase(context.Background()); err != nil {
-		return err
-	}
-	// AND BEFORE THE WORKER FOR THE SAME REASON THE DATABASE IS: the wasm tier
-	// takes its queue and log backings as collaborators when the worker is
-	// composed, so a service opened afterwards would be one the tier never saw.
-	if err := n.openPrimitives(); err != nil {
 		return err
 	}
 	if err := n.openWorker(); err != nil {
@@ -703,11 +702,6 @@ func (n *Instance) Start(ctx context.Context) error {
 	if n.database != nil {
 		order = append(order, n.database)
 	}
-	// The primitives service before the worker that sends through it; Start binds the
-	// listener, forms the group in the background and starts the lifecycle pass.
-	if n.primitives != nil {
-		order = append(order, n.primitives)
-	}
 	if n.worker != nil {
 		order = append(order, n.worker)
 	}
@@ -930,7 +924,7 @@ func (n *Instance) Secrets() secretsService.Service { return n.secrets }
 func (n *Instance) Database() *databaseService.Service { return n.database }
 
 // Primitives is this node's primitives service, or nil if it runs none.
-func (n *Instance) Primitives() *primitivesService.Service { return n.primitives }
+func (n *Instance) Primitives() primitivesService.Service { return n.primitives }
 
 // Discovery is this node's view of the fleet, or nil.
 func (n *Instance) Discovery() discovery.Service { return n.discovery }

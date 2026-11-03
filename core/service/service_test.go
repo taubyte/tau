@@ -68,6 +68,29 @@ func TestAServiceElsewhereIsDialledOnANodeDiscoveryNames(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoneRuns)
 }
 
+func TestRoutedWorkGoesWhereTheDirectoryNamesFirst(t *testing.T) {
+	p := peer.Mock(t.Context())
+	t.Cleanup(p.Close)
+	h := &fake{Node: p, running: []Running{{Name: "discovery", Service: directory{"far", p.ID()}}}}
+
+	var at libp2ppeer.ID
+	r := Routed(h, "clock", answer("here"), func(_ host.Host, id libp2ppeer.ID) (answer, error) { at = id; return "far", nil })
+	got, err := r.Now(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, answer("far"), got, "the first named, even with this node among them")
+	require.Equal(t, libp2ppeer.ID("far"), at)
+
+	h.running = []Running{{Name: "discovery", Service: directory{p.ID(), "far"}}}
+	got, err = r.Now(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, answer("here"), got, "this node named first is this node, undialled")
+
+	h.running = nil
+	got, err = r.Now(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, answer("here"), got, "nobody named is nobody but this node")
+}
+
 // directory is a discovery that names these nodes for every service.
 type directory []libp2ppeer.ID
 

@@ -13,7 +13,6 @@ import (
 
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/queue"
-	"github.com/taubyte/tau/pkg/raft"
 )
 
 // Drives the clock rather than waiting for it. Most tests keep both acts (the
@@ -36,8 +35,7 @@ func clockingOn(t *testing.T, cluster leader, s Schedule) (*harness, *fires) {
 	fired := &fires{status: 200}
 	held := &listing{schedules: []Schedule{s}}
 	h := startingOn(t, cluster,
-		WithSchedules(held.of),
-		WithFire(fired.serve))
+		clockOf(held.of, fired.serve))
 
 	return h, fired
 }
@@ -51,9 +49,8 @@ func tasking(t *testing.T, s Schedule) (*taskings, *harness, *fires) {
 	fired := &fires{status: 200}
 	held := &listing{schedules: []Schedule{s}}
 	h := startingOn(t, newCluster(),
-		WithSchedules(held.of),
-		WithFire(fired.serve),
-		WithTasking(sent.take))
+		clockOf(held.of, fired.serve),
+		withTasking(sent.take))
 
 	return sent, h, fired
 }
@@ -189,7 +186,7 @@ func TestAFreshLeaderDoesNotRefireTheMinuteItInherited(t *testing.T) {
 	require.Eventually(t, func() bool { return len(fired.seen()) == 1 }, 5*time.Second, 10*time.Millisecond)
 
 	// A clock that has just started over the same namespace, half a minute in.
-	fresh := &crons{service: h.Service}
+	fresh := &crons{service: h.server}
 	fresh.tick(t.Context(), at(3, 0).Add(30*time.Second))
 
 	require.Equal(t, at(3, 0), fresh.tasked, "a fresh leader did not record where the clock was")
@@ -348,22 +345,15 @@ func TestAFollowerFiresNothing(t *testing.T) {
 	require.Equal(t, at(2, 30), h.tasked())
 }
 
-func TestAServiceGivenHalfAClockIsRefused(t *testing.T) {
-	_, err := New(nil)
+func TestAServiceWithNoHostIsRefused(t *testing.T) {
+	_, err := build(nil)
 	require.ErrorIs(t, err, ErrNoHost)
-
-	h := starting(t)
-	_, err = New(h.host,
-		WithRegister(&published{revision: 1, object: compiled()}),
-		WithConsensus(func(string) (raft.Cluster, error) { return newCluster(), nil }),
-		WithRecords(newStores().open),
-		WithSchedules(func(context.Context) []Schedule { return nil }))
-	require.ErrorIs(t, err, ErrHalfAClock)
 }
 
 func TestAServiceWithNoScheduleSourceRunsNoClock(t *testing.T) {
 	h := starting(t)
-	require.Nil(t, h.Service.schedules)
+	_, clocked := h.workers()
+	require.False(t, clocked)
 
 	// The turn still runs, because the lifecycle pass rides the same one.
 	h.cycle(t.Context())
@@ -599,9 +589,9 @@ func TestACronThatStartsAWorkflowSendsFromTheDelivery(t *testing.T) {
 	// THE RUN LANDS IN THE WORKFLOW'S OWN FIRST STEP'S QUEUE, under an id that
 	// is the cron and the SLOT — so a fire this queue delivered twice is still
 	// one run.
-	declared, err := h.Service.declared(t.Context(), address{project: projectID, environment: "prod", id: jobsID}, queueType)
+	declared, err := h.server.declared(t.Context(), address{project: projectID, environment: "prod", id: jobsID}, queueType)
 	require.NoError(t, err)
-	opened, err := h.Service.work.open(declared)
+	opened, err := h.server.work.open(declared)
 	require.NoError(t, err)
 
 	require.Eventually(t, func() bool {
@@ -771,4 +761,21 @@ func (f *fires) inflight() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.running
+}
+
+// workloadsOf is the workloads a test fires through: a listing and somewhere for the
+// fires to land.
+type workloadsOf struct {
+	of    func(context.Context) []Schedule
+	serve func(context.Context, Target, *invoke.Request) (*invoke.Response, error)
+}
+
+func (w workloadsOf) Schedules(ctx context.Context) []Schedule { return w.of(ctx) }
+func (w workloadsOf) Fire(ctx context.Context, at Target, req *invoke.Request) (*invoke.Response, error) {
+	return w.serve(ctx, at, req)
+}
+
+// clockOf is a clock over those workloads, always beside the service.
+func clockOf(of func(context.Context) []Schedule, serve func(context.Context, Target, *invoke.Request) (*invoke.Response, error)) option {
+	return withWorkloads(func() (Workloads, bool) { return workloadsOf{of: of, serve: serve}, true })
 }

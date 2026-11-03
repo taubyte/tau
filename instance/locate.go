@@ -135,9 +135,6 @@ func (n *Instance) closeReach() {
 	if n.sends != nil {
 		n.sends.Close()
 	}
-	if n.clocks != nil {
-		n.clocks.Close()
-	}
 }
 
 // closerFunc adapts a plain stop function to io.Closer, for the things this

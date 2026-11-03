@@ -7,8 +7,8 @@
 // crons. The tasking is the exactly-once; the leader's last handed-out minute lives
 // in its process, so a leadership change loses at most one minute's slots (cron.go).
 // A fire is an item in a platform queue, retried and dead-lettered like any other.
-// Which crons exist, how a fire reaches a workload and which node to task are the
-// composer's: WithSchedules, WithFire, WithTasking.
+// Which crons exist and how a fire reaches a workload are the Workloads beside this
+// service; which node to task is the one discovery names first.
 //
 // Not the database service: a queue has no key and a log's position is issued, not
 // chosen. Not storage: records and items are never named, listed or metered.

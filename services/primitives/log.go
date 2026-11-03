@@ -36,7 +36,7 @@ import (
 // records is the log half of this service: the raft cluster that orders
 // appends, and the store that holds what was appended.
 type records struct {
-	service *Service
+	service *server
 
 	mu sync.Mutex
 	db kvdb.Instance

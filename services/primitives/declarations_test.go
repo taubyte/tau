@@ -130,7 +130,7 @@ func TestTheServiceReadsTheDeclarationAndNotTheGrant(t *testing.T) {
 func TestAnInstanceIsRefusedUntilTheVocabularyCanDeclareOne(t *testing.T) {
 	h := starting(t)
 	ctx := t.Context()
-	api := &handler{h.Service}
+	api := &handler{h.server}
 
 	at := func(id string) *primitivesv2.Ref {
 		return &primitivesv2.Ref{Project: projectID, Environment: "prod", Id: id, Instance: "eu"}

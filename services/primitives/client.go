@@ -48,10 +48,10 @@ type Clocks interface {
 
 // Local is this service as the compute tier's seam, with no stream; a node not
 // running the service uses Client.
-func (s *Service) Local() *Tier { return &Tier{service: s} }
+func (s *server) Local() *Tier { return &Tier{service: s} }
 
 // Tier answers every seam a compute node needs, in this process.
-type Tier struct{ service *Service }
+type Tier struct{ service *server }
 
 var (
 	_ wasmtier.Queues = (*Tier)(nil)

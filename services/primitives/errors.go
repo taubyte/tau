@@ -26,16 +26,9 @@ var (
 	// answering half the calls.
 	ErrNoRecords = errors.New("primitives: nothing to keep log records in")
 
-	// ErrHalfAClock is a service given one of the clock's two halves. Which
-	// schedules exist and how a fire reaches its workload are both the
-	// composer's, and a service holding one without the other either claims
-	// every slot in the cloud and delivers nothing or runs a pass over nothing
-	// — see WithSchedules and WithFire.
-	ErrHalfAClock = errors.New("primitives: a clock with schedules and no way to fire one, or the other way round")
-
 	// ErrNoClock is a window handed to a node that holds the namespace and
 	// runs no compute. There is no deployment view to enumerate crons from, so
-	// it can walk nothing — see WithSchedules. It is REFUSED and never answered
+	// it can walk nothing — see Workloads. It is REFUSED and never answered
 	// empty: a tasking the leader believes was done is a minute nobody fires.
 	ErrNoClock = errors.New("primitives: this node runs no clock")
 

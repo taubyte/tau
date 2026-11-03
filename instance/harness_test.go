@@ -3,9 +3,11 @@ package instance
 import (
 	"context"
 	"errors"
+	"maps"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"path"
 
@@ -21,6 +23,7 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
+	"github.com/taubyte/tau/services/consensus"
 )
 
 // A node is tested with real services and fake resources: a mocknet host, gossipsub
@@ -286,7 +289,30 @@ func rooted(t testing.TB, cfg Config) Config {
 	if (len(cfg.Services) == 0 || cfg.runs(DNS)) && cfg.DNSListen == "" {
 		cfg.DNSListen = "127.0.0.1:0"
 	}
+	// RAFT TIMED FOR ONE PROCESS, as dream times it: by default a group of one waits
+	// out a 30s bootstrap before electing itself.
+	if _, ok := cfg.Sections[consensus.Descriptor.Name]; !ok {
+		sections := maps.Clone(cfg.Sections)
+		if sections == nil {
+			sections = map[string]any{}
+		}
+		sections[consensus.Descriptor.Name] = quickConsensus
+		cfg.Sections = sections
+	}
 	return cfg
+}
+
+// quickConsensus is raft timed for nodes one process apart.
+var quickConsensus = consensus.Config{
+	Timeouts: raft.TimeoutConfig{
+		HeartbeatTimeout:   50 * time.Millisecond,
+		ElectionTimeout:    50 * time.Millisecond,
+		CommitTimeout:      25 * time.Millisecond,
+		LeaderLeaseTimeout: 25 * time.Millisecond,
+		SnapshotInterval:   time.Minute,
+		SnapshotThreshold:  1000,
+	},
+	BootstrapTimeout: 200 * time.Millisecond,
 }
 
 // rootedIn is rooted, in the directory a test named.

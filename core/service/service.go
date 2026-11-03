@@ -104,6 +104,24 @@ func Reach[T any](h Host, name string, dial func(host.Host, libp2ppeer.ID) (T, e
 		func(id libp2ppeer.ID) (T, error) { return dial(self, id) })
 }
 
+// Routed is the service named at the node the directory beside h names first, this one
+// among them, and here when it names none: for work that should leave the node
+// handing it out. See p2p/rpc's ReachRouted for why that is not Reach.
+func Routed[T any](h Host, name string, here T, dial func(host.Host, libp2ppeer.ID) (T, error)) *rpc.Reacher[T] {
+	self := h.Peer().Host()
+	return rpc.ReachRouted(self, name,
+		func() (libp2ppeer.ID, error) {
+			if d, ok := Get[Directory](h); ok {
+				if ids := d.Peers(name); len(ids) > 0 {
+					return ids[0], nil
+				}
+			}
+			return "", fmt.Errorf("%w: %s", ErrNoneRuns, name)
+		},
+		func() (T, bool) { return here, true },
+		func(id libp2ppeer.ID) (T, error) { return dial(self, id) })
+}
+
 // Lone runs services on one peer outside an instance: what a test or a dream harness
 // composes. Each service started is beside the ones started before it.
 type Lone struct {

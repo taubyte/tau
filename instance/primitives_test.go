@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/pkg/invoke"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	primitivesService "github.com/taubyte/tau/services/primitives"
@@ -68,7 +69,7 @@ func holdingSync(t *testing.T, cfg Config) *Instance {
 	// THE GROUP FORMS OFF THE REQUEST PATH, so a test that called straight into
 	// it would be testing ErrForming. The mock is instant; waiting for it is
 	// what makes the assertions below deterministic rather than fast.
-	<-n.Primitives().Formed()
+	require.NoError(t, n.Primitives().WaitForLeader(t.Context()))
 	return n
 }
 
@@ -145,7 +146,7 @@ func TestAWorkerReachesAPrimitivesServiceOnAnotherNode(t *testing.T) {
 		Project: "shop", Environment: "prod", Revision: 1, Compiled: withPrimitives(),
 	})
 	require.NoError(t, err)
-	<-holder.Primitives().Formed()
+	require.NoError(t, holder.Primitives().WaitForLeader(t.Context()))
 
 	sees(t, compute, Primitives)
 
@@ -189,24 +190,29 @@ func TestClosingANodeClosesThePrimitivesService(t *testing.T) {
 	require.ErrorIs(t, err, primitivesService.ErrClosed)
 }
 
-func TestATaskingForThisNodeSkipsTheWire(t *testing.T) {
+func TestTheClockFiresThroughTheWorkerBesideIt(t *testing.T) {
 	n := holdingSync(t, Config{Services: []string{Register, Worker, Primitives}})
+	w, ok := service.Get[primitivesService.Workloads](&added{node: n})
+	require.True(t, ok, "a node running a worker offers it to the clock")
+	require.Empty(t, w.Schedules(t.Context()), "nothing deployed, nothing scheduled")
 
-	// No discovery, so there is no fleet to pick from — and the one primitives
-	// service this node can reach is its own.
-	require.NoError(t, n.taskCron(t.Context(), at(2, 59), at(3, 0)))
-
-	_, dialled := n.clocks.At()
-	require.False(t, dialled, "the clock dialled a service in this very process")
+	without, _, _ := makeNode(t, Config{Services: []string{Register, Primitives}})
+	_, ok = service.Get[primitivesService.Workloads](&added{node: without})
+	require.False(t, ok, "a node with no worker runs no clock")
+	require.Empty(t, workloads{without}.Schedules(t.Context()))
+	_, err := workloads{without}.Fire(t.Context(), primitivesService.Target{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"}, &invoke.Request{Method: "POST", Path: "/"})
+	require.ErrorIs(t, err, ErrNoPrimitives, "and fires nothing")
 }
 
 func TestAWindowHandedToAnotherNodeReachesItsPrimitivesService(t *testing.T) {
+	// THE HOLDER IS THE ONLY PRIMITIVES NODE, so it leads its group alone: a window
+	// it took would otherwise be forwarded to a leader that does run a clock.
 	nodes := fleet(t,
-		Config{Services: []string{Register, Worker, Discovery, Primitives}},
+		Config{Services: []string{Register, Worker, Discovery}},
 		Config{Services: []string{Discovery, Primitives}},
 	)
 	clock, holder := nodes[0], nodes[1]
-	<-holder.Primitives().Formed()
+	require.NoError(t, holder.Primitives().WaitForLeader(t.Context()))
 
 	// DIALLED DIRECTLY rather than through the clock's reach, because the
 	// reach's whole job is to decide WHO gets the window and this test is about
@@ -251,10 +257,4 @@ func TestAFireIsPlacedWhereThereIsDiscovery(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 200, res.Status)
 	require.Len(t, answers.seen(), 1)
-}
-
-func TestAMinuteNeedsAPrimitivesService(t *testing.T) {
-	_, err := (&Instance{Node: mockPeer(t)}).clockNow(t.Context())
-	require.ErrorIs(t, err, ErrNoPrimitives)
-	require.ErrorContains(t, err, "runs no service to take one")
 }

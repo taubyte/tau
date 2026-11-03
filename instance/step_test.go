@@ -86,7 +86,7 @@ func stepping(t *testing.T, answers *answering) (*Instance, *dispatcher) {
 		Project: "shop", Environment: "prod", Revision: 1, Compiled: withStepFunction(),
 	})
 	require.NoError(t, err)
-	<-n.Primitives().Formed()
+	require.NoError(t, n.Primitives().WaitForLeader(t.Context()))
 
 	// THE STEP IS PLACED, so this node has to be in its own view before it can
 	// take its own work. Without the wait the test asks placement for a worker

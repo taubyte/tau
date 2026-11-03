@@ -1,10 +1,14 @@
 package primitives
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/taubyte/tau/pkg/register"
 )
 
 // Every case runs the pass without touching the resource first: quiet resources are
@@ -113,7 +117,7 @@ func TestAnItemThatGivesUpReachesTheDeadLetterWithNobodyClaiming(t *testing.T) {
 }
 
 func TestTheDeadLetterIsBounded(t *testing.T) {
-	h := starting(t, WithDeadLetterRetention(24*time.Hour, 0))
+	h := starting(t, withDeadLetterRetention(24*time.Hour, 0))
 	tier := h.Local()
 	ctx := t.Context()
 	fragile := grantFor(deadID)
@@ -139,7 +143,7 @@ func TestTheDeadLetterIsBounded(t *testing.T) {
 }
 
 func TestALiveItemIsNotExpiredWithTheDeadOnes(t *testing.T) {
-	h := starting(t, WithDeadLetterRetention(time.Hour, 0))
+	h := starting(t, withDeadLetterRetention(time.Hour, 0))
 	tier := h.Local()
 	ctx := t.Context()
 	jobs := grantFor(jobsID)
@@ -207,4 +211,83 @@ func TestEveryPlaceTheLifecyclePassWalksResolvesBackToItsDeclaration(t *testing.
 		_, err := h.declared(ctx, spec.at(), spec.Type)
 		require.NoError(t, err, "%s is a place the pass walks and cannot resolve", spec.Prefix())
 	}
+}
+
+// refusingRegister is a register this node cannot read.
+type refusingRegister struct{}
+
+func (refusingRegister) Resolve(context.Context, string, string) (register.Pointer, error) {
+	return register.Pointer{}, errors.New("the register is unreachable")
+}
+
+func (refusingRegister) Object(context.Context, register.ObjectID) ([]byte, error) {
+	return nil, errors.New("the register is unreachable")
+}
+
+// A REGISTER THIS NODE CANNOT READ, or one that no longer declares the resource,
+// truncates nothing: the first is a fault the next pass retries, the second reclaim's.
+func TestRetentionTruncatesNothingItCannotResolve(t *testing.T) {
+	h := starting(t)
+	ctx := t.Context()
+	traces := grantFor(tracesID)
+	for _, line := range []string{"one", "two", "three"} {
+		_, err := h.Local().Append(ctx, traces, []byte(line))
+		require.NoError(t, err)
+	}
+	require.NoError(t, h.Local().Send(ctx, grantFor(jobsID), "job-1", []byte("work")))
+
+	nothing, err := json.Marshal(map[string]any{"object": map[string]any{"id": projectID, "name": "shop"}})
+	require.NoError(t, err)
+	for _, reg := range []register.Registry{refusingRegister{}, &published{revision: 2, object: nothing}} {
+		other := startingOn(t, h.cluster, withRegister(reg), withRecords(h.stores.open), withClock(h.clock.now))
+		h.clock.advance(2 * time.Hour)
+		other.cycle(ctx)
+	}
+
+	read, err := h.Local().Read(ctx, traces, "", 0)
+	require.NoError(t, err)
+	require.Equal(t, []string{"one", "two", "three"}, payloads(read))
+	depth, err := h.Local().Depth(ctx, grantFor(jobsID))
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), depth.Ready)
+}
+
+// A FOLLOWER'S TURN RETAINS NOTHING, a pass whose caller has gone stops, and a store
+// that cannot answer is reported rather than read as a log inside its budget.
+func TestRetentionRunsOnlyWhereItMayAndWhatItCanRead(t *testing.T) {
+	ctx := t.Context()
+	traces := grantFor(tracesID)
+	appended := func(t *testing.T) *harness {
+		h := starting(t)
+		for _, line := range []string{"one", "two", "three"} {
+			_, err := h.Local().Append(ctx, traces, []byte(line))
+			require.NoError(t, err)
+		}
+		require.NoError(t, h.Local().Send(ctx, grantFor(jobsID), "job-1", []byte("work")))
+		h.clock.advance(2 * time.Hour)
+		return h
+	}
+	kept := func(t *testing.T, h *harness) {
+		t.Helper()
+		read, err := h.Local().Read(ctx, traces, "", 0)
+		require.NoError(t, err)
+		require.Equal(t, []string{"one", "two", "three"}, payloads(read))
+	}
+
+	follower := appended(t)
+	follower.cluster.stepDown()
+	follower.cycle(ctx)
+	kept(t, follower)
+
+	gone := appended(t)
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	gone.retain(cancelled, gone.cluster)
+	kept(t, gone)
+
+	sick := appended(t)
+	sick.stores.sicken(true)
+	sick.cycle(ctx)
+	sick.stores.sicken(false)
+	kept(t, sick)
 }

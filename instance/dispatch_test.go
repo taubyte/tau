@@ -127,7 +127,7 @@ func consuming(t *testing.T, answers *answering, compiled []byte) (*Instance, *d
 
 	// Start forms the primitives service's group in the background; the mock
 	// one is instant, so waiting for it is what makes a step deterministic.
-	<-n.Primitives().Formed()
+	require.NoError(t, n.Primitives().WaitForLeader(t.Context()))
 
 	// AND A DELIVERY IS PLACED, so this node has to be in its own view before it
 	// can take its own work. Asking placement while the first discovery report is

@@ -23,7 +23,7 @@ func wired(t *testing.T) (*Client, *harness) {
 
 // wiredWith is the same with the composition the case is about — a clock, for
 // the tasking, which the queue and log cases have no use for.
-func wiredWith(t *testing.T, opts ...Option) (*Client, *harness) {
+func wiredWith(t *testing.T, opts ...option) (*Client, *harness) {
 	t.Helper()
 
 	mn := mocknet.New()
@@ -39,15 +39,15 @@ func wiredWith(t *testing.T, opts ...Option) (*Client, *harness) {
 	cluster := newCluster()
 	tick := newClock()
 
-	s, err := New(server, append([]Option{
-		WithRegister(&published{revision: 1, object: compiled()}),
-		WithConsensus(func(string) (raft.Cluster, error) { return cluster, nil }),
-		WithRecords(mockRecords()),
-		WithClock(tick.now),
-		WithSweep(time.Hour),
+	s, err := build(server, append([]option{
+		withRegister(&published{revision: 1, object: compiled()}),
+		withConsensus(func(string) (raft.Cluster, error) { return cluster, nil }),
+		withRecords(mockRecords()),
+		withClock(tick.now),
+		withSweep(time.Hour),
 	}, opts...)...)
 	require.NoError(t, err)
-	require.NoError(t, s.Start(t.Context()))
+	require.NoError(t, s.serve(t.Context()))
 	t.Cleanup(func() { s.Close() })
 
 	s.formMu.Lock()
@@ -59,7 +59,7 @@ func wiredWith(t *testing.T, opts ...Option) (*Client, *harness) {
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
 
-	return client, &harness{Service: s, cluster: cluster, clock: tick}
+	return client, &harness{server: s, cluster: cluster, clock: tick}
 }
 
 func TestTheWireAnswersLikeTheSeamItReplaces(t *testing.T) {
@@ -155,10 +155,10 @@ func TestACallBeforeTheConsensusHasFormedIsToldSoRatherThanHeld(t *testing.T) {
 	host, err := mn.GenPeer()
 	require.NoError(t, err)
 
-	s, err := New(host,
-		WithRegister(&published{revision: 1, object: compiled()}),
-		WithConsensus(func(string) (raft.Cluster, error) { return newCluster(), nil }),
-		WithRecords(mockRecords()))
+	s, err := build(host,
+		withRegister(&published{revision: 1, object: compiled()}),
+		withConsensus(func(string) (raft.Cluster, error) { return newCluster(), nil }),
+		withRecords(mockRecords()))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 
@@ -172,7 +172,7 @@ func TestACallBeforeTheConsensusHasFormedIsToldSoRatherThanHeld(t *testing.T) {
 func TestAWindowCrossesTheWireAndIsGeneratedWhereItLands(t *testing.T) {
 	fired := &fires{status: 200}
 	held := &listing{schedules: []Schedule{nightly("0 3 * * *")}}
-	client, h := wiredWith(t, WithSchedules(held.of), WithFire(fired.serve))
+	client, h := wiredWith(t, clockOf(held.of, fired.serve))
 
 	// The clock the tasked node reads, because everything a queue decides —
 	// when a claim expires, when a backoff is up — is decided against it.
@@ -196,7 +196,7 @@ func TestAWindowHandedOverTheWireToANodeWithNoClockIsRefusedByName(t *testing.T)
 func TestATaskingSaysHowFarItHasCome(t *testing.T) {
 	fired := &fires{status: 200}
 	held := &listing{schedules: []Schedule{nightly("0 3 * * *")}}
-	client, h := wiredWith(t, WithSchedules(held.of), WithFire(fired.serve))
+	client, h := wiredWith(t, clockOf(held.of, fired.serve))
 	h.clock.set(at(3, 0))
 
 	// A tasking already at the ceiling arrives at the ceiling, so the node it
@@ -213,4 +213,18 @@ func TestATaskingSaysHowFarItHasCome(t *testing.T) {
 	h.cluster.stepDown()
 	err := client.CronTask(ctx, at(3, 0), at(3, 1))
 	require.ErrorIs(t, err, ErrNotLeading)
+}
+
+func TestARefusalOnTheWireIsTheServicesOwn(t *testing.T) {
+	client, _ := wiredWith(t)
+	ctx := t.Context()
+	nobody := grantFor("QmUndeclaredUndeclaredUndeclaredUndeclared00")
+
+	// THE GUEST'S ARM, as the tier would have answered it in process.
+	_, err := client.Depth(ctx, nobody)
+	require.ErrorIs(t, err, wasmtier.ErrNotFound)
+	require.ErrorIs(t, client.Settle(ctx, nobody, Delivery{ID: "1"}, true), wasmtier.ErrNotFound)
+
+	_, err = NewClient(nil, "")
+	require.Error(t, err, "a client with no host to dial from")
 }

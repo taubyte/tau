@@ -18,13 +18,13 @@ import (
 // window names a stretch of the clock, so it routes rather than resolves.
 
 // mount is the one handler rpc.Listen serves.
-func (s *Service) mount() http.Handler {
+func (s *server) mount() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle(primitivesv2connect.NewPrimitivesServiceHandler(&handler{s}, codec.Option()))
 	return mux
 }
 
-type handler struct{ s *Service }
+type handler struct{ s *server }
 
 var _ primitivesv2connect.PrimitivesServiceHandler = (*handler)(nil)
 

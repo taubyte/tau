@@ -69,7 +69,7 @@ var (
 )
 
 // All is every service this composition knows how to start.
-var All = []string{Worker, Gateway, Auth, Database, Primitives, Proxy, DNS, BuildBackend}
+var All = []string{Worker, Gateway, Auth, Database, Proxy, DNS, BuildBackend}
 
 // Everything is every service a node can be configured to run: the ones this
 // package still starts itself and the ones services.New makes. All, the default
@@ -299,6 +299,15 @@ func WithClock(now func() time.Time) Option {
 func (c Config) withDefaults(added ...string) (Config, error) {
 	if len(c.Services) == 0 {
 		c.Services = append(append([]string(nil), All...), added...)
+	}
+	// WHAT A SERVICE CANNOT START WITHOUT RUNS BESIDE IT, so a list naming the
+	// service alone still starts.
+	for _, name := range slices.Clone(c.Services) {
+		for _, need := range services.Needs(name) {
+			if !slices.Contains(c.Services, need) {
+				c.Services = append(c.Services, need)
+			}
+		}
 	}
 	known := append(builtIn(), added...)
 	for _, name := range c.Services {

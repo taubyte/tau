@@ -29,7 +29,7 @@ import (
 // leader records where the clock is and tasks nothing, so a leadership change can
 // lose at most one minute's slots and never run one twice.
 //
-// The tasking is an RPC to a node the composer picks (WithTasking). Any primitives
+// The tasking is an RPC to the node discovery names first (host.go). Any primitives
 // node accepts it and forwards once to the node its group says may write, since a
 // fire is a write and pkg/raft refuses writes off the leader. A tasking that cannot
 // commit is refused, not recorded, and the next turn hands out the same window
@@ -43,8 +43,8 @@ import (
 // touched, so a redelivery waits for the schedule's next slot.
 
 // Target is one thing a schedule edges to, as an address. This package's own type,
-// so a consensus group does not import a compute service; the composer converts (see
-// WithSchedules).
+// so a consensus group does not import a compute service; the Workloads beside it
+// convert.
 type Target struct {
 	Project     string
 	Environment string
@@ -107,28 +107,32 @@ type Schedule struct {
 // edges to nothing this cloud serves is never opened at all.
 func (s Schedule) owes() bool { return len(s.Fires)+len(s.Starts) > 0 }
 
-// WithSchedules is where this service reads the clock's work from, injected because
-// only a composer holding a worker can enumerate crons. Without it no clock runs.
-func WithSchedules(of func(context.Context) []Schedule) Option {
+// Workloads is what the clock fires through: which schedules exist, and running what
+// a fire names through placement, so fires spread across the fleet instead of running
+// on the leader. The worker beside this service answers it.
+type Workloads interface {
+	Schedules(ctx context.Context) []Schedule
+	Fire(ctx context.Context, at Target, req *invoke.Request) (*invoke.Response, error)
+}
+
+// withWorkloads is where the clock finds the workloads it fires through, asked each
+// time: what runs beside this service can start after it.
+func withWorkloads(beside func() (Workloads, bool)) option {
 	return func(o *options) error {
-		if of == nil {
-			return errors.New("primitives: a nil schedule source")
+		if beside == nil {
+			return errors.New("primitives: nowhere to find workloads")
 		}
-		o.schedules = of
+		o.workloads = beside
 		return nil
 	}
 }
 
-// WithFire is how a fire reaches its workload, through placement, so fires spread
-// across the fleet instead of running on the leader.
-func WithFire(run func(context.Context, Target, *invoke.Request) (*invoke.Response, error)) Option {
-	return func(o *options) error {
-		if run == nil {
-			return errors.New("primitives: a nil fire")
-		}
-		o.fire = run
-		return nil
+// workers is the workloads beside this service, when something answers.
+func (s *server) workers() (Workloads, bool) {
+	if s.workloads == nil {
+		return nil, false
 	}
+	return s.workloads()
 }
 
 const (
@@ -196,7 +200,7 @@ var cronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month 
 // crons is the clock half of this service: the leader's tasking, and the pass a
 // tasking runs.
 type crons struct {
-	service *Service
+	service *server
 
 	// mu guards tasked, which the service's own loop writes and a test drives
 	// from its own goroutine.
@@ -242,7 +246,7 @@ func (c *crons) advance(minute time.Time) {
 	c.tasked = minute
 }
 
-// assign hands one window to a node the composer picks (WithTasking), bounded so a
+// assign hands one window to the node the tasking names, bounded so a
 // hanging tasking cannot hold the leader's single periodic goroutine.
 func (c *crons) assign(ctx context.Context, since, upto time.Time) error {
 	tasking, stop := context.WithTimeout(ctx, taskTimeout)
@@ -261,7 +265,7 @@ func (c *crons) accept(ctx context.Context, since, upto time.Time) error {
 	if !cluster.IsLeader() {
 		return c.forward(ctx, cluster, since, upto)
 	}
-	if c.service.schedules == nil {
+	if _, ok := c.service.workers(); !ok {
 		// A node that may write but runs no compute has no crons to enumerate; refusing keeps
 		// the window re-taskable.
 		return ErrNoClock
@@ -349,7 +353,11 @@ func (c *crons) generate(ctx context.Context, since, upto time.Time) error {
 	var pushed int
 	var refused error
 
-	for _, schedule := range c.service.schedules(ctx) {
+	workers, ok := c.service.workers()
+	if !ok {
+		return ErrNoClock
+	}
+	for _, schedule := range workers.Schedules(ctx) {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -570,7 +578,12 @@ func (c *crons) invoke(ctx context.Context, schedule Schedule, fire *primitivesv
 	}
 	slot := time.Unix(fire.GetSlot(), 0).UTC()
 
-	res, err := c.service.fire(ctx, at, &invoke.Request{
+	workers, ok := c.service.workers()
+	if !ok {
+		logger.Warnf("cron: %s firing %s/%s: %s", fire.GetCron(), at.Kind, at.Name, ErrNoClock)
+		return false
+	}
+	res, err := workers.Fire(ctx, at, &invoke.Request{
 		Method: http.MethodPost,
 		Path:   "/",
 		Headers: map[string][]string{
