@@ -419,11 +419,17 @@ func TestWithRegions(t *testing.T) {
 }
 
 func TestTheRegionANodeReadsIsTheOneItsConfigNames(t *testing.T) {
-	n := &Instance{Node: mockPeer(t)}
-	require.Equal(t, schema.DefaultRegion, n.destination())
-	n.cfg.Region = "region-1"
-	require.Equal(t, "region-1", n.destination())
-	require.Equal(t, "region-1", (&added{node: n}).Region(), "and the region its services are told")
+	ctx := t.Context()
+	n, _, _ := makeNode(t, Config{Services: []string{Register}, Region: "region-1"})
+	require.NoError(t, n.Start(ctx))
+	require.Equal(t, "region-1", (&added{node: n}).Region(), "the region its services are told")
+
+	_, err := n.register.Local().Publish(ctx, pkgregister.Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("whole"),
+		Views: []pkgregister.View{{Destination: "region-1", Compiled: []byte("region-1")}, {Destination: schema.DefaultRegion, Compiled: []byte("default")}}})
+	require.NoError(t, err)
+	p, err := n.views.Resolve(ctx, "shop", "prod")
+	require.NoError(t, err)
+	require.Equal(t, pkgregister.IDOf([]byte("region-1")), p.Object, "and the view it reads")
 }
 
 func TestBuildSeamsAreLayeredOverTheNodesOwn(t *testing.T) {

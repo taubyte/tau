@@ -14,34 +14,13 @@ import (
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
-	"github.com/taubyte/tau/p2p/rpc"
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/placement"
-	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/register"
 )
 
 // Dial is a client of the storage node at id, as the store.
 func Dial(h host.Host, id libp2ppeer.ID) (Store, error) { return NewClient(h, id) }
-
-// fleetOf reads the fleet document through whichever register answers.
-type fleetOf struct{ r *rpc.Reacher[register.Fleet] }
-
-func (f fleetOf) ResolveFleet(ctx context.Context) (pkgregister.Pointer, error) {
-	reg, err := f.r.Now(ctx)
-	if err != nil {
-		return pkgregister.Pointer{}, err
-	}
-	return reg.ResolveFleet(ctx)
-}
-
-func (f fleetOf) Object(ctx context.Context, id pkgregister.ObjectID) ([]byte, error) {
-	reg, err := f.r.Now(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return reg.Object(ctx, id)
-}
 
 // retentionPoll is how often a database rereads the cloud's retention.
 const retentionPoll = time.Minute
@@ -71,7 +50,7 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 	}
 
 	logger := logging.Logger("tau.storage")
-	fleet := service.Reach(h, register.Descriptor.Name, register.DialFleet)
+	fleet := register.ViewsOn(h)
 	s.also = append(s.also, fleet)
 
 	// EVERY DATABASE HERE IS UNDER THIS SERVICE'S NAME, so nothing else on the
@@ -80,7 +59,7 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 		return pkgkvdb.Open(p, Descriptor.Name+"/"+name,
 			pkgkvdb.WithLogger(logger),
 			pkgkvdb.WithRetentionFrom(func(ctx context.Context) (time.Duration, error) {
-				return register.Retention(ctx, fleetOf{fleet})
+				return register.Retention(ctx, fleet)
 			}, retentionPoll))
 	}
 	db, err := open("catalog")
@@ -102,7 +81,7 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 			}
 			return nil
 		}),
-		withFleet(fleetOf{fleet}),
+		withFleet(fleet),
 		withLogger(logger.Errorf),
 	)
 	if err != nil {

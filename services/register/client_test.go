@@ -210,12 +210,12 @@ func TestTheFleetDocumentCrossesTheWire(t *testing.T) {
 	require.JSONEq(t, `{"replication":3}`, string(doc))
 }
 
-func TestTheFleetIsDialledAsItsReader(t *testing.T) {
+func TestTheRegisterIsDialledAsItsReader(t *testing.T) {
 	h := newHarness(t, pkgregister.NewMemStore())
 	id, err := h.Service.Local().PublishFleet(t.Context(), 2, []byte(`{"replication":2}`))
 	require.NoError(t, err)
 
-	f, err := DialFleet(h.CallerHost, h.ServerHost.ID())
+	f, err := DialReader(h.CallerHost, h.ServerHost.ID())
 	require.NoError(t, err)
 	t.Cleanup(func() { f.(*Client).Close() })
 	p, err := f.ResolveFleet(t.Context())

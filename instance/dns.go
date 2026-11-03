@@ -41,7 +41,7 @@ func (n *Instance) openDNS() error {
 		// component tier is passed as-is — nil on a node that runs none, and a
 		// zone naming a resolver it cannot run then answers nothing rather than
 		// answering that the name is gone.
-		z, err := zone.New(n.registerSource(), n.worker, n.wasmTier())
+		z, err := zone.New(n.views, n.worker, n.wasmTier())
 		if err != nil {
 			return err
 		}
@@ -53,7 +53,7 @@ func (n *Instance) openDNS() error {
 	// the gateway service answer them.
 	if zone := n.cfg.Gateway.CloudFqdn; zone != "" {
 		options = append(options, dns.WithGenerated(dns.Generated{
-			Zone: zone, Hosts: n.registerSource(), Service: Gateway,
+			Zone: zone, Hosts: n.views, Service: Gateway,
 		}))
 		// AND ITS SERVICES BY NAME, `<service>.<cloud>`, answered by the nodes
 		// reporting each one. The names are every service a node can run here,

@@ -173,7 +173,7 @@ func (n *Instance) openDatabase(ctx context.Context) error {
 	svc, err := databaseService.New(n.Host(),
 		databaseService.WithEngines(registry),
 		databaseService.WithConsensus(kept...),
-		databaseService.WithRegister(n.registerSource()),
+		databaseService.WithRegister(n.views),
 		// WHAT THIS NODE ACTUALLY HOLDS, which is a different question from what
 		// it can open: a node answers "do you hold this" from its disk, and is
 		// the only thing that can let go of a copy.

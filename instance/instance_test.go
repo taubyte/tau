@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/core/service"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/stats"
 	"github.com/taubyte/tau/services"
@@ -142,7 +143,8 @@ func TestANodeWithNoRegisterSaysSo(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Worker, Discovery}})
 
 	_, err := n.Worker().Resolve(t.Context(), workerTarget())
-	require.ErrorIs(t, err, ErrNoRegister)
+	require.ErrorIs(t, err, service.ErrNoneRuns)
+	require.ErrorContains(t, err, Register)
 }
 
 func TestANodeWithNoWayToFindARegister(t *testing.T) {
@@ -151,8 +153,8 @@ func TestANodeWithNoWayToFindARegister(t *testing.T) {
 	t.Cleanup(func() { n.Close() })
 
 	_, err = n.Worker().Resolve(t.Context(), workerTarget())
-	require.ErrorIs(t, err, ErrNoRegister)
-	require.Contains(t, err.Error(), "discovery")
+	require.ErrorIs(t, err, service.ErrNoneRuns)
+	require.Contains(t, err.Error(), "no directory")
 }
 
 func TestTheGatewayIsServedByTheCaller(t *testing.T) {
@@ -236,18 +238,18 @@ func TestTheFleetIsReadFromTheLocalRegister(t *testing.T) {
 	ctx := t.Context()
 	with, _, _ := makeNode(t, Config{Services: []string{Register}})
 	require.NoError(t, with.Start(ctx))
-	_, err := (&source{node: with}).ResolveFleet(ctx)
+	_, err := with.views.ResolveFleet(ctx)
 	require.ErrorIs(t, err, pkgregister.ErrNotPublished, "nothing was published, and the register said so")
 
 	without, _, _ := makeNode(t, Config{Services: []string{Discovery}})
 	require.NoError(t, without.Start(ctx))
-	s := &source{node: without}
+	s := without.views
 	_, err = s.ResolveFleet(ctx)
-	require.ErrorIs(t, err, ErrNoRegister)
+	require.ErrorIs(t, err, service.ErrNoneRuns)
 	_, err = s.Object(ctx, pkgregister.ObjectID("x"))
-	require.ErrorIs(t, err, ErrNoRegister)
+	require.ErrorIs(t, err, service.ErrNoneRuns)
 	_, _, err = s.ResolveHost(ctx, "shop.example.com")
-	require.ErrorIs(t, err, ErrNoRegister)
+	require.ErrorIs(t, err, service.ErrNoneRuns)
 }
 
 func TestWithTLSReachesTheGateway(t *testing.T) {

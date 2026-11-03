@@ -212,3 +212,12 @@ func (s *server) ResolveFleet(ctx context.Context) (register.Pointer, error) {
 func (s *server) Object(ctx context.Context, id register.ObjectID) ([]byte, error) {
 	return s.reg.Object(ctx, id)
 }
+
+// ResolveView and ResolveHost are what a node serves, as this register holds it.
+func (s *server) ResolveView(ctx context.Context, project, environment, destination string) (register.ViewPointer, error) {
+	return s.reg.ResolveView(ctx, project, environment, destination)
+}
+
+func (s *server) ResolveHost(ctx context.Context, fqdn string) (string, string, error) {
+	return s.reg.ResolveHost(ctx, fqdn)
+}

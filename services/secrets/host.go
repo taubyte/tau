@@ -36,13 +36,9 @@ func (srv *server) Start(ctx context.Context, h service.Host) error {
 	if h.Root() == "" {
 		return ErrNoRoot
 	}
-	fleet := service.Reach(h, register.Descriptor.Name, register.DialFleet)
+	fleet := register.ViewsOn(h)
 	db, err := open(h.Peer(), func(ctx context.Context) (time.Duration, error) {
-		f, err := fleet.Now(ctx)
-		if err != nil {
-			return 0, err
-		}
-		return register.Retention(ctx, f)
+		return register.Retention(ctx, fleet)
 	})
 	if err != nil {
 		fleet.Close()

@@ -5,9 +5,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/libp2p/go-libp2p/core/host"
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
-
 	"github.com/taubyte/tau/pkg/kvdb"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 )
@@ -22,9 +19,6 @@ var (
 	_ Fleet = (*pkgregister.Register)(nil)
 	_ Fleet = (*Client)(nil)
 )
-
-// DialFleet is a client of the register at id, as the fleet's reader.
-func DialFleet(h host.Host, id libp2ppeer.ID) (Fleet, error) { return NewClient(h, id) }
 
 // Retention is the T the cloud's fleet document gives its replicated databases: 0,
 // the default, while nothing is published.

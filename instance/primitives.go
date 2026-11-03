@@ -105,7 +105,7 @@ func (n *Instance) openPrimitives() error {
 	// records live in the replicated store beside every other kind's bytes; both
 	// are this instance's.
 	options := []primitivesService.Option{
-		primitivesService.WithRegister(n.registerSource()),
+		primitivesService.WithRegister(n.views),
 		primitivesService.WithConsensus(n.raftGroup),
 		primitivesService.WithRecords(n.kvdb),
 	}

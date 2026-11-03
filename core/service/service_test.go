@@ -79,6 +79,7 @@ func TestNoDirectoryIsNobodyToAsk(t *testing.T) {
 	r := Reach(&fake{Node: p}, "store", func(host.Host, libp2ppeer.ID) (answer, error) { return "", nil })
 	_, err := r.Now(t.Context())
 	require.ErrorIs(t, err, ErrNoneRuns)
+	require.ErrorContains(t, err, "no directory")
 }
 
 // recorder is a service that keeps the host it started with.

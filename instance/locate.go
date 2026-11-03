@@ -99,6 +99,7 @@ func (n *Instance) rowsFor(service string) []pkgstats.Node {
 // below reads a field of the node at CALL time, so a service opened after this
 // is still found by a reach built before it.
 func (n *Instance) openReach() {
+	n.views = registerService.ViewsOn(&added{node: n})
 	n.registers = rpc.Reach(n.Host(), Register,
 		n.routeTo(Register, ErrNoRegister, "this node runs neither a register nor discovery to find one"),
 		func() (registerSeam, bool) {
@@ -128,17 +129,15 @@ func (n *Instance) closeReach() {
 	if n.registers != nil {
 		n.registers.Close()
 	}
+	if n.views != nil {
+		n.views.Close()
+	}
 	if n.sends != nil {
 		n.sends.Close()
 	}
 	if n.clocks != nil {
 		n.clocks.Close()
 	}
-}
-
-// client is the register this node reads from.
-func (s *source) client(ctx context.Context) (registerReader, error) {
-	return s.node.registers.Now(ctx)
 }
 
 // closerFunc adapts a plain stop function to io.Closer, for the things this

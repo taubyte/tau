@@ -35,10 +35,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/invoke/js"
 	"github.com/taubyte/tau/pkg/invoke/wasm"
-	"github.com/taubyte/tau/pkg/register"
 
-	pkgregister "github.com/taubyte/tau/pkg/register"
-	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/frontend"
 
@@ -157,8 +154,10 @@ type Instance struct {
 	// configuration reads, sends for queues, logs and claims, clocks for the leader's
 	// minute, the one that does not prefer this node (Node.clockNow).
 	registers *rpc.Reacher[registerSeam]
-	sends     *rpc.Reacher[primitive.Seam]
-	clocks    *rpc.Reacher[primitivesService.Clocks]
+	// views is the register as this node's services read what they serve.
+	views  *registerService.Views
+	sends  *rpc.Reacher[primitive.Seam]
+	clocks *rpc.Reacher[primitivesService.Clocks]
 
 	// loopsStop ends the background loops this node runs, and each Done is
 	// closed when that loop has stopped. All three are nil on a node that runs
@@ -451,7 +450,7 @@ func (n *Instance) openWorker() error {
 	n.closers = append(n.closers, closerFunc(func() { pool.Close() }))
 
 	options := []worker.Option{
-		worker.WithRegister(n.registerSource()),
+		worker.WithRegister(n.views),
 		worker.WithPool(pool),
 	}
 	// WHAT A BUILT RESOURCE RUNS COMES FROM THE BUILD SERVICE, unless a
@@ -575,7 +574,7 @@ func (n *Instance) openGateway() error {
 		return errors.New("node: a gateway routes from discovery, and this node does not run one")
 	}
 
-	source := n.registerSource()
+	source := n.views
 	gatewayOptions := []gateway.Option{
 		gateway.WithHosts(source),
 		gateway.WithSource(source),
@@ -676,12 +675,6 @@ func (n *Instance) secretResolver() model.Secrets {
 		return n.vault
 	}
 	return nil
-}
-
-// registerSource is how this node reads the register: directly when it runs one, no
-// hop, and over the swarm otherwise.
-func (n *Instance) registerSource() *source {
-	return &source{node: n}
 }
 
 // Start starts what was built, in the order it was built. Calling it twice, or
@@ -960,56 +953,4 @@ func (n *Instance) QueueDepth(handle string) (ready, claimed int, ok bool) {
 		return 0, 0, false
 	}
 	return int(depth.Ready), int(depth.Claimed), true
-}
-
-// source reads the register for this node's own services.
-type source struct{ node *Instance }
-
-var (
-	_ register.Registry = (*source)(nil)
-	_ gateway.Hosts     = (*source)(nil)
-)
-
-// Resolve is what this node runs of a deployment: its destination's VIEW, so every
-// consumer reading through the cache holds only what is placed where this node is.
-func (s *source) Resolve(ctx context.Context, name, environment string) (pkgregister.Pointer, error) {
-	c, err := s.client(ctx)
-	if err != nil {
-		return pkgregister.Pointer{}, err
-	}
-	return pkgregister.InRegion(c, s.node.destination()).Resolve(ctx, name, environment)
-}
-
-// destination is the region whose views this node reads.
-func (n *Instance) destination() string {
-	if n.cfg.Region != "" {
-		return n.cfg.Region
-	}
-	return schema.DefaultRegion
-}
-
-func (s *source) Object(ctx context.Context, id pkgregister.ObjectID) ([]byte, error) {
-	c, err := s.client(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return c.Object(ctx, id)
-}
-
-// ResolveFleet is the cloud's replication floor. Only the local register can answer:
-// the register's wire has no call for it, so a node without one falls back to the
-// default.
-func (s *source) ResolveFleet(ctx context.Context) (pkgregister.Pointer, error) {
-	if s.node.register == nil || s.node.register.Local() == nil {
-		return pkgregister.Pointer{}, fmt.Errorf("%w: this node runs no register to read the fleet from", ErrNoRegister)
-	}
-	return s.node.register.Local().ResolveFleet(ctx)
-}
-
-func (s *source) ResolveHost(ctx context.Context, fqdn string) (string, string, error) {
-	c, err := s.client(ctx)
-	if err != nil {
-		return "", "", err
-	}
-	return c.ResolveHost(ctx, fqdn)
 }

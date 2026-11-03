@@ -89,11 +89,13 @@ func Reach[T any](h Host, name string, dial func(host.Host, libp2ppeer.ID) (T, e
 	self := h.Peer().Host()
 	return rpc.Reach(self, name,
 		func() (libp2ppeer.ID, error) {
-			if d, ok := Get[Directory](h); ok {
-				for _, id := range d.Peers(name) {
-					if id != self.ID() {
-						return id, nil
-					}
+			d, ok := Get[Directory](h)
+			if !ok {
+				return "", fmt.Errorf("%w: %s, and no directory runs here to ask", ErrNoneRuns, name)
+			}
+			for _, id := range d.Peers(name) {
+				if id != self.ID() {
+					return id, nil
 				}
 			}
 			return "", fmt.Errorf("%w: %s", ErrNoneRuns, name)
