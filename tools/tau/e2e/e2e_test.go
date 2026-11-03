@@ -208,14 +208,23 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 		ID     string `json:"id"`
 		Status string `json:"status"`
 	}
+	// A PUSH IS A PLAN AND A JOB PER ENVIRONMENT IT FEEDS: this project's one.
 	var jobs []job
+	succeeded := func() bool {
+		for _, j := range jobs {
+			if j.Status != "success" {
+				return false
+			}
+		}
+		return true
+	}
 	require.Eventually(t, func() bool {
 		jobs = nil
-		return json.Unmarshal([]byte(ok(t, "jobs", "--profile", "owner", "--dir", dir, "-o", "json")), &jobs) == nil && len(jobs) == 1
+		return json.Unmarshal([]byte(ok(t, "jobs", "--profile", "owner", "--dir", dir, "-o", "json")), &jobs) == nil && len(jobs) > 0
 	}, time.Minute, time.Second, "the verified push queued a job")
 	require.Eventually(t, func() bool {
 		jobs = nil
-		return json.Unmarshal([]byte(ok(t, "jobs", "--profile", "owner", "--dir", dir, "-o", "json")), &jobs) == nil && len(jobs) == 1 && jobs[0].Status == "success"
+		return json.Unmarshal([]byte(ok(t, "jobs", "--profile", "owner", "--dir", dir, "-o", "json")), &jobs) == nil && len(jobs) == 2 && succeeded()
 	}, 3*time.Minute, 2*time.Second, "the build cloned over the deploy key and succeeded: %v", jobs)
 
 	// A SECOND TAU USER sees nothing until granted, then reads; revoked, the
