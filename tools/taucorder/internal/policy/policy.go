@@ -55,7 +55,7 @@ var Table = map[string]map[string]Class{
 	"tau.register.v2.RegisterService": {
 		"Link": W, "Project": R, "Repository": R, "ProjectsOf": R, "ListProjects": R,
 		"Publish": W, "Resolve": R, "Object": R, "Environments": R,
-		"ResolveHost": R, "ResolveView": R, "Assigned": R, "Manifest": R,
+		"ResolveHost": R, "ResolveView": R, "Assigned": R, "Manifest": R, "ResolveFleet": R,
 		"Grant": W, "Revoke": W, "Grants": R, "Role": R,
 	},
 	"tau.build.v2.QueueService": {"Enqueue": W},
