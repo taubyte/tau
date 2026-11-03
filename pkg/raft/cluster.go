@@ -423,6 +423,9 @@ func (c *cluster) buildRaftConfig() *raft.Config {
 	cfg.LeaderLeaseTimeout = timeouts.LeaderLeaseTimeout
 	cfg.SnapshotInterval = timeouts.SnapshotInterval
 	cfg.SnapshotThreshold = timeouts.SnapshotThreshold
+	if timeouts.TrailingLogs > 0 {
+		cfg.TrailingLogs = timeouts.TrailingLogs
+	}
 
 	return cfg
 }

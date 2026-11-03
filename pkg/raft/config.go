@@ -27,6 +27,11 @@ type TimeoutConfig struct {
 	// SnapshotThreshold controls how many outstanding logs there
 	// must be before we perform a snapshot
 	SnapshotThreshold uint64 `yaml:"snapshot_threshold"`
+
+	// TrailingLogs is how many entries a snapshot leaves in the log behind it, so
+	// a follower slightly behind catches up from the log rather than a snapshot.
+	// Everything older is deleted from the log store.
+	TrailingLogs uint64 `yaml:"trailing_logs"`
 }
 
 // DefaultTimeoutConfig is the default timeout configuration, tuned for
@@ -38,4 +43,5 @@ var DefaultTimeoutConfig = TimeoutConfig{
 	LeaderLeaseTimeout: 15 * time.Second,
 	SnapshotInterval:   10 * time.Minute,
 	SnapshotThreshold:  32768,
+	TrailingLogs:       10240,
 }
