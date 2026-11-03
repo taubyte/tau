@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,8 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
-	"github.com/taubyte/tau/pkg/raft"
-	"github.com/taubyte/tau/services/build/backend/row"
 )
 
 func enqueue(t *testing.T, h *harness, key, ref, commit string) (string, error) {
@@ -23,13 +20,13 @@ func enqueue(t *testing.T, h *harness, key, ref, commit string) (string, error) 
 	return h.enqueue(t.Context(), &buildv2.PushEvent{RepositoryKey: key, Ref: ref, CommitSha: commit})
 }
 
-func TestEnqueueWritesTheRecordAndBothIndexesInOneEntry(t *testing.T) {
+func TestEnqueueWritesTheCreatedEventAndBothRowsInOneDelta(t *testing.T) {
 	h := newHarness(t)
 
 	var duringBatch int
-	h.store.onBatch(func() {
-		// Nothing of this job may be visible before the entry commits.
-		duringBatch = len(h.store.Keys(rootSegment + "/"))
+	h.records.onBatch(func() {
+		// Nothing of this job may be visible before the delta commits.
+		duringBatch = len(h.rows(t))
 	})
 
 	id, err := enqueue(t, h, testRepo, testRef, testCommit)
@@ -45,8 +42,8 @@ func TestEnqueueWritesTheRecordAndBothIndexesInOneEntry(t *testing.T) {
 	require.Equal(t, h.clock.now().Unix(), rec.CreatedAt)
 	require.Zero(t, rec.Attempt)
 
-	require.Len(t, h.store.Keys(projectIndexPrefix(rec.ProjectID)), 1)
-	require.Len(t, h.store.Keys(openIndexPrefix(testRepo)), 1)
+	require.Len(t, h.records.keys(t, projectRows(rec.ProjectID)), 1)
+	require.Len(t, h.records.keys(t, openRows(testRepo)), 1)
 
 	ready, claimed := h.work.Depth()
 	require.Equal(t, 1, ready)
@@ -64,7 +61,7 @@ func TestARedeliveredPushIsTheSameJob(t *testing.T) {
 	require.Equal(t, first, second)
 	ready, _ := h.work.Depth()
 	require.Equal(t, 1, ready, "a redelivery must not make a second item")
-	require.Len(t, h.store.Keys(projectIndexPrefix("project-of-"+testRepo)), 1)
+	require.Len(t, h.records.keys(t, projectRows("project-of-"+testRepo)), 1)
 }
 
 func TestARedeliveryOfAClaimedOrFinishedJobChangesNothing(t *testing.T) {
@@ -138,7 +135,7 @@ func TestEnqueueRefusesStrangerAuthoredNonsense(t *testing.T) {
 		})
 	}
 
-	require.Empty(t, h.store.Keys(rootSegment+"/"), "nothing refused may have written a row")
+	require.Empty(t, h.rows(t), "nothing refused may have written a row")
 }
 
 func TestEnqueueOnAFollowerIsUnavailable(t *testing.T) {
@@ -176,7 +173,7 @@ func TestAPushForAnUnregisteredRepositoryIsRefusedBeforeAnythingIsQueued(t *test
 
 	ready, _ := h.work.Depth()
 	require.Equal(t, 0, ready)
-	require.Empty(t, h.store.Keys(rootSegment+"/"))
+	require.Empty(t, h.rows(t))
 }
 
 func TestAnUnreachableAuthIsUnavailableRatherThanARefusal(t *testing.T) {
@@ -241,7 +238,7 @@ func TestAdmissionBoundsTheQueueAndTheRepository(t *testing.T) {
 
 func TestAStoreThatRefusesTheWriteIsUnavailable(t *testing.T) {
 	h := newHarness(t)
-	h.store.failBatches(errors.New("log is full"))
+	h.records.failBatches(errors.New("the store is full"))
 
 	_, err := enqueue(t, h, testRepo, testRef, testCommit)
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
@@ -250,21 +247,21 @@ func TestAStoreThatRefusesTheWriteIsUnavailable(t *testing.T) {
 func TestAPushThatFailsAfterTheRecordIsReported(t *testing.T) {
 	h := newHarness(t)
 
-	// Let the record's entry through, then refuse the queue's.
-	h.store.onBatch(func() { h.store.failBatches(errors.New("log is full")) })
+	// The created event goes to kvdb; refuse the queue's entry.
+	h.store.failBatches(errors.New("log is full"))
 
 	_, err := enqueue(t, h, testRepo, testRef, testCommit)
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
 
 	h.store.failBatches(nil)
-	require.Len(t, h.store.Keys(openIndexRoot()), 1, "the record survives, for reconcile to find")
+	require.Len(t, h.records.keys(t, openRoot()), 1, "the job survives, for reconcile to find")
 }
 
 func TestACorruptRecordIsInternalRatherThanASecondJob(t *testing.T) {
 	h := newHarness(t)
 	key, _ := parseRepositoryKey(testRepo)
 	id := jobID(key, testRef, testCommit)
-	h.store.put(t, jobRecordKey(id), []byte("not a record"))
+	h.records.garble(t, id)
 
 	_, err := enqueue(t, h, testRepo, testRef, testCommit)
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
@@ -276,20 +273,23 @@ func TestTheOnlyWritesAreOneEntrysRows(t *testing.T) {
 
 	require.NoError(t, h.cancel(id))
 
-	entries := h.store.entriesNaming(jobRecordKey(id))
-	require.Len(t, entries, 2, "the record is written twice: once created, once cancelled")
+	entries := h.records.entriesAbout(id)
+	require.Len(t, entries, 2, "two deltas: created, then cancelled")
+	events := h.records.keys(t, eventPrefix(id))
+	require.Len(t, events, 2, "and each is one event of its own")
+	opened := openRowsOf(testRepo, id) + strings.TrimPrefix(events[0], eventPrefix(id))
 
 	require.Equal(t, []string{
-		"set " + jobRecordKey(id),
-		"set " + projectIndexKey("project-of-"+testRepo, id),
-		"set " + openIndexKey(testRepo, id),
-	}, keysIn(entries[0]), "create composes the record, the project row and the open row")
+		"set " + events[0],
+		"set " + projectRow("project-of-"+testRepo, id),
+		"set " + opened,
+	}, entries[0], "create composes the event, the project row and the open row")
 
 	require.Equal(t, []string{
-		"set " + jobRecordKey(id),
-		"del " + openIndexKey(testRepo, id),
-		"set " + terminalIndexKey(h.clock.now(), id),
-	}, keysIn(entries[1]), "and a cancel the record, the open row removed and the retention row")
+		"set " + events[1],
+		"del " + opened,
+		"set " + terminalRow(h.clock.now(), id),
+	}, entries[1], "and a cancel the event, the open row removed and the retention row")
 }
 
 func TestTheRepairPushCanFailOnItsOwn(t *testing.T) {
@@ -375,97 +375,12 @@ func TestARedeliveryThatOverlapsTheFirstDeliveryDoesNotBuildTwice(t *testing.T) 
 	require.Len(t, h.runner.seen(), 1, "one push, one build")
 }
 
-// staleStore is a newly elected node holding committed, unapplied entries;
-// raft.MockCluster cannot lag.
-type staleStore struct {
-	*fakeStore
-
-	mu        sync.Mutex
-	unapplied []raft.BatchOp
-
-	// the other way to be behind: not an entry this node has yet to apply, but
-	// a key it still answers from the prefix it HAD applied.
-	behindOn    string
-	behindKey   string
-	behindValue []byte
-	behind      bool
-}
-
-// commitElsewhere is an entry another leader wrote, accepted and not yet applied
-// here.
-func (s *staleStore) commitElsewhere(t *testing.T, e row.Entry) {
-	t.Helper()
-	require.NoError(t, e.Apply(unapplied{s}, 0))
-}
-
-// unapplied takes an entry's rows and holds them where the store cannot answer
-// from them.
-type unapplied struct{ s *staleStore }
-
-func (u unapplied) Batch(ops []raft.BatchOp, _ time.Duration) error {
-	u.s.mu.Lock()
-	defer u.s.mu.Unlock()
-	u.s.unapplied = append(u.s.unapplied, ops...)
-	return nil
-}
-
-// behindFrom makes key answer `applied` from the next listing of prefix until the
-// next barrier. Writes are not behind: a delete decided on the stale read lands
-// on the present store.
-func (s *staleStore) behindFrom(prefix, key string, applied []byte) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.behindOn, s.behindKey, s.behindValue = prefix, key, applied
-}
-
-func (s *staleStore) Keys(prefix string) []string {
-	keys := s.fakeStore.Keys(prefix)
-
-	s.mu.Lock()
-	if s.behindOn != "" && prefix == s.behindOn {
-		s.behindOn = ""
-		s.behind = true
-	}
-	s.mu.Unlock()
-	return keys
-}
-
-func (s *staleStore) Get(key string) ([]byte, bool) {
-	s.mu.Lock()
-	behind, stale, value := s.behind, s.behindKey, s.behindValue
-	s.mu.Unlock()
-
-	if behind && key == stale {
-		return value, true
-	}
-	return s.fakeStore.Get(key)
-}
-
-func (s *staleStore) Barrier(timeout time.Duration) error {
-	if err := s.fakeStore.Barrier(timeout); err != nil {
-		return err
-	}
-	s.mu.Lock()
-	ops := s.unapplied
-	s.unapplied = nil
-	s.behind = false
-	s.mu.Unlock()
-	if len(ops) == 0 {
-		return nil
-	}
-	return s.fakeStore.MockCluster.Batch(ops, timeout)
-}
-
-func TestACreateDecidesOnWhatABarrierMakesVisible(t *testing.T) {
+// A DELIVERY THAT WAS AWAY decides on the job another node finished meanwhile:
+// its section reads after the round trip, so the events that landed during it are
+// what it decides on.
+func TestACreateDecidesOnWhatLandedWhileItWasAway(t *testing.T) {
 	gate := newGatedRepositories(testRepo)
-	var store *staleStore
-	// The harness's own options run first, so o.store is already the fake by
-	// the time this wraps it.
-	h := newHarness(t, func(o *options) error {
-		store = &staleStore{fakeStore: o.store.(*fakeStore)}
-		o.store = store
-		return nil
-	}, WithRepositories(gate))
+	h := newHarness(t, WithRepositories(gate))
 
 	key, ok := parseRepositoryKey(testRepo)
 	require.True(t, ok)
@@ -480,7 +395,7 @@ func TestACreateDecidesOnWhatABarrierMakesVisible(t *testing.T) {
 	}()
 	<-gate.entered
 
-	finished := jobRecord{
+	h.plantRecord(t, jobRecord{
 		ID:            id,
 		Status:        int32(buildv2.JobStatus_JobStatusSuccess),
 		RepositoryKey: testRepo,
@@ -488,18 +403,8 @@ func TestACreateDecidesOnWhatABarrierMakesVisible(t *testing.T) {
 		CommitSHA:     testCommit,
 		ProjectID:     "project-of-" + testRepo,
 		CreatedAt:     h.clock.now().Unix(),
-		UpdatedAt:     h.clock.now().Unix(),
 		Attempt:       1,
-	}
-	value, err := finished.encode()
-	require.NoError(t, err)
-	elsewhere := row.Sized(3)
-	elsewhere.Set(jobRecordKey(id), value)
-	elsewhere.Set(projectIndexKey(finished.ProjectID, id), nil)
-	elsewhere.Set(terminalIndexKey(h.clock.now(), id), nil)
-	store.commitElsewhere(t, elsewhere)
-	_, visible := store.Get(jobRecordKey(id))
-	require.False(t, visible, "an unapplied entry must not be readable, or this test proves nothing")
+	})
 
 	close(gate.release)
 	require.NoError(t, <-done)
@@ -510,46 +415,33 @@ func TestACreateDecidesOnWhatABarrierMakesVisible(t *testing.T) {
 	require.Zero(t, ready+claimed, "and it must not be queued here either")
 }
 
-// recordingStore counts the entries that write a job record, which is how a
-// test says "two deliveries, one write".
-type recordingStore struct {
-	*fakeStore
+// AND ONE THAT LANDS AFTER IT DECIDED is a second created, which the fold ignores:
+// the other node's ending applies to the job this node created, and the item this
+// node queued is dropped by begin, unbuilt.
+func TestACreateThatRacedAnotherNodesIsOneJob(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
 
-	mu      sync.Mutex
-	records int
-}
+	h.elsewhere(t, id, &buildv2.JobEvent{Kind: &buildv2.JobEvent_Created{Created: &buildv2.JobCreated{
+		RepositoryKey: testRepo, Ref: testRef, CommitSha: testCommit, ProjectId: "project-of-" + testRepo,
+	}}})
+	h.elsewhere(t, id, &buildv2.JobEvent{Kind: &buildv2.JobEvent_Claimed{Claimed: &buildv2.JobClaimed{Attempt: 1}}})
+	h.elsewhere(t, id, &buildv2.JobEvent{Kind: &buildv2.JobEvent_Settled{Settled: &buildv2.JobSettled{
+		Attempt: 1, Status: buildv2.JobStatus_JobStatusSuccess,
+	}}})
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
 
-func (s *recordingStore) Batch(ops []raft.BatchOp, timeout time.Duration) error {
-	if err := s.fakeStore.Batch(ops, timeout); err != nil {
-		return err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, op := range ops {
-		if op.Set != nil && strings.HasSuffix(op.Set.Key, "/"+recordSegment) {
-			s.records++
-		}
-	}
-	return nil
-}
-
-func (s *recordingStore) written() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.records
+	require.True(t, h.mustStep(t), "the item this node queued is claimed")
+	require.Empty(t, h.runner.planned, "and dropped, since the job had ended")
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
 }
 
 func TestASecondDeliveryCannotDecideWhileTheFirstIsWriting(t *testing.T) {
-	var store *recordingStore
-	h := newHarness(t, func(o *options) error {
-		store = &recordingStore{fakeStore: o.store.(*fakeStore)}
-		o.store = store
-		return nil
-	})
+	h := newHarness(t)
 
 	writing := make(chan struct{})
 	trying := make(chan struct{})
-	h.store.onBatch(func() {
+	h.records.onBatch(func() {
 		close(writing)
 		select {
 		case <-trying:
@@ -580,7 +472,7 @@ func TestASecondDeliveryCannotDecideWhileTheFirstIsWriting(t *testing.T) {
 
 	require.NoError(t, secondErr)
 	require.Equal(t, first, second, "both deliveries name one job")
-	require.Equal(t, 1, store.written(), "two overlapping deliveries, one record write")
+	require.Len(t, h.records.entriesAbout(first), 1, "two overlapping deliveries, one created event")
 
 	ready, claimed := h.work.Depth()
 	require.Equal(t, 1, ready, "and one item")
@@ -608,13 +500,13 @@ func TestWhatADeliveryFindsWhenItComesBackFromAuth(t *testing.T) {
 		close(gate.release)
 
 		require.Equal(t, connect.CodeUnavailable, connect.CodeOf(<-done))
-		require.Empty(t, h.store.Keys(rootSegment+"/"), "a follower writes nothing")
+		require.Empty(t, h.rows(t), "a follower writes nothing")
 	})
 
-	// A row that will not decode is Internal on the way back for the same
+	// An event that will not decode is Internal on the way back for the same
 	// reason it is on the way in: minting a second job over it would lose
 	// whatever the first one was.
-	t.Run("the record is there and will not decode", func(t *testing.T) {
+	t.Run("the job is there and will not decode", func(t *testing.T) {
 		gate := newGatedRepositories(testRepo)
 		h := newHarness(t, WithRepositories(gate))
 
@@ -630,7 +522,7 @@ func TestWhatADeliveryFindsWhenItComesBackFromAuth(t *testing.T) {
 		}()
 
 		<-gate.entered
-		h.store.put(t, jobRecordKey(jobID(key, testRef, testCommit)), []byte("not a record"))
+		h.records.garble(t, jobID(key, testRef, testCommit))
 		close(gate.release)
 
 		require.Equal(t, connect.CodeInternal, connect.CodeOf(<-done))
@@ -665,7 +557,7 @@ func TestEnqueueConfirmsThePushAtTheRepository(t *testing.T) {
 			_, err := enqueue(t, h, testRepo, testRef, testCommit)
 			require.Equal(t, tc.code, connect.CodeOf(err))
 			require.Equal(t, 1, c.asked)
-			require.Empty(t, h.store.Keys(rootSegment+"/"), "nothing refused may have written a row")
+			require.Empty(t, h.rows(t), "nothing refused may have written a row")
 		})
 	}
 

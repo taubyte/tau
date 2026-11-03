@@ -8,37 +8,48 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	kvdbmock "github.com/taubyte/tau/pkg/kvdb/mock"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
-	"github.com/taubyte/tau/pkg/raft"
 )
 
 func TestEveryPrefixEndsInASlashAndACrossJobReadIsImpossible(t *testing.T) {
-	store := raft.NewMockCluster()
+	ctx := t.Context()
+	db, err := kvdbmock.New().New(nil, "build", 0)
+	require.NoError(t, err)
 
 	// Two ids where one encodes to a prefix of the other. seg() is base64url,
 	// so this is exactly what "AAA" and "AAAB" do.
 	short, long := "AAA", "AAAB"
 	require.True(t, strings.HasPrefix(seg(long), seg(short)))
 
-	require.NoError(t, store.Set(jobRecordKey(short), []byte("short"), time.Second))
-	require.NoError(t, store.Set(jobRecordKey(long), []byte("long"), time.Second))
+	require.NoError(t, db.Put(ctx, eventKey(short, 1, "w"), []byte("short")))
+	require.NoError(t, db.Put(ctx, eventKey(long, 1, "w"), []byte("long")))
 
 	for _, prefix := range []string{
-		jobPrefix(short),
-		projectIndexPrefix("p"),
-		openIndexPrefix("github.com/a/b"),
-		openIndexRoot(),
+		eventPrefix(short),
+		projectRows("p"),
+		openRoot(),
+		openRows("github.com/a/b"),
+		openRowsOf("github.com/a/b", short),
+		anchorRows("github.com/a/b", testRef, testEnvironment),
+		liveRows("p", testEnvironment, "website/home"),
+		terminalRows(),
 	} {
 		require.True(t, strings.HasSuffix(prefix, "/"), "prefix %q must end in a slash", prefix)
 	}
 
-	require.Len(t, store.Keys(jobPrefix(short)), 1, "a job's prefix must reach only its own rows")
-	require.Len(t, store.Keys(jobPrefix(long)), 1)
+	keys, err := db.List(ctx, eventPrefix(short))
+	require.NoError(t, err)
+	require.Len(t, keys, 1, "a job's prefix must reach only its own events")
+	keys, err = db.List(ctx, eventPrefix(long))
+	require.NoError(t, err)
+	require.Len(t, keys, 1)
 
 	// And the failure this guards, spelled out: without the trailing slash the
 	// same listing reaches both.
-	require.Len(t, store.Keys(strings.TrimSuffix(jobPrefix(short), "/")), 2,
-		"this is what a missing trailing slash costs")
+	keys, err = db.List(ctx, strings.TrimSuffix(eventPrefix(short), "/"+eventSegment+"/"))
+	require.NoError(t, err)
+	require.Len(t, keys, 2, "this is what a missing trailing slash costs")
 }
 
 func TestNoInputCanForgeASegmentBoundary(t *testing.T) {
@@ -59,39 +70,59 @@ func TestNoInputCanForgeASegmentBoundary(t *testing.T) {
 
 func TestAHostileRefCannotReachAnotherJobsRows(t *testing.T) {
 	victim := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-	hostileRef := "refs/heads/../../../job/" + seg(victim) + "/attempt"
+	hostileRef := "refs/heads/../../../job/" + seg(victim) + "/event"
 
-	key := refLastKey("github.com/a/b", hostileRef, testEnvironment)
-	require.NotContains(t, strings.TrimPrefix(key, rootSegment+"/"+indexSegment+"/"+refSegment+"/"),
+	key := anchorRow("github.com/a/b", hostileRef, testEnvironment, 1, "id", "w")
+	require.NotContains(t, strings.TrimPrefix(key, "/"+rootSegment+"/"+anchorSegment+"/"),
 		"..", "a ref must not survive into a key as path syntax")
-	require.False(t, strings.HasPrefix(key, jobPrefix(victim)))
+	require.False(t, strings.HasPrefix(key, eventPrefix(victim)))
 }
 
 func TestUnsegRejectsAMalformedSegment(t *testing.T) {
 	_, err := unseg("!!!not base64!!!")
 	require.Error(t, err)
 
-	_, err = idFromIndexKey("no-slash-here!!!")
-	require.Error(t, err)
-
-	_, err = idFromIndexKey(projectIndexPrefix("p") + "!!!")
+	_, err = lastSegmentOf(projectRows("p") + "!!!")
 	require.Error(t, err)
 }
 
-func TestIDFromIndexKeyReadsTheIDOffTheEnd(t *testing.T) {
+func TestTheLastSegmentOfARowIsItsJob(t *testing.T) {
 	id := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	for _, key := range []string{
-		projectIndexKey("proj", id),
-		openIndexKey("github.com/a/b", id),
-		terminalIndexKey(time.Unix(1_700_000_000, 0), id),
+		projectRow("proj", id),
+		terminalRow(time.Unix(1_700_000_000, 0), id),
 	} {
-		got, err := idFromIndexKey(key)
+		got, err := lastSegmentOf(key)
 		require.NoError(t, err)
 		require.Equal(t, id, got)
 	}
 }
 
-func TestParseOpenIndexKeyRoundTrips(t *testing.T) {
+func TestARowBesideAnEventNamesThatEvent(t *testing.T) {
+	id := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	for prefix, key := range map[string]string{
+		anchorRows("github.com/a/b", testRef, testEnvironment): anchorRow("github.com/a/b", testRef, testEnvironment, 7, id, "a/writer"),
+		liveRows("proj", testEnvironment, "website/home"):      liveRow("proj", testEnvironment, "website/home", 7, id, "a/writer"),
+	} {
+		at, got, writer, err := parseBeside(prefix, key)
+		require.NoError(t, err)
+		require.Equal(t, int64(7), at)
+		require.Equal(t, id, got)
+		require.Equal(t, "a/writer", writer)
+	}
+	for _, key := range []string{
+		liveRows("p", "e", "r") + "!!!",
+		liveRows("p", "e", "r") + stamp(1) + "/!!!/" + seg("w"),
+		liveRows("p", "e", "r") + stamp(1) + "/" + seg("id") + "/!!!",
+		liveRows("p", "e", "r") + "x/" + seg("id") + "/" + seg("w"),
+		anchorRows("r", "f", "e") + besideName(1, "id", "w"),
+	} {
+		_, _, _, err := parseBeside(liveRows("p", "e", "r"), key)
+		require.Error(t, err, "key %q", key)
+	}
+}
+
+func TestAnOpenRowRoundTrips(t *testing.T) {
 	for _, repositoryKey := range []string{
 		"github.com/a/b",
 		"gitlab.com/acme/team/widget",
@@ -102,29 +133,37 @@ func TestParseOpenIndexKeyRoundTrips(t *testing.T) {
 			"a/b/../c",
 			"",
 		} {
-			key := openIndexKey(repositoryKey, id)
-			gotRepo, gotID, err := parseOpenIndexKey(key)
+			key := openRow(repositoryKey, id, 7, "writer/with/slashes")
+			gotRepo, gotID, err := parseOpenRow(key)
 			require.NoError(t, err)
 			require.Equal(t, repositoryKey, gotRepo)
 			require.Equal(t, id, gotID)
-			require.Equal(t, key, openIndexKey(gotRepo, gotID),
+			at, err := openRowAt(key)
+			require.NoError(t, err)
+			require.Equal(t, int64(7), at)
+			require.Equal(t, key, openRow(gotRepo, gotID, at, "writer/with/slashes"),
 				"mend deletes what it rebuilds, so the two must be one key")
+			require.Equal(t, openRowsOf(gotRepo, gotID)+eventName(7, "writer/with/slashes"), key,
+				"and the row is named by the event it was written beside")
 		}
 	}
 }
 
-func TestParseOpenIndexKeyRejectsWhatIsNotOne(t *testing.T) {
+func TestParseOpenRowRejectsWhatIsNotOne(t *testing.T) {
 	for _, key := range []string{
 		"",
-		projectIndexKey("p", "id"),
-		openIndexRoot(),
-		openIndexPrefix("github.com/a/b") + "!!!",
-		openIndexRoot() + "!!!/" + seg("id"),
-		openIndexKey("github.com/a/b", "id") + "/extra",
+		projectRow("p", "id"),
+		openRoot(),
+		openRows("github.com/a/b") + "!!!",
+		openRoot() + "!!!/" + seg("id") + "/" + eventName(1, "w"),
+		openRoot() + seg("github.com/a/b") + "/!!!/" + eventName(1, "w"),
+		openRow("github.com/a/b", "id", 1, "w") + "/extra",
 	} {
-		_, _, err := parseOpenIndexKey(key)
+		_, _, err := parseOpenRow(key)
 		require.Error(t, err, "key %q", key)
 	}
+	_, err := openRowAt("nothing")
+	require.Error(t, err)
 }
 
 func TestTheLogsOfARecordSortInAttemptOrder(t *testing.T) {
@@ -170,50 +209,6 @@ func TestStampClampsBelowZeroAndIsFixedWidth(t *testing.T) {
 	require.Less(t, stamp(2), stamp(10))
 }
 
-func TestJobRecordRoundTrips(t *testing.T) {
-	rec := jobRecord{
-		ID:            "id",
-		Status:        int32(buildv2.JobStatus_JobStatusClaimed),
-		RepositoryKey: "github.com/a/b",
-		Ref:           "refs/heads/main",
-		CommitSHA:     strings.Repeat("a", 40),
-		ProjectID:     "proj",
-		CreatedAt:     10,
-		Attempt:       2,
-		UpdatedAt:     20,
-		ClaimedUntil:  30,
-		Holder:        "peer",
-		Reason:        "why",
-	}
-
-	raw, err := rec.encode()
-	require.NoError(t, err)
-
-	got, err := decodeJobRecord(jobRecordKey(rec.ID), rec.ID, raw)
-	require.NoError(t, err)
-	require.Equal(t, rec, got)
-}
-
-func TestADecodedRecordMustBeTheOneItsKeyNames(t *testing.T) {
-	const id = "0123456789012345678901234567890123456789abc"
-
-	neighbour, err := jobRecord{ID: "a completely different job"}.encode()
-	require.NoError(t, err)
-	_, err = decodeJobRecord(jobRecordKey(id), id, neighbour)
-	require.ErrorContains(t, err, "it says it is job")
-	require.ErrorContains(t, err, "a completely different job")
-
-	// A record with no id at all is the same failure and needs no branch of its
-	// own: a job id is never empty (errors.go).
-	anonymous, err := jobRecord{}.encode()
-	require.NoError(t, err)
-	_, err = decodeJobRecord(jobRecordKey(id), id, anonymous)
-	require.ErrorContains(t, err, "it says it is job")
-
-	_, err = decodeJobRecord(jobRecordKey(id), id, []byte("not a record at all"))
-	require.ErrorContains(t, err, "corrupt")
-}
-
 func TestTerminalIsExactlyTheThreeEndStates(t *testing.T) {
 	for status, want := range map[buildv2.JobStatus]bool{
 		buildv2.JobStatus_JobStatusOpen:      false,
@@ -229,7 +224,7 @@ func TestTerminalIsExactlyTheThreeEndStates(t *testing.T) {
 }
 
 func TestBuildsRowsAndTheQueuesRowsCannotOverlap(t *testing.T) {
-	require.True(t, strings.HasPrefix(jobPrefix("x"), rootSegment+"/"))
-	require.False(t, strings.HasPrefix(jobPrefix("x"), "queue/"))
-	require.False(t, strings.HasPrefix(openIndexRoot(), "queue/"))
+	require.True(t, strings.HasPrefix(eventPrefix("x"), "/"+rootSegment+"/"))
+	require.False(t, strings.HasPrefix(eventPrefix("x"), "queue/"))
+	require.False(t, strings.HasPrefix(openRoot(), "queue/"))
 }

@@ -608,7 +608,7 @@ func TestSettleWritesNothingForARecordThatIsGone(t *testing.T) {
 
 	h.runner.run = func(_ context.Context, _ Work, out Output) error {
 		fmt.Fprint(out, "built\n")
-		require.NoError(t, h.store.MockCluster.Delete(jobRecordKey(id), time.Second))
+		h.records.erase(t, id)
 		return nil
 	}
 	require.True(t, h.mustStep(t))
@@ -640,10 +640,10 @@ func TestACancelledJobWithNoOutputCostsNoEntry(t *testing.T) {
 	defer out.discard()
 	fmt.Fprint(out, "nowhere to put this\n")
 
-	before := h.store.appliedEntries()
+	before := h.records.appliedEntries()
 	require.NoError(t, h.settle(t.Context(), d, out, nil))
-	require.Equal(t, before+1, h.store.appliedEntries(),
-		"the ack is the one write: nothing produced is nothing to record")
+	require.Equal(t, before, h.records.appliedEntries(),
+		"the ack is the one write, and it is the queue's: nothing produced is nothing to record")
 }
 
 func TestALogIsFiledUnderTheRunsAttemptAndNotTheRecordsAtSettleTime(t *testing.T) {
@@ -656,9 +656,7 @@ func TestALogIsFiledUnderTheRunsAttemptAndNotTheRecordsAtSettleTime(t *testing.T
 	rec := h.mustRecord(t, id)
 	rec.Status = int32(buildv2.JobStatus_JobStatusClaimed)
 	rec.Attempt = 7
-	value, err := rec.encode()
-	require.NoError(t, err)
-	h.store.put(t, jobRecordKey(id), value)
+	h.plantRecord(t, rec)
 
 	out, err := h.output(Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 3})
 	require.NoError(t, err)
@@ -695,8 +693,8 @@ func TestRecordingALogOnACancelledJobMovesNothingElse(t *testing.T) {
 	require.Equal(t, before.UpdatedAt, after.UpdatedAt, "the clock moved and the record must not")
 	require.Equal(t, map[string]string{stamp(1): assetCID([]byte("cancelled midway\n"))}, after.Logs)
 
-	_, retained := h.store.Get(terminalIndexKey(time.Unix(after.UpdatedAt, 0), id))
-	require.True(t, retained, "the retention row still names the instant the record carries")
+	require.Contains(t, h.terminal(t, id), terminalRow(time.Unix(after.UpdatedAt, 0), id),
+		"the retention row still names the instant the job carries")
 }
 
 func TestALogIsNeverOpenedThroughASymlinkPlantedAtItsPath(t *testing.T) {
@@ -899,7 +897,7 @@ func TestARecordThatWentWhileItsLogWasStoredIsNotWrittenBack(t *testing.T) {
 	go func() { _, err := h.step(context.Background()); stepped <- err }()
 	<-storing
 
-	require.NoError(t, h.store.MockCluster.Delete(jobRecordKey(id), time.Second))
+	h.records.erase(t, id)
 	close(release)
 	require.NoError(t, <-stepped)
 
@@ -928,7 +926,7 @@ func TestAReopenedJobsLogReportsAStoreThatRefusedIt(t *testing.T) {
 
 	require.NoError(t, h.cancel(id))
 	require.NoError(t, h.retry(id))
-	h.store.failBatches(errors.New("the log is written and the store said no"))
+	h.records.failBatches(errors.New("the log is written and the store said no"))
 	close(release)
 
 	err := <-stepped

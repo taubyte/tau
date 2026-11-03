@@ -73,7 +73,7 @@ func TestWhatTheSectionsBarriersCost(t *testing.T) {
 		for i := range open {
 			h.push(t, testRef, shaOf(i))
 		}
-		require.Len(t, h.store.Keys(openIndexPrefix(testRepo)), open)
+		require.Len(t, h.open(t, testRepo), open)
 
 		n := spent(h, func() { require.NoError(t, h.reconcile()) })
 		t.Logf("openJobs=%d barriers=%d", open, n)
@@ -104,21 +104,20 @@ func TestWhatTheSectionsBarriersCost(t *testing.T) {
 		require.Equal(t, int64(1+open), n, "one for the pass, and one per push it made")
 	})
 
-	// The delete branch costs one per orphan-looking row, bounded by the repair work
-	// rather than the size of the cloud.
+	// The delete branch costs nothing more: the rows say which decision wrote them,
+	// so dropping one needs no barrier.
 	t.Run("a reconcile pass over orphaned rows", func(t *testing.T) {
 		h := newHarness(t)
 		const orphans = 4
 		for i := range orphans {
-			h.store.put(t, openIndexKey(testRepo, jobIDOf(t, shaOf(i))), nil)
+			h.plant(t, testRepo, jobIDOf(t, shaOf(i)))
 		}
-		require.Len(t, h.store.Keys(openIndexPrefix(testRepo)), orphans)
+		require.Len(t, h.open(t, testRepo), orphans)
 
 		n := spent(h, func() { require.NoError(t, h.reconcile()) })
 		t.Logf("orphans=%d barriers=%d", orphans, n)
-		require.Empty(t, h.store.Keys(openIndexPrefix(testRepo)))
-		require.Equal(t, int64(1+orphans), n,
-			"one for the pass, and one for each row this pass actually deleted")
+		require.Empty(t, h.open(t, testRepo))
+		require.Equal(t, int64(1), n, "one for the pass, however many rows it dropped")
 	})
 }
 

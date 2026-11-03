@@ -10,19 +10,25 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/host"
 
+	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/services/build"
 )
 
-// Service is build's private half: the host it answers on, the replicated
-// store it was handed, the queue over that store, and what it was given to run
+// Service is build's private half: the host it answers on, the raft group its
+// queue lives in, the kvdb database its jobs live in, and what it was given to run
 // work with.
 type Service struct {
 	host  host.Host
 	store Store
 	repos Repositories
 	cfg   Config
+
+	// records is where every job's events and rows live (events.go); journal
+	// appends to it and folds a job back.
+	records kvdb.Instance
+	journal *journal
 
 	confirm Confirmer
 
@@ -71,9 +77,10 @@ type Service struct {
 type Option func(*options) error
 
 type options struct {
-	host  host.Host
-	store Store
-	repos Repositories
+	host    host.Host
+	store   Store
+	records kvdb.Instance
+	repos   Repositories
 
 	runner        Runner
 	confirm       Confirmer
@@ -96,13 +103,24 @@ func WithHost(h host.Host) Option {
 	}
 }
 
-// WithStore is where the queue and the job records persist. Required.
+// WithStore is the raft group the queue lives in, and only the queue. Required.
 func WithStore(st Store) Option {
 	return func(o *options) error {
 		if st == nil {
 			return errors.New("build: no store")
 		}
 		o.store = st
+		return nil
+	}
+}
+
+// WithRecords is the kvdb database every job's events and rows live in. Required.
+func WithRecords(db kvdb.Instance) Option {
+	return func(o *options) error {
+		if db == nil {
+			return errors.New("build: no records")
+		}
+		o.records = db
 		return nil
 	}
 }
@@ -226,6 +244,8 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		return nil, errors.New("build: no host to answer on")
 	case o.store == nil:
 		return nil, errors.New("build: no store")
+	case o.records == nil:
+		return nil, errors.New("build: no records")
 	case o.repos == nil:
 		return nil, errors.New("build: no repositories to resolve a project with")
 	}
@@ -234,6 +254,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		meter:         o.meter,
 		host:          o.host,
 		store:         o.store,
+		records:       o.records,
 		repos:         o.repos,
 		cfg:           effective,
 		runner:        o.runner,
@@ -245,6 +266,8 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		running:       map[string]context.CancelFunc{},
 		logs:          map[string]runLog{},
 	}
+
+	s.journal = newJournal(s.records, s.host.ID().String(), func() time.Time { return s.now() })
 
 	// The queue reads the same clock this service does, so a test that moves
 	// time moves both.

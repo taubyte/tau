@@ -16,13 +16,13 @@ import (
 )
 
 // Pins the population of writers rather than any one member: a new
-// read-modify-write site over the job record would otherwise go unseen by every
+// read-modify-write site over a job would otherwise go unseen by every
 // interleaving test. Writes are methods on a handle that exists only inside a
 // section's closure (section.go), so these scans ask who may write and which key,
 // at review time; whether a write happened while still allowed is the runtime's,
-// measured in section_test.go. Key builders are enumerated from store.go and
-// classified by the key they return, and package-level declarations are scanned
-// too.
+// measured in section_test.go. Key builders are enumerated from events.go and
+// store.go and classified by the key they return, and package-level declarations
+// are scanned too.
 
 // span is one call's argument range: from its '(' to its ')'. A body handed to
 // withJob is one, and so is the closure handed to under().
@@ -78,7 +78,7 @@ type funcs struct {
 // enumeration rejects it.
 const packageLevel = "(package level)"
 
-// pairedQueueWrites pair with a record write; Claim and Sweep do not.
+// pairedQueueWrites pair with an event; Claim and Sweep do not.
 var pairedQueueWrites = map[string]bool{"Push": true, "Remove": true, "Ack": true, "Nack": true}
 
 // rowVerbs are backend/row's Set and Delete, the only calls that make a row. A
@@ -97,78 +97,89 @@ var barrierVerbs = map[string]bool{
 	"Push": true, "Remove": true, "Ack": true, "Nack": true, "Claim": true, "Sweep": true,
 }
 
-// Key builders are enumerated from store.go and classified by the key they return,
-// so two names producing one key are one builder; the enumeration is checked
-// against the invocation table.
+// Key builders are enumerated from events.go and store.go and classified by the
+// key they return, so two names producing one key are one builder; the
+// enumeration is checked against the invocation table.
 
-// sampleKeys invokes every builder store.go declares, with one canonical set of
+// sampleKeys invokes every builder those files declare, with one canonical set of
 // inputs so that two builders producing the same key produce the same string.
 func sampleKeys() map[string]string {
 	const (
 		sampleID      = "0123456789012345678901234567890123456789abc"
 		sampleProject = "project-of-" + testRepo
+		sampleWriter  = "builder"
 	)
 	at := time.Unix(1756000000, 0).UTC()
+	instant := at.UnixNano()
 
 	return map[string]string{
-		"seg":                seg(sampleID),
-		"stamp":              stamp(1),
-		"jobPrefix":          jobPrefix(sampleID),
-		"jobRecordKey":       jobRecordKey(sampleID),
-		"projectIndexPrefix": projectIndexPrefix(sampleProject),
-		"projectIndexKey":    projectIndexKey(sampleProject, sampleID),
-		"assetKey":           assetKey("prod", sampleID),
-		"artifactKey":        artifactKey(sampleProject, "prod", sampleID),
-		"artifactPrefix":     artifactPrefix(sampleProject),
-		"openIndexPrefix":    openIndexPrefix(testRepo),
-		"openIndexKey":       openIndexKey(testRepo, sampleID),
-		"openIndexRoot":      openIndexRoot(),
-		"refLastKey":         refLastKey(testRepo, testRef, testEnvironment),
-		"terminalIndexKey":   terminalIndexKey(at, sampleID),
+		"seg":          seg(sampleID),
+		"stamp":        stamp(1),
+		"assetKey":     assetKey("prod", sampleID),
+		"eventPrefix":  eventPrefix(sampleID),
+		"eventKey":     eventKey(sampleID, instant, sampleWriter),
+		"eventName":    eventName(instant, sampleWriter),
+		"projectRow":   projectRow(sampleProject, sampleID),
+		"projectRows":  projectRows(sampleProject),
+		"openRoot":     openRoot(),
+		"openRows":     openRows(testRepo),
+		"openRowsOf":   openRowsOf(testRepo, sampleID),
+		"openRow":      openRow(testRepo, sampleID, instant, sampleWriter),
+		"openRowNamed": openRowNamed(testRepo, sampleID, eventName(instant, sampleWriter)),
+		"anchorRows":   anchorRows(testRepo, testRef, testEnvironment),
+		"anchorRow":    anchorRow(testRepo, testRef, testEnvironment, instant, sampleID, sampleWriter),
+		"liveRows":     liveRows(sampleProject, testEnvironment, sampleID),
+		"liveRow":      liveRow(sampleProject, testEnvironment, sampleID, instant, sampleID, sampleWriter),
+		"besideName":   besideName(instant, sampleID, sampleWriter),
+		"terminalRow":  terminalRow(at, sampleID),
+		"terminalRows": terminalRows(),
 	}
 }
 
-// storeDeclares is every builder store.go declares: no receiver, one string
+// keyFiles are the files that build keys.
+var keyFiles = []string{"events.go", "store.go"}
+
+// storeDeclares is every builder the key files declare: no receiver, one string
 // result.
 func storeDeclares(t *testing.T) []string {
 	t.Helper()
 
-	var file *ast.File
-	for name, f := range parsePackage(t).Files {
-		if strings.HasSuffix(name, "store.go") {
-			file = f
-		}
-	}
-	require.NotNil(t, file, "store.go is the one file that builds a key")
-
 	var out []string
-	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Recv != nil || fn.Body == nil {
+	read := 0
+	for name, file := range parsePackage(t).Files {
+		if !slices.Contains(keyFiles, filepath.Base(name)) {
 			continue
 		}
-		if fn.Type.Results == nil || len(fn.Type.Results.List) != 1 {
-			continue
-		}
-		result := fn.Type.Results.List[0]
-		if len(result.Names) > 1 {
-			continue
-		}
-		if id, ok := result.Type.(*ast.Ident); ok && id.Name == "string" {
-			out = append(out, fn.Name.Name)
+		read++
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Recv != nil || fn.Body == nil {
+				continue
+			}
+			if fn.Type.Results == nil || len(fn.Type.Results.List) != 1 {
+				continue
+			}
+			result := fn.Type.Results.List[0]
+			if len(result.Names) > 1 {
+				continue
+			}
+			if id, ok := result.Type.(*ast.Ident); ok && id.Name == "string" {
+				out = append(out, fn.Name.Name)
+			}
 		}
 	}
+	require.Equal(t, len(keyFiles), read, "events.go and store.go are the files that build a key")
 	return out
 }
 
-// classes maps every builder to the key it produces. It fails when store.go and
-// the invocation table above disagree, because a builder nothing calls cannot
+// classes maps every builder to the key it produces. It fails when the key files
+// and the invocation table above disagree, because a builder nothing calls cannot
 // be classified and an unclassified builder is exactly the hole.
 func classes(t *testing.T) map[string]string {
 	t.Helper()
 	samples := sampleKeys()
 	require.ElementsMatch(t, storeDeclares(t), names(samples),
-		"store.go declares a key builder sampleKeys does not invoke, or invokes one it no longer declares — "+
+		"a key file declares a builder sampleKeys does not invoke, or invokes one it no longer declares — "+
 			"a builder is classified by the key it RETURNS, so an un-invoked one is unclassified and invisible")
 	return samples
 }
@@ -191,19 +202,19 @@ func sameKeyAs(all map[string]string, like string) map[string]bool {
 func wholeKeys(all map[string]string) map[string]bool {
 	out := map[string]bool{}
 	for name, key := range all {
-		if strings.HasPrefix(key, rootSegment+"/") && !strings.HasSuffix(key, "/") {
+		if strings.HasPrefix(key, "/"+rootSegment+"/") && !strings.HasSuffix(key, "/") {
 			out[name] = true
 		}
 	}
 	return out
 }
 
-// indexRowKeys is every row that is neither the record nor an attempt row: open,
-// project and retention indexes, the ref anchor, and the artifact row. A union of
-// classes, so a second spelling is in it.
+// indexRowKeys is every row that is not an event: the open, project and retention
+// rows, the ref anchor, and the live row. A union of classes, so a second spelling
+// is in it.
 func indexRowKeys(all map[string]string) map[string]bool {
 	out := map[string]bool{}
-	for _, like := range []string{"openIndexKey", "projectIndexKey", "terminalIndexKey", "refLastKey", "artifactKey"} {
+	for _, like := range []string{"openRow", "projectRow", "terminalRow", "anchorRow", "liveRow"} {
 		for name := range sameKeyAs(all, like) {
 			out[name] = true
 		}
@@ -215,7 +226,7 @@ func TestEveryKeyThisPackageWritesIsInSomeCensus(t *testing.T) {
 	keys := classes(t)
 	whole := wholeKeys(keys)
 	censuses := []map[string]bool{
-		sameKeyAs(keys, "jobRecordKey"),
+		sameKeyAs(keys, "eventKey"),
 		indexRowKeys(keys),
 	}
 
@@ -261,7 +272,7 @@ func recvName(fn *ast.FuncDecl) string {
 }
 
 // qualify names a declaration the way the tables below do: "Service.cancel",
-// "entry.commit", or a bare "jobRecordKey" for a function with no receiver.
+// "entry.commit", or a bare "eventKey" for a function with no receiver.
 func qualify(fn *ast.FuncDecl) string {
 	if name := receiver(fn); name != "" {
 		return name + "." + fn.Name.Name
@@ -289,7 +300,7 @@ func receiver(fn *ast.FuncDecl) string {
 // sourceFiles what is on disk, and the parser what it read. A file a filter
 // silently dropped would take it out of every census at once.
 var backendFiles = []string{
-	"authz.go", "config.go", "doc.go", "errors.go", "jobid.go", "jobs.go",
+	"authz.go", "config.go", "doc.go", "errors.go", "events.go", "jobid.go", "jobs.go",
 	"leader.go", "meter.go", "output.go", "queue.go", "reconcile.go", "rpc.go",
 	"runner.go", "section.go", "service.go", "store.go",
 }
@@ -525,8 +536,8 @@ func decls(all map[string]funcs, call string) []string {
 
 // reach is every call name a function makes, transitively through this
 // package's own functions. skip stops the walk at a name — readRecord() is
-// skipped wherever the question is "does this WRITE a record", because every
-// section reads one on the way in.
+// skipped wherever the question is "does this WRITE an event", because every
+// section reads the job on the way in.
 func reach(all map[string]funcs, start string, skip map[string]bool) map[string]bool {
 	out := map[string]bool{}
 	var walk func(string)
@@ -545,9 +556,9 @@ func reach(all map[string]funcs, start string, skip map[string]bool) map[string]
 	return out
 }
 
-// theRead is the one read of a job record, skipped by every question about
-// writes: a section takes it on the way in, so counting it would make every
-// transition a record writer.
+// theRead is the one read of a job, skipped by every question about writes: a
+// section takes it on the way in, so counting it would make every transition an
+// event writer.
 var theRead = map[string]bool{"readRecord": true}
 
 func bare(qualified string) string {
@@ -557,9 +568,9 @@ func bare(qualified string) string {
 	return qualified
 }
 
-// writesRecord reports whether a site's read decides an entry that writes the
-// job record, wherever in the call tree that entry is built. It asks for the
-// KEY rather than for one spelling of it.
+// writesRecord reports whether a site's read decides an entry that writes one of
+// the job's events, wherever in the call tree that entry is built. It asks for
+// the KEY rather than for one spelling of it.
 func writesRecord(all map[string]funcs, qualified string, recordKeys map[string]bool) bool {
 	for name := range reach(all, bare(qualified), theRead) {
 		if recordKeys[name] {
@@ -629,29 +640,39 @@ func writesIn(all map[string]funcs, f funcs) map[string][]token.Pos {
 	return out
 }
 
-func TestOnlyOneFunctionReadsAJobRecord(t *testing.T) {
+func TestOnlyOneFunctionReadsAJob(t *testing.T) {
 	all := pkgFuncs(t)
-	recordKeys := sameKeyAs(classes(t), "jobRecordKey")
+	keys := classes(t)
+	eventKeys := sameKeyAs(keys, "eventKey")
 
-	var readers []string
+	// The events are listed in one place, and every other read of a job folds them.
+	var listers []string
 	for n, f := range all {
-		if recordKeys[n] || !f.calls["Get"] {
+		if eventKeys[n] || !f.calls["eventPrefix"] {
 			continue
 		}
-		for builder := range recordKeys {
-			if f.calls[builder] {
-				readers = append(readers, n)
-				break
+		listers = append(listers, n)
+	}
+	require.ElementsMatch(t, []string{"journal.events"}, listers,
+		"every read of a job must go through journal.events, or the population below is incomplete")
+	require.ElementsMatch(t, []string{"journal.read"}, names(callers(all, "events")))
+	require.ElementsMatch(t, []string{"Service.readRecord", "journal.newest"}, names(callers(all, "read")),
+		"a job is read by the sections' one reader and by the anchor and live readers, which "+
+			"decide no write")
+	for _, builder := range names(eventKeys) {
+		for n, f := range all {
+			if n == "entry.event" || eventKeys[n] {
+				continue
 			}
+			require.False(t, f.calls[builder],
+				"%s names an event key, which only the entry that writes the event may", n)
 		}
 	}
-	require.ElementsMatch(t, []string{"Service.readRecord"}, readers,
-		"every read of a job record must go through readRecord(), or the population below is incomplete")
 
 	require.ElementsMatch(t,
-		[]string{"jobReader.First", "jobReader.Again", "Service.job"},
+		[]string{"jobReader.First", "Service.job"},
 		names(callers(all, "readRecord")),
-		"a fourth reader is either a section that did not go through the source enter names, or "+
+		"a third reader is either a section that did not go through the source enter names, or "+
 			"a read outside every section — and a read outside every section decides nothing, "+
 			"because there is no handle attached to it")
 
@@ -660,20 +681,17 @@ func TestOnlyOneFunctionReadsAJobRecord(t *testing.T) {
 	require.False(t, all["Service.enter"].calls["readRecord"],
 		"the entry point names the source; it does not take the read itself, or there would be "+
 			"a second answer to what a holding carries")
-	require.ElementsMatch(t, []string{"jobReader.Subject", "jobReader.First", "jobReader.Again"},
+	require.ElementsMatch(t, []string{"jobReader.Subject", "jobReader.First"},
 		methodsOn(t, "jobReader"),
-		"the source is three methods: what the section is about, and its two reads")
+		"the source is two methods: what the section is about, and its read")
 
-	// All three must name the same field: a source whose subject and read diverge
-	// would compose keys for one job while deciding on another's record (measured: the
-	// suite hangs).
+	// Both must name the same field: a source whose subject and read diverge would
+	// compose keys for one job while deciding on another's (measured: the suite hangs).
 	subject := reads(t, "jobReader.Subject", "id")
 	require.NotEmpty(t, subject, "the source must say what it is about by naming a field")
-	for _, read := range []string{"jobReader.First", "jobReader.Again"} {
-		require.Equal(t, subject, reads(t, read, "readRecord"),
-			"%s must read the field Subject names, or a section is about one job and decides "+
-				"on another's record", read)
-	}
+	require.Equal(t, subject, reads(t, "jobReader.First", "readRecord"),
+		"First must read the field Subject names, or a section is about one job and decides "+
+			"on another's events")
 }
 
 // reads is what a method hands to `call`, or returns when call is "" — as a
@@ -760,15 +778,15 @@ func methodsOn(t *testing.T, recv string) []string {
 // site is one section and the writes its read decides, a column per kind of
 // write.
 type site struct {
-	// record: the read decides an entry that writes the job record.
+	// record: the read decides an entry that writes one of the job's events.
 	record bool
 	// queue: the read decides a push, a withdrawal or an ack.
 	queue bool
 	// index: the read decides a write or delete of an index row.
 	index bool
-	// unbarriered says it entered through withJobUnbarriered, which reads
-	// WITHOUT a barrier — so it must take one with reread() before it decides
-	// anything, and must say why that placement is the safe one.
+	// unbarriered says it entered through withJobUnbarriered, which reads WITHOUT
+	// the queue's barrier — so it may decide no event, and must say why what it
+	// does decide is safe.
 	unbarriered bool
 	why         string
 }
@@ -783,23 +801,23 @@ func TestEveryReadModifyWriteOfAJobRecordIsOneSection(t *testing.T) {
 		"Service.create":            {record: true, queue: true, index: true},
 		"Service.createEnvironment": {record: true, queue: true, index: true},
 		// runner.go
-		"Service.begin":           {record: true, queue: true},
+		// A claim, or the ending of a job whose events never arrived, retained.
+		"Service.begin":           {record: true, queue: true, index: true},
 		"Service.plan":            {record: true, queue: true, index: true},
 		"Service.settle":          {record: true, queue: true, index: true},
 		"Service.drainDeadLetter": {record: true, queue: true, index: true},
-		// reconcile.go — the one section that reads without a barrier. mend
-		// triages on a read that decides nothing and takes the barrier, with
-		// reread(), on the branch that deletes an open-index row, so the cost is
-		// one per row that looks orphaned rather than one per open job per pass.
-		// barrier_test.go measures both numbers.
+		// reconcile.go — the one section that reads without a barrier, since the
+		// pass took one for all of them. barrier_test.go measures the number.
 		"Service.mend": {queue: true, index: true, unbarriered: true,
 			why: "a barrier before every row's read is one replicated entry per open job per " +
-				"pass, forever; the delete branch takes one and reads again under the same holding"},
+				"pass, forever. What mend deletes is named by the events its read saw, or is " +
+				"older than the cutoff, so a read behind the queue cannot drop a row it did not " +
+				"see written; its push is deduplicated by the queue"},
 	}
 
 	all := pkgFuncs(t)
 	keys := classes(t)
-	recordKeys, rows := sameKeyAs(keys, "jobRecordKey"), indexRowKeys(keys)
+	recordKeys, rows := sameKeyAs(keys, "eventKey"), indexRowKeys(keys)
 
 	found := map[string]funcs{}
 	for entry := range sectionEntries {
@@ -830,34 +848,17 @@ func TestEveryReadModifyWriteOfAJobRecordIsOneSection(t *testing.T) {
 			continue
 		}
 
-		// And the triage must decide nothing: every write follows reread()'s barrier.
 		require.NotEmpty(t, want.why, "%s: a section that reads without a barrier must say why that is safe", name)
-		reread, ok := f.at["reread"]
-		require.True(t, ok, "%s: a section that reads without a barrier must read again behind one", name)
-		for verb, positions := range writesIn(all, f) {
-			for _, at := range positions {
-				require.Greater(t, at, reread,
-					"%s: %s is decided before the read its barrier covers", name, verb)
-			}
-		}
+		require.False(t, want.record, "%s: a read without the barrier decides no event", name)
 	}
 
 	// The barrier is the source's, taken before the read every body decides on.
 	require.True(t, barriers(all, "lead"), "lead() must barrier, or no section has one")
-	for _, read := range []string{"jobReader.First", "jobReader.Again"} {
-		src := all[read]
-		require.Less(t, src.at["lead"], src.at["readRecord"],
-			"%s must barrier BEFORE the read a body's writes are decided on", read)
-	}
-
-	// The second read always barriers, which is why mend's exemption is safe. The
-	// reread-to-Again link is an interface call no scan follows, so its two ends are
-	// pinned.
-	require.False(t, all["jobReader.Again"].calls["barrier"],
-		"Again must not consult the flag: a second read that skipped the barrier when the "+
-			"first did is the exemption spreading from one branch to the whole section")
-	require.True(t, all["jobReader.First"].calls["barrier"],
-		"and First must, or withJob and withJobUnbarriered are the same door")
+	src := all["jobReader.First"]
+	require.Less(t, src.at["lead"], src.at["readRecord"],
+		"First must barrier BEFORE the read a body's writes are decided on")
+	require.True(t, src.calls["barrier"],
+		"and consult the flag, or withJob and withJobUnbarriered are the same door")
 }
 
 func TestEveryQueueWriteIsInsideTheSectionThatDecidedIt(t *testing.T) {
@@ -870,16 +871,16 @@ func TestEveryQueueWriteIsInsideTheSectionThatDecidedIt(t *testing.T) {
 		"Nack":   {},
 		"Claim": {
 			"Service.step": "the queue's own transition, taken under the queue's own group lock " +
-				"and decided on no job record. The record write it pairs with is begin's, and " +
-				"THAT is a section: a claim whose record turns out to be finished is dropped " +
-				"there and acked there.",
+				"and decided on no job. The event it pairs with is begin's, and THAT is a " +
+				"section: a claim whose job turns out to be finished is dropped there and " +
+				"acked there.",
 			"Service.drainDeadLetter": "the same, one queue over. The dead letter's group lock is " +
-				"what makes its claim exclusive; the record write it pairs with is inside the " +
+				"what makes its claim exclusive; the event it pairs with is inside the " +
 				"section below it.",
 		},
 		"Sweep": {
 			"Service.step": "moves expired claims on and hands nothing out. It reads no job " +
-				"record and decides nothing on one.",
+				"and decides nothing on one.",
 		},
 	}
 
@@ -968,9 +969,10 @@ func inBodyFrom(all map[string]funcs, fn, call string, seen map[string]bool) (bo
 	return true, ""
 }
 
-func TestARecordAndItsOpenRowMoveInOneEntry(t *testing.T) {
+func TestAnEventAndItsOpenRowMoveInOneEntry(t *testing.T) {
 	all := pkgFuncs(t)
-	openRowKeys := sameKeyAs(classes(t), "openIndexKey")
+	openRowKeys := sameKeyAs(classes(t), "openRow")
+	require.True(t, openRowKeys["openRowNamed"], "two spellings of one key are one builder")
 
 	var touches []string
 	for name, f := range all {
@@ -985,27 +987,27 @@ func TestARecordAndItsOpenRowMoveInOneEntry(t *testing.T) {
 		}
 	}
 	require.ElementsMatch(t,
-		[]string{"stated.open", "stated.dropOpen", "entry.dropOrphanedOpen"}, touches,
-		"an open-index row is built in three places: the two that move it with the record, and "+
-			"the one that drops an orphan")
+		[]string{"stated.open", "entry.dropRead", "entry.dropOrphanedOpen"}, touches,
+		"an open row is built in three places: the one that writes it beside its event, the one "+
+			"that drops the rows of events a read saw, and the one that drops a row with no events")
 
-	for _, name := range []string{"stated.open", "stated.dropOpen"} {
-		require.Equal(t, "stated", all[name].recv,
-			"%s must hang off an entry that carries the record, or the pairing is back to a scan", name)
-	}
-	require.ElementsMatch(t, []string{"entry.record"}, assembles(all, "stated"),
-		"a second way to MAKE a `stated` is a second way to write an open row without the record "+
+	require.Equal(t, "stated", all["stated.open"].recv,
+		"open must hang off an entry that carries the event, or the row is a claim about a job "+
+			"nothing wrote")
+	require.ElementsMatch(t, []string{"entry.event"}, assembles(all, "stated"),
+		"a second way to MAKE a `stated` is a second way to write an open row without the event "+
 			"it belongs to — which is the whole of what this type is for")
-	require.Equal(t, "entry", all["entry.record"].recv)
+	require.Equal(t, "entry", all["entry.event"].recv)
 
-	require.Equal(t, "entry", all["entry.dropOrphanedOpen"].recv)
+	require.ElementsMatch(t, []string{"stated.dropOpen", "entry.dropClosedOpen"}, names(callers(all, "dropRead")))
+	require.ElementsMatch(t, []string{"Service.mend"}, names(callers(all, "dropClosedOpen")))
 	require.ElementsMatch(t, []string{"Service.mend"}, names(callers(all, "dropOrphanedOpen")),
 		"the orphan delete is reconcile's alone: a second caller is a transition dropping the "+
-			"open row of a job whose record it has not shown to be gone")
+			"open row of a job whose events it has not shown to be absent")
 }
 
-// keyBuilder reports whether an expression calls one of store.go's whole-key
-// builders, the only expressions that may name a key an entry writes.
+// keyBuilder reports whether an expression calls one of the whole-key builders,
+// the only expressions that may name a key an entry writes.
 func keyBuilder(builders map[string]bool, expr ast.Expr) bool {
 	call, ok := expr.(*ast.CallExpr)
 	if !ok {
@@ -1058,7 +1060,7 @@ func TestEveryKeyAnEntryWritesIsBuiltWhereTheEntryIs(t *testing.T) {
 				}
 				made++
 				require.True(t, keyBuilder(builders, call.Args[0]),
-					"%s: %s(%s) — the key a row names must be built by one of store.go's "+
+					"%s: %s(%s) — the key a row names must be built by one of the key files' "+
 						"builders, right here. A key that arrives as a parameter is a door "+
 						"scoped by the shape of its argument, and anybody can walk through one",
 					qualify(fn), calleeName(call.Fun), types.ExprString(call.Args[0]))
@@ -1105,8 +1107,8 @@ func TestARespeltRowMakerIsStillCounted(t *testing.T) {
 func (e *entry) aliased(key string) {
 	mk := e.ops.Set
 	mk(key, nil)
-	bk := refLastKey
-	e.ops.Set(bk("github.com/evil/repo", "refs/heads/main"), nil)
+	bk := anchorRows
+	e.ops.Set(bk("github.com/evil/repo", "refs/heads/main", "prod"), nil)
 }
 `, 0)
 	require.NoError(t, err)
@@ -1134,69 +1136,57 @@ func (e *entry) aliased(key string) {
 		"a key built through an aliased builder is not a call to one, so the census fails on it")
 }
 
-func TestEveryWriteOfAJobRecordIsInsideASection(t *testing.T) {
+func TestEveryEventIsWrittenInsideASection(t *testing.T) {
 	all := pkgFuncs(t)
-	recordKeys := sameKeyAs(classes(t), "jobRecordKey")
+	eventKeys := sameKeyAs(classes(t), "eventKey")
 
 	var writers []string
 	for n, f := range all {
-		if recordKeys[n] || n == "Service.readRecord" {
+		if eventKeys[n] {
 			continue
 		}
-		for builder := range recordKeys {
-			if f.calls[builder] {
+		for builder := range eventKeys {
+			if f.calls[builder] && f.calls["Set"] {
 				writers = append(writers, n)
 				break
 			}
 		}
 	}
-	require.ElementsMatch(t, []string{"entry.record"}, writers,
-		"a second place that names a job record key is a second place that decides which job an "+
+	require.ElementsMatch(t, []string{"entry.event"}, writers,
+		"a second place that writes an event key is a second place that decides which job an "+
 			"entry is about")
 
-	// The record key is the handle's subject, and the record's id is overwritten with
-	// it.
-	record := all["entry.record"]
-	require.Equal(t, "entry", record.recv)
-	require.Contains(t, record.writesTo, "ID",
-		"record() must stamp the subject onto the record it encodes, or a record can still say "+
+	// The event's key is the handle's subject, and the folded record's id is
+	// overwritten with it.
+	event := all["entry.event"]
+	require.Equal(t, "entry", event.recv)
+	require.Contains(t, event.writesTo, "ID",
+		"event() must stamp the subject onto the record it hands on, or a record can still say "+
 			"it is a job the section was not entered on")
 
-	// The four transitions that write one all open a section to do it, and
-	// ends() is the shared terminal write, so it is a method on the handle and
-	// its callers are the ones that must open the section.
-	require.ElementsMatch(t,
-		[]string{"Service.create", "Service.createEnvironment", "Service.begin", "Service.retry", "held.ends", "held.logged"},
-		names(callers(all, "record")))
-	for name := range callers(all, "record") {
-		held, chain := inBody(all, name, "record")
-		require.True(t, held, "%s writes a record outside its section — %s", name, chain)
+	// One method per kind of event, each on the entry, and every caller of one is
+	// inside a section.
+	kinds := []string{
+		"entry.created", "entry.claimed", "entry.settled", "entry.cancelled", "entry.retried", "entry.loggedEvent",
 	}
+	require.ElementsMatch(t, kinds, names(callers(all, "event")))
+	for _, kind := range kinds {
+		for name := range callers(all, bare(kind)) {
+			held, chain := inBody(all, name, bare(kind))
+			require.True(t, held, "%s writes an event outside its section — %s", name, chain)
+		}
+	}
+	require.ElementsMatch(t, []string{"Service.create", "Service.createEnvironment"}, names(callers(all, "created")))
+	require.ElementsMatch(t, []string{"Service.begin", "entry.settled"}, names(callers(all, "claimed")),
+		"a claim is begin's, and the claim a settle of an unclaimed job opens")
 	for name := range callers(all, "ends") {
 		held, chain := inBody(all, name, "ends")
-		require.True(t, held, "%s writes a terminal record outside its section — %s", name, chain)
+		require.True(t, held, "%s ends a job outside its section — %s", name, chain)
 	}
 }
 
 func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 	builders := wholeKeys(classes(t))
-
-	// The one row a job owns not keyed by its id, named so it is not a general
-	// escape.
-	notKeyedByTheJob := map[string]string{
-		"refLastKey": "the ref anchor is keyed by (repository, ref), because the thing that reads " +
-			"it is the NEXT build of that ref, which is a different job. All three of its parts " +
-			"come off the record THIS SECTION READ, so the anchor an entry can move is the one " +
-			"belonging to the job the read was taken on.",
-	}
-
-	// The artifact row, keyed by (project, deployment, resource): its project comes
-	// off the record read, the other two from this run's `produced`, a typed pair.
-	fromThisRunsOutput := map[string]string{
-		"artifactKey": "the artifact row is keyed by (project, deployment, resource): the project " +
-			"comes off the record THIS SECTION READ, and the other two are fields of the produced " +
-			"value this entry is writing onto that record.",
-	}
 
 	// HOW EACH WRITER NAMES ITS SUBJECT, spelled against the receiver so that a
 	// method that renamed its receiver cannot make the check vacuous.
@@ -1229,35 +1219,16 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 
 				key, ok := call.Args[0].(*ast.CallExpr)
 				require.True(t, ok && keyBuilder(builders, key),
-					"%s writes %s, which is not a key store.go builds", owner, types.ExprString(call.Args[0]))
+					"%s writes %s, which is not a key the key files build", owner, types.ExprString(call.Args[0]))
 
 				builder := calleeName(key.Fun)
 				rows[owner] = append(rows[owner], builder)
 
+				// EVERY ROW IS KEYED BY ITS JOB: the anchor and the live row, which a
+				// different job reads, carry the job they were written beside too.
 				var args []string
 				for _, arg := range key.Args {
 					args = append(args, types.ExprString(arg))
-				}
-				if why, exempt := notKeyedByTheJob[builder]; exempt {
-					for _, arg := range args {
-						require.True(t, strings.HasPrefix(arg, e+".h.rec()."),
-							"%s builds %s from %q, which is neither the section's subject nor a "+
-								"field of the record this section READ. %s", owner, builder, arg, why)
-					}
-					return true
-				}
-				if why, exempt := fromThisRunsOutput[builder]; exempt {
-					for _, arg := range args {
-						// The output's parts are fields of a loop variable over this run's assets, never a
-						// literal or composed string.
-						require.True(t,
-							strings.HasPrefix(arg, e+".h.rec().") ||
-								strings.HasPrefix(arg, "ref."),
-							"%s builds %s from %q, which is neither a field of the record this "+
-								"section READ nor a field of what this run produced. %s",
-							owner, builder, arg, why)
-					}
-					return true
 				}
 				require.Contains(t, args, e+"."+subject,
 					"%s builds %s from %v, and none of those is the subject its writer was "+
@@ -1271,29 +1242,29 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 	// Every row this package can write is in this table, so a new Set or Delete caller
 	// fails here until classified.
 	require.Equal(t, map[string][]string{
-		"entry.record":           {"jobRecordKey"},
-		"entry.dropRetained":     {"terminalIndexKey"},
-		"entry.dropOrphanedOpen": {"openIndexKey"},
-		"stated.open":            {"openIndexKey"},
-		"stated.dropOpen":        {"openIndexKey"},
-		"stated.inProject":       {"projectIndexKey"},
-		"stated.retained":        {"terminalIndexKey"},
-		"stated.anchor":          {"refLastKey"},
-		"stated.artifacts":       {"artifactKey"},
+		"entry.event":            {"eventKey"},
+		"entry.dropRetained":     {"terminalRow"},
+		"entry.dropRead":         {"openRowNamed"},
+		"entry.dropOrphanedOpen": {"openRowNamed"},
+		"stated.open":            {"openRow"},
+		"stated.inProject":       {"projectRow"},
+		"stated.retained":        {"terminalRow"},
+		"stated.anchor":          {"anchorRow"},
+		"stated.artifacts":       {"liveRow"},
 	}, rows, "one row kind per method, and every method named")
 
 	// Set and Delete are the only things that make a row; row.Entry's slice is
 	// unexported.
 	all := pkgFuncs(t)
 	require.ElementsMatch(t, []string{
-		"entry.record", "stated.open", "stated.inProject", "stated.retained", "stated.anchor",
+		"entry.event", "stated.open", "stated.inProject", "stated.retained", "stated.anchor",
 		"stated.artifacts",
 	}, names(callers(all, "Set")),
 		"a row with a value in it is made by a method in the table above and by nothing else — "+
 			"including a method that only takes the method VALUE, which counts here exactly as a "+
 			"call does")
 	require.ElementsMatch(t, []string{
-		"stated.dropOpen", "entry.dropRetained", "entry.dropOrphanedOpen",
+		"entry.dropRead", "entry.dropRetained", "entry.dropOrphanedOpen",
 	}, names(callers(all, "Delete")),
 		"and a row removed likewise")
 
@@ -1308,6 +1279,47 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 	require.ElementsMatch(t, []string{"held.writes"}, assembles(all, "entry"),
 		"and an entry is made in one place, so the rows a commit applies are the ones its own "+
 			"methods put there")
+}
+
+// A KEY WITH A VALUE IS NEVER WRITTEN BY TWO NODES WITH DIFFERENT CONTENT
+// (AGENTS.md rule 1): every row that carries a value names the event it was
+// written beside — its instant and its writer — and every other row is empty, so
+// two writers of one key write the same thing.
+func TestNoTwoWritersCanPutDifferentContentAtOneKey(t *testing.T) {
+	carriesAValue := map[string]bool{}
+	empty := map[string]bool{}
+	for _, file := range parsePackage(t).Files {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok || calleeName(call.Fun) != "Set" || len(call.Args) != 2 {
+					return true
+				}
+				key, ok := call.Args[0].(*ast.CallExpr)
+				require.True(t, ok, "%s sets a key no builder made", qualify(fn))
+				builder := calleeName(key.Fun)
+				if id, ok := call.Args[1].(*ast.Ident); ok && id.Name == "nil" {
+					empty[builder] = true
+					return true
+				}
+				carriesAValue[builder] = true
+				var args []string
+				for _, arg := range key.Args {
+					args = append(args, types.ExprString(arg))
+				}
+				require.True(t, slices.ContainsFunc(args, func(a string) bool { return strings.HasSuffix(a, "journal.writer") }),
+					"%s puts a value at %s(%v), whose key names no writer: two nodes writing it "+
+						"write one key, and one of them is lost", qualify(fn), builder, args)
+				return true
+			})
+		}
+	}
+	require.Equal(t, map[string]bool{"eventKey": true, "anchorRow": true, "liveRow": true}, carriesAValue)
+	require.Equal(t, map[string]bool{"openRow": true, "projectRow": true, "terminalRow": true}, empty)
 }
 
 func TestTheClaimAndTheRegistrationAreOneSection(t *testing.T) {
@@ -1410,7 +1422,7 @@ func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 		"held.stopRun":  "running",
 	}
 	// The handle and the things carrying one: entry is made by held.writes, stated by
-	// entry.record.
+	// entry.event.
 	carriesTheHandle := map[string]bool{"held": true, "entry": true, "stated": true}
 
 	for fn, verb := range writes {
@@ -1428,14 +1440,11 @@ func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 	// Each carrier has one constructor.
 	require.ElementsMatch(t, []string{"held.writes"}, assembles(all, "entry"),
 		"an entry is made by the handle and nowhere else")
-	require.ElementsMatch(t, []string{"entry.record"}, assembles(all, "stated"))
+	require.ElementsMatch(t, []string{"entry.event"}, assembles(all, "stated"))
 
-	// backend/section's three doors (Write, Reread, Subject) each have one caller
-	// here.
+	// backend/section's two doors (Write, Subject) each have one caller here.
 	require.ElementsMatch(t, []string{"held.under"}, onTheHolding(t, "Write"),
 		"the gate is the only thing that asks the holding to write")
-	require.ElementsMatch(t, []string{"held.reread"}, onTheHolding(t, "Reread"),
-		"and the one second read is the only thing that replaces what a holding carries")
 	require.ElementsMatch(t, []string{"held.id"}, onTheHolding(t, "Subject"),
 		"and the subject is read in one place, which is what every key is built from — a "+
 			"second reader of it is a second answer to what this section is about")

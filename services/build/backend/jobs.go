@@ -99,10 +99,15 @@ func (s *Service) list(projectID string, emit func(*buildv2.JobRef) error) error
 		return err
 	}
 
-	keys := s.store.Keys(projectIndexPrefix(projectID))
+	ctx, stop := context.WithTimeout(context.Background(), s.cfg.Queue.ApplyTimeout)
+	defer stop()
+	keys, err := s.records.List(ctx, projectRows(projectID))
+	if err != nil {
+		return errUnavailable("listing project %s's jobs: %v", projectID, err)
+	}
 	slices.Sort(keys)
 	for _, key := range keys {
-		id, err := idFromIndexKey(key)
+		id, err := lastSegmentOf(key)
 		if err != nil {
 			return errInternal("%v", err)
 		}
@@ -159,8 +164,8 @@ func (s *Service) retry(id string) error {
 		return err
 	}
 
-	// The reopening, push included, is one section with its deciding read: released
-	// early, reconcile could delete the open-index row just written.
+	// The reopening, push included, is one section with its deciding read, so this
+	// node's own transitions on the job are ordered around it.
 	return s.withJob(id, func(j *held) error {
 		if !j.found() {
 			return errNotFound("no job %s", id)
@@ -170,15 +175,10 @@ func (s *Service) retry(id string) error {
 			return errFailedPrecondition("job %s is %s, not finished", id, rec.status())
 		}
 
-		rec.Status = int32(buildv2.JobStatus_JobStatusOpen)
-		rec.UpdatedAt = s.now().Unix()
-		rec.ClaimedUntil = 0
-		rec.Holder = ""
-		rec.Reason = ""
-
 		// dropRetained reads the retention timestamp off the record this section read,
 		// not the one being written.
-		if err := j.writes().record(rec).open().dropRetained().commit("reopening"); err != nil {
+		reopened := j.writes().retried().open()
+		if err := reopened.dropRetained().commit("reopening"); err != nil {
 			return err
 		}
 
@@ -226,16 +226,21 @@ func (s *Service) Built(project, environment, resource string) (string, error) {
 		return "", err
 	}
 
-	cid, ok := s.store.Get(artifactKey(project, environment, resource))
+	ctx, stop := context.WithTimeout(context.Background(), s.cfg.Queue.ApplyTimeout)
+	defer stop()
+	cid, _, ok, err := s.journal.live(ctx, project, environment, resource)
+	if err != nil {
+		return "", err
+	}
 	if !ok {
 		// Nothing built is NotFound, which differs from needing no build; the caller
 		// knows which it asked about.
 		return "", errNotFound("build: nothing has been built for %s/%s's %s", project, environment, resource)
 	}
-	if len(cid) == 0 {
+	if cid == "" {
 		return "", errInternal("build: %s/%s's %s names an empty artifact", project, environment, resource)
 	}
-	return string(cid), nil
+	return cid, nil
 }
 
 func (h *jobHandler) Follow(ctx context.Context, req *connect.Request[buildv2.FollowRequest], stream *connect.ServerStream[buildv2.LogChunk]) error {

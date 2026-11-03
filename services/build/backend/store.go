@@ -5,20 +5,12 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strings"
-	"time"
 
-	"github.com/taubyte/tau/pkg/proto/codec"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
-// store.go is the key layout, the only file here that builds a key:
-//
-//	build/job/<seg(id)>/record                       the job itself
-//	build/index/project/<seg(pid)>/<seg(id)>          how a caller finds a job
-//	build/index/open/<seg(repokey)>/<seg(id)>         non-terminal jobs
-//	build/index/ref/<seg(repokey)>/<seg(ref)>/last    -> the last sha finished here
-//	build/index/terminal/<%020d unix>/<seg(id)>       retention scan
+// store.go is how an id becomes a key segment and what a job is once folded; the
+// keys themselves are events.go's.
 //
 // A segment is a literal, an id through seg(), or a fixed-width decimal. seg() is
 // unpadded base64url, so an encoded id never contains "/" and is never "." or
@@ -26,19 +18,13 @@ import (
 // "/" (GitLab subgroups, refs/heads/feature/x); spliced raw, an attacker's ref
 // could land rows in another job's prefix.
 //
-// Every prefix ends in "/": raft's Keys is a plain HasPrefix and there is no
-// anchored listing, so Keys("build/job/AAA") would also return "build/job/AAAB"
-// rows.
+// Every prefix ends in "/": a listing is a plain prefix match, so a prefix that
+// stopped mid-segment would also list another id's rows.
 const (
 	rootSegment     = "build"
 	jobSegment      = "job"
-	recordSegment   = "record"
-	indexSegment    = "index"
 	projectSegment  = "project"
 	openSegment     = "open"
-	refSegment      = "ref"
-	artifactSegment = "artifact"
-	lastSegment     = "last"
 	terminalSegment = "terminal"
 
 	// stampWidth zero-pads decimals so byte order is numeric order (AGENTS.md rule 7).
@@ -67,25 +53,6 @@ func stamp(n int64) string {
 	return fmt.Sprintf("%0*d", stampWidth, n)
 }
 
-// jobPrefix is everything one job owns, kept a prefix so another row kind would
-// be a sibling under it.
-func jobPrefix(id string) string {
-	return rootSegment + "/" + jobSegment + "/" + seg(id) + "/"
-}
-
-func jobRecordKey(id string) string { return jobPrefix(id) + recordSegment }
-
-// Every index row is set membership: the id is the last segment and the value is
-// empty.
-
-func projectIndexPrefix(projectID string) string {
-	return rootSegment + "/" + indexSegment + "/" + projectSegment + "/" + seg(projectID) + "/"
-}
-
-func projectIndexKey(projectID, id string) string {
-	return projectIndexPrefix(projectID) + seg(id)
-}
-
 // assetKey names one built artifact, composed here so a worker reproduces the key
 // the build wrote. The deployment is in it, since build stanzas differ per
 // deployment.
@@ -93,79 +60,8 @@ func assetKey(environment, resourceID string) string {
 	return environment + "/" + resourceID
 }
 
-// artifactKey is what a project's deployment currently runs for one resource. The
-// project half is the job's own and the rest seg-escaped, so a runner cannot
-// reach outside its project's subtree.
-func artifactKey(projectID, environment, resourceID string) string {
-	return artifactPrefix(projectID) + seg(assetKey(environment, resourceID))
-}
-
-func artifactPrefix(projectID string) string {
-	return rootSegment + "/" + artifactSegment + "/" + seg(projectID) + "/"
-}
-
-func openIndexPrefix(repositoryKey string) string {
-	return rootSegment + "/" + indexSegment + "/" + openSegment + "/" + seg(repositoryKey) + "/"
-}
-
-func openIndexKey(repositoryKey, id string) string {
-	return openIndexPrefix(repositoryKey) + seg(id)
-}
-
-// openIndexRoot is every open job of every repository — what reconcile walks.
-func openIndexRoot() string {
-	return rootSegment + "/" + indexSegment + "/" + openSegment + "/"
-}
-
-// refLastKey holds the last commit this service finished for a ref in one
-// environment, the diff anchor it computes itself rather than taking from the
-// webhook. Per environment, since each builds on its own.
-func refLastKey(repositoryKey, ref, environment string) string {
-	return rootSegment + "/" + indexSegment + "/" + refSegment + "/" +
-		seg(repositoryKey) + "/" + seg(ref) + "/" + seg(environment) + "/" + lastSegment
-}
-
-// terminalIndexKey is the retention row, unix seconds first so a listing is
-// oldest-first. Nothing sweeps it yet: how long a record must survive to keep
-// replayed webhooks idempotent is a security decision.
-func terminalIndexKey(at time.Time, id string) string {
-	return rootSegment + "/" + indexSegment + "/" + terminalSegment + "/" +
-		stamp(at.Unix()) + "/" + seg(id)
-}
-
-// parseOpenIndexKey reads both halves of an open-index row, so mend's delete is
-// spelled openIndexKey(repositoryKey, id).
-func parseOpenIndexKey(key string) (repositoryKey, id string, err error) {
-	rest, ok := strings.CutPrefix(key, openIndexRoot())
-	if !ok {
-		return "", "", fmt.Errorf("key %q is not an open index row", key)
-	}
-	parts := strings.Split(rest, "/")
-	if len(parts) != 2 {
-		return "", "", fmt.Errorf("key %q is not an open index row", key)
-	}
-	if repositoryKey, err = unseg(parts[0]); err != nil {
-		return "", "", err
-	}
-	if id, err = unseg(parts[1]); err != nil {
-		return "", "", err
-	}
-	return repositoryKey, id, nil
-}
-
-// idFromIndexKey reads the job id off the end of an index row.
-func idFromIndexKey(key string) (string, error) {
-	i := strings.LastIndex(key, "/")
-	if i < 0 {
-		return "", fmt.Errorf("index key %q has no id segment", key)
-	}
-	return unseg(key[i+1:])
-}
-
-// jobRecord is what build/job/<id>/record holds: the whole job, including its
-// runs' cids. The maps are fields despite AGENTS.md rule 1 because every write of
-// this record is made by the body that read it, inside its section, so there is
-// one writer. Stored as buildv2.JobRecord; it never crosses a wire.
+// jobRecord is a job as the fold of its events makes it (events.go), including its
+// runs' cids. It is never stored: what is stored is the events.
 type jobRecord struct {
 	ID            string
 	Status        int32
@@ -206,6 +102,11 @@ type jobRecord struct {
 	Prelude string
 	// Children is the environment jobs a plan enqueued.
 	Children []string
+
+	// seen is every event the fold read, by eventName, and whether it applied. A
+	// drop takes only rows of events it read, since a row beside one it did not see
+	// is a decision it did not make; a reader counts only rows of applied ones.
+	seen map[string]bool
 }
 
 // with is this record plus what a run produced. The maps are copied: the record is
@@ -245,39 +146,10 @@ func merged(into, from map[string]string) map[string]string {
 	return out
 }
 
-func (r jobRecord) encode() ([]byte, error) {
-	m := buildv2.JobRecord{
-		Id: r.ID, Status: buildv2.JobStatus(r.Status), RepositoryKey: r.RepositoryKey, Ref: r.Ref,
-		CommitSha: r.CommitSHA, ProjectId: r.ProjectID, CreatedAt: r.CreatedAt, Attempt: r.Attempt,
-		UpdatedAt: r.UpdatedAt, ClaimedUntil: r.ClaimedUntil, Holder: r.Holder, Reason: r.Reason,
-		Logs: r.Logs, Assets: r.Assets, Environment: r.Environment, Prelude: r.Prelude, Children: r.Children,
-	}
-	return m.MarshalVT()
-}
-
-// decodeJobRecord reads one record back and checks it is the record the key names:
-// a row saying it is another job is refused. key is for the message, id what it
-// must match; an empty id never matches.
-func decodeJobRecord(key, id string, raw []byte) (jobRecord, error) {
-	var m buildv2.JobRecord
-	if err := codec.Decode(raw, &m); err != nil {
-		return jobRecord{}, fmt.Errorf("corrupt job record at %q: %w", key, err)
-	}
-	if m.Id != id {
-		return jobRecord{}, fmt.Errorf("corrupt job record at %q: it says it is job %q", key, m.Id)
-	}
-	return jobRecord{
-		ID: m.Id, Status: int32(m.Status), RepositoryKey: m.RepositoryKey, Ref: m.Ref,
-		CommitSHA: m.CommitSha, ProjectID: m.ProjectId, CreatedAt: m.CreatedAt, Attempt: m.Attempt,
-		UpdatedAt: m.UpdatedAt, ClaimedUntil: m.ClaimedUntil, Holder: m.Holder, Reason: m.Reason,
-		Logs: m.Logs, Assets: m.Assets, Environment: m.Environment, Prelude: m.Prelude, Children: m.Children,
-	}, nil
-}
-
 func (r jobRecord) status() buildv2.JobStatus { return buildv2.JobStatus(r.Status) }
 
 // terminal reports whether this job is finished for good. A terminal job is
-// never claimed, never re-queued by reconcile, and its open-index row is gone.
+// never claimed, never re-queued by reconcile, and its open rows go.
 func (r jobRecord) terminal() bool { return finished(r.status()) }
 
 // finished is terminal for a status, which is how a Job carries it.

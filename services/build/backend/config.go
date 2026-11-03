@@ -30,8 +30,8 @@ const (
 	// DefaultClaimInterval is how often the claim loop cycles when it found
 	// nothing to do.
 	DefaultClaimInterval = time.Second
-	// DefaultReconcileEvery is how often the open index is walked for records
-	// whose queue item was lost.
+	// DefaultReconcileEvery is how often the open rows are walked for jobs whose
+	// queue item was lost.
 	DefaultReconcileEvery = 5 * time.Minute
 	// Admission control on stranger-authored input: every Enqueue argument comes from
 	// an unauthenticated POST to the frontend.
@@ -49,6 +49,11 @@ const (
 	// It is spent inside ClaimMargin, before the ack that is this service's
 	// commit point, which is why withDefaults refuses one that does not fit.
 	DefaultPublishTimeout = 10 * time.Second
+	// DefaultRecordReads and DefaultRecordReadInterval are how long a builder waits for
+	// a claimed job's record to reach its replica before it fails the job (claims
+	// arrive through raft, records through kvdb, and kvdb can lag).
+	DefaultRecordReads        = 5
+	DefaultRecordReadInterval = 200 * time.Millisecond
 )
 
 // Config is what an operator declared. A plain value: no live objects, no
@@ -70,7 +75,7 @@ type Config struct {
 	// DefaultClaimInterval.
 	ClaimInterval time.Duration `yaml:"claimInterval"`
 
-	// ReconcileEvery is how often the open index is reconciled against the
+	// ReconcileEvery is how often the open rows are reconciled against the
 	// queue. Zero means DefaultReconcileEvery.
 	ReconcileEvery time.Duration `yaml:"reconcileEvery"`
 
@@ -99,6 +104,12 @@ type Config struct {
 	// PublishTimeout bounds the handoff of a finished log to the asset store.
 	// Zero means DefaultPublishTimeout.
 	PublishTimeout time.Duration `yaml:"publishTimeout"`
+
+	// RecordReads is how many times a builder reads a claimed job's record before
+	// failing the job as one whose record never reached it, RecordReadInterval
+	// apart. A user retries such a job. Zero means the defaults.
+	RecordReads        int           `yaml:"recordReads"`
+	RecordReadInterval time.Duration `yaml:"recordReadInterval"`
 }
 
 // defaultLogDir is the scratch log directory, per uid so a shared /tmp name cannot
@@ -122,6 +133,7 @@ func (c Config) withDefaults() (Config, error) {
 		{"claimInterval", c.ClaimInterval},
 		{"reconcileEvery", c.ReconcileEvery},
 		{"publishTimeout", c.PublishTimeout},
+		{"recordReadInterval", c.RecordReadInterval},
 	} {
 		if d.value < 0 {
 			return c, fmt.Errorf("build: %s must not be negative", d.name)
@@ -136,6 +148,7 @@ func (c Config) withDefaults() (Config, error) {
 		{"maxOpenPerRepo", int64(c.MaxOpenPerRepo)},
 		{"maxMessageBytes", int64(c.MaxMessageBytes)},
 		{"maxLogBytes", c.MaxLogBytes},
+		{"recordReads", int64(c.RecordReads)},
 	} {
 		if n.value < 0 {
 			return c, fmt.Errorf("build: %s must not be negative", n.name)
@@ -144,6 +157,12 @@ func (c Config) withDefaults() (Config, error) {
 
 	if c.BuildTimeout == 0 {
 		c.BuildTimeout = DefaultBuildTimeout
+	}
+	if c.RecordReads == 0 {
+		c.RecordReads = DefaultRecordReads
+	}
+	if c.RecordReadInterval == 0 {
+		c.RecordReadInterval = DefaultRecordReadInterval
 	}
 	if c.ClaimMargin == 0 {
 		c.ClaimMargin = DefaultClaimMargin
@@ -199,23 +218,18 @@ func (c Config) withDefaults() (Config, error) {
 	return c, nil
 }
 
-// Store is pkg/queue's Store, method for method, so the claim and the job record
-// are written by one writer against one log and can disagree only in the
-// direction a redelivery repairs.
+// Store is pkg/queue's Store, method for method: the raft group the work queue
+// lives in. Nothing else of this service is in it; a job's events are in kvdb
+// (WithRecords, events.go), since every write to raft is a replicated log entry.
 //
-//   - Get: every single-job read is by an id this service derived or was handed.
-//   - Keys: the only scan; the key grammar carries every listing (store.go).
-//   - Batch: every multi-key transition is one entry. No Set or Delete, so half a
-//     transition cannot be written.
-//   - Barrier: a new leader may hold committed but unapplied entries; Enqueue
-//     without one could create a duplicate job.
+//   - Get, Keys, Batch: the queue's own.
+//   - Barrier: a new leader may hold committed but unapplied queue entries; a
+//     transition reads behind one.
 //   - IsLeader: a cheap pre-check; Batch fails the same way on a follower.
 //
 // Deliberately absent: Close (the composition root owns the cluster) and Leader
 // and the membership methods, so "a follower answers Unavailable" is the only
 // design and forwarding, placement and admission stay with the cluster service.
-// No kvdb: build's central fact is a mutual exclusion, which a CRDT cannot
-// express.
 type Store interface {
 	Get(key string) ([]byte, bool)
 	Keys(prefix string) []string
@@ -224,9 +238,6 @@ type Store interface {
 	IsLeader() bool
 }
 
-// One injected value is both the queue's store and the job records', held by
-// the compiler rather than by a comment. raft.Cluster and *raft.MockCluster
-// both satisfy it.
 var (
 	_ queue.Store = (Store)(nil)
 	_ Store       = (raft.Cluster)(nil)

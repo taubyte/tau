@@ -57,7 +57,7 @@ func TestTheOnlyThingThatHandsOutAHoldingIsDo(t *testing.T) {
 	}
 
 	require.ElementsMatch(t,
-		[]string{"Do", "Held", "Subject", "Value", "Found", "Write", "Reread"},
+		[]string{"Do", "Held", "Subject", "Value", "Found", "Write"},
 		exported,
 		"the exported surface of this package is the whole of what a caller can spend")
 
@@ -76,8 +76,8 @@ func TestNothingExportedTakesAValueFromItsCaller(t *testing.T) {
 	// THE CONTROL. The same scan over a declaration that DOES take one finds
 	// it, so the emptiness above is a fact about this package rather than about
 	// a scan that looks for nothing.
-	require.Equal(t, []string{"Reread"}, producers(t, parse(t, `package section
-		func (h *Holding[T]) Reread(read func() (T, bool, error)) error { return nil }`)))
+	require.Equal(t, []string{"Install"}, producers(t, parse(t, `package section
+		func (h *Holding[T]) Install(read func() (T, bool, error)) error { return nil }`)))
 }
 
 // producers is every declaration that takes a function returning T — the shape
@@ -227,7 +227,6 @@ func TestTheZeroHoldingIsLiveInNothing(t *testing.T) {
 	var none Holding[string]
 	require.ErrorIs(t, none.Write(func() error { return nil }), ErrStale)
 	require.ErrorContains(t, none.Write(func() error { return nil }), "no section ever handed out")
-	require.ErrorIs(t, none.Reread(), ErrStale)
 	require.Empty(t, none.Subject(), "and it is about nothing, so it composes no key either")
 	require.Empty(t, none.Value())
 	require.False(t, none.Found())
@@ -313,46 +312,6 @@ func TestAReadThatFoundNothingStillDecides(t *testing.T) {
 	}))
 }
 
-func TestRereadReplacesWhatTheHoldingCarries(t *testing.T) {
-	var l Lock[string]
-	src := &mutable{subject: "a job", value: "triage", found: true}
-
-	require.NoError(t, l.Do(src, func(h Holding[string]) error {
-		require.Equal(t, "triage", h.Value())
-
-		src.value = "decided"
-		require.NoError(t, h.Reread())
-		require.Equal(t, "decided", h.Value())
-		require.True(t, h.Found())
-		require.Equal(t, "a job", h.Subject(), "and a second read is a second read of the SAME thing")
-
-		// A failed re-read leaves what was there: there is no third state to
-		// install and nothing has happened.
-		src.err = errors.New("the store is gone")
-		require.ErrorIs(t, h.Reread(), src.err)
-		require.Equal(t, "decided", h.Value())
-		return nil
-	}))
-	require.Equal(t, 2, src.agains, "Reread reads, every time, rather than taking what it is given")
-}
-
-func TestAnEscapedHandleCannotRereadItselfAlive(t *testing.T) {
-	var l Lock[string]
-	src := &mutable{subject: "a job", value: "x", found: true}
-
-	var escaped Holding[string]
-	require.NoError(t, l.Do(src, func(h Holding[string]) error {
-		escaped = h
-		return nil
-	}))
-
-	src.value = "fresh"
-	require.ErrorIs(t, escaped.Reread(), ErrStale)
-	require.Equal(t, "x", escaped.Value())
-	require.Equal(t, 0, src.agains, "and the read it would have decided on is never even taken")
-	require.ErrorIs(t, escaped.Write(func() error { return nil }), ErrStale)
-}
-
 func TestACopyOfAHandleDiesWithTheOneItWasCopiedFrom(t *testing.T) {
 	var l Lock[string]
 	var copied Holding[string]
@@ -432,33 +391,24 @@ func (w watchful) First() (string, bool, error) {
 	return "the record", true, nil
 }
 
-func (w watchful) Again() (string, bool, error) { return "the record", true, nil }
-
 // mutable is a source whose answers a test can move, so that "the subject is
-// snapshotted" and "Reread reads again" are shown rather than asserted.
+// snapshotted" is shown rather than asserted.
 type mutable struct {
 	subject string
 	value   string
 	found   bool
 	err     error
-	agains  int
 }
 
 func (m *mutable) Subject() string { return m.subject }
 
 func (m *mutable) First() (string, bool, error) { return m.value, m.found, m.err }
 
-func (m *mutable) Again() (string, bool, error) {
-	m.agains++
-	return m.value, m.found, m.err
-}
-
 // failing is a source whose first read fails.
 type failing[T any] struct{ err error }
 
 func (f failing[T]) Subject() string         { return "a job" }
 func (f failing[T]) First() (T, bool, error) { var zero T; return zero, false, f.err }
-func (f failing[T]) Again() (T, bool, error) { var zero T; return zero, false, f.err }
 
 // fixed is the ordinary case: one subject, one value, both reads the same.
 type fixed[T any] struct {
@@ -468,7 +418,6 @@ type fixed[T any] struct {
 
 func (f fixed[T]) Subject() string         { return f.subject }
 func (f fixed[T]) First() (T, bool, error) { return f.value, true, nil }
-func (f fixed[T]) Again() (T, bool, error) { return f.value, true, nil }
 
 func read[T any](subject string, value T) Source[T] {
 	return fixed[T]{subject: subject, value: value}

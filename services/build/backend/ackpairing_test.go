@@ -16,7 +16,7 @@ import (
 // root, which is all a gate needs.
 const queueKeyRoot = "queue/"
 
-// A record write and the queue write paired with it. pkg/queue's Push dedups
+// A job's event and the queue write paired with it. pkg/queue's Push dedups
 // against a claimed item's index row and Ack deletes that row, so a push during a
 // delivery followed by the ack would leave a job with no item. The window is a
 // whole build.
@@ -50,7 +50,7 @@ func TestARetryBetweenACancelAndTheSettleOfTheRunItCancelledSurvives(t *testing.
 
 	rec := h.mustRecord(t, id)
 	ready, claimed := h.work.Depth()
-	open := len(h.store.Keys(openIndexPrefix(testRepo)))
+	open := len(h.open(t, testRepo))
 	t.Logf("status=%s reason=%q attempt=%d ready=%d claimed=%d openRows=%d",
 		rec.status(), rec.Reason, rec.Attempt, ready, claimed, open)
 
@@ -90,7 +90,7 @@ func TestTheDropDecisionAndItsAckAreOneSection(t *testing.T) {
 
 	// And the racer, at the read the drop is decided on.
 	var retryErr error
-	retried := gate.onRead(t, jobRecordKey(id), 1, func() { retryErr = h.retry(id) })
+	retried := gate.onRead(t, eventPrefix(id), 1, func() { retryErr = h.retry(id) })
 
 	require.NoError(t, h.run(context.Background(), d))
 	<-retried
@@ -98,7 +98,7 @@ func TestTheDropDecisionAndItsAckAreOneSection(t *testing.T) {
 
 	rec := h.mustRecord(t, id)
 	ready, claimed := h.work.Depth()
-	open := len(h.store.Keys(openIndexPrefix(testRepo)))
+	open := len(h.open(t, testRepo))
 	t.Logf("sectionHeldAtTheAck=%v status=%s ready=%d claimed=%d openRows=%d",
 		!loose.Load(), rec.status(), ready, claimed, open)
 

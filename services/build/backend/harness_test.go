@@ -7,6 +7,8 @@ import (
 	"encoding/base64"
 	"io"
 	"os"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,6 +19,8 @@ import (
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/core/kvdb"
+	kvdbmock "github.com/taubyte/tau/pkg/kvdb/mock"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/pkg/raft"
@@ -215,11 +219,240 @@ func keysIn(entry []raft.BatchOp) []string {
 	return out
 }
 
-// put writes straight into the underlying state, to plant a row this package
-// did not write.
-func (s *fakeStore) put(t testing.TB, key string, value []byte) {
+// fakeRecords is the kvdb a job's events live in, with the hooks a test needs to
+// get between a listing and a read, or in front of a delta.
+type fakeRecords struct {
+	kvdb.Instance
+
+	mu          sync.Mutex
+	batchErr    error
+	beforeBatch func()
+	afterList   func()
+	listPrefix  string
+	phantom     []string
+	// entries is every delta applied, each spelled as its rows: "set <key>",
+	// "del <key>".
+	entries [][]string
+	// gate is a race test's hook on reads and writes (lostupdate_test.go).
+	gate *readGate
+}
+
+func (r *fakeRecords) gated(g *readGate) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.gate = g
+}
+
+func newRecords(t testing.TB) *fakeRecords {
 	t.Helper()
-	require.NoError(t, s.MockCluster.Set(key, value, time.Second))
+	db, err := kvdbmock.New().New(nil, "build", 0)
+	require.NoError(t, err)
+	return &fakeRecords{Instance: db}
+}
+
+// haunt makes List report a key that Get will not find: a row deleted between a
+// listing and the read of it.
+func (r *fakeRecords) haunt(keys ...string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.phantom = append(r.phantom, keys...)
+}
+
+// onList runs hook after the next listing of prefix.
+func (r *fakeRecords) onList(prefix string, hook func()) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.listPrefix, r.afterList = prefix, hook
+}
+
+func (r *fakeRecords) List(ctx context.Context, prefix string) ([]string, error) {
+	keys, err := r.Instance.List(ctx, prefix)
+	if err != nil {
+		return nil, err
+	}
+
+	r.mu.Lock()
+	for _, k := range r.phantom {
+		if strings.HasPrefix(k, prefix) {
+			keys = append(keys, k)
+		}
+	}
+	hook := r.afterList
+	if hook != nil && prefix == r.listPrefix {
+		r.afterList = nil
+	} else {
+		hook = nil
+	}
+	gate := r.gate
+	r.mu.Unlock()
+
+	if hook != nil {
+		hook()
+	}
+	if gate != nil {
+		gate.read(prefix)
+	}
+	return keys, nil
+}
+
+func (r *fakeRecords) failBatches(err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.batchErr = err
+}
+
+// onBatch runs hook before the next delta commits.
+func (r *fakeRecords) onBatch(hook func()) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.beforeBatch = hook
+}
+
+func (r *fakeRecords) Batch(context.Context) (kvdb.Batch, error) {
+	return &recordsBatch{r: r}, nil
+}
+
+// recordsBatch holds a delta's rows until Commit, which applies all of them or
+// none.
+type recordsBatch struct {
+	r    *fakeRecords
+	rows []recordsRow
+}
+
+type recordsRow struct {
+	key    string
+	value  []byte
+	delete bool
+}
+
+func (b *recordsBatch) Put(key string, value []byte) error {
+	b.rows = append(b.rows, recordsRow{key: key, value: value})
+	return nil
+}
+
+func (b *recordsBatch) Delete(key string) error {
+	b.rows = append(b.rows, recordsRow{key: key, delete: true})
+	return nil
+}
+
+func (b *recordsBatch) Commit() error {
+	b.r.mu.Lock()
+	hook, err := b.r.beforeBatch, b.r.batchErr
+	b.r.beforeBatch = nil
+	b.r.mu.Unlock()
+
+	if err != nil {
+		return err
+	}
+	if hook != nil {
+		hook()
+	}
+
+	spelled := make([]string, 0, len(b.rows))
+	inner, err := b.r.Instance.Batch(context.Background())
+	if err != nil {
+		return err
+	}
+	for _, row := range b.rows {
+		if row.delete {
+			spelled = append(spelled, "del "+row.key)
+			err = inner.Delete(row.key)
+		} else {
+			spelled = append(spelled, "set "+row.key)
+			err = inner.Put(row.key, row.value)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	if err := inner.Commit(); err != nil {
+		return err
+	}
+
+	b.r.mu.Lock()
+	b.r.entries = append(b.r.entries, spelled)
+	gate := b.r.gate
+	b.r.mu.Unlock()
+
+	if gate != nil {
+		gate.wrote(spelled)
+	}
+	return nil
+}
+
+// entriesNaming is every applied delta carrying a row at key, in order.
+func (r *fakeRecords) entriesNaming(key string) [][]string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var found [][]string
+	for _, entry := range r.entries {
+		for _, row := range entry {
+			if strings.HasSuffix(row, " "+key) {
+				found = append(found, entry)
+				break
+			}
+		}
+	}
+	return found
+}
+
+// entriesAbout is every applied delta carrying one of a job's events.
+func (r *fakeRecords) entriesAbout(id string) [][]string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var found [][]string
+	for _, entry := range r.entries {
+		for _, row := range entry {
+			if strings.HasPrefix(row, "set "+eventPrefix(id)) {
+				found = append(found, entry)
+				break
+			}
+		}
+	}
+	return found
+}
+
+// appliedEntries is how many deltas have reached the store.
+func (r *fakeRecords) appliedEntries() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.entries)
+}
+
+// keys is every key under prefix, in byte order.
+func (r *fakeRecords) keys(t testing.TB, prefix string) []string {
+	t.Helper()
+	keys, err := r.Instance.List(context.Background(), prefix)
+	require.NoError(t, err)
+	slices.Sort(keys)
+	return keys
+}
+
+// put writes straight into the store, to plant a row this package did not write.
+func (r *fakeRecords) put(t testing.TB, key string, value []byte) {
+	t.Helper()
+	require.NoError(t, r.Instance.Put(context.Background(), key, value))
+}
+
+func (r *fakeRecords) drop(t testing.TB, key string) {
+	t.Helper()
+	require.NoError(t, r.Instance.Delete(context.Background(), key))
+}
+
+// garble plants an event of id that does not decode.
+func (r *fakeRecords) garble(t testing.TB, id string) {
+	t.Helper()
+	r.put(t, eventKey(id, 1<<62, "garbled"), []byte("not an event"))
+}
+
+// erase removes every event of a job, as retention would.
+func (r *fakeRecords) erase(t testing.TB, id string) {
+	t.Helper()
+	for _, key := range r.keys(t, eventPrefix(id)) {
+		r.drop(t, key)
+	}
 }
 
 type testClock struct {
@@ -476,12 +709,13 @@ func newHost(t testing.TB, mn mocknet.Mocknet) host.Host {
 // interfaces. Nothing binds a port and nothing needs a universe.
 type harness struct {
 	*Service
-	store  *fakeStore
-	repos  *fakeRepositories
-	runner *fakeRunner
-	assets *fakeAssets
-	clock  *testClock
-	host   host.Host
+	store   *fakeStore
+	records *fakeRecords
+	repos   *fakeRepositories
+	runner  *fakeRunner
+	assets  *fakeAssets
+	clock   *testClock
+	host    host.Host
 }
 
 const (
@@ -547,12 +781,13 @@ func newHarnessOverCfg(t testing.TB, over Store, store *fakeStore, adjust func(*
 	if adjust != nil {
 		adjust(&cfg)
 	}
-	s, err := New(cfg, append([]Option{WithHost(h), WithStore(over), WithRepositories(repos)}, opts...)...)
+	records := newRecords(t)
+	s, err := New(cfg, append([]Option{WithHost(h), WithStore(over), WithRecords(records), WithRepositories(repos)}, opts...)...)
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 
 	return &harness{
-		Service: s, store: store, repos: repos,
+		Service: s, store: store, records: records, repos: repos,
 		runner: runner, assets: assets, clock: clock, host: h,
 	}
 }
@@ -602,14 +837,47 @@ func (h *harness) plannedEach(t testing.TB, refs ...string) []string {
 }
 
 // terminal is the retention rows of one job: its plan has rows of its own.
-func (h *harness) terminal(id string) []string {
+func (h *harness) terminal(t testing.TB, id string) []string {
+	t.Helper()
 	var out []string
-	for _, key := range h.store.Keys(rootSegment + "/" + indexSegment + "/" + terminalSegment + "/") {
+	for _, key := range h.records.keys(t, terminalRows()) {
 		if strings.HasSuffix(key, "/"+seg(id)) {
 			out = append(out, key)
 		}
 	}
 	return out
+}
+
+// rows is every key this service keeps for its jobs.
+func (h *harness) rows(t testing.TB) []string {
+	t.Helper()
+	return h.records.keys(t, "/"+rootSegment+"/")
+}
+
+// open is the jobs a repository has outstanding, each once however many open rows
+// it has.
+func (h *harness) open(t testing.TB, repositoryKey string) []string {
+	t.Helper()
+	var out []string
+	for _, key := range h.records.keys(t, openRows(repositoryKey)) {
+		_, id, err := parseOpenRow(key)
+		require.NoError(t, err)
+		if !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// plant writes an open row this package did not leave: beside the job's first
+// event, a row a drop of it missed; for a job with no events, a row from long ago.
+func (h *harness) plant(t testing.TB, repositoryKey, id string) {
+	t.Helper()
+	if events := h.records.keys(t, eventPrefix(id)); len(events) > 0 {
+		h.records.put(t, openRowsOf(repositoryKey, id)+strings.TrimPrefix(events[0], eventPrefix(id)), nil)
+		return
+	}
+	h.records.put(t, openRow(repositoryKey, id, 1, "plant"), nil)
 }
 
 func (h *harness) mustRecord(t testing.TB, id string) jobRecord {
@@ -667,4 +935,65 @@ func logFiles(t testing.TB, h *harness) []string {
 		out = append(out, e.Name())
 	}
 	return out
+}
+
+// plantRecord replaces a job's events with ones that fold to rec, as if another
+// writer had taken it there. The events are at this node's own next instants, so
+// what the test does afterwards is ordered after them.
+func (h *harness) plantRecord(t testing.TB, rec jobRecord) {
+	t.Helper()
+	h.records.erase(t, rec.ID)
+
+	evs := []*buildv2.JobEvent{{Kind: &buildv2.JobEvent_Created{Created: &buildv2.JobCreated{
+		RepositoryKey: rec.RepositoryKey, Ref: rec.Ref, CommitSha: rec.CommitSHA,
+		ProjectId: rec.ProjectID, Environment: rec.Environment, Prelude: rec.Prelude,
+		CreatedAt: rec.CreatedAt,
+	}}}}
+	claim := func(attempt uint32) *buildv2.JobEvent {
+		return &buildv2.JobEvent{Kind: &buildv2.JobEvent_Claimed{Claimed: &buildv2.JobClaimed{
+			Attempt: attempt, Holder: rec.Holder, ClaimedUntil: rec.ClaimedUntil,
+		}}}
+	}
+	settle := func(status buildv2.JobStatus, reason string) *buildv2.JobEvent {
+		return &buildv2.JobEvent{Kind: &buildv2.JobEvent_Settled{Settled: &buildv2.JobSettled{
+			Attempt: rec.Attempt, Status: status, Reason: reason,
+			Assets: rec.Assets, Children: rec.Children,
+		}}}
+	}
+	switch status := rec.status(); {
+	case status == buildv2.JobStatus_JobStatusClaimed:
+		require.NotZero(t, rec.Attempt, "a claimed job is at an attempt")
+		require.Empty(t, rec.Assets, "a claimed job has built nothing yet")
+		evs = append(evs, claim(rec.Attempt))
+	case status == buildv2.JobStatus_JobStatusCancelled:
+		require.Empty(t, rec.Assets, "a cancelled job built nothing that counts")
+		if rec.Attempt > 0 {
+			evs = append(evs, claim(rec.Attempt))
+		}
+		evs = append(evs, &buildv2.JobEvent{Kind: &buildv2.JobEvent_Cancelled{Cancelled: &buildv2.JobCancelled{Reason: rec.Reason}}})
+	case rec.terminal():
+		require.NotZero(t, rec.Attempt, "a settled job ended an attempt")
+		evs = append(evs, claim(rec.Attempt), settle(status, rec.Reason))
+	case rec.Attempt > 0 || len(rec.Assets) > 0:
+		// AN OPEN JOB THAT HAS RUN BEFORE is one whose last attempt ended and was
+		// retried.
+		require.NotZero(t, rec.Attempt, "what an open job built, an attempt built")
+		evs = append(evs, claim(rec.Attempt), settle(buildv2.JobStatus_JobStatusFailed, ""),
+			&buildv2.JobEvent{Kind: &buildv2.JobEvent_Retried{Retried: &buildv2.JobRetried{}}})
+	}
+	for attempt, cid := range rec.Logs {
+		n, err := strconv.ParseUint(attempt, 10, 32)
+		require.NoError(t, err)
+		evs = append(evs, &buildv2.JobEvent{Kind: &buildv2.JobEvent_Logged{Logged: &buildv2.JobLogged{Attempt: uint32(n), Log: cid}}})
+	}
+	for _, ev := range evs {
+		ev.At, ev.Writer = h.journal.at(), "plant"
+		raw, err := ev.MarshalVT()
+		require.NoError(t, err)
+		h.records.put(t, eventKey(rec.ID, ev.At, ev.Writer), raw)
+	}
+
+	planted := h.mustRecord(t, rec.ID)
+	require.Equal(t, rec.status(), planted.status(), "the planted events fold to the record asked for")
+	require.Equal(t, rec.Attempt, planted.Attempt)
 }

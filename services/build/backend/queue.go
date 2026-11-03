@@ -98,9 +98,9 @@ func (s *Service) resume(id string) (bool, error) {
 	return found, err
 }
 
-// create writes a new job's record, project index and open index rows in one
-// entry, then its item. The read is taken here behind a barrier, after the auth
-// round trip, so a delivery finding the job already there requeues that record.
+// create writes a new job's created event, project row and open row in one delta,
+// then its item. The read is taken here behind the queue's barrier, after the auth
+// round trip, so a delivery finding the job already there requeues it.
 func (s *Service) create(id, repositoryKey, ref, commitSHA, projectID string) error {
 	return s.withJob(id, func(j *held) error {
 		if j.found() {
@@ -121,7 +121,7 @@ func (s *Service) create(id, repositoryKey, ref, commitSHA, projectID string) er
 
 		// One entry, so no reader sees a job in some of the three rows; every key comes
 		// from the subject and this record.
-		if err := j.writes().record(rec).inProject().open().commit("writing"); err != nil {
+		if err := j.writes().created(rec).inProject().open().commit("writing"); err != nil {
 			return err
 		}
 
@@ -161,7 +161,7 @@ func (s *Service) createEnvironment(plan jobRecord, environment, prelude string)
 			CreatedAt:     now.Unix(),
 			UpdatedAt:     now.Unix(),
 		}
-		if err := j.writes().record(rec).inProject().open().commit("writing"); err != nil {
+		if err := j.writes().created(rec).inProject().open().commit("writing"); err != nil {
 			return err
 		}
 		if err := j.push(); err != nil {
@@ -180,10 +180,32 @@ func (s *Service) admit(repositoryKey string) error {
 	if ready+claimed >= s.cfg.MaxQueueDepth {
 		return errResourceExhausted("build queue is full (%d)", s.cfg.MaxQueueDepth)
 	}
-	if open := len(s.store.Keys(openIndexPrefix(repositoryKey))); open >= s.cfg.MaxOpenPerRepo {
+	open, err := s.outstanding(repositoryKey)
+	if err != nil {
+		return err
+	}
+	if open >= s.cfg.MaxOpenPerRepo {
 		return errResourceExhausted("repository %q already has %d jobs outstanding", repositoryKey, open)
 	}
 	return nil
+}
+
+// outstanding is how many of a repository's jobs have an open row: each job once,
+// however many reopenings it has had.
+func (s *Service) outstanding(repositoryKey string) (int, error) {
+	ctx, stop := context.WithTimeout(context.Background(), s.cfg.Queue.ApplyTimeout)
+	defer stop()
+	keys, err := s.records.List(ctx, openRows(repositoryKey))
+	if err != nil {
+		return 0, errUnavailable("listing %q's outstanding jobs: %v", repositoryKey, err)
+	}
+	jobs := map[string]bool{}
+	for _, key := range keys {
+		if _, id, err := parseOpenRow(key); err == nil {
+			jobs[id] = true
+		}
+	}
+	return len(jobs), nil
 }
 
 // projectError keeps auth's code for an unknown repository and maps anything else
@@ -199,18 +221,11 @@ func (s *Service) projectError(repositoryKey string, err error) error {
 	}
 }
 
-// readRecord reads one job record. Its callers: enter() (before handing a body its
-// handle), reread() (mend's second read) and job() (decides no write). It is
-// handed the id as well, so a row naming another job is corrupt.
+// readRecord is one job, as the fold of its events on this node's replica. Its
+// callers: enter() (before handing a body its handle) and job() (decides no
+// write).
 func (s *Service) readRecord(id string) (jobRecord, bool, error) {
-	key := jobRecordKey(id)
-	raw, exists := s.store.Get(key)
-	if !exists {
-		return jobRecord{}, false, nil
-	}
-	rec, err := decodeJobRecord(key, id, raw)
-	if err != nil {
-		return jobRecord{}, false, errInternal("%v", err)
-	}
-	return rec, true, nil
+	ctx, stop := context.WithTimeout(context.Background(), s.cfg.Queue.ApplyTimeout)
+	defer stop()
+	return s.journal.read(ctx, id)
 }

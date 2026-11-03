@@ -1,5 +1,6 @@
-// Package backend is build's private half: the queue, the job records and the
-// run, served as build.proto's QueueService and JobService to other tau nodes
+// Package backend is build's private half: the queue (raft), the jobs (events in
+// kvdb, events.go) and the run, served as build.proto's QueueService and
+// JobService to other tau nodes
 // over p2p/rpc and reachable no other way. The public half, taking webhooks off
 // the internet, is services/build/frontend.
 //
@@ -7,23 +8,25 @@
 //
 //  1. Every RPC is leader-only, reads included; a follower answers
 //     CodeUnavailable (leader.go). No forwarding, no leader cache, no staleness.
-//  2. Ack is the commit point. A run's terminal record is written only after the
+//  2. Ack is the commit point. A run's terminal event is written only after the
 //     queue accepted the ack, the one compare-and-swap here: the loser of a
 //     leadership flap gets ErrStaleDelivery and publishes nothing.
 //  3. The claim's deadline bounds the run (less a margin, capped by
 //     BuildTimeout); a run outliving its claim is a second claimer.
-//  4. Cancel is a record write, and a job record's read and the entry it decides
-//     are one section (section.go's jobLock), so Cancel and Retry on rpc
-//     goroutines cannot interleave with the claim loop.
+//  4. Cancel is an event, and a job's read and the entry it decides are one
+//     section (section.go's jobLock), so Cancel and Retry on rpc goroutines
+//     cannot interleave with the claim loop. Across nodes nothing is locked: the
+//     fold (events.go) gives every node the same job from the same events.
 //
 // A section's write is made while the deciding read's section is still held
 // (runtime: a handle dies when withJob returns), by the body that took that read
 // (compiler: every write is a method on the handle), and only about the job the
-// read was on (compiler for the subject; for store.go's key grammar, the
+// read was on (compiler for the subject; for events.go's key grammar, the
 // censuses in population_test.go).
 //
-// New binds no port and opens nothing; it takes a host, one replicated store
-// (pkg/queue's Store) and one question for auth. The node supplies the Runner
+// New binds no port and opens nothing; it takes a host, the queue's raft store
+// (pkg/queue's Store), the kvdb database the jobs live in, and one question for
+// auth. The node supplies the Runner
 // and the storage service as Assets (instance/build.go).
 //
 // A push is a plan job: the runner reads which environments the commit feeds, and
@@ -41,5 +44,7 @@
 // Known gaps: a record's identity fields other than ID are whatever the body
 // hands over; a log can reach the asset store with no cid reaching any job if
 // leadership is lost after the store takes it (bounded by PublishTimeout; the job
-// is rebuilt); and nothing bounds how much a build stores.
+// is rebuilt); nothing bounds how much a build stores; and a finished job's
+// events are kept: the retention rows name them, and nothing sweeps them yet,
+// since what a deployment runs is resolved through the job that built it.
 package backend

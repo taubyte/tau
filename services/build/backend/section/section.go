@@ -11,8 +11,7 @@
 //
 // A body writes by handing Write the write itself. The subject is snapshotted
 // from the Source and unexported, so a copy is the same authority over the same
-// subject, and Reread takes nothing, reading the same subject again. Go cannot
-// stop a handle escaping, so an escaped one is invalidated when Do returns and
+// subject. Go cannot stop a handle escaping, so an escaped one is invalidated when Do returns and
 // every write through it fails with ErrStale.
 package section
 
@@ -38,9 +37,6 @@ type Source[T any] interface {
 	// First is the read Do takes before it runs the body. Its result is what
 	// the body decides on.
 	First() (T, bool, error)
-	// Again is Reread's read, separate so a section can triage on a cheap read and
-	// decide on a careful one.
-	Again() (T, bool, error)
 }
 
 // Lock is the exclusion over one table. The mutex is unexported and only Do takes
@@ -71,7 +67,6 @@ type Holding[T any] struct {
 	// together are the whole of the guarantee: a caller can read it and cannot
 	// write it, so a handle it copied is about what the original was about.
 	subject string
-	source  Source[T]
 	value   T
 	found   bool
 }
@@ -98,7 +93,6 @@ func (l *Lock[T]) Do(src Source[T], body func(Holding[T]) error) error {
 		lock:    l,
 		id:      id,
 		subject: src.Subject(),
-		source:  src,
 		value:   value,
 		found:   found,
 	})
@@ -127,21 +121,6 @@ func (h *Holding[T]) Write(w func() error) error {
 		return err
 	}
 	return w()
-}
-
-// Reread replaces the carried value with a fresh read of the same subject under
-// this holding. It takes nothing, so no foreign value can be installed; a failed
-// read leaves what was there.
-func (h *Holding[T]) Reread() error {
-	if err := h.live(); err != nil {
-		return err
-	}
-	value, found, err := h.source.Again()
-	if err != nil {
-		return err
-	}
-	h.value, h.found = value, found
-	return nil
 }
 
 // live is the whole of the runtime half, and it is unexported because a caller

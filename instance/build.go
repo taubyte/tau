@@ -203,6 +203,13 @@ func (n *Instance) openBuildBackend() error {
 	}
 	n.closers = append(n.closers, closerFunc(func() { cluster.Close() }))
 
+	// THE QUEUE IS RAFT'S AND NOTHING ELSE IS: every job's events and rows live in
+	// a kvdb database of the backend's own.
+	records, err := n.kvdb(BuildBackend + "/jobs")
+	if err != nil {
+		return fmt.Errorf("node: %s: %w", BuildBackend, err)
+	}
+
 	// WHO A PUSH BELONGS TO IS THE REGISTER'S PROJECT TABLE, and the deploy
 	// key that clones it is the vault's, under the name the developer's link
 	// stored it as (pkg/linkcreds).
@@ -302,6 +309,7 @@ func (n *Instance) openBuildBackend() error {
 	service := []backend.Option{
 		backend.WithHost(n.Host()),
 		backend.WithStore(cluster),
+		backend.WithRecords(records),
 		backend.WithRepositories(projects),
 		backend.WithRunner(runner),
 		// A PUSH IS BUILT ONLY FOR WHAT THE REPOSITORY HOLDS: the ref is read

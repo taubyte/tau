@@ -43,7 +43,7 @@ func TestOneStepClaimsRunsAcksAndFinishes(t *testing.T) {
 	require.Equal(t, 0, ready)
 	require.Equal(t, 0, claimed)
 
-	require.Empty(t, h.store.Keys(openIndexPrefix(testRepo)))
+	require.Empty(t, h.open(t, testRepo))
 
 	work := h.runner.seen()
 	require.Len(t, work, 1)
@@ -280,7 +280,7 @@ func TestAnExhaustedJobIsDeadLetteredAndTheDrainMarksItFailed(t *testing.T) {
 	rec := h.mustRecord(t, id)
 	require.Equal(t, buildv2.JobStatus_JobStatusFailed, rec.status())
 	require.Equal(t, "attempts exhausted", rec.Reason)
-	require.Empty(t, h.store.Keys(openIndexPrefix(testRepo)))
+	require.Empty(t, h.open(t, testRepo))
 
 	ready, claimed := dead.Depth()
 	require.Equal(t, 0, ready)
@@ -330,7 +330,7 @@ func TestOnlyTheLeaderOfTheDomainClaims(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
-	follower, err := New(Config{}, WithHost(newHost(t, newMocknet(t))), WithStore(h.store), WithRepositories(h.repos),
+	follower, err := New(Config{}, WithHost(newHost(t, newMocknet(t))), WithStore(h.store), WithRecords(h.records), WithRepositories(h.repos),
 		WithClock(h.clock.now), WithRunner(&fakeRunner{}))
 	require.NoError(t, err)
 	t.Cleanup(func() { follower.Close() })
@@ -351,7 +351,7 @@ func TestOnlyTheLeaderOfTheDomainClaims(t *testing.T) {
 func TestANodeWithNoRunnerKeepsTheQueueSweptAndClaimsNothing(t *testing.T) {
 	store := newStore()
 	clock := newClock()
-	s, err := New(Config{}, WithHost(newHost(t, newMocknet(t))), WithStore(store), WithRepositories(newRepositories(testRepo)), WithClock(clock.now))
+	s, err := New(Config{}, WithHost(newHost(t, newMocknet(t))), WithStore(store), WithRecords(newRecords(t)), WithRepositories(newRepositories(testRepo)), WithClock(clock.now))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 
@@ -378,18 +378,18 @@ func TestStepReportsAStoreThatRefusesTheClaimWrite(t *testing.T) {
 	h := newHarness(t)
 	h.planned(t, testRef, testCommit)
 
-	// The record's Claimed write is the first Batch after the queue's own.
-	h.store.onBatch(func() { h.store.failBatches(errors.New("log is full")) })
+	// The claimed event is the step's first write to the job's store.
+	h.records.failBatches(errors.New("the store is full"))
 
 	_, err := h.step(t.Context())
 	require.Error(t, err)
 	require.Empty(t, h.runner.seen(), "a job whose claim could not be recorded must not run")
 }
 
-func TestStepReportsACorruptRecordRatherThanRunningIt(t *testing.T) {
+func TestStepReportsACorruptEventRatherThanRunningIt(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
-	h.store.put(t, jobRecordKey(id), []byte("not a record"))
+	h.records.garble(t, id)
 
 	_, err := h.step(t.Context())
 	require.Error(t, err)
@@ -465,12 +465,12 @@ func TestSettleReportsARecordItCannotRead(t *testing.T) {
 	id := h.planned(t, testRef, testCommit)
 
 	h.runner.run = func(context.Context, Work, Output) error {
-		h.store.put(t, jobRecordKey(id), []byte("not a record"))
+		h.records.garble(t, id)
 		return nil
 	}
 
 	_, err := h.step(t.Context())
-	require.ErrorContains(t, err, "corrupt job record")
+	require.ErrorContains(t, err, "does not decode")
 
 	ready, claimed := h.work.Depth()
 	require.Equal(t, 0, ready)
@@ -495,12 +495,12 @@ func TestTheDeadLetterDrainReportsARecordItCannotWrite(t *testing.T) {
 	id := h.planned(t, testRef, testCommit)
 	require.NoError(t, h.dead.Push(id, nil))
 
-	h.store.onBatch(func() { h.store.failBatches(errors.New("log is full")) })
+	h.records.failBatches(errors.New("the store is full"))
 
 	_, err := h.step(t.Context())
 	require.ErrorContains(t, err, "finishing job "+id)
 
-	h.store.failBatches(nil)
+	h.records.failBatches(nil)
 	ready, claimed := h.dead.Depth()
 	require.Equal(t, 0, ready)
 	require.Equal(t, 1, claimed, "an entry whose record could not be written stays claimed and comes back")
@@ -564,10 +564,10 @@ func TestTheDeadLetterDrainReportsACorruptRecord(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
 	require.NoError(t, h.dead.Push(id, nil))
-	h.store.put(t, jobRecordKey(id), []byte("not a record"))
+	h.records.garble(t, id)
 
 	_, err := h.step(t.Context())
-	require.ErrorContains(t, err, "corrupt job record")
+	require.ErrorContains(t, err, "does not decode")
 
 	ready, claimed := h.dead.Depth()
 	require.Equal(t, 0, ready)
@@ -666,7 +666,70 @@ func TestNoMeterIsTheOrdinaryCase(t *testing.T) {
 }
 
 func TestWithMeterRefusesNil(t *testing.T) {
-	_, err := New(Config{}, WithHost(newHost(t, newMocknet(t))), WithStore(newStore()),
+	_, err := New(Config{}, WithHost(newHost(t, newMocknet(t))), WithStore(newStore()), WithRecords(newRecords(t)),
 		WithRepositories(newRepositories()), WithMeter(nil))
 	require.ErrorContains(t, err, "meter")
+}
+
+// A JOB WHOSE EVENTS NEVER REACH THIS BUILDER: the claim came through raft and the
+// job through kvdb. It is read RecordReads times, then failed by name, its item
+// acked, so a user can find it and retry it.
+func TestAClaimedJobWhoseEventsNeverArriveIsFailedAfterItsReads(t *testing.T) {
+	h := newHarnessCfg(t, func(c *Config) {
+		c.RecordReads = 3
+		c.RecordReadInterval = time.Millisecond
+	})
+	require.NoError(t, h.work.Push(unknownJobID, nil))
+	require.True(t, h.mustStep(t))
+
+	rec := h.mustRecord(t, unknownJobID)
+	require.Equal(t, buildv2.JobStatus_JobStatusFailed, rec.status())
+	require.Equal(t, orphanReason(3), rec.Reason)
+	require.Contains(t, rec.Reason, "retry it")
+	require.Len(t, h.terminal(t, unknownJobID), 1, "a failure the retention pass can find")
+	require.Empty(t, h.runner.seen(), "and nothing was built")
+
+	ready, claimed := h.work.Depth()
+	require.Zero(t, ready+claimed, "the item is acked, so it is not claimed forever")
+
+	// AND IT IS RETRIED like any failed job: a retry reopens it, for when its
+	// events do arrive.
+	require.NoError(t, h.retry(unknownJobID))
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, unknownJobID))
+}
+
+// AND ONE WHOSE EVENTS ARRIVE BETWEEN READS is built: the wait is for the lag, not
+// a refusal of it.
+func TestAClaimedJobWhoseEventsArriveLateIsBuilt(t *testing.T) {
+	h := newHarnessCfg(t, func(c *Config) {
+		c.RecordReads = 3
+		c.RecordReadInterval = time.Millisecond
+	})
+	id := h.planned(t, testRef, testCommit)
+	rec := h.mustRecord(t, id)
+	h.records.erase(t, id)
+
+	h.records.onList(eventPrefix(id), func() { h.plantRecord(t, rec) })
+	require.True(t, h.mustStep(t))
+
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
+	require.Len(t, h.runner.seen(), 1)
+}
+
+func TestAClaimedJobsWaitEndsWithTheRun(t *testing.T) {
+	h := newHarnessCfg(t, func(c *Config) {
+		c.RecordReads = 1000
+		c.RecordReadInterval = time.Hour
+	})
+	require.NoError(t, h.work.Push(unknownJobID, nil))
+	d, err := h.work.Claim()
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	h.records.onList(eventPrefix(unknownJobID), cancel)
+	require.ErrorIs(t, h.run(ctx, d), context.Canceled)
+
+	_, found, err := h.readRecord(unknownJobID)
+	require.NoError(t, err)
+	require.False(t, found, "a wait that ended decided nothing")
 }

@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
-	"github.com/taubyte/tau/pkg/raft"
+	"github.com/taubyte/tau/services/build/backend/row"
 	"github.com/taubyte/tau/services/build/backend/section"
 )
 
@@ -64,8 +64,6 @@ func TestAHandleAssembledOutsideAHoldingIsDead(t *testing.T) {
 	requireRefused(t, h, id, forged.register(func() {}))
 	requireRefused(t, h, id, forged.stopRun())
 	requireRefused(t, h, id, forged.finish(buildv2.JobStatus_JobStatusCancelled, "cancelled"))
-	require.ErrorIs(t, forged.reread(), section.ErrStale,
-		"and it cannot read itself a value to write on either")
 
 	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id))
 }
@@ -322,10 +320,10 @@ func TestEveryTransitionWritesInTheSectionItReadIn(t *testing.T) {
 	require.Equal(t, buildv2.JobStatus_JobStatusFailed, h.status(t, second))
 
 	// mend, both branches: an orphaned row to delete and a live one to leave.
-	h.store.put(t, openIndexKey(testRepo, id), nil)
+	h.plant(t, testRepo, id)
 	third := h.push(t, testRef, shaOf(2))
 	require.NoError(t, h.reconcile())
-	require.Equal(t, []string{openIndexKey(testRepo, third)}, h.store.Keys(openIndexPrefix(testRepo)))
+	require.Equal(t, []string{third}, h.open(t, testRepo))
 }
 
 func TestACancelStopsTheRunTheClaimRegistered(t *testing.T) {
@@ -360,13 +358,15 @@ func TestACancelStopsTheRunTheClaimRegistered(t *testing.T) {
 }
 
 // rowsOf is every row of one job, so "the neighbour did not move" is measured.
-func rowsOf(h *harness, id string) map[string]string {
+func rowsOf(t testing.TB, h *harness, id string) map[string]string {
+	t.Helper()
 	out := map[string]string{}
-	for _, key := range h.store.Keys(rootSegment + "/") {
+	for _, key := range h.rows(t) {
 		if !strings.Contains(key, seg(id)) {
 			continue
 		}
-		value, _ := h.store.Get(key)
+		value, err := h.records.Get(t.Context(), key)
+		require.NoError(t, err)
 		out[key] = string(value)
 	}
 	return out
@@ -378,7 +378,7 @@ func TestAnEntryCannotNameAJobItsSectionWasNotEnteredOn(t *testing.T) {
 	b := h.planned(t, testRef, shaOf(1))
 	require.NotEqual(t, a, b)
 
-	before := rowsOf(h, b)
+	before := rowsOf(t, h, b)
 	require.NotEmpty(t, before, "the neighbour must have rows for this to measure anything")
 
 	// Every row an entry can write, in one entry, decided inside A's section
@@ -386,10 +386,10 @@ func TestAnEntryCannotNameAJobItsSectionWasNotEnteredOn(t *testing.T) {
 	// B's rows back when the key came from the value.
 	neighbour := h.mustRecord(t, b)
 	require.NoError(t, h.withJob(a, func(j *held) error {
-		return j.writes().record(neighbour).inProject().open().retained().anchor().commit("writing")
+		return j.writes().created(neighbour).inProject().open().retained().anchor().commit("writing")
 	}))
 
-	require.Equal(t, before, rowsOf(h, b),
+	require.Equal(t, before, rowsOf(t, h, b),
 		"a section entered on one job wrote a row of another")
 
 	// AND WHAT IT DID WRITE IS THIS JOB. The record's own id is the handle's,
@@ -397,8 +397,17 @@ func TestAnEntryCannotNameAJobItsSectionWasNotEnteredOn(t *testing.T) {
 	// still decides what the record SAYS, which is what a read-modify-write is,
 	// and no longer decides which job it is.
 	require.Equal(t, a, h.mustRecord(t, a).ID)
-	require.Equal(t, testCommit, h.lastCommit(testRepo, testRef, testEnvironment),
-		"and the ref anchor is the commit the SECTION READ, not the one the body handed over")
+	anchors := h.records.keys(t, anchorRows(testRepo, testRef, testEnvironment))
+	require.Len(t, anchors, 1)
+	_, of, _, err := parseBeside(anchorRows(testRepo, testRef, testEnvironment), anchors[0])
+	require.NoError(t, err)
+	require.Equal(t, a, of, "the ref anchor is this job's")
+	sha, err := h.records.Get(t.Context(), anchors[0])
+	require.NoError(t, err)
+	require.Equal(t, testCommit, string(sha),
+		"and the commit the SECTION READ, not the one the body handed over")
+	require.Empty(t, h.lastCommit(testRepo, testRef, testEnvironment),
+		"and it counts for nothing: it is beside a second created event, which the fold ignores")
 }
 
 func TestAHandleCannotBePointedAtAnotherJob(t *testing.T) {
@@ -469,19 +478,19 @@ func TestAnAckOfAnotherJobsDeliveryIsRefused(t *testing.T) {
 func TestAnEntryThatCouldNotBeBuiltWritesNothing(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
-	before := rowsOf(h, id)
+	before := rowsOf(t, h, id)
 
 	require.NoError(t, h.withJob(unknownJobID, func(j *held) error {
 		require.False(t, j.found())
-		err := j.writes().record(jobRecord{}).anchor().commit("writing")
+		err := j.writes().created(jobRecord{}).anchor().commit("writing")
 		require.Error(t, err)
 		require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
 		require.ErrorContains(t, err, "a record this section did not find")
 		return nil
 	}))
 
-	require.Equal(t, before, rowsOf(h, id))
-	require.Empty(t, rowsOf(h, unknownJobID),
+	require.Equal(t, before, rowsOf(t, h, id))
+	require.Empty(t, rowsOf(t, h, unknownJobID),
 		"an entry that failed to build must not have written the rows it had already composed")
 }
 
@@ -524,34 +533,35 @@ type benchSource struct{}
 
 func (benchSource) Subject() string                 { return "a job" }
 func (benchSource) First() (jobRecord, bool, error) { return jobRecord{}, true, nil }
-func (benchSource) Again() (jobRecord, bool, error) { return jobRecord{}, true, nil }
 
 func BenchmarkTheEntry(b *testing.B) {
 	h := newHarness(b)
 	id := h.planned(b, testRef, testCommit)
 	rec := h.mustRecord(b, id)
 
-	b.Run("the slice literal an entry replaced", func(b *testing.B) {
+	b.Run("the rows written by hand", func(b *testing.B) {
 		for b.Loop() {
-			value, err := rec.encode()
+			ev := &buildv2.JobEvent{At: 1, Writer: "w", Kind: &buildv2.JobEvent_Created{Created: &buildv2.JobCreated{
+				RepositoryKey: rec.RepositoryKey, Ref: rec.Ref, CommitSha: rec.CommitSHA, ProjectId: rec.ProjectID,
+			}}}
+			value, err := ev.MarshalVT()
 			if err != nil {
 				b.Fatal(err)
 			}
-			ops := []raft.BatchOp{
-				{Set: &raft.SetCommand{Key: jobRecordKey(id), Value: value}},
-				{Set: &raft.SetCommand{Key: projectIndexKey(rec.ProjectID, id)}},
-				{Set: &raft.SetCommand{Key: openIndexKey(rec.RepositoryKey, id)}},
-			}
-			if len(ops) != 3 {
+			e := row.Sized(3)
+			e.Set(eventKey(id, 1, "w"), value)
+			e.Set(projectRow(rec.ProjectID, id), nil)
+			e.Set(openRow(rec.RepositoryKey, id, 1, "w"), nil)
+			if e.Len() != 3 {
 				b.Fatal("the compiler elided the thing being measured")
 			}
 		}
 	})
 
-	b.Run("the entry that replaced it", func(b *testing.B) {
+	b.Run("the entry", func(b *testing.B) {
 		if err := h.withJob(id, func(j *held) error {
 			for b.Loop() {
-				e := j.writes().record(rec).inProject().open()
+				e := j.writes().created(rec).inProject().open()
 				if e.err != nil {
 					b.Fatal(e.err)
 				}

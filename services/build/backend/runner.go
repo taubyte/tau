@@ -65,7 +65,7 @@ func (s *Service) run(ctx context.Context, d queue.Delivery) error {
 
 	// Both acks are inside the sections that decided them (begin's drop, settle's);
 	// the build in between holds no lock.
-	rec, claimed, err := s.begin(d, deadline, stop)
+	rec, claimed, err := s.awaitBegin(runCtx, d, deadline, stop)
 	if err != nil || !claimed {
 		return err
 	}
@@ -136,38 +136,61 @@ func (s *Service) accountBuild(ctx context.Context, rec jobRecord, started time.
 // deduplicated item. Re-reading alone is not enough: without the section, a
 // cancel between read and entry would be overwritten with Claimed. Not claimed is
 // not an error.
-func (s *Service) begin(d queue.Delivery, deadline time.Time, stop context.CancelFunc) (jobRecord, bool, error) {
+func (s *Service) begin(d queue.Delivery, deadline time.Time, stop context.CancelFunc, last bool) (rec jobRecord, running, missing bool, err error) {
 	var claimed jobRecord
-	var running bool
 
-	err := s.withJob(d.ID, func(j *held) error {
+	err = s.withJob(d.ID, func(j *held) error {
+		// A JOB WHOSE EVENTS HAVE NOT REACHED THIS BUILDER is read again (awaitBegin),
+		// and after the last read failed by name: its item is acked, so it is not
+		// claimed forever, and the failure is a job a user can find and retry.
+		if !j.found() {
+			if !last {
+				missing = true
+				return nil
+			}
+			if err := j.ack(s.work, d); err != nil {
+				return err
+			}
+			return j.writes().settled(buildv2.JobStatus_JobStatusFailed, orphanReason(s.cfg.RecordReads), produced{}).
+				retained().commit("failing")
+		}
 		// Cancelled is one of the three terminal states, so this is the cancel
-		// case as much as it is the redelivery case. An item with no record
-		// cannot be identified, let alone built.
-		if !j.found() || j.rec().terminal() {
+		// case as much as it is the redelivery case.
+		if j.rec().terminal() {
 			return j.ack(s.work, d)
 		}
 
-		rec := j.rec()
-		rec.Status = int32(buildv2.JobStatus_JobStatusClaimed)
-		rec.Attempt++
-		rec.UpdatedAt = s.now().Unix()
-		rec.ClaimedUntil = deadline.UnixNano()
-		rec.Holder = s.host.ID().String()
-
 		// The entry's key is the section's subject, not the record's id.
-		if err := j.writes().record(rec).commit("claiming"); err != nil {
+		taken := j.writes().claimed(j.rec().Attempt+1, deadline)
+		if err := taken.commit("claiming"); err != nil {
 			return err
 		}
 
 		// The registration is the body's last act; a refused one throws the claim away.
-		claimed, running = rec, true
+		claimed, running = taken.rec, true
 		return j.register(stop)
 	})
 	if err != nil {
-		return jobRecord{}, false, err
+		return jobRecord{}, false, false, err
 	}
-	return claimed, running, nil
+	return claimed, running, missing, nil
+}
+
+// awaitBegin is begin, read again while the job is missing. THE CLAIM CAME
+// THROUGH RAFT AND THE JOB THROUGH KVDB, which can lag, so a missing job is read
+// RecordReads times at most, RecordReadInterval apart, and the last read decides.
+func (s *Service) awaitBegin(ctx context.Context, d queue.Delivery, deadline time.Time, stop context.CancelFunc) (jobRecord, bool, error) {
+	for read := 1; ; read++ {
+		rec, running, missing, err := s.begin(d, deadline, stop, read >= s.cfg.RecordReads)
+		if err != nil || !missing {
+			return rec, running, err
+		}
+		select {
+		case <-ctx.Done():
+			return jobRecord{}, false, ctx.Err()
+		case <-time.After(s.cfg.RecordReadInterval):
+		}
+	}
 }
 
 // forget drops this node's cancel for a finished run; it needs no reading since the
@@ -391,11 +414,14 @@ func (s *Service) claimDeadline(d queue.Delivery) time.Time {
 // to diff against and the Runner must treat it as a full build — exactly what a
 // GitHub payload's all-zero `before` signals for a newly created branch.
 func (s *Service) lastCommit(repositoryKey, ref, environment string) string {
-	raw, exists := s.store.Get(refLastKey(repositoryKey, ref, environment))
-	if !exists {
+	ctx, stop := context.WithTimeout(context.Background(), s.cfg.Queue.ApplyTimeout)
+	defer stop()
+	// An anchor that cannot be read is a full build, which is correct, only slower.
+	sha, _, err := s.journal.anchor(ctx, repositoryKey, ref, environment)
+	if err != nil {
 		return ""
 	}
-	return string(raw)
+	return sha
 }
 
 // drainDeadLetter marks one exhausted job Failed and acks it. The claim is outside

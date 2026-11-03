@@ -57,18 +57,17 @@ func TestReconcileCannotDisturbAClaimedJob(t *testing.T) {
 
 func TestReconcileDropsStaleOpenRows(t *testing.T) {
 	h := newHarness(t)
-
 	finished := h.planned(t, testRef, testCommit)
 	require.NoError(t, h.finishNow(t, finished, buildv2.JobStatus_JobStatusSuccess, ""))
-	// finish already removed the row; put it back to stand for a crash between
-	// the two halves of some earlier transition.
-	h.store.put(t, openIndexKey(testRepo, finished), nil)
+	// finish already removed the row; put it back to stand for an ending whose read
+	// had not seen the opening.
+	h.plant(t, testRepo, finished)
 
-	h.store.put(t, openIndexKey(testRepo, unknownJobID), nil)
+	h.plant(t, testRepo, unknownJobID)
 
-	require.Len(t, h.store.Keys(openIndexRoot()), 2)
+	require.Len(t, h.records.keys(t, openRoot()), 2)
 	require.NoError(t, h.reconcile())
-	require.Empty(t, h.store.Keys(openIndexRoot()))
+	require.Empty(t, h.records.keys(t, openRoot()))
 }
 
 func TestReconcileIsLeaderOnly(t *testing.T) {
@@ -80,61 +79,27 @@ func TestReconcileIsLeaderOnly(t *testing.T) {
 }
 
 func TestReconcileReportsWhatItCannotRead(t *testing.T) {
-	t.Run("an index row that does not decode", func(t *testing.T) {
+	t.Run("an open row that does not decode", func(t *testing.T) {
 		h := newHarness(t)
-		h.store.put(t, openIndexPrefix(testRepo)+"!!!", nil)
+		h.records.put(t, openRows(testRepo)+"!!!", nil)
 
 		require.Equal(t, connect.CodeInternal, connect.CodeOf(h.reconcile()))
 	})
 
-	t.Run("a record that does not decode", func(t *testing.T) {
+	t.Run("an event that does not decode", func(t *testing.T) {
 		h := newHarness(t)
 		id := h.planned(t, testRef, testCommit)
-		h.store.put(t, jobRecordKey(id), []byte("not a record"))
+		h.records.garble(t, id)
 
 		require.Equal(t, connect.CodeInternal, connect.CodeOf(h.reconcile()))
 	})
 
 	t.Run("a store that refuses the repair", func(t *testing.T) {
 		h := newHarness(t)
-		h.store.put(t, openIndexKey(testRepo, unknownJobID), nil)
-		h.store.failBatches(errors.New("log is full"))
+		h.plant(t, testRepo, unknownJobID)
+		h.records.failBatches(errors.New("the store is full"))
 
 		require.Error(t, h.reconcile())
-	})
-
-	// The delete branch takes a barrier of its own, so it has a refusal of its
-	// own — and it happens after reconcile's, which succeeded.
-	t.Run("a store that refuses the delete branch its barrier", func(t *testing.T) {
-		h := newHarness(t)
-		h.store.put(t, openIndexKey(testRepo, unknownJobID), nil)
-		h.store.onKeys(openIndexRoot(), func() {
-			h.store.failBarrier(errors.New("lost quorum"))
-		})
-
-		require.Equal(t, connect.CodeUnavailable, connect.CodeOf(h.reconcile()))
-		require.Len(t, h.store.Keys(openIndexRoot()), 1,
-			"and nothing is deleted on a read this node could not make current")
-	})
-
-	// The second read is a read like any other, and a record that does not
-	// decode is reported rather than treated as a record that is gone — which
-	// would delete the row of a job whose record is merely corrupt.
-	t.Run("a record that does not decode on the deciding read", func(t *testing.T) {
-		h, stale := staleHarness(t)
-		id := h.planned(t, testRef, testCommit)
-		d, err := h.work.Claim()
-		require.NoError(t, err)
-		require.NoError(t, h.work.Ack(d))
-		require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusFailed, "boom"))
-
-		applied, exists := stale.fakeStore.Get(jobRecordKey(id))
-		require.True(t, exists)
-		stale.fakeStore.put(t, openIndexKey(testRepo, id), nil)
-		stale.fakeStore.put(t, jobRecordKey(id), []byte("not a record"))
-		stale.behindFrom(openIndexRoot(), jobRecordKey(id), applied)
-
-		require.Equal(t, connect.CodeInternal, connect.CodeOf(h.reconcile()))
 	})
 
 	t.Run("a store that refuses the re-queue", func(t *testing.T) {
@@ -170,49 +135,57 @@ func TestTheStartedLoopReconciles(t *testing.T) {
 	}, 5*time.Second, time.Millisecond, "the reconcile ticker never re-queued job %s", id)
 }
 
-// staleHarness is a Service over a node that can be behind what it holds
-// committed. The wrapper goes under New, so the queue is behind it too.
-func staleHarness(t testing.TB) (*harness, *staleStore) {
+// elsewhere appends one event of a job as another node's writer, with the rows
+// that went in its delta, straight into the store: a delta replicated here.
+func (h *harness) elsewhere(t testing.TB, id string, ev *buildv2.JobEvent, rows ...func(at int64, writer string) string) {
 	t.Helper()
-	store := newStore()
-	stale := &staleStore{fakeStore: store}
-	return newHarnessOver(t, stale, store), stale
+	ev.At, ev.Writer = h.journal.at(), "elsewhere"
+	raw, err := ev.MarshalVT()
+	require.NoError(t, err)
+	h.records.put(t, eventKey(id, ev.At, ev.Writer), raw)
+	for _, row := range rows {
+		h.records.put(t, row(ev.At, ev.Writer), nil)
+	}
 }
 
-func TestMendDoesNotDropAnOpenRowItReadAtAnOlderPrefix(t *testing.T) {
-	h, stale := staleHarness(t)
+// A REOPENING THIS REPLICA HAD NOT SEEN KEEPS ITS ROW. Another node's retry
+// arrives between mend's read of the job and its listing of the job's rows: mend
+// decided on an ended job, and the row it now lists is beside an event that read
+// never saw.
+func TestMendDoesNotDropTheRowOfAReopeningItHadNotRead(t *testing.T) {
+	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
-
-	// What this node has APPLIED: the job lost its item and finished, so its
-	// open row is gone.
 	d, err := h.work.Claim()
 	require.NoError(t, err)
 	require.NoError(t, h.work.Ack(d))
 	require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusFailed, "boom"))
-	applied, exists := stale.fakeStore.Get(jobRecordKey(id))
-	require.True(t, exists)
+	h.plant(t, testRepo, id)
+	stale := h.records.keys(t, openRowsOf(testRepo, id))
+	require.Len(t, stale, 1)
 
-	// And what it holds committed and has not: a retry, which reopened the job
-	// and wrote its open row back in one entry.
-	require.NoError(t, h.retry(id))
-	_, row := stale.fakeStore.Get(openIndexKey(testRepo, id))
-	require.True(t, row, "the retry wrote the row this pass is about to walk")
+	h.records.onList(eventPrefix(id), func() {
+		h.elsewhere(t, id, &buildv2.JobEvent{Kind: &buildv2.JobEvent_Retried{Retried: &buildv2.JobRetried{}}},
+			func(at int64, writer string) string { return openRow(testRepo, id, at, writer) })
+	})
+	require.NoError(t, h.reconcile())
 
-	// The lag starts at the listing, which is where reconcile's own barrier is
-	// already behind it.
-	stale.behindFrom(openIndexRoot(), jobRecordKey(id), applied)
+	rows := h.records.keys(t, openRowsOf(testRepo, id))
+	t.Logf("status=%s rows=%v", h.status(t, id), rows)
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id), "the retry reopened the job")
+	require.Len(t, rows, 1, "the reopening's row survives")
+	require.NotContains(t, rows, stale[0], "and the row of the opening the read saw end is gone")
+}
 
-	n := spent(h, func() { require.NoError(t, h.reconcile()) })
+// A ROW WITH NO EVENTS IS LEFT UNTIL IT IS OLD: its delta may have arrived ahead
+// of the created one it follows.
+func TestMendLeavesAYoungRowWithNoEventsBehindIt(t *testing.T) {
+	h := newHarness(t)
+	h.records.put(t, openRow(testRepo, unknownJobID, h.journal.at(), "elsewhere"), nil)
 
-	raw, exists := stale.fakeStore.Get(jobRecordKey(id))
-	require.True(t, exists)
-	rec, err := decodeJobRecord(jobRecordKey(id), id, raw)
-	require.NoError(t, err)
-	_, row = stale.fakeStore.Get(openIndexKey(testRepo, id))
-	t.Logf("status=%s openRow=%v barriers=%d", rec.status(), row, n)
+	require.NoError(t, h.reconcile())
+	require.Len(t, h.records.keys(t, openRoot()), 1)
 
-	require.Equal(t, buildv2.JobStatus_JobStatusOpen, rec.status(),
-		"the retry was accepted, so the job is open")
-	require.True(t, row,
-		"and its open row must survive a pass whose record read predates the retry")
+	h.clock.advance(h.cfg.Queue.VisibilityTimeout + h.cfg.BuildTimeout + time.Second)
+	require.NoError(t, h.reconcile())
+	require.Empty(t, h.records.keys(t, openRoot()))
 }
