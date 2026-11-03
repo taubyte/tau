@@ -229,7 +229,7 @@ func TestAPutIsHeldByItsHoldersAndReadFromAnyNode(t *testing.T) {
 	at := assetsOf(t, "site_code")
 	c := newCluster(t, 4, fixedCatalog{at})
 
-	v, err := c.client(t, 0, 0).Put(t.Context(), at, "build-1", "application/gzip", strings.NewReader("the artifact"))
+	v, err := c.client(t, 0, 0).Put(t.Context(), at, "build-1", Object{ContentType: "application/gzip"}, strings.NewReader("the artifact"))
 	require.NoError(t, err)
 	require.Equal(t, uint64(len("the artifact")), v.Record.Size)
 	require.Equal(t, "application/gzip", v.Record.ContentType)
@@ -264,7 +264,7 @@ func TestAPutTooFewNodesTookIsNoVersion(t *testing.T) {
 	for _, id := range c.ids[1:] {
 		c.swarm.down[id] = true
 	}
-	_, err := c.client(t, 0, 0).Put(t.Context(), at, "build-1", "", strings.NewReader("lost"))
+	_, err := c.client(t, 0, 0).Put(t.Context(), at, "build-1", Object{}, strings.NewReader("lost"))
 	require.ErrorIs(t, err, ErrUnderHeld)
 
 	for _, id := range c.ids[1:] {
@@ -279,7 +279,7 @@ func TestADeleteIsATombstoneAcknowledgedLikeAPut(t *testing.T) {
 	c := newCluster(t, 3, fixedCatalog{at})
 	cl := c.client(t, 0, 1)
 
-	put, err := cl.Put(t.Context(), at, "build-1", "", strings.NewReader("one"))
+	put, err := cl.Put(t.Context(), at, "build-1", Object{}, strings.NewReader("one"))
 	require.NoError(t, err)
 	del, err := cl.Delete(t.Context(), at, "build-1")
 	require.NoError(t, err)
@@ -315,7 +315,7 @@ func TestANodeThatHoldsNoIndexAsksOneThatDoes(t *testing.T) {
 	}
 	require.GreaterOrEqual(t, outside, 0, "five nodes and three holders leave someone out")
 
-	_, err = c.client(t, outside, outside).Put(t.Context(), at, "build-1", "", strings.NewReader("one"))
+	_, err = c.client(t, outside, outside).Put(t.Context(), at, "build-1", Object{}, strings.NewReader("one"))
 	require.NoError(t, err)
 	got, err := c.client(t, outside, outside).Current(t.Context(), at, "build-1")
 	require.NoError(t, err)
@@ -344,7 +344,7 @@ func TestABucketTheCatalogHasNotHeardOfStaysOpenOnceWritten(t *testing.T) {
 	at := assetsOf(t, "site_code")
 	c := newCluster(t, 3, fixedCatalog{})
 
-	_, err := c.client(t, 0, 0).Put(t.Context(), at, "build-1", "", strings.NewReader("one"))
+	_, err := c.client(t, 0, 0).Put(t.Context(), at, "build-1", Object{}, strings.NewReader("one"))
 	require.NoError(t, err)
 	shard, err := shardOf(at.Bucket())
 	require.NoError(t, err)
@@ -392,7 +392,7 @@ func TestAOneNodeStoreIsItsOwnBar(t *testing.T) {
 	at := assetsOf(t, "site_code")
 	c := newCluster(t, 1, fixedCatalog{at})
 
-	w, err := c.client(t, 0, 0).Put(t.Context(), at, "build-1", "", strings.NewReader("alone"))
+	w, err := c.client(t, 0, 0).Put(t.Context(), at, "build-1", Object{}, strings.NewReader("alone"))
 	require.NoError(t, err)
 	got, err := c.client(t, 0, 0).Current(t.Context(), at, "build-1")
 	require.NoError(t, err)

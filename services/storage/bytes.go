@@ -1,0 +1,105 @@
+package storage
+
+import (
+	"context"
+	"fmt"
+	"io"
+
+	"github.com/ipfs/boxo/ipld/merkledag"
+	"github.com/ipfs/go-cid"
+	ipld "github.com/ipfs/go-ipld-format"
+	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
+
+	"github.com/taubyte/tau/p2p/peer"
+)
+
+// peerBytes is a peer's blockstore as this service keeps bytes in it.
+type peerBytes struct{ peer.Node }
+
+var _ Bytes = peerBytes{}
+
+func (b peerBytes) Add(ctx context.Context, content io.Reader) (cid.Cid, uint64, []cid.Cid, error) {
+	counted := &countingReader{r: content}
+	root, err := b.DAG().AddFile(ctx, counted, nil)
+	if err != nil {
+		return cid.Undef, 0, nil, err
+	}
+	blocks, err := walk(ctx, b.DAG(), root.Cid())
+	return root.Cid(), counted.n, blocks, err
+}
+
+func (b peerBytes) Fetch(ctx context.Context, root cid.Cid, from libp2ppeer.ID) ([]cid.Cid, error) {
+	// The writer is who has every block, so it is asked first rather than found.
+	if err := b.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: from}); err != nil {
+		return nil, fmt.Errorf("reaching %s: %w", from, err)
+	}
+	return walk(ctx, b.DAG().Session(ctx), root)
+}
+
+func (b peerBytes) Read(ctx context.Context, root cid.Cid) (io.ReadSeekCloser, error) {
+	return b.DAG().GetFile(ctx, root)
+}
+
+func (b peerBytes) Has(ctx context.Context, c cid.Cid) (bool, error) {
+	return b.DAG().HasBlock(ctx, c)
+}
+
+// Links reads only this node's copy: a block not here is an error, never a fetch.
+func (b peerBytes) Links(ctx context.Context, c cid.Cid) ([]cid.Cid, error) {
+	block, err := b.DAG().BlockStore().Get(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	if c.Prefix().Codec == cid.Raw {
+		return nil, nil
+	}
+	nd, err := merkledag.DecodeProtobufBlock(block)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]cid.Cid, 0, len(nd.Links()))
+	for _, l := range nd.Links() {
+		out = append(out, l.Cid)
+	}
+	return out, nil
+}
+
+func (b peerBytes) Delete(ctx context.Context, c cid.Cid) error {
+	return b.DAG().DeleteBlocks(ctx, []cid.Cid{c})
+}
+
+// walk is every block under root, each read through get, which fetches what is not
+// here when it is a session.
+func walk(ctx context.Context, get ipld.NodeGetter, root cid.Cid) ([]cid.Cid, error) {
+	seen := map[cid.Cid]bool{}
+	var out []cid.Cid
+	stack := []cid.Cid{root}
+	for len(stack) > 0 {
+		c := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if seen[c] {
+			continue
+		}
+		seen[c] = true
+		nd, err := get.Get(ctx, c)
+		if err != nil {
+			return nil, fmt.Errorf("reading %s: %w", c, err)
+		}
+		out = append(out, c)
+		for _, l := range nd.Links() {
+			stack = append(stack, l.Cid)
+		}
+	}
+	return out, nil
+}
+
+type countingReader struct {
+	r io.Reader
+	n uint64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += uint64(n)
+	return n, err
+}

@@ -34,7 +34,7 @@ func TestAnAddedServiceJoinsAFleet(t *testing.T) {
 	const name = "added"
 	protocol := rpc.Protocol(echov1connect.EchoServiceName)
 
-	added := instance.WithService(instance.Service{Name: name, Start: func(_ context.Context, h instance.Host) (io.Closer, error) {
+	added := instance.WithService(echoService{name: name, start: func(_ context.Context, h instance.Host) (io.Closer, error) {
 		mux := http.NewServeMux()
 		mux.Handle(echov1connect.NewEchoServiceHandler(echoes{peer: h.Peer().ID().String()}))
 		if err := h.Listen(protocol, mux); err != nil {
@@ -91,4 +91,16 @@ func routes(n *instance.Instance, service, peer string) bool {
 		}
 	}
 	return false
+}
+
+// echoService is a service this test writes as a function.
+type echoService struct {
+	name  string
+	start func(context.Context, instance.Host) (io.Closer, error)
+}
+
+func (s echoService) Name() string { return s.name }
+
+func (s echoService) Start(ctx context.Context, h instance.Host) (io.Closer, error) {
+	return s.start(ctx, h)
 }

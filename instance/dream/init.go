@@ -30,6 +30,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/discovery"
+	"github.com/taubyte/tau/services/storage"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -382,6 +383,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		// A DEVELOPMENT CLOUD'S DOOR for a developer's own build — see uploads.
 		instance.WithUploads(held),
 		instance.WithBuildSeams(func(s instance.BuildSeams) instance.BuildSeams { return held.layer(folders.layer(s)) }),
+		instance.WithService(storage.Role),
 	}
 	if now != nil {
 		options = append(options, instance.WithClock(now))

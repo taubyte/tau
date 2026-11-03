@@ -27,7 +27,7 @@ type written struct {
 }
 
 // put stores content as the next version of name.
-func (s *Service) put(ctx context.Context, a Address, name, contentType string, content io.Reader) (written, error) {
+func (s *Service) put(ctx context.Context, a Address, name string, o Object, content io.Reader) (written, error) {
 	replicas, barrier, known := s.fleet.read(ctx)
 	if !known {
 		return written{}, fmt.Errorf("%w: this node has never learned how many copies the cloud promises", ErrUnderHeld)
@@ -57,11 +57,17 @@ func (s *Service) put(ctx context.Context, a Address, name, contentType string, 
 	}
 
 	rec := VersionRecord{
-		RootCID: root.String(), Size: size, ContentType: contentType,
+		RootCID: root.String(), Size: size, ContentType: o.ContentType, Metadata: o.Metadata,
 		CreatedMS: uint64(s.now().UnixMilli()), Writer: s.self,
 	}
 	if err := s.appendEverywhere(ctx, a, name, stamp, rec, replicas, barrier); err != nil {
 		return written{}, err
+	}
+	// The catalog is a hint: the shard's holders already Saw the instance.
+	if r, ok := s.catalog.(catalogRecorder); ok {
+		if err := r.Record(ctx, a); err != nil {
+			s.logf("storage: cataloguing %s: %v", a, err)
+		}
 	}
 	v, err := versionOf(a, name, stamp, rec)
 	return written{version: v, holders: held}, err

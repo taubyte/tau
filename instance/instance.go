@@ -191,7 +191,7 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 
 	added := make([]string, 0, len(o.extra))
 	for _, s := range o.extra {
-		added = append(added, s.Name)
+		added = append(added, s.Name())
 	}
 	cfg, err := cfg.withDefaults(added...)
 	if err != nil {
@@ -304,6 +304,7 @@ func (n *Instance) openStats() error {
 		return err
 	}
 	n.discovery = svc
+	n.provide(Discovery, svc)
 	n.closers = append(n.closers, svc)
 	return nil
 }
@@ -329,6 +330,7 @@ func (n *Instance) openRegister() error {
 		return err
 	}
 	n.register = svc
+	n.provide(Register, svc)
 	n.closers = append(n.closers, svc)
 	return nil
 }
@@ -923,7 +925,7 @@ func (n *Instance) Handler() http.Handler {
 		gateway = n.gateway.Handler()
 	}
 	for _, s := range n.opts.extra {
-		if n.cfg.runs(s.Name) {
+		if n.cfg.runs(s.Name()) {
 			return n.public.front(gateway)
 		}
 	}

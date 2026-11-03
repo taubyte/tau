@@ -93,6 +93,15 @@ func (c *Client) ResolveHost(ctx context.Context, fqdn string) (project, environ
 	return res.Msg.GetProject(), res.Msg.GetEnvironment(), nil
 }
 
+// ResolveFleet is the cloud's own document in force.
+func (c *Client) ResolveFleet(ctx context.Context) (pkgregister.Pointer, error) {
+	res, err := c.svc.ResolveFleet(ctx, connect.NewRequest(&registerv2.FleetRequest{}))
+	if err != nil {
+		return pkgregister.Pointer{}, unwire(err)
+	}
+	return pkgregister.Pointer{Object: pkgregister.ObjectID(res.Msg.GetObject()), Revision: res.Msg.GetRevision()}, nil
+}
+
 func (c *Client) Object(ctx context.Context, id pkgregister.ObjectID) ([]byte, error) {
 	res, err := c.svc.Object(ctx, connect.NewRequest(&registerv2.ObjectRequest{Object: string(id)}))
 	if err != nil {

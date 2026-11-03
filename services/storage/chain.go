@@ -70,14 +70,14 @@ type VersionRecord struct {
 	// exclusive object frees its DAG with no mark phase at all. It is only
 	// ever a HINT THAT SAVES WORK — false means "walk", never "keep".
 	Exclusive bool
+
+	// Metadata is the caller's own name/value pairs, carried so head answers
+	// them without the bytes.
+	Metadata map[string]string
 }
 
 func (r VersionRecord) encode() ([]byte, error) {
-	m := storagev2.VersionRecord{
-		RootCid: r.RootCID, Size: r.Size, ContentType: r.ContentType, CreatedMs: r.CreatedMS,
-		Writer: r.Writer, Tombstone: r.Tombstone, Exclusive: r.Exclusive,
-	}
-	return m.MarshalVT()
+	return wireRecord(r).MarshalVT()
 }
 
 // decodeVersionRecord refuses an empty row: every record written carries a root or a
@@ -87,10 +87,7 @@ func decodeVersionRecord(raw []byte) (VersionRecord, error) {
 	if err := codec.DecodeNonEmpty(raw, &m); err != nil {
 		return VersionRecord{}, fmt.Errorf("%w: %w", ErrNotThisServicesRow, err)
 	}
-	return VersionRecord{
-		RootCID: m.RootCid, Size: m.Size, ContentType: m.ContentType, CreatedMS: m.CreatedMs,
-		Writer: m.Writer, Tombstone: m.Tombstone, Exclusive: m.Exclusive,
-	}, nil
+	return recordOf(&m), nil
 }
 
 // Version is one row, key and value together, derived entirely from the row.
@@ -283,6 +280,59 @@ func (i index) Versions(ctx context.Context, a Address, name string, limit int) 
 			return nil, err
 		}
 		out = append(out, v)
+	}
+	return out, nil
+}
+
+// List is the current version of every live object whose name begins with prefix
+// and sorts after after, in name order. An object's rows are contiguous and
+// newest-first, so its first row is its current version and a tombstone there
+// leaves it out.
+func (i index) List(ctx context.Context, a Address, prefix, after string, limit int) ([]Version, error) {
+	namespace, err := a.objectsPrefix()
+	if err != nil {
+		return nil, err
+	}
+	raw, err := a.listPrefix(prefix)
+	if err != nil {
+		return nil, err
+	}
+	var past string
+	if after != "" {
+		object, err := a.objectPrefix(after)
+		if err != nil {
+			return nil, err
+		}
+		// Past every row of after: its stamps and writers sort below '~', and a
+		// name extending after sorts above this.
+		past = object + "/~"
+	}
+	rows, err := i.scan(ctx, namespace, raw, past, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	var (
+		out  []Version
+		last string
+		seen bool
+	)
+	for _, r := range rows {
+		v, err := parseVersion(r.key, r.value)
+		if err != nil {
+			return nil, err
+		}
+		if seen && v.Name == last {
+			continue
+		}
+		seen, last = true, v.Name
+		if v.Tombstone() {
+			continue
+		}
+		out = append(out, v)
+		if limit > 0 && len(out) == limit {
+			break
+		}
 	}
 	return out, nil
 }

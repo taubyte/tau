@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 
 	"connectrpc.com/connect"
 	"github.com/ipfs/go-cid"
@@ -24,6 +25,9 @@ func (s *Service) mount() http.Handler {
 
 type handler struct{ s *Service }
 
+// storagev2Client is another storage node, as this one calls it.
+type storagev2Client = storagev2connect.StorageServiceClient
+
 var _ storagev2connect.StorageServiceHandler = (*handler)(nil)
 
 func (h *handler) Put(ctx context.Context, stream *connect.ClientStream[storagev2.PutRequest]) (*connect.Response[storagev2.PutResponse], error) {
@@ -38,7 +42,8 @@ func (h *handler) Put(ctx context.Context, stream *connect.ClientStream[storagev
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	w, err := h.s.put(ctx, a, string(head.GetName()), head.GetContentType(), &chunks{stream: stream})
+	o := Object{ContentType: head.GetContentType(), Metadata: head.GetMetadata()}
+	w, err := h.s.put(ctx, a, string(head.GetName()), o, &chunks{stream: stream})
 	if err != nil {
 		return nil, wire(err)
 	}
@@ -85,6 +90,49 @@ func (h *handler) Delete(ctx context.Context, req *connect.Request[storagev2.Del
 	return connect.NewResponse(&storagev2.DeleteResponse{Version: wireVersion(v)}), nil
 }
 
+func (h *handler) List(ctx context.Context, req *connect.Request[storagev2.ListRequest]) (*connect.Response[storagev2.ListResponse], error) {
+	a, err := addressOf(req.Msg.GetAt())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	vs, err := h.s.list(ctx, a, string(req.Msg.GetPrefix()), string(req.Msg.GetAfter()), int(req.Msg.GetLimit()), req.Msg.GetHere())
+	if err != nil {
+		return nil, wire(err)
+	}
+	out := &storagev2.ListResponse{Versions: make([]*storagev2.Version, 0, len(vs))}
+	for _, v := range vs {
+		out.Versions = append(out.Versions, wireVersion(v))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (h *handler) Read(ctx context.Context, req *connect.Request[storagev2.ReadRequest], stream *connect.ServerStream[storagev2.ReadResponse]) error {
+	root, err := cid.Decode(req.Msg.GetRootCid())
+	if err != nil {
+		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("storage: root: %w", err))
+	}
+	content, err := h.s.open(ctx, root, req.Msg.GetHere())
+	if err != nil {
+		return wire(err)
+	}
+	defer content.Close()
+	buf := make([]byte, chunkSize)
+	for {
+		n, err := content.Read(buf)
+		if n > 0 {
+			if serr := stream.Send(&storagev2.ReadResponse{Chunk: buf[:n]}); serr != nil {
+				return serr
+			}
+		}
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
+}
+
 func (h *handler) Hold(ctx context.Context, req *connect.Request[storagev2.HoldRequest]) (*connect.Response[storagev2.HoldResponse], error) {
 	a, err := addressOf(req.Msg.GetAt())
 	if err != nil {
@@ -122,11 +170,11 @@ func (h *handler) Append(ctx context.Context, req *connect.Request[storagev2.App
 // holder's.
 func (s *Service) current(ctx context.Context, a Address, name string, here bool) (Version, error) {
 	var out Version
-	err := s.read(ctx, a, here, func(i index) error {
+	err := s.fromIndex(ctx, a, here, func(i index) error {
 		v, err := i.Current(ctx, a, name)
 		out = v
 		return err
-	}, func(svc storagev2connect.StorageServiceClient) error {
+	}, func(svc storagev2Client) error {
 		res, err := svc.Current(ctx, connect.NewRequest(&storagev2.CurrentRequest{At: wireAddress(a), Name: []byte(name), Here: true}))
 		if err != nil {
 			return err
@@ -140,11 +188,11 @@ func (s *Service) current(ctx context.Context, a Address, name string, here bool
 // versions is name's versions, newest first.
 func (s *Service) versions(ctx context.Context, a Address, name string, limit int, here bool) ([]Version, error) {
 	var out []Version
-	err := s.read(ctx, a, here, func(i index) error {
+	err := s.fromIndex(ctx, a, here, func(i index) error {
 		vs, err := i.Versions(ctx, a, name, limit)
 		out = vs
 		return err
-	}, func(svc storagev2connect.StorageServiceClient) error {
+	}, func(svc storagev2Client) error {
 		res, err := svc.Versions(ctx, connect.NewRequest(&storagev2.VersionsRequest{At: wireAddress(a), Name: []byte(name), Limit: uint32(limit), Here: true}))
 		if err != nil {
 			return err
@@ -162,9 +210,9 @@ func (s *Service) versions(ctx context.Context, a Address, name string, limit in
 	return out, err
 }
 
-// read answers from this node's copy when it holds the shard, and otherwise from the
-// first holder that answers. A request that says here never leaves this node.
-func (s *Service) read(ctx context.Context, a Address, here bool, local func(index) error, remote func(storagev2connect.StorageServiceClient) error) error {
+// fromIndex answers from this node's copy when it holds the shard, and otherwise from
+// the first holder that answers. A request that says here never leaves this node.
+func (s *Service) fromIndex(ctx context.Context, a Address, here bool, local func(index) error, remote func(storagev2Client) error) error {
 	i, ok, err := s.indexOf(ctx, a)
 	if err != nil {
 		return err
@@ -258,27 +306,53 @@ func wireAddress(a Address) *storagev2.Address {
 func wireRecord(r VersionRecord) *storagev2.VersionRecord {
 	return &storagev2.VersionRecord{
 		RootCid: r.RootCID, Size: r.Size, ContentType: r.ContentType, CreatedMs: r.CreatedMS,
-		Writer: r.Writer, Tombstone: r.Tombstone, Exclusive: r.Exclusive,
+		Writer: r.Writer, Tombstone: r.Tombstone, Exclusive: r.Exclusive, Metadata: sortedMetadata(r.Metadata),
 	}
 }
 
 func recordOf(m *storagev2.VersionRecord) VersionRecord {
 	return VersionRecord{
 		RootCID: m.GetRootCid(), Size: m.GetSize(), ContentType: m.GetContentType(), CreatedMS: m.GetCreatedMs(),
-		Writer: m.GetWriter(), Tombstone: m.GetTombstone(), Exclusive: m.GetExclusive(),
+		Writer: m.GetWriter(), Tombstone: m.GetTombstone(), Exclusive: m.GetExclusive(), Metadata: metadataMap(m.GetMetadata()),
 	}
+}
+
+// sortedMetadata is metadata in name order, so one record always encodes to one byte
+// string.
+func sortedMetadata(m map[string]string) []*storagev2.Metadata {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make([]*storagev2.Metadata, 0, len(m))
+	for name, value := range m {
+		out = append(out, &storagev2.Metadata{Name: name, Value: value})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+func metadataMap(pairs []*storagev2.Metadata) map[string]string {
+	if len(pairs) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(pairs))
+	for _, p := range pairs {
+		out[p.GetName()] = p.GetValue()
+	}
+	return out
 }
 
 func wireVersion(v Version) *storagev2.Version {
 	return &storagev2.Version{
 		RootCid: v.Record.RootCID, Stamp: v.Stamp, Writer: v.Writer, Size: v.Record.Size,
 		ContentType: v.Record.ContentType, Tombstone: v.Record.Tombstone,
+		CreatedMs: v.Record.CreatedMS, Metadata: v.Record.Metadata, Name: []byte(v.Name),
 	}
 }
 
 func versionFromWire(a Address, name string, w *storagev2.Version) (Version, error) {
 	return versionOf(a, name, w.GetStamp(), VersionRecord{
 		RootCID: w.GetRootCid(), Size: w.GetSize(), ContentType: w.GetContentType(),
-		Writer: w.GetWriter(), Tombstone: w.GetTombstone(),
+		Writer: w.GetWriter(), Tombstone: w.GetTombstone(), CreatedMS: w.GetCreatedMs(), Metadata: w.GetMetadata(),
 	})
 }

@@ -15,25 +15,26 @@ import (
 
 // An operator configures four per-node durations. R and K are the cloud's, published
 // once (pkg/fleet, fleet.go), since a cloud-wide promise configured per node cannot
-// be noticed drifting. Every interface here is declared by the consumer and narrow:
-// no peer.Node, and each has an in-memory test implementation.
+// be noticed drifting. Every interface here is declared by the consumer and narrow,
+// and each has an in-memory test implementation; only host.go and bytes.go see the
+// instance's peer, to build them from it.
 
 // Config is what an operator declared: a plain value that round-trips through yaml.
 // Replication policy is the platform's, not a bucket's or a node's.
 type Config struct {
 	// MaxSkew is how far ahead of local time a remote stamp may be and still
 	// advance this node's clock. Default 5m. See clock.go.
-	MaxSkew time.Duration
+	MaxSkew time.Duration `yaml:"max_skew"`
 
 	// GraceGC is how long a tombstone must have been OBSERVED HERE before the
 	// blocks it releases may be swept. Default 24h. It is timed from local
 	// observation, never from the stamp — see gc.go.
-	GraceGC time.Duration
+	GraceGC time.Duration `yaml:"grace_gc"`
 
 	// Liveness and Stabilize are the two membership timescales
 	// (pkg/membership). Defaults 5s and 60s.
-	Liveness  time.Duration
-	Stabilize time.Duration
+	Liveness  time.Duration `yaml:"liveness"`
+	Stabilize time.Duration `yaml:"stabilize"`
 }
 
 // withDefaults fills the zero fields and refuses a combination that cannot be
@@ -73,7 +74,7 @@ const (
 // Datastore is the slice of go-datastore this service's index needs. No Close (a
 // shard's lifetime is shard.go's) and no AllKeysChan (the blockstore is shared with
 // kvdb's own DAG blocks). *kvdb.Datastore satisfies it; this service builds its own
-// store because it needs prefix queries, which core/kvdb.KVDB lacks.
+// store because it needs prefix queries, which core/kvdb.Instance lacks.
 type Datastore interface {
 	Get(ctx context.Context, key ds.Key) ([]byte, error)
 	Has(ctx context.Context, key ds.Key) (bool, error)
@@ -92,6 +93,11 @@ type Catalog interface {
 	// Buckets lists every bucket instance the cloud declares. A storage node
 	// reads it to decide which shards exist; it is never a per-request call.
 	Buckets(ctx context.Context) ([]Address, error)
+}
+
+// catalogRecorder is a Catalog that learns of a bucket instance from its first write.
+type catalogRecorder interface {
+	Record(ctx context.Context, a Address) error
 }
 
 // Blocks is the byte plane as the index half sees it: has, local links, delete, and

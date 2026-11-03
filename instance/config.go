@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/taubyte/tau/core/kvdb"
+	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/invoke"
@@ -165,7 +166,7 @@ type options struct {
 	artifacts worker.Artifacts
 	secrets   worker.Secrets
 	now       func() time.Time
-	extra     []Service
+	extra     []service.Service
 	identity  func(Host) (auth.Identity, error)
 	regions   schema.Regions
 	resolver  cm.Resolver

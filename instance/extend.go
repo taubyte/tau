@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"slices"
 	"sync"
@@ -15,99 +14,36 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/taubyte/tau/core/kvdb"
+	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/rpc"
 )
 
 // Lets a composer add a service this package does not name, registered by name with
 // WithService before the config is checked, so a misspelled name is still refused.
-// An added service gets the node's resources through Host, all closed with the node
-// before the built-in services.
+// An added service gets the instance's facilities through Host, all closed with the
+// instance before the built-in services.
 
-// Service is a service added to a node by name.
-type Service struct {
-	// Name is what an operator writes in Config.Services, and what this node
-	// reports to discovery while it runs the service.
-	Name string
+// Host is what an instance gives each service it runs; see core/service.
+type Host = service.Host
 
-	// Start brings the service up. It runs after every built-in service has
-	// started, so whatever it reaches through Host is already answering. The
-	// closer it returns is closed first when the node closes.
-	Start func(ctx context.Context, h Host) (io.Closer, error)
-}
+// Vault is what the cloud's secrets service answers.
+type Vault = service.Vault
 
-// Host is what a node gives a service added with WithService.
-type Host interface {
-	// Name is the name the service was added under.
-	Name() string
-
-	// Peer is the instance's peer: its host, gossip, blockstore and datastore.
-	Peer() peer.Node
-
-	// Database opens one of the service's own replicated databases. Its path
-	// is under the service's name, so no added service can open a built-in
-	// one by naming it. It is closed with the node.
-	Database(name string) (kvdb.Instance, error)
-
-	// Listen serves handler to other nodes over p2p/rpc on id. The listener
-	// is closed with the node.
-	Listen(id protocol.ID, handler http.Handler) error
-
-	// Handle serves handler on the node's public listener for every request
-	// pattern matches, in net/http.ServeMux syntax — "mail.example.com/" or
-	// "/v1/things/". Whatever no added pattern matches is the gateway's.
-	Handle(pattern string, handler http.Handler) error
-
-	// Peers is every node discovery currently says runs service, this one
-	// included when it does. Nil when the node has no discovery view.
-	Peers(service string) []libp2ppeer.ID
-
-	// Local is the handle the service named provided on this instance, nil when
-	// this instance runs none. Provide is this service's own, for the others on
-	// this instance to reach it without a hop.
-	Local(service string) any
-	Provide(handle any)
-
-	// Secrets is the cloud's vault: this node's own when it runs one,
-	// otherwise whichever node discovery names.
-	Secrets() Vault
-
-	// Root is the node's own directory, or "" when it was composed without one.
-	Root() string
-
-	// Logger is a logger named for the service.
-	Logger() log.StandardLogger
-
-	// Config decodes the service's entry in Config.Added into into, the way
-	// the node's own file decodes: by yaml. With no entry it leaves into as
-	// it was, so whatever into held is the default.
-	Config(into any) error
-}
-
-// Vault is what the cloud's secrets service answers, from whichever node runs it.
-type Vault interface {
-	Secret(ctx context.Context, project, environment, secretID string) (string, error)
-	Set(ctx context.Context, project, environment, name string, value []byte) error
-	Delete(ctx context.Context, project, environment, name string) error
-	List(ctx context.Context, project, environment string) ([]string, error)
-}
-
-var errNoServiceStart = errors.New("node: an added service needs a Start")
-
-// WithService adds a service this node can run when its config names it.
-func WithService(s Service) Option {
+// WithService adds a service this instance can run when its config names it.
+func WithService(s service.Service) Option {
 	return func(o *options) error {
 		switch {
-		case s.Name == "":
+		case s == nil:
+			return errors.New("node: a nil service")
+		case s.Name() == "":
 			return errors.New("node: an added service needs a name")
-		case s.Start == nil:
-			return errNoServiceStart
-		case slices.Contains(builtIn(), s.Name):
-			return fmt.Errorf("node: %q is a built-in service", s.Name)
+		case slices.Contains(builtIn(), s.Name()):
+			return fmt.Errorf("node: %q is a built-in service", s.Name())
 		}
 		for _, have := range o.extra {
-			if have.Name == s.Name {
-				return fmt.Errorf("node: %q is added twice", s.Name)
+			if have.Name() == s.Name() {
+				return fmt.Errorf("node: %q is added twice", s.Name())
 			}
 		}
 		o.extra = append(o.extra, s)
@@ -122,12 +58,12 @@ func builtIn() []string { return append(append([]string(nil), All...), BuildFron
 // were added.
 func (n *Instance) startAdded(ctx context.Context) error {
 	for _, s := range n.opts.extra {
-		if !n.cfg.runs(s.Name) {
+		if !n.cfg.runs(s.Name()) {
 			continue
 		}
-		c, err := s.Start(ctx, &added{node: n, name: s.Name})
+		c, err := s.Start(ctx, &added{node: n, name: s.Name()})
 		if err != nil {
-			return fmt.Errorf("node: %s: %w", s.Name, err)
+			return fmt.Errorf("node: %s: %w", s.Name(), err)
 		}
 		if c != nil {
 			n.addCloser(c)

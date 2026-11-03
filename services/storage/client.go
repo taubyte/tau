@@ -38,10 +38,10 @@ func (c *Client) Close() error { c.conn.Close(); return nil }
 
 // Put stores content as the next version of name, and returns once the cloud's
 // barrier of nodes hold it.
-func (c *Client) Put(ctx context.Context, at Address, name, contentType string, content io.Reader) (Version, error) {
+func (c *Client) Put(ctx context.Context, at Address, name string, o Object, content io.Reader) (Version, error) {
 	stream := c.svc.Put(ctx)
 	head := &storagev2.PutRequest{Part: &storagev2.PutRequest_Head{Head: &storagev2.PutHead{
-		At: wireAddress(at), Name: []byte(name), ContentType: contentType,
+		At: wireAddress(at), Name: []byte(name), ContentType: o.ContentType, Metadata: o.Metadata,
 	}}}
 	if err := stream.Send(head); err != nil {
 		return Version{}, c.closed(stream, err)
@@ -111,4 +111,29 @@ func (c *Client) Delete(ctx context.Context, at Address, name string) (Version, 
 		return Version{}, unwire(err)
 	}
 	return versionFromWire(at, name, res.Msg.GetVersion())
+}
+
+// List is the current version of every live name beginning with prefix that sorts
+// after after, in name order.
+func (c *Client) List(ctx context.Context, at Address, prefix, after string, limit int) ([]Version, error) {
+	res, err := c.svc.List(ctx, connect.NewRequest(&storagev2.ListRequest{
+		At: wireAddress(at), Prefix: []byte(prefix), After: []byte(after), Limit: uint32(limit),
+	}))
+	if err != nil {
+		return nil, unwire(err)
+	}
+	out := make([]Version, 0, len(res.Msg.GetVersions()))
+	for _, w := range res.Msg.GetVersions() {
+		v, err := versionFromWire(at, string(w.GetName()), w)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+// Read is the bytes under root, from whichever node holds them.
+func (c *Client) Read(ctx context.Context, root string) (io.ReadCloser, error) {
+	return readFrom(ctx, c.svc, root, false)
 }

@@ -50,6 +50,10 @@ const (
 	StorageServiceVersionsProcedure = "/tau.storage.v2.StorageService/Versions"
 	// StorageServiceDeleteProcedure is the fully-qualified name of the StorageService's Delete RPC.
 	StorageServiceDeleteProcedure = "/tau.storage.v2.StorageService/Delete"
+	// StorageServiceListProcedure is the fully-qualified name of the StorageService's List RPC.
+	StorageServiceListProcedure = "/tau.storage.v2.StorageService/List"
+	// StorageServiceReadProcedure is the fully-qualified name of the StorageService's Read RPC.
+	StorageServiceReadProcedure = "/tau.storage.v2.StorageService/Read"
 	// StorageServiceHoldProcedure is the fully-qualified name of the StorageService's Hold RPC.
 	StorageServiceHoldProcedure = "/tau.storage.v2.StorageService/Hold"
 	// StorageServiceAppendProcedure is the fully-qualified name of the StorageService's Append RPC.
@@ -64,6 +68,9 @@ type StorageServiceClient interface {
 	Versions(context.Context, *connect.Request[v2.VersionsRequest]) (*connect.Response[v2.VersionsResponse], error)
 	// Delete writes a tombstone, acknowledged like a put.
 	Delete(context.Context, *connect.Request[v2.DeleteRequest]) (*connect.Response[v2.DeleteResponse], error)
+	List(context.Context, *connect.Request[v2.ListRequest]) (*connect.Response[v2.ListResponse], error)
+	// Read streams an object's bytes. A root no holder has is NotFound.
+	Read(context.Context, *connect.Request[v2.ReadRequest]) (*connect.ServerStreamForClient[v2.ReadResponse], error)
 	// Hold and Append are one storage node asking another.
 	Hold(context.Context, *connect.Request[v2.HoldRequest]) (*connect.Response[v2.HoldResponse], error)
 	Append(context.Context, *connect.Request[v2.AppendRequest]) (*connect.Response[v2.AppendResponse], error)
@@ -104,6 +111,18 @@ func NewStorageServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(storageServiceMethods.ByName("Delete")),
 			connect.WithClientOptions(opts...),
 		),
+		list: connect.NewClient[v2.ListRequest, v2.ListResponse](
+			httpClient,
+			baseURL+StorageServiceListProcedure,
+			connect.WithSchema(storageServiceMethods.ByName("List")),
+			connect.WithClientOptions(opts...),
+		),
+		read: connect.NewClient[v2.ReadRequest, v2.ReadResponse](
+			httpClient,
+			baseURL+StorageServiceReadProcedure,
+			connect.WithSchema(storageServiceMethods.ByName("Read")),
+			connect.WithClientOptions(opts...),
+		),
 		hold: connect.NewClient[v2.HoldRequest, v2.HoldResponse](
 			httpClient,
 			baseURL+StorageServiceHoldProcedure,
@@ -125,6 +144,8 @@ type storageServiceClient struct {
 	current  *connect.Client[v2.CurrentRequest, v2.CurrentResponse]
 	versions *connect.Client[v2.VersionsRequest, v2.VersionsResponse]
 	delete   *connect.Client[v2.DeleteRequest, v2.DeleteResponse]
+	list     *connect.Client[v2.ListRequest, v2.ListResponse]
+	read     *connect.Client[v2.ReadRequest, v2.ReadResponse]
 	hold     *connect.Client[v2.HoldRequest, v2.HoldResponse]
 	append   *connect.Client[v2.AppendRequest, v2.AppendResponse]
 }
@@ -149,6 +170,16 @@ func (c *storageServiceClient) Delete(ctx context.Context, req *connect.Request[
 	return c.delete.CallUnary(ctx, req)
 }
 
+// List calls tau.storage.v2.StorageService.List.
+func (c *storageServiceClient) List(ctx context.Context, req *connect.Request[v2.ListRequest]) (*connect.Response[v2.ListResponse], error) {
+	return c.list.CallUnary(ctx, req)
+}
+
+// Read calls tau.storage.v2.StorageService.Read.
+func (c *storageServiceClient) Read(ctx context.Context, req *connect.Request[v2.ReadRequest]) (*connect.ServerStreamForClient[v2.ReadResponse], error) {
+	return c.read.CallServerStream(ctx, req)
+}
+
 // Hold calls tau.storage.v2.StorageService.Hold.
 func (c *storageServiceClient) Hold(ctx context.Context, req *connect.Request[v2.HoldRequest]) (*connect.Response[v2.HoldResponse], error) {
 	return c.hold.CallUnary(ctx, req)
@@ -167,6 +198,9 @@ type StorageServiceHandler interface {
 	Versions(context.Context, *connect.Request[v2.VersionsRequest]) (*connect.Response[v2.VersionsResponse], error)
 	// Delete writes a tombstone, acknowledged like a put.
 	Delete(context.Context, *connect.Request[v2.DeleteRequest]) (*connect.Response[v2.DeleteResponse], error)
+	List(context.Context, *connect.Request[v2.ListRequest]) (*connect.Response[v2.ListResponse], error)
+	// Read streams an object's bytes. A root no holder has is NotFound.
+	Read(context.Context, *connect.Request[v2.ReadRequest], *connect.ServerStream[v2.ReadResponse]) error
 	// Hold and Append are one storage node asking another.
 	Hold(context.Context, *connect.Request[v2.HoldRequest]) (*connect.Response[v2.HoldResponse], error)
 	Append(context.Context, *connect.Request[v2.AppendRequest]) (*connect.Response[v2.AppendResponse], error)
@@ -203,6 +237,18 @@ func NewStorageServiceHandler(svc StorageServiceHandler, opts ...connect.Handler
 		connect.WithSchema(storageServiceMethods.ByName("Delete")),
 		connect.WithHandlerOptions(opts...),
 	)
+	storageServiceListHandler := connect.NewUnaryHandler(
+		StorageServiceListProcedure,
+		svc.List,
+		connect.WithSchema(storageServiceMethods.ByName("List")),
+		connect.WithHandlerOptions(opts...),
+	)
+	storageServiceReadHandler := connect.NewServerStreamHandler(
+		StorageServiceReadProcedure,
+		svc.Read,
+		connect.WithSchema(storageServiceMethods.ByName("Read")),
+		connect.WithHandlerOptions(opts...),
+	)
 	storageServiceHoldHandler := connect.NewUnaryHandler(
 		StorageServiceHoldProcedure,
 		svc.Hold,
@@ -225,6 +271,10 @@ func NewStorageServiceHandler(svc StorageServiceHandler, opts ...connect.Handler
 			storageServiceVersionsHandler.ServeHTTP(w, r)
 		case StorageServiceDeleteProcedure:
 			storageServiceDeleteHandler.ServeHTTP(w, r)
+		case StorageServiceListProcedure:
+			storageServiceListHandler.ServeHTTP(w, r)
+		case StorageServiceReadProcedure:
+			storageServiceReadHandler.ServeHTTP(w, r)
 		case StorageServiceHoldProcedure:
 			storageServiceHoldHandler.ServeHTTP(w, r)
 		case StorageServiceAppendProcedure:
@@ -252,6 +302,14 @@ func (UnimplementedStorageServiceHandler) Versions(context.Context, *connect.Req
 
 func (UnimplementedStorageServiceHandler) Delete(context.Context, *connect.Request[v2.DeleteRequest]) (*connect.Response[v2.DeleteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.storage.v2.StorageService.Delete is not implemented"))
+}
+
+func (UnimplementedStorageServiceHandler) List(context.Context, *connect.Request[v2.ListRequest]) (*connect.Response[v2.ListResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.storage.v2.StorageService.List is not implemented"))
+}
+
+func (UnimplementedStorageServiceHandler) Read(context.Context, *connect.Request[v2.ReadRequest], *connect.ServerStream[v2.ReadResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("tau.storage.v2.StorageService.Read is not implemented"))
 }
 
 func (UnimplementedStorageServiceHandler) Hold(context.Context, *connect.Request[v2.HoldRequest]) (*connect.Response[v2.HoldResponse], error) {

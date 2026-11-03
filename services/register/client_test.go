@@ -6,6 +6,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
 
 	pkgregister "github.com/taubyte/tau/pkg/register"
@@ -187,4 +188,47 @@ func TestTheManifestCrossesTheWire(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, local, m)
 	require.Equal(t, localID, id)
+}
+
+func TestTheFleetDocumentCrossesTheWire(t *testing.T) {
+	h := newHarness(t, pkgregister.NewMemStore())
+	c := newClient(t, h)
+
+	_, err := c.ResolveFleet(t.Context())
+	require.ErrorIs(t, err, pkgregister.ErrNotPublished, "an unpublished fleet is the defaults, not a failure")
+
+	id, err := h.Service.Local().PublishFleet(t.Context(), 3, []byte(`{"replication":3}`))
+	require.NoError(t, err)
+
+	p, err := c.ResolveFleet(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, id, p.Object)
+	require.Equal(t, uint64(3), p.Revision)
+	doc, err := c.Object(t.Context(), p.Object)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"replication":3}`, string(doc))
+}
+
+func TestAReachReadsTheFleetFromTheRegisterHereOrAnother(t *testing.T) {
+	h := newHarness(t, pkgregister.NewMemStore())
+	id, err := h.Service.Local().PublishFleet(t.Context(), 2, []byte(`{"replication":2}`))
+	require.NoError(t, err)
+
+	for name, r := range map[string]*Reach{
+		"here":    NewReach(h.CallerHost, func() *Service { return h.Service }, func() []libp2ppeer.ID { return nil }),
+		"another": NewReach(h.CallerHost, func() *Service { return nil }, func() []libp2ppeer.ID { return []libp2ppeer.ID{h.ServerHost.ID()} }),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Cleanup(func() { r.Close() })
+			p, err := r.ResolveFleet(t.Context())
+			require.NoError(t, err)
+			require.Equal(t, id, p.Object)
+			doc, err := r.Object(t.Context(), p.Object)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"replication":2}`, string(doc))
+
+			_, err = r.Object(t.Context(), pkgregister.IDOf([]byte("never")))
+			require.ErrorIs(t, err, pkgregister.ErrNoObject, "an answer, not a node to pass over")
+		})
+	}
 }

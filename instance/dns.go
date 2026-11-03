@@ -114,7 +114,7 @@ func (n *Instance) DNSAddrs() []net.Addr {
 func (n *Instance) knownServices() []string {
 	out := builtIn()
 	for _, svc := range n.opts.extra {
-		out = append(out, svc.Name)
+		out = append(out, svc.Name())
 	}
 	return out
 }

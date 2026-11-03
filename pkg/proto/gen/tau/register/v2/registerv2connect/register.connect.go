@@ -135,6 +135,9 @@ const (
 	// RegisterServiceManifestProcedure is the fully-qualified name of the RegisterService's Manifest
 	// RPC.
 	RegisterServiceManifestProcedure = "/tau.register.v2.RegisterService/Manifest"
+	// RegisterServiceResolveFleetProcedure is the fully-qualified name of the RegisterService's
+	// ResolveFleet RPC.
+	RegisterServiceResolveFleetProcedure = "/tau.register.v2.RegisterService/ResolveFleet"
 )
 
 // RegisterServiceClient is a client for the tau.register.v2.RegisterService service.
@@ -201,6 +204,10 @@ type RegisterServiceClient interface {
 	// Manifest is a deployment's current revision: its whole object and every
 	// destination it lists. A deployment nobody published is NotFound.
 	Manifest(context.Context, *connect.Request[v2.ResolveRequest]) (*connect.Response[v2.DeploymentManifest], error)
+	// ResolveFleet is the cloud's own document in force: its object and revision,
+	// the object read with Object. One nobody published is NotFound, as for a
+	// deployment, and every service then keeps its defaults.
+	ResolveFleet(context.Context, *connect.Request[v2.FleetRequest]) (*connect.Response[v2.Pointer], error)
 }
 
 // NewRegisterServiceClient constructs a client for the tau.register.v2.RegisterService service. By
@@ -316,6 +323,12 @@ func NewRegisterServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(registerServiceMethods.ByName("Manifest")),
 			connect.WithClientOptions(opts...),
 		),
+		resolveFleet: connect.NewClient[v2.FleetRequest, v2.Pointer](
+			httpClient,
+			baseURL+RegisterServiceResolveFleetProcedure,
+			connect.WithSchema(registerServiceMethods.ByName("ResolveFleet")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -338,6 +351,7 @@ type registerServiceClient struct {
 	resolveView  *connect.Client[v2.ViewRequest, v2.ViewPointer]
 	assigned     *connect.Client[v2.DestinationRequest, v2.Assignments]
 	manifest     *connect.Client[v2.ResolveRequest, v2.DeploymentManifest]
+	resolveFleet *connect.Client[v2.FleetRequest, v2.Pointer]
 }
 
 // Link calls tau.register.v2.RegisterService.Link.
@@ -425,6 +439,11 @@ func (c *registerServiceClient) Manifest(ctx context.Context, req *connect.Reque
 	return c.manifest.CallUnary(ctx, req)
 }
 
+// ResolveFleet calls tau.register.v2.RegisterService.ResolveFleet.
+func (c *registerServiceClient) ResolveFleet(ctx context.Context, req *connect.Request[v2.FleetRequest]) (*connect.Response[v2.Pointer], error) {
+	return c.resolveFleet.CallUnary(ctx, req)
+}
+
 // RegisterServiceHandler is an implementation of the tau.register.v2.RegisterService service.
 type RegisterServiceHandler interface {
 	// Link claims a project id for a configuration repository and attaches
@@ -489,6 +508,10 @@ type RegisterServiceHandler interface {
 	// Manifest is a deployment's current revision: its whole object and every
 	// destination it lists. A deployment nobody published is NotFound.
 	Manifest(context.Context, *connect.Request[v2.ResolveRequest]) (*connect.Response[v2.DeploymentManifest], error)
+	// ResolveFleet is the cloud's own document in force: its object and revision,
+	// the object read with Object. One nobody published is NotFound, as for a
+	// deployment, and every service then keeps its defaults.
+	ResolveFleet(context.Context, *connect.Request[v2.FleetRequest]) (*connect.Response[v2.Pointer], error)
 }
 
 // NewRegisterServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -600,6 +623,12 @@ func NewRegisterServiceHandler(svc RegisterServiceHandler, opts ...connect.Handl
 		connect.WithSchema(registerServiceMethods.ByName("Manifest")),
 		connect.WithHandlerOptions(opts...),
 	)
+	registerServiceResolveFleetHandler := connect.NewUnaryHandler(
+		RegisterServiceResolveFleetProcedure,
+		svc.ResolveFleet,
+		connect.WithSchema(registerServiceMethods.ByName("ResolveFleet")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/tau.register.v2.RegisterService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case RegisterServiceLinkProcedure:
@@ -636,6 +665,8 @@ func NewRegisterServiceHandler(svc RegisterServiceHandler, opts ...connect.Handl
 			registerServiceAssignedHandler.ServeHTTP(w, r)
 		case RegisterServiceManifestProcedure:
 			registerServiceManifestHandler.ServeHTTP(w, r)
+		case RegisterServiceResolveFleetProcedure:
+			registerServiceResolveFleetHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -711,4 +742,8 @@ func (UnimplementedRegisterServiceHandler) Assigned(context.Context, *connect.Re
 
 func (UnimplementedRegisterServiceHandler) Manifest(context.Context, *connect.Request[v2.ResolveRequest]) (*connect.Response[v2.DeploymentManifest], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.Manifest is not implemented"))
+}
+
+func (UnimplementedRegisterServiceHandler) ResolveFleet(context.Context, *connect.Request[v2.FleetRequest]) (*connect.Response[v2.Pointer], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.ResolveFleet is not implemented"))
 }

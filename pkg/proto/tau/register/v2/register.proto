@@ -377,4 +377,11 @@ service RegisterService {
   // Manifest is a deployment's current revision: its whole object and every
   // destination it lists. A deployment nobody published is NotFound.
   rpc Manifest(ResolveRequest) returns (DeploymentManifest);
+
+  // ResolveFleet is the cloud's own document in force: its object and revision,
+  // the object read with Object. One nobody published is NotFound, as for a
+  // deployment, and every service then keeps its defaults.
+  rpc ResolveFleet(FleetRequest) returns (Pointer);
 }
+
+message FleetRequest {}

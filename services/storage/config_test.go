@@ -77,7 +77,10 @@ func TestRaftAppearsNowhere(t *testing.T) {
 	}
 }
 
-func TestNoPeerNodeAnywhere(t *testing.T) {
+// The logic half takes narrow interfaces; only the two files that build them from
+// the instance's peer may see it.
+func TestOnlyTheHostSeesThePeer(t *testing.T) {
+	sees := map[string]bool{"host.go": true, "bytes.go": true}
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, ".", func(fi os.FileInfo) bool {
 		return !strings.HasSuffix(fi.Name(), "_test.go")
@@ -86,6 +89,9 @@ func TestNoPeerNodeAnywhere(t *testing.T) {
 
 	for _, pkg := range pkgs {
 		for name, file := range pkg.Files {
+			if sees[filepath.Base(name)] {
+				continue
+			}
 			for _, imp := range file.Imports {
 				path := strings.Trim(imp.Path.Value, `"`)
 				require.NotEqual(t, "github.com/taubyte/tau/p2p/peer", path, "%s imports p2p/peer", name)
@@ -174,14 +180,15 @@ func TestTheStorageBriefsSurfaceIsWhatIsExported(t *testing.T) {
 		"ErrEmptyObjectName", "ErrGateClosed", "ErrLocalClockSkew", "ErrLogicalOverflow",
 		"ErrNoAddress", "ErrNoBytes", "ErrNoCatalog", "ErrNoShards", "ErrNotFound",
 		"ErrNotThisServicesRow", "ErrRemoteClockSkew", "ErrStampRange", "ErrUnderHeld",
-		"ErrWriterMismatch", "Gates", "Local", "Marker", "Meter", "MisplacementDrop", "New",
-		"NewAddress", "NewBloomMarker", "NewBucket", "NewClient", "NewClock", "NewExactMarker",
-		"NewLocal", "NewSweeper", "Newest", "Op", "OpAdd", "OpRefuse", "OpRemove", "Option",
-		"Order", "PackStamp", "ParseVersionKey", "Policy", "Protocol", "Purpose", "Reference",
-		"Service", "ShardOpener", "Shards", "SweepResult", "Sweeper", "UnpackStamp", "Usage",
-		"Version", "VersionKey", "VersionRecord", "WithBytes", "WithCatalog", "WithClock",
-		"WithFleet", "WithLocal", "WithLogger", "WithMembers", "WithMeter", "WithServerOptions",
-		"WithShards", "WithSweep",
+		"ErrWriterMismatch", "Gates", "Host", "Local", "Marker", "Meter", "MisplacementDrop",
+		"New", "NewAddress", "NewBloomMarker", "NewBucket", "NewClient", "NewClock",
+		"NewExactMarker", "NewLocal", "NewReach", "NewSweeper", "Newest", "Object", "Op",
+		"OpAdd", "OpRefuse", "OpRemove", "Option", "Order", "PackStamp", "ParseVersionKey",
+		"Policy", "Protocol", "Purpose", "Reach", "Reference", "Role", "Service", "ShardOpener",
+		"Shards", "Start", "Store", "SweepResult", "Sweeper", "UnpackStamp", "Usage", "Version",
+		"VersionKey", "VersionRecord", "WithBytes", "WithCatalog", "WithClock", "WithFleet",
+		"WithLocal", "WithLogger", "WithMembers", "WithMeter", "WithServerOptions", "WithShards",
+		"WithSweep",
 	}, dedupe(names))
 }
 

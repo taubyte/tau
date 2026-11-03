@@ -10,6 +10,7 @@ import (
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/core/service"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 )
@@ -227,7 +228,7 @@ func TestANameDeepInAZoneFindsIt(t *testing.T) {
 }
 
 func TestEveryServiceANodeCanRunIsAName(t *testing.T) {
-	n := &Instance{Node: mockPeer(t), opts: options{extra: []Service{{Name: "billing"}}}}
+	n := &Instance{Node: mockPeer(t), opts: options{extra: []service.Service{started{name: "billing"}}}}
 	names := n.knownServices()
 	for _, want := range append(append([]string(nil), All...), BuildFrontend, "billing") {
 		require.Contains(t, names, want)

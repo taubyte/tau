@@ -21,6 +21,15 @@ message VersionRecord {
   string writer = 5;
   bool tombstone = 6;
   bool exclusive = 7;
+  // metadata is the caller's own name/value pairs, as an S3 object carries them,
+  // sorted by name: every holder of a shard writes this row under one key, so its
+  // bytes must not depend on map order.
+  repeated Metadata metadata = 8;
+}
+
+message Metadata {
+  string name = 1;
+  string value = 2;
 }
 
 // Address is one bucket instance: a `storage` resource's id, or the reserved
@@ -38,6 +47,7 @@ message PutHead {
   // name is the object's name within the instance, any bytes.
   bytes name = 2;
   string content_type = 3;
+  map<string, string> metadata = 4;
 }
 
 message PutRequest {
@@ -55,6 +65,10 @@ message Version {
   uint64 size = 4;
   string content_type = 5;
   bool tombstone = 6;
+  uint64 created_ms = 7;
+  map<string, string> metadata = 8;
+  // name is the object's, set where a response carries versions of many.
+  bytes name = 9;
 }
 
 message PutResponse {
@@ -122,6 +136,36 @@ message DeleteResponse {
   Version version = 1;
 }
 
+// ListRequest asks for the live objects of an instance, by name.
+message ListRequest {
+  Address at = 1;
+  // prefix selects the names that begin with it; empty is every name.
+  bytes prefix = 2;
+  // after resumes a listing past this name.
+  bytes after = 3;
+  // limit bounds how many names; zero is all of them.
+  uint32 limit = 4;
+  // here is as on CurrentRequest.
+  bool here = 5;
+}
+
+// ListResponse is each live object's current version, ordered by name.
+message ListResponse {
+  repeated Version versions = 1;
+}
+
+// ReadRequest asks for an object's bytes by their root, from whichever node holds
+// them.
+message ReadRequest {
+  string root_cid = 1;
+  // here reads only this node's blocks, never forwarding.
+  bool here = 2;
+}
+
+message ReadResponse {
+  bytes chunk = 1;
+}
+
 service StorageService {
   // Put stores one object: a head, then its bytes in chunks.
   rpc Put(stream PutRequest) returns (PutResponse);
@@ -129,6 +173,9 @@ service StorageService {
   rpc Versions(VersionsRequest) returns (VersionsResponse);
   // Delete writes a tombstone, acknowledged like a put.
   rpc Delete(DeleteRequest) returns (DeleteResponse);
+  rpc List(ListRequest) returns (ListResponse);
+  // Read streams an object's bytes. A root no holder has is NotFound.
+  rpc Read(ReadRequest) returns (stream ReadResponse);
 
   // Hold and Append are one storage node asking another.
   rpc Hold(HoldRequest) returns (HoldResponse);

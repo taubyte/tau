@@ -6,15 +6,19 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/rpc"
 	echov1 "github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1"
 	"github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1/echov1connect"
+	"github.com/taubyte/tau/pkg/raft"
+	"github.com/taubyte/tau/services/storage"
 )
 
 const addedName = "added"
@@ -39,8 +43,8 @@ type recording struct {
 	closer *closed
 }
 
-func (r *recording) service() Service {
-	return Service{Name: addedName, Start: func(_ context.Context, h Host) (io.Closer, error) {
+func (r *recording) service() service.Service {
+	return started{name: addedName, start: func(_ context.Context, h Host) (io.Closer, error) {
 		r.host = h
 		r.closer = &closed{done: make(chan struct{})}
 		return r.closer, nil
@@ -50,11 +54,11 @@ func (r *recording) service() Service {
 func TestWhatWithServiceRefuses(t *testing.T) {
 	start := func(context.Context, Host) (io.Closer, error) { return nil, nil }
 	for name, opts := range map[string][]Option{
-		"no name":    {WithService(Service{Start: start})},
-		"no start":   {WithService(Service{Name: addedName})},
-		"built-in":   {WithService(Service{Name: Register, Start: start})},
-		"twice":      {WithService(Service{Name: addedName, Start: start}), WithService(Service{Name: addedName, Start: start})},
-		"misspelled": {WithService(Service{Name: addedName, Start: start})},
+		"no name":    {WithService(started{start: start})},
+		"nil":        {WithService(nil)},
+		"built-in":   {WithService(started{name: Register, start: start})},
+		"twice":      {WithService(started{name: addedName, start: start}), WithService(started{name: addedName, start: start})},
+		"misspelled": {WithService(started{name: addedName, start: start})},
 	} {
 		t.Run(name, func(t *testing.T) {
 			services := []string{addedName}
@@ -137,7 +141,7 @@ func TestAnAddedServiceGetsTheNodesResources(t *testing.T) {
 
 func TestAnAddedServiceAnswersOverRPCAndHTTP(t *testing.T) {
 	var host Host
-	svc := Service{Name: addedName, Start: func(_ context.Context, h Host) (io.Closer, error) {
+	svc := started{name: addedName, start: func(_ context.Context, h Host) (io.Closer, error) {
 		host = h
 		mux := http.NewServeMux()
 		mux.Handle(echov1connect.NewEchoServiceHandler(echoes{}))
@@ -186,7 +190,7 @@ func TestAnAddedServiceAnswersOverRPCAndHTTP(t *testing.T) {
 }
 
 func TestAddedPatternsAreServedInFrontOfTheGateway(t *testing.T) {
-	svc := Service{Name: addedName, Start: func(_ context.Context, h Host) (io.Closer, error) {
+	svc := started{name: addedName, start: func(_ context.Context, h Host) (io.Closer, error) {
 		return nil, h.Handle("mail.example.com/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			io.WriteString(w, "added")
 		}))
@@ -206,7 +210,7 @@ func TestAddedPatternsAreServedInFrontOfTheGateway(t *testing.T) {
 
 func TestAnAddedServiceThatFailsToStartFailsTheNode(t *testing.T) {
 	refused := errors.New("refused")
-	svc := Service{Name: addedName, Start: func(context.Context, Host) (io.Closer, error) { return nil, refused }}
+	svc := started{name: addedName, start: func(context.Context, Host) (io.Closer, error) { return nil, refused }}
 	n, _, _ := makeNode(t, Config{Services: []string{addedName}}, WithService(svc))
 	err := n.Start(t.Context())
 	require.ErrorIs(t, err, refused)
@@ -255,4 +259,39 @@ func TestAnAddedServiceDecodesItsOwnConfig(t *testing.T) {
 func TestConfigForAServiceNotAddedIsRefused(t *testing.T) {
 	_, err := New(mockPeer(t), rooted(t, Config{Added: map[string]any{"mail": map[string]any{}}}))
 	require.ErrorContains(t, err, `"mail"`)
+}
+
+// started is a service a test writes as a function.
+type started struct {
+	name  string
+	start func(context.Context, Host) (io.Closer, error)
+}
+
+func (s started) Name() string { return s.name }
+
+func (s started) Start(ctx context.Context, h Host) (io.Closer, error) { return s.start(ctx, h) }
+
+func TestStorageRunsBesideTheServicesItReaches(t *testing.T) {
+	ctx := t.Context()
+	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Register, Discovery, storage.Descriptor.Name}}),
+		withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
+		WithService(storage.Role))
+	require.NoError(t, err)
+	t.Cleanup(func() { n.Close() })
+	require.NoError(t, n.Start(ctx))
+
+	s, ok := n.local(storage.Descriptor.Name).(*storage.Service)
+	require.True(t, ok, "it provided itself")
+	at, err := storage.NewAddress("shop", "prod", storage.AssetsBucket, "QmPackage")
+	require.NoError(t, err)
+	// THE FLEET IS READ FROM THE REGISTER ON THIS INSTANCE, which is why a write
+	// can be acknowledged at all.
+	v, err := s.Put(ctx, at, "job-1", storage.Object{}, strings.NewReader("an artifact"))
+	require.NoError(t, err)
+	r, err := s.Read(ctx, v.Record.RootCID)
+	require.NoError(t, err)
+	body, err := io.ReadAll(r)
+	require.NoError(t, r.Close())
+	require.NoError(t, err)
+	require.Equal(t, "an artifact", string(body))
 }
