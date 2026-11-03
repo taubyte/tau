@@ -1,12 +1,16 @@
 package instance
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	fleetdoc "github.com/taubyte/tau/pkg/fleet"
+	"github.com/taubyte/tau/pkg/raft"
+	"github.com/taubyte/tau/services/consensus"
 )
 
 func TestADatabaseIsOpenedOncePerName(t *testing.T) {
@@ -90,4 +94,35 @@ func TestANodeWithNoRegisterFollowsNoFleet(t *testing.T) {
 	// It returns rather than polling a register that is not there.
 	n.followRetention(t.Context())
 	require.Zero(t, n.dbs.retention)
+}
+
+func TestABuiltInsGroupIsTimedByTheConsensusSection(t *testing.T) {
+	quick := consensus.Config{
+		Timeouts: raft.TimeoutConfig{
+			HeartbeatTimeout:   50 * time.Millisecond,
+			ElectionTimeout:    50 * time.Millisecond,
+			CommitTimeout:      25 * time.Millisecond,
+			LeaderLeaseTimeout: 25 * time.Millisecond,
+			SnapshotInterval:   time.Minute,
+			SnapshotThreshold:  1000,
+		},
+		BootstrapTimeout: 200 * time.Millisecond,
+	}
+	root := t.TempDir()
+	n := &Instance{Node: mockPeer(t), cfg: Config{Root: root, Sections: map[string]any{consensus.Descriptor.Name: quick}}}
+	c, err := n.raftGroup("built-in")
+	require.NoError(t, err)
+	t.Cleanup(func() { c.Close() })
+	// LEADER WELL INSIDE raft's 30s default bootstrap.
+	require.Eventually(t, c.IsLeader, 5*time.Second, 20*time.Millisecond)
+	_, err = os.Stat(filepath.Join(root, "raft", "built-in"))
+	require.NoError(t, err)
+
+	n.cfg.Sections[consensus.Descriptor.Name] = map[string]any{"timeouts": "not a table"}
+	_, err = n.raftGroup("refused")
+	require.ErrorContains(t, err, consensus.Descriptor.Name)
+
+	n.cfg.Root = ""
+	_, err = n.raftGroup("rootless")
+	require.ErrorIs(t, err, ErrNoRoot)
 }

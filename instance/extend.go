@@ -67,14 +67,16 @@ func (o options) serviceNamed(name string) (service.Service, bool) {
 	return services.New(name)
 }
 
-// serviceNames is every name serviceNamed answers.
+// serviceNames is every name serviceNamed answers, in the order they start: the
+// catalog's, then what this package's tests added.
 func (o options) serviceNames() []string {
 	out := services.Names()
+	added := make([]string, 0, len(o.extra))
 	for name := range o.extra {
-		out = append(out, name)
+		added = append(added, name)
 	}
-	slices.Sort(out)
-	return out
+	slices.Sort(added)
+	return append(out, added...)
 }
 
 // builtIn is every name this package starts itself.

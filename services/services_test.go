@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/services/consensus"
 	"github.com/taubyte/tau/services/discovery"
 	"github.com/taubyte/tau/services/register"
 	"github.com/taubyte/tau/services/secrets"
@@ -12,7 +13,7 @@ import (
 )
 
 func TestANameIsTheServiceItRuns(t *testing.T) {
-	require.Equal(t, []string{discovery.Descriptor.Name, register.Descriptor.Name, secrets.Descriptor.Name, storage.Descriptor.Name}, Names())
+	require.Equal(t, []string{consensus.Descriptor.Name, discovery.Descriptor.Name, register.Descriptor.Name, secrets.Descriptor.Name, storage.Descriptor.Name}, Names(), "in start order")
 
 	s, ok := New(storage.Descriptor.Name)
 	require.True(t, ok)

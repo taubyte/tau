@@ -6,27 +6,27 @@ import "time"
 type TimeoutConfig struct {
 	// HeartbeatTimeout specifies the time in follower state without
 	// a leader before we attempt an election
-	HeartbeatTimeout time.Duration
+	HeartbeatTimeout time.Duration `yaml:"heartbeat_timeout"`
 
 	// ElectionTimeout specifies the time in candidate state without
 	// leader contact before we attempt another election
-	ElectionTimeout time.Duration
+	ElectionTimeout time.Duration `yaml:"election_timeout"`
 
 	// CommitTimeout controls the time without an Apply operation
 	// before heartbeat is sent to ensure timely commit
-	CommitTimeout time.Duration
+	CommitTimeout time.Duration `yaml:"commit_timeout"`
 
 	// LeaderLeaseTimeout is used to control how long the "lease"
 	// lasts for leader without being able to contact quorum
-	LeaderLeaseTimeout time.Duration
+	LeaderLeaseTimeout time.Duration `yaml:"leader_lease_timeout"`
 
 	// SnapshotInterval controls how often we check if we should
 	// perform a snapshot
-	SnapshotInterval time.Duration
+	SnapshotInterval time.Duration `yaml:"snapshot_interval"`
 
 	// SnapshotThreshold controls how many outstanding logs there
 	// must be before we perform a snapshot
-	SnapshotThreshold uint64
+	SnapshotThreshold uint64 `yaml:"snapshot_threshold"`
 }
 
 // DefaultTimeoutConfig is the default timeout configuration, tuned for

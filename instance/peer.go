@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/consensus"
 )
 
 // A node is made from its peer. Whatever a service's backing is built from is the
@@ -142,14 +142,13 @@ func (n *Instance) raftGroup(namespace string) (raft.Cluster, error) {
 	if n.cfg.Root == "" {
 		return nil, ErrNoRoot
 	}
-	options := []raft.Option{raft.WithSnapshotRoot(filepath.Join(n.cfg.Root, "raft"))}
-	if n.cfg.Raft.Timeouts != (raft.TimeoutConfig{}) {
-		options = append(options, raft.WithTimeouts(n.cfg.Raft.Timeouts))
+	// THE CONSENSUS SERVICE'S TIMING, for the built-ins that open a group before
+	// any configured service has started.
+	var timing consensus.Config
+	if err := n.cfg.Section(consensus.Descriptor.Name, &timing); err != nil {
+		return nil, err
 	}
-	if n.cfg.Raft.BootstrapTimeout != 0 {
-		options = append(options, raft.WithBootstrapTimeout(n.cfg.Raft.BootstrapTimeout))
-	}
-	return raft.New(n.Node, namespace, options...)
+	return raft.New(n.Node, namespace, consensus.Options(n.cfg.Root, timing)...)
 }
 
 // ErrNoRoot is a node asked for what lives in a directory and given none.

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	auth "github.com/taubyte/tau/services/auth"
+	"github.com/taubyte/tau/services/consensus"
 
 	"github.com/taubyte/tau/instance/boot"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
@@ -373,7 +374,10 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	// directory, checkpointed and restored the way it is on a machine; and raft
 	// timed for nodes one process apart.
 	nodeConfig.Root = root
-	nodeConfig.Raft = instance.RaftConfig{Timeouts: dreamTimeouts, BootstrapTimeout: dreamBootstrapTimeout}
+	if nodeConfig.Sections == nil {
+		nodeConfig.Sections = map[string]any{}
+	}
+	nodeConfig.Sections[consensus.Descriptor.Name] = consensus.Config{Timeouts: dreamTimeouts, BootstrapTimeout: dreamBootstrapTimeout}
 
 	options := []instance.Option{
 		instance.WithArtifacts(staged),

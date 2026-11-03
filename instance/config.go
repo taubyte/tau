@@ -93,9 +93,6 @@ type Config struct {
 	// needs one is refused by name.
 	Root string
 
-	// Raft is how this instance's consensus groups time out; zero is raft's defaults.
-	Raft RaftConfig
-
 	// Cloud scopes what this node gossips with. Two clouds sharing a machine,
 	// or bridged by a stray peer, must not pool their load figures and route
 	// each other's traffic.
@@ -204,12 +201,6 @@ func WithDatabaseEngines(r *database.Registry) Option {
 type Assets interface {
 	Put(ctx context.Context, content io.Reader) (string, error)
 	Get(ctx context.Context, id string) (io.ReadSeekCloser, error)
-}
-
-// RaftConfig is how long this instance's raft groups wait.
-type RaftConfig struct {
-	Timeouts         raft.TimeoutConfig
-	BootstrapTimeout time.Duration
 }
 
 // WithTLS says the composer serves this node's gateway over TLS as well, answering
