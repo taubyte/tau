@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sync"
 	"time"
 
@@ -369,6 +370,18 @@ func (s *Service) Placement() []placement.Member {
 		return nil
 	}
 	return s.members.StablePlacement()
+}
+
+// PlacementOf is the placement set narrowed to the members whose last report says
+// they serve role: data a role holds is placed only on nodes running it.
+func (s *Service) PlacementOf(role string) []placement.Member {
+	var out []placement.Member
+	for _, m := range s.Placement() {
+		if node, ok := s.view.Get(m.ID); ok && slices.Contains(node.Serving, role) {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // Pending is how many databases the whole fleet knows to be below their floor,

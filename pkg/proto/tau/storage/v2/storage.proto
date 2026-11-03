@@ -1,6 +1,14 @@
 syntax = "proto3";
 
-// storage is what the storage service writes for itself. None of it is an RPC.
+// storage is where a project's bytes live: the objects of its `storage` resources
+// and the platform's own assets of it, its builds' artifacts and logs. A bucket
+// instance's index is replicated across the holders of its shard; an object's
+// bytes are held by the nodes placement names for its root, and a write is
+// acknowledged once enough of them hold it that one node going away loses nothing.
+//
+// No authorization: any peer that can reach this service can read and write any
+// project's bytes. Swarm membership, enforced by the cloud's CA, is the boundary,
+// as for the register, secrets and database.
 package tau.storage.v2;
 
 // VersionRecord is the value of a version row: everything head needs, so
@@ -13,4 +21,116 @@ message VersionRecord {
   string writer = 5;
   bool tombstone = 6;
   bool exclusive = 7;
+}
+
+// Address is one bucket instance: a `storage` resource's id, or the reserved
+// bucket a project's assets are kept in, in one environment of one project.
+message Address {
+  string project = 1;
+  string environment = 2;
+  string bucket = 3;
+  string instance = 4;
+}
+
+// PutHead says what the bytes after it are. It is the first message of a Put.
+message PutHead {
+  Address at = 1;
+  // name is the object's name within the instance, any bytes.
+  bytes name = 2;
+  string content_type = 3;
+}
+
+message PutRequest {
+  oneof part {
+    PutHead head = 1;
+    bytes chunk = 2;
+  }
+}
+
+// Version is one version of one object, as a reader sees it.
+message Version {
+  string root_cid = 1;
+  uint64 stamp = 2;
+  string writer = 3;
+  uint64 size = 4;
+  string content_type = 5;
+  bool tombstone = 6;
+}
+
+message PutResponse {
+  Version version = 1;
+  // holders is how many nodes held the bytes when the version was written: at
+  // least the cloud's barrier.
+  uint32 holders = 2;
+}
+
+// HoldRequest asks a node placement names for a root to fetch it from the node
+// that has it and keep it, for the version it is about to become.
+message HoldRequest {
+  string root_cid = 1;
+  // from is the peer that has every block now.
+  string from = 2;
+  Address at = 3;
+  bytes name = 4;
+  uint64 stamp = 5;
+}
+
+message HoldResponse {}
+
+// AppendRequest writes one version row on a holder of the instance's shard, for a
+// node that does not hold it.
+message AppendRequest {
+  Address at = 1;
+  bytes name = 2;
+  uint64 stamp = 3;
+  VersionRecord record = 4;
+}
+
+message AppendResponse {}
+
+message CurrentRequest {
+  Address at = 1;
+  bytes name = 2;
+  // here answers from this node's copy of the index, never forwarding: what one
+  // storage node asks another that placement names as a holder.
+  bool here = 3;
+}
+
+message CurrentResponse {
+  Version version = 1;
+}
+
+message VersionsRequest {
+  Address at = 1;
+  bytes name = 2;
+  // limit bounds how many, newest first; zero is all of them.
+  uint32 limit = 3;
+  // here is as on CurrentRequest.
+  bool here = 4;
+}
+
+message VersionsResponse {
+  repeated Version versions = 1;
+}
+
+message DeleteRequest {
+  Address at = 1;
+  bytes name = 2;
+}
+
+message DeleteResponse {
+  Version version = 1;
+}
+
+service StorageService {
+  // Put stores one object: a head, then its bytes in chunks.
+  rpc Put(stream PutRequest) returns (PutResponse);
+  rpc Current(CurrentRequest) returns (CurrentResponse);
+  rpc Versions(VersionsRequest) returns (VersionsResponse);
+  // Delete writes a tombstone, acknowledged like a put.
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+
+  // Hold and Append are one storage node asking another.
+  rpc Hold(HoldRequest) returns (HoldResponse);
+  rpc Append(AppendRequest) returns (AppendResponse);
 }

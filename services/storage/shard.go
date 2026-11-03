@@ -125,6 +125,22 @@ func (s *shardSet) reconcile(ctx context.Context, desired map[uint16]struct{}) (
 	return opened, closed, errors.Join(errs...)
 }
 
+// ensure opens one shard now, for a write that reached a holder before the catalog
+// named its bucket. The next reconcile keeps it, since the write is also Saw.
+func (s *shardSet) ensure(ctx context.Context, shard uint16) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, have := s.open[shard]; have {
+		return nil
+	}
+	store, err := s.opener.Open(ctx, shard)
+	if err != nil {
+		return fmt.Errorf("storage: opening shard %d: %w", shard, err)
+	}
+	s.open[shard] = store
+	return nil
+}
+
 // index returns the index for a bucket, if this node holds its shard.
 func (s *shardSet) index(b Bucket) (index, bool, error) {
 	shard, err := shardOf(b)

@@ -116,3 +116,37 @@ func TestAConfiguredStabilizeIsWhatPlacementRunsOn(t *testing.T) {
 	beat()
 	require.Len(t, s.Placement(), 1, "the configured window elapsed and nothing settled")
 }
+
+func TestARolesPlacementIsOnlyTheNodesRunningIt(t *testing.T) {
+	var mu sync.Mutex
+	now := time.Unix(0, 0)
+	clock := func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		return now
+	}
+
+	s, err := New(newHost(t), Config{Interval: time.Second},
+		WithClock(clock), WithBus(&memBus{}), WithReporter(fixedSnapshot(Snapshot{Ready: true})))
+	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
+
+	serving := map[string][]string{"n1": {"storage", "worker"}, "n2": {"worker"}, "n3": {"storage"}}
+	for range 121 {
+		mu.Lock()
+		now = now.Add(time.Second)
+		mu.Unlock()
+		for peer, roles := range serving {
+			require.NoError(t, s.view.Observe(stats.Report{Peer: peer, Load: 0.1, Ready: true, Serving: roles}))
+			s.beat(peer, 1, true)
+		}
+	}
+
+	var ids []string
+	for _, m := range s.PlacementOf("storage") {
+		ids = append(ids, m.ID)
+	}
+	require.ElementsMatch(t, []string{"n1", "n3"}, ids)
+	require.Empty(t, s.PlacementOf("dns"), "a role nobody runs is placed nowhere")
+	require.Len(t, s.Placement(), 3, "the whole set is unchanged")
+}

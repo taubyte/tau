@@ -4,7 +4,15 @@
 // 	protoc        (unknown)
 // source: tau/storage/v2/storage.proto
 
-// storage is what the storage service writes for itself. None of it is an RPC.
+// storage is where a project's bytes live: the objects of its `storage` resources
+// and the platform's own assets of it, its builds' artifacts and logs. A bucket
+// instance's index is replicated across the holders of its shard; an object's
+// bytes are held by the nodes placement names for its root, and a write is
+// acknowledged once enough of them hold it that one node going away loses nothing.
+//
+// No authorization: any peer that can reach this service can read and write any
+// project's bytes. Swarm membership, enforced by the cloud's CA, is the boundary,
+// as for the register, secrets and database.
 
 package storagev2
 
@@ -117,6 +125,896 @@ func (x *VersionRecord) GetExclusive() bool {
 	return false
 }
 
+// Address is one bucket instance: a `storage` resource's id, or the reserved
+// bucket a project's assets are kept in, in one environment of one project.
+type Address struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	Environment   string                 `protobuf:"bytes,2,opt,name=environment,proto3" json:"environment,omitempty"`
+	Bucket        string                 `protobuf:"bytes,3,opt,name=bucket,proto3" json:"bucket,omitempty"`
+	Instance      string                 `protobuf:"bytes,4,opt,name=instance,proto3" json:"instance,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Address) Reset() {
+	*x = Address{}
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Address) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Address) ProtoMessage() {}
+
+func (x *Address) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Address.ProtoReflect.Descriptor instead.
+func (*Address) Descriptor() ([]byte, []int) {
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *Address) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *Address) GetEnvironment() string {
+	if x != nil {
+		return x.Environment
+	}
+	return ""
+}
+
+func (x *Address) GetBucket() string {
+	if x != nil {
+		return x.Bucket
+	}
+	return ""
+}
+
+func (x *Address) GetInstance() string {
+	if x != nil {
+		return x.Instance
+	}
+	return ""
+}
+
+// PutHead says what the bytes after it are. It is the first message of a Put.
+type PutHead struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	At    *Address               `protobuf:"bytes,1,opt,name=at,proto3" json:"at,omitempty"`
+	// name is the object's name within the instance, any bytes.
+	Name          []byte `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	ContentType   string `protobuf:"bytes,3,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutHead) Reset() {
+	*x = PutHead{}
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutHead) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutHead) ProtoMessage() {}
+
+func (x *PutHead) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutHead.ProtoReflect.Descriptor instead.
+func (*PutHead) Descriptor() ([]byte, []int) {
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *PutHead) GetAt() *Address {
+	if x != nil {
+		return x.At
+	}
+	return nil
+}
+
+func (x *PutHead) GetName() []byte {
+	if x != nil {
+		return x.Name
+	}
+	return nil
+}
+
+func (x *PutHead) GetContentType() string {
+	if x != nil {
+		return x.ContentType
+	}
+	return ""
+}
+
+type PutRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Part:
+	//
+	//	*PutRequest_Head
+	//	*PutRequest_Chunk
+	Part          isPutRequest_Part `protobuf_oneof:"part"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutRequest) Reset() {
+	*x = PutRequest{}
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutRequest) ProtoMessage() {}
+
+func (x *PutRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutRequest.ProtoReflect.Descriptor instead.
+func (*PutRequest) Descriptor() ([]byte, []int) {
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *PutRequest) GetPart() isPutRequest_Part {
+	if x != nil {
+		return x.Part
+	}
+	return nil
+}
+
+func (x *PutRequest) GetHead() *PutHead {
+	if x != nil {
+		if x, ok := x.Part.(*PutRequest_Head); ok {
+			return x.Head
+		}
+	}
+	return nil
+}
+
+func (x *PutRequest) GetChunk() []byte {
+	if x != nil {
+		if x, ok := x.Part.(*PutRequest_Chunk); ok {
+			return x.Chunk
+		}
+	}
+	return nil
+}
+
+type isPutRequest_Part interface {
+	isPutRequest_Part()
+}
+
+type PutRequest_Head struct {
+	Head *PutHead `protobuf:"bytes,1,opt,name=head,proto3,oneof"`
+}
+
+type PutRequest_Chunk struct {
+	Chunk []byte `protobuf:"bytes,2,opt,name=chunk,proto3,oneof"`
+}
+
+func (*PutRequest_Head) isPutRequest_Part() {}
+
+func (*PutRequest_Chunk) isPutRequest_Part() {}
+
+// Version is one version of one object, as a reader sees it.
+type Version struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RootCid       string                 `protobuf:"bytes,1,opt,name=root_cid,json=rootCid,proto3" json:"root_cid,omitempty"`
+	Stamp         uint64                 `protobuf:"varint,2,opt,name=stamp,proto3" json:"stamp,omitempty"`
+	Writer        string                 `protobuf:"bytes,3,opt,name=writer,proto3" json:"writer,omitempty"`
+	Size          uint64                 `protobuf:"varint,4,opt,name=size,proto3" json:"size,omitempty"`
+	ContentType   string                 `protobuf:"bytes,5,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
+	Tombstone     bool                   `protobuf:"varint,6,opt,name=tombstone,proto3" json:"tombstone,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Version) Reset() {
+	*x = Version{}
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Version) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Version) ProtoMessage() {}
+
+func (x *Version) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Version.ProtoReflect.Descriptor instead.
+func (*Version) Descriptor() ([]byte, []int) {
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *Version) GetRootCid() string {
+	if x != nil {
+		return x.RootCid
+	}
+	return ""
+}
+
+func (x *Version) GetStamp() uint64 {
+	if x != nil {
+		return x.Stamp
+	}
+	return 0
+}
+
+func (x *Version) GetWriter() string {
+	if x != nil {
+		return x.Writer
+	}
+	return ""
+}
+
+func (x *Version) GetSize() uint64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *Version) GetContentType() string {
+	if x != nil {
+		return x.ContentType
+	}
+	return ""
+}
+
+func (x *Version) GetTombstone() bool {
+	if x != nil {
+		return x.Tombstone
+	}
+	return false
+}
+
+type PutResponse struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Version *Version               `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	// holders is how many nodes held the bytes when the version was written: at
+	// least the cloud's barrier.
+	Holders       uint32 `protobuf:"varint,2,opt,name=holders,proto3" json:"holders,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutResponse) Reset() {
+	*x = PutResponse{}
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutResponse) ProtoMessage() {}
+
+func (x *PutResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutResponse.ProtoReflect.Descriptor instead.
+func (*PutResponse) Descriptor() ([]byte, []int) {
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *PutResponse) GetVersion() *Version {
+	if x != nil {
+		return x.Version
+	}
+	return nil
+}
+
+func (x *PutResponse) GetHolders() uint32 {
+	if x != nil {
+		return x.Holders
+	}
+	return 0
+}
+
+// HoldRequest asks a node placement names for a root to fetch it from the node
+// that has it and keep it, for the version it is about to become.
+type HoldRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	RootCid string                 `protobuf:"bytes,1,opt,name=root_cid,json=rootCid,proto3" json:"root_cid,omitempty"`
+	// from is the peer that has every block now.
+	From          string   `protobuf:"bytes,2,opt,name=from,proto3" json:"from,omitempty"`
+	At            *Address `protobuf:"bytes,3,opt,name=at,proto3" json:"at,omitempty"`
+	Name          []byte   `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
+	Stamp         uint64   `protobuf:"varint,5,opt,name=stamp,proto3" json:"stamp,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HoldRequest) Reset() {
+	*x = HoldRequest{}
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HoldRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HoldRequest) ProtoMessage() {}
+
+func (x *HoldRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HoldRequest.ProtoReflect.Descriptor instead.
+func (*HoldRequest) Descriptor() ([]byte, []int) {
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *HoldRequest) GetRootCid() string {
+	if x != nil {
+		return x.RootCid
+	}
+	return ""
+}
+
+func (x *HoldRequest) GetFrom() string {
+	if x != nil {
+		return x.From
+	}
+	return ""
+}
+
+func (x *HoldRequest) GetAt() *Address {
+	if x != nil {
+		return x.At
+	}
+	return nil
+}
+
+func (x *HoldRequest) GetName() []byte {
+	if x != nil {
+		return x.Name
+	}
+	return nil
+}
+
+func (x *HoldRequest) GetStamp() uint64 {
+	if x != nil {
+		return x.Stamp
+	}
+	return 0
+}
+
+type HoldResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HoldResponse) Reset() {
+	*x = HoldResponse{}
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HoldResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HoldResponse) ProtoMessage() {}
+
+func (x *HoldResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HoldResponse.ProtoReflect.Descriptor instead.
+func (*HoldResponse) Descriptor() ([]byte, []int) {
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{7}
+}
+
+// AppendRequest writes one version row on a holder of the instance's shard, for a
+// node that does not hold it.
+type AppendRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	At            *Address               `protobuf:"bytes,1,opt,name=at,proto3" json:"at,omitempty"`
+	Name          []byte                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Stamp         uint64                 `protobuf:"varint,3,opt,name=stamp,proto3" json:"stamp,omitempty"`
+	Record        *VersionRecord         `protobuf:"bytes,4,opt,name=record,proto3" json:"record,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AppendRequest) Reset() {
+	*x = AppendRequest{}
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppendRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppendRequest) ProtoMessage() {}
+
+func (x *AppendRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppendRequest.ProtoReflect.Descriptor instead.
+func (*AppendRequest) Descriptor() ([]byte, []int) {
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *AppendRequest) GetAt() *Address {
+	if x != nil {
+		return x.At
+	}
+	return nil
+}
+
+func (x *AppendRequest) GetName() []byte {
+	if x != nil {
+		return x.Name
+	}
+	return nil
+}
+
+func (x *AppendRequest) GetStamp() uint64 {
+	if x != nil {
+		return x.Stamp
+	}
+	return 0
+}
+
+func (x *AppendRequest) GetRecord() *VersionRecord {
+	if x != nil {
+		return x.Record
+	}
+	return nil
+}
+
+type AppendResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AppendResponse) Reset() {
+	*x = AppendResponse{}
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppendResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppendResponse) ProtoMessage() {}
+
+func (x *AppendResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppendResponse.ProtoReflect.Descriptor instead.
+func (*AppendResponse) Descriptor() ([]byte, []int) {
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{9}
+}
+
+type CurrentRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	At    *Address               `protobuf:"bytes,1,opt,name=at,proto3" json:"at,omitempty"`
+	Name  []byte                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// here answers from this node's copy of the index, never forwarding: what one
+	// storage node asks another that placement names as a holder.
+	Here          bool `protobuf:"varint,3,opt,name=here,proto3" json:"here,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CurrentRequest) Reset() {
+	*x = CurrentRequest{}
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CurrentRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CurrentRequest) ProtoMessage() {}
+
+func (x *CurrentRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CurrentRequest.ProtoReflect.Descriptor instead.
+func (*CurrentRequest) Descriptor() ([]byte, []int) {
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *CurrentRequest) GetAt() *Address {
+	if x != nil {
+		return x.At
+	}
+	return nil
+}
+
+func (x *CurrentRequest) GetName() []byte {
+	if x != nil {
+		return x.Name
+	}
+	return nil
+}
+
+func (x *CurrentRequest) GetHere() bool {
+	if x != nil {
+		return x.Here
+	}
+	return false
+}
+
+type CurrentResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Version       *Version               `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CurrentResponse) Reset() {
+	*x = CurrentResponse{}
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CurrentResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CurrentResponse) ProtoMessage() {}
+
+func (x *CurrentResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CurrentResponse.ProtoReflect.Descriptor instead.
+func (*CurrentResponse) Descriptor() ([]byte, []int) {
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *CurrentResponse) GetVersion() *Version {
+	if x != nil {
+		return x.Version
+	}
+	return nil
+}
+
+type VersionsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	At    *Address               `protobuf:"bytes,1,opt,name=at,proto3" json:"at,omitempty"`
+	Name  []byte                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// limit bounds how many, newest first; zero is all of them.
+	Limit uint32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	// here is as on CurrentRequest.
+	Here          bool `protobuf:"varint,4,opt,name=here,proto3" json:"here,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VersionsRequest) Reset() {
+	*x = VersionsRequest{}
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VersionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VersionsRequest) ProtoMessage() {}
+
+func (x *VersionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VersionsRequest.ProtoReflect.Descriptor instead.
+func (*VersionsRequest) Descriptor() ([]byte, []int) {
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *VersionsRequest) GetAt() *Address {
+	if x != nil {
+		return x.At
+	}
+	return nil
+}
+
+func (x *VersionsRequest) GetName() []byte {
+	if x != nil {
+		return x.Name
+	}
+	return nil
+}
+
+func (x *VersionsRequest) GetLimit() uint32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *VersionsRequest) GetHere() bool {
+	if x != nil {
+		return x.Here
+	}
+	return false
+}
+
+type VersionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Versions      []*Version             `protobuf:"bytes,1,rep,name=versions,proto3" json:"versions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VersionsResponse) Reset() {
+	*x = VersionsResponse{}
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VersionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VersionsResponse) ProtoMessage() {}
+
+func (x *VersionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VersionsResponse.ProtoReflect.Descriptor instead.
+func (*VersionsResponse) Descriptor() ([]byte, []int) {
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *VersionsResponse) GetVersions() []*Version {
+	if x != nil {
+		return x.Versions
+	}
+	return nil
+}
+
+type DeleteRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	At            *Address               `protobuf:"bytes,1,opt,name=at,proto3" json:"at,omitempty"`
+	Name          []byte                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteRequest) Reset() {
+	*x = DeleteRequest{}
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteRequest) ProtoMessage() {}
+
+func (x *DeleteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteRequest.ProtoReflect.Descriptor instead.
+func (*DeleteRequest) Descriptor() ([]byte, []int) {
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *DeleteRequest) GetAt() *Address {
+	if x != nil {
+		return x.At
+	}
+	return nil
+}
+
+func (x *DeleteRequest) GetName() []byte {
+	if x != nil {
+		return x.Name
+	}
+	return nil
+}
+
+type DeleteResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Version       *Version               `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteResponse) Reset() {
+	*x = DeleteResponse{}
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteResponse) ProtoMessage() {}
+
+func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteResponse.ProtoReflect.Descriptor instead.
+func (*DeleteResponse) Descriptor() ([]byte, []int) {
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *DeleteResponse) GetVersion() *Version {
+	if x != nil {
+		return x.Version
+	}
+	return nil
+}
+
 var File_tau_storage_v2_storage_proto protoreflect.FileDescriptor
 
 const file_tau_storage_v2_storage_proto_rawDesc = "" +
@@ -130,7 +1028,69 @@ const file_tau_storage_v2_storage_proto_rawDesc = "" +
 	"created_ms\x18\x04 \x01(\x04R\tcreatedMs\x12\x16\n" +
 	"\x06writer\x18\x05 \x01(\tR\x06writer\x12\x1c\n" +
 	"\ttombstone\x18\x06 \x01(\bR\ttombstone\x12\x1c\n" +
-	"\texclusive\x18\a \x01(\bR\texclusiveB\xbb\x01\n" +
+	"\texclusive\x18\a \x01(\bR\texclusive\"y\n" +
+	"\aAddress\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\x12 \n" +
+	"\venvironment\x18\x02 \x01(\tR\venvironment\x12\x16\n" +
+	"\x06bucket\x18\x03 \x01(\tR\x06bucket\x12\x1a\n" +
+	"\binstance\x18\x04 \x01(\tR\binstance\"i\n" +
+	"\aPutHead\x12'\n" +
+	"\x02at\x18\x01 \x01(\v2\x17.tau.storage.v2.AddressR\x02at\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\fR\x04name\x12!\n" +
+	"\fcontent_type\x18\x03 \x01(\tR\vcontentType\"[\n" +
+	"\n" +
+	"PutRequest\x12-\n" +
+	"\x04head\x18\x01 \x01(\v2\x17.tau.storage.v2.PutHeadH\x00R\x04head\x12\x16\n" +
+	"\x05chunk\x18\x02 \x01(\fH\x00R\x05chunkB\x06\n" +
+	"\x04part\"\xa7\x01\n" +
+	"\aVersion\x12\x19\n" +
+	"\broot_cid\x18\x01 \x01(\tR\arootCid\x12\x14\n" +
+	"\x05stamp\x18\x02 \x01(\x04R\x05stamp\x12\x16\n" +
+	"\x06writer\x18\x03 \x01(\tR\x06writer\x12\x12\n" +
+	"\x04size\x18\x04 \x01(\x04R\x04size\x12!\n" +
+	"\fcontent_type\x18\x05 \x01(\tR\vcontentType\x12\x1c\n" +
+	"\ttombstone\x18\x06 \x01(\bR\ttombstone\"Z\n" +
+	"\vPutResponse\x121\n" +
+	"\aversion\x18\x01 \x01(\v2\x17.tau.storage.v2.VersionR\aversion\x12\x18\n" +
+	"\aholders\x18\x02 \x01(\rR\aholders\"\x8f\x01\n" +
+	"\vHoldRequest\x12\x19\n" +
+	"\broot_cid\x18\x01 \x01(\tR\arootCid\x12\x12\n" +
+	"\x04from\x18\x02 \x01(\tR\x04from\x12'\n" +
+	"\x02at\x18\x03 \x01(\v2\x17.tau.storage.v2.AddressR\x02at\x12\x12\n" +
+	"\x04name\x18\x04 \x01(\fR\x04name\x12\x14\n" +
+	"\x05stamp\x18\x05 \x01(\x04R\x05stamp\"\x0e\n" +
+	"\fHoldResponse\"\x99\x01\n" +
+	"\rAppendRequest\x12'\n" +
+	"\x02at\x18\x01 \x01(\v2\x17.tau.storage.v2.AddressR\x02at\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\fR\x04name\x12\x14\n" +
+	"\x05stamp\x18\x03 \x01(\x04R\x05stamp\x125\n" +
+	"\x06record\x18\x04 \x01(\v2\x1d.tau.storage.v2.VersionRecordR\x06record\"\x10\n" +
+	"\x0eAppendResponse\"a\n" +
+	"\x0eCurrentRequest\x12'\n" +
+	"\x02at\x18\x01 \x01(\v2\x17.tau.storage.v2.AddressR\x02at\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\fR\x04name\x12\x12\n" +
+	"\x04here\x18\x03 \x01(\bR\x04here\"D\n" +
+	"\x0fCurrentResponse\x121\n" +
+	"\aversion\x18\x01 \x01(\v2\x17.tau.storage.v2.VersionR\aversion\"x\n" +
+	"\x0fVersionsRequest\x12'\n" +
+	"\x02at\x18\x01 \x01(\v2\x17.tau.storage.v2.AddressR\x02at\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\fR\x04name\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\rR\x05limit\x12\x12\n" +
+	"\x04here\x18\x04 \x01(\bR\x04here\"G\n" +
+	"\x10VersionsResponse\x123\n" +
+	"\bversions\x18\x01 \x03(\v2\x17.tau.storage.v2.VersionR\bversions\"L\n" +
+	"\rDeleteRequest\x12'\n" +
+	"\x02at\x18\x01 \x01(\v2\x17.tau.storage.v2.AddressR\x02at\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\fR\x04name\"C\n" +
+	"\x0eDeleteResponse\x121\n" +
+	"\aversion\x18\x01 \x01(\v2\x17.tau.storage.v2.VersionR\aversion2\xc2\x03\n" +
+	"\x0eStorageService\x12@\n" +
+	"\x03Put\x12\x1a.tau.storage.v2.PutRequest\x1a\x1b.tau.storage.v2.PutResponse(\x01\x12J\n" +
+	"\aCurrent\x12\x1e.tau.storage.v2.CurrentRequest\x1a\x1f.tau.storage.v2.CurrentResponse\x12M\n" +
+	"\bVersions\x12\x1f.tau.storage.v2.VersionsRequest\x1a .tau.storage.v2.VersionsResponse\x12G\n" +
+	"\x06Delete\x12\x1d.tau.storage.v2.DeleteRequest\x1a\x1e.tau.storage.v2.DeleteResponse\x12A\n" +
+	"\x04Hold\x12\x1b.tau.storage.v2.HoldRequest\x1a\x1c.tau.storage.v2.HoldResponse\x12G\n" +
+	"\x06Append\x12\x1d.tau.storage.v2.AppendRequest\x1a\x1e.tau.storage.v2.AppendResponseB\xbb\x01\n" +
 	"\x12com.tau.storage.v2B\fStorageProtoP\x01Z=github.com/taubyte/tau/pkg/proto/gen/tau/storage/v2;storagev2\xa2\x02\x03TSX\xaa\x02\x0eTau.Storage.V2\xca\x02\x0eTau\\Storage\\V2\xe2\x02\x1aTau\\Storage\\V2\\GPBMetadata\xea\x02\x10Tau::Storage::V2b\x06proto3"
 
 var (
@@ -145,16 +1105,55 @@ func file_tau_storage_v2_storage_proto_rawDescGZIP() []byte {
 	return file_tau_storage_v2_storage_proto_rawDescData
 }
 
-var file_tau_storage_v2_storage_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_tau_storage_v2_storage_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_tau_storage_v2_storage_proto_goTypes = []any{
-	(*VersionRecord)(nil), // 0: tau.storage.v2.VersionRecord
+	(*VersionRecord)(nil),    // 0: tau.storage.v2.VersionRecord
+	(*Address)(nil),          // 1: tau.storage.v2.Address
+	(*PutHead)(nil),          // 2: tau.storage.v2.PutHead
+	(*PutRequest)(nil),       // 3: tau.storage.v2.PutRequest
+	(*Version)(nil),          // 4: tau.storage.v2.Version
+	(*PutResponse)(nil),      // 5: tau.storage.v2.PutResponse
+	(*HoldRequest)(nil),      // 6: tau.storage.v2.HoldRequest
+	(*HoldResponse)(nil),     // 7: tau.storage.v2.HoldResponse
+	(*AppendRequest)(nil),    // 8: tau.storage.v2.AppendRequest
+	(*AppendResponse)(nil),   // 9: tau.storage.v2.AppendResponse
+	(*CurrentRequest)(nil),   // 10: tau.storage.v2.CurrentRequest
+	(*CurrentResponse)(nil),  // 11: tau.storage.v2.CurrentResponse
+	(*VersionsRequest)(nil),  // 12: tau.storage.v2.VersionsRequest
+	(*VersionsResponse)(nil), // 13: tau.storage.v2.VersionsResponse
+	(*DeleteRequest)(nil),    // 14: tau.storage.v2.DeleteRequest
+	(*DeleteResponse)(nil),   // 15: tau.storage.v2.DeleteResponse
 }
 var file_tau_storage_v2_storage_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	1,  // 0: tau.storage.v2.PutHead.at:type_name -> tau.storage.v2.Address
+	2,  // 1: tau.storage.v2.PutRequest.head:type_name -> tau.storage.v2.PutHead
+	4,  // 2: tau.storage.v2.PutResponse.version:type_name -> tau.storage.v2.Version
+	1,  // 3: tau.storage.v2.HoldRequest.at:type_name -> tau.storage.v2.Address
+	1,  // 4: tau.storage.v2.AppendRequest.at:type_name -> tau.storage.v2.Address
+	0,  // 5: tau.storage.v2.AppendRequest.record:type_name -> tau.storage.v2.VersionRecord
+	1,  // 6: tau.storage.v2.CurrentRequest.at:type_name -> tau.storage.v2.Address
+	4,  // 7: tau.storage.v2.CurrentResponse.version:type_name -> tau.storage.v2.Version
+	1,  // 8: tau.storage.v2.VersionsRequest.at:type_name -> tau.storage.v2.Address
+	4,  // 9: tau.storage.v2.VersionsResponse.versions:type_name -> tau.storage.v2.Version
+	1,  // 10: tau.storage.v2.DeleteRequest.at:type_name -> tau.storage.v2.Address
+	4,  // 11: tau.storage.v2.DeleteResponse.version:type_name -> tau.storage.v2.Version
+	3,  // 12: tau.storage.v2.StorageService.Put:input_type -> tau.storage.v2.PutRequest
+	10, // 13: tau.storage.v2.StorageService.Current:input_type -> tau.storage.v2.CurrentRequest
+	12, // 14: tau.storage.v2.StorageService.Versions:input_type -> tau.storage.v2.VersionsRequest
+	14, // 15: tau.storage.v2.StorageService.Delete:input_type -> tau.storage.v2.DeleteRequest
+	6,  // 16: tau.storage.v2.StorageService.Hold:input_type -> tau.storage.v2.HoldRequest
+	8,  // 17: tau.storage.v2.StorageService.Append:input_type -> tau.storage.v2.AppendRequest
+	5,  // 18: tau.storage.v2.StorageService.Put:output_type -> tau.storage.v2.PutResponse
+	11, // 19: tau.storage.v2.StorageService.Current:output_type -> tau.storage.v2.CurrentResponse
+	13, // 20: tau.storage.v2.StorageService.Versions:output_type -> tau.storage.v2.VersionsResponse
+	15, // 21: tau.storage.v2.StorageService.Delete:output_type -> tau.storage.v2.DeleteResponse
+	7,  // 22: tau.storage.v2.StorageService.Hold:output_type -> tau.storage.v2.HoldResponse
+	9,  // 23: tau.storage.v2.StorageService.Append:output_type -> tau.storage.v2.AppendResponse
+	18, // [18:24] is the sub-list for method output_type
+	12, // [12:18] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_tau_storage_v2_storage_proto_init() }
@@ -162,15 +1161,19 @@ func file_tau_storage_v2_storage_proto_init() {
 	if File_tau_storage_v2_storage_proto != nil {
 		return
 	}
+	file_tau_storage_v2_storage_proto_msgTypes[3].OneofWrappers = []any{
+		(*PutRequest_Head)(nil),
+		(*PutRequest_Chunk)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_storage_v2_storage_proto_rawDesc), len(file_tau_storage_v2_storage_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   1,
+			NumMessages:   16,
 			NumExtensions: 0,
-			NumServices:   0,
+			NumServices:   1,
 		},
 		GoTypes:           file_tau_storage_v2_storage_proto_goTypes,
 		DependencyIndexes: file_tau_storage_v2_storage_proto_depIdxs,

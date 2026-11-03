@@ -168,17 +168,20 @@ func TestTheStorageBriefsSurfaceIsWhatIsExported(t *testing.T) {
 	sort.Strings(names)
 
 	require.Equal(t, []string{
-		"Accounted", "Address", "Blocks", "Bucket", "Catalog", "Clock", "Config", "Datastore",
-		"DeadObject", "DefaultBarrier", "DefaultMaxSkew", "DefaultReplicas",
-		"ErrEmptyIdentity", "ErrEmptyObjectName", "ErrGateClosed", "ErrLocalClockSkew",
-		"ErrLogicalOverflow", "ErrNoAddress", "ErrNotFound", "ErrNotThisServicesRow",
-		"ErrRemoteClockSkew", "ErrStampRange", "ErrWriterMismatch",
-		"Gates", "Local", "Marker", "Meter", "MisplacementDrop",
-		"NewAddress", "NewBloomMarker", "NewBucket", "NewClock", "NewExactMarker",
-		"NewLocal", "NewSweeper", "Newest", "Op", "OpAdd", "OpRefuse", "OpRemove",
-		"Order", "PackStamp", "ParseVersionKey", "Policy", "Purpose",
-		"Reference", "ShardOpener", "Shards", "SweepResult", "Sweeper",
-		"UnpackStamp", "Usage", "Version", "VersionKey", "VersionRecord",
+		"Accounted", "Address", "AssetsBucket", "Blocks", "Bucket", "Bytes", "Catalog", "Client",
+		"Clock", "Config", "Datastore", "DeadObject", "DefaultBarrier", "DefaultMaxSkew",
+		"DefaultReplicas", "DefaultSweep", "Descriptor", "ErrEmptyIdentity",
+		"ErrEmptyObjectName", "ErrGateClosed", "ErrLocalClockSkew", "ErrLogicalOverflow",
+		"ErrNoAddress", "ErrNoBytes", "ErrNoCatalog", "ErrNoShards", "ErrNotFound",
+		"ErrNotThisServicesRow", "ErrRemoteClockSkew", "ErrStampRange", "ErrUnderHeld",
+		"ErrWriterMismatch", "Gates", "Local", "Marker", "Meter", "MisplacementDrop", "New",
+		"NewAddress", "NewBloomMarker", "NewBucket", "NewClient", "NewClock", "NewExactMarker",
+		"NewLocal", "NewSweeper", "Newest", "Op", "OpAdd", "OpRefuse", "OpRemove", "Option",
+		"Order", "PackStamp", "ParseVersionKey", "Policy", "Protocol", "Purpose", "Reference",
+		"Service", "ShardOpener", "Shards", "SweepResult", "Sweeper", "UnpackStamp", "Usage",
+		"Version", "VersionKey", "VersionRecord", "WithBytes", "WithCatalog", "WithClock",
+		"WithFleet", "WithLocal", "WithLogger", "WithMembers", "WithMeter", "WithServerOptions",
+		"WithShards", "WithSweep",
 	}, dedupe(names))
 }
 

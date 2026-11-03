@@ -38,6 +38,7 @@ const (
 	localRefs   = localRoot + "/ref"
 	localTombs  = localRoot + "/tomb"
 	localDirty  = localRoot + "/dirty"
+	localSeen   = localRoot + "/seen"
 )
 
 // instanceSegment encodes a whole bucket instance into ONE path segment, so a
@@ -223,6 +224,33 @@ func (l *Local) Forget(ctx context.Context, c cid.Cid) error {
 		return err
 	}
 	return l.store.Delete(ctx, ds.RawKey(key))
+}
+
+// Saw records that this node was written a row of an instance, so it keeps that
+// instance's shard open before the catalog has heard of the bucket.
+func (l *Local) Saw(ctx context.Context, a Address) error {
+	inst, err := instanceSegment(a)
+	if err != nil {
+		return err
+	}
+	return l.store.Put(ctx, ds.RawKey(localSeen+"/"+inst), encodeMS(uint64(l.now().UnixMilli())))
+}
+
+// Seen is every instance this node was written a row of.
+func (l *Local) Seen(ctx context.Context) ([]Address, error) {
+	keys, err := l.list(ctx, localSeen)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Address, 0, len(keys))
+	for _, k := range keys {
+		a, err := addressFromInstanceSegment(strings.TrimPrefix(k, localSeen+"/"))
+		if err != nil {
+			return nil, fmt.Errorf("%w: seen row %q: %w", ErrNotThisServicesRow, k, err)
+		}
+		out = append(out, a)
+	}
+	return out, nil
 }
 
 // IndexedBlocks lists every block this service imported on this node.
