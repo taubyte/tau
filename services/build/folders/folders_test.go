@@ -1,6 +1,4 @@
-//go:build dreaming
-
-package dream
+package folders
 
 import (
 	"context"
@@ -12,7 +10,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/instance"
 	"github.com/taubyte/tau/services/build/backend"
 )
 
@@ -48,33 +45,28 @@ func TestALocalFolderIsCheckedOutAtTheCommitAsked(t *testing.T) {
 	second := gitIn(t, dir, "rev-parse", "HEAD")
 
 	const key = "github.com/acme/app"
-	l, err := newLocal(map[string]string{key: dir})
+	f, err := New(map[string]string{key: dir})
 	require.NoError(t, err)
 	var asked string
-	s := l.layer(instance.BuildSeams{Checkout: fallthroughSeam{&asked}, Confirm: fallthroughSeam{&asked}})
+	checkout, confirm := f.Checkout(fallthroughSeam{&asked}), f.Confirm(fallthroughSeam{&asked})
 
-	at, done, err := s.Checkout.Checkout(t.Context(), key, "main", first)
+	at, done, err := checkout.Checkout(t.Context(), key, "main", first)
 	require.NoError(t, err)
 	got, err := os.ReadFile(filepath.Join(at, "a.txt"))
 	require.NoError(t, err)
 	require.Equal(t, "one", string(got))
 	done()
 
-	require.NoError(t, s.Confirm.Confirm(t.Context(), key, "refs/heads/main", second))
-	require.ErrorIs(t, s.Confirm.Confirm(t.Context(), key, "refs/heads/main", first), backend.ErrNotAtCommit)
+	require.NoError(t, confirm.Confirm(t.Context(), key, "refs/heads/main", second))
+	require.ErrorIs(t, confirm.Confirm(t.Context(), key, "refs/heads/main", first), backend.ErrNotAtCommit)
 	require.Empty(t, asked)
 
-	dirOut, _, err := s.Checkout.Checkout(t.Context(), "github.com/acme/other", "main", first)
+	dirOut, _, err := checkout.Checkout(t.Context(), "github.com/acme/other", "main", first)
 	require.NoError(t, err)
 	require.Equal(t, "inner", dirOut)
 	require.Equal(t, "github.com/acme/other", asked)
-	require.NoError(t, s.Confirm.Confirm(t.Context(), "github.com/acme/elsewhere", "refs/heads/main", first))
+	require.NoError(t, confirm.Confirm(t.Context(), "github.com/acme/elsewhere", "refs/heads/main", first))
 	require.Equal(t, "github.com/acme/elsewhere", asked)
 
-	require.ErrorContains(t, l.clone.Confirm(t.Context(), "github.com/acme/unknown", "refs/heads/main", first), "is not a local folder")
-
-	none, err := newLocal(nil)
-	require.NoError(t, err)
-	plain := instance.BuildSeams{Checkout: fallthroughSeam{&asked}}
-	require.Equal(t, plain, none.layer(plain))
+	require.ErrorContains(t, f.clone.Confirm(t.Context(), "github.com/acme/unknown", "refs/heads/main", first), "is not a local folder")
 }

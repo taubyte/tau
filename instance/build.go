@@ -26,8 +26,10 @@ import (
 	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/clients"
 	"github.com/taubyte/tau/services/build/deploy"
+	"github.com/taubyte/tau/services/build/folders"
 	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/build/frontend/forgeauth"
+	"github.com/taubyte/tau/services/build/uploads"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -238,7 +240,14 @@ func (n *Instance) openBuildBackend() error {
 		return err
 	}
 
-	seams := BuildSeams{Checkout: clone, Confirm: clone}
+	// WHAT A PUSH IS READ AND RUN WITH: the forge's clone, and the container engine. A
+	// development cloud's configuration puts its local folders and uploaded builds in
+	// front of them.
+	var (
+		checkout deploy.Checkout   = clone
+		confirm  backend.Confirmer = clone
+		engine   artifact.Engine
+	)
 
 	// A NODE THAT CANNOT RUN A CONTAINER CANNOT BUILD CODE, and it says so on
 	// the push rather than starting and refusing every one. The two halves of
@@ -250,19 +259,28 @@ func (n *Instance) openBuildBackend() error {
 			return err
 		}
 
-		engine, err := artifact.NewEngine(backend)
+		if engine, err = artifact.NewEngine(backend); err != nil {
+			return err
+		}
+	}
+	if local := n.cfg.BuildBackend.Local; len(local) > 0 {
+		f, err := folders.New(local)
 		if err != nil {
 			return err
 		}
-		seams.Engine = engine
+		checkout, confirm = f.Checkout(checkout), f.Confirm(confirm)
 	}
-	if n.opts.buildSeams != nil {
-		seams = n.opts.buildSeams(seams)
+	if dir := n.cfg.BuildBackend.Uploads; dir != "" {
+		held, err := uploads.Open(dir)
+		if err != nil {
+			return fmt.Errorf("node: %s: uploads: %w", BuildBackend, err)
+		}
+		checkout, confirm, engine = held.Checkout(checkout), held.Confirm(confirm), held.Engine(engine)
 	}
 
 	options := []deploy.Option{
 		deploy.WithProjects(projects),
-		deploy.WithCheckout(seams.Checkout),
+		deploy.WithCheckout(checkout),
 		deploy.WithRegister(n.publisher),
 		deploy.WithCloudFqdn(n.cfg.Gateway.CloudFqdn),
 	}
@@ -275,7 +293,7 @@ func (n *Instance) openBuildBackend() error {
 	}
 	options = append(options, deploy.WithDomains(domains))
 
-	if seams.Engine != nil {
+	if engine != nil {
 		// A source's clone URL is keyed by the forge that serves it, the same
 		// function every push's repository key came out of.
 		registry, err := n.forgeRegistry()
@@ -286,8 +304,8 @@ func (n *Instance) openBuildBackend() error {
 		buildOptions := []artifact.Option{
 			artifact.WithRegister(buildRegister{n}),
 			artifact.WithProjects(projects),
-			artifact.WithCheckout(seams.Checkout),
-			artifact.WithEngine(seams.Engine),
+			artifact.WithCheckout(checkout),
+			artifact.WithEngine(engine),
 			artifact.WithKeys(registry),
 		}
 		if v := vaults(); v != nil {
@@ -314,7 +332,7 @@ func (n *Instance) openBuildBackend() error {
 		backend.WithRunner(runner),
 		// A PUSH IS BUILT ONLY FOR WHAT THE REPOSITORY HOLDS: the ref is read
 		// at the forge over the repository's deploy key before it is queued.
-		backend.WithConfirmer(seams.Confirm),
+		backend.WithConfirmer(confirm),
 	}
 	service = append(service, backend.WithAssets(n.store))
 
@@ -394,9 +412,6 @@ func (n *Instance) openBuildFrontend() error {
 	}
 	// What a deployment runs, read back for a developer's build against it.
 	frontendOptions = append(frontendOptions, frontend.WithPublished(buildRegister{n}))
-	if n.opts.uploads != nil {
-		frontendOptions = append(frontendOptions, frontend.WithUploads(n.opts.uploads))
-	}
 	// The public role never holds a vault: it is the process strangers reach. This is
 	// always a stream to a node that does, used only for hook secrets.
 	var linked secretReader

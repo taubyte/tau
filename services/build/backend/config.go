@@ -118,6 +118,16 @@ type Config struct {
 	// is kept however old, since what runs is resolved through it. Zero means
 	// DefaultJobRetention.
 	JobRetention time.Duration `yaml:"jobRetention"`
+
+	// Uploads is the directory a development cloud's frontend keeps a developer's
+	// build in (services/build/uploads): a push of an uploaded commit is confirmed,
+	// checked out and built from it. Empty is a cloud with no uploads.
+	Uploads string `yaml:"uploads"`
+
+	// Local is repositories read from folders on this machine, by repository key, in
+	// place of the forge (services/build/folders): a development cloud's, so a CI run
+	// needs no forge to hold the code.
+	Local map[string]string `yaml:"local"`
 }
 
 // defaultLogDir is the scratch log directory, per uid so a shared /tmp name cannot

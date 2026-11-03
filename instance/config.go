@@ -17,9 +17,7 @@ import (
 	"github.com/taubyte/tau/services"
 	auth "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/build"
-	"github.com/taubyte/tau/services/build/artifact"
 	"github.com/taubyte/tau/services/build/backend"
-	"github.com/taubyte/tau/services/build/deploy"
 	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/dns"
@@ -176,9 +174,6 @@ type options struct {
 	regions   schema.Regions
 	resolver  cm.Resolver
 	forges    *forge.Registry
-	// buildSeams and uploads are a development cloud's; see WithBuildSeams.
-	buildSeams func(BuildSeams) BuildSeams
-	uploads    frontend.Uploads
 
 	// terminates says whatever serves Handler serves it over TLS too, with
 	// TLSConfig. See WithTLS.
@@ -228,39 +223,6 @@ func WithArtifacts(a worker.Artifacts) Option {
 			return errors.New("node: a nil artifact resolver")
 		}
 		o.artifacts = a
-		return nil
-	}
-}
-
-// BuildSeams are what a build backend reads repositories with and runs builds
-// in: the clone a push is confirmed against and checked out from, and the
-// engine a code build runs in — nil on a node that runs no containers.
-type BuildSeams struct {
-	Checkout deploy.Checkout
-	Confirm  backend.Confirmer
-	Engine   artifact.Engine
-}
-
-// WithBuildSeams puts a development cloud's seams in front of the node's (an upload
-// read as a commit, and run). For instance/dream only.
-func WithBuildSeams(layer func(BuildSeams) BuildSeams) Option {
-	return func(o *options) error {
-		if layer == nil {
-			return errors.New("node: nil build seams")
-		}
-		o.buildSeams = layer
-		return nil
-	}
-}
-
-// WithUploads gives the build frontend a universe's door for a developer's build
-// (frontend.Uploads). For instance/dream only.
-func WithUploads(u frontend.Uploads) Option {
-	return func(o *options) error {
-		if u == nil {
-			return errors.New("node: nil uploads")
-		}
-		o.uploads = u
 		return nil
 	}
 }

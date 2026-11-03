@@ -252,6 +252,11 @@ type Config struct {
 	Local map[string]string
 }
 
+// removed is a directory a universe deletes when it closes.
+type removed string
+
+func (d removed) Close() error { return os.RemoveAll(string(d)) }
+
 // Universe is a running fleet of nodes.
 type Universe struct {
 	mesh *mesh.Mesh
@@ -281,25 +286,20 @@ func Start(ctx context.Context, name string, cfg Config) (*Universe, error) {
 	}
 	account := []*secretsv2.InitSecret{sealed}
 
-	// One upload door per universe, shared by every node, since the frontend and the
-	// backend that builds are often two nodes.
-	held, err := newUploads()
+	// ONE UPLOADS DIRECTORY PER UNIVERSE, named in every node's build configuration,
+	// since the frontend that takes a developer's build and the backend that builds
+	// it are often two nodes.
+	held, err := os.MkdirTemp("", "tau-uploads-")
 	if err != nil {
 		m.Close()
 		return nil, err
 	}
-	m.OnClose(held)
-
-	folders, err := newLocal(cfg.Local)
-	if err != nil {
-		m.Close()
-		return nil, err
-	}
+	m.OnClose(removed(held))
 
 	u := &Universe{mesh: m}
 	copies := max(cfg.Copies, 1)
 	for index := range copies {
-		p, err := m.Add(func(p peer.Node) error { return create(m, p, cfg, index, account, held, folders) })
+		p, err := m.Add(func(p peer.Node) error { return create(m, p, cfg, index, account, held) })
 		if err != nil {
 			u.Close()
 			return nil, fmt.Errorf("dream: node %d: %w", index, err)
@@ -325,7 +325,7 @@ func (u *Universe) CA() *sectls.CA { return u.mesh.CA() }
 // Close stops every node, then their peers.
 func (u *Universe) Close() { u.mesh.Close() }
 
-func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secretsv2.InitSecret, held *uploads, folders *local) error {
+func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secretsv2.InitSecret, uploads string) error {
 	ctx := m.Context()
 	h := p.Host()
 
@@ -367,8 +367,12 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	nodeConfig.Sections = map[string]any{discovery.Descriptor.Name: discovery.Config{Stabilize: dreamStabilize}}
 	// A universe is one developer's cloud, so sign-up is open.
 	nodeConfig.Auth.SignUp = auth.SignUpOpen
-	// A development cloud serves declared zones unproven.
+	// A development cloud serves declared zones unproven, takes a developer's build,
+	// and reads the repositories it was handed folders for.
 	nodeConfig.CM.Domains.Trusted = true
+	nodeConfig.BuildFrontend.Uploads = uploads
+	nodeConfig.BuildBackend.Uploads = uploads
+	nodeConfig.BuildBackend.Local = cfg.Local
 	if cfg.Configure != nil {
 		cfg.Configure(index, &nodeConfig)
 	}
@@ -392,9 +396,6 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		instance.WithArtifacts(staged),
 		instance.WithDatabaseEngines(engines),
 		instance.WithRuntimes(tiers...),
-		// A DEVELOPMENT CLOUD'S DOOR for a developer's own build — see uploads.
-		instance.WithUploads(held),
-		instance.WithBuildSeams(func(s instance.BuildSeams) instance.BuildSeams { return held.layer(folders.layer(s)) }),
 	}
 	if now != nil {
 		options = append(options, instance.WithClock(now))

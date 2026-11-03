@@ -37,8 +37,8 @@ func (s *Service) mount() http.Handler {
 		mux.HandleFunc("GET /projects/{projectId}/deployments/{environment}", s.admitted("projectId", s.handlePublished))
 	}
 
-	// A DEVELOPMENT CLOUD'S OWN DOOR, and only one composed with Uploads has
-	// it: on a cloud nothing accepts a build's output from outside.
+	// A DEVELOPMENT CLOUD'S OWN DOOR, and only one configured with an uploads
+	// directory has it: on a cloud nothing accepts a build's output from outside.
 	if s.uploads != nil {
 		mux.HandleFunc("POST /upload/{projectId}", s.admitted("projectId", s.handleUpload))
 	}

@@ -1,12 +1,14 @@
 package frontend
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,6 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/build/artifact"
+	"github.com/taubyte/tau/services/build/uploads"
 )
 
 func manualBuild(token, project string, body any) *http.Request {
@@ -135,31 +139,30 @@ func TestAManualBuildTheBackendRefuses(t *testing.T) {
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 }
 
-type uploads struct {
-	project, repository, ref string
-	body                     string
-	err                      error
+// aBundle is a developer's build of one file.
+func aBundle(t *testing.T, content string) []byte {
+	t.Helper()
+	tree := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(tree, "project.yaml"), []byte(content), 0o644))
+	var b bytes.Buffer
+	require.NoError(t, artifact.PackBundle(&b, tree, []string{"project.yaml"}, nil))
+	return b.Bytes()
 }
 
-func (u *uploads) Put(_ context.Context, projectID, repositoryKey, ref string, bundle io.Reader) (string, error) {
-	body, err := io.ReadAll(bundle)
-	if err != nil {
-		return "", err
-	}
-	u.project, u.repository, u.ref, u.body = projectID, repositoryKey, ref, string(body)
-	if u.err != nil {
-		return "", u.err
-	}
-	return testSHA, nil
+func upload(token, project, ref string, body []byte) *http.Request {
+	return withBody(authed(http.MethodPost, "/upload/"+project+"?ref="+ref, token), body)
 }
 
-func upload(token, project, ref, body string) *http.Request {
-	return withBody(authed(http.MethodPost, "/upload/"+project+"?ref="+ref, token), []byte(body))
+// confirmsNothing is a forge that holds no commit.
+type confirmsNothing struct{}
+
+func (confirmsNothing) Confirm(context.Context, string, string, string) error {
+	return errors.New("not at the forge")
 }
 
 func TestACloudTakesNoUpload(t *testing.T) {
 	h, _ := registered(t)
-	w := h.do(t, upload("tok-"+testUser, testProject, "refs/heads/main", "bundle"))
+	w := h.do(t, upload("tok-"+testUser, testProject, "refs/heads/main", aBundle(t, "x")))
 	require.Equal(t, http.StatusNotFound, w.Code)
 
 	h, _ = registered(t, WithCloudFqdn("tau.example"))
@@ -169,52 +172,62 @@ func TestACloudTakesNoUpload(t *testing.T) {
 }
 
 func TestAUniverseTakesAnUploadAsACommitOfTheConfiguration(t *testing.T) {
-	held := &uploads{}
-	h, l := registered(t, WithUploads(held), WithCloudFqdn("tau.example"))
+	dir := filepath.Join(t.TempDir(), "uploads")
+	h, l := registeredWith(t, Config{Uploads: dir}, WithCloudFqdn("tau.example"))
 	_, err := l.Register.LinkProject(t.Context(), register.Link{Project: testProject, Config: testRepoKey, Claimant: testUser})
 	require.NoError(t, err)
 
-	w := h.do(t, upload("tok-"+testUser, testProject, "refs/heads/main", "the bundle"))
+	// THE BACKEND'S HALF reads the same directory.
+	held, err := uploads.Open(dir)
+	require.NoError(t, err)
+	confirm := held.Confirm(confirmsNothing{})
+
+	w := h.do(t, upload("tok-"+testUser, testProject, "refs/heads/main", aBundle(t, "the bundle")))
 	require.Equal(t, http.StatusAccepted, w.Code, w.Body.String())
-	require.Equal(t, uploads{project: testProject, repository: testRepoKey, ref: "refs/heads/main", body: "the bundle"}, *held)
-	require.Equal(t, []enqueued{{testRepoKey, "refs/heads/main", testSHA}}, h.backend.enqueues())
+	pushed := h.backend.enqueues()
+	require.Len(t, pushed, 1)
+	require.Equal(t, testRepoKey, pushed[0].repositoryKey)
+	require.Equal(t, "refs/heads/main", pushed[0].ref)
+	require.NoError(t, confirm.Confirm(t.Context(), testRepoKey, "refs/heads/main", pushed[0].commitSHA),
+		"the commit queued is the upload the directory holds")
 
 	w = h.do(t, authed(http.MethodGet, "/cloud", "tok-x"))
 	require.Contains(t, w.Body.String(), `"uploads":true`)
 
 	// Somebody who is not a builder on it uploads nothing.
-	w = h.do(t, upload("tok-mallory", testProject, "refs/heads/main", "x"))
+	w = h.do(t, upload("tok-mallory", testProject, "refs/heads/main", aBundle(t, "x")))
 	require.Equal(t, http.StatusNotFound, w.Code)
 
 	// A ref this cloud does not build is refused before the bundle is read.
-	held.body = ""
-	w = h.do(t, upload("tok-"+testUser, testProject, "refs/heads/feature", "x"))
+	w = h.do(t, upload("tok-"+testUser, testProject, "refs/heads/feature", aBundle(t, "feature")))
 	require.Equal(t, http.StatusUnprocessableEntity, w.Code)
-	require.Empty(t, held.body)
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "only the first upload was kept")
 
 	// A code repository of the project is uploaded as itself; any other is
 	// refused.
 	_, err = l.Register.LinkProject(t.Context(), register.Link{Project: testProject, Config: testRepoKey, Code: []string{"github.com/acme/lib"}, Claimant: testUser})
 	require.NoError(t, err)
-	w = h.do(t, withBody(authed(http.MethodPost, "/upload/"+testProject+"?ref=refs/heads/main&repository=github.com/acme/lib", "tok-"+testUser), []byte("code")))
+	w = h.do(t, withBody(authed(http.MethodPost, "/upload/"+testProject+"?ref=refs/heads/main&repository=github.com/acme/lib", "tok-"+testUser), aBundle(t, "code")))
 	require.Equal(t, http.StatusAccepted, w.Code, w.Body.String())
-	require.Equal(t, "github.com/acme/lib", held.repository)
-	require.Equal(t, enqueued{"github.com/acme/lib", "refs/heads/main", testSHA}, h.backend.enqueues()[1])
-	w = h.do(t, withBody(authed(http.MethodPost, "/upload/"+testProject+"?ref=refs/heads/main&repository=github.com/else/lib", "tok-"+testUser), []byte("code")))
+	code := h.backend.enqueues()[1]
+	require.Equal(t, "github.com/acme/lib", code.repositoryKey)
+	require.NoError(t, confirm.Confirm(t.Context(), "github.com/acme/lib", "refs/heads/main", code.commitSHA))
+	w = h.do(t, withBody(authed(http.MethodPost, "/upload/"+testProject+"?ref=refs/heads/main&repository=github.com/else/lib", "tok-"+testUser), aBundle(t, "code")))
 	require.Equal(t, http.StatusUnprocessableEntity, w.Code)
 
 	// A bundle that cannot be kept is refused with why.
-	held.err = errors.New("not a gzip stream")
-	w = h.do(t, upload("tok-"+testUser, testProject, "refs/heads/main", "x"))
+	w = h.do(t, upload("tok-"+testUser, testProject, "refs/heads/main", []byte("x")))
 	require.Equal(t, http.StatusBadRequest, w.Code)
-	require.Contains(t, w.Body.String(), "not a gzip stream")
+	require.Contains(t, w.Body.String(), "not a bundle")
 	require.Len(t, h.backend.enqueues(), 2)
 }
 
 func TestAnUploadForAProjectThatCannotBeRead(t *testing.T) {
-	h := newHarness(t, Config{}, WithLinker(unreadable{}), WithUploads(&uploads{}))
+	h := newHarness(t, Config{Uploads: t.TempDir()}, WithLinker(unreadable{}))
 	h.projects.role = asBuilder
-	w := h.do(t, upload(testToken, testProject, "refs/heads/main", "x"))
+	w := h.do(t, upload(testToken, testProject, "refs/heads/main", aBundle(t, "x")))
 	require.Equal(t, http.StatusNotFound, w.Code)
 }
 
@@ -224,15 +237,19 @@ func (unreadable) ProjectRecord(context.Context, string) (register.ProjectRecord
 	return register.ProjectRecord{}, register.ErrNotLinked
 }
 
-func TestUploadsNeedALinker(t *testing.T) {
-	_, err := New(Config{}, WithHooks(&fakeHooks{}), WithDeliveries(&fakeDeliveries{}), WithProjects(&fakeProjects{}),
-		WithBackend(&fakeBackend{}), WithCallers(&fakeCallers{}), WithUploads(&uploads{}))
+func TestUploadsNeedALinkerAndADirectory(t *testing.T) {
+	_, err := New(Config{Uploads: t.TempDir()}, WithHooks(&fakeHooks{}), WithDeliveries(&fakeDeliveries{}), WithProjects(&fakeProjects{}),
+		WithBackend(&fakeBackend{}), WithCallers(&fakeCallers{}))
 	require.ErrorContains(t, err, "linker")
 
-	for _, o := range []Option{WithUploads(nil), WithPublished(nil)} {
-		_, err := New(Config{}, o)
-		require.Error(t, err)
-	}
+	file := filepath.Join(t.TempDir(), "a file")
+	require.NoError(t, os.WriteFile(file, nil, 0o600))
+	_, err = New(Config{Uploads: filepath.Join(file, "below")}, WithHooks(&fakeHooks{}), WithDeliveries(&fakeDeliveries{}), WithProjects(&fakeProjects{}),
+		WithBackend(&fakeBackend{}), WithCallers(&fakeCallers{}), WithLinker(unreadable{}))
+	require.ErrorContains(t, err, "uploads")
+
+	_, err = New(Config{}, WithPublished(nil))
+	require.Error(t, err)
 }
 
 type published map[string]string

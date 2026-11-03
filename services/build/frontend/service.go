@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/taubyte/tau/pkg/tenancy"
+	"github.com/taubyte/tau/services/build/uploads"
 )
 
 // Service is build's public half: an http.Server, a mux, and the questions it may
@@ -32,7 +33,7 @@ type Service struct {
 	streams    Streams
 	linked     Linked
 	authAPI    AuthAPI
-	uploads    Uploads
+	uploads    *uploads.Dir
 	published  Published
 	cfg        Config
 	cloudFqdn  string
@@ -81,7 +82,6 @@ type options struct {
 	streams    Streams
 	linked     Linked
 	authAPI    AuthAPI
-	uploads    Uploads
 	published  Published
 	cloudFqdn  string
 
@@ -303,13 +303,21 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		return nil, errors.New("build: no projects to authorize against")
 	case o.backend == nil:
 		return nil, errors.New("build: no backend to queue into")
-	case o.uploads != nil && o.linker == nil:
+	case effective.Uploads != "" && o.linker == nil:
 		return nil, errors.New("build: uploads need a linker to name the repository an upload is a commit of")
 	case o.callers == nil:
 		return nil, errors.New("build: no way to verify a caller")
 	}
 
+	var held *uploads.Dir
+	if effective.Uploads != "" {
+		if held, err = uploads.Open(effective.Uploads); err != nil {
+			return nil, fmt.Errorf("build: uploads: %w", err)
+		}
+	}
+
 	s := &Service{
+		uploads:    held,
 		hooks:      o.hooks,
 		deliveries: o.deliveries,
 		projects:   o.projects,
@@ -323,7 +331,6 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		streams:    o.streams,
 		linked:     o.linked,
 		authAPI:    o.authAPI,
-		uploads:    o.uploads,
 		published:  o.published,
 		cfg:        effective,
 		cloudFqdn:  o.cloudFqdn,
@@ -447,20 +454,6 @@ func (s *Service) Close() error {
 }
 
 func (s *Service) log(format string, args ...any) { s.logf(format, args...) }
-
-// WithUploads mounts POST /upload/{projectId}: a universe's own way in for a
-// developer's build. Nothing but a development cloud's composition passes one,
-// so on a cloud the route does not exist (buildapi.go). It needs WithLinker,
-// for the configuration repository an upload is a commit of.
-func WithUploads(u Uploads) Option {
-	return func(o *options) error {
-		if u == nil {
-			return errors.New("build: nil uploads")
-		}
-		o.uploads = u
-		return nil
-	}
-}
 
 // WithPublished is how a deployment's compiled object is read back for
 // `tau build --published`. Optional: without one that route is a 404.

@@ -2,8 +2,8 @@ package instance
 
 import (
 	"context"
-	"errors"
-	"io"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -19,7 +19,6 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/build/artifact"
 	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/worker"
 )
@@ -432,29 +431,23 @@ func TestTheRegionANodeReadsIsTheOneItsConfigNames(t *testing.T) {
 	require.Equal(t, pkgregister.IDOf([]byte("region-1")), p.Object, "and the view it reads")
 }
 
-func TestBuildSeamsAreLayeredOverTheNodesOwn(t *testing.T) {
-	require.Error(t, WithBuildSeams(nil)(&options{}))
-	require.Error(t, WithUploads(nil)(&options{}))
-
-	var handed BuildSeams
-	n, _, _ := makeNode(t, Config{Services: []string{Discovery, BuildBackend}}, WithBuildSeams(func(s BuildSeams) BuildSeams {
-		handed = s
-		s.Engine = engineFunc(func(context.Context, artifact.Spec, io.Writer) (io.ReadCloser, error) {
-			return nil, errors.New("not run here")
-		})
-		return s
-	}))
+func TestADevelopmentCloudsBuildIsConfigured(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "uploads")
+	cfg := Config{Services: []string{Discovery, BuildBackend}}
+	cfg.BuildBackend.Uploads = dir
+	cfg.BuildBackend.Local = map[string]string{"github.com/acme/app": t.TempDir()}
+	n, _, _ := makeNode(t, cfg)
 	require.NoError(t, n.Start(t.Context()))
 	require.NotNil(t, n.buildBackend)
-	require.NotNil(t, handed.Checkout)
-	require.NotNil(t, handed.Confirm)
-	require.Nil(t, handed.Engine, "this node runs no containers")
-}
+	require.DirExists(t, dir, "the uploads directory is the build's to make")
 
-type engineFunc func(context.Context, artifact.Spec, io.Writer) (io.ReadCloser, error)
-
-func (f engineFunc) Make(ctx context.Context, s artifact.Spec, log io.Writer) (io.ReadCloser, error) {
-	return f(ctx, s, log)
+	// A DIRECTORY IT CANNOT MAKE refuses the node, rather than a door that fails
+	// on the first upload.
+	file := filepath.Join(t.TempDir(), "a file")
+	require.NoError(t, os.WriteFile(file, nil, 0o600))
+	cfg.BuildBackend.Uploads = filepath.Join(file, "below")
+	_, err := New(mockPeer(t), rooted(t, cfg), withKVDB(&memFactory{}), mockRaft())
+	require.ErrorContains(t, err, "uploads")
 }
 
 func TestTheBuildRegisterReadsAPublishedObjectBack(t *testing.T) {

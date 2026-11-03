@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"regexp"
 	"slices"
@@ -36,16 +35,6 @@ type buildRequest struct {
 
 type queued struct {
 	JobID string `json:"job_id"`
-}
-
-// Uploads is a universe's own way in: a developer's tree and what was built
-// from it, carried whole into a development cloud that then deploys it the way
-// it deploys a push. NO CLOUD IS COMPOSED WITH ONE, so on a cloud the route
-// does not exist and `tau build` publishes nothing.
-type Uploads interface {
-	// Put keeps a bundle as a commit of the project's configuration
-	// repository, and answers the commit a queued build reads it at.
-	Put(ctx context.Context, projectID, repositoryKey, ref string, bundle io.Reader) (commit string, err error)
 }
 
 // Published reads what a project's deployments currently run.
@@ -167,7 +156,7 @@ func (s *Service) handleUpload(w http.ResponseWriter, r *http.Request, token, pr
 	// THE BODY IS READ UNDER THE REQUEST'S OWN CONTEXT and not BackendTimeout,
 	// which bounds one call out of this process: a bundle is as slow as the
 	// developer's link.
-	commit, err := s.uploads.Put(r.Context(), projectID, repository, ref, http.MaxBytesReader(w, r.Body, MaxUploadBytes))
+	commit, err := s.uploads.Put(repository, ref, http.MaxBytesReader(w, r.Body, MaxUploadBytes))
 	if err != nil {
 		s.log("upload for %s: %v", projectID, err)
 		respond(w, problem(http.StatusBadRequest, "the bundle could not be read: "+err.Error()))

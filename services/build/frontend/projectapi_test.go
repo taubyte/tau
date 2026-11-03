@@ -115,8 +115,13 @@ func (users) Caller(_ context.Context, token string) (string, error) {
 // and users'.
 func registered(t *testing.T, opts ...Option) (*harness, *linker) {
 	t.Helper()
+	return registeredWith(t, Config{}, opts...)
+}
+
+func registeredWith(t *testing.T, cfg Config, opts ...Option) (*harness, *linker) {
+	t.Helper()
 	l := newLinker(t)
-	h := newHarness(t, Config{}, append([]Option{WithLinker(l), WithProjects(l), WithCallers(users{})}, opts...)...)
+	h := newHarness(t, cfg, append([]Option{WithLinker(l), WithProjects(l), WithCallers(users{})}, opts...)...)
 	return h, l
 }
 

@@ -148,6 +148,11 @@ type Config struct {
 	// node is writing yet (jobapi.go). Zero means the matching default.
 	FollowBackoff    time.Duration `yaml:"followBackoff"`
 	FollowBackoffMax time.Duration `yaml:"followBackoffMax"`
+
+	// Uploads is the directory a development cloud keeps a developer's build in
+	// (services/build/uploads); empty is a cloud with no upload door, which is every
+	// cloud but a development one. The backend names the same directory to read them.
+	Uploads string `yaml:"uploads"`
 }
 
 func (c Config) withDefaults() (Config, error) {
