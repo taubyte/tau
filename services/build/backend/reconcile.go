@@ -3,13 +3,14 @@ package backend
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 )
 
 // reconcile walks the open rows for a job whose event was written and whose queue
-// item was not (a crash between the two writes). Re-queueing is safe by
-// queue.Push's own dedup; the age gate keeps the pass from a Push and barrier per
-// open job.
+// item was not (a crash between the two writes), then expires what finished long
+// ago. Re-queueing is safe by queue.Push's own dedup; the age gate keeps the pass
+// from a Push and barrier per open job.
 func (s *Service) reconcile() error {
 	if err := s.lead(); err != nil {
 		return err
@@ -41,7 +42,60 @@ func (s *Service) reconcile() error {
 			return err
 		}
 	}
+	return s.expire(now)
+}
+
+// expire erases the jobs that finished longer than JobRetention ago, oldest first,
+// keeping those whose build a deployment still runs.
+func (s *Service) expire(now time.Time) error {
+	ctx, stop := context.WithTimeout(context.Background(), s.cfg.Queue.ApplyTimeout)
+	defer stop()
+	keys, err := s.records.List(ctx, terminalRows())
+	if err != nil {
+		return errUnavailable("listing the retention rows: %v", err)
+	}
+	slices.Sort(keys)
+	cutoff := now.Add(-s.cfg.JobRetention).Unix()
+	for _, key := range keys {
+		unix, id, err := parseTerminalRow(key)
+		if err != nil {
+			return errInternal("%v", err)
+		}
+		if unix >= cutoff {
+			return nil
+		}
+		if err := s.expireJob(id, unix); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// expireJob is one expired job, one section: the job the row names, if it still ended
+// at the second the row says and nothing it built still runs.
+func (s *Service) expireJob(id string, retained int64) error {
+	ctx, stop := context.WithTimeout(context.Background(), s.cfg.Queue.ApplyTimeout)
+	defer stop()
+	return s.withJob(id, func(j *held) error {
+		rec := j.rec()
+		if !j.found() || !rec.terminal() || rec.UpdatedAt != retained {
+			return j.writes().dropStaleRetained(retained).commit("dropping the stale retention row of")
+		}
+		for asset := range rec.Assets {
+			environment, resource, ok := splitAssetKey(asset)
+			if !ok {
+				continue
+			}
+			_, from, ok, err := s.journal.live(ctx, rec.ProjectID, environment, resource)
+			if err != nil {
+				return err
+			}
+			if ok && from == id {
+				return nil
+			}
+		}
+		return j.writes().erase().commit("erasing")
+	})
 }
 
 // mend is one job of the walk, one section per job so the pass never stalls Cancel

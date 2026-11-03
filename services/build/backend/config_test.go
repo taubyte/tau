@@ -18,6 +18,7 @@ func TestTheZeroConfigIsValidAndItsDefaultsAreThese(t *testing.T) {
 	require.Equal(t, DefaultClaimMargin, c.ClaimMargin)
 	require.Equal(t, DefaultClaimInterval, c.ClaimInterval)
 	require.Equal(t, DefaultReconcileEvery, c.ReconcileEvery)
+	require.Equal(t, DefaultJobRetention, c.JobRetention)
 	require.Equal(t, DefaultMaxQueueDepth, c.MaxQueueDepth)
 	require.Equal(t, DefaultMaxOpenPerRepo, c.MaxOpenPerRepo)
 	require.Equal(t, DefaultMaxMessageBytes, c.MaxMessageBytes)
@@ -64,6 +65,7 @@ func TestNegativeTunablesAreRefused(t *testing.T) {
 		"claimMargin":     {ClaimMargin: -1},
 		"claimInterval":   {ClaimInterval: -1},
 		"reconcileEvery":  {ReconcileEvery: -1},
+		"jobRetention":    {JobRetention: -1},
 		"maxQueueDepth":   {MaxQueueDepth: -1},
 		"maxOpenPerRepo":  {MaxOpenPerRepo: -1},
 		"maxMessageBytes": {MaxMessageBytes: -1},

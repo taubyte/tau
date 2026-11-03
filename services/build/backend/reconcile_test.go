@@ -1,7 +1,9 @@
 package backend
 
 import (
+	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -188,4 +190,121 @@ func TestMendLeavesAYoungRowWithNoEventsBehindIt(t *testing.T) {
 	h.clock.advance(h.cfg.Queue.VisibilityTimeout + h.cfg.BuildTimeout + time.Second)
 	require.NoError(t, h.reconcile())
 	require.Empty(t, h.records.keys(t, openRoot()))
+}
+
+// pastRetention ages the harness past the job retention.
+func (h *harness) pastRetention() {
+	h.clock.advance(h.cfg.JobRetention + time.Hour)
+}
+
+func TestAJobIsErasedOnceItIsPastRetention(t *testing.T) {
+	h := newHarness(t)
+	id := h.planned(t, testRef, testCommit)
+	require.True(t, h.mustStep(t))
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
+	plan := h.rows(t)
+	require.NotEmpty(t, plan)
+
+	// NOT YET: a finished job is kept for the retention.
+	require.NoError(t, h.reconcile())
+	require.NotEmpty(t, h.records.keys(t, eventPrefix(id)))
+
+	h.pastRetention()
+	require.NoError(t, h.reconcile())
+
+	_, found, err := h.readRecord(id)
+	require.NoError(t, err)
+	require.False(t, found, "an expired job is gone")
+	for _, key := range h.rows(t) {
+		require.NotContains(t, key, seg(id), "and so is every row that named it")
+	}
+	require.Empty(t, h.lastCommit(testRepo, testRef, testEnvironment),
+		"its anchor went with it, so the next build is a full one")
+}
+
+// WHAT A DEPLOYMENT RUNS IS KEPT HOWEVER OLD: it is resolved through the job that
+// built it. Once a newer build supersedes it, it goes.
+func TestAJobWhoseBuildStillRunsIsKept(t *testing.T) {
+	h := newHarness(t)
+	build := func(ref, content string) string {
+		t.Helper()
+		id := h.planned(t, ref, testCommit)
+		h.runner.run = func(ctx context.Context, _ Work, out Output) error {
+			return out.Asset(ctx, "website/home", strings.NewReader(content))
+		}
+		require.True(t, h.mustStep(t))
+		require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
+		return id
+	}
+	project := "project-of-" + testRepo
+
+	running := build(testRef, "the first build")
+	h.pastRetention()
+	require.NoError(t, h.reconcile())
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, running), "it is what runs")
+	cid, err := h.Built(project, testEnvironment, "website/home")
+	require.NoError(t, err)
+	require.Equal(t, assetCID([]byte("the first build")), cid)
+
+	newer := build("refs/heads/next", "the second build")
+	require.NoError(t, h.reconcile())
+	_, found, err := h.readRecord(running)
+	require.NoError(t, err)
+	require.False(t, found, "superseded, it expires")
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, newer), "and the young one stays")
+	cid, err = h.Built(project, testEnvironment, "website/home")
+	require.NoError(t, err)
+	require.Equal(t, assetCID([]byte("the second build")), cid)
+}
+
+func TestARetentionRowItsJobOutlivedIsDropped(t *testing.T) {
+	h := newHarness(t)
+	gone := h.planned(t, testRef, testCommit)
+	require.NoError(t, h.finishNow(t, gone, buildv2.JobStatus_JobStatusFailed, "boom"))
+	h.records.erase(t, gone)
+
+	reopened := h.planned(t, testRef, shaOf(1))
+	require.NoError(t, h.finishNow(t, reopened, buildv2.JobStatus_JobStatusFailed, "boom"))
+	stale := h.terminal(t, reopened)
+	require.Len(t, stale, 1)
+	d, err := h.work.Claim()
+	require.NoError(t, err)
+	require.NoError(t, h.work.Ack(d))
+	require.NoError(t, h.retry(reopened))
+	h.records.put(t, stale[0], nil)
+
+	h.pastRetention()
+	require.NoError(t, h.reconcile())
+
+	require.Empty(t, h.terminal(t, gone), "a row whose job is gone goes")
+	require.Empty(t, h.terminal(t, reopened), "and so does one whose job is open again")
+	require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, reopened), "which is not erased")
+}
+
+func TestExpiryReportsWhatItCannotRead(t *testing.T) {
+	t.Run("a retention row that does not decode", func(t *testing.T) {
+		h := newHarness(t)
+		h.records.put(t, terminalRows()+"!!!", nil)
+		require.Equal(t, connect.CodeInternal, connect.CodeOf(h.reconcile()))
+	})
+
+	t.Run("an event that does not decode", func(t *testing.T) {
+		h := newHarness(t)
+		id := h.planned(t, testRef, testCommit)
+		require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusFailed, "boom"))
+		h.records.garble(t, id)
+		h.pastRetention()
+		require.Equal(t, connect.CodeInternal, connect.CodeOf(h.reconcile()))
+	})
+
+	t.Run("a store that refuses the erase", func(t *testing.T) {
+		h := newHarness(t)
+		id := h.planned(t, testRef, testCommit)
+		require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusFailed, "boom"))
+		h.pastRetention()
+		h.records.failBatches(errors.New("the store is full"))
+		require.ErrorContains(t, h.reconcile(), "erasing job "+id)
+		h.records.failBatches(nil)
+		require.NotEmpty(t, h.records.keys(t, eventPrefix(id)), "and nothing was erased")
+	})
 }

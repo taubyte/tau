@@ -359,6 +359,68 @@ func (e *entry) dropClosedOpen(repositoryKey string) *entry {
 	return e
 }
 
+// dropStaleRetained removes a retention row its job no longer stands behind (gone,
+// reopened, or ended again since), named by the second the listing says.
+func (e *entry) dropStaleRetained(unix int64) *entry {
+	e.ops.Delete(terminalRow(time.Unix(unix, 0), e.h.id()))
+	return e
+}
+
+// erase removes this job: every event, and every row that names it.
+func (e *entry) erase() *entry {
+	rec := e.h.rec()
+	ctx := context.Background()
+	prefix := eventPrefix(e.h.id())
+	events, err := e.h.s.records.List(ctx, prefix)
+	if err != nil {
+		e.err = errUnavailable("listing the events of job %s: %v", e.h.id(), err)
+		return e
+	}
+	for _, key := range events {
+		at, writer, err := parseEventName(strings.TrimPrefix(key, prefix))
+		if err != nil {
+			e.err = errInternal("job %s: %v", e.h.id(), err)
+			return e
+		}
+		e.ops.Delete(eventKey(e.h.id(), at, writer))
+	}
+	e.ops.Delete(projectRow(rec.ProjectID, e.h.id()))
+	e.ops.Delete(terminalRow(time.Unix(rec.UpdatedAt, 0), e.h.id()))
+	e.dropRead(rec.RepositoryKey)
+
+	for asset := range rec.Assets {
+		environment, resource, ok := splitAssetKey(asset)
+		if !ok {
+			continue
+		}
+		rows := liveRows(rec.ProjectID, environment, resource)
+		keys, err := e.h.s.records.List(ctx, rows)
+		if err != nil {
+			e.err = errUnavailable("listing what %s's %s ran: %v", environment, resource, err)
+			return e
+		}
+		for _, key := range keys {
+			if at, id, writer, err := parseBeside(rows, key); err == nil && id == e.h.id() {
+				e.ops.Delete(liveRow(rec.ProjectID, environment, resource, at, e.h.id(), writer))
+			}
+		}
+	}
+	if rec.Environment != "" {
+		rows := anchorRows(rec.RepositoryKey, rec.Ref, rec.Environment)
+		keys, err := e.h.s.records.List(ctx, rows)
+		if err != nil {
+			e.err = errUnavailable("listing the anchors of job %s: %v", e.h.id(), err)
+			return e
+		}
+		for _, key := range keys {
+			if at, id, writer, err := parseBeside(rows, key); err == nil && id == e.h.id() {
+				e.ops.Delete(anchorRow(rec.RepositoryKey, rec.Ref, rec.Environment, at, e.h.id(), writer))
+			}
+		}
+	}
+	return e
+}
+
 // dropOrphanedOpen removes the open rows of a job with no events, for mend: rows
 // whose event is older than before. A younger row may be one whose delta has
 // arrived ahead of the created event it follows, and is left for a later pass.

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
@@ -58,6 +59,11 @@ func stamp(n int64) string {
 // deployment.
 func assetKey(environment, resourceID string) string {
 	return environment + "/" + resourceID
+}
+
+// splitAssetKey is assetKey's two parts. An environment name holds no "/".
+func splitAssetKey(key string) (environment, resourceID string, ok bool) {
+	return strings.Cut(key, "/")
 }
 
 // jobRecord is a job as the fold of its events makes it (events.go), including its

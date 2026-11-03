@@ -653,19 +653,21 @@ func TestOnlyOneFunctionReadsAJob(t *testing.T) {
 		}
 		listers = append(listers, n)
 	}
-	require.ElementsMatch(t, []string{"journal.events"}, listers,
-		"every read of a job must go through journal.events, or the population below is incomplete")
+	require.ElementsMatch(t, []string{"journal.events", "entry.erase"}, listers,
+		"every read of a job must go through journal.events, or the population below is incomplete; "+
+			"erase lists the events it deletes")
 	require.ElementsMatch(t, []string{"journal.read"}, names(callers(all, "events")))
 	require.ElementsMatch(t, []string{"Service.readRecord", "journal.newest"}, names(callers(all, "read")),
 		"a job is read by the sections' one reader and by the anchor and live readers, which "+
 			"decide no write")
 	for _, builder := range names(eventKeys) {
 		for n, f := range all {
-			if n == "entry.event" || eventKeys[n] {
+			if n == "entry.event" || n == "entry.erase" || eventKeys[n] {
 				continue
 			}
 			require.False(t, f.calls[builder],
-				"%s names an event key, which only the entry that writes the event may", n)
+				"%s names an event key, which only the entry that writes the event, and the one "+
+					"that erases an expired job, may", n)
 		}
 	}
 
@@ -806,6 +808,8 @@ func TestEveryReadModifyWriteOfAJobRecordIsOneSection(t *testing.T) {
 		"Service.plan":            {record: true, queue: true, index: true},
 		"Service.settle":          {record: true, queue: true, index: true},
 		"Service.drainDeadLetter": {record: true, queue: true, index: true},
+		// The erase of an expired job, or the drop of a retention row it outlived.
+		"Service.expireJob": {record: true, index: true},
 		// reconcile.go — the one section that reads without a barrier, since the
 		// pass took one for all of them. barrier_test.go measures the number.
 		"Service.mend": {queue: true, index: true, unbarriered: true,
@@ -999,7 +1003,7 @@ func TestAnEventAndItsOpenRowMoveInOneEntry(t *testing.T) {
 			"it belongs to — which is the whole of what this type is for")
 	require.Equal(t, "entry", all["entry.event"].recv)
 
-	require.ElementsMatch(t, []string{"stated.dropOpen", "entry.dropClosedOpen"}, names(callers(all, "dropRead")))
+	require.ElementsMatch(t, []string{"stated.dropOpen", "entry.dropClosedOpen", "entry.erase"}, names(callers(all, "dropRead")))
 	require.ElementsMatch(t, []string{"Service.mend"}, names(callers(all, "dropClosedOpen")))
 	require.ElementsMatch(t, []string{"Service.mend"}, names(callers(all, "dropOrphanedOpen")),
 		"the orphan delete is reconcile's alone: a second caller is a transition dropping the "+
@@ -1242,15 +1246,17 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 	// Every row this package can write is in this table, so a new Set or Delete caller
 	// fails here until classified.
 	require.Equal(t, map[string][]string{
-		"entry.event":            {"eventKey"},
-		"entry.dropRetained":     {"terminalRow"},
-		"entry.dropRead":         {"openRowNamed"},
-		"entry.dropOrphanedOpen": {"openRowNamed"},
-		"stated.open":            {"openRow"},
-		"stated.inProject":       {"projectRow"},
-		"stated.retained":        {"terminalRow"},
-		"stated.anchor":          {"anchorRow"},
-		"stated.artifacts":       {"liveRow"},
+		"entry.event":             {"eventKey"},
+		"entry.erase":             {"eventKey", "projectRow", "terminalRow", "liveRow", "anchorRow"},
+		"entry.dropStaleRetained": {"terminalRow"},
+		"entry.dropRetained":      {"terminalRow"},
+		"entry.dropRead":          {"openRowNamed"},
+		"entry.dropOrphanedOpen":  {"openRowNamed"},
+		"stated.open":             {"openRow"},
+		"stated.inProject":        {"projectRow"},
+		"stated.retained":         {"terminalRow"},
+		"stated.anchor":           {"anchorRow"},
+		"stated.artifacts":        {"liveRow"},
 	}, rows, "one row kind per method, and every method named")
 
 	// Set and Delete are the only things that make a row; row.Entry's slice is
@@ -1264,7 +1270,7 @@ func TestEveryKeyAnEntryWritesNamesTheSectionsOwnJob(t *testing.T) {
 			"including a method that only takes the method VALUE, which counts here exactly as a "+
 			"call does")
 	require.ElementsMatch(t, []string{
-		"entry.dropRead", "entry.dropRetained", "entry.dropOrphanedOpen",
+		"entry.dropRead", "entry.dropRetained", "entry.dropOrphanedOpen", "entry.erase", "entry.dropStaleRetained",
 	}, names(callers(all, "Delete")),
 		"and a row removed likewise")
 

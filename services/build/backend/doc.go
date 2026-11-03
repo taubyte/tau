@@ -44,7 +44,7 @@
 // Known gaps: a record's identity fields other than ID are whatever the body
 // hands over; a log can reach the asset store with no cid reaching any job if
 // leadership is lost after the store takes it (bounded by PublishTimeout; the job
-// is rebuilt); nothing bounds how much a build stores; and a finished job's
-// events are kept: the retention rows name them, and nothing sweeps them yet,
-// since what a deployment runs is resolved through the job that built it.
+// is rebuilt); and nothing bounds how much a build stores. A finished job is
+// erased after JobRetention, unless what it built is still what a deployment
+// runs: that is resolved through the job.
 package backend

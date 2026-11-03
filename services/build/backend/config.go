@@ -54,6 +54,8 @@ const (
 	// arrive through raft, records through kvdb, and kvdb can lag).
 	DefaultRecordReads        = 5
 	DefaultRecordReadInterval = 200 * time.Millisecond
+	// DefaultJobRetention is how long a finished job is kept.
+	DefaultJobRetention = 30 * 24 * time.Hour
 )
 
 // Config is what an operator declared. A plain value: no live objects, no
@@ -110,6 +112,12 @@ type Config struct {
 	// apart. A user retries such a job. Zero means the defaults.
 	RecordReads        int           `yaml:"recordReads"`
 	RecordReadInterval time.Duration `yaml:"recordReadInterval"`
+
+	// JobRetention is how long a finished job is kept before reconcile erases it: its
+	// events, its log's name and its rows. A job whose build a deployment still runs
+	// is kept however old, since what runs is resolved through it. Zero means
+	// DefaultJobRetention.
+	JobRetention time.Duration `yaml:"jobRetention"`
 }
 
 // defaultLogDir is the scratch log directory, per uid so a shared /tmp name cannot
@@ -133,6 +141,7 @@ func (c Config) withDefaults() (Config, error) {
 		{"claimInterval", c.ClaimInterval},
 		{"reconcileEvery", c.ReconcileEvery},
 		{"publishTimeout", c.PublishTimeout},
+		{"jobRetention", c.JobRetention},
 		{"recordReadInterval", c.RecordReadInterval},
 	} {
 		if d.value < 0 {
@@ -172,6 +181,9 @@ func (c Config) withDefaults() (Config, error) {
 	}
 	if c.ReconcileEvery == 0 {
 		c.ReconcileEvery = DefaultReconcileEvery
+	}
+	if c.JobRetention == 0 {
+		c.JobRetention = DefaultJobRetention
 	}
 	if c.MaxQueueDepth == 0 {
 		c.MaxQueueDepth = DefaultMaxQueueDepth

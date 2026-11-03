@@ -53,6 +53,21 @@ func eventKey(id string, at int64, writer string) string {
 // eventName is what names one event among a job's: its instant and its writer.
 func eventName(at int64, writer string) string { return stamp(at) + "/" + seg(writer) }
 
+// parseEventName reads an eventName back.
+func parseEventName(name string) (at int64, writer string, err error) {
+	parts := strings.Split(name, "/")
+	if len(parts) != 2 {
+		return 0, "", fmt.Errorf("%q is not an event name", name)
+	}
+	if _, err = fmt.Sscanf(parts[0], "%d", &at); err != nil {
+		return 0, "", fmt.Errorf("%q: %w", name, err)
+	}
+	if writer, err = unseg(parts[1]); err != nil {
+		return 0, "", err
+	}
+	return at, writer, nil
+}
+
 func projectRow(projectID, id string) string {
 	return "/" + rootSegment + "/" + projectSegment + "/" + seg(projectID) + "/" + seg(id)
 }
@@ -157,6 +172,23 @@ func terminalRow(at time.Time, id string) string {
 }
 
 func terminalRows() string { return "/" + rootSegment + "/" + terminalSegment + "/" }
+
+// parseTerminalRow reads the second a job finished and the job off its retention
+// row.
+func parseTerminalRow(key string) (unix int64, id string, err error) {
+	rest, ok := strings.CutPrefix(key, terminalRows())
+	parts := strings.Split(rest, "/")
+	if !ok || len(parts) != 2 {
+		return 0, "", fmt.Errorf("%q is not a retention row", key)
+	}
+	if _, err = fmt.Sscanf(parts[0], "%d", &unix); err != nil {
+		return 0, "", fmt.Errorf("%q: %w", key, err)
+	}
+	if id, err = unseg(parts[1]); err != nil {
+		return 0, "", err
+	}
+	return unix, id, nil
+}
 
 // lastSegmentOf is the id a row names in its final segment.
 func lastSegmentOf(key string) (string, error) {
