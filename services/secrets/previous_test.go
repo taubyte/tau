@@ -28,7 +28,7 @@ func (c *manualClock) advance(d time.Duration) {
 
 func TestTheReplacedVersionIsServedUntilItsRetentionEnds(t *testing.T) {
 	clock := &manualClock{at: time.Now()}
-	srv, client, _ := single(t, WithClock(clock.now), WithReplacedRetention(time.Hour))
+	srv, client, _ := single(t, withClock(clock.now), withReplacedRetention(time.Hour))
 	ctx := t.Context()
 	r := Ref{Scope: Project("p", "e"), Name: "hook"}
 
@@ -68,5 +68,5 @@ func TestPreviousRefusesAnInvalidRef(t *testing.T) {
 }
 
 func TestNoRetentionIsNegative(t *testing.T) {
-	require.Error(t, WithReplacedRetention(-time.Second)(&options{}))
+	require.Error(t, withReplacedRetention(-time.Second)(&options{}))
 }

@@ -24,7 +24,7 @@ import (
 type Client struct {
 	host    host.Host
 	members func() []peerCore.ID
-	local   func() *Service
+	local   func() *server
 	conns   peers
 }
 
@@ -39,7 +39,7 @@ const settleWindow = 15 * time.Second
 // NewClient builds a client from h. members is who runs the service, asked on
 // every call; local is this node's own service, or nil, and is used instead of
 // a stream whenever a call is for this node.
-func NewClient(h host.Host, members func() []peerCore.ID, local func() *Service) (*Client, error) {
+func NewClient(h host.Host, members func() []peerCore.ID, local func() *server) (*Client, error) {
 	if h == nil {
 		return nil, ErrNoHost
 	}
@@ -47,7 +47,7 @@ func NewClient(h host.Host, members func() []peerCore.ID, local func() *Service)
 		members = func() []peerCore.ID { return nil }
 	}
 	if local == nil {
-		local = func() *Service { return nil }
+		local = func() *server { return nil }
 	}
 	return &Client{host: h, members: members, local: local, conns: peers{host: h, open: map[peerCore.ID]*rpc.Client{}}}, nil
 }

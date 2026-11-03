@@ -7,7 +7,6 @@ import (
 	"slices"
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
-	"gopkg.in/yaml.v3"
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
@@ -111,23 +110,7 @@ func (n *Instance) Peers(service string) []libp2ppeer.ID {
 	return (&fromDiscovery{node: n, name: service}).Known()
 }
 
-func (a *added) Config(into any) error {
-	entry, ok := a.node.cfg.Sections[a.name]
-	if !ok {
-		return nil
-	}
-	// A ROUND TRIP AND NOT A CAST. From a file the entry is whatever yaml
-	// decoded it to; from Go it may be the service's own struct. Either way
-	// the service gets what its yaml tags say, exactly as an operator wrote it.
-	raw, err := yaml.Marshal(entry)
-	if err != nil {
-		return fmt.Errorf("node: %s: config: %w", a.name, err)
-	}
-	if err := yaml.Unmarshal(raw, into); err != nil {
-		return fmt.Errorf("node: %s: config: %w", a.name, err)
-	}
-	return nil
-}
+func (a *added) Config(into any) error { return a.node.cfg.Section(a.name, into) }
 
 // provide adds a running service, under its name, to what the others on this
 // instance can Get.

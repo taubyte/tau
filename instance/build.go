@@ -152,7 +152,7 @@ func (n *Instance) openAuth() error {
 	v := newVault(n)
 	n.closers = append(n.closers, v)
 	authOptions := []authService.Option{
-		authService.WithUsers(db, v.cloud(authService.VaultService), n.authConfig()),
+		authService.WithUsers(db, v.Cloud(authService.VaultService), n.authConfig()),
 		authService.WithForges(registry),
 	}
 	identity, err := n.identityOption()

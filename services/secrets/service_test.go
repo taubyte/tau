@@ -50,10 +50,10 @@ type cluster struct {
 	mu sync.Mutex
 
 	db       string
-	opts     []Option
+	opts     []option
 	nodes    []peerNode.Node
 	consumer peerNode.Node // runs no service, the way a real client node does not
-	services []*Service
+	services []*server
 	stopped  []int
 	dbs      []coreKvdb.Instance
 	paths    []string
@@ -66,7 +66,7 @@ type cluster struct {
 // difference between testing the design and testing a convenient fiction: the
 // hazards this service is built around -- a node acting on a view that has not
 // caught up yet -- only exist when replication is real and takes time.
-func newCluster(t *testing.T, ctx context.Context, n int, opts ...Option) *cluster {
+func newCluster(t *testing.T, ctx context.Context, n int, opts ...option) *cluster {
 	t.Helper()
 
 	c := newMesh(t, ctx, n, opts...)
@@ -80,7 +80,7 @@ func newCluster(t *testing.T, ctx context.Context, n int, opts ...Option) *clust
 }
 
 // newMesh connects n nodes and a consumer, and starts no service on them.
-func newMesh(t *testing.T, ctx context.Context, n int, opts ...Option) *cluster {
+func newMesh(t *testing.T, ctx context.Context, n int, opts ...option) *cluster {
 	t.Helper()
 
 	// The mocknet is process-wide and kvdb replicates by database name, so two
@@ -146,7 +146,7 @@ func (c *cluster) start(t *testing.T, node peerNode.Node) int {
 
 // launch starts one service instance over an existing node, database and share
 // store, so a node can be restarted onto the state it already had.
-func (c *cluster) launch(t *testing.T, node peerNode.Node, db coreKvdb.Instance, path string) *Service {
+func (c *cluster) launch(t *testing.T, node peerNode.Node, db coreKvdb.Instance, path string) *server {
 	t.Helper()
 
 	srv := c.serve(t, node, db, path)
@@ -159,15 +159,15 @@ func (c *cluster) launch(t *testing.T, node peerNode.Node, db coreKvdb.Instance,
 
 // serve builds and starts one service over a node, a database and a share
 // store, announcing epochs on the node's own gossip.
-func (c *cluster) serve(t *testing.T, node peerNode.Node, db coreKvdb.Instance, path string) *Service {
+func (c *cluster) serve(t *testing.T, node peerNode.Node, db coreKvdb.Instance, path string) *server {
 	t.Helper()
 
 	// Membership is stated, as discovery states it on a node, rather than read off
 	// identify, whose record of a late-listening service arrives only by a push.
-	opts := append([]Option{WithRoot(path), WithPubSub(node.Messaging()), WithBootstrapDelay(never), WithMembers(c.memberIDs), WithReplacedRetention(0)}, c.opts...)
-	srv, err := New(node.Host(), db, opts...)
+	opts := append([]option{withRoot(path), withPubSub(node.Messaging()), withBootstrapDelay(never), withMembers(c.memberIDs), withReplacedRetention(0)}, c.opts...)
+	srv, err := build(node.Host(), db, opts...)
 	require.NoError(t, err)
-	require.NoError(t, srv.Start(context.Background()))
+	require.NoError(t, srv.serve(context.Background()))
 	t.Cleanup(func() { srv.Close() })
 
 	return srv
@@ -227,8 +227,8 @@ func (c *cluster) stop(t *testing.T, i int) {
 	c.mu.Unlock()
 }
 
-func (c *cluster) live() []*Service {
-	live := make([]*Service, 0, len(c.services))
+func (c *cluster) live() []*server {
+	live := make([]*server, 0, len(c.services))
 	for i, srv := range c.services {
 		if !slices.Contains(c.stopped, i) {
 			live = append(live, srv)
@@ -268,7 +268,7 @@ func ref(name string) Ref {
 }
 
 // newest is the newest version of ref a node stores, or one naming nothing.
-func newest(ctx context.Context, srv *Service, ref Ref) version {
+func newest(ctx context.Context, srv *server, ref Ref) version {
 	versions, err := srv.records.Versions(ctx, ref)
 	if err != nil || len(versions) == 0 {
 		return version{Ref: ref, CID: "none"}
@@ -780,7 +780,7 @@ func TestReconcileLoopRunsOnItsOwn(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 2, WithReconcileInterval(500*time.Millisecond))
+	c := newCluster(t, ctx, 2, withReconcileInterval(500*time.Millisecond))
 	c.bootstrap(t, ctx, 0)
 	first := c.awaitKey(t, ctx)
 
@@ -1072,7 +1072,7 @@ func TestShrinksToASingleNode(t *testing.T) {
 	assert.Equal(t, plaintext, got)
 }
 
-func mustActive(t *testing.T, ctx context.Context, srv *Service) *KeyMeta {
+func mustActive(t *testing.T, ctx context.Context, srv *server) *KeyMeta {
 	t.Helper()
 
 	key, err := srv.ActiveKey(ctx)
@@ -1281,7 +1281,7 @@ func TestRotatesWhenTheKeyAgesOut(t *testing.T) {
 	const age = time.Hour
 	clock := newFakeClock()
 
-	c := newCluster(t, ctx, 2, WithRotationAge(age), WithClock(clock.now))
+	c := newCluster(t, ctx, 2, withRotationAge(age), withClock(clock.now))
 	c.bootstrap(t, ctx, 0)
 	first := c.awaitKey(t, ctx)
 
@@ -1332,7 +1332,7 @@ func TestZeroRotationAgeDisablesTheTrigger(t *testing.T) {
 	defer cancel()
 
 	clock := newFakeClock()
-	c := newCluster(t, ctx, 2, WithRotationAge(0), WithClock(clock.now))
+	c := newCluster(t, ctx, 2, withRotationAge(0), withClock(clock.now))
 	c.bootstrap(t, ctx, 0)
 	first := c.awaitKey(t, ctx)
 

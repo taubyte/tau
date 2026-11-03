@@ -23,7 +23,7 @@ func TestInitWritesTheVaultTheNodeThenReads(t *testing.T) {
 	ref := secretsService.Ref{Scope: secretsService.Project("p", "e"), Name: "n"}
 	bundle := bundleOf(t, ref, "v")
 
-	require.ErrorIs(t, Init(t.Context(), f, bundle), instance.ErrNoSecretsHere)
+	require.ErrorIs(t, Init(t.Context(), f, bundle), ErrNoSecretsHere)
 
 	f.Node.Services = append(f.Node.Services, instance.Secrets)
 	minted := f

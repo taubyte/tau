@@ -42,7 +42,7 @@ func Sealed(ref Ref, value []byte, writtenAt time.Time) (*secretsv2.InitSecret, 
 // epoch the moment the cluster rotates to its real roster: every secret is
 // carried forward by its own member, and the one-member key's wrappings and
 // share are retired.
-func (srv *Service) Init(ctx context.Context, bundle *secretsv2.InitBundle) error {
+func (srv *server) Init(ctx context.Context, bundle *secretsv2.InitBundle) error {
 	key, err := srv.ActiveKey(ctx)
 	if err != nil {
 		epoch, err := srv.keys.Epoch(ctx)
@@ -84,7 +84,7 @@ func Unsealed(secret *secretsv2.InitSecret) (Ref, []byte, error) {
 	return ref, value, nil
 }
 
-func (srv *Service) initOne(ctx context.Context, key *KeyMeta, public group.Element, secret *secretsv2.InitSecret) error {
+func (srv *server) initOne(ctx context.Context, key *KeyMeta, public group.Element, secret *secretsv2.InitSecret) error {
 	ref, _, err := Unsealed(secret)
 	if err != nil {
 		return err

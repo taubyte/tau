@@ -14,7 +14,7 @@ import (
 	"github.com/taubyte/tau/pkg/secrets/tdh"
 )
 
-func (srv *Service) mount() http.Handler {
+func (srv *server) mount() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle(secretsv2connect.NewSecretsServiceHandler(&secretsHandler{srv}, codec.Option()))
 	mux.Handle(secretsv2connect.NewDealerServiceHandler(&dealerHandler{srv}, codec.Option()))
@@ -24,7 +24,7 @@ func (srv *Service) mount() http.Handler {
 // secretsHandler is the storage surface. Its methods have exactly the
 // signatures of the generated client, so a Client on this node calls it
 // directly rather than over a stream to itself.
-type secretsHandler struct{ srv *Service }
+type secretsHandler struct{ srv *server }
 
 var (
 	_ secretsv2connect.SecretsServiceHandler = (*secretsHandler)(nil)
@@ -191,7 +191,7 @@ func (h *secretsHandler) List(ctx context.Context, req *connect.Request[secretsv
 }
 
 // dealerHandler is the key-generation surface between members.
-type dealerHandler struct{ srv *Service }
+type dealerHandler struct{ srv *server }
 
 var _ secretsv2connect.DealerServiceHandler = (*dealerHandler)(nil)
 

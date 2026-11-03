@@ -23,14 +23,14 @@ func (c *cluster) localClient(t *testing.T, i int) *Client {
 	t.Helper()
 
 	srv := c.services[i]
-	client, err := NewClient(c.nodes[i].Host(), func() []peerCore.ID { return nil }, func() *Service { return srv })
+	client, err := NewClient(c.nodes[i].Host(), func() []peerCore.ID { return nil }, func() *server { return srv })
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
 	return client
 }
 
 // versionsOn is how many versions of ref one node stores.
-func versionsOn(t *testing.T, ctx context.Context, srv *Service, ref Ref) int {
+func versionsOn(t *testing.T, ctx context.Context, srv *server, ref Ref) int {
 	t.Helper()
 
 	versions, err := srv.records.Versions(ctx, ref)
@@ -87,7 +87,7 @@ func TestARewriteAfterRotationIsReadEverywhere(t *testing.T) {
 }
 
 // skewed gives the nodes of a cluster, in start order, clocks this far off.
-func skewed(offsets ...time.Duration) Option {
+func skewed(offsets ...time.Duration) option {
 	var started atomic.Int32
 	return func(o *options) error {
 		offset := offsets[int(started.Add(1)-1)%len(offsets)]
@@ -132,7 +132,7 @@ func TestANewRosterRotatesOnceOnItsOwn(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 2, WithBootstrapDelay(100*time.Millisecond))
+	c := newCluster(t, ctx, 2, withBootstrapDelay(100*time.Millisecond))
 	first := c.awaitKey(t, ctx)
 	require.Len(t, first.Members, 2)
 
@@ -225,7 +225,7 @@ func TestAnUnreadableSecretDoesNotStopRetirement(t *testing.T) {
 
 	const age = time.Hour
 	clock := newFakeClock()
-	c := newCluster(t, ctx, 2, WithRotationAge(age), WithClock(clock.now))
+	c := newCluster(t, ctx, 2, withRotationAge(age), withClock(clock.now))
 	c.bootstrap(t, ctx, 0)
 	first := c.awaitKey(t, ctx)
 
@@ -252,7 +252,7 @@ func TestAnUnreadableSecretDoesNotStopRetirement(t *testing.T) {
 func initOn(t *testing.T, ctx context.Context, c *cluster, i int, bundle *secretsv2.InitBundle) {
 	t.Helper()
 
-	srv, err := New(c.nodes[i].Host(), c.dbs[i], WithRoot(c.paths[i]))
+	srv, err := build(c.nodes[i].Host(), c.dbs[i], withRoot(c.paths[i]))
 	require.NoError(t, err)
 	require.NoError(t, srv.Init(ctx, bundle))
 	require.NoError(t, srv.Close())
@@ -406,7 +406,7 @@ func TestVersionStepsReportAFailingStore(t *testing.T) {
 	r := Ref{Scope: Cloud("auth"), Name: "n"}
 	bundle := bundleOf(t, map[Ref]string{r: "v"})
 
-	failing := &Service{host: srv.host, shares: srv.shares, now: time.Now, ctx: ctx, rounds: map[string]*round{},
+	failing := &server{host: srv.host, shares: srv.shares, now: time.Now, ctx: ctx, rounds: map[string]*round{},
 		db: broken{}, keys: &keyStore{db: broken{}}, records: &recordStore{db: broken{}}, wrappings: &wrappingStore{db: broken{}}}
 	require.ErrorIs(t, failing.Init(ctx, bundle), errBroken)
 	require.ErrorIs(t, failing.Delete(ctx, r), errBroken)
@@ -505,7 +505,7 @@ func ownerAway(t *testing.T, ctx context.Context, away bool) {
 		open(2)
 		// Its first look is stale: v2 only under its own one-member key, v1
 		// under every node's. That must not prune v1.
-		returning, err := New(c.nodes[2].Host(), c.dbs[2], WithRoot(c.paths[2]), WithReplacedRetention(0))
+		returning, err := build(c.nodes[2].Host(), c.dbs[2], withRoot(c.paths[2]), withReplacedRetention(0))
 		require.NoError(t, err)
 		require.NoError(t, returning.prune(ctx))
 		assert.Equal(t, 2, versionsOn(t, ctx, returning, r), "a stale view pruned the older version")

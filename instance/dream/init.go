@@ -7,9 +7,9 @@ package dream
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -392,9 +392,14 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	if nodeConfig.CM.Certificate.ACME.Enabled {
 		bundle.Secrets = append(account, cfg.Secrets...)
 	}
-	if len(bundle.Secrets) > 0 {
-		err := instance.InitSecrets(ctx, p, nodeConfig, bundle)
-		if err != nil && !errors.Is(err, instance.ErrNoSecretsHere) {
+	runsSecrets := len(nodeConfig.Services) == 0 || slices.Contains(nodeConfig.Services, secrets.Descriptor.Name)
+	if len(bundle.Secrets) > 0 && runsSecrets {
+		var section secrets.Config
+		err := nodeConfig.Section(secrets.Descriptor.Name, &section)
+		if err == nil {
+			err = secrets.Init(ctx, p, root, section, bundle)
+		}
+		if err != nil {
 			os.RemoveAll(root)
 			return err
 		}

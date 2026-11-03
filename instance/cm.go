@@ -12,6 +12,7 @@ import (
 	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/dns"
+	secretsService "github.com/taubyte/tau/services/secrets"
 )
 
 // Wires the cm service (the cloud's certificate store) and the one client every
@@ -30,11 +31,11 @@ const challengeDatabase = "cm-challenges"
 var ErrNoZoneForCertificates = errors.New("node: certificates are issued for the cloud's zone, and this node's gateway names none (gateway.cloudfqdn)")
 
 // certVault is the vault every certificate key goes through.
-func (n *Instance) certVault() cloudVault {
+func (n *Instance) certVault() secretsService.CloudVault {
 	n.Vault()
 	n.sharedMu.Lock()
 	defer n.sharedMu.Unlock()
-	return n.shared.cloud(cm.VaultService)
+	return n.shared.Cloud(cm.VaultService)
 }
 
 func (n *Instance) openCM() error {

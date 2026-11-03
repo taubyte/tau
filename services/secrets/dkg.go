@@ -96,7 +96,7 @@ func thresholdFor(members []string) uint {
 // So it asks. Peers are the authority on whether a key exists, and asking is a
 // question, not a vote: one answer is enough to stop, and no answer from
 // anybody is the only thing that justifies creating one.
-func (srv *Service) ensureKey(ctx context.Context) error {
+func (srv *server) ensureKey(ctx context.Context) error {
 	if _, err := srv.ActiveKey(ctx); err == nil {
 		return nil
 	}
@@ -122,7 +122,7 @@ func (srv *Service) ensureKey(ctx context.Context) error {
 }
 
 // peerWithKey reports whether any discovered member already serves a key.
-func (srv *Service) peerWithKey(members []string) (string, uint64, []string, bool) {
+func (srv *server) peerWithKey(members []string) (string, uint64, []string, bool) {
 	self := srv.self()
 
 	for _, member := range members {
@@ -139,7 +139,7 @@ func (srv *Service) peerWithKey(members []string) (string, uint64, []string, boo
 }
 
 // joined is the round this node is already taking part in under id, if any.
-func (srv *Service) joined(id string) (*round, bool) {
+func (srv *server) joined(id string) (*round, bool) {
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 	r, ok := srv.rounds[id]
@@ -147,7 +147,7 @@ func (srv *Service) joined(id string) (*round, bool) {
 }
 
 // await waits for a round to complete.
-func (srv *Service) await(ctx context.Context, r *round) error {
+func (srv *server) await(ctx context.Context, r *round) error {
 	select {
 	case <-r.done:
 		return nil
@@ -162,7 +162,7 @@ func (srv *Service) await(ctx context.Context, r *round) error {
 // shared store when the question is "has this already happened": a store that
 // has not caught up answers no, and acting on that no is what turns one
 // membership change into an epoch per node.
-func (srv *Service) peerKey(member string) (epoch uint64, roster []string, ok bool) {
+func (srv *server) peerKey(member string) (epoch uint64, roster []string, ok bool) {
 	to, err := peerCore.Decode(member)
 	if err != nil {
 		return 0, nil, false
@@ -186,7 +186,7 @@ func (srv *Service) peerKey(member string) (epoch uint64, roster []string, ok bo
 // alreadyRotated reports whether some member is already serving a key for this
 // roster at a newer epoch, in which case the rotation this node wants has
 // happened and starting another only burns an epoch.
-func (srv *Service) alreadyRotated(members []string, since uint64) bool {
+func (srv *server) alreadyRotated(members []string, since uint64) bool {
 	self := srv.self()
 
 	for _, member := range members {
@@ -211,7 +211,7 @@ func (srv *Service) alreadyRotated(members []string, since uint64) bool {
 // proceeds once one has survived two consecutive passes -- and discovering it
 // again here would throw that away and generate for whatever the last poll
 // happened to see.
-func (srv *Service) generateKey(ctx context.Context, epoch uint64, members []string) error {
+func (srv *server) generateKey(ctx context.Context, epoch uint64, members []string) error {
 	r, err := srv.joinRound(ctx, roundID(epoch, members), epoch, members)
 	if err != nil {
 		return err
@@ -224,7 +224,7 @@ func (srv *Service) generateKey(ctx context.Context, epoch uint64, members []str
 
 // joinRound returns this node's round, creating it if this is the first time
 // the node hears of it. A round a node did not start is as valid as one it did.
-func (srv *Service) joinRound(ctx context.Context, id string, epoch uint64, members []string) (*round, error) {
+func (srv *server) joinRound(ctx context.Context, id string, epoch uint64, members []string) (*round, error) {
 	if id != roundID(epoch, members) {
 		return nil, fmt.Errorf("round %s does not name its epoch and roster", id)
 	}
@@ -270,7 +270,7 @@ func (srv *Service) joinRound(ctx context.Context, id string, epoch uint64, memb
 
 // evictOldestLocked keeps the round table bounded. Evicting a finished round
 // costs nothing -- its share is already on disk.
-func (srv *Service) evictOldestLocked() {
+func (srv *server) evictOldestLocked() {
 	for len(srv.rounds) >= maxRounds {
 		var oldest *round
 		for _, r := range srv.rounds {
@@ -284,7 +284,7 @@ func (srv *Service) evictOldestLocked() {
 
 // dealerSeed derives this node's polynomial for one round from its identity, so
 // dealing is idempotent across restarts. It must never leave the node.
-func (srv *Service) dealerSeed(id string) ([]byte, error) {
+func (srv *server) dealerSeed(id string) ([]byte, error) {
 	priv := srv.host.Peerstore().PrivKey(srv.host.ID())
 	if priv == nil {
 		return nil, errors.New("node has no private key to derive a contribution from")
@@ -304,7 +304,7 @@ func (srv *Service) dealerSeed(id string) ([]byte, error) {
 
 // dealOnce sends this node's contribution to every other member, at most once
 // per round however many times it is called.
-func (srv *Service) dealOnce(r *round) {
+func (srv *server) dealOnce(r *round) {
 	r.deal.Do(func() {
 		self := srv.self()
 
@@ -327,7 +327,7 @@ func (srv *Service) dealOnce(r *round) {
 	})
 }
 
-func (srv *Service) contribute(r *round, member string) error {
+func (srv *server) contribute(r *round, member string) error {
 	to, err := peerCore.Decode(member)
 	if err != nil {
 		return fmt.Errorf("decoding member: %w", err)
@@ -404,7 +404,7 @@ func contributed(p *secretsv2.Contribution) (secretsharing.SecretCommitment, sec
 
 // receive accepts one member's contribution, joining the round if this node had
 // not heard of it, and finalizes once every contribution is in.
-func (srv *Service) receive(ctx context.Context, p *secretsv2.Contribution) error {
+func (srv *server) receive(ctx context.Context, p *secretsv2.Contribution) error {
 	commitment, share, err := contributed(p)
 	if err != nil {
 		return err
@@ -436,7 +436,7 @@ func (srv *Service) receive(ctx context.Context, p *secretsv2.Contribution) erro
 // is derived from the roster and the group key is the sum of the same
 // commitments -- so the record has no single writer to elect and no value two
 // nodes could disagree on.
-func (srv *Service) completeLocked(ctx context.Context, r *round) error {
+func (srv *server) completeLocked(ctx context.Context, r *round) error {
 	if r.key != nil || !r.dealer.Complete() {
 		return nil
 	}
@@ -495,7 +495,7 @@ func (srv *Service) completeLocked(ctx context.Context, r *round) error {
 // member; handing it to anybody who names a member would let a caller collect
 // t of them and reconstruct the group secret outright, which is a far cheaper
 // attack than asking t nodes to decrypt one secret at a time.
-func (srv *Service) replay(ctx context.Context, keyID, to string) (*secretsv2.Contribution, error) {
+func (srv *server) replay(ctx context.Context, keyID, to string) (*secretsv2.Contribution, error) {
 	key, err := srv.keys.Get(ctx, keyID)
 	if err != nil {
 		return nil, err
@@ -537,7 +537,7 @@ func (srv *Service) replay(ctx context.Context, keyID, to string) (*secretsv2.Co
 // re-encrypted and nothing is retired -- the node simply ends up holding again
 // what it held before. The reconstruction is checked against the published group
 // key, so a wrong or malicious contribution cannot be persisted as a share.
-func (srv *Service) recoverShare(ctx context.Context, key *KeyMeta) error {
+func (srv *server) recoverShare(ctx context.Context, key *KeyMeta) error {
 	self := srv.self()
 	if !slices.Contains(key.Members, self) {
 		return fmt.Errorf("this node is not a member of key %s", key.KeyID)
@@ -605,7 +605,7 @@ func (srv *Service) recoverShare(ctx context.Context, key *KeyMeta) error {
 	return srv.shares.Put(ctx, key.KeyID, recovered.Share)
 }
 
-func (srv *Service) askReplay(member, keyID string) (secretsharing.SecretCommitment, secretsharing.Share, error) {
+func (srv *server) askReplay(member, keyID string) (secretsharing.SecretCommitment, secretsharing.Share, error) {
 	to, err := peerCore.Decode(member)
 	if err != nil {
 		return nil, secretsharing.Share{}, err

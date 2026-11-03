@@ -191,7 +191,7 @@ func TestAHookIsTheLinkAndItsSecret(t *testing.T) {
 	require.NotErrorIs(t, err, frontend.ErrNoHook, "an unreachable vault is not an answer")
 
 	_, err = linkSecrets{projects: p}.Hook(ctx, linkedID)
-	require.ErrorIs(t, err, ErrNoSecrets)
+	require.ErrorIs(t, err, secretsService.ErrNoSecrets)
 }
 
 func TestADeployKeyIsReadFromTheVaultByRepository(t *testing.T) {

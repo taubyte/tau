@@ -85,7 +85,7 @@ func TestWithoutStatedMembersTheRosterIsWhoSpeaksTheProtocol(t *testing.T) {
 	ctx := t.Context()
 	name := fmt.Sprintf("secrets-%d", clusters.Add(1))
 
-	var services []*Service
+	var services []*server
 	var nodes []peerNode.Node
 	for range 2 {
 		node := peerNode.Mock(ctx)
@@ -93,9 +93,9 @@ func TestWithoutStatedMembersTheRosterIsWhoSpeaksTheProtocol(t *testing.T) {
 		db, err := kvdb.Open(node, name, kvdb.WithLogger(logging.Logger("secrets-test")), kvdb.WithRebroadcast(time.Second))
 		require.NoError(t, err)
 		t.Cleanup(func() { db.Close() })
-		srv, err := New(node.Host(), db, WithRoot(t.TempDir()), WithBootstrapDelay(never))
+		srv, err := build(node.Host(), db, withRoot(t.TempDir()), withBootstrapDelay(never))
 		require.NoError(t, err)
-		require.NoError(t, srv.Start(ctx))
+		require.NoError(t, srv.serve(ctx))
 		t.Cleanup(func() { srv.Close() })
 		services, nodes = append(services, srv), append(nodes, node)
 	}
@@ -176,7 +176,7 @@ func TestAClientRefusesBadReferencesBeforeAskingAnyone(t *testing.T) {
 	t.Cleanup(func() { node.Close() })
 
 	// Named as a member, but this node runs no service, so it is not a target.
-	client, err := NewClient(node.Host(), func() []peerCore.ID { return []peerCore.ID{node.ID()} }, func() *Service { return nil })
+	client, err := NewClient(node.Host(), func() []peerCore.ID { return []peerCore.ID{node.ID()} }, func() *server { return nil })
 	require.NoError(t, err)
 	ctx := t.Context()
 
@@ -194,7 +194,7 @@ func TestAClientRefusesBadReferencesBeforeAskingAnyone(t *testing.T) {
 func TestReconciliationStepsReportAFailingStore(t *testing.T) {
 	ctx := t.Context()
 	db := broken{}
-	srv := &Service{db: db, records: &recordStore{db: db}, wrappings: &wrappingStore{db: db}, keys: &keyStore{db: db}}
+	srv := &server{db: db, records: &recordStore{db: db}, wrappings: &wrappingStore{db: db}, keys: &keyStore{db: db}}
 
 	_, err := srv.keysInUse(ctx)
 	require.ErrorIs(t, err, errBroken)

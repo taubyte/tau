@@ -83,14 +83,14 @@ func TestAWriteWithNoVaultAnywhereIsRefused(t *testing.T) {
 	v := newVault(n)
 	t.Cleanup(func() { v.Close() })
 
-	require.ErrorIs(t, v.Set(t.Context(), "shop", "prod", secretID, []byte("x")), ErrNoSecrets)
-	require.ErrorIs(t, v.Delete(t.Context(), "shop", "prod", secretID), ErrNoSecrets)
+	require.ErrorIs(t, v.Set(t.Context(), "shop", "prod", secretID, []byte("x")), secretsService.ErrNoSecrets)
+	require.ErrorIs(t, v.Delete(t.Context(), "shop", "prod", secretID), secretsService.ErrNoSecrets)
 
 	_, err := v.List(t.Context(), "shop", "prod")
-	require.ErrorIs(t, err, ErrNoSecrets)
+	require.ErrorIs(t, err, secretsService.ErrNoSecrets)
 
 	_, err = v.Secret(t.Context(), "shop", "prod", secretID)
-	require.ErrorIs(t, err, ErrNoSecrets)
+	require.ErrorIs(t, err, secretsService.ErrNoSecrets)
 }
 
 // secretFor is an injected resolver, which is the one thing that outranks a
@@ -134,12 +134,9 @@ func TestInitWritesTheCloudsSecretsTheNodeThenServes(t *testing.T) {
 	require.NoError(t, err)
 	bundle := &secretsv2.InitBundle{Secrets: []*secretsv2.InitSecret{sealed}}
 
-	require.ErrorIs(t, InitSecrets(ctx, p, Config{Services: []string{Register}, Root: root}, bundle), ErrNoSecretsHere)
+	require.ErrorIs(t, secretsService.Init(ctx, p, "", secretsService.Config{}, bundle), secretsService.ErrNoRoot)
+	require.NoError(t, secretsService.Init(ctx, p, root, secretsService.Config{}, bundle))
 	cfg := Config{Services: []string{Register, Discovery, Secrets}}
-	require.ErrorIs(t, InitSecrets(ctx, p, cfg, bundle), secretsService.ErrNoRoot)
-	require.ErrorIs(t, InitSecrets(ctx, p, Config{}, bundle), secretsService.ErrNoRoot, "no services named runs secrets")
-	cfg.Root = root
-	require.NoError(t, InitSecrets(ctx, p, cfg, bundle))
 
 	// THE SAME PEER, so the node opens the database init wrote into.
 	n, err := New(p, rootedIn(t, cfg, root), withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }))
@@ -147,7 +144,7 @@ func TestInitWritesTheCloudsSecretsTheNodeThenServes(t *testing.T) {
 	t.Cleanup(func() { n.Close() })
 	require.NoError(t, n.Start(ctx))
 
-	cloud := n.Vault().(*vault).cloud("auth")
+	cloud := n.Vault().(*secretsService.Vault).Cloud("auth")
 	got, err := cloud.Get(ctx, "pepper")
 	require.NoError(t, err)
 	require.Equal(t, "salt", string(got))

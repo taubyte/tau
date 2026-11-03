@@ -21,6 +21,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/ipfs/go-log/v2"
@@ -34,6 +35,7 @@ import (
 	"github.com/taubyte/tau/p2p/sectls"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/pkg/stats"
+	"github.com/taubyte/tau/services/secrets"
 )
 
 // File is what an operator writes.
@@ -481,10 +483,18 @@ func Init(ctx context.Context, f File, bundle *secretsv2.InitBundle) error {
 	}
 	defer p.Close()
 
-	cfg := f.Node
-	cfg.Root = f.Root
-	return instance.InitSecrets(ctx, p, cfg, bundle)
+	if len(f.Node.Services) > 0 && !slices.Contains(f.Node.Services, secrets.Descriptor.Name) {
+		return ErrNoSecretsHere
+	}
+	var section secrets.Config
+	if err := f.Node.Section(secrets.Descriptor.Name, &section); err != nil {
+		return err
+	}
+	return secrets.Init(ctx, p, f.Root, section, bundle)
 }
+
+// ErrNoSecretsHere is an init of a node whose file runs no secrets service.
+var ErrNoSecretsHere = errors.New("boot: this node runs no secrets service to initialize")
 
 // initListen keeps init off the ports the node itself binds.
 const initListen = "/ip4/127.0.0.1/tcp/0"

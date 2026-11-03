@@ -191,7 +191,7 @@ type linkSecrets struct {
 // value is one link credential, or false when none is set.
 func (l linkSecrets) value(ctx context.Context, project, name string) ([]byte, bool, error) {
 	if l.vault == nil {
-		return nil, false, ErrNoSecrets
+		return nil, false, secretsService.ErrNoSecrets
 	}
 	v, err := l.vault.Secret(ctx, project, linkcreds.Environment, name)
 	switch {

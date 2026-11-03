@@ -23,7 +23,7 @@ import (
 )
 
 // single is one node running the service, reached through its own Client.
-func single(t *testing.T, opts ...Option) (*Service, *Client, peerNode.Node) {
+func single(t *testing.T, opts ...option) (*server, *Client, peerNode.Node) {
 	t.Helper()
 	ctx := t.Context()
 
@@ -33,16 +33,16 @@ func single(t *testing.T, opts ...Option) (*Service, *Client, peerNode.Node) {
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 
-	srv, err := New(node.Host(), db, append([]Option{
-		WithRoot(t.TempDir()), WithBootstrapDelay(never), WithConfig(Config{}),
-		WithMembers(func() []peerCore.ID { return nil }), WithServerOptions(),
-		WithReconcileInterval(time.Hour), WithReplacedRetention(0),
+	srv, err := build(node.Host(), db, append([]option{
+		withRoot(t.TempDir()), withBootstrapDelay(never), withConfig(Config{}),
+		withMembers(func() []peerCore.ID { return nil }), withServerOptions(),
+		withReconcileInterval(time.Hour), withReplacedRetention(0),
 	}, opts...)...)
 	require.NoError(t, err)
-	require.NoError(t, srv.Start(ctx))
+	require.NoError(t, srv.serve(ctx))
 	t.Cleanup(func() { srv.Close() })
 
-	client, err := NewClient(node.Host(), nil, func() *Service { return srv })
+	client, err := NewClient(node.Host(), nil, func() *server { return srv })
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
 	return srv, client, node
@@ -103,33 +103,33 @@ func TestWhatNewAndItsOptionsRefuse(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 
-	_, err = New(nil, db)
+	_, err = build(nil, db)
 	require.ErrorIs(t, err, ErrNoHost)
-	_, err = New(node.Host(), nil)
+	_, err = build(node.Host(), nil)
 	require.ErrorIs(t, err, ErrNoDB)
-	_, err = New(node.Host(), db)
+	_, err = build(node.Host(), db)
 	require.ErrorIs(t, err, ErrNoRoot)
 
-	for name, opt := range map[string]Option{
-		"root":      WithRoot(""),
-		"members":   WithMembers(nil),
-		"pubsub":    WithPubSub(nil),
-		"delay":     WithBootstrapDelay(-1),
-		"age":       WithRotationAge(-1),
-		"reconcile": WithReconcileInterval(0),
-		"clock":     WithClock(nil),
+	for name, opt := range map[string]option{
+		"root":      withRoot(""),
+		"members":   withMembers(nil),
+		"pubsub":    withPubSub(nil),
+		"delay":     withBootstrapDelay(-1),
+		"age":       withRotationAge(-1),
+		"reconcile": withReconcileInterval(0),
+		"clock":     withClock(nil),
 	} {
-		_, err := New(node.Host(), db, WithRoot(t.TempDir()), opt)
+		_, err := build(node.Host(), db, withRoot(t.TempDir()), opt)
 		require.Error(t, err, name)
 	}
 }
 
 func TestStartIsOnceAndNotAfterClose(t *testing.T) {
 	srv, _, _ := single(t)
-	require.Error(t, srv.Start(t.Context()))
+	require.Error(t, srv.serve(t.Context()))
 	require.NoError(t, srv.Close())
 	require.NoError(t, srv.Close(), "close is idempotent")
-	require.Error(t, srv.Start(t.Context()))
+	require.Error(t, srv.serve(t.Context()))
 }
 
 func TestTheHandlersRefuseWhatTheyCannotUse(t *testing.T) {
@@ -309,7 +309,7 @@ func TestAStoreThatFailsIsAnErrorEverywhere(t *testing.T) {
 	_, err = (&recordStore{db: db}).Versions(ctx, Ref{})
 	require.ErrorIs(t, err, ErrInvalidRef)
 
-	srv := &Service{db: db, records: &recordStore{db: db}, wrappings: &wrappingStore{db: db}, keys: &keyStore{db: db}}
+	srv := &server{db: db, records: &recordStore{db: db}, wrappings: &wrappingStore{db: db}, keys: &keyStore{db: db}}
 	require.Error(t, srv.Delete(ctx, ref))
 	require.Error(t, srv.compact(ctx))
 	require.Error(t, srv.retire(ctx, &KeyMeta{}))
@@ -319,7 +319,7 @@ func TestAStoreThatFailsIsAnErrorEverywhere(t *testing.T) {
 }
 
 func TestTheBootTimerFormsTheFirstKey(t *testing.T) {
-	srv, _, _ := single(t, WithBootstrapDelay(10*time.Millisecond))
+	srv, _, _ := single(t, withBootstrapDelay(10*time.Millisecond))
 	require.Eventually(t, func() bool {
 		_, err := srv.ActiveKey(t.Context())
 		return err == nil

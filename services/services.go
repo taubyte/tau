@@ -8,6 +8,7 @@ import (
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/services/discovery"
 	"github.com/taubyte/tau/services/register"
+	"github.com/taubyte/tau/services/secrets"
 	"github.com/taubyte/tau/services/storage"
 )
 
@@ -16,6 +17,7 @@ func shipped() map[string]func() service.Service {
 	return map[string]func() service.Service{
 		discovery.Descriptor.Name: func() service.Service { return discovery.New() },
 		register.Descriptor.Name:  func() service.Service { return register.New() },
+		secrets.Descriptor.Name:   func() service.Service { return secrets.New() },
 		storage.Descriptor.Name:   func() service.Service { return storage.New() },
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/kvdb"
+	secretsService "github.com/taubyte/tau/services/secrets"
 )
 
 func TestEveryBackingOpensItsDatabaseByName(t *testing.T) {
@@ -103,5 +104,5 @@ func TestADatabaseStoreIsOpenedAndReleasedByName(t *testing.T) {
 func TestADatabaseCredentialNeedsAVault(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register}})
 	_, err := databaseSecrets{node: n}.Secret(t.Context(), "shop", "prod", "dbpass")
-	require.ErrorIs(t, err, ErrNoSecrets)
+	require.ErrorIs(t, err, secretsService.ErrNoSecrets)
 }

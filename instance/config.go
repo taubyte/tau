@@ -28,8 +28,8 @@ import (
 	gateway "github.com/taubyte/tau/services/gateway"
 	"github.com/taubyte/tau/services/primitives"
 	proxy "github.com/taubyte/tau/services/proxy"
-	"github.com/taubyte/tau/services/secrets"
 	"github.com/taubyte/tau/services/worker"
+	"gopkg.in/yaml.v3"
 )
 
 // Services a node can run. They are named here so an operator's list is checked
@@ -69,7 +69,7 @@ var (
 )
 
 // All is every service this composition knows how to start.
-var All = []string{Worker, Gateway, Auth, Secrets, Database, Primitives, Proxy, DNS, BuildBackend}
+var All = []string{Worker, Gateway, Auth, Database, Primitives, Proxy, DNS, BuildBackend}
 
 // Everything is every service a node can be configured to run: the ones this
 // package still starts itself and the ones services.New makes. All, the default
@@ -120,7 +120,6 @@ type Config struct {
 	// here reinterprets it.
 	Worker  worker.Config
 	Gateway gateway.Config
-	Secrets secrets.Config
 
 	// CM is what the cloud keeps once for every region: today its
 	// certificates — the ACME CA, the challenge type and whether the zone's
@@ -330,3 +329,24 @@ func (c Config) withDefaults(added ...string) (Config, error) {
 }
 
 func (c Config) runs(name string) bool { return slices.Contains(c.Services, name) }
+
+// Section decodes the named service's section into into, by yaml. With no section it
+// leaves into as it was, so whatever into held is the default.
+//
+// A ROUND TRIP AND NOT A CAST. From a file a section is whatever yaml decoded it
+// to; from Go it may be the service's own struct. Either way the service gets what
+// its yaml tags say, exactly as an operator wrote it.
+func (c Config) Section(name string, into any) error {
+	section, ok := c.Sections[name]
+	if !ok {
+		return nil
+	}
+	raw, err := yaml.Marshal(section)
+	if err != nil {
+		return fmt.Errorf("node: %s: config: %w", name, err)
+	}
+	if err := yaml.Unmarshal(raw, into); err != nil {
+		return fmt.Errorf("node: %s: config: %w", name, err)
+	}
+	return nil
+}

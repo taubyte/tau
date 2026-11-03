@@ -38,7 +38,7 @@ import (
 // A version that cannot be carried forward is reported, never a reason to
 // stop: one unreadable secret must not keep every other one's old wrappings,
 // and the keys under them, alive.
-func (srv *Service) reconcile(ctx context.Context) error {
+func (srv *server) reconcile(ctx context.Context) error {
 	// Repair before anything else. A node that lost its share is not a reason to
 	// rotate -- rotating would re-encrypt every secret to work around a node
 	// that can simply be handed back what it already had.
@@ -77,7 +77,7 @@ func (srv *Service) reconcile(ctx context.Context) error {
 //
 // Best effort by design. A member that is down means one round of replay fails
 // and the next pass tries again; nothing else is blocked in the meantime.
-func (srv *Service) repairShares(ctx context.Context) {
+func (srv *server) repairShares(ctx context.Context) {
 	keys, err := srv.keys.Newest(ctx)
 	if err != nil {
 		return
@@ -118,7 +118,7 @@ func (srv *Service) repairShares(ctx context.Context) {
 
 // keysInUse is the set of keys some stored secret is still wrapped under, plus
 // the active one.
-func (srv *Service) keysInUse(ctx context.Context) (map[string]struct{}, error) {
+func (srv *server) keysInUse(ctx context.Context) (map[string]struct{}, error) {
 	inUse := make(map[string]struct{})
 
 	if active, err := srv.ActiveKey(ctx); err == nil {
@@ -144,7 +144,7 @@ func (srv *Service) keysInUse(ctx context.Context) (map[string]struct{}, error) 
 }
 
 // versions is every stored version of every secret.
-func (srv *Service) versions(ctx context.Context) ([]version, error) {
+func (srv *server) versions(ctx context.Context) ([]version, error) {
 	refs, err := srv.records.All(ctx)
 	if err != nil {
 		return nil, err
@@ -167,7 +167,7 @@ func (srv *Service) versions(ctx context.Context) ([]version, error) {
 // key has aged out. Both triggers are evaluated independently on every node;
 // they converge because the next epoch is derived, so two nodes deciding to
 // rotate at the same moment join the same round.
-func (srv *Service) rotateIfNeeded(ctx context.Context) error {
+func (srv *server) rotateIfNeeded(ctx context.Context) error {
 	active, err := srv.ActiveKey(ctx)
 	if err != nil {
 		return srv.ensureKey(ctx)
@@ -233,7 +233,7 @@ func (srv *Service) rotateIfNeeded(ctx context.Context) error {
 
 // rememberRoster records the roster this pass saw and reports whether the
 // previous pass saw the same one.
-func (srv *Service) rememberRoster(members []string) bool {
+func (srv *server) rememberRoster(members []string) bool {
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 
@@ -245,7 +245,7 @@ func (srv *Service) rememberRoster(members []string) bool {
 
 // rearm runs one more pass a moment from now, so a roster seen once is
 // confirmed by a second sighting without waiting out the reconcile interval.
-func (srv *Service) rearm() {
+func (srv *server) rearm() {
 	srv.background(func() {
 		select {
 		case <-srv.ctx.Done():
@@ -262,7 +262,7 @@ func (srv *Service) rearm() {
 // value two nodes disagree on. Nodes therefore age a key out at slightly
 // different moments, which costs nothing -- whoever goes first defines the
 // round the others join.
-func (srv *Service) aged(ctx context.Context, keyID string) (bool, error) {
+func (srv *server) aged(ctx context.Context, keyID string) (bool, error) {
 	if srv.rotateAfter <= 0 {
 		return false, nil
 	}
@@ -286,7 +286,7 @@ func (srv *Service) aged(ctx context.Context, keyID string) (bool, error) {
 // The version the opening one replaced is kept until the retention has passed
 // since the replacement was written, so Previous can serve it; nothing has to
 // end that window but the clock.
-func (srv *Service) prune(ctx context.Context) error {
+func (srv *server) prune(ctx context.Context) error {
 	refs, err := srv.records.All(ctx)
 	if err != nil {
 		return err
@@ -336,7 +336,7 @@ func (srv *Service) prune(ctx context.Context) error {
 // read a secret, which is what keeps a node with a stale view -- one that
 // sees the newer version only under its own one-member key -- from deleting
 // an older version the rest of the cluster holds.
-func (srv *Service) covers(ctx context.Context, newer, older version) bool {
+func (srv *server) covers(ctx context.Context, newer, older version) bool {
 	newerIDs, err := srv.wrappings.KeyIDs(ctx, newer)
 	if err != nil {
 		return false
@@ -376,7 +376,7 @@ func (srv *Service) covers(ctx context.Context, newer, older version) bool {
 // not a guess about who is down; a newer key that brings a member back makes
 // the version openable again. A version with no wrapping is mid-write, never
 // abandoned.
-func (srv *Service) abandoned(ctx context.Context, v version, keys []*KeyMeta) bool {
+func (srv *server) abandoned(ctx context.Context, v version, keys []*KeyMeta) bool {
 	if len(keys) == 0 {
 		return false
 	}
@@ -407,7 +407,7 @@ func (srv *Service) abandoned(ctx context.Context, v version, keys []*KeyMeta) b
 // needs the plaintext -- but it does need the data key, which means a threshold
 // decryption per version and a moment where this node holds that key in memory.
 // That is the cost of regenerating rather than resharing.
-func (srv *Service) reEncrypt(ctx context.Context, active *KeyMeta) error {
+func (srv *server) reEncrypt(ctx context.Context, active *KeyMeta) error {
 	versions, err := srv.versions(ctx)
 	if err != nil {
 		return err
@@ -441,7 +441,7 @@ func (srv *Service) reEncrypt(ctx context.Context, active *KeyMeta) error {
 }
 
 // carryForward re-wraps one version's data key under the active key.
-func (srv *Service) carryForward(ctx context.Context, v version, active *KeyMeta, public group.Element) error {
+func (srv *server) carryForward(ctx context.Context, v version, active *KeyMeta, public group.Element) error {
 	dek, err := srv.open(ctx, v)
 	if err != nil {
 		return err
@@ -457,7 +457,7 @@ func (srv *Service) carryForward(ctx context.Context, v version, active *KeyMeta
 
 // open recovers a version's data key under any key this node holds that it is
 // wrapped under, newest first.
-func (srv *Service) open(ctx context.Context, v version) ([]byte, error) {
+func (srv *server) open(ctx context.Context, v version) ([]byte, error) {
 	keys, err := srv.held(ctx)
 	if err != nil {
 		return nil, err
@@ -502,7 +502,7 @@ func (srv *Service) open(ctx context.Context, v version) ([]byte, error) {
 // would take exactly the cluster-wide agreement this design does not have. So
 // wrappings -- the part that grows with the number of secrets -- are collected,
 // and the per-epoch material is kept.
-func (srv *Service) retire(ctx context.Context, active *KeyMeta) error {
+func (srv *server) retire(ctx context.Context, active *KeyMeta) error {
 	versions, err := srv.versions(ctx)
 	if err != nil {
 		return err
@@ -543,7 +543,7 @@ func (srv *Service) retire(ctx context.Context, active *KeyMeta) error {
 // agreement this design does not have. A one-member key is the exception: only
 // its own member ever wraps under it, so this node's store is the whole truth
 // about whether it is still in use.
-func (srv *Service) dropGenesis(ctx context.Context) error {
+func (srv *server) dropGenesis(ctx context.Context) error {
 	inUse, err := srv.keysInUse(ctx)
 	if err != nil {
 		return err
@@ -567,7 +567,7 @@ func (srv *Service) dropGenesis(ctx context.Context) error {
 
 // supersededKeys lists the keys whose wrappings of this version are safe to
 // drop: only once the active key's wrapping has been proven openable.
-func (srv *Service) supersededKeys(ctx context.Context, v version, active *KeyMeta) ([]string, error) {
+func (srv *server) supersededKeys(ctx context.Context, v version, active *KeyMeta) ([]string, error) {
 	keyIDs, err := srv.wrappings.KeyIDs(ctx, v)
 	if err != nil {
 		return nil, err
@@ -624,7 +624,7 @@ func (srv *Service) supersededKeys(ctx context.Context, v version, active *KeyMe
 // recoverDEK opens a secret's data key, using this node's own share plus
 // partials collected from the rest of the key's members. The plaintext is never
 // involved: only the wrapped data key is recovered, and only to re-wrap it.
-func (srv *Service) recoverDEK(ctx context.Context, v version, key *KeyMeta, wrapping *tdh.Wrapping, writer string) ([]byte, error) {
+func (srv *server) recoverDEK(ctx context.Context, v version, key *KeyMeta, wrapping *tdh.Wrapping, writer string) ([]byte, error) {
 	public, err := key.PublicKey()
 	if err != nil {
 		return nil, err
@@ -662,7 +662,7 @@ func (srv *Service) recoverDEK(ctx context.Context, v version, key *KeyMeta, wra
 	return tdh.Unwrap(wrapping, public, partials, key.Threshold, wrapAAD(v, key.KeyID))
 }
 
-func (srv *Service) askPartial(member string, v version, keyID, writer string) (*tdh.Partial, error) {
+func (srv *server) askPartial(member string, v version, keyID, writer string) (*tdh.Partial, error) {
 	to, err := peerCore.Decode(member)
 	if err != nil {
 		return nil, err
@@ -685,7 +685,7 @@ func (srv *Service) askPartial(member string, v version, keyID, writer string) (
 
 // compact reclaims the space behind the tombstones deletion leaves. Compact
 // documents itself as coordination-free, so every node may run it.
-func (srv *Service) compact(ctx context.Context) error {
+func (srv *server) compact(ctx context.Context) error {
 	compactor, ok := srv.db.(kvdb.Compactor)
 	if !ok {
 		return nil

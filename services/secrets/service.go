@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"sync"
 	"time"
@@ -15,8 +16,10 @@ import (
 	peerCore "github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/taubyte/tau/core/kvdb"
+	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/proto/codec"
+	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2/secretsv2connect"
 	"github.com/taubyte/tau/pkg/secrets/tdh"
 )
@@ -62,10 +65,22 @@ type Config struct {
 	Key string `yaml:"key"`
 }
 
-// Service stores secrets that no single node can read. Clients encrypt under
-// the group public key; recovering a plaintext takes partial decryptions from a
-// threshold of nodes. See the package doc for what that defends against.
-type Service struct {
+// Service is the secrets service as an instance runs it: secrets no single node can
+// read. Clients encrypt under the group public key; recovering a plaintext takes
+// partial decryptions from a threshold of nodes. See the package doc for what that
+// defends against.
+type Service interface {
+	service.Service
+
+	// Init writes a sealed bundle into the vault before it serves.
+	Init(ctx context.Context, bundle *secretsv2.InitBundle) error
+}
+
+// New is the secrets service, unstarted; Start builds it from its instance.
+func New() Service { return &server{} }
+
+// server is one node's part of the secrets service.
+type server struct {
 	host      host.Host
 	db        kvdb.Instance
 	keys      *keyStore
@@ -106,6 +121,9 @@ type Service struct {
 	lastRoster []string
 
 	conns peers
+
+	// owned is what Start opened for this service, closed with it.
+	owned []io.Closer
 }
 
 // PubSub is where epochs are announced. A node's gossipsub satisfies it.
@@ -126,13 +144,13 @@ type options struct {
 	serverOptions  []rpc.ServerOption
 }
 
-// Option configures a Service at construction.
-type Option func(*options) error
+// option configures a Service at construction.
+type option func(*options) error
 
-// WithRoot is the directory this node keeps its shares in. Required: a share
+// withRoot is the directory this node keeps its shares in. Required: a share
 // is the one piece of key material a node cannot re-derive, so it lives on
 // this machine's disk and nowhere else.
-func WithRoot(dir string) Option {
+func withRoot(dir string) option {
 	return func(o *options) error {
 		if dir == "" {
 			return errors.New("an empty root is not a directory")
@@ -142,18 +160,18 @@ func WithRoot(dir string) Option {
 	}
 }
 
-// WithConfig applies the operator's configuration.
-func WithConfig(c Config) Option {
+// withConfig applies the operator's configuration.
+func withConfig(c Config) option {
 	return func(o *options) error {
 		o.atRestKey = c.Key
 		return nil
 	}
 }
 
-// WithMembers is who else runs this service, asked each time a roster is
+// withMembers is who else runs this service, asked each time a roster is
 // formed. Without it the members are the connected peers that speak the
 // protocol.
-func WithMembers(members func() []peerCore.ID) Option {
+func withMembers(members func() []peerCore.ID) option {
 	return func(o *options) error {
 		if members == nil {
 			return errors.New("a nil member source")
@@ -163,9 +181,9 @@ func WithMembers(members func() []peerCore.ID) Option {
 	}
 }
 
-// WithPubSub is where a new epoch is announced and heard. Without it a node
+// withPubSub is where a new epoch is announced and heard. Without it a node
 // learns of one on its next reconcile tick.
-func WithPubSub(ps PubSub) Option {
+func withPubSub(ps PubSub) option {
 	return func(o *options) error {
 		if ps == nil {
 			return errors.New("a nil pubsub")
@@ -175,9 +193,9 @@ func WithPubSub(ps PubSub) Option {
 	}
 }
 
-// WithBootstrapDelay sets how long the node waits for peers before generating
+// withBootstrapDelay sets how long the node waits for peers before generating
 // the cluster's first key.
-func WithBootstrapDelay(delay time.Duration) Option {
+func withBootstrapDelay(delay time.Duration) option {
 	return func(o *options) error {
 		if delay < 0 {
 			return errors.New("bootstrap delay cannot be negative")
@@ -187,9 +205,9 @@ func WithBootstrapDelay(delay time.Duration) Option {
 	}
 }
 
-// WithRotationAge sets how long a group key stays active. Zero disables
+// withRotationAge sets how long a group key stays active. Zero disables
 // age-based rotation; a roster change still rotates.
-func WithRotationAge(age time.Duration) Option {
+func withRotationAge(age time.Duration) option {
 	return func(o *options) error {
 		if age < 0 {
 			return errors.New("rotation age cannot be negative")
@@ -199,10 +217,10 @@ func WithRotationAge(age time.Duration) Option {
 	}
 }
 
-// WithReplacedRetention sets how long a replaced version is kept after the
+// withReplacedRetention sets how long a replaced version is kept after the
 // version that replaced it was written. Zero prunes it as soon as the newer one
 // is held as widely.
-func WithReplacedRetention(d time.Duration) Option {
+func withReplacedRetention(d time.Duration) option {
 	return func(o *options) error {
 		if d < 0 {
 			return errors.New("replaced retention cannot be negative")
@@ -212,9 +230,9 @@ func WithReplacedRetention(d time.Duration) Option {
 	}
 }
 
-// WithReconcileInterval sets how often the node re-checks the roster, the key
+// withReconcileInterval sets how often the node re-checks the roster, the key
 // age, and whether a migration is unfinished.
-func WithReconcileInterval(interval time.Duration) Option {
+func withReconcileInterval(interval time.Duration) option {
 	return func(o *options) error {
 		if interval <= 0 {
 			return errors.New("reconcile interval must be positive")
@@ -224,8 +242,8 @@ func WithReconcileInterval(interval time.Duration) Option {
 	}
 }
 
-// WithClock injects the clock a key's age is read from.
-func WithClock(now func() time.Time) Option {
+// withClock injects the clock a key's age is read from.
+func withClock(now func() time.Time) option {
 	return func(o *options) error {
 		if now == nil {
 			return errors.New("a nil clock")
@@ -235,8 +253,8 @@ func WithClock(now func() time.Time) Option {
 	}
 }
 
-// WithServerOptions passes p2p/rpc server options through to Start.
-func WithServerOptions(opts ...rpc.ServerOption) Option {
+// withServerOptions passes p2p/rpc server options through to Start.
+func withServerOptions(opts ...rpc.ServerOption) option {
 	return func(o *options) error {
 		o.serverOptions = append(o.serverOptions, opts...)
 		return nil
@@ -249,14 +267,23 @@ var (
 	ErrNoRoot = errors.New("secrets: no directory to keep this node's shares in")
 )
 
-// New validates and opens this node's share store. It binds nothing and
-// starts nothing until Start.
-func New(h host.Host, db kvdb.Instance, opts ...Option) (*Service, error) {
+// build is a server over db, its share store open, not yet serving.
+func build(h host.Host, db kvdb.Instance, opts ...option) (*server, error) {
+	srv := &server{}
+	if err := srv.assemble(h, db, opts...); err != nil {
+		return nil, err
+	}
+	return srv, nil
+}
+
+// assemble validates and opens this node's share store. It binds nothing and
+// starts nothing until serve.
+func (srv *server) assemble(h host.Host, db kvdb.Instance, opts ...option) error {
 	if h == nil {
-		return nil, ErrNoHost
+		return ErrNoHost
 	}
 	if db == nil {
-		return nil, ErrNoDB
+		return ErrNoDB
 	}
 
 	o := options{
@@ -268,26 +295,26 @@ func New(h host.Host, db kvdb.Instance, opts ...Option) (*Service, error) {
 	}
 	for _, apply := range opts {
 		if err := apply(&o); err != nil {
-			return nil, fmt.Errorf("secrets: option: %w", err)
+			return fmt.Errorf("secrets: option: %w", err)
 		}
 	}
 	if o.root == "" {
-		return nil, ErrNoRoot
+		return ErrNoRoot
 	}
 
 	atRest, err := newAtRest(h, o.atRestKey)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	serviceLog.Info(atRest.posture())
 
 	shares, err := newShareStore(o.root, atRest, o.now)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	srv := &Service{
+	*srv = server{
 		host:           h,
 		db:             db,
 		keys:           &keyStore{db: db},
@@ -308,12 +335,12 @@ func New(h host.Host, db kvdb.Instance, opts ...Option) (*Service, error) {
 		nudge:          make(chan struct{}, 1),
 		conns:          peers{host: h, open: map[peerCore.ID]*rpc.Client{}},
 	}
-	return srv, nil
+	return nil
 }
 
-// Start listens, joins the epoch topic and starts the background work: the
+// serve listens, joins the epoch topic and starts the background work: the
 // first key's bootstrap and the reconcile loop.
-func (srv *Service) Start(ctx context.Context) error {
+func (srv *server) serve(ctx context.Context) error {
 	srv.lifecycle.Lock()
 	defer srv.lifecycle.Unlock()
 
@@ -358,7 +385,11 @@ func (srv *Service) Start(ctx context.Context) error {
 
 // Close stops serving, waits for background work, and closes the share
 // store. It does not close the database, which its composer handed it.
-func (srv *Service) Close() error {
+func (srv *server) Close() error {
+	// NEVER BUILT, nothing to stop: Start failed before it opened anything.
+	if srv.cancel == nil {
+		return nil
+	}
 	srv.cancel()
 
 	// Refuse new background work before waiting, so nothing can still be
@@ -383,6 +414,9 @@ func (srv *Service) Close() error {
 	if srv.topic != nil {
 		errs = append(errs, srv.topic.Close())
 	}
+	for _, c := range srv.owned {
+		errs = append(errs, c.Close())
+	}
 	srv.conns.close()
 	errs = append(errs, srv.shares.Close())
 
@@ -396,7 +430,7 @@ func (srv *Service) Close() error {
 // start the same round. Retries cover the case where a member was not
 // discovered in time -- the next attempt sees a different roster, which is a
 // different round, and one that can actually complete.
-func (srv *Service) bootstrap(ctx context.Context) {
+func (srv *server) bootstrap(ctx context.Context) {
 	for attempt := range bootstrapAttempts {
 		select {
 		case <-ctx.Done():
@@ -415,7 +449,7 @@ func (srv *Service) bootstrap(ctx context.Context) {
 }
 
 // watchEpochs listens for other nodes announcing a new epoch.
-func (srv *Service) watchEpochs() error {
+func (srv *server) watchEpochs() error {
 	if srv.pubsub == nil {
 		return nil
 	}
@@ -448,7 +482,7 @@ func (srv *Service) watchEpochs() error {
 }
 
 // announceEpoch tells the other nodes a new epoch exists.
-func (srv *Service) announceEpoch(ctx context.Context, epoch uint64) {
+func (srv *server) announceEpoch(ctx context.Context, epoch uint64) {
 	if srv.topic == nil {
 		return
 	}
@@ -459,7 +493,7 @@ func (srv *Service) announceEpoch(ctx context.Context, epoch uint64) {
 
 // background runs fn under the service's lifetime, so Close waits for it rather
 // than leaving it to touch a store that is about to shut.
-func (srv *Service) background(fn func()) {
+func (srv *server) background(fn func()) {
 	srv.lifecycle.Lock()
 	if srv.closed {
 		srv.lifecycle.Unlock()
@@ -476,7 +510,7 @@ func (srv *Service) background(fn func()) {
 
 // wake asks the reconcile loop to run now, without blocking if it already owes
 // a pass.
-func (srv *Service) wake() {
+func (srv *server) wake() {
 	select {
 	case srv.nudge <- struct{}{}:
 	default:
@@ -493,7 +527,7 @@ const rosterPollFloor = 50 * time.Millisecond
 // It polls the member source because that is where the roster comes from: a
 // connection event fires before discovery counts the peer, so acting on one
 // would read the roster it is about to replace.
-func (srv *Service) watchRoster(ctx context.Context) {
+func (srv *server) watchRoster(ctx context.Context) {
 	every := max(srv.bootDelay, rosterPollFloor)
 	last := srv.roster()
 	for {
@@ -515,7 +549,7 @@ func (srv *Service) watchRoster(ctx context.Context) {
 // roster changes or the key ages out, carries secrets forward, and retires
 // superseded epochs. Every node runs it, and every write it makes is justified
 // by a local fact, so they need no turn-taking.
-func (srv *Service) reconcileLoop(ctx context.Context) {
+func (srv *server) reconcileLoop(ctx context.Context) {
 	ticker := time.NewTicker(srv.reconcileEvery)
 	defer ticker.Stop()
 
@@ -541,7 +575,7 @@ func (srv *Service) reconcileLoop(ctx context.Context) {
 // for, which is a fact it can check locally and nobody else needs to agree to.
 // Two nodes may briefly offer different epochs while a round settles; both are
 // readable, so that costs nothing and converges on its own.
-func (srv *Service) ActiveKey(ctx context.Context) (*KeyMeta, error) {
+func (srv *server) ActiveKey(ctx context.Context) (*KeyMeta, error) {
 	keys, err := srv.held(ctx)
 	if err != nil {
 		return nil, err
@@ -555,7 +589,7 @@ func (srv *Service) ActiveKey(ctx context.Context) (*KeyMeta, error) {
 var errNoKey = errors.New("this node holds no distributed key")
 
 // held lists the keys this node can serve partials for, newest epoch first.
-func (srv *Service) held(ctx context.Context) ([]*KeyMeta, error) {
+func (srv *server) held(ctx context.Context) ([]*KeyMeta, error) {
 	keys, err := srv.keys.Newest(ctx)
 	if err != nil {
 		return nil, err
@@ -578,7 +612,7 @@ func (srv *Service) held(ctx context.Context) ([]*KeyMeta, error) {
 // ciphertext. Its written-at is never earlier than the newest version this
 // node has seen, so a sequential overwrite wins wherever the earlier write had
 // arrived, whatever the writers' clocks say.
-func (srv *Service) Set(ctx context.Context, ref Ref, ciphertext []byte, keyID string, wrapping *tdh.Wrapping) error {
+func (srv *server) Set(ctx context.Context, ref Ref, ciphertext []byte, keyID string, wrapping *tdh.Wrapping) error {
 	if wrapping == nil {
 		return errors.New("missing wrapping")
 	}
@@ -611,7 +645,7 @@ func (srv *Service) Set(ctx context.Context, ref Ref, ciphertext []byte, keyID s
 
 // nextWrittenAt is now, or one nanosecond past the newest version of ref this
 // node has seen when that is later.
-func (srv *Service) nextWrittenAt(ctx context.Context, ref Ref) (int64, error) {
+func (srv *server) nextWrittenAt(ctx context.Context, ref Ref) (int64, error) {
 	versions, err := srv.records.Versions(ctx, ref)
 	if err != nil {
 		return 0, err
@@ -628,7 +662,7 @@ func (srv *Service) nextWrittenAt(ctx context.Context, ref Ref) (int64, error) {
 // encrypted, with the wrapping to open it by. A newer version this node holds
 // no wrapping for yet is skipped rather than reported: another member may
 // serve it, and the reader asks them all.
-func (srv *Service) Get(ctx context.Context, ref Ref) (*entry, *KeyMeta, *tdh.Wrapping, string, error) {
+func (srv *server) Get(ctx context.Context, ref Ref) (*entry, *KeyMeta, *tdh.Wrapping, string, error) {
 	versions, err := srv.records.Versions(ctx, ref)
 	if err != nil {
 		return nil, nil, nil, "", err
@@ -653,7 +687,7 @@ func (srv *Service) Get(ctx context.Context, ref Ref) (*entry, *KeyMeta, *tdh.Wr
 // Previous returns the version the newest one replaced, with the newest one's
 // written-at. Only the immediate predecessor is ever served: what it replaced
 // is not a previous value of anything a reader holds.
-func (srv *Service) Previous(ctx context.Context, ref Ref) (*entry, int64, *KeyMeta, *tdh.Wrapping, string, error) {
+func (srv *server) Previous(ctx context.Context, ref Ref) (*entry, int64, *KeyMeta, *tdh.Wrapping, string, error) {
 	versions, err := srv.records.Versions(ctx, ref)
 	if err != nil {
 		return nil, 0, nil, nil, "", err
@@ -675,7 +709,7 @@ func (srv *Service) Previous(ctx context.Context, ref Ref) (*entry, int64, *KeyM
 //
 // Matching is by key id, never by epoch: two keys can share an epoch, so an
 // epoch match can pair a wrapping with a group key that did not make it.
-func (srv *Service) readable(ctx context.Context, v version) (*KeyMeta, *tdh.Wrapping, string, error) {
+func (srv *server) readable(ctx context.Context, v version) (*KeyMeta, *tdh.Wrapping, string, error) {
 	keys, err := srv.held(ctx)
 	if err != nil {
 		return nil, nil, "", err
@@ -697,7 +731,7 @@ func (srv *Service) readable(ctx context.Context, v version) (*KeyMeta, *tdh.Wra
 // a version and a key id, never a ciphertext: a holder must never apply its
 // share to a value a caller made up, and never to a key other than the one
 // the caller named.
-func (srv *Service) Partial(ctx context.Context, v version, keyID, writer string) (*tdh.Partial, error) {
+func (srv *server) Partial(ctx context.Context, v version, keyID, writer string) (*tdh.Partial, error) {
 	// The caller names the exact wrapping. Picking one locally would let two
 	// nodes answer against different ephemeral keys, and partials taken against
 	// different R values combine to nothing.
@@ -714,7 +748,7 @@ func (srv *Service) Partial(ctx context.Context, v version, keyID, writer string
 	return tdh.PartialDecrypt(share, wrapping)
 }
 
-func (srv *Service) self() string {
+func (srv *server) self() string {
 	return srv.host.ID().String()
 }
 
@@ -724,7 +758,7 @@ func (srv *Service) self() string {
 //
 // A version written concurrently from elsewhere has a CID this delete did not
 // see, so it survives; a delete only ever removes what it read.
-func (srv *Service) Delete(ctx context.Context, ref Ref) error {
+func (srv *server) Delete(ctx context.Context, ref Ref) error {
 	versions, err := srv.records.Versions(ctx, ref)
 	if err != nil {
 		return err
@@ -738,7 +772,7 @@ func (srv *Service) Delete(ctx context.Context, ref Ref) error {
 	return nil
 }
 
-func (srv *Service) dropVersion(ctx context.Context, v version) error {
+func (srv *server) dropVersion(ctx context.Context, v version) error {
 	if err := srv.wrappings.DeleteAll(ctx, v); err != nil {
 		return err
 	}
@@ -746,13 +780,13 @@ func (srv *Service) dropVersion(ctx context.Context, v version) error {
 }
 
 // List names the secrets of one scope.
-func (srv *Service) List(ctx context.Context, scope Scope) ([]Ref, error) {
+func (srv *server) List(ctx context.Context, scope Scope) ([]Ref, error) {
 	return srv.records.List(ctx, scope)
 }
 
 // closing reports whether the service is shutting down, so a handler does not
 // write to a closed datastore.
-func (srv *Service) closing() error {
+func (srv *server) closing() error {
 	select {
 	case <-srv.ctx.Done():
 		return fmt.Errorf("service is closing: %w", srv.ctx.Err())
@@ -762,7 +796,7 @@ func (srv *Service) closing() error {
 }
 
 // roster is the membership this node can see, itself included.
-func (srv *Service) roster() []string {
+func (srv *server) roster() []string {
 	members := make([]string, 0, maxMembers)
 	for _, p := range srv.others() {
 		members = append(members, p.String())
@@ -774,7 +808,7 @@ func (srv *Service) roster() []string {
 }
 
 // others are the other members this node can see, at most maxMembers-1.
-func (srv *Service) others() []peerCore.ID {
+func (srv *server) others() []peerCore.ID {
 	var found []peerCore.ID
 	if srv.members != nil {
 		found = srv.members()
@@ -796,7 +830,7 @@ func (srv *Service) others() []peerCore.ID {
 }
 
 // speakers are the connected peers that advertise this service's protocol.
-func (srv *Service) speakers() []peerCore.ID {
+func (srv *server) speakers() []peerCore.ID {
 	var out []peerCore.ID
 	for _, pid := range srv.host.Network().Peers() {
 		protos, err := srv.host.Peerstore().GetProtocols(pid)
@@ -808,7 +842,7 @@ func (srv *Service) speakers() []peerCore.ID {
 }
 
 // secretsAt and dealerAt are clients onto another member.
-func (srv *Service) secretsAt(to peerCore.ID) (secretsv2connect.SecretsServiceClient, error) {
+func (srv *server) secretsAt(to peerCore.ID) (secretsv2connect.SecretsServiceClient, error) {
 	c, err := srv.conns.get(to)
 	if err != nil {
 		return nil, err
@@ -816,7 +850,7 @@ func (srv *Service) secretsAt(to peerCore.ID) (secretsv2connect.SecretsServiceCl
 	return secretsv2connect.NewSecretsServiceClient(c.HTTP(), c.URL(), codec.Option()), nil
 }
 
-func (srv *Service) dealerAt(to peerCore.ID) (secretsv2connect.DealerServiceClient, error) {
+func (srv *server) dealerAt(to peerCore.ID) (secretsv2connect.DealerServiceClient, error) {
 	c, err := srv.conns.get(to)
 	if err != nil {
 		return nil, err

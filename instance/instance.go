@@ -21,7 +21,6 @@ import (
 	"strings"
 	"sync"
 
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/instance/admit"
@@ -84,7 +83,7 @@ type Instance struct {
 	proxy     *v2proxy.Service
 	dns       *dnsService.Service
 
-	secrets *secretsService.Service
+	secrets secretsService.Service
 
 	// cm holds the cloud's certificates when this node runs it, certs is
 	// the client every public listener here takes them from, and challengeDB
@@ -114,7 +113,7 @@ type Instance struct {
 	// vault is this node's one reader of secret values, shared by the worker
 	// and the wasm tier. It holds a stream to a remote secrets service, so a
 	// second would be a second stream to the same peer.
-	vault *vault
+	vault *secretsService.Vault
 
 	// disks is this node's volume backing: a directory per handle under the
 	// root, checkpointed into the asset store. Nil on a node with no root,
@@ -152,7 +151,7 @@ type Instance struct {
 
 	// shared is the vault Vault hands out, made on first use.
 	sharedMu sync.Mutex
-	shared   *vault
+	shared   *secretsService.Vault
 
 	// The three locators, each one stream opened on first use: registers for
 	// configuration reads, sends for queues, logs and claims, clocks for the leader's
@@ -211,6 +210,9 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 			if r, ok := s.(registerService.Service); ok {
 				n.register = r
 			}
+			if v, ok := s.(secretsService.Service); ok {
+				n.secrets = v
+			}
 		}
 	}
 	// What the built-ins add to this node's report.
@@ -239,9 +241,6 @@ func (n *Instance) open() error {
 	}
 	// BEFORE THE WORKER, which resolves a secret on the request path and takes
 	// the vault as a collaborator rather than looking one up per invocation.
-	if err := n.openSecrets(); err != nil {
-		return err
-	}
 	// AFTER THE SECRETS SERVICE, which keeps its keys.
 	if err := n.openCM(); err != nil {
 		return err
@@ -286,51 +285,6 @@ func (n *Instance) open() error {
 		return err
 	}
 	return n.openBuildFrontend()
-}
-
-// openSecrets starts this node's vault, in its own database: different writers,
-// lifecycle and trust than the register's.
-func (n *Instance) openSecrets() error {
-	if !n.cfg.runs(Secrets) {
-		return nil
-	}
-
-	// A SHARE IS THE ONE PIECE OF KEY MATERIAL A NODE CANNOT RE-DERIVE, so
-	// it lives on this machine's disk, and a node with no directory of its
-	// own runs no secrets rather than holding shares that die with it.
-	if n.cfg.Root == "" {
-		return secretsService.ErrNoRoot
-	}
-
-	db, err := n.kvdb(Secrets)
-	if err != nil {
-		return err
-	}
-	n.closers = append(n.closers, closerFunc(db.Close))
-
-	options := secretsOptions(n.cfg, n.cfg.Root)
-	// WHO ELSE HOLDS A SHARE IS DISCOVERY'S ANSWER on a node that has one,
-	// asked each time a roster is formed; without it, the connected peers that
-	// speak the protocol.
-	if n.cfg.runs(Discovery) {
-		options = append(options, secretsService.WithMembers(func() []libp2ppeer.ID {
-			return (&fromDiscovery{node: n, name: Secrets}).Known()
-		}))
-	}
-	if n.Messaging() != nil {
-		options = append(options, secretsService.WithPubSub(n.Messaging()))
-	}
-	if n.opts.now != nil {
-		options = append(options, secretsService.WithClock(n.opts.now))
-	}
-
-	svc, err := secretsService.New(n.Host(), db, options...)
-	if err != nil {
-		return err
-	}
-	n.secrets = svc
-	n.closers = append(n.closers, svc)
-	return nil
 }
 
 // tiers is what this node's pool can run. It is here for the composition's own
@@ -744,9 +698,6 @@ func (n *Instance) Start(ctx context.Context) error {
 	}
 
 	var order []starter
-	if n.secrets != nil {
-		order = append(order, n.secrets)
-	}
 	if n.cm != nil {
 		order = append(order, n.cm)
 	}
@@ -976,7 +927,7 @@ func (n *Instance) Register() registerService.Service { return n.register }
 func (n *Instance) Worker() *worker.Service { return n.worker }
 
 // Secrets is this node's vault, or nil if it runs none.
-func (n *Instance) Secrets() *secretsService.Service { return n.secrets }
+func (n *Instance) Secrets() secretsService.Service { return n.secrets }
 
 // Database is this node's database service, or nil if it runs none.
 func (n *Instance) Database() *databaseService.Service { return n.database }
