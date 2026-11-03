@@ -548,7 +548,7 @@ func (u *underTest) bothWays(t *testing.T, c corpusCase) {
 		var b built
 		if json.Unmarshal([]byte(local.stdout), &b) == nil && b.Job != "" {
 			require.Equal(t, "failed", b.Status)
-			said += ok(t, "logs", "--", b.Job)
+			said += logOf(t, b.Job)
 		}
 		require.Contains(t, said, c.refused)
 	} else {
@@ -581,7 +581,7 @@ func (u *underTest) bothWays(t *testing.T, c corpusCase) {
 		require.NotZero(t, ci.code)
 		require.NoError(t, json.Unmarshal([]byte(ci.stdout), &ran), ci.stderr)
 		require.Equal(t, "failed", ran.Status)
-		require.Contains(t, ok(t, "logs", "--", ran.Job), c.refused)
+		require.Contains(t, logOf(t, ran.Job), c.refused)
 		envs, err := serving.Register().Local().Environments(t.Context(), id)
 		require.NoError(t, err)
 		require.Empty(t, envs, "nothing was published for a refused project")
@@ -612,7 +612,7 @@ func (u *underTest) bothWays(t *testing.T, c corpusCase) {
 		for k, v := range assetsOf(t, b.Job) {
 			local1[k] = v
 		}
-		log := ok(t, "logs", "--", jobs[i])
+		log := logOf(t, jobs[i])
 		for _, x := range b.Built {
 			recipes++
 			require.Contains(t, log, fmt.Sprintf("building %s/%s for %s (recipe %s)", x.Kind, x.Name, x.Environment, x.Recipe),
@@ -643,12 +643,53 @@ func (u *underTest) bothWays(t *testing.T, c corpusCase) {
 // assetsOf is a job's artifacts, by the key its record files them under.
 func assetsOf(t *testing.T, job string) map[string]string {
 	t.Helper()
-	type buildView struct {
-		Built map[string]string `json:"asset_cid"`
+	out := map[string]string{}
+	for _, view := range builtBy(t, job) {
+		maps.Copy(out, view.Built)
 	}
-	var view buildView
+	return out
+}
+
+// jobView is what `tau job -o json` says of a job.
+type jobView struct {
+	Built       map[string]string `json:"asset_cid"`
+	Environment string            `json:"environment"`
+	Children    []string          `json:"children"`
+	Reason      string            `json:"reason"`
+	ID          string            `json:"id"`
+}
+
+func viewOf(t *testing.T, job string) jobView {
+	t.Helper()
+	var view jobView
 	require.NoError(t, json.Unmarshal([]byte(ok(t, "job", "-o", "json", "--", job)), &view))
-	return view.Built
+	return view
+}
+
+// builtBy is the environment jobs a push's job stands for: the plan's children, or
+// the job itself when it builds an environment.
+func builtBy(t *testing.T, job string) []jobView {
+	t.Helper()
+	view := viewOf(t, job)
+	if view.Environment != "" {
+		return []jobView{view}
+	}
+	out := make([]jobView, 0, len(view.Children))
+	for _, child := range view.Children {
+		out = append(out, viewOf(t, child))
+	}
+	return out
+}
+
+// logOf is what a push's job said: its plan's reason when it failed, and each
+// environment job's log.
+func logOf(t *testing.T, job string) string {
+	t.Helper()
+	said := viewOf(t, job).Reason
+	for _, view := range builtBy(t, job) {
+		said += ok(t, "logs", "--", view.ID)
+	}
+	return said
 }
 
 // answered asks the serving node what the internet would, until it answers.

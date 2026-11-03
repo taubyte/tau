@@ -147,11 +147,17 @@ type jobView struct {
 	Timestamp  int64             `json:"timestamp"`
 	Attempt    int32             `json:"attempt"`
 	Built      map[string]string `json:"asset_cid,omitempty"`
+	// Environment is the deployment the job builds; a push's plan has none, and
+	// Children is the environment jobs it queued.
+	Environment string   `json:"environment,omitempty"`
+	Children    []string `json:"children,omitempty"`
+	Reason      string   `json:"reason,omitempty"`
 }
 
 func viewOf(j *api.Job) jobView {
 	return jobView{ID: j.GetId(), Status: ui.Status(j.GetStatus()), Repository: j.GetRepositoryKey(), Ref: j.GetRef(),
-		Commit: j.GetCommitSha(), Timestamp: j.GetTimestamp(), Attempt: j.GetAttempt(), Built: j.GetAssetCid()}
+		Commit: j.GetCommitSha(), Timestamp: j.GetTimestamp(), Attempt: j.GetAttempt(), Built: j.GetAssetCid(),
+		Environment: j.GetEnvironment(), Children: j.GetChildren(), Reason: j.GetReason()}
 }
 
 func jobJSON(jobs []*api.Job) []jobView {
