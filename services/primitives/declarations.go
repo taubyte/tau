@@ -45,8 +45,9 @@ type declared struct {
 	// its name and dead letter already scoped. Zero for a log.
 	delivery queue.Config
 
-	// keep is a log's retention. Zero for a queue, and zero for a log whose
-	// author wrote none — which the vocabulary spells as forever.
+	// keep is a log's retention, and for a queue how long an item may wait
+	// unclaimed. Zero for a log whose author wrote none, which the vocabulary
+	// spells as forever; a queue's is always defaulted.
 	keep retention
 }
 
@@ -131,6 +132,7 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 	switch kindOf {
 	case queueType:
 		out.delivery = deliveryOf(out.spec, primitive.Queue)
+		out.keep = unclaimedOf(primitive.Queue)
 	case logType:
 		out.keep = keepOf(primitive.Log)
 	}
@@ -186,6 +188,10 @@ func deliveryOf(spec Spec, declared specs.SyncQueue) queue.Config {
 	if n := declared.MaxAttempts; n != nil && *n > 0 {
 		cfg.MaxAttempts = uint32(*n)
 	}
+	// THE QUEUE'S SIZE IS WHAT ITS ITEMS MAY HOLD; a send past it is refused.
+	if n := declared.RetentionSize; n != nil && *n > 0 {
+		cfg.MaxBytes = *n
+	}
 	// A COMPILED NUMBER IS A NUMBER. `retry/factor` is a Float in the
 	// vocabulary; reading it as a string answers "" and the multiplier never
 	// travels, so an author who wrote `factor: 2` gets a flat interval with
@@ -194,6 +200,17 @@ func deliveryOf(spec Spec, declared specs.SyncQueue) queue.Config {
 		cfg.RetryFactor = *f
 	}
 	return cfg
+}
+
+// unclaimedOf reads a queue's retention age: how long an item may wait unclaimed
+// before the lifecycle pass moves it to the dead letter. Its size is the queue's
+// own bound (deliveryOf).
+func unclaimedOf(declared specs.SyncQueue) retention {
+	var out retention
+	if d := declared.RetentionAge; d != nil {
+		out.age = *d
+	}
+	return out
 }
 
 // keepOf reads a log's retention.

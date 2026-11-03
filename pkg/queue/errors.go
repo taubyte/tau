@@ -24,6 +24,10 @@ var (
 	// producer that pushed the item.
 	ErrClaimed = errors.New("queue: item is claimed")
 
+	// ErrFull is returned by a push that would take the queue past its MaxBytes.
+	// Nothing in the push is added.
+	ErrFull = errors.New("queue: the queue is full")
+
 	// ErrStaleDelivery is returned by Ack and Nack when the delivery no longer
 	// owns the item — its claim expired and the item was redelivered or
 	// dead-lettered. The caller's work was not applied and must not be treated as

@@ -1704,7 +1704,9 @@ type SyncQueue struct {
 	DeadLetterName      string
 	DeadLetterNamespace string
 	Delay               *time.Duration
-	MaxAttempts         *int64 // defaulted
+	MaxAttempts         *int64         // defaulted
+	RetentionAge        *time.Duration // defaulted
+	RetentionSize       *int64         // defaulted
 	RetryCeiling        *time.Duration
 	RetryFactor         *float64
 	RetryInterval       *time.Duration
@@ -1723,6 +1725,8 @@ func ReadSyncQueue(r Resource) SyncQueue {
 	out.DeadLetterNamespace = r.String("queue", "dead_letter", "namespace")
 	out.Delay = present[time.Duration](r.Duration("queue", "delay"))
 	out.MaxAttempts = present[int64](r.Int("queue", "max_attempts"))
+	out.RetentionAge = present[time.Duration](r.Duration("queue", "retention", "age"))
+	out.RetentionSize = present[int64](r.Int("queue", "retention", "size"))
 	out.RetryCeiling = present[time.Duration](r.Duration("queue", "retry", "ceiling"))
 	out.RetryFactor = present[float64](r.Float("queue", "retry", "factor"))
 	out.RetryInterval = present[time.Duration](r.Duration("queue", "retry", "interval"))
@@ -1744,6 +1748,8 @@ const (
 	SyncQueueKeyDeadLetterNamespace = "queue/dead_letter/namespace"
 	SyncQueueKeyDelay               = "queue/delay"
 	SyncQueueKeyMaxAttempts         = "queue/max_attempts"
+	SyncQueueKeyRetentionAge        = "queue/retention/age"
+	SyncQueueKeyRetentionSize       = "queue/retention/size"
 	SyncQueueKeyRetryCeiling        = "queue/retry/ceiling"
 	SyncQueueKeyRetryFactor         = "queue/retry/factor"
 	SyncQueueKeyRetryInterval       = "queue/retry/interval"

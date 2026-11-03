@@ -690,6 +690,15 @@ func queueAttributes(t syncType) []*Attribute {
 			Doc("Dead Letter Namespace", "Where that queue lives. Omitted means this queue's own scope, then its parents.")),
 		String(k("dead_letter", "name"), IsVariableName(), Ref("sync"), InSection("delivery"), shown,
 			Doc("Dead Letter Queue", "Queue that receives items which exhausted max-attempts.")),
+
+		// A queue never grows without bound. Unclaimed work is not forgotten, as a
+		// log's oldest records are: past its age it moves to the dead letter, and a
+		// full queue refuses a send, as a full bucket does. Defaulted, so a queue
+		// nobody bounded is bounded anyway.
+		Duration(k("retention", "age"), Accessor(title(t.name)+"RetentionAge"), Default("168h"), DefaultWhen("type", t.name), PerEnv(), InSection("retention"), shown,
+			Doc("Retention Age", "How long an item may wait unclaimed before it moves to the dead-letter queue, as a human string (e.g. \"168h\").")),
+		Bytes(k("retention", "size"), Accessor(title(t.name)+"RetentionSize"), Default("64MB"), DefaultWhen("type", t.name), PerEnv(), InSection("retention"), shown,
+			Doc("Retention Size", "How much the queue's waiting and claimed items may hold, as a human string (e.g. \"64MB\"). A send past it is refused.")),
 	}
 }
 
@@ -700,9 +709,9 @@ func logAttributes(t syncType) []*Attribute {
 	k := func(rest ...string) AKey { return Key(append([]string{t.name}, rest...)...) }
 
 	return []*Attribute{
-		Duration(k("retention", "age"), PerEnv(), InSection("retention"), shown,
+		Duration(k("retention", "age"), Accessor(title(t.name)+"RetentionAge"), PerEnv(), InSection("retention"), shown,
 			Doc("Retention Age", "How long a record is kept, as a human string (e.g. \"168h\"). Absent means forever.")),
-		Bytes(k("retention", "size"), PerEnv(), InSection("retention"), shown,
+		Bytes(k("retention", "size"), Accessor(title(t.name)+"RetentionSize"), PerEnv(), InSection("retention"), shown,
 			Doc("Retention Size", "How much the log keeps before the oldest records are dropped, as a human string (e.g. \"1GB\"). Absent means it is not capped.")),
 	}
 }

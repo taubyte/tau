@@ -71,6 +71,7 @@ export type GatewayCertSource = "generated" | "provided";
 export type GatewayMatch = "prefix" | "exact" | "regex";
 export type GatewayMethods = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "CONNECT" | "OPTIONS" | "TRACE" | "PATCH";
 export type GatewayMode = "static" | "spa";
+export type GatewayCorsMethods = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "CONNECT" | "OPTIONS" | "TRACE" | "PATCH";
 export type ProxyHostKind = "generated" | "zone";
 export type ProxyRouting = "forward" | "router";
 export type ProxyHandlerKind = "application";
@@ -404,6 +405,16 @@ export class ApplicationConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["package", "namespace"]);
   }
 
+  async packageName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["package", "name"])) as string | undefined;
+  }
+  setPackageName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["package", "name"], v);
+  }
+  unsetPackageName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["package", "name"]);
+  }
+
   /** Which application this is — the key its settings live under. */
   async readinessKind(): Promise<ApplicationReadinessKind | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, ["readiness"]).catch(() => null);
@@ -432,12 +443,72 @@ export class ApplicationConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["readiness", "http", "path"]);
   }
 
+  async readinessFunctionName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["readiness", "function", "name"])) as string | undefined;
+  }
+  setReadinessFunctionName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["readiness", "function", "name"], v);
+  }
+  unsetReadinessFunctionName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["readiness", "function", "name"]);
+  }
+
+  async readinessFunctionNamespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["readiness", "function", "namespace"])) as string | undefined;
+  }
+  setReadinessFunctionNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["readiness", "function", "namespace"], v);
+  }
+  unsetReadinessFunctionNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["readiness", "function", "namespace"]);
+  }
+
   /** Which application this is — the key its settings live under. */
   async livenessKind(): Promise<ApplicationLivenessKind | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, ["liveness"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
     for (const k of ["http", "function"] as readonly string[]) if (k in block) return k as ApplicationLivenessKind;
     return undefined;
+  }
+
+  async livenessHttpPort(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["liveness", "http", "port"])) as string | undefined;
+  }
+  setLivenessHttpPort(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["liveness", "http", "port"], v);
+  }
+  unsetLivenessHttpPort(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["liveness", "http", "port"]);
+  }
+
+  async livenessHttpPath(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["liveness", "http", "path"])) as string | undefined;
+  }
+  setLivenessHttpPath(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["liveness", "http", "path"], v);
+  }
+  unsetLivenessHttpPath(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["liveness", "http", "path"]);
+  }
+
+  async livenessFunctionName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["liveness", "function", "name"])) as string | undefined;
+  }
+  setLivenessFunctionName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["liveness", "function", "name"], v);
+  }
+  unsetLivenessFunctionName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["liveness", "function", "name"]);
+  }
+
+  async livenessFunctionNamespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["liveness", "function", "namespace"])) as string | undefined;
+  }
+  setLivenessFunctionNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["liveness", "function", "namespace"], v);
+  }
+  unsetLivenessFunctionNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["liveness", "function", "namespace"]);
   }
 
   async failures(): Promise<number | undefined> {
@@ -606,6 +677,16 @@ export class FunctionConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["package", "namespace"]);
   }
 
+  async packageName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["package", "name"])) as string | undefined;
+  }
+  setPackageName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["package", "name"], v);
+  }
+  unsetPackageName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["package", "name"]);
+  }
+
   async call(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["execution", "call"])) as string | undefined;
   }
@@ -694,6 +775,26 @@ export class FunctionConfig extends ResourceConfig {
   unsetStandby(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
+
+  async authorizerName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "name"])) as string | undefined;
+  }
+  setAuthorizerName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "name"], v);
+  }
+  unsetAuthorizerName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "name"]);
+  }
+
+  async authorizerNamespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
+  }
+  setAuthorizerNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "namespace"], v);
+  }
+  unsetAuthorizerNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "namespace"]);
+  }
 }
 
 /** Typed accessors for a worker's config. */
@@ -760,6 +861,16 @@ export class WorkerConfig extends ResourceConfig {
   }
   unsetNamespace(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["package", "namespace"]);
+  }
+
+  async packageName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["package", "name"])) as string | undefined;
+  }
+  setPackageName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["package", "name"], v);
+  }
+  unsetPackageName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["package", "name"]);
   }
 
   async call(): Promise<string | undefined> {
@@ -850,6 +961,26 @@ export class WorkerConfig extends ResourceConfig {
   unsetStandby(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
+
+  async authorizerName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "name"])) as string | undefined;
+  }
+  setAuthorizerName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "name"], v);
+  }
+  unsetAuthorizerName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "name"]);
+  }
+
+  async authorizerNamespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
+  }
+  setAuthorizerNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "namespace"], v);
+  }
+  unsetAuthorizerNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "namespace"]);
+  }
 }
 
 /** Typed accessors for a sandbox's config. */
@@ -906,6 +1037,16 @@ export class SandboxConfig extends ResourceConfig {
   }
   unsetNamespace(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["package", "namespace"]);
+  }
+
+  async packageName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["package", "name"])) as string | undefined;
+  }
+  setPackageName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["package", "name"], v);
+  }
+  unsetPackageName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["package", "name"]);
   }
 
   async idle(): Promise<string | undefined> {
@@ -995,6 +1136,26 @@ export class SandboxConfig extends ResourceConfig {
   }
   unsetStandby(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
+  }
+
+  async authorizerName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "name"])) as string | undefined;
+  }
+  setAuthorizerName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "name"], v);
+  }
+  unsetAuthorizerName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "name"]);
+  }
+
+  async authorizerNamespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
+  }
+  setAuthorizerNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "namespace"], v);
+  }
+  unsetAuthorizerNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "namespace"]);
   }
 }
 
@@ -1248,6 +1409,16 @@ export class PackageConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["source", "image_pull_secret", "namespace"]);
   }
 
+  async sourceImagePullSecretName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "image_pull_secret", "name"])) as string | undefined;
+  }
+  setSourceImagePullSecretName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "image_pull_secret", "name"], v);
+  }
+  unsetSourceImagePullSecretName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "image_pull_secret", "name"]);
+  }
+
   async builtin(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["source", "builtin"])) as string | undefined;
   }
@@ -1412,6 +1583,16 @@ export class WebsiteConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["package", "namespace"]);
   }
 
+  async packageName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["package", "name"])) as string | undefined;
+  }
+  setPackageName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["package", "name"], v);
+  }
+  unsetPackageName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["package", "name"]);
+  }
+
   /** Which website this is — the key its settings live under. */
   async hostKind(): Promise<WebsiteHostKind | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, ["host"]).catch(() => null);
@@ -1429,6 +1610,16 @@ export class WebsiteConfig extends ResourceConfig {
   }
   unsetHostName(hostKind: WebsiteHostKind): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["host", hostKind, "name"]);
+  }
+
+  async hostZoneInNamespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["host", "zone", "in", "namespace"])) as string | undefined;
+  }
+  setHostZoneInNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["host", "zone", "in", "namespace"], v);
+  }
+  unsetHostZoneInNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["host", "zone", "in", "namespace"]);
   }
 
   /** Lives under the website's kind, so the branch is explicit. */
@@ -1450,6 +1641,16 @@ export class WebsiteConfig extends ResourceConfig {
   }
   unsetCertSource(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["certificate", "source"]);
+  }
+
+  async certificateSecretNamespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["certificate", "secret", "namespace"])) as string | undefined;
+  }
+  setCertificateSecretNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["certificate", "secret", "namespace"], v);
+  }
+  unsetCertificateSecretNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["certificate", "secret", "namespace"]);
   }
 
   async certSecret(): Promise<string | undefined> {
@@ -1678,6 +1879,16 @@ export class CacheConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["encryption", "key", "namespace"]);
   }
 
+  async encryptionKeyName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["encryption", "key", "name"])) as string | undefined;
+  }
+  setEncryptionKeyName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["encryption", "key", "name"], v);
+  }
+  unsetEncryptionKeyName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["encryption", "key", "name"]);
+  }
+
   /** Which cache this is — the key its settings live under. */
   async regionsPolicy(): Promise<CacheRegionsPolicy | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, ["regions"]).catch(() => null);
@@ -1715,6 +1926,26 @@ export class CacheConfig extends ResourceConfig {
   }
   unsetStandby(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
+  }
+
+  async authorizerName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "name"])) as string | undefined;
+  }
+  setAuthorizerName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "name"], v);
+  }
+  unsetAuthorizerName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "name"]);
+  }
+
+  async authorizerNamespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
+  }
+  setAuthorizerNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "namespace"], v);
+  }
+  unsetAuthorizerNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "namespace"]);
   }
 }
 
@@ -2093,6 +2324,16 @@ export class DatabaseConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
 
+  async authorizerName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "name"])) as string | undefined;
+  }
+  setAuthorizerName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "name"], v);
+  }
+  unsetAuthorizerName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "name"]);
+  }
+
   async namespace(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
   }
@@ -2268,6 +2509,16 @@ export class StorageConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
 
+  async authorizerName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "name"])) as string | undefined;
+  }
+  setAuthorizerName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "name"], v);
+  }
+  unsetAuthorizerName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "name"]);
+  }
+
   async namespace(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
   }
@@ -2404,6 +2655,16 @@ export class VolumeConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
 
+  async authorizerName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "name"])) as string | undefined;
+  }
+  setAuthorizerName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "name"], v);
+  }
+  unsetAuthorizerName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "name"]);
+  }
+
   async namespace(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
   }
@@ -2518,6 +2779,16 @@ export class SecretConfig extends ResourceConfig {
   }
   unsetStandby(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
+  }
+
+  async authorizerName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "name"])) as string | undefined;
+  }
+  setAuthorizerName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "name"], v);
+  }
+  unsetAuthorizerName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "name"]);
   }
 
   async namespace(): Promise<string | undefined> {
@@ -2655,6 +2926,36 @@ export class SyncConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["queue", "dead_letter", "namespace"]);
   }
 
+  async queueDeadLetterName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["queue", "dead_letter", "name"])) as string | undefined;
+  }
+  setQueueDeadLetterName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["queue", "dead_letter", "name"], v);
+  }
+  unsetQueueDeadLetterName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["queue", "dead_letter", "name"]);
+  }
+
+  async queueRetentionAge(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["queue", "retention", "age"])) as string | undefined;
+  }
+  setQueueRetentionAge(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["queue", "retention", "age"], v);
+  }
+  unsetQueueRetentionAge(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["queue", "retention", "age"]);
+  }
+
+  async queueRetentionSize(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["queue", "retention", "size"])) as string | undefined;
+  }
+  setQueueRetentionSize(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["queue", "retention", "size"], v);
+  }
+  unsetQueueRetentionSize(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["queue", "retention", "size"]);
+  }
+
   async logConsensus(): Promise<SyncLogConsensus | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["log", "consensus"])) as SyncLogConsensus | undefined;
   }
@@ -2665,23 +2966,23 @@ export class SyncConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["log", "consensus"]);
   }
 
-  async age(): Promise<string | undefined> {
+  async logRetentionAge(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["log", "retention", "age"])) as string | undefined;
   }
-  setAge(v: string): Promise<void> {
+  setLogRetentionAge(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["log", "retention", "age"], v);
   }
-  unsetAge(): Promise<void> {
+  unsetLogRetentionAge(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["log", "retention", "age"]);
   }
 
-  async size(): Promise<string | undefined> {
+  async logRetentionSize(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["log", "retention", "size"])) as string | undefined;
   }
-  setSize(v: string): Promise<void> {
+  setLogRetentionSize(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["log", "retention", "size"], v);
   }
-  unsetSize(): Promise<void> {
+  unsetLogRetentionSize(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["log", "retention", "size"]);
   }
 
@@ -2722,6 +3023,26 @@ export class SyncConfig extends ResourceConfig {
   }
   unsetStandby(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
+  }
+
+  async authorizerName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "name"])) as string | undefined;
+  }
+  setAuthorizerName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "name"], v);
+  }
+  unsetAuthorizerName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "name"]);
+  }
+
+  async authorizerNamespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
+  }
+  setAuthorizerNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "namespace"], v);
+  }
+  unsetAuthorizerNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "namespace"]);
   }
 }
 
@@ -2799,6 +3120,16 @@ export class ZoneConfig extends ResourceConfig {
   }
   unsetFile(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["file"]);
+  }
+
+  async resolverName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["resolver", "name"])) as string | undefined;
+  }
+  setResolverName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["resolver", "name"], v);
+  }
+  unsetResolverName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["resolver", "name"]);
   }
 
   async namespace(): Promise<string | undefined> {
@@ -2937,6 +3268,46 @@ export class GatewayConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["host", hostKind, "in", "name"]);
   }
 
+  async routerNamespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["router", "namespace"])) as string | undefined;
+  }
+  setRouterNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["router", "namespace"], v);
+  }
+  unsetRouterNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["router", "namespace"]);
+  }
+
+  async routerName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["router", "name"])) as string | undefined;
+  }
+  setRouterName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["router", "name"], v);
+  }
+  unsetRouterName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["router", "name"]);
+  }
+
+  async routeRouterNamespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["route", "router", "namespace"])) as string | undefined;
+  }
+  setRouteRouterNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["route", "router", "namespace"], v);
+  }
+  unsetRouteRouterNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["route", "router", "namespace"]);
+  }
+
+  async routeRouterName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["route", "router", "name"])) as string | undefined;
+  }
+  setRouteRouterName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["route", "router", "name"], v);
+  }
+  unsetRouteRouterName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["route", "router", "name"]);
+  }
+
   /** Which gateway this is — the key its settings live under. */
   async routing(): Promise<GatewayRouting | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
@@ -2961,6 +3332,16 @@ export class GatewayConfig extends ResourceConfig {
   }
   unsetCertSource(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["certificate", "source"]);
+  }
+
+  async certificateSecretNamespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["certificate", "secret", "namespace"])) as string | undefined;
+  }
+  setCertificateSecretNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["certificate", "secret", "namespace"], v);
+  }
+  unsetCertificateSecretNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["certificate", "secret", "namespace"]);
   }
 
   async certSecret(): Promise<string | undefined> {
@@ -3104,6 +3485,16 @@ export class GatewayConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["cors", "origins"]);
   }
 
+  async corsMethods(): Promise<GatewayCorsMethods | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["cors", "methods"])) as GatewayCorsMethods | undefined;
+  }
+  setCorsMethods(v: GatewayCorsMethods): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["cors", "methods"], v);
+  }
+  unsetCorsMethods(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["cors", "methods"]);
+  }
+
   async rpm(): Promise<number | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["rate_limit", "rpm"])) as number | undefined;
   }
@@ -3132,6 +3523,46 @@ export class GatewayConfig extends ResourceConfig {
   }
   unsetKey(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["rate_limit", "key"]);
+  }
+
+  async authorizerName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "name"])) as string | undefined;
+  }
+  setAuthorizerName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "name"], v);
+  }
+  unsetAuthorizerName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "name"]);
+  }
+
+  async authorizerNamespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
+  }
+  setAuthorizerNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "namespace"], v);
+  }
+  unsetAuthorizerNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "namespace"]);
+  }
+
+  async routeAuthorizerName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["route", "authorizer", "name"])) as string | undefined;
+  }
+  setRouteAuthorizerName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["route", "authorizer", "name"], v);
+  }
+  unsetRouteAuthorizerName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["route", "authorizer", "name"]);
+  }
+
+  async routeAuthorizerNamespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["route", "authorizer", "namespace"])) as string | undefined;
+  }
+  setRouteAuthorizerNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["route", "authorizer", "namespace"], v);
+  }
+  unsetRouteAuthorizerNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["route", "authorizer", "namespace"]);
   }
 
   /** Which gateway this is — the key its settings live under. */
@@ -3260,6 +3691,26 @@ export class ProxyConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["host", hostKind, "in", "name"]);
   }
 
+  async routerNamespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["router", "namespace"])) as string | undefined;
+  }
+  setRouterNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["router", "namespace"], v);
+  }
+  unsetRouterNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["router", "namespace"]);
+  }
+
+  async routerName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["router", "name"])) as string | undefined;
+  }
+  setRouterName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["router", "name"], v);
+  }
+  unsetRouterName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["router", "name"]);
+  }
+
   /** Which proxy this is — the key its settings live under. */
   async routing(): Promise<ProxyRouting | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
@@ -3296,6 +3747,16 @@ export class ProxyConfig extends ResourceConfig {
   }
   unsetCertSource(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["certificate", "source"]);
+  }
+
+  async certificateSecretNamespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["certificate", "secret", "namespace"])) as string | undefined;
+  }
+  setCertificateSecretNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["certificate", "secret", "namespace"], v);
+  }
+  unsetCertificateSecretNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["certificate", "secret", "namespace"]);
   }
 
   async certSecret(): Promise<string | undefined> {
@@ -3576,6 +4037,16 @@ export class StreamConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
 
+  async authorizerName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "name"])) as string | undefined;
+  }
+  setAuthorizerName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "name"], v);
+  }
+  unsetAuthorizerName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "name"]);
+  }
+
   async namespace(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
   }
@@ -3712,6 +4183,16 @@ export class BusConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
 
+  async authorizerName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "name"])) as string | undefined;
+  }
+  setAuthorizerName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "name"], v);
+  }
+  unsetAuthorizerName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "name"]);
+  }
+
   async namespace(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
   }
@@ -3826,6 +4307,16 @@ export class MCPConfig extends ResourceConfig {
   }
   unsetStandby(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
+  }
+
+  async authorizerName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "name"])) as string | undefined;
+  }
+  setAuthorizerName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "name"], v);
+  }
+  unsetAuthorizerName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "name"]);
   }
 
   async namespace(): Promise<string | undefined> {
@@ -3975,6 +4466,16 @@ export class ChannelConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
 
+  async authorizerName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "name"])) as string | undefined;
+  }
+  setAuthorizerName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "name"], v);
+  }
+  unsetAuthorizerName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "name"]);
+  }
+
   async namespace(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
   }
@@ -4080,6 +4581,36 @@ export class ModelConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["inference", "remote", "credentials", "namespace"]);
   }
 
+  async inferenceRemoteCredentialsName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["inference", "remote", "credentials", "name"])) as string | undefined;
+  }
+  setInferenceRemoteCredentialsName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["inference", "remote", "credentials", "name"], v);
+  }
+  unsetInferenceRemoteCredentialsName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["inference", "remote", "credentials", "name"]);
+  }
+
+  async inferenceLocalNamespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["inference", "local", "namespace"])) as string | undefined;
+  }
+  setInferenceLocalNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["inference", "local", "namespace"], v);
+  }
+  unsetInferenceLocalNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["inference", "local", "namespace"]);
+  }
+
+  async inferenceLocalName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["inference", "local", "name"])) as string | undefined;
+  }
+  setInferenceLocalName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["inference", "local", "name"], v);
+  }
+  unsetInferenceLocalName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["inference", "local", "name"]);
+  }
+
   async port(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["inference", "local", "port"])) as string | undefined;
   }
@@ -4148,6 +4679,26 @@ export class ModelConfig extends ResourceConfig {
   unsetStandby(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
+
+  async authorizerName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "name"])) as string | undefined;
+  }
+  setAuthorizerName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "name"], v);
+  }
+  unsetAuthorizerName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "name"]);
+  }
+
+  async authorizerNamespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
+  }
+  setAuthorizerNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "namespace"], v);
+  }
+  unsetAuthorizerNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "namespace"]);
+  }
 }
 
 /** Typed accessors for a agent's config. */
@@ -4206,6 +4757,16 @@ export class AgentConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["model", "namespace"]);
   }
 
+  async modelName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["model", "name"])) as string | undefined;
+  }
+  setModelName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["model", "name"], v);
+  }
+  unsetModelName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["model", "name"]);
+  }
+
   async instructions(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["instructions"])) as string | undefined;
   }
@@ -4214,6 +4775,26 @@ export class AgentConfig extends ResourceConfig {
   }
   unsetInstructions(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["instructions"]);
+  }
+
+  async memoryEmbedderNamespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["memory", "embedder", "namespace"])) as string | undefined;
+  }
+  setMemoryEmbedderNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["memory", "embedder", "namespace"], v);
+  }
+  unsetMemoryEmbedderNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["memory", "embedder", "namespace"]);
+  }
+
+  async memoryEmbedderName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["memory", "embedder", "name"])) as string | undefined;
+  }
+  setMemoryEmbedderName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["memory", "embedder", "name"], v);
+  }
+  unsetMemoryEmbedderName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["memory", "embedder", "name"]);
   }
 
   async dimensions(): Promise<number | undefined> {
@@ -4382,6 +4963,26 @@ export class AgentConfig extends ResourceConfig {
   unsetStandby(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
   }
+
+  async authorizerName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "name"])) as string | undefined;
+  }
+  setAuthorizerName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "name"], v);
+  }
+  unsetAuthorizerName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "name"]);
+  }
+
+  async authorizerNamespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "namespace"])) as string | undefined;
+  }
+  setAuthorizerNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "namespace"], v);
+  }
+  unsetAuthorizerNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "namespace"]);
+  }
 }
 
 /** Typed accessors for a workflow's config. */
@@ -4497,6 +5098,16 @@ export class WorkflowConfig extends ResourceConfig {
   }
   unsetStandby(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "failover", "standby"]);
+  }
+
+  async authorizerName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["authorizer", "name"])) as string | undefined;
+  }
+  setAuthorizerName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["authorizer", "name"], v);
+  }
+  unsetAuthorizerName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["authorizer", "name"]);
   }
 
   async namespace(): Promise<string | undefined> {
@@ -4911,9 +5522,11 @@ export interface Sync {
   interval?: number;
   ceiling?: number;
   namespace?: string;
+  queueretentionage?: number;
+  queueretentionsize?: number;
   logconsensus?: SyncLogConsensus;
-  age?: number;
-  size?: number;
+  logretentionage?: number;
+  logretentionsize?: number;
 }
 
 /** Zone as decoded from the compiled config object. */

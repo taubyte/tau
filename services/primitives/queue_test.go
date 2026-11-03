@@ -141,3 +141,38 @@ func TestTwoQueuesDoNotSeeEachOther(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, claimed)
 }
+
+// A QUEUE NEVER GROWS WITHOUT BOUND: a send past its declared size is refused, on
+// the tier and the wire alike, and work nobody claims within its age moves to the
+// dead letter on the lifecycle pass.
+func TestAQueueIsBoundedBySizeAndAge(t *testing.T) {
+	ctx := t.Context()
+	h := starting(t)
+	tier := h.Local()
+	bounded := grantFor(boundedID)
+
+	require.NoError(t, tier.Send(ctx, bounded, "1", []byte("12345")))
+	err := tier.Send(ctx, bounded, "2", []byte("12345"))
+	require.ErrorIs(t, err, ErrQueueFull)
+	require.ErrorContains(t, err, "declared size")
+	depth, err := tier.Depth(ctx, bounded)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), depth.Ready, "a refused send adds nothing")
+
+	client, _ := wiredWith(t)
+	require.NoError(t, client.Send(ctx, bounded, "1", []byte("12345")))
+	err = client.Send(ctx, bounded, "2", []byte("12345"))
+	require.Error(t, err)
+	require.ErrorContains(t, err, "declared size", "the wire carries the reason")
+
+	// PAST ITS AGE, unclaimed, it is dead-lettered rather than forgotten.
+	h.clock.advance(2 * time.Hour)
+	h.cycle(ctx)
+	depth, err = tier.Depth(ctx, bounded)
+	require.NoError(t, err)
+	require.Zero(t, depth.Ready)
+	require.Equal(t, uint64(1), depth.Dead)
+
+	// And the room it held is free again.
+	require.NoError(t, tier.Send(ctx, bounded, "3", []byte("12345678")))
+}

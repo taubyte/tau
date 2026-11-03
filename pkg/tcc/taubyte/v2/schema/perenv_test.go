@@ -37,6 +37,8 @@ func TestWhatMayBeWrittenPerEnvironment(t *testing.T) {
 		"proxy/rate_limit/burst", "proxy/rate_limit/concurrent",
 		"proxy/rate_limit/connections_per_minute",
 		"sync/queue/visibility_timeout",
+		"sync/queue/retention/age",
+		"sync/queue/retention/size",
 		"sync/log/retention/age",
 		"sync/log/retention/size",
 		"sandbox/egress", "sandbox/execution/cpu", "sandbox/execution/memory",

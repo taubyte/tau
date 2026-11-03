@@ -1,6 +1,7 @@
 package gen
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"unicode"
@@ -183,7 +184,8 @@ type tsEnum struct {
 // group and the project root, so all three get the same accessors.
 func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enumOrder *[]string) ([]tsField, error) {
 	var out []tsField
-	seen := map[string]bool{}
+	var collisions []error
+	seen := map[string]string{}
 	attrs := withBlocks(n, nil)
 	// A node may hold SEVERAL switches — a database's type and each type's
 	// engine, an application's readiness and its liveness — so the discriminator
@@ -225,10 +227,19 @@ func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enu
 		// NB: no scalar retype — these edit the SOURCE config, where
 		// Duration/Bytes are human strings ("20s", "32GB").
 		fname := tsName(structFieldName(group, a))
-		if seen[fname] {
+		// TWO ATTRIBUTES ON ONE ACCESSOR would leave one unaddressable: a block's
+		// reference names its target `name`, as the resource names itself. The
+		// one that comes later is named by its whole path (authorizer/name is
+		// authorizerName), so nothing an earlier name meant changes, and a clash
+		// even then is refused rather than dropped.
+		if _, dup := seen[fname]; dup && len(path) > 1 {
+			fname = tsName(joinTitled(strings.FieldsFunc(strings.Join(path, "_"), func(r rune) bool { return r == '_' })))
+		}
+		if first, dup := seen[fname]; dup {
+			collisions = append(collisions, fmt.Errorf("%s.%s and %s.%s both come out as the accessor %q: give one an Accessor()", group, first, group, a.Name, fname))
 			continue
 		}
-		seen[fname] = true
+		seen[fname] = a.Name
 
 		typ := tsType(gt)
 		if vals, ok := a.Meta["enum"].([]string); ok {
@@ -257,6 +268,9 @@ func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enu
 			}
 		}
 		out = append(out, f)
+	}
+	if len(collisions) > 0 {
+		return nil, errors.Join(collisions...)
 	}
 	return out, nil
 }
@@ -411,6 +425,7 @@ func writeTSClass(b *strings.Builder, r tsResource, ctor string) {
 func GenerateTS(rootNode *engine.Node) ([]byte, error) {
 	root := rootNode.Children
 	var resources []tsResource
+	var failed []error
 	enums := map[string]tsEnum{}
 	var enumOrder []string
 
@@ -425,9 +440,14 @@ func GenerateTS(rootNode *engine.Node) ([]byte, error) {
 		}
 		fields, err := tsFieldsOf(g.Children[0], name, d.Spec, enums, &enumOrder)
 		if err != nil {
-			return nil, err
+			// EVERY RESOURCE'S, not the first's, so one run names the whole population.
+			failed = append(failed, err)
+			continue
 		}
 		resources = append(resources, tsResource{spec: d.Spec, group: name, fields: fields})
+	}
+	if len(failed) > 0 {
+		return nil, errors.Join(failed...)
 	}
 
 	// The container group and project root are documents too and get accessor classes;

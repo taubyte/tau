@@ -34,6 +34,7 @@ const (
 	gossipID  = "QmSgvGwSJmtqBCJ8Zw3rNKtCCTqTFcqSUQqLYyPBnW6cVs"
 	deadID    = "QmXqE8kkR6cB9vkkeNZ7dMtsgPPmYzArkLfVtn9SBLsRJk"
 	chatterID = "QmdWL1UYbDLtNcQFzJXgAmnfJv7CTNVnEbcbMkFf7GE4tZ"
+	boundedID = "QmW5ewPvyQdwKAF6uEJTXzfUKQ99VWEAfBganZeD2r6ySc"
 	sessionID = "QmbWqxBEKC3P8tqsKc98xmWNzrzDtRLMiMPL8wBuTGsMnR"
 )
 
@@ -72,6 +73,13 @@ func compiled() []byte {
 					"name": "chatter", "type": "queue",
 					"queue": map[string]any{"consensus": "crdt"},
 				},
+				boundedID: map[string]any{
+					"name": "bounded", "type": "queue",
+					"queue": map[string]any{
+						"consensus": "raft",
+						"retention": map[string]any{"age": float64(time.Hour), "size": float64(8)},
+					},
+				},
 				deadID: map[string]any{
 					"name": "fragile", "type": "queue",
 					"queue": map[string]any{
@@ -98,6 +106,8 @@ func compiled() []byte {
 				"branches/main/projects/" + projectID + "/sync/" + auditID},
 			"projects/" + projectID + "/sync/traces/links": []any{
 				"branches/main/projects/" + projectID + "/sync/" + tracesID},
+			"projects/" + projectID + "/sync/bounded/links": []any{
+				"branches/main/projects/" + projectID + "/sync/" + boundedID},
 			"projects/" + projectID + "/sync/gossip/links": []any{
 				"branches/main/projects/" + projectID + "/sync/" + gossipID},
 			"projects/" + projectID + "/sync/jobs/links": []any{

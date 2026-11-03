@@ -136,6 +136,15 @@ func (s *server) retainQueue(ctx context.Context, spec Spec) {
 		logger.Warnf("primitives: sweeping %s: %s", spec.Prefix(), err)
 	}
 
+	// UNCLAIMED WORK PAST ITS AGE MOVES TO THE DEAD LETTER, before the dead letter
+	// is bounded below, so what retires this pass is kept as evidence like
+	// anything else buried.
+	if retired, err := held.Retire(d.keep.age); err != nil && !errors.Is(err, queue.ErrNotLeader) {
+		logger.Warnf("primitives: retiring what %s left unclaimed: %s", spec.Prefix(), err)
+	} else if retired > 0 {
+		logger.Debugf("primitives: %s moved %d unclaimed items to its dead letter", spec.Prefix(), retired)
+	}
+
 	dead, err := held.Dead()
 	if err != nil {
 		return

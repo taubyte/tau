@@ -227,3 +227,36 @@ func TestTSEnumLiteralsAreQuotedByType(t *testing.T) {
 		t.Error("a numeric enum must be emitted as number literals")
 	}
 }
+
+// TWO ATTRIBUTES ON ONE ACCESSOR: the later one is named by its whole path, so the
+// earlier keeps its name and neither is dropped; one that clashes even then is
+// refused.
+func TestTSAClashingAccessorIsNamedByItsPath(t *testing.T) {
+	n := &engine.Node{Attributes: []*engine.Attribute{
+		engine.String("name"),
+		engine.String(engine.Key("dead_letter", "name"), engine.Path("dead_letter", "name")),
+	}}
+	enums := map[string]tsEnum{}
+	var order []string
+	fields, err := tsFieldsOf(n, "queues", "Queue", enums, &order)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, f := range fields {
+		names = append(names, f.name)
+	}
+	if strings.Join(names, ",") != "name,deadLetterName" {
+		t.Fatalf("accessors = %v, want [name deadLetterName]", names)
+	}
+
+	clash := &engine.Node{Attributes: []*engine.Attribute{
+		engine.String("deadLetterName", engine.Accessor("DeadLetterName")),
+		engine.String("name"),
+		engine.String(engine.Key("dead_letter", "name"), engine.Path("dead_letter", "name")),
+		engine.String(engine.Key("dead", "letter_name"), engine.Path("dead", "letter_name")),
+	}}
+	if _, err := tsFieldsOf(clash, "queues", "Queue", enums, &order); err == nil || !strings.Contains(err.Error(), "both come out as the accessor") {
+		t.Fatalf("a clash its path cannot settle must be refused, got %v", err)
+	}
+}

@@ -35,6 +35,7 @@ type Store interface {
 //	queue/<name>/ready/<deliverable-at>/<id>   an item waiting to be delivered
 //	queue/<name>/claimed/<deadline>/<id>       an item a consumer holds
 //	queue/<name>/index/<id>                    -> the key above that holds it
+//	queue/<name>/held                          -> the bytes its items hold
 //
 // <name> and <id> are escaped, so neither can contain a '/' or forge a segment.
 // The time is fixed-width decimal nanoseconds, so a lexical sort of a prefix
@@ -45,6 +46,7 @@ const (
 	readySegment   = "ready"
 	claimedSegment = "claimed"
 	indexSegment   = "index"
+	heldSegment    = "held"
 
 	stampWidth = 20
 )
@@ -69,6 +71,8 @@ func (k keyspace) claimed(deadline time.Time, id string) string {
 	t := stampDigits(deadline)
 	return k.prefix + claimedSegment + "/" + string(t[:]) + "/" + escape(id)
 }
+
+func (k keyspace) held() string { return k.prefix + heldSegment }
 
 func (k keyspace) index(id string) string {
 	return k.prefix + indexSegment + "/" + escape(id)

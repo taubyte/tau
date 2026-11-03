@@ -59,6 +59,11 @@ type Config struct {
 	// ApplyTimeout bounds each store write and barrier. Zero means
 	// DefaultApplyTimeout. It may not exceed raft.MaxApplyTimeout.
 	ApplyTimeout time.Duration `yaml:"applyTimeout"`
+
+	// MaxBytes is how much the queue's items may hold, ready and claimed together:
+	// a push that would take it past this is refused with [ErrFull]. Zero is no
+	// bound.
+	MaxBytes int64 `yaml:"maxBytes"`
 }
 
 // withDefaults returns the configuration with zero values filled in, or an error
@@ -81,6 +86,9 @@ func (c Config) withDefaults() (Config, error) {
 		if d.value < 0 {
 			return c, fmt.Errorf("%w: %s must not be negative", ErrInvalidConfig, d.name)
 		}
+	}
+	if c.MaxBytes < 0 {
+		return c, fmt.Errorf("%w: maxBytes must not be negative", ErrInvalidConfig)
 	}
 	if c.RetryFactor < 0 {
 		return c, fmt.Errorf("%w: retryFactor must not be negative", ErrInvalidConfig)

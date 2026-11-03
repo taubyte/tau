@@ -204,6 +204,8 @@ func (w *work) refusal(err error) error {
 		return fmt.Errorf("%w: %s", ErrStaleDelivery, err)
 	case errors.Is(err, queue.ErrNotFound):
 		return fmt.Errorf("%w: %s", ErrNoSuchDelivery, err)
+	case errors.Is(err, queue.ErrFull):
+		return fmt.Errorf("%w: %s", ErrQueueFull, err)
 	default:
 		return err
 	}

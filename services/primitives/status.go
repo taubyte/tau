@@ -80,6 +80,9 @@ var refusals = []refusal{
 	// when one node was simply not the writer.
 	{err: ErrNotLeading, code: connect.CodeAborted, arm: wasmtier.ErrNotWritable},
 
+	// A FULL QUEUE IS A RETRY, LATER: the guest's queue has no arm of its own for
+	// it, and unavailable is what tells it to come back. The sentence says why.
+	{err: ErrQueueFull, code: connect.CodeUnavailable},
 	{err: ErrForming, code: connect.CodeUnavailable},
 	{err: ErrClosed, code: connect.CodeUnavailable},
 }

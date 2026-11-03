@@ -149,6 +149,7 @@ func (q *Queue) PushWith(items []Item, also ...raft.BatchOp) error {
 	ops := append([]raft.BatchOp(nil), also...)
 	at := addClamped(q.group.now(), q.cfg.Delay)
 	seen := make(map[string]bool, len(items))
+	var added int64
 	for _, item := range items {
 		// An id twice in one call is one item. The index read below sees committed state
 		// only, so without this one id would land under two ready keys and become
@@ -167,12 +168,45 @@ func (q *Queue) PushWith(items []Item, also ...raft.BatchOp) error {
 		}
 		key := q.keys.ready(at, item.ID)
 		ops = append(ops, set(key, value), set(q.keys.index(item.ID), []byte(key)))
+		added += int64(len(item.Data))
 	}
 
 	if len(ops) == 0 {
 		return nil
 	}
+	if added > 0 {
+		held := q.heldBy(q.keys)
+		if q.cfg.MaxBytes > 0 && held+added > q.cfg.MaxBytes {
+			return fmt.Errorf("%w: it holds %d of %d bytes and this push is %d", ErrFull, held, q.cfg.MaxBytes, added)
+		}
+		ops = append(ops, q.holding(q.keys, held+added))
+	}
 	return q.group.store.Batch(ops, q.cfg.ApplyTimeout)
+}
+
+// heldBy is the bytes the queue under k holds.
+func (q *Queue) heldBy(k keyspace) int64 {
+	raw, ok := q.group.store.Get(k.held())
+	if !ok {
+		return 0
+	}
+	n, err := strconv.ParseInt(string(raw), 10, 64)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+// holding is the write that says the queue under k holds n bytes.
+func (q *Queue) holding(k keyspace, n int64) raft.BatchOp {
+	return set(k.held(), []byte(strconv.FormatInt(max(n, 0), 10)))
+}
+
+// Held is the bytes this queue's items hold, ready and claimed together.
+func (q *Queue) Held() int64 {
+	q.group.mu.Lock()
+	defer q.group.mu.Unlock()
+	return q.heldBy(q.keys)
 }
 
 // owns is whether a key is part of this queue's state machine or its dead
@@ -220,10 +254,15 @@ func (q *Queue) Remove(id string) error {
 	if state.state == claimedSegment {
 		return fmt.Errorf("%w: %q", ErrClaimed, id)
 	}
+	rec, err := q.load(key)
+	if err != nil {
+		return err
+	}
 
 	return q.group.store.Batch([]raft.BatchOp{
 		del(key),
 		del(q.keys.index(id)),
+		q.holding(q.keys, q.heldBy(q.keys)-int64(len(rec.Data))),
 	}, q.cfg.ApplyTimeout)
 }
 
@@ -309,6 +348,7 @@ func (q *Queue) Ack(d Delivery) error {
 	return q.group.store.Batch([]raft.BatchOp{
 		del(key),
 		del(q.keys.index(rec.ID)),
+		q.holding(q.keys, q.heldBy(q.keys)-int64(len(rec.Data))),
 	}, q.cfg.ApplyTimeout)
 }
 
@@ -417,19 +457,43 @@ func (q *Queue) fail(key string, rec record, failedAt, now time.Time) error {
 // takes it out of this one. It lands deliverable with attempts reset, because the
 // dead letter counts its own deliveries. The group's lock covers both queues' keys.
 func (q *Queue) bury(key string, rec record, now time.Time) error {
-	ops := []raft.BatchOp{del(key), del(q.keys.index(rec.ID))}
-
-	// The dead letter deduplicates by id like any queue.
-	if _, exists := q.group.store.Get(q.dead.index(rec.ID)); !exists {
-		value, err := record{ID: rec.ID, Data: rec.Data, DeliverAt: now.UnixNano()}.encode()
-		if err != nil {
-			return err
-		}
-		dead := q.dead.ready(now, rec.ID)
-		ops = append(ops, set(dead, value), set(q.dead.index(rec.ID), []byte(dead)))
+	ops, err := q.burying([]buried{{key: key, rec: rec}}, now)
+	if err != nil {
+		return err
 	}
-
 	return q.group.store.Batch(ops, q.cfg.ApplyTimeout)
+}
+
+// buried is one item on its way to the dead letter, under the key that holds it.
+type buried struct {
+	key string
+	rec record
+}
+
+// burying is the writes that move items into the dead letter, the counters of
+// both queues included. The dead letter deduplicates by id like any queue.
+func (q *Queue) burying(items []buried, now time.Time) ([]raft.BatchOp, error) {
+	var ops []raft.BatchOp
+	var left, landed int64
+	for _, item := range items {
+		ops = append(ops, del(item.key), del(q.keys.index(item.rec.ID)))
+		left += int64(len(item.rec.Data))
+		if _, exists := q.group.store.Get(q.dead.index(item.rec.ID)); exists {
+			continue
+		}
+		value, err := record{ID: item.rec.ID, Data: item.rec.Data, DeliverAt: now.UnixNano()}.encode()
+		if err != nil {
+			return nil, err
+		}
+		dead := q.dead.ready(now, item.rec.ID)
+		ops = append(ops, set(dead, value), set(q.dead.index(item.rec.ID), []byte(dead)))
+		landed += int64(len(item.rec.Data))
+	}
+	ops = append(ops, q.holding(q.keys, q.heldBy(q.keys)-left))
+	if landed > 0 {
+		ops = append(ops, q.holding(q.dead, q.heldBy(q.dead)+landed))
+	}
+	return ops, nil
 }
 
 // held resolves a delivery to the key it is claimed under, refusing one the

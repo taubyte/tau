@@ -80,6 +80,10 @@ var (
 	// starting from the beginning — rather than retrying it.
 	ErrBadCursor = errors.New("primitives: that is not a position this log can read from")
 
+	// ErrQueueFull is a send that would take a queue past its declared size. A
+	// retry, once the queue's consumers have drained it, is the caller's answer.
+	ErrQueueFull = errors.New("primitives: the queue is at its declared size")
+
 	// ErrNoSuchDelivery is a settle for an item the queue does not hold.
 	ErrNoSuchDelivery = errors.New("primitives: this queue holds no such item")
 

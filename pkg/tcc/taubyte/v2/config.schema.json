@@ -23091,6 +23091,52 @@
                 }
               },
               "type": "object"
+            },
+            "retention": {
+              "properties": {
+                "age": {
+                  "default": "168h",
+                  "description": "How long an item may wait unclaimed before it moves to the dead-letter queue, as a human string (e.g. \"168h\").",
+                  "pattern": "^[-+]?(([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$",
+                  "title": "Retention Age",
+                  "type": "string",
+                  "x-tau-default-when": {
+                    "field": "type",
+                    "in": [
+                      "queue"
+                    ]
+                  },
+                  "x-tau-scalar": "duration",
+                  "x-tau-section": "retention",
+                  "x-tau-show-when": {
+                    "field": "type",
+                    "in": [
+                      "queue"
+                    ]
+                  }
+                },
+                "size": {
+                  "default": "64MB",
+                  "description": "How much the queue's waiting and claimed items may hold, as a human string (e.g. \"64MB\"). A send past it is refused.",
+                  "title": "Retention Size",
+                  "type": "string",
+                  "x-tau-default-when": {
+                    "field": "type",
+                    "in": [
+                      "queue"
+                    ]
+                  },
+                  "x-tau-scalar": "bytes",
+                  "x-tau-section": "retention",
+                  "x-tau-show-when": {
+                    "field": "type",
+                    "in": [
+                      "queue"
+                    ]
+                  }
+                }
+              },
+              "type": "object"
             }
           },
           "type": "object"

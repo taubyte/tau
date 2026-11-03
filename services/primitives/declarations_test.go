@@ -176,7 +176,16 @@ func TestAQueuesBudgetAndALogsRetentionAreReadOffTheirOwnBlocks(t *testing.T) {
 	require.Equal(t, 1.5, cfg.RetryFactor)
 	require.NotEmpty(t, cfg.DeadLetter)
 
+	// A QUEUE'S RETENTION: its size bounds what its items hold, its age how long
+	// one waits unclaimed.
+	bound := int64(64 << 20)
+	bounded := specs.SyncQueue{RetentionSize: &bound, RetentionAge: d(168 * time.Hour)}
+	require.Equal(t, bound, deliveryOf(spec, bounded).MaxBytes)
+	require.Equal(t, retention{age: 168 * time.Hour}, unclaimedOf(bounded))
+	require.Equal(t, retention{}, unclaimedOf(specs.SyncQueue{}))
+
 	unwritten := deliveryOf(spec, specs.SyncQueue{})
+	require.Zero(t, unwritten.MaxBytes)
 	require.Zero(t, unwritten.VisibilityTimeout)
 	require.Zero(t, unwritten.MaxAttempts)
 	require.Empty(t, unwritten.DeadLetter)

@@ -41,7 +41,7 @@ func (q *Queue) Expire(age time.Duration, size int64) (int, error) {
 	// Ready keys sort by deliverable time, which for a buried item is its burial.
 	keys := q.sorted(q.keys.readyPrefix())
 
-	var held int64
+	var held, freed int64
 	var ops []raft.BatchOp
 	dropped := 0
 	for i := len(keys) - 1; i >= 0; i-- {
@@ -70,11 +70,13 @@ func (q *Queue) Expire(age time.Duration, size int64) (int, error) {
 
 		ops = append(ops, del(key), del(q.keys.index(rec.ID)))
 		dropped++
+		freed += int64(len(rec.Data))
 	}
 
 	if len(ops) == 0 {
 		return 0, nil
 	}
+	ops = append(ops, q.holding(q.keys, q.heldBy(q.keys)-freed))
 	// One entry for the whole pass: every drop applies or none does.
 	if err := q.group.store.Batch(ops, q.cfg.ApplyTimeout); err != nil {
 		return 0, err
@@ -92,4 +94,60 @@ func (q *Queue) Dead() (*Queue, error) {
 		// A dead letter's own dead letter is a second hop nothing drains.
 		DeadLetter: q.cfg.DeadLetter + DeadLetterSuffix,
 	})
+}
+
+// Retire moves every ready item that has been deliverable longer than age, with
+// nobody claiming it, into the dead letter, and reports how many it moved. It is
+// the queue's own retention: unclaimed work is not forgotten, it becomes evidence
+// in a dead letter that is itself bounded. Zero keeps everything.
+//
+// All moves go into one entry, so a pass that stops early applied nothing.
+func (q *Queue) Retire(age time.Duration) (int, error) {
+	if age <= 0 {
+		return 0, nil
+	}
+
+	q.group.mu.Lock()
+	defer q.group.mu.Unlock()
+
+	if err := q.prepare(); err != nil {
+		return 0, err
+	}
+
+	now := q.group.now()
+	cutoff := now.Add(-age)
+
+	// Ready keys sort by deliverable time, so the scan stops at the first item still
+	// inside its age.
+	var items []buried
+	for _, key := range q.sorted(q.keys.readyPrefix()) {
+		due, err := q.keys.parse(key)
+		if err != nil {
+			return 0, err
+		}
+		if !due.at.Before(cutoff) {
+			break
+		}
+		raw, exists := q.group.store.Get(key)
+		if !exists {
+			continue
+		}
+		rec, err := decodeRecord(key, raw)
+		if err != nil {
+			return 0, err
+		}
+		items = append(items, buried{key: key, rec: rec})
+	}
+	if len(items) == 0 {
+		return 0, nil
+	}
+
+	ops, err := q.burying(items, now)
+	if err != nil {
+		return 0, err
+	}
+	if err := q.group.store.Batch(ops, q.cfg.ApplyTimeout); err != nil {
+		return 0, err
+	}
+	return len(items), nil
 }
