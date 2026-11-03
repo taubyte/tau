@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/instance/volume"
+	"github.com/taubyte/tau/services/worker/volume"
 )
 
 func TestASparseFileStaysSparseWhereItIsRestored(t *testing.T) {

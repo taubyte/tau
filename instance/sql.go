@@ -14,7 +14,7 @@ import (
 // over this node's host and pubsub (pkg/database/engines/sql/distributed/swarm).
 //
 // IT JOINS THE COMPOSER'S REGISTRY rather than standing beside it, because
-// that is where a workload's `sql` access is answered from (instance/database's
+// that is where a workload's `sql` access is answered from (services/worker/database's
 // engines). A composer that registered a `distributed` sql engine of its own
 // keeps it.
 //

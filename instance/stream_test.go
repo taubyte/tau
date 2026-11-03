@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/instance/stream"
+	"github.com/taubyte/tau/services/worker/stream"
 )
 
 // Only the wiring: which gossip and cloud a backing was built over, and that a bus has

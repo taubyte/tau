@@ -8,11 +8,11 @@ import (
 	ds "github.com/ipfs/go-datastore"
 
 	"github.com/taubyte/tau/core/kvdb"
-	"github.com/taubyte/tau/instance/cache"
 	pkgcache "github.com/taubyte/tau/pkg/cache"
+	"github.com/taubyte/tau/services/worker/cache"
 )
 
-// The caches are instance/cache's; the instance opens the database, names it, and
+// The caches are services/worker/cache's; the instance opens the database, names it, and
 // registers what it opened to close.
 
 // cacheDatabase is the one database's name. It is not a service name — no node
@@ -37,7 +37,7 @@ func (s cacheStores) Store() (pkgcache.Store, error) {
 func isNotFound(err error) bool { return errors.Is(err, ds.ErrNotFound) }
 
 // cacheStore adapts a kvdb to the four methods a cache needs, separating "not there"
-// from "could not look". instance/database.go and instance/admit use it too.
+// from "could not look". instance/database.go and services/worker/admit use it too.
 type cacheStore struct{ db kvdb.Instance }
 
 func (s cacheStore) Get(ctx context.Context, key string) ([]byte, bool, error) {

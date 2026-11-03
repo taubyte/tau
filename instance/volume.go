@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/taubyte/tau/instance/volume"
 	"github.com/taubyte/tau/pkg/invoke/container"
+	"github.com/taubyte/tau/services/worker/volume"
 )
 
-// The directories are instance/volume's; the root reaches the root directory, the asset
+// The directories are services/worker/volume's; the root reaches the root directory, the asset
 // store and its databases, names the database, and registers it to close.
 
 // volumeDatabase is the one database's name, for cacheDatabase's reason.
@@ -43,7 +43,7 @@ func (n *Instance) disksOrNil() (container.Volumes, error) {
 	return n.disks, nil
 }
 
-// volumeStores opens that database for instance/volume, on the first checkpoint that
+// volumeStores opens that database for services/worker/volume, on the first checkpoint that
 // needs it.
 type volumeStores struct{ node *Instance }
 

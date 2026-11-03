@@ -13,11 +13,11 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/taubyte/tau/instance/primitive"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	primitivesService "github.com/taubyte/tau/services/primitives"
 	"github.com/taubyte/tau/services/worker"
+	"github.com/taubyte/tau/services/worker/primitive"
 )
 
 // The claiming half of a queue: `receive` is a delivery, so it is not an ABI. Here

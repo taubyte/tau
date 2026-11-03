@@ -23,24 +23,23 @@ import (
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
-	"github.com/taubyte/tau/instance/admit"
-	"github.com/taubyte/tau/instance/cache"
-	"github.com/taubyte/tau/instance/model"
-	"github.com/taubyte/tau/instance/primitive"
-	"github.com/taubyte/tau/instance/stream"
-	"github.com/taubyte/tau/instance/volume"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/assets"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/invoke/js"
 	"github.com/taubyte/tau/pkg/invoke/wasm"
+	"github.com/taubyte/tau/services/worker/admit"
+	"github.com/taubyte/tau/services/worker/cache"
+	"github.com/taubyte/tau/services/worker/model"
+	"github.com/taubyte/tau/services/worker/primitive"
+	"github.com/taubyte/tau/services/worker/stream"
+	"github.com/taubyte/tau/services/worker/volume"
 
 	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/frontend"
 
 	"github.com/taubyte/tau/instance/placement"
-	"github.com/taubyte/tau/instance/storage"
 	authService "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/cm"
 	cmService "github.com/taubyte/tau/services/cm"
@@ -53,6 +52,7 @@ import (
 	registerService "github.com/taubyte/tau/services/register"
 	secretsService "github.com/taubyte/tau/services/secrets"
 	"github.com/taubyte/tau/services/worker"
+	"github.com/taubyte/tau/services/worker/storage"
 )
 
 // Node is everything this machine runs.
@@ -767,7 +767,7 @@ func (n *Instance) Start(ctx context.Context) error {
 
 	// THE CHECKPOINTS, which is what makes a volume survive its node — and
 	// which raft has nothing to do with either. A checkpoint is a row in a
-	// replicated kvdb that ANY node may write; instance/volume's own doc records
+	// replicated kvdb that ANY node may write; services/worker/volume's own doc records
 	// the leader-only write as the bug it was, because a volume is mounted
 	// wherever placement put the workload and not on a leader.
 	if n.disks != nil {

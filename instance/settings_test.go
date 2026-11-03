@@ -5,12 +5,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/instance/admit"
-	"github.com/taubyte/tau/instance/cache"
-	nodeDatabase "github.com/taubyte/tau/instance/database"
-	"github.com/taubyte/tau/instance/storage"
-	"github.com/taubyte/tau/instance/volume"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
+	"github.com/taubyte/tau/services/worker/admit"
+	"github.com/taubyte/tau/services/worker/cache"
+	nodeDatabase "github.com/taubyte/tau/services/worker/database"
+	"github.com/taubyte/tau/services/worker/storage"
+	"github.com/taubyte/tau/services/worker/volume"
 )
 
 func TestEverySettingKeyNamesAnAttribute(t *testing.T) {

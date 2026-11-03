@@ -49,8 +49,8 @@ const LedgerDomain = "/tau/databases/v2"
 // leader that exists, which is a commit to a quorum.
 const LedgerBudget = 10 * time.Second
 
-// Namespace is the raft namespace one database's group lives in — the same name
-// instance/database gives its crdt store, under a different root, so the group and
+// LedgerNamespace is the raft namespace one database's group lives in — the same name
+// Name gives its crdt store, under a different root, so the group and
 // the store agree by construction rather than by two expressions that happen to
 // match. Spec.Prefix already refuses a separator in any segment, which is what a
 // protocol id needs.

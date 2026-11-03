@@ -3,10 +3,10 @@ package instance
 import (
 	"fmt"
 
-	"github.com/taubyte/tau/instance/admit"
+	"github.com/taubyte/tau/services/worker/admit"
 )
 
-// The decision is instance/admit's; the root reaches the component tier, the worker and
+// The decision is services/worker/admit's; the root reaches the component tier, the worker and
 // the database factory, names the database, and registers what it opened to close.
 
 // admissionDatabase is the one database's name, for cacheDatabase's reason.
@@ -36,7 +36,7 @@ func (n *Instance) admissions() (*admit.Admissions, error) {
 	return n.admit, nil
 }
 
-// admissionStores opens that database for instance/admit, on the first admission
+// admissionStores opens that database for services/worker/admit, on the first admission
 // that needs it.
 type admissionStores struct{ node *Instance }
 

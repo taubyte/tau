@@ -9,11 +9,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/instance/primitive"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	primitives "github.com/taubyte/tau/services/primitives"
 	"github.com/taubyte/tau/services/worker"
+	"github.com/taubyte/tau/services/worker/primitive"
 )
 
 // The adapter alone: every call resolves the reach, a refusing reach refuses every

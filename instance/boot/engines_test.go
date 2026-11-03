@@ -5,9 +5,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	nodeDatabase "github.com/taubyte/tau/instance/database"
 	"github.com/taubyte/tau/pkg/database"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
+	nodeDatabase "github.com/taubyte/tau/services/worker/database"
 )
 
 // Every external engine the vocabulary names is one a machine can open.

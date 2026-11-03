@@ -3,16 +3,16 @@ package instance
 import (
 	"fmt"
 
-	"github.com/taubyte/tau/instance/storage"
+	"github.com/taubyte/tau/services/worker/storage"
 )
 
-// The objects are instance/storage's; the root reaches the factory, names the database,
+// The objects are services/worker/storage's; the root reaches the factory, names the database,
 // and registers it to close.
 
 // storageDatabase is the one database's name, for cacheDatabase's reason.
 const storageDatabase = "storage"
 
-// storageStores opens that database for instance/storage, on the first bucket that
+// storageStores opens that database for services/worker/storage, on the first bucket that
 // needs it.
 type storageStores struct{ node *Instance }
 

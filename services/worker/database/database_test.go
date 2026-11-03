@@ -11,12 +11,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	backing "github.com/taubyte/tau/instance/database"
 	"github.com/taubyte/tau/pkg/database"
 	docengine "github.com/taubyte/tau/pkg/database/engines/document"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	copies "github.com/taubyte/tau/services/database"
+	backing "github.com/taubyte/tau/services/worker/database"
 )
 
 // The fakes the adapter's tau-backed engines keep their entries in.

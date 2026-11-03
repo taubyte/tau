@@ -9,11 +9,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/instance/admit"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/services/worker"
+	"github.com/taubyte/tau/services/worker/admit"
 )
 
 // The decision with all three collaborators faked: which of three answers a caller

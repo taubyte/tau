@@ -10,8 +10,8 @@ import (
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/instance/stream"
 	gateway "github.com/taubyte/tau/services/gateway"
+	"github.com/taubyte/tau/services/worker/stream"
 )
 
 // A real gossipsub over one mocknet peer: a *pubsub.Topic is concrete, and a double

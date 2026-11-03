@@ -11,7 +11,7 @@ import (
 	"github.com/taubyte/tau/core/kvdb"
 )
 
-// What the root owes instance/database: stores opened through the operator's factory and
+// What the root owes services/worker/database: stores opened through the operator's factory and
 // closed with the node, release through the one path that removes bytes, and the disk
 // surface asserted off a factory that may lack it.
 

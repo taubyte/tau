@@ -7,11 +7,11 @@ import (
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
-	"github.com/taubyte/tau/instance/primitive"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
 	primitivesService "github.com/taubyte/tau/services/primitives"
 	"github.com/taubyte/tau/services/worker"
+	"github.com/taubyte/tau/services/worker/primitive"
 )
 
 // How everything here reaches the primitives service: guest sends and appends, and the

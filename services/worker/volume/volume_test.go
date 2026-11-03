@@ -23,8 +23,8 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/instance/volume"
 	"github.com/taubyte/tau/pkg/invoke"
+	"github.com/taubyte/tau/services/worker/volume"
 )
 
 // Bytes that must survive the container and the node, tested against fakes: a

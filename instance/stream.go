@@ -1,10 +1,10 @@
 package instance
 
 import (
-	"github.com/taubyte/tau/instance/stream"
+	"github.com/taubyte/tau/services/worker/stream"
 )
 
-// The stream and bus adapters are instance/stream's; the root decides which gossip and
+// The stream and bus adapters are services/worker/stream's; the root decides which gossip and
 // cloud, and that a bus has one backing shared by the wasm tier and the gateway.
 
 // streamBacking is a backing for one kind over this node's gossip.

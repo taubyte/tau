@@ -5,13 +5,13 @@ import (
 	"errors"
 	"fmt"
 
-	nodeDatabase "github.com/taubyte/tau/instance/database"
 	"github.com/taubyte/tau/pkg/database"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	databaseService "github.com/taubyte/tau/services/database"
+	nodeDatabase "github.com/taubyte/tau/services/worker/database"
 )
 
-// The database adapters are instance/database's; the root reaches the factory, names
+// The database adapters are services/worker/database's; the root reaches the factory, names
 // stores, registers closers, and hands over raft, the vault and the composer's
 // registry. A node running the database service serves kv from it; one without falls
 // back to these engines (see kvBacking).

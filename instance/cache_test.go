@@ -5,10 +5,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/instance/cache"
 	"github.com/taubyte/tau/pkg/invoke"
 	invokesecret "github.com/taubyte/tau/pkg/invoke/secret"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	"github.com/taubyte/tau/services/worker/cache"
 )
 
 // Only the wiring is tested here: one named database, opened on first need, closed

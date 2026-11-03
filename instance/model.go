@@ -1,10 +1,10 @@
 package instance
 
 import (
-	"github.com/taubyte/tau/instance/model"
+	"github.com/taubyte/tau/services/worker/model"
 )
 
-// The inference backing is instance/model's; the root passes its two collaborators as
+// The inference backing is services/worker/model's; the root passes its two collaborators as
 // functions, since the wasm tier and placement are composed after it.
 
 // inference is this node's model backing.

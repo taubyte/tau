@@ -14,7 +14,7 @@ import (
 
 // validator.go is the host half of `taubyte:instance-validator`, the function a
 // many-instance store names to decide who may open one. The authorizer's sibling
-// with its own question and export. Nothing is kept here; instance/admit remembers
+// with its own question and export. Nothing is kept here; services/worker/admit remembers
 // admitted instances.
 
 // WorldValidator is `implements: instance-validator`.

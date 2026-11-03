@@ -136,7 +136,7 @@ func withValidator() []byte {
 	}`)
 }
 
-// guarding stands in for the component tier here the way instance/admit's own double
+// guarding stands in for the component tier here the way services/worker/admit's own double
 // does for a validator: what a REAL guard does with a real question is
 // pkg/invoke/wasm's own test, and what this proves is the node's policy around it.
 type guarding struct {

@@ -15,8 +15,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/instance/volume"
 	"github.com/taubyte/tau/pkg/containers/reserve"
+	"github.com/taubyte/tau/services/worker/volume"
 )
 
 // restorer is a fresh node over root whose store holds archive as the volume's

@@ -9,10 +9,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/instance/cache"
 	pkgcache "github.com/taubyte/tau/pkg/cache"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	"github.com/taubyte/tau/services/worker/cache"
 )
 
 // The adapter over a map, with real pkg/cache caches, so the translation is not

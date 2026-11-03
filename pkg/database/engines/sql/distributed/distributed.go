@@ -48,7 +48,7 @@ var (
 type Files func(ctx context.Context, spec database.Spec) (dir string, err error)
 
 // UnderRoot is the Files provider a node composes: one directory per database under
-// the node's root, named by Spec.Prefix escaped into one segment (as instance/volume
+// the node's root, named by Spec.Prefix escaped into one segment (as services/worker/volume
 // escapes a handle). Without a root it refuses rather than using a temp directory,
 // which would lose every row silently.
 func UnderRoot(root string) Files {
