@@ -120,8 +120,39 @@ func ciRunCommand(env Env) *cobra.Command {
 // went away runs again with a log of its own, which is read from its start
 // after a note saying where the last one stopped.
 func awaitJob(cmd *cobra.Command, cl *api.Client, job string, log io.Writer) (*api.Job, error) {
-	ctx := cmd.Context()
 	out := &lines{w: log}
+	j, err := awaitOne(cmd, cl, job, out)
+	if err != nil || !isPlan(j) {
+		return j, err
+	}
+
+	// A PUSH IS A PLAN, then a job per environment it feeds: the push has ended
+	// when they have, and it is the first that did not succeed.
+	if j.GetStatus() != api.JobSuccess {
+		if reason := j.GetReason(); reason != "" {
+			out.note("job %s: %s", job, reason)
+		}
+		return j, nil
+	}
+	final := j
+	for _, child := range j.GetChildren() {
+		out.note("job %s: building as job %s", job, child)
+		if final, err = awaitOne(cmd, cl, child, out); err != nil {
+			return nil, err
+		}
+		if final.GetStatus() != api.JobSuccess {
+			return final, nil
+		}
+	}
+	return final, nil
+}
+
+// isPlan is a push's first job, which builds no environment and keeps no log.
+func isPlan(j *api.Job) bool { return j.GetEnvironment() == "" }
+
+// awaitOne follows one job's log to its end.
+func awaitOne(cmd *cobra.Command, cl *api.Client, job string, out *lines) (*api.Job, error) {
+	ctx := cmd.Context()
 	var run *api.LogStream
 	// done is whether run's log was read to its end, or is known to have none.
 	var done bool
@@ -131,7 +162,7 @@ func awaitJob(cmd *cobra.Command, cl *api.Client, job string, log io.Writer) (*a
 			return nil, err
 		}
 		ended := terminal(j)
-		if at := j.GetAttempt(); at > 0 && (ended || j.GetStatus() == api.JobRunning) {
+		if at := j.GetAttempt(); at > 0 && !isPlan(j) && (ended || j.GetStatus() == api.JobRunning) {
 			if run == nil || run.Attempt() != at {
 				if run != nil && !done {
 					out.note("job %s: the log of attempt %d was read to byte %d; attempt %d follows", job, run.Attempt(), run.Offset(), at)

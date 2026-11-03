@@ -1,14 +1,13 @@
-//go:build dreaming
+//go:build dreaming && docker_integration
 
 package e2e
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -17,30 +16,48 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/instance"
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	"github.com/taubyte/tau/services/build/artifact"
 	"github.com/taubyte/tau/tools/tau/internal/cli"
 	"github.com/taubyte/tau/tools/tau/internal/config"
 )
 
-// heldEngine says one line, then holds the build until released, then fails
-// it: a build in the middle of its work, and one whose output matters.
-type heldEngine struct {
-	release chan struct{}
-}
+// held is a package whose build says one line and then holds, a build in the
+// middle of its work, until somebody cancels it.
+const held = `id: QmXoj8UEVte5oUsVvmYkSa6NQ7tkfDsyPRP97HRckJQ1jV
+type: wasm
+source: services/hello
+output: handler.wasm
+build:
+    steps:
+        - name: build
+          image: busybox:1.36
+          commands:
+              - echo compiling the held build
+              - sleep 3600
+`
 
-func (e *heldEngine) Make(ctx context.Context, spec artifact.Spec, log io.Writer) (io.ReadCloser, error) {
-	io.WriteString(log, "compiling the held build\n")
-	select {
-	case <-e.release:
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-	io.WriteString(log, "error: the linker gave up\n")
-	return nil, errors.New("exit-code:1")
+// failing is the same package built by a recipe that fails at once, with output
+// that matters.
+const failing = `id: QmXoj8UEVte5oUsVvmYkSa6NQ7tkfDsyPRP97HRckJQ1jV
+type: wasm
+source: services/hello
+output: handler.wasm
+build:
+    steps:
+        - name: build
+          image: busybox:1.36
+          commands:
+              - echo compiling the queued build
+              - "echo error: the linker gave up"
+              - exit 1
+`
+
+// recipe writes what the project's one package is built by.
+func recipe(t *testing.T, work, yaml string) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(filepath.Join(work, "package", "hello_code.yaml"), []byte(yaml), 0o644))
 }
 
 // watched is a writer that says when it first holds want.
@@ -69,7 +86,6 @@ func (w *watched) String() string {
 }
 
 func TestTauCIRunFollowsALiveBuild(t *testing.T) {
-	engine := &heldEngine{release: make(chan struct{})}
 	t.Setenv(config.EnvConfig, filepath.Join(t.TempDir(), "config.yaml"))
 	t.Setenv(config.EnvToken, "")
 	t.Setenv(config.EnvCloud, "")
@@ -78,10 +94,7 @@ func TestTauCIRunFollowsALiveBuild(t *testing.T) {
 	f, err := fake.Serve(fake.GitHubLike)
 	require.NoError(t, err)
 	t.Cleanup(func() { f.Close() })
-	cloud, _ := fleet(t, f, instance.WithBuildSeams(func(s instance.BuildSeams) instance.BuildSeams {
-		s.Engine = engine
-		return s
-	}))
+	cloud, _ := universe(t, f, nil)
 	var login result
 	require.Eventually(t, func() bool {
 		login = tauIn(f.TokenString()+"\n", "login", "--cloud", cloud, "--sso", f.Host(), "--paste")
@@ -90,6 +103,9 @@ func TestTauCIRunFollowsALiveBuild(t *testing.T) {
 
 	work := t.TempDir()
 	require.NoError(t, copyProject(filepath.Join("..", "..", "..", "instance", "dream", "projects", "with", "function", "wasm"), work))
+	require.NoError(t, os.MkdirAll(filepath.Join(work, "services", "hello"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(work, "services", "hello", "README"), []byte("built by its recipe\n"), 0o644))
+	recipe(t, work, held)
 	configRepo := repokey.Key{Host: f.Host(), Owner: fake.Namespace, Name: "follow"}
 	var link result
 	require.Eventually(t, func() bool {
@@ -109,9 +125,6 @@ func TestTauCIRunFollowsALiveBuild(t *testing.T) {
 	case <-live.seen:
 	case code := <-exited:
 		t.Fatalf("tau ci run ended (%d) before the build said anything: %s", code, live.String())
-	case <-time.After(3 * time.Minute):
-		close(engine.release)
-		t.Fatalf("the build's first line never reached tau ci run while it ran: %s", live.String())
 	}
 	select {
 	case code := <-exited:
@@ -119,21 +132,19 @@ func TestTauCIRunFollowsALiveBuild(t *testing.T) {
 	default:
 	}
 
-	_, rest, found := strings.Cut(live.String(), "queued job ")
-	require.True(t, found, "tau ci run names its job: %s", live.String())
-	job, _, _ := strings.Cut(rest, ":")
+	// A PUSH IS A PLAN, and the build is the environment job it queued, which tau ci
+	// run names as it follows it.
+	plan := named(t, live.String(), "queued job ", ":")
+	job := named(t, live.String(), "building as job ", "\n")
+	// RELEASED BY A CANCEL, the one way a held build ends before its time.
+	release := sync.OnceFunc(func() { ok(t, "cancel", job, "--yes") })
+	t.Cleanup(release)
 
-	soFar := make(chan result, 1)
-	go func() { soFar <- tau("logs", "--", job) }()
-	select {
-	case r := <-soFar:
-		require.Equal(t, 0, r.code, r.stderr)
-		require.Contains(t, r.stdout, "compiling the held build")
-		require.NotContains(t, r.stdout, "error: the linker gave up")
-	case <-time.After(time.Minute):
-		close(engine.release)
-		t.Fatal("tau logs without --follow waited for the held build to end")
-	}
+	soFar := tau("logs", "--", job)
+	require.Equal(t, 0, soFar.code, soFar.stderr)
+	require.Contains(t, soFar.stdout, "compiling the held build")
+	require.NotContains(t, soFar.stdout, "context canceled", "and it did not wait for the held build to end")
+	require.Contains(t, tau("logs", "--", plan).stderr, "built as "+job, "the plan names the job it queued")
 
 	followed := &watched{want: "compiling the held build", seen: make(chan struct{})}
 	following := make(chan int, 1)
@@ -144,11 +155,7 @@ func TestTauCIRunFollowsALiveBuild(t *testing.T) {
 	select {
 	case <-followed.seen:
 	case code := <-following:
-		close(engine.release)
 		t.Fatalf("tau logs --follow ended (%d) while the build was held: %s", code, followed.String())
-	case <-time.After(time.Minute):
-		close(engine.release)
-		t.Fatalf("tau logs --follow never printed the held build's first line: %s", followed.String())
 	}
 	select {
 	case code := <-following:
@@ -156,7 +163,7 @@ func TestTauCIRunFollowsALiveBuild(t *testing.T) {
 	default:
 	}
 
-	queued := queueBehind(t, f, work, configRepo)
+	queued := queueBehind(t, f, work, configRepo, failing)
 	require.Contains(t, ok(t, "job", "-o", "json", "--", queued), `"status": "open"`)
 	waiting := tau("logs", "--", queued)
 	require.Equal(t, 0, waiting.code, waiting.stderr)
@@ -173,11 +180,7 @@ func TestTauCIRunFollowsALiveBuild(t *testing.T) {
 	select {
 	case <-note.seen:
 	case code := <-waitingFollow:
-		close(engine.release)
 		t.Fatalf("tau logs --follow of a queued job ended (%d) without saying it was queued: %s", code, note.String())
-	case <-time.After(time.Minute):
-		close(engine.release)
-		t.Fatalf("tau logs --follow of a queued job never said it was queued: %s", note.String())
 	}
 	require.Contains(t, ok(t, "job", "-o", "json", "--", queued), `"status": "open"`, "still behind the held build")
 	select {
@@ -186,52 +189,46 @@ func TestTauCIRunFollowsALiveBuild(t *testing.T) {
 	default:
 	}
 
-	close(engine.release)
-	select {
-	case code := <-exited:
-		require.Equal(t, 1, code, "a failed build fails tau ci run: %s", live.String())
-	case <-time.After(2 * time.Minute):
-		t.Fatal("tau ci run never ended after the build did")
-	}
-	require.Contains(t, live.String(), "error: the linker gave up", "the failure's output is followed too")
-	select {
-	case code := <-following:
-		require.Equal(t, 0, code)
-	case <-time.After(2 * time.Minute):
-		t.Fatal("tau logs --follow never ended after the build did")
-	}
-	require.Contains(t, followed.String(), "error: the linker gave up", "the rest arrives while it follows")
+	release()
+	require.Equal(t, 1, <-exited, "a cancelled build fails tau ci run: %s", live.String())
+	require.Contains(t, live.String(), "context canceled", "the end of its output is followed too")
+	require.Equal(t, 0, <-following)
+	require.Contains(t, followed.String(), "context canceled", "the rest arrives while it follows")
 
-	require.Contains(t, out.String(), "job "+job+": failed")
+	require.Contains(t, out.String(), "job "+plan+": cancelled")
 	stored := ok(t, "logs", "--", job)
 	require.Contains(t, stored, "compiling the held build")
-	require.Contains(t, stored, "error: the linker gave up")
+	require.Contains(t, stored, "context canceled")
 	require.Equal(t, stored, ok(t, "logs", "--follow", "--", job), "an ended job's log is the stored one either way")
 
-	select {
-	case code := <-waitingFollow:
-		require.Equal(t, 0, code)
-	case <-time.After(2 * time.Minute):
-		t.Fatal("tau logs --follow of the queued job never ended after it did")
-	}
-	require.Contains(t, waited.String(), "compiling the held build")
-	// The follow ends with the log, which closes before the record settles.
-	require.Eventually(t, func() bool {
-		r := tau("job", "-o", "json", "--", queued)
-		return r.code == 0 && strings.Contains(r.stdout, `"status": "failed"`)
-	}, 2*time.Minute, time.Second, "the queued job never settled")
-	require.Equal(t, ok(t, "logs", "--", queued), waited.String(), "the follow that waited got the whole log")
+	require.Equal(t, 0, <-waitingFollow)
+	require.Contains(t, waited.String(), "compiling the queued build")
+	require.Contains(t, waited.String(), "error: the linker gave up")
+	behind := named(t, note.String(), "building as job ", "\n")
+	require.Equal(t, ok(t, "logs", "--", behind), waited.String(), "the follow that waited got the whole log")
 }
 
-// queueBehind pushes a second commit to the configuration repository and has
-// tau ci run queue its build, which waits for the fleet's one build backend.
-func queueBehind(t *testing.T, f *fake.Served, work string, repo repokey.Key) string {
+// named is the id that follows prefix in what a command said, up to end.
+func named(t *testing.T, said, prefix, end string) string {
+	t.Helper()
+	_, rest, found := strings.Cut(said, prefix)
+	require.True(t, found, "%q is not in: %s", prefix, said)
+	id, _, _ := strings.Cut(rest, end)
+	require.NotEmpty(t, id)
+	return id
+}
+
+// queueBehind pushes a second commit to the configuration repository, its package
+// built by the recipe given, and has tau ci run queue its build, which waits for
+// the fleet's one build backend.
+func queueBehind(t *testing.T, f *fake.Served, work string, repo repokey.Key, yaml string) string {
 	t.Helper()
 	s, err := forges.For(repo, f.Token())
 	require.NoError(t, err)
 	addr, err := s.CloneAddress(repo, forge.HTTPS)
 	require.NoError(t, err)
-	gitOK(t, work, "commit", "-q", "--allow-empty", "-m", "queued behind the held build")
+	recipe(t, work, yaml)
+	gitOK(t, work, "commit", "-q", "-am", "queued behind the held build")
 	gitOK(t, work, "-c", "http.extraHeader=Authorization: Basic "+basic(addr.HTTPUsername, f.TokenString()), "push", "-q", addr.URL, "HEAD:refs/heads/main")
 
 	type queuedJob struct {

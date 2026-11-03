@@ -226,6 +226,10 @@ func showLog(cmd *cobra.Command, env Env, cl *api.Client, id string, from int64,
 	if jsonOut(cmd) {
 		notes = io.Discard
 	}
+	// A PUSH'S PLAN KEEPS NO LOG: its environment jobs are where the build is.
+	if err == nil && isPlan(j) {
+		return showPlan(cmd, env, cl, j, follow, notes)
+	}
 	stream := cl.Stream(cmd.Context(), id, 0, from)
 	if !follow {
 		stream.Retries = 0
@@ -252,6 +256,48 @@ func showLog(cmd *cobra.Command, env Env, cl *api.Client, id string, from int64,
 	}
 	_, err = stream.CopyTo(env.Stdout)
 	return err
+}
+
+// showPlan is the log of a push: what its plan queued, and with follow each of
+// those jobs' logs in turn, once the plan has planned.
+func showPlan(cmd *cobra.Command, env Env, cl *api.Client, j *api.Job, follow bool, notes io.Writer) error {
+	id := j.GetId()
+	queued := j.GetStatus() == api.JobQueued
+	if !follow {
+		switch {
+		case queued:
+			fmt.Fprintf(notes, "job %s is queued: it has logged nothing yet\n", id)
+		case len(j.GetChildren()) > 0:
+			fmt.Fprintf(notes, "job %s is a push's plan and keeps no log; it built as %s\n", id, strings.Join(j.GetChildren(), ", "))
+		default:
+			fmt.Fprintf(notes, "job %s is a push's plan and keeps no log; it has queued no build yet\n", id)
+		}
+		return nil
+	}
+	if queued {
+		fmt.Fprintf(notes, "job %s is queued: its log follows once it starts\n", id)
+	}
+	for !terminal(j) {
+		select {
+		case <-cmd.Context().Done():
+			return cmd.Context().Err()
+		case <-time.After(interval(cmd)):
+		}
+		var err error
+		if j, err = cl.Job(cmd.Context(), id); err != nil {
+			return err
+		}
+	}
+	if reason := j.GetReason(); j.GetStatus() != api.JobSuccess && reason != "" {
+		fmt.Fprintf(notes, "job %s: %s\n", id, reason)
+	}
+	for _, child := range j.GetChildren() {
+		fmt.Fprintf(notes, "job %s: building as job %s\n", id, child)
+		if err := showLog(cmd, env, cl, child, 0, true); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func cancelCommand(env Env) *cobra.Command {

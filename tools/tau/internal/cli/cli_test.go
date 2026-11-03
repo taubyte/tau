@@ -378,7 +378,7 @@ func TestLogsOfACancelledJobAreItsLastRuns(t *testing.T) {
 	x := newTester(t)
 	x.login()
 	x.f.mu.Lock()
-	x.f.jobs["job-cx"] = &buildv2.Job{Id: "job-cx", Status: buildv2.JobStatus_JobStatusCancelled, RepositoryKey: "github.com/acme/pay", Attempt: 2,
+	x.f.jobs["job-cx"] = &buildv2.Job{Id: "job-cx", Status: buildv2.JobStatus_JobStatusCancelled, RepositoryKey: "github.com/acme/pay", Attempt: 2, Environment: "prod",
 		Logs: map[string]string{"00000000000000000001": "bafy1"}}
 	x.f.runLogs["job-cx/1"] = "the first run\n"
 	x.f.runLogs["job-cx/2"] = "the second run, cancelled\n"

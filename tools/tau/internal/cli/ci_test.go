@@ -89,12 +89,12 @@ func TestCIRunFollowsARerunFromItsStart(t *testing.T) {
 	x.f.endOnFollow = true
 	x.f.mu.Lock()
 	x.f.dropOnce, x.f.rerunOnDrop = true, true
-	x.f.runLogs["job-3/2"] = "rebuilt from its start\n"
+	x.f.runLogs["job-3-prod/2"] = "rebuilt from its start\n"
 	x.f.mu.Unlock()
 
 	r := x.run("ci", "run", "--dir", x.dir, "--commit", strings.Repeat("c", 40), "--branch", "main", "--interval", "10ms")
 	require.Zero(t, r.code, r.stderr)
-	require.Contains(t, r.stderr, "built\njob job-3: the log of attempt 1 was not kept past byte 5\nrebuilt from its start\n")
+	require.Contains(t, r.stderr, "built\njob job-3-prod: the log of attempt 1 was not kept past byte 5\nrebuilt from its start\n")
 	require.Contains(t, r.stdout, "success")
 }
 
@@ -105,16 +105,16 @@ func TestCIRunMovesOnFromARunItCouldNotRead(t *testing.T) {
 	x.f.finish = buildv2.JobStatus_JobStatusClaimed
 	x.f.endOnFollow = true
 	x.f.mu.Lock()
-	x.f.refused["job-3/1"], x.f.rerunOnDrop = true, true
-	x.f.runLogs["job-3/2"] = "rebuilt\n"
+	x.f.refused["job-3-prod/1"], x.f.rerunOnDrop = true, true
+	x.f.runLogs["job-3-prod/2"] = "rebuilt\n"
 	x.f.mu.Unlock()
 	r := x.run("ci", "run", "--dir", x.dir, "--commit", strings.Repeat("c", 40), "--branch", "main", "--interval", "10ms")
 	require.Zero(t, r.code, r.stderr)
-	require.Contains(t, r.stderr, "job job-3: the log of attempt 1 was read to byte 0; attempt 2 follows\nrebuilt\n")
+	require.Contains(t, r.stderr, "job job-3-prod: the log of attempt 1 was read to byte 0; attempt 2 follows\nrebuilt\n")
 
 	x.f.mu.Lock()
 	x.f.finish, x.f.rerunOnDrop = buildv2.JobStatus_JobStatusSuccess, false
-	x.f.refused["job-4/1"] = true
+	x.f.refused["job-4-prod/1"] = true
 	x.f.mu.Unlock()
 	r = x.run("ci", "run", "--dir", x.dir, "--commit", strings.Repeat("d", 40), "--branch", "main", "--interval", "10ms")
 	require.Zero(t, r.code, r.stderr)

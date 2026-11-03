@@ -97,9 +97,9 @@ func newFrontend(t *testing.T) *frontend {
 		finish:    buildv2.JobStatus_JobStatusSuccess,
 		published: map[string][]byte{},
 		jobs: map[string]*buildv2.Job{
-			"job-1":    {Id: "job-1", Status: buildv2.JobStatus_JobStatusSuccess, RepositoryKey: "github.com/acme/pay", Ref: "refs/heads/main", CommitSha: "0123456789abcdef0123", Timestamp: 1700000000, Attempt: 1, AssetCid: map[string]string{"res-a": "bafyA"}, Logs: map[string]string{"1": "bafylog"}},
-			"job-live": {Id: "job-live", Status: buildv2.JobStatus_JobStatusClaimed, RepositoryKey: "github.com/acme/pay", Ref: "refs/heads/main", CommitSha: "0123456789abcdef0123", Timestamp: 1700000050, Attempt: 1},
-			"job-2":    {Id: "job-2", Status: buildv2.JobStatus_JobStatusFailed, RepositoryKey: "github.com/acme/cfg", Ref: "refs/heads/main", CommitSha: "fedcba", Timestamp: 1700000100, Attempt: 2},
+			"job-1":    {Id: "job-1", Status: buildv2.JobStatus_JobStatusSuccess, RepositoryKey: "github.com/acme/pay", Ref: "refs/heads/main", CommitSha: "0123456789abcdef0123", Timestamp: 1700000000, Attempt: 1, Environment: "prod", AssetCid: map[string]string{"res-a": "bafyA"}, Logs: map[string]string{"1": "bafylog"}},
+			"job-live": {Id: "job-live", Status: buildv2.JobStatus_JobStatusClaimed, RepositoryKey: "github.com/acme/pay", Ref: "refs/heads/main", CommitSha: "0123456789abcdef0123", Timestamp: 1700000050, Attempt: 1, Environment: "prod"},
+			"job-2":    {Id: "job-2", Status: buildv2.JobStatus_JobStatusFailed, RepositoryKey: "github.com/acme/cfg", Ref: "refs/heads/main", CommitSha: "fedcba", Timestamp: 1700000100, Attempt: 2, Environment: "prod"},
 		},
 		byProj:  map[string][]string{"proj-1": {"job-1", "job-2"}},
 		logs:    map[string]string{"job-1": "step one\nstep two\n", "job-live": "step one\nstep two\n"},
@@ -323,10 +323,14 @@ func newFrontend(t *testing.T) *frontend {
 	}))
 	queue := func(w http.ResponseWriter, what string) {
 		f.mu.Lock()
+		// A PUSH IS A PLAN, which queues one job per environment the commit feeds:
+		// here one, which is where the build and its log are.
 		id := "job-" + strconv.Itoa(len(f.queued)+3)
+		built := id + "-prod"
 		f.queued = append(f.queued, what)
-		f.jobs[id] = &buildv2.Job{Id: id, Status: f.finish, Timestamp: 1700000300, Attempt: 1, Logs: map[string]string{"1": "bafylog"}}
-		f.logs[id] = "built " + what + "\n"
+		f.jobs[id] = &buildv2.Job{Id: id, Status: buildv2.JobStatus_JobStatusSuccess, Timestamp: 1700000300, Attempt: 1, Children: []string{built}}
+		f.jobs[built] = &buildv2.Job{Id: built, Status: f.finish, Timestamp: 1700000300, Attempt: 1, Environment: "prod", Logs: map[string]string{"1": "bafylog"}}
+		f.logs[built] = "built " + what + "\n"
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusAccepted)
 		json.NewEncoder(w).Encode(map[string]string{"job_id": id})
@@ -470,7 +474,7 @@ func (f *frontend) pushLater(project, id, log string) {
 }
 
 func (f *frontend) addJobLocked(project, id, log string) {
-	f.jobs[id] = &buildv2.Job{Id: id, Status: buildv2.JobStatus_JobStatusClaimed, Timestamp: 1700000200, Attempt: 1}
+	f.jobs[id] = &buildv2.Job{Id: id, Status: buildv2.JobStatus_JobStatusClaimed, Timestamp: 1700000200, Attempt: 1, Environment: "prod"}
 	f.byProj[project] = append(f.byProj[project], id)
 	f.logs[id] = log
 }
@@ -491,7 +495,7 @@ type liveLog struct {
 func (f *frontend) building(t *testing.T, id, first string) *liveLog {
 	l := &liveLog{f: f, id: id, text: first, grew: make(chan struct{})}
 	f.mu.Lock()
-	f.jobs[id] = &buildv2.Job{Id: id, Status: buildv2.JobStatus_JobStatusClaimed, Timestamp: 1700000400, Attempt: 1}
+	f.jobs[id] = &buildv2.Job{Id: id, Status: buildv2.JobStatus_JobStatusClaimed, Timestamp: 1700000400, Attempt: 1, Environment: "prod"}
 	if f.live == nil {
 		f.live = map[string]*liveLog{}
 	}
