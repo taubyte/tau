@@ -4,117 +4,41 @@
 // 	protoc        (unknown)
 // source: tau/build/v2/build.proto
 
-// build's inter-service RPC surface. v1's patrick (webhook + job store) and
-// monkey (CI runner) merge into one v2 service, `build`, split into two
-// ROLES on either side of a trust boundary rather than a scaling one
-// (service-topology.md §2): a public FRONTEND that takes webhooks off the
-// internet, and a private BACKEND that clones, builds and publishes.
+// build's inter-service RPC surface. v1's patrick (webhook + job store) and monkey
+// (CI runner) become two v2 services on either side of a trust boundary
+// (.notes/v2/build-topology.md): `build`, public, which takes webhooks and the job
+// API off the internet and OWNS THE QUEUE AND THE JOB RECORDS; and `runner`,
+// private, N of them, which hold no state and run what build hands them. Public
+// and dangerous are different axes: build is exposed to hostile INPUT, a runner to
+// hostile CODE (a repository's build.sh), so consensus stays off the machine that
+// runs it.
 //
-// EVERY RPC BELOW IS SERVED BY THE BACKEND. The frontend calls them; it
-// hosts no RPC surface of its own. Its only listener is plain HTTP:
-//   - a forge's push webhook (POST /hook/{hook}), verified under the scheme
-//     and secret stored with the hook, which it fetches from auth over
-//     tau.auth.v2's already-modeled HookService.Get — not duplicated here.
-//   - the forge-token-authenticated job API a human or the CLI calls
-//     (v1's services/patrick/api.go's setupJobRoutes: GET /jobs/{projectId},
-//     GET /job/{jid}, POST /cancel/{jid}, POST /retry/{jid}, plus
-//     GET /download/{jobId}/{resourceId} and GET /logs/{cid}).
-// Both are caller-facing HTTP, not peer-to-peer RPC between v2 services, for
-// the identical reason auth.proto keeps auth's GitHub-token HTTP surface
-// (github_http_endpoints.go, domains_http_endpoints.go) out of auth.proto —
-// restated there, not repeated here. The job API's four mutating/reading
-// routes are why QueueService and JobService below exist at all: the
-// frontend answers them by calling into the backend, which is where the
-// queue and the job records actually live.
+// EVERY RPC BELOW IS SERVED BY BUILD, on /tau/build/v2. QueueService and JobService
+// answer build's own HTTP routes on whichever build node leads the queue;
+// RunnerService is what a runner asks for work. BUILD NEVER DIALS A RUNNER, and a
+// runner serves nothing: a runner opens the stream, so the side that runs hostile
+// code is never the side that is asked.
 //
-// AN EMPTY SURFACE IS A STRONG CLAIM AND IT IS MEANT AS ONE. The frontend is
-// the one process in this service a stranger can reach, so trust across the
-// boundary has to run in exactly one direction: the frontend may ASK the
-// backend, and may never be asked. A p2p listener on the frontend reverses
-// that — every node in the swarm would then be dialling, and believing, a
-// process whose input is an unauthenticated POST body, and the peer identity
-// on the far side of that stream (service-conventions.md §5b) would say
-// "a tau node" while meaning "whatever reached the webhook handler". The
-// emptiness IS the boundary: it is what service-topology.md §2's capability
-// list ("it needs no container runtime, no clone credentials, no build
-// images, no publish rights") reduces to on the wire, since a capability the
-// frontend cannot be asked to exercise is one it does not need to hold.
+// ONE PACKAGE, SEVERAL `service` BLOCKS, as auth.proto does: a node's protocol id
+// is derived from the package (`tau.build.v2` -> `/tau/build/v2`), and the blocks
+// are facets of one job lifecycle — created through QueueService, observed and
+// administered through JobService, run through RunnerService.
 //
-// So the file is falsifiable rather than merely asserted: the day the
-// frontend must be CALLED, it needs a package of its own, which is a
-// protocol id of its own (§2d), which is a second listener on the public
-// side — none of which can be reached by adding a `service` block here.
-// That is deliberately more friction than an edit to this file, because it
-// is the change that deserves the review.
+// IDENTITY, as in auth.proto: a repository is named by its canonical clone-URL key
+// alone (pkg/git/repokey: host/owner/name), never a provider-native or numeric id,
+// and a clone URL is never carried — see PushEvent.
 //
-// What a compiled descriptor CANNOT see is which role serves which block —
-// pkg/proto/rules_test.go names that gap rather than pretending to close
-// it, and refuses the capability NAMES (clone, checkout, run/exec a
-// container, push an image, publish) as the nearest mechanical proxy.
+// THE QUEUE IS A TRUST BOUNDARY: every field QueueService.Enqueue accepts
+// originates in a webhook delivered off the internet, so the crossing is small and
+// typed rather than a copy of whatever shape the provider's payload has. PushEvent
+// argues it in place. JobService's calls carry a job or project id an
+// authenticated caller was already handed, and who that caller is is build's
+// authorization, never a field here.
 //
-// ONE PACKAGE, TWO `service` BLOCKS, NOT TWO PACKAGES. auth.proto already
-// sets the precedent this follows: one proto package per v2 SERVICE (in
-// service-topology.md's sense — the process that owns a protocol id and a
-// mux), containing as many `service` blocks as the domain has facets; a
-// node's protocol id is derived from the PACKAGE
-// (`rpc.Protocol(...ServiceName)` -> `/<package, dots as slashes>`, so
-// `tau.build.v2` -> `/tau/build/v2`, the row service-conventions.md §2d's
-// table already reserves for this service), so tau.auth.v2 already mounts
-// five `service` blocks (ProjectService, RepositoryService, HookService,
-// DomainService, CertificateService) behind one protocol id and one mux.
-// The `tau.` segment is that rule's anti-collision half and is not optional:
-// `build.v2` would derive `/build/v2`, a bare service-name id with nothing to
-// say it belongs to tau rather than to anything else on the swarm.
-// Splitting QueueService and JobService into their own packages would buy no isolation — both are
-// served by the same backend process on the same listener — and would force
-// either duplicating JobStatus/Job/JobRef or an awkward cross-package import
-// for two facets of one job lifecycle: a job is CREATED through
-// QueueService and OBSERVED/ADMINISTERED through JobService. There is no
-// `tau.build.frontend.v2`/`tau.build.backend.v2` split for the same reason:
-// the frontend serves no RPC of its own to need one.
-//
-// IDENTITY, as in auth.proto: a repository is named by its canonical
-// clone-URL key alone (pkg/git/repokey: host/owner/name) — never a
-// provider-native or numeric id, never a `oneof` over providers, because the
-// host in the key already says which provider serves it. v1's
-// `Repository.ID int` (v1's core/services/patrick/types.go, cbor field 65) and
-// its deprecated `SSHURL` (superseded by `URI`, per this agent's decision 3)
-// do not survive into PushEvent or Job below: the key is carried, the
-// integer is not, and a clone URL is never carried either — see PushEvent.
-//
-// THE QUEUE IS A TRUST BOUNDARY (service-topology.md §5, decision D5): every
-// field QueueService.Enqueue accepts originates in a webhook delivered off
-// the internet to the frontend, so the crossing is kept small and typed
-// rather than a copy of whatever shape the provider's payload happens to
-// have. See PushEvent and QueueService for the argument in full — it is the
-// central decision this file exists to encode, so it is argued once, in
-// place, rather than summarized here.
-//
-// FIVE RPCs CROSS FROM FRONTEND TO BACKEND, NOT ONE, and the distinction is
-// what the field lists below turn on rather than a technicality. Enqueue is
-// the only one whose contents a STRANGER authored: an unauthenticated POST
-// to the webhook route decides them, which is why PushEvent carries three
-// fields and re-derives the rest. JobService's four carry a job id or a
-// project id that an authenticated caller was already handed — a different
-// input with a different exposure, so the shape restriction that produced
-// PushEvent does not apply to them and is not imitated there. What does
-// apply to them, and is NOT in this file, is that the backend cannot take
-// the frontend's word for WHO is asking: the identity on a p2p stream is
-// the calling node's (service-conventions.md §5b), and a frontend relaying
-// four HTTP routes is one node relaying many humans. That is authorization,
-// it belongs in the backend's authz.go beside auth's, and a field in these
-// messages would be exactly the identity-the-caller-encodes that §5b exists
-// to refuse.
-//
-// STREAMING, as in auth.proto: List below is server-streaming because it
-// enumerates an unbounded, unpaginated store — both v1's raw job-id stream
-// action (v1's services/patrick/api.go's listHandler, `db.List(ctx, "/jobs/")`
-// plus the archive, with no bound) and its project-scoped HTTP twin
-// (`projectAllJobHandler`, `db.List(ctx, "/by/project/"+projectId+"/")`)
-// materialize the whole result in memory before answering today. Every
-// other RPC here is a single lookup or a single mutation and stays unary,
-// matching today's cbor transport's fire-once, first-response-wins send —
-// the same reasoning auth.proto states once and this file does not repeat.
+// STREAMING, as in auth.proto: List is server-streaming because it enumerates an
+// unbounded store; Follow streams a run's events; RunnerService.Serve is one
+// runner's lifetime. Every other RPC is a single lookup or mutation and stays
+// unary.
 
 package buildv2
 
@@ -142,7 +66,7 @@ type JobStatus int32
 
 const (
 	JobStatus_JobStatusOpen JobStatus = 0
-	// Claimed: a backend node has popped this job off the queue and is
+	// Claimed: build has popped this job off the queue and a runner is
 	// running it. v1 names this JobStatusLocked; renamed to match the
 	// claim/visibility-timeout vocabulary the raft `queue` kind specifies
 	// (cluster-service.md §2, services-are-rewritten.md §5) — "locked"
@@ -239,18 +163,17 @@ func (*Empty) Descriptor() ([]byte, []int) {
 	return file_tau_build_v2_build_proto_rawDescGZIP(), []int{0}
 }
 
-// PushEvent is what a verified GitHub push becomes on the wire from
-// frontend to backend, and it is the ONLY message in this file whose
+// PushEvent is what a verified push becomes when it crosses into the queue,
+// and it is the ONLY message in this file whose
 // fields originate, even indirectly, in a webhook payload. Three fields,
 // by deliberate and argued exclusion of everything else v1's cbor `Meta`
 // carried (v1's core/services/patrick/types.go):
 //
 //   - `repository_key` — pkg/git/repokey's canonical identity, parsed by
-//     the frontend from the payload's repository URL. Never the numeric
-//     `Repository.ID` v1 sent instead: the backend re-derives clone access
-//     for this key by calling tau.auth.v2's RepositoryService.Get (already
-//     modeled — deploy_key comes back from there), not from a URL or a
-//     credential the frontend hands it. `repository_key` alone is also
+//     build's webhook handler from the payload's repository URL. Never the
+//     numeric `Repository.ID` v1 sent instead: a runner re-derives clone
+//     access for this key from the deploy key its link stored in the vault,
+//     not from a URL or a credential build hands it. `repository_key` alone is also
 //     enough to reconstruct a clone address, because it already contains
 //     the host that serves the repository — carrying a separate clone URL
 //     across this boundary would only ever agree with the key or lie about
@@ -258,10 +181,10 @@ func (*Empty) Descriptor() ([]byte, []int) {
 //     field beside a repository key.
 //   - `ref` — the pushed git ref, e.g. "refs/heads/main". Branch-eligibility
 //     policy (v1's check against legacy/specs/common's `DefaultBranches`,
-//     `main`/`master`) is the FRONTEND's decision, made before Enqueue is
-//     ever called: a push to an ineligible ref is refused at the HTTP
-//     handler and never reaches this RPC. So `ref` here already passed that
-//     policy — it is not raw material for the backend to re-filter.
+//     `main`/`master`) is decided at build's webhook handler before Enqueue
+//     is ever called: a push to an ineligible ref is refused there and never
+//     reaches this RPC. So `ref` here already passed that policy — it is not
+//     raw material for a runner to re-filter.
 //   - `commit_sha` — the pushed HEAD. v1 carried this twice (`Meta.After`
 //     and `Meta.HeadCommit.ID`), collapsed to one field here: a push event
 //     carries them equal, and two fields that must always agree are one
@@ -271,17 +194,17 @@ func (*Empty) Descriptor() ([]byte, []int) {
 // NOT HERE, on D5's explicit ruling (service-topology.md §5): the payload's
 // per-commit `commits[].added|modified|removed` list — provider-shaped,
 // truncates past 20 commits or 3000 files in GitHub's own payload, and
-// forwarding it would hand the backend's path-filter logic data shaped by
+// forwarding it would hand a runner's path-filter logic data shaped by
 // an internet-facing listener instead of by the repository itself. `before`
 // is not carried either, and not merely as a smaller version of the same
 // caution: it is exactly as webhook-supplied as `commit_sha` is, so
 // carrying it would not have bought back any trust `commit_sha` alone
-// lacks. Instead the backend computes its own before..after diff AFTER the
-// clone: `commit_sha` is `after`, and `before` is whatever commit sha this
-// backend itself last processed for this exact (repository_key, ref) —
-// read from its own job history, never from the frontend. A ref with no
-// prior processed commit has no `before` to diff against and the backend
-// treats it as a full build, exactly what a GitHub payload's all-zero
+// lacks. Instead a runner computes its own before..after diff AFTER the
+// clone: `commit_sha` is `after`, and `before` is whatever commit sha build
+// last finished for this exact (repository_key, ref) — read from build's own
+// job history and handed down in Work.before, never from the webhook. A ref
+// with no prior processed commit has no `before` to diff against and is
+// built in full, exactly what a GitHub payload's all-zero
 // `before` signals today for a newly created branch.
 //
 // One consequence worth stating rather than leaving implicit: v1's job id
@@ -402,8 +325,8 @@ func (x *JobRef) GetId() string {
 // `Repository` carries `repository_key` in place of the numeric
 // `Repository.ID`/deprecated `SSHURL`, per decision 3. `project_id` is
 // deliberately absent, matching v1 exactly: v1 never stored it on the job
-// either, only in a separate `/by/project/<id>/<jid>` index the backend
-// keeps privately — a project is how a caller finds a job (see List
+// either, only in a separate `/by/project/<id>/<jid>` index build keeps
+// privately — a project is how a caller finds a job (see List
 // below), not a field of the job itself.
 type Job struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -597,9 +520,8 @@ func (x *ProjectRef) GetId() string {
 	return ""
 }
 
-// JobService answers what the frontend's GitHub-token-authenticated HTTP
-// job API (out of scope here, see this file's header) needs from the
-// backend, which is where every job record actually lives.
+// JobService answers what build's token-authenticated HTTP job API needs from
+// the node leading the queue, which is where every job record is written.
 //
 // Cancel and Retry are each ONE RPC where v1 needed a round trip between
 // two services to do the equivalent thing, and stating why is worth doing
@@ -612,18 +534,13 @@ func (x *ProjectRef) GetId() string {
 //     to patrick with the accumulated logs so patrick can write
 //     JobStatusCancelled (v1's services/monkey/api_monkeys.go's cancelHandler
 //     calling `m.patrickClient.Cancel(jid, monkey.Job.Logs)`). That
-//     round trip exists only because monkey (execution) and patrick (the
-//     job record) are different services. In v2 the backend is both, so
-//     stopping the run and writing the terminal status are two lines in
-//     one process; Cancel(JobRef) returns (Empty) is the whole surface a
-//     caller outside the backend ever needs, and no log payload crosses
-//     because the backend already holds the logs it is about to write.
-//     A backend node that does not itself hold the running job forwards
-//     to the one that does using this SAME RPC against that specific peer
-//     (service-conventions.md §3's `pool.Peer(ctx, pid)`, the peer read
-//     from the same claim record the raft queue already tracks) — that is
-//     an implementation detail of one backend node calling another, not a
-//     second method here.
+//     round trip exists only because monkey held the run and patrick the
+//     record. In v2 build holds both the record and the runner's stream, so
+//     stopping the run (a cancel down that stream) and writing the terminal
+//     status are one call; Cancel(JobRef) returns (Empty) is the whole
+//     surface, and no log payload crosses because build already writes the
+//     log. A build node that does not lead forwards with this SAME RPC to the
+//     one that does — one build node calling another, not a second method.
 //   - Retry returns Empty, not the job's id: v1's retryJob
 //     (v1's services/patrick/api.go) always re-queues the SAME id it was given
 //     and returns exactly that id back — `{"retry": jid}` — which the
@@ -835,6 +752,451 @@ func (x *Built) GetCid() string {
 	return ""
 }
 
+// Assignment is what build hands a runner: a job to plan or to build, or the word
+// to stop the job in hand.
+type Assignment struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Kind:
+	//
+	//	*Assignment_Plan
+	//	*Assignment_Build
+	//	*Assignment_Cancel
+	Kind          isAssignment_Kind `protobuf_oneof:"kind"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Assignment) Reset() {
+	*x = Assignment{}
+	mi := &file_tau_build_v2_build_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Assignment) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Assignment) ProtoMessage() {}
+
+func (x *Assignment) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_build_v2_build_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Assignment.ProtoReflect.Descriptor instead.
+func (*Assignment) Descriptor() ([]byte, []int) {
+	return file_tau_build_v2_build_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *Assignment) GetKind() isAssignment_Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return nil
+}
+
+func (x *Assignment) GetPlan() *Work {
+	if x != nil {
+		if x, ok := x.Kind.(*Assignment_Plan); ok {
+			return x.Plan
+		}
+	}
+	return nil
+}
+
+func (x *Assignment) GetBuild() *Work {
+	if x != nil {
+		if x, ok := x.Kind.(*Assignment_Build); ok {
+			return x.Build
+		}
+	}
+	return nil
+}
+
+func (x *Assignment) GetCancel() *Empty {
+	if x != nil {
+		if x, ok := x.Kind.(*Assignment_Cancel); ok {
+			return x.Cancel
+		}
+	}
+	return nil
+}
+
+type isAssignment_Kind interface {
+	isAssignment_Kind()
+}
+
+type Assignment_Plan struct {
+	// plan reads which environments the pushed commit feeds; Finished.environments
+	// answers it.
+	Plan *Work `protobuf:"bytes,1,opt,name=plan,proto3,oneof"`
+}
+
+type Assignment_Build struct {
+	// build builds one environment.
+	Build *Work `protobuf:"bytes,2,opt,name=build,proto3,oneof"`
+}
+
+type Assignment_Cancel struct {
+	// cancel stops the job in hand: it was cancelled, or its claim ran out.
+	Cancel *Empty `protobuf:"bytes,3,opt,name=cancel,proto3,oneof"`
+}
+
+func (*Assignment_Plan) isAssignment_Kind() {}
+
+func (*Assignment_Build) isAssignment_Kind() {}
+
+func (*Assignment_Cancel) isAssignment_Kind() {}
+
+// Work is everything a run is given, derived by build from the job record and
+// never from the webhook.
+type Work struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	RepositoryKey string                 `protobuf:"bytes,2,opt,name=repository_key,json=repositoryKey,proto3" json:"repository_key,omitempty"`
+	Ref           string                 `protobuf:"bytes,3,opt,name=ref,proto3" json:"ref,omitempty"`
+	CommitSha     string                 `protobuf:"bytes,4,opt,name=commit_sha,json=commitSha,proto3" json:"commit_sha,omitempty"`
+	// before is the last commit build finished for this (repository, ref), from its
+	// own history; empty is a full build.
+	Before    string `protobuf:"bytes,5,opt,name=before,proto3" json:"before,omitempty"`
+	ProjectId string `protobuf:"bytes,6,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Attempt   uint32 `protobuf:"varint,7,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	// environment is the deployment a build builds, empty for a plan.
+	Environment   string `protobuf:"bytes,8,opt,name=environment,proto3" json:"environment,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Work) Reset() {
+	*x = Work{}
+	mi := &file_tau_build_v2_build_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Work) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Work) ProtoMessage() {}
+
+func (x *Work) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_build_v2_build_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Work.ProtoReflect.Descriptor instead.
+func (*Work) Descriptor() ([]byte, []int) {
+	return file_tau_build_v2_build_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *Work) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+func (x *Work) GetRepositoryKey() string {
+	if x != nil {
+		return x.RepositoryKey
+	}
+	return ""
+}
+
+func (x *Work) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
+func (x *Work) GetCommitSha() string {
+	if x != nil {
+		return x.CommitSha
+	}
+	return ""
+}
+
+func (x *Work) GetBefore() string {
+	if x != nil {
+		return x.Before
+	}
+	return ""
+}
+
+func (x *Work) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *Work) GetAttempt() uint32 {
+	if x != nil {
+		return x.Attempt
+	}
+	return 0
+}
+
+func (x *Work) GetEnvironment() string {
+	if x != nil {
+		return x.Environment
+	}
+	return ""
+}
+
+// RunnerReport is what a runner says on its stream.
+type RunnerReport struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Kind:
+	//
+	//	*RunnerReport_Ready
+	//	*RunnerReport_Output
+	//	*RunnerReport_Stored
+	//	*RunnerReport_Finished
+	Kind          isRunnerReport_Kind `protobuf_oneof:"kind"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunnerReport) Reset() {
+	*x = RunnerReport{}
+	mi := &file_tau_build_v2_build_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunnerReport) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunnerReport) ProtoMessage() {}
+
+func (x *RunnerReport) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_build_v2_build_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunnerReport.ProtoReflect.Descriptor instead.
+func (*RunnerReport) Descriptor() ([]byte, []int) {
+	return file_tau_build_v2_build_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *RunnerReport) GetKind() isRunnerReport_Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return nil
+}
+
+func (x *RunnerReport) GetReady() *Empty {
+	if x != nil {
+		if x, ok := x.Kind.(*RunnerReport_Ready); ok {
+			return x.Ready
+		}
+	}
+	return nil
+}
+
+func (x *RunnerReport) GetOutput() []byte {
+	if x != nil {
+		if x, ok := x.Kind.(*RunnerReport_Output); ok {
+			return x.Output
+		}
+	}
+	return nil
+}
+
+func (x *RunnerReport) GetStored() *Stored {
+	if x != nil {
+		if x, ok := x.Kind.(*RunnerReport_Stored); ok {
+			return x.Stored
+		}
+	}
+	return nil
+}
+
+func (x *RunnerReport) GetFinished() *Finished {
+	if x != nil {
+		if x, ok := x.Kind.(*RunnerReport_Finished); ok {
+			return x.Finished
+		}
+	}
+	return nil
+}
+
+type isRunnerReport_Kind interface {
+	isRunnerReport_Kind()
+}
+
+type RunnerReport_Ready struct {
+	// ready is the first report: this runner takes work.
+	Ready *Empty `protobuf:"bytes,1,opt,name=ready,proto3,oneof"`
+}
+
+type RunnerReport_Output struct {
+	// output is what the job in hand wrote to its log, as it wrote it.
+	Output []byte `protobuf:"bytes,2,opt,name=output,proto3,oneof"`
+}
+
+type RunnerReport_Stored struct {
+	// stored is an artifact the runner put in the storage service.
+	Stored *Stored `protobuf:"bytes,3,opt,name=stored,proto3,oneof"`
+}
+
+type RunnerReport_Finished struct {
+	// finished ends the job in hand.
+	Finished *Finished `protobuf:"bytes,4,opt,name=finished,proto3,oneof"`
+}
+
+func (*RunnerReport_Ready) isRunnerReport_Kind() {}
+
+func (*RunnerReport_Output) isRunnerReport_Kind() {}
+
+func (*RunnerReport_Stored) isRunnerReport_Kind() {}
+
+func (*RunnerReport_Finished) isRunnerReport_Kind() {}
+
+// Stored is one artifact of the job in hand, already kept: the runner puts it in
+// the storage service itself, so its bytes never cross build.
+type Stored struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ResourceId    string                 `protobuf:"bytes,1,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
+	Cid           string                 `protobuf:"bytes,2,opt,name=cid,proto3" json:"cid,omitempty"`
+	Bytes         uint64                 `protobuf:"varint,3,opt,name=bytes,proto3" json:"bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Stored) Reset() {
+	*x = Stored{}
+	mi := &file_tau_build_v2_build_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Stored) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Stored) ProtoMessage() {}
+
+func (x *Stored) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_build_v2_build_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Stored.ProtoReflect.Descriptor instead.
+func (*Stored) Descriptor() ([]byte, []int) {
+	return file_tau_build_v2_build_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *Stored) GetResourceId() string {
+	if x != nil {
+		return x.ResourceId
+	}
+	return ""
+}
+
+func (x *Stored) GetCid() string {
+	if x != nil {
+		return x.Cid
+	}
+	return ""
+}
+
+func (x *Stored) GetBytes() uint64 {
+	if x != nil {
+		return x.Bytes
+	}
+	return 0
+}
+
+// Finished is how the job in hand ended: error empty is a success, anything else
+// is the build's failure, in its own words.
+type Finished struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Error string                 `protobuf:"bytes,1,opt,name=error,proto3" json:"error,omitempty"`
+	// environments answers a plan.
+	Environments  []string `protobuf:"bytes,2,rep,name=environments,proto3" json:"environments,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Finished) Reset() {
+	*x = Finished{}
+	mi := &file_tau_build_v2_build_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Finished) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Finished) ProtoMessage() {}
+
+func (x *Finished) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_build_v2_build_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Finished.ProtoReflect.Descriptor instead.
+func (*Finished) Descriptor() ([]byte, []int) {
+	return file_tau_build_v2_build_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *Finished) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *Finished) GetEnvironments() []string {
+	if x != nil {
+		return x.Environments
+	}
+	return nil
+}
+
 // Event is one thing that happened to one run of a job, as a follower sees it:
 // the run's status as it moves, and each line of its output. A follower reads
 // until a terminal status.
@@ -858,7 +1220,7 @@ type Job_Event struct {
 
 func (x *Job_Event) Reset() {
 	*x = Job_Event{}
-	mi := &file_tau_build_v2_build_proto_msgTypes[10]
+	mi := &file_tau_build_v2_build_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -870,7 +1232,7 @@ func (x *Job_Event) String() string {
 func (*Job_Event) ProtoMessage() {}
 
 func (x *Job_Event) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_build_v2_build_proto_msgTypes[10]
+	mi := &file_tau_build_v2_build_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -995,7 +1357,38 @@ const file_tau_build_v2_build_proto_rawDesc = "" +
 	"\venvironment\x18\x02 \x01(\tR\venvironment\x12\x1a\n" +
 	"\bresource\x18\x03 \x01(\tR\bresource\"\x19\n" +
 	"\x05Built\x12\x10\n" +
-	"\x03cid\x18\x01 \x01(\tR\x03cid*w\n" +
+	"\x03cid\x18\x01 \x01(\tR\x03cid\"\x99\x01\n" +
+	"\n" +
+	"Assignment\x12(\n" +
+	"\x04plan\x18\x01 \x01(\v2\x12.tau.build.v2.WorkH\x00R\x04plan\x12*\n" +
+	"\x05build\x18\x02 \x01(\v2\x12.tau.build.v2.WorkH\x00R\x05build\x12-\n" +
+	"\x06cancel\x18\x03 \x01(\v2\x13.tau.build.v2.EmptyH\x00R\x06cancelB\x06\n" +
+	"\x04kind\"\xe8\x01\n" +
+	"\x04Work\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12%\n" +
+	"\x0erepository_key\x18\x02 \x01(\tR\rrepositoryKey\x12\x10\n" +
+	"\x03ref\x18\x03 \x01(\tR\x03ref\x12\x1d\n" +
+	"\n" +
+	"commit_sha\x18\x04 \x01(\tR\tcommitSha\x12\x16\n" +
+	"\x06before\x18\x05 \x01(\tR\x06before\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x06 \x01(\tR\tprojectId\x12\x18\n" +
+	"\aattempt\x18\a \x01(\rR\aattempt\x12 \n" +
+	"\venvironment\x18\b \x01(\tR\venvironment\"\xc3\x01\n" +
+	"\fRunnerReport\x12+\n" +
+	"\x05ready\x18\x01 \x01(\v2\x13.tau.build.v2.EmptyH\x00R\x05ready\x12\x18\n" +
+	"\x06output\x18\x02 \x01(\fH\x00R\x06output\x12.\n" +
+	"\x06stored\x18\x03 \x01(\v2\x14.tau.build.v2.StoredH\x00R\x06stored\x124\n" +
+	"\bfinished\x18\x04 \x01(\v2\x16.tau.build.v2.FinishedH\x00R\bfinishedB\x06\n" +
+	"\x04kind\"Q\n" +
+	"\x06Stored\x12\x1f\n" +
+	"\vresource_id\x18\x01 \x01(\tR\n" +
+	"resourceId\x12\x10\n" +
+	"\x03cid\x18\x02 \x01(\tR\x03cid\x12\x14\n" +
+	"\x05bytes\x18\x03 \x01(\x04R\x05bytes\"D\n" +
+	"\bFinished\x12\x14\n" +
+	"\x05error\x18\x01 \x01(\tR\x05error\x12\"\n" +
+	"\fenvironments\x18\x02 \x03(\tR\fenvironments*w\n" +
 	"\tJobStatus\x12\x11\n" +
 	"\rJobStatusOpen\x10\x00\x12\x14\n" +
 	"\x10JobStatusClaimed\x10\x01\x12\x14\n" +
@@ -1011,7 +1404,9 @@ const file_tau_build_v2_build_proto_rawDesc = "" +
 	"\x06Cancel\x12\x14.tau.build.v2.JobRef\x1a\x13.tau.build.v2.Empty\x122\n" +
 	"\x05Retry\x12\x14.tau.build.v2.JobRef\x1a\x13.tau.build.v2.Empty\x12>\n" +
 	"\bArtifact\x12\x1d.tau.build.v2.ArtifactRequest\x1a\x13.tau.build.v2.Built\x12@\n" +
-	"\x06Follow\x12\x1b.tau.build.v2.FollowRequest\x1a\x17.tau.build.v2.Job.Event0\x01B\xab\x01\n" +
+	"\x06Follow\x12\x1b.tau.build.v2.FollowRequest\x1a\x17.tau.build.v2.Job.Event0\x012R\n" +
+	"\rRunnerService\x12A\n" +
+	"\x05Serve\x12\x1a.tau.build.v2.RunnerReport\x1a\x18.tau.build.v2.Assignment(\x010\x01B\xab\x01\n" +
 	"\x10com.tau.build.v2B\n" +
 	"BuildProtoP\x01Z9github.com/taubyte/tau/pkg/proto/gen/tau/build/v2;buildv2\xa2\x02\x03TBX\xaa\x02\fTau.Build.V2\xca\x02\fTau\\Build\\V2\xe2\x02\x18Tau\\Build\\V2\\GPBMetadata\xea\x02\x0eTau::Build::V2b\x06proto3"
 
@@ -1028,7 +1423,7 @@ func file_tau_build_v2_build_proto_rawDescGZIP() []byte {
 }
 
 var file_tau_build_v2_build_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_tau_build_v2_build_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_tau_build_v2_build_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_tau_build_v2_build_proto_goTypes = []any{
 	(JobStatus)(0),          // 0: tau.build.v2.JobStatus
 	(*Empty)(nil),           // 1: tau.build.v2.Empty
@@ -1039,34 +1434,47 @@ var file_tau_build_v2_build_proto_goTypes = []any{
 	(*FollowRequest)(nil),   // 6: tau.build.v2.FollowRequest
 	(*ArtifactRequest)(nil), // 7: tau.build.v2.ArtifactRequest
 	(*Built)(nil),           // 8: tau.build.v2.Built
-	nil,                     // 9: tau.build.v2.Job.LogsEntry
-	nil,                     // 10: tau.build.v2.Job.AssetCidEntry
-	(*Job_Event)(nil),       // 11: tau.build.v2.Job.Event
+	(*Assignment)(nil),      // 9: tau.build.v2.Assignment
+	(*Work)(nil),            // 10: tau.build.v2.Work
+	(*RunnerReport)(nil),    // 11: tau.build.v2.RunnerReport
+	(*Stored)(nil),          // 12: tau.build.v2.Stored
+	(*Finished)(nil),        // 13: tau.build.v2.Finished
+	nil,                     // 14: tau.build.v2.Job.LogsEntry
+	nil,                     // 15: tau.build.v2.Job.AssetCidEntry
+	(*Job_Event)(nil),       // 16: tau.build.v2.Job.Event
 }
 var file_tau_build_v2_build_proto_depIdxs = []int32{
 	0,  // 0: tau.build.v2.Job.status:type_name -> tau.build.v2.JobStatus
-	9,  // 1: tau.build.v2.Job.logs:type_name -> tau.build.v2.Job.LogsEntry
-	10, // 2: tau.build.v2.Job.asset_cid:type_name -> tau.build.v2.Job.AssetCidEntry
-	0,  // 3: tau.build.v2.Job.Event.status:type_name -> tau.build.v2.JobStatus
-	2,  // 4: tau.build.v2.QueueService.Enqueue:input_type -> tau.build.v2.PushEvent
-	3,  // 5: tau.build.v2.JobService.Get:input_type -> tau.build.v2.JobRef
-	5,  // 6: tau.build.v2.JobService.List:input_type -> tau.build.v2.ProjectRef
-	3,  // 7: tau.build.v2.JobService.Cancel:input_type -> tau.build.v2.JobRef
-	3,  // 8: tau.build.v2.JobService.Retry:input_type -> tau.build.v2.JobRef
-	7,  // 9: tau.build.v2.JobService.Artifact:input_type -> tau.build.v2.ArtifactRequest
-	6,  // 10: tau.build.v2.JobService.Follow:input_type -> tau.build.v2.FollowRequest
-	3,  // 11: tau.build.v2.QueueService.Enqueue:output_type -> tau.build.v2.JobRef
-	4,  // 12: tau.build.v2.JobService.Get:output_type -> tau.build.v2.Job
-	3,  // 13: tau.build.v2.JobService.List:output_type -> tau.build.v2.JobRef
-	1,  // 14: tau.build.v2.JobService.Cancel:output_type -> tau.build.v2.Empty
-	1,  // 15: tau.build.v2.JobService.Retry:output_type -> tau.build.v2.Empty
-	8,  // 16: tau.build.v2.JobService.Artifact:output_type -> tau.build.v2.Built
-	11, // 17: tau.build.v2.JobService.Follow:output_type -> tau.build.v2.Job.Event
-	11, // [11:18] is the sub-list for method output_type
-	4,  // [4:11] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	14, // 1: tau.build.v2.Job.logs:type_name -> tau.build.v2.Job.LogsEntry
+	15, // 2: tau.build.v2.Job.asset_cid:type_name -> tau.build.v2.Job.AssetCidEntry
+	10, // 3: tau.build.v2.Assignment.plan:type_name -> tau.build.v2.Work
+	10, // 4: tau.build.v2.Assignment.build:type_name -> tau.build.v2.Work
+	1,  // 5: tau.build.v2.Assignment.cancel:type_name -> tau.build.v2.Empty
+	1,  // 6: tau.build.v2.RunnerReport.ready:type_name -> tau.build.v2.Empty
+	12, // 7: tau.build.v2.RunnerReport.stored:type_name -> tau.build.v2.Stored
+	13, // 8: tau.build.v2.RunnerReport.finished:type_name -> tau.build.v2.Finished
+	0,  // 9: tau.build.v2.Job.Event.status:type_name -> tau.build.v2.JobStatus
+	2,  // 10: tau.build.v2.QueueService.Enqueue:input_type -> tau.build.v2.PushEvent
+	3,  // 11: tau.build.v2.JobService.Get:input_type -> tau.build.v2.JobRef
+	5,  // 12: tau.build.v2.JobService.List:input_type -> tau.build.v2.ProjectRef
+	3,  // 13: tau.build.v2.JobService.Cancel:input_type -> tau.build.v2.JobRef
+	3,  // 14: tau.build.v2.JobService.Retry:input_type -> tau.build.v2.JobRef
+	7,  // 15: tau.build.v2.JobService.Artifact:input_type -> tau.build.v2.ArtifactRequest
+	6,  // 16: tau.build.v2.JobService.Follow:input_type -> tau.build.v2.FollowRequest
+	11, // 17: tau.build.v2.RunnerService.Serve:input_type -> tau.build.v2.RunnerReport
+	3,  // 18: tau.build.v2.QueueService.Enqueue:output_type -> tau.build.v2.JobRef
+	4,  // 19: tau.build.v2.JobService.Get:output_type -> tau.build.v2.Job
+	3,  // 20: tau.build.v2.JobService.List:output_type -> tau.build.v2.JobRef
+	1,  // 21: tau.build.v2.JobService.Cancel:output_type -> tau.build.v2.Empty
+	1,  // 22: tau.build.v2.JobService.Retry:output_type -> tau.build.v2.Empty
+	8,  // 23: tau.build.v2.JobService.Artifact:output_type -> tau.build.v2.Built
+	16, // 24: tau.build.v2.JobService.Follow:output_type -> tau.build.v2.Job.Event
+	9,  // 25: tau.build.v2.RunnerService.Serve:output_type -> tau.build.v2.Assignment
+	18, // [18:26] is the sub-list for method output_type
+	10, // [10:18] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_tau_build_v2_build_proto_init() }
@@ -1074,7 +1482,18 @@ func file_tau_build_v2_build_proto_init() {
 	if File_tau_build_v2_build_proto != nil {
 		return
 	}
+	file_tau_build_v2_build_proto_msgTypes[8].OneofWrappers = []any{
+		(*Assignment_Plan)(nil),
+		(*Assignment_Build)(nil),
+		(*Assignment_Cancel)(nil),
+	}
 	file_tau_build_v2_build_proto_msgTypes[10].OneofWrappers = []any{
+		(*RunnerReport_Ready)(nil),
+		(*RunnerReport_Output)(nil),
+		(*RunnerReport_Stored)(nil),
+		(*RunnerReport_Finished)(nil),
+	}
+	file_tau_build_v2_build_proto_msgTypes[15].OneofWrappers = []any{
 		(*Job_Event_Status)(nil),
 		(*Job_Event_Message)(nil),
 	}
@@ -1084,9 +1503,9 @@ func file_tau_build_v2_build_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_build_v2_build_proto_rawDesc), len(file_tau_build_v2_build_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   11,
+			NumMessages:   16,
 			NumExtensions: 0,
-			NumServices:   2,
+			NumServices:   3,
 		},
 		GoTypes:           file_tau_build_v2_build_proto_goTypes,
 		DependencyIndexes: file_tau_build_v2_build_proto_depIdxs,

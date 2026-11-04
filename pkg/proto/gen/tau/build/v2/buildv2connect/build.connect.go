@@ -2,118 +2,41 @@
 //
 // Source: tau/build/v2/build.proto
 
-// build's inter-service RPC surface. v1's patrick (webhook + job store) and
-// monkey (CI runner) merge into one v2 service, `build`, split into two
-// ROLES on either side of a trust boundary rather than a scaling one
-// (service-topology.md §2): a public FRONTEND that takes webhooks off the
-// internet, and a private BACKEND that clones, builds and publishes.
+// build's inter-service RPC surface. v1's patrick (webhook + job store) and monkey
+// (CI runner) become two v2 services on either side of a trust boundary
+// (.notes/v2/build-topology.md): `build`, public, which takes webhooks and the job
+// API off the internet and OWNS THE QUEUE AND THE JOB RECORDS; and `runner`,
+// private, N of them, which hold no state and run what build hands them. Public
+// and dangerous are different axes: build is exposed to hostile INPUT, a runner to
+// hostile CODE (a repository's build.sh), so consensus stays off the machine that
+// runs it.
 //
-// EVERY RPC BELOW IS SERVED BY THE BACKEND. The frontend calls them; it
-// hosts no RPC surface of its own. Its only listener is plain HTTP:
-//   - a forge's push webhook (POST /hook/{hook}), verified under the scheme
-//     and secret stored with the hook, which it fetches from auth over
-//     tau.auth.v2's already-modeled HookService.Get — not duplicated here.
-//   - the forge-token-authenticated job API a human or the CLI calls
-//     (v1's services/patrick/api.go's setupJobRoutes: GET /jobs/{projectId},
-//     GET /job/{jid}, POST /cancel/{jid}, POST /retry/{jid}, plus
-//     GET /download/{jobId}/{resourceId} and GET /logs/{cid}).
+// EVERY RPC BELOW IS SERVED BY BUILD, on /tau/build/v2. QueueService and JobService
+// answer build's own HTTP routes on whichever build node leads the queue;
+// RunnerService is what a runner asks for work. BUILD NEVER DIALS A RUNNER, and a
+// runner serves nothing: a runner opens the stream, so the side that runs hostile
+// code is never the side that is asked.
 //
-// Both are caller-facing HTTP, not peer-to-peer RPC between v2 services, for
-// the identical reason auth.proto keeps auth's GitHub-token HTTP surface
-// (github_http_endpoints.go, domains_http_endpoints.go) out of auth.proto —
-// restated there, not repeated here. The job API's four mutating/reading
-// routes are why QueueService and JobService below exist at all: the
-// frontend answers them by calling into the backend, which is where the
-// queue and the job records actually live.
+// ONE PACKAGE, SEVERAL `service` BLOCKS, as auth.proto does: a node's protocol id
+// is derived from the package (`tau.build.v2` -> `/tau/build/v2`), and the blocks
+// are facets of one job lifecycle — created through QueueService, observed and
+// administered through JobService, run through RunnerService.
 //
-// AN EMPTY SURFACE IS A STRONG CLAIM AND IT IS MEANT AS ONE. The frontend is
-// the one process in this service a stranger can reach, so trust across the
-// boundary has to run in exactly one direction: the frontend may ASK the
-// backend, and may never be asked. A p2p listener on the frontend reverses
-// that — every node in the swarm would then be dialling, and believing, a
-// process whose input is an unauthenticated POST body, and the peer identity
-// on the far side of that stream (service-conventions.md §5b) would say
-// "a tau node" while meaning "whatever reached the webhook handler". The
-// emptiness IS the boundary: it is what service-topology.md §2's capability
-// list ("it needs no container runtime, no clone credentials, no build
-// images, no publish rights") reduces to on the wire, since a capability the
-// frontend cannot be asked to exercise is one it does not need to hold.
+// IDENTITY, as in auth.proto: a repository is named by its canonical clone-URL key
+// alone (pkg/git/repokey: host/owner/name), never a provider-native or numeric id,
+// and a clone URL is never carried — see PushEvent.
 //
-// So the file is falsifiable rather than merely asserted: the day the
-// frontend must be CALLED, it needs a package of its own, which is a
-// protocol id of its own (§2d), which is a second listener on the public
-// side — none of which can be reached by adding a `service` block here.
-// That is deliberately more friction than an edit to this file, because it
-// is the change that deserves the review.
+// THE QUEUE IS A TRUST BOUNDARY: every field QueueService.Enqueue accepts
+// originates in a webhook delivered off the internet, so the crossing is small and
+// typed rather than a copy of whatever shape the provider's payload has. PushEvent
+// argues it in place. JobService's calls carry a job or project id an
+// authenticated caller was already handed, and who that caller is is build's
+// authorization, never a field here.
 //
-// What a compiled descriptor CANNOT see is which role serves which block —
-// pkg/proto/rules_test.go names that gap rather than pretending to close
-// it, and refuses the capability NAMES (clone, checkout, run/exec a
-// container, push an image, publish) as the nearest mechanical proxy.
-//
-// ONE PACKAGE, TWO `service` BLOCKS, NOT TWO PACKAGES. auth.proto already
-// sets the precedent this follows: one proto package per v2 SERVICE (in
-// service-topology.md's sense — the process that owns a protocol id and a
-// mux), containing as many `service` blocks as the domain has facets; a
-// node's protocol id is derived from the PACKAGE
-// (`rpc.Protocol(...ServiceName)` -> `/<package, dots as slashes>`, so
-// `tau.build.v2` -> `/tau/build/v2`, the row service-conventions.md §2d's
-// table already reserves for this service), so tau.auth.v2 already mounts
-// five `service` blocks (ProjectService, RepositoryService, HookService,
-// DomainService, CertificateService) behind one protocol id and one mux.
-// The `tau.` segment is that rule's anti-collision half and is not optional:
-// `build.v2` would derive `/build/v2`, a bare service-name id with nothing to
-// say it belongs to tau rather than to anything else on the swarm.
-// Splitting QueueService and JobService into their own packages would buy no isolation — both are
-// served by the same backend process on the same listener — and would force
-// either duplicating JobStatus/Job/JobRef or an awkward cross-package import
-// for two facets of one job lifecycle: a job is CREATED through
-// QueueService and OBSERVED/ADMINISTERED through JobService. There is no
-// `tau.build.frontend.v2`/`tau.build.backend.v2` split for the same reason:
-// the frontend serves no RPC of its own to need one.
-//
-// IDENTITY, as in auth.proto: a repository is named by its canonical
-// clone-URL key alone (pkg/git/repokey: host/owner/name) — never a
-// provider-native or numeric id, never a `oneof` over providers, because the
-// host in the key already says which provider serves it. v1's
-// `Repository.ID int` (v1's core/services/patrick/types.go, cbor field 65) and
-// its deprecated `SSHURL` (superseded by `URI`, per this agent's decision 3)
-// do not survive into PushEvent or Job below: the key is carried, the
-// integer is not, and a clone URL is never carried either — see PushEvent.
-//
-// THE QUEUE IS A TRUST BOUNDARY (service-topology.md §5, decision D5): every
-// field QueueService.Enqueue accepts originates in a webhook delivered off
-// the internet to the frontend, so the crossing is kept small and typed
-// rather than a copy of whatever shape the provider's payload happens to
-// have. See PushEvent and QueueService for the argument in full — it is the
-// central decision this file exists to encode, so it is argued once, in
-// place, rather than summarized here.
-//
-// FIVE RPCs CROSS FROM FRONTEND TO BACKEND, NOT ONE, and the distinction is
-// what the field lists below turn on rather than a technicality. Enqueue is
-// the only one whose contents a STRANGER authored: an unauthenticated POST
-// to the webhook route decides them, which is why PushEvent carries three
-// fields and re-derives the rest. JobService's four carry a job id or a
-// project id that an authenticated caller was already handed — a different
-// input with a different exposure, so the shape restriction that produced
-// PushEvent does not apply to them and is not imitated there. What does
-// apply to them, and is NOT in this file, is that the backend cannot take
-// the frontend's word for WHO is asking: the identity on a p2p stream is
-// the calling node's (service-conventions.md §5b), and a frontend relaying
-// four HTTP routes is one node relaying many humans. That is authorization,
-// it belongs in the backend's authz.go beside auth's, and a field in these
-// messages would be exactly the identity-the-caller-encodes that §5b exists
-// to refuse.
-//
-// STREAMING, as in auth.proto: List below is server-streaming because it
-// enumerates an unbounded, unpaginated store — both v1's raw job-id stream
-// action (v1's services/patrick/api.go's listHandler, `db.List(ctx, "/jobs/")`
-// plus the archive, with no bound) and its project-scoped HTTP twin
-// (`projectAllJobHandler`, `db.List(ctx, "/by/project/"+projectId+"/")`)
-// materialize the whole result in memory before answering today. Every
-// other RPC here is a single lookup or a single mutation and stays unary,
-// matching today's cbor transport's fire-once, first-response-wins send —
-// the same reasoning auth.proto states once and this file does not repeat.
+// STREAMING, as in auth.proto: List is server-streaming because it enumerates an
+// unbounded store; Follow streams a run's events; RunnerService.Serve is one
+// runner's lifetime. Every other RPC is a single lookup or mutation and stays
+// unary.
 package buildv2connect
 
 import (
@@ -137,6 +60,8 @@ const (
 	QueueServiceName = "tau.build.v2.QueueService"
 	// JobServiceName is the fully-qualified name of the JobService service.
 	JobServiceName = "tau.build.v2.JobService"
+	// RunnerServiceName is the fully-qualified name of the RunnerService service.
+	RunnerServiceName = "tau.build.v2.RunnerService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -161,6 +86,8 @@ const (
 	JobServiceArtifactProcedure = "/tau.build.v2.JobService/Artifact"
 	// JobServiceFollowProcedure is the fully-qualified name of the JobService's Follow RPC.
 	JobServiceFollowProcedure = "/tau.build.v2.JobService/Follow"
+	// RunnerServiceServeProcedure is the fully-qualified name of the RunnerService's Serve RPC.
+	RunnerServiceServeProcedure = "/tau.build.v2.RunnerService/Serve"
 )
 
 // QueueServiceClient is a client for the tau.build.v2.QueueService service.
@@ -276,7 +203,7 @@ type JobServiceClient interface {
 	//
 	// ONLY THE NODE WRITING THE LOG CAN ANSWER, and while the run has not ended
 	// every other one says Unavailable rather than NotFound — which is what makes
-	// a caller's pool walk to the next backend instead of stopping at the first
+	// a caller's pool walk to the next build node instead of stopping at the first
 	// that does not have it. A run that has not started — the job is queued, or
 	// claimed and not writing yet — is held by the leader, which is where every
 	// run is claimed, until it starts there or the job ends without it; every
@@ -422,7 +349,7 @@ type JobServiceHandler interface {
 	//
 	// ONLY THE NODE WRITING THE LOG CAN ANSWER, and while the run has not ended
 	// every other one says Unavailable rather than NotFound — which is what makes
-	// a caller's pool walk to the next backend instead of stopping at the first
+	// a caller's pool walk to the next build node instead of stopping at the first
 	// that does not have it. A run that has not started — the job is queued, or
 	// claimed and not writing yet — is held by the leader, which is where every
 	// run is claimed, until it starts there or the job ends without it; every
@@ -535,4 +462,74 @@ func (UnimplementedJobServiceHandler) Artifact(context.Context, *connect.Request
 
 func (UnimplementedJobServiceHandler) Follow(context.Context, *connect.Request[v2.FollowRequest], *connect.ServerStream[v2.Job_Event]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("tau.build.v2.JobService.Follow is not implemented"))
+}
+
+// RunnerServiceClient is a client for the tau.build.v2.RunnerService service.
+type RunnerServiceClient interface {
+	Serve(context.Context) *connect.BidiStreamForClient[v2.RunnerReport, v2.Assignment]
+}
+
+// NewRunnerServiceClient constructs a client for the tau.build.v2.RunnerService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewRunnerServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) RunnerServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	runnerServiceMethods := v2.File_tau_build_v2_build_proto.Services().ByName("RunnerService").Methods()
+	return &runnerServiceClient{
+		serve: connect.NewClient[v2.RunnerReport, v2.Assignment](
+			httpClient,
+			baseURL+RunnerServiceServeProcedure,
+			connect.WithSchema(runnerServiceMethods.ByName("Serve")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// runnerServiceClient implements RunnerServiceClient.
+type runnerServiceClient struct {
+	serve *connect.Client[v2.RunnerReport, v2.Assignment]
+}
+
+// Serve calls tau.build.v2.RunnerService.Serve.
+func (c *runnerServiceClient) Serve(ctx context.Context) *connect.BidiStreamForClient[v2.RunnerReport, v2.Assignment] {
+	return c.serve.CallBidiStream(ctx)
+}
+
+// RunnerServiceHandler is an implementation of the tau.build.v2.RunnerService service.
+type RunnerServiceHandler interface {
+	Serve(context.Context, *connect.BidiStream[v2.RunnerReport, v2.Assignment]) error
+}
+
+// NewRunnerServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewRunnerServiceHandler(svc RunnerServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	runnerServiceMethods := v2.File_tau_build_v2_build_proto.Services().ByName("RunnerService").Methods()
+	runnerServiceServeHandler := connect.NewBidiStreamHandler(
+		RunnerServiceServeProcedure,
+		svc.Serve,
+		connect.WithSchema(runnerServiceMethods.ByName("Serve")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/tau.build.v2.RunnerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case RunnerServiceServeProcedure:
+			runnerServiceServeHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedRunnerServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedRunnerServiceHandler struct{}
+
+func (UnimplementedRunnerServiceHandler) Serve(context.Context, *connect.BidiStream[v2.RunnerReport, v2.Assignment]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("tau.build.v2.RunnerService.Serve is not implemented"))
 }
