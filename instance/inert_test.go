@@ -18,15 +18,14 @@ import (
 // inert is what a method on a config type may hand back: the operator's own
 // data, and an answer about it. Anything else is a resource.
 var inert = map[string]bool{
-	"error":           true,
-	"bool":            true,
-	"string":          true,
-	"int":             true,
-	"int64":           true,
-	"[]string":        true,
-	"time.Duration":   true,
-	"Config":          true,
-	"ContainerConfig": true,
+	"error":         true,
+	"bool":          true,
+	"string":        true,
+	"int":           true,
+	"int64":         true,
+	"[]string":      true,
+	"time.Duration": true,
+	"Config":        true,
 }
 
 func TestAConfigConstructsNothing(t *testing.T) {

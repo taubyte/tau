@@ -24,6 +24,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/pkg/forge/drivers"
+
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
 
@@ -90,7 +92,7 @@ func fleet(t *testing.T, f *fake.Served, opts ...instance.Option) (front, otherF
 		Secrets: []*secretsv2.InitSecret{adminSecret},
 		Configure: func(index int, c *instance.Config) {
 			c.Gateway.CloudFqdn = e2eCloud
-			c.Forges = []instance.Forge{{Host: f.Host(), Driver: instance.ForgeGitHub, HostKeys: []string{f.HostKey()}}}
+			c.Forges = []drivers.Forge{{Host: f.Host(), Driver: drivers.GitHub, HostKeys: []string{f.HostKey()}}}
 			c.Auth.Admin = auth.Admin{Name: "root"}
 			if index > 0 {
 				c.Services = []string{instance.Discovery, instance.BuildFrontend}

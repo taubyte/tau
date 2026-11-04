@@ -1,7 +1,7 @@
 // Package public is the two public forges, bound as a cloud binds them when its
 // operator named none. `tau link` installs a webhook whose wire secret is
 // derived under the driver's scheme, so the CLI must sign with exactly the
-// scheme the cloud verifies with; node's test holds node.DefaultForges to the
+// scheme the cloud verifies with; node's test holds drivers.Default to the
 // same schemes.
 package public
 

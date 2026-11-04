@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/pkg/containers"
+
 	storageService "github.com/taubyte/tau/services/storage"
 
 	"github.com/stretchr/testify/require"
@@ -21,7 +23,7 @@ import (
 func TestAChannelServedByAContainerDeliversToItsNamedPort(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Services:  []string{instance.Register, instance.Worker, instance.Discovery, storageService.Descriptor.Name},
-		Container: instance.BackendDocker,
+		Container: containers.Docker,
 	})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)

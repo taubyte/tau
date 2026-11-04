@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/pkg/forge/drivers"
+
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
 
@@ -27,8 +29,8 @@ func TestTheBackendClonesAPrivateRepositoryWithTheDeployKeyALinkStored(t *testin
 
 	n, _, _ := makeNode(t, Config{
 		Services: []string{Register, Secrets, Discovery},
-		Forges: []Forge{{
-			Host: host.Addr, Driver: ForgeGitHub,
+		Forges: []drivers.Forge{{
+			Host: host.Addr, Driver: drivers.GitHub,
 			HostKeys: []string{strings.TrimSpace(string(gossh.MarshalAuthorizedKey(host.HostKey)))},
 		}},
 	})

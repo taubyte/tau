@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/pkg/forge/drivers"
+
 	"github.com/spf13/afero"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
@@ -65,7 +67,7 @@ func TestSignInAndCertificatesReachEveryNodeAndTheirSecretsOnlyTheBundle(t *test
 		assert.DeepEqual(t, n.Auth.Redirects, []string{"https://console.test.com/callback"})
 		assert.DeepEqual(t, n.Auth.Forges, []auth.ForgeApp{{Host: "github.com", ClientID: "gh-id"}})
 		assert.DeepEqual(t, n.Auth.OIDC, []auth.OIDCProvider{{Name: "corp", Issuer: "https://id.test.com", ClientID: "corp-id", Scopes: []string{"email"}}})
-		assert.DeepEqual(t, n.Forges, []instance.Forge{{Host: "github.com", Driver: "github"}, {Host: "git.test.com", Driver: "gitea"}})
+		assert.DeepEqual(t, n.Forges, []drivers.Forge{{Host: "github.com", Driver: "github"}, {Host: "git.test.com", Driver: "gitea"}})
 		acme := n.CM.Certificate.ACME
 		assert.Assert(t, acme.Enabled)
 		assert.Equal(t, acme.Directory, "https://ca.test.com/dir")

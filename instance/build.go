@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/taubyte/tau/pkg/containers"
+
 	"connectrpc.com/connect"
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
@@ -17,6 +19,7 @@ import (
 
 	gossh "golang.org/x/crypto/ssh"
 
+	"github.com/taubyte/tau/pkg/forge/drivers"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/pkg/tenancy"
@@ -185,7 +188,7 @@ func (n *Instance) buildClone(keys deploy.Credentials) (*deploy.Clone, error) {
 	if err != nil {
 		return nil, err
 	}
-	pinned, err := hostKeys(n.cfg.Forges)
+	pinned, err := drivers.HostKeys(n.cfg.Forges)
 	if err != nil {
 		return nil, err
 	}
@@ -254,8 +257,8 @@ func (n *Instance) openBuildBackend() error {
 	// the push rather than starting and refusing every one. The two halves of
 	// what a push can be are independent: a node with no container backend
 	// still deploys configuration, which is most of what a small cloud does.
-	if n.cfg.Container.declared() {
-		backend, err := containerBackend(n.cfg.Container)
+	if n.cfg.Container.Any() {
+		backend, err := containers.Open(n.cfg.Container)
 		if err != nil {
 			return err
 		}

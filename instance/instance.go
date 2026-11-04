@@ -310,7 +310,7 @@ func (n *Instance) openWorker() error {
 	// composed this. Both end up in the same pool, and a node can have both —
 	// a container backend an operator named and a wasm engine the process
 	// already holds.
-	if n.cfg.Container.declared() {
+	if n.cfg.Container.Any() {
 		disks, err := n.disksOrNil()
 		if err != nil {
 			return err

@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/pkg/containers"
+
 	storageService "github.com/taubyte/tau/services/storage"
 
 	"github.com/stretchr/testify/require"
@@ -23,7 +25,7 @@ import (
 func TestAnApplicationAnswersThroughTheGateway(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Services:  []string{instance.Register, instance.Worker, instance.Discovery, instance.Gateway, storageService.Descriptor.Name},
-		Container: instance.BackendDocker,
+		Container: containers.Docker,
 	})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)

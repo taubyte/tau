@@ -14,6 +14,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/taubyte/tau/pkg/containers"
+
 	"github.com/ipfs/go-log/v2"
 	"github.com/urfave/cli/v2"
 	"google.golang.org/protobuf/proto"
@@ -179,7 +181,7 @@ func printExample(w io.Writer) error {
 		Node: instance.Config{
 			Services:  append(append([]string(nil), instance.All...), services.Names()...),
 			Cloud:     "acme",
-			Container: instance.ContainerConfig{Backend: instance.BackendContainerd},
+			Container: containers.Declared{Backend: containers.Containerd},
 			// Written out although it is the default: :53 needs root or
 			// CAP_NET_BIND_SERVICE, and the file should show the number that
 			// will fail on a laptop.

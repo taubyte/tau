@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/pkg/containers"
+
 	"connectrpc.com/connect"
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
@@ -216,9 +218,9 @@ func TestABuildBackendWithNoContainerBackend(t *testing.T) {
 func TestABuildBackendWithABackendThatIsNotOne(t *testing.T) {
 	_, err := New(mockPeer(t), rooted(t, Config{
 		Services:  []string{Discovery, BuildBackend},
-		Container: ContainerConfig{Backend: "not-a-backend"},
+		Container: containers.Declared{Backend: "not-a-backend"},
 	}), withKVDB(&memFactory{}), withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }))
-	require.ErrorIs(t, err, ErrUnknownBackend)
+	require.ErrorIs(t, err, containers.ErrUnknownBackend)
 }
 
 func TestAnAssetStoreIsEnoughToRunCode(t *testing.T) {
@@ -232,27 +234,6 @@ func TestAnAssetStoreIsEnoughToRunCode(t *testing.T) {
 	// Both: a wasm component and a js function are what the smallest possible cloud
 	// runs, and neither needs a daemon. A site's files are its gateway's to serve.
 	require.ElementsMatch(t, []string{"wasm", "warp"}, tierNames(n))
-}
-
-func TestTheContainerBackendIsTheOperatorsChoice(t *testing.T) {
-	_, err := containerBackend(ContainerConfig{Backend: "not-a-backend"})
-	require.ErrorIs(t, err, ErrUnknownBackend)
-	require.ErrorContains(t, err, BackendDocker)
-	require.ErrorContains(t, err, BackendContainerd)
-
-	// A NAMED ONE IS BUILT RATHER THAN DETECTED, and the two backends differ in
-	// when they find out whether the daemon is there: docker builds a client
-	// and asks later, containerd checks its socket now. Either way the answer
-	// arrives at BOOT rather than at the first push, which is this
-	// composition's rule.
-	_, err = containerBackend(ContainerConfig{Backend: BackendDocker})
-	require.NoError(t, err)
-
-	_, err = containerBackend(ContainerConfig{Backend: BackendContainerd, Socket: "/nowhere/containerd.sock"})
-	if err != nil {
-		require.ErrorContains(t, err, "containerd",
-			"the message names the socket it looked for, so an operator sees which path was tried")
-	}
 }
 
 func TestTheArtifactLookupIsCachedForTheDeployBudget(t *testing.T) {

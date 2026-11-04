@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/taubyte/tau/pkg/containers"
+
 	auth "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/consensus"
 
@@ -225,8 +227,8 @@ type Config struct {
 	// Copies is how many nodes. Zero is one.
 	Copies int
 
-	// Container is the daemon nodes run container workloads on (node.BackendDocker or
-	// node.BackendContainerd). None unless asked: without one a node runs wasm and
+	// Container is the daemon nodes run container workloads on (containers.Docker or
+	// containers.Containerd). None unless asked: without one a node runs wasm and
 	// static sites and refuses container workloads by name.
 	Container string
 
@@ -361,7 +363,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	nodeConfig := instance.Config{
 		Services:  append([]string(nil), cfg.Services...),
 		Cloud:     m.Name(),
-		Container: instance.ContainerConfig{Backend: cfg.Container},
+		Container: containers.Declared{Backend: cfg.Container},
 	}
 	nodeConfig.DNSListen = "127.0.0.1:0"
 	nodeConfig.Sections = map[string]any{discovery.Descriptor.Name: discovery.Config{Stabilize: dreamStabilize}}

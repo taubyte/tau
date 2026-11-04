@@ -6,10 +6,13 @@ import (
 	"slices"
 	"time"
 
+	"github.com/taubyte/tau/pkg/containers"
+
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/forge"
+	"github.com/taubyte/tau/pkg/forge/drivers"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
@@ -107,12 +110,12 @@ type Config struct {
 	Tenancy []string
 
 	// Forges are the git hosts this cloud serves, and the driver for each.
-	// Empty means DefaultForges. See forge.go.
-	Forges []Forge
+	// Empty means drivers.Default. See pkg/forge/drivers.
+	Forges []drivers.Forge
 
 	// Container is the container tier this node runs, if any. See
 	// container.go, and in particular what its Runtime field is for.
-	Container ContainerConfig
+	Container containers.Declared
 
 	// Per-service operator configuration. Each is that service's own; nothing
 	// here reinterprets it.
