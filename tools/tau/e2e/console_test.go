@@ -89,7 +89,7 @@ func TestTheConsolePathAgainstARealFleet(t *testing.T) {
 
 	secret, err := forge.NewSecret()
 	require.NoError(t, err)
-	callback, err := url.Parse("https://build-frontend." + named.Fqdn + "/hook/" + project)
+	callback, err := url.Parse("https://build." + named.Fqdn + "/hook/" + project)
 	require.NoError(t, err)
 	hook, err := s.RegisterPushHook(t.Context(), repo, callback, secret)
 	require.NoError(t, err)

@@ -18,7 +18,6 @@ import (
 	"github.com/taubyte/tau/services"
 	auth "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/build"
-	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/dns"
 	gateway "github.com/taubyte/tau/services/gateway"
@@ -52,16 +51,16 @@ const (
 // service's descriptor so a rename cannot leave config naming nothing.
 var Primitives = primitives.Descriptor.Name
 
-// The two halves of the build service, named by the build service itself. Two
-// processes: the public role may not import the private one
-// (services/build/boundary_test.go), and withDefaults refuses one node running both.
+// Build and Runner, named by the build packages themselves. Two processes: build
+// may not import runner (services/build/boundary_test.go), and withDefaults refuses
+// one node running both.
 var (
-	// BuildFrontend is the webhook a provider posts to and the job API a
-	// developer reads. It is the only public role in this composition.
-	BuildFrontend = build.Frontend.Name
-	// BuildBackend holds the queue, the job records, the clone credentials and
-	// the runners.
-	BuildBackend = build.Backend.Name
+	// Build is the webhook a provider posts to and the job API a developer reads.
+	// It is the only public service in this composition.
+	Build = build.Build.Name
+	// Runner holds the queue, the job records and the clone credentials, and runs
+	// the builds.
+	Runner = build.Runner.Name
 )
 
 // All is every service this composition knows how to start.
@@ -71,12 +70,12 @@ var All = []string{Worker, Gateway, Auth, Proxy, DNS}
 // package still starts itself and the ones services.New makes. All, the default
 // shape, is the first half of it.
 func Everything() []string {
-	return append(append(append([]string(nil), All...), BuildFrontend, CM), services.Names()...)
+	return append(append(append([]string(nil), All...), CM), services.Names()...)
 }
 
-// BuildFrontend is NOT in All. All is what a single-node development cloud
-// starts, and that node runs the backend; putting the public half in the
-// default shape would make the default the one combination this file refuses.
+// Build is in no default shape: a single-node development cloud runs the runner,
+// and putting build beside it would make the default the one combination this file
+// refuses.
 
 // Config is what an operator declared about this node, and ONLY that.
 type Config struct {
@@ -140,10 +139,6 @@ type Config struct {
 	// by convention.
 	DNSListen string
 
-	// BuildFrontend is the build service's public half's own configuration. The
-	// private half, build-backend, reads its own section.
-	BuildFrontend frontend.Config
-
 	// Sections is each service's own configuration, under its name, at the top
 	// level of the file beside the instance's own keys. Nothing here reads it: the
 	// service decodes its own with Host.Config. A section naming no service is
@@ -154,9 +149,9 @@ type Config struct {
 var (
 	ErrNoPeer = errors.New("instance: no peer to be made from")
 
-	// ErrBothHalves is the one service combination this composition refuses.
-	ErrBothHalves = errors.New("node: " + build.Frontend.Name + " and " + build.Backend.Name +
-		" must not run in one process; the public half exists so a stranger's POST does not reach the queue or the clone credentials")
+	// ErrBuildAndRunner is the one service combination this composition refuses.
+	ErrBuildAndRunner = errors.New("node: " + build.Build.Name + " and " + build.Runner.Name +
+		" must not run in one process; build is public so that a stranger's POST does not reach the queue or the clone credentials")
 )
 
 type Option func(*options) error
@@ -251,10 +246,16 @@ func WithClock(now func() time.Time) Option {
 }
 
 // withDefaults fills and checks the service list. added are the names of the services
-// tau ships beside the built-ins: an empty list runs them, and a list may name them.
+// tau ships beside the built-ins: an empty list runs those services.Default leaves in,
+// and a list may name any of them.
 func (c Config) withDefaults(added ...string) (Config, error) {
 	if len(c.Services) == 0 {
-		c.Services = append(append([]string(nil), All...), added...)
+		c.Services = append([]string(nil), All...)
+		for _, name := range added {
+			if slices.Contains(services.Default(), name) || !slices.Contains(services.Names(), name) {
+				c.Services = append(c.Services, name)
+			}
+		}
 	}
 	// WHAT A SERVICE CANNOT START WITHOUT RUNS BESIDE IT, so a list naming the
 	// service alone still starts.
@@ -271,8 +272,8 @@ func (c Config) withDefaults(added ...string) (Config, error) {
 			return Config{}, fmt.Errorf("node: %q is not a service this node can run; it runs %v", name, known)
 		}
 	}
-	if slices.Contains(c.Services, BuildFrontend) && slices.Contains(c.Services, BuildBackend) {
-		return Config{}, ErrBothHalves
+	if slices.Contains(c.Services, Build) && slices.Contains(c.Services, Runner) {
+		return Config{}, ErrBuildAndRunner
 	}
 	served, err := tenancy.Parse(c.Tenancy)
 	if err != nil {
@@ -298,6 +299,7 @@ type cloudWide struct {
 	Tenancy   []string            `yaml:"tenancy,omitempty"`
 	Forges    []drivers.Forge     `yaml:"forges,omitempty"`
 	Container containers.Declared `yaml:"container,omitempty"`
+	CM        cm.Config           `yaml:"cm,omitempty"`
 }
 
 // Section decodes, into into, the cloud-wide keys a service declares and then the
@@ -308,7 +310,7 @@ type cloudWide struct {
 // to; from Go it may be the service's own struct. Either way the service gets what
 // its yaml tags say, exactly as an operator wrote it.
 func (c Config) Section(name string, into any) error {
-	shared := cloudWide{CloudFqdn: c.CloudFqdn, Tenancy: c.Tenancy, Forges: c.Forges, Container: c.Container}
+	shared := cloudWide{CloudFqdn: c.CloudFqdn, Tenancy: c.Tenancy, Forges: c.Forges, Container: c.Container, CM: c.CM}
 	if err := roundTrip(shared, into); err != nil {
 		return fmt.Errorf("node: %s: config: %w", name, err)
 	}

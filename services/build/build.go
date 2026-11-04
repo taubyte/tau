@@ -32,7 +32,7 @@ const (
 	IngressPublic
 )
 
-// Descriptor is one role's registry entry: the facts a node needs before it
+// Descriptor is one service's registry entry: the facts a node needs before it
 // constructs anything.
 type Descriptor struct {
 	Name     string
@@ -40,10 +40,11 @@ type Descriptor struct {
 	Ingress  Ingress
 }
 
-// Frontend's Protocol is empty: the public role hosts no RPC surface, so the swarm
-// cannot dial it.
-var Frontend = Descriptor{Name: "build-frontend", Protocol: "", Ingress: IngressPublic}
+// Build is the public service: forges and people reach it. Its Protocol is empty:
+// it hosts no RPC surface, so the swarm cannot dial it.
+var Build = Descriptor{Name: "build", Protocol: "", Ingress: IngressPublic}
 
-// Backend serves both of build.proto's service blocks behind Protocol, and
-// faces no internet: every caller it has is a peer libp2p authenticated.
-var Backend = Descriptor{Name: "build-backend", Protocol: Protocol, Ingress: IngressNone}
+// Runner is the private service that runs builds. It serves both of build.proto's
+// service blocks behind Protocol, and faces no internet: every caller it has is a
+// peer libp2p authenticated.
+var Runner = Descriptor{Name: "runner", Protocol: Protocol, Ingress: IngressNone}

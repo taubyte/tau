@@ -21,8 +21,7 @@ func TestAServiceIsResolvedByNameToTheNodeRunningIt(t *testing.T) {
 		Configure: func(index int, c *instance.Config) {
 			c.CloudFqdn = cloud
 			if index > 0 {
-				c.Services = []string{instance.Discovery, instance.BuildFrontend}
-				c.BuildFrontend.Listen = "127.0.0.1:0"
+				c.Services = []string{instance.Discovery, instance.Build}
 			}
 		},
 	})
@@ -30,7 +29,7 @@ func TestAServiceIsResolvedByNameToTheNodeRunningIt(t *testing.T) {
 	t.Cleanup(u.Close)
 
 	ask := asking(t, nodeOf(t, u.Pids()[0]))
-	name := instance.BuildFrontend + "." + cloud
+	name := instance.Build + "." + cloud
 
 	var reply *dns.Msg
 	require.Eventually(t, func() bool {

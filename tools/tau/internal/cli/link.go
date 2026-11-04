@@ -28,7 +28,7 @@ import (
 // repositories and wire each one, doing everything at the forge with this
 // profile's own credential (the cloud never acts at a forge). Per repository it
 // generates a webhook secret and an ed25519 deploy key, installs the hook (to
-// https://build-frontend.<fqdn>/hook/<id>) and the read-only key, and hands the
+// https://build.<fqdn>/hook/<id>) and the read-only key, and hands the
 // cloud the secret and private key under pkg/linkcreds' names. --create creates
 // missing repositories; --push pushes the project last, so that push is the first
 // build. A repository already holding this cloud's hook is replaced or kept (asked,
@@ -208,7 +208,7 @@ func linkCommand(env Env) *cobra.Command {
 	cmd.Flags().Bool("create", false, "create the repositories that do not exist yet, in the namespace each one names")
 	cmd.Flags().Bool("public", false, "with --create, make the new repositories public (default private)")
 	cmd.Flags().Bool("push", false, "push this directory to the configuration repository once it is linked")
-	cmd.Flags().String("callback", "", "the webhook URL to install (default https://build-frontend.<cloud fqdn>/hook/<id>)")
+	cmd.Flags().String("callback", "", "the webhook URL to install (default https://build.<cloud fqdn>/hook/<id>)")
 	cmd.Flags().Bool("manual", false, "install nothing on the forge: print the webhooks and deploy keys to add by hand")
 	cmd.Flags().Bool("replace-hook", false, "when a repository already has this cloud's webhook, delete it and this cloud's deploy key and install new ones")
 	cmd.Flags().Bool("keep-hook", false, "when a repository already has this cloud's webhook, keep it and its stored credentials")
@@ -225,7 +225,7 @@ func hookURL(cmd *cobra.Command, cl *api.Client, id string) (*url.URL, error) {
 		if err != nil {
 			return nil, fmt.Errorf("asking the cloud its name: %w (or pass --callback)", err)
 		}
-		return url.Parse("https://build-frontend." + fqdn + "/hook/" + url.PathEscape(id))
+		return url.Parse("https://build." + fqdn + "/hook/" + url.PathEscape(id))
 	}
 	u, err := url.Parse(base)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {

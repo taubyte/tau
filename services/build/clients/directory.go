@@ -1,0 +1,66 @@
+package clients
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/libp2p/go-libp2p/core/peer"
+
+	"github.com/taubyte/tau/core/service"
+	"github.com/taubyte/tau/p2p/discovery"
+)
+
+// lookAgain is how often a lookup waiting for a node looks again. The directory is
+// gossiped and changes on its own schedule; there is nothing to subscribe to.
+const lookAgain = 250 * time.Millisecond
+
+// directory is a discovery.Resolver over the directory beside a service: the nodes it
+// says run one service, this one included, asked at call time.
+type directory struct {
+	h    service.Host
+	name string
+}
+
+var _ discovery.Resolver = directory{}
+
+// Discovered is the nodes running name as the directory beside h names them.
+func Discovered(h service.Host, name string) discovery.Resolver { return directory{h: h, name: name} }
+
+// Known is nil on an instance running no directory: it looked nowhere, which is not
+// the same as having found nobody.
+func (d directory) Known() []peer.ID {
+	dir, ok := service.Get[service.Directory](d.h)
+	if !ok {
+		return nil
+	}
+	return dir.Peers(d.name)
+}
+
+func (d directory) Any(ctx context.Context) (peer.ID, error) {
+	peers, err := d.Peers(ctx, 1)
+	if err != nil {
+		return "", err
+	}
+	return peers[0], nil
+}
+
+func (d directory) Peers(ctx context.Context, want int) ([]peer.ID, error) {
+	for {
+		if known := d.Known(); len(known) > 0 {
+			if want > 0 && len(known) > want {
+				known = known[:want]
+			}
+			return known, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("build: no %s is reachable: %w", d.name, ctx.Err())
+		case <-time.After(lookAgain):
+		}
+	}
+}
+
+// Failed does nothing: a failed dial is not evidence the node stopped running the
+// service, and the directory already ages out nodes that stopped reporting.
+func (directory) Failed(peer.ID) {}

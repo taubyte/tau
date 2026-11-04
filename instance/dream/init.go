@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/taubyte/tau/services/build/frontend"
+
 	"github.com/taubyte/tau/services/build/backend"
 
 	"github.com/taubyte/tau/pkg/containers"
@@ -373,8 +375,9 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	nodeConfig.Auth.SignUp = auth.SignUpOpen
 	// A development cloud serves declared zones unproven, takes a developer's build,
 	// and reads the repositories it was handed folders for.
-	nodeConfig.BuildFrontend.Uploads = uploads
-	nodeConfig.Sections[instance.BuildBackend] = backend.Config{
+	// A node running the public build role listens on an ephemeral loopback port too.
+	nodeConfig.Sections[instance.Build] = frontend.Config{Uploads: uploads, Listen: "127.0.0.1:0"}
+	nodeConfig.Sections[instance.Runner] = backend.Config{
 		Uploads: uploads, Local: cfg.Local, Domains: backend.Domains{Trusted: true},
 	}
 	if cfg.Configure != nil {

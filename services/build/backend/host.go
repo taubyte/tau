@@ -89,7 +89,7 @@ func (b *hosted) Start(ctx context.Context, h service.Host) error {
 	if !ok {
 		return ErrNoConsensus
 	}
-	cluster, err := agree.Raft(build.Backend.Name)
+	cluster, err := agree.Raft(build.Runner.Name)
 	if err != nil {
 		return err
 	}
@@ -97,7 +97,7 @@ func (b *hosted) Start(ctx context.Context, h service.Host) error {
 
 	fleet := register.ViewsOn(h)
 	b.also = append(b.also, fleet)
-	records, err := pkgkvdb.Open(h.Peer(), build.Backend.Name+"/jobs",
+	records, err := pkgkvdb.Open(h.Peer(), build.Runner.Name+"/jobs",
 		pkgkvdb.WithLogger(logging.Logger("tau.build")),
 		pkgkvdb.WithRetentionFrom(func(ctx context.Context) (time.Duration, error) {
 			return register.Retention(ctx, fleet)

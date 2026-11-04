@@ -245,7 +245,7 @@ func TestTheZoneIsProvedByDNS01AndItsWildcardAnswersEveryService(t *testing.T) {
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), ReadHeaderTimeout: time.Minute}
 	go server.Serve(l)
 	defer server.Close()
-	for _, service := range []string{"build-frontend." + cloud, "dns." + cloud} {
+	for _, service := range []string{"build." + cloud, "dns." + cloud} {
 		res := handshake(t, l.Addr().String(), service, ca.roots(t))
 		require.Equal(t, []string{"*." + cloud}, res.TLS.PeerCertificates[0].DNSNames, service)
 	}

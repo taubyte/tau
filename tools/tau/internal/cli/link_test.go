@@ -45,7 +45,7 @@ func projectYAMLID(t *testing.T, dir string) string {
 	return p.ID()
 }
 
-func hookOf(id string) string { return "https://build-frontend.cloud.example/hook/" + id }
+func hookOf(id string) string { return "https://build.cloud.example/hook/" + id }
 
 // hooksOn is what the fake forge holds on key: the hooks and the deploy keys.
 func hooksOn(t *testing.T, x *tester, f *fake.Forge, key repokey.Key) ([]forge.InstalledPushHook, []forge.InstalledDeployKey) {
@@ -78,7 +78,7 @@ func TestLinkInstallsEverythingFromTheClient(t *testing.T) {
 		require.Len(t, hooks, 1)
 		require.Equal(t, hookOf(id), hooks[0].Callback, "aimed at the cloud's own name for its frontend")
 		require.Len(t, keys, 1)
-		require.Equal(t, "tau build-frontend.cloud.example", keys[0].Title)
+		require.Equal(t, "tau build.cloud.example", keys[0].Title)
 	}
 	require.NotEqual(t, names[linkcreds.HookSecret(cfg.String())], names[linkcreds.HookSecret(code.String())], "one secret per repository")
 	require.True(t, f.LastDeployKeyReadOnly())

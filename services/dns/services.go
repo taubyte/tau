@@ -9,7 +9,7 @@ import (
 )
 
 // The cloud's own services by name: `<service>.<cloud>`, e.g.
-// `build-frontend.tau.example.io`. A service is one label under the cloud fqdn,
+// `build.tau.example.io`. A service is one label under the cloud fqdn,
 // beside the project labels, which are fixed-width derived labels and cannot collide.
 //
 // The addresses are the nodes reporting the service in discovery. A known service

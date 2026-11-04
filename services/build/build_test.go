@@ -15,16 +15,16 @@ func TestBothServiceBlocksDeriveOneProtocolID(t *testing.T) {
 	require.EqualValues(t, "/tau/build/v2", Protocol)
 }
 
-func TestOnlyTheFrontendFacesTheInternetAndOnlyTheBackendHasAProtocol(t *testing.T) {
-	require.Equal(t, IngressPublic, Frontend.Ingress)
-	require.EqualValues(t, "", Frontend.Protocol, "the public role must have no protocol id")
+func TestOnlyBuildFacesTheInternetAndOnlyTheRunnerHasAProtocol(t *testing.T) {
+	require.Equal(t, IngressPublic, Build.Ingress)
+	require.EqualValues(t, "", Build.Protocol, "build must have no protocol id")
 
-	require.Equal(t, IngressNone, Backend.Ingress)
-	require.Equal(t, Protocol, Backend.Protocol)
+	require.Equal(t, IngressNone, Runner.Ingress)
+	require.Equal(t, Protocol, Runner.Protocol)
 
-	require.NotEqual(t, Frontend.Name, Backend.Name)
-	require.NotEmpty(t, Frontend.Name)
-	require.NotEmpty(t, Backend.Name)
+	require.NotEqual(t, Build.Name, Runner.Name)
+	require.NotEmpty(t, Build.Name)
+	require.NotEmpty(t, Runner.Name)
 }
 
 func TestSilenceIsPrivate(t *testing.T) {

@@ -37,8 +37,6 @@ import (
 	"github.com/taubyte/tau/services/worker/stream"
 	"github.com/taubyte/tau/services/worker/volume"
 
-	"github.com/taubyte/tau/services/build/frontend"
-
 	"github.com/taubyte/tau/instance/placement"
 	authService "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/cm"
@@ -136,8 +134,7 @@ type Instance struct {
 	// would be a second stream to the same peer.
 	syncs *primitive.Backing
 
-	auth          *authService.Service
-	buildFrontend *frontend.Service
+	auth *authService.Service
 
 	pool     *invoke.Pool
 	runtimes []invoke.Runtime
@@ -276,12 +273,7 @@ func (n *Instance) open() error {
 	// AND DNS LAST OF THE EDGE SERVICES, because it publishes what the two
 	// above and every other node reported — it answers from the discovery view and
 	// takes nothing else.
-	if err := n.openDNS(); err != nil {
-		return err
-	}
-	// THE BUILD FRONTEND COMES LAST because it dials auth, and a node running auth
-	// itself has to have it answering before a pool onto it is opened.
-	return n.openBuildFrontend()
+	return n.openDNS()
 }
 
 // tiers is what this node's pool can run. It is here for the composition's own
@@ -696,9 +688,6 @@ func (n *Instance) Start(ctx context.Context) error {
 	}
 	if n.auth != nil {
 		order = append(order, n.auth)
-	}
-	if n.buildFrontend != nil {
-		order = append(order, n.buildFrontend)
 	}
 
 	for _, s := range order {

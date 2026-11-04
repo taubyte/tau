@@ -5,10 +5,8 @@ import (
 	"crypto/tls"
 	"errors"
 
-	"connectrpc.com/connect"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
-	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/dns"
 	secretsService "github.com/taubyte/tau/services/secrets"
@@ -202,18 +200,4 @@ func (n *Instance) domains() (*cm.Domains, error) {
 	n.domainClaims = d
 	n.closers = append(n.closers, d)
 	return d, nil
-}
-
-// domainClaims is the claim route's seam over the cm client.
-type domainClaims struct{ d *cm.Domains }
-
-func (c domainClaims) Claim(ctx context.Context, project, fqdn string) (frontend.DomainClaim, error) {
-	claim, err := c.d.Claim(ctx, project, fqdn)
-	if errors.Is(err, cm.ErrBadClaim) {
-		return frontend.DomainClaim{}, connect.NewError(connect.CodeInvalidArgument, err)
-	}
-	if err != nil {
-		return frontend.DomainClaim{}, err
-	}
-	return frontend.DomainClaim{Entry: claim.GetEntry(), Type: claim.GetType(), Token: claim.GetToken()}, nil
 }

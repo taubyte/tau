@@ -29,7 +29,7 @@ func TestAHostWithoutBothBuildHalvesIsOneNode(t *testing.T) {
 	assert.Equal(t, len(nodes.instances), 1)
 	assert.Equal(t, nodes.instances[0].name, "shape1", "the main node is named after the primary shape")
 	assert.DeepEqual(t, nodes.instances[0].file.Node.Services,
-		[]string{instance.Auth, instance.Secrets, instance.Discovery, instance.DNS, instance.Gateway, instance.BuildBackend, instance.Proxy})
+		[]string{instance.Auth, instance.Secrets, instance.Discovery, instance.DNS, instance.Gateway, instance.Runner, instance.Proxy})
 }
 
 func TestEveryNodeRunsDiscovery(t *testing.T) {
@@ -73,9 +73,9 @@ func TestTheSplitIdentityIsStable(t *testing.T) {
 	_, p := fixtures.VirtConfig()
 	primary := p.Hosts().Host("host1").Shapes().Instance("shape1").Key()
 
-	a, err := derivedKey(primary, instance.BuildFrontend)
+	a, err := derivedKey(primary, instance.Build)
 	assert.NilError(t, err)
-	b, err := derivedKey(primary, instance.BuildFrontend)
+	b, err := derivedKey(primary, instance.Build)
 	assert.NilError(t, err)
 	assert.Equal(t, a, b)
 	assert.Assert(t, a != primary)
@@ -85,7 +85,7 @@ func TestTheSplitIdentityIsStable(t *testing.T) {
 	_, err = crypto.UnmarshalPrivateKey(raw)
 	assert.NilError(t, err)
 
-	_, err = derivedKey("not base64!", instance.BuildFrontend)
+	_, err = derivedKey("not base64!", instance.Build)
 	assert.ErrorContains(t, err, "decode")
 }
 
@@ -135,7 +135,7 @@ func TestNodesIsThePlanOfOneHost(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, len(plan.Nodes), 2)
 	assert.Equal(t, plan.Nodes[0].Name, "shape1")
-	assert.Equal(t, plan.Nodes[1].Name, instance.BuildFrontend)
+	assert.Equal(t, plan.Nodes[1].Name, instance.Build)
 	assert.Equal(t, plan.Nodes[1].Port, plan.Nodes[0].Port+1)
 	assert.Assert(t, slices.Contains(plan.Ignored, "shapes.shape2.plugins"))
 
@@ -190,9 +190,9 @@ func TestIssueRefusesAKeyThatIsNotOne(t *testing.T) {
 
 func TestAShapeMustNameAUnitAndADirectory(t *testing.T) {
 	for shape, want := range map[string]string{
-		instance.BuildFrontend: "cannot be named",
-		"a b":                  "letters, digits",
-		"../up":                "letters, digits",
+		instance.Build: "cannot be named",
+		"a b":          "letters, digits",
+		"../up":        "letters, digits",
 	} {
 		_, p := fixtures.VirtConfig()
 		p.Shapes().Shape(shape).Ports().Set("main", 5242)

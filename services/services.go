@@ -6,6 +6,7 @@ import (
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/build/backend"
+	"github.com/taubyte/tau/services/build/hosted"
 	"github.com/taubyte/tau/services/consensus"
 	"github.com/taubyte/tau/services/database"
 	"github.com/taubyte/tau/services/discovery"
@@ -21,20 +22,27 @@ type shipped struct {
 	name  string
 	new   func() service.Service
 	needs []string
+
+	// onlyNamed is a service an instance runs only when its list names it, never as
+	// part of the every-service default.
+	onlyNamed bool
 }
 
 // catalog is every service tau ships, IN THE ORDER AN INSTANCE STARTS THEM: what a
 // service reaches beside it when it starts comes before it.
 func catalog() []shipped {
 	return []shipped{
-		{consensus.Descriptor.Name, func() service.Service { return consensus.New() }, nil},
-		{discovery.Descriptor.Name, func() service.Service { return discovery.New() }, nil},
-		{register.Descriptor.Name, func() service.Service { return register.New() }, nil},
-		{secrets.Descriptor.Name, func() service.Service { return secrets.New() }, nil},
-		{primitives.Descriptor.Name, func() service.Service { return primitives.New() }, []string{consensus.Descriptor.Name}},
-		{database.Descriptor.Name, func() service.Service { return database.New() }, []string{consensus.Descriptor.Name}},
-		{storage.Descriptor.Name, func() service.Service { return storage.New() }, nil},
-		{build.Backend.Name, func() service.Service { return backend.New() }, []string{consensus.Descriptor.Name}},
+		{name: consensus.Descriptor.Name, new: func() service.Service { return consensus.New() }},
+		{name: discovery.Descriptor.Name, new: func() service.Service { return discovery.New() }},
+		{name: register.Descriptor.Name, new: func() service.Service { return register.New() }},
+		{name: secrets.Descriptor.Name, new: func() service.Service { return secrets.New() }},
+		{name: primitives.Descriptor.Name, new: func() service.Service { return primitives.New() }, needs: []string{consensus.Descriptor.Name}},
+		{name: database.Descriptor.Name, new: func() service.Service { return database.New() }, needs: []string{consensus.Descriptor.Name}},
+		{name: storage.Descriptor.Name, new: func() service.Service { return storage.New() }},
+		{name: build.Runner.Name, new: func() service.Service { return backend.New() }, needs: []string{consensus.Descriptor.Name}},
+		// Build is never part of the default: one node running every service runs the
+		// runner, and a node may not run both.
+		{name: build.Build.Name, new: func() service.Service { return hosted.New() }, onlyNamed: true},
 	}
 }
 
@@ -70,6 +78,18 @@ func Needs(name string) []string {
 	var out []string
 	for _, s := range catalog() {
 		if want[s.name] {
+			out = append(out, s.name)
+		}
+	}
+	return out
+}
+
+// Default is every service an instance runs when its list names none, in the order
+// it starts them.
+func Default() []string {
+	var out []string
+	for _, s := range catalog() {
+		if !s.onlyNamed {
 			out = append(out, s.name)
 		}
 	}

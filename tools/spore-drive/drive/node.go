@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"net"
+	"net/url"
 	"regexp"
 	"slices"
 	"sort"
@@ -25,9 +26,9 @@ import (
 // node.go turns a spore-drive cloud config, written for v1 (one tau process per
 // shape), into the v2 node files a host runs. The input format does not change.
 //
-//   - One node per host: every shape's services are unioned, except that both build
-//     halves cannot share a node (node.ErrBothHalves), so build-frontend gets its
-//     own (frontendInstance).
+//   - One node per host: every shape's services are unioned, except that build and
+//     runner cannot share a node (instance.ErrBuildAndRunner), so build gets its own
+//     (frontendInstance).
 //   - v1 service names map onto the v2 services doing their work (v1Services).
 //   - What has no v2 home is read, not emitted, and logged per host
 //     (ignoredFields).
@@ -44,8 +45,8 @@ var v1Services = map[string][]string{
 	"substrate": {instance.Worker, instance.Gateway},
 	"gateway":   {instance.Gateway},
 	"hoarder":   {instance.Database, instance.Primitives},
-	"patrick":   {instance.BuildFrontend},
-	"monkey":    {instance.BuildBackend},
+	"patrick":   {instance.Build},
+	"monkey":    {instance.Runner},
 }
 
 // dropped are v1 service names that are read and run nothing in v2.
@@ -54,7 +55,7 @@ var dropped = []string{"accounts"}
 // unit is one tau instance a host runs. The main one is named after the host's
 // primary shape, as its key and port already are: its systemd unit is
 // tau@<shape>, its file <root>/config/<shape>.yaml and its data
-// <root>/storage/<shape>. A split-off build-frontend node is named after that
+// <root>/storage/<shape>. A split-off build node is named after that
 // service.
 type unit struct {
 	name string
@@ -163,7 +164,7 @@ func bootstrap(p config.Parser, self string) ([]string, error) {
 	return out, nil
 }
 
-// derivedKey is the build-frontend node's identity when it has to be split off
+// derivedKey is the build node's identity when it has to be split off
 // a host's node: a second peer needs a second key, and the cloud config — which
 // spore-drive must not rewrite — holds one per shape. Derived from the primary
 // key so it is the same on every deploy without being stored anywhere.
@@ -211,8 +212,8 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 		return nil, err
 	}
 	for _, shape := range hc.Shapes().List() {
-		if shape == instance.BuildFrontend {
-			return nil, fmt.Errorf("host %s: a shape cannot be named %s, the name of the node split off for it", hostName, instance.BuildFrontend)
+		if shape == instance.Build {
+			return nil, fmt.Errorf("host %s: a shape cannot be named %s, the name of the node split off for it", hostName, instance.Build)
 		}
 		if !safeName.MatchString(shape) {
 			return nil, fmt.Errorf("host %s: shape %q names a unit and a directory, so it is letters, digits, '.', '_' and '-'", hostName, shape)
@@ -253,7 +254,7 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 	if err != nil {
 		return nil, err
 	}
-	sections, err := withBackend(added, cloudServices.trusted)
+	sections, err := withBuild(added, cloudServices)
 	if err != nil {
 		return nil, err
 	}
@@ -303,17 +304,17 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 
 	out := &hostNodes{ignored: d.ignoredFields(hostName, droppedHere)}
 
-	if slices.Contains(services, instance.BuildFrontend) && slices.Contains(services, instance.BuildBackend) {
-		frontendKey, err := derivedKey(key, instance.BuildFrontend)
+	if slices.Contains(services, instance.Build) && slices.Contains(services, instance.Runner) {
+		frontendKey, err := derivedKey(key, instance.Build)
 		if err != nil {
 			return nil, err
 		}
-		services = slices.DeleteFunc(services, func(s string) bool { return s == instance.BuildFrontend })
-		frontend, err := file([]string{instance.BuildFrontend, instance.Discovery}, mainPort+1, frontendKey)
+		services = slices.DeleteFunc(services, func(s string) bool { return s == instance.Build })
+		frontend, err := file([]string{instance.Build, instance.Discovery}, mainPort+1, frontendKey)
 		if err != nil {
 			return nil, err
 		}
-		out.instances = append(out.instances, unit{name: instance.BuildFrontend, port: mainPort + 1, file: frontend})
+		out.instances = append(out.instances, unit{name: instance.Build, port: mainPort + 1, file: frontend})
 	}
 	main, err := file(services, mainPort, key)
 	if err != nil {
@@ -376,19 +377,43 @@ func (d *sporedrive) Nodes(hostName string) (*Nodes, error) {
 	return out, nil
 }
 
-// withBackend is the added services' sections and the build backend's, which says
-// whether the cloud serves declared zones unproven.
-func withBackend(added map[string]any, trusted bool) (map[string]any, error) {
-	if !trusted {
-		return added, nil
+// withBuild is the added services' sections and the two spore-drive writes for the
+// build services: build's origins, the consoles auth sends people back to, which may
+// call it; and the runner's word on whether declared zones are trusted unproven.
+func withBuild(added map[string]any, cloud *cloudServices) (map[string]any, error) {
+	own := map[string]any{}
+	if origins := consoleOrigins(cloud.auth.Redirects); len(origins) > 0 {
+		own[instance.Build] = map[string]any{"origins": origins}
 	}
-	if _, twice := added[instance.BuildBackend]; twice {
-		return nil, fmt.Errorf("added: %s is configured by spore-drive, not as an added service", instance.BuildBackend)
+	if cloud.trusted {
+		own[instance.Runner] = map[string]any{"domains": map[string]any{"trusted": true}}
+	}
+	if len(own) == 0 {
+		return added, nil
 	}
 	sections := maps.Clone(added)
 	if sections == nil {
 		sections = map[string]any{}
 	}
-	sections[instance.BuildBackend] = map[string]any{"domains": map[string]any{"trusted": true}}
+	for name, section := range own {
+		if _, twice := added[name]; twice {
+			return nil, fmt.Errorf("added: %s is configured by spore-drive, not as an added service", name)
+		}
+		sections[name] = section
+	}
 	return sections, nil
+}
+
+// consoleOrigins are the origins of the console callbacks auth returns to.
+func consoleOrigins(redirects []string) []string {
+	var out []string
+	for _, r := range redirects {
+		if u, err := url.Parse(r); err == nil && u.Scheme != "" && u.Host != "" {
+			o := u.Scheme + "://" + u.Host
+			if !slices.Contains(out, o) {
+				out = append(out, o)
+			}
+		}
+	}
+	return out
 }

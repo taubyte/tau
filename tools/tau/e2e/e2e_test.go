@@ -95,8 +95,7 @@ func fleet(t *testing.T, f *fake.Served, opts ...instance.Option) (front, otherF
 			c.Forges = []drivers.Forge{{Host: f.Host(), Driver: drivers.GitHub, HostKeys: []string{f.HostKey()}, CA: f.CA()}}
 			c.Auth.Admin = auth.Admin{Name: "root"}
 			if index > 0 {
-				c.Services = []string{instance.Discovery, instance.BuildFrontend}
-				c.BuildFrontend.Listen = "127.0.0.1:0"
+				c.Services = []string{instance.Discovery, instance.Build}
 			}
 		},
 	})
@@ -105,7 +104,7 @@ func fleet(t *testing.T, f *fake.Served, opts ...instance.Option) (front, otherF
 	addr := func(i int) string {
 		n, found := dream.Node(u.Pids()[i])
 		require.True(t, found)
-		a := n.BuildFrontendAddr()
+		a := n.BuildAddr()
 		require.NotNil(t, a)
 		return "http://" + a.String()
 	}
@@ -170,7 +169,7 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 	wire := f.LastHookWire()
 	hooks := installed(t, f.Forge, configRepo)
 	require.Len(t, hooks, 1)
-	require.Equal(t, "https://"+instance.BuildFrontend+"."+e2eCloud+"/hook/"+linked.ProjectID, hooks[0].Callback)
+	require.Equal(t, "https://"+instance.Build+"."+e2eCloud+"/hook/"+linked.ProjectID, hooks[0].Callback)
 	require.True(t, f.LastDeployKeyReadOnly())
 
 	// Relinking keeps the config repository's hook, creates and wires the

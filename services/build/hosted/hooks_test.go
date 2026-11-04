@@ -1,4 +1,4 @@
-package instance
+package hosted
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	links "github.com/taubyte/tau/services/build/linked"
+	"github.com/taubyte/tau/services/build/linked"
 	"github.com/taubyte/tau/services/register"
 
 	"github.com/stretchr/testify/require"
@@ -40,11 +40,11 @@ const (
 	linkedCode = "github.com/acme/code"
 )
 
-func linkedNode(t *testing.T) links.Projects {
+func linkedTable(t *testing.T) linked.Projects {
 	t.Helper()
 	r, err := pkgregister.New(pkgregister.WithStore(pkgregister.NewMemStore()))
 	require.NoError(t, err)
-	p := links.Projects{Table: func(context.Context) (register.Table, error) { return r, nil }}
+	p := linked.Projects{Table: func(context.Context) (register.Table, error) { return r, nil }}
 	_, err = p.LinkProject(t.Context(), pkgregister.Link{
 		Project: linkedID, Config: linkedCfg, Code: []string{linkedCode}, Claimant: "github.com/1",
 	})
@@ -53,11 +53,11 @@ func linkedNode(t *testing.T) links.Projects {
 }
 
 func TestAHookIsTheLinkAndItsSecret(t *testing.T) {
-	p := linkedNode(t)
+	p := linkedTable(t)
 	ctx := t.Context()
 
 	vault := secretsMap{}
-	l := linkHooks{links.Credentials{Projects: p, Vault: vault}}
+	l := hooks{linked.Credentials{Projects: p, Vault: vault}}
 
 	_, err := l.Hook(ctx, linkedID)
 	require.ErrorIs(t, err, frontend.ErrNoHook, "linked with no secret set is not a hook")
@@ -77,11 +77,11 @@ func TestAHookIsTheLinkAndItsSecret(t *testing.T) {
 		{Key: linkedCfg, Secret: []byte("cfg-secret")}, {Key: linkedCode, Secret: []byte("code-secret")},
 	}}, hook)
 
-	_, err = linkHooks{links.Credentials{Projects: p, Vault: brokenVault{}}}.Hook(ctx, linkedID)
+	_, err = hooks{linked.Credentials{Projects: p, Vault: brokenVault{}}}.Hook(ctx, linkedID)
 	require.Error(t, err)
 	require.NotErrorIs(t, err, frontend.ErrNoHook, "an unreachable vault is not an answer")
 
-	_, err = linkHooks{links.Credentials{Projects: p}}.Hook(ctx, linkedID)
+	_, err = hooks{linked.Credentials{Projects: p}}.Hook(ctx, linkedID)
 	require.ErrorIs(t, err, secretsService.ErrNoSecrets)
 }
 
@@ -105,7 +105,7 @@ func (h historyVault) Previous(_ context.Context, project, environment, name str
 }
 
 func TestAHookCarriesTheSecretItsSecretReplaced(t *testing.T) {
-	p := linkedNode(t)
+	p := linkedTable(t)
 	ctx := t.Context()
 	code := [3]string{linkedID, linkcreds.Environment, linkcreds.HookSecret(linkedCode)}
 	cfg := [3]string{linkedID, linkcreds.Environment, linkcreds.HookSecret(linkedCfg)}
@@ -116,7 +116,7 @@ func TestAHookCarriesTheSecretItsSecretReplaced(t *testing.T) {
 		previous:   map[[3]string]string{code: "old"},
 		replaced:   at,
 	}
-	hook, err := linkHooks{links.Credentials{Projects: p, Vault: vault}}.Hook(ctx, linkedID)
+	hook, err := hooks{linked.Credentials{Projects: p, Vault: vault}}.Hook(ctx, linkedID)
 	require.NoError(t, err)
 	require.Equal(t, []frontend.HookRepository{
 		{Key: linkedCfg, Secret: []byte("cfg-secret")},
@@ -124,6 +124,38 @@ func TestAHookCarriesTheSecretItsSecretReplaced(t *testing.T) {
 	}, hook.Repositories)
 
 	vault.err = errors.New("vault unreachable")
-	_, err = linkHooks{links.Credentials{Projects: p, Vault: vault}}.Hook(ctx, linkedID)
+	_, err = hooks{linked.Credentials{Projects: p, Vault: vault}}.Hook(ctx, linkedID)
 	require.ErrorContains(t, err, "vault unreachable")
+}
+
+func TestWhatIsPublishedIsReadBackFromTheRegister(t *testing.T) {
+	r, err := pkgregister.New(pkgregister.WithStore(pkgregister.NewMemStore()))
+	require.NoError(t, err)
+	p := published{table: func(context.Context) (register.Table, error) { return r, nil }}
+
+	// A project nobody published has no deployments, and asking is not an error.
+	got, err := p.Environments(t.Context(), "shop")
+	require.NoError(t, err)
+	require.Empty(t, got)
+
+	compiled := []byte(`{"object":{"id":"QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zd","name":"shop"}}`)
+	_, err = r.Publish(t.Context(), pkgregister.Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled})
+	require.NoError(t, err)
+
+	got, err = p.Environments(t.Context(), "shop")
+	require.NoError(t, err)
+	require.Equal(t, []string{"prod"}, got)
+	read, err := p.Compiled(t.Context(), "shop", "prod")
+	require.NoError(t, err)
+	require.JSONEq(t, string(compiled), string(read))
+	_, err = p.Compiled(t.Context(), "shop", "preview")
+	require.Error(t, err)
+
+	// With no register to ask, it fails rather than answering nothing.
+	gone := errors.New("no register is reachable")
+	none := published{table: func(context.Context) (register.Table, error) { return nil, gone }}
+	_, err = none.Environments(t.Context(), "shop")
+	require.ErrorIs(t, err, gone)
+	_, err = none.Compiled(t.Context(), "shop", "prod")
+	require.ErrorIs(t, err, gone)
 }

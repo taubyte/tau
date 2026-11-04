@@ -202,7 +202,7 @@ func TestADownloadThatIsNotARelease(t *testing.T) {
 }
 
 func TestADerivedKeyNeedsAPrimaryOne(t *testing.T) {
-	_, err := derivedKey("not base64!", "build-frontend")
+	_, err := derivedKey("not base64!", "build")
 	assert.ErrorContains(t, err, "decode private key")
 }
 

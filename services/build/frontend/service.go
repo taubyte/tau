@@ -238,7 +238,7 @@ func WithHTTPServer(f func(*http.Server)) Option {
 }
 
 // WithTLS serves Listen over TLS, answering each handshake from c. A node
-// hands over the cloud's certificates for `build-frontend.<cloud fqdn>`,
+// hands over the cloud's certificates for `build.<cloud fqdn>`,
 // which is the address a forge's webhook is installed at.
 func WithTLS(c *tls.Config) Option {
 	return func(o *options) error {

@@ -428,7 +428,7 @@ func TestTheZoneItsNamesAndItsWildcardAreProvedByDNS01(t *testing.T) {
 	// HTTP-01 answers nothing, so only DNS-01 can have proved these.
 	c.answer = func(string) (string, bool) { return "", false }
 
-	for _, name := range []string{"*.tau.example.io", "build-frontend.tau.example.io", "tau.example.io"} {
+	for _, name := range []string{"*.tau.example.io", "build.tau.example.io", "tau.example.io"} {
 		cert, err := i.Certificate(t.Context(), name)
 		require.NoError(t, err, name)
 		c.verify(t, cert.Certificate[0], strings.Replace(name, "*", "anything", 1))

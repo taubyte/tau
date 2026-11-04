@@ -133,7 +133,7 @@ func testDisplace(t *testing.T, sd Spore, root string, secrets []string, openDel
 		rh.On("Sudo", ctx, "bash", "-c", "mkdir -p "+root+"/{bin,config,storage}").Return(nil, nil)
 
 		// one file per node, keys inline
-		for _, inst := range []string{"shape1", "build-frontend"} {
+		for _, inst := range []string{"shape1", "build"} {
 			cf, _ := rhfs.OpenFile("/tmp/"+inst+".yaml", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0600)
 			rh.On("OpenFile", "/tmp/"+inst+".yaml", os.O_CREATE|os.O_RDWR|os.O_TRUNC, fs.FileMode(0600)).Once().Return(cf, nil)
 			rh.On("Sudo", ctx, "cp", "-f", "/tmp/"+inst+".yaml", root+"/config/").Return(nil, nil)
@@ -148,7 +148,7 @@ func testDisplace(t *testing.T, sd Spore, root string, secrets []string, openDel
 		rh.On("Sudo", ctx, "test", "-d", root+"/storage/shape1").Once().Return(nil, nil)
 		rh.On("Sudo", ctx, "grep", "-qs", "^node:", root+"/config/shape1.yaml").Once().Return(nil, errors.New("exit 1"))
 		rh.On("Sudo", ctx, "mv", root+"/storage/shape1", root+"/storage/shape1.v1-20261022T093000").Once().Return(nil, nil)
-		rh.On("Sudo", ctx, "test", "-d", root+"/storage/build-frontend").Once().Return(nil, errors.New("exit 1"))
+		rh.On("Sudo", ctx, "test", "-d", root+"/storage/build").Once().Return(nil, errors.New("exit 1"))
 
 		if secrets != nil {
 			rh.On("SudoInput", ctx, mock.Anything, root+"/bin/tau", "init", "--config", root+"/config/shape1.yaml", "--root", root+"/storage/shape1", "-").
@@ -170,8 +170,8 @@ func testDisplace(t *testing.T, sd Spore, root string, secrets []string, openDel
 		for _, inst := range []string{"shape2", "node"} {
 			rh.On("Sudo", ctx, "systemctl", "disable", "tau@"+inst).Return(nil, nil)
 		}
-		rh.On("Sudo", ctx, "systemctl", "enable", "tau@build-frontend").Return(nil, nil)
-		for _, inst := range []string{"shape1", "build-frontend"} {
+		rh.On("Sudo", ctx, "systemctl", "enable", "tau@build").Return(nil, nil)
+		for _, inst := range []string{"shape1", "build"} {
 			rh.On("Sudo", ctx, "systemctl", "start", "tau@"+inst).Return(nil, nil)
 		}
 
@@ -235,11 +235,11 @@ func testDisplace(t *testing.T, sd Spore, root string, secrets []string, openDel
 
 		var main, frontend boot.File
 		assert.NilError(t, yaml.Unmarshal(read("/tmp/shape1.yaml"), &main))
-		assert.NilError(t, yaml.Unmarshal(read("/tmp/build-frontend.yaml"), &frontend))
+		assert.NilError(t, yaml.Unmarshal(read("/tmp/build.yaml"), &frontend))
 
 		// the host's shapes are one node, keyed by its first shape
 		assert.Equal(t, main.PrivateKey, sdrive.parser.Hosts().Host(h.Name()).Shapes().Instance("shape1").Key())
-		assert.DeepEqual(t, main.Node.Services, []string{"auth", "secrets", "discovery", "dns", "gateway", "build-backend"})
+		assert.DeepEqual(t, main.Node.Services, []string{"auth", "secrets", "discovery", "dns", "gateway", "runner"})
 		assert.Equal(t, main.Node.Cloud, "test.com")
 		assert.Equal(t, main.Node.CloudFqdn, "gtest.com")
 		assert.Equal(t, main.HTTP, ":80")
@@ -267,8 +267,8 @@ func testDisplace(t *testing.T, sd Spore, root string, secrets []string, openDel
 		}
 		assert.Equal(t, main.CA, frontend.CA, "one CA for the cloud")
 
-		// build-frontend is split off, on the next port, with its own identity
-		assert.DeepEqual(t, frontend.Node.Services, []string{"build-frontend", "discovery"})
+		// build is split off, on the next port, with its own identity
+		assert.DeepEqual(t, frontend.Node.Services, []string{"build", "discovery"})
 		assert.DeepEqual(t, frontend.Listen, []string{"/ip4/0.0.0.0/tcp/4243"})
 		assert.Assert(t, frontend.PrivateKey != main.PrivateKey)
 		assert.Equal(t, frontend.HTTP, "")

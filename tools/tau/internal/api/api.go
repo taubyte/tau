@@ -293,7 +293,7 @@ func (c *Client) Projects(ctx context.Context) ([]Project, error) {
 }
 
 // Fqdn is the name the cloud serves under; its build frontend is
-// build-frontend.<fqdn>.
+// build.<fqdn>.
 func (c *Client) Fqdn(ctx context.Context) (string, error) {
 	type domainAnswer struct {
 		Fqdn string `json:"fqdn"`

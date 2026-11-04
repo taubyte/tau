@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -16,28 +15,17 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/taubyte/tau/core/service"
-	"github.com/taubyte/tau/pkg/linkcreds"
-	"github.com/taubyte/tau/pkg/tenancy"
 	authService "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/clients"
-	"github.com/taubyte/tau/services/build/frontend"
-	"github.com/taubyte/tau/services/build/frontend/forgeauth"
-	links "github.com/taubyte/tau/services/build/linked"
-	"github.com/taubyte/tau/services/register"
+	"github.com/taubyte/tau/services/build/hosted"
 	"github.com/taubyte/tau/services/worker"
 )
 
-// Composes the public half of the build service and the auth it asks:
-//
-//	auth           who is admitted to this cloud, once a forge said who a caller is.
-//	build-frontend the webhook a provider posts to, and the job API a
-//	               developer reads.
-//
-// The private half, build-backend, is a service of its own (services/build/backend).
-// The frontend reaches auth as a client over the swarm even when it runs locally, so
-// it holds none of auth's store.
+// Composes auth: who is admitted to this cloud, once a forge said who a caller is.
+// The build service, both its roles, runs from the catalog (services/build/hosted),
+// and is asked here only what a worker's artifact lookup needs.
 
 // maxAuthConnections bounds the streams one node keeps to auth. It is small
 // because every answer is cached in front of it — the frontend caches hook
@@ -48,9 +36,9 @@ const maxAuthConnections = 4
 // gossiped and changes on its own schedule; there is nothing to subscribe to.
 const pollInterval = 250 * time.Millisecond
 
-// ErrNoBuildBackend is a resource the platform builds, on a node that can find
+// ErrNoRunner is a resource the platform builds, on a node that can find
 // nothing that builds.
-var ErrNoBuildBackend = errors.New("node: no build service is reachable")
+var ErrNoRunner = errors.New("node: no runner is reachable")
 
 // ErrNotBuilt is a resource the platform builds and nothing has built yet.
 //
@@ -169,180 +157,13 @@ func (n *Instance) openAuth() error {
 	return nil
 }
 
-// openBuildFrontend is the public half: a webhook and a job API.
-func (n *Instance) openBuildFrontend() error {
-	if !n.cfg.runs(BuildFrontend) {
-		return nil
+// BuildAddr is where this node's build frontend listens, nil when it runs
+// none or it has not started.
+func (n *Instance) BuildAddr() net.Addr {
+	if f, ok := service.Get[hosted.Service](&added{node: n}); ok {
+		return f.Addr()
 	}
-
-	auth, err := n.dial(clients.AuthProtocol, Auth)
-	if err != nil {
-		return err
-	}
-	projects := links.Projects{Table: func(ctx context.Context) (register.Table, error) { return n.registers.Now(ctx) }}
-
-	backends, err := n.dial(build.Protocol, BuildBackend)
-	if err != nil {
-		return err
-	}
-	builds, err := clients.Builds(backends)
-	if err != nil {
-		return err
-	}
-
-	served, err := tenancy.Parse(n.cfg.Tenancy)
-	if err != nil {
-		return err
-	}
-	registry, err := n.forgeRegistry()
-	if err != nil {
-		return err
-	}
-	forges, err := forgeauth.New(registry)
-	if err != nil {
-		return err
-	}
-
-	identities, err := clients.Identities(auth)
-	if err != nil {
-		return err
-	}
-	authCalls, err := clients.AuthCalls(auth)
-	if err != nil {
-		return err
-	}
-
-	frontendOptions := []frontend.Option{
-		// THE PROJECT TABLE IS THE REGISTER'S: who a project's owner is and
-		// what roles it granted. This role writes it only through the link
-		// and grant routes, after authorizing the caller.
-		frontend.WithLinker(projects),
-		frontend.WithProjects(projects),
-		// WHO A CALLER IS IS AUTH'S TO SAY, from their tau token.
-		frontend.WithCallers(identities),
-		// SIGNING IN IS AUTH'S, carried here because auth has no ingress.
-		frontend.WithAuthAPI(authCalls),
-		frontend.WithBackend(builds),
-		frontend.WithDeliveries(forges),
-		frontend.WithTenancy(served),
-		frontend.WithCloudFqdn(n.cfg.CloudFqdn),
-	}
-	// A forge with no signed webhook reports pushes on its own feed (Gerrit's
-	// stream-events), subscribed to as a second source (frontend/streams.go). A finished
-	// job's logs and artifacts are read by cid from the storage service.
-	frontendOptions = append(frontendOptions, frontend.WithAssets(n.store))
-	if len(registry.EventHosts()) > 0 {
-		frontendOptions = append(frontendOptions, frontend.WithStreams(forges, projects))
-	}
-	// What a deployment runs, read back for a developer's build against it.
-	frontendOptions = append(frontendOptions, frontend.WithPublished(published{n}))
-	// The public role never holds a vault: it is the process strangers reach. This is
-	// always a stream to a node that does, used only for hook secrets.
-	var vault links.Vault
-	switch {
-	case n.opts.secrets != nil:
-		vault = n.opts.secrets
-	case n.discovery != nil:
-		v := newVault(n)
-		n.closers = append(n.closers, v)
-		vault = v
-		frontendOptions = append(frontendOptions, frontend.WithVault(v))
-	}
-	frontendOptions = append(frontendOptions, frontend.WithHooks(linkHooks{links.Credentials{Projects: projects, Vault: vault}}))
-	domains, err := n.domains()
-	if err != nil {
-		return err
-	}
-	frontendOptions = append(frontendOptions, frontend.WithDomains(domainClaims{domains}))
-
-	// A console auth may redirect to is a console that may call this ingress: its
-	// origins are the CORS allow-list. TLS when the cloud issues certificates.
-	secure, err := n.ServiceTLS()
-	if err != nil {
-		return err
-	}
-	if secure != nil {
-		frontendOptions = append(frontendOptions, frontend.WithTLS(secure))
-	}
-	feCfg := n.cfg.BuildFrontend
-	feCfg.Origins = append(slices.Clone(feCfg.Origins), consoleOrigins(n.cfg.Auth.Redirects)...)
-	svc, err := frontend.New(feCfg, frontendOptions...)
-	if err != nil {
-		return err
-	}
-	n.buildFrontend = svc
-	n.closers = append(n.closers, svc)
 	return nil
-}
-
-// BuildFrontendAddr is where this node's build frontend listens, nil when it
-// runs none or has not started.
-func (n *Instance) BuildFrontendAddr() net.Addr {
-	if n.buildFrontend == nil {
-		return nil
-	}
-	return n.buildFrontend.Addr()
-}
-
-// published is what a deployment runs, read back for a developer's build against it:
-// frontend.Published, resolved per call, since which register answers is a routing
-// question.
-type published struct{ node *Instance }
-
-func (p published) Environments(ctx context.Context, project string) ([]string, error) {
-	r, err := p.node.registers.Now(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return r.Environments(ctx, project)
-}
-
-// Compiled is the object a deployment's pointer names.
-func (p published) Compiled(ctx context.Context, project, environment string) ([]byte, error) {
-	r, err := p.node.registers.Now(ctx)
-	if err != nil {
-		return nil, err
-	}
-	pointer, err := r.Resolve(ctx, project, environment)
-	if err != nil {
-		return nil, err
-	}
-	return r.Object(ctx, pointer.Object)
-}
-
-// linkHooks is a project's webhook as the frontend checks a delivery against it: its
-// repositories, from the register, each with its own secret, from the vault.
-type linkHooks struct{ links.Credentials }
-
-// Hook is ErrNoHook for a project none of whose repositories has a secret set: one
-// that can be pushed to was linked AND had a secret set for the repository pushed.
-func (l linkHooks) Hook(ctx context.Context, project string) (frontend.Hook, error) {
-	repositories, err := l.Projects.Repositories(ctx, project)
-	if connect.CodeOf(err) == connect.CodeNotFound {
-		return frontend.Hook{}, fmt.Errorf("%w: %w", frontend.ErrNoHook, err)
-	}
-	if err != nil {
-		return frontend.Hook{}, err
-	}
-	hook := frontend.Hook{Project: project}
-	for _, repository := range repositories {
-		secret, found, err := l.Value(ctx, project, linkcreds.HookSecret(repository))
-		if err != nil {
-			return frontend.Hook{}, err
-		}
-		if !found {
-			continue
-		}
-		repo := frontend.HookRepository{Key: repository, Secret: secret}
-		if repo.Previous, repo.Replaced, err = l.Previous(ctx, project, linkcreds.HookSecret(repository)); err != nil {
-			return frontend.Hook{}, err
-		}
-		hook.Repositories = append(hook.Repositories, repo)
-	}
-	if len(hook.Repositories) == 0 {
-		return frontend.Hook{}, fmt.Errorf("%w: project %s has no hook secret set", frontend.ErrNoHook, project)
-	}
-	return hook, nil
 }
 
 // artifacts is what a built resource currently runs. It drops the kind, since a
@@ -392,12 +213,12 @@ func (a *artifacts) Artifact(ctx context.Context, project, environment, kind, re
 	// The view is asked before the pool, since this is the request path:
 	// fromDiscovery.Peers would wait forever on a cloud with no build backend. A failed
 	// lookup is not cached.
-	if len((&fromDiscovery{node: a.node, name: BuildBackend}).Known()) == 0 {
+	if len((&fromDiscovery{node: a.node, name: Runner}).Known()) == 0 {
 		return "", fmt.Errorf("%w: %s/%s is built by the platform and no build service is reachable",
-			ErrNoBuildBackend, project, environment)
+			ErrNoRunner, project, environment)
 	}
 
-	pool, err := a.node.dial(build.Protocol, BuildBackend)
+	pool, err := a.node.dial(build.Protocol, Runner)
 	if err != nil {
 		return "", err
 	}

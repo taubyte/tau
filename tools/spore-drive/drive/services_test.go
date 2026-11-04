@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/services/build/frontend"
+
 	"github.com/taubyte/tau/services/build/backend"
 
 	"github.com/taubyte/tau/pkg/forge/drivers"
@@ -76,8 +78,11 @@ func TestSignInAndCertificatesReachEveryNodeAndTheirSecretsOnlyTheBundle(t *test
 		assert.Equal(t, acme.Email, "ops@test.com")
 		assert.Equal(t, acme.EAB.KeyID, "k")
 		var built backend.Config
-		assert.NilError(t, n.Section(instance.BuildBackend, &built))
-		assert.Assert(t, built.Domains.Trusted, "a trusted cloud's backend serves declared zones unproven")
+		assert.NilError(t, n.Section(instance.Runner, &built))
+		assert.Assert(t, built.Domains.Trusted, "a trusted cloud's runner serves declared zones unproven")
+		var public frontend.Config
+		assert.NilError(t, n.Section(instance.Build, &public))
+		assert.DeepEqual(t, public.Origins, []string{"https://console.test.com"})
 
 		raw, err := yaml.Marshal(inst.file)
 		assert.NilError(t, err)
@@ -246,4 +251,17 @@ func TestSealingRefusesWhatCannotBeASecret(t *testing.T) {
 		_, err := driveFor(p).sealSecrets()
 		assert.Assert(t, err != nil, name)
 	}
+}
+
+func TestConsoleOriginsAreTheCallbacksOrigins(t *testing.T) {
+	assert.DeepEqual(t, consoleOrigins([]string{"https://console.example/cb", "https://console.example/other", "http://127.0.0.1:3000/x", "::"}),
+		[]string{"https://console.example", "http://127.0.0.1:3000"})
+}
+
+func TestSporeDriveOwnsTheBuildSections(t *testing.T) {
+	_, err := withBuild(map[string]any{instance.Runner: map[string]any{}}, &cloudServices{trusted: true})
+	assert.ErrorContains(t, err, instance.Runner)
+	kept, err := withBuild(map[string]any{"mail": 1}, &cloudServices{})
+	assert.NilError(t, err)
+	assert.DeepEqual(t, kept, map[string]any{"mail": 1})
 }

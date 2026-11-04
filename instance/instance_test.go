@@ -30,7 +30,7 @@ func TestANodeRunsWhatItWasToldTo(t *testing.T) {
 func TestAnEmptyServiceListIsEveryService(t *testing.T) {
 	n, _, _ := makeNode(t, Config{})
 
-	require.ElementsMatch(t, append(slices.Clone(All), services.Names()...), n.Services(), "and every service tau ships")
+	require.ElementsMatch(t, append(slices.Clone(All), services.Default()...), n.Services(), "and every service tau ships but build")
 	require.NotNil(t, n.Register())
 	require.NotNil(t, n.Worker())
 	require.NotNil(t, n.Discovery())

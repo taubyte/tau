@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
-	"slices"
 
 	authService "github.com/taubyte/tau/services/auth"
 )
@@ -52,18 +50,4 @@ func (n *Instance) authConfig() authService.Config {
 		c.Issuer = "tau:" + n.cfg.Cloud
 	}
 	return c
-}
-
-// consoleOrigins are the origins of the console callbacks auth returns to.
-func consoleOrigins(redirects []string) []string {
-	var out []string
-	for _, r := range redirects {
-		if u, err := url.Parse(r); err == nil && u.Scheme != "" && u.Host != "" {
-			o := u.Scheme + "://" + u.Host
-			if !slices.Contains(out, o) {
-				out = append(out, o)
-			}
-		}
-	}
-	return out
 }

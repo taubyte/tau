@@ -97,8 +97,8 @@ func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 				file.Node.DNSListen = "127.0.0.1:0"
 				file = initialized(t, bundle, file)
 			} else {
-				file.Node.Services = []string{instance.Register, instance.Discovery, instance.Gateway, instance.BuildFrontend}
-				file.Node.BuildFrontend = frontend.Config{Listen: addr + ":8443"}
+				file.Node.Services = []string{instance.Register, instance.Discovery, instance.Gateway, instance.Build}
+				file.Node.Sections = map[string]any{instance.Build: frontend.Config{Listen: addr + ":8443"}}
 			}
 			if i > 0 {
 				h := f.nodes[0].Host()
@@ -143,7 +143,7 @@ func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 		require.Equal(t, []string{name}, gen.DNSNames)
 		require.True(t, f.reached(resolverAddr, "_acme-challenge."+name, dns.TypeTXT), "pebble's DNS-01 lookup reached tau's dns")
 
-		frontendName := instance.BuildFrontend + "." + liveCloud
+		frontendName := instance.Build + "." + liveCloud
 		res := issued(t, f.addrs[2]+":8443", frontendName, roots)
 		wildcard := res.TLS.PeerCertificates[0]
 		require.Equal(t, []string{"*." + liveCloud}, wildcard.DNSNames)

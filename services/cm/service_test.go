@@ -261,7 +261,7 @@ func TestANodeOrdersWhatItNeedsAndAnotherReadsIt(t *testing.T) {
 	f := newFleet(t, 2, false)
 	c := f.client(t)
 
-	for _, name := range []string{"build-frontend.tau.example.io", "api.shop.tau.example.io"} {
+	for _, name := range []string{"build.tau.example.io", "api.shop.tau.example.io"} {
 		cert, err := c.GetCertificate(&tls.ClientHelloInfo{ServerName: strings.ToUpper(name) + "."})
 		require.NoError(t, err, name)
 		f.verify(t, *cert, name)
@@ -284,7 +284,7 @@ func TestANodeOrdersWhatItNeedsAndAnotherReadsIt(t *testing.T) {
 	require.False(t, ok)
 
 	// NO TXT RECORD OUTLIVES ITS CHALLENGE.
-	values, err := f.challenges(t).values(t.Context(), "build-frontend.tau.example.io")
+	values, err := f.challenges(t).values(t.Context(), "build.tau.example.io")
 	require.NoError(t, err)
 	require.Empty(t, values)
 
@@ -304,7 +304,7 @@ func TestTheWildcardAnswersEveryServiceName(t *testing.T) {
 	require.Equal(t, []string{"*.tau.example.io"}, cert.Leaf.DNSNames)
 	f.verify(t, cert, "dns.tau.example.io")
 
-	other, err := c.Certificate(t.Context(), "build-frontend.tau.example.io")
+	other, err := c.Certificate(t.Context(), "build.tau.example.io")
 	require.NoError(t, err)
 	require.Equal(t, cert.Certificate[0], other.Certificate[0], "the one wildcard, not a second issuance")
 

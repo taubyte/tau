@@ -30,8 +30,8 @@ func TestAFrontendFollowsAForgesEventStream(t *testing.T) {
 
 	priv, pub := gittest.KeyPair(t)
 	n, _, _ := makeNode(t, Config{
-		Services:      []string{Discovery, BuildFrontend},
-		BuildFrontend: frontend.Config{Listen: "127.0.0.1:0"},
+		Services: []string{Discovery, Build},
+		Sections: map[string]any{Build: frontend.Config{Listen: "127.0.0.1:0"}},
 		Forges: []drivers.Forge{{
 			Host: "review.example.com", Driver: drivers.Gerrit,
 			Events:   &drivers.Events{Address: sshd.Addr().String(), User: "tau-bot", Key: priv},

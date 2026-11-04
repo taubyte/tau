@@ -67,11 +67,6 @@ func TestWhatWithIdentityRefuses(t *testing.T) {
 	}
 }
 
-func TestConsoleOriginsAreTheCallbacksOrigins(t *testing.T) {
-	require.Equal(t, []string{"https://console.example", "http://127.0.0.1:3000"},
-		consoleOrigins([]string{"https://console.example/cb", "https://console.example/other", "http://127.0.0.1:3000/x", "::"}))
-}
-
 func TestAuthConfigDefaultsTheIssuer(t *testing.T) {
 	n := &Instance{Node: mockPeer(t), cfg: Config{Cloud: "example.com"}}
 	require.Equal(t, "tau:example.com", n.authConfig().Issuer)

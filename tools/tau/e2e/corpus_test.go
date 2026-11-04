@@ -179,8 +179,7 @@ func universe(t *testing.T, f *fake.Served, configure func(*instance.Config), op
 				configure(c)
 			}
 			if index > 0 {
-				c.Services = []string{instance.Discovery, instance.BuildFrontend}
-				c.BuildFrontend.Listen = "127.0.0.1:0"
+				c.Services = []string{instance.Discovery, instance.Build}
 			}
 		},
 	})
@@ -191,7 +190,7 @@ func universe(t *testing.T, f *fake.Served, configure func(*instance.Config), op
 	require.True(t, ok)
 	front, ok := dream.Node(u.Pids()[1])
 	require.True(t, ok)
-	addr := front.BuildFrontendAddr()
+	addr := front.BuildAddr()
 	require.NotNil(t, addr)
 	return "http://" + addr.String(), serving
 }
@@ -790,9 +789,9 @@ func (z *txtZone) LookupTXT(_ context.Context, name string) ([]string, error) {
 func TestTheDomainCorpusBuildsBothWays(t *testing.T) {
 	dns := &txtZone{m: map[string][]string{}}
 	u := signedIn(t, func(c *instance.Config) {
-		built := c.Sections[instance.BuildBackend].(backend.Config)
+		built := c.Sections[instance.Runner].(backend.Config)
 		built.Domains.Trusted = false
-		c.Sections[instance.BuildBackend] = built
+		c.Sections[instance.Runner] = built
 		c.Services = append(append(append([]string(nil), instance.All...), services.Names()...), instance.CM)
 	}, instance.WithResolver(dns))
 

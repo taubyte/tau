@@ -64,8 +64,7 @@ func TestAServiceNameIsIssuedOnceForTheFleet(t *testing.T) {
 			case 0, 1:
 				c.Services = append(append(slices.Clone(instance.All), services.Names()...), instance.CM)
 			default:
-				c.Services = []string{instance.Discovery, instance.BuildFrontend}
-				c.BuildFrontend.Listen = "127.0.0.1:0"
+				c.Services = []string{instance.Discovery, instance.Build}
 			}
 		},
 	})
@@ -90,7 +89,7 @@ func TestAServiceNameIsIssuedOnceForTheFleet(t *testing.T) {
 	h := front.Handler()
 	handler.Store(&h)
 
-	name := instance.BuildFrontend + "." + cloud
+	name := instance.Build + "." + cloud
 	var leaves [][]byte
 	for _, n := range nodes {
 		secure, err := n.ServiceTLS()

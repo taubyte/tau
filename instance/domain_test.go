@@ -6,12 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"connectrpc.com/connect"
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
-
-	kvdbmock "github.com/taubyte/tau/pkg/kvdb/mock"
-	"github.com/taubyte/tau/services/cm"
 )
 
 type memVault struct {
@@ -47,34 +42,8 @@ func TestAResolverIsTheOperatorsChoice(t *testing.T) {
 	require.NotNil(t, o.resolver)
 }
 
-func TestTheClaimRouteSeamSaysWhatIsMalformed(t *testing.T) {
-	p := mockPeer(t)
-	h := p.Host()
-	db, err := kvdbmock.New().New(nil, "cm", 0)
-	require.NoError(t, err)
-	svc, err := cm.New(h, db, cm.Config{Certificate: cm.CertificateConfig{Zone: "tau.example"}}, cm.WithVault(&memVault{m: map[string][]byte{}}))
-	require.NoError(t, err)
-
-	n := &Instance{Node: p, cm: svc}
-	n.opts.resolver = noTXT{}
-	d, err := cm.NewDomains(h, func() []libp2ppeer.ID { return nil }, func() *cm.Service { return n.cm })
-	require.NoError(t, err)
-	t.Cleanup(func() { d.Close() })
-
-	c, err := domainClaims{d}.Claim(t.Context(), "QmNTj7BY3YNySGaUrfuWjkomCME8fTcynvgHiNdX1hyLME", "shop.test")
-	require.NoError(t, err)
-	require.Equal(t, "QmNTj7BY.shop.test", c.Entry)
-	require.Equal(t, "txt", c.Type)
-	require.NotEmpty(t, c.Token)
-
-	_, err = domainClaims{d}.Claim(t.Context(), "not a cid", "shop.test")
-	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
-
-	none, err := cm.NewDomains(h, func() []libp2ppeer.ID { return nil }, func() *cm.Service { return nil })
-	require.NoError(t, err)
-	_, err = domainClaims{none}.Claim(t.Context(), "QmNTj7BY3YNySGaUrfuWjkomCME8fTcynvgHiNdX1hyLME", "shop.test")
-	require.ErrorIs(t, err, cm.ErrNoMembers)
-
+func TestTheDomainsClientIsBuiltOnce(t *testing.T) {
+	n := &Instance{Node: mockPeer(t)}
 	built, err := n.domains()
 	require.NoError(t, err)
 	again, err := n.domains()

@@ -40,16 +40,16 @@ func accountKey(t *testing.T) string {
 	return string(blob)
 }
 
-func TestTheBuildFrontendServesTLSWhenTheCloudIssues(t *testing.T) {
+func TestBuildServesTLSWhenTheCloudIssues(t *testing.T) {
 	n, _, _ := makeNode(t, Config{
-		Services:      []string{Discovery, BuildFrontend},
-		BuildFrontend: frontend.Config{Listen: "127.0.0.1:0"},
-		CloudFqdn:     "tau.example.io",
-		CM:            cm.Config{Certificate: cm.CertificateConfig{ACME: certificate.ACME{Enabled: true}}},
+		Services:  []string{Discovery, Build},
+		Sections:  map[string]any{Build: frontend.Config{Listen: "127.0.0.1:0"}},
+		CloudFqdn: "tau.example.io",
+		CM:        cm.Config{Certificate: cm.CertificateConfig{ACME: certificate.ACME{Enabled: true}}},
 	})
 	require.NoError(t, n.Start(t.Context()))
 
-	res, err := http.Get("http://" + n.BuildFrontendAddr().String() + "/")
+	res, err := http.Get("http://" + n.BuildAddr().String() + "/")
 	require.NoError(t, err)
 	body, err := io.ReadAll(res.Body)
 	res.Body.Close()
@@ -57,7 +57,7 @@ func TestTheBuildFrontendServesTLSWhenTheCloudIssues(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, res.StatusCode)
 	require.Contains(t, string(body), "HTTPS server")
 
-	_, err = tls.Dial("tcp", n.BuildFrontendAddr().String(), &tls.Config{ServerName: "build-frontend.tau.example.io"})
+	_, err = tls.Dial("tcp", n.BuildAddr().String(), &tls.Config{ServerName: "build.tau.example.io"})
 	require.Error(t, err, "no cm node keeps one, so nothing is presented")
 
 	secure, err := n.ServiceTLS()
@@ -65,7 +65,7 @@ func TestTheBuildFrontendServesTLSWhenTheCloudIssues(t *testing.T) {
 	require.NotNil(t, secure.GetCertificate)
 
 	// A CLOUD THAT ISSUES NOTHING serves its frontend as it did.
-	plain, _, _ := makeNode(t, Config{Services: []string{Discovery, BuildFrontend}, BuildFrontend: frontend.Config{Listen: "127.0.0.1:0"}})
+	plain, _, _ := makeNode(t, Config{Services: []string{Discovery, Build}, Sections: map[string]any{Build: frontend.Config{Listen: "127.0.0.1:0"}}})
 	secure, err = plain.ServiceTLS()
 	require.NoError(t, err)
 	require.Nil(t, secure)

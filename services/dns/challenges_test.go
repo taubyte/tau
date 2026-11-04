@@ -20,12 +20,12 @@ func (p presented) Challenges(_ context.Context, fqdn string) ([]string, error) 
 
 func TestADNS01ChallengeIsAnsweredFromTheCertificateNodes(t *testing.T) {
 	p := presented{values: map[string][]string{
-		"build-frontend.tau.example.io": {"one", "two"},
-		"tau.example.io":                {"apex"},
+		"build.tau.example.io": {"one", "two"},
+		"tau.example.io":       {"apex"},
 	}}
 	s := servicesService(t, builders, WithChallenges("tau.example.io.", p))
 
-	reply := s.Answer(query("_acme-challenge.Build-Frontend.tau.example.io", dns.TypeTXT))
+	reply := s.Answer(query("_acme-challenge.Build.tau.example.io", dns.TypeTXT))
 	require.Equal(t, dns.RcodeSuccess, reply.Rcode)
 	require.Len(t, reply.Answer, 2)
 	require.Equal(t, []string{"one"}, reply.Answer[0].(*dns.TXT).Txt)
@@ -39,7 +39,7 @@ func TestADNS01ChallengeIsAnsweredFromTheCertificateNodes(t *testing.T) {
 	reply = s.Answer(query("_acme-challenge.other.tau.example.io", dns.TypeTXT))
 	require.Equal(t, dns.RcodeServerFailure, reply.Rcode)
 	require.Empty(t, reply.Answer)
-	reply = s.Answer(query("_acme-challenge.build-frontend.tau.example.io", dns.TypeA))
+	reply = s.Answer(query("_acme-challenge.build.tau.example.io", dns.TypeA))
 	require.Equal(t, dns.RcodeSuccess, reply.Rcode)
 	require.Empty(t, reply.Answer)
 

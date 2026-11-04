@@ -17,7 +17,9 @@ import (
 )
 
 func TestANameIsTheServiceItRuns(t *testing.T) {
-	require.Equal(t, []string{consensus.Descriptor.Name, discovery.Descriptor.Name, register.Descriptor.Name, secrets.Descriptor.Name, primitives.Descriptor.Name, database.Descriptor.Name, storage.Descriptor.Name, build.Backend.Name}, Names(), "in start order")
+	require.Equal(t, []string{consensus.Descriptor.Name, discovery.Descriptor.Name, register.Descriptor.Name, secrets.Descriptor.Name, primitives.Descriptor.Name, database.Descriptor.Name, storage.Descriptor.Name, build.Runner.Name, build.Build.Name}, Names(), "in start order")
+	require.Equal(t, []string{consensus.Descriptor.Name, discovery.Descriptor.Name, register.Descriptor.Name, secrets.Descriptor.Name, primitives.Descriptor.Name, database.Descriptor.Name, storage.Descriptor.Name, build.Runner.Name}, Default(),
+		"every one but build, which may not run beside the runner")
 
 	s, ok := New(storage.Descriptor.Name)
 	require.True(t, ok)
@@ -40,7 +42,7 @@ func TestANameIsTheServiceItRuns(t *testing.T) {
 func TestAServiceNeedsWhatItCannotStartWithout(t *testing.T) {
 	require.Equal(t, []string{consensus.Descriptor.Name}, Needs(primitives.Descriptor.Name))
 	require.Equal(t, []string{consensus.Descriptor.Name}, Needs(database.Descriptor.Name))
-	require.Equal(t, []string{consensus.Descriptor.Name}, Needs(build.Backend.Name), "a build queue is a raft group")
+	require.Equal(t, []string{consensus.Descriptor.Name}, Needs(build.Runner.Name), "a build queue is a raft group")
 	require.Empty(t, Needs(consensus.Descriptor.Name))
 	require.Empty(t, Needs("nothing"))
 }

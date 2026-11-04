@@ -96,7 +96,7 @@ type CertificateConfig struct {
 	// wildcard is DNS-01 or nothing.
 	Challenge string `yaml:"challenge"`
 
-	// Zone is the cloud's fqdn. The node fills it from the gateway's.
+	// Zone is the cloud's fqdn: the node's cloudfqdn, filled by whoever builds a client.
 	Zone string `yaml:"-"`
 }
 
