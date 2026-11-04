@@ -3,6 +3,8 @@ package services
 import (
 	"testing"
 
+	"github.com/taubyte/tau/services/build"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/services/consensus"
@@ -15,7 +17,7 @@ import (
 )
 
 func TestANameIsTheServiceItRuns(t *testing.T) {
-	require.Equal(t, []string{consensus.Descriptor.Name, discovery.Descriptor.Name, register.Descriptor.Name, secrets.Descriptor.Name, primitives.Descriptor.Name, database.Descriptor.Name, storage.Descriptor.Name}, Names(), "in start order")
+	require.Equal(t, []string{consensus.Descriptor.Name, discovery.Descriptor.Name, register.Descriptor.Name, secrets.Descriptor.Name, primitives.Descriptor.Name, database.Descriptor.Name, storage.Descriptor.Name, build.Backend.Name}, Names(), "in start order")
 
 	s, ok := New(storage.Descriptor.Name)
 	require.True(t, ok)
@@ -38,6 +40,7 @@ func TestANameIsTheServiceItRuns(t *testing.T) {
 func TestAServiceNeedsWhatItCannotStartWithout(t *testing.T) {
 	require.Equal(t, []string{consensus.Descriptor.Name}, Needs(primitives.Descriptor.Name))
 	require.Equal(t, []string{consensus.Descriptor.Name}, Needs(database.Descriptor.Name))
+	require.Equal(t, []string{consensus.Descriptor.Name}, Needs(build.Backend.Name), "a build queue is a raft group")
 	require.Empty(t, Needs(consensus.Descriptor.Name))
 	require.Empty(t, Needs("nothing"))
 }
