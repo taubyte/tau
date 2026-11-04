@@ -19,7 +19,7 @@ func TestAServiceIsResolvedByNameToTheNodeRunningIt(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Copies: 2,
 		Configure: func(index int, c *instance.Config) {
-			c.Gateway.CloudFqdn = cloud
+			c.CloudFqdn = cloud
 			if index > 0 {
 				c.Services = []string{instance.Discovery, instance.BuildFrontend}
 				c.BuildFrontend.Listen = "127.0.0.1:0"

@@ -19,8 +19,8 @@ import (
 
 // Services is the cloud's zone and the services that may be named under it.
 type Services struct {
-	// Zone is the cloud's fqdn — the gateway's CloudFqdn, the same value the
-	// generated names use.
+	// Zone is the cloud's fqdn: the node's cloudfqdn, the same value the generated
+	// names use.
 	Zone string
 
 	// Names are the services this cloud knows how to run. A name outside them

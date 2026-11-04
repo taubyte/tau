@@ -241,7 +241,7 @@ func testDisplace(t *testing.T, sd Spore, root string, secrets []string, openDel
 		assert.Equal(t, main.PrivateKey, sdrive.parser.Hosts().Host(h.Name()).Shapes().Instance("shape1").Key())
 		assert.DeepEqual(t, main.Node.Services, []string{"auth", "secrets", "discovery", "dns", "gateway", "build-backend"})
 		assert.Equal(t, main.Node.Cloud, "test.com")
-		assert.Equal(t, main.Node.Gateway.CloudFqdn, "gtest.com")
+		assert.Equal(t, main.Node.CloudFqdn, "gtest.com")
 		assert.Equal(t, main.HTTP, ":80")
 		assert.Equal(t, main.HTTPS, ":443")
 		assert.DeepEqual(t, main.Listen, []string{"/ip4/0.0.0.0/tcp/4242"})

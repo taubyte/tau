@@ -91,7 +91,7 @@ func fleet(t *testing.T, f *fake.Served, opts ...instance.Option) (front, otherF
 		Options: append([]instance.Option{instance.WithForges(forges)}, opts...),
 		Secrets: []*secretsv2.InitSecret{adminSecret},
 		Configure: func(index int, c *instance.Config) {
-			c.Gateway.CloudFqdn = e2eCloud
+			c.CloudFqdn = e2eCloud
 			c.Forges = []drivers.Forge{{Host: f.Host(), Driver: drivers.GitHub, HostKeys: []string{f.HostKey()}}}
 			c.Auth.Admin = auth.Admin{Name: "root"}
 			if index > 0 {

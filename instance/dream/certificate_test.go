@@ -58,7 +58,7 @@ func TestAServiceNameIsIssuedOnceForTheFleet(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Copies: 3,
 		Configure: func(index int, c *instance.Config) {
-			c.Gateway.CloudFqdn = cloud
+			c.CloudFqdn = cloud
 			c.CM = cfg
 			switch index {
 			case 0, 1:

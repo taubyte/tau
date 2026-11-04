@@ -42,7 +42,6 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/cm"
-	"github.com/taubyte/tau/services/gateway"
 )
 
 // Issuance with nothing in process but tau: pebble in its own container, resolving
@@ -217,8 +216,8 @@ func liveNode(t *testing.T, ca *livePebble, cfg cm.CertificateConfig, addr strin
 	cfg.ACME = certificate.ACME{Enabled: true, Directory: ca.directory, Email: "ops@example.test", RootCA: ca.serverCA}
 	return admit(t, File{
 		Node: instance.Config{
-			Gateway: gateway.Config{CloudFqdn: liveCloud},
-			CM:      cm.Config{Certificate: cfg},
+			CloudFqdn: liveCloud,
+			CM:        cm.Config{Certificate: cfg},
 		},
 		Root:       t.TempDir(),
 		PrivateKey: base64.StdEncoding.EncodeToString(minted),

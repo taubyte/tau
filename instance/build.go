@@ -286,7 +286,7 @@ func (n *Instance) openBuildBackend() error {
 		deploy.WithProjects(projects),
 		deploy.WithCheckout(checkout),
 		deploy.WithRegister(n.publisher),
-		deploy.WithCloudFqdn(n.cfg.Gateway.CloudFqdn),
+		deploy.WithCloudFqdn(n.cfg.CloudFqdn),
 	}
 	if n.opts.regions != nil {
 		options = append(options, deploy.WithRegions(n.opts.regions))
@@ -405,7 +405,7 @@ func (n *Instance) openBuildFrontend() error {
 		frontend.WithBackend(builds),
 		frontend.WithDeliveries(forges),
 		frontend.WithTenancy(served),
-		frontend.WithCloudFqdn(n.cfg.Gateway.CloudFqdn),
+		frontend.WithCloudFqdn(n.cfg.CloudFqdn),
 	}
 	// A forge with no signed webhook reports pushes on its own feed (Gerrit's
 	// stream-events), subscribed to as a second source (frontend/streams.go). A finished

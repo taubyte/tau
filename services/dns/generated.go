@@ -12,7 +12,8 @@ import (
 
 // The cloud's own names: `<label>.<project label>.<cloud>`, the hosts a project
 // answers on without a zone of its own. Any gateway serves one, so the addresses are
-// the nodes reporting the gateway service.
+// the nodes reporting the gateway service, unless nodes report serving the name
+// itself, as a proxy does each host it serves.
 //
 // Only a published name resolves; answering every name would make the zone a
 // wildcard a CA would validate. The register's host index decides, as it does for
@@ -34,8 +35,7 @@ type Hosts interface {
 
 // Generated is the cloud's zone and what answers on it.
 type Generated struct {
-	// Zone is the cloud's fqdn, e.g. "tau.example.io" — the gateway's
-	// CloudFqdn, the same value, not a second declaration of it.
+	// Zone is the cloud's fqdn, e.g. "tau.example.io": the node's cloudfqdn.
 	Zone string
 
 	// Hosts says which names under Zone are published.
@@ -88,9 +88,14 @@ func (s *Service) answerGenerated(ctx context.Context, reply *dns.Msg, name stri
 		return true
 	}
 
-	nodes := s.opts.router.Route(g.Service, s.cfg.MaxAge)
+	// A NAME A NODE REPORTS SERVING BY NAME is answered by those nodes: a proxy
+	// reports each host it serves, and a gateway serves them all and reports none.
+	nodes := s.opts.router.Route(name, s.cfg.MaxAge)
 	if len(nodes) == 0 {
-		// Published, and no gateway is reporting: unserved, not absent.
+		nodes = s.opts.router.Route(g.Service, s.cfg.MaxAge)
+	}
+	if len(nodes) == 0 {
+		// Published, and nothing serving it is reporting: unserved, not absent.
 		reply.Rcode = dns.RcodeServerFailure
 		return true
 	}

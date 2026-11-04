@@ -228,7 +228,7 @@ func TestACertificateNodeKnowsTheZone(t *testing.T) {
 	assert.NilError(t, err)
 	f := nodes.instances[0].file
 	assert.DeepEqual(t, f.Node.Services, []string{instance.CM, instance.Register, instance.Discovery})
-	assert.Equal(t, f.Node.Gateway.CloudFqdn, "gtest.com")
+	assert.Equal(t, f.Node.CloudFqdn, "gtest.com")
 	assert.Equal(t, f.HTTP, "", "only a gateway serves http")
 }
 

@@ -275,9 +275,12 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 				// The tenancy is cloud-wide: every node carries it, and the
 				// ones that register, link or build a repository apply it.
 				Tenancy: served.Namespaces(),
-				Forges:  cloudServices.forges,
-				Auth:    cloudServices.auth,
-				CM:      cloudServices.cm,
+				// So is the zone: a build completes generated names with it, as a
+				// gateway serves and a cm certifies them.
+				CloudFqdn: p.Cloud().Domain().Generated(),
+				Forges:    cloudServices.forges,
+				Auth:      cloudServices.auth,
+				CM:        cloudServices.cm,
 			},
 			Listen:      []string{fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port)},
 			Announce:    announce,
@@ -285,9 +288,6 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 			PrivateKey:  key,
 			CA:          string(ca.CertificatePEM()),
 			Certificate: string(certificate),
-		}
-		if slices.Contains(services, instance.Gateway) || slices.Contains(services, instance.DNS) || slices.Contains(services, instance.CM) {
-			f.Node.Gateway.CloudFqdn = p.Cloud().Domain().Generated()
 		}
 		if slices.Contains(services, instance.Gateway) {
 			f.HTTP = ":80"

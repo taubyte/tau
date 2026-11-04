@@ -72,7 +72,7 @@ func proxying(t *testing.T, compiled []byte) *Instance {
 	t.Helper()
 
 	cfg := Config{Services: []string{Register, Worker, Discovery, Proxy}}
-	cfg.Proxy.CloudFqdn = "tau.example.io"
+	cfg.CloudFqdn = "tau.example.io"
 
 	// A fast sweep, since the deployment is held after Start and the sweep is what is
 	// tested; with the default the first pass would race the hold.

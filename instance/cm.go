@@ -28,7 +28,7 @@ var CM = cm.Name
 const challengeDatabase = "cm-challenges"
 
 // ErrNoZoneForCertificates is ACME on a node that does not know the zone.
-var ErrNoZoneForCertificates = errors.New("node: certificates are issued for the cloud's zone, and this node's gateway names none (gateway.cloudfqdn)")
+var ErrNoZoneForCertificates = errors.New("node: certificates are issued for the cloud's zone, and this node names none (cloudfqdn)")
 
 // certVault is the vault every certificate key goes through.
 func (n *Instance) certVault() secretsService.CloudVault {
@@ -42,7 +42,7 @@ func (n *Instance) openCM() error {
 	if !n.cfg.runs(CM) {
 		return nil
 	}
-	if n.cfg.Gateway.CloudFqdn == "" {
+	if n.cfg.CloudFqdn == "" {
 		return ErrNoZoneForCertificates
 	}
 
@@ -58,7 +58,7 @@ func (n *Instance) openCM() error {
 	}
 
 	cfg := n.cfg.CM
-	cfg.Certificate.Zone = n.cfg.Gateway.CloudFqdn
+	cfg.Certificate.Zone = n.cfg.CloudFqdn
 	options := []cm.Option{cm.WithVault(n.certVault())}
 	if n.opts.resolver != nil {
 		options = append(options, cm.WithResolver(n.opts.resolver))
@@ -84,11 +84,11 @@ func (n *Instance) certificates() (*cm.Client, error) {
 	if n.certs != nil {
 		return n.certs, nil
 	}
-	if n.cfg.Gateway.CloudFqdn == "" {
+	if n.cfg.CloudFqdn == "" {
 		return nil, ErrNoZoneForCertificates
 	}
 	cfg := n.cfg.CM
-	cfg.Certificate.Zone = n.cfg.Gateway.CloudFqdn
+	cfg.Certificate.Zone = n.cfg.CloudFqdn
 	options := []cm.ClientOption{cm.WithLogger(logger.Warnf)}
 	if n.opts.now != nil {
 		options = append(options, cm.WithClientClock(n.opts.now))

@@ -25,7 +25,7 @@ func serving(t *testing.T, compiled []byte, hosts ...string) *Instance {
 	t.Helper()
 
 	cfg := Config{Services: []string{Register, Worker, Discovery, Proxy, DNS}}
-	cfg.Proxy.CloudFqdn = "tau.example.io"
+	cfg.CloudFqdn = "tau.example.io"
 	cfg.DNS.NodeZone = "nodes.tau.example.io"
 
 	// Both timers (proxy sweep and discovery tick) are wound down rather than waited out.
@@ -39,7 +39,15 @@ func serving(t *testing.T, compiled []byte, hosts ...string) *Instance {
 	// them beside the object — see services/build/deploy — and a zone's apex
 	// is one of them, which is the only reason dns can find the records an
 	// author wrote.
-	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
+	// AND THE GENERATED ONES, completed by the zone exactly as a deploy completes them.
+	p, err := specs.Load(compiled)
+	require.NoError(t, err)
+	for _, h := range p.Hosts() {
+		if h.Generated {
+			hosts = append(hosts, h.Fqdn+"."+cfg.CloudFqdn)
+		}
+	}
+	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled, Hosts: hosts,
 	})
 	require.NoError(t, err)

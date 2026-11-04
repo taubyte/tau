@@ -95,8 +95,9 @@ type Config struct {
 
 	// CloudFqdn is the zone this cloud serves, e.g. "tau.example.io". A generated host
 	// compiles to `<label>.<project label>` and the rest is not the project's to assert.
-	// With none, only names in zones the projects declare can be published.
-	CloudFqdn string `yaml:"cloudFqdn"`
+	// With none, only names in zones the projects declare can be published. It is the
+	// node's cloudfqdn, set by the instance, never a key of its own.
+	CloudFqdn string `yaml:"-"`
 }
 
 // Certificate is a chain and its key, in PEM.

@@ -12,7 +12,6 @@ import (
 	"github.com/taubyte/tau/pkg/certificate/acme"
 	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/cm"
-	gateway "github.com/taubyte/tau/services/gateway"
 )
 
 func TestACloudIssuingCertificatesNeedsItsZoneAndAWorkableConfig(t *testing.T) {
@@ -24,7 +23,7 @@ func TestACloudIssuingCertificatesNeedsItsZoneAndAWorkableConfig(t *testing.T) {
 		require.ErrorIs(t, err, ErrNoZoneForCertificates, services)
 	}
 
-	cfg := Config{Services: []string{Register, Discovery, Secrets, Gateway, DNS, CM}, CM: on, Gateway: gateway.Config{CloudFqdn: "tau.example.io"}}
+	cfg := Config{Services: []string{Register, Discovery, Secrets, Gateway, DNS, CM}, CM: on, CloudFqdn: "tau.example.io"}
 	n, _, _ := makeNode(t, cfg)
 	require.NotNil(t, n.cm, "a cm node hosts the store")
 	require.NotNil(t, n.certs, "and its gateway and dns server take the client")
@@ -45,7 +44,7 @@ func TestTheBuildFrontendServesTLSWhenTheCloudIssues(t *testing.T) {
 	n, _, _ := makeNode(t, Config{
 		Services:      []string{Discovery, BuildFrontend},
 		BuildFrontend: frontend.Config{Listen: "127.0.0.1:0"},
-		Gateway:       gateway.Config{CloudFqdn: "tau.example.io"},
+		CloudFqdn:     "tau.example.io",
 		CM:            cm.Config{Certificate: cm.CertificateConfig{ACME: certificate.ACME{Enabled: true}}},
 	})
 	require.NoError(t, n.Start(t.Context()))

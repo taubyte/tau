@@ -9,6 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/pkg/containers"
+	"github.com/taubyte/tau/pkg/forge/drivers"
+
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
@@ -199,6 +202,49 @@ func TestAnAddedServiceDecodesItsOwnConfig(t *testing.T) {
 		require.ErrorContains(t, r.host.Config(&got), addedName)
 	})
 
+	t.Run("the cloud-wide keys it declares come from the node, once", func(t *testing.T) {
+		r := &recording{}
+		n, _, _ := makeNode(t, Config{
+			Services:  []string{addedName},
+			CloudFqdn: "tau.example.io",
+			Tenancy:   []string{"github.com/acme"},
+			Forges:    []drivers.Forge{{Host: "git.example.com", Driver: drivers.Gitea}},
+			Container: containers.Declared{Backend: containers.Docker},
+			Sections:  map[string]any{addedName: map[string]any{"port": 25}},
+		}, r.service())
+		require.NoError(t, n.Start(t.Context()))
+		var got cloudAware
+		require.NoError(t, r.host.Config(&got))
+		require.Equal(t, cloudAware{
+			CloudFqdn: "tau.example.io",
+			Tenancy:   []string{"github.com/acme"},
+			Forges:    []drivers.Forge{{Host: "git.example.com", Driver: drivers.Gitea}},
+			Container: containers.Declared{Backend: containers.Docker},
+			Port:      25,
+		}, got)
+
+		own := settings{Port: 1}
+		require.NoError(t, r.host.Config(&own), "a service that declares none of them is not handed them")
+		require.Equal(t, settings{Port: 25}, own)
+	})
+
+	t.Run("a cloud-wide key the node leaves empty keeps the default", func(t *testing.T) {
+		r := &recording{}
+		n, _, _ := makeNode(t, Config{Services: []string{addedName}}, r.service())
+		require.NoError(t, n.Start(t.Context()))
+		got := cloudAware{CloudFqdn: "default.example.io"}
+		require.NoError(t, r.host.Config(&got))
+		require.Equal(t, cloudAware{CloudFqdn: "default.example.io"}, got)
+	})
+}
+
+// cloudAware is a service's configuration that reads cloud-wide keys beside its own.
+type cloudAware struct {
+	CloudFqdn string              `yaml:"cloudfqdn"`
+	Tenancy   []string            `yaml:"tenancy"`
+	Forges    []drivers.Forge     `yaml:"forges"`
+	Container containers.Declared `yaml:"container"`
+	Port      int                 `yaml:"port"`
 }
 
 func TestConfigForAServiceNotAddedIsRefused(t *testing.T) {

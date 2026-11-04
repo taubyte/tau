@@ -102,6 +102,11 @@ type Config struct {
 	// schema.DefaultRegion, the one destination of a build with no regions.
 	Region string
 
+	// CloudFqdn is the zone this cloud serves, e.g. "tau.example.io": what completes a
+	// generated name. Every node carries it, and the services that complete, serve or
+	// certify a name read it.
+	CloudFqdn string
+
 	// Tenancy are the forge namespaces this cloud serves, each written
 	// host/namespace ("github.com/acme"). A repository outside them is
 	// refused by name wherever one is registered, linked to a project or
@@ -280,6 +285,8 @@ func (c Config) withDefaults(added ...string) (Config, error) {
 		return Config{}, fmt.Errorf("node: %w", err)
 	}
 	c.Tenancy = served.Namespaces()
+	// The services this package still builds carry the zone in their own config.
+	c.Gateway.CloudFqdn, c.Proxy.CloudFqdn = c.CloudFqdn, c.CloudFqdn
 	for name := range c.Sections {
 		if !slices.Contains(added, name) {
 			return Config{}, fmt.Errorf("node: there is configuration for %q, which is not a service this node can run; it runs %v", name, added)
@@ -290,23 +297,41 @@ func (c Config) withDefaults(added ...string) (Config, error) {
 
 func (c Config) runs(name string) bool { return slices.Contains(c.Services, name) }
 
-// Section decodes the named service's section into into, by yaml. With no section it
-// leaves into as it was, so whatever into held is the default.
+// cloudWide is what every node carries about its cloud and its machine, one copy
+// each, under the keys the node's own configuration spells them with.
+type cloudWide struct {
+	CloudFqdn string              `yaml:"cloudfqdn,omitempty"`
+	Tenancy   []string            `yaml:"tenancy,omitempty"`
+	Forges    []drivers.Forge     `yaml:"forges,omitempty"`
+	Container containers.Declared `yaml:"container,omitempty"`
+}
+
+// Section decodes, into into, the cloud-wide keys a service declares and then the
+// named service's own section, by yaml. What neither names is left as into held it,
+// so that is the default.
 //
 // A ROUND TRIP AND NOT A CAST. From a file a section is whatever yaml decoded it
 // to; from Go it may be the service's own struct. Either way the service gets what
 // its yaml tags say, exactly as an operator wrote it.
 func (c Config) Section(name string, into any) error {
+	shared := cloudWide{CloudFqdn: c.CloudFqdn, Tenancy: c.Tenancy, Forges: c.Forges, Container: c.Container}
+	if err := roundTrip(shared, into); err != nil {
+		return fmt.Errorf("node: %s: config: %w", name, err)
+	}
 	section, ok := c.Sections[name]
 	if !ok {
 		return nil
 	}
-	raw, err := yaml.Marshal(section)
-	if err != nil {
-		return fmt.Errorf("node: %s: config: %w", name, err)
-	}
-	if err := yaml.Unmarshal(raw, into); err != nil {
+	if err := roundTrip(section, into); err != nil {
 		return fmt.Errorf("node: %s: config: %w", name, err)
 	}
 	return nil
+}
+
+func roundTrip(from, into any) error {
+	raw, err := yaml.Marshal(from)
+	if err != nil {
+		return err
+	}
+	return yaml.Unmarshal(raw, into)
 }

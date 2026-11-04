@@ -59,6 +59,21 @@ func TestAPublishedGeneratedNameIsAnsweredWithEveryGateway(t *testing.T) {
 	require.Empty(t, reply.Answer)
 }
 
+func TestAPublishedGeneratedNameANodeServesByNameIsAnsweredByThatNode(t *testing.T) {
+	r := serving("gateway", stats.Node{Peer: "g1", Ready: true, Addresses: []string{"203.0.113.1"}})
+	r.nodes["db.p1.tau.example.io"] = []stats.Node{{Peer: "x1", Ready: true, Addresses: []string{"203.0.113.9"}}}
+	s := generatedService(t, r, fakeHosts{published: map[string]bool{"db.p1.tau.example.io": true, "api.p1.tau.example.io": true}})
+
+	reply := s.Answer(query("db.p1.tau.example.io", dns.TypeA))
+	require.Equal(t, dns.RcodeSuccess, reply.Rcode)
+	require.Len(t, reply.Answer, 1, "the proxy serving it, and not every gateway")
+	require.Equal(t, "203.0.113.9", reply.Answer[0].(*dns.A).A.String())
+
+	reply = s.Answer(query("api.p1.tau.example.io", dns.TypeA))
+	require.Len(t, reply.Answer, 1)
+	require.Equal(t, "203.0.113.1", reply.Answer[0].(*dns.A).A.String(), "a name nobody reports by name is the gateways'")
+}
+
 func TestAGeneratedNameNobodyPublishedIsNXDOMAIN(t *testing.T) {
 	s := generatedService(t, gateways, fakeHosts{published: map[string]bool{"api.p1.tau.example.io": true}})
 	reply := s.Answer(query("typo.p1.tau.example.io", dns.TypeA))

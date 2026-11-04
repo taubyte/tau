@@ -120,8 +120,9 @@ type Config struct {
 	// IT IS OPERATOR CONFIG AND NOT PROJECT CONFIG, which is the whole reason a
 	// generated host is incomplete in a compiled project: `<label>.<project
 	// label>` is what the config can know, and this is the rest. A gateway with
-	// none serves only the names whose zones the projects themselves declare.
-	CloudFqdn string
+	// none serves only the names whose zones the projects themselves declare. It is
+	// the node's cloudfqdn, set by the instance, never a key of its own.
+	CloudFqdn string `yaml:"-"`
 
 	// PointerTTL is how long a resolved pointer is trusted — the deploy
 	// propagation budget. Default project.DefaultTTL.

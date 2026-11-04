@@ -26,7 +26,7 @@ import (
 type Forge struct {
 	// Host is the host as it appears in a clone URL: "github.com",
 	// "gitlab.example.com", "git.internal:8443".
-	Host string
+	Host string `yaml:"host"`
 
 	// Driver is the API the host speaks: "github" for github.com and GitHub
 	// Enterprise, "gitlab" for GitLab, "gitea" for Gitea, Forgejo and
@@ -41,7 +41,7 @@ type Forge struct {
 	// one built in), and gerrit, which has no webhook API. Such a forge is
 	// still served for everything else — identity, access, clones. A gerrit
 	// with Events triggers builds from its event stream instead.
-	Driver string
+	Driver string `yaml:"driver"`
 
 	// HostKeys are the ssh host keys this forge may answer a clone with, one per
 	// line as `ssh-keyscan` or a forge's own docs print them ("[host] type
@@ -49,7 +49,7 @@ type Forge struct {
 	// clone that accepted any host key could be answered by anyone on the path,
 	// so a forge with none is not cloned from. github.com and gitlab.com default
 	// to their published keys; any other host must name its own.
-	HostKeys []string
+	HostKeys []string `yaml:"hostkeys,omitempty"`
 
 	// Signing says a GitLab instance signs its deliveries with Standard
 	// Webhooks (GitLab 19.0 and later), and it is what gives a gitlab driver
@@ -58,42 +58,42 @@ type Forge struct {
 	// driver offers no hooks and the instance's pushes trigger no build. Set it
 	// on an instance that does not sign (GitLab CE 18.4 does not) and every
 	// delivery fails verification — closed, and visibly broken. gitlab only.
-	Signing bool
+	Signing bool `yaml:"signing,omitempty"`
 
 	// PayloadKey is the std base64 Ed25519 key a sourcehut instance signs
 	// deliveries with, as its api-meta.json publishes it. git.sr.ht's is
 	// built in; a self-hosted instance without one has no push hooks.
 	// sourcehut only.
-	PayloadKey string
+	PayloadKey string `yaml:"payloadkey,omitempty"`
 
 	// Organizations are the Azure DevOps organizations (collections, on a
 	// Server) this cloud answers in. At least one is required. azure only.
-	Organizations []string
+	Organizations []string `yaml:"organizations,omitempty"`
 
 	// SSHPort is the port a Bitbucket Server serves ssh on, when it is not
 	// 7999. Its ssh addresses are keyed as the same repositories as its https
 	// ones. bitbucket-server only.
-	SSHPort int
+	SSHPort int `yaml:"sshport,omitempty"`
 
 	// Membership is the deployment's own credential, "username:password",
 	// that answers whether an account belongs to a group — and, with Events,
 	// reads a project's branch heads. gerrit only.
-	Membership string
+	Membership string `yaml:"membership,omitempty"`
 
 	// Events subscribes this cloud to the forge's push feed over ssh, which is
 	// how a forge without signed webhooks triggers builds. The sshd is pinned
 	// to HostKeys. gerrit only.
-	Events *Events
+	Events *Events `yaml:"events,omitempty"`
 }
 
 // Events is the deployment's ssh account on a forge's event feed.
 type Events struct {
 	// Address is the sshd, "gerrit.example.com:29418".
-	Address string
+	Address string `yaml:"address"`
 	// User is the account; it needs Gerrit's Stream Events capability.
-	User string
+	User string `yaml:"user"`
 	// Key is the account's private key, PEM.
-	Key string
+	Key string `yaml:"key"`
 }
 
 // The drivers a Forge may name.

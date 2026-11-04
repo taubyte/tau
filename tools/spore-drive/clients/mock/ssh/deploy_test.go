@@ -127,7 +127,7 @@ func TestADeployWritesTheNodeFileItPlanned(t *testing.T) {
 		assert.NilError(t, yaml.Unmarshal(raw, &f))
 		assert.DeepEqual(t, f.Node.Services, []string{"auth", "secrets", "discovery", "dns", "gateway"})
 		assert.Equal(t, f.Node.Cloud, "test.com")
-		assert.Equal(t, f.Node.Gateway.CloudFqdn, "g.test.com")
+		assert.Equal(t, f.Node.CloudFqdn, "g.test.com")
 		assert.DeepEqual(t, f.Node.Tenancy, []string{"github.com/acme"})
 		assert.DeepEqual(t, f.Node.Sections, map[string]any{"example": map[string]any{"greeting": "hello", "replicas": 2}})
 		assert.Assert(t, f.CA != "" && f.Certificate != "" && f.PrivateKey != "")

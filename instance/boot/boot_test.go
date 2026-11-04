@@ -28,6 +28,7 @@ func TestTheFileIsTheConfig(t *testing.T) {
 node:
   services: [register, worker]
   cloud: acme
+  cloudfqdn: tau.example.io
   container:
     backend: containerd
     runtime: io.containerd.runsc.v1
@@ -35,7 +36,6 @@ node:
     pointerttl: 10s
     maxprojects: 8
   gateway:
-    cloudfqdn: tau.example.io
     maxbody: 1048576
 root: /var/lib/tau
 listen: ["/ip4/0.0.0.0/tcp/4001"]
@@ -49,7 +49,7 @@ http: ":8080"
 	require.Equal(t, "io.containerd.runsc.v1", f.Node.Container.Runtime,
 		"the isolation handler reaches the node that builds the tier")
 	require.Equal(t, 8, f.Node.Worker.MaxProjects)
-	require.Equal(t, "tau.example.io", f.Node.Gateway.CloudFqdn)
+	require.Equal(t, "tau.example.io", f.Node.CloudFqdn)
 	require.Equal(t, int64(1<<20), f.Node.Gateway.MaxBody)
 	require.Equal(t, "/var/lib/tau", f.Root)
 	require.Equal(t, ":8080", f.HTTP)
