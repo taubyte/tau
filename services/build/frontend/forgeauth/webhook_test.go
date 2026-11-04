@@ -179,7 +179,7 @@ func TestAGenuineButUnreadableDeliveryIsMalformed(t *testing.T) {
 	body := []byte("{not json")
 	header, err := forge.Sign(forge.SchemeHubSHA256, secret, body, "delivery-1", time.Now())
 	require.NoError(t, err)
-	header.Set("X-Fake-Event", "push")
+	header.Set("X-GitHub-Event", "push")
 
 	_, err = forges.Verify(frontend.Hook{
 		Repositories: []frontend.HookRepository{{Key: f.Keys().Writable.String(), Secret: secret.Expose()}},

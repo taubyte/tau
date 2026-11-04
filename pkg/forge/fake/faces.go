@@ -543,7 +543,7 @@ func (d dSig) Scheme() forge.Scheme { return d.c.shape.Scheme }
 // Push reads a payload the core has ALREADY verified — the parameter type is
 // the proof — and returns what it CLAIMS. It never decides anything.
 func (d dSig) Push(body forge.VerifiedBody, header http.Header) (forge.PushClaim, error) {
-	if header.Get("X-Fake-Event") != "push" && !d.c.shape.faulty(FaultAnyDeliveryReadsAsAPush) {
+	if header.Get(d.c.eventHeader()) != "push" && !d.c.shape.faulty(FaultAnyDeliveryReadsAsAPush) {
 		return forge.PushClaim{}, forge.ErrNotAPush
 	}
 	var p payload
@@ -713,11 +713,20 @@ func (f *Forge) deliver(h forge.Hook, names repokey.Key, ref, commit string, at 
 		return forge.Delivery{}, err
 	}
 	if isPush {
-		hdr.Set("X-Fake-Event", "push")
+		hdr.Set(f.c.eventHeader(), "push")
 	} else {
-		hdr.Set("X-Fake-Event", "ping")
+		hdr.Set(f.c.eventHeader(), "ping")
 	}
 	return forge.Delivery{Header: hdr, Body: body}, nil
+}
+
+// eventHeader is where a delivery names its event: GitHub's header for a forge that
+// speaks GitHub, so its driver reads the delivery, and this fake's own otherwise.
+func (c *core) eventHeader() string {
+	if c.shape.Speaks == SpeaksGitHub {
+		return "X-GitHub-Event"
+	}
+	return "X-Fake-Event"
 }
 
 // padded makes any string usable as a secret for every scheme, including the
