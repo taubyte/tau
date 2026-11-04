@@ -115,7 +115,8 @@ func (s *server) session(ctx context.Context, id libp2ppeer.ID) error {
 		}
 		if job != nil {
 			select {
-			case <-job.done:
+			case <-job.said:
+				<-job.done
 				job = nil
 			default:
 			}
@@ -139,14 +140,17 @@ func (s *server) session(ctx context.Context, id libp2ppeer.ID) error {
 // running is the job in hand.
 type running struct {
 	cancel context.CancelFunc
-	done   chan struct{}
+	// said closes as the job starts to say how it ended, and from then it is not in
+	// hand: build hands the next one as soon as it hears.
+	said chan struct{}
+	done chan struct{}
 }
 
 // start runs one job beside the stream's reader, which goes on reading so a cancel
 // reaches it; the job is the stream's only sender until it has said how it ended.
 func (s *server) start(ctx context.Context, a *buildv2.Assignment, send *sender) *running {
 	jobCtx, cancel := context.WithCancel(ctx)
-	r := &running{cancel: cancel, done: make(chan struct{})}
+	r := &running{cancel: cancel, said: make(chan struct{}), done: make(chan struct{})}
 	go func() {
 		defer close(r.done)
 		defer cancel()
@@ -164,6 +168,7 @@ func (s *server) start(ctx context.Context, a *buildv2.Assignment, send *sender)
 		if err != nil {
 			finished.Error = err.Error()
 		}
+		close(r.said)
 		send.report(&buildv2.RunnerReport{Kind: &buildv2.RunnerReport_Finished{Finished: finished}})
 	}()
 	return r

@@ -74,7 +74,10 @@ func (b *buildNode) Serve(ctx context.Context, stream *connect.BidiStream[buildv
 	for {
 		rep, err := stream.Receive()
 		if err != nil {
+			// The end is said before the reports close, so a report sent before it
+			// is always read first.
 			s.ended <- err
+			close(s.reports)
 			return nil
 		}
 		s.reports <- rep
@@ -160,13 +163,11 @@ func serving(t *testing.T, mn mocknet.Mocknet, s *server, builders ...*buildNode
 
 func (s *session) next(t *testing.T) *buildv2.RunnerReport {
 	t.Helper()
-	select {
-	case rep := <-s.reports:
-		return rep
-	case err := <-s.ended:
-		t.Fatalf("the runner's stream ended: %v", err)
-		return nil
+	rep, open := <-s.reports
+	if !open {
+		t.Fatalf("the runner's stream ended: %v", <-s.ended)
 	}
+	return rep
 }
 
 // finished reads to the end of the job in hand: what it wrote, what it kept, and
