@@ -79,7 +79,7 @@ func TestReadIsForwardedInEveryProtocol(t *testing.T) {
 	for s.Receive() {
 		n++
 	}
-	if n != 3 || s.Err() != nil {
+	if n != 4 || s.Err() != nil { // three lines and the status the run ended in
 		t.Fatal(n, s.Err())
 	}
 }

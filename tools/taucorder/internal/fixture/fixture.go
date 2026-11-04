@@ -179,12 +179,12 @@ func (j *jobs) Get(_ context.Context, req *connect.Request[buildv2.JobRef]) (*co
 	return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("no job %s", req.Msg.GetId()))
 }
 
-func (j *jobs) Follow(_ context.Context, req *connect.Request[buildv2.FollowRequest], s *connect.ServerStream[buildv2.LogChunk]) error {
+func (j *jobs) Follow(_ context.Context, req *connect.Request[buildv2.FollowRequest], s *connect.ServerStream[buildv2.Job_Event]) error {
 	j.c.count("JobService/Follow")
 	for i := range 3 {
-		if err := s.Send(&buildv2.LogChunk{Data: []byte(fmt.Sprintf("line %d\n", i)), NextOffset: int64(i + 1)}); err != nil {
+		if err := s.Send(&buildv2.Job_Event{Kind: &buildv2.Job_Event_Message{Message: fmt.Sprintf("line %d", i)}, Offset: int64(i + 1)}); err != nil {
 			return err
 		}
 	}
-	return nil
+	return s.Send(&buildv2.Job_Event{Kind: &buildv2.Job_Event_Status{Status: buildv2.JobStatus_JobStatusSuccess}, Offset: 3})
 }

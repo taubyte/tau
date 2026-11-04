@@ -72,7 +72,7 @@ func TestForwardsUnaryAndStreams(t *testing.T) {
 	for s.Receive() {
 		n++
 	}
-	if s.Err() != nil || n != 3 {
+	if s.Err() != nil || n != 4 { // three lines and the status the run ended in
 		t.Fatal(n, s.Err())
 	}
 }

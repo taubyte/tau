@@ -137,18 +137,18 @@ func (c *BuildClient) Retry(ctx context.Context, jobID string) error {
 // resumes rather than repeats; only the writer answers, others say Unavailable. A
 // walk ending Unavailable is a log still to come; an ended run stops at the leader
 // with FailedPrecondition. A failing emit is the caller's and stops the walk.
-func (c *BuildClient) Follow(ctx context.Context, jobID string, attempt int32, from int64, emit func(data []byte, next int64) error) (int64, error) {
+func (c *BuildClient) Follow(ctx context.Context, jobID string, attempt int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 	return c.read(ctx, jobID, attempt, from, false, emit)
 }
 
 // Snapshot is Follow up to what the log holds when it is asked rather than to
 // the end of the build, which goes on. It walks to the writer and resumes the
 // way Follow does.
-func (c *BuildClient) Snapshot(ctx context.Context, jobID string, attempt int32, from int64, emit func(data []byte, next int64) error) (int64, error) {
+func (c *BuildClient) Snapshot(ctx context.Context, jobID string, attempt int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 	return c.read(ctx, jobID, attempt, from, true, emit)
 }
 
-func (c *BuildClient) read(ctx context.Context, jobID string, attempt int32, from int64, snapshot bool, emit func(data []byte, next int64) error) (int64, error) {
+func (c *BuildClient) read(ctx context.Context, jobID string, attempt int32, from int64, snapshot bool, emit func(*buildv2.Job_Event) error) (int64, error) {
 	if emit == nil {
 		return from, connect.NewError(connect.CodeInternal, errors.New("build: follow needs somewhere to put the output"))
 	}
@@ -168,11 +168,11 @@ func (c *BuildClient) read(ctx context.Context, jobID string, attempt int32, fro
 		defer stream.Close()
 
 		for stream.Receive() {
-			msg := stream.Msg()
-			if err := emit(msg.GetData(), msg.GetNextOffset()); err != nil {
+			ev := stream.Msg()
+			if err := emit(ev); err != nil {
 				return fmt.Errorf("build: following %q: %w", jobID, err)
 			}
-			offset = msg.GetNextOffset()
+			offset = ev.GetOffset()
 		}
 		return stream.Err()
 	})

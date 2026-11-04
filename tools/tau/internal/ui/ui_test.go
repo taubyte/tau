@@ -91,7 +91,7 @@ type chunks struct {
 	offset int64
 }
 
-func (c *chunks) Next() ([]byte, error) {
+func (c *chunks) Line() ([]byte, error) {
 	if len(c.parts) == 0 {
 		if c.err != nil {
 			return nil, c.err

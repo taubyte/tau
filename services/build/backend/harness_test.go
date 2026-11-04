@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"io"
 	"os"
 	"slices"
@@ -24,6 +25,7 @@ import (
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/pkg/raft"
+	"github.com/taubyte/tau/services/build/joblog"
 	"github.com/taubyte/tau/services/build/livelog"
 	"github.com/taubyte/tau/services/storage"
 )
@@ -583,10 +585,13 @@ type fakeAssets struct {
 	onStored func()
 	// encodings is what each kept object said it was encoded as.
 	encodings map[string]string
+	// logs is the events of each log kept. A log's content, and so its cid, is the
+	// text of its messages, so a test names an expected log by what the run said.
+	logs map[string][]*buildv2.Job_Event
 }
 
 func newAssets() *fakeAssets {
-	return &fakeAssets{stored: map[string][]byte{}, encodings: map[string]string{}}
+	return &fakeAssets{stored: map[string][]byte{}, encodings: map[string]string{}, logs: map[string][]*buildv2.Job_Event{}}
 }
 
 func (f *fakeAssets) Put(ctx context.Context, at storage.Address, name string, o storage.Object, content io.Reader) (storage.Version, error) {
@@ -623,13 +628,26 @@ func (f *fakeAssets) put(ctx context.Context, content io.Reader, o storage.Objec
 	if readErr != nil {
 		return "", readErr
 	}
-	// A LOG IS KEPT COMPRESSED; what a test reads back is what was logged.
+	// A LOG IS KEPT COMPRESSED, and is its events; what a test reads back is what
+	// was said.
+	var logged []*buildv2.Job_Event
 	if o.Metadata["encoding"] == logEncoding {
 		plain, err := io.ReadAll(livelog.Decompressed(io.NopCloser(bytes.NewReader(raw))))
 		if err != nil {
 			return "", err
 		}
-		raw = plain
+		events := joblog.Read(bytes.NewReader(plain), 0)
+		for {
+			ev, err := events.Next()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				return "", err
+			}
+			logged = append(logged, ev)
+		}
+		raw = []byte(messagesOf(logged))
 	}
 
 	f.mu.Lock()
@@ -640,6 +658,9 @@ func (f *fakeAssets) put(ctx context.Context, content io.Reader, o storage.Objec
 	id := assetCID(raw)
 	f.stored[id] = raw
 	f.encodings[id] = o.Metadata["encoding"]
+	if logged != nil {
+		f.logs[id] = logged
+	}
 	if f.onStored != nil {
 		f.onStored()
 	}
@@ -660,6 +681,16 @@ func (f *fakeAssets) content(t testing.TB, cid string) string {
 	raw, ok := f.stored[cid]
 	require.True(t, ok, "nothing was stored at %q", cid)
 	return string(raw)
+}
+
+// events is what a kept log recorded.
+func (f *fakeAssets) events(t testing.TB, cid string) []*buildv2.Job_Event {
+	t.Helper()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	evs, ok := f.logs[cid]
+	require.True(t, ok, "no log was stored at %q", cid)
+	return evs
 }
 
 func (f *fakeAssets) fail(err error) {

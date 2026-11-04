@@ -723,64 +723,6 @@ func (x *FollowRequest) GetAttempt() int32 {
 	return 0
 }
 
-// LogChunk is some bytes of a build's output and where they ended.
-//
-// `next_offset` IS WHAT A RESUMING CLIENT SENDS BACK. It is carried per chunk
-// rather than derived by the client from the length it has received, because
-// the two disagree the moment a client drops a chunk it could not write — and a
-// resume computed from a count that lost bytes silently skips them.
-type LogChunk struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
-	NextOffset    int64                  `protobuf:"varint,2,opt,name=next_offset,json=nextOffset,proto3" json:"next_offset,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *LogChunk) Reset() {
-	*x = LogChunk{}
-	mi := &file_tau_build_v2_build_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *LogChunk) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*LogChunk) ProtoMessage() {}
-
-func (x *LogChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_build_v2_build_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use LogChunk.ProtoReflect.Descriptor instead.
-func (*LogChunk) Descriptor() ([]byte, []int) {
-	return file_tau_build_v2_build_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *LogChunk) GetData() []byte {
-	if x != nil {
-		return x.Data
-	}
-	return nil
-}
-
-func (x *LogChunk) GetNextOffset() int64 {
-	if x != nil {
-		return x.NextOffset
-	}
-	return 0
-}
-
 // ArtifactRequest asks what one resource of one deployment currently runs.
 type ArtifactRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -793,7 +735,7 @@ type ArtifactRequest struct {
 
 func (x *ArtifactRequest) Reset() {
 	*x = ArtifactRequest{}
-	mi := &file_tau_build_v2_build_proto_msgTypes[7]
+	mi := &file_tau_build_v2_build_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -805,7 +747,7 @@ func (x *ArtifactRequest) String() string {
 func (*ArtifactRequest) ProtoMessage() {}
 
 func (x *ArtifactRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_build_v2_build_proto_msgTypes[7]
+	mi := &file_tau_build_v2_build_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -818,7 +760,7 @@ func (x *ArtifactRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArtifactRequest.ProtoReflect.Descriptor instead.
 func (*ArtifactRequest) Descriptor() ([]byte, []int) {
-	return file_tau_build_v2_build_proto_rawDescGZIP(), []int{7}
+	return file_tau_build_v2_build_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ArtifactRequest) GetProject() string {
@@ -858,7 +800,7 @@ type Built struct {
 
 func (x *Built) Reset() {
 	*x = Built{}
-	mi := &file_tau_build_v2_build_proto_msgTypes[8]
+	mi := &file_tau_build_v2_build_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -870,7 +812,7 @@ func (x *Built) String() string {
 func (*Built) ProtoMessage() {}
 
 func (x *Built) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_build_v2_build_proto_msgTypes[8]
+	mi := &file_tau_build_v2_build_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -883,7 +825,7 @@ func (x *Built) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Built.ProtoReflect.Descriptor instead.
 func (*Built) Descriptor() ([]byte, []int) {
-	return file_tau_build_v2_build_proto_rawDescGZIP(), []int{8}
+	return file_tau_build_v2_build_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Built) GetCid() string {
@@ -892,6 +834,113 @@ func (x *Built) GetCid() string {
 	}
 	return ""
 }
+
+// Event is one thing that happened to one run of a job, as a follower sees it:
+// the run's status as it moves, and each line of its output. A follower reads
+// until a terminal status.
+type Job_Event struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// at is unix nanoseconds, by the clock of the node that served it.
+	At int64 `protobuf:"varint,1,opt,name=at,proto3" json:"at,omitempty"`
+	// Types that are valid to be assigned to Kind:
+	//
+	//	*Job_Event_Status
+	//	*Job_Event_Message
+	Kind isJob_Event_Kind `protobuf_oneof:"kind"`
+	// offset is where a follower that lost the stream asks again from: the byte
+	// of the run's log after this event. IT IS CARRIED, not counted by the
+	// follower, because the two disagree the moment a follower drops an event it
+	// could not write, and a resume from a count that lost one skips it.
+	Offset        int64 `protobuf:"varint,4,opt,name=offset,proto3" json:"offset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Job_Event) Reset() {
+	*x = Job_Event{}
+	mi := &file_tau_build_v2_build_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Job_Event) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Job_Event) ProtoMessage() {}
+
+func (x *Job_Event) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_build_v2_build_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Job_Event.ProtoReflect.Descriptor instead.
+func (*Job_Event) Descriptor() ([]byte, []int) {
+	return file_tau_build_v2_build_proto_rawDescGZIP(), []int{3, 2}
+}
+
+func (x *Job_Event) GetAt() int64 {
+	if x != nil {
+		return x.At
+	}
+	return 0
+}
+
+func (x *Job_Event) GetKind() isJob_Event_Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return nil
+}
+
+func (x *Job_Event) GetStatus() JobStatus {
+	if x != nil {
+		if x, ok := x.Kind.(*Job_Event_Status); ok {
+			return x.Status
+		}
+	}
+	return JobStatus_JobStatusOpen
+}
+
+func (x *Job_Event) GetMessage() string {
+	if x != nil {
+		if x, ok := x.Kind.(*Job_Event_Message); ok {
+			return x.Message
+		}
+	}
+	return ""
+}
+
+func (x *Job_Event) GetOffset() int64 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+type isJob_Event_Kind interface {
+	isJob_Event_Kind()
+}
+
+type Job_Event_Status struct {
+	Status JobStatus `protobuf:"varint,2,opt,name=status,proto3,enum=tau.build.v2.JobStatus,oneof"`
+}
+
+type Job_Event_Message struct {
+	// message is one line of the run's output, without its newline.
+	Message string `protobuf:"bytes,3,opt,name=message,proto3,oneof"`
+}
+
+func (*Job_Event_Status) isJob_Event_Kind() {}
+
+func (*Job_Event_Message) isJob_Event_Kind() {}
 
 var File_tau_build_v2_build_proto protoreflect.FileDescriptor
 
@@ -905,7 +954,7 @@ const file_tau_build_v2_build_proto_rawDesc = "" +
 	"\n" +
 	"commit_sha\x18\x03 \x01(\tR\tcommitSha\"\x18\n" +
 	"\x06JobRef\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x91\x04\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x9a\x05\n" +
 	"\x03Job\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12/\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x17.tau.build.v2.JobStatusR\x06status\x12%\n" +
@@ -926,7 +975,13 @@ const file_tau_build_v2_build_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a;\n" +
 	"\rAssetCidEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x1c\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a\x86\x01\n" +
+	"\x05Event\x12\x0e\n" +
+	"\x02at\x18\x01 \x01(\x03R\x02at\x121\n" +
+	"\x06status\x18\x02 \x01(\x0e2\x17.tau.build.v2.JobStatusH\x00R\x06status\x12\x1a\n" +
+	"\amessage\x18\x03 \x01(\tH\x00R\amessage\x12\x16\n" +
+	"\x06offset\x18\x04 \x01(\x03R\x06offsetB\x06\n" +
+	"\x04kind\"\x1c\n" +
 	"\n" +
 	"ProjectRef\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"t\n" +
@@ -934,11 +989,7 @@ const file_tau_build_v2_build_proto_rawDesc = "" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x16\n" +
 	"\x06offset\x18\x02 \x01(\x03R\x06offset\x12\x1a\n" +
 	"\bsnapshot\x18\x03 \x01(\bR\bsnapshot\x12\x18\n" +
-	"\aattempt\x18\x04 \x01(\x05R\aattempt\"?\n" +
-	"\bLogChunk\x12\x12\n" +
-	"\x04data\x18\x01 \x01(\fR\x04data\x12\x1f\n" +
-	"\vnext_offset\x18\x02 \x01(\x03R\n" +
-	"nextOffset\"i\n" +
+	"\aattempt\x18\x04 \x01(\x05R\aattempt\"i\n" +
 	"\x0fArtifactRequest\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12 \n" +
 	"\venvironment\x18\x02 \x01(\tR\venvironment\x12\x1a\n" +
@@ -952,15 +1003,15 @@ const file_tau_build_v2_build_proto_rawDesc = "" +
 	"\x0fJobStatusFailed\x10\x03\x12\x16\n" +
 	"\x12JobStatusCancelled\x10\x042H\n" +
 	"\fQueueService\x128\n" +
-	"\aEnqueue\x12\x17.tau.build.v2.PushEvent\x1a\x14.tau.build.v2.JobRef2\xe0\x02\n" +
+	"\aEnqueue\x12\x17.tau.build.v2.PushEvent\x1a\x14.tau.build.v2.JobRef2\xe1\x02\n" +
 	"\n" +
 	"JobService\x12.\n" +
 	"\x03Get\x12\x14.tau.build.v2.JobRef\x1a\x11.tau.build.v2.Job\x128\n" +
 	"\x04List\x12\x18.tau.build.v2.ProjectRef\x1a\x14.tau.build.v2.JobRef0\x01\x123\n" +
 	"\x06Cancel\x12\x14.tau.build.v2.JobRef\x1a\x13.tau.build.v2.Empty\x122\n" +
 	"\x05Retry\x12\x14.tau.build.v2.JobRef\x1a\x13.tau.build.v2.Empty\x12>\n" +
-	"\bArtifact\x12\x1d.tau.build.v2.ArtifactRequest\x1a\x13.tau.build.v2.Built\x12?\n" +
-	"\x06Follow\x12\x1b.tau.build.v2.FollowRequest\x1a\x16.tau.build.v2.LogChunk0\x01B\xab\x01\n" +
+	"\bArtifact\x12\x1d.tau.build.v2.ArtifactRequest\x1a\x13.tau.build.v2.Built\x12@\n" +
+	"\x06Follow\x12\x1b.tau.build.v2.FollowRequest\x1a\x17.tau.build.v2.Job.Event0\x01B\xab\x01\n" +
 	"\x10com.tau.build.v2B\n" +
 	"BuildProtoP\x01Z9github.com/taubyte/tau/pkg/proto/gen/tau/build/v2;buildv2\xa2\x02\x03TBX\xaa\x02\fTau.Build.V2\xca\x02\fTau\\Build\\V2\xe2\x02\x18Tau\\Build\\V2\\GPBMetadata\xea\x02\x0eTau::Build::V2b\x06proto3"
 
@@ -986,41 +1037,46 @@ var file_tau_build_v2_build_proto_goTypes = []any{
 	(*Job)(nil),             // 4: tau.build.v2.Job
 	(*ProjectRef)(nil),      // 5: tau.build.v2.ProjectRef
 	(*FollowRequest)(nil),   // 6: tau.build.v2.FollowRequest
-	(*LogChunk)(nil),        // 7: tau.build.v2.LogChunk
-	(*ArtifactRequest)(nil), // 8: tau.build.v2.ArtifactRequest
-	(*Built)(nil),           // 9: tau.build.v2.Built
-	nil,                     // 10: tau.build.v2.Job.LogsEntry
-	nil,                     // 11: tau.build.v2.Job.AssetCidEntry
+	(*ArtifactRequest)(nil), // 7: tau.build.v2.ArtifactRequest
+	(*Built)(nil),           // 8: tau.build.v2.Built
+	nil,                     // 9: tau.build.v2.Job.LogsEntry
+	nil,                     // 10: tau.build.v2.Job.AssetCidEntry
+	(*Job_Event)(nil),       // 11: tau.build.v2.Job.Event
 }
 var file_tau_build_v2_build_proto_depIdxs = []int32{
 	0,  // 0: tau.build.v2.Job.status:type_name -> tau.build.v2.JobStatus
-	10, // 1: tau.build.v2.Job.logs:type_name -> tau.build.v2.Job.LogsEntry
-	11, // 2: tau.build.v2.Job.asset_cid:type_name -> tau.build.v2.Job.AssetCidEntry
-	2,  // 3: tau.build.v2.QueueService.Enqueue:input_type -> tau.build.v2.PushEvent
-	3,  // 4: tau.build.v2.JobService.Get:input_type -> tau.build.v2.JobRef
-	5,  // 5: tau.build.v2.JobService.List:input_type -> tau.build.v2.ProjectRef
-	3,  // 6: tau.build.v2.JobService.Cancel:input_type -> tau.build.v2.JobRef
-	3,  // 7: tau.build.v2.JobService.Retry:input_type -> tau.build.v2.JobRef
-	8,  // 8: tau.build.v2.JobService.Artifact:input_type -> tau.build.v2.ArtifactRequest
-	6,  // 9: tau.build.v2.JobService.Follow:input_type -> tau.build.v2.FollowRequest
-	3,  // 10: tau.build.v2.QueueService.Enqueue:output_type -> tau.build.v2.JobRef
-	4,  // 11: tau.build.v2.JobService.Get:output_type -> tau.build.v2.Job
-	3,  // 12: tau.build.v2.JobService.List:output_type -> tau.build.v2.JobRef
-	1,  // 13: tau.build.v2.JobService.Cancel:output_type -> tau.build.v2.Empty
-	1,  // 14: tau.build.v2.JobService.Retry:output_type -> tau.build.v2.Empty
-	9,  // 15: tau.build.v2.JobService.Artifact:output_type -> tau.build.v2.Built
-	7,  // 16: tau.build.v2.JobService.Follow:output_type -> tau.build.v2.LogChunk
-	10, // [10:17] is the sub-list for method output_type
-	3,  // [3:10] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	9,  // 1: tau.build.v2.Job.logs:type_name -> tau.build.v2.Job.LogsEntry
+	10, // 2: tau.build.v2.Job.asset_cid:type_name -> tau.build.v2.Job.AssetCidEntry
+	0,  // 3: tau.build.v2.Job.Event.status:type_name -> tau.build.v2.JobStatus
+	2,  // 4: tau.build.v2.QueueService.Enqueue:input_type -> tau.build.v2.PushEvent
+	3,  // 5: tau.build.v2.JobService.Get:input_type -> tau.build.v2.JobRef
+	5,  // 6: tau.build.v2.JobService.List:input_type -> tau.build.v2.ProjectRef
+	3,  // 7: tau.build.v2.JobService.Cancel:input_type -> tau.build.v2.JobRef
+	3,  // 8: tau.build.v2.JobService.Retry:input_type -> tau.build.v2.JobRef
+	7,  // 9: tau.build.v2.JobService.Artifact:input_type -> tau.build.v2.ArtifactRequest
+	6,  // 10: tau.build.v2.JobService.Follow:input_type -> tau.build.v2.FollowRequest
+	3,  // 11: tau.build.v2.QueueService.Enqueue:output_type -> tau.build.v2.JobRef
+	4,  // 12: tau.build.v2.JobService.Get:output_type -> tau.build.v2.Job
+	3,  // 13: tau.build.v2.JobService.List:output_type -> tau.build.v2.JobRef
+	1,  // 14: tau.build.v2.JobService.Cancel:output_type -> tau.build.v2.Empty
+	1,  // 15: tau.build.v2.JobService.Retry:output_type -> tau.build.v2.Empty
+	8,  // 16: tau.build.v2.JobService.Artifact:output_type -> tau.build.v2.Built
+	11, // 17: tau.build.v2.JobService.Follow:output_type -> tau.build.v2.Job.Event
+	11, // [11:18] is the sub-list for method output_type
+	4,  // [4:11] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_tau_build_v2_build_proto_init() }
 func file_tau_build_v2_build_proto_init() {
 	if File_tau_build_v2_build_proto != nil {
 		return
+	}
+	file_tau_build_v2_build_proto_msgTypes[10].OneofWrappers = []any{
+		(*Job_Event_Status)(nil),
+		(*Job_Event_Message)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

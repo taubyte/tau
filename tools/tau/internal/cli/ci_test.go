@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -94,7 +95,8 @@ func TestCIRunFollowsARerunFromItsStart(t *testing.T) {
 
 	r := x.run("ci", "run", "--dir", x.dir, "--commit", strings.Repeat("c", 40), "--branch", "main", "--interval", "10ms")
 	require.Zero(t, r.code, r.stderr)
-	require.Contains(t, r.stderr, "built\njob job-3-prod: the log of attempt 1 was not kept past byte 5\nrebuilt from its start\n")
+	built := "built proj-1 github.com/acme/cfg refs/heads/main " + strings.Repeat("c", 40) + "\n"
+	require.Contains(t, r.stderr, built+"job job-3-prod: the log of attempt 1 was not kept past byte "+strconv.Itoa(len(built))+"\nrebuilt from its start\n")
 	require.Contains(t, r.stdout, "success")
 }
 

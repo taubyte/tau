@@ -672,11 +672,12 @@ func TestOnlyOneFunctionReadsAJob(t *testing.T) {
 	}
 
 	require.ElementsMatch(t,
-		[]string{"jobReader.First", "Service.job"},
+		[]string{"jobReader.First", "Service.job", "Service.holds"},
 		names(callers(all, "readRecord")),
-		"a third reader is either a section that did not go through the source enter names, or "+
+		"another reader is either a section that did not go through the source enter names, or "+
 			"a read outside every section — and a read outside every section decides nothing, "+
-			"because there is no handle attached to it")
+			"because there is no handle attached to it: job answers a caller, holds whether a "+
+			"follow waits")
 
 	// The source is the only thing a section reads through; enter names one and does
 	// not read.
@@ -1497,20 +1498,19 @@ func TestEveryWriteToTheAssetStoreIsNamedAndPlaced(t *testing.T) {
 			"orphan the shutdown path already declines to make")
 
 	settle := all["Service.settle"]
-	require.Len(t, settle.bodies, 2,
-		"settle is the ack's section, the publish, and the record's section — one section means "+
-			"one of the two is in the wrong place")
+	require.Len(t, settle.bodies, 3,
+		"settle is the ack's section, the record's section, the publish, and the section that "+
+			"files the log — fewer sections means one of them is in the wrong place")
 	shipping := settle.posns["publish"]
 	require.Len(t, shipping, 1, "the log is handed over once, on one path")
 	require.False(t, covered(settle.bodies, shipping[0]),
 		"settle publishes inside one of its own sections, which holds jobLock — every job on "+
 			"this node — across a round trip to the asset store")
-	require.Greater(t, shipping[0], settle.bodies[0].to,
-		"settle publishes before the section that acks, so a delivery this node had already lost "+
-			"still ships a log no record will name")
-	require.Less(t, shipping[0], settle.bodies[1].from,
-		"settle publishes after the section that records, so the cid cannot reach the entry that "+
-			"settles the job and a log this node could not read back cannot fail it")
+	require.Greater(t, shipping[0], settle.bodies[1].to,
+		"settle publishes before the section that records, so the log cannot end with what the "+
+			"run left the job as, and a delivery this node had already lost still ships a log")
+	require.Less(t, shipping[0], settle.bodies[2].from,
+		"settle files the log before it is stored, naming a cid nothing holds")
 	require.True(t, covered([]span{settle.bodies[0]}, settle.at["ack"]),
 		"the ack is not in the first of settle's sections, so it is not what the publish is past")
 
@@ -1543,7 +1543,7 @@ func TestEveryWriteToTheAssetStoreIsNamedAndPlaced(t *testing.T) {
 	}
 	require.ElementsMatch(t, []string{"runOutput.Asset"}, names(written),
 		"a second writer of the run's cids is a second opinion about what this run produced")
-	require.ElementsMatch(t, []string{"runOutput.Asset", "runOutput.publish"}, names(callers(all, "built")),
+	require.ElementsMatch(t, []string{"runOutput.Asset", "runOutput.produced"}, names(callers(all, "built")),
 		"and a third toucher of them is a cid read somewhere the section that records it cannot see")
 }
 

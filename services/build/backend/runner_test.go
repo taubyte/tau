@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -11,10 +12,12 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/services/build"
+	"github.com/taubyte/tau/services/build/joblog"
 )
 
 func TestOneStepClaimsRunsAcksAndFinishes(t *testing.T) {
@@ -601,7 +604,8 @@ func (m *meter) of(op Op) []Accounted {
 
 func TestASuccessfulBuildIsAccounted(t *testing.T) {
 	m := &meter{}
-	h := newHarness(t, WithMeter(m), WithAssets(newAssets()))
+	store := newAssets()
+	h := newHarness(t, WithMeter(m), WithAssets(store))
 	id := h.planned(t, testRef, testCommit)
 
 	h.runner.run = func(ctx context.Context, w Work, out Output) error {
@@ -634,7 +638,8 @@ func TestASuccessfulBuildIsAccounted(t *testing.T) {
 
 	logs := m.of(OpLog)
 	require.Len(t, logs, 1)
-	require.Equal(t, uint64(len("building\n")), logs[0].Bytes)
+	require.Equal(t, logBytes(t, store.events(t, h.mustRecord(t, id).Logs[stamp(1)])), logs[0].Bytes,
+		"a log's bytes are its records'")
 }
 
 func TestAFailedBuildIsAccounted(t *testing.T) {
@@ -732,4 +737,16 @@ func TestAClaimedJobsWaitEndsWithTheRun(t *testing.T) {
 	_, found, err := h.readRecord(unknownJobID)
 	require.NoError(t, err)
 	require.False(t, found, "a wait that ended decided nothing")
+}
+
+// logBytes is how long a log of these events is.
+func logBytes(t testing.TB, evs []*buildv2.Job_Event) uint64 {
+	t.Helper()
+	var log bytes.Buffer
+	for _, ev := range evs {
+		written := proto.Clone(ev).(*buildv2.Job_Event)
+		written.Offset = 0
+		require.NoError(t, joblog.Write(&log, written))
+	}
+	return uint64(log.Len())
 }

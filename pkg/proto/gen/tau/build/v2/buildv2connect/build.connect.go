@@ -269,17 +269,20 @@ type JobServiceClient interface {
 	// its own resource — and the caller is the one that knows which it asked
 	// about.
 	Artifact(context.Context, *connect.Request[v2.ArtifactRequest]) (*connect.Response[v2.Built], error)
-	// Follow streams one RUN's output, from `offset` to the end of it — or, with
-	// `snapshot`, to the end of what it has written so far.
+	// Follow streams one RUN's events, from `offset` to the end of it — or, with
+	// `snapshot`, to the end of what it has written so far: its status as it starts,
+	// each line of its output, and, for a follow, the status the run left the job
+	// in once that has settled, which is the stream's last event.
 	//
 	// ONLY THE NODE WRITING THE LOG CAN ANSWER, and while the run has not ended
 	// every other one says Unavailable rather than NotFound — which is what makes
 	// a caller's pool walk to the next backend instead of stopping at the first
 	// that does not have it. A run that has not started — the job is queued, or
-	// claimed and not writing yet — is Unavailable from every node: its log is
-	// still to come, and a follower asks again. The alternative, forwarding to
-	// the claim record's holder the way Cancel does, would put a proxy hop in
-	// front of a stream that is already a proxy hop behind the public role.
+	// claimed and not writing yet — is held by the leader, which is where every
+	// run is claimed, until it starts there or the job ends without it; every
+	// other node says Unavailable. The alternative, forwarding to the claim
+	// record's holder the way Cancel does, would put a proxy hop in front of a
+	// stream that is already a proxy hop behind the public role.
 	//
 	// THE NODE THAT WROTE A LOG ANSWERS FOR IT UNTIL THE RECORD NAMES IT. A
 	// run's log is handed to the asset store after the build ends and before the
@@ -295,7 +298,7 @@ type JobServiceClient interface {
 	// with no output, nor an Unavailable that would have a follower ask again
 	// for a log no node will write. A run past the job's next is
 	// InvalidArgument.
-	Follow(context.Context, *connect.Request[v2.FollowRequest]) (*connect.ServerStreamForClient[v2.LogChunk], error)
+	Follow(context.Context, *connect.Request[v2.FollowRequest]) (*connect.ServerStreamForClient[v2.Job_Event], error)
 }
 
 // NewJobServiceClient constructs a client for the tau.build.v2.JobService service. By default, it
@@ -339,7 +342,7 @@ func NewJobServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...
 			connect.WithSchema(jobServiceMethods.ByName("Artifact")),
 			connect.WithClientOptions(opts...),
 		),
-		follow: connect.NewClient[v2.FollowRequest, v2.LogChunk](
+		follow: connect.NewClient[v2.FollowRequest, v2.Job_Event](
 			httpClient,
 			baseURL+JobServiceFollowProcedure,
 			connect.WithSchema(jobServiceMethods.ByName("Follow")),
@@ -355,7 +358,7 @@ type jobServiceClient struct {
 	cancel   *connect.Client[v2.JobRef, v2.Empty]
 	retry    *connect.Client[v2.JobRef, v2.Empty]
 	artifact *connect.Client[v2.ArtifactRequest, v2.Built]
-	follow   *connect.Client[v2.FollowRequest, v2.LogChunk]
+	follow   *connect.Client[v2.FollowRequest, v2.Job_Event]
 }
 
 // Get calls tau.build.v2.JobService.Get.
@@ -384,7 +387,7 @@ func (c *jobServiceClient) Artifact(ctx context.Context, req *connect.Request[v2
 }
 
 // Follow calls tau.build.v2.JobService.Follow.
-func (c *jobServiceClient) Follow(ctx context.Context, req *connect.Request[v2.FollowRequest]) (*connect.ServerStreamForClient[v2.LogChunk], error) {
+func (c *jobServiceClient) Follow(ctx context.Context, req *connect.Request[v2.FollowRequest]) (*connect.ServerStreamForClient[v2.Job_Event], error) {
 	return c.follow.CallServerStream(ctx, req)
 }
 
@@ -412,17 +415,20 @@ type JobServiceHandler interface {
 	// its own resource — and the caller is the one that knows which it asked
 	// about.
 	Artifact(context.Context, *connect.Request[v2.ArtifactRequest]) (*connect.Response[v2.Built], error)
-	// Follow streams one RUN's output, from `offset` to the end of it — or, with
-	// `snapshot`, to the end of what it has written so far.
+	// Follow streams one RUN's events, from `offset` to the end of it — or, with
+	// `snapshot`, to the end of what it has written so far: its status as it starts,
+	// each line of its output, and, for a follow, the status the run left the job
+	// in once that has settled, which is the stream's last event.
 	//
 	// ONLY THE NODE WRITING THE LOG CAN ANSWER, and while the run has not ended
 	// every other one says Unavailable rather than NotFound — which is what makes
 	// a caller's pool walk to the next backend instead of stopping at the first
 	// that does not have it. A run that has not started — the job is queued, or
-	// claimed and not writing yet — is Unavailable from every node: its log is
-	// still to come, and a follower asks again. The alternative, forwarding to
-	// the claim record's holder the way Cancel does, would put a proxy hop in
-	// front of a stream that is already a proxy hop behind the public role.
+	// claimed and not writing yet — is held by the leader, which is where every
+	// run is claimed, until it starts there or the job ends without it; every
+	// other node says Unavailable. The alternative, forwarding to the claim
+	// record's holder the way Cancel does, would put a proxy hop in front of a
+	// stream that is already a proxy hop behind the public role.
 	//
 	// THE NODE THAT WROTE A LOG ANSWERS FOR IT UNTIL THE RECORD NAMES IT. A
 	// run's log is handed to the asset store after the build ends and before the
@@ -438,7 +444,7 @@ type JobServiceHandler interface {
 	// with no output, nor an Unavailable that would have a follower ask again
 	// for a log no node will write. A run past the job's next is
 	// InvalidArgument.
-	Follow(context.Context, *connect.Request[v2.FollowRequest], *connect.ServerStream[v2.LogChunk]) error
+	Follow(context.Context, *connect.Request[v2.FollowRequest], *connect.ServerStream[v2.Job_Event]) error
 }
 
 // NewJobServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -527,6 +533,6 @@ func (UnimplementedJobServiceHandler) Artifact(context.Context, *connect.Request
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.build.v2.JobService.Artifact is not implemented"))
 }
 
-func (UnimplementedJobServiceHandler) Follow(context.Context, *connect.Request[v2.FollowRequest], *connect.ServerStream[v2.LogChunk]) error {
+func (UnimplementedJobServiceHandler) Follow(context.Context, *connect.Request[v2.FollowRequest], *connect.ServerStream[v2.Job_Event]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("tau.build.v2.JobService.Follow is not implemented"))
 }

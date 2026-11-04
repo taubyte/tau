@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/public"
@@ -241,7 +242,7 @@ func showLog(cmd *cobra.Command, env Env, cl *api.Client, id string, from int64,
 	if !follow {
 		stream.Retries = 0
 		stream.Snapshot = true
-		reached, err := stream.CopyTo(env.Stdout)
+		reached, err := copyLog(cmd, env, stream)
 		if err == nil && queued && reached == from {
 			fmt.Fprintf(notes, "job %s is queued: it has logged nothing yet\n", id)
 		}
@@ -261,8 +262,24 @@ func showLog(cmd *cobra.Command, env Env, cl *api.Client, id string, from int64,
 		}
 		return nil
 	}
-	_, err = stream.CopyTo(env.Stdout)
+	_, err = copyLog(cmd, env, stream)
 	return err
+}
+
+// copyLog writes a run's log to stdout: its output, or with -o json every event as
+// the cloud sent it, one object per line.
+func copyLog(cmd *cobra.Command, env Env, stream *api.LogStream) (int64, error) {
+	if !jsonOut(cmd) {
+		return stream.CopyTo(env.Stdout)
+	}
+	return stream.Each(func(ev *api.Event) error {
+		raw, err := protojson.Marshal(ev)
+		if err != nil {
+			return err
+		}
+		_, err = env.Stdout.Write(append(raw, '\n'))
+		return err
+	})
 }
 
 // showPlan is the log of a push: what its plan queued, and with follow each of

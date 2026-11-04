@@ -2,10 +2,12 @@ package frontend
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/build/joblog"
 	"github.com/taubyte/tau/services/build/livelog"
 )
 
@@ -13,9 +15,40 @@ import (
 // an artifact by resource id, authorized as the job is and looked up in its own
 // maps. No caller ever names a cid.
 
-// handleJobLog is GET /job/{jid}/logs/{key}: one finished log.
+// handleJobLog is GET /job/{jid}/logs/{key}: one finished run's log, its events as
+// JSON, one object per line, the way /job/{jid}/logs serves a run.
 func (s *Service) handleJobLog(w http.ResponseWriter, r *http.Request, token, jobID string) {
-	s.serveJobAsset(w, r, token, jobID, "key", func(_, logs map[string]string, key string) string { return logs[key] }, "text/plain; charset=utf-8", livelog.Decompressed)
+	s.serveJobAsset(w, r, token, jobID, "key", func(_, logs map[string]string, key string) string { return logs[key] }, "application/x-ndjson", asEvents)
+}
+
+// asEvents is a stored log read as its events, each a line of JSON.
+func asEvents(stored io.ReadCloser) io.ReadCloser {
+	content := livelog.Decompressed(stored)
+	r, w := io.Pipe()
+	go func() {
+		defer content.Close()
+		events := joblog.Read(content, 0)
+		for {
+			ev, err := events.Next()
+			if errors.Is(err, io.EOF) {
+				w.Close()
+				return
+			}
+			if err != nil {
+				w.CloseWithError(err)
+				return
+			}
+			raw, err := jobJSON.Marshal(ev)
+			if err == nil {
+				_, err = w.Write(append(raw, '\n'))
+			}
+			if err != nil {
+				w.CloseWithError(err)
+				return
+			}
+		}
+	}()
+	return r
 }
 
 // handleJobAsset is GET /job/{jid}/assets/{resource}: one built artifact.

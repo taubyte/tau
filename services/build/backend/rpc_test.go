@@ -244,24 +244,29 @@ func TestASnapshotEndsOverTheWireWhileAFollowStaysOpen(t *testing.T) {
 
 	snapshot, err := h.Jobs.Follow(ctx, connect.NewRequest(&buildv2.FollowRequest{JobId: id, Attempt: 1, Snapshot: true}))
 	require.NoError(t, err)
-	var soFar []byte
+	var soFar []*buildv2.Job_Event
 	for snapshot.Receive() {
-		soFar = append(soFar, snapshot.Msg().GetData()...)
+		soFar = append(soFar, snapshot.Msg())
 	}
 	require.NoError(t, snapshot.Err(), "a snapshot that waited for the build would have run into the deadline")
-	require.Equal(t, "cloning\n", string(soFar))
+	require.Equal(t, "cloning\n", messagesOf(soFar))
 
 	follow, err := h.Jobs.Follow(ctx, connect.NewRequest(&buildv2.FollowRequest{JobId: id, Attempt: 1}))
 	require.NoError(t, err)
 	defer follow.Close()
-	require.True(t, follow.Receive(), "%v", follow.Err())
-	require.Equal(t, "cloning\n", string(follow.Msg().GetData()))
+	next := func() *buildv2.Job_Event {
+		t.Helper()
+		require.True(t, follow.Receive(), "%v", follow.Err())
+		return follow.Msg()
+	}
+	require.Equal(t, buildv2.JobStatus_JobStatusClaimed, next().GetStatus())
+	require.Equal(t, "cloning", next().GetMessage())
 
 	lines <- "compiling\n"
-	require.True(t, follow.Receive(), "%v", follow.Err())
-	require.Equal(t, "compiling\n", string(follow.Msg().GetData()))
+	require.Equal(t, "compiling", next().GetMessage())
 
 	finish()
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, next().GetStatus(), "the last event is how the run left the job")
 	require.False(t, follow.Receive())
 	require.NoError(t, follow.Err(), "the build ending is the end of the follow, not a failure of it")
 }

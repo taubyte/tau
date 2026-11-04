@@ -151,8 +151,8 @@ func (s *Service) begin(d queue.Delivery, deadline time.Time, stop context.Cance
 			if err := j.ack(s.work, d); err != nil {
 				return err
 			}
-			return j.writes().settled(buildv2.JobStatus_JobStatusFailed, orphanReason(s.cfg.RecordReads), produced{}).
-				retained().commit("failing")
+			return j.ended(j.writes().settled(buildv2.JobStatus_JobStatusFailed, orphanReason(s.cfg.RecordReads), produced{}).
+				retained().commit("failing"))
 		}
 		// Cancelled is one of the three terminal states, so this is the cancel
 		// case as much as it is the redelivery case.
@@ -235,15 +235,25 @@ const maxPrelude = 64 << 10
 // between its two sections, each in its own, like a push's: a section writes only
 // the job it read. Creating one is idempotent, so a plan run twice makes them once.
 func (s *Service) plan(ctx, runCtx context.Context, d queue.Delivery, rec jobRecord, work Work, started time.Time) error {
+	// A PLAN'S LOG IS LIVE ONLY: what it said, which jobs it queued and how it ended,
+	// for whoever follows it while it plans. What it said also opens each environment
+	// job's. A plan that could not open one plans unfollowed.
 	said := &capped{max: maxPrelude}
-	environments, runErr := s.planned(runCtx, work, said)
+	var live io.Writer = said
+	out, err := s.output(work)
+	if err == nil {
+		live = io.MultiWriter(said, out)
+	}
+	defer out.discard()
+
+	environments, runErr := s.planned(runCtx, work, live)
 	if runErr != nil && errors.Is(context.Cause(ctx), errShuttingDown) {
 		return fmt.Errorf("job %s abandoned: %w", rec.ID, errShuttingDown)
 	}
 	s.accountBuild(ctx, rec, started, runErr)
 
 	var wanted bool
-	err := s.withJob(d.ID, func(j *held) error {
+	err = s.withJob(d.ID, func(j *held) error {
 		if err := j.ack(s.work, d); err != nil {
 			return err
 		}
@@ -272,21 +282,41 @@ func (s *Service) plan(ctx, runCtx context.Context, d queue.Delivery, rec jobRec
 				break
 			}
 			children = append(children, id)
+			if out != nil {
+				fmt.Fprintf(out, "queued job %s for %s\n", id, environment)
+			}
 		}
 	}
+	if runErr != nil && out != nil {
+		fmt.Fprintf(out, "error: %v\n", runErr)
+	}
 
-	return s.withJob(d.ID, func(j *held) error {
-		if !j.found() || j.rec().terminal() {
+	var (
+		left    buildv2.JobStatus
+		settled bool
+	)
+	err = s.withJob(d.ID, func(j *held) error {
+		if !j.found() {
+			return nil
+		}
+		left, settled = j.rec().status(), true
+		if j.rec().terminal() {
 			return nil
 		}
 		if j.rec().status() != buildv2.JobStatus_JobStatusClaimed {
 			return j.requeue()
 		}
 		if runErr != nil {
+			left = buildv2.JobStatus_JobStatusFailed
 			return j.fail(strings.TrimSpace(said.String()+"\nerror: "+runErr.Error()), produced{})
 		}
+		left = buildv2.JobStatus_JobStatusSuccess
 		return j.planned(children)
 	})
+	if err == nil && settled {
+		out.status(left)
+	}
+	return err
 }
 
 // planned runs the runner's plan; a panic is a failed plan, as for a build.
@@ -318,8 +348,8 @@ func (c *capped) Write(p []byte) (int, error) {
 
 func (c *capped) String() string { return c.buf.String() }
 
-// settle acks, hands off the log, then writes the record: two sections with the
-// network call between them.
+// settle acks, writes the record, then hands off the log and files it: three
+// sections with the network call between the last two.
 //
 // The ack is the commit point: a node whose claim expired or which lost leadership
 // learns it in the first section and publishes nothing. The barrier is withJob's
@@ -327,15 +357,17 @@ func (c *capped) String() string { return c.buf.String() }
 // section also asks whether the output is still wanted (record gone, or cancelled
 // and retried mid-build).
 //
-// The publish is outside both sections because jobLock covers the whole job table
-// and a slow asset store would stall every claim, Enqueue and Cancel on the node.
-//
 // The second section reads again, since the record may have become terminal (keep
-// the status, record the log), stayed Claimed by this run, or been reopened by a
-// cancel and retry (put the item back). Publishing before the record lets an
-// unreadable log fail the build. The cost: one more barrier per build, and a
-// window as wide as the publish in which a leadership loss leaves an unnamed
-// object (doc.go).
+// the status, file what was built), stayed Claimed by this run, or been reopened by
+// a cancel and retry (put the item back). What it leaves the job as is the log's
+// last record, so the stored log is everything that happened to the run, its end
+// included.
+//
+// The publish is outside every section because jobLock covers the whole job table
+// and a slow asset store would stall every claim, Enqueue and Cancel on the node;
+// the third section files the log's cid. A log that could not be stored is lost and
+// says so; the job's status does not hang on it. A leadership loss between the two
+// leaves an unnamed object (doc.go).
 func (s *Service) settle(ctx context.Context, d queue.Delivery, out *runOutput, runErr error) error {
 	var wanted bool
 	err := s.withJob(d.ID, func(j *held) error {
@@ -357,28 +389,25 @@ func (s *Service) settle(ctx context.Context, d queue.Delivery, out *runOutput, 
 		return err
 	}
 
-	// OUTSIDE EVERY SECTION, holding nothing. Past the ack, so this delivery was
-	// still this node's when it was given up; past the read, so there is a
-	// record for the cid to reach.
-	p, logErr := out.publish(ctx)
-	if runErr == nil {
-		// A log that could not be read back fails the build; a run that already failed
-		// keeps its own reason.
-		runErr = logErr
-	}
-
-	return s.withJob(d.ID, func(j *held) error {
+	p := out.produced()
+	var (
+		left    buildv2.JobStatus
+		settled bool
+	)
+	err = s.withJob(d.ID, func(j *held) error {
 		if !j.found() {
 			return nil
 		}
+		settled = true
 		if j.rec().terminal() {
-			// A cancelled job keeps its status and still gets its log; a log that could not be
-			// read back is simply dropped here.
+			// A cancelled job keeps its status and still gets what this run built.
+			left = j.rec().status()
 			return j.logged(p)
 		}
 		if j.rec().status() != buildv2.JobStatus_JobStatusClaimed {
-			// The reopened job keeps this run's log, filed under the run's attempt; its status
-			// is untouched. Record first, push second.
+			// The reopened job keeps this run's output, filed under the run's attempt; its
+			// status is untouched. Record first, push second.
+			left = j.rec().status()
 			if err := j.logged(p); err != nil {
 				return err
 			}
@@ -389,12 +418,33 @@ func (s *Service) settle(ctx context.Context, d queue.Delivery, out *runOutput, 
 			// AN ERROR FROM Run IS TERMINAL. The queue's retry exists for a
 			// worker that DIED — which is a claim that expired, not an error
 			// returned — and retrying a compile error five times is waste.
+			left = buildv2.JobStatus_JobStatusFailed
 			return j.fail(runErr.Error(), p)
 		}
 
 		// The ref anchor moves in the same entry as the success: this commit is what the
 		// next build of this ref diffs from.
+		left = buildv2.JobStatus_JobStatusSuccess
 		return j.succeed(p)
+	})
+	if err != nil || !settled {
+		return err
+	}
+
+	// OUTSIDE EVERY SECTION, holding nothing. Past the record, so the log ends with
+	// what it left the job as.
+	if err := out.status(left); err != nil {
+		return errInternal("build: job %s: writing its end into its log: %v", d.ID, err)
+	}
+	cid, err := out.publish(ctx)
+	if cid == "" {
+		return err
+	}
+	return s.withJob(d.ID, func(j *held) error {
+		if !j.found() {
+			return nil
+		}
+		return j.logged(produced{attempt: p.attempt, logCID: cid})
 	})
 }
 

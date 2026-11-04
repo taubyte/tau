@@ -278,6 +278,24 @@ message Job {
   repeated string children = 11;
   // reason is why a job failed, empty otherwise.
   string reason = 12;
+
+  // Event is one thing that happened to one run of a job, as a follower sees it:
+  // the run's status as it moves, and each line of its output. A follower reads
+  // until a terminal status.
+  message Event {
+    // at is unix nanoseconds, by the clock of the node that served it.
+    int64 at = 1;
+    oneof kind {
+      JobStatus status = 2;
+      // message is one line of the run's output, without its newline.
+      string message = 3;
+    }
+    // offset is where a follower that lost the stream asks again from: the byte
+    // of the run's log after this event. IT IS CARRIED, not counted by the
+    // follower, because the two disagree the moment a follower drops an event it
+    // could not write, and a resume from a count that lost one skips it.
+    int64 offset = 4;
+  }
 }
 
 message ProjectRef {
@@ -348,16 +366,6 @@ message FollowRequest {
   int32 attempt = 4;
 }
 
-// LogChunk is some bytes of a build's output and where they ended.
-//
-// `next_offset` IS WHAT A RESUMING CLIENT SENDS BACK. It is carried per chunk
-// rather than derived by the client from the length it has received, because
-// the two disagree the moment a client drops a chunk it could not write — and a
-// resume computed from a count that lost bytes silently skips them.
-message LogChunk {
-  bytes data = 1;
-  int64 next_offset = 2;
-}
 
 // ArtifactRequest asks what one resource of one deployment currently runs.
 message ArtifactRequest {
@@ -402,17 +410,20 @@ service JobService {
   // about.
   rpc Artifact(ArtifactRequest) returns (Built);
 
-  // Follow streams one RUN's output, from `offset` to the end of it — or, with
-  // `snapshot`, to the end of what it has written so far.
+  // Follow streams one RUN's events, from `offset` to the end of it — or, with
+  // `snapshot`, to the end of what it has written so far: its status as it starts,
+  // each line of its output, and, for a follow, the status the run left the job
+  // in once that has settled, which is the stream's last event.
   //
   // ONLY THE NODE WRITING THE LOG CAN ANSWER, and while the run has not ended
   // every other one says Unavailable rather than NotFound — which is what makes
   // a caller's pool walk to the next backend instead of stopping at the first
   // that does not have it. A run that has not started — the job is queued, or
-  // claimed and not writing yet — is Unavailable from every node: its log is
-  // still to come, and a follower asks again. The alternative, forwarding to
-  // the claim record's holder the way Cancel does, would put a proxy hop in
-  // front of a stream that is already a proxy hop behind the public role.
+  // claimed and not writing yet — is held by the leader, which is where every
+  // run is claimed, until it starts there or the job ends without it; every
+  // other node says Unavailable. The alternative, forwarding to the claim
+  // record's holder the way Cancel does, would put a proxy hop in front of a
+  // stream that is already a proxy hop behind the public role.
   //
   // THE NODE THAT WROTE A LOG ANSWERS FOR IT UNTIL THE RECORD NAMES IT. A
   // run's log is handed to the asset store after the build ends and before the
@@ -428,5 +439,5 @@ service JobService {
   // with no output, nor an Unavailable that would have a follower ask again
   // for a log no node will write. A run past the job's next is
   // InvalidArgument.
-  rpc Follow(FollowRequest) returns (stream LogChunk);
+  rpc Follow(FollowRequest) returns (stream Job.Event);
 }

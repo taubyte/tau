@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -8,6 +9,8 @@ import (
 	"path/filepath"
 	"sync"
 
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	"github.com/taubyte/tau/services/build/joblog"
 	"github.com/taubyte/tau/services/build/livelog"
 	"github.com/taubyte/tau/services/storage"
 )
@@ -68,6 +71,15 @@ type runOutput struct {
 	// ended is this type's own idempotence: discard is deferred by run and
 	// publish closes on its way in, so the two meet on every path.
 	ended bool
+
+	// written guards lines and the log's records, since a runner may write its output
+	// from more than one goroutine. size is the log's bytes so far, and cut whether
+	// MaxLogBytes has been reached: past it the run's output is dropped, and its
+	// statuses still go in.
+	written sync.Mutex
+	lines   lineWriter
+	size    int64
+	cut     bool
 }
 
 // output opens a run's log and registers it for following. The file is named for
@@ -81,29 +93,149 @@ func (s *Service) output(w Work) (*runOutput, error) {
 	}
 
 	name := seg(w.JobID) + "." + stamp(int64(w.Attempt)) + ".log"
-	log, err := livelog.Create(filepath.Join(s.cfg.LogDir, name), livelog.WithMaxBytes(s.cfg.MaxLogBytes))
+	log, err := livelog.Create(filepath.Join(s.cfg.LogDir, name))
 	if err != nil {
+		return nil, errUnavailable("build: job %s: %v", w.JobID, err)
+	}
+
+	o := &runOutput{
+		s: s, job: w.JobID, project: w.ProjectID, environment: w.Environment, attempt: w.Attempt, log: log,
+		built: map[assetRef]string{},
+	}
+	o.lines = lineWriter{send: o.message}
+	// THE LOG OPENS WITH THE RUN'S CLAIM, so it says from its first record what it is
+	// the log of.
+	if err := o.status(buildv2.JobStatus_JobStatusClaimed); err != nil {
+		log.Close()
+		log.Unlink()
 		return nil, errUnavailable("build: job %s: %v", w.JobID, err)
 	}
 
 	s.logsMu.Lock()
 	s.logs[w.JobID] = runLog{attempt: w.Attempt, log: log}
 	s.logsMu.Unlock()
-
-	return &runOutput{
-		s: s, job: w.JobID, project: w.ProjectID, environment: w.Environment, attempt: w.Attempt, log: log,
-		built: map[assetRef]string{},
-	}, nil
+	s.runs.ring()
+	return o, nil
 }
 
-// Write is the log. A full log is not a failed write: livelog writes the notice
-// and the run carries on.
-func (o *runOutput) Write(p []byte) (int, error) {
-	n, err := o.log.Write(p)
-	if errors.Is(err, livelog.ErrFull) {
-		return len(p), nil
+// notice is a ring a waiter can wait on without a timer: wait hands out the channel
+// the next ring closes.
+type notice struct {
+	mu sync.Mutex
+	ch chan struct{}
+}
+
+func (n *notice) wait() <-chan struct{} {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.ch == nil {
+		n.ch = make(chan struct{})
 	}
-	return n, err
+	return n.ch
+}
+
+func (n *notice) ring() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.ch != nil {
+		close(n.ch)
+		n.ch = nil
+	}
+}
+
+// Write is the run's output, each line of it a message in the log. A full log is
+// not a failed write: the log says it was cut, once, and the run carries on.
+func (o *runOutput) Write(p []byte) (int, error) {
+	o.mu.Lock()
+	ended := o.ended
+	o.mu.Unlock()
+	if ended {
+		return 0, livelog.ErrClosed
+	}
+	o.written.Lock()
+	defer o.written.Unlock()
+	return o.lines.Write(p)
+}
+
+// status records the run's status in its log.
+func (o *runOutput) status(st buildv2.JobStatus) error {
+	if o == nil {
+		return nil
+	}
+	o.written.Lock()
+	defer o.written.Unlock()
+	if err := o.lines.flush(); err != nil {
+		return err
+	}
+	return o.record(&buildv2.Job_Event{Kind: &buildv2.Job_Event_Status{Status: st}})
+}
+
+// message is one line of output, dropped once the log has reached its cap.
+func (o *runOutput) message(line string) error {
+	if o.cut {
+		return nil
+	}
+	ev := &buildv2.Job_Event{Kind: &buildv2.Job_Event_Message{Message: line}}
+	if max := o.s.cfg.MaxLogBytes; max > 0 && o.size+int64(protoSize(ev)) > max {
+		o.cut = true
+		ev = &buildv2.Job_Event{Kind: &buildv2.Job_Event_Message{Message: fmt.Sprintf("... the log was cut at %d bytes", o.size)}}
+	}
+	return o.record(ev)
+}
+
+// record appends one event, at this node's instant.
+func (o *runOutput) record(ev *buildv2.Job_Event) error {
+	ev.At = o.s.now().UnixNano()
+	before := o.log.Size()
+	if err := joblog.Write(o.log, ev); err != nil {
+		return err
+	}
+	o.size += o.log.Size() - before
+	return nil
+}
+
+// protoSize is an event's bytes in the log, near enough for the cap.
+func protoSize(ev *buildv2.Job_Event) int { return ev.SizeVT() + 4 }
+
+// lineWriter cuts output into lines, each a message; a line longer than
+// maxMessage is sent in pieces, since one line of a stranger's build can be the
+// whole log.
+type lineWriter struct {
+	send    func(string) error
+	pending []byte
+}
+
+// maxMessage is how long one message may be.
+const maxMessage = 16 << 10
+
+func (l *lineWriter) Write(p []byte) (int, error) {
+	n := len(p)
+	for len(p) > 0 {
+		i := bytes.IndexByte(p, '\n')
+		if i < 0 {
+			l.pending = append(l.pending, p...)
+			if len(l.pending) >= maxMessage {
+				return n, l.flush()
+			}
+			return n, nil
+		}
+		l.pending = append(l.pending, p[:i]...)
+		p = p[i+1:]
+		if err := l.flush(); err != nil {
+			return n, err
+		}
+	}
+	return n, nil
+}
+
+// flush sends the line held, ended or not.
+func (l *lineWriter) flush() error {
+	if len(l.pending) == 0 {
+		return nil
+	}
+	line := string(l.pending)
+	l.pending = l.pending[:0]
+	return l.send(line)
 }
 
 // Asset hands one artifact to the asset store now and keeps its cid for publish.
@@ -165,24 +297,20 @@ func (o *runOutput) Asset(ctx context.Context, resourceID string, content io.Rea
 // stream without being held in memory. Its deadline is PublishTimeout off a
 // context the run's cancellation cannot reach. A store failure costs the log; an
 // unreadable log fails the build; a short read is caught by counting bytes.
-func (o *runOutput) publish(ctx context.Context) (produced, error) {
+func (o *runOutput) publish(ctx context.Context) (string, error) {
 	// A NIL OUTPUT IS A RUN THAT NEVER STARTED — this node could not open a log
 	// for it — and it produced nothing. settle is the only caller, and it hands
 	// over whatever the run left rather than branching on whether there was
 	// one.
 	if o == nil {
-		return produced{}, nil
+		return "", nil
 	}
 
 	o.end()
 
-	o.mu.Lock()
-	p := produced{attempt: o.attempt, assets: copied(o.built)}
-	o.mu.Unlock()
-
 	// A plan keeps no log: what it said opens each environment job's.
 	if o.s.assetStore == nil || o.environment == "" {
-		return p, nil
+		return "", nil
 	}
 
 	// The fork is taken AFTER end() closed the log, so the read stops at the
@@ -191,7 +319,7 @@ func (o *runOutput) publish(ctx context.Context) (produced, error) {
 	// discard's (livelog).
 	whole, err := o.log.Fork(0)
 	if err != nil {
-		return p, errInternal("build: job %s: reading back the log it wrote: %v", o.job, err)
+		return "", errInternal("build: job %s: reading back the log it wrote: %v", o.job, err)
 	}
 	defer whole.Close()
 
@@ -202,7 +330,7 @@ func (o *runOutput) publish(ctx context.Context) (produced, error) {
 
 	at, err := storage.NewAddress(o.project, o.environment, storage.AssetsBucket, LogsInstance)
 	if err != nil {
-		return p, errInternal("build: job %s: %v", o.job, err)
+		return "", errInternal("build: job %s: %v", o.job, err)
 	}
 	source := &handover{from: whole}
 	stream := livelog.Compressed(source)
@@ -213,19 +341,19 @@ func (o *runOutput) publish(ctx context.Context) (produced, error) {
 	// pipe; closing it ends that.
 	stream.Close()
 	if source.err != nil {
-		return p, errInternal("build: job %s: reading back the log it wrote: %v", o.job, source.err)
+		return "", errInternal("build: job %s: reading back the log it wrote: %v", o.job, source.err)
 	}
 	if err != nil {
-		return p, nil
+		return "", nil
 	}
 	// A Put that succeeded with less than the whole log stored a prefix: the store
 	// stopped before the compressed stream ended, whatever the compressor had read.
 	if !stream.Ended() {
-		return p, errInternal("build: job %s: the asset store took %d bytes of its compressed log and stopped before its end",
+		return "", errInternal("build: job %s: the asset store took %d bytes of its compressed log and stopped before its end",
 			o.job, stream.Taken())
 	}
 	if size := o.log.Size(); source.n != size {
-		return p, errInternal("build: job %s: the asset store took %d of the %d bytes of its log",
+		return "", errInternal("build: job %s: the asset store took %d of the %d bytes of its log",
 			o.job, source.n, size)
 	}
 	o.s.emit(ctx, Accounted{
@@ -237,8 +365,17 @@ func (o *runOutput) publish(ctx context.Context) (produced, error) {
 		Bytes:       uint64(source.n),
 	})
 
-	p.logCID = v.Record.RootCID
-	return p, nil
+	return v.Record.RootCID, nil
+}
+
+// produced is what the run built, and its attempt.
+func (o *runOutput) produced() produced {
+	if o == nil {
+		return produced{}
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return produced{attempt: o.attempt, assets: copied(o.built)}
 }
 
 // handover is the log on its way into the asset store: how much of it went, and
@@ -266,6 +403,9 @@ func (h *handover) Read(p []byte) (int, error) {
 // before the unlink under the fork lock. Readers that forked keep draining: the
 // inode outlives the name.
 func (o *runOutput) discard() {
+	if o == nil {
+		return
+	}
 	o.end()
 
 	o.s.logsMu.Lock()
@@ -287,6 +427,11 @@ func (o *runOutput) end() {
 	if ended {
 		return
 	}
+	// A line the run had not ended is still something it said. A log that will not
+	// take it has failed already, and is closed all the same.
+	o.written.Lock()
+	o.lines.flush()
+	o.written.Unlock()
 	o.log.Close()
 }
 
@@ -307,11 +452,11 @@ func (s *Service) Follow(jobID string, attempt uint32, from int64) (io.ReadClose
 // Snapshot is Follow up to where the log is now, then EOF. The end is read after
 // the fork, so it is never short of the checked offset.
 func (s *Service) Snapshot(jobID string, attempt uint32, from int64) (io.ReadCloser, error) {
-	log, r, err := s.fork(jobID, attempt, from)
+	kept, r, err := s.fork(jobID, attempt, from)
 	if err != nil {
 		return nil, err
 	}
-	return soFar{Reader: io.LimitReader(r, log.Size()-from), Closer: r}, nil
+	return soFar{Reader: io.LimitReader(r, kept.log.Size()-from), Closer: r}, nil
 }
 
 // soFar is a fork that ends at a fixed byte of the log.
@@ -328,9 +473,9 @@ type runLog struct {
 
 // fork is this node's log for that run of jobID and a reader at from; another
 // run's log is never substituted, since an offset belongs to one run.
-func (s *Service) fork(jobID string, attempt uint32, from int64) (*livelog.Log, *livelog.Reader, error) {
+func (s *Service) fork(jobID string, attempt uint32, from int64) (runLog, *livelog.Reader, error) {
 	if err := requireJobID(jobID); err != nil {
-		return nil, nil, err
+		return runLog{}, nil, err
 	}
 
 	s.logsMu.Lock()
@@ -338,16 +483,16 @@ func (s *Service) fork(jobID string, attempt uint32, from int64) (*livelog.Log, 
 
 	kept, ok := s.logs[jobID]
 	if !ok || kept.attempt != attempt {
-		return nil, nil, errNotFound("no log of attempt %d of job %s is on this node", attempt, jobID)
+		return runLog{}, nil, errNotFound("no log of attempt %d of job %s is on this node", attempt, jobID)
 	}
 
 	r, err := kept.log.Fork(from)
 	if err != nil {
 		// An offset past the end of this run's log is the caller's arithmetic.
 		if errors.Is(err, livelog.ErrOffset) {
-			return nil, nil, errInvalidArgument("%v", err)
+			return runLog{}, nil, errInvalidArgument("%v", err)
 		}
-		return nil, nil, errUnavailable("build: following job %s: %v", jobID, err)
+		return runLog{}, nil, errUnavailable("build: following job %s: %v", jobID, err)
 	}
-	return kept.log, r, nil
+	return kept, r, nil
 }

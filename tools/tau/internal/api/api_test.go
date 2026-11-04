@@ -8,12 +8,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
+
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
 func server(t *testing.T, h http.HandlerFunc) *Client {
@@ -168,9 +172,25 @@ func TestSecretsRoundTrip(t *testing.T) {
 	require.NoError(t, c.UnsetSecret(t.Context(), "p", "prod", "A"))
 }
 
-// logServer serves log from ?offset=, as run 1 unless asked for another, cutting
-// the connection after cut bytes on the first `drops` requests. It keeps the
-// query each request asked with.
+// eventsOf is text as the frontend serves a run's log from byte from: an event per
+// line, one JSON object per line, each carrying the offset after it.
+func eventsOf(text string, from int) []string {
+	var out []string
+	for at := from; at < len(text); {
+		end := len(text)
+		if i := strings.IndexByte(text[at:], '\n'); i >= 0 {
+			end = at + i + 1
+		}
+		raw, _ := protojson.Marshal(&Event{Kind: &buildv2.Job_Event_Message{Message: strings.TrimSuffix(text[at:end], "\n")}, Offset: int64(end)})
+		out = append(out, string(raw)+"\n")
+		at = end
+	}
+	return out
+}
+
+// logServer serves log's events from ?offset=, as run 1 unless asked for another,
+// cutting the connection inside the event after the first cut on the first `drops`
+// requests. It keeps the query each request asked with.
 func logServer(t *testing.T, log string, drops int, cut int) (*Client, *atomic.Int32, func() []string) {
 	var requests atomic.Int32
 	var mu sync.Mutex
@@ -185,18 +205,20 @@ func logServer(t *testing.T, log string, drops int, cut int) (*Client, *atomic.I
 			run = "1"
 		}
 		from, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-		rest := log[from:]
+		events := eventsOf(log, from)
 		if int(n) <= drops {
-			hj := w.(http.Hijacker)
-			conn, buf, _ := hj.Hijack()
-			part := rest[:min(cut, len(rest))]
+			part := strings.Join(events[:min(cut, len(events))], "")
+			if cut < len(events) {
+				part += events[cut][:len(events[cut])/2]
+			}
+			conn, buf, _ := w.(http.Hijacker).Hijack()
 			buf.WriteString("HTTP/1.1 200 OK\r\nX-Job-Attempt: " + run + "\r\nTransfer-Encoding: chunked\r\n\r\n" + strconv.FormatInt(int64(len(part)), 16) + "\r\n" + part + "\r\n")
 			buf.Flush()
 			conn.Close()
 			return
 		}
 		w.Header().Set("X-Job-Attempt", run)
-		io.WriteString(w, rest)
+		io.WriteString(w, strings.Join(events, ""))
 	})
 	return c, &requests, func() []string {
 		mu.Lock()
@@ -205,35 +227,37 @@ func logServer(t *testing.T, log string, drops int, cut int) (*Client, *atomic.I
 	}
 }
 
+const fiveLines = "a\nb\nc\nd\ne\n"
+
 func TestTheStreamResumesAtTheOffsetReached(t *testing.T) {
-	c, requests, _ := logServer(t, "0123456789", 2, 3)
+	c, requests, _ := logServer(t, fiveLines, 2, 2)
 	s := c.Stream(t.Context(), "j", 0, 0)
 	s.Backoff = time.Millisecond
 	var out bytes.Buffer
 	end, err := s.CopyTo(&out)
 	require.NoError(t, err)
-	require.Equal(t, "0123456789", out.String())
-	require.Equal(t, int64(10), end)
-	require.Equal(t, int64(10), s.Offset())
+	require.Equal(t, fiveLines, out.String(), "an event cut in the middle is read again whole")
+	require.Equal(t, int64(len(fiveLines)), end)
+	require.Equal(t, int64(len(fiveLines)), s.Offset())
 	require.Equal(t, int32(3), requests.Load())
 }
 
 func TestTheStreamResumesTheRunItWasReading(t *testing.T) {
-	c, _, asked := logServer(t, "0123456789", 2, 3)
+	c, _, asked := logServer(t, fiveLines, 2, 2)
 	s := c.Stream(t.Context(), "j", 0, 0)
 	s.Backoff = time.Millisecond
 	_, err := s.CopyTo(io.Discard)
 	require.NoError(t, err)
 	require.Equal(t, int32(1), s.Attempt())
-	require.Equal(t, []string{"", "attempt=1&offset=3", "attempt=1&offset=6"}, asked())
+	require.Equal(t, []string{"", "attempt=1&offset=4", "attempt=1&offset=8"}, asked())
 
-	c, _, asked = logServer(t, "0123456789", 1, 4)
+	c, _, asked = logServer(t, fiveLines, 1, 2)
 	s = c.Stream(t.Context(), "j", 7, 2)
 	s.Backoff = time.Millisecond
 	var out bytes.Buffer
 	_, err = s.CopyTo(&out)
 	require.NoError(t, err)
-	require.Equal(t, "23456789", out.String())
+	require.Equal(t, "b\nc\nd\ne\n", out.String())
 	require.Equal(t, []string{"attempt=7&offset=2", "attempt=7&offset=6"}, asked())
 }
 
@@ -242,22 +266,22 @@ func TestTheStreamRefusesAnotherRunsLog(t *testing.T) {
 	c := server(t, func(w http.ResponseWriter, r *http.Request) {
 		requests++
 		if requests == 1 {
-			hj := w.(http.Hijacker)
-			conn, buf, _ := hj.Hijack()
-			buf.WriteString("HTTP/1.1 200 OK\r\nX-Job-Attempt: 1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nfirst\r\n")
+			first := eventsOf("first\n", 0)[0]
+			conn, buf, _ := w.(http.Hijacker).Hijack()
+			buf.WriteString("HTTP/1.1 200 OK\r\nX-Job-Attempt: 1\r\nTransfer-Encoding: chunked\r\n\r\n" + strconv.FormatInt(int64(len(first)), 16) + "\r\n" + first + "\r\n")
 			buf.Flush()
 			conn.Close()
 			return
 		}
 		w.Header().Set("X-Job-Attempt", "2")
-		io.WriteString(w, " of the second run")
+		io.WriteString(w, strings.Join(eventsOf("first\nof the second run\n", 6), ""))
 	})
 	s := c.Stream(t.Context(), "j", 0, 0)
 	s.Backoff = time.Millisecond
 	var out bytes.Buffer
 	_, err := s.CopyTo(&out)
 	require.ErrorContains(t, err, "attempt 1 was asked for and attempt 2 was sent")
-	require.Equal(t, "first", out.String())
+	require.Equal(t, "first\n", out.String())
 }
 
 func TestALostRunEndsTheStream(t *testing.T) {
@@ -284,11 +308,20 @@ func TestAResponseThatNamesNoRunIsRefused(t *testing.T) {
 	requests := 0
 	c := server(t, func(w http.ResponseWriter, r *http.Request) {
 		requests++
-		io.WriteString(w, "a log")
+		io.WriteString(w, strings.Join(eventsOf("a log\n", 0), ""))
 	})
 	_, err := c.Stream(t.Context(), "j", 0, 0).CopyTo(io.Discard)
 	require.ErrorIs(t, err, errUnnamedRun)
 	require.Equal(t, 1, requests)
+}
+
+func TestAnEventThatIsNotOneEndsTheStream(t *testing.T) {
+	c := server(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Job-Attempt", "1")
+		io.WriteString(w, "not an event\n")
+	})
+	_, err := c.Stream(t.Context(), "j", 0, 0).CopyTo(io.Discard)
+	require.ErrorContains(t, err, "reading the log of j")
 }
 
 func TestTheStreamGivesUpAfterItsRetries(t *testing.T) {
@@ -322,10 +355,15 @@ func TestTheStreamRetriesAnUnreachableCloudThenStops(t *testing.T) {
 	_, err = s.Next()
 	require.Error(t, err)
 
+	// A CALLER THAT GIVES UP while the stream waits to ask again ends the wait.
 	ctx, cancel := context.WithCancel(t.Context())
-	s = c.Stream(ctx, "j", 0, 0)
+	hangsUp := server(t, func(w http.ResponseWriter, r *http.Request) {
+		cancel()
+		conn, _, _ := w.(http.Hijacker).Hijack()
+		conn.Close()
+	})
+	s = hangsUp.Stream(ctx, "j", 0, 0)
 	s.Backoff = time.Hour
-	go func() { time.Sleep(20 * time.Millisecond); cancel() }()
 	_, err = s.Next()
 	require.Error(t, err)
 }
@@ -333,7 +371,7 @@ func TestTheStreamRetriesAnUnreachableCloudThenStops(t *testing.T) {
 func TestTheStreamStopsWhenItsWriterDoes(t *testing.T) {
 	c := server(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Job-Attempt", "1")
-		io.WriteString(w, "data")
+		io.WriteString(w, strings.Join(eventsOf("data\n", 0), ""))
 	})
 	_, err := c.Stream(t.Context(), "j", 0, 0).CopyTo(failing{})
 	require.Error(t, err)
@@ -351,7 +389,8 @@ func TestTheStreamAsksForASnapshotOnlyWhenTold(t *testing.T) {
 		asked = append(asked, r.URL.Path+"?"+r.URL.RawQuery)
 		mu.Unlock()
 		w.Header().Set("X-Job-Attempt", "1")
-		io.WriteString(w, "so far\n")
+		from, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+		io.WriteString(w, strings.Join(eventsOf("abc"+"so far\n", from), ""))
 	})
 
 	s := c.Stream(t.Context(), "j", 0, 3)
@@ -371,16 +410,37 @@ func TestTheStreamAsksForASnapshotOnlyWhenTold(t *testing.T) {
 }
 
 func TestTheStreamStopsWhenCancelledDuringBackoff(t *testing.T) {
-	c, _, _ := logServer(t, "0123456789", 100, 2)
+	c, _, _ := logServer(t, fiveLines, 100, 1)
 	ctx, cancel := context.WithCancel(t.Context())
 	s := c.Stream(ctx, "j", 0, 0)
 	s.Backoff = time.Hour
-	chunk, err := s.Next()
+	line, err := s.Line()
 	require.NoError(t, err)
-	require.Equal(t, "01", string(chunk))
-	go func() { time.Sleep(20 * time.Millisecond); cancel() }()
+	require.Equal(t, "a\n", string(line))
+	cancel()
 	_, err = s.Next()
 	require.Error(t, err)
+}
+
+// THE STATUS A RUN ENDED THE JOB IN is the log's own last event, and the stream says
+// it, so a follower knows how the run ended without asking the record.
+func TestTheStreamSaysHowTheRunEnded(t *testing.T) {
+	c := server(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Job-Attempt", "1")
+		io.WriteString(w, strings.Join(eventsOf("built\n", 0), ""))
+		raw, _ := protojson.Marshal(&Event{Kind: &buildv2.Job_Event_Status{Status: buildv2.JobStatus_JobStatusSuccess}, Offset: 6})
+		w.Write(append(raw, '\n'))
+	})
+	s := c.Stream(t.Context(), "j", 0, 0)
+	_, ended := s.Ended()
+	require.False(t, ended)
+	var out bytes.Buffer
+	_, err := s.CopyTo(&out)
+	require.NoError(t, err)
+	require.Equal(t, "built\n", out.String(), "a status is not a line of output")
+	status, ended := s.Ended()
+	require.True(t, ended)
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, status)
 }
 
 func TestBuildsByHandAndByUpload(t *testing.T) {

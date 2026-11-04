@@ -2,6 +2,7 @@ package clients
 
 import (
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -231,15 +232,16 @@ func TestEveryPeerUnavailableIsErrNoBackend(t *testing.T) {
 	require.ErrorIs(t, c.Cancel(t.Context(), "job-1"), ErrNoBackend)
 }
 
-// chunks is a Follow the fake backend serves from a fixed string.
-func chunks(text string, size int) func(string, int64, func(*buildv2.LogChunk) error) error {
-	return func(_ string, offset int64, send func(*buildv2.LogChunk) error) error {
+// lines is a Follow the fake backend serves from a fixed string, a message event
+// per line, each carrying the offset after it.
+func lines(text string) func(string, int64, func(*buildv2.Job_Event) error) error {
+	return func(_ string, offset int64, send func(*buildv2.Job_Event) error) error {
 		if offset > int64(len(text)) {
 			return connect.NewError(connect.CodeInvalidArgument, errors.New("offset past the end"))
 		}
 		for at := offset; at < int64(len(text)); {
-			end := min(at+int64(size), int64(len(text)))
-			if err := send(&buildv2.LogChunk{Data: []byte(text[at:end]), NextOffset: end}); err != nil {
+			end := at + int64(strings.IndexByte(text[at:], '\n')) + 1
+			if err := send(message(text[at:end-1], end)); err != nil {
 				return err
 			}
 			at = end
@@ -248,29 +250,35 @@ func chunks(text string, size int) func(string, int64, func(*buildv2.LogChunk) e
 	}
 }
 
-func TestFollow(t *testing.T) {
-	c := newBuilds(t, &fakeBackend{follow: chunks("cloning\ncompiling\ndone\n", 5)})
+func message(text string, offset int64) *buildv2.Job_Event {
+	return &buildv2.Job_Event{Kind: &buildv2.Job_Event_Message{Message: text}, Offset: offset}
+}
 
-	var got []byte
-	end, err := c.Follow(t.Context(), "job", 1, 0, func(data []byte, _ int64) error {
-		got = append(got, data...)
+// said is an emit that keeps what it was told, a line per message.
+func said(got *string) func(*buildv2.Job_Event) error {
+	return func(ev *buildv2.Job_Event) error {
+		*got += ev.GetMessage() + "\n"
 		return nil
-	})
+	}
+}
+
+func TestFollow(t *testing.T) {
+	c := newBuilds(t, &fakeBackend{follow: lines("cloning\ncompiling\ndone\n")})
+
+	var got string
+	end, err := c.Follow(t.Context(), "job", 1, 0, said(&got))
 	require.NoError(t, err)
-	require.Equal(t, "cloning\ncompiling\ndone\n", string(got))
+	require.Equal(t, "cloning\ncompiling\ndone\n", got)
 	require.Equal(t, int64(len("cloning\ncompiling\ndone\n")), end)
 }
 
 func TestFollowResumes(t *testing.T) {
-	c := newBuilds(t, &fakeBackend{follow: chunks("first\nsecond\n", 64)})
+	c := newBuilds(t, &fakeBackend{follow: lines("first\nsecond\n")})
 
-	var got []byte
-	_, err := c.Follow(t.Context(), "job", 1, int64(len("first\n")), func(data []byte, _ int64) error {
-		got = append(got, data...)
-		return nil
-	})
+	var got string
+	_, err := c.Follow(t.Context(), "job", 1, int64(len("first\n")), said(&got))
 	require.NoError(t, err)
-	require.Equal(t, "second\n", string(got))
+	require.Equal(t, "second\n", got)
 }
 
 func TestFollowWalksToTheWriterAndResumes(t *testing.T) {
@@ -279,9 +287,9 @@ func TestFollowWalksToTheWriterAndResumes(t *testing.T) {
 
 	// The first peer serves a little and then goes Unavailable — the shape of a
 	// backend whose claim lapsed mid-build.
-	broke := &fakeBackend{follow: func(_ string, offset int64, send func(*buildv2.LogChunk) error) error {
+	broke := &fakeBackend{follow: func(_ string, offset int64, send func(*buildv2.Job_Event) error) error {
 		if offset == 0 {
-			if err := send(&buildv2.LogChunk{Data: []byte("cloning\n"), NextOffset: 8}); err != nil {
+			if err := send(message("cloning", 8)); err != nil {
 				return err
 			}
 		}
@@ -289,7 +297,7 @@ func TestFollowWalksToTheWriterAndResumes(t *testing.T) {
 	}}
 	partial := serveBuild(t, mn, broke)
 	// The second has the whole thing and is asked for the rest of it.
-	writer := &fakeBackend{follow: chunks("cloning\ncompiling\n", 64)}
+	writer := &fakeBackend{follow: lines("cloning\ncompiling\n")}
 	whole := serveBuild(t, mn, writer)
 
 	p, err := NewPool(caller, discovery.Static(partial.ID(), whole.ID()), build.Protocol, 4)
@@ -299,13 +307,10 @@ func TestFollowWalksToTheWriterAndResumes(t *testing.T) {
 	c, err := Builds(p)
 	require.NoError(t, err)
 
-	var got []byte
-	end, err := c.Follow(t.Context(), "job", 3, 0, func(data []byte, _ int64) error {
-		got = append(got, data...)
-		return nil
-	})
+	var got string
+	end, err := c.Follow(t.Context(), "job", 3, 0, said(&got))
 	require.NoError(t, err)
-	require.Equal(t, "cloning\ncompiling\n", string(got), "the second peer resumed at 8 rather than repeating")
+	require.Equal(t, "cloning\ncompiling\n", got, "the second peer resumed at 8 rather than repeating")
 	require.Equal(t, int64(len("cloning\ncompiling\n")), end)
 	// AND IT RESUMED THE SAME RUN: an offset carried to the next peer without
 	// its attempt could be read from another run's log.
@@ -315,34 +320,34 @@ func TestFollowWalksToTheWriterAndResumes(t *testing.T) {
 
 func TestFollowOfAnEndedJobStopsAtTheLeader(t *testing.T) {
 	var asked atomic.Int32
-	after := &fakeBackend{follow: func(id string, offset int64, send func(*buildv2.LogChunk) error) error {
+	after := &fakeBackend{follow: func(id string, offset int64, send func(*buildv2.Job_Event) error) error {
 		asked.Add(1)
-		return chunks("output\n", 64)(id, offset, send)
+		return lines("output\n")(id, offset, send)
 	}}
-	ended := func(string, int64, func(*buildv2.LogChunk) error) error {
+	ended := func(string, int64, func(*buildv2.Job_Event) error) error {
 		return connect.NewError(connect.CodeFailedPrecondition, errors.New("job finished as JobStatusSuccess"))
 	}
 	c := newBuilds(t, &fakeBackend{follow: ended, snapshot: ended}, after)
 
-	_, err := c.Follow(t.Context(), "job", 1, 0, func([]byte, int64) error { return nil })
+	_, err := c.Follow(t.Context(), "job", 1, 0, func(*buildv2.Job_Event) error { return nil })
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
-	_, err = c.Snapshot(t.Context(), "job", 1, 0, func([]byte, int64) error { return nil })
+	_, err = c.Snapshot(t.Context(), "job", 1, 0, func(*buildv2.Job_Event) error { return nil })
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 	require.Zero(t, asked.Load(), "nothing past the leader was asked")
 
-	notHere := func(string, int64, func(*buildv2.LogChunk) error) error {
+	notHere := func(string, int64, func(*buildv2.Job_Event) error) error {
 		return connect.NewError(connect.CodeUnavailable, errors.New("not writing this log"))
 	}
 	c = newBuilds(t, &fakeBackend{follow: notHere}, &fakeBackend{follow: notHere})
-	_, err = c.Follow(t.Context(), "job", 1, 0, func([]byte, int64) error { return nil })
+	_, err = c.Follow(t.Context(), "job", 1, 0, func(*buildv2.Job_Event) error { return nil })
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
 	require.ErrorIs(t, err, ErrNoBackend)
 }
 
 func TestFollowStopsOnTheCallersFailure(t *testing.T) {
-	c := newBuilds(t, &fakeBackend{follow: chunks("output\n", 2)})
+	c := newBuilds(t, &fakeBackend{follow: lines("output\n")})
 
-	_, err := c.Follow(t.Context(), "job", 1, 0, func([]byte, int64) error {
+	_, err := c.Follow(t.Context(), "job", 1, 0, func(*buildv2.Job_Event) error {
 		return errors.New("client went away")
 	})
 	require.ErrorContains(t, err, "client went away")
@@ -392,19 +397,16 @@ func TestArtifactWalksPastAFollower(t *testing.T) {
 
 func TestSnapshotAsksForWhatTheLogHoldsNow(t *testing.T) {
 	c := newBuilds(t, &fakeBackend{
-		follow: func(string, int64, func(*buildv2.LogChunk) error) error {
+		follow: func(string, int64, func(*buildv2.Job_Event) error) error {
 			return connect.NewError(connect.CodeFailedPrecondition, errors.New("asked to follow"))
 		},
-		snapshot: chunks("cloning\n", 64),
+		snapshot: lines("cloning\n"),
 	})
 
-	var got []byte
-	end, err := c.Snapshot(t.Context(), "job", 1, 0, func(data []byte, _ int64) error {
-		got = append(got, data...)
-		return nil
-	})
+	var got string
+	end, err := c.Snapshot(t.Context(), "job", 1, 0, said(&got))
 	require.NoError(t, err)
-	require.Equal(t, "cloning\n", string(got))
+	require.Equal(t, "cloning\n", got)
 	require.Equal(t, int64(len("cloning\n")), end)
 }
 
@@ -412,16 +414,16 @@ func TestSnapshotWalksToTheWriterAndResumes(t *testing.T) {
 	mn := newMocknet(t)
 	caller := newHost(t, mn)
 
-	broke := &fakeBackend{snapshot: func(_ string, offset int64, send func(*buildv2.LogChunk) error) error {
+	broke := &fakeBackend{snapshot: func(_ string, offset int64, send func(*buildv2.Job_Event) error) error {
 		if offset == 0 {
-			if err := send(&buildv2.LogChunk{Data: []byte("cloning\n"), NextOffset: 8}); err != nil {
+			if err := send(message("cloning", 8)); err != nil {
 				return err
 			}
 		}
 		return connect.NewError(connect.CodeUnavailable, errors.New("not writing this log"))
 	}}
 	partial := serveBuild(t, mn, broke)
-	writer := &fakeBackend{snapshot: chunks("cloning\ncompiling\n", 64)}
+	writer := &fakeBackend{snapshot: lines("cloning\ncompiling\n")}
 	whole := serveBuild(t, mn, writer)
 
 	p, err := NewPool(caller, discovery.Static(partial.ID(), whole.ID()), build.Protocol, 4)
@@ -431,13 +433,10 @@ func TestSnapshotWalksToTheWriterAndResumes(t *testing.T) {
 	c, err := Builds(p)
 	require.NoError(t, err)
 
-	var got []byte
-	end, err := c.Snapshot(t.Context(), "job", 2, 0, func(data []byte, _ int64) error {
-		got = append(got, data...)
-		return nil
-	})
+	var got string
+	end, err := c.Snapshot(t.Context(), "job", 2, 0, said(&got))
 	require.NoError(t, err)
-	require.Equal(t, "cloning\ncompiling\n", string(got))
+	require.Equal(t, "cloning\ncompiling\n", got)
 	require.Equal(t, int64(len("cloning\ncompiling\n")), end)
 	require.Equal(t, []int32{2}, broke.asked())
 	require.Equal(t, []int32{2}, writer.asked())

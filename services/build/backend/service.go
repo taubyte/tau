@@ -62,6 +62,9 @@ type Service struct {
 	// run's record names it. Decided by the run having started, not by a record read.
 	logsMu sync.Mutex
 	logs   map[string]runLog
+	// runs rings when a run starts on this node or a job ends here, for a follow
+	// waiting on the leader for the run it asked about.
+	runs notice
 
 	// meter is where this service says what it accounted for. Nil is the
 	// ordinary case; see meter.go.

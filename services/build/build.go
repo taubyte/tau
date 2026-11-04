@@ -1,9 +1,10 @@
-// Package build holds the two facts both of build's roles need: the protocol id
-// the backend serves and the frontend dials, and the role descriptors. The roles
+// Package build holds what both of build's roles need: the protocol id the backend
+// serves and the frontend dials, the role descriptors, and how a run's log becomes
+// the events a follower reads (lines.go). The roles
 // sit on either side of a trust boundary: the frontend takes webhooks and the
 // job API off the internet and holds no credentials or runtime; the backend owns
 // the queue, the records and the run, reachable only over p2p. It imports p2p/rpc
-// and the generated connect package only, never pkg/http.
+// and the generated code only, never pkg/http.
 package build
 
 import (

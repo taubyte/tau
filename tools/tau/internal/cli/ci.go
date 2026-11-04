@@ -150,53 +150,66 @@ func awaitJob(cmd *cobra.Command, cl *api.Client, job string, log io.Writer) (*a
 // isPlan is a push's first job, which builds no environment and keeps no log.
 func isPlan(j *api.Job) bool { return j.GetEnvironment() == "" }
 
-// awaitOne follows one job's log to its end.
+// awaitOne follows one job to its end: each run's events until the status it left
+// the job in, which is its log's last, so nothing waits on a clock while a run goes
+// on. The record is read between runs, for what comes next. Only a log that cannot
+// be read at all is asked for again after the interval.
 func awaitOne(cmd *cobra.Command, cl *api.Client, job string, out *lines) (*api.Job, error) {
 	ctx := cmd.Context()
-	var run *api.LogStream
-	// done is whether run's log was read to its end, or is known to have none.
-	var done bool
+	j, err := cl.Job(ctx, job)
+	if err != nil {
+		return nil, err
+	}
+	// The run it follows is named, as the frontend would name it, so a note about one
+	// it could not read can say which.
+	at := j.GetAttempt()
+	if at == 0 || j.GetStatus() == api.JobQueued {
+		at++
+	}
 	for {
-		j, err := cl.Job(ctx, job)
-		if err != nil {
+		run := cl.Stream(ctx, job, at, 0)
+		_, err := run.CopyTo(out)
+		var lost *api.LostLog
+		var refusal *api.Error
+		unreadable := false
+		switch {
+		case errors.As(err, &lost):
+			// A plan's log is live only, so one that ended before it was followed
+			// left nothing to say so about.
+			if !isPlan(j) {
+				out.note("%v", lost)
+			}
+		case errors.As(err, &refusal):
+			// A FOLLOW REFUSED IS A LOG NO NODE CAN SERVE NOW: asked for again,
+			// unless the job has ended, when it is the last word on its log.
+			unreadable = true
+		case err != nil:
 			return nil, err
 		}
-		ended := terminal(j)
-		if at := j.GetAttempt(); at > 0 && !isPlan(j) && (ended || j.GetStatus() == api.JobRunning) {
-			if run == nil || run.Attempt() != at {
-				if run != nil && !done {
-					out.note("job %s: the log of attempt %d was read to byte %d; attempt %d follows", job, run.Attempt(), run.Offset(), at)
-				}
-				run, done = cl.Stream(ctx, job, at, 0), false
-			}
-			if !done {
-				_, err := run.CopyTo(out)
-				done = err == nil
-				var lost *api.LostLog
-				var refusal *api.Error
-				switch {
-				case errors.As(err, &lost):
-					done = true
-					out.note("%v", lost)
-				case errors.As(err, &refusal):
-					// A FOLLOW REFUSED IS A BUILD NOT RUNNING THERE YET OR ANY
-					// MORE, which the next look at its record says — unless the
-					// job has ended, when it is the last word on its log.
-					if ended {
-						out.note("the job's log cannot be read: %v", err)
-					}
-				case err != nil:
-					return nil, err
-				}
-			}
+
+		if j, err = cl.Job(ctx, job); err != nil {
+			return nil, err
 		}
-		if ended {
+		if terminal(j) {
+			if unreadable {
+				out.note("the job's log cannot be read: %v", refusal)
+			}
 			return j, nil
 		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(interval(cmd)):
+		next := j.GetAttempt()
+		if j.GetStatus() == api.JobQueued {
+			next++
+		}
+		if next != at && lost == nil {
+			out.note("job %s: the log of attempt %d was read to byte %d; attempt %d follows", job, at, run.Offset(), next)
+		}
+		at = next
+		if unreadable {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(interval(cmd)):
+			}
 		}
 	}
 }

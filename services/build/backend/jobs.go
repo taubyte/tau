@@ -9,6 +9,7 @@ import (
 	"connectrpc.com/connect"
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	"github.com/taubyte/tau/services/build/joblog"
 )
 
 // jobHandler is the connect adapter for JobService: each method authorizes, leads
@@ -71,7 +72,11 @@ func (s *Service) job(id string) (*buildv2.Job, error) {
 	if !found {
 		return nil, errNotFound("no job %s", id)
 	}
+	return jobOf(rec), nil
+}
 
+// jobOf is a job as the wire carries it.
+func jobOf(rec jobRecord) *buildv2.Job {
 	return &buildv2.Job{
 		Id:            rec.ID,
 		Status:        rec.status(),
@@ -85,7 +90,7 @@ func (s *Service) job(id string) (*buildv2.Job, error) {
 		Environment:   rec.Environment,
 		Children:      slices.Clone(rec.Children),
 		Reason:        rec.Reason,
-	}, nil
+	}
 }
 
 // list streams the ids of a project's jobs, unbounded and unpaginated, handing
@@ -189,10 +194,6 @@ func (s *Service) retry(id string) error {
 	})
 }
 
-// followChunk is how much of a log one message carries, small because a watcher
-// wants latency, not throughput; livelog's Reader returns what is there.
-const followChunk = 16 << 10
-
 func (h *jobHandler) Artifact(ctx context.Context, req *connect.Request[buildv2.ArtifactRequest]) (*connect.Response[buildv2.Built], error) {
 	cid, err := h.s.artifact(ctx, req.Msg.GetProject(), req.Msg.GetEnvironment(), req.Msg.GetResource())
 	if err != nil {
@@ -243,16 +244,20 @@ func (s *Service) Built(project, environment, resource string) (string, error) {
 	return cid, nil
 }
 
-func (h *jobHandler) Follow(ctx context.Context, req *connect.Request[buildv2.FollowRequest], stream *connect.ServerStream[buildv2.LogChunk]) error {
+func (h *jobHandler) Follow(ctx context.Context, req *connect.Request[buildv2.FollowRequest], stream *connect.ServerStream[buildv2.Job_Event]) error {
 	if err := h.s.allow(ctx, ActRead, req.Msg.GetJobId()); err != nil {
 		return err
 	}
 	return h.s.follow(ctx, req.Msg, stream.Send)
 }
 
-// follow streams a build's output from the request's offset to the end of the
-// build, or with snapshot to what is written so far.
-func (s *Service) follow(ctx context.Context, req *buildv2.FollowRequest, send func(*buildv2.LogChunk) error) error {
+// follow streams one run's events from the request's offset, as its log records
+// them: its claim, each line of its output, and the status it left the job in,
+// which is the last. A snapshot ends at what is written so far. Asked of the leader,
+// which is where every run is claimed, a follow of a run to come says the job is
+// queued and waits for the run to begin here, or for the job to end without it:
+// rung, not timed.
+func (s *Service) follow(ctx context.Context, req *buildv2.FollowRequest, send func(*buildv2.Job_Event) error) error {
 	jobID, offset := req.GetJobId(), req.GetOffset()
 	if offset < 0 {
 		return errInvalidArgument("build: offset %d is before the start of the log", offset)
@@ -262,44 +267,84 @@ func (s *Service) follow(ctx context.Context, req *buildv2.FollowRequest, send f
 	}
 	attempt := uint32(req.GetAttempt())
 
-	open := s.Follow
-	if req.GetSnapshot() {
-		open = s.Snapshot
-	}
-	reader, err := open(jobID, attempt, offset)
-	if err != nil {
+	var (
+		reader io.ReadCloser
+		waited bool
+	)
+	for {
+		rung := s.runs.wait()
+		var err error
+		if req.GetSnapshot() {
+			reader, err = s.Snapshot(jobID, attempt, offset)
+		} else {
+			reader, err = s.Follow(jobID, attempt, offset)
+		}
+		if err == nil {
+			break
+		}
 		// Only a missing log goes to notWritten; other refusals keep their codes so a bad
 		// request does not walk the fleet.
-		if connect.CodeOf(err) == connect.CodeNotFound {
-			return s.notWritten(jobID, attempt, err)
+		if connect.CodeOf(err) != connect.CodeNotFound {
+			return err
 		}
-		return err
+		err = s.notWritten(jobID, attempt, err)
+		if req.GetSnapshot() || connect.CodeOf(err) != connect.CodeUnavailable || !s.holds(jobID, attempt) {
+			return err
+		}
+		if !waited {
+			waited = true
+			queued := &buildv2.Job_Event{At: s.now().UnixNano(), Kind: &buildv2.Job_Event_Status{Status: buildv2.JobStatus_JobStatusOpen}, Offset: offset}
+			if err := send(queued); err != nil {
+				return err
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-rung:
+		}
 	}
 	defer reader.Close()
 
-	buf := make([]byte, followChunk)
+	events := joblog.Read(reader, offset)
 	for {
 		// Checked before the read, which blocks until the writer appends or closes.
 		if ctx.Err() != nil {
 			return nil
 		}
-
-		n, err := reader.Read(buf)
-		if n > 0 {
-			offset += int64(n)
-			if sendErr := send(&buildv2.LogChunk{Data: buf[:n], NextOffset: offset}); sendErr != nil {
-				return sendErr
-			}
-		}
+		ev, err := events.Next()
 		if err != nil {
-			// EOF is the build ending (or, for a snapshot, the end of what was there): a
-			// complete answer.
+			// EOF is the run's log ending (or, for a snapshot, the end of what was
+			// there): a complete answer.
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
 			return errUnavailable("build: following job %s: %v", jobID, err)
 		}
+		if err := send(ev); err != nil {
+			return err
+		}
 	}
+}
+
+// holds is whether a follow of that run waits here: on the leader, where every run
+// is claimed, for a run still to come, or claimed by this node and not writing yet.
+// A run another node claimed is that node's to answer, so its follow walks on.
+func (s *Service) holds(jobID string, attempt uint32) bool {
+	if !s.store.IsLeader() {
+		return false
+	}
+	rec, found, err := s.readRecord(jobID)
+	if err != nil || !found {
+		return false
+	}
+	switch rec.status() {
+	case buildv2.JobStatus_JobStatusOpen:
+		return attempt == rec.Attempt+1
+	case buildv2.JobStatus_JobStatusClaimed:
+		return attempt == rec.Attempt && rec.Holder == s.host.ID().String()
+	}
+	return false
 }
 
 // notWritten answers for a node holding no log of that run. While the run is to

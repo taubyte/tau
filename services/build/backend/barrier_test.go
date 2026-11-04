@@ -33,18 +33,18 @@ func TestWhatTheSectionsBarriersCost(t *testing.T) {
 			"the dead letter's claim, the sweep, and the work queue's claim — all pkg/queue's own")
 	})
 
-	// A claimed, built and settled job costs four more: begin's lead(), then settle's
-	// three (the ack's section, the ack, the record's section). Settle is two
-	// sections because the log handoff to the asset store sits between them, outside
-	// jobLock, and the second section reads a newer prefix so takes its own barrier.
+	// A claimed, built and settled job costs five more: begin's lead(), then settle's
+	// four (the ack's section, the ack, the record's section, and the section filing
+	// its log). The log handoff to the asset store sits between the last two, outside
+	// jobLock, after the record, so the log ends with what the run left the job as.
 	t.Run("a cycle that claims, runs and settles a job", func(t *testing.T) {
 		h := newHarness(t)
 		id := h.planned(t, testRef, testCommit)
 
 		n := spent(h, func() { require.True(t, h.mustStep(t)) })
 		t.Logf("barriers=%d", n)
-		require.Equal(t, int64(7), n,
-			"the three above, plus begin's lead(), settle's two lead()s and settle's ack")
+		require.Equal(t, int64(8), n,
+			"the three above, plus begin's lead(), settle's three lead()s and settle's ack")
 		require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
 	})
 

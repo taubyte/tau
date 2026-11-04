@@ -42,32 +42,31 @@ func TestARunningBuildsLogIsFollowedWhileItIsStillBeingWritten(t *testing.T) {
 	}()
 
 	<-started
-	follower, err := h.Follow(id, 1, 0)
-	require.NoError(t, err)
-	defer follower.Close()
+	var followed collector
+	following := make(chan error, 1)
+	go func() {
+		following <- h.follow(t.Context(), &buildv2.FollowRequest{JobId: id, Attempt: 1}, followed.send)
+	}()
+	followed.waitText("cloning\n")
 
-	require.Equal(t, "cloning\n", readExactly(t, follower, 8))
-
-	// A reader that has caught up BLOCKS rather than seeing the end of the
-	// build; the next thing the build prints is what releases it.
+	// A follower that has caught up WAITS rather than seeing the end of the build;
+	// the next thing the build prints is what releases it.
 	more <- "compiling\n"
-	require.Equal(t, "compiling\n", readExactly(t, follower, 10))
+	followed.waitText("cloning\ncompiling\n")
 
 	close(more)
 	require.NoError(t, <-done)
-
-	// The run is over, so the follower drains and ends — even though the file
-	// itself is already gone.
-	rest, err := io.ReadAll(follower)
-	require.NoError(t, err)
-	require.Empty(t, rest)
+	// The run is over, so the follower drains and ends, even though the file itself
+	// is already gone.
+	require.NoError(t, <-following)
 
 	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
 	require.Empty(t, logFiles(t, h))
 
 	// And it is no longer followable: the cid on the job is the address now.
-	_, err = h.Follow(id, 1, 0)
+	_, err := h.Follow(id, 1, 0)
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
+	require.Equal(t, "cloning\ncompiling\n", h.assets.content(t, h.mustRecord(t, id).Logs[stamp(1)]))
 }
 
 func TestFollowRefusesWhatItCannotAnswer(t *testing.T) {
@@ -241,28 +240,33 @@ func TestAPublishThatOutlastsItsDeadlineCostsTheLogAndNotTheJob(t *testing.T) {
 
 func TestALogPastItsCapIsTruncatedAndTheBuildStillSucceeds(t *testing.T) {
 	h := newHarnessCfg(t, func(c *Config) {
-		c.MaxLogBytes = 16
+		c.MaxLogBytes = 64
 	})
 	id := h.planned(t, testRef, testCommit)
 
+	long := strings.Repeat("well past the cap ", 8) + "\n"
 	var wrote int
 	var writeErr error
 	h.runner.run = func(_ context.Context, _ Work, out Output) error {
-		out.Write([]byte("0123456789"))
-		wrote, writeErr = out.Write([]byte("this is well past the cap"))
+		fmt.Fprint(out, "first line\n")
+		wrote, writeErr = out.Write([]byte(long))
+		fmt.Fprint(out, "and more\n")
 		return nil
 	}
 	require.True(t, h.mustStep(t))
 
 	require.NoError(t, writeErr, "a full log must not look like a broken pipe to the build")
-	require.Equal(t, len("this is well past the cap"), wrote,
+	require.Equal(t, len(long), wrote,
 		"and it must report the whole write, or an io.Copy of a build's stdout stops early")
 
 	rec := h.mustRecord(t, id)
 	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, rec.status())
-	stored := h.assets.content(t, rec.Logs[stamp(1)])
-	require.Contains(t, stored, "0123456789this ")
-	require.Contains(t, stored, "truncated", "a truncated log that does not say so is a log that lies")
+	cid := rec.Logs[stamp(1)]
+	stored := h.assets.content(t, cid)
+	require.True(t, strings.HasPrefix(stored, "first line\n... the log was cut at "), stored)
+	require.NotContains(t, stored, "and more", "past the cap the output goes, and the log says so once")
+	statuses := statusesOf(h.assets.events(t, cid))
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, statuses[len(statuses)-1], "but the run's end still goes in")
 }
 
 func TestARunThatCannotOpenALogIsAFailedBuild(t *testing.T) {
@@ -391,11 +395,11 @@ func TestEndingARunTwiceIsTheSameEnding(t *testing.T) {
 	require.NoError(t, err)
 	fmt.Fprint(out, "one line\n")
 
-	p, err := out.publish(t.Context())
+	cid, err := out.publish(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, "one line\n", h.assets.content(t, p.logCID))
+	require.Equal(t, "one line\n", h.assets.content(t, cid))
 	h.assets.mu.Lock()
-	encoding := h.assets.encodings[p.logCID]
+	encoding := h.assets.encodings[cid]
 	h.assets.mu.Unlock()
 	require.Equal(t, logEncoding, encoding, "a log is kept compressed, and says how")
 
@@ -417,9 +421,9 @@ func TestALogWhoseNameWentIsPublishedAnyway(t *testing.T) {
 	// a tmp sweep is.
 	require.NoError(t, os.Remove(out.log.Path()))
 
-	p, err := out.publish(t.Context())
+	cid, err := out.publish(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, "one line\n", h.assets.content(t, p.logCID))
+	require.Equal(t, "one line\n", h.assets.content(t, cid))
 }
 
 func TestAPublishThatCannotReadItsLogSaysSo(t *testing.T) {
@@ -434,10 +438,10 @@ func TestAPublishThatCannotReadItsLogSaysSo(t *testing.T) {
 	// inode — so there is nothing left to read back.
 	require.NoError(t, out.log.Unlink())
 
-	p, err := out.publish(t.Context())
+	cid, err := out.publish(t.Context())
 	require.ErrorContains(t, err, "reading back the log it wrote")
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
-	require.Empty(t, p.logCID)
+	require.Empty(t, cid)
 	require.Zero(t, h.assets.count(), "and nothing half-read reaches the store")
 }
 
@@ -451,12 +455,12 @@ func TestALogThatLostBytesFailsTheBuildRatherThanBeingStoredShort(t *testing.T) 
 		// is what the log's own size measurement is against.
 		return os.Truncate(logFile(h, w), 0)
 	}
-	require.True(t, h.mustStep(t))
+	_, err := h.step(t.Context())
+	require.ErrorContains(t, err, "reading back the log it wrote", "a log this node cannot read back is reported")
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv2.JobStatus_JobStatusFailed, rec.status(),
-		"a log this node cannot read back is a failed build, not a build with no log")
-	require.Contains(t, rec.Reason, "reading back the log it wrote")
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, rec.status(),
+		"the job settled before its log was stored, and does not hang on it")
 	require.Empty(t, rec.Logs, "and nothing names a short log")
 	require.Zero(t, h.assets.objects(), "which the store did not take either")
 }
@@ -469,11 +473,11 @@ func TestAStoreThatSwallowedAReadErrorDoesNotGetToNameTheLog(t *testing.T) {
 		fmt.Fprint(out, "cloning\n")
 		return os.Truncate(logFile(h, w), 0)
 	}
-	require.True(t, h.mustStep(t))
+	_, err := h.step(t.Context())
+	require.ErrorContains(t, err, "reading back the log it wrote")
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv2.JobStatus_JobStatusFailed, rec.status())
-	require.Contains(t, rec.Reason, "reading back the log it wrote")
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, rec.status())
 	require.Empty(t, rec.Logs, "the cid it answered with names bytes that are not the log")
 }
 
@@ -485,11 +489,11 @@ func TestAStoreThatStoppedReadingDoesNotGetToNameTheLog(t *testing.T) {
 		fmt.Fprint(out, "cloning\ncompiling\nlinking\n")
 		return nil
 	}
-	require.True(t, h.mustStep(t))
+	_, err := h.step(t.Context())
+	require.ErrorContains(t, err, "took 4 bytes of its compressed log and stopped before its end")
 
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv2.JobStatus_JobStatusFailed, rec.status())
-	require.Contains(t, rec.Reason, "took 4 bytes of its compressed log and stopped before its end")
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, rec.status())
 	require.Empty(t, rec.Logs, "a cid over a prefix of the log is not this log")
 }
 
@@ -819,29 +823,15 @@ func TestALogCanReachTheStoreAndNoCidReachAnyJob(t *testing.T) {
 	require.Equal(t, 1, h.assets.objects(), "the store kept the log")
 	require.Equal(t, "attempt 1 printed this\n", h.assets.content(t, orphaned))
 
+	// THE JOB SETTLED FIRST, so it is done; the log it ends with is named by nothing,
+	// with nothing in this service able to unreference it.
 	rec := h.mustRecord(t, id)
-	require.Equal(t, buildv2.JobStatus_JobStatusClaimed, rec.status())
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, rec.status())
 	require.Empty(t, rec.Logs, "and no job names it")
 
 	ready, claimed := h.work.Depth()
 	require.Zero(t, ready)
 	require.Zero(t, claimed, "the ack landed, so there is no delivery left either")
-
-	// AND WHAT REPAIRS THE JOB DOES NOT REPAIR THE OBJECT. reconcile pushes the
-	// record back once it is past its cutoff, and the rebuild writes its own
-	// log — a second object, beside the one nothing names.
-	h.clock.advance(h.cfg.Queue.VisibilityTimeout + h.cfg.BuildTimeout + time.Minute)
-	require.NoError(t, h.reconcile())
-	require.True(t, h.mustStep(t))
-	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
-
-	after := h.mustRecord(t, id)
-	require.Equal(t, map[string]string{stamp(2): assetCID([]byte("attempt 2 printed this\n"))},
-		after.Logs, "the job names the rebuild's log and only that one")
-	require.Equal(t, 2, h.assets.objects(),
-		"and the first is still there, named by nothing, with nothing in this service able to "+
-			"unreference it")
-	require.Equal(t, "attempt 1 printed this\n", h.assets.content(t, orphaned))
 }
 
 func TestAJobReopenedWhileItsLogWasStoredKeepsThatLog(t *testing.T) {
@@ -862,15 +852,16 @@ func TestAJobReopenedWhileItsLogWasStoredKeepsThatLog(t *testing.T) {
 	go func() { _, err := h.step(context.Background()); stepped <- err }()
 	<-storing
 
-	// Both transitions take jobLock, which the publish is no longer holding.
-	require.NoError(t, h.cancel(id))
+	// THE JOB SETTLED BEFORE ITS LOG WENT, so a cancel is too late and a retry is
+	// not: it takes jobLock, which the publish is no longer holding.
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, h.status(t, id))
 	require.NoError(t, h.retry(id))
 	close(release)
 	require.NoError(t, <-stepped)
 
 	rec := h.mustRecord(t, id)
 	require.Equal(t, buildv2.JobStatus_JobStatusOpen, rec.status(),
-		"the run that was cancelled does not get to write over the attempt that replaced it")
+		"the run that ended does not get to write over the attempt that replaced it")
 	require.Equal(t,
 		map[string]string{stamp(1): assetCID([]byte("what the cancelled attempt printed\n"))},
 		rec.Logs, "and what it printed is still readable, under its own attempt")
@@ -924,7 +915,6 @@ func TestAReopenedJobsLogReportsAStoreThatRefusedIt(t *testing.T) {
 	go func() { _, err := h.step(context.Background()); stepped <- err }()
 	<-storing
 
-	require.NoError(t, h.cancel(id))
 	require.NoError(t, h.retry(id))
 	h.records.failBatches(errors.New("the log is written and the store said no"))
 	close(release)

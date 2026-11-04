@@ -14,6 +14,7 @@ import (
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/build/joblog"
 	"github.com/taubyte/tau/services/build/livelog"
 )
 
@@ -54,8 +55,10 @@ func (s *Service) handleGetJob(w http.ResponseWriter, r *http.Request, token, jo
 // handleFollowJob is GET /job/{jid}/logs; with ?snapshot=true it ends at what the
 // log holds now. Not bounded by BackendTimeout: it ends when the build does or the
 // caller hangs up. Authorization is decided once, before the first byte. The
-// response is one run's log (?attempt=N, else the current run), named in
-// X-Job-Attempt, since an offset belongs to one run. An unstarted run is waited
+// response is one run's events (?attempt=N, else the current run) as JSON, one
+// object per line: its status as it moves and each line of its output, the last a
+// terminal status when the run ended the job. The run is named in X-Job-Attempt,
+// since an offset belongs to one run. An unstarted run is waited
 // for; an ended one is read from its record; one ended with no log is a 410, or a
 // cut response if found after the 200.
 func (s *Service) handleFollowJob(w http.ResponseWriter, r *http.Request, token, jobID string) {
@@ -104,7 +107,7 @@ func (s *Service) handleFollowJob(w http.ResponseWriter, r *http.Request, token,
 // attemptHeader names the run a log response is about.
 const attemptHeader = "X-Job-Attempt"
 
-// readLog writes run's log of jobID to out from `from`, and unless snapshot keeps
+// readLog writes run's events of jobID to out from `from`, and unless snapshot keeps
 // following. The first ask is a snapshot, so the status can still be a 410 for an
 // unkept log.
 func (s *Service) readLog(ctx context.Context, jobID string, run int32, from int64, snapshot bool, out *logResponse) error {
@@ -126,7 +129,7 @@ func (s *Service) readLog(ctx context.Context, jobID string, run int32, from int
 // followLog follows one run, asking again with backoff while no node writes it,
 // and after a break from where it left off; the request names the run, so no other
 // run's bytes come back.
-func (s *Service) followLog(ctx context.Context, jobID string, run int32, from int64, emit func([]byte, int64) error) (int64, error) {
+func (s *Service) followLog(ctx context.Context, jobID string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 	wait := s.cfg.FollowBackoff
 	for {
 		reached, err := s.backend.Follow(ctx, jobID, run, from, emit)
@@ -145,10 +148,11 @@ func (s *Service) followLog(ctx context.Context, jobID string, run int32, from i
 	}
 }
 
-// storedLog writes, from `from`, an ended run's stored log, re-reading the record
-// since authorization's read predates the end. A run that never ran logged
+// storedLog writes, from `from`, an ended run's stored log, which is its events as
+// they happened, the status it left the job in last, re-reading the record since
+// authorization's read predates the end. A run that never ran logged
 // nothing; one whose log was lost is errLogNotKept.
-func (s *Service) storedLog(ctx context.Context, jobID string, run int32, from int64, w io.Writer) error {
+func (s *Service) storedLog(ctx context.Context, jobID string, run int32, from int64, out *logResponse) error {
 	read, cancel := context.WithTimeout(ctx, s.cfg.BackendTimeout)
 	job, err := s.backend.Get(read, jobID)
 	cancel()
@@ -178,8 +182,19 @@ func (s *Service) storedLog(ctx context.Context, jobID string, run int32, from i
 		}
 		return err
 	}
-	_, err = io.Copy(w, content)
-	return err
+	events := joblog.Read(content, from)
+	for {
+		ev, err := events.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := out.emit(ev); err != nil {
+			return err
+		}
+	}
 }
 
 // logOf is the cid a job's record files run's log under, keyed by the padded
@@ -193,9 +208,9 @@ func logOf(job *buildv2.Job, run int32) (string, bool) {
 	return "", false
 }
 
-// logResponse sends status and headers with the first byte (or when there is
-// nothing yet), so a refusal can still be a status; afterwards each write is
-// flushed.
+// logResponse sends a run's events as JSON lines, with the HTTP status and headers
+// going out with the first one (or when there is nothing yet), so a refusal can still
+// be a status; afterwards each event is flushed.
 type logResponse struct {
 	w      http.ResponseWriter
 	run    int32
@@ -208,7 +223,7 @@ func (o *logResponse) open() {
 	}
 	o.opened = true
 	h := o.w.Header()
-	h.Set("Content-Type", "text/plain; charset=utf-8")
+	h.Set("Content-Type", "application/x-ndjson")
 	h.Set("X-Content-Type-Options", "nosniff")
 	// A proxy that buffered this would defeat the whole route.
 	h.Set("Cache-Control", "no-store")
@@ -218,16 +233,17 @@ func (o *logResponse) open() {
 	o.flush()
 }
 
-func (o *logResponse) Write(p []byte) (int, error) {
+func (o *logResponse) emit(ev *buildv2.Job_Event) error {
+	raw, err := jobJSON.Marshal(ev)
+	if err != nil {
+		return err
+	}
 	o.open()
-	n, err := o.w.Write(p)
+	if _, err := o.w.Write(append(raw, '\n')); err != nil {
+		return err
+	}
 	o.flush()
-	return n, err
-}
-
-func (o *logResponse) emit(data []byte, _ int64) error {
-	_, err := o.Write(data)
-	return err
+	return nil
 }
 
 func (o *logResponse) flush() {

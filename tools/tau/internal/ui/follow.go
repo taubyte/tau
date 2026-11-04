@@ -14,10 +14,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Chunks is a log read a chunk at a time (api.LogStream). Next blocks, so it
-// is only ever called from a tea.Cmd.
+// Chunks is a log read a line at a time (api.LogStream). Line blocks, so it is
+// only ever called from a tea.Cmd.
 type Chunks interface {
-	Next() ([]byte, error)
+	Line() ([]byte, error)
 	Offset() int64
 }
 
@@ -26,7 +26,7 @@ type endMsg struct{ err error }
 
 func readNext(c Chunks) tea.Cmd {
 	return func() tea.Msg {
-		chunk, err := c.Next()
+		chunk, err := c.Line()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				err = nil

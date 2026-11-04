@@ -393,10 +393,10 @@ type Backend interface {
 	// Follow streams one run's output from `from` and returns the offset reached; only
 	// the writer answers. Unavailable from all is a log not yet written;
 	// FailedPrecondition is an ended run.
-	Follow(ctx context.Context, jobID string, attempt int32, from int64, emit func(data []byte, next int64) error) (int64, error)
+	Follow(ctx context.Context, jobID string, attempt int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error)
 	// Snapshot is Follow up to what the log holds when it is asked: it ends
 	// there while the build goes on.
-	Snapshot(ctx context.Context, jobID string, attempt int32, from int64, emit func(data []byte, next int64) error) (int64, error)
+	Snapshot(ctx context.Context, jobID string, attempt int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error)
 }
 
 // ErrBadCredential is a token auth refused outright.

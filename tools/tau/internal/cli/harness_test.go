@@ -192,8 +192,11 @@ func newFrontend(t *testing.T) *frontend {
 		}
 		gone, refused, unnamed := f.gone[id+"/"+attempt], f.refused[id+"/"+attempt], f.unnamed
 		from, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-		drop := f.dropOnce && from == 0
-		f.dropOnce = false
+		// The drop is a run's: one with a log to cut.
+		drop := f.dropOnce && from == 0 && ok
+		if ok {
+			f.dropOnce = false
+		}
 		if drop && f.rerunOnDrop {
 			f.gone[id+"/"+attempt] = true
 			j.Attempt = run + 1
@@ -213,6 +216,14 @@ func newFrontend(t *testing.T) *frontend {
 			json.NewEncoder(w).Encode(map[string]string{"error": "this run's log was not kept"})
 			return
 		}
+		if !ok && ended {
+			// AN ENDED RUN WITH NO LOG KEPT is a 410, as the frontend answers it: a
+			// plan's log is live only.
+			w.Header().Set("X-Job-Attempt", attempt)
+			w.WriteHeader(http.StatusGone)
+			json.NewEncoder(w).Encode(map[string]string{"error": "this run's log was not kept"})
+			return
+		}
 		if !ok {
 			denied(w)
 			return
@@ -220,13 +231,21 @@ func newFrontend(t *testing.T) *frontend {
 		if ended {
 			log = "stored: " + log
 		}
-		rest := log[min(from, len(log)):]
+		events := eventsOf(log, min(from, len(log)))
+		if ended && j.GetAttempt() == run {
+			events = append(events, statusEvent(j.GetStatus(), int64(len(log))))
+		}
 		if drop {
-			// Send a little, then cut the connection mid-stream.
+			// Send the first event and half the next, then cut the connection
+			// mid-stream.
+			part := events[0]
+			if len(events) > 1 {
+				part += events[1][:len(events[1])/2]
+			}
 			hj, _ := w.(http.Hijacker)
 			conn, buf, _ := hj.Hijack()
-			buf.WriteString("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nX-Job-Attempt: " + attempt + "\r\nTransfer-Encoding: chunked\r\n\r\n")
-			buf.WriteString(strconv.FormatInt(int64(len(rest[:5])), 16) + "\r\n" + rest[:5] + "\r\n")
+			buf.WriteString("HTTP/1.1 200 OK\r\nContent-Type: application/x-ndjson\r\nX-Job-Attempt: " + attempt + "\r\nTransfer-Encoding: chunked\r\n\r\n")
+			buf.WriteString(strconv.FormatInt(int64(len(part)), 16) + "\r\n" + part + "\r\n")
 			buf.Flush()
 			conn.Close()
 			return
@@ -234,7 +253,7 @@ func newFrontend(t *testing.T) *frontend {
 		if !unnamed {
 			w.Header().Set("X-Job-Attempt", attempt)
 		}
-		io.WriteString(w, rest)
+		io.WriteString(w, strings.Join(events, ""))
 		// A FOLLOWED BUILD ENDS when its log does, as the backend's follow
 		// returns when the build finishes.
 		f.mu.Lock()
@@ -381,7 +400,7 @@ func newFrontend(t *testing.T) *frontend {
 			denied(w)
 			return
 		}
-		io.WriteString(w, "stored: "+log)
+		io.WriteString(w, strings.Join(eventsOf("stored: "+log, 0), ""))
 	}))
 	mux.HandleFunc("GET /projects/{projectId}/deployments", authed(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
@@ -582,7 +601,7 @@ func (l *liveLog) serve(w http.ResponseWriter, r *http.Request, attempt string) 
 		text, grew, ended := l.text, l.grew, l.ended
 		l.mu.Unlock()
 		if from < len(text) {
-			io.WriteString(w, text[from:])
+			io.WriteString(w, strings.Join(eventsOf(text, from), ""))
 			w.(http.Flusher).Flush()
 			from = len(text)
 		}
@@ -781,4 +800,26 @@ func golden(t *testing.T, name, got string) {
 	want, err := os.ReadFile(path)
 	require.NoError(t, err, "run with -update to create it")
 	require.Equal(t, string(want), got)
+}
+
+// eventsOf is text as the frontend serves a run's log from byte from: an event per
+// line, one JSON object per line, each carrying the offset after it.
+func eventsOf(text string, from int) []string {
+	var out []string
+	for at := from; at < len(text); {
+		end := len(text)
+		if i := strings.IndexByte(text[at:], '\n'); i >= 0 {
+			end = at + i + 1
+		}
+		raw, _ := protojson.Marshal(&buildv2.Job_Event{Kind: &buildv2.Job_Event_Message{Message: strings.TrimSuffix(text[at:end], "\n")}, Offset: int64(end)})
+		out = append(out, string(raw)+"\n")
+		at = end
+	}
+	return out
+}
+
+// statusEvent is the status a run's log ends the job in.
+func statusEvent(st buildv2.JobStatus, offset int64) string {
+	raw, _ := protojson.Marshal(&buildv2.Job_Event{Kind: &buildv2.Job_Event_Status{Status: st}, Offset: offset})
+	return string(raw) + "\n"
 }

@@ -1,18 +1,29 @@
 package api
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
+
+	"google.golang.org/protobuf/encoding/protojson"
+
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
-// LogStream reads one run of a job's log chunk by chunk, resuming at its byte
-// offset after a drop; EOF is the end of that run's log. The run is pinned: a job
-// that runs again has a new log from byte zero, so resuming without the run would
-// splice two logs. A run whose log was not kept ends with *LostLog.
+// Event is one thing that happened to a run of a job: its status as it moves, or a
+// line of its output.
+type Event = buildv2.Job_Event
+
+// LogStream reads one run of a job's events, one per line of JSON, resuming at the
+// offset the last one carried after a drop; EOF is the end of that run's log. The
+// run is pinned: a job that runs again has a new log from offset zero, so resuming
+// without the run would splice two logs. A run whose log was not kept ends with
+// *LostLog.
 type LogStream struct {
 	c       *Client
 	ctx     context.Context
@@ -20,7 +31,9 @@ type LogStream struct {
 	attempt int32
 	offset  int64
 	body    io.ReadCloser
-	buf     []byte
+	lines   *bufio.Reader
+	ended   buildv2.JobStatus
+	settled bool
 
 	// Retries is how many consecutive reconnects a drop may cost before Next
 	// gives up; Backoff is the wait before each.
@@ -50,17 +63,23 @@ func (e *LostLog) Error() string {
 // Stream opens a resumable log stream for one run of job, starting at from:
 // the run attempt names, or with 0 the job's current one.
 func (c *Client) Stream(ctx context.Context, job string, attempt int32, from int64) *LogStream {
-	return &LogStream{c: c, ctx: ctx, job: job, attempt: attempt, offset: from, buf: make([]byte, 32<<10), Retries: 5, Backoff: 500 * time.Millisecond}
+	return &LogStream{c: c, ctx: ctx, job: job, attempt: attempt, offset: from, Retries: 5, Backoff: 500 * time.Millisecond}
 }
 
-// Offset is how many bytes of the run's log have been read.
+// Offset is where in the run's log the last event read ended.
 func (s *LogStream) Offset() int64 { return s.offset }
 
 // Attempt is the run being read, or 0 before the frontend has named it.
 func (s *LogStream) Attempt() int32 { return s.attempt }
 
-// Next returns the next chunk, or io.EOF at the end of the log.
-func (s *LogStream) Next() ([]byte, error) {
+// Ended is the status the run's log ended the job in, once it has said one.
+func (s *LogStream) Ended() (buildv2.JobStatus, bool) { return s.ended, s.settled }
+
+// eventJSON reads what the frontend writes, and what it may add.
+var eventJSON = protojson.UnmarshalOptions{DiscardUnknown: true}
+
+// Next returns the next event, or io.EOF at the end of the log.
+func (s *LogStream) Next() (*Event, error) {
 	failures := 0
 	for {
 		if s.body == nil {
@@ -91,32 +110,61 @@ func (s *LogStream) Next() ([]byte, error) {
 				body.Close()
 				return nil, fmt.Errorf("reading the log of %s: attempt %d was asked for and attempt %d was sent", s.job, s.attempt, run)
 			}
-			s.attempt, s.body = run, body
+			s.attempt, s.body, s.lines = run, body, bufio.NewReader(body)
 		}
-		n, err := s.body.Read(s.buf)
-		if n > 0 {
-			s.offset += int64(n)
-			chunk := append([]byte(nil), s.buf[:n]...)
-			if err != nil && !errors.Is(err, io.EOF) {
+		line, err := s.lines.ReadBytes('\n')
+		if bytes.HasSuffix(line, []byte("\n")) {
+			ev := &Event{}
+			if err := eventJSON.Unmarshal(line, ev); err != nil {
 				s.drop()
+				return nil, fmt.Errorf("reading the log of %s: %w", s.job, err)
 			}
-			return chunk, nil
+			s.offset = ev.GetOffset()
+			if st, ok := ev.GetKind().(*buildv2.Job_Event_Status); ok {
+				s.ended, s.settled = st.Status, isEnd(st.Status)
+			}
+			return ev, nil
 		}
-		if errors.Is(err, io.EOF) {
+		// An event cut in the middle is not one: it is read again from the offset
+		// the last whole one carried.
+		if errors.Is(err, io.EOF) && len(line) == 0 {
 			s.Close()
 			return nil, io.EOF
 		}
-		if err != nil {
-			s.drop()
-			if s.ctx.Err() != nil || failures >= s.Retries {
-				return nil, err
+		s.drop()
+		if s.ctx.Err() != nil || failures >= s.Retries {
+			if err == nil || errors.Is(err, io.EOF) {
+				err = io.ErrUnexpectedEOF
 			}
-			failures++
-			if !s.wait() {
-				return nil, s.ctx.Err()
-			}
+			return nil, err
+		}
+		failures++
+		if !s.wait() {
+			return nil, s.ctx.Err()
 		}
 	}
+}
+
+// Line returns the next line of the run's output, with its newline, passing over
+// its statuses: what a viewer of the log reads.
+func (s *LogStream) Line() ([]byte, error) {
+	for {
+		ev, err := s.Next()
+		if err != nil {
+			return nil, err
+		}
+		if m, ok := ev.GetKind().(*buildv2.Job_Event_Message); ok {
+			return []byte(m.Message + "\n"), nil
+		}
+	}
+}
+
+func isEnd(st buildv2.JobStatus) bool {
+	switch st {
+	case buildv2.JobStatus_JobStatusSuccess, buildv2.JobStatus_JobStatusFailed, buildv2.JobStatus_JobStatusCancelled:
+		return true
+	}
+	return false
 }
 
 // lost is the run a 410 is about: the one pinned, or the one it names.
@@ -140,7 +188,7 @@ func (s *LogStream) wait() bool {
 func (s *LogStream) drop() {
 	if s.body != nil {
 		s.body.Close()
-		s.body = nil
+		s.body, s.lines = nil, nil
 	}
 }
 
@@ -149,19 +197,31 @@ func (s *LogStream) Close() error {
 	return nil
 }
 
-// CopyTo writes the whole log to w, resuming across drops, and returns the
-// final offset.
+// CopyTo writes the run's output to w, a line per message, resuming across drops,
+// and returns the final offset.
 func (s *LogStream) CopyTo(w io.Writer) (int64, error) {
+	return s.Each(func(ev *Event) error {
+		if m, ok := ev.GetKind().(*buildv2.Job_Event_Message); ok {
+			_, err := io.WriteString(w, m.Message+"\n")
+			return err
+		}
+		return nil
+	})
+}
+
+// Each hands every event of the run to fn, resuming across drops, and returns the
+// final offset.
+func (s *LogStream) Each(fn func(*Event) error) (int64, error) {
 	defer s.Close()
 	for {
-		chunk, err := s.Next()
+		ev, err := s.Next()
 		if errors.Is(err, io.EOF) {
 			return s.offset, nil
 		}
 		if err != nil {
 			return s.offset, err
 		}
-		if _, err := w.Write(chunk); err != nil {
+		if err := fn(ev); err != nil {
 			return s.offset, err
 		}
 	}

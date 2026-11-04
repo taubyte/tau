@@ -1,6 +1,7 @@
 package frontend
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -22,10 +23,10 @@ func (f fakeAssets) Read(_ context.Context, cid string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader(v)), nil
 }
 
-// lzwOf is a log as the backend stores it.
-func lzwOf(t *testing.T, log string) string {
+// lzwOf is the log of a run that said text, as the backend stores it.
+func lzwOf(t *testing.T, text string) string {
 	t.Helper()
-	stored, err := io.ReadAll(livelog.Compressed(strings.NewReader(log)))
+	stored, err := io.ReadAll(livelog.Compressed(bytes.NewReader(logSaying(text))))
 	require.NoError(t, err)
 	return string(stored)
 }
@@ -35,8 +36,8 @@ func TestJobAssets(t *testing.T) {
 
 	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs/2026-01-01T00:00:00Z", testToken))
 	require.Equal(t, http.StatusOK, w.Code)
-	require.Equal(t, "built ok\n", bodyOf(t, w))
-	require.Equal(t, "text/plain; charset=utf-8", w.Header().Get("Content-Type"))
+	require.Equal(t, "built ok\n", said(t, w.Body), "a stored log is its events, as /logs serves them")
+	require.Equal(t, "application/x-ndjson", w.Header().Get("Content-Type"))
 
 	w = h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/assets/resource-1", testToken))
 	require.Equal(t, http.StatusOK, w.Code)

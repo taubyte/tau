@@ -27,10 +27,10 @@ type fakeBackend struct {
 	list    func(projectID string, send func(*buildv2.JobRef) error) error
 	cancel  func(id string) error
 	retry   func(id string) error
-	follow  func(jobID string, offset int64, send func(*buildv2.LogChunk) error) error
+	follow  func(jobID string, offset int64, send func(*buildv2.Job_Event) error) error
 	// snapshot answers a Follow that asks for one, so a test can tell the two
 	// requests apart.
-	snapshot func(jobID string, offset int64, send func(*buildv2.LogChunk) error) error
+	snapshot func(jobID string, offset int64, send func(*buildv2.Job_Event) error) error
 	built    func(project, environment, resource string) (string, error)
 
 	mu sync.Mutex
@@ -55,7 +55,7 @@ func (f *fakeBackend) Artifact(_ context.Context, req *connect.Request[buildv2.A
 	return connect.NewResponse(&buildv2.Built{Cid: cid}), nil
 }
 
-func (f *fakeBackend) Follow(_ context.Context, req *connect.Request[buildv2.FollowRequest], stream *connect.ServerStream[buildv2.LogChunk]) error {
+func (f *fakeBackend) Follow(_ context.Context, req *connect.Request[buildv2.FollowRequest], stream *connect.ServerStream[buildv2.Job_Event]) error {
 	f.mu.Lock()
 	f.runs = append(f.runs, req.Msg.GetAttempt())
 	f.mu.Unlock()

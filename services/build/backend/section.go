@@ -522,19 +522,28 @@ func (h *held) ends(status buildv2.JobStatus, reason string, p produced) stated 
 }
 
 func (h *held) finish(status buildv2.JobStatus, reason string) error {
-	return h.ends(status, reason, produced{}).commit("finishing")
+	return h.ended(h.ends(status, reason, produced{}).commit("finishing"))
 }
 
 func (h *held) fail(reason string, p produced) error {
-	return h.ends(buildv2.JobStatus_JobStatusFailed, reason, p).commit("finishing")
+	return h.ended(h.ends(buildv2.JobStatus_JobStatusFailed, reason, p).commit("finishing"))
 }
 
 func (h *held) succeed(p produced) error {
-	return h.ends(buildv2.JobStatus_JobStatusSuccess, "", p).artifacts(p).anchor().commit("finishing")
+	return h.ended(h.ends(buildv2.JobStatus_JobStatusSuccess, "", p).artifacts(p).anchor().commit("finishing"))
 }
 
 func (h *held) planned(children []string) error {
-	return h.ends(buildv2.JobStatus_JobStatusSuccess, "", produced{children: children}).commit("finishing")
+	return h.ended(h.ends(buildv2.JobStatus_JobStatusSuccess, "", produced{children: children}).commit("finishing"))
+}
+
+// ended rings this node's runs once an entry ending the job has committed, which is
+// what a follow waiting for the job's next run is waiting for too.
+func (h *held) ended(err error) error {
+	if err == nil {
+		h.s.runs.ring()
+	}
+	return err
 }
 
 // logged files a run's output on a job that ended some other way.

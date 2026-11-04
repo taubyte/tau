@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/tools/tau/internal/config"
@@ -359,9 +360,9 @@ func TestLogsNeverSpliceTwoRuns(t *testing.T) {
 
 	r := x.run("logs", "job-live", "--follow")
 	require.NotZero(t, r.code)
-	require.Equal(t, "step ", r.stdout, "nothing of the rerun follows the dropped run's bytes")
-	require.Contains(t, r.stderr, "job job-live: the log of attempt 1 was not kept past byte 5")
-	require.Equal(t, []string{"", "attempt=1&offset=5"}, x.f.logQueries, "the resume named its run")
+	require.Equal(t, "step one\n", r.stdout, "nothing of the rerun follows the dropped run's events")
+	require.Contains(t, r.stderr, "job job-live: the log of attempt 1 was not kept past byte 9")
+	require.Equal(t, []string{"", "attempt=1&offset=9"}, x.f.logQueries, "the resume named its run")
 
 	// And a job whose last run left no log has none to print, which is not an
 	// empty one.
@@ -557,4 +558,26 @@ func TestCIRunOfAFailedPlanSaysWhy(t *testing.T) {
 	r := x.run("ci", "run", "--dir", x.dir, "--commit", strings.Repeat("c", 40), "--branch", "main", "--interval", "10ms")
 	require.Equal(t, 1, r.code, r.stderr)
 	require.Contains(t, r.stderr, "the commit feeds no environment")
+}
+
+// tau logs -o json is the run's events as the cloud sent them, one object per line:
+// its output and the status it ended the job in.
+func TestLogsAsJSONAreTheRunsEvents(t *testing.T) {
+	x := newTester(t)
+	x.login()
+	out := x.ok("logs", "job-1", "-o", "json")
+	var said []string
+	var ended buildv2.JobStatus
+	for _, line := range strings.Split(strings.TrimSuffix(out, "\n"), "\n") {
+		var ev buildv2.Job_Event
+		require.NoError(t, protojson.Unmarshal([]byte(line), &ev), line)
+		switch k := ev.GetKind().(type) {
+		case *buildv2.Job_Event_Message:
+			said = append(said, k.Message)
+		case *buildv2.Job_Event_Status:
+			ended = k.Status
+		}
+	}
+	require.Equal(t, []string{"stored: step one", "step two"}, said)
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, ended)
 }

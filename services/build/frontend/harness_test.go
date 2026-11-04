@@ -146,12 +146,12 @@ type fakeBackend struct {
 	list    func(projectID string, emit func(string) error) error
 	cancel  func(id string) error
 	retry   func(id string) error
-	follow  func(id string, run int32, from int64, emit func([]byte, int64) error) (int64, error)
+	follow  func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error)
 	// snapshot answers Snapshot, so a test can tell the two reads apart.
-	snapshot func(id string, run int32, from int64, emit func([]byte, int64) error) (int64, error)
+	snapshot func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error)
 }
 
-func (f *fakeBackend) Follow(ctx context.Context, id string, run int32, from int64, emit func([]byte, int64) error) (int64, error) {
+func (f *fakeBackend) Follow(ctx context.Context, id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 	f.mu.Lock()
 	f.ctx = ctx
 	f.mu.Unlock()
@@ -161,7 +161,7 @@ func (f *fakeBackend) Follow(ctx context.Context, id string, run int32, from int
 	return from, connect.NewError(connect.CodeUnavailable, errors.New("no build of that job is running"))
 }
 
-func (f *fakeBackend) Snapshot(ctx context.Context, id string, run int32, from int64, emit func([]byte, int64) error) (int64, error) {
+func (f *fakeBackend) Snapshot(ctx context.Context, id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 	f.mu.Lock()
 	f.ctx = ctx
 	f.mu.Unlock()

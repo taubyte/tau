@@ -1,6 +1,8 @@
 package frontend
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -16,28 +19,89 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/build/joblog"
 )
 
 // read is Backend.Follow or Backend.Snapshot.
-type read = func(id string, run int32, from int64, emit func([]byte, int64) error) (int64, error)
+type read = func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error)
 
-// serves is a read that hands the whole of text over in one chunk from the
-// offset it was asked for, whichever run it was asked about.
+// logSaying is the log a run that said text writes: a message per line.
+func logSaying(text string) []byte {
+	var log bytes.Buffer
+	for _, line := range strings.SplitAfter(text, "\n") {
+		if line == "" {
+			continue
+		}
+		joblog.Write(&log, &buildv2.Job_Event{Kind: &buildv2.Job_Event_Message{Message: strings.TrimSuffix(line, "\n")}})
+	}
+	return log.Bytes()
+}
+
+// after is the offset after the nth line of text's log.
+func after(text string, n int) int64 {
+	return int64(len(logSaying(strings.Join(strings.SplitAfter(text, "\n")[:n], ""))))
+}
+
+// emitFrom sends the events of text's log from `from`, and answers where it ended.
+func emitFrom(text string, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
+	log := logSaying(text)
+	if from > int64(len(log)) {
+		return from, connect.NewError(connect.CodeInvalidArgument, errors.New("offset past the end"))
+	}
+	events := joblog.Read(bytes.NewReader(log[from:]), from)
+	for {
+		ev, err := events.Next()
+		if errors.Is(err, io.EOF) {
+			return events.Offset(), nil
+		}
+		if err != nil {
+			return events.Offset(), err
+		}
+		if err := emit(ev); err != nil {
+			return ev.GetOffset(), err
+		}
+	}
+}
+
+// serves is a read that hands text's log over from the offset it was asked for,
+// whichever run it was asked about.
 func serves(text string) read {
-	return func(_ string, _ int32, from int64, emit func([]byte, int64) error) (int64, error) {
-		end := int64(len(text))
-		if from > end {
-			return from, connect.NewError(connect.CodeInvalidArgument, errors.New("offset past the end"))
+	return func(_ string, _ int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
+		return emitFrom(text, from, emit)
+	}
+}
+
+// said is what a response's events said, a line per message.
+func said(t *testing.T, body io.Reader) string {
+	t.Helper()
+	var out strings.Builder
+	lines := bufio.NewScanner(body)
+	for lines.Scan() {
+		var ev buildv2.Job_Event
+		require.NoError(t, protojson.Unmarshal(lines.Bytes(), &ev))
+		if m, ok := ev.GetKind().(*buildv2.Job_Event_Message); ok {
+			out.WriteString(m.Message + "\n")
 		}
-		if from < end {
-			if err := emit([]byte(text[from:]), end); err != nil {
-				return from, err
-			}
+	}
+	require.NoError(t, lines.Err())
+	return out.String()
+}
+
+// nextSaid is the next message on a streaming response.
+func nextSaid(t *testing.T, events *bufio.Reader) string {
+	t.Helper()
+	for {
+		line, err := events.ReadBytes('\n')
+		require.NoError(t, err)
+		var ev buildv2.Job_Event
+		require.NoError(t, protojson.Unmarshal(line, &ev))
+		if m, ok := ev.GetKind().(*buildv2.Job_Event_Message); ok {
+			return m.Message + "\n"
 		}
-		return end, nil
 	}
 }
 
@@ -55,7 +119,7 @@ type recorded struct {
 }
 
 func (r *recorded) of(next read) read {
-	return func(id string, run int32, from int64, emit func([]byte, int64) error) (int64, error) {
+	return func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 		r.mu.Lock()
 		r.asks = append(r.asks, asked{run, from})
 		r.mu.Unlock()
@@ -87,11 +151,11 @@ func TestFollowStreamsTheLog(t *testing.T) {
 	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs", testToken))
 
 	require.Equal(t, http.StatusOK, w.Code)
-	require.Equal(t, "cloning\ncompiling\n", w.Body.String())
+	require.Equal(t, "cloning\ncompiling\n", said(t, w.Body))
 
-	// The body is the log and nothing else: no framing on this hop, so a client
-	// resuming counts the bytes it wrote.
-	require.Equal(t, "text/plain; charset=utf-8", w.Header().Get("Content-Type"))
+	// The body is the run's events, one JSON object per line, each saying where a
+	// client that lost the stream resumes from.
+	require.Equal(t, "application/x-ndjson", w.Header().Get("Content-Type"))
 	require.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"))
 
 	// A PROXY THAT BUFFERED THIS WOULD DEFEAT THE ROUTE, so it says not to.
@@ -107,10 +171,10 @@ func TestFollowResumesAtAnOffset(t *testing.T) {
 	var follows recorded
 	h.backend.follow = follows.of(serves("first\nsecond\n"))
 
-	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?attempt=1&offset=6", testToken))
+	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?attempt=1&offset="+strconv.FormatInt(after("first\nsecond\n", 1), 10), testToken))
 	require.Equal(t, http.StatusOK, w.Code)
-	require.Equal(t, "second\n", w.Body.String())
-	require.Equal(t, []asked{{1, 6}}, follows.all())
+	require.Equal(t, "second\n", said(t, w.Body))
+	require.Equal(t, []asked{{1, after("first\nsecond\n", 1)}}, follows.all())
 }
 
 func TestFollowRefusesAnOffsetThatIsNotOne(t *testing.T) {
@@ -132,7 +196,7 @@ func TestFollowRefusesAnAttemptThatIsNotOne(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, w.Code, attempt)
 	}
 
-	h.backend.snapshot = func(_ string, run int32, from int64, _ func([]byte, int64) error) (int64, error) {
+	h.backend.snapshot = func(_ string, run int32, from int64, _ func(*buildv2.Job_Event) error) (int64, error) {
 		return from, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("attempt %d is not the job's next", run))
 	}
 	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?attempt=9", testToken))
@@ -181,9 +245,9 @@ func TestTheResponseIsOneRunAndSaysWhich(t *testing.T) {
 
 			w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs"+tc.query, testToken))
 			require.Equal(t, http.StatusOK, w.Code)
-			require.Equal(t, "so far\nand more\n", w.Body.String())
+			require.Equal(t, "so far\nand more\n", said(t, w.Body))
 			require.Equal(t, strconv.Itoa(int(tc.run)), w.Header().Get("X-Job-Attempt"))
-			require.Equal(t, []asked{{tc.run, 0}, {tc.run, int64(len("so far\n"))}}, reads.all())
+			require.Equal(t, []asked{{tc.run, 0}, {tc.run, after("so far\n", 1)}}, reads.all())
 		})
 	}
 }
@@ -192,7 +256,7 @@ func TestAResumeIsNeverAnotherRunsLog(t *testing.T) {
 	first, second := "first run, line one\nfirst run, line two\n", "second run, line one\nsecond run, line two\n"
 	h := newHarness(t, quick, WithAssets(fakeAssets{"bafy1": lzwOf(t, first)}))
 	h.backend.get = jobAt(buildv2.JobStatus_JobStatusClaimed, 2, map[string]string{key(1): "bafy1"})
-	byRun := func(id string, run int32, from int64, emit func([]byte, int64) error) (int64, error) {
+	byRun := func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 		if run == 2 {
 			return serves(second)(id, run, from, emit)
 		}
@@ -200,18 +264,18 @@ func TestAResumeIsNeverAnotherRunsLog(t *testing.T) {
 	}
 	h.backend.follow, h.backend.snapshot = byRun, byRun
 
-	read := len("first run, line one\n")
+	read := strconv.FormatInt(after(first, 1), 10)
 	for _, path := range []string{"/logs?attempt=1&offset=", "/logs?snapshot=true&attempt=1&offset="} {
-		w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+path+strconv.Itoa(read), testToken))
+		w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+path+read, testToken))
 		require.Equal(t, http.StatusOK, w.Code, path)
-		require.Equal(t, first[read:], w.Body.String(), path)
+		require.Equal(t, "first run, line two\n", said(t, w.Body), path)
 		require.Equal(t, "1", w.Header().Get("X-Job-Attempt"), path)
 	}
 
 	// The first run's node went away before its log was stored: gone, and
 	// still not the second run's bytes.
 	h.backend.get = jobAt(buildv2.JobStatus_JobStatusClaimed, 2, nil)
-	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?attempt=1&offset="+strconv.Itoa(read), testToken))
+	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?attempt=1&offset="+read, testToken))
 	require.Equal(t, http.StatusGone, w.Code)
 	require.Equal(t, "1", w.Header().Get("X-Job-Attempt"))
 	require.NotContains(t, w.Body.String(), "second run")
@@ -232,9 +296,9 @@ func TestAnEndedRunIsNeverAnotherRunsStoredLog(t *testing.T) {
 	h.backend.get = jobAt(buildv2.JobStatus_JobStatusCancelled, 2, map[string]string{key(1): "bafy1", key(2): "bafy2"})
 	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs", testToken))
 	require.Equal(t, http.StatusOK, w.Code)
-	require.Equal(t, "the second run\n", w.Body.String())
+	require.Equal(t, "the second run\n", said(t, w.Body))
 	w = h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?attempt=1", testToken))
-	require.Equal(t, "the first run\n", w.Body.String())
+	require.Equal(t, "the first run\n", said(t, w.Body))
 }
 
 func TestARunTheJobNeverReachedIsEmpty(t *testing.T) {
@@ -245,7 +309,7 @@ func TestARunTheJobNeverReachedIsEmpty(t *testing.T) {
 	for _, path := range []string{"/logs", "/logs?snapshot=true"} {
 		w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+path, testToken))
 		require.Equal(t, http.StatusOK, w.Code, path)
-		require.Empty(t, w.Body.String(), path)
+		require.Empty(t, said(t, w.Body), path)
 		require.Equal(t, "1", w.Header().Get("X-Job-Attempt"), path)
 	}
 	require.Empty(t, h.logs.joined())
@@ -255,21 +319,21 @@ func TestAFollowThatBreaksResumesItsRun(t *testing.T) {
 	h := newHarness(t, quick)
 	var follows recorded
 	broke := false
-	h.backend.follow = follows.of(func(id string, run int32, from int64, emit func([]byte, int64) error) (int64, error) {
+	h.backend.follow = follows.of(func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 		if !broke {
 			broke = true
-			if err := emit([]byte("cloning\n"), 8); err != nil {
+			if _, err := emitFrom("cloning\n", 0, emit); err != nil {
 				return from, err
 			}
-			return 8, connect.NewError(connect.CodeUnavailable, errors.New("the node writing this log went away"))
+			return after("cloning\n", 1), connect.NewError(connect.CodeUnavailable, errors.New("the node writing this log went away"))
 		}
 		return serves("cloning\ncompiling\n")(id, run, from, emit)
 	})
 
 	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs", testToken))
 	require.Equal(t, http.StatusOK, w.Code)
-	require.Equal(t, "cloning\ncompiling\n", w.Body.String())
-	require.Equal(t, []asked{{1, 0}, {1, 8}}, follows.all())
+	require.Equal(t, "cloning\ncompiling\n", said(t, w.Body))
+	require.Equal(t, []asked{{1, 0}, {1, after("cloning\n", 1)}}, follows.all())
 	require.Empty(t, h.logs.joined())
 }
 
@@ -278,27 +342,28 @@ func TestAFollowWhoseRunWasLostIsCut(t *testing.T) {
 	srv := httptest.NewServer(h.Handler())
 	t.Cleanup(srv.Close)
 	h.backend.get = jobAt(buildv2.JobStatus_JobStatusClaimed, 1, nil)
-	lost := func(_ string, _ int32, from int64, emit func([]byte, int64) error) (int64, error) {
+	lost := func(_ string, _ int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 		if from > 0 {
 			return from, connect.NewError(connect.CodeFailedPrecondition, errors.New("attempt 1 has ended"))
 		}
-		if err := emit([]byte("cloning\n"), 8); err != nil {
+		if _, err := emitFrom("cloning\n", 0, emit); err != nil {
 			return from, err
 		}
 		// The node went away, the claim lapsed and the job ran again.
 		h.backend.get = jobAt(buildv2.JobStatus_JobStatusClaimed, 2, nil)
-		return 8, connect.NewError(connect.CodeUnavailable, errors.New("the node writing this log went away"))
+		return after("cloning\n", 1), connect.NewError(connect.CodeUnavailable, errors.New("the node writing this log went away"))
 	}
 	h.backend.follow, h.backend.snapshot = lost, lost
 
 	resp := get(t, srv, "/job/"+testJobID+"/logs")
 	require.Equal(t, "1", resp.Header.Get("X-Job-Attempt"))
-	got, err := io.ReadAll(resp.Body)
-	require.Equal(t, "cloning\n", string(got))
+	events := bufio.NewReader(resp.Body)
+	require.Equal(t, "cloning\n", nextSaid(t, events))
+	_, err := io.ReadAll(events)
 	require.ErrorIs(t, err, io.ErrUnexpectedEOF, "a cut response is not the end of the log")
 	require.Contains(t, h.logs.joined(), "following job "+testJobID)
 
-	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?attempt=1&offset=8", testToken))
+	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?attempt=1&offset="+strconv.FormatInt(after("cloning\n", 1), 10), testToken))
 	require.Equal(t, http.StatusGone, w.Code)
 	require.Equal(t, "1", w.Header().Get("X-Job-Attempt"))
 	type refusalJSON struct{ Error string }
@@ -312,7 +377,7 @@ func TestAFollowWhoseRunWasLostIsCut(t *testing.T) {
 var quick = Config{FollowBackoff: time.Millisecond, FollowBackoffMax: 4 * time.Millisecond}
 
 // notWritten is every backend's answer for a log no node is writing yet.
-func notWritten(_ string, _ int32, from int64, _ func([]byte, int64) error) (int64, error) {
+func notWritten(_ string, _ int32, from int64, _ func(*buildv2.Job_Event) error) (int64, error) {
 	return from, connect.NewError(connect.CodeUnavailable, errors.New("no build of that job is running"))
 }
 
@@ -330,7 +395,7 @@ func TestAFollowsPaceHasDefaults(t *testing.T) {
 func TestAFollowWaitsForAJobToStart(t *testing.T) {
 	h := newHarness(t, quick)
 	var asked []int64
-	h.backend.follow = func(id string, run int32, from int64, emit func([]byte, int64) error) (int64, error) {
+	h.backend.follow = func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 		asked = append(asked, from)
 		if len(asked) < 3 {
 			return notWritten(id, run, from, emit)
@@ -340,7 +405,7 @@ func TestAFollowWaitsForAJobToStart(t *testing.T) {
 
 	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs", testToken))
 	require.Equal(t, http.StatusOK, w.Code)
-	require.Equal(t, "cloning\ncompiling\n", w.Body.String())
+	require.Equal(t, "cloning\ncompiling\n", said(t, w.Body))
 	require.Equal(t, []int64{0, 0, 0}, asked)
 	require.Empty(t, h.logs.joined(), "waiting for a queued job is not a failure")
 }
@@ -351,7 +416,7 @@ type queuedJob struct {
 	started atomic.Pointer[building]
 }
 
-func (q *queuedJob) follow(id string, run int32, from int64, emit func([]byte, int64) error) (int64, error) {
+func (q *queuedJob) follow(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 	q.asks.Add(1)
 	if b := q.started.Load(); b != nil {
 		return b.follow(id, run, from, emit)
@@ -359,7 +424,7 @@ func (q *queuedJob) follow(id string, run int32, from int64, emit func([]byte, i
 	return notWritten(id, run, from, emit)
 }
 
-func (q *queuedJob) snapshot(id string, run int32, from int64, emit func([]byte, int64) error) (int64, error) {
+func (q *queuedJob) snapshot(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 	if b := q.started.Load(); b != nil {
 		return b.snapshot(id, run, from, emit)
 	}
@@ -373,30 +438,26 @@ func TestAQueuedJobIsFollowedFromBeforeItStarts(t *testing.T) {
 	job := &queuedJob{}
 	h.backend.follow, h.backend.snapshot = job.follow, job.snapshot
 
-	soFar, err := io.ReadAll(get(t, srv, "/job/"+testJobID+"/logs?snapshot=true").Body)
-	require.NoError(t, err)
-	require.Empty(t, soFar)
+	require.Empty(t, said(t, get(t, srv, "/job/"+testJobID+"/logs?snapshot=true").Body))
 
-	followed := get(t, srv, "/job/"+testJobID+"/logs").Body
+	followed := bufio.NewReader(get(t, srv, "/job/"+testJobID+"/logs").Body)
 	require.Eventually(t, func() bool { return job.asks.Load() >= 3 }, 5*time.Second, time.Millisecond,
 		"the follow keeps asking while the job is queued")
 
-	build := newBuilding(t, "cloning\n")
-	job.started.Store(build)
-	require.Equal(t, "cloning\n", readN(t, followed, len("cloning\n")))
-	build.say("compiling\n")
-	require.Equal(t, "compiling\n", readN(t, followed, len("compiling\n")))
-	build.end()
-	rest, err := io.ReadAll(followed)
-	require.NoError(t, err)
-	require.Empty(t, rest, "the follow ends with the build")
+	b := newBuilding(t, "cloning\n")
+	job.started.Store(b)
+	require.Equal(t, "cloning\n", nextSaid(t, followed))
+	b.say("compiling\n")
+	require.Equal(t, "compiling\n", nextSaid(t, followed))
+	b.end()
+	require.Empty(t, said(t, followed), "the follow ends with the build")
 	require.Empty(t, h.logs.joined())
 }
 
 func TestAWaitingFollowEndsWithItsViewer(t *testing.T) {
 	h := newHarness(t, Config{FollowBackoff: time.Hour})
 	ctx, cancel := context.WithCancel(t.Context())
-	h.backend.follow = func(id string, run int32, from int64, emit func([]byte, int64) error) (int64, error) {
+	h.backend.follow = func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 		cancel()
 		return notWritten(id, run, from, emit)
 	}
@@ -407,18 +468,14 @@ func TestAWaitingFollowEndsWithItsViewer(t *testing.T) {
 		h.Handler().ServeHTTP(w, authed(http.MethodGet, "/job/"+testJobID+"/logs", testToken).WithContext(ctx))
 		done <- w
 	}()
-	select {
-	case w := <-done:
-		require.Equal(t, http.StatusOK, w.Code)
-		require.Empty(t, w.Body.String())
-	case <-time.After(5 * time.Second):
-		t.Fatal("the follow outlived its viewer")
-	}
+	w := <-done
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Empty(t, said(t, w.Body))
 	require.Empty(t, h.logs.joined(), "a viewer hanging up is not a failure")
 }
 
 // endedAt is a backend whose run ended before the read reached its log.
-func endedAt(_ string, _ int32, from int64, _ func([]byte, int64) error) (int64, error) {
+func endedAt(_ string, _ int32, from int64, _ func(*buildv2.Job_Event) error) (int64, error) {
 	return from, connect.NewError(connect.CodeFailedPrecondition, errors.New("job finished as JobStatusFailed"))
 }
 
@@ -436,7 +493,7 @@ func TestAnEndedJobsLogIsTheStoredOne(t *testing.T) {
 	h.backend.get = retried
 	asks := 0
 	h.backend.snapshot = notWritten
-	h.backend.follow = func(id string, run int32, from int64, emit func([]byte, int64) error) (int64, error) {
+	h.backend.follow = func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 		if asks++; asks == 1 {
 			return notWritten(id, run, from, emit)
 		}
@@ -444,16 +501,16 @@ func TestAnEndedJobsLogIsTheStoredOne(t *testing.T) {
 	}
 
 	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs", testToken))
-	require.Equal(t, "cloning\nerror: failed\n", w.Body.String(), "it ran between two asks")
+	require.Equal(t, "cloning\nerror: failed\n", said(t, w.Body), "it ran between two asks")
 	require.Equal(t, 2, asks)
 
 	h.backend.snapshot = endedAt
-	w = h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?offset=8", testToken))
-	require.Equal(t, "error: failed\n", w.Body.String())
+	w = h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?offset="+strconv.FormatInt(after("cloning\nerror: failed\n", 1), 10), testToken))
+	require.Equal(t, "error: failed\n", said(t, w.Body))
 	w = h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?snapshot=true", testToken))
-	require.Equal(t, "cloning\nerror: failed\n", w.Body.String())
+	require.Equal(t, "cloning\nerror: failed\n", said(t, w.Body))
 	w = h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?attempt=9", testToken))
-	require.Equal(t, "the attempt before\n", w.Body.String())
+	require.Equal(t, "the attempt before\n", said(t, w.Body))
 	require.Equal(t, "9", w.Header().Get("X-Job-Attempt"))
 	require.Empty(t, h.logs.joined())
 
@@ -500,14 +557,14 @@ func TestAnEndedJobsLogThatCannotBeRead(t *testing.T) {
 func TestASnapshotOfAQueuedJobIsEmpty(t *testing.T) {
 	h := newHarness(t, quick)
 	asks := 0
-	h.backend.snapshot = func(id string, run int32, from int64, emit func([]byte, int64) error) (int64, error) {
+	h.backend.snapshot = func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 		asks++
 		return notWritten(id, run, from, emit)
 	}
 
 	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?snapshot=true", testToken))
 	require.Equal(t, http.StatusOK, w.Code)
-	require.Empty(t, w.Body.String())
+	require.Empty(t, said(t, w.Body))
 	require.Equal(t, 1, asks)
 	require.Empty(t, h.logs.joined())
 }
@@ -547,16 +604,17 @@ func (b *building) end() {
 	}
 }
 
-func (b *building) follow(_ string, _ int32, from int64, emit func([]byte, int64) error) (int64, error) {
+func (b *building) follow(_ string, _ int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 	for {
 		b.mu.Lock()
 		text, grew, ended := b.text, b.grew, b.ended
 		b.mu.Unlock()
-		if from < int64(len(text)) {
-			if err := emit([]byte(text[from:]), int64(len(text))); err != nil {
-				return from, err
+		if end := int64(len(logSaying(text))); from < end {
+			reached, err := emitFrom(text, from, emit)
+			if err != nil {
+				return reached, err
 			}
-			from = int64(len(text))
+			from = reached
 			continue
 		}
 		if ended {
@@ -566,7 +624,7 @@ func (b *building) follow(_ string, _ int32, from int64, emit func([]byte, int64
 	}
 }
 
-func (b *building) snapshot(id string, run int32, from int64, emit func([]byte, int64) error) (int64, error) {
+func (b *building) snapshot(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 	b.mu.Lock()
 	text := b.text
 	b.mu.Unlock()
@@ -587,62 +645,49 @@ func get(t *testing.T, srv *httptest.Server, path string) *http.Response {
 	return resp
 }
 
-func readN(t *testing.T, r io.Reader, n int) string {
-	t.Helper()
-	buf := make([]byte, n)
-	_, err := io.ReadFull(r, buf)
-	require.NoError(t, err)
-	return string(buf)
-}
-
 func TestASnapshotEndsWhileTheBuildRunsAndAFollowEndsWithIt(t *testing.T) {
 	h := newHarness(t, Config{})
 	srv := httptest.NewServer(h.Handler())
 	t.Cleanup(srv.Close)
-	build := newBuilding(t, "cloning\n")
-	h.backend.follow, h.backend.snapshot = build.follow, build.snapshot
+	b := newBuilding(t, "cloning\n")
+	h.backend.follow, h.backend.snapshot = b.follow, b.snapshot
 
-	soFar, err := io.ReadAll(get(t, srv, "/job/"+testJobID+"/logs?snapshot=true").Body)
-	require.NoError(t, err, "a snapshot that waited for the build would have timed out")
-	require.Equal(t, "cloning\n", string(soFar))
+	require.Equal(t, "cloning\n", said(t, get(t, srv, "/job/"+testJobID+"/logs?snapshot=true").Body),
+		"a snapshot that waited for the build would hang")
 
-	followed := get(t, srv, "/job/"+testJobID+"/logs").Body
-	require.Equal(t, "cloning\n", readN(t, followed, len("cloning\n")))
+	followed := bufio.NewReader(get(t, srv, "/job/"+testJobID+"/logs").Body)
+	require.Equal(t, "cloning\n", nextSaid(t, followed))
 
-	build.say("compiling\n")
-	require.Equal(t, "compiling\n", readN(t, followed, len("compiling\n")))
+	b.say("compiling\n")
+	require.Equal(t, "compiling\n", nextSaid(t, followed))
 
-	soFar, err = io.ReadAll(get(t, srv, "/job/"+testJobID+"/logs?snapshot=true&offset=8").Body)
-	require.NoError(t, err)
-	require.Equal(t, "compiling\n", string(soFar))
+	require.Equal(t, "compiling\n", said(t, get(t, srv, "/job/"+testJobID+"/logs?snapshot=true&offset="+strconv.FormatInt(after("cloning\n", 1), 10)).Body))
 
-	build.end()
-	rest, err := io.ReadAll(followed)
-	require.NoError(t, err)
-	require.Empty(t, rest, "the follow ends with the build")
+	b.end()
+	require.Empty(t, said(t, followed), "the follow ends with the build")
 }
 
 func TestAnEndedBuildsLogIsWholeToBothReads(t *testing.T) {
 	h := newHarness(t, Config{})
-	build := newBuilding(t, "cloning\ncompiling\n")
-	build.end()
-	h.backend.follow, h.backend.snapshot = build.follow, build.snapshot
+	b := newBuilding(t, "cloning\ncompiling\n")
+	b.end()
+	h.backend.follow, h.backend.snapshot = b.follow, b.snapshot
 
 	for _, path := range []string{"/logs", "/logs?snapshot=true"} {
 		w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+path, testToken))
 		require.Equal(t, http.StatusOK, w.Code, path)
-		require.Equal(t, "cloning\ncompiling\n", w.Body.String(), path)
+		require.Equal(t, "cloning\ncompiling\n", said(t, w.Body), path)
 	}
 }
 
 func TestASnapshotIsAskedForWithABoolean(t *testing.T) {
 	h := newHarness(t, Config{})
 	var reads []string
-	h.backend.follow = func(id string, run int32, from int64, emit func([]byte, int64) error) (int64, error) {
+	h.backend.follow = func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 		reads = append(reads, "follow")
 		return serves("log\n")(id, run, from, emit)
 	}
-	h.backend.snapshot = func(id string, run int32, from int64, emit func([]byte, int64) error) (int64, error) {
+	h.backend.snapshot = func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 		reads = append(reads, "snapshot")
 		return serves("log\n")(id, run, from, emit)
 	}
@@ -651,7 +696,7 @@ func TestASnapshotIsAskedForWithABoolean(t *testing.T) {
 		reads = nil
 		w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?snapshot="+value, testToken))
 		require.Equal(t, http.StatusOK, w.Code, value)
-		require.Equal(t, "log\n", w.Body.String(), value)
+		require.Equal(t, "log\n", said(t, w.Body), value)
 		require.Equal(t, want, reads, value)
 	}
 	for _, value := range []string{"maybe", "yes", "2"} {
