@@ -11,8 +11,8 @@ import (
 
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
-	"github.com/taubyte/tau/services/build/backend"
 	buildDeploy "github.com/taubyte/tau/services/build/deploy"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 func TestAnApplicationWithNothingToRunIsBroken(t *testing.T) {
@@ -33,7 +33,7 @@ func TestAnApplicationWithNothingToRunIsBroken(t *testing.T) {
 		buildDeploy.WithCloudFqdn("tau.dream.test"),
 	)
 	require.NoError(t, err)
-	err = planThenRun(t.Context(), d, backend.Work{JobID: "j", RepositoryKey: "github.com/acme/" + id,
+	err = planThenRun(t.Context(), d, run.Work{JobID: "j", RepositoryKey: "github.com/acme/" + id,
 		Ref: "refs/heads/main", CommitSHA: "c", ProjectID: id}, &buildLog{})
 	require.ErrorIs(t, err, buildDeploy.ErrBroken)
 	require.ErrorContains(t, err, "is of type oci and names no image and no build")
@@ -59,7 +59,7 @@ func TestAWebsiteOfSomethingThatRunsIsRefusedWhereItWasWritten(t *testing.T) {
 		buildDeploy.WithCloudFqdn("tau.dream.test"),
 	)
 	require.NoError(t, err)
-	err = planThenRun(t.Context(), d, backend.Work{JobID: "j", RepositoryKey: "github.com/acme/" + id,
+	err = planThenRun(t.Context(), d, run.Work{JobID: "j", RepositoryKey: "github.com/acme/" + id,
 		Ref: "refs/heads/main", CommitSHA: "c", ProjectID: id}, &buildLog{})
 	require.ErrorIs(t, err, buildDeploy.ErrBroken)
 	require.ErrorContains(t, err, "serves package module, which is of type wasm")
@@ -87,7 +87,7 @@ func TestAProjectWithNoEnvironmentsIsRefused(t *testing.T) {
 		buildDeploy.WithCloudFqdn("tau.dream.test"),
 	)
 	require.NoError(t, err)
-	err = planThenRun(t.Context(), d, backend.Work{JobID: "j", RepositoryKey: "github.com/acme/" + id,
+	err = planThenRun(t.Context(), d, run.Work{JobID: "j", RepositoryKey: "github.com/acme/" + id,
 		Ref: "refs/heads/main", CommitSHA: "c", ProjectID: id}, &buildLog{})
 	require.ErrorIs(t, err, buildDeploy.ErrNoDeployment)
 	require.ErrorContains(t, err, "declares no environments")
@@ -119,7 +119,7 @@ func TestAFunctionWithoutATierItRunsOnIsRefused(t *testing.T) {
 				buildDeploy.WithCloudFqdn("tau.dream.test"),
 			)
 			require.NoError(t, err)
-			err = planThenRun(t.Context(), d, backend.Work{JobID: "j", RepositoryKey: "github.com/acme/" + tc.id,
+			err = planThenRun(t.Context(), d, run.Work{JobID: "j", RepositoryKey: "github.com/acme/" + tc.id,
 				Ref: "refs/heads/main", CommitSHA: "c", ProjectID: tc.id}, &buildLog{})
 			require.ErrorContains(t, err, tc.reason)
 

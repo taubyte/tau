@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/services/build/run"
+
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
@@ -229,7 +231,7 @@ func TestAJobWhoseBuildStillRunsIsKept(t *testing.T) {
 	build := func(ref, content string) string {
 		t.Helper()
 		id := h.planned(t, ref, testCommit)
-		h.runner.run = func(ctx context.Context, _ Work, out Output) error {
+		h.runner.run = func(ctx context.Context, _ run.Work, out run.Output) error {
 			return out.Asset(ctx, "website/home", strings.NewReader(content))
 		}
 		require.True(t, h.mustStep(t))

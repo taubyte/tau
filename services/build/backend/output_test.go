@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/services/build/run"
+
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
@@ -28,7 +30,7 @@ func TestARunningBuildsLogIsFollowedWhileItIsStillBeingWritten(t *testing.T) {
 	started, more := make(chan struct{}), make(chan string)
 	done := make(chan error, 1)
 
-	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+	h.runner.run = func(_ context.Context, _ run.Work, out run.Output) error {
 		fmt.Fprint(out, "cloning\n")
 		close(started)
 		for line := range more {
@@ -85,7 +87,7 @@ func TestFollowRefusesWhatItCannotAnswer(t *testing.T) {
 	// arithmetic, told so rather than handed the end.
 	started, release := make(chan struct{}), make(chan struct{})
 	done := make(chan error, 1)
-	h.runner.run = func(context.Context, Work, Output) error {
+	h.runner.run = func(context.Context, run.Work, run.Output) error {
 		close(started)
 		<-release
 		return nil
@@ -108,7 +110,7 @@ func TestAFailedBuildKeepsWhatItPrintedBeforeItFailed(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
-	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+	h.runner.run = func(_ context.Context, _ run.Work, out run.Output) error {
 		fmt.Fprint(out, "undefined: Frobnicate\n")
 		return errors.New("compile error")
 	}
@@ -125,7 +127,7 @@ func TestAPanickingBuildKeepsWhatItPrinted(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
-	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+	h.runner.run = func(_ context.Context, _ run.Work, out run.Output) error {
 		fmt.Fprint(out, "step 3 of 4\n")
 		panic("nil map write")
 	}
@@ -141,7 +143,7 @@ func TestACancelledBuildStillGetsItsLog(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
-	h.runner.run = func(ctx context.Context, w Work, out Output) error {
+	h.runner.run = func(ctx context.Context, w run.Work, out run.Output) error {
 		fmt.Fprint(out, "installing dependencies\n")
 		require.NoError(t, h.cancel(w.JobID))
 		<-ctx.Done()
@@ -161,7 +163,7 @@ func TestAnAbandonedRunPublishesNothingAndLeavesNoFile(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
-	h.runner.run = func(ctx context.Context, _ Work, out Output) error {
+	h.runner.run = func(ctx context.Context, _ run.Work, out run.Output) error {
 		fmt.Fprint(out, "half a build\n")
 		return ctx.Err()
 	}
@@ -182,7 +184,7 @@ func TestANodeWithNoAssetStoreBuildsAndKeepsNothing(t *testing.T) {
 	id := h.planned(t, testRef, testCommit)
 
 	var assetErr error
-	h.runner.run = func(ctx context.Context, _ Work, out Output) error {
+	h.runner.run = func(ctx context.Context, _ run.Work, out run.Output) error {
 		fmt.Fprint(out, "building\n")
 		assetErr = out.Asset(ctx, "website/home", strings.NewReader("the artifact"))
 		return nil
@@ -203,7 +205,7 @@ func TestAnAssetStoreThatRefusesTheLogLeavesTheJobWithoutOne(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
-	h.runner.run = func(ctx context.Context, _ Work, out Output) error {
+	h.runner.run = func(ctx context.Context, _ run.Work, out run.Output) error {
 		require.NoError(t, out.Asset(ctx, "website/home", strings.NewReader("the artifact")))
 		fmt.Fprint(out, "built\n")
 		h.assets.fail(errors.New("storage is down"))
@@ -227,7 +229,7 @@ func TestAPublishThatOutlastsItsDeadlineCostsTheLogAndNotTheJob(t *testing.T) {
 	h.assets.block = make(chan struct{})
 	defer close(h.assets.block)
 
-	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+	h.runner.run = func(_ context.Context, _ run.Work, out run.Output) error {
 		fmt.Fprint(out, "built\n")
 		return nil
 	}
@@ -247,7 +249,7 @@ func TestALogPastItsCapIsTruncatedAndTheBuildStillSucceeds(t *testing.T) {
 	long := strings.Repeat("well past the cap ", 8) + "\n"
 	var wrote int
 	var writeErr error
-	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+	h.runner.run = func(_ context.Context, _ run.Work, out run.Output) error {
 		fmt.Fprint(out, "first line\n")
 		wrote, writeErr = out.Write([]byte(long))
 		fmt.Fprint(out, "and more\n")
@@ -278,7 +280,7 @@ func TestARunThatCannotOpenALogIsAFailedBuild(t *testing.T) {
 	})
 	id := h.planned(t, testRef, testCommit)
 
-	h.runner.run = func(context.Context, Work, Output) error {
+	h.runner.run = func(context.Context, run.Work, run.Output) error {
 		t.Error("the run must not start without somewhere to write its log")
 		return nil
 	}
@@ -298,7 +300,7 @@ func TestAnAssetNeedsAResourceAndContent(t *testing.T) {
 	h := newHarness(t)
 	h.planned(t, testRef, testCommit)
 
-	h.runner.run = func(ctx context.Context, _ Work, out Output) error {
+	h.runner.run = func(ctx context.Context, _ run.Work, out run.Output) error {
 		require.Error(t, out.Asset(ctx, "", strings.NewReader("x")))
 		require.Error(t, out.Asset(ctx, "website/home", nil))
 		return nil
@@ -312,7 +314,7 @@ func TestAnAssetStoreThatReturnsNoCidIsRefused(t *testing.T) {
 	h.planned(t, testRef, testCommit)
 
 	var err error
-	h.runner.run = func(ctx context.Context, _ Work, out Output) error {
+	h.runner.run = func(ctx context.Context, _ run.Work, out run.Output) error {
 		err = (&runOutput{s: h.Service, job: "j", project: "shop", environment: testEnvironment, built: map[assetRef]string{}}).
 			Asset(ctx, "website/home", strings.NewReader("x"))
 		return nil
@@ -328,15 +330,15 @@ func TestNothingIsLeftFollowableAfterARun(t *testing.T) {
 	type testCase struct {
 		name   string
 		commit string
-		run    func(context.Context, Work, Output) error
+		run    func(context.Context, run.Work, run.Output) error
 	}
 	for _, tc := range []testCase{
 		{"a build that succeeded", "1111111111111111111111111111111111111111",
-			func(context.Context, Work, Output) error { return nil }},
+			func(context.Context, run.Work, run.Output) error { return nil }},
 		{"a build that failed", "2222222222222222222222222222222222222222",
-			func(context.Context, Work, Output) error { return errors.New("compile error") }},
+			func(context.Context, run.Work, run.Output) error { return errors.New("compile error") }},
 		{"a build that panicked", "3333333333333333333333333333333333333333",
-			func(context.Context, Work, Output) error { panic("nil map write") }},
+			func(context.Context, run.Work, run.Output) error { panic("nil map write") }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h.planned(t, testRef, tc.commit)
@@ -354,9 +356,9 @@ func TestARunEndingOnlyForgetsItsOwnLog(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
-	first, err := h.output(Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 1})
+	first, err := h.output(run.Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 1})
 	require.NoError(t, err)
-	second, err := h.output(Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 2})
+	second, err := h.output(run.Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 2})
 	require.NoError(t, err)
 
 	first.discard()
@@ -376,10 +378,10 @@ func TestTwoAttemptsOfOneJobWriteDifferentFiles(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
-	first, err := h.output(Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 1})
+	first, err := h.output(run.Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 1})
 	require.NoError(t, err)
 	defer first.discard()
-	second, err := h.output(Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 2})
+	second, err := h.output(run.Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 2})
 	require.NoError(t, err)
 	defer second.discard()
 
@@ -391,7 +393,7 @@ func TestEndingARunTwiceIsTheSameEnding(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
-	out, err := h.output(Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 1})
+	out, err := h.output(run.Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 1})
 	require.NoError(t, err)
 	fmt.Fprint(out, "one line\n")
 
@@ -413,7 +415,7 @@ func TestALogWhoseNameWentIsPublishedAnyway(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
-	out, err := h.output(Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 1})
+	out, err := h.output(run.Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 1})
 	require.NoError(t, err)
 	fmt.Fprint(out, "one line\n")
 
@@ -430,7 +432,7 @@ func TestAPublishThatCannotReadItsLogSaysSo(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
-	out, err := h.output(Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 1})
+	out, err := h.output(run.Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 1})
 	require.NoError(t, err)
 	fmt.Fprint(out, "one line\n")
 
@@ -449,7 +451,7 @@ func TestALogThatLostBytesFailsTheBuildRatherThanBeingStoredShort(t *testing.T) 
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
-	h.runner.run = func(_ context.Context, w Work, out Output) error {
+	h.runner.run = func(_ context.Context, w run.Work, out run.Output) error {
 		fmt.Fprint(out, "cloning\n")
 		// Not this package's doing: the file is shortened under the run, which
 		// is what the log's own size measurement is against.
@@ -469,7 +471,7 @@ func TestAStoreThatSwallowedAReadErrorDoesNotGetToNameTheLog(t *testing.T) {
 	h := newHarness(t, WithAssets(&swallowingStore{}))
 	id := h.planned(t, testRef, testCommit)
 
-	h.runner.run = func(_ context.Context, w Work, out Output) error {
+	h.runner.run = func(_ context.Context, w run.Work, out run.Output) error {
 		fmt.Fprint(out, "cloning\n")
 		return os.Truncate(logFile(h, w), 0)
 	}
@@ -485,7 +487,7 @@ func TestAStoreThatStoppedReadingDoesNotGetToNameTheLog(t *testing.T) {
 	h := newHarness(t, WithAssets(&shortStore{}))
 	id := h.planned(t, testRef, testCommit)
 
-	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+	h.runner.run = func(_ context.Context, _ run.Work, out run.Output) error {
 		fmt.Fprint(out, "cloning\ncompiling\nlinking\n")
 		return nil
 	}
@@ -518,13 +520,13 @@ func (*swallowingStore) Put(_ context.Context, _ storage.Address, name string, _
 }
 
 // logFile is where a run's log is, named the way output() names it.
-func logFile(h *harness, w Work) string {
+func logFile(h *harness, w run.Work) string {
 	return filepath.Join(h.cfg.LogDir, seg(w.JobID)+"."+stamp(int64(w.Attempt))+".log")
 }
 
 func TestAWriteToAnEndedLogIsReportedToTheRunner(t *testing.T) {
 	h := newHarness(t)
-	out, err := h.output(Work{ProjectID: "shop", Environment: testEnvironment, JobID: h.planned(t, testRef, testCommit), Attempt: 1})
+	out, err := h.output(run.Work{ProjectID: "shop", Environment: testEnvironment, JobID: h.planned(t, testRef, testCommit), Attempt: 1})
 	require.NoError(t, err)
 	out.discard()
 
@@ -566,7 +568,7 @@ func TestARunThatCannotCreateItsLogFileIsAFailedBuild(t *testing.T) {
 	// one way to make the create fail for every user including root.
 	require.NoError(t, os.Mkdir(filepath.Join(h.cfg.LogDir, seg(id)+"."+stamp(1)+".log"), 0o700))
 
-	h.runner.run = func(context.Context, Work, Output) error {
+	h.runner.run = func(context.Context, run.Work, run.Output) error {
 		t.Error("the run must not start without a log to write")
 		return nil
 	}
@@ -582,7 +584,7 @@ func TestAnAssetStoreThatRefusesAnArtifactTellsTheRunner(t *testing.T) {
 	id := h.planned(t, testRef, testCommit)
 
 	h.assets.fail(errors.New("storage is down"))
-	h.runner.run = func(ctx context.Context, _ Work, out Output) error {
+	h.runner.run = func(ctx context.Context, _ run.Work, out run.Output) error {
 		return out.Asset(ctx, "website/home", strings.NewReader("the artifact"))
 	}
 	require.True(t, h.mustStep(t))
@@ -597,7 +599,7 @@ func TestFollowReportsALogItCannotOpen(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
-	out, err := h.output(Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 1})
+	out, err := h.output(run.Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 1})
 	require.NoError(t, err)
 	defer out.discard()
 	require.NoError(t, out.log.Unlink())
@@ -610,7 +612,7 @@ func TestSettleWritesNothingForARecordThatIsGone(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
-	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+	h.runner.run = func(_ context.Context, _ run.Work, out run.Output) error {
 		fmt.Fprint(out, "built\n")
 		h.records.erase(t, id)
 		return nil
@@ -639,7 +641,7 @@ func TestACancelledJobWithNoOutputCostsNoEntry(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusCancelled, "cancelled"))
 
-	out, err := h.output(Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 1})
+	out, err := h.output(run.Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 1})
 	require.NoError(t, err)
 	defer out.discard()
 	fmt.Fprint(out, "nowhere to put this\n")
@@ -662,7 +664,7 @@ func TestALogIsFiledUnderTheRunsAttemptAndNotTheRecordsAtSettleTime(t *testing.T
 	rec.Attempt = 7
 	h.plantRecord(t, rec)
 
-	out, err := h.output(Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 3})
+	out, err := h.output(run.Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 3})
 	require.NoError(t, err)
 	defer out.discard()
 	fmt.Fprint(out, "what run three printed\n")
@@ -681,7 +683,7 @@ func TestRecordingALogOnACancelledJobMovesNothingElse(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, h.finishNow(t, id, buildv2.JobStatus_JobStatusCancelled, "cancelled"))
 
-	out, err := h.output(Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 1})
+	out, err := h.output(run.Work{ProjectID: "shop", Environment: testEnvironment, JobID: id, Attempt: 1})
 	require.NoError(t, err)
 	defer out.discard()
 	fmt.Fprint(out, "cancelled midway\n")
@@ -709,10 +711,10 @@ func TestALogIsNeverOpenedThroughASymlinkPlantedAtItsPath(t *testing.T) {
 	const secret = "ssh-ed25519 AAAA-the-operators-own-key\n"
 	require.NoError(t, os.WriteFile(victim, []byte(secret), 0o600))
 
-	planted := logFile(h, Work{JobID: id, Attempt: 1})
+	planted := logFile(h, run.Work{JobID: id, Attempt: 1})
 	require.NoError(t, os.Symlink(victim, planted))
 
-	h.runner.run = func(context.Context, Work, Output) error {
+	h.runner.run = func(context.Context, run.Work, run.Output) error {
 		t.Error("the run must not start against a log this node did not create")
 		return nil
 	}
@@ -769,7 +771,7 @@ func TestASlowAssetStoreDoesNotStallEveryOtherJobOnTheNode(t *testing.T) {
 	h.assets.block = release
 	h.assets.onPut = func() { close(storing) }
 
-	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+	h.runner.run = func(_ context.Context, _ run.Work, out run.Output) error {
 		fmt.Fprint(out, "a build whose log is going to a store that has stopped\n")
 		return nil
 	}
@@ -809,7 +811,7 @@ func TestALogCanReachTheStoreAndNoCidReachAnyJob(t *testing.T) {
 	// The attempt is in what the build prints so that the two runs are two
 	// distinct objects: the store is content-addressed, so a rebuild printing
 	// the same bytes would be the same cid and there would be nothing to count.
-	h.runner.run = func(_ context.Context, w Work, out Output) error {
+	h.runner.run = func(_ context.Context, w run.Work, out run.Output) error {
 		fmt.Fprintf(out, "attempt %d printed this\n", w.Attempt)
 		return nil
 	}
@@ -843,7 +845,7 @@ func TestAJobReopenedWhileItsLogWasStoredKeepsThatLog(t *testing.T) {
 	h.assets.block = release
 	h.assets.onPut = func() { close(storing) }
 
-	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+	h.runner.run = func(_ context.Context, _ run.Work, out run.Output) error {
 		fmt.Fprint(out, "what the cancelled attempt printed\n")
 		return nil
 	}
@@ -879,7 +881,7 @@ func TestARecordThatWentWhileItsLogWasStoredIsNotWrittenBack(t *testing.T) {
 	release := make(chan struct{})
 	h.assets.block = release
 	h.assets.onPut = func() { close(storing) }
-	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+	h.runner.run = func(_ context.Context, _ run.Work, out run.Output) error {
 		fmt.Fprint(out, "built\n")
 		return nil
 	}
@@ -906,7 +908,7 @@ func TestAReopenedJobsLogReportsAStoreThatRefusedIt(t *testing.T) {
 	release := make(chan struct{})
 	h.assets.block = release
 	h.assets.onPut = func() { close(storing) }
-	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+	h.runner.run = func(_ context.Context, _ run.Work, out run.Output) error {
 		fmt.Fprint(out, "built\n")
 		return nil
 	}

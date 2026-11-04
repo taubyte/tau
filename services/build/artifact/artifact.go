@@ -26,7 +26,7 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/pkg/vault"
-	"github.com/taubyte/tau/services/build/backend"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 // branchRef is the only ref shape a build answers to, for the same reason a
@@ -202,7 +202,7 @@ func New(opts ...Option) (*Builder, error) {
 }
 
 // Plan is which published environments a push to this branch feeds.
-func (b *Builder) Plan(ctx context.Context, w backend.Work, out io.Writer) ([]string, error) {
+func (b *Builder) Plan(ctx context.Context, w run.Work, out io.Writer) ([]string, error) {
 	branch, ok := strings.CutPrefix(w.Ref, branchRef)
 	if !ok || branch == "" {
 		return nil, fmt.Errorf("%w: %s", ErrNotABranch, w.Ref)
@@ -216,7 +216,7 @@ func (b *Builder) Plan(ctx context.Context, w backend.Work, out io.Writer) ([]st
 }
 
 // Build runs every build this push touches in the job's environment.
-func (b *Builder) Build(ctx context.Context, w backend.Work, out backend.Output) error {
+func (b *Builder) Build(ctx context.Context, w run.Work, out run.Output) error {
 	branch, ok := strings.CutPrefix(w.Ref, branchRef)
 	if !ok || branch == "" {
 		return fmt.Errorf("%w: %s", ErrNotABranch, w.Ref)

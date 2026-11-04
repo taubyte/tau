@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/taubyte/tau/services/build/run"
+
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/queue"
 )
@@ -71,7 +73,7 @@ func (s *Service) run(ctx context.Context, d queue.Delivery) error {
 	}
 	defer s.forget(d.ID)
 
-	work := Work{
+	work := run.Work{
 		JobID:         rec.ID,
 		RepositoryKey: rec.RepositoryKey,
 		Ref:           rec.Ref,
@@ -203,7 +205,7 @@ func (s *Service) forget(id string) {
 
 // invoke opens the run's output and runs the job, returning the output even when
 // the run failed: those are the lines somebody wants.
-func (s *Service) invoke(ctx context.Context, work Work, prelude string) (out *runOutput, err error) {
+func (s *Service) invoke(ctx context.Context, work run.Work, prelude string) (out *runOutput, err error) {
 	if out, err = s.output(work); err != nil {
 		return nil, err
 	}
@@ -234,7 +236,7 @@ const maxPrelude = 64 << 10
 // each, then the plan settled as their parent. The environment jobs are created
 // between its two sections, each in its own, like a push's: a section writes only
 // the job it read. Creating one is idempotent, so a plan run twice makes them once.
-func (s *Service) plan(ctx, runCtx context.Context, d queue.Delivery, rec jobRecord, work Work, started time.Time) error {
+func (s *Service) plan(ctx, runCtx context.Context, d queue.Delivery, rec jobRecord, work run.Work, started time.Time) error {
 	// A PLAN'S LOG IS LIVE ONLY: what it said, which jobs it queued and how it ended,
 	// for whoever follows it while it plans. What it said also opens each environment
 	// job's. A plan that could not open one plans unfollowed.
@@ -320,7 +322,7 @@ func (s *Service) plan(ctx, runCtx context.Context, d queue.Delivery, rec jobRec
 }
 
 // planned runs the runner's plan; a panic is a failed plan, as for a build.
-func (s *Service) planned(ctx context.Context, work Work, out io.Writer) (environments []string, err error) {
+func (s *Service) planned(ctx context.Context, work run.Work, out io.Writer) (environments []string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("runner panicked: %v", r)

@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/services/build/run"
+
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
@@ -205,7 +207,7 @@ func TestACancelIsNotLostToTheClaimThatOverlapsIt(t *testing.T) {
 	// cancel was supposed to end this build and instead left it to its own
 	// deadline an hour away.
 	stopped := make(chan error, 1)
-	h.runner.run = func(ctx context.Context, _ Work, _ Output) error {
+	h.runner.run = func(ctx context.Context, _ run.Work, _ run.Output) error {
 		select {
 		case <-ctx.Done():
 			stopped <- ctx.Err()

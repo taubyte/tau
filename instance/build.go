@@ -29,6 +29,7 @@ import (
 	"github.com/taubyte/tau/services/build/folders"
 	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/build/frontend/forgeauth"
+	"github.com/taubyte/tau/services/build/run"
 	"github.com/taubyte/tau/services/build/uploads"
 	"github.com/taubyte/tau/services/worker"
 )
@@ -244,8 +245,8 @@ func (n *Instance) openBuildBackend() error {
 	// development cloud's configuration puts its local folders and uploaded builds in
 	// front of them.
 	var (
-		checkout deploy.Checkout   = clone
-		confirm  backend.Confirmer = clone
+		checkout deploy.Checkout = clone
+		confirm  run.Confirmer   = clone
 		engine   artifact.Engine
 	)
 

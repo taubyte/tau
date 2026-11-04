@@ -17,8 +17,8 @@ import (
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
-	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/deploy"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 // repository stands up a real repository with two commits, so the clone is shown
@@ -244,9 +244,9 @@ func TestAPushIsConfirmedAtTheRepository(t *testing.T) {
 	clone := deploy.NewClone(nil, deploy.WithAddress(func(string, forge.Protocol) (forge.Address, error) { return forge.Address{URL: path}, nil }))
 
 	require.NoError(t, clone.Confirm(t.Context(), "local/repo", "refs/heads/main", second))
-	require.ErrorIs(t, clone.Confirm(t.Context(), "local/repo", "refs/heads/main", first), backend.ErrNotAtCommit,
+	require.ErrorIs(t, clone.Confirm(t.Context(), "local/repo", "refs/heads/main", first), run.ErrNotAtCommit,
 		"a superseded commit is not the ref")
-	require.ErrorIs(t, clone.Confirm(t.Context(), "local/repo", "refs/heads/gone", second), backend.ErrNotAtCommit)
+	require.ErrorIs(t, clone.Confirm(t.Context(), "local/repo", "refs/heads/gone", second), run.ErrNotAtCommit)
 
 	err := clone.Confirm(t.Context(), "", "refs/heads/main", second)
 	require.ErrorContains(t, err, "not a repository")
@@ -258,5 +258,5 @@ func TestAPushIsConfirmedAtTheRepository(t *testing.T) {
 	}))
 	err = missing.Confirm(t.Context(), "local/repo", "refs/heads/main", second)
 	require.ErrorContains(t, err, "listing local/repo")
-	require.NotErrorIs(t, err, backend.ErrNotAtCommit)
+	require.NotErrorIs(t, err, run.ErrNotAtCommit)
 }

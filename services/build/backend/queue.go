@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 
+	"github.com/taubyte/tau/services/build/run"
+
 	"connectrpc.com/connect"
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
@@ -74,7 +76,7 @@ func (s *Service) enqueue(ctx context.Context, p *buildv2.PushEvent) (string, er
 	if s.confirm != nil {
 		err := s.confirm.Confirm(ctx, key.String(), p.GetRef(), p.GetCommitSha())
 		switch {
-		case errors.Is(err, ErrNotAtCommit):
+		case errors.Is(err, run.ErrNotAtCommit):
 			return "", errFailedPrecondition("%s does not hold %s at %s", key, p.GetRef(), p.GetCommitSha())
 		case err != nil:
 			return "", errUnavailable("confirming %s %s: %v", key, p.GetRef(), err)

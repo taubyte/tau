@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/services/build/backend"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 type fallthroughSeam struct{ asked *string }
@@ -58,7 +58,7 @@ func TestALocalFolderIsCheckedOutAtTheCommitAsked(t *testing.T) {
 	done()
 
 	require.NoError(t, confirm.Confirm(t.Context(), key, "refs/heads/main", second))
-	require.ErrorIs(t, confirm.Confirm(t.Context(), key, "refs/heads/main", first), backend.ErrNotAtCommit)
+	require.ErrorIs(t, confirm.Confirm(t.Context(), key, "refs/heads/main", first), run.ErrNotAtCommit)
 	require.Empty(t, asked)
 
 	dirOut, _, err := checkout.Checkout(t.Context(), "github.com/acme/other", "main", first)

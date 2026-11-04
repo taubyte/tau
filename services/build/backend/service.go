@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/taubyte/tau/services/build/run"
+
 	"github.com/libp2p/go-libp2p/core/host"
 
 	"github.com/taubyte/tau/core/kvdb"
@@ -30,13 +32,13 @@ type Service struct {
 	records kvdb.Instance
 	journal *journal
 
-	confirm Confirmer
+	confirm run.Confirmer
 
 	group *queue.Group
 	work  *queue.Queue
 	dead  *queue.Queue
 
-	runner Runner
+	runner run.Runner
 	// assetStore is the one door in this package off this machine, named for the door
 	// so the censuses can tell it from the record's Assets map and a run's cids.
 	assetStore Assets
@@ -85,8 +87,8 @@ type options struct {
 	records kvdb.Instance
 	repos   Repositories
 
-	runner        Runner
-	confirm       Confirmer
+	runner        run.Runner
+	confirm       run.Confirmer
 	assetStore    Assets
 	meter         Meter
 	authz         Authorizer
@@ -142,7 +144,7 @@ func WithRepositories(r Repositories) Option {
 // WithConfirmer is what a push is checked against before it is queued: the
 // repository itself, asked whether the ref is at the commit. Without it a push
 // is queued as the frontend verified it.
-func WithConfirmer(c Confirmer) Option {
+func WithConfirmer(c run.Confirmer) Option {
 	return func(o *options) error {
 		if c == nil {
 			return errors.New("build: confirmer must not be nil")
@@ -164,7 +166,7 @@ func WithServerOptions(opts ...rpc.ServerOption) Option {
 // WithRunner gives this node something to run claimed work with. Without one the
 // node claims nothing but still serves, replicates and sweeps: a voter need not
 // be a builder.
-func WithRunner(r Runner) Option {
+func WithRunner(r run.Runner) Option {
 	return func(o *options) error {
 		if r == nil {
 			return errors.New("build: runner must not be nil")

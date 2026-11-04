@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 
 	"github.com/taubyte/tau/pkg/forge"
-	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/deploy"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 // Folders is the repositories read from folders.
@@ -44,7 +44,7 @@ func New(folders map[string]string) (*Folders, error) {
 func (f *Folders) Checkout(inner deploy.Checkout) deploy.Checkout { return checkout{f, inner} }
 
 // Confirm is the folders in front of inner.
-func (f *Folders) Confirm(inner backend.Confirmer) backend.Confirmer { return confirm{f, inner} }
+func (f *Folders) Confirm(inner run.Confirmer) run.Confirmer { return confirm{f, inner} }
 
 type checkout struct {
 	f     *Folders
@@ -60,7 +60,7 @@ func (c checkout) Checkout(ctx context.Context, repositoryKey, branch, commit st
 
 type confirm struct {
 	f     *Folders
-	inner backend.Confirmer
+	inner run.Confirmer
 }
 
 func (c confirm) Confirm(ctx context.Context, repositoryKey, ref, commit string) error {

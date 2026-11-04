@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/services/build/run"
+
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
@@ -332,7 +334,7 @@ func TestACancelStopsTheRunTheClaimRegistered(t *testing.T) {
 
 	// Reaching the fallback is the failure: the cancel should have ended the build.
 	building, stopped := make(chan struct{}), make(chan error, 1)
-	h.runner.run = func(ctx context.Context, _ Work, _ Output) error {
+	h.runner.run = func(ctx context.Context, _ run.Work, _ run.Output) error {
 		close(building)
 		select {
 		case <-ctx.Done():

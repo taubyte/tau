@@ -24,7 +24,7 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
-	"github.com/taubyte/tau/services/build/backend"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 // branchRef is the only ref shape a deploy answers to; a tag matches no
@@ -84,8 +84,8 @@ type Checkout interface {
 // the container runner.
 type Builder interface {
 	// Plan is which environments a code push feeds.
-	Plan(ctx context.Context, w backend.Work, out io.Writer) ([]string, error)
-	Build(ctx context.Context, w backend.Work, out backend.Output) error
+	Plan(ctx context.Context, w run.Work, out io.Writer) ([]string, error)
+	Build(ctx context.Context, w run.Work, out run.Output) error
 }
 
 // Register is the slice of the register a deploy writes.
@@ -95,7 +95,7 @@ type Register interface {
 	Publish(ctx context.Context, p register.Publication) (register.ObjectID, error)
 }
 
-// Deploy is a backend.Runner.
+// Deploy is a run.Runner.
 type Deploy struct {
 	projects Projects
 	checkout Checkout
@@ -116,7 +116,7 @@ type Deploy struct {
 	domains Domains
 }
 
-var _ backend.Runner = (*Deploy)(nil)
+var _ run.Runner = (*Deploy)(nil)
 
 // New builds a deploy runner.
 func New(opts ...Option) (*Deploy, error) {
@@ -155,7 +155,7 @@ func New(opts ...Option) (*Deploy, error) {
 // Plan reads which environments the push feeds: a configuration push from the
 // pushed commit itself, so one that adds an environment builds it; a code push from
 // what the project publishes, through the builder.
-func (d *Deploy) Plan(ctx context.Context, w backend.Work, out io.Writer) ([]string, error) {
+func (d *Deploy) Plan(ctx context.Context, w run.Work, out io.Writer) ([]string, error) {
 	branch, ok := strings.CutPrefix(w.Ref, branchRef)
 	if !ok || branch == "" {
 		return nil, fmt.Errorf("%w: %s", ErrNotABranch, w.Ref)
@@ -189,7 +189,7 @@ func (d *Deploy) Plan(ctx context.Context, w backend.Work, out io.Writer) ([]str
 // Run publishes what the pushed commit compiles to for the job's one environment,
 // then builds what it backs. Each environment is its own job, so one that fails to
 // compile does not hold back another.
-func (d *Deploy) Run(ctx context.Context, w backend.Work, out backend.Output) error {
+func (d *Deploy) Run(ctx context.Context, w run.Work, out run.Output) error {
 	branch, ok := strings.CutPrefix(w.Ref, branchRef)
 	if !ok || branch == "" {
 		return fmt.Errorf("%w: %s", ErrNotABranch, w.Ref)
@@ -385,7 +385,7 @@ func compileFor(fs afero.Fs, dir, branch, environment string) ([]byte, *specs.Pr
 // cut asks this cloud's Regions where a deployment runs and cuts it into one view
 // per served region. What cannot be cut is refused before anything publishes;
 // everything short of that goes to the build log.
-func (d *Deploy) cut(flat map[string]any, environment string, out backend.Output) ([]register.View, error) {
+func (d *Deploy) cut(flat map[string]any, environment string, out run.Output) ([]register.View, error) {
 	views, findings, err := schema.Views(flat, schema.WithRegions(d.regions), schema.AuditIn(environment))
 	var refused []string
 	for _, f := range findings {

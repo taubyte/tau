@@ -20,8 +20,8 @@ import (
 	nodeDream "github.com/taubyte/tau/instance/dream"
 	cmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/build/backend"
 	buildDeploy "github.com/taubyte/tau/services/build/deploy"
+	"github.com/taubyte/tau/services/build/run"
 	"github.com/taubyte/tau/services/cm"
 )
 
@@ -67,7 +67,7 @@ func (*buildLog) Asset(context.Context, string, io.Reader) error { return nil }
 
 // planThenRun is a push as the backend runs it: the plan, then one job per environment
 // it names.
-func planThenRun(ctx context.Context, d *buildDeploy.Deploy, w backend.Work, out backend.Output) error {
+func planThenRun(ctx context.Context, d *buildDeploy.Deploy, w run.Work, out run.Output) error {
 	environments, err := d.Plan(ctx, w, out)
 	if err != nil {
 		return err
@@ -106,7 +106,7 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { domains.Close() })
 
-	run := func(project, id string) (*pkgregister.Register, error) {
+	deployed := func(project, id string) (*pkgregister.Register, error) {
 		r, err := pkgregister.New(pkgregister.WithStore(pkgregister.NewMemStore()))
 		require.NoError(t, err)
 		d, err := buildDeploy.New(
@@ -117,10 +117,10 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 			buildDeploy.WithDomains(domains),
 		)
 		require.NoError(t, err)
-		return r, planThenRun(t.Context(), d, backend.Work{JobID: "j", RepositoryKey: "github.com/acme/" + id, Ref: "refs/heads/main", CommitSHA: "c", ProjectID: id}, &buildLog{})
+		return r, planThenRun(t.Context(), d, run.Work{JobID: "j", RepositoryKey: "github.com/acme/" + id, Ref: "refs/heads/main", CommitSHA: "c", ProjectID: id}, &buildLog{})
 	}
 
-	_, err = run("with/domain/apex", customDomainID)
+	_, err = deployed("with/domain/apex", customDomainID)
 	require.ErrorIs(t, err, buildDeploy.ErrUnproven, "no record is set yet")
 
 	// THE VAULT NEEDS ITS MEMBERS before the first signing key can be kept.
@@ -134,7 +134,7 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 
 	var r *pkgregister.Register
 	require.Eventually(t, func() bool {
-		r, err = run("with/domain/apex", customDomainID)
+		r, err = deployed("with/domain/apex", customDomainID)
 		return err == nil
 	}, time.Minute, time.Second, "the signing key replicates to every cm node")
 	project, environment, err := r.ResolveHost(t.Context(), "www.shop.test")
@@ -143,13 +143,13 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 	require.Equal(t, "prod", environment)
 
 	dns.set(stolenDomainID[:8]+".shop.test", claim.GetToken())
-	_, err = run("refused/domain/stolen", stolenDomainID)
+	_, err = deployed("refused/domain/stolen", stolenDomainID)
 	require.ErrorIs(t, err, buildDeploy.ErrUnproven)
 	require.ErrorContains(t, err, "tau domain claim shop.test")
 
 	// A ZONE UNDER A PROVEN ONE is its project's with no record of its own,
 	// and another project's never, whatever record it sets.
-	r, err = run("with/domain/child", customDomainID)
+	r, err = deployed("with/domain/child", customDomainID)
 	require.NoError(t, err)
 	project, _, err = r.ResolveHost(t.Context(), "www.eu.shop.test")
 	require.NoError(t, err)
@@ -158,13 +158,13 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 	stolen, err := domains.Claim(t.Context(), stolenDomainID, "eu.shop.test")
 	require.NoError(t, err)
 	dns.set(stolen.GetEntry(), stolen.GetToken())
-	_, err = run("refused/domain/stolenchild", stolenDomainID)
+	_, err = deployed("refused/domain/stolenchild", stolenDomainID)
 	require.ErrorIs(t, err, buildDeploy.ErrUnproven)
 	require.ErrorContains(t, err, "shop.test is proven to be another project's")
 
 	// THE PARENT'S RECORD GONE, the child's redeploy is refused: a released
 	// domain is lost at its next deploy.
 	dns.set(claim.GetEntry(), "removed")
-	_, err = run("with/domain/child", customDomainID)
+	_, err = deployed("with/domain/child", customDomainID)
 	require.ErrorIs(t, err, buildDeploy.ErrUnproven)
 }

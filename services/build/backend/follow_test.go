@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/taubyte/tau/services/build/run"
+
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -297,7 +299,7 @@ func hold(t *testing.T, h *harness, first string) *heldBuild {
 	t.Helper()
 	b := &heldBuild{lines: make(chan string), ended: make(chan error, 1)}
 	started := make(chan struct{})
-	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+	h.runner.run = func(_ context.Context, _ run.Work, out run.Output) error {
 		fmt.Fprint(out, first)
 		close(started)
 		for line := range b.lines {
@@ -497,7 +499,7 @@ func TestAResumeIsNeverAnotherRunsLog(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
-	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+	h.runner.run = func(_ context.Context, _ run.Work, out run.Output) error {
 		fmt.Fprint(out, "first run, line one\nfirst run, line two\n")
 		return errors.New("the node went away")
 	}
@@ -577,7 +579,7 @@ func storing(t *testing.T, h *harness) (reached chan struct{}, release func()) {
 func TestALogIsWholeWhileItIsHandedToTheStore(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
-	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+	h.runner.run = func(_ context.Context, _ run.Work, out run.Output) error {
 		fmt.Fprint(out, "cloning\ncompiling\n")
 		return nil
 	}
@@ -608,7 +610,7 @@ func TestALogIsWholeWhileItIsHandedToTheStore(t *testing.T) {
 func TestACancelledRunsLogIsFollowedUntilItIsStored(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
-	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+	h.runner.run = func(_ context.Context, _ run.Work, out run.Output) error {
 		fmt.Fprint(out, "the first run\n")
 		return errors.New("flaky")
 	}
@@ -616,7 +618,7 @@ func TestACancelledRunsLogIsFollowedUntilItIsStored(t *testing.T) {
 	require.NoError(t, h.retry(id))
 
 	started := make(chan struct{})
-	h.runner.run = func(ctx context.Context, _ Work, out Output) error {
+	h.runner.run = func(ctx context.Context, _ run.Work, out run.Output) error {
 		fmt.Fprint(out, "the second run\n")
 		close(started)
 		<-ctx.Done()

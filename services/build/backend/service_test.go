@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/services/build/run"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/rpc"
@@ -156,7 +158,7 @@ func TestCloseAbandonsTheRunInFlightRatherThanFailingTheJob(t *testing.T) {
 	id := h.planned(t, testRef, testCommit)
 
 	started := make(chan struct{})
-	h.runner.run = func(ctx context.Context, _ Work, _ Output) error {
+	h.runner.run = func(ctx context.Context, _ run.Work, _ run.Output) error {
 		close(started)
 		<-ctx.Done()
 		return ctx.Err()

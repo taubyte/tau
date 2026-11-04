@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/services/build/run"
+
 	"github.com/libp2p/go-libp2p/core/host"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
@@ -526,18 +528,18 @@ func (f *fakeRepositories) fail(err error) {
 // test set it to do.
 type fakeRunner struct {
 	mu      sync.Mutex
-	work    []Work
-	planned []Work
+	work    []run.Work
+	planned []run.Work
 
-	run func(ctx context.Context, w Work, out Output) error
+	run func(ctx context.Context, w run.Work, out run.Output) error
 	// plan is which environments a push feeds; nil is testEnvironment alone.
-	plan func(ctx context.Context, w Work, out io.Writer) ([]string, error)
+	plan func(ctx context.Context, w run.Work, out io.Writer) ([]string, error)
 }
 
 // testEnvironment is the one environment a push feeds unless a test plans others.
 const testEnvironment = "prod"
 
-func (f *fakeRunner) Plan(ctx context.Context, w Work, out io.Writer) ([]string, error) {
+func (f *fakeRunner) Plan(ctx context.Context, w run.Work, out io.Writer) ([]string, error) {
 	f.mu.Lock()
 	f.planned = append(f.planned, w)
 	plan := f.plan
@@ -549,7 +551,7 @@ func (f *fakeRunner) Plan(ctx context.Context, w Work, out io.Writer) ([]string,
 	return plan(ctx, w, out)
 }
 
-func (f *fakeRunner) Run(ctx context.Context, w Work, out Output) error {
+func (f *fakeRunner) Run(ctx context.Context, w run.Work, out run.Output) error {
 	f.mu.Lock()
 	f.work = append(f.work, w)
 	run := f.run
@@ -714,10 +716,10 @@ func (f *fakeAssets) objects() int {
 	return len(f.stored)
 }
 
-func (f *fakeRunner) seen() []Work {
+func (f *fakeRunner) seen() []run.Work {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]Work(nil), f.work...)
+	return append([]run.Work(nil), f.work...)
 }
 
 func newMocknet(t testing.TB) mocknet.Mocknet {

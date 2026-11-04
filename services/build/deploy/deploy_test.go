@@ -14,8 +14,8 @@ import (
 
 	"github.com/taubyte/tau/pkg/register"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
-	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/deploy"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 const (
@@ -113,7 +113,7 @@ const shopID = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
 // envsID is the envs fixture's own project id.
 const envsID = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"
 
-func envsWork() backend.Work {
+func envsWork() run.Work {
 	w := work()
 	w.ProjectID = envsID
 	return w
@@ -121,7 +121,7 @@ func envsWork() backend.Work {
 
 // pushed is a push as the backend runs it: the plan, then one job per environment
 // it names, each told its own.
-func pushed(ctx context.Context, d *deploy.Deploy, w backend.Work, out backend.Output) error {
+func pushed(ctx context.Context, d *deploy.Deploy, w run.Work, out run.Output) error {
 	environments, err := d.Plan(ctx, w, out)
 	if err != nil {
 		return err
@@ -135,8 +135,8 @@ func pushed(ctx context.Context, d *deploy.Deploy, w backend.Work, out backend.O
 	return nil
 }
 
-func work() backend.Work {
-	return backend.Work{
+func work() run.Work {
+	return run.Work{
 		JobID:         "job",
 		RepositoryKey: "github.com/acme/shop-config",
 		Ref:           "refs/heads/main",
@@ -489,18 +489,18 @@ func TestWithBuilderRefusesNil(t *testing.T) {
 
 type builderStub struct {
 	calls int
-	saw   backend.Work
+	saw   run.Work
 	err   error
 }
 
 // Plan is the deployments a code push feeds, as the builder reads them from what the
 // project publishes.
-func (b *builderStub) Plan(_ context.Context, w backend.Work, out io.Writer) ([]string, error) {
+func (b *builderStub) Plan(_ context.Context, w run.Work, out io.Writer) ([]string, error) {
 	fmt.Fprintln(out, "planned")
 	return []string{"prod"}, nil
 }
 
-func (b *builderStub) Build(_ context.Context, w backend.Work, out backend.Output) error {
+func (b *builderStub) Build(_ context.Context, w run.Work, out run.Output) error {
 	b.calls++
 	b.saw = w
 	if b.err != nil {

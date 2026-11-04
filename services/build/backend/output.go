@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/taubyte/tau/services/build/run"
+
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/services/build/joblog"
 	"github.com/taubyte/tau/services/build/livelog"
@@ -87,7 +89,7 @@ type runOutput struct {
 // retry gets its own. The name is computable by anyone who knows the repository,
 // which is why livelog.OwnDir and Create refuse a directory or file someone else
 // planted.
-func (s *Service) output(w Work) (*runOutput, error) {
+func (s *Service) output(w run.Work) (*runOutput, error) {
 	if err := livelog.OwnDir(s.cfg.LogDir); err != nil {
 		return nil, errUnavailable("build: log directory %s: %v", s.cfg.LogDir, err)
 	}

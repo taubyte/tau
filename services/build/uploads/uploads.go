@@ -23,8 +23,8 @@ import (
 	"regexp"
 
 	"github.com/taubyte/tau/services/build/artifact"
-	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/deploy"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 const manifestFile = "upload.json"
@@ -154,7 +154,7 @@ func (d *Dir) product(commit, digest string) (io.ReadCloser, bool) {
 func (d *Dir) Checkout(inner deploy.Checkout) deploy.Checkout { return checkout{d, inner} }
 
 // Confirm is the uploaded commits in front of inner.
-func (d *Dir) Confirm(inner backend.Confirmer) backend.Confirmer { return confirm{d, inner} }
+func (d *Dir) Confirm(inner run.Confirmer) run.Confirmer { return confirm{d, inner} }
 
 // Engine is the uploaded products in front of inner, which is nil on a cloud that
 // runs no containers.
@@ -176,7 +176,7 @@ func (c checkout) Checkout(ctx context.Context, repositoryKey, branch, commit st
 
 type confirm struct {
 	d     *Dir
-	inner backend.Confirmer
+	inner run.Confirmer
 }
 
 // Confirm is the directory holding the commit, for the repository and ref it was

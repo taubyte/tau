@@ -14,8 +14,8 @@ import (
 	nodeDream "github.com/taubyte/tau/instance/dream"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
-	"github.com/taubyte/tau/services/build/backend"
 	buildDeploy "github.com/taubyte/tau/services/build/deploy"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 const viewsID = "QmWBYU7xWH1ZwyEE3qRgrRmSc7ng1G12UMKPtUNYCattB5"
@@ -50,7 +50,7 @@ func deployAs(t *testing.T, n *instance.Instance, regions schema.Regions) string
 	)
 	require.NoError(t, err)
 	var log deployLog
-	require.NoError(t, planThenRun(t.Context(), d, backend.Work{
+	require.NoError(t, planThenRun(t.Context(), d, run.Work{
 		JobID: "job", RepositoryKey: "github.com/acme/views-config", Ref: "refs/heads/main",
 		CommitSHA: "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c", ProjectID: viewsID, Attempt: 1,
 	}, &log))

@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/services/build/run"
+
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
@@ -548,7 +550,7 @@ func TestEnqueueConfirmsThePushAtTheRepository(t *testing.T) {
 		code connect.Code
 	}
 	for _, tc := range []testCase{
-		{"not at the commit", fmt.Errorf("%w: moved on", ErrNotAtCommit), connect.CodeFailedPrecondition},
+		{"not at the commit", fmt.Errorf("%w: moved on", run.ErrNotAtCommit), connect.CodeFailedPrecondition},
 		{"forge unreachable", errors.New("dial"), connect.CodeUnavailable},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

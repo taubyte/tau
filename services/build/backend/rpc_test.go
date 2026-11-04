@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/services/build/run"
+
 	"connectrpc.com/connect"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -212,7 +214,7 @@ func TestASnapshotEndsOverTheWireWhileAFollowStaysOpen(t *testing.T) {
 	h := newWireHarness(t)
 	started, lines := make(chan struct{}), make(chan string)
 	h.runner.mu.Lock()
-	h.runner.run = func(ctx context.Context, _ Work, out Output) error {
+	h.runner.run = func(ctx context.Context, _ run.Work, out run.Output) error {
 		fmt.Fprint(out, "cloning\n")
 		close(started)
 		for {

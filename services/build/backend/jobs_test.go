@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/services/build/run"
+
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
@@ -369,7 +371,7 @@ func TestASuccessfulBuildPointsTheDeploymentAtWhatItMade(t *testing.T) {
 	h := newWireHarness(t, WithAssets(newAssets()))
 	id := h.planned(t, testRef, testCommit)
 
-	h.runner.run = func(ctx context.Context, w Work, out Output) error {
+	h.runner.run = func(ctx context.Context, w run.Work, out run.Output) error {
 		return out.Asset(ctx, "website/home", strings.NewReader("the artifact"))
 	}
 	require.True(t, h.mustStep(t))
@@ -385,13 +387,13 @@ func TestASuccessfulBuildPointsTheDeploymentAtWhatItMade(t *testing.T) {
 
 func TestADeploymentsArtifactIsItsOwn(t *testing.T) {
 	h := newWireHarness(t, WithAssets(newAssets()))
-	h.runner.plan = func(context.Context, Work, io.Writer) ([]string, error) {
+	h.runner.plan = func(context.Context, run.Work, io.Writer) ([]string, error) {
 		return []string{"prod", "preview"}, nil
 	}
 	plan := h.push(t, testRef, testCommit)
 
 	// ONE JOB PER ENVIRONMENT, each building only its own.
-	h.runner.run = func(ctx context.Context, w Work, out Output) error {
+	h.runner.run = func(ctx context.Context, w run.Work, out run.Output) error {
 		content := map[string]string{"prod": "production", "preview": "preview"}[w.Environment]
 		return out.Asset(ctx, "website/home", strings.NewReader(content))
 	}
@@ -422,7 +424,7 @@ func TestAFailedBuildDoesNotMoveWhatADeploymentRuns(t *testing.T) {
 	h := newWireHarness(t, WithAssets(newAssets()))
 	id := h.planned(t, testRef, testCommit)
 
-	h.runner.run = func(ctx context.Context, w Work, out Output) error {
+	h.runner.run = func(ctx context.Context, w run.Work, out run.Output) error {
 		if err := out.Asset(ctx, "website/home", strings.NewReader("half a build")); err != nil {
 			return err
 		}

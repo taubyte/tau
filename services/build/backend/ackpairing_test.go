@@ -5,6 +5,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/taubyte/tau/services/build/run"
+
 	"github.com/stretchr/testify/require"
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
@@ -30,7 +32,7 @@ func TestARetryBetweenACancelAndTheSettleOfTheRunItCancelledSurvives(t *testing.
 
 	building := make(chan struct{})
 	release := make(chan struct{})
-	h.runner.run = func(ctx context.Context, _ Work, _ Output) error {
+	h.runner.run = func(ctx context.Context, _ run.Work, _ run.Output) error {
 		close(building)
 		<-release
 		// The cancel is what ended this build, and this is what a Runner that

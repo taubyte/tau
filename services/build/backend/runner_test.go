@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/services/build/run"
+
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -25,7 +27,7 @@ func TestOneStepClaimsRunsAcksAndFinishes(t *testing.T) {
 	id := h.planned(t, testRef, testCommit)
 
 	var during buildv2.JobStatus
-	h.runner.run = func(_ context.Context, w Work, out Output) error {
+	h.runner.run = func(_ context.Context, w run.Work, out run.Output) error {
 		during = h.status(t, w.JobID)
 		fmt.Fprintf(out, "building %s\n", w.CommitSHA)
 		return out.Asset(context.Background(), "website/home", strings.NewReader("the artifact"))
@@ -50,7 +52,7 @@ func TestOneStepClaimsRunsAcksAndFinishes(t *testing.T) {
 
 	work := h.runner.seen()
 	require.Len(t, work, 1)
-	require.Equal(t, Work{
+	require.Equal(t, run.Work{
 		JobID: id, RepositoryKey: testRepo, Ref: testRef, CommitSHA: testCommit,
 		Before: "", ProjectID: "project-of-" + testRepo, Attempt: 1, Environment: testEnvironment,
 	}, work[0])
@@ -97,7 +99,7 @@ func TestBeforeIsWhatThisServiceItselfLastFinished(t *testing.T) {
 func TestARunThatFailsIsTerminalRatherThanRetried(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
-	h.runner.run = func(context.Context, Work, Output) error { return errors.New("compile error") }
+	h.runner.run = func(context.Context, run.Work, run.Output) error { return errors.New("compile error") }
 
 	require.True(t, h.mustStep(t))
 
@@ -117,7 +119,7 @@ func TestARunThatFailsIsTerminalRatherThanRetried(t *testing.T) {
 func TestARunnerThatPanicsIsAFailedBuild(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
-	h.runner.run = func(context.Context, Work, Output) error { panic("nil map write") }
+	h.runner.run = func(context.Context, run.Work, run.Output) error { panic("nil map write") }
 
 	require.True(t, h.mustStep(t))
 	require.Equal(t, buildv2.JobStatus_JobStatusFailed, h.status(t, id))
@@ -129,7 +131,7 @@ func TestCancelWhileRunningStopsTheRunAndKeepsTheCancelledStatus(t *testing.T) {
 	id := h.planned(t, testRef, testCommit)
 
 	var ctxErr error
-	h.runner.run = func(ctx context.Context, w Work, _ Output) error {
+	h.runner.run = func(ctx context.Context, w run.Work, _ run.Output) error {
 		require.NoError(t, h.cancel(w.JobID))
 		<-ctx.Done()
 		ctxErr = ctx.Err()
@@ -153,7 +155,7 @@ func TestTheRunIsBoundedByWhicheverOfTheLeaseAndThePolicyIsShorter(t *testing.T)
 		h.planned(t, testRef, testCommit)
 
 		var left time.Duration
-		h.runner.run = func(ctx context.Context, _ Work, _ Output) error {
+		h.runner.run = func(ctx context.Context, _ run.Work, _ run.Output) error {
 			deadline, ok := ctx.Deadline()
 			require.True(t, ok, "a run must always be bounded")
 			left = time.Until(deadline)
@@ -175,7 +177,7 @@ func TestTheRunIsBoundedByWhicheverOfTheLeaseAndThePolicyIsShorter(t *testing.T)
 		h.planned(t, testRef, testCommit)
 
 		var left time.Duration
-		h.runner.run = func(ctx context.Context, _ Work, _ Output) error {
+		h.runner.run = func(ctx context.Context, _ run.Work, _ run.Output) error {
 			deadline, ok := ctx.Deadline()
 			require.True(t, ok, "a run must always be bounded")
 			left = time.Until(deadline)
@@ -191,7 +193,7 @@ func TestARunWhoseClaimExpiredMidRunPublishesNothing(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
-	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+	h.runner.run = func(_ context.Context, _ run.Work, out run.Output) error {
 		fmt.Fprint(out, "a build whose claim went\n")
 		// Somebody else takes the job while this run is going: the lease
 		// elapses and the queue redelivers it.
@@ -217,7 +219,7 @@ func TestLeadershipLostMidRunPublishesNothing(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
-	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+	h.runner.run = func(_ context.Context, _ run.Work, out run.Output) error {
 		fmt.Fprint(out, "a build whose node stopped leading\n")
 		h.store.stepDown()
 		return nil
@@ -406,7 +408,7 @@ func TestTheStartedLoopEventuallyRunsAQueuedJob(t *testing.T) {
 	id := h.planned(t, testRef, testCommit)
 
 	done := make(chan struct{})
-	h.runner.run = func(context.Context, Work, Output) error { close(done); return nil }
+	h.runner.run = func(context.Context, run.Work, run.Output) error { close(done); return nil }
 
 	require.NoError(t, h.Start(t.Context()))
 	select {
@@ -467,7 +469,7 @@ func TestSettleReportsARecordItCannotRead(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
-	h.runner.run = func(context.Context, Work, Output) error {
+	h.runner.run = func(context.Context, run.Work, run.Output) error {
 		h.records.garble(t, id)
 		return nil
 	}
@@ -529,7 +531,7 @@ func TestASectionThatCannotBarrierDecidesNothing(t *testing.T) {
 		id := h.planned(t, testRef, testCommit)
 
 		// begin's barrier is taken and the build runs; settle's is refused.
-		h.runner.run = func(context.Context, Work, Output) error {
+		h.runner.run = func(context.Context, run.Work, run.Output) error {
 			h.store.failBarrier(errors.New("timed out"))
 			return nil
 		}
@@ -608,7 +610,7 @@ func TestASuccessfulBuildIsAccounted(t *testing.T) {
 	h := newHarness(t, WithMeter(m), WithAssets(store))
 	id := h.planned(t, testRef, testCommit)
 
-	h.runner.run = func(ctx context.Context, w Work, out Output) error {
+	h.runner.run = func(ctx context.Context, w run.Work, out run.Output) error {
 		fmt.Fprintln(out, "building")
 		h.clock.advance(90 * time.Second)
 		return out.Asset(ctx, "website/home", strings.NewReader("the artifact"))
@@ -647,7 +649,7 @@ func TestAFailedBuildIsAccounted(t *testing.T) {
 	h := newHarness(t, WithMeter(m), WithAssets(newAssets()))
 	h.planned(t, testRef, testCommit)
 
-	h.runner.run = func(context.Context, Work, Output) error {
+	h.runner.run = func(context.Context, run.Work, run.Output) error {
 		h.clock.advance(30 * time.Second)
 		return errors.New("the toolchain fell over")
 	}
@@ -663,7 +665,7 @@ func TestNoMeterIsTheOrdinaryCase(t *testing.T) {
 	h := newHarness(t, WithAssets(newAssets()))
 	id := h.planned(t, testRef, testCommit)
 
-	h.runner.run = func(ctx context.Context, w Work, out Output) error {
+	h.runner.run = func(ctx context.Context, w run.Work, out run.Output) error {
 		return out.Asset(ctx, "website/home", strings.NewReader("the artifact"))
 	}
 	require.True(t, h.mustStep(t))

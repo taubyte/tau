@@ -15,7 +15,7 @@ import (
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/git"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	"github.com/taubyte/tau/services/build/backend"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 // git.go is the Checkout a node runs: a real clone at the pushed commit, never the
@@ -44,8 +44,8 @@ type Clone struct {
 }
 
 var (
-	_ Checkout          = (*Clone)(nil)
-	_ backend.Confirmer = (*Clone)(nil)
+	_ Checkout      = (*Clone)(nil)
+	_ run.Confirmer = (*Clone)(nil)
 )
 
 // NewClone builds one. A nil credentials reads public repositories only.
@@ -211,7 +211,7 @@ func (c *Clone) Confirm(ctx context.Context, repositoryKey, ref, commit string) 
 			return nil
 		}
 	}
-	return fmt.Errorf("%w: %s %s %s", backend.ErrNotAtCommit, repositoryKey, ref, short(commit))
+	return fmt.Errorf("%w: %s %s %s", run.ErrNotAtCommit, repositoryKey, ref, short(commit))
 }
 
 func refused(err error) bool {

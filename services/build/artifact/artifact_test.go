@@ -20,7 +20,7 @@ import (
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/pkg/vault"
 	"github.com/taubyte/tau/services/build/artifact"
-	"github.com/taubyte/tau/services/build/backend"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 const (
@@ -87,7 +87,7 @@ func (e *engine) seen() []artifact.Spec {
 	return append([]artifact.Spec(nil), e.specs...)
 }
 
-// out is a backend.Output that keeps what it was handed.
+// out is a run.Output that keeps what it was handed.
 type out struct {
 	mu     sync.Mutex
 	log    bytes.Buffer
@@ -243,7 +243,7 @@ func deployed(t *testing.T, dir string, environments ...string) *pkgregister.Reg
 
 // planned is a push as the backend runs it: the plan, then one job per environment
 // it names, each told its own.
-func planned(ctx context.Context, b *artifact.Builder, w backend.Work, o *out) error {
+func planned(ctx context.Context, b *artifact.Builder, w run.Work, o *out) error {
 	environments, err := b.Plan(ctx, w, o)
 	if err != nil {
 		return err
@@ -260,8 +260,8 @@ func planned(ctx context.Context, b *artifact.Builder, w backend.Work, o *out) e
 	return nil
 }
 
-func work(repository string) backend.Work {
-	return backend.Work{
+func work(repository string) run.Work {
+	return run.Work{
 		JobID:         "job",
 		RepositoryKey: repository,
 		Ref:           "refs/heads/main",
