@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/services/build/backend"
+
 	"github.com/taubyte/tau/pkg/containers"
 
 	"github.com/taubyte/tau/pkg/forge/drivers"
@@ -37,7 +39,6 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/pkg/specs"
-	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/services"
 	"github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/secrets"
@@ -512,7 +513,7 @@ func bothWays(t *testing.T, c corpusCase) {
 		signedIn(t, nil).bothWays(t, c)
 		return
 	}
-	signedIn(t, func(cfg *instance.Config) { cfg.Region = c.region }, instance.WithRegions(schema.WithRegion(c.region))).bothWays(t, c)
+	signedIn(t, func(cfg *instance.Config) { cfg.Region = c.region }).bothWays(t, c)
 }
 
 func (u *underTest) bothWays(t *testing.T, c corpusCase) {
@@ -789,7 +790,9 @@ func (z *txtZone) LookupTXT(_ context.Context, name string) ([]string, error) {
 func TestTheDomainCorpusBuildsBothWays(t *testing.T) {
 	dns := &txtZone{m: map[string][]string{}}
 	u := signedIn(t, func(c *instance.Config) {
-		c.CM.Domains.Trusted = false
+		built := c.Sections[instance.BuildBackend].(backend.Config)
+		built.Domains.Trusted = false
+		c.Sections[instance.BuildBackend] = built
 		c.Services = append(append(append([]string(nil), instance.All...), services.Names()...), instance.CM)
 	}, instance.WithResolver(dns))
 

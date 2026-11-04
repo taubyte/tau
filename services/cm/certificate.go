@@ -78,16 +78,6 @@ var (
 type Config struct {
 	// Certificate is how the cloud issues its TLS certificates.
 	Certificate CertificateConfig `yaml:"certificate"`
-
-	// Domains is how a project's own zones are proven to be its. See domain.go.
-	Domains DomainsConfig `yaml:"domains"`
-}
-
-// DomainsConfig is how custom domains are proven.
-type DomainsConfig struct {
-	// Trusted serves every zone a project declares without its TXT proof, as
-	// v1's dev mode did: a development cloud, never one anybody else deploys to.
-	Trusted bool `yaml:"trusted"`
 }
 
 // CertificateConfig is the ACME CA and what is issued from it.

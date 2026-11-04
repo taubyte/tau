@@ -11,6 +11,8 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/peer"
 
+	"github.com/taubyte/tau/pkg/containers"
+	"github.com/taubyte/tau/pkg/forge/drivers"
 	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/build"
@@ -127,6 +129,23 @@ type Config struct {
 	// place of the forge (services/build/folders): a development cloud's, so a CI run
 	// needs no forge to hold the code.
 	Local map[string]string `yaml:"local"`
+
+	// Domains is how a deploy treats the zones a project declares.
+	Domains Domains `yaml:"domains"`
+
+	// The cloud-wide keys the backend reads, one copy each on the node: the zone that
+	// completes generated names, the forges it clones from, and the container daemon
+	// a code build runs in.
+	CloudFqdn string              `yaml:"cloudfqdn,omitempty"`
+	Forges    []drivers.Forge     `yaml:"forges,omitempty"`
+	Container containers.Declared `yaml:"container,omitempty"`
+}
+
+// Domains is the zones a project declares, as a deploy treats them.
+type Domains struct {
+	// Trusted serves every zone a project declares without its TXT proof: a
+	// development cloud's, whose one developer owns every zone it is shown.
+	Trusted bool `yaml:"trusted"`
 }
 
 // defaultLogDir is the scratch log directory, per uid so a shared /tmp name cannot
@@ -241,7 +260,7 @@ func (c Config) withDefaults() (Config, error) {
 
 // Store is pkg/queue's Store, method for method: the raft group the work queue
 // lives in. Nothing else of this service is in it; a job's events are in kvdb
-// (WithRecords, events.go), since every write to raft is a replicated log entry.
+// (withRecords, events.go), since every write to raft is a replicated log entry.
 //
 //   - Get, Keys, Batch: the queue's own.
 //   - Barrier: a new leader may hold committed but unapplied queue entries; a

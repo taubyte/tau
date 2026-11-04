@@ -16,8 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/taubyte/tau/services/build/run"
-
 	"github.com/libp2p/go-libp2p/core/host"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
@@ -29,6 +27,7 @@ import (
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/build/joblog"
 	"github.com/taubyte/tau/services/build/livelog"
+	"github.com/taubyte/tau/services/build/run"
 	"github.com/taubyte/tau/services/storage"
 )
 
@@ -737,11 +736,11 @@ func newHost(t testing.TB, mn mocknet.Mocknet) host.Host {
 	return h
 }
 
-// harness is a constructed (but not started) Service and everything under it.
+// harness is a constructed (but not started) server and everything under it.
 // Every dependency is a fake: a mocknet host, a map behind a raft mock, and two
 // interfaces. Nothing binds a port and nothing needs a universe.
 type harness struct {
-	*Service
+	*server
 	store   *fakeStore
 	records *fakeRecords
 	repos   *fakeRepositories
@@ -758,28 +757,28 @@ const (
 )
 
 // withoutRunner is a test-only option: a node that is a voter in the
-// consistency domain without being a builder, which WithRunner cannot express
+// consistency domain without being a builder, which withRunner cannot express
 // because it refuses nil — correctly, since in production a nil runner is a
 // mistake rather than a deployment choice.
-func withoutRunner() Option {
+func withoutRunner() option {
 	return func(o *options) error { o.runner = nil; return nil }
 }
 
 // withoutAssets is the same for the asset store: a node that builds but has
-// nowhere to put what it produced. WithAssets refuses nil for the same reason
-// WithRunner does.
-func withoutAssets() Option {
+// nowhere to put what it produced. withAssets refuses nil for the same reason
+// withRunner does.
+func withoutAssets() option {
 	return func(o *options) error { o.assetStore = nil; return nil }
 }
 
-func newHarness(t testing.TB, opts ...Option) *harness {
+func newHarness(t testing.TB, opts ...option) *harness {
 	return newHarnessCfg(t, nil, opts...)
 }
 
 // newHarnessCfg is newHarness plus a tweak to the node config. It exists
 // because ClaimInterval and BuildTimeout are OPERATOR settings, not injected
-// collaborators, so they are not reachable through an Option.
-func newHarnessCfg(t testing.TB, adjust func(*Config), opts ...Option) *harness {
+// collaborators, so they are not reachable through an option.
+func newHarnessCfg(t testing.TB, adjust func(*Config), opts ...option) *harness {
 	t.Helper()
 	store := newStore()
 	return newHarnessOverCfg(t, store, store, adjust, opts...)
@@ -788,11 +787,11 @@ func newHarnessCfg(t testing.TB, adjust func(*Config), opts ...Option) *harness 
 // newHarnessOver builds the service over `over`, which may wrap `store`. The queue
 // is opened over whatever New was given, so a wrapper must be passed here to sit
 // under both.
-func newHarnessOver(t testing.TB, over Store, store *fakeStore, opts ...Option) *harness {
+func newHarnessOver(t testing.TB, over Store, store *fakeStore, opts ...option) *harness {
 	return newHarnessOverCfg(t, over, store, nil, opts...)
 }
 
-func newHarnessOverCfg(t testing.TB, over Store, store *fakeStore, adjust func(*Config), opts ...Option) *harness {
+func newHarnessOverCfg(t testing.TB, over Store, store *fakeStore, adjust func(*Config), opts ...option) *harness {
 	t.Helper()
 
 	repos := newRepositories(testRepo)
@@ -801,10 +800,10 @@ func newHarnessOverCfg(t testing.TB, over Store, store *fakeStore, adjust func(*
 	clock := newClock()
 	h := newHost(t, newMocknet(t))
 
-	opts = append([]Option{
-		WithClock(clock.now),
-		WithRunner(runner),
-		WithAssets(assets),
+	opts = append([]option{
+		withClock(clock.now),
+		withRunner(runner),
+		withAssets(assets),
 	}, opts...)
 
 	// THE LOG DIRECTORY IS THIS TEST'S OWN. A run writes a real file, and the
@@ -815,12 +814,12 @@ func newHarnessOverCfg(t testing.TB, over Store, store *fakeStore, adjust func(*
 		adjust(&cfg)
 	}
 	records := newRecords(t)
-	s, err := New(cfg, append([]Option{WithHost(h), WithStore(over), WithRecords(records), WithRepositories(repos)}, opts...)...)
+	s, err := newServer(cfg, append([]option{withHost(h), withStore(over), withRecords(records), withRepositories(repos)}, opts...)...)
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 
 	return &harness{
-		Service: s, store: store, records: records, repos: repos,
+		server: s, store: store, records: records, repos: repos,
 		runner: runner, assets: assets, clock: clock, host: h,
 	}
 }

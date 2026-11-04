@@ -21,6 +21,8 @@ type cloudServices struct {
 	cm      cm.Config
 	forges  []drivers.Forge
 	secrets []cloudSecret
+	// trusted serves every zone a project declares unproven: the build backend's.
+	trusted bool
 }
 
 type cloudSecret struct {
@@ -82,7 +84,7 @@ func servicesOf(p config.Parser) (*cloudServices, error) {
 		secret(authService.OIDCSecretName(o.Name), o.ClientSecret)
 	}
 
-	out.cm.Domains.Trusted = m.Domains.Trusted
+	out.trusted = m.Domains.Trusted
 	if m.ACME.AccountKey != "" {
 		key, err := p.Cloud().AccountKey(m.ACME)
 		if err != nil {

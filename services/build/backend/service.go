@@ -8,20 +8,19 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/taubyte/tau/services/build/run"
-
 	"github.com/libp2p/go-libp2p/core/host"
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/services/build"
+	"github.com/taubyte/tau/services/build/run"
 )
 
-// Service is build's private half: the host it answers on, the raft group its
+// server is build's private half: the host it answers on, the raft group its
 // queue lives in, the kvdb database its jobs live in, and what it was given to run
 // work with.
-type Service struct {
+type server struct {
 	host  host.Host
 	store Store
 	repos Repositories
@@ -49,7 +48,7 @@ type Service struct {
 
 	// startMu guards server and the loop's lifetime: Start and Close both
 	// read-then-write them, and nothing about this type promises a caller will
-	// only ever touch one Service from one goroutine.
+	// only ever touch one server from one goroutine.
 	startMu sync.Mutex
 	server  *rpc.Server
 	stop    context.CancelCauseFunc
@@ -77,9 +76,9 @@ type Service struct {
 	closed    atomic.Bool
 }
 
-// Option configures an options value; New builds the Service once from the
+// option configures an options value; New builds the server once from the
 // validated snapshot.
-type Option func(*options) error
+type option func(*options) error
 
 type options struct {
 	host    host.Host
@@ -96,9 +95,9 @@ type options struct {
 	serverOptions []rpc.ServerOption
 }
 
-// WithHost is the libp2p host this service answers on. Required: nil is an
+// withHost is the libp2p host this service answers on. Required: nil is an
 // error, never an invented identity.
-func WithHost(h host.Host) Option {
+func withHost(h host.Host) option {
 	return func(o *options) error {
 		if h == nil {
 			return errors.New("build: no host to answer on")
@@ -108,8 +107,8 @@ func WithHost(h host.Host) Option {
 	}
 }
 
-// WithStore is the raft group the queue lives in, and only the queue. Required.
-func WithStore(st Store) Option {
+// withStore is the raft group the queue lives in, and only the queue. Required.
+func withStore(st Store) option {
 	return func(o *options) error {
 		if st == nil {
 			return errors.New("build: no store")
@@ -119,8 +118,8 @@ func WithStore(st Store) Option {
 	}
 }
 
-// WithRecords is the kvdb database every job's events and rows live in. Required.
-func WithRecords(db kvdb.Instance) Option {
+// withRecords is the kvdb database every job's events and rows live in. Required.
+func withRecords(db kvdb.Instance) option {
 	return func(o *options) error {
 		if db == nil {
 			return errors.New("build: no records")
@@ -130,8 +129,8 @@ func WithRecords(db kvdb.Instance) Option {
 	}
 }
 
-// WithRepositories resolves a project. Required.
-func WithRepositories(r Repositories) Option {
+// withRepositories resolves a project. Required.
+func withRepositories(r Repositories) option {
 	return func(o *options) error {
 		if r == nil {
 			return errors.New("build: no repositories to resolve a project with")
@@ -141,10 +140,10 @@ func WithRepositories(r Repositories) Option {
 	}
 }
 
-// WithConfirmer is what a push is checked against before it is queued: the
+// withConfirmer is what a push is checked against before it is queued: the
 // repository itself, asked whether the ref is at the commit. Without it a push
 // is queued as the frontend verified it.
-func WithConfirmer(c run.Confirmer) Option {
+func withConfirmer(c run.Confirmer) option {
 	return func(o *options) error {
 		if c == nil {
 			return errors.New("build: confirmer must not be nil")
@@ -154,19 +153,19 @@ func WithConfirmer(c run.Confirmer) Option {
 	}
 }
 
-// WithServerOptions passes p2p/rpc.ServerOption values through to rpc.Listen
+// withServerOptions passes p2p/rpc.ServerOption values through to rpc.Listen
 // in Start without this package needing an option of its own for each one.
-func WithServerOptions(opts ...rpc.ServerOption) Option {
+func withServerOptions(opts ...rpc.ServerOption) option {
 	return func(o *options) error {
 		o.serverOptions = append(o.serverOptions, opts...)
 		return nil
 	}
 }
 
-// WithRunner gives this node something to run claimed work with. Without one the
+// withRunner gives this node something to run claimed work with. Without one the
 // node claims nothing but still serves, replicates and sweeps: a voter need not
 // be a builder.
-func WithRunner(r run.Runner) Option {
+func withRunner(r run.Runner) option {
 	return func(o *options) error {
 		if r == nil {
 			return errors.New("build: runner must not be nil")
@@ -176,9 +175,9 @@ func WithRunner(r run.Runner) Option {
 	}
 }
 
-// WithMeter is where this service says what it accounted for — build minutes
+// withMeter is where this service says what it accounted for — build minutes
 // and the bytes an artifact and a log occupy. Nil emits nothing.
-func WithMeter(m Meter) Option {
+func withMeter(m Meter) option {
 	return func(o *options) error {
 		if m == nil {
 			return errors.New("build: a nil meter")
@@ -188,10 +187,10 @@ func WithMeter(m Meter) Option {
 	}
 }
 
-// WithAssets gives this node somewhere to put logs and artifacts. Without one the
+// withAssets gives this node somewhere to put logs and artifacts. Without one the
 // node still builds, but logs die with the run and jobs carry no cids (see
 // Assets in config.go).
-func WithAssets(a Assets) Option {
+func withAssets(a Assets) option {
 	return func(o *options) error {
 		if a == nil {
 			return errors.New("build: asset store must not be nil")
@@ -201,8 +200,8 @@ func WithAssets(a Assets) Option {
 	}
 }
 
-// WithAuthorizer replaces the default, which is AllowAnyPeer. See authz.go.
-func WithAuthorizer(a Authorizer) Option {
+// withAuthorizer replaces the default, which is AllowAnyPeer. See authz.go.
+func withAuthorizer(a Authorizer) option {
 	return func(o *options) error {
 		if a == nil {
 			return errors.New("build: authorizer must not be nil")
@@ -212,10 +211,10 @@ func WithAuthorizer(a Authorizer) Option {
 	}
 }
 
-// WithClock replaces the source of time — for this service AND for the queue
+// withClock replaces the source of time — for this service AND for the queue
 // under it, which is the point: a test that moves time has to move both or the
 // two disagree about whether a claim has expired.
-func WithClock(now func() time.Time) Option {
+func withClock(now func() time.Time) option {
 	return func(o *options) error {
 		if now == nil {
 			return errors.New("build: clock must not be nil")
@@ -225,11 +224,11 @@ func WithClock(now func() time.Time) Option {
 	}
 }
 
-// New validates and allocates; it binds and opens nothing, so every service can
-// be constructed before any starts. Each dependency comes through a With… that
-// refuses nil. It never constructs raft, so the package builds against
-// mocknet.GenPeer().
-func New(cfg Config, opts ...Option) (*Service, error) {
+// newServer validates and allocates; it binds and opens nothing. Each dependency comes
+// through an option that refuses nil. It never constructs raft, so the package builds
+// against mocknet.GenPeer(). Start builds one from an instance; a test builds one
+// from what it fakes.
+func newServer(cfg Config, opts ...option) (*server, error) {
 	effective, err := cfg.withDefaults()
 	if err != nil {
 		return nil, err
@@ -238,7 +237,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 	o := options{authz: AllowAnyPeer(), now: time.Now}
 	for _, apply := range opts {
 		if err := apply(&o); err != nil {
-			// Nothing to unwind: New owns no resource by the time an option
+			// Nothing to unwind: newServer owns no resource by the time an option
 			// runs.
 			return nil, fmt.Errorf("build: option: %w", err)
 		}
@@ -255,7 +254,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		return nil, errors.New("build: no repositories to resolve a project with")
 	}
 
-	s := &Service{
+	s := &server{
 		meter:         o.meter,
 		host:          o.host,
 		store:         o.store,
@@ -302,10 +301,10 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 	return s, nil
 }
 
-// Start listens, serves, and starts the claim loop; twice or after Close is an
+// serve listens, serves, and starts the claim loop; twice or after Close is an
 // error. Both service blocks share build.Protocol; a second rpc.Listen on it
 // fails with ErrProtocolTaken.
-func (s *Service) Start(ctx context.Context) error {
+func (s *server) serve(ctx context.Context) error {
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
 
@@ -316,11 +315,11 @@ func (s *Service) Start(ctx context.Context) error {
 		return errors.New("build: already started")
 	}
 
-	server, err := rpc.Listen(ctx, s.host, build.Protocol, s.mount(), s.serverOptions...)
+	listener, err := rpc.Listen(ctx, s.host, build.Protocol, s.mount(), s.serverOptions...)
 	if err != nil {
 		return fmt.Errorf("build: listen on %s: %w", build.Protocol, err)
 	}
-	s.server = server
+	s.server = listener
 
 	// With a cause, since a run interrupted by shutdown otherwise looks like a failed
 	// build (errShuttingDown).
@@ -336,7 +335,7 @@ func (s *Service) Start(ctx context.Context) error {
 // everything is in step, which performs exactly one cycle — because that is
 // what makes the whole claim path reachable from a test without a goroutine, a
 // sleep or a real clock.
-func (s *Service) loop(ctx context.Context, done chan<- struct{}) {
+func (s *server) loop(ctx context.Context, done chan<- struct{}) {
 	defer close(done)
 
 	claim := time.NewTicker(s.cfg.ClaimInterval)
@@ -367,20 +366,20 @@ var errShuttingDown = errors.New("build: shutting down")
 // to close. A run in flight is abandoned, not failed: unacked, its claim expires
 // and the queue redelivers it, so a restart costs a rebuild, never a false
 // Failed.
-func (s *Service) Close() error {
+func (s *server) Close() error {
 	s.closeOnce.Do(func() {
 		s.closed.Store(true)
 
 		s.startMu.Lock()
-		stop, stopped, server := s.stop, s.stopped, s.server
+		stop, stopped, listener := s.stop, s.stopped, s.server
 		s.startMu.Unlock()
 
 		if stop != nil {
 			stop(errShuttingDown)
 			<-stopped
 		}
-		if server != nil {
-			s.closeErr = server.Close()
+		if listener != nil {
+			s.closeErr = listener.Close()
 		}
 	})
 	return s.closeErr

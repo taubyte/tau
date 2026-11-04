@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/taubyte/tau/services/build/run"
-
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -20,6 +18,7 @@ import (
 	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/build/joblog"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 func TestOneStepClaimsRunsAcksAndFinishes(t *testing.T) {
@@ -335,8 +334,8 @@ func TestOnlyTheLeaderOfTheDomainClaims(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
-	follower, err := New(Config{}, WithHost(newHost(t, newMocknet(t))), WithStore(h.store), WithRecords(h.records), WithRepositories(h.repos),
-		WithClock(h.clock.now), WithRunner(&fakeRunner{}))
+	follower, err := newServer(Config{}, withHost(newHost(t, newMocknet(t))), withStore(h.store), withRecords(h.records), withRepositories(h.repos),
+		withClock(h.clock.now), withRunner(&fakeRunner{}))
 	require.NoError(t, err)
 	t.Cleanup(func() { follower.Close() })
 
@@ -356,7 +355,7 @@ func TestOnlyTheLeaderOfTheDomainClaims(t *testing.T) {
 func TestANodeWithNoRunnerKeepsTheQueueSweptAndClaimsNothing(t *testing.T) {
 	store := newStore()
 	clock := newClock()
-	s, err := New(Config{}, WithHost(newHost(t, newMocknet(t))), WithStore(store), WithRecords(newRecords(t)), WithRepositories(newRepositories(testRepo)), WithClock(clock.now))
+	s, err := newServer(Config{}, withHost(newHost(t, newMocknet(t))), withStore(store), withRecords(newRecords(t)), withRepositories(newRepositories(testRepo)), withClock(clock.now))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 
@@ -410,7 +409,7 @@ func TestTheStartedLoopEventuallyRunsAQueuedJob(t *testing.T) {
 	done := make(chan struct{})
 	h.runner.run = func(context.Context, run.Work, run.Output) error { close(done); return nil }
 
-	require.NoError(t, h.Start(t.Context()))
+	require.NoError(t, h.serve(t.Context()))
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
@@ -607,7 +606,7 @@ func (m *meter) of(op Op) []Accounted {
 func TestASuccessfulBuildIsAccounted(t *testing.T) {
 	m := &meter{}
 	store := newAssets()
-	h := newHarness(t, WithMeter(m), WithAssets(store))
+	h := newHarness(t, withMeter(m), withAssets(store))
 	id := h.planned(t, testRef, testCommit)
 
 	h.runner.run = func(ctx context.Context, w run.Work, out run.Output) error {
@@ -646,7 +645,7 @@ func TestASuccessfulBuildIsAccounted(t *testing.T) {
 
 func TestAFailedBuildIsAccounted(t *testing.T) {
 	m := &meter{}
-	h := newHarness(t, WithMeter(m), WithAssets(newAssets()))
+	h := newHarness(t, withMeter(m), withAssets(newAssets()))
 	h.planned(t, testRef, testCommit)
 
 	h.runner.run = func(context.Context, run.Work, run.Output) error {
@@ -662,7 +661,7 @@ func TestAFailedBuildIsAccounted(t *testing.T) {
 }
 
 func TestNoMeterIsTheOrdinaryCase(t *testing.T) {
-	h := newHarness(t, WithAssets(newAssets()))
+	h := newHarness(t, withAssets(newAssets()))
 	id := h.planned(t, testRef, testCommit)
 
 	h.runner.run = func(ctx context.Context, w run.Work, out run.Output) error {
@@ -673,8 +672,8 @@ func TestNoMeterIsTheOrdinaryCase(t *testing.T) {
 }
 
 func TestWithMeterRefusesNil(t *testing.T) {
-	_, err := New(Config{}, WithHost(newHost(t, newMocknet(t))), WithStore(newStore()), WithRecords(newRecords(t)),
-		WithRepositories(newRepositories()), WithMeter(nil))
+	_, err := newServer(Config{}, withHost(newHost(t, newMocknet(t))), withStore(newStore()), withRecords(newRecords(t)),
+		withRepositories(newRepositories()), withMeter(nil))
 	require.ErrorContains(t, err, "meter")
 }
 

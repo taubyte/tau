@@ -8,16 +8,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/taubyte/tau/services/build/run"
-
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/queue"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 // step performs one cycle of the claim loop, which Start calls on a ticker; tests
 // call it synchronously with an injected clock. It reports whether it did
 // anything.
-func (s *Service) step(ctx context.Context) (bool, error) {
+func (s *server) step(ctx context.Context) (bool, error) {
 	// A FOLLOWER CONSUMES NOTHING, and this is not papered over: the queue
 	// would refuse every write anyway, and scanning for an item that could not
 	// be claimed is work done to reach a guaranteed error.
@@ -56,7 +55,7 @@ func (s *Service) step(ctx context.Context) (bool, error) {
 }
 
 // run executes one claimed delivery.
-func (s *Service) run(ctx context.Context, d queue.Delivery) error {
+func (s *server) run(ctx context.Context, d queue.Delivery) error {
 	deadline := s.claimDeadline(d)
 
 	// The run's context exists before the record is claimed, since begin registers its
@@ -117,7 +116,7 @@ func (s *Service) run(ctx context.Context, d queue.Delivery) error {
 
 // accountBuild emits what one run occupied a builder for, before settle, so a slow
 // meter cannot stall a section. Failed builds are accounted too.
-func (s *Service) accountBuild(ctx context.Context, rec jobRecord, started time.Time, runErr error) {
+func (s *server) accountBuild(ctx context.Context, rec jobRecord, started time.Time, runErr error) {
 	s.emit(ctx, Accounted{
 		Project:    rec.ProjectID,
 		Repository: rec.RepositoryKey,
@@ -138,7 +137,7 @@ func (s *Service) accountBuild(ctx context.Context, rec jobRecord, started time.
 // deduplicated item. Re-reading alone is not enough: without the section, a
 // cancel between read and entry would be overwritten with Claimed. Not claimed is
 // not an error.
-func (s *Service) begin(d queue.Delivery, deadline time.Time, stop context.CancelFunc, last bool) (rec jobRecord, running, missing bool, err error) {
+func (s *server) begin(d queue.Delivery, deadline time.Time, stop context.CancelFunc, last bool) (rec jobRecord, running, missing bool, err error) {
 	var claimed jobRecord
 
 	err = s.withJob(d.ID, func(j *held) error {
@@ -181,7 +180,7 @@ func (s *Service) begin(d queue.Delivery, deadline time.Time, stop context.Cance
 // awaitBegin is begin, read again while the job is missing. THE CLAIM CAME
 // THROUGH RAFT AND THE JOB THROUGH KVDB, which can lag, so a missing job is read
 // RecordReads times at most, RecordReadInterval apart, and the last read decides.
-func (s *Service) awaitBegin(ctx context.Context, d queue.Delivery, deadline time.Time, stop context.CancelFunc) (jobRecord, bool, error) {
+func (s *server) awaitBegin(ctx context.Context, d queue.Delivery, deadline time.Time, stop context.CancelFunc) (jobRecord, bool, error) {
 	for read := 1; ; read++ {
 		rec, running, missing, err := s.begin(d, deadline, stop, read >= s.cfg.RecordReads)
 		if err != nil || !missing {
@@ -197,7 +196,7 @@ func (s *Service) awaitBegin(ctx context.Context, d queue.Delivery, deadline tim
 
 // forget drops this node's cancel for a finished run; it needs no reading since the
 // entry it drops is always this goroutine's.
-func (s *Service) forget(id string) {
+func (s *server) forget(id string) {
 	s.runningMu.Lock()
 	delete(s.running, id)
 	s.runningMu.Unlock()
@@ -205,7 +204,7 @@ func (s *Service) forget(id string) {
 
 // invoke opens the run's output and runs the job, returning the output even when
 // the run failed: those are the lines somebody wants.
-func (s *Service) invoke(ctx context.Context, work run.Work, prelude string) (out *runOutput, err error) {
+func (s *server) invoke(ctx context.Context, work run.Work, prelude string) (out *runOutput, err error) {
 	if out, err = s.output(work); err != nil {
 		return nil, err
 	}
@@ -236,7 +235,7 @@ const maxPrelude = 64 << 10
 // each, then the plan settled as their parent. The environment jobs are created
 // between its two sections, each in its own, like a push's: a section writes only
 // the job it read. Creating one is idempotent, so a plan run twice makes them once.
-func (s *Service) plan(ctx, runCtx context.Context, d queue.Delivery, rec jobRecord, work run.Work, started time.Time) error {
+func (s *server) plan(ctx, runCtx context.Context, d queue.Delivery, rec jobRecord, work run.Work, started time.Time) error {
 	// A PLAN'S LOG IS LIVE ONLY: what it said, which jobs it queued and how it ended,
 	// for whoever follows it while it plans. What it said also opens each environment
 	// job's. A plan that could not open one plans unfollowed.
@@ -322,7 +321,7 @@ func (s *Service) plan(ctx, runCtx context.Context, d queue.Delivery, rec jobRec
 }
 
 // planned runs the runner's plan; a panic is a failed plan, as for a build.
-func (s *Service) planned(ctx context.Context, work run.Work, out io.Writer) (environments []string, err error) {
+func (s *server) planned(ctx context.Context, work run.Work, out io.Writer) (environments []string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("runner panicked: %v", r)
@@ -370,7 +369,7 @@ func (c *capped) String() string { return c.buf.String() }
 // the third section files the log's cid. A log that could not be stored is lost and
 // says so; the job's status does not hang on it. A leadership loss between the two
 // leaves an unnamed object (doc.go).
-func (s *Service) settle(ctx context.Context, d queue.Delivery, out *runOutput, runErr error) error {
+func (s *server) settle(ctx context.Context, d queue.Delivery, out *runOutput, runErr error) error {
 	var wanted bool
 	err := s.withJob(d.ID, func(j *held) error {
 		if err := j.ack(s.work, d); err != nil {
@@ -452,7 +451,7 @@ func (s *Service) settle(ctx context.Context, d queue.Delivery, out *runOutput, 
 
 // claimDeadline is when this run must be over: the claim's deadline less the
 // margin (a run reaching it is a second claimer), or BuildTimeout if smaller.
-func (s *Service) claimDeadline(d queue.Delivery) time.Time {
+func (s *server) claimDeadline(d queue.Delivery) time.Time {
 	lease := d.Deadline.Add(-s.cfg.ClaimMargin)
 	policy := s.now().Add(s.cfg.BuildTimeout)
 	if policy.Before(lease) {
@@ -465,7 +464,7 @@ func (s *Service) claimDeadline(d queue.Delivery) time.Time {
 // last FINISHED for this exact (repository, ref, environment). Absent means there is nothing
 // to diff against and the Runner must treat it as a full build — exactly what a
 // GitHub payload's all-zero `before` signals for a newly created branch.
-func (s *Service) lastCommit(repositoryKey, ref, environment string) string {
+func (s *server) lastCommit(repositoryKey, ref, environment string) string {
 	ctx, stop := context.WithTimeout(context.Background(), s.cfg.Queue.ApplyTimeout)
 	defer stop()
 	// An anchor that cannot be read is a full build, which is correct, only slower.
@@ -479,7 +478,7 @@ func (s *Service) lastCommit(repositoryKey, ref, environment string) string {
 // drainDeadLetter marks one exhausted job Failed and acks it. The claim is outside
 // the section; the read, record and ack inside, so a cancel cannot be overwritten
 // with Failed.
-func (s *Service) drainDeadLetter() (bool, error) {
+func (s *server) drainDeadLetter() (bool, error) {
 	d, err := s.dead.Claim()
 	if errors.Is(err, queue.ErrNoItem) {
 		return false, nil

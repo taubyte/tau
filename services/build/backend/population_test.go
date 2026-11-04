@@ -271,7 +271,7 @@ func recvName(fn *ast.FuncDecl) string {
 	return fn.Recv.List[0].Names[0].Name
 }
 
-// qualify names a declaration the way the tables below do: "Service.cancel",
+// qualify names a declaration the way the tables below do: "server.cancel",
 // "entry.commit", or a bare "eventKey" for a function with no receiver.
 func qualify(fn *ast.FuncDecl) string {
 	if name := receiver(fn); name != "" {
@@ -300,7 +300,7 @@ func receiver(fn *ast.FuncDecl) string {
 // sourceFiles what is on disk, and the parser what it read. A file a filter
 // silently dropped would take it out of every census at once.
 var backendFiles = []string{
-	"authz.go", "config.go", "doc.go", "errors.go", "events.go", "jobid.go", "jobs.go",
+	"authz.go", "config.go", "doc.go", "errors.go", "events.go", "host.go", "jobid.go", "jobs.go",
 	"leader.go", "meter.go", "output.go", "queue.go", "reconcile.go", "rpc.go",
 	"runner.go", "section.go", "service.go", "store.go",
 }
@@ -657,7 +657,7 @@ func TestOnlyOneFunctionReadsAJob(t *testing.T) {
 		"every read of a job must go through journal.events, or the population below is incomplete; "+
 			"erase lists the events it deletes")
 	require.ElementsMatch(t, []string{"journal.read"}, names(callers(all, "events")))
-	require.ElementsMatch(t, []string{"Service.readRecord", "journal.newest"}, names(callers(all, "read")),
+	require.ElementsMatch(t, []string{"server.readRecord", "journal.newest"}, names(callers(all, "read")),
 		"a job is read by the sections' one reader and by the anchor and live readers, which "+
 			"decide no write")
 	for _, builder := range names(eventKeys) {
@@ -672,7 +672,7 @@ func TestOnlyOneFunctionReadsAJob(t *testing.T) {
 	}
 
 	require.ElementsMatch(t,
-		[]string{"jobReader.First", "Service.job", "Service.holds"},
+		[]string{"jobReader.First", "server.job", "server.holds"},
 		names(callers(all, "readRecord")),
 		"another reader is either a section that did not go through the source enter names, or "+
 			"a read outside every section — and a read outside every section decides nothing, "+
@@ -681,7 +681,7 @@ func TestOnlyOneFunctionReadsAJob(t *testing.T) {
 
 	// The source is the only thing a section reads through; enter names one and does
 	// not read.
-	require.False(t, all["Service.enter"].calls["readRecord"],
+	require.False(t, all["server.enter"].calls["readRecord"],
 		"the entry point names the source; it does not take the read itself, or there would be "+
 			"a second answer to what a holding carries")
 	require.ElementsMatch(t, []string{"jobReader.Subject", "jobReader.First"},
@@ -797,23 +797,23 @@ type site struct {
 func TestEveryReadModifyWriteOfAJobRecordIsOneSection(t *testing.T) {
 	population := map[string]site{
 		// jobs.go
-		"Service.cancel": {record: true, queue: true, index: true},
-		"Service.retry":  {record: true, queue: true, index: true},
+		"server.cancel": {record: true, queue: true, index: true},
+		"server.retry":  {record: true, queue: true, index: true},
 		// queue.go
-		"Service.resume":            {queue: true},
-		"Service.create":            {record: true, queue: true, index: true},
-		"Service.createEnvironment": {record: true, queue: true, index: true},
+		"server.resume":            {queue: true},
+		"server.create":            {record: true, queue: true, index: true},
+		"server.createEnvironment": {record: true, queue: true, index: true},
 		// runner.go
 		// A claim, or the ending of a job whose events never arrived, retained.
-		"Service.begin":           {record: true, queue: true, index: true},
-		"Service.plan":            {record: true, queue: true, index: true},
-		"Service.settle":          {record: true, queue: true, index: true},
-		"Service.drainDeadLetter": {record: true, queue: true, index: true},
+		"server.begin":           {record: true, queue: true, index: true},
+		"server.plan":            {record: true, queue: true, index: true},
+		"server.settle":          {record: true, queue: true, index: true},
+		"server.drainDeadLetter": {record: true, queue: true, index: true},
 		// The erase of an expired job, or the drop of a retention row it outlived.
-		"Service.expireJob": {record: true, index: true},
+		"server.expireJob": {record: true, index: true},
 		// reconcile.go — the one section that reads without a barrier, since the
 		// pass took one for all of them. barrier_test.go measures the number.
-		"Service.mend": {queue: true, index: true, unbarriered: true,
+		"server.mend": {queue: true, index: true, unbarriered: true,
 			why: "a barrier before every row's read is one replicated entry per open job per " +
 				"pass, forever. What mend deletes is named by the events its read saw, or is " +
 				"older than the cutoff, so a read behind the queue cannot drop a row it did not " +
@@ -827,7 +827,7 @@ func TestEveryReadModifyWriteOfAJobRecordIsOneSection(t *testing.T) {
 	found := map[string]funcs{}
 	for entry := range sectionEntries {
 		for name, f := range callers(all, entry) {
-			if name == "Service.withJob" || name == "Service.withJobUnbarriered" {
+			if name == "server.withJob" || name == "server.withJobUnbarriered" {
 				continue
 			}
 			found[name] = f
@@ -875,16 +875,16 @@ func TestEveryQueueWriteIsInsideTheSectionThatDecidedIt(t *testing.T) {
 		"Ack":    {"held.ack": ""},
 		"Nack":   {},
 		"Claim": {
-			"Service.step": "the queue's own transition, taken under the queue's own group lock " +
+			"server.step": "the queue's own transition, taken under the queue's own group lock " +
 				"and decided on no job. The event it pairs with is begin's, and THAT is a " +
 				"section: a claim whose job turns out to be finished is dropped there and " +
 				"acked there.",
-			"Service.drainDeadLetter": "the same, one queue over. The dead letter's group lock is " +
+			"server.drainDeadLetter": "the same, one queue over. The dead letter's group lock is " +
 				"what makes its claim exclusive; the event it pairs with is inside the " +
 				"section below it.",
 		},
 		"Sweep": {
-			"Service.step": "moves expired claims on and hands nothing out. It reads no job " +
+			"server.step": "moves expired claims on and hands nothing out. It reads no job " +
 				"and decides nothing on one.",
 		},
 	}
@@ -1005,8 +1005,8 @@ func TestAnEventAndItsOpenRowMoveInOneEntry(t *testing.T) {
 	require.Equal(t, "entry", all["entry.event"].recv)
 
 	require.ElementsMatch(t, []string{"stated.dropOpen", "entry.dropClosedOpen", "entry.erase"}, names(callers(all, "dropRead")))
-	require.ElementsMatch(t, []string{"Service.mend"}, names(callers(all, "dropClosedOpen")))
-	require.ElementsMatch(t, []string{"Service.mend"}, names(callers(all, "dropOrphanedOpen")),
+	require.ElementsMatch(t, []string{"server.mend"}, names(callers(all, "dropClosedOpen")))
+	require.ElementsMatch(t, []string{"server.mend"}, names(callers(all, "dropOrphanedOpen")),
 		"the orphan delete is reconcile's alone: a second caller is a transition dropping the "+
 			"open row of a job whose events it has not shown to be absent")
 }
@@ -1181,8 +1181,8 @@ func TestEveryEventIsWrittenInsideASection(t *testing.T) {
 			require.True(t, held, "%s writes an event outside its section — %s", name, chain)
 		}
 	}
-	require.ElementsMatch(t, []string{"Service.create", "Service.createEnvironment"}, names(callers(all, "created")))
-	require.ElementsMatch(t, []string{"Service.begin", "entry.settled"}, names(callers(all, "claimed")),
+	require.ElementsMatch(t, []string{"server.create", "server.createEnvironment"}, names(callers(all, "created")))
+	require.ElementsMatch(t, []string{"server.begin", "entry.settled"}, names(callers(all, "claimed")),
 		"a claim is begin's, and the claim a settle of an unclaimed job opens")
 	for name := range callers(all, "ends") {
 		held, chain := inBody(all, name, "ends")
@@ -1333,7 +1333,7 @@ func TestTheClaimAndTheRegistrationAreOneSection(t *testing.T) {
 	all := pkgFuncs(t)
 
 	require.ElementsMatch(t,
-		[]string{"held.register", "held.stopRun", "Service.forget"},
+		[]string{"held.register", "held.stopRun", "server.forget"},
 		names(callers(all, "running")),
 		"register records the run, stop ends it, forget drops it when it is over — a fourth "+
 			"toucher of this map is a fourth opinion about what this node is running, and one "+
@@ -1345,7 +1345,7 @@ func TestTheClaimAndTheRegistrationAreOneSection(t *testing.T) {
 			writers[n] = at
 		}
 	}
-	require.ElementsMatch(t, []string{"held.register", "Service.forget"}, names(writers))
+	require.ElementsMatch(t, []string{"held.register", "server.forget"}, names(writers))
 
 	// register and stop are the checked paths, so what they do to the map must
 	// be inside the gate. A map write that reached the store would be caught by
@@ -1363,10 +1363,10 @@ func TestTheClaimAndTheRegistrationAreOneSection(t *testing.T) {
 	// And begin is register's one caller, inside the section that claimed the
 	// job and after the entry that wrote the record Claimed, so the two are one
 	// decision.
-	require.ElementsMatch(t, []string{"Service.begin"}, names(callers(all, "register")),
+	require.ElementsMatch(t, []string{"server.begin"}, names(callers(all, "register")),
 		"the registration belongs to the claim that decided it")
 
-	begin := all["Service.begin"]
+	begin := all["server.begin"]
 	claim, wrote := begin.at["commit"]
 	require.True(t, wrote, "begin must write the claim itself, or there is no section to be inside of")
 	for _, at := range begin.posns["register"] {
@@ -1379,9 +1379,9 @@ func TestTheClaimAndTheRegistrationAreOneSection(t *testing.T) {
 
 	// And the stop's caller is cancel, inside its own section: the record write
 	// and the stop are one decision the same way.
-	require.ElementsMatch(t, []string{"Service.cancel"}, names(callers(all, "stopRun")),
+	require.ElementsMatch(t, []string{"server.cancel"}, names(callers(all, "stopRun")),
 		"a second caller of the stop is a second opinion about which read decided to end a build")
-	held, chain := inBody(all, "Service.cancel", "stopRun")
+	held, chain := inBody(all, "server.cancel", "stopRun")
 	require.True(t, held, "cancel stops a run outside the section that decided it — %s", chain)
 }
 
@@ -1477,8 +1477,8 @@ func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 func TestEveryWriteToTheAssetStoreIsNamedAndPlaced(t *testing.T) {
 	all := pkgFuncs(t)
 
-	// Who may name the asset store field at all; New assembles it from the options.
-	require.ElementsMatch(t, []string{"New", "WithAssets", "runOutput.Asset", "runOutput.publish"},
+	// Who may name the asset store field at all; newServer assembles it from the options.
+	require.ElementsMatch(t, []string{"newServer", "withAssets", "runOutput.Asset", "runOutput.publish"},
 		names(callers(all, "assetStore")),
 		"a fifth function names the asset store: the constructor that assembles it, the option "+
 			"that carries it, the run's own content door and the publish inside settle's section "+
@@ -1493,11 +1493,11 @@ func TestEveryWriteToTheAssetStoreIsNamedAndPlaced(t *testing.T) {
 
 	// The log ships only from settle, between its two sections: before the ack it
 	// orphans the log on a lost claim, inside a section it stalls the node.
-	require.ElementsMatch(t, []string{"Service.settle"}, names(callers(all, "publish")),
+	require.ElementsMatch(t, []string{"server.settle"}, names(callers(all, "publish")),
 		"a publish outside settle is a log shipped on a delivery nothing has acked, which is the "+
 			"orphan the shutdown path already declines to make")
 
-	settle := all["Service.settle"]
+	settle := all["server.settle"]
 	require.Len(t, settle.bodies, 3,
 		"settle is the ack's section, the record's section, the publish, and the section that "+
 			"files the log — fewer sections means one of them is in the wrong place")
@@ -1515,9 +1515,9 @@ func TestEveryWriteToTheAssetStoreIsNamedAndPlaced(t *testing.T) {
 		"the ack is not in the first of settle's sections, so it is not what the publish is past")
 
 	// And settle's caller holds no section, or every position above is moot.
-	require.ElementsMatch(t, []string{"Service.run"}, names(callers(all, "settle")),
+	require.ElementsMatch(t, []string{"server.run"}, names(callers(all, "settle")),
 		"a second caller of settle is a second place the publish's position is decided")
-	require.Empty(t, all["Service.run"].bodies,
+	require.Empty(t, all["server.run"].bodies,
 		"run opens a section of its own, so everything settle does inside it — the publish "+
 			"included — is under jobLock however settle is spelled")
 
@@ -1609,11 +1609,11 @@ func onTheHolding(t *testing.T, verb string) []string {
 func TestAHandleIsOnlyMadeByTheOneThatTookTheLock(t *testing.T) {
 	all := pkgFuncs(t)
 
-	require.ElementsMatch(t, []string{"Service.enter"}, assembles(all, "held"),
+	require.ElementsMatch(t, []string{"server.enter"}, assembles(all, "held"),
 		"a handle assembled anywhere but the one place that took the lock is a section nobody entered")
 
 	// The subject is named once, where the lock is taken.
-	require.ElementsMatch(t, []string{"Service.enter"}, assembles(all, "jobReader"),
+	require.ElementsMatch(t, []string{"server.enter"}, assembles(all, "jobReader"),
 		"a source assembled anywhere else is a section about a job the door did not name")
 
 	touches := map[string]bool{}
@@ -1622,14 +1622,14 @@ func TestAHandleIsOnlyMadeByTheOneThatTookTheLock(t *testing.T) {
 			touches[name] = true
 		}
 	}
-	require.ElementsMatch(t, []string{"Service.enter"}, names(touches),
+	require.ElementsMatch(t, []string{"server.enter"}, names(touches),
 		"the lock is named in one place and that place is the one that hands out a handle — a "+
 			"second mention of it is a second door onto a live holding, including one declared "+
 			"at the package level, where a scan over function bodies would not have seen it. "+
 			"IT IS THE LOCK THAT IS COUNTED AND NOT THE VERB: sync.Once has a Do as well, and "+
 			"matching the method name put Close on this list")
 
-	require.ElementsMatch(t, []string{"Service.withJob", "Service.withJobUnbarriered"},
+	require.ElementsMatch(t, []string{"server.withJob", "server.withJobUnbarriered"},
 		names(callers(all, "enter")),
 		"the two entry points are the two barriers policies, and nothing else opens a section")
 

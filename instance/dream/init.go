@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/taubyte/tau/services/build/backend"
+
 	"github.com/taubyte/tau/pkg/containers"
 
 	auth "github.com/taubyte/tau/services/auth"
@@ -371,10 +373,10 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	nodeConfig.Auth.SignUp = auth.SignUpOpen
 	// A development cloud serves declared zones unproven, takes a developer's build,
 	// and reads the repositories it was handed folders for.
-	nodeConfig.CM.Domains.Trusted = true
 	nodeConfig.BuildFrontend.Uploads = uploads
-	nodeConfig.BuildBackend.Uploads = uploads
-	nodeConfig.BuildBackend.Local = cfg.Local
+	nodeConfig.Sections[instance.BuildBackend] = backend.Config{
+		Uploads: uploads, Local: cfg.Local, Domains: backend.Domains{Trusted: true},
+	}
 	if cfg.Configure != nil {
 		cfg.Configure(index, &nodeConfig)
 	}

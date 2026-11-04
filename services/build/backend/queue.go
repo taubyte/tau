@@ -4,17 +4,16 @@ import (
 	"context"
 	"errors"
 
-	"github.com/taubyte/tau/services/build/run"
-
 	"connectrpc.com/connect"
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 // queueHandler is the connect adapter for QueueService: authorize, lead,
 // delegate. The split matters because no test outside p2p/rpc can fabricate a
 // caller identity, so the logic lives in plain methods.
-type queueHandler struct{ s *Service }
+type queueHandler struct{ s *server }
 
 func (h *queueHandler) Enqueue(ctx context.Context, req *connect.Request[buildv2.PushEvent]) (*connect.Response[buildv2.JobRef], error) {
 	if err := h.s.allow(ctx, ActEnqueue, req.Msg.GetRepositoryKey()); err != nil {
@@ -32,7 +31,7 @@ func (h *queueHandler) Enqueue(ctx context.Context, req *connect.Request[buildv2
 // mechanism. A redelivered webhook can arrive while the first is in flight, so the
 // decision and its write are one section (create). Every argument is
 // stranger-authored.
-func (s *Service) enqueue(ctx context.Context, p *buildv2.PushEvent) (string, error) {
+func (s *server) enqueue(ctx context.Context, p *buildv2.PushEvent) (string, error) {
 	key, ok := parseRepositoryKey(p.GetRepositoryKey())
 	if !ok {
 		return "", errInvalidArgument("repository key %q is not canonical", p.GetRepositoryKey())
@@ -88,7 +87,7 @@ func (s *Service) enqueue(ctx context.Context, p *buildv2.PushEvent) (string, er
 
 // resume answers a push this service already has; the read and the push it decides
 // are one section, so a cancel's withdrawal cannot be undone.
-func (s *Service) resume(id string) (bool, error) {
+func (s *server) resume(id string) (bool, error) {
 	var found bool
 	err := s.withJob(id, func(j *held) error {
 		if !j.found() {
@@ -103,7 +102,7 @@ func (s *Service) resume(id string) (bool, error) {
 // create writes a new job's created event, project row and open row in one delta,
 // then its item. The read is taken here behind the queue's barrier, after the auth
 // round trip, so a delivery finding the job already there requeues it.
-func (s *Service) create(id, repositoryKey, ref, commitSHA, projectID string) error {
+func (s *server) create(id, repositoryKey, ref, commitSHA, projectID string) error {
 	return s.withJob(id, func(j *held) error {
 		if j.found() {
 			return j.requeue()
@@ -137,7 +136,7 @@ func (s *Service) create(id, repositoryKey, ref, commitSHA, projectID string) er
 
 // createEnvironment enqueues the build of one environment of plan's push, or finds
 // the one already there. It is a push of its own, admitted by the plan's.
-func (s *Service) createEnvironment(plan jobRecord, environment, prelude string) (string, error) {
+func (s *server) createEnvironment(plan jobRecord, environment, prelude string) (string, error) {
 	key, ok := parseRepositoryKey(plan.RepositoryKey)
 	if !ok {
 		return "", errInternal("plan %s: repository key %q is not canonical", plan.ID, plan.RepositoryKey)
@@ -177,7 +176,7 @@ func (s *Service) createEnvironment(plan jobRecord, environment, prelude string)
 // consistency domain, both are cheap listings of keys this service already
 // keeps, and both answer CodeResourceExhausted — which a frontend can turn
 // into a 503 and a retry rather than into a failed build.
-func (s *Service) admit(repositoryKey string) error {
+func (s *server) admit(repositoryKey string) error {
 	ready, claimed := s.work.Depth()
 	if ready+claimed >= s.cfg.MaxQueueDepth {
 		return errResourceExhausted("build queue is full (%d)", s.cfg.MaxQueueDepth)
@@ -194,7 +193,7 @@ func (s *Service) admit(repositoryKey string) error {
 
 // outstanding is how many of a repository's jobs have an open row: each job once,
 // however many reopenings it has had.
-func (s *Service) outstanding(repositoryKey string) (int, error) {
+func (s *server) outstanding(repositoryKey string) (int, error) {
 	ctx, stop := context.WithTimeout(context.Background(), s.cfg.Queue.ApplyTimeout)
 	defer stop()
 	keys, err := s.records.List(ctx, openRows(repositoryKey))
@@ -212,7 +211,7 @@ func (s *Service) outstanding(repositoryKey string) (int, error) {
 
 // projectError keeps auth's code for an unknown repository and maps anything else
 // to Unavailable.
-func (s *Service) projectError(repositoryKey string, err error) error {
+func (s *server) projectError(repositoryKey string, err error) error {
 	switch connect.CodeOf(err) {
 	case connect.CodeNotFound:
 		return errFailedPrecondition("repository %q is not registered with this cloud", repositoryKey)
@@ -226,7 +225,7 @@ func (s *Service) projectError(repositoryKey string, err error) error {
 // readRecord is one job, as the fold of its events on this node's replica. Its
 // callers: enter() (before handing a body its handle) and job() (decides no
 // write).
-func (s *Service) readRecord(id string) (jobRecord, bool, error) {
+func (s *server) readRecord(id string) (jobRecord, bool, error) {
 	ctx, stop := context.WithTimeout(context.Background(), s.cfg.Queue.ApplyTimeout)
 	defer stop()
 	return s.journal.read(ctx, id)

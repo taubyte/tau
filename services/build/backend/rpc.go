@@ -11,7 +11,7 @@ import (
 
 // mount puts build.proto's two connect handlers behind one mux for rpc.Listen.
 // WithReadMaxBytes is required: p2p/rpc leaves the message bound to each service.
-func (s *Service) mount() http.Handler {
+func (s *server) mount() http.Handler {
 	mux := http.NewServeMux()
 	max := connect.WithReadMaxBytes(s.cfg.MaxMessageBytes)
 	mux.Handle(buildv2connect.NewQueueServiceHandler(&queueHandler{s}, max, codec.Option()))

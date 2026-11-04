@@ -23,7 +23,7 @@ func caller(ctx context.Context) (peer.ID, error) {
 
 // allow resolves the caller and asks the injected Authorizer. Every one of the
 // five RPCs calls it, first, before anything else reads the request.
-func (s *Service) allow(ctx context.Context, act Action, subject string) error {
+func (s *server) allow(ctx context.Context, act Action, subject string) error {
 	id, err := caller(ctx)
 	if err != nil {
 		return err

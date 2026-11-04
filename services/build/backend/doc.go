@@ -36,7 +36,7 @@
 //
 // A log is a file, and only its cid is replicated: while the build runs it is an
 // append-only file this node owns (services/build/livelog); followers read it at
-// an offset (Service.Follow); when the build ends it is LZW-compressed into the
+// an offset (server.Follow); when the build ends it is LZW-compressed into the
 // logs instance of its environment's assets bucket between settle's two sections,
 // and its cid lands on the record, only if the whole log was stored. An artifact
 // is a version of its package's instance in the same bucket.

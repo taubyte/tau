@@ -5,11 +5,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/taubyte/tau/services/build/run"
-
 	"github.com/stretchr/testify/require"
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 // queueKeyRoot is the prefix every key pkg/queue writes lives under

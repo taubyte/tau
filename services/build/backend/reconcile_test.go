@@ -7,12 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/taubyte/tau/services/build/run"
-
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 func TestReconcileReQueuesARecordWhosePushWasLost(t *testing.T) {
@@ -132,7 +131,7 @@ func TestTheStartedLoopReconciles(t *testing.T) {
 	require.NoError(t, h.work.Ack(d))
 	h.clock.advance(h.cfg.Queue.VisibilityTimeout + h.cfg.BuildTimeout + time.Second)
 
-	require.NoError(t, h.Start(t.Context()))
+	require.NoError(t, h.serve(t.Context()))
 	require.Eventually(t, func() bool {
 		ready, _ := h.work.Depth()
 		return ready == 1

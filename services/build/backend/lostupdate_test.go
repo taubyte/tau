@@ -8,12 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/taubyte/tau/services/build/run"
-
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 // One test per pair of transitions that can be in flight at once: each reads the
@@ -64,7 +63,7 @@ func gated(t *testing.T, h *harness, key string) *readGate {
 
 // gatedHarness puts the gate under the queue too, since New opens the queue over
 // the store it was given.
-func gatedHarness(t *testing.T, opts ...Option) (*harness, *readGate) {
+func gatedHarness(t *testing.T, opts ...option) (*harness, *readGate) {
 	t.Helper()
 	store := newStore()
 	g := &readGate{}

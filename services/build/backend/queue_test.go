@@ -9,12 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/taubyte/tau/services/build/run"
-
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 func enqueue(t *testing.T, h *harness, key, ref, commit string) (string, error) {
@@ -337,7 +336,7 @@ func (g *gatedRepositories) Project(ctx context.Context, key string) (string, er
 
 func TestARedeliveryThatOverlapsTheFirstDeliveryDoesNotBuildTwice(t *testing.T) {
 	gate := newGatedRepositories(testRepo)
-	h := newHarness(t, WithRepositories(gate))
+	h := newHarness(t, withRepositories(gate))
 
 	type answer struct {
 		id  string
@@ -382,7 +381,7 @@ func TestARedeliveryThatOverlapsTheFirstDeliveryDoesNotBuildTwice(t *testing.T) 
 // what it decides on.
 func TestACreateDecidesOnWhatLandedWhileItWasAway(t *testing.T) {
 	gate := newGatedRepositories(testRepo)
-	h := newHarness(t, WithRepositories(gate))
+	h := newHarness(t, withRepositories(gate))
 
 	key, ok := parseRepositoryKey(testRepo)
 	require.True(t, ok)
@@ -487,7 +486,7 @@ func TestWhatADeliveryFindsWhenItComesBackFromAuth(t *testing.T) {
 	// rather than a store error.
 	t.Run("leadership is gone", func(t *testing.T) {
 		gate := newGatedRepositories(testRepo)
-		h := newHarness(t, WithRepositories(gate))
+		h := newHarness(t, withRepositories(gate))
 
 		done := make(chan error, 1)
 		go func() {
@@ -510,7 +509,7 @@ func TestWhatADeliveryFindsWhenItComesBackFromAuth(t *testing.T) {
 	// whatever the first one was.
 	t.Run("the job is there and will not decode", func(t *testing.T) {
 		gate := newGatedRepositories(testRepo)
-		h := newHarness(t, WithRepositories(gate))
+		h := newHarness(t, withRepositories(gate))
 
 		key, ok := parseRepositoryKey(testRepo)
 		require.True(t, ok)
@@ -555,7 +554,7 @@ func TestEnqueueConfirmsThePushAtTheRepository(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := &confirmer{err: tc.err}
-			h := newHarness(t, WithConfirmer(c))
+			h := newHarness(t, withConfirmer(c))
 			_, err := enqueue(t, h, testRepo, testRef, testCommit)
 			require.Equal(t, tc.code, connect.CodeOf(err))
 			require.Equal(t, 1, c.asked)
@@ -564,11 +563,11 @@ func TestEnqueueConfirmsThePushAtTheRepository(t *testing.T) {
 	}
 
 	c := &confirmer{}
-	h := newHarness(t, WithConfirmer(c))
+	h := newHarness(t, withConfirmer(c))
 	id := h.push(t, testRef, testCommit)
 	require.Equal(t, id, h.push(t, testRef, testCommit))
 	require.Equal(t, 1, c.asked, "a push already queued is not asked about again")
 
-	_, err := New(Config{}, WithConfirmer(nil))
+	_, err := newServer(Config{}, withConfirmer(nil))
 	require.Error(t, err)
 }

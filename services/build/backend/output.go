@@ -9,11 +9,10 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/taubyte/tau/services/build/run"
-
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/services/build/joblog"
 	"github.com/taubyte/tau/services/build/livelog"
+	"github.com/taubyte/tau/services/build/run"
 	"github.com/taubyte/tau/services/storage"
 )
 
@@ -59,7 +58,7 @@ const logEncoding = livelog.Encoding
 // runOutput is one run's Output: its log file and the assets it hands over. It
 // reaches no replicated store, only the asset store.
 type runOutput struct {
-	s           *Service
+	s           *server
 	job         string
 	project     string
 	environment string
@@ -89,7 +88,7 @@ type runOutput struct {
 // retry gets its own. The name is computable by anyone who knows the repository,
 // which is why livelog.OwnDir and Create refuse a directory or file someone else
 // planted.
-func (s *Service) output(w run.Work) (*runOutput, error) {
+func (s *server) output(w run.Work) (*runOutput, error) {
 	if err := livelog.OwnDir(s.cfg.LogDir); err != nil {
 		return nil, errUnavailable("build: log directory %s: %v", s.cfg.LogDir, err)
 	}
@@ -325,7 +324,7 @@ func (o *runOutput) publish(ctx context.Context) (string, error) {
 	}
 	defer whole.Close()
 
-	// `stop`, not `cancel`: the censuses read call-site names, and Service.cancel
+	// `stop`, not `cancel`: the censuses read call-site names, and server.cancel
 	// opens a section.
 	ctx, stop := context.WithTimeout(context.WithoutCancel(ctx), o.s.cfg.PublishTimeout)
 	defer stop()
@@ -443,7 +442,7 @@ func (o *runOutput) end() {
 // (write access to the job's repository), and routing to the node running the
 // build belongs to the backend topology change. A job running elsewhere is
 // NotFound here.
-func (s *Service) Follow(jobID string, attempt uint32, from int64) (io.ReadCloser, error) {
+func (s *server) Follow(jobID string, attempt uint32, from int64) (io.ReadCloser, error) {
 	_, r, err := s.fork(jobID, attempt, from)
 	if err != nil {
 		return nil, err
@@ -453,7 +452,7 @@ func (s *Service) Follow(jobID string, attempt uint32, from int64) (io.ReadClose
 
 // Snapshot is Follow up to where the log is now, then EOF. The end is read after
 // the fork, so it is never short of the checked offset.
-func (s *Service) Snapshot(jobID string, attempt uint32, from int64) (io.ReadCloser, error) {
+func (s *server) Snapshot(jobID string, attempt uint32, from int64) (io.ReadCloser, error) {
 	kept, r, err := s.fork(jobID, attempt, from)
 	if err != nil {
 		return nil, err
@@ -475,7 +474,7 @@ type runLog struct {
 
 // fork is this node's log for that run of jobID and a reader at from; another
 // run's log is never substituted, since an offset belongs to one run.
-func (s *Service) fork(jobID string, attempt uint32, from int64) (runLog, *livelog.Reader, error) {
+func (s *server) fork(jobID string, attempt uint32, from int64) (runLog, *livelog.Reader, error) {
 	if err := requireJobID(jobID); err != nil {
 		return runLog{}, nil, err
 	}

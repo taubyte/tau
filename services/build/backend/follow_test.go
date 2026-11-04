@@ -11,8 +11,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/taubyte/tau/services/build/run"
-
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -20,6 +18,7 @@ import (
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/services/build/joblog"
 	"github.com/taubyte/tau/services/build/livelog"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 // collector is a ServerStream's Send, which is all the handler uses. Each event it
@@ -150,7 +149,7 @@ func (r *testRun) close() {
 }
 
 // running puts a log on this service under jobID, as that attempt's run would.
-func running(t *testing.T, s *Service, jobID string, attempt uint32) *testRun {
+func running(t *testing.T, s *server, jobID string, attempt uint32) *testRun {
 	t.Helper()
 
 	log, err := livelog.Create(t.TempDir() + "/log")
@@ -172,7 +171,7 @@ func running(t *testing.T, s *Service, jobID string, attempt uint32) *testRun {
 func TestFollowStreamsARunningBuild(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
-	run := running(t, h.Service, id, 1)
+	run := running(t, h.server, id, 1)
 	run.status(buildv2.JobStatus_JobStatusClaimed)
 	run.say("cloning")
 
@@ -202,7 +201,7 @@ func TestFollowStreamsARunningBuild(t *testing.T) {
 func TestFollowResumesAtAnOffset(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
-	run := running(t, h.Service, id, 1)
+	run := running(t, h.server, id, 1)
 	run.say("first")
 	run.say("second")
 	run.close()
@@ -235,7 +234,7 @@ func TestFollowOnANodeThatIsNotTheWriter(t *testing.T) {
 
 	// An offset past the end of a log that IS here is the caller's arithmetic,
 	// not a routing problem.
-	running(t, h.Service, id, 1)
+	running(t, h.server, id, 1)
 	err = h.follow(t.Context(), &buildv2.FollowRequest{JobId: id, Attempt: 1, Offset: 4096}, (&collector{}).send)
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 }
@@ -243,7 +242,7 @@ func TestFollowOnANodeThatIsNotTheWriter(t *testing.T) {
 func TestFollowEndsWhenTheViewerGoesAway(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
-	run := running(t, h.Service, id, 1)
+	run := running(t, h.server, id, 1)
 	run.say("started")
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -262,7 +261,7 @@ func TestFollowEndsWhenTheViewerGoesAway(t *testing.T) {
 func TestFollowStopsWhenItCannotSend(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
-	running(t, h.Service, id, 1).say("output")
+	running(t, h.server, id, 1).say("output")
 
 	broken := &collector{fail: errors.New("client went away")}
 	require.ErrorContains(t, h.follow(t.Context(), &buildv2.FollowRequest{JobId: id, Attempt: 1}, broken.send), "client went away")
@@ -271,7 +270,7 @@ func TestFollowStopsWhenItCannotSend(t *testing.T) {
 func TestAFollowOfALogCutMidRecordIsUnavailable(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
-	run := running(t, h.Service, id, 1)
+	run := running(t, h.server, id, 1)
 	var raw bytes.Buffer
 	require.NoError(t, joblog.Write(&raw, &buildv2.Job_Event{Kind: &buildv2.Job_Event_Message{Message: "a line"}}))
 	_, err := run.log.Write(raw.Bytes()[:raw.Len()-2])
@@ -458,7 +457,7 @@ func TestALogNoNodeIsWritingIsElsewhereOrEnded(t *testing.T) {
 func TestAnEndedLogIsWholeToAFollowAndASnapshot(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
-	run := running(t, h.Service, id, 1)
+	run := running(t, h.server, id, 1)
 	run.say("cloning")
 	run.say("compiling")
 	run.close()
@@ -483,7 +482,7 @@ func TestASnapshotIsRefusedWhereAFollowIs(t *testing.T) {
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(snap("", 0)))
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(snap(id, -1)))
 
-	running(t, h.Service, id, 1)
+	running(t, h.server, id, 1)
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(snap(id, 4096)))
 }
 

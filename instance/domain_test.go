@@ -40,22 +40,7 @@ type noTXT struct{}
 
 func (noTXT) LookupTXT(context.Context, string) ([]string, error) { return nil, errors.New("none") }
 
-func TestADevelopmentCloudTrustsItsZones(t *testing.T) {
-	n := &Instance{Node: mockPeer(t)}
-	n.cfg.CM.Domains.Trusted = true
-	p, err := n.domainProver()
-	require.NoError(t, err)
-	require.NoError(t, p.Prove(t.Context(), "anything", "example.com"))
-
-	// UNTRUSTED, A ZONE IS PROVEN through the cm service, built once.
-	n.cfg.CM.Domains.Trusted = false
-	p, err = n.domainProver()
-	require.NoError(t, err)
-	again, err := n.domainProver()
-	require.NoError(t, err)
-	require.Same(t, p, again)
-	t.Cleanup(func() { n.Close() })
-
+func TestAResolverIsTheOperatorsChoice(t *testing.T) {
 	require.Error(t, WithResolver(nil)(&options{}))
 	var o options
 	require.NoError(t, WithResolver(noTXT{})(&o))

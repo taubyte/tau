@@ -1,4 +1,4 @@
-package instance
+package linked
 
 import (
 	"context"
@@ -7,14 +7,12 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/linkcreds"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/build/frontend"
-	secretsService "github.com/taubyte/tau/services/secrets"
+	"github.com/taubyte/tau/services/register"
+	"github.com/taubyte/tau/services/secrets"
 )
 
 // secretsMap is a vault: (project, environment, name) to value.
@@ -23,7 +21,7 @@ type secretsMap map[[3]string]string
 func (m secretsMap) Secret(_ context.Context, project, environment, name string) (string, error) {
 	v, ok := m[[3]string{project, environment, name}]
 	if !ok {
-		return "", secretsService.ErrNotSet
+		return "", secrets.ErrNotSet
 	}
 	return v, nil
 }
@@ -40,11 +38,16 @@ const (
 	linkedCode = "github.com/acme/code"
 )
 
-func linkedNode(t *testing.T) projectTable {
+func table(t *testing.T) (Projects, *pkgregister.Register) {
 	t.Helper()
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Discovery}})
-	require.NoError(t, n.Start(t.Context()))
-	p := projectTable{n}
+	r, err := pkgregister.New(pkgregister.WithStore(pkgregister.NewMemStore()))
+	require.NoError(t, err)
+	return Projects{Table: func(context.Context) (register.Table, error) { return r, nil }}, r
+}
+
+func linkedTable(t *testing.T) Projects {
+	t.Helper()
+	p, _ := table(t)
 	_, err := p.LinkProject(t.Context(), pkgregister.Link{
 		Project: linkedID, Config: linkedCfg, Code: []string{linkedCode}, Claimant: "github.com/1",
 	})
@@ -53,7 +56,7 @@ func linkedNode(t *testing.T) projectTable {
 }
 
 func TestTheProjectTableAnswersBothBuildRoles(t *testing.T) {
-	p := linkedNode(t)
+	p := linkedTable(t)
 	ctx := t.Context()
 
 	id, err := p.Project(ctx, linkedCode)
@@ -88,10 +91,8 @@ func TestTheProjectTableAnswersBothBuildRoles(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, mine, 1)
 
-	_, err = p.LinkProject(ctx, pkgregister.Link{Project: "QmConfigOnly", Config: "github.com/acme/other", Claimant: "github.com/1"})
-	require.NoError(t, err)
-	// SEVERAL CODE REPOSITORIES, in an order that is not sorted: the bare
-	// path is still the configuration repository, never the first of them.
+	// SEVERAL CODE REPOSITORIES, in an order that is not sorted: the bare path is
+	// still the configuration repository, never the first of them.
 	_, err = p.LinkProject(ctx, pkgregister.Link{Project: "QmManyCode", Config: "github.com/acme/many-config",
 		Code: []string{"github.com/acme/zeta", "github.com/acme/alpha", "github.com/acme/mid"}, Claimant: "github.com/1"})
 	require.NoError(t, err)
@@ -103,7 +104,7 @@ func TestTheProjectTableAnswersBothBuildRoles(t *testing.T) {
 }
 
 func TestTheProjectTableHoldsRoles(t *testing.T) {
-	p := linkedNode(t)
+	p := linkedTable(t)
 	ctx := t.Context()
 
 	role, err := p.Role(ctx, linkedID, "github.com/1")
@@ -128,100 +129,64 @@ func TestTheProjectTableHoldsRoles(t *testing.T) {
 	require.Equal(t, pkgregister.RoleNone, role)
 }
 
-func TestWithNoRegisterAnywhereTheTableSaysSo(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Discovery}})
-	require.NoError(t, n.Start(t.Context()))
-	p := projectTable{n}
+func TestWithNoRegisterTheTableSaysSo(t *testing.T) {
+	gone := errors.New("no register is reachable")
+	p := Projects{Table: func(context.Context) (register.Table, error) { return nil, gone }}
 	ctx := t.Context()
 
 	_, err := p.Project(ctx, linkedCode)
-	require.ErrorIs(t, err, ErrNoRegister)
+	require.ErrorIs(t, err, gone)
 	_, err = p.Configures(ctx, linkedID, linkedCfg)
-	require.ErrorIs(t, err, ErrNoRegister)
+	require.ErrorIs(t, err, gone)
 	_, err = p.Repositories(ctx, linkedID)
-	require.ErrorIs(t, err, ErrNoRegister)
+	require.ErrorIs(t, err, gone)
 	_, err = p.LinkProject(ctx, pkgregister.Link{Project: linkedID, Config: linkedCfg, Claimant: "x"})
-	require.ErrorIs(t, err, ErrNoRegister)
+	require.ErrorIs(t, err, gone)
 	_, err = p.ProjectsOf(ctx, "x")
-	require.ErrorIs(t, err, ErrNoRegister)
+	require.ErrorIs(t, err, gone)
 	_, err = p.LinkedRepositories(ctx)
-	require.ErrorIs(t, err, ErrNoRegister)
+	require.ErrorIs(t, err, gone)
 	_, err = p.Role(ctx, linkedID, "x")
-	require.ErrorIs(t, err, ErrNoRegister)
+	require.ErrorIs(t, err, gone)
 	_, err = p.GrantRole(ctx, linkedID, "x", pkgregister.RoleViewer, "y")
-	require.ErrorIs(t, err, ErrNoRegister)
-	require.ErrorIs(t, p.Revoke(ctx, linkedID, "id", "y"), ErrNoRegister)
+	require.ErrorIs(t, err, gone)
+	require.ErrorIs(t, p.Revoke(ctx, linkedID, "id", "y"), gone)
 	_, err = p.Grants(ctx, linkedID)
-	require.ErrorIs(t, err, ErrNoRegister)
+	require.ErrorIs(t, err, gone)
 
-	l := linkSecrets{projects: p, vault: secretsMap{}}
-	_, err = l.DeployKey(ctx, linkedCode)
-	require.ErrorIs(t, err, ErrNoRegister)
-	_, err = l.Hook(ctx, linkedID)
-	require.ErrorIs(t, err, ErrNoRegister)
-}
-
-func TestAHookIsTheLinkAndItsSecret(t *testing.T) {
-	p := linkedNode(t)
-	ctx := t.Context()
-
-	vault := secretsMap{}
-	l := linkSecrets{projects: p, vault: vault}
-
-	_, err := l.Hook(ctx, linkedID)
-	require.ErrorIs(t, err, frontend.ErrNoHook, "linked with no secret set is not a hook")
-	_, err = l.Hook(ctx, "QmNobody")
-	require.ErrorIs(t, err, frontend.ErrNoHook)
-
-	// EACH REPOSITORY HAS ITS OWN SECRET, and one with none is left out.
-	vault[[3]string{linkedID, linkcreds.Environment, linkcreds.HookSecret(linkedCode)}] = "code-secret"
-	hook, err := l.Hook(ctx, linkedID)
-	require.NoError(t, err)
-	require.Equal(t, frontend.Hook{Project: linkedID, Repositories: []frontend.HookRepository{{Key: linkedCode, Secret: []byte("code-secret")}}}, hook)
-
-	vault[[3]string{linkedID, linkcreds.Environment, linkcreds.HookSecret(linkedCfg)}] = "cfg-secret"
-	hook, err = l.Hook(ctx, linkedID)
-	require.NoError(t, err)
-	require.Equal(t, frontend.Hook{Project: linkedID, Repositories: []frontend.HookRepository{
-		{Key: linkedCfg, Secret: []byte("cfg-secret")}, {Key: linkedCode, Secret: []byte("code-secret")},
-	}}, hook)
-
-	_, err = linkSecrets{projects: p, vault: brokenVault{}}.Hook(ctx, linkedID)
-	require.Error(t, err)
-	require.NotErrorIs(t, err, frontend.ErrNoHook, "an unreachable vault is not an answer")
-
-	_, err = linkSecrets{projects: p}.Hook(ctx, linkedID)
-	require.ErrorIs(t, err, secretsService.ErrNoSecrets)
+	_, err = Credentials{Projects: p, Vault: secretsMap{}}.DeployKey(ctx, linkedCode)
+	require.ErrorIs(t, err, gone)
 }
 
 func TestADeployKeyIsReadFromTheVaultByRepository(t *testing.T) {
-	p := linkedNode(t)
+	p := linkedTable(t)
 	ctx := t.Context()
 
 	vault := secretsMap{}
-	l := linkSecrets{projects: p, vault: vault}
+	c := Credentials{Projects: p, Vault: vault}
 
-	key, err := l.DeployKey(ctx, linkedCode)
+	key, err := c.DeployKey(ctx, linkedCode)
 	require.NoError(t, err)
 	require.Empty(t, key, "none set clones with none — a public repository")
 
-	key, err = l.DeployKey(ctx, "github.com/nobody/here")
+	key, err = c.DeployKey(ctx, "github.com/nobody/here")
 	require.NoError(t, err)
 	require.Empty(t, key)
 
 	vault[[3]string{linkedID, linkcreds.Environment, linkcreds.DeployKey(linkedCode)}] = "-----BEGIN OPENSSH PRIVATE KEY-----"
-	key, err = l.DeployKey(ctx, "github.com/ACME/code")
+	key, err = c.DeployKey(ctx, "github.com/ACME/code")
 	require.NoError(t, err)
 	require.Equal(t, "-----BEGIN OPENSSH PRIVATE KEY-----", key)
 
-	_, err = linkSecrets{projects: p, vault: brokenVault{}}.DeployKey(ctx, linkedCode)
+	_, err = Credentials{Projects: p, Vault: brokenVault{}}.DeployKey(ctx, linkedCode)
 	require.Error(t, err)
+
+	_, _, err = Credentials{Projects: p}.Value(ctx, linkedID, "anything")
+	require.ErrorIs(t, err, secrets.ErrNoSecrets, "no vault is not an unset secret")
 }
 
 func TestLinkedRepositoriesIsEveryRepositoryOfEveryProject(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Discovery}})
-	require.NoError(t, n.Start(t.Context()))
-	p := projectTable{n}
+	p, r := table(t)
 	ctx := t.Context()
 
 	repos, err := p.LinkedRepositories(ctx)
@@ -237,18 +202,10 @@ func TestLinkedRepositoriesIsEveryRepositoryOfEveryProject(t *testing.T) {
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{linkedCfg, linkedCode, "github.com/acme/other"}, repos)
 
-	cancelled, cancel := context.WithCancel(ctx)
-	cancel()
-	_, err = p.LinkedRepositories(cancelled)
-	require.ErrorIs(t, err, context.Canceled, "a listing that cannot finish is not an empty one")
-
-	// A table the register cannot scan is an error, not an empty listing a
-	// resync would read as "nothing to compare".
+	// A table the register cannot scan is an error, not an empty listing a resync
+	// would read as "nothing to compare".
 	broken := errors.New("store unreachable")
-	local := n.register.Local()
-	n.registers = rpc.Reach(n.Host(), Register, func() (libp2ppeer.ID, error) { return "", ErrNoRegister },
-		func() (registerSeam, bool) { return unlisting{registerSeam: local, err: broken}, true },
-		func(libp2ppeer.ID) (registerSeam, error) { return nil, ErrNoRegister })
+	p.Table = func(context.Context) (register.Table, error) { return unlisting{Table: r, err: broken}, nil }
 	repos, err = p.LinkedRepositories(ctx)
 	require.ErrorIs(t, err, broken)
 	require.Nil(t, repos)
@@ -268,38 +225,48 @@ func (h historyVault) Previous(_ context.Context, project, environment, name str
 	}
 	v, ok := h.previous[[3]string{project, environment, name}]
 	if !ok {
-		return "", time.Time{}, secretsService.ErrNotSet
+		return "", time.Time{}, secrets.ErrNotSet
 	}
 	return v, h.replaced, nil
 }
 
-func TestAHookCarriesTheSecretItsSecretReplaced(t *testing.T) {
-	p := linkedNode(t)
+func TestACredentialCarriesWhatItReplaced(t *testing.T) {
+	p := linkedTable(t)
 	ctx := t.Context()
-	code := [3]string{linkedID, linkcreds.Environment, linkcreds.HookSecret(linkedCode)}
-	cfg := [3]string{linkedID, linkcreds.Environment, linkcreds.HookSecret(linkedCfg)}
+	name := linkcreds.HookSecret(linkedCode)
 	at := time.Unix(1700000000, 0)
 
 	vault := historyVault{
-		secretsMap: secretsMap{code: "new", cfg: "cfg-secret"},
-		previous:   map[[3]string]string{code: "old"},
+		secretsMap: secretsMap{{linkedID, linkcreds.Environment, name}: "new"},
+		previous:   map[[3]string]string{{linkedID, linkcreds.Environment, name}: "old"},
 		replaced:   at,
 	}
-	hook, err := linkSecrets{projects: p, vault: vault}.Hook(ctx, linkedID)
+	c := Credentials{Projects: p, Vault: vault}
+	v, found, err := c.Value(ctx, linkedID, name)
 	require.NoError(t, err)
-	require.Equal(t, []frontend.HookRepository{
-		{Key: linkedCfg, Secret: []byte("cfg-secret")},
-		{Key: linkedCode, Secret: []byte("new"), Previous: []byte("old"), Replaced: at},
-	}, hook.Repositories)
+	require.True(t, found)
+	require.Equal(t, []byte("new"), v)
+	old, when, err := c.Previous(ctx, linkedID, name)
+	require.NoError(t, err)
+	require.Equal(t, []byte("old"), old)
+	require.Equal(t, at, when)
+
+	old, _, err = c.Previous(ctx, linkedID, "unset")
+	require.NoError(t, err)
+	require.Nil(t, old, "nothing replaced is nothing")
+
+	old, _, err = Credentials{Projects: p, Vault: secretsMap{}}.Previous(ctx, linkedID, name)
+	require.NoError(t, err)
+	require.Nil(t, old, "a vault that keeps no history replaced nothing")
 
 	vault.err = errors.New("vault unreachable")
-	_, err = linkSecrets{projects: p, vault: vault}.Hook(ctx, linkedID)
+	_, _, err = Credentials{Projects: p, Vault: vault}.Previous(ctx, linkedID, name)
 	require.ErrorContains(t, err, "vault unreachable")
 }
 
 // unlisting is a register whose project table cannot be scanned.
 type unlisting struct {
-	registerSeam
+	register.Table
 	err error
 }
 

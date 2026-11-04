@@ -4,6 +4,8 @@ package services
 
 import (
 	"github.com/taubyte/tau/core/service"
+	"github.com/taubyte/tau/services/build"
+	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/consensus"
 	"github.com/taubyte/tau/services/database"
 	"github.com/taubyte/tau/services/discovery"
@@ -32,6 +34,7 @@ func catalog() []shipped {
 		{primitives.Descriptor.Name, func() service.Service { return primitives.New() }, []string{consensus.Descriptor.Name}},
 		{database.Descriptor.Name, func() service.Service { return database.New() }, []string{consensus.Descriptor.Name}},
 		{storage.Descriptor.Name, func() service.Service { return storage.New() }, nil},
+		{build.Backend.Name, func() service.Service { return backend.New() }, []string{consensus.Descriptor.Name}},
 	}
 }
 

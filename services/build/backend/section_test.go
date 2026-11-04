@@ -8,19 +8,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/taubyte/tau/services/build/run"
-
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/services/build/backend/row"
 	"github.com/taubyte/tau/services/build/backend/section"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 // The runtime half population_test.go cannot be: a handle that outlives withJob
 // (captured, deferred, sent to a goroutine), in each shape earlier guards were
-// beaten by, against the real Service, store and jobLock. Each is refused.
+// beaten by, against the real server, store and jobLock. Each is refused.
 
 // escapee is a handle that outlived its call. It is the one thing a body can do
 // that no type can stop it doing, so it is what every form below is built from.
@@ -59,7 +58,7 @@ func TestAHandleAssembledOutsideAHoldingIsDead(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
-	forged := &held{s: h.Service}
+	forged := &held{s: h.server}
 	requireRefused(t, h, id, forged.writes().commit("forging"))
 	requireRefused(t, h, id, forged.push())
 	requireRefused(t, h, id, forged.withdraw())
@@ -88,7 +87,7 @@ func TestAGoroutineThatHoldsNothingHasNothingToWriteWith(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 		// And the only handle this goroutine can put the record behind cannot be pointed
 		// at the job it read: there is no id field.
-		done <- (&held{s: h.Service}).finish(buildv2.JobStatus_JobStatusCancelled, "cancelled")
+		done <- (&held{s: h.server}).finish(buildv2.JobStatus_JobStatusCancelled, "cancelled")
 	}()
 
 	require.NoError(t, h.withJob(id, func(*held) error {

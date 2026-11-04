@@ -7,8 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/taubyte/tau/services/build/run"
-
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/rpc"
@@ -16,10 +14,11 @@ import (
 	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/build"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 func TestServiceNeedsOnlyAMocknetHostAMockClusterAndAFakeAuth(t *testing.T) {
-	s, err := New(Config{}, WithHost(newHost(t, newMocknet(t))), WithStore(raft.NewMockCluster()), WithRecords(newRecords(t)), WithRepositories(newRepositories()))
+	s, err := newServer(Config{}, withHost(newHost(t, newMocknet(t))), withStore(raft.NewMockCluster()), withRecords(newRecords(t)), withRepositories(newRepositories()))
 	require.NoError(t, err)
 	require.NoError(t, s.Close())
 }
@@ -28,45 +27,47 @@ func TestNewRefusesWhatItCannotBeBuiltFrom(t *testing.T) {
 	mn := newMocknet(t)
 	h := newHost(t, mn)
 	store := newStore()
-	records := WithRecords(newRecords(t))
+	records := withRecords(newRecords(t))
 	repos := newRepositories()
 
-	for name, tc := range map[string]func() (*Service, error){
-		"no host":     func() (*Service, error) { return New(Config{}, WithStore(store), records, WithRepositories(repos)) },
-		"a nil host":  func() (*Service, error) { return New(Config{}, WithHost(nil)) },
-		"no store":    func() (*Service, error) { return New(Config{}, WithHost(h), records, WithRepositories(repos)) },
-		"a nil store": func() (*Service, error) { return New(Config{}, WithStore(nil)) },
-		"no records": func() (*Service, error) {
-			return New(Config{}, WithHost(h), WithStore(store), WithRepositories(repos))
+	for name, tc := range map[string]func() (*server, error){
+		"no host": func() (*server, error) {
+			return newServer(Config{}, withStore(store), records, withRepositories(repos))
 		},
-		"a nil records": func() (*Service, error) { return New(Config{}, WithRecords(nil)) },
-		"no repositories": func() (*Service, error) {
-			return New(Config{}, WithHost(h), WithStore(store), records)
+		"a nil host":  func() (*server, error) { return newServer(Config{}, withHost(nil)) },
+		"no store":    func() (*server, error) { return newServer(Config{}, withHost(h), records, withRepositories(repos)) },
+		"a nil store": func() (*server, error) { return newServer(Config{}, withStore(nil)) },
+		"no records": func() (*server, error) {
+			return newServer(Config{}, withHost(h), withStore(store), withRepositories(repos))
 		},
-		"a nil repositories": func() (*Service, error) { return New(Config{}, WithRepositories(nil)) },
-		"a lease shorter than a build": func() (*Service, error) {
-			return New(Config{
+		"a nil records": func() (*server, error) { return newServer(Config{}, withRecords(nil)) },
+		"no repositories": func() (*server, error) {
+			return newServer(Config{}, withHost(h), withStore(store), records)
+		},
+		"a nil repositories": func() (*server, error) { return newServer(Config{}, withRepositories(nil)) },
+		"a lease shorter than a build": func() (*server, error) {
+			return newServer(Config{
 				BuildTimeout: time.Hour,
 				Queue:        queue.Config{VisibilityTimeout: time.Minute},
-			}, WithHost(h), WithStore(store), records, WithRepositories(repos))
+			}, withHost(h), withStore(store), records, withRepositories(repos))
 		},
-		"a negative tunable": func() (*Service, error) {
-			return New(Config{ClaimInterval: -1}, WithHost(h), WithStore(store), records, WithRepositories(repos))
+		"a negative tunable": func() (*server, error) {
+			return newServer(Config{ClaimInterval: -1}, withHost(h), withStore(store), records, withRepositories(repos))
 		},
-		"an apply timeout the queue refuses": func() (*Service, error) {
-			return New(Config{
+		"an apply timeout the queue refuses": func() (*server, error) {
+			return newServer(Config{
 				Queue: queue.Config{ApplyTimeout: raft.MaxApplyTimeout + time.Second},
-			}, WithHost(h), WithStore(store), records, WithRepositories(repos))
+			}, withHost(h), withStore(store), records, withRepositories(repos))
 		},
-		"an option that fails": func() (*Service, error) {
-			return New(Config{}, func(*options) error { return errors.New("no") })
+		"an option that fails": func() (*server, error) {
+			return newServer(Config{}, func(*options) error { return errors.New("no") })
 		},
-		"a nil runner":     func() (*Service, error) { return New(Config{}, WithRunner(nil)) },
-		"a nil authorizer": func() (*Service, error) { return New(Config{}, WithAuthorizer(nil)) },
-		"a nil asset store": func() (*Service, error) {
-			return New(Config{}, WithAssets(nil))
+		"a nil runner":     func() (*server, error) { return newServer(Config{}, withRunner(nil)) },
+		"a nil authorizer": func() (*server, error) { return newServer(Config{}, withAuthorizer(nil)) },
+		"a nil asset store": func() (*server, error) {
+			return newServer(Config{}, withAssets(nil))
 		},
-		"a nil clock": func() (*Service, error) { return New(Config{}, WithClock(nil)) },
+		"a nil clock": func() (*server, error) { return newServer(Config{}, withClock(nil)) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, err := tc()
@@ -76,9 +77,9 @@ func TestNewRefusesWhatItCannotBeBuiltFrom(t *testing.T) {
 	}
 }
 
-func TestNewBindsNothing(t *testing.T) {
+func TestNewServerBindsNothing(t *testing.T) {
 	h := newHarness(t)
-	require.Nil(t, h.server)
+	require.Nil(t, h.server.server, "no listener until it serves")
 
 	// The protocol is free until Start takes it, which is what a second
 	// listener on the same host proves.
@@ -87,26 +88,26 @@ func TestNewBindsNothing(t *testing.T) {
 	require.NoError(t, srv.Close())
 }
 
-func TestStartTwiceIsAnErrorAndSoIsStartAfterClose(t *testing.T) {
+func TestServeTwiceIsAnErrorAndSoIsServeAfterClose(t *testing.T) {
 	h := newHarness(t)
 
-	require.NoError(t, h.Start(t.Context()))
-	require.ErrorContains(t, h.Start(t.Context()), "already started")
+	require.NoError(t, h.serve(t.Context()))
+	require.ErrorContains(t, h.serve(t.Context()), "already started")
 
 	require.NoError(t, h.Close())
 	require.NoError(t, h.Close(), "Close is idempotent")
-	require.ErrorContains(t, h.Start(t.Context()), "closed")
+	require.ErrorContains(t, h.serve(t.Context()), "closed")
 }
 
 func TestASecondListenerOnTheProtocolIsRefused(t *testing.T) {
 	h := newHarness(t)
-	require.NoError(t, h.Start(t.Context()))
+	require.NoError(t, h.serve(t.Context()))
 
-	other, err := New(Config{}, WithHost(h.host), WithStore(newStore()), WithRecords(newRecords(t)), WithRepositories(newRepositories()))
+	other, err := newServer(Config{}, withHost(h.host), withStore(newStore()), withRecords(newRecords(t)), withRepositories(newRepositories()))
 	require.NoError(t, err)
 	t.Cleanup(func() { other.Close() })
 
-	require.ErrorIs(t, other.Start(t.Context()), rpc.ErrProtocolTaken)
+	require.ErrorIs(t, other.serve(t.Context()), rpc.ErrProtocolTaken)
 }
 
 func TestCloseStopsTheClaimLoop(t *testing.T) {
@@ -115,7 +116,7 @@ func TestCloseStopsTheClaimLoop(t *testing.T) {
 		c.ReconcileEvery = time.Millisecond
 	})
 
-	require.NoError(t, h.Start(t.Context()))
+	require.NoError(t, h.serve(t.Context()))
 	require.NoError(t, h.Close())
 
 	select {
@@ -143,11 +144,11 @@ func TestTheQueueAndItsDeadLetterAreNamedFromTheDomain(t *testing.T) {
 
 func TestServerOptionsReachTheListener(t *testing.T) {
 	var configured bool
-	h := newHarness(t, WithServerOptions(rpc.WithHTTPServer(func(*http.Server) {
+	h := newHarness(t, withServerOptions(rpc.WithHTTPServer(func(*http.Server) {
 		configured = true
 	})))
 
-	require.NoError(t, h.Start(t.Context()))
+	require.NoError(t, h.serve(t.Context()))
 	require.True(t, configured, "a ServerOption given to New must reach rpc.Listen")
 }
 
@@ -164,7 +165,7 @@ func TestCloseAbandonsTheRunInFlightRatherThanFailingTheJob(t *testing.T) {
 		return ctx.Err()
 	}
 
-	require.NoError(t, h.Start(t.Context()))
+	require.NoError(t, h.serve(t.Context()))
 	select {
 	case <-started:
 	case <-time.After(5 * time.Second):

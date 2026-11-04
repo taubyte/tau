@@ -14,7 +14,7 @@ import (
 
 // jobHandler is the connect adapter for JobService: each method authorizes, leads
 // and delegates to a plain method below.
-type jobHandler struct{ s *Service }
+type jobHandler struct{ s *server }
 
 func (h *jobHandler) Get(ctx context.Context, req *connect.Request[buildv2.JobRef]) (*connect.Response[buildv2.Job], error) {
 	if err := h.s.allow(ctx, ActRead, req.Msg.GetId()); err != nil {
@@ -57,7 +57,7 @@ func (h *jobHandler) Retry(ctx context.Context, req *connect.Request[buildv2.Job
 // job assembles one Job in one read; the record carries its logs' and assets'
 // cids. The one record read deciding no write, so it takes no section. The maps
 // are copied out so the caller's message shares no map with the decoded record.
-func (s *Service) job(id string) (*buildv2.Job, error) {
+func (s *server) job(id string) (*buildv2.Job, error) {
 	if err := requireJobID(id); err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func jobOf(rec jobRecord) *buildv2.Job {
 // list streams the ids of a project's jobs, unbounded and unpaginated, handing
 // each to emit as it is found. emit is a closure because connect.ServerStream has
 // no exported constructor.
-func (s *Service) list(projectID string, emit func(*buildv2.JobRef) error) error {
+func (s *server) list(projectID string, emit func(*buildv2.JobRef) error) error {
 	if projectID == "" {
 		return errInvalidArgument("project id is required")
 	}
@@ -129,7 +129,7 @@ func (s *Service) list(projectID string, emit func(*buildv2.JobRef) error) error
 // begin), a claimer either reads Cancelled and drops the delivery or has
 // registered its run for the stop. A run on another node settles against a
 // terminal record, writing its log and never a status.
-func (s *Service) cancel(id string) error {
+func (s *server) cancel(id string) error {
 	if err := requireJobID(id); err != nil {
 		return err
 	}
@@ -164,7 +164,7 @@ func (s *Service) cancel(id string) error {
 // retry re-queues a finished job; a non-terminal one is a FailedPrecondition. The
 // record's attempt counter keeps rising, so earlier runs' cids stay filed under
 // their attempts.
-func (s *Service) retry(id string) error {
+func (s *server) retry(id string) error {
 	if err := requireJobID(id); err != nil {
 		return err
 	}
@@ -204,7 +204,7 @@ func (h *jobHandler) Artifact(ctx context.Context, req *connect.Request[buildv2.
 
 // artifact reads what one resource of one deployment runs, authorized on the
 // project (ActArtifact), since a worker asking has no job in hand.
-func (s *Service) artifact(ctx context.Context, project, environment, resource string) (string, error) {
+func (s *server) artifact(ctx context.Context, project, environment, resource string) (string, error) {
 	switch {
 	case project == "":
 		return "", errInvalidArgument("build: project is required")
@@ -222,7 +222,7 @@ func (s *Service) artifact(ctx context.Context, project, environment, resource s
 
 // Built is the Artifact read for this node itself, in-process: a host does not
 // dial itself. Only the leader answers.
-func (s *Service) Built(project, environment, resource string) (string, error) {
+func (s *server) Built(project, environment, resource string) (string, error) {
 	if err := s.lead(); err != nil {
 		return "", err
 	}
@@ -257,7 +257,7 @@ func (h *jobHandler) Follow(ctx context.Context, req *connect.Request[buildv2.Fo
 // which is where every run is claimed, a follow of a run to come says the job is
 // queued and waits for the run to begin here, or for the job to end without it:
 // rung, not timed.
-func (s *Service) follow(ctx context.Context, req *buildv2.FollowRequest, send func(*buildv2.Job_Event) error) error {
+func (s *server) follow(ctx context.Context, req *buildv2.FollowRequest, send func(*buildv2.Job_Event) error) error {
 	jobID, offset := req.GetJobId(), req.GetOffset()
 	if offset < 0 {
 		return errInvalidArgument("build: offset %d is before the start of the log", offset)
@@ -333,7 +333,7 @@ func (s *Service) follow(ctx context.Context, req *buildv2.FollowRequest, send f
 // holds is whether a follow of that run waits here: on the leader, where every run
 // is claimed, for a run still to come, or claimed by this node and not writing yet.
 // A run another node claimed is that node's to answer, so its follow walks on.
-func (s *Service) holds(jobID string, attempt uint32) bool {
+func (s *server) holds(jobID string, attempt uint32) bool {
 	if !s.store.IsLeader() {
 		return false
 	}
@@ -354,7 +354,7 @@ func (s *Service) holds(jobID string, attempt uint32) bool {
 // come or going on it is Unavailable, so the caller's pool walks to the node
 // running it. Once the run has ended it is FailedPrecondition from the leader:
 // what survives is the cid the record files under that attempt.
-func (s *Service) notWritten(jobID string, attempt uint32, missing error) error {
+func (s *server) notWritten(jobID string, attempt uint32, missing error) error {
 	job, err := s.job(jobID)
 	switch {
 	case connect.CodeOf(err) == connect.CodeUnavailable:

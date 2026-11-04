@@ -45,6 +45,30 @@ func TestTheServiceHereIsReachedWithNoClient(t *testing.T) {
 	require.Zero(t, dialled)
 }
 
+// holder runs as one thing and is reached as what it holds.
+type holder struct{ held answer }
+
+func TestAServiceHereIsReachedAsWhatItHolds(t *testing.T) {
+	p := peer.Mock(t.Context())
+	t.Cleanup(p.Close)
+	h := &fake{Node: p, running: []Running{{Service: 7}, {Name: "store", Service: holder{held: "held"}}}}
+
+	dialled := 0
+	r := ReachAs(h, "store", func(s holder) answer { return s.held },
+		func(host.Host, libp2ppeer.ID) (answer, error) { dialled++; return "far", nil })
+	got, err := r.Now(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, answer("held"), got)
+	require.Zero(t, dialled)
+
+	h.running = []Running{{Name: "discovery", Service: directory{"far"}}}
+	got, err = ReachAs(h, "store", func(s holder) answer { return s.held },
+		func(host.Host, libp2ppeer.ID) (answer, error) { dialled++; return "far", nil }).Now(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, answer("far"), got, "none here is a client of one elsewhere")
+	require.Equal(t, 1, dialled)
+}
+
 func TestAServiceElsewhereIsDialledOnANodeDiscoveryNames(t *testing.T) {
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)

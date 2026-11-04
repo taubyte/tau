@@ -89,7 +89,6 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 		Options:  []instance.Option{instance.WithResolver(dns)},
 		Configure: func(_ int, c *instance.Config) {
 			c.CloudFqdn = "tau.dream.test"
-			c.CM.Domains.Trusted = false
 		},
 	})
 	require.NoError(t, err)

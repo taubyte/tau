@@ -8,7 +8,6 @@ import (
 	"connectrpc.com/connect"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
-	"github.com/taubyte/tau/services/build/deploy"
 	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/dns"
@@ -203,19 +202,6 @@ func (n *Instance) domains() (*cm.Domains, error) {
 	n.domainClaims = d
 	n.closers = append(n.closers, d)
 	return d, nil
-}
-
-// trustedDomains is the prover of a cloud whose zones are trusted unproven.
-type trustedDomains struct{}
-
-func (trustedDomains) Prove(context.Context, string, string) error { return nil }
-
-// domainProver is what this node's deploys prove a zone with.
-func (n *Instance) domainProver() (deploy.Domains, error) {
-	if n.cfg.CM.Domains.Trusted {
-		return trustedDomains{}, nil
-	}
-	return n.domains()
 }
 
 // domainClaims is the claim route's seam over the cm client.

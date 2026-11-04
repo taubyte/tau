@@ -10,43 +10,34 @@ import (
 	"sync"
 	"time"
 
-	"github.com/taubyte/tau/pkg/containers"
-
 	"connectrpc.com/connect"
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 
-	gossh "golang.org/x/crypto/ssh"
-
-	"github.com/taubyte/tau/pkg/forge/drivers"
-	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
+	"github.com/taubyte/tau/core/service"
+	"github.com/taubyte/tau/pkg/linkcreds"
 	"github.com/taubyte/tau/pkg/tenancy"
 	authService "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/build"
-	"github.com/taubyte/tau/services/build/artifact"
 	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/clients"
-	"github.com/taubyte/tau/services/build/deploy"
-	"github.com/taubyte/tau/services/build/folders"
 	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/build/frontend/forgeauth"
-	"github.com/taubyte/tau/services/build/run"
-	"github.com/taubyte/tau/services/build/uploads"
+	links "github.com/taubyte/tau/services/build/linked"
+	"github.com/taubyte/tau/services/register"
 	"github.com/taubyte/tau/services/worker"
 )
 
-// Composes the two halves of the build service and the auth they both ask:
+// Composes the public half of the build service and the auth it asks:
 //
 //	auth           who is admitted to this cloud, once a forge said who a caller is.
-//	build-backend  the queue, the job records, and the runners that clone a
-//	               pushed commit and deploy it.
 //	build-frontend the webhook a provider posts to, and the job API a
 //	               developer reads.
 //
-// Both halves reach auth as a client over the swarm even when it runs locally, so no
-// role holds auth's store.
+// The private half, build-backend, is a service of its own (services/build/backend).
+// The frontend reaches auth as a client over the swarm even when it runs locally, so
+// it holds none of auth's store.
 
 // maxAuthConnections bounds the streams one node keeps to auth. It is small
 // because every answer is cached in front of it — the frontend caches hook
@@ -178,177 +169,6 @@ func (n *Instance) openAuth() error {
 	return nil
 }
 
-// buildClone is the checkout the build backend clones with.
-//
-// SSH WHERE A DEPLOY KEY IS, HTTPS WHERE NONE IS: a deploy key is an ssh key,
-// and a repository without one is read anonymously or not at all. Both
-// addresses, and the ssh account, are the forge's; an ssh host is pinned.
-func (n *Instance) buildClone(keys deploy.Credentials) (*deploy.Clone, error) {
-	registry, err := n.forgeRegistry()
-	if err != nil {
-		return nil, err
-	}
-	pinned, err := drivers.HostKeys(n.cfg.Forges)
-	if err != nil {
-		return nil, err
-	}
-	return deploy.NewClone(keys,
-		deploy.WithAddress(deploy.Forged(registry)),
-		deploy.WithHostKeys(func(host string) []gossh.PublicKey { return pinned[host] })), nil
-}
-
-// openBuildBackend is the private half: the queue, the job records, and the
-// runner that turns a push into a deploy.
-func (n *Instance) openBuildBackend() error {
-	if !n.cfg.runs(BuildBackend) {
-		return nil
-	}
-	cluster, err := n.raftGroup(BuildBackend)
-	if err != nil {
-		return fmt.Errorf("node: %s: %w", BuildBackend, err)
-	}
-	n.closers = append(n.closers, closerFunc(func() { cluster.Close() }))
-
-	// THE QUEUE IS RAFT'S AND NOTHING ELSE IS: every job's events and rows live in
-	// a kvdb database of the backend's own.
-	records, err := n.kvdb(BuildBackend + "/jobs")
-	if err != nil {
-		return fmt.Errorf("node: %s: %w", BuildBackend, err)
-	}
-
-	// WHO A PUSH BELONGS TO IS THE REGISTER'S PROJECT TABLE, and the deploy
-	// key that clones it is the vault's, under the name the developer's link
-	// stored it as (pkg/linkcreds).
-	projects := projectTable{n}
-
-	// ONE VAULT FOR THE BACKEND, made on first need: the deploy keys below and
-	// a code build's secrets read the same one, by the worker's rule — an
-	// injected resolver wins, then this node's own or one in the fleet.
-	var backendVault secretReader
-	vaults := func() secretReader {
-		if backendVault != nil {
-			return backendVault
-		}
-		switch {
-		case n.opts.secrets != nil:
-			backendVault = n.opts.secrets
-		case n.secrets != nil || n.discovery != nil:
-			v := newVault(n)
-			n.closers = append(n.closers, v)
-			backendVault = v
-		}
-		return backendVault
-	}
-	clone, err := n.buildClone(linkSecrets{projects: projects, vault: vaults()})
-	if err != nil {
-		return err
-	}
-
-	// WHAT A PUSH IS READ AND RUN WITH: the forge's clone, and the container engine. A
-	// development cloud's configuration puts its local folders and uploaded builds in
-	// front of them.
-	var (
-		checkout deploy.Checkout = clone
-		confirm  run.Confirmer   = clone
-		engine   artifact.Engine
-	)
-
-	// A NODE THAT CANNOT RUN A CONTAINER CANNOT BUILD CODE, and it says so on
-	// the push rather than starting and refusing every one. The two halves of
-	// what a push can be are independent: a node with no container backend
-	// still deploys configuration, which is most of what a small cloud does.
-	if n.cfg.Container.Any() {
-		backend, err := containers.Open(n.cfg.Container)
-		if err != nil {
-			return err
-		}
-
-		if engine, err = artifact.NewEngine(backend); err != nil {
-			return err
-		}
-	}
-	if local := n.cfg.BuildBackend.Local; len(local) > 0 {
-		f, err := folders.New(local)
-		if err != nil {
-			return err
-		}
-		checkout, confirm = f.Checkout(checkout), f.Confirm(confirm)
-	}
-	if dir := n.cfg.BuildBackend.Uploads; dir != "" {
-		held, err := uploads.Open(dir)
-		if err != nil {
-			return fmt.Errorf("node: %s: uploads: %w", BuildBackend, err)
-		}
-		checkout, confirm, engine = held.Checkout(checkout), held.Confirm(confirm), held.Engine(engine)
-	}
-
-	options := []deploy.Option{
-		deploy.WithProjects(projects),
-		deploy.WithCheckout(checkout),
-		deploy.WithRegister(n.publisher),
-		deploy.WithCloudFqdn(n.cfg.CloudFqdn),
-	}
-	if n.opts.regions != nil {
-		options = append(options, deploy.WithRegions(n.opts.regions))
-	}
-	domains, err := n.domainProver()
-	if err != nil {
-		return err
-	}
-	options = append(options, deploy.WithDomains(domains))
-
-	if engine != nil {
-		// A source's clone URL is keyed by the forge that serves it, the same
-		// function every push's repository key came out of.
-		registry, err := n.forgeRegistry()
-		if err != nil {
-			return err
-		}
-
-		buildOptions := []artifact.Option{
-			artifact.WithRegister(buildRegister{n}),
-			artifact.WithProjects(projects),
-			artifact.WithCheckout(checkout),
-			artifact.WithEngine(engine),
-			artifact.WithKeys(registry),
-		}
-		if v := vaults(); v != nil {
-			buildOptions = append(buildOptions, artifact.WithSecrets(v))
-		}
-
-		builder, err := artifact.New(buildOptions...)
-		if err != nil {
-			return err
-		}
-		options = append(options, deploy.WithBuilder(builder))
-	}
-
-	runner, err := deploy.New(options...)
-	if err != nil {
-		return err
-	}
-
-	service := []backend.Option{
-		backend.WithHost(n.Host()),
-		backend.WithStore(cluster),
-		backend.WithRecords(records),
-		backend.WithRepositories(projects),
-		backend.WithRunner(runner),
-		// A PUSH IS BUILT ONLY FOR WHAT THE REPOSITORY HOLDS: the ref is read
-		// at the forge over the repository's deploy key before it is queued.
-		backend.WithConfirmer(confirm),
-	}
-	service = append(service, backend.WithAssets(n.store))
-
-	svc, err := backend.New(n.cfg.BuildBackend, service...)
-	if err != nil {
-		return err
-	}
-	n.buildBackend = svc
-	n.closers = append(n.closers, svc)
-	return nil
-}
-
 // openBuildFrontend is the public half: a webhook and a job API.
 func (n *Instance) openBuildFrontend() error {
 	if !n.cfg.runs(BuildFrontend) {
@@ -359,7 +179,7 @@ func (n *Instance) openBuildFrontend() error {
 	if err != nil {
 		return err
 	}
-	projects := projectTable{n}
+	projects := links.Projects{Table: func(ctx context.Context) (register.Table, error) { return n.registers.Now(ctx) }}
 
 	backends, err := n.dial(build.Protocol, BuildBackend)
 	if err != nil {
@@ -415,20 +235,20 @@ func (n *Instance) openBuildFrontend() error {
 		frontendOptions = append(frontendOptions, frontend.WithStreams(forges, projects))
 	}
 	// What a deployment runs, read back for a developer's build against it.
-	frontendOptions = append(frontendOptions, frontend.WithPublished(buildRegister{n}))
+	frontendOptions = append(frontendOptions, frontend.WithPublished(published{n}))
 	// The public role never holds a vault: it is the process strangers reach. This is
 	// always a stream to a node that does, used only for hook secrets.
-	var linked secretReader
+	var vault links.Vault
 	switch {
 	case n.opts.secrets != nil:
-		linked = n.opts.secrets
+		vault = n.opts.secrets
 	case n.discovery != nil:
 		v := newVault(n)
 		n.closers = append(n.closers, v)
-		linked = v
+		vault = v
 		frontendOptions = append(frontendOptions, frontend.WithVault(v))
 	}
-	frontendOptions = append(frontendOptions, frontend.WithHooks(linkSecrets{projects: projects, vault: linked}))
+	frontendOptions = append(frontendOptions, frontend.WithHooks(linkHooks{links.Credentials{Projects: projects, Vault: vault}}))
 	domains, err := n.domains()
 	if err != nil {
 		return err
@@ -464,48 +284,65 @@ func (n *Instance) BuildFrontendAddr() net.Addr {
 	return n.buildFrontend.Addr()
 }
 
-// buildRegister is how a code build reads the configuration it builds against.
-//
-// IT RESOLVES PER CALL for the same reason the deploy's publisher does: which
-// node answers is a routing question, and one held from construction would be
-// whichever node this dialled at boot, forever.
-type buildRegister struct{ node *Instance }
+// published is what a deployment runs, read back for a developer's build against it:
+// frontend.Published, resolved per call, since which register answers is a routing
+// question.
+type published struct{ node *Instance }
 
-func (b buildRegister) Environments(ctx context.Context, project string) ([]string, error) {
-	r, err := b.reader(ctx)
+func (p published) Environments(ctx context.Context, project string) ([]string, error) {
+	r, err := p.node.registers.Now(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return r.Environments(ctx, project)
 }
 
-func (b buildRegister) Resolve(ctx context.Context, project, environment string) (pkgregister.Pointer, error) {
-	r, err := b.reader(ctx)
-	if err != nil {
-		return pkgregister.Pointer{}, err
-	}
-	return r.Resolve(ctx, project, environment)
-}
-
-func (b buildRegister) Object(ctx context.Context, id pkgregister.ObjectID) ([]byte, error) {
-	r, err := b.reader(ctx)
+// Compiled is the object a deployment's pointer names.
+func (p published) Compiled(ctx context.Context, project, environment string) ([]byte, error) {
+	r, err := p.node.registers.Now(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return r.Object(ctx, id)
-}
-
-// Compiled is frontend.Published: the object a deployment's pointer names.
-func (b buildRegister) Compiled(ctx context.Context, project, environment string) ([]byte, error) {
-	pointer, err := b.Resolve(ctx, project, environment)
+	pointer, err := r.Resolve(ctx, project, environment)
 	if err != nil {
 		return nil, err
 	}
-	return b.Object(ctx, pointer.Object)
+	return r.Object(ctx, pointer.Object)
 }
 
-func (b buildRegister) reader(ctx context.Context) (artifact.Register, error) {
-	return b.node.registers.Now(ctx)
+// linkHooks is a project's webhook as the frontend checks a delivery against it: its
+// repositories, from the register, each with its own secret, from the vault.
+type linkHooks struct{ links.Credentials }
+
+// Hook is ErrNoHook for a project none of whose repositories has a secret set: one
+// that can be pushed to was linked AND had a secret set for the repository pushed.
+func (l linkHooks) Hook(ctx context.Context, project string) (frontend.Hook, error) {
+	repositories, err := l.Projects.Repositories(ctx, project)
+	if connect.CodeOf(err) == connect.CodeNotFound {
+		return frontend.Hook{}, fmt.Errorf("%w: %w", frontend.ErrNoHook, err)
+	}
+	if err != nil {
+		return frontend.Hook{}, err
+	}
+	hook := frontend.Hook{Project: project}
+	for _, repository := range repositories {
+		secret, found, err := l.Value(ctx, project, linkcreds.HookSecret(repository))
+		if err != nil {
+			return frontend.Hook{}, err
+		}
+		if !found {
+			continue
+		}
+		repo := frontend.HookRepository{Key: repository, Secret: secret}
+		if repo.Previous, repo.Replaced, err = l.Previous(ctx, project, linkcreds.HookSecret(repository)); err != nil {
+			return frontend.Hook{}, err
+		}
+		hook.Repositories = append(hook.Repositories, repo)
+	}
+	if len(hook.Repositories) == 0 {
+		return frontend.Hook{}, fmt.Errorf("%w: project %s has no hook secret set", frontend.ErrNoHook, project)
+	}
+	return hook, nil
 }
 
 // artifacts is what a built resource currently runs. It drops the kind, since a
@@ -541,8 +378,8 @@ func (a *artifacts) Artifact(ctx context.Context, project, environment, kind, re
 	// host does not dial itself, so a single-node cloud asking the swarm would
 	// find only itself and never resolve anything. A follower says
 	// Unavailable, and then the fleet is asked as before.
-	if a.node.buildBackend != nil {
-		cid, err := a.node.buildBackend.Built(project, environment, resource)
+	if built, ok := service.Get[backend.Service](&added{node: a.node}); ok {
+		cid, err := built.Built(project, environment, resource)
 		if err == nil {
 			a.remember(key, cid)
 			return cid, nil
@@ -613,27 +450,4 @@ func (n *Instance) clock() time.Time {
 		return n.opts.now()
 	}
 	return time.Now()
-}
-
-// publisher is where a deploy publishes.
-//
-// IT IS THE ONLY WRITE PATH TO THE REGISTER IN THIS COMPOSITION. registerSource
-// is read-only on purpose — "nothing this composition wires is allowed to
-// deploy" — and this is the exception that proves it: a deploy is what a push
-// became, and a push is the only thing that may.
-func (n *Instance) publisher(ctx context.Context) (deploy.Register, error) {
-	return n.registers.Now(ctx)
-}
-
-// WithRegions is what this node's deploys answer about where a project runs. Without
-// it a deploy reads no regions (schema.WithNoRegions): everything is placed in
-// schema.DefaultRegion, and any region a project names is refused.
-func WithRegions(r schema.Regions) Option {
-	return func(o *options) error {
-		if r == nil {
-			return errors.New("node: nil regions")
-		}
-		o.regions = r
-		return nil
-	}
 }

@@ -11,7 +11,7 @@ import (
 // item was not (a crash between the two writes), then expires what finished long
 // ago. Re-queueing is safe by queue.Push's own dedup; the age gate keeps the pass
 // from a Push and barrier per open job.
-func (s *Service) reconcile() error {
+func (s *server) reconcile() error {
 	if err := s.lead(); err != nil {
 		return err
 	}
@@ -47,7 +47,7 @@ func (s *Service) reconcile() error {
 
 // expire erases the jobs that finished longer than JobRetention ago, oldest first,
 // keeping those whose build a deployment still runs.
-func (s *Service) expire(now time.Time) error {
+func (s *server) expire(now time.Time) error {
 	ctx, stop := context.WithTimeout(context.Background(), s.cfg.Queue.ApplyTimeout)
 	defer stop()
 	keys, err := s.records.List(ctx, terminalRows())
@@ -73,7 +73,7 @@ func (s *Service) expire(now time.Time) error {
 
 // expireJob is one expired job, one section: the job the row names, if it still ended
 // at the second the row says and nothing it built still runs.
-func (s *Service) expireJob(id string, retained int64) error {
+func (s *server) expireJob(id string, retained int64) error {
 	ctx, stop := context.WithTimeout(context.Background(), s.cfg.Queue.ApplyTimeout)
 	defer stop()
 	return s.withJob(id, func(j *held) error {
@@ -104,7 +104,7 @@ func (s *Service) expireJob(id string, retained int64) error {
 // 5); a job with no events loses the rows older than the cutoff. Neither needs a
 // barrier: the rows say which decision wrote them. The push needs none either:
 // Push dedups, and a stale item is dropped by begin.
-func (s *Service) mend(repositoryKey, id string, now time.Time, cutoff time.Duration) error {
+func (s *server) mend(repositoryKey, id string, now time.Time, cutoff time.Duration) error {
 	return s.withJobUnbarriered(id, func(j *held) error {
 		var drop *entry
 		switch {

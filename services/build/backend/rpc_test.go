@@ -7,8 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/taubyte/tau/services/build/run"
-
 	"connectrpc.com/connect"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -18,6 +16,7 @@ import (
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
 	"github.com/taubyte/tau/services/build"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 // recordingAuthorizer captures what the handler resolved the caller to, which
@@ -40,7 +39,7 @@ func (r *recordingAuthorizer) Allow(_ context.Context, caller peer.ID, act Actio
 	return nil
 }
 
-// wireHarness is a running Service on one mocknet host reached from another over
+// wireHarness is a running server on one mocknet host reached from another over
 // the real transport, the only way to get a real caller identity and to exercise
 // the streamed List.
 type wireHarness struct {
@@ -51,7 +50,7 @@ type wireHarness struct {
 	Jobs       buildv2connect.JobServiceClient
 }
 
-func newWireHarness(t *testing.T, opts ...Option) *wireHarness {
+func newWireHarness(t *testing.T, opts ...option) *wireHarness {
 	t.Helper()
 
 	authorizer := &recordingAuthorizer{}
@@ -64,11 +63,11 @@ func newWireHarness(t *testing.T, opts ...Option) *wireHarness {
 	runner := &fakeRunner{}
 	clock := newClock()
 
-	opts = append([]Option{WithClock(clock.now), WithRunner(runner), WithAuthorizer(authorizer)}, opts...)
+	opts = append([]option{withClock(clock.now), withRunner(runner), withAuthorizer(authorizer)}, opts...)
 	records := newRecords(t)
-	s, err := New(Config{}, append([]Option{WithHost(server), WithStore(store), WithRecords(records), WithRepositories(repos)}, opts...)...)
+	s, err := newServer(Config{}, append([]option{withHost(server), withStore(store), withRecords(records), withRepositories(repos)}, opts...)...)
 	require.NoError(t, err)
-	require.NoError(t, s.Start(t.Context()))
+	require.NoError(t, s.serve(t.Context()))
 	t.Cleanup(func() { s.Close() })
 
 	c, err := rpc.NewClient(callerHost, server.ID(), build.Protocol)
@@ -77,7 +76,7 @@ func newWireHarness(t *testing.T, opts ...Option) *wireHarness {
 
 	return &wireHarness{
 		harness: &harness{
-			Service: s, store: store, records: records, repos: repos, runner: runner, clock: clock, host: server,
+			server: s, store: store, records: records, repos: repos, runner: runner, clock: clock, host: server,
 		},
 		authorizer: authorizer,
 		caller:     callerHost,

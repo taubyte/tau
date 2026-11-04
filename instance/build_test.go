@@ -2,12 +2,14 @@ package instance
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/pkg/containers"
 
 	"connectrpc.com/connect"
@@ -21,6 +23,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/worker"
 )
@@ -40,7 +43,7 @@ func TestANodeRefusesBothHalvesOfTheBuildService(t *testing.T) {
 
 func TestTheDefaultShapeStarts(t *testing.T) {
 	require.NotContains(t, All, BuildFrontend)
-	require.Contains(t, All, BuildBackend)
+	require.Contains(t, services.Names(), BuildBackend, "the backend is a service tau ships")
 	require.Contains(t, All, Auth)
 
 	cfg, err := Config{}.withDefaults(services.Names()...)
@@ -63,7 +66,8 @@ func TestANodeAdvertisesTheRolesItRuns(t *testing.T) {
 	require.NotContains(t, serving, BuildFrontend)
 
 	require.NotNil(t, n.auth)
-	require.NotNil(t, n.buildBackend)
+	_, built := backendOf(n)
+	require.True(t, built)
 	require.Nil(t, n.buildFrontend)
 }
 
@@ -79,7 +83,8 @@ func TestTheFrontendHoldsNeitherStore(t *testing.T) {
 
 	require.NotNil(t, n.buildFrontend)
 	require.Nil(t, n.auth, "the public role does not hold auth's store")
-	require.Nil(t, n.buildBackend, "nor the queue's writer")
+	_, built := backendOf(n)
+	require.False(t, built, "nor the queue's writer")
 	require.NotNil(t, n.buildFrontend.Handler(), "and it is a handler somebody serves")
 	require.NotNil(t, n.BuildFrontendAddr(), "listening where a CLI can reach it")
 }
@@ -146,27 +151,11 @@ func TestARowThatIsNotAPeerIsSkipped(t *testing.T) {
 	require.Equal(t, []libp2ppeer.ID(nil), (&fromDiscovery{node: &Instance{Node: mockPeer(t)}, name: Auth}).Known())
 }
 
-func TestThePublisherIsLocalWhenThisNodeHasTheRegister(t *testing.T) {
+func TestWhatIsPublishedIsReadLocallyWhenThisNodeHasARegister(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Discovery}})
 	require.NoError(t, n.Start(t.Context()))
 
-	publisher, err := n.publisher(t.Context())
-	require.NoError(t, err)
-	require.Equal(t, n.register.Local(), publisher)
-
-	// With no register anywhere, it fails rather than silently dropping a
-	// deploy.
-	none, _, _ := makeNode(t, Config{Services: []string{Discovery}})
-	require.NoError(t, none.Start(t.Context()))
-	_, err = none.publisher(t.Context())
-	require.ErrorIs(t, err, ErrNoRegister)
-}
-
-func TestTheBuildRegisterReadsLocallyWhenThisNodeHasOne(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Discovery}})
-	require.NoError(t, n.Start(t.Context()))
-
-	r := buildRegister{n}
+	r := published{n}
 
 	// A project nobody published has no deployments, and asking is not an
 	// error.
@@ -184,43 +173,32 @@ func TestTheBuildRegisterReadsLocallyWhenThisNodeHasOne(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"prod"}, got)
 
-	pointer, err := r.Resolve(t.Context(), "shop", "prod")
-	require.NoError(t, err)
-	require.Equal(t, uint64(1), pointer.Revision)
-
-	compiled, err := r.Object(t.Context(), pointer.Object)
+	compiled, err := r.Compiled(t.Context(), "shop", "prod")
 	require.NoError(t, err)
 	require.Contains(t, string(compiled), "shop")
-}
 
-func TestTheBuildRegisterWithNoRegisterAnywhere(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Discovery}})
-	require.NoError(t, n.Start(t.Context()))
-
-	r := buildRegister{n}
-
-	_, err := r.Environments(t.Context(), "shop")
+	// With no register anywhere, it fails rather than answering nothing.
+	none, _, _ := makeNode(t, Config{Services: []string{Discovery}})
+	require.NoError(t, none.Start(t.Context()))
+	_, err = published{none}.Environments(t.Context(), "shop")
 	require.ErrorIs(t, err, ErrNoRegister)
-
-	_, err = r.Resolve(t.Context(), "shop", "prod")
-	require.ErrorIs(t, err, ErrNoRegister)
-
-	_, err = r.Object(t.Context(), "some-object")
+	_, err = published{none}.Compiled(t.Context(), "shop", "prod")
 	require.ErrorIs(t, err, ErrNoRegister)
 }
 
 func TestABuildBackendWithNoContainerBackend(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Discovery, BuildBackend}})
 	require.NoError(t, n.Start(t.Context()))
-	require.NotNil(t, n.buildBackend, "it still runs, and still deploys configuration")
+	_, built := backendOf(n)
+	require.True(t, built, "it still runs, and still deploys configuration")
 }
 
 func TestABuildBackendWithABackendThatIsNotOne(t *testing.T) {
-	_, err := New(mockPeer(t), rooted(t, Config{
+	n, _, _ := makeNode(t, Config{
 		Services:  []string{Discovery, BuildBackend},
 		Container: containers.Declared{Backend: "not-a-backend"},
-	}), withKVDB(&memFactory{}), withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }))
-	require.ErrorIs(t, err, containers.ErrUnknownBackend)
+	})
+	require.ErrorIs(t, n.Start(t.Context()), containers.ErrUnknownBackend, "the node's one daemon is the build's")
 }
 
 func TestAnAssetStoreIsEnoughToRunCode(t *testing.T) {
@@ -391,13 +369,6 @@ func TestAWorkerAsksTheBuildBackendOnAnotherNode(t *testing.T) {
 	require.Empty(t, a.seen)
 }
 
-func TestWithRegions(t *testing.T) {
-	var o options
-	require.Error(t, WithRegions(nil)(&o))
-	require.NoError(t, WithRegions(schema.WithNoRegions())(&o))
-	require.Equal(t, schema.WithNoRegions(), o.regions)
-}
-
 func TestTheRegionANodeReadsIsTheOneItsConfigNames(t *testing.T) {
 	ctx := t.Context()
 	n, _, _ := makeNode(t, Config{Services: []string{Register}, Region: "region-1"})
@@ -414,24 +385,24 @@ func TestTheRegionANodeReadsIsTheOneItsConfigNames(t *testing.T) {
 
 func TestADevelopmentCloudsBuildIsConfigured(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "uploads")
-	cfg := Config{Services: []string{Discovery, BuildBackend}}
-	cfg.BuildBackend.Uploads = dir
-	cfg.BuildBackend.Local = map[string]string{"github.com/acme/app": t.TempDir()}
+	section := backend.Config{Uploads: dir, Local: map[string]string{"github.com/acme/app": t.TempDir()}}
+	cfg := Config{Services: []string{Discovery, BuildBackend}, Sections: map[string]any{BuildBackend: section}}
 	n, _, _ := makeNode(t, cfg)
 	require.NoError(t, n.Start(t.Context()))
-	require.NotNil(t, n.buildBackend)
+	_, built := backendOf(n)
+	require.True(t, built)
 	require.DirExists(t, dir, "the uploads directory is the build's to make")
 
 	// A DIRECTORY IT CANNOT MAKE refuses the node, rather than a door that fails
 	// on the first upload.
 	file := filepath.Join(t.TempDir(), "a file")
 	require.NoError(t, os.WriteFile(file, nil, 0o600))
-	cfg.BuildBackend.Uploads = filepath.Join(file, "below")
-	_, err := New(mockPeer(t), rooted(t, cfg), withKVDB(&memFactory{}), mockRaft())
-	require.ErrorContains(t, err, "uploads")
+	section.Uploads = filepath.Join(file, "below")
+	refused, _, _ := makeNode(t, Config{Services: []string{Discovery, BuildBackend}, Sections: map[string]any{BuildBackend: section}})
+	require.ErrorContains(t, refused.Start(t.Context()), "uploads")
 }
 
-func TestTheBuildRegisterReadsAPublishedObjectBack(t *testing.T) {
+func TestWhatIsPublishedIsReadBack(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Discovery}})
 	require.NoError(t, n.Start(t.Context()))
 
@@ -441,17 +412,20 @@ func TestTheBuildRegisterReadsAPublishedObjectBack(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	got, err := buildRegister{n}.Compiled(t.Context(), "shop", "prod")
+	got, err := published{n}.Compiled(t.Context(), "shop", "prod")
 	require.NoError(t, err)
 	require.JSONEq(t, string(compiled), string(got))
 
-	_, err = buildRegister{n}.Compiled(t.Context(), "shop", "preview")
+	_, err = published{n}.Compiled(t.Context(), "shop", "preview")
 	require.Error(t, err)
 }
 
 func TestANodeReadsItsOwnBuildBackend(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Discovery, BuildBackend, Worker}})
 	require.NoError(t, n.Start(t.Context()))
+	built, ok := backendOf(n)
+	require.True(t, ok)
+	require.NoError(t, built.WaitForLeader(t.Context()))
 
 	_, err := n.BuildArtifacts().Artifact(t.Context(), "shop", "prod", "function", "QmNothing")
 	require.ErrorIs(t, err, ErrNotBuilt)
@@ -459,16 +433,23 @@ func TestANodeReadsItsOwnBuildBackend(t *testing.T) {
 	require.ErrorContains(t, err, "QmNothing")
 }
 
-// following is a backend's store that never leads.
-type following struct{ *raft.MockCluster }
+// following is a backend beside the worker that does not lead its queue.
+type following struct{ backend.Service }
 
-func (following) IsLeader() bool { return false }
+func (following) Built(string, string, string) (string, error) {
+	return "", connect.NewError(connect.CodeUnavailable, errors.New("not the leader"))
+}
 
 func TestAFollowerAsksTheFleetForAnArtifact(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{BuildBackend}},
-		withRaft(func(string) (raft.Cluster, error) { return following{raft.NewMockCluster()}, nil }))
+	n, _, _ := makeNode(t, Config{Services: []string{Discovery}})
 	require.NoError(t, n.Start(t.Context()))
+	n.provide(BuildBackend, following{})
 
 	_, err := n.BuildArtifacts().Artifact(t.Context(), "shop", "prod", "function", "QmNothing")
-	require.ErrorIs(t, err, ErrNoBuildBackend)
+	require.ErrorIs(t, err, ErrNoBuildBackend, "a follower beside it sends the question to the fleet")
+}
+
+// backendOf is the build backend this node runs, if it runs one.
+func backendOf(n *Instance) (backend.Service, bool) {
+	return service.Get[backend.Service](&added{node: n})
 }

@@ -8,12 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/taubyte/tau/services/build/run"
-
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	"github.com/taubyte/tau/services/build/run"
 )
 
 const unknownJobID = "0000000000000000000000000000000000000000000000000000000000000000"
@@ -193,7 +192,7 @@ func TestACancelledJobLeavesNoWorkBehindItInTheQueue(t *testing.T) {
 
 		require.NoError(t, h.cancel(id))
 
-		// This node never claims (WithRunner: a voter need not be a builder), so
+		// This node never claims (withRunner: a voter need not be a builder), so
 		// the claim path cannot be what drops the item. Nothing else would.
 		require.False(t, h.mustStep(t))
 		ready, claimed := h.work.Depth()
@@ -368,7 +367,7 @@ func TestRetryRemovesTheRetentionRowItActuallyWrote(t *testing.T) {
 }
 
 func TestASuccessfulBuildPointsTheDeploymentAtWhatItMade(t *testing.T) {
-	h := newWireHarness(t, WithAssets(newAssets()))
+	h := newWireHarness(t, withAssets(newAssets()))
 	id := h.planned(t, testRef, testCommit)
 
 	h.runner.run = func(ctx context.Context, w run.Work, out run.Output) error {
@@ -386,7 +385,7 @@ func TestASuccessfulBuildPointsTheDeploymentAtWhatItMade(t *testing.T) {
 }
 
 func TestADeploymentsArtifactIsItsOwn(t *testing.T) {
-	h := newWireHarness(t, WithAssets(newAssets()))
+	h := newWireHarness(t, withAssets(newAssets()))
 	h.runner.plan = func(context.Context, run.Work, io.Writer) ([]string, error) {
 		return []string{"prod", "preview"}, nil
 	}
@@ -421,7 +420,7 @@ func TestADeploymentsArtifactIsItsOwn(t *testing.T) {
 }
 
 func TestAFailedBuildDoesNotMoveWhatADeploymentRuns(t *testing.T) {
-	h := newWireHarness(t, WithAssets(newAssets()))
+	h := newWireHarness(t, withAssets(newAssets()))
 	id := h.planned(t, testRef, testCommit)
 
 	h.runner.run = func(ctx context.Context, w run.Work, out run.Output) error {

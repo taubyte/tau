@@ -15,12 +15,10 @@ import (
 	"github.com/taubyte/tau/pkg/forge/drivers"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
-	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/pkg/tenancy"
 	"github.com/taubyte/tau/services"
 	auth "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/build"
-	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/dns"
@@ -68,7 +66,7 @@ var (
 )
 
 // All is every service this composition knows how to start.
-var All = []string{Worker, Gateway, Auth, Proxy, DNS, BuildBackend}
+var All = []string{Worker, Gateway, Auth, Proxy, DNS}
 
 // Everything is every service a node can be configured to run: the ones this
 // package still starts itself and the ones services.New makes. All, the default
@@ -143,10 +141,9 @@ type Config struct {
 	// by convention.
 	DNSListen string
 
-	// BuildFrontend and BuildBackend are the two halves' own configuration.
-	// A node uses at most one of them.
+	// BuildFrontend is the build service's public half's own configuration. The
+	// private half, build-backend, reads its own section.
 	BuildFrontend frontend.Config
-	BuildBackend  backend.Config
 
 	// Sections is each service's own configuration, under its name, at the top
 	// level of the file beside the instance's own keys. Nothing here reads it: the
@@ -179,7 +176,6 @@ type options struct {
 	now       func() time.Time
 	extra     map[string]service.Service
 	identity  func(Host) (auth.Identity, error)
-	regions   schema.Regions
 	resolver  cm.Resolver
 	forges    *forge.Registry
 

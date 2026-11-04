@@ -13,13 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/taubyte/tau/services/build/run"
-
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/services/build/livelog"
+	"github.com/taubyte/tau/services/build/run"
 	"github.com/taubyte/tau/services/storage"
 )
 
@@ -315,7 +314,7 @@ func TestAnAssetStoreThatReturnsNoCidIsRefused(t *testing.T) {
 
 	var err error
 	h.runner.run = func(ctx context.Context, _ run.Work, out run.Output) error {
-		err = (&runOutput{s: h.Service, job: "j", project: "shop", environment: testEnvironment, built: map[assetRef]string{}}).
+		err = (&runOutput{s: h.server, job: "j", project: "shop", environment: testEnvironment, built: map[assetRef]string{}}).
 			Asset(ctx, "website/home", strings.NewReader("x"))
 		return nil
 	}
@@ -468,7 +467,7 @@ func TestALogThatLostBytesFailsTheBuildRatherThanBeingStoredShort(t *testing.T) 
 }
 
 func TestAStoreThatSwallowedAReadErrorDoesNotGetToNameTheLog(t *testing.T) {
-	h := newHarness(t, WithAssets(&swallowingStore{}))
+	h := newHarness(t, withAssets(&swallowingStore{}))
 	id := h.planned(t, testRef, testCommit)
 
 	h.runner.run = func(_ context.Context, w run.Work, out run.Output) error {
@@ -484,7 +483,7 @@ func TestAStoreThatSwallowedAReadErrorDoesNotGetToNameTheLog(t *testing.T) {
 }
 
 func TestAStoreThatStoppedReadingDoesNotGetToNameTheLog(t *testing.T) {
-	h := newHarness(t, WithAssets(&shortStore{}))
+	h := newHarness(t, withAssets(&shortStore{}))
 	id := h.planned(t, testRef, testCommit)
 
 	h.runner.run = func(_ context.Context, _ run.Work, out run.Output) error {

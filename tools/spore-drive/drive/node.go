@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"maps"
 	"net"
 	"regexp"
 	"slices"
@@ -252,6 +253,10 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 	if err != nil {
 		return nil, err
 	}
+	sections, err := withBackend(added, cloudServices.trusted)
+	if err != nil {
+		return nil, err
+	}
 	mainPort := int(p.Shapes().Shape(primary).Ports().Get("main"))
 	key := hc.Shapes().Instance(primary).Key()
 
@@ -271,7 +276,7 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 				// ADDED SERVICES' CONFIGURATION IS COPIED, NEVER READ. Each
 				// service decodes its own entry; a node built without one
 				// refuses the entry by name.
-				Sections: added,
+				Sections: sections,
 				// The tenancy is cloud-wide: every node carries it, and the
 				// ones that register, link or build a repository apply it.
 				Tenancy: served.Namespaces(),
@@ -369,4 +374,21 @@ func (d *sporedrive) Nodes(hostName string) (*Nodes, error) {
 		out.Nodes = append(out.Nodes, Node{Name: inst.name, Port: inst.port, Services: inst.file.Node.Services})
 	}
 	return out, nil
+}
+
+// withBackend is the added services' sections and the build backend's, which says
+// whether the cloud serves declared zones unproven.
+func withBackend(added map[string]any, trusted bool) (map[string]any, error) {
+	if !trusted {
+		return added, nil
+	}
+	if _, twice := added[instance.BuildBackend]; twice {
+		return nil, fmt.Errorf("added: %s is configured by spore-drive, not as an added service", instance.BuildBackend)
+	}
+	sections := maps.Clone(added)
+	if sections == nil {
+		sections = map[string]any{}
+	}
+	sections[instance.BuildBackend] = map[string]any{"domains": map[string]any{"trusted": true}}
+	return sections, nil
 }

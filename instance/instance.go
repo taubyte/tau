@@ -37,7 +37,6 @@ import (
 	"github.com/taubyte/tau/services/worker/stream"
 	"github.com/taubyte/tau/services/worker/volume"
 
-	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/frontend"
 
 	"github.com/taubyte/tau/instance/placement"
@@ -138,7 +137,6 @@ type Instance struct {
 	syncs *primitive.Backing
 
 	auth          *authService.Service
-	buildBackend  *backend.Service
 	buildFrontend *frontend.Service
 
 	pool     *invoke.Pool
@@ -255,6 +253,10 @@ func (n *Instance) open() error {
 	if err := n.openCM(); err != nil {
 		return err
 	}
+	// The cm store is a service beside the others, for a deploy proving a zone.
+	if n.cm != nil {
+		n.provide(CM, n.cm)
+	}
 	if err := n.openWorker(); err != nil {
 		return err
 	}
@@ -277,11 +279,8 @@ func (n *Instance) open() error {
 	if err := n.openDNS(); err != nil {
 		return err
 	}
-	// THE TWO BUILD ROLES COME LAST because both dial auth, and a node running
-	// auth itself has to have it answering before a pool onto it is opened.
-	if err := n.openBuildBackend(); err != nil {
-		return err
-	}
+	// THE BUILD FRONTEND COMES LAST because it dials auth, and a node running auth
+	// itself has to have it answering before a pool onto it is opened.
 	return n.openBuildFrontend()
 }
 
@@ -697,13 +696,6 @@ func (n *Instance) Start(ctx context.Context) error {
 	}
 	if n.auth != nil {
 		order = append(order, n.auth)
-	}
-	// THE BACKEND BEFORE THE FRONTEND, in the one process that could have both
-	// — which is none, because withDefaults refuses it — and in the order that
-	// reads correctly anyway: the public role's first act is to queue into the
-	// private one.
-	if n.buildBackend != nil {
-		order = append(order, n.buildBackend)
 	}
 	if n.buildFrontend != nil {
 		order = append(order, n.buildFrontend)

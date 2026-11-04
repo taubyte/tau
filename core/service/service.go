@@ -86,6 +86,23 @@ func Get[T any](h Host) (T, bool) {
 // there is one, otherwise a client dial opens to a node the directory beside it
 // names. See p2p/rpc's Reach for why the local case is no client at all.
 func Reach[T any](h Host, name string, dial func(host.Host, libp2ppeer.ID) (T, error)) *rpc.Reacher[T] {
+	return reach(h, name, func() (T, bool) { return Get[T](h) }, dial)
+}
+
+// ReachAs is Reach for a service that runs as an S and is reached as the T as makes
+// of it, such as a service whose store is what its clients mirror.
+func ReachAs[S, T any](h Host, name string, as func(S) T, dial func(host.Host, libp2ppeer.ID) (T, error)) *rpc.Reacher[T] {
+	return reach(h, name, func() (T, bool) {
+		s, ok := Get[S](h)
+		if !ok {
+			var zero T
+			return zero, false
+		}
+		return as(s), true
+	}, dial)
+}
+
+func reach[T any](h Host, name string, local func() (T, bool), dial func(host.Host, libp2ppeer.ID) (T, error)) *rpc.Reacher[T] {
 	self := h.Peer().Host()
 	return rpc.Reach(self, name,
 		func() (libp2ppeer.ID, error) {
@@ -100,7 +117,7 @@ func Reach[T any](h Host, name string, dial func(host.Host, libp2ppeer.ID) (T, e
 			}
 			return "", fmt.Errorf("%w: %s", ErrNoneRuns, name)
 		},
-		func() (T, bool) { return Get[T](h) },
+		local,
 		func(id libp2ppeer.ID) (T, error) { return dial(self, id) })
 }
 

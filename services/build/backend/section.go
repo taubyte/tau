@@ -55,7 +55,7 @@ var jobLock section.Lock[jobRecord]
 // chosen once by enter(). First takes the queue's barrier when withJob asked for
 // one.
 type jobReader struct {
-	s       *Service
+	s       *server
 	id      string
 	barrier bool
 }
@@ -78,24 +78,24 @@ func (r jobReader) First() (jobRecord, bool, error) {
 // running map. It exists only inside a body and is dead once withJob returns. It
 // has no id field: the id is inside the holding, readable but not assignable here.
 type held struct {
-	s  *Service
+	s  *server
 	in section.Holding[jobRecord]
 }
 
 // withJob is every transition's shape: lock, barrier, read, and a handle that is
 // the only way to write. The barrier is here so no transition forgets it.
-func (s *Service) withJob(id string, body func(*held) error) error {
+func (s *server) withJob(id string, body func(*held) error) error {
 	return s.enter(id, true, body)
 }
 
 // withJobUnbarriered is mend's alone: a barrier per row of a reconcile pass would
 // be one queue entry per open job, and the pass took one for all of them.
-func (s *Service) withJobUnbarriered(id string, body func(*held) error) error {
+func (s *server) withJobUnbarriered(id string, body func(*held) error) error {
 	return s.enter(id, false, body)
 }
 
 // enter is the one place a handle is made and a subject named.
-func (s *Service) enter(id string, barrier bool, body func(*held) error) error {
+func (s *server) enter(id string, barrier bool, body func(*held) error) error {
 	return jobLock.Do(
 		jobReader{s: s, id: id, barrier: barrier},
 		func(in section.Holding[jobRecord]) error { return body(&held{s: s, in: in}) },

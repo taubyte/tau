@@ -6,7 +6,7 @@ import "github.com/taubyte/tau/services/build"
 // writes off the leader, and pkg/raft's Barrier is leader-only, so a follower
 // cannot read linearizably; a stale NotFound for a just-enqueued job would be a
 // lie. Unavailable sends the caller's Pool.Do to the next peer.
-func (s *Service) lead() error {
+func (s *server) lead() error {
 	if !s.store.IsLeader() {
 		return errUnavailable("not the leader of %s", build.QueueDomain)
 	}

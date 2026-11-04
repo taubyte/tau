@@ -59,7 +59,7 @@ type Accounted struct {
 
 // emit hands over one event, or does nothing. Not called `record`: that name is
 // reserved for the one record writer the censuses count.
-func (s *Service) emit(ctx context.Context, ev Accounted) {
+func (s *server) emit(ctx context.Context, ev Accounted) {
 	if s.meter == nil {
 		return
 	}
