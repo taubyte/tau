@@ -99,6 +99,14 @@ func (s *server) session(ctx context.Context, id libp2ppeer.ID) error {
 			job.cancel()
 			<-job.done
 		}
+		// WHAT THE JOB SAID LAST IS STILL ON ITS WAY, and a cancel would cut it: the
+		// request is closed and the build node's end of the stream awaited.
+		stream.CloseRequest()
+		for {
+			if _, err := stream.Receive(); err != nil {
+				return
+			}
+		}
 	}()
 	for {
 		a, err := stream.Receive()

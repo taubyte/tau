@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -241,7 +242,11 @@ func TestOnlyALeaderTakesARunnerAndOnlyOneThatSaysItIsReady(t *testing.T) {
 
 	h.store.stepDown()
 	follower := client.Serve(t.Context())
-	require.NoError(t, follower.Send(&buildv2.RunnerReport{Kind: &buildv2.RunnerReport_Ready{Ready: &buildv2.Empty{}}}))
+	// A FOLLOWER ANSWERS BEFORE IT READS, so the send can meet a stream it has ended,
+	// which connect says with io.EOF; the answer is what Receive reads.
+	if err := follower.Send(&buildv2.RunnerReport{Kind: &buildv2.RunnerReport_Ready{Ready: &buildv2.Empty{}}}); err != nil {
+		require.ErrorIs(t, err, io.EOF)
+	}
 	_, err = follower.Receive()
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err), "a follower sends a runner to the leader")
 	require.True(t, strings.Contains(err.Error(), "leader"))
