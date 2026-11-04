@@ -25,8 +25,8 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/build/backend"
-	"github.com/taubyte/tau/services/build/frontend"
+	"github.com/taubyte/tau/services/build/ingress"
+	"github.com/taubyte/tau/services/build/jobs"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -80,7 +80,7 @@ func TestBuildHoldsTheQueueAndNotAuthsStore(t *testing.T) {
 	// one.
 	n, _, _ := makeNode(t, Config{
 		Services: []string{Discovery, Build},
-		Sections: map[string]any{Build: frontend.Config{Listen: "127.0.0.1:0"}},
+		Sections: map[string]any{Build: ingress.Config{Listen: "127.0.0.1:0"}},
 	})
 	require.NoError(t, n.Start(t.Context()))
 
@@ -313,7 +313,7 @@ func TestAWorkloadsStreamsAreNamedByTheWorkload(t *testing.T) {
 
 func TestAWorkerAsksBuildOnAnotherNode(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Discovery, Build}, Sections: map[string]any{Build: frontend.Config{Listen: "127.0.0.1:0"}}},
+		Config{Services: []string{Register, Discovery, Build}, Sections: map[string]any{Build: ingress.Config{Listen: "127.0.0.1:0"}}},
 		Config{Services: []string{Worker, Discovery}},
 	)
 	compute := nodes[1]
@@ -368,7 +368,7 @@ func TestADevelopmentCloudsRunnerIsConfigured(t *testing.T) {
 
 func TestANodeReadsItsOwnBuild(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Discovery, Build, Worker},
-		Sections: map[string]any{Build: frontend.Config{Listen: "127.0.0.1:0"}}})
+		Sections: map[string]any{Build: ingress.Config{Listen: "127.0.0.1:0"}}})
 	require.NoError(t, n.Start(t.Context()))
 	built, ok := backendOf(n)
 	require.True(t, ok)
@@ -381,7 +381,7 @@ func TestANodeReadsItsOwnBuild(t *testing.T) {
 }
 
 // following is a backend beside the worker that does not lead its queue.
-type following struct{ backend.Service }
+type following struct{ jobs.Service }
 
 func (following) Built(string, string, string) (string, error) {
 	return "", connect.NewError(connect.CodeUnavailable, errors.New("not the leader"))
@@ -397,6 +397,6 @@ func TestAFollowerAsksTheFleetForAnArtifact(t *testing.T) {
 }
 
 // backendOf is the build backend this node runs, if it runs one.
-func backendOf(n *Instance) (backend.Service, bool) {
-	return service.Get[backend.Service](&added{node: n})
+func backendOf(n *Instance) (jobs.Service, bool) {
+	return service.Get[jobs.Service](&added{node: n})
 }

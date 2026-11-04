@@ -13,10 +13,10 @@ import (
 	"github.com/taubyte/tau/p2p/discovery"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/services/build"
-	"github.com/taubyte/tau/services/build/frontend"
+	"github.com/taubyte/tau/services/build/ingress"
 )
 
-var _ frontend.Backend = (*BuildClient)(nil)
+var _ ingress.Backend = (*BuildClient)(nil)
 
 func newBuilds(t *testing.T, backends ...*fakeBackend) *BuildClient {
 	t.Helper()

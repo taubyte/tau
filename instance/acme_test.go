@@ -10,7 +10,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/certificate"
 	"github.com/taubyte/tau/pkg/certificate/acme"
-	"github.com/taubyte/tau/services/build/frontend"
+	"github.com/taubyte/tau/services/build/ingress"
 	"github.com/taubyte/tau/services/cm"
 )
 
@@ -43,7 +43,7 @@ func accountKey(t *testing.T) string {
 func TestBuildServesTLSWhenTheCloudIssues(t *testing.T) {
 	n, _, _ := makeNode(t, Config{
 		Services:  []string{Discovery, Build},
-		Sections:  map[string]any{Build: frontend.Config{Listen: "127.0.0.1:0"}},
+		Sections:  map[string]any{Build: ingress.Config{Listen: "127.0.0.1:0"}},
 		CloudFqdn: "tau.example.io",
 		CM:        cm.Config{Certificate: cm.CertificateConfig{ACME: certificate.ACME{Enabled: true}}},
 	})
@@ -65,7 +65,7 @@ func TestBuildServesTLSWhenTheCloudIssues(t *testing.T) {
 	require.NotNil(t, secure.GetCertificate)
 
 	// A CLOUD THAT ISSUES NOTHING serves its frontend as it did.
-	plain, _, _ := makeNode(t, Config{Services: []string{Discovery, Build}, Sections: map[string]any{Build: frontend.Config{Listen: "127.0.0.1:0"}}})
+	plain, _, _ := makeNode(t, Config{Services: []string{Discovery, Build}, Sections: map[string]any{Build: ingress.Config{Listen: "127.0.0.1:0"}}})
 	secure, err = plain.ServiceTLS()
 	require.NoError(t, err)
 	require.Nil(t, secure)

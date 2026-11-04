@@ -10,7 +10,7 @@ import (
 
 	"github.com/taubyte/tau/services/build/runner"
 
-	"github.com/taubyte/tau/services/build/frontend"
+	"github.com/taubyte/tau/services/build/ingress"
 
 	"github.com/taubyte/tau/pkg/forge/drivers"
 
@@ -80,7 +80,7 @@ func TestSignInAndCertificatesReachEveryNodeAndTheirSecretsOnlyTheBundle(t *test
 		var built runner.Config
 		assert.NilError(t, n.Section(instance.Runner, &built))
 		assert.Assert(t, built.Domains.Trusted, "a trusted cloud's runner serves declared zones unproven")
-		var public frontend.Config
+		var public ingress.Config
 		assert.NilError(t, n.Section(instance.Build, &public))
 		assert.DeepEqual(t, public.Origins, []string{"https://console.test.com"})
 

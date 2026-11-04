@@ -27,8 +27,8 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/build/frontend"
-	"github.com/taubyte/tau/services/build/frontend/forgeauth"
+	"github.com/taubyte/tau/services/build/ingress"
+	"github.com/taubyte/tau/services/build/ingress/forgeauth"
 )
 
 func TestARealGerritStreamsItsPushes(t *testing.T) {
@@ -156,11 +156,11 @@ func TestARealGerritStreamsItsPushes(t *testing.T) {
 	forges, err := forgeauth.New(reg)
 	require.NoError(t, err)
 	backend := &recordingBackend{}
-	svc, err := frontend.New(frontend.Config{Listen: "127.0.0.1:0", StreamResync: time.Hour},
-		frontend.WithHooks(noHooks{}), frontend.WithDeliveries(forges), frontend.WithProjects(noProjects{}),
-		frontend.WithBackend(backend), frontend.WithCallers(noCallers{}),
-		frontend.WithStreams(forges, linkedRepos{key.String()}),
-		frontend.WithLogger(t.Logf))
+	svc, err := ingress.New(ingress.Config{Listen: "127.0.0.1:0", StreamResync: time.Hour},
+		ingress.WithHooks(noHooks{}), ingress.WithDeliveries(forges), ingress.WithProjects(noProjects{}),
+		ingress.WithBackend(backend), ingress.WithCallers(noCallers{}),
+		ingress.WithStreams(forges, linkedRepos{key.String()}),
+		ingress.WithLogger(t.Logf))
 	require.NoError(t, err)
 	require.NoError(t, svc.Start(ctx))
 	t.Cleanup(func() { svc.Close() })
@@ -239,8 +239,8 @@ func drain(c chan forge.Push) {
 // The frontend's other dependencies, which a stream never asks.
 type noHooks struct{}
 
-func (noHooks) Hook(context.Context, string) (frontend.Hook, error) {
-	return frontend.Hook{}, frontend.ErrNoHook
+func (noHooks) Hook(context.Context, string) (ingress.Hook, error) {
+	return ingress.Hook{}, ingress.ErrNoHook
 }
 
 type noProjects struct{}
@@ -297,5 +297,5 @@ func (b *recordingBackend) Snapshot(context.Context, string, int32, int64, func(
 type noCallers struct{}
 
 func (noCallers) Caller(context.Context, string) (string, error) {
-	return "", frontend.ErrBadCredential
+	return "", ingress.ErrBadCredential
 }

@@ -16,10 +16,10 @@ import (
 	"github.com/taubyte/tau/pkg/linkcreds"
 	"github.com/taubyte/tau/pkg/tenancy"
 	"github.com/taubyte/tau/services/build"
-	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/clients"
-	"github.com/taubyte/tau/services/build/frontend"
-	"github.com/taubyte/tau/services/build/frontend/forgeauth"
+	"github.com/taubyte/tau/services/build/ingress"
+	"github.com/taubyte/tau/services/build/ingress/forgeauth"
+	"github.com/taubyte/tau/services/build/jobs"
 	"github.com/taubyte/tau/services/build/linked"
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/register"
@@ -35,7 +35,7 @@ const maxConnections = 4
 // Service is the build service as an instance runs it: the queue and the job
 // records, and the routes in front of them.
 type Service interface {
-	backend.Service
+	jobs.Service
 
 	// Addr is where it listens, nil before it starts.
 	Addr() net.Addr
@@ -47,7 +47,7 @@ var ErrNoZoneForCertificates = errors.New("build: certificates are issued for th
 
 // config is the build service's section, and the cloud-wide keys it reads.
 type config struct {
-	frontend.Config `yaml:",inline"`
+	ingress.Config `yaml:",inline"`
 
 	CloudFqdn string          `yaml:"cloudfqdn,omitempty"`
 	Tenancy   []string        `yaml:"tenancy,omitempty"`
@@ -59,8 +59,8 @@ type config struct {
 // in front of them (the frontend Start built), and what Start opened for them, closed
 // with them.
 type server struct {
-	*frontend.Service
-	control backend.Service
+	*ingress.Service
+	control jobs.Service
 	also    []io.Closer
 }
 
@@ -72,7 +72,7 @@ func (c closer) Close() error { c(); return nil }
 
 // Start builds the service from its instance: the queue a raft group of the
 // consensus beside it and the job records a database on the peer (the control,
-// services/build/backend), then the routes in front of them, asking that control
+// services/build/jobs), then the routes in front of them, asking that control
 // in-process and the other build nodes over p2p when it does not lead; auth
 // reached by discovery, the projects in the register, the link credentials in the
 // vault, logs and artifacts in storage, domain claims and its certificate from cm.
@@ -84,7 +84,7 @@ func (f *server) Start(ctx context.Context, h service.Host) error {
 	if err := h.Config(&cfg); err != nil {
 		return err
 	}
-	f.control = backend.New()
+	f.control = jobs.New()
 	if err := f.control.Start(ctx, h); err != nil {
 		return err
 	}
@@ -92,7 +92,7 @@ func (f *server) Start(ctx context.Context, h service.Host) error {
 	if err != nil {
 		return err
 	}
-	svc, err := frontend.New(cfg.Config, options...)
+	svc, err := ingress.New(cfg.Config, options...)
 	if err != nil {
 		return err
 	}
@@ -100,7 +100,7 @@ func (f *server) Start(ctx context.Context, h service.Host) error {
 	return svc.Start(ctx)
 }
 
-func (f *server) wire(h service.Host, cfg config) ([]frontend.Option, error) {
+func (f *server) wire(h service.Host, cfg config) ([]ingress.Option, error) {
 	self := h.Peer().Host()
 	auth, err := clients.NewPool(self, clients.Discovered(h, clients.Auth), clients.AuthProtocol, maxConnections)
 	if err != nil {
@@ -161,33 +161,33 @@ func (f *server) wire(h service.Host, cfg config) ([]frontend.Option, error) {
 	}
 	f.also = append(f.also, domains)
 
-	options := []frontend.Option{
-		frontend.WithLogger(logging.Logger("tau.build").Infof),
+	options := []ingress.Option{
+		ingress.WithLogger(logging.Logger("tau.build").Infof),
 		// THE PROJECT TABLE IS THE REGISTER'S: who a project's owner is and what
 		// roles it granted. This role writes it only through the link and grant
 		// routes, after authorizing the caller.
-		frontend.WithLinker(projects),
-		frontend.WithProjects(projects),
+		ingress.WithLinker(projects),
+		ingress.WithProjects(projects),
 		// WHO A CALLER IS IS AUTH'S TO SAY, from their tau token.
-		frontend.WithCallers(identities),
+		ingress.WithCallers(identities),
 		// SIGNING IN IS AUTH'S, carried here because auth has no ingress.
-		frontend.WithAuthAPI(authCalls),
-		frontend.WithBackend(builds),
-		frontend.WithDeliveries(forges),
-		frontend.WithTenancy(served),
-		frontend.WithCloudFqdn(cfg.CloudFqdn),
-		frontend.WithAssets(assets),
-		frontend.WithPublished(published{table.Now}),
+		ingress.WithAuthAPI(authCalls),
+		ingress.WithBackend(builds),
+		ingress.WithDeliveries(forges),
+		ingress.WithTenancy(served),
+		ingress.WithCloudFqdn(cfg.CloudFqdn),
+		ingress.WithAssets(assets),
+		ingress.WithPublished(published{table.Now}),
 		// Build never holds a vault: it is the process strangers reach. This
 		// is a stream to a node that does, used for hook secrets and a project's own.
-		frontend.WithVault(vault),
-		frontend.WithHooks(hooks{linked.Credentials{Projects: projects, Vault: vault}}),
-		frontend.WithDomains(claims{domains}),
+		ingress.WithVault(vault),
+		ingress.WithHooks(hooks{linked.Credentials{Projects: projects, Vault: vault}}),
+		ingress.WithDomains(claims{domains}),
 	}
 	// A forge with no signed webhook reports pushes on its own feed (Gerrit's
 	// stream-events), subscribed to as a second source (frontend/streams.go).
 	if len(registry.EventHosts()) > 0 {
-		options = append(options, frontend.WithStreams(forges, projects))
+		options = append(options, ingress.WithStreams(forges, projects))
 	}
 	// TLS WHEN THE CLOUD ISSUES CERTIFICATES: the one cm keeps for this role's name,
 	// the zone's wildcard when it issues one, read by cm's client as every public
@@ -203,7 +203,7 @@ func (f *server) wire(h service.Host, cfg config) ([]frontend.Option, error) {
 			return nil, err
 		}
 		f.also = append(f.also, certificates)
-		options = append(options, frontend.WithTLS(certificates.TLSConfig()))
+		options = append(options, ingress.WithTLS(certificates.TLSConfig()))
 	}
 	return options, nil
 }
@@ -228,19 +228,19 @@ func (f *server) Close() error {
 // worker asks what a deployment runs.
 func (f *server) Built(project, environment, resource string) (string, error) {
 	if f.control == nil {
-		return "", backend.ErrNotStarted
+		return "", jobs.ErrNotStarted
 	}
 	return f.control.Built(project, environment, resource)
 }
 
 func (f *server) WaitForLeader(ctx context.Context) error {
 	if f.control == nil {
-		return backend.ErrNotStarted
+		return jobs.ErrNotStarted
 	}
 	return f.control.WaitForLeader(ctx)
 }
 
-func (f *server) Local() backend.Local { return f.control.Local() }
+func (f *server) Local() jobs.Local { return f.control.Local() }
 
 // Addr is nil before Start, as the frontend's own is.
 func (f *server) Addr() net.Addr {
@@ -283,31 +283,31 @@ type hooks struct{ linked.Credentials }
 
 // Hook is ErrNoHook for a project none of whose repositories has a secret set: one
 // that can be pushed to was linked AND had a secret set for the repository pushed.
-func (l hooks) Hook(ctx context.Context, project string) (frontend.Hook, error) {
+func (l hooks) Hook(ctx context.Context, project string) (ingress.Hook, error) {
 	repositories, err := l.Projects.Repositories(ctx, project)
 	if connect.CodeOf(err) == connect.CodeNotFound {
-		return frontend.Hook{}, fmt.Errorf("%w: %w", frontend.ErrNoHook, err)
+		return ingress.Hook{}, fmt.Errorf("%w: %w", ingress.ErrNoHook, err)
 	}
 	if err != nil {
-		return frontend.Hook{}, err
+		return ingress.Hook{}, err
 	}
-	hook := frontend.Hook{Project: project}
+	hook := ingress.Hook{Project: project}
 	for _, repository := range repositories {
 		secret, found, err := l.Value(ctx, project, linkcreds.HookSecret(repository))
 		if err != nil {
-			return frontend.Hook{}, err
+			return ingress.Hook{}, err
 		}
 		if !found {
 			continue
 		}
-		repo := frontend.HookRepository{Key: repository, Secret: secret}
+		repo := ingress.HookRepository{Key: repository, Secret: secret}
 		if repo.Previous, repo.Replaced, err = l.Previous(ctx, project, linkcreds.HookSecret(repository)); err != nil {
-			return frontend.Hook{}, err
+			return ingress.Hook{}, err
 		}
 		hook.Repositories = append(hook.Repositories, repo)
 	}
 	if len(hook.Repositories) == 0 {
-		return frontend.Hook{}, fmt.Errorf("%w: project %s has no hook secret set", frontend.ErrNoHook, project)
+		return ingress.Hook{}, fmt.Errorf("%w: project %s has no hook secret set", ingress.ErrNoHook, project)
 	}
 	return hook, nil
 }
@@ -315,13 +315,13 @@ func (l hooks) Hook(ctx context.Context, project string) (frontend.Hook, error) 
 // claims is the claim route over cm's domain client.
 type claims struct{ d *cm.Domains }
 
-func (c claims) Claim(ctx context.Context, project, fqdn string) (frontend.DomainClaim, error) {
+func (c claims) Claim(ctx context.Context, project, fqdn string) (ingress.DomainClaim, error) {
 	claim, err := c.d.Claim(ctx, project, fqdn)
 	if errors.Is(err, cm.ErrBadClaim) {
-		return frontend.DomainClaim{}, connect.NewError(connect.CodeInvalidArgument, err)
+		return ingress.DomainClaim{}, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	if err != nil {
-		return frontend.DomainClaim{}, err
+		return ingress.DomainClaim{}, err
 	}
-	return frontend.DomainClaim{Entry: claim.GetEntry(), Type: claim.GetType(), Token: claim.GetToken()}, nil
+	return ingress.DomainClaim{Entry: claim.GetEntry(), Type: claim.GetType(), Token: claim.GetToken()}, nil
 }

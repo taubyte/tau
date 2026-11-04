@@ -13,7 +13,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/linkcreds"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/build/frontend"
+	"github.com/taubyte/tau/services/build/ingress"
 	secretsService "github.com/taubyte/tau/services/secrets"
 )
 
@@ -60,26 +60,26 @@ func TestAHookIsTheLinkAndItsSecret(t *testing.T) {
 	l := hooks{linked.Credentials{Projects: p, Vault: vault}}
 
 	_, err := l.Hook(ctx, linkedID)
-	require.ErrorIs(t, err, frontend.ErrNoHook, "linked with no secret set is not a hook")
+	require.ErrorIs(t, err, ingress.ErrNoHook, "linked with no secret set is not a hook")
 	_, err = l.Hook(ctx, "QmNobody")
-	require.ErrorIs(t, err, frontend.ErrNoHook)
+	require.ErrorIs(t, err, ingress.ErrNoHook)
 
 	// EACH REPOSITORY HAS ITS OWN SECRET, and one with none is left out.
 	vault[[3]string{linkedID, linkcreds.Environment, linkcreds.HookSecret(linkedCode)}] = "code-secret"
 	hook, err := l.Hook(ctx, linkedID)
 	require.NoError(t, err)
-	require.Equal(t, frontend.Hook{Project: linkedID, Repositories: []frontend.HookRepository{{Key: linkedCode, Secret: []byte("code-secret")}}}, hook)
+	require.Equal(t, ingress.Hook{Project: linkedID, Repositories: []ingress.HookRepository{{Key: linkedCode, Secret: []byte("code-secret")}}}, hook)
 
 	vault[[3]string{linkedID, linkcreds.Environment, linkcreds.HookSecret(linkedCfg)}] = "cfg-secret"
 	hook, err = l.Hook(ctx, linkedID)
 	require.NoError(t, err)
-	require.Equal(t, frontend.Hook{Project: linkedID, Repositories: []frontend.HookRepository{
+	require.Equal(t, ingress.Hook{Project: linkedID, Repositories: []ingress.HookRepository{
 		{Key: linkedCfg, Secret: []byte("cfg-secret")}, {Key: linkedCode, Secret: []byte("code-secret")},
 	}}, hook)
 
 	_, err = hooks{linked.Credentials{Projects: p, Vault: brokenVault{}}}.Hook(ctx, linkedID)
 	require.Error(t, err)
-	require.NotErrorIs(t, err, frontend.ErrNoHook, "an unreachable vault is not an answer")
+	require.NotErrorIs(t, err, ingress.ErrNoHook, "an unreachable vault is not an answer")
 
 	_, err = hooks{linked.Credentials{Projects: p}}.Hook(ctx, linkedID)
 	require.ErrorIs(t, err, secretsService.ErrNoSecrets)
@@ -118,7 +118,7 @@ func TestAHookCarriesTheSecretItsSecretReplaced(t *testing.T) {
 	}
 	hook, err := hooks{linked.Credentials{Projects: p, Vault: vault}}.Hook(ctx, linkedID)
 	require.NoError(t, err)
-	require.Equal(t, []frontend.HookRepository{
+	require.Equal(t, []ingress.HookRepository{
 		{Key: linkedCfg, Secret: []byte("cfg-secret")},
 		{Key: linkedCode, Secret: []byte("new"), Previous: []byte("old"), Replaced: at},
 	}, hook.Repositories)

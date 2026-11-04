@@ -15,8 +15,8 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/git/gittest"
 	"github.com/taubyte/tau/pkg/raft"
-	"github.com/taubyte/tau/services/build/backend"
-	"github.com/taubyte/tau/services/build/frontend"
+	"github.com/taubyte/tau/services/build/ingress"
+	"github.com/taubyte/tau/services/build/jobs"
 	"github.com/taubyte/tau/services/consensus"
 )
 
@@ -81,8 +81,8 @@ func TestBuildStartsFromItsInstance(t *testing.T) {
 	s := New()
 	require.Nil(t, s.(Service).Addr(), "nothing bound before it starts")
 	_, err := s.(Service).Built("shop", "prod", "QmNothing")
-	require.ErrorIs(t, err, backend.ErrNotStarted)
-	require.ErrorIs(t, s.(Service).WaitForLeader(t.Context()), backend.ErrNotStarted)
+	require.ErrorIs(t, err, jobs.ErrNotStarted)
+	require.ErrorIs(t, s.(Service).WaitForLeader(t.Context()), jobs.ErrNotStarted)
 	require.NoError(t, s.Start(t.Context(), lone(t, map[string]any{"listen": "127.0.0.1:0", "cloudfqdn": "tau.example.io"})))
 	t.Cleanup(func() { s.Close() })
 
@@ -153,7 +153,7 @@ func TestAForgeWithAnEventStreamIsFollowed(t *testing.T) {
 }
 
 func TestASectionGivenInGoKeepsTheDefaultsItLeavesOut(t *testing.T) {
-	raw, err := yaml.Marshal(frontend.Config{Listen: "127.0.0.1:0"})
+	raw, err := yaml.Marshal(ingress.Config{Listen: "127.0.0.1:0"})
 	require.NoError(t, err)
 	var cfg config
 	require.NoError(t, yaml.Unmarshal(raw, &cfg))

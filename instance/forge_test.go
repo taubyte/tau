@@ -8,7 +8,7 @@ import (
 	"github.com/taubyte/tau/pkg/forge/drivers"
 
 	"github.com/taubyte/tau/pkg/git/gittest"
-	"github.com/taubyte/tau/services/build/frontend"
+	"github.com/taubyte/tau/services/build/ingress"
 
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
@@ -31,7 +31,7 @@ func TestAFrontendFollowsAForgesEventStream(t *testing.T) {
 	priv, pub := gittest.KeyPair(t)
 	n, _, _ := makeNode(t, Config{
 		Services: []string{Discovery, Build},
-		Sections: map[string]any{Build: frontend.Config{Listen: "127.0.0.1:0"}},
+		Sections: map[string]any{Build: ingress.Config{Listen: "127.0.0.1:0"}},
 		Forges: []drivers.Forge{{
 			Host: "review.example.com", Driver: drivers.Gerrit,
 			Events:   &drivers.Events{Address: sshd.Addr().String(), User: "tau-bot", Key: priv},

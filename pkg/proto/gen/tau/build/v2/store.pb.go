@@ -26,7 +26,7 @@ const (
 // JobEvent is one key under build/job/<id>/event/<at>/<writer>: one transition
 // of one job, never rewritten. A job is the fold of its events in (at, writer)
 // order, so two nodes holding the same events agree on the job without
-// coordinating (services/build/backend/events.go).
+// coordinating (services/build/jobs/events.go).
 type JobEvent struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// at is the writer's clock, unix nanoseconds, strictly increasing per writer.

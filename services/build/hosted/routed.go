@@ -6,19 +6,19 @@ import (
 	"connectrpc.com/connect"
 
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
-	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/clients"
+	"github.com/taubyte/tau/services/build/jobs"
 )
 
 // routed is the job API as build's routes ask it: the control on this node, which
 // answers when it leads the queue, else the other build nodes over p2p. Unavailable
 // is the control's word for "not the leader", and the one that sends a call on.
 type routed struct {
-	here, elsewhere jobs
+	here, elsewhere jobAPI
 }
 
-// jobs is the job API as build's routes ask it, here or over p2p.
-type jobs interface {
+// jobAPI is the job API as build's routes ask it, here or over p2p.
+type jobAPI interface {
 	Enqueue(ctx context.Context, repositoryKey, ref, commitSHA string) (string, error)
 	Get(ctx context.Context, jobID string) (*buildv2.Job, error)
 	List(ctx context.Context, projectID string, emit func(jobID string) error) error
@@ -29,8 +29,8 @@ type jobs interface {
 }
 
 var (
-	_ jobs = backend.Local{}
-	_ jobs = (*clients.BuildClient)(nil)
+	_ jobAPI = jobs.Local{}
+	_ jobAPI = (*clients.BuildClient)(nil)
 )
 
 func elsewhere(err error) bool { return connect.CodeOf(err) == connect.CodeUnavailable }

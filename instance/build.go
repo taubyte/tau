@@ -17,9 +17,9 @@ import (
 	"github.com/taubyte/tau/core/service"
 	authService "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/build"
-	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/clients"
 	"github.com/taubyte/tau/services/build/hosted"
+	"github.com/taubyte/tau/services/build/jobs"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -199,7 +199,7 @@ func (a *artifacts) Artifact(ctx context.Context, project, environment, kind, re
 	// host does not dial itself, so a single-node cloud asking the swarm would
 	// find only itself and never resolve anything. A follower says
 	// Unavailable, and then the fleet is asked as before.
-	if built, ok := service.Get[backend.Service](&added{node: a.node}); ok {
+	if built, ok := service.Get[jobs.Service](&added{node: a.node}); ok {
 		cid, err := built.Built(project, environment, resource)
 		if err == nil {
 			a.remember(key, cid)

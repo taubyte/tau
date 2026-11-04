@@ -17,7 +17,7 @@ import (
 
 	"github.com/taubyte/tau/services/build/runner"
 
-	"github.com/taubyte/tau/services/build/frontend"
+	"github.com/taubyte/tau/services/build/ingress"
 
 	"github.com/taubyte/tau/pkg/containers"
 
@@ -376,7 +376,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	// A development cloud serves declared zones unproven, takes a developer's build,
 	// and reads the repositories it was handed folders for.
 	// A node running the public build role listens on an ephemeral loopback port too.
-	nodeConfig.Sections[instance.Build] = frontend.Config{Uploads: uploads, Listen: "127.0.0.1:0"}
+	nodeConfig.Sections[instance.Build] = ingress.Config{Uploads: uploads, Listen: "127.0.0.1:0"}
 	nodeConfig.Sections[instance.Runner] = runner.Config{
 		Uploads: uploads, Local: cfg.Local, Domains: runner.Domains{Trusted: true},
 	}

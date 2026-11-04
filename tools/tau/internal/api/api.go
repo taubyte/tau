@@ -1,5 +1,5 @@
 // Package api is the build frontend's public HTTP API, as the CLI calls it
-// (services/build/frontend/ingress.go is the other side). Jobs are decoded into
+// (services/build/ingress/ingress.go is the other side). Jobs are decoded into
 // the generated tau.build.v2 types with protojson — the frontend encodes them
 // that way — so nothing here restates the schema.
 package api
