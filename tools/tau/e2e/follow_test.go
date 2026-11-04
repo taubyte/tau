@@ -205,7 +205,8 @@ func TestTauCIRunFollowsALiveBuild(t *testing.T) {
 	require.Contains(t, waited.String(), "compiling the queued build")
 	require.Contains(t, waited.String(), "error: the linker gave up")
 	behind := named(t, note.String(), "building as job ", "\n")
-	require.Equal(t, ok(t, "logs", "--", behind), waited.String(), "the follow that waited got the whole log")
+	require.Equal(t, "main feeds prod\nqueued job "+behind+" for prod\n"+ok(t, "logs", "--", behind), waited.String(),
+		"the follow that waited got what the plan said, then the whole log of the job it queued")
 }
 
 // named is the id that follows prefix in what a command said, up to end.
