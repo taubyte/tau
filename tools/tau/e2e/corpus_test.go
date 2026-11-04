@@ -169,11 +169,11 @@ func universe(t *testing.T, f *fake.Served, configure func(*instance.Config), op
 	u, err := dream.Start(t.Context(), strings.ReplaceAll(t.Name(), "/", "-"), dream.Config{
 		Copies:    2,
 		Container: containers.Docker,
-		Options:   append([]instance.Option{instance.WithForges(forges)}, opts...),
+		Options:   opts,
 		Secrets:   []*secretsv2.InitSecret{adminSecret},
 		Configure: func(index int, c *instance.Config) {
 			c.CloudFqdn = e2eCloud
-			c.Forges = []drivers.Forge{{Host: f.Host(), Driver: drivers.GitHub, HostKeys: []string{f.HostKey()}}}
+			c.Forges = []drivers.Forge{{Host: f.Host(), Driver: drivers.GitHub, HostKeys: []string{f.HostKey()}, CA: f.CA()}}
 			c.Auth.Admin = auth.Admin{Name: "root"}
 			if configure != nil {
 				configure(c)

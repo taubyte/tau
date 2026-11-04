@@ -34,7 +34,7 @@ type sshServer struct {
 
 const sshKeyExtension = "fake-public-key"
 
-func serveSSH(c *core) (*sshServer, error) {
+func serveSSH(c *core, ln net.Listener) (*sshServer, error) {
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, err
@@ -51,11 +51,6 @@ func serveSSH(c *core) (*sshServer, error) {
 		},
 	}
 	config.AddHostKey(signer)
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return nil, err
-	}
-	c.sshHost = ln.Addr().String()
 	s := &sshServer{ln: ln, config: config, host: signer}
 	go s.accept(c)
 	return s, nil

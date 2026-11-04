@@ -49,8 +49,7 @@ func TestAServedForgeServesGitOverSSHToDeployKeys(t *testing.T) {
 	require.NoError(t, err)
 	addr, err := sess.CloneAddress(k, forge.SSH)
 	require.NoError(t, err)
-	require.True(t, strings.HasPrefix(addr.URL, "ssh://git@127.0.0.1:"), addr.URL)
-	require.NotContains(t, addr.URL, s.Host())
+	require.True(t, strings.HasPrefix(addr.URL, "ssh://git@"+s.Host()+"/"), "on the forge's own host and port: %s", addr.URL)
 	viaSSH, err := reg.Key(addr.URL)
 	require.NoError(t, err)
 	viaHTTPS, err := reg.Key(https.URL)
@@ -152,25 +151,19 @@ func pushOptions(t *testing.T, priv string, pinned []gossh.PublicKey) *gogit.Pus
 	return &gogit.PushOptions{Auth: auth, RefSpecs: []gitconfig.RefSpec{"refs/heads/main:refs/heads/other"}}
 }
 
-func TestTheSSHEndpointIsASpellingOfTheForge(t *testing.T) {
+func TestTheSSHEndpointIsTheForgesOwnHost(t *testing.T) {
 	s, err := fake.Serve(fake.GitHubLike)
 	require.NoError(t, err)
 	defer s.Close()
-	sp := s.Driver().(forge.Spellings)
-	require.Len(t, sp.SpellingHosts(), 1)
-	k := s.Keys().Writable
-	elsewhere := k
-	elsewhere.Host = "elsewhere.example"
-	_, ok := sp.Canonical(elsewhere)
-	require.False(t, ok)
-	got, ok := sp.Canonical(k)
-	require.True(t, ok)
-	require.Equal(t, k, got)
-
-	plain := fake.New(fake.GitHubLike).Driver().(forge.Spellings)
-	require.Empty(t, plain.SpellingHosts())
-	_, ok = plain.Canonical(elsewhere)
-	require.False(t, ok)
+	_, spells := s.Driver().(forge.Spellings)
+	require.False(t, spells, "one port answers every protocol, so there is no other host to spell")
+	reg, err := s.Registry(forge.Policy{})
+	require.NoError(t, err)
+	sess, err := reg.For(s.Keys().Writable, s.Token())
+	require.NoError(t, err)
+	addr, err := sess.CloneAddress(s.Keys().Writable, forge.SSH)
+	require.NoError(t, err)
+	require.Equal(t, "ssh://git@"+s.Host()+"/"+s.Keys().Writable.FullName()+".git", addr.URL)
 }
 
 func TestTheSSHEndpointRunsUploadPackOnly(t *testing.T) {

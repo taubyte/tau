@@ -11,7 +11,6 @@ import (
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/pkg/database"
-	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/drivers"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
@@ -177,7 +176,6 @@ type options struct {
 	extra     map[string]service.Service
 	identity  func(Host) (auth.Identity, error)
 	resolver  cm.Resolver
-	forges    *forge.Registry
 
 	// terminates says whatever serves Handler serves it over TLS too, with
 	// TLSConfig. See WithTLS.

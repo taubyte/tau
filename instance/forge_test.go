@@ -7,31 +7,12 @@ import (
 
 	"github.com/taubyte/tau/pkg/forge/drivers"
 
-	"github.com/taubyte/tau/pkg/forge"
-	"github.com/taubyte/tau/pkg/forge/fake"
 	"github.com/taubyte/tau/pkg/git/gittest"
 	"github.com/taubyte/tau/services/build/frontend"
 
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
 )
-
-func TestAnInjectedForgeRegistryWins(t *testing.T) {
-	var o options
-	require.Error(t, WithForges(nil)(&o))
-
-	reg, err := fake.New(fake.GitHubLike).Registry(forge.Policy{})
-	require.NoError(t, err)
-	require.NoError(t, WithForges(reg)(&o))
-
-	got, err := (&Instance{Node: mockPeer(t), opts: o}).forgeRegistry()
-	require.NoError(t, err)
-	require.Same(t, reg, got)
-
-	got, err = (&Instance{Node: mockPeer(t)}).forgeRegistry()
-	require.NoError(t, err)
-	require.NotSame(t, reg, got)
-}
 
 func TestAFrontendFollowsAForgesEventStream(t *testing.T) {
 	sshd, err := net.Listen("tcp", "127.0.0.1:0")

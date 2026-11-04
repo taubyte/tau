@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/pkg/forge/drivers"
+
 	"connectrpc.com/connect"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/assert"
@@ -14,7 +16,6 @@ import (
 	"github.com/taubyte/tau/instance"
 	nodeDream "github.com/taubyte/tau/instance/dream"
 	"github.com/taubyte/tau/p2p/rpc"
-	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
@@ -24,9 +25,9 @@ import (
 )
 
 func TestSignInAcrossAFleet(t *testing.T) {
-	f := fake.New(fake.GitHubLike)
-	reg, err := f.Registry(forge.Policy{})
+	f, err := fake.Serve(fake.GitHubLike)
 	require.NoError(t, err)
+	t.Cleanup(func() { f.Close() })
 	hash, err := auth.HashAdminPassword("correct horse battery")
 	require.NoError(t, err)
 	adminSecret, err := secrets.Sealed(secrets.Ref{Scope: secrets.Cloud(auth.VaultService), Name: auth.AdminSecret}, []byte(hash), time.Now())
@@ -35,9 +36,9 @@ func TestSignInAcrossAFleet(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Copies:   2,
 		Services: []string{instance.Discovery, instance.Secrets, instance.Auth},
-		Options:  []instance.Option{instance.WithForges(reg)},
 		Secrets:  []*secretsv2.InitSecret{adminSecret},
 		Configure: func(_ int, c *instance.Config) {
+			c.Forges = []drivers.Forge{{Host: f.Host(), Driver: drivers.GitHub, CA: f.CA()}}
 			c.Auth.Admin = auth.Admin{Name: "root"}
 			c.Auth.SignUp = auth.SignUpInvite
 		},
@@ -103,7 +104,7 @@ func TestSignInAcrossAFleet(t *testing.T) {
 	}, 60*time.Second, time.Second, "each node's signing key and user reach the other")
 
 	// And the forge identity is now admitted without a tau token, on either.
-	a, err := id0.Admit(ctx, connect.NewRequest(&authv2.Caller{Forge: f.Host(), Subject: "fake-user-subject"}))
+	a, err := id0.Admit(ctx, connect.NewRequest(&authv2.Caller{Forge: f.Host(), Subject: fake.Subject}))
 	require.NoError(t, err)
 	require.True(t, a.Msg.GetAdmitted())
 	a, err = id0.Admit(ctx, connect.NewRequest(&authv2.Caller{Forge: f.Host(), Subject: "stranger"}))

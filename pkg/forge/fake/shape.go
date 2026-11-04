@@ -41,13 +41,21 @@ type Shape struct {
 	Omit []forge.Capability
 
 	Faults []Fault
+
+	// Speaks is the API a served forge answers in, so a real driver can be bound to
+	// it: SpeaksGitHub, or empty for none.
+	Speaks string
 }
+
+// SpeaksGitHub is GitHub's REST API, under /api/v3/ as an Enterprise instance serves it.
+const SpeaksGitHub = "github"
 
 var (
 	GitHubLike = Shape{
 		Host:                   "fake.github",
 		Scheme:                 forge.SchemeHubSHA256,
 		PayloadCarriesCloneURL: true,
+		Speaks:                 SpeaksGitHub,
 	}
 	GitLabLike = Shape{
 		Host:                   "fake.gitlab",

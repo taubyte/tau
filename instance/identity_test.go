@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/taubyte/tau/pkg/forge/fake"
+
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
@@ -14,11 +16,11 @@ import (
 	authService "github.com/taubyte/tau/services/auth"
 )
 
-// linked admits subject "fake-user-subject", the fake forge's only user.
+// linked admits the fake forge's only user.
 type linked struct{ closed bool }
 
 func (l *linked) Admit(_ context.Context, c authService.Caller) (authService.Admission, error) {
-	return authService.Admission{Admitted: c.Subject == "fake-user-subject", Reason: "not linked"}, nil
+	return authService.Admission{Admitted: c.Subject == fake.Subject, Reason: "not linked"}, nil
 }
 
 func (l *linked) Close() error { l.closed = true; return nil }

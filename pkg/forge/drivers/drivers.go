@@ -4,7 +4,10 @@
 package drivers
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"net/http"
 	"slices"
 
 	gossh "golang.org/x/crypto/ssh"
@@ -50,6 +53,11 @@ type Forge struct {
 	// so a forge with none is not cloned from. github.com and gitlab.com default
 	// to their published keys; any other host must name its own.
 	HostKeys []string `yaml:"hostkeys,omitempty"`
+
+	// CA is the root this forge's TLS chains to, PEM, when it is not one the machine
+	// trusts: an enterprise instance behind a private CA. Empty is the machine's own
+	// roots.
+	CA string `yaml:"ca,omitempty"`
 
 	// Signing says a GitLab instance signs its deliveries with Standard
 	// Webhooks (GitLab 19.0 and later), and it is what gives a gitlab driver
@@ -194,11 +202,15 @@ func Registry(declared []Forge, oauth ...string) (*forge.Registry, error) {
 			d   forge.Driver
 			err error
 		)
+		rt, err := transportFor(f)
+		if err != nil {
+			return nil, err
+		}
 		switch f.Driver {
 		case GitHub:
-			d, err = github.New(f.Host)
+			d, err = github.New(f.Host, github.Transport(rt))
 		case GitLab:
-			var opts []gitlab.Option
+			opts := []gitlab.Option{gitlab.HTTPTransport(rt)}
 			if f.Signing {
 				opts = append(opts, gitlab.Signing())
 			}
@@ -207,29 +219,29 @@ func Registry(declared []Forge, oauth ...string) (*forge.Registry, error) {
 			}
 			d, err = gitlab.New(f.Host, opts...)
 		case Gitea:
-			d, err = gitea.New(f.Host)
+			d, err = gitea.New(f.Host, gitea.Transport(rt))
 		case Gogs:
-			d, err = gogs.New(f.Host)
+			d, err = gogs.New(f.Host, gogs.Transport(rt))
 		case OneDev:
-			d, err = onedev.New(f.Host)
+			d, err = onedev.New(f.Host, onedev.Transport(rt))
 		case Gerrit:
-			d, err = newGerrit(f)
+			d, err = newGerrit(f, rt)
 		case Sourcehut:
-			var opts []sourcehut.Option
+			opts := []sourcehut.Option{sourcehut.Transport(rt)}
 			if f.PayloadKey != "" {
 				opts = append(opts, sourcehut.PayloadKey(f.PayloadKey))
 			}
 			d, err = sourcehut.New(f.Host, opts...)
 		case Bitbucket:
-			d, err = bitbucket.New(f.Host)
+			d, err = bitbucket.New(f.Host, bitbucket.Transport(rt))
 		case BitbucketServer:
-			var opts []bitbucketserver.Option
+			opts := []bitbucketserver.Option{bitbucketserver.Transport(rt)}
 			if f.SSHPort != 0 {
 				opts = append(opts, bitbucketserver.SSHPort(f.SSHPort))
 			}
 			d, err = bitbucketserver.New(f.Host, opts...)
 		case Azure:
-			d, err = azure.New(f.Host, azure.Organizations(f.Organizations...))
+			d, err = azure.New(f.Host, azure.Transport(rt), azure.Organizations(f.Organizations...))
 		default:
 			return nil, fmt.Errorf("forge %q names driver %q; a driver is one of %q", f.Host, f.Driver, names)
 		}
@@ -241,9 +253,24 @@ func Registry(declared []Forge, oauth ...string) (*forge.Registry, error) {
 	return forge.New(forge.Policy{}, bindings...)
 }
 
+// transportFor is what a forge's driver sends its requests over: the machine's
+// default, or one trusting only the forge's own CA when it names one.
+func transportFor(f Forge) (http.RoundTripper, error) {
+	if f.CA == "" {
+		return http.DefaultTransport, nil
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM([]byte(f.CA)) {
+		return nil, fmt.Errorf("forge %q: its ca holds no certificate", f.Host)
+	}
+	rt := http.DefaultTransport.(*http.Transport).Clone()
+	rt.TLSClientConfig = &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
+	return rt, nil
+}
+
 // newGerrit is the one driver whose binding carries deployment credentials.
-func newGerrit(f Forge) (forge.Driver, error) {
-	var opts []gerrit.Option
+func newGerrit(f Forge, rt http.RoundTripper) (forge.Driver, error) {
+	opts := []gerrit.Option{gerrit.Transport(rt)}
 	if f.Membership != "" {
 		opts = append(opts, gerrit.Membership(f.Membership))
 	}

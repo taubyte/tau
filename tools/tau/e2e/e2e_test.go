@@ -88,11 +88,11 @@ func fleet(t *testing.T, f *fake.Served, opts ...instance.Option) (front, otherF
 
 	u, err := dream.Start(t.Context(), t.Name(), dream.Config{
 		Copies:  3,
-		Options: append([]instance.Option{instance.WithForges(forges)}, opts...),
+		Options: opts,
 		Secrets: []*secretsv2.InitSecret{adminSecret},
 		Configure: func(index int, c *instance.Config) {
 			c.CloudFqdn = e2eCloud
-			c.Forges = []drivers.Forge{{Host: f.Host(), Driver: drivers.GitHub, HostKeys: []string{f.HostKey()}}}
+			c.Forges = []drivers.Forge{{Host: f.Host(), Driver: drivers.GitHub, HostKeys: []string{f.HostKey()}, CA: f.CA()}}
 			c.Auth.Admin = auth.Admin{Name: "root"}
 			if index > 0 {
 				c.Services = []string{instance.Discovery, instance.BuildFrontend}

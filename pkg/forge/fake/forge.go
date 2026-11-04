@@ -49,6 +49,11 @@ const (
 	Namespace = "acme"
 	Member    = "alice"
 	NonMember = "mallory"
+
+	// Login and Subject are who Token belongs to. Subject is a number, as a user's
+	// is on GitHub, so every face of this forge names the same person.
+	Login   = "fake-user"
+	Subject = "4711"
 )
 
 // The token this forge honours, and one it refuses. They are long enough and
@@ -75,9 +80,6 @@ type core struct {
 	// "http" for a forge Serve put on loopback.
 	scheme string
 	git    gitStores
-
-	// sshHost is where Serve answers git over ssh; empty when not served.
-	sshHost string
 
 	mu       sync.Mutex
 	repos    map[string]*repo
@@ -499,9 +501,6 @@ func (c *core) flatten(k repokey.Key) repokey.Key {
 }
 
 func (c *core) cloneURL(k repokey.Key, over forge.Protocol) string {
-	if over == forge.SSH && c.sshHost != "" {
-		return "ssh://git@" + c.sshHost + "/" + k.FullName() + ".git"
-	}
 	if over == forge.SSH {
 		return "ssh://git@" + c.shape.Host + "/" + k.FullName() + ".git"
 	}

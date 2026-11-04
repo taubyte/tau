@@ -1,7 +1,14 @@
 package drivers
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
+	"math/big"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
@@ -183,4 +190,22 @@ func TestTheCLIsPublicForgesSignAsTheDefaultCloudVerifies(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, want.(forge.Signatures).Scheme(), got.(forge.Signatures).Scheme(), host)
 	}
+}
+
+func TestAForgeBehindAPrivateCATrustsOnlyIt(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	template := &x509.Certificate{SerialNumber: big.NewInt(1), NotAfter: time.Now().Add(time.Hour), IsCA: true, BasicConstraintsValid: true}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	require.NoError(t, err)
+	ca := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+
+	for _, driver := range names {
+		f := Forge{Host: "git.example.com", Driver: driver, CA: ca, Organizations: []string{"acme"}}
+		_, err := Registry([]Forge{f})
+		require.NoError(t, err, "%s takes a private root", driver)
+	}
+
+	_, err = Registry([]Forge{{Host: "git.example.com", Driver: GitHub, CA: "not a certificate"}})
+	require.ErrorContains(t, err, "holds no certificate")
 }

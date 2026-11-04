@@ -1,12 +1,22 @@
 package fake
 
 import (
+	"bufio"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
+	"math/big"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
@@ -20,17 +30,27 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// A fake forge can also serve git's smart HTTP protocol on loopback, go-git
-// behind it; a clone and a push take the grants every face answers with.
+// A fake forge can also serve on loopback, on ONE port, as a forge does on one host:
+// TLS (its API in the dialect its shape speaks, and git's smart HTTP), git over ssh to
+// deploy keys, and git's smart HTTP in the clear. What a connection sends first says
+// which: a TLS ClientHello opens with 0x16, an ssh client with its "SSH-" banner, and
+// anything else is plain HTTP. A real driver bound to the host derives its https and
+// ssh addresses from it, and both land here.
 
 type Served struct {
 	*Forge
-	srv *http.Server
-	ssh *sshServer
+	ln    net.Listener
+	srv   *http.Server
+	tls   *http.Server
+	ssh   *sshServer
+	ca    []byte
+	plain *connQueue
+	safe  *connQueue
+	shell *connQueue
 }
 
-// Serve starts a forge of the given shape whose host is a loopback address
-// serving git over plain http. The shape's Host is replaced by that address.
+// Serve starts a forge of the given shape on a loopback address. The shape's Host is
+// replaced by that address.
 func Serve(sh Shape) (*Served, error) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -39,18 +59,149 @@ func Serve(sh Shape) (*Served, error) {
 	sh.Host = ln.Addr().String()
 	f := New(sh)
 	f.c.scheme = "http"
-	ssh, err := serveSSH(f.c)
+
+	cert, ca, err := selfSigned()
 	if err != nil {
 		ln.Close()
 		return nil, err
 	}
-	s := &Served{Forge: f, srv: &http.Server{Handler: http.HandlerFunc(f.c.serveGit)}, ssh: ssh}
-	go s.srv.Serve(ln)
+	s := &Served{Forge: f, ln: ln, ca: ca,
+		plain: newConnQueue(ln.Addr()), safe: newConnQueue(ln.Addr()), shell: newConnQueue(ln.Addr())}
+	if s.ssh, err = serveSSH(f.c, s.shell); err != nil {
+		ln.Close()
+		return nil, err
+	}
+	handler := f.c.handler()
+	s.srv = &http.Server{Handler: handler}
+	s.tls = &http.Server{Handler: handler, TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}}
+	go s.srv.Serve(s.plain)
+	go s.tls.ServeTLS(s.safe, "", "")
+	go s.sort()
 	return s, nil
 }
 
+// CA is the root this forge's TLS chains to, PEM: what a cloud names as the forge's
+// ca to trust it.
+func (s *Served) CA() string { return string(s.ca) }
+
 func (s *Served) Close() error {
-	return errors.Join(s.srv.Close(), s.ssh.ln.Close())
+	err := s.ln.Close()
+	s.plain.Close()
+	s.safe.Close()
+	s.shell.Close()
+	return errors.Join(err, s.srv.Close(), s.tls.Close())
+}
+
+// sort hands every connection to the server its first bytes name.
+func (s *Served) sort() {
+	for {
+		conn, err := s.ln.Accept()
+		if err != nil {
+			return
+		}
+		go s.route(conn)
+	}
+}
+
+func (s *Served) route(conn net.Conn) {
+	r := bufio.NewReader(conn)
+	first, err := r.Peek(1)
+	if err != nil {
+		conn.Close()
+		return
+	}
+	peeked := &peekedConn{Conn: conn, r: r}
+	if first[0] == 0x16 {
+		s.safe.push(peeked)
+		return
+	}
+	if banner, err := r.Peek(4); err == nil && string(banner) == "SSH-" {
+		s.shell.push(peeked)
+		return
+	}
+	s.plain.push(peeked)
+}
+
+// handler is everything this forge answers over HTTP: its API, when its shape speaks
+// one, and git.
+func (c *core) handler() http.Handler {
+	mux := http.NewServeMux()
+	if c.shape.Speaks == SpeaksGitHub {
+		mux.Handle(githubAPI, http.StripPrefix(strings.TrimSuffix(githubAPI, "/"), c.github()))
+	}
+	mux.HandleFunc("/", c.serveGit)
+	return mux
+}
+
+// peekedConn is a connection whose first bytes were read to sort it, and are read
+// again by whoever it was sorted to.
+type peekedConn struct {
+	net.Conn
+	r *bufio.Reader
+}
+
+func (p *peekedConn) Read(b []byte) (int, error) { return p.r.Read(b) }
+
+// connQueue is a listener over the connections sorted to one server.
+type connQueue struct {
+	addr   net.Addr
+	conns  chan net.Conn
+	closed chan struct{}
+	once   sync.Once
+}
+
+func newConnQueue(addr net.Addr) *connQueue {
+	return &connQueue{addr: addr, conns: make(chan net.Conn), closed: make(chan struct{})}
+}
+
+func (q *connQueue) push(c net.Conn) {
+	select {
+	case q.conns <- c:
+	case <-q.closed:
+		c.Close()
+	}
+}
+
+func (q *connQueue) Accept() (net.Conn, error) {
+	select {
+	case c := <-q.conns:
+		return c, nil
+	case <-q.closed:
+		return nil, net.ErrClosed
+	}
+}
+
+func (q *connQueue) Close() error {
+	q.once.Do(func() { close(q.closed) })
+	return nil
+}
+
+func (q *connQueue) Addr() net.Addr { return q.addr }
+
+// selfSigned is a certificate for loopback that is its own root.
+func selfSigned() (tls.Certificate, []byte, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, nil, err
+	}
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "fake forge"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		IPAddresses:           []net.IP{net.IPv4(127, 0, 0, 1)},
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		return tls.Certificate{}, nil, err
+	}
+	pemCert := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	cert := tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
+	return cert, pemCert, nil
 }
 
 type gitStores struct {
