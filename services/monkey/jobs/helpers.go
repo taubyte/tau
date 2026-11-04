@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/pkg/git"
 	specs "github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/tau/pkg/specs/methods"
@@ -33,16 +35,34 @@ func (c Context) storeLogFile(file *os.File) (string, error) {
 	return cid, nil
 }
 
+// TnsRetryFor is how long a job waits for a TNS key another job publishes.
+var TnsRetryFor = 30 * time.Second
+
+// retryTns calls fetch every second until it succeeds or TnsRetryFor passes,
+// so a key that lands a second later costs a second, not a fixed long sleep.
+func retryTns(ctx context.Context, fetch func() (tns.Object, error)) (tns.Object, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	deadline := time.Now().Add(TnsRetryFor)
+	for {
+		obj, err := fetch()
+		if err == nil || time.Now().After(deadline) {
+			return obj, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, err
+		case <-time.After(time.Second):
+		}
+	}
+}
+
 func (c Context) fetchConfigSshUrl() (sshString string, err error) {
 	tnsPath := specs.NewTnsPath([]string{"resolve", "repo", "github", strconv.Itoa(c.ConfigRepoId)})
-	tnsObj, err := c.Tns.Fetch(tnsPath)
-	// TODO: This should return
+	tnsObj, err := retryTns(c.ctx, func() (tns.Object, error) { return c.Tns.Fetch(tnsPath) })
 	if err != nil {
-		time.Sleep(30 * time.Second)
-		tnsObj, err = c.Tns.Fetch(tnsPath)
-		if err != nil {
-			err = fmt.Errorf("fetching config ssh url failed with: %s", err)
-		}
+		return "", fmt.Errorf("fetching config ssh url failed with: %s", err)
 	}
 
 	obj := maps.SafeInterfaceToStringKeys(tnsObj.Interface())
@@ -64,15 +84,22 @@ func (c Context) getResourceRepositoryId() (id string, err error) {
 		return
 	}
 
-	resp, err := c.Tns.Fetch(repoPath.AllResources())
+	// The config job publishes this key; when both jobs run at once, the build
+	// can get here first.
+	resp, err := retryTns(c.ctx, func() (tns.Object, error) {
+		resp, err := c.Tns.Fetch(repoPath.AllResources())
+		if err == nil {
+			if key, ok := resp.Interface().(string); !ok || len(key) < 1 {
+				err = fmt.Errorf("could not find git repo id `%s` key in tns", gitRepoId)
+			}
+		}
+		return resp, err
+	})
 	if err != nil {
 		return
 	}
 
-	key, ok := resp.Interface().(string)
-	if !ok || len(key) < 1 {
-		err = fmt.Errorf("could not find git repo id `%s` key in tns", gitRepoId)
-	}
+	key := resp.Interface().(string)
 
 	keySplit := strings.Split(key, "/")
 	id = keySplit[len(keySplit)-1]
@@ -90,6 +117,14 @@ func (c Context) handleCompressedBuild(id string, rsk io.ReadSeekCloser) error {
 		return fmt.Errorf("stashing build failed with: %s", err)
 	}
 
+	if err = c.publishAsset(id, cid); err == nil && c.reuseKey != "" {
+		builtModules.Store(c.reuseKey, cid)
+	}
+	return err
+}
+
+// publishAsset records cid as the build of resource id on the job and in TNS.
+func (c Context) publishAsset(id, cid string) error {
 	c.Job.SetCid(id, cid)
 
 	assetKey, err := methods.GetTNSAssetPath(c.ProjectID, id, c.Job.Meta.Repository.Branch)
@@ -149,6 +184,7 @@ func (c *Context) cloneAndSet() error {
 		git.URL(c.Job.Meta.Repository.URI),
 		git.SSHKey(c.DeployKey),
 		git.Temporary(),
+		git.Shallow(),
 		git.Branch(c.Job.Meta.Repository.Branch),
 		git.Output(c.LogFile),
 	)

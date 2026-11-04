@@ -140,6 +140,17 @@ func Root(root string) Option {
 	}
 }
 
+/* Shallow is an Option to clone only the latest commit of the Branch, for a
+ * repository that is read and thrown away, not pushed from. Without Branch it
+ * does nothing.
+ */
+func Shallow() Option {
+	return func(c *Repository) error {
+		c.shallow = true
+		return nil
+	}
+}
+
 /* Branch is an Option to set the repository branch.
  *
  * branch: The branch to use.

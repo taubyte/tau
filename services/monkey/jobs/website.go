@@ -10,6 +10,10 @@ import (
 )
 
 func (w website) handle() (err error) {
+	if reused, err := w.reusePrevious("website"); reused || err != nil {
+		return err
+	}
+
 	builder, err := build.New(w.ctx, w.LogFile, w.WorkDir, build.Dev(w.Monkey.Dev()))
 	if err != nil {
 		return fmt.Errorf("creating new builder for git website repo `%d` failed with: %w", w.Job.Meta.Repository.ID, err)
