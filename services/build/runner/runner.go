@@ -20,6 +20,7 @@ import (
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/rpc"
+	"github.com/taubyte/tau/pkg/proto/codec"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
 	"github.com/taubyte/tau/services/build"
@@ -81,7 +82,7 @@ func (s *server) session(ctx context.Context, id libp2ppeer.ID) error {
 	defer c.Close()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stream := buildv2connect.NewRunnerServiceClient(c.HTTP(), c.URL()).Serve(ctx)
+	stream := buildv2connect.NewRunnerServiceClient(c.HTTP(), c.URL(), codec.Option()).Serve(ctx)
 	defer stream.CloseRequest()
 	// A CANCELLED CONTEXT DOES NOT END A READ IN PROGRESS over this transport, so the
 	// stream's response is closed under it, which does.

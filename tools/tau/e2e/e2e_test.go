@@ -101,6 +101,17 @@ func fleet(t *testing.T, f *fake.Served, opts ...instance.Option) (front, otherF
 	})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
+	// A NODE THAT HAS HEARD NOBODY answers a push it cannot route with 503, so the
+	// fleet is handed over once every node's directory names all of them.
+	require.Eventually(t, func() bool {
+		for _, pid := range u.Pids() {
+			n, found := dream.Node(pid)
+			if !found || len(n.Peers(instance.Discovery)) != len(u.Pids()) {
+				return false
+			}
+		}
+		return true
+	}, time.Minute, 100*time.Millisecond, "the fleet's nodes never all heard each other")
 	addr := func(i int) string {
 		n, found := dream.Node(u.Pids()[i])
 		require.True(t, found)
@@ -194,12 +205,12 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 		linkcreds.HookSecret(codeRepo.String()), linkcreds.DeployKey(codeRepo.String()),
 	}, names)
 
-	// THE PUSH IS VERIFIED BY THE REPOSITORY'S OWN SECRET, and confirmed at
-	// the forge over the deploy key before it is queued: a commit the branch
-	// does not hold builds nothing.
+	// THE PUSH IS VERIFIED BY THE REPOSITORY'S OWN SECRET, and confirmed at the
+	// forge over the deploy key by the runner that plans it: a commit the branch
+	// does not hold is queued, and builds nothing.
 	hook := cloud + "/hook/" + linked.ProjectID
 	require.Equal(t, http.StatusNotFound, deliver(t, f.Forge, hook, configRepo, "not-the-secret", linked.Pushed).StatusCode)
-	require.NotEqual(t, http.StatusAccepted, deliver(t, f.Forge, hook, configRepo, wire, strings.Repeat("a", 40)).StatusCode)
+	require.Equal(t, http.StatusAccepted, deliver(t, f.Forge, hook, configRepo, wire, strings.Repeat("a", 40)).StatusCode)
 	require.Eventually(t, func() bool {
 		return deliver(t, f.Forge, hook, configRepo, wire, linked.Pushed).StatusCode == http.StatusAccepted
 	}, time.Minute, time.Second, "the pushed commit was never confirmed")
@@ -209,15 +220,17 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 		ID     string `json:"id"`
 		Status string `json:"status"`
 	}
-	// A PUSH IS A PLAN AND A JOB PER ENVIRONMENT IT FEEDS: this project's one.
+	// A PUSH IS A PLAN AND A JOB PER ENVIRONMENT IT FEEDS: this project's one, for
+	// the pushed commit, both succeeding; and one plan for the commit the branch
+	// does not hold, failed by the runner's confirm.
 	var jobs []job
-	succeeded := func() bool {
+	ended := func(want string) (n int, last string) {
 		for _, j := range jobs {
-			if j.Status != "success" {
-				return false
+			if j.Status == want {
+				n, last = n+1, j.ID
 			}
 		}
-		return true
+		return n, last
 	}
 	require.Eventually(t, func() bool {
 		jobs = nil
@@ -225,8 +238,16 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 	}, time.Minute, time.Second, "the verified push queued a job")
 	require.Eventually(t, func() bool {
 		jobs = nil
-		return json.Unmarshal([]byte(ok(t, "jobs", "--profile", "owner", "--dir", dir, "-o", "json")), &jobs) == nil && len(jobs) == 2 && succeeded()
+		if json.Unmarshal([]byte(ok(t, "jobs", "--profile", "owner", "--dir", dir, "-o", "json")), &jobs) != nil {
+			return false
+		}
+		succeeded, _ := ended("success")
+		failed, _ := ended("failed")
+		return len(jobs) == 3 && succeeded == 2 && failed == 1
 	}, 3*time.Minute, 2*time.Second, "the build cloned over the deploy key and succeeded: %v", jobs)
+	_, refused := ended("failed")
+	require.Contains(t, ok(t, "job", "--profile", "owner", "-o", "json", "--", refused), "does not hold",
+		"the commit the branch does not hold is refused at the forge, by name")
 
 	// A SECOND TAU USER sees nothing until granted, then reads; revoked, the
 	// project is a 404 again.

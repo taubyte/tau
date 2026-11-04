@@ -62,6 +62,8 @@ var Table = map[string]map[string]Class{
 	"tau.build.v2.JobService": {
 		"Get": R, "List": R, "Cancel": W, "Retry": W, "Artifact": R, "Follow": R,
 	},
+	// A runner's stream: it is handed jobs to run, which no outside client drives.
+	"tau.build.v2.RunnerService": {"Serve": W},
 	// Verifying says who a token is.
 	"tau.auth.v2.IdentityService": {"Admit": S, "Verify": S},
 	// Every call that ends in a session or a forge token mints a credential,

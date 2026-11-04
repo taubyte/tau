@@ -8,6 +8,7 @@ import (
 	"net"
 
 	"connectrpc.com/connect"
+	logging "github.com/ipfs/go-log/v2"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/taubyte/tau/core/service"
@@ -161,6 +162,7 @@ func (f *server) wire(h service.Host, cfg config) ([]frontend.Option, error) {
 	f.also = append(f.also, domains)
 
 	options := []frontend.Option{
+		frontend.WithLogger(logging.Logger("tau.build").Infof),
 		// THE PROJECT TABLE IS THE REGISTER'S: who a project's owner is and what
 		// roles it granted. This role writes it only through the link and grant
 		// routes, after authorizing the caller.
