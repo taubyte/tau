@@ -103,7 +103,7 @@ func TestStartRefusesAnOpenNetworkItWasNotToldAbout(t *testing.T) {
 
 func TestTheExampleRoundTrips(t *testing.T) {
 	example := File{
-		Node:      instance.Config{Services: append(append([]string(nil), instance.All...), services.Names()...), Cloud: "acme"},
+		Node:      instance.Config{Services: append(append([]string(nil), instance.All...), services.Default()...), Cloud: "acme"},
 		Root:      DefaultRoot,
 		Listen:    []string{DefaultListen},
 		Open:      true,

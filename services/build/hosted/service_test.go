@@ -13,6 +13,7 @@ import (
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/git/gittest"
+	"github.com/taubyte/tau/services/build/frontend"
 )
 
 // node is an instance as build sees it: a peer, nothing beside it, and the section
@@ -108,4 +109,12 @@ func TestAForgeWithAnEventStreamIsFollowed(t *testing.T) {
 		}},
 	})))
 	require.NoError(t, s.Close(), "and the stream it opened stops with it")
+}
+
+func TestASectionGivenInGoKeepsTheDefaultsItLeavesOut(t *testing.T) {
+	raw, err := yaml.Marshal(frontend.Config{Listen: "127.0.0.1:0"})
+	require.NoError(t, err)
+	var cfg config
+	require.NoError(t, yaml.Unmarshal(raw, &cfg))
+	require.Nil(t, cfg.EligibleRefs, "no refs named is the default refs, not none")
 }

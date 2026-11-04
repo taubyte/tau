@@ -792,7 +792,7 @@ func TestTheDomainCorpusBuildsBothWays(t *testing.T) {
 		built := c.Sections[instance.Runner].(backend.Config)
 		built.Domains.Trusted = false
 		c.Sections[instance.Runner] = built
-		c.Services = append(append(append([]string(nil), instance.All...), services.Names()...), instance.CM)
+		c.Services = append(append(append([]string(nil), instance.All...), services.Default()...), instance.CM)
 	}, instance.WithResolver(dns))
 
 	claim := func(t *testing.T, work, fqdn string) api.DomainClaim {

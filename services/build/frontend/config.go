@@ -114,11 +114,11 @@ type Config struct {
 
 	// EligibleRefs are the refs a push is built for; nil means DefaultEligibleRefs.
 	// The one place that decides, before Enqueue.
-	EligibleRefs []string `yaml:"eligibleRefs"`
+	EligibleRefs []string `yaml:"eligibleRefs,omitempty"`
 
 	// Origins are the browser origins (scheme://host[:port]) whose pages may call this
 	// ingress; no cookie is ever accepted (cors.go).
-	Origins []string `yaml:"origins"`
+	Origins []string `yaml:"origins,omitempty"`
 
 	// HookRate limits one hook id, WebhookRate the webhook route, CallerRate one
 	// credential, JobRate the job routes. Each surface has its own pair so a flood
