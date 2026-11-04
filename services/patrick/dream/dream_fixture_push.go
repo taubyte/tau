@@ -1,14 +1,18 @@
 package dream
 
 import (
+	"cmp"
 	_ "embed"
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	authIface "github.com/taubyte/tau/core/services/auth"
+	tnsIface "github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	spec "github.com/taubyte/tau/pkg/specs/common"
@@ -78,13 +82,35 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 
 	_map := maps.SafeInterfaceToStringKeys(resp.Interface())
 
-	pushIdx := 0
+	auth, err := simple.Auth()
+	if err != nil {
+		return err
+	}
+
+	type repo struct{ id, fullName string }
+	var repos []repo
 	for repoId, repoInfo := range _map {
-		_repoInfo := maps.SafeInterfaceToStringKeys(repoInfo)
-		fullName, ok := _repoInfo["fullname"].(string)
+		fullName, ok := maps.SafeInterfaceToStringKeys(repoInfo)["fullname"].(string)
 		if !ok {
 			continue
 		}
+		// The universe's repos are every project's: with a project id, push
+		// only that project's, rather than rebuilding every project there is.
+		if projectId != "" {
+			if owner := repoProject(auth, tns, repoId); owner != "" && owner != projectId {
+				continue
+			}
+		}
+		repos = append(repos, repo{repoId, fullName})
+	}
+	// Config first: the other repos' jobs read what its job publishes.
+	slices.SortStableFunc(repos, func(a, b repo) int {
+		return cmp.Compare(repoKindOrder(a.fullName), repoKindOrder(b.fullName))
+	})
+
+	pushIdx := 0
+	for _, r := range repos {
+		repoId, fullName := r.id, r.fullName
 		var err error
 		pushedAt := time.Now().Unix() + int64(pushIdx)
 		pushIdx++
@@ -117,6 +143,35 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 
 	return nil
 }
+
+// repoProject is the project a repository belongs to, or "" when neither auth
+// nor TNS knows it yet; such a repository is pushed, as it always was.
+func repoProject(auth authIface.Client, tns tnsIface.Client, repoId string) string {
+	if id, err := strconv.Atoi(repoId); err == nil {
+		if r, err := auth.Repositories().Github().Get(id); err == nil && r.Project() != "" {
+			return r.Project()
+		}
+	}
+	project, _ := tns.Simple().GetRepositoryProjectId("github", repoId)
+	return project
+}
+
+// repoKindOrder sorts a project's repositories as their jobs depend on each
+// other: config, then libraries, code and websites.
+func repoKindOrder(fullName string) int {
+	name := fullName[strings.LastIndex(fullName, "/")+1:]
+	switch {
+	case strings.HasPrefix(name, "tb_library_"):
+		return 1
+	case strings.HasPrefix(name, "tb_code_"):
+		return 2
+	case strings.HasPrefix(name, "tb_website_"):
+		return 3
+	default:
+		return 0
+	}
+}
+
 func pushSpecific(u *dream.Universe, params ...interface{}) error {
 	if err := u.Provides("auth", "patrick", "tns"); err != nil {
 		return err
@@ -170,12 +225,17 @@ func pushSpecific(u *dream.Universe, params ...interface{}) error {
 		return err
 	}
 
-	// Try to register
+	// Try to register. Registering returns once it is done, so wait only until
+	// auth answers for the repository, instead of a second per repository.
 	commonTest.RegisterTestRepositories(u.Context(), auth, commonTest.Repository{
 		ID:   intRepoId,
 		Name: strings.Split(fullname, "/")[1],
 	})
-	time.Sleep(1 * time.Second)
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		if _, err := auth.Repositories().Github().Get(intRepoId); err == nil {
+			break
+		}
+	}
 
 	var newPayload []byte
 	if localPath != "" {

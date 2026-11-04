@@ -44,7 +44,17 @@ func Start(ctx context.Context, options ...Option) error {
 			case <-time.After(cnf.interval):
 				// A sweep that cannot reclaim anything is how a build node runs
 				// out of disk, so say so rather than dropping the error.
-				if err := client.Clean(ctx, cnf.maxAge, cnf.reference); err != nil {
+				var err error
+				if cnf.reference != "" {
+					err = client.Clean(ctx, cnf.maxAge, cnf.reference)
+				} else {
+					// Judged by when tau last used an image, not when it was
+					// built upstream: by that measure every build image is
+					// always too old, and it is downloaded again after each
+					// sweep. Images tau never used are not its to remove.
+					err = client.CleanUnused(ctx, cnf.maxAge)
+				}
+				if err != nil {
 					logger.Errorf("image cleanup failed: %s", err)
 				}
 			case <-ctx.Done():
