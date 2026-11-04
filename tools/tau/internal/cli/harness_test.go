@@ -513,11 +513,14 @@ type liveLog struct {
 	text  string
 	grew  chan struct{}
 	ended bool
+	// attached closes when a follower first reads the log.
+	attached chan struct{}
+	attach   sync.Once
 }
 
 // building puts a running job on the fake whose log so far is first.
 func (f *frontend) building(t *testing.T, id, first string) *liveLog {
-	l := &liveLog{f: f, id: id, text: first, grew: make(chan struct{})}
+	l := &liveLog{f: f, id: id, text: first, grew: make(chan struct{}), attached: make(chan struct{})}
 	f.mu.Lock()
 	f.jobs[id] = &buildv2.Job{Id: id, Status: buildv2.JobStatus_JobStatusClaimed, Timestamp: 1700000400, Attempt: 1, Environment: "prod"}
 	if f.live == nil {
@@ -593,9 +596,12 @@ func (l *liveLog) end() {
 func (l *liveLog) serve(w http.ResponseWriter, r *http.Request, attempt string) {
 	from, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	snapshot := r.URL.Query().Get("snapshot") == "true"
-	// The response opens before the first chunk, as the frontend's does.
+	// The response opens before the first event, as the frontend's does.
 	w.Header().Set("X-Job-Attempt", attempt)
 	w.(http.Flusher).Flush()
+	if !snapshot {
+		l.attach.Do(func() { close(l.attached) })
+	}
 	for {
 		l.mu.Lock()
 		text, grew, ended := l.text, l.grew, l.ended

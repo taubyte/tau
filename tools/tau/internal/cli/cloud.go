@@ -282,35 +282,39 @@ func copyLog(cmd *cobra.Command, env Env, stream *api.LogStream) (int64, error) 
 	})
 }
 
-// showPlan is the log of a push: what its plan queued, and with follow each of
-// those jobs' logs in turn, once the plan has planned.
+// showPlan is the log of a push: its plan's own events, live while it plans, and with
+// follow each job it queued in turn. A plan's log is not kept once it ends, so what
+// survives it is the jobs it names.
 func showPlan(cmd *cobra.Command, env Env, cl *api.Client, j *api.Job, follow bool, notes io.Writer) error {
-	id := j.GetId()
-	queued := j.GetStatus() == api.JobQueued
-	if !follow {
-		switch {
-		case queued:
+	ctx, id := cmd.Context(), j.GetId()
+	if j.GetStatus() == api.JobQueued {
+		if follow {
+			fmt.Fprintf(notes, "job %s is queued: its log follows once it starts\n", id)
+		} else {
 			fmt.Fprintf(notes, "job %s is queued: it has logged nothing yet\n", id)
-		case len(j.GetChildren()) > 0:
-			fmt.Fprintf(notes, "job %s is a push's plan and keeps no log; it built as %s\n", id, strings.Join(j.GetChildren(), ", "))
-		default:
-			fmt.Fprintf(notes, "job %s is a push's plan and keeps no log; it has queued no build yet\n", id)
+			return nil
+		}
+	}
+	stream := cl.Stream(ctx, id, 0, 0)
+	if !follow {
+		stream.Retries, stream.Snapshot = 0, true
+	}
+	_, err := copyLog(cmd, env, stream)
+	var lost *api.LostLog
+	if err != nil && !errors.As(err, &lost) {
+		return err
+	}
+	if j, err = cl.Job(ctx, id); err != nil {
+		return err
+	}
+	if !follow {
+		if children := j.GetChildren(); len(children) > 0 {
+			fmt.Fprintf(notes, "job %s is a push's plan; it built as %s\n", id, strings.Join(children, ", "))
 		}
 		return nil
 	}
-	if queued {
-		fmt.Fprintf(notes, "job %s is queued: its log follows once it starts\n", id)
-	}
-	for !terminal(j) {
-		select {
-		case <-cmd.Context().Done():
-			return cmd.Context().Err()
-		case <-time.After(interval(cmd)):
-		}
-		var err error
-		if j, err = cl.Job(cmd.Context(), id); err != nil {
-			return err
-		}
+	if !terminal(j) {
+		return fmt.Errorf("job %s: its log ended while it was still %s", id, ui.Status(j.GetStatus()))
 	}
 	if reason := j.GetReason(); j.GetStatus() != api.JobSuccess && reason != "" {
 		fmt.Fprintf(notes, "job %s: %s\n", id, reason)

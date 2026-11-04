@@ -507,23 +507,21 @@ func TestSecrets(t *testing.T) {
 	require.Equal(t, []string{"Environment", "Value of api_key"}, x.prompter.asked)
 }
 
-// A PUSH'S PLAN KEEPS NO LOG: tau logs names the jobs it queued, and following it
-// follows them.
+// A PUSH'S PLAN: tau logs shows what it said while it plans and names the jobs it
+// queued, and following it follows them.
 func TestTheLogsOfAPlanAreItsJobs(t *testing.T) {
 	x := newTester(t)
 	x.login()
 	x.f.mu.Lock()
 	x.f.jobs["plan"] = &buildv2.Job{Id: "plan", Status: buildv2.JobStatus_JobStatusSuccess, Attempt: 1, Children: []string{"job-1"}}
-	x.f.jobs["planning"] = &buildv2.Job{Id: "planning", Status: buildv2.JobStatus_JobStatusClaimed, Attempt: 1}
 	x.f.jobs["waiting"] = &buildv2.Job{Id: "waiting", Status: buildv2.JobStatus_JobStatusOpen}
 	x.f.jobs["broken"] = &buildv2.Job{Id: "broken", Status: buildv2.JobStatus_JobStatusFailed, Attempt: 1, Reason: "the commit feeds no environment"}
 	x.f.mu.Unlock()
 
 	r := x.run("logs", "plan")
 	require.Zero(t, r.code, r.stderr)
-	require.Empty(t, r.stdout)
-	require.Contains(t, r.stderr, "job plan is a push's plan and keeps no log; it built as job-1")
-	require.Contains(t, x.run("logs", "planning").stderr, "it has queued no build yet")
+	require.Empty(t, r.stdout, "an ended plan's log is not kept")
+	require.Contains(t, r.stderr, "job plan is a push's plan; it built as job-1")
 	require.Contains(t, x.run("logs", "waiting").stderr, "job waiting is queued: it has logged nothing yet")
 
 	followed := x.run("logs", "plan", "--follow")
@@ -536,15 +534,23 @@ func TestTheLogsOfAPlanAreItsJobs(t *testing.T) {
 	require.Contains(t, broke.stderr, "job broken: the commit feeds no environment")
 	require.Empty(t, broke.stdout)
 
-	// A plan that ends while it is followed is waited for.
-	go func() {
-		x.f.mu.Lock()
-		defer x.f.mu.Unlock()
-		x.f.jobs["planning"].Status, x.f.jobs["planning"].Children = buildv2.JobStatus_JobStatusSuccess, []string{"job-1"}
-	}()
-	planned := x.run("logs", "planning", "--follow", "--interval", "10ms")
+	// A PLAN FOLLOWED WHILE IT PLANS is its own log to its end, then the jobs it
+	// queued: nothing waits on a clock.
+	planning := x.f.building(t, "planning", "main feeds prod\n")
+	x.f.mu.Lock()
+	x.f.jobs["planning"].Environment = ""
+	x.f.mu.Unlock()
+	done := make(chan run, 1)
+	go func() { done <- x.run("logs", "planning", "--follow") }()
+	<-planning.attached
+	planning.say("queued job job-1 for prod\n")
+	x.f.mu.Lock()
+	x.f.jobs["planning"].Status, x.f.jobs["planning"].Children = buildv2.JobStatus_JobStatusSuccess, []string{"job-1"}
+	x.f.mu.Unlock()
+	planning.end()
+	planned := <-done
 	require.Zero(t, planned.code, planned.stderr)
-	require.Equal(t, "stored: step one\nstep two\n", planned.stdout)
+	require.Equal(t, "main feeds prod\nqueued job job-1 for prod\nstored: step one\nstep two\n", planned.stdout)
 }
 
 // tau ci run of a push whose plan failed says why, and fails.

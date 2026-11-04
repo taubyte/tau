@@ -195,6 +195,9 @@ func succeededAt(attempt uint32) *buildv2.JobEvent {
 	return &buildv2.JobEvent{Kind: &buildv2.JobEvent_Settled{Settled: &buildv2.JobSettled{Attempt: attempt, Status: buildv2.JobStatus_JobStatusSuccess}}}
 }
 
+// success is one job's successful build: what it built and from which commit.
+type success struct{ job, cid, sha string }
+
 func TestAJournalAppendsAndFoldsBack(t *testing.T) {
 	for name, open := range map[string]func(t *testing.T) kvdb.Instance{
 		"mock": func(t *testing.T) kvdb.Instance {
@@ -261,7 +264,7 @@ func TestAJournalAppendsAndFoldsBack(t *testing.T) {
 					}, value: []byte(sha)})
 				require.NoError(t, err)
 			}
-			for _, built := range []struct{ job, cid, sha string }{{"one", "bafyone", "sha-one"}, {"two", "bafytwo", "sha-two"}} {
+			for _, built := range []success{{"one", "bafyone", "sha-one"}, {"two", "bafytwo", "sha-two"}} {
 				_, err = appendEvent(ctx, j, built.job, createdIn("shop", "prod"))
 				require.NoError(t, err)
 				_, err = appendEvent(ctx, j, built.job, claimedAt(1))

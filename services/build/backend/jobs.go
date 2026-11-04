@@ -283,13 +283,16 @@ func (s *Service) follow(ctx context.Context, req *buildv2.FollowRequest, send f
 			break
 		}
 		// Only a missing log goes to notWritten; other refusals keep their codes so a bad
-		// request does not walk the fleet.
+		// request does not walk the fleet. A follow already held asks holds alone, which
+		// reads without the queue's barrier, so waiting costs no raft entry per ring.
 		if connect.CodeOf(err) != connect.CodeNotFound {
 			return err
 		}
-		err = s.notWritten(jobID, attempt, err)
-		if req.GetSnapshot() || connect.CodeOf(err) != connect.CodeUnavailable || !s.holds(jobID, attempt) {
-			return err
+		if !waited || !s.holds(jobID, attempt) {
+			err = s.notWritten(jobID, attempt, err)
+			if req.GetSnapshot() || connect.CodeOf(err) != connect.CodeUnavailable || !s.holds(jobID, attempt) {
+				return err
+			}
 		}
 		if !waited {
 			waited = true
