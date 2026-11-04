@@ -38,6 +38,9 @@ func New(ctx context.Context, cfg tauConfig.Config) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	if srv.dev {
+		go warmBuildImages(ctx)
+	}
 
 	if srv.node = cfg.Node(); srv.node == nil {
 		srv.node, err = tauConfig.NewLiteNode(ctx, cfg, path.Join(cfg.Root(), protocolCommon.Monkey))

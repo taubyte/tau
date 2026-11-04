@@ -53,8 +53,22 @@ func (p *PatrickService) republishJob(ctx context.Context, jid string) error {
 	return nil
 }
 
+// devProjectLookupWait is how long a development node waits for a pushed
+// repository's project to become known. A website's or library's project is
+// published by the config job, which a push of the whole project has queued
+// moments earlier; rejecting the push lost that repository's first build.
+var devProjectLookupWait = 15 * time.Second
+
 func (srv *PatrickService) connectToProject(ctx context.Context, job *patrick.Job) error {
 	projectID, err := srv.getProjectIDFromJob(job)
+	for deadline := time.Now().Add(devProjectLookupWait); err != nil && srv.devMode && time.Now().Before(deadline); {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+		projectID, err = srv.getProjectIDFromJob(job)
+	}
 	if err != nil {
 		return err
 	}
