@@ -39,14 +39,14 @@ type callers struct{}
 
 func (callers) Caller(context.Context, string) (string, error) { return "", ingress.ErrBadCredential }
 
-// backend records what was queued. Everything but Enqueue is unreached here.
-type backend struct {
-	ingress.Backend
+// queued is jobs, recording what was queued. Everything but Enqueue is unreached here.
+type queued struct {
+	ingress.Jobs
 	mu     sync.Mutex
 	queued []ingress.Push
 }
 
-func (b *backend) Enqueue(_ context.Context, key, ref, sha string) (string, error) {
+func (b *queued) Enqueue(_ context.Context, key, ref, sha string) (string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.queued = append(b.queued, ingress.Push{Repository: key, Ref: ref, Commit: sha})
@@ -72,7 +72,7 @@ func TestEveryForgesDeliveriesReachTheSameRoute(t *testing.T) {
 			require.NoError(t, err)
 			adminHook := forge.Hook{Key: f.Keys().Admin, Handle: "8", Scheme: sig.Scheme(), Secret: adminSecret}
 
-			queue := &backend{}
+			queue := &queued{}
 			svc, err := ingress.New(ingress.Config{},
 				// TWO REPOSITORIES, each under its own secret, the pushed one
 				// second, so the delivery is verified by trying them in turn.
@@ -85,7 +85,7 @@ func TestEveryForgesDeliveriesReachTheSameRoute(t *testing.T) {
 				ingress.WithDeliveries(forges),
 				ingress.WithCallers(callers{}),
 				ingress.WithProjects(projects{}),
-				ingress.WithBackend(queue))
+				ingress.WithJobs(queue))
 			require.NoError(t, err)
 
 			post := func(d forge.Delivery, tamper bool) *httptest.ResponseRecorder {

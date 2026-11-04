@@ -29,7 +29,7 @@ import (
 //
 // withJob takes the lock and the read, and hands the body a handle. Every write is
 // a method on it, and every key is composed from h.in.Subject(), a field of
-// backend/section this package cannot assign. Rows are a row.Entry, made only by
+// jobs/section this package cannot assign. Rows are a row.Entry, made only by
 // Set and Delete and reaching kvdb only by Apply, as one delta. Go has no lifetime
 // on a parameter, so a handle that outlives withJob (captured, deferred, sent) is
 // refused at runtime (section_test.go). What no type can say (who may reach an

@@ -94,13 +94,13 @@ func (f fakeLinked) LinkedRepositories(context.Context) ([]string, error) { retu
 func (h *harness) waitEnqueued(t *testing.T, want enqueued) {
 	t.Helper()
 	require.Eventually(t, func() bool {
-		for _, e := range h.backend.enqueues() {
+		for _, e := range h.jobs.enqueues() {
 			if e == want {
 				return true
 			}
 		}
 		return false
-	}, 10*time.Second, 5*time.Millisecond, "never enqueued %+v; enqueued %+v", want, h.backend.enqueues())
+	}, 10*time.Second, 5*time.Millisecond, "never enqueued %+v; enqueued %+v", want, h.jobs.enqueues())
 }
 
 func startStreaming(t *testing.T, f *fakeStreams, linked Linked, cfg Config) *harness {
@@ -146,7 +146,7 @@ func TestAStreamedPushIsBuiltAndAMissedOneIsFoundOnReconnect(t *testing.T) {
 	h.waitEnqueued(t, enqueued{streamRepo, "refs/heads/main", headC})
 	require.Contains(t, h.logs.joined(), "connection reset; subscribing again")
 
-	for _, e := range h.backend.enqueues() {
+	for _, e := range h.jobs.enqueues() {
 		require.NotEqual(t, "refs/heads/dev", e.ref, "an ineligible ref was built")
 		require.Equal(t, streamRepo, e.repositoryKey)
 	}
@@ -186,7 +186,7 @@ func TestAStreamThatNeverConnectsBacksOff(t *testing.T) {
 func TestAStreamedPushTheBackendRefusesIsLogged(t *testing.T) {
 	f := newFakeStreams()
 	h := newHarness(t, Config{Listen: "127.0.0.1:0", StreamResync: time.Hour}, WithStreams(f, fakeLinked{}))
-	h.backend.enqueue = func(string, string, string) (string, error) { return "", errors.New("belongs to no project") }
+	h.jobs.enqueue = func(string, string, string) (string, error) { return "", errors.New("belongs to no project") }
 	require.NoError(t, h.Start(t.Context()))
 	t.Cleanup(func() { h.Close() })
 	emit := <-f.connected

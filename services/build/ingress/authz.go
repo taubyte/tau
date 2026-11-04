@@ -20,7 +20,7 @@ import (
 const bearerPrefix = "Bearer "
 
 // maxIDLength bounds a caller-chosen path segment before it leaves this
-// process. The backend refuses anything that is not a 43-character job id, but
+// process. Jobs refuses anything that is not a 43-character job id, but
 // it should not have to receive a megabyte to say so.
 const maxIDLength = 128
 
@@ -87,7 +87,7 @@ func (s *Service) mayTouchJob(ctx context.Context, token, jobID string, want reg
 	if err != nil {
 		return nil, err
 	}
-	job, err := s.backend.Get(ctx, jobID)
+	job, err := s.jobs.Get(ctx, jobID)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func (s *Service) mayTouchJob(ctx context.Context, token, jobID string, want reg
 }
 
 // parseRepositoryKey accepts only repokey's canonical form: parsing the key as an
-// https URL must yield itself. Duplicated from backend/jobid.go to keep
+// https URL must yield itself. Duplicated from jobs/jobid.go to keep
 // services/build's import surface small.
 func parseRepositoryKey(key string) (repokey.Key, bool) {
 	if key == "" {

@@ -136,7 +136,7 @@ type enqueued struct {
 	commitSHA     string
 }
 
-type fakeBackend struct {
+type fakeJobs struct {
 	mu   sync.Mutex
 	sent []enqueued
 	ctx  context.Context
@@ -151,7 +151,7 @@ type fakeBackend struct {
 	snapshot func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error)
 }
 
-func (f *fakeBackend) Follow(ctx context.Context, id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
+func (f *fakeJobs) Follow(ctx context.Context, id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 	f.mu.Lock()
 	f.ctx = ctx
 	f.mu.Unlock()
@@ -161,7 +161,7 @@ func (f *fakeBackend) Follow(ctx context.Context, id string, run int32, from int
 	return from, connect.NewError(connect.CodeUnavailable, errors.New("no build of that job is running"))
 }
 
-func (f *fakeBackend) Snapshot(ctx context.Context, id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
+func (f *fakeJobs) Snapshot(ctx context.Context, id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 	f.mu.Lock()
 	f.ctx = ctx
 	f.mu.Unlock()
@@ -171,7 +171,7 @@ func (f *fakeBackend) Snapshot(ctx context.Context, id string, run int32, from i
 	return from, connect.NewError(connect.CodeUnavailable, errors.New("no build of that job is running"))
 }
 
-func (f *fakeBackend) Enqueue(ctx context.Context, key, ref, sha string) (string, error) {
+func (f *fakeJobs) Enqueue(ctx context.Context, key, ref, sha string) (string, error) {
 	f.mu.Lock()
 	f.sent = append(f.sent, enqueued{key, ref, sha})
 	f.ctx = ctx
@@ -182,7 +182,7 @@ func (f *fakeBackend) Enqueue(ctx context.Context, key, ref, sha string) (string
 	return testJobID, nil
 }
 
-func (f *fakeBackend) Get(ctx context.Context, id string) (*buildv2.Job, error) {
+func (f *fakeJobs) Get(ctx context.Context, id string) (*buildv2.Job, error) {
 	f.mu.Lock()
 	f.ctx = ctx
 	f.mu.Unlock()
@@ -205,34 +205,34 @@ func (f *fakeBackend) Get(ctx context.Context, id string) (*buildv2.Job, error) 
 	}, nil
 }
 
-func (f *fakeBackend) List(_ context.Context, projectID string, emit func(string) error) error {
+func (f *fakeJobs) List(_ context.Context, projectID string, emit func(string) error) error {
 	if f.list != nil {
 		return f.list(projectID, emit)
 	}
 	return emit(testJobID)
 }
 
-func (f *fakeBackend) Cancel(_ context.Context, id string) error {
+func (f *fakeJobs) Cancel(_ context.Context, id string) error {
 	if f.cancel != nil {
 		return f.cancel(id)
 	}
 	return nil
 }
 
-func (f *fakeBackend) Retry(_ context.Context, id string) error {
+func (f *fakeJobs) Retry(_ context.Context, id string) error {
 	if f.retry != nil {
 		return f.retry(id)
 	}
 	return nil
 }
 
-func (f *fakeBackend) lastContext() context.Context {
+func (f *fakeJobs) lastContext() context.Context {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.ctx
 }
 
-func (f *fakeBackend) enqueues() []enqueued {
+func (f *fakeJobs) enqueues() []enqueued {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]enqueued(nil), f.sent...)
@@ -244,7 +244,7 @@ type harness struct {
 	deliveries *fakeDeliveries
 	projects   *fakeProjects
 	callers    *fakeCallers
-	backend    *fakeBackend
+	jobs       *fakeJobs
 	clock      *clock
 	logs       *logs
 }
@@ -291,13 +291,13 @@ func newHarness(t *testing.T, cfg Config, opts ...Option) *harness {
 		deliveries: &fakeDeliveries{},
 		projects:   &fakeProjects{},
 		callers:    &fakeCallers{},
-		backend:    &fakeBackend{},
+		jobs:       &fakeJobs{},
 		clock:      &clock{at: time.Unix(1700000000, 0).UTC()},
 		logs:       &logs{},
 	}
 
 	opts = append([]Option{WithClock(h.clock.now), WithLogger(h.logs.write)}, opts...)
-	svc, err := New(cfg, append([]Option{WithHooks(h.hooks), WithDeliveries(h.deliveries), WithProjects(h.projects), WithBackend(h.backend), WithCallers(h.callers)}, opts...)...)
+	svc, err := New(cfg, append([]Option{WithHooks(h.hooks), WithDeliveries(h.deliveries), WithProjects(h.projects), WithJobs(h.jobs), WithCallers(h.callers)}, opts...)...)
 	require.NoError(t, err)
 	h.Service = svc
 	return h

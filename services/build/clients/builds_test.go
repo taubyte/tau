@@ -16,15 +16,15 @@ import (
 	"github.com/taubyte/tau/services/build/ingress"
 )
 
-var _ ingress.Backend = (*BuildClient)(nil)
+var _ ingress.Jobs = (*BuildClient)(nil)
 
-func newBuilds(t *testing.T, backends ...*fakeBackend) *BuildClient {
+func newBuilds(t *testing.T, nodes ...*fakeBuild) *BuildClient {
 	t.Helper()
 	mn := newMocknet(t)
 	caller := newHost(t, mn)
 
-	peers := make([]peer.ID, 0, len(backends))
-	for _, b := range backends {
+	peers := make([]peer.ID, 0, len(nodes))
+	for _, b := range nodes {
 		peers = append(peers, serveBuild(t, mn, b).ID())
 	}
 
@@ -55,7 +55,7 @@ func TestBuildsRefusesAPoolForTheWrongProtocol(t *testing.T) {
 
 func TestEnqueueCarriesThreeFieldsAndReturnsTheJobId(t *testing.T) {
 	var got *buildv2.PushEvent
-	c := newBuilds(t, &fakeBackend{enqueue: func(p *buildv2.PushEvent) (string, error) {
+	c := newBuilds(t, &fakeBuild{enqueue: func(p *buildv2.PushEvent) (string, error) {
 		got = p
 		return "job-1", nil
 	}})
@@ -70,7 +70,7 @@ func TestEnqueueCarriesThreeFieldsAndReturnsTheJobId(t *testing.T) {
 }
 
 func TestAnEnqueueWithNoIdIsAFault(t *testing.T) {
-	c := newBuilds(t, &fakeBackend{enqueue: func(*buildv2.PushEvent) (string, error) { return "", nil }})
+	c := newBuilds(t, &fakeBuild{enqueue: func(*buildv2.PushEvent) (string, error) { return "", nil }})
 
 	_, err := c.Enqueue(t.Context(), "github.com/acme/pay", "refs/heads/main", "abc")
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
@@ -80,14 +80,14 @@ func TestAFollowerIsWalkedPastForEveryRPC(t *testing.T) {
 	notLeader := func() error {
 		return connect.NewError(connect.CodeUnavailable, errors.New("not the leader of build/queue"))
 	}
-	follower := &fakeBackend{
+	follower := &fakeBuild{
 		enqueue: func(*buildv2.PushEvent) (string, error) { return "", notLeader() },
 		get:     func(string) (*buildv2.Job, error) { return nil, notLeader() },
 		list:    func(string, func(*buildv2.JobRef) error) error { return notLeader() },
 		cancel:  func(string) error { return notLeader() },
 		retry:   func(string) error { return notLeader() },
 	}
-	leader := &fakeBackend{
+	leader := &fakeBuild{
 		enqueue: func(*buildv2.PushEvent) (string, error) { return "job-1", nil },
 		get:     func(id string) (*buildv2.Job, error) { return &buildv2.Job{Id: id}, nil },
 		list:    func(_ string, send func(*buildv2.JobRef) error) error { return send(&buildv2.JobRef{Id: "job-1"}) },
@@ -118,11 +118,11 @@ func TestAFollowerIsWalkedPastForEveryRPC(t *testing.T) {
 
 func TestAConsideredRefusalIsNotRetried(t *testing.T) {
 	asked := 0
-	refuse := &fakeBackend{retry: func(string) error {
+	refuse := &fakeBuild{retry: func(string) error {
 		asked++
 		return connect.NewError(connect.CodeFailedPrecondition, errors.New("job is Claimed, not finished"))
 	}}
-	other := &fakeBackend{retry: func(string) error { asked++; return nil }}
+	other := &fakeBuild{retry: func(string) error { asked++; return nil }}
 
 	c := newBuilds(t, refuse, other)
 
@@ -133,13 +133,13 @@ func TestAConsideredRefusalIsNotRetried(t *testing.T) {
 }
 
 func TestAListThatBrokeAfterItStartedIsNotRetriedAgainstAnotherPeer(t *testing.T) {
-	breaks := &fakeBackend{list: func(_ string, send func(*buildv2.JobRef) error) error {
+	breaks := &fakeBuild{list: func(_ string, send func(*buildv2.JobRef) error) error {
 		if err := send(&buildv2.JobRef{Id: "a"}); err != nil {
 			return err
 		}
 		return connect.NewError(connect.CodeUnavailable, errors.New("leadership lost mid-stream"))
 	}}
-	whole := &fakeBackend{list: func(_ string, send func(*buildv2.JobRef) error) error {
+	whole := &fakeBuild{list: func(_ string, send func(*buildv2.JobRef) error) error {
 		for _, id := range []string{"a", "b", "c"} {
 			if err := send(&buildv2.JobRef{Id: id}); err != nil {
 				return err
@@ -162,10 +162,10 @@ func TestAListThatBrokeAfterItStartedIsNotRetriedAgainstAnotherPeer(t *testing.T
 }
 
 func TestAListThatBrokeBeforeItStartedIsRetried(t *testing.T) {
-	breaks := &fakeBackend{list: func(string, func(*buildv2.JobRef) error) error {
+	breaks := &fakeBuild{list: func(string, func(*buildv2.JobRef) error) error {
 		return connect.NewError(connect.CodeUnavailable, errors.New("not the leader"))
 	}}
-	whole := &fakeBackend{list: func(_ string, send func(*buildv2.JobRef) error) error {
+	whole := &fakeBuild{list: func(_ string, send func(*buildv2.JobRef) error) error {
 		return send(&buildv2.JobRef{Id: "a"})
 	}}
 
@@ -188,8 +188,8 @@ func TestTheCallersOwnFailureStopsTheWalk(t *testing.T) {
 		}
 		return nil
 	}
-	first := &fakeBackend{list: emit}
-	second := &fakeBackend{list: emit}
+	first := &fakeBuild{list: emit}
+	second := &fakeBuild{list: emit}
 
 	c := newBuilds(t, first, second)
 
@@ -205,7 +205,7 @@ func TestTheCallersOwnFailureStopsTheWalk(t *testing.T) {
 }
 
 func TestListNeedsSomewhereToPutTheIds(t *testing.T) {
-	c := newBuilds(t, &fakeBackend{})
+	c := newBuilds(t, &fakeBuild{})
 	err := c.List(t.Context(), "proj-1", nil)
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
 }
@@ -214,8 +214,8 @@ func TestEveryPeerUnavailableIsErrNoBackend(t *testing.T) {
 	notLeader := func() error {
 		return connect.NewError(connect.CodeUnavailable, errors.New("not the leader"))
 	}
-	follower := func() *fakeBackend {
-		return &fakeBackend{
+	follower := func() *fakeBuild {
+		return &fakeBuild{
 			get:    func(string) (*buildv2.Job, error) { return nil, notLeader() },
 			cancel: func(string) error { return notLeader() },
 		}
@@ -232,7 +232,7 @@ func TestEveryPeerUnavailableIsErrNoBackend(t *testing.T) {
 	require.ErrorIs(t, c.Cancel(t.Context(), "job-1"), ErrNoBackend)
 }
 
-// lines is a Follow the fake backend serves from a fixed string, a message event
+// lines is a Follow the fake build node serves from a fixed string, a message event
 // per line, each carrying the offset after it.
 func lines(text string) func(string, int64, func(*buildv2.Job_Event) error) error {
 	return func(_ string, offset int64, send func(*buildv2.Job_Event) error) error {
@@ -263,7 +263,7 @@ func said(got *string) func(*buildv2.Job_Event) error {
 }
 
 func TestFollow(t *testing.T) {
-	c := newBuilds(t, &fakeBackend{follow: lines("cloning\ncompiling\ndone\n")})
+	c := newBuilds(t, &fakeBuild{follow: lines("cloning\ncompiling\ndone\n")})
 
 	var got string
 	end, err := c.Follow(t.Context(), "job", 1, 0, said(&got))
@@ -273,7 +273,7 @@ func TestFollow(t *testing.T) {
 }
 
 func TestFollowResumes(t *testing.T) {
-	c := newBuilds(t, &fakeBackend{follow: lines("first\nsecond\n")})
+	c := newBuilds(t, &fakeBuild{follow: lines("first\nsecond\n")})
 
 	var got string
 	_, err := c.Follow(t.Context(), "job", 1, int64(len("first\n")), said(&got))
@@ -286,8 +286,8 @@ func TestFollowWalksToTheWriterAndResumes(t *testing.T) {
 	caller := newHost(t, mn)
 
 	// The first peer serves a little and then goes Unavailable — the shape of a
-	// backend whose claim lapsed mid-build.
-	broke := &fakeBackend{follow: func(_ string, offset int64, send func(*buildv2.Job_Event) error) error {
+	// build node whose claim lapsed mid-build.
+	broke := &fakeBuild{follow: func(_ string, offset int64, send func(*buildv2.Job_Event) error) error {
 		if offset == 0 {
 			if err := send(message("cloning", 8)); err != nil {
 				return err
@@ -297,7 +297,7 @@ func TestFollowWalksToTheWriterAndResumes(t *testing.T) {
 	}}
 	partial := serveBuild(t, mn, broke)
 	// The second has the whole thing and is asked for the rest of it.
-	writer := &fakeBackend{follow: lines("cloning\ncompiling\n")}
+	writer := &fakeBuild{follow: lines("cloning\ncompiling\n")}
 	whole := serveBuild(t, mn, writer)
 
 	p, err := NewPool(caller, discovery.Static(partial.ID(), whole.ID()), build.Protocol, 4)
@@ -320,14 +320,14 @@ func TestFollowWalksToTheWriterAndResumes(t *testing.T) {
 
 func TestFollowOfAnEndedJobStopsAtTheLeader(t *testing.T) {
 	var asked atomic.Int32
-	after := &fakeBackend{follow: func(id string, offset int64, send func(*buildv2.Job_Event) error) error {
+	after := &fakeBuild{follow: func(id string, offset int64, send func(*buildv2.Job_Event) error) error {
 		asked.Add(1)
 		return lines("output\n")(id, offset, send)
 	}}
 	ended := func(string, int64, func(*buildv2.Job_Event) error) error {
 		return connect.NewError(connect.CodeFailedPrecondition, errors.New("job finished as JobStatusSuccess"))
 	}
-	c := newBuilds(t, &fakeBackend{follow: ended, snapshot: ended}, after)
+	c := newBuilds(t, &fakeBuild{follow: ended, snapshot: ended}, after)
 
 	_, err := c.Follow(t.Context(), "job", 1, 0, func(*buildv2.Job_Event) error { return nil })
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
@@ -338,14 +338,14 @@ func TestFollowOfAnEndedJobStopsAtTheLeader(t *testing.T) {
 	notHere := func(string, int64, func(*buildv2.Job_Event) error) error {
 		return connect.NewError(connect.CodeUnavailable, errors.New("not writing this log"))
 	}
-	c = newBuilds(t, &fakeBackend{follow: notHere}, &fakeBackend{follow: notHere})
+	c = newBuilds(t, &fakeBuild{follow: notHere}, &fakeBuild{follow: notHere})
 	_, err = c.Follow(t.Context(), "job", 1, 0, func(*buildv2.Job_Event) error { return nil })
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
 	require.ErrorIs(t, err, ErrNoBackend)
 }
 
 func TestFollowStopsOnTheCallersFailure(t *testing.T) {
-	c := newBuilds(t, &fakeBackend{follow: lines("output\n")})
+	c := newBuilds(t, &fakeBuild{follow: lines("output\n")})
 
 	_, err := c.Follow(t.Context(), "job", 1, 0, func(*buildv2.Job_Event) error {
 		return errors.New("client went away")
@@ -355,13 +355,13 @@ func TestFollowStopsOnTheCallersFailure(t *testing.T) {
 }
 
 func TestFollowNeedsSomewhereToPutIt(t *testing.T) {
-	c := newBuilds(t, &fakeBackend{})
+	c := newBuilds(t, &fakeBuild{})
 	_, err := c.Follow(t.Context(), "job", 1, 0, nil)
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
 }
 
 func TestArtifact(t *testing.T) {
-	c := newBuilds(t, &fakeBackend{built: func(project, environment, resource string) (string, error) {
+	c := newBuilds(t, &fakeBuild{built: func(project, environment, resource string) (string, error) {
 		require.Equal(t, "shop", project)
 		require.Equal(t, "prod", environment)
 		require.Equal(t, "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc", resource)
@@ -374,7 +374,7 @@ func TestArtifact(t *testing.T) {
 }
 
 func TestArtifactThatIsNotThere(t *testing.T) {
-	c := newBuilds(t, &fakeBackend{built: func(string, string, string) (string, error) {
+	c := newBuilds(t, &fakeBuild{built: func(string, string, string) (string, error) {
 		return "", connect.NewError(connect.CodeNotFound, errors.New("nothing has been built for that"))
 	}})
 
@@ -384,10 +384,10 @@ func TestArtifactThatIsNotThere(t *testing.T) {
 
 func TestArtifactWalksPastAFollower(t *testing.T) {
 	c := newBuilds(t,
-		&fakeBackend{built: func(string, string, string) (string, error) {
+		&fakeBuild{built: func(string, string, string) (string, error) {
 			return "", connect.NewError(connect.CodeUnavailable, errors.New("not the leader"))
 		}},
-		&fakeBackend{built: func(string, string, string) (string, error) { return "bafybuilt", nil }},
+		&fakeBuild{built: func(string, string, string) (string, error) { return "bafybuilt", nil }},
 	)
 
 	cid, err := c.Artifact(t.Context(), "shop", "prod", "resource")
@@ -396,7 +396,7 @@ func TestArtifactWalksPastAFollower(t *testing.T) {
 }
 
 func TestSnapshotAsksForWhatTheLogHoldsNow(t *testing.T) {
-	c := newBuilds(t, &fakeBackend{
+	c := newBuilds(t, &fakeBuild{
 		follow: func(string, int64, func(*buildv2.Job_Event) error) error {
 			return connect.NewError(connect.CodeFailedPrecondition, errors.New("asked to follow"))
 		},
@@ -414,7 +414,7 @@ func TestSnapshotWalksToTheWriterAndResumes(t *testing.T) {
 	mn := newMocknet(t)
 	caller := newHost(t, mn)
 
-	broke := &fakeBackend{snapshot: func(_ string, offset int64, send func(*buildv2.Job_Event) error) error {
+	broke := &fakeBuild{snapshot: func(_ string, offset int64, send func(*buildv2.Job_Event) error) error {
 		if offset == 0 {
 			if err := send(message("cloning", 8)); err != nil {
 				return err
@@ -423,7 +423,7 @@ func TestSnapshotWalksToTheWriterAndResumes(t *testing.T) {
 		return connect.NewError(connect.CodeUnavailable, errors.New("not writing this log"))
 	}}
 	partial := serveBuild(t, mn, broke)
-	writer := &fakeBackend{snapshot: lines("cloning\ncompiling\n")}
+	writer := &fakeBuild{snapshot: lines("cloning\ncompiling\n")}
 	whole := serveBuild(t, mn, writer)
 
 	p, err := NewPool(caller, discovery.Static(partial.ID(), whole.ID()), build.Protocol, 4)

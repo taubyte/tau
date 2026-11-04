@@ -26,7 +26,7 @@ import (
 	"github.com/taubyte/tau/services/build/joblog"
 )
 
-// read is Backend.Follow or Backend.Snapshot.
+// read is Jobs.Follow or Jobs.Snapshot.
 type read = func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error)
 
 // logSaying is the log a run that said text writes: a message per line.
@@ -146,7 +146,7 @@ func key(run int) string { return fmt.Sprintf("%020d", run) }
 
 func TestFollowStreamsTheLog(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.backend.follow = serves("cloning\ncompiling\n")
+	h.jobs.follow = serves("cloning\ncompiling\n")
 
 	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs", testToken))
 
@@ -169,7 +169,7 @@ func TestFollowStreamsTheLog(t *testing.T) {
 func TestFollowResumesAtAnOffset(t *testing.T) {
 	h := newHarness(t, Config{})
 	var follows recorded
-	h.backend.follow = follows.of(serves("first\nsecond\n"))
+	h.jobs.follow = follows.of(serves("first\nsecond\n"))
 
 	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?attempt=1&offset="+strconv.FormatInt(after("first\nsecond\n", 1), 10), testToken))
 	require.Equal(t, http.StatusOK, w.Code)
@@ -179,7 +179,7 @@ func TestFollowResumesAtAnOffset(t *testing.T) {
 
 func TestFollowRefusesAnOffsetThatIsNotOne(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.backend.follow = serves("output\n")
+	h.jobs.follow = serves("output\n")
 
 	for _, offset := range []string{"-1", "abc", "1.5", "9223372036854775808"} {
 		w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?offset="+offset, testToken))
@@ -189,14 +189,14 @@ func TestFollowRefusesAnOffsetThatIsNotOne(t *testing.T) {
 
 func TestFollowRefusesAnAttemptThatIsNotOne(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.backend.follow = serves("output\n")
+	h.jobs.follow = serves("output\n")
 
 	for _, attempt := range []string{"0", "-1", "abc", "1.5", "2147483648"} {
 		w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?attempt="+attempt, testToken))
 		require.Equal(t, http.StatusBadRequest, w.Code, attempt)
 	}
 
-	h.backend.snapshot = func(_ string, run int32, from int64, _ func(*buildv2.Job_Event) error) (int64, error) {
+	h.jobs.snapshot = func(_ string, run int32, from int64, _ func(*buildv2.Job_Event) error) (int64, error) {
 		return from, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("attempt %d is not the job's next", run))
 	}
 	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?attempt=9", testToken))
@@ -206,7 +206,7 @@ func TestFollowRefusesAnAttemptThatIsNotOne(t *testing.T) {
 
 func TestFollowIsAuthorizedLikeTheRest(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.backend.follow = serves("secret build output\n")
+	h.jobs.follow = serves("secret build output\n")
 
 	// No bearer at all.
 	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs", ""))
@@ -239,9 +239,9 @@ func TestTheResponseIsOneRunAndSaysWhich(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t, Config{})
-			h.backend.get = jobAt(tc.status, tc.attempt, nil)
+			h.jobs.get = jobAt(tc.status, tc.attempt, nil)
 			var reads recorded
-			h.backend.snapshot, h.backend.follow = reads.of(serves("so far\n")), reads.of(serves("so far\nand more\n"))
+			h.jobs.snapshot, h.jobs.follow = reads.of(serves("so far\n")), reads.of(serves("so far\nand more\n"))
 
 			w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs"+tc.query, testToken))
 			require.Equal(t, http.StatusOK, w.Code)
@@ -255,14 +255,14 @@ func TestTheResponseIsOneRunAndSaysWhich(t *testing.T) {
 func TestAResumeIsNeverAnotherRunsLog(t *testing.T) {
 	first, second := "first run, line one\nfirst run, line two\n", "second run, line one\nsecond run, line two\n"
 	h := newHarness(t, quick, WithAssets(fakeAssets{"bafy1": lzwOf(t, first)}))
-	h.backend.get = jobAt(buildv2.JobStatus_JobStatusClaimed, 2, map[string]string{key(1): "bafy1"})
+	h.jobs.get = jobAt(buildv2.JobStatus_JobStatusClaimed, 2, map[string]string{key(1): "bafy1"})
 	byRun := func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 		if run == 2 {
 			return serves(second)(id, run, from, emit)
 		}
 		return endedAt(id, run, from, emit)
 	}
-	h.backend.follow, h.backend.snapshot = byRun, byRun
+	h.jobs.follow, h.jobs.snapshot = byRun, byRun
 
 	read := strconv.FormatInt(after(first, 1), 10)
 	for _, path := range []string{"/logs?attempt=1&offset=", "/logs?snapshot=true&attempt=1&offset="} {
@@ -274,7 +274,7 @@ func TestAResumeIsNeverAnotherRunsLog(t *testing.T) {
 
 	// The first run's node went away before its log was stored: gone, and
 	// still not the second run's bytes.
-	h.backend.get = jobAt(buildv2.JobStatus_JobStatusClaimed, 2, nil)
+	h.jobs.get = jobAt(buildv2.JobStatus_JobStatusClaimed, 2, nil)
 	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?attempt=1&offset="+read, testToken))
 	require.Equal(t, http.StatusGone, w.Code)
 	require.Equal(t, "1", w.Header().Get("X-Job-Attempt"))
@@ -283,8 +283,8 @@ func TestAResumeIsNeverAnotherRunsLog(t *testing.T) {
 
 func TestAnEndedRunIsNeverAnotherRunsStoredLog(t *testing.T) {
 	h := newHarness(t, quick, WithAssets(fakeAssets{"bafy1": lzwOf(t, "the first run\n"), "bafy2": lzwOf(t, "the second run\n")}))
-	h.backend.get = jobAt(buildv2.JobStatus_JobStatusCancelled, 2, map[string]string{key(1): "bafy1"})
-	h.backend.follow, h.backend.snapshot = endedAt, endedAt
+	h.jobs.get = jobAt(buildv2.JobStatus_JobStatusCancelled, 2, map[string]string{key(1): "bafy1"})
+	h.jobs.follow, h.jobs.snapshot = endedAt, endedAt
 
 	for _, path := range []string{"/logs", "/logs?snapshot=true"} {
 		w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+path, testToken))
@@ -293,7 +293,7 @@ func TestAnEndedRunIsNeverAnotherRunsStoredLog(t *testing.T) {
 		require.NotContains(t, w.Body.String(), "the first run", path)
 	}
 
-	h.backend.get = jobAt(buildv2.JobStatus_JobStatusCancelled, 2, map[string]string{key(1): "bafy1", key(2): "bafy2"})
+	h.jobs.get = jobAt(buildv2.JobStatus_JobStatusCancelled, 2, map[string]string{key(1): "bafy1", key(2): "bafy2"})
 	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs", testToken))
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, "the second run\n", said(t, w.Body))
@@ -303,8 +303,8 @@ func TestAnEndedRunIsNeverAnotherRunsStoredLog(t *testing.T) {
 
 func TestARunTheJobNeverReachedIsEmpty(t *testing.T) {
 	h := newHarness(t, quick, WithAssets(fakeAssets{}))
-	h.backend.get = jobAt(buildv2.JobStatus_JobStatusCancelled, 0, nil)
-	h.backend.follow, h.backend.snapshot = endedAt, endedAt
+	h.jobs.get = jobAt(buildv2.JobStatus_JobStatusCancelled, 0, nil)
+	h.jobs.follow, h.jobs.snapshot = endedAt, endedAt
 
 	for _, path := range []string{"/logs", "/logs?snapshot=true"} {
 		w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+path, testToken))
@@ -319,7 +319,7 @@ func TestAFollowThatBreaksResumesItsRun(t *testing.T) {
 	h := newHarness(t, quick)
 	var follows recorded
 	broke := false
-	h.backend.follow = follows.of(func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
+	h.jobs.follow = follows.of(func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 		if !broke {
 			broke = true
 			if _, err := emitFrom("cloning\n", 0, emit); err != nil {
@@ -341,7 +341,7 @@ func TestAFollowWhoseRunWasLostIsCut(t *testing.T) {
 	h := newHarness(t, quick, WithAssets(fakeAssets{}))
 	srv := httptest.NewServer(h.Handler())
 	t.Cleanup(srv.Close)
-	h.backend.get = jobAt(buildv2.JobStatus_JobStatusClaimed, 1, nil)
+	h.jobs.get = jobAt(buildv2.JobStatus_JobStatusClaimed, 1, nil)
 	lost := func(_ string, _ int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 		if from > 0 {
 			return from, connect.NewError(connect.CodeFailedPrecondition, errors.New("attempt 1 has ended"))
@@ -350,10 +350,10 @@ func TestAFollowWhoseRunWasLostIsCut(t *testing.T) {
 			return from, err
 		}
 		// The node went away, the claim lapsed and the job ran again.
-		h.backend.get = jobAt(buildv2.JobStatus_JobStatusClaimed, 2, nil)
+		h.jobs.get = jobAt(buildv2.JobStatus_JobStatusClaimed, 2, nil)
 		return after("cloning\n", 1), connect.NewError(connect.CodeUnavailable, errors.New("the node writing this log went away"))
 	}
-	h.backend.follow, h.backend.snapshot = lost, lost
+	h.jobs.follow, h.jobs.snapshot = lost, lost
 
 	resp := get(t, srv, "/job/"+testJobID+"/logs")
 	require.Equal(t, "1", resp.Header.Get("X-Job-Attempt"))
@@ -376,7 +376,7 @@ func TestAFollowWhoseRunWasLostIsCut(t *testing.T) {
 // and not on its pace.
 var quick = Config{FollowBackoff: time.Millisecond, FollowBackoffMax: 4 * time.Millisecond}
 
-// notWritten is every backend's answer for a log no node is writing yet.
+// notWritten is every build node's answer for a log no node is writing yet.
 func notWritten(_ string, _ int32, from int64, _ func(*buildv2.Job_Event) error) (int64, error) {
 	return from, connect.NewError(connect.CodeUnavailable, errors.New("no build of that job is running"))
 }
@@ -395,7 +395,7 @@ func TestAFollowsPaceHasDefaults(t *testing.T) {
 func TestAFollowWaitsForAJobToStart(t *testing.T) {
 	h := newHarness(t, quick)
 	var asked []int64
-	h.backend.follow = func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
+	h.jobs.follow = func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 		asked = append(asked, from)
 		if len(asked) < 3 {
 			return notWritten(id, run, from, emit)
@@ -436,7 +436,7 @@ func TestAQueuedJobIsFollowedFromBeforeItStarts(t *testing.T) {
 	srv := httptest.NewServer(h.Handler())
 	t.Cleanup(srv.Close)
 	job := &queuedJob{}
-	h.backend.follow, h.backend.snapshot = job.follow, job.snapshot
+	h.jobs.follow, h.jobs.snapshot = job.follow, job.snapshot
 
 	require.Empty(t, said(t, get(t, srv, "/job/"+testJobID+"/logs?snapshot=true").Body))
 
@@ -457,7 +457,7 @@ func TestAQueuedJobIsFollowedFromBeforeItStarts(t *testing.T) {
 func TestAWaitingFollowEndsWithItsViewer(t *testing.T) {
 	h := newHarness(t, Config{FollowBackoff: time.Hour})
 	ctx, cancel := context.WithCancel(t.Context())
-	h.backend.follow = func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
+	h.jobs.follow = func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 		cancel()
 		return notWritten(id, run, from, emit)
 	}
@@ -474,7 +474,7 @@ func TestAWaitingFollowEndsWithItsViewer(t *testing.T) {
 	require.Empty(t, h.logs.joined(), "a viewer hanging up is not a failure")
 }
 
-// endedAt is a backend whose run ended before the read reached its log.
+// endedAt is a job whose run ended before the read reached its log.
 func endedAt(_ string, _ int32, from int64, _ func(*buildv2.Job_Event) error) (int64, error) {
 	return from, connect.NewError(connect.CodeFailedPrecondition, errors.New("job finished as JobStatusFailed"))
 }
@@ -490,10 +490,10 @@ func retried(id string) (*buildv2.Job, error) {
 
 func TestAnEndedJobsLogIsTheStoredOne(t *testing.T) {
 	h := newHarness(t, quick, WithAssets(fakeAssets{"bafy9": lzwOf(t, "the attempt before\n"), "bafy10": lzwOf(t, "cloning\nerror: failed\n")}))
-	h.backend.get = retried
+	h.jobs.get = retried
 	asks := 0
-	h.backend.snapshot = notWritten
-	h.backend.follow = func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
+	h.jobs.snapshot = notWritten
+	h.jobs.follow = func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 		if asks++; asks == 1 {
 			return notWritten(id, run, from, emit)
 		}
@@ -504,7 +504,7 @@ func TestAnEndedJobsLogIsTheStoredOne(t *testing.T) {
 	require.Equal(t, "cloning\nerror: failed\n", said(t, w.Body), "it ran between two asks")
 	require.Equal(t, 2, asks)
 
-	h.backend.snapshot = endedAt
+	h.jobs.snapshot = endedAt
 	w = h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?offset="+strconv.FormatInt(after("cloning\nerror: failed\n", 1), 10), testToken))
 	require.Equal(t, "error: failed\n", said(t, w.Body))
 	w = h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?snapshot=true", testToken))
@@ -515,7 +515,7 @@ func TestAnEndedJobsLogIsTheStoredOne(t *testing.T) {
 	require.Empty(t, h.logs.joined())
 
 	// A run that stored no log has none to send, and it is not an empty one.
-	h.backend.get = func(id string) (*buildv2.Job, error) {
+	h.jobs.get = func(id string) (*buildv2.Job, error) {
 		job, err := retried(id)
 		job.Logs = nil
 		return job, err
@@ -534,22 +534,22 @@ func TestAnEndedJobsLogThatCannotBeRead(t *testing.T) {
 		"no asset store": {newHarness(t, quick), http.StatusServiceUnavailable},
 		"not stored":     {newHarness(t, quick, WithAssets(fakeAssets{})), http.StatusBadGateway},
 	} {
-		tc.h.backend.get = retried
-		tc.h.backend.follow, tc.h.backend.snapshot = endedAt, endedAt
+		tc.h.jobs.get = retried
+		tc.h.jobs.follow, tc.h.jobs.snapshot = endedAt, endedAt
 		w := tc.h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs", testToken))
 		require.Equal(t, tc.status, w.Code, name)
 	}
 
 	h := newHarness(t, quick, WithAssets(fakeAssets{"bafy10": lzwOf(t, "x")}))
 	authorized := false
-	h.backend.get = func(id string) (*buildv2.Job, error) {
+	h.jobs.get = func(id string) (*buildv2.Job, error) {
 		if !authorized {
 			authorized = true
 			return retried(id)
 		}
 		return nil, connect.NewError(connect.CodeUnavailable, errors.New("no leader"))
 	}
-	h.backend.follow, h.backend.snapshot = endedAt, endedAt
+	h.jobs.follow, h.jobs.snapshot = endedAt, endedAt
 	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs", testToken))
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 }
@@ -557,7 +557,7 @@ func TestAnEndedJobsLogThatCannotBeRead(t *testing.T) {
 func TestASnapshotOfAQueuedJobIsEmpty(t *testing.T) {
 	h := newHarness(t, quick)
 	asks := 0
-	h.backend.snapshot = func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
+	h.jobs.snapshot = func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 		asks++
 		return notWritten(id, run, from, emit)
 	}
@@ -569,7 +569,7 @@ func TestASnapshotOfAQueuedJobIsEmpty(t *testing.T) {
 	require.Empty(t, h.logs.joined())
 }
 
-// building is a log the backend is still writing, read the two ways the real
+// building is a log build is still writing, read the two ways the real
 // one reads it: follow sends what is there and then each line as it is
 // written, ending with the build; snapshot sends what is there and ends.
 type building struct {
@@ -650,7 +650,7 @@ func TestASnapshotEndsWhileTheBuildRunsAndAFollowEndsWithIt(t *testing.T) {
 	srv := httptest.NewServer(h.Handler())
 	t.Cleanup(srv.Close)
 	b := newBuilding(t, "cloning\n")
-	h.backend.follow, h.backend.snapshot = b.follow, b.snapshot
+	h.jobs.follow, h.jobs.snapshot = b.follow, b.snapshot
 
 	require.Equal(t, "cloning\n", said(t, get(t, srv, "/job/"+testJobID+"/logs?snapshot=true").Body),
 		"a snapshot that waited for the build would hang")
@@ -671,7 +671,7 @@ func TestAnEndedBuildsLogIsWholeToBothReads(t *testing.T) {
 	h := newHarness(t, Config{})
 	b := newBuilding(t, "cloning\ncompiling\n")
 	b.end()
-	h.backend.follow, h.backend.snapshot = b.follow, b.snapshot
+	h.jobs.follow, h.jobs.snapshot = b.follow, b.snapshot
 
 	for _, path := range []string{"/logs", "/logs?snapshot=true"} {
 		w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+path, testToken))
@@ -683,11 +683,11 @@ func TestAnEndedBuildsLogIsWholeToBothReads(t *testing.T) {
 func TestASnapshotIsAskedForWithABoolean(t *testing.T) {
 	h := newHarness(t, Config{})
 	var reads []string
-	h.backend.follow = func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
+	h.jobs.follow = func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 		reads = append(reads, "follow")
 		return serves("log\n")(id, run, from, emit)
 	}
-	h.backend.snapshot = func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
+	h.jobs.snapshot = func(id string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 		reads = append(reads, "snapshot")
 		return serves("log\n")(id, run, from, emit)
 	}
@@ -707,7 +707,7 @@ func TestASnapshotIsAskedForWithABoolean(t *testing.T) {
 
 func TestAConsoleSeesWhichRunALogIs(t *testing.T) {
 	h := newHarness(t, Config{Origins: []string{"https://console.example"}})
-	h.backend.follow = serves("output\n")
+	h.jobs.follow = serves("output\n")
 
 	r := authed(http.MethodGet, "/job/"+testJobID+"/logs", testToken)
 	r.Header.Set("Origin", "https://console.example")

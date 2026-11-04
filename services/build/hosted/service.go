@@ -56,7 +56,7 @@ type config struct {
 }
 
 // server is the build service: the queue and the job records (control), the routes
-// in front of them (the frontend Start built), and what Start opened for them, closed
+// in front of them (ingress, which Start built), and what Start opened for them, closed
 // with them.
 type server struct {
 	*ingress.Service
@@ -172,7 +172,7 @@ func (f *server) wire(h service.Host, cfg config) ([]ingress.Option, error) {
 		ingress.WithCallers(identities),
 		// SIGNING IN IS AUTH'S, carried here because auth has no ingress.
 		ingress.WithAuthAPI(authCalls),
-		ingress.WithBackend(builds),
+		ingress.WithJobs(builds),
 		ingress.WithDeliveries(forges),
 		ingress.WithTenancy(served),
 		ingress.WithCloudFqdn(cfg.CloudFqdn),
@@ -185,7 +185,7 @@ func (f *server) wire(h service.Host, cfg config) ([]ingress.Option, error) {
 		ingress.WithDomains(claims{domains}),
 	}
 	// A forge with no signed webhook reports pushes on its own feed (Gerrit's
-	// stream-events), subscribed to as a second source (frontend/streams.go).
+	// stream-events), subscribed to as a second source (ingress/streams.go).
 	if len(registry.EventHosts()) > 0 {
 		options = append(options, ingress.WithStreams(forges, projects))
 	}
@@ -242,7 +242,7 @@ func (f *server) WaitForLeader(ctx context.Context) error {
 
 func (f *server) Local() jobs.Local { return f.control.Local() }
 
-// Addr is nil before Start, as the frontend's own is.
+// Addr is nil before Start, as ingress's own is.
 func (f *server) Addr() net.Addr {
 	if f.Service == nil {
 		return nil

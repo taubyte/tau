@@ -26,7 +26,7 @@ const DefaultProfile = "default"
 
 // Profile is one cloud and the credential used against it.
 type Profile struct {
-	// Cloud is the build frontend's base URL, e.g. https://build.example.com.
+	// Cloud is the build service's base URL, e.g. https://build.example.com.
 	Cloud string `yaml:"cloud" json:"cloud"`
 	// Token is the tau token: a short-lived access token, or an API token.
 	// It is the only credential the cloud takes.

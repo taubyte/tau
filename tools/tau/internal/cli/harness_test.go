@@ -41,12 +41,12 @@ const goodToken = "tok-good"
 // back to the CLI.
 var forgeToken = fake.New(fake.GitHubLike).TokenString()
 
-// takenID is a project id the fake frontend says somebody else claimed.
+// takenID is a project id the fake build service says somebody else claimed.
 const takenID = "QmTakenTakenTakenTakenTakenTakenTakenTakenTake"
 
-// frontend is a fake build frontend: the routes ingress.go mounts, answering
+// fakeBuild is a fake build service: the routes ingress.go mounts, answering
 // from memory, refusing any token but goodToken the way the real one does.
-type frontend struct {
+type fakeBuild struct {
 	mu       sync.Mutex
 	jobs     map[string]*buildv2.Job
 	byProj   map[string][]string
@@ -94,8 +94,8 @@ type frontend struct {
 	logQueries []string
 }
 
-func newFrontend(t *testing.T) *frontend {
-	f := &frontend{
+func newFakeBuild(t *testing.T) *fakeBuild {
+	f := &fakeBuild{
 		finish:    buildv2.JobStatus_JobStatusSuccess,
 		published: map[string][]byte{},
 		jobs: map[string]*buildv2.Job{
@@ -159,7 +159,7 @@ func newFrontend(t *testing.T) *frontend {
 		b, _ := protojson.MarshalOptions{UseProtoNames: true}.Marshal(j)
 		w.Write(b)
 	}))
-	// THE LOG ROUTE SERVES ONE RUN, as the frontend's does: ?attempt=, or the
+	// THE LOG ROUTE SERVES ONE RUN, as the build service's does: ?attempt=, or the
 	// job's current run, named in X-Job-Attempt. An ended run's log is the one
 	// it stored, and a run whose log was not kept is a 410.
 	mux.HandleFunc("GET /job/{jid}/logs", authed(func(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +207,7 @@ func newFrontend(t *testing.T) *frontend {
 		f.mu.Unlock()
 		if refused {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			json.NewEncoder(w).Encode(map[string]string{"error": "no backend available"})
+			json.NewEncoder(w).Encode(map[string]string{"error": "no build node available"})
 			return
 		}
 		if gone {
@@ -217,7 +217,7 @@ func newFrontend(t *testing.T) *frontend {
 			return
 		}
 		if !ok && ended {
-			// AN ENDED RUN WITH NO LOG KEPT is a 410, as the frontend answers it: a
+			// AN ENDED RUN WITH NO LOG KEPT is a 410, as the build service answers it: a
 			// plan's log is live only.
 			w.Header().Set("X-Job-Attempt", attempt)
 			w.WriteHeader(http.StatusGone)
@@ -254,7 +254,7 @@ func newFrontend(t *testing.T) *frontend {
 			w.Header().Set("X-Job-Attempt", attempt)
 		}
 		io.WriteString(w, strings.Join(events, ""))
-		// A FOLLOWED BUILD ENDS when its log does, as the backend's follow
+		// A FOLLOWED BUILD ENDS when its log does, as build's follow
 		// returns when the build finishes.
 		f.mu.Lock()
 		if j := f.jobs[r.PathValue("jid")]; j != nil && f.endOnFollow && j.Status == buildv2.JobStatus_JobStatusClaimed {
@@ -337,7 +337,7 @@ func newFrontend(t *testing.T) *frontend {
 	mux.HandleFunc("GET /cloud", authed(func(w http.ResponseWriter, r *http.Request) {
 		if f.fqdn == "" {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			json.NewEncoder(w).Encode(map[string]string{"error": "this build frontend was given no cloud fqdn"})
+			json.NewEncoder(w).Encode(map[string]string{"error": "this build node was given no cloud fqdn"})
 			return
 		}
 		json.NewEncoder(w).Encode(map[string]any{"fqdn": f.fqdn, "uploads": f.uploads})
@@ -482,7 +482,7 @@ func newFrontend(t *testing.T) *frontend {
 }
 
 // addJob makes a job appear, as a push would.
-func (f *frontend) addJob(project, id, log string) {
+func (f *fakeBuild) addJob(project, id, log string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.addJobLocked(project, id, log)
@@ -490,24 +490,24 @@ func (f *frontend) addJob(project, id, log string) {
 
 // pushLater makes a job appear on the second list after this — after a
 // waiting deploy has taken its snapshot of what already existed.
-func (f *frontend) pushLater(project, id, log string) {
+func (f *fakeBuild) pushLater(project, id, log string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.pushAfter = 2
 	f.pushed = func() { f.addJobLocked(project, id, log) }
 }
 
-func (f *frontend) addJobLocked(project, id, log string) {
+func (f *fakeBuild) addJobLocked(project, id, log string) {
 	f.jobs[id] = &buildv2.Job{Id: id, Status: buildv2.JobStatus_JobStatusClaimed, Timestamp: 1700000200, Attempt: 1, Environment: "prod"}
 	f.byProj[project] = append(f.byProj[project], id)
 	f.logs[id] = log
 }
 
-// liveLog is a running job's log the way the build frontend serves it: a
+// liveLog is a running job's log the way the build service serves it: a
 // follow is held open and sent each line as it is written until the job ends,
 // and a snapshot is what is there now.
 type liveLog struct {
-	f     *frontend
+	f     *fakeBuild
 	id    string
 	mu    sync.Mutex
 	text  string
@@ -519,7 +519,7 @@ type liveLog struct {
 }
 
 // building puts a running job on the fake whose log so far is first.
-func (f *frontend) building(t *testing.T, id, first string) *liveLog {
+func (f *fakeBuild) building(t *testing.T, id, first string) *liveLog {
 	l := &liveLog{f: f, id: id, text: first, grew: make(chan struct{}), attached: make(chan struct{})}
 	f.mu.Lock()
 	f.jobs[id] = &buildv2.Job{Id: id, Status: buildv2.JobStatus_JobStatusClaimed, Timestamp: 1700000400, Attempt: 1, Environment: "prod"}
@@ -535,7 +535,7 @@ func (f *frontend) building(t *testing.T, id, first string) *liveLog {
 
 // queuedJob puts a job on the fake that no node has started: a follow of it is
 // held open until it does, and a snapshot of it is empty.
-func (f *frontend) queuedJob(t *testing.T, id string) *liveLog {
+func (f *fakeBuild) queuedJob(t *testing.T, id string) *liveLog {
 	l := f.building(t, id, "")
 	f.mu.Lock()
 	f.jobs[id].Status, f.jobs[id].Attempt = buildv2.JobStatus_JobStatusOpen, 0
@@ -552,7 +552,7 @@ func (l *liveLog) start(first string) {
 }
 
 // currentRun is the run a log read is about when it names none, as the
-// frontend decides it: the one claimed or last run, or a queued job's next.
+// build service decides it: the one claimed or last run, or a queued job's next.
 func currentRun(j *buildv2.Job) int32 {
 	if j.GetStatus() == buildv2.JobStatus_JobStatusOpen || j.GetAttempt() == 0 {
 		return j.GetAttempt() + 1
@@ -596,7 +596,7 @@ func (l *liveLog) end() {
 func (l *liveLog) serve(w http.ResponseWriter, r *http.Request, attempt string) {
 	from, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	snapshot := r.URL.Query().Get("snapshot") == "true"
-	// The response opens before the first event, as the frontend's does.
+	// The response opens before the first event, as the build service's does.
 	w.Header().Set("X-Job-Attempt", attempt)
 	w.(http.Flusher).Flush()
 	if !snapshot {
@@ -711,7 +711,7 @@ type run struct {
 type tester struct {
 	t           *testing.T
 	forges      *forge.Registry
-	f           *frontend
+	f           *fakeBuild
 	dir         string
 	interactive bool
 	prompter    *prompter
@@ -726,7 +726,7 @@ func newTester(t *testing.T) *tester {
 	t.Setenv(config.EnvCloud, "")
 	t.Setenv("TAU_PROFILE", "")
 	t.Setenv("TAU_PROJECT", "")
-	return &tester{t: t, f: newFrontend(t), dir: t.TempDir(), prompter: &prompter{}}
+	return &tester{t: t, f: newFakeBuild(t), dir: t.TempDir(), prompter: &prompter{}}
 }
 
 func (x *tester) env(stdout, stderr io.Writer) Env {
@@ -808,7 +808,7 @@ func golden(t *testing.T, name, got string) {
 	require.Equal(t, string(want), got)
 }
 
-// eventsOf is text as the frontend serves a run's log from byte from: an event per
+// eventsOf is text as the build service serves a run's log from byte from: an event per
 // line, one JSON object per line, each carrying the offset after it.
 func eventsOf(text string, from int) []string {
 	var out []string

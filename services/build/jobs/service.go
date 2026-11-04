@@ -147,7 +147,7 @@ func withRepositories(r Repositories) option {
 
 // withConfirmer is what a push is checked against before it is queued: the
 // repository itself, asked whether the ref is at the commit. Without it a push
-// is queued as the frontend verified it.
+// is queued as ingress verified it.
 func withConfirmer(c run.Confirmer) option {
 	return func(o *options) error {
 		if c == nil {

@@ -13,7 +13,7 @@ import (
 // ratelimit.go bounds what reaches it. Only a usable hook is remembered: a miss or
 // a failed lookup is not, so a newly set secret works at once everywhere. A
 // remembered hook that fails to verify a delivery is re-asked once (webhook.go),
-// which is what makes rotation correct on every frontend.
+// which is what makes rotation correct on every build node.
 
 // cache is a bounded, expiring map of one fetch's outcome. Entries leave by
 // expiry or, when the map is full, oldest-inserted-first.
@@ -215,7 +215,7 @@ func (c *hookCache) drop(project string) {
 }
 
 func (s *Service) fetchHook(ctx context.Context, project string) (Hook, error) {
-	ctx, cancel := context.WithTimeout(ctx, s.cfg.BackendTimeout)
+	ctx, cancel := context.WithTimeout(ctx, s.cfg.CallTimeout)
 	defer cancel()
 	return s.hooks.Hook(ctx, project)
 }

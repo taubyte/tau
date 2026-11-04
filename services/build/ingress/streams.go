@@ -10,8 +10,8 @@ import (
 )
 
 // streams.go is a second source of pushes, not a second pipeline: a push from a
-// forge's event feed (Gerrit) goes the webhook's way. Every frontend holds every
-// stream; the backend's job id dedups. A stream has no replay, so on every accepted
+// forge's event feed (Gerrit) goes the webhook's way. Every build node holds every
+// stream; the job id dedups. A stream has no replay, so on every accepted
 // subscription and every StreamResync the eligible heads of every linked
 // repository are enqueued again, which is idempotent.
 
@@ -122,9 +122,9 @@ func (s *Service) streamed(ctx context.Context, host string, p Push) {
 	if err := s.refusal(p); err != nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(ctx, s.cfg.BackendTimeout)
+	ctx, cancel := context.WithTimeout(ctx, s.cfg.CallTimeout)
 	defer cancel()
-	jobID, err := s.backend.Enqueue(ctx, p.Repository, p.Ref, p.Commit)
+	jobID, err := s.jobs.Enqueue(ctx, p.Repository, p.Ref, p.Commit)
 	if err != nil {
 		s.log("stream %s: enqueue %s %s: %v", host, p.Repository, p.Commit, err)
 		return

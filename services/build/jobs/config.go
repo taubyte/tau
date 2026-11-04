@@ -33,7 +33,7 @@ const (
 	// queue item was lost.
 	DefaultReconcileEvery = 5 * time.Minute
 	// Admission control on stranger-authored input: every Enqueue argument comes from
-	// an unauthenticated POST to the frontend.
+	// an unauthenticated POST to ingress.
 	DefaultMaxQueueDepth  = 10_000
 	DefaultMaxOpenPerRepo = 32
 	// DefaultMaxMessageBytes bounds one request message. p2p/rpc deliberately

@@ -28,7 +28,7 @@ func TestAReplacedHookSecretVerifiesForTheGraceOnly(t *testing.T) {
 	h.clock.advance(time.Minute)
 	require.Equal(t, http.StatusNotFound, h.do(t, webhookRequest(webhookOpts{signature: "old"})).Code)
 	require.Equal(t, http.StatusAccepted, h.do(t, webhookRequest(webhookOpts{signature: "new"})).Code)
-	require.Len(t, h.backend.enqueues(), 4)
+	require.Len(t, h.jobs.enqueues(), 4)
 }
 
 func TestTheHookSecretGraceDefaultsAndIsNeverNegative(t *testing.T) {

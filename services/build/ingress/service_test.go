@@ -13,7 +13,7 @@ import (
 )
 
 func TestNewRefusesEveryMissingDependency(t *testing.T) {
-	hooks, deliveries, projects, backend, callers := &fakeHooks{}, &fakeDeliveries{}, &fakeProjects{}, &fakeBackend{}, &fakeCallers{}
+	hooks, deliveries, projects, jobs, callers := &fakeHooks{}, &fakeDeliveries{}, &fakeProjects{}, &fakeJobs{}, &fakeCallers{}
 
 	type testCase struct {
 		name string
@@ -23,19 +23,19 @@ func TestNewRefusesEveryMissingDependency(t *testing.T) {
 	for _, tc := range []testCase{
 		// Omitted entirely: the option was never passed.
 		{"no hooks", func() (*Service, error) {
-			return New(Config{}, WithDeliveries(deliveries), WithProjects(projects), WithBackend(backend), WithCallers(callers))
+			return New(Config{}, WithDeliveries(deliveries), WithProjects(projects), WithJobs(jobs), WithCallers(callers))
 		}, "hooks"},
 		{"no deliveries", func() (*Service, error) {
-			return New(Config{}, WithHooks(hooks), WithProjects(projects), WithBackend(backend), WithCallers(callers))
+			return New(Config{}, WithHooks(hooks), WithProjects(projects), WithJobs(jobs), WithCallers(callers))
 		}, "verify a webhook delivery"},
 		{"no projects", func() (*Service, error) {
-			return New(Config{}, WithHooks(hooks), WithDeliveries(deliveries), WithBackend(backend), WithCallers(callers))
+			return New(Config{}, WithHooks(hooks), WithDeliveries(deliveries), WithJobs(jobs), WithCallers(callers))
 		}, "projects"},
-		{"no backend", func() (*Service, error) {
+		{"no queue", func() (*Service, error) {
 			return New(Config{}, WithHooks(hooks), WithDeliveries(deliveries), WithProjects(projects), WithCallers(callers))
-		}, "backend"},
+		}, "queue"},
 		{"no callers", func() (*Service, error) {
-			return New(Config{}, WithHooks(hooks), WithDeliveries(deliveries), WithProjects(projects), WithBackend(backend))
+			return New(Config{}, WithHooks(hooks), WithDeliveries(deliveries), WithProjects(projects), WithJobs(jobs))
 		}, "verify a caller"},
 
 		// Passed as nil: the option itself refuses, so a bad argument fails
@@ -43,7 +43,7 @@ func TestNewRefusesEveryMissingDependency(t *testing.T) {
 		{"a nil hooks", func() (*Service, error) { return New(Config{}, WithHooks(nil)) }, "hooks"},
 		{"a nil deliveries", func() (*Service, error) { return New(Config{}, WithDeliveries(nil)) }, "verify a webhook delivery"},
 		{"a nil projects", func() (*Service, error) { return New(Config{}, WithProjects(nil)) }, "projects"},
-		{"a nil backend", func() (*Service, error) { return New(Config{}, WithBackend(nil)) }, "backend"},
+		{"a nil queue", func() (*Service, error) { return New(Config{}, WithJobs(nil)) }, "queue"},
 		{"nil callers", func() (*Service, error) { return New(Config{}, WithCallers(nil)) }, "verify a caller"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -65,7 +65,7 @@ func TestNewRefusesAnUnusableConfig(t *testing.T) {
 		{"negative header timeout", Config{ReadHeaderTimeout: -time.Second}, "readHeaderTimeout"},
 		{"negative idle timeout", Config{IdleTimeout: -time.Second}, "idleTimeout"},
 		{"negative shutdown timeout", Config{ShutdownTimeout: -time.Second}, "shutdownTimeout"},
-		{"negative backend timeout", Config{BackendTimeout: -time.Second}, "backendTimeout"},
+		{"negative call timeout", Config{CallTimeout: -time.Second}, "callTimeout"},
 		{"negative follow backoff", Config{FollowBackoff: -time.Second}, "followBackoff"},
 		{"negative follow backoff ceiling", Config{FollowBackoffMax: -time.Second}, "followBackoffMax"},
 		{"negative cache ttl", Config{SecretCacheTTL: -time.Second}, "secretCacheTTL"},
@@ -80,7 +80,7 @@ func TestNewRefusesAnUnusableConfig(t *testing.T) {
 		{"an empty eligible ref", Config{EligibleRefs: []string{"refs/heads/main", ""}}, "empty ref"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s, err := New(tc.cfg, WithHooks(&fakeHooks{}), WithProjects(&fakeProjects{}), WithBackend(&fakeBackend{}), WithCallers(&fakeCallers{}))
+			s, err := New(tc.cfg, WithHooks(&fakeHooks{}), WithProjects(&fakeProjects{}), WithJobs(&fakeJobs{}), WithCallers(&fakeCallers{}))
 			require.Nil(t, s)
 			require.ErrorContains(t, err, tc.want)
 		})
@@ -98,7 +98,7 @@ func TestNewRefusesANilOption(t *testing.T) {
 		{"http server", WithHTTPServer(nil)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s, err := New(Config{}, WithHooks(&fakeHooks{}), WithProjects(&fakeProjects{}), WithBackend(&fakeBackend{}), WithCallers(&fakeCallers{}), tc.opt)
+			s, err := New(Config{}, WithHooks(&fakeHooks{}), WithProjects(&fakeProjects{}), WithJobs(&fakeJobs{}), WithCallers(&fakeCallers{}), tc.opt)
 			require.Nil(t, s)
 			require.ErrorContains(t, err, "option")
 		})
@@ -107,7 +107,7 @@ func TestNewRefusesANilOption(t *testing.T) {
 
 func TestAnOptionsOwnErrorSurvives(t *testing.T) {
 	sentinel := errors.New("no")
-	s, err := New(Config{}, WithHooks(&fakeHooks{}), WithProjects(&fakeProjects{}), WithBackend(&fakeBackend{}), WithCallers(&fakeCallers{}),
+	s, err := New(Config{}, WithHooks(&fakeHooks{}), WithProjects(&fakeProjects{}), WithJobs(&fakeJobs{}), WithCallers(&fakeCallers{}),
 		func(*options) error { return sentinel })
 	require.Nil(t, s)
 	require.ErrorIs(t, err, sentinel)
@@ -179,7 +179,7 @@ func TestTheHTTPServerHookRunsBeforeItServes(t *testing.T) {
 }
 
 func TestServiceNeedsOnlyFakes(t *testing.T) {
-	s, err := New(Config{}, WithHooks(&fakeHooks{}), WithDeliveries(&fakeDeliveries{}), WithProjects(&fakeProjects{}), WithBackend(&fakeBackend{}), WithCallers(&fakeCallers{}),
+	s, err := New(Config{}, WithHooks(&fakeHooks{}), WithDeliveries(&fakeDeliveries{}), WithProjects(&fakeProjects{}), WithJobs(&fakeJobs{}), WithCallers(&fakeCallers{}),
 		WithLinker(linkedTestProject(t)), WithVault(&fakeVault{}))
 	require.NoError(t, err)
 	require.Nil(t, s.Addr())
@@ -192,17 +192,17 @@ func TestServiceNeedsOnlyFakes(t *testing.T) {
 }
 
 func TestEveryCallOutOfThisProcessCarriesADeadline(t *testing.T) {
-	h := newHarness(t, Config{BackendTimeout: 25 * time.Millisecond})
+	h := newHarness(t, Config{CallTimeout: 25 * time.Millisecond})
 
 	h.do(t, authed(http.MethodGet, "/job/"+testJobID, testToken))
 
-	deadline, ok := h.backend.lastContext().Deadline()
-	require.True(t, ok, "the backend was called with no deadline")
+	deadline, ok := h.jobs.lastContext().Deadline()
+	require.True(t, ok, "the queue was called with no deadline")
 	require.LessOrEqual(t, time.Until(deadline), 25*time.Millisecond)
 
 	// And the webhook path too, which is the one a stranger reaches.
 	h.do(t, webhookRequest(webhookOpts{}))
-	deadline, ok = h.backend.lastContext().Deadline()
+	deadline, ok = h.jobs.lastContext().Deadline()
 	require.True(t, ok)
 	require.LessOrEqual(t, time.Until(deadline), 25*time.Millisecond)
 }

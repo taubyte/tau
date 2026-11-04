@@ -1,7 +1,7 @@
 //go:build dreaming
 
 // Package e2e runs the CLI against a real v2 fleet: a dream universe with two build
-// frontends and a node running every private service. `tau link` works at the fake
+// nodes and a node running every private service. `tau link` works at the fake
 // forge with the credential its sign-in returned; the fleet verifies deliveries
 // with what the link stored and clones over the deploy key it installed.
 package e2e
@@ -72,7 +72,7 @@ func ok(t *testing.T, args ...string) string {
 const e2eCloud = "tau.e2e.test"
 
 // fleet is a dream universe of three: index 0 runs every private service,
-// the others only a build frontend. The fake forge serves git over https and
+// the others only build. The fake forge serves git over https and
 // ssh, and every node pins its ssh host key, so a build confirms and clones
 // over the deploy key the CLI installed.
 func fleet(t *testing.T, f *fake.Served, opts ...instance.Option) (front, otherFront string) {

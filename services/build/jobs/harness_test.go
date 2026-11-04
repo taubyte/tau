@@ -48,7 +48,7 @@ type fakeStore struct {
 	keysPrefix  string
 	phantom     []string
 	// entries is every batch applied, in order. An entry hands its rows to a
-	// Batcher and to nothing else — there is no accessor on one (backend/row) —
+	// Batcher and to nothing else — there is no accessor on one (jobs/row) —
 	// so this is where a test reads what one actually carried.
 	entries [][]raft.BatchOp
 }
@@ -181,7 +181,7 @@ func (s *fakeStore) Batch(ops []raft.BatchOp, timeout time.Duration) error {
 
 // entriesNaming is every applied batch carrying a row at key, in order. An
 // entry hands its rows to a Batcher and to nothing else — there is no accessor
-// on one (backend/row) — so this is where a test reads what one carried.
+// on one (jobs/row) — so this is where a test reads what one carried.
 func (s *fakeStore) entriesNaming(key string) [][]raft.BatchOp {
 	s.mu.Lock()
 	defer s.mu.Unlock()

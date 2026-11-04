@@ -19,7 +19,7 @@ func TestAVerifiedPushIsQueuedAndTheCallerIsToldNothing(t *testing.T) {
 
 	require.Equal(t, http.StatusAccepted, w.Code)
 	require.Empty(t, bodyOf(t, w))
-	require.Equal(t, []enqueued{{testRepoKey, "refs/heads/main", testSHA}}, h.backend.enqueues())
+	require.Equal(t, []enqueued{{testRepoKey, "refs/heads/main", testSHA}}, h.jobs.enqueues())
 	// The id is logged, where an operator tracing a delivery can find it.
 	require.Contains(t, h.logs.joined(), testJobID)
 }
@@ -46,7 +46,7 @@ func TestEachAnswerAboutADeliveryHasItsOwnStatus(t *testing.T) {
 
 			require.Equal(t, tc.status, w.Code)
 			require.Equal(t, tc.says, w.Header().Get("X-Build-Ignored"))
-			require.Empty(t, h.backend.enqueues())
+			require.Empty(t, h.jobs.enqueues())
 		})
 	}
 }
@@ -58,7 +58,7 @@ func TestWhatIsQueuedIsWhatWasVerified(t *testing.T) {
 	}
 
 	require.Equal(t, http.StatusAccepted, h.do(t, webhookRequest(webhookOpts{})).Code)
-	require.Equal(t, []enqueued{{"gitlab.example.com/group/sub/pay", "refs/heads/main", testSHA}}, h.backend.enqueues())
+	require.Equal(t, []enqueued{{"gitlab.example.com/group/sub/pay", "refs/heads/main", testSHA}}, h.jobs.enqueues())
 }
 
 func TestAQueryParameterCannotChooseTheHook(t *testing.T) {
@@ -86,7 +86,7 @@ func TestAnEmptySecretIsAFailureAndNeverASkippedMAC(t *testing.T) {
 	w := h.do(t, webhookRequest(webhookOpts{omitSig: true}))
 
 	require.Equal(t, http.StatusInternalServerError, w.Code)
-	require.Empty(t, h.backend.enqueues())
+	require.Empty(t, h.jobs.enqueues())
 	require.Contains(t, h.logs.joined(), "no secret")
 }
 
@@ -103,7 +103,7 @@ func TestTheBodyIsBoundedBeforeItIsRead(t *testing.T) {
 	require.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
 	// Nothing was verified, nothing was parsed and nothing was queued: the read
 	// is where this stops.
-	require.Empty(t, h.backend.enqueues())
+	require.Empty(t, h.jobs.enqueues())
 }
 
 func TestOnlyJSONIsParsed(t *testing.T) {
@@ -138,7 +138,7 @@ func TestAnUnknownHookIsNotFound(t *testing.T) {
 	h := newHarness(t, Config{})
 	w := h.do(t, webhookRequest(webhookOpts{hookID: "nobody"}))
 	require.Equal(t, http.StatusNotFound, w.Code)
-	require.Empty(t, h.backend.enqueues())
+	require.Empty(t, h.jobs.enqueues())
 }
 
 func TestAnOversizedHookIdNeverReachesAuth(t *testing.T) {
@@ -156,7 +156,7 @@ func TestARefThisCloudDoesNotBuildIsAcceptedAndIgnored(t *testing.T) {
 
 	require.Equal(t, http.StatusAccepted, w.Code)
 	require.Equal(t, "ref is not built", w.Header().Get("X-Build-Ignored"))
-	require.Empty(t, h.backend.enqueues())
+	require.Empty(t, h.jobs.enqueues())
 }
 
 func TestTheEligibleRefListIsTheOperatorsAndNotV1s(t *testing.T) {
@@ -165,14 +165,14 @@ func TestTheEligibleRefListIsTheOperatorsAndNotV1s(t *testing.T) {
 
 	w := h.do(t, webhookRequest(webhookOpts{body: body, signature: testSecret}))
 	require.Equal(t, http.StatusAccepted, w.Code)
-	require.Len(t, h.backend.enqueues(), 1)
+	require.Len(t, h.jobs.enqueues(), 1)
 
 	// And main is no longer eligible, because the list REPLACES the default
 	// rather than extending it.
 	main := pushBody("refs/heads/main", testSHA)
 	w = h.do(t, webhookRequest(webhookOpts{body: main, signature: testSecret}))
 	require.Equal(t, http.StatusAccepted, w.Code)
-	require.Len(t, h.backend.enqueues(), 1)
+	require.Len(t, h.jobs.enqueues(), 1)
 }
 
 func TestABackendRefusalReachesTheCallerAsAStatusAndNotAsWords(t *testing.T) {
@@ -186,16 +186,16 @@ func TestABackendRefusalReachesTheCallerAsAStatusAndNotAsWords(t *testing.T) {
 		{"no leader", connect.NewError(connect.CodeUnavailable, errors.New("not the leader of build/queue")), http.StatusServiceUnavailable},
 		{"unregistered", connect.NewError(connect.CodeFailedPrecondition, errors.New("repository is not registered")), http.StatusConflict},
 		{"bad ref", connect.NewError(connect.CodeInvalidArgument, errors.New("ref is not a branch ref")), http.StatusBadRequest},
-		{"frontend not a peer", connect.NewError(connect.CodeUnauthenticated, errors.New("not over a libp2p stream")), http.StatusBadGateway},
+		{"ingress not a peer", connect.NewError(connect.CodeUnauthenticated, errors.New("not over a libp2p stream")), http.StatusBadGateway},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t, Config{})
-			h.backend.enqueue = func(string, string, string) (string, error) { return "", tc.err }
+			h.jobs.enqueue = func(string, string, string) (string, error) { return "", tc.err }
 
 			w := h.do(t, webhookRequest(webhookOpts{}))
 
 			require.Equal(t, tc.want, w.Code)
-			// The backend's own words stay in the log and never in the answer.
+			// The queue's own words stay in the log and never in the answer.
 			require.NotContains(t, bodyOf(t, w), tc.err.Error())
 			require.Contains(t, h.logs.joined(), tc.err.Error())
 		})
@@ -251,7 +251,7 @@ func TestARedeliveredWebhookCostsOneLookupNotTwo(t *testing.T) {
 	}
 
 	require.Equal(t, 1, h.hooks.count())
-	// Three enqueues, and the backend deduplicates them: idempotency lives
+	// Three enqueues, and jobs deduplicates them: idempotency lives
 	// there, on the job id, and is not imitated here.
-	require.Len(t, h.backend.enqueues(), 3)
+	require.Len(t, h.jobs.enqueues(), 3)
 }

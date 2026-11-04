@@ -48,7 +48,7 @@ func framed(fields ...string) string {
 const jobIDDomain = "tau.build.v2/job\x00"
 
 // refPattern is the last check before a stranger's ref becomes part of a hash and
-// a key segment; eligibility policy is the frontend's.
+// a key segment; eligibility policy is ingress's.
 var refPattern = regexp.MustCompile(`^refs/heads/[A-Za-z0-9._/-]{1,255}$`)
 
 // shaPattern is a full 40-character lowercase git object name. v1 accepted

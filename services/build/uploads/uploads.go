@@ -1,7 +1,7 @@
 // Package uploads is a development cloud's door for a developer's build: `tau build`
 // carries the tree and what it built, kept as a commit of the repository it was
-// uploaded for, in the directory the build service's configuration names. Both halves
-// name the same directory, the frontend to keep an upload and the backend to read one,
+// uploaded for, in the directory the build service's configuration names. Build and its
+// runners name the same directory, ingress to keep an upload and a runner to read one,
 // so it is the door of a cloud whose build runs on one machine.
 //
 // From there an upload is a push. Three seams answer differently for an uploaded

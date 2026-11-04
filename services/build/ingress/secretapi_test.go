@@ -118,7 +118,7 @@ func TestRotatingASecretNeedsNoPush(t *testing.T) {
 	}
 
 	require.Equal(t, []byte("new"), v.held()[vaultKey(testProject, "production", "TOKEN")])
-	require.Empty(t, h.backend.sent, "nothing was queued")
+	require.Empty(t, h.jobs.sent, "nothing was queued")
 }
 
 func TestAnEnvironmentWithNothingSetIsAnEmptyList(t *testing.T) {
@@ -235,7 +235,7 @@ func TestAVaultFailureIsAnUpstreamFailure(t *testing.T) {
 
 func TestAVaultMustNotBeNil(t *testing.T) {
 	_, err := New(Config{}, WithHooks(&fakeHooks{}), WithProjects(&fakeProjects{}),
-		WithBackend(&fakeBackend{}), WithCallers(&fakeCallers{}), WithVault(nil))
+		WithJobs(&fakeJobs{}), WithCallers(&fakeCallers{}), WithVault(nil))
 	require.ErrorContains(t, err, "no vault")
 }
 

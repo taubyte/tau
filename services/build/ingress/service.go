@@ -24,7 +24,7 @@ type Service struct {
 	deliveries Deliveries
 	projects   Projects
 	callers    Callers
-	backend    Backend
+	jobs       Jobs
 	vault      Vault
 	domains    Domains
 	linker     Linker
@@ -73,7 +73,7 @@ type options struct {
 	deliveries Deliveries
 	projects   Projects
 	callers    Callers
-	backend    Backend
+	jobs       Jobs
 	vault      Vault
 	domains    Domains
 	linker     Linker
@@ -113,14 +113,14 @@ func WithProjects(p Projects) Option {
 	}
 }
 
-// WithBackend is where work is queued. Required, and an interface: this role never
-// builds its own route to the backend.
-func WithBackend(b Backend) Option {
+// WithJobs is where work is queued. Required, and an interface: ingress never
+// builds its own route to jobs.
+func WithJobs(b Jobs) Option {
 	return func(o *options) error {
 		if b == nil {
-			return errors.New("build: no backend to queue into")
+			return errors.New("build: no queue to push into")
 		}
-		o.backend = b
+		o.jobs = b
 		return nil
 	}
 }
@@ -204,7 +204,7 @@ func WithTenancy(t tenancy.Tenancy) Option {
 	}
 }
 
-// WithStreams subscribes this frontend to every forge event stream s offers,
+// WithStreams subscribes ingress to every forge event stream s offers,
 // with linked as the repositories whose heads a reconnect compares. Optional:
 // without it only webhooks trigger builds. See streams.go.
 func WithStreams(s Streams, linked Linked) Option {
@@ -301,8 +301,8 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		return nil, errors.New("build: no way to verify a webhook delivery")
 	case o.projects == nil:
 		return nil, errors.New("build: no projects to authorize against")
-	case o.backend == nil:
-		return nil, errors.New("build: no backend to queue into")
+	case o.jobs == nil:
+		return nil, errors.New("build: no queue to push into")
 	case effective.Uploads != "" && o.linker == nil:
 		return nil, errors.New("build: uploads need a linker to name the repository an upload is a commit of")
 	case o.callers == nil:
@@ -322,7 +322,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		deliveries: o.deliveries,
 		projects:   o.projects,
 		callers:    o.callers,
-		backend:    o.backend,
+		jobs:       o.jobs,
 		vault:      o.vault,
 		domains:    o.domains,
 		linker:     o.linker,

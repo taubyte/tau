@@ -21,10 +21,10 @@ func TestAllowAnyPeerIsTheDefaultAndAllowsAnyone(t *testing.T) {
 }
 
 func TestAllowPeersNarrowsToTheListedOnes(t *testing.T) {
-	a := AllowPeers(peer.ID("frontend-1"), peer.ID("frontend-2"))
+	a := AllowPeers(peer.ID("build-1"), peer.ID("build-2"))
 
-	require.NoError(t, a.Allow(t.Context(), peer.ID("frontend-1"), ActEnqueue, "x"))
-	require.NoError(t, a.Allow(t.Context(), peer.ID("frontend-2"), ActRead, "x"))
+	require.NoError(t, a.Allow(t.Context(), peer.ID("build-1"), ActEnqueue, "x"))
+	require.NoError(t, a.Allow(t.Context(), peer.ID("build-2"), ActRead, "x"))
 
 	err := a.Allow(t.Context(), peer.ID("stranger"), ActEnqueue, "x")
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))

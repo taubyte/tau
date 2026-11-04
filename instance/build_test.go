@@ -69,7 +69,7 @@ func TestANodeAdvertisesTheRolesItRuns(t *testing.T) {
 	require.NotContains(t, serving, Build)
 
 	require.NotNil(t, n.auth)
-	_, built := backendOf(n)
+	_, built := jobsOf(n)
 	require.False(t, built, "a runner holds no queue")
 	require.Nil(t, n.BuildAddr(), "and no build listens")
 }
@@ -85,7 +85,7 @@ func TestBuildHoldsTheQueueAndNotAuthsStore(t *testing.T) {
 	require.NoError(t, n.Start(t.Context()))
 
 	require.Nil(t, n.auth, "build does not hold auth's store")
-	_, built := backendOf(n)
+	_, built := jobsOf(n)
 	require.True(t, built, "it holds the queue")
 	require.NotNil(t, n.BuildAddr(), "it listens where a CLI can reach it")
 }
@@ -192,7 +192,7 @@ func TestTheArtifactLookupIsCachedForTheDeployBudget(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "bafyone", cid)
 
-	// Past the budget it is asked again — and with no build backend anywhere,
+	// Past the budget it is asked again — and with no build node anywhere,
 	// asking waits for one until the caller gives up rather than serving
 	// something stale forever.
 	now = now.Add(2 * time.Minute)
@@ -322,7 +322,7 @@ func TestAWorkerAsksBuildOnAnotherNode(t *testing.T) {
 
 	a := &artifacts{node: compute, seen: map[string]builtAt{}}
 
-	// NOTHING HAS BUILT THIS, and the answer comes from the backend rather than
+	// NOTHING HAS BUILT THIS, and the answer comes from build rather than
 	// from the view — which is the difference between "no build service is
 	// reachable" and "the build service says there is no artifact".
 	_, err := a.Artifact(t.Context(), "shop", "prod", "function", "checkout")
@@ -370,7 +370,7 @@ func TestANodeReadsItsOwnBuild(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Discovery, Build, Worker},
 		Sections: map[string]any{Build: ingress.Config{Listen: "127.0.0.1:0"}}})
 	require.NoError(t, n.Start(t.Context()))
-	built, ok := backendOf(n)
+	built, ok := jobsOf(n)
 	require.True(t, ok)
 	require.NoError(t, built.WaitForLeader(t.Context()))
 
@@ -380,7 +380,7 @@ func TestANodeReadsItsOwnBuild(t *testing.T) {
 	require.ErrorContains(t, err, "QmNothing")
 }
 
-// following is a backend beside the worker that does not lead its queue.
+// following is build beside the worker that does not lead its queue.
 type following struct{ jobs.Service }
 
 func (following) Built(string, string, string) (string, error) {
@@ -390,13 +390,13 @@ func (following) Built(string, string, string) (string, error) {
 func TestAFollowerAsksTheFleetForAnArtifact(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Discovery}})
 	require.NoError(t, n.Start(t.Context()))
-	n.provide(Runner, following{})
+	n.provide(Build, following{})
 
 	_, err := n.BuildArtifacts().Artifact(t.Context(), "shop", "prod", "function", "QmNothing")
 	require.ErrorIs(t, err, ErrNoBuild, "a follower beside it sends the question to the fleet")
 }
 
-// backendOf is the build backend this node runs, if it runs one.
-func backendOf(n *Instance) (jobs.Service, bool) {
+// jobsOf is the build jobs this node runs, if it runs build.
+func jobsOf(n *Instance) (jobs.Service, bool) {
 	return service.Get[jobs.Service](&added{node: n})
 }

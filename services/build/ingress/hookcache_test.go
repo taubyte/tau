@@ -13,7 +13,7 @@ import (
 )
 
 // rotatable is a hook whose secret the test changes, the way a relink through
-// ANOTHER frontend does: nothing here is told.
+// ANOTHER build node does: nothing here is told.
 func rotatable(h *harness, secret *string, mu *sync.Mutex) {
 	h.hooks.get = func(id string) (Hook, error) {
 		mu.Lock()
@@ -46,7 +46,7 @@ func TestARotatedSecretIsBelievedAtItsFirstDelivery(t *testing.T) {
 
 	w := h.do(t, webhookRequest(webhookOpts{signature: "old"}))
 	require.Equal(t, http.StatusNotFound, w.Code)
-	require.Len(t, h.backend.enqueues(), 3)
+	require.Len(t, h.jobs.enqueues(), 3)
 }
 
 func TestARefusedDeliveryCostsAtMostOneLookup(t *testing.T) {

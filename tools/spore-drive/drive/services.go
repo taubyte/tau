@@ -21,7 +21,7 @@ type cloudServices struct {
 	cm      cm.Config
 	forges  []drivers.Forge
 	secrets []cloudSecret
-	// trusted serves every zone a project declares unproven: the build backend's.
+	// trusted serves every zone a project declares unproven: a runner's.
 	trusted bool
 }
 

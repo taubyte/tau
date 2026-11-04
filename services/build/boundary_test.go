@@ -17,10 +17,10 @@ import (
 // neither role. It reads each package's own imports, not its transitive set,
 // since net/http appears below p2p/rpc.
 const (
-	buildPkg    = "github.com/taubyte/tau/services/build"
-	backendPkg  = buildPkg + "/backend"
-	frontendPkg = buildPkg + "/frontend"
-	clientsPkg  = buildPkg + "/clients"
+	buildPkg   = "github.com/taubyte/tau/services/build"
+	jobsPkg    = buildPkg + "/jobs"
+	ingressPkg = buildPkg + "/ingress"
+	clientsPkg = buildPkg + "/clients"
 )
 
 // imports returns the import paths of the non-test files in dir, and whether dir
@@ -102,17 +102,17 @@ func TestTheSharedPackageStaysThreeImportsWide(t *testing.T) {
 }
 
 func TestThePrivateRoleHasNoIngress(t *testing.T) {
-	paths, ok := imports(t, "backend")
-	require.True(t, ok, "the backend package must exist")
+	paths, ok := imports(t, "jobs")
+	require.True(t, ok, "the jobs package must exist")
 
 	requireNoImport(t, paths, "github.com/taubyte/tau/pkg/http",
 		"IngressNone means no HTTP listener; a route added here would face whatever reaches the node")
-	requireNoImport(t, paths, frontendPkg,
+	requireNoImport(t, paths, ingressPkg,
 		"the private role must not depend on the public one")
 	requireNoImport(t, paths, "github.com/taubyte/tau/legacy",
 		"nothing new imports v1's frozen address space")
 
-	for name := range sources(t, "backend") {
+	for name := range sources(t, "jobs") {
 		require.NotEqual(t, "ingress.go", name,
 			"ingress.go exists in exactly two packages in the tree, and neither is this one")
 	}
@@ -122,17 +122,17 @@ func TestTheDialAdaptersImportNeitherRole(t *testing.T) {
 	paths, ok := imports(t, "clients")
 	require.True(t, ok, "the clients package must exist")
 
-	requireNoImport(t, paths, backendPkg, "an adapter must not depend on the role that consumes it")
-	requireNoImport(t, paths, frontendPkg, "an adapter must not depend on the role that consumes it")
+	requireNoImport(t, paths, jobsPkg, "an adapter must not depend on the role that consumes it")
+	requireNoImport(t, paths, ingressPkg, "an adapter must not depend on the role that consumes it")
 	requireNoImport(t, paths, "github.com/taubyte/tau/services/auth",
 		"dialling auth needs auth's SCHEMA, never auth's service package and the store behind it")
 }
 
 func TestThePublicRoleServesNoP2PRPC(t *testing.T) {
-	paths, ok := imports(t, "frontend")
-	require.True(t, ok, "the frontend package must exist")
+	paths, ok := imports(t, "ingress")
+	require.True(t, ok, "the ingress package must exist")
 
-	requireNoImport(t, paths, backendPkg,
+	requireNoImport(t, paths, jobsPkg,
 		"the public role must not import the private one: it would hold the queue's writer")
 	requireNoImport(t, paths, "github.com/taubyte/tau/p2p/rpc",
 		"the public role dials through the interfaces it declares; the pool that speaks p2p lives in clients")
@@ -144,27 +144,27 @@ func TestThePublicRoleServesNoP2PRPC(t *testing.T) {
 		"the library v1 verifies webhooks with is sha1-only and skips the MAC on an empty secret")
 
 	// A listener added here without touching the descriptor is caught by the
-	// source; the backend's test checks the other direction.
-	for name, src := range sources(t, "frontend") {
+	// source; jobs's test checks the other direction.
+	for name, src := range sources(t, "ingress") {
 		require.NotContains(t, src, "rpc.Listen(",
 			"%s mounts a p2p listener on the public role; build.proto's header is explicit that it has none", name)
 	}
 
 	// And the positive half: IngressPublic means there IS an ingress.go, and it
 	// is the file a reviewer opens to see every route this cloud exposes.
-	require.Contains(t, sources(t, "frontend"), "ingress.go",
+	require.Contains(t, sources(t, "ingress"), "ingress.go",
 		"the public role's routes and limits live in ingress.go, as they do in gateway's")
 }
 
 func TestTheIdentityAdapterKnowsNoProvider(t *testing.T) {
-	frontendImports, ok := imports(t, "frontend")
+	ingressImports, ok := imports(t, "ingress")
 	require.True(t, ok)
-	requireNoImport(t, frontendImports, "github.com/google/go-github",
-		"the frontend knows Identity, not a provider")
-	requireNoImport(t, frontendImports, "github.com/taubyte/tau/pkg/forge",
-		"the frontend knows Identity, not how it is answered")
+	requireNoImport(t, ingressImports, "github.com/google/go-github",
+		"ingress knows Identity, not a provider")
+	requireNoImport(t, ingressImports, "github.com/taubyte/tau/pkg/forge",
+		"ingress knows Identity, not how it is answered")
 
-	adapterImports, ok := imports(t, filepath.Join("frontend", "forgeauth"))
+	adapterImports, ok := imports(t, filepath.Join("ingress", "forgeauth"))
 	require.True(t, ok, "the identity adapter must exist")
 	requireNoImport(t, adapterImports, "github.com/google/go-github",
 		"a provider SDK is a driver's, in pkg/forge, never the adapter's")
@@ -188,7 +188,7 @@ func TestTheIdentityAdapterKnowsNoProvider(t *testing.T) {
 		"the adapter asks by host; which driver answers is the node's binding")
 	requireNoImport(t, adapterImports, "github.com/taubyte/tau/pkg/forge/azure",
 		"the adapter asks by host; which driver answers is the node's binding")
-	requireNoImport(t, adapterImports, backendPkg,
+	requireNoImport(t, adapterImports, jobsPkg,
 		"the public role's own adapter must not reach the private role")
 	requireNoImport(t, adapterImports, "github.com/taubyte/tau/services/auth",
 		"restating auth's access rule is not importing auth")

@@ -19,7 +19,7 @@ import (
 	"github.com/taubyte/tau/services/storage"
 )
 
-// Service is the build backend as an instance runs it.
+// Service is build's jobs as an instance runs them.
 type Service interface {
 	service.Service
 
@@ -31,14 +31,14 @@ type Service interface {
 	// request path, so a composer that needs one waits here.
 	WaitForLeader(ctx context.Context) error
 
-	// Local is this backend as build's own routes ask it, in-process.
+	// Local is these jobs as build's own routes ask them, in-process.
 	Local() Local
 }
 
-// New is the build backend, unstarted. Start builds it from its instance.
+// New is build's jobs, unstarted. Start builds it from its instance.
 func New() Service { return &hosted{} }
 
-// ErrNotStarted is a backend asked for what only a started one has.
+// ErrNotStarted is jobs asked for what only started jobs have.
 var ErrNotStarted = errors.New("build: not started")
 
 // ErrNoConsensus is an instance running no consensus service, so the queue has no
@@ -48,7 +48,7 @@ var ErrNoConsensus = errors.New("build: no consensus service runs beside it")
 // retentionPoll is how often the job records reread the cloud's retention.
 const retentionPoll = time.Minute
 
-// hosted is the backend as an instance runs it: the server Start built, and what
+// hosted is jobs as an instance runs them: the server Start built, and what
 // Start opened for it, closed with it.
 type hosted struct {
 	*server
@@ -63,10 +63,9 @@ func (b *hosted) WaitForLeader(ctx context.Context) error {
 	return b.queue.WaitForLeader(ctx)
 }
 
-// Start runs the backend on an instance: its queue a raft group of the consensus
-// beside it, its job records a replicated database on the peer, its artifacts and
-// logs in the storage service, its projects in the register and its link
-// credentials in the vault, both wherever discovery finds them.
+// Start runs jobs on an instance: its queue a raft group of the consensus beside
+// it, its job records a replicated database on the peer, its logs in the storage
+// service and its projects in the register, both wherever discovery finds them.
 func (b *hosted) Start(ctx context.Context, h service.Host) error {
 	if b.server != nil {
 		return errors.New("build: already started")

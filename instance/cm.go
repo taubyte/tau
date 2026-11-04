@@ -115,7 +115,7 @@ func (n *Instance) certificates() (*cm.Client, error) {
 }
 
 // ServiceTLS is what a service's own public listener answers handshakes
-// with — the build frontend's, an added service's: the cloud's certificate
+// with — the build service's, an added service's: the cloud's certificate
 // for `<service>.<zone>` (the zone's wildcard, when it issues one), or nil
 // when the cloud issues none. The gateway's listener takes TLSConfig, which
 // asks the gateway serving each name first.

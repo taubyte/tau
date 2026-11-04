@@ -217,7 +217,7 @@ func linkCommand(env Env) *cobra.Command {
 }
 
 // hookURL is where a forge delivers id's pushes: --callback, or the cloud's
-// build frontend under the name the cloud reports.
+// build service under the name the cloud reports.
 func hookURL(cmd *cobra.Command, cl *api.Client, id string) (*url.URL, error) {
 	base := flagString(cmd, "callback")
 	if base == "" {

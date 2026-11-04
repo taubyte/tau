@@ -152,22 +152,22 @@ func TestARealGerritStreamsItsPushes(t *testing.T) {
 		{Key: key, Ref: "refs/heads/master", Commit: missed},
 	}, heads, "the heads are what a reconnect compares")
 
-	t.Log("the frontend's reconnect finds the missed push and enqueues it")
+	t.Log("ingress's reconnect finds the missed push and enqueues it")
 	forges, err := forgeauth.New(reg)
 	require.NoError(t, err)
-	backend := &recordingBackend{}
+	queued := &recordingJobs{}
 	svc, err := ingress.New(ingress.Config{Listen: "127.0.0.1:0", StreamResync: time.Hour},
 		ingress.WithHooks(noHooks{}), ingress.WithDeliveries(forges), ingress.WithProjects(noProjects{}),
-		ingress.WithBackend(backend), ingress.WithCallers(noCallers{}),
+		ingress.WithJobs(queued), ingress.WithCallers(noCallers{}),
 		ingress.WithStreams(forges, linkedRepos{key.String()}),
 		ingress.WithLogger(t.Logf))
 	require.NoError(t, err)
 	require.NoError(t, svc.Start(ctx))
 	t.Cleanup(func() { svc.Close() })
 	eventually(t, "the missed push enqueued", time.Minute, func() bool {
-		return backend.has(key.String(), "refs/heads/master", missed)
+		return queued.has(key.String(), "refs/heads/master", missed)
 	})
-	require.True(t, backend.has(key.String(), "refs/heads/main", first), "the head already built is enqueued again, which the backend's job id makes the same job")
+	require.True(t, queued.has(key.String(), "refs/heads/main", first), "the head already built is enqueued again, which the job id makes the same job")
 }
 
 // scanHostKey is the key the sshd at addr answers with.
@@ -236,7 +236,7 @@ func drain(c chan forge.Push) {
 	}
 }
 
-// The frontend's other dependencies, which a stream never asks.
+// Ingress's other dependencies, which a stream never asks.
 type noHooks struct{}
 
 func (noHooks) Hook(context.Context, string) (ingress.Hook, error) {
@@ -255,19 +255,19 @@ type linkedRepos []string
 
 func (l linkedRepos) LinkedRepositories(context.Context) ([]string, error) { return l, nil }
 
-type recordingBackend struct {
+type recordingJobs struct {
 	mu   sync.Mutex
 	sent []string
 }
 
-func (b *recordingBackend) Enqueue(_ context.Context, repo, ref, sha string) (string, error) {
+func (b *recordingJobs) Enqueue(_ context.Context, repo, ref, sha string) (string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.sent = append(b.sent, repo+" "+ref+" "+sha)
 	return "job", nil
 }
 
-func (b *recordingBackend) has(repo, ref, sha string) bool {
+func (b *recordingJobs) has(repo, ref, sha string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for _, s := range b.sent {
@@ -278,18 +278,18 @@ func (b *recordingBackend) has(repo, ref, sha string) bool {
 	return false
 }
 
-func (b *recordingBackend) Get(context.Context, string) (*buildv2.Job, error) {
+func (b *recordingJobs) Get(context.Context, string) (*buildv2.Job, error) {
 	return nil, errors.New("unused")
 }
-func (b *recordingBackend) List(context.Context, string, func(string) error) error {
+func (b *recordingJobs) List(context.Context, string, func(string) error) error {
 	return errors.New("unused")
 }
-func (b *recordingBackend) Cancel(context.Context, string) error { return errors.New("unused") }
-func (b *recordingBackend) Retry(context.Context, string) error  { return errors.New("unused") }
-func (b *recordingBackend) Follow(context.Context, string, int32, int64, func(*buildv2.Job_Event) error) (int64, error) {
+func (b *recordingJobs) Cancel(context.Context, string) error { return errors.New("unused") }
+func (b *recordingJobs) Retry(context.Context, string) error  { return errors.New("unused") }
+func (b *recordingJobs) Follow(context.Context, string, int32, int64, func(*buildv2.Job_Event) error) (int64, error) {
 	return 0, errors.New("unused")
 }
-func (b *recordingBackend) Snapshot(context.Context, string, int32, int64, func(*buildv2.Job_Event) error) (int64, error) {
+func (b *recordingJobs) Snapshot(context.Context, string, int32, int64, func(*buildv2.Job_Event) error) (int64, error) {
 	return 0, errors.New("unused")
 }
 

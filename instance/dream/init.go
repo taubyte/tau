@@ -242,8 +242,8 @@ type Config struct {
 
 	// Configure, when set, adjusts node index's config after the universe has
 	// filled it — the way a fleet gives different machines different roles,
-	// such as a build frontend on one node and its backend on another (a node
-	// refuses to run both halves).
+	// such as build on one node and a runner on another (a node
+	// refuses to run both).
 	Configure func(index int, c *instance.Config)
 
 	// Secrets are cloud secrets every node that keeps secrets is initialized
@@ -293,8 +293,8 @@ func Start(ctx context.Context, name string, cfg Config) (*Universe, error) {
 	account := []*secretsv2.InitSecret{sealed}
 
 	// ONE UPLOADS DIRECTORY PER UNIVERSE, named in every node's build configuration,
-	// since the frontend that takes a developer's build and the backend that builds
-	// it are often two nodes.
+	// since build, which takes a developer's build, and the runner that builds it
+	// are often two nodes.
 	held, err := os.MkdirTemp("", "tau-uploads-")
 	if err != nil {
 		m.Close()

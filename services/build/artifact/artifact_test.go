@@ -93,7 +93,7 @@ type out struct {
 	log    bytes.Buffer
 	assets map[string]string
 	err    error
-	// environment is the one the job being run builds, as the backend's output knows.
+	// environment is the one the job being run builds, as the runner's output knows.
 	environment string
 }
 
@@ -115,7 +115,7 @@ func (o *out) Asset(_ context.Context, resourceID string, content io.Reader) err
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	// The same shape the backend composes, so what these tests read back is
+	// The same shape a runner composes, so what these tests read back is
 	// what a real record holds.
 	o.assets[o.environment+"/"+resourceID] = string(body)
 	return nil
@@ -241,7 +241,7 @@ func deployed(t *testing.T, dir string, environments ...string) *pkgregister.Reg
 	return r
 }
 
-// planned is a push as the backend runs it: the plan, then one job per environment
+// planned is a push as build runs it: the plan, then one job per environment
 // it names, each told its own.
 func planned(ctx context.Context, b *artifact.Builder, w run.Work, o *out) error {
 	environments, err := b.Plan(ctx, w, o)

@@ -74,7 +74,7 @@ func (s *Service) handleLinkProject(w http.ResponseWriter, r *http.Request, toke
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
 
 	user, err := s.caller(ctx, token)
@@ -126,7 +126,7 @@ func (s *Service) handleListProjects(w http.ResponseWriter, r *http.Request, tok
 		respond(w, errDenied)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
 
 	user, err := s.caller(ctx, token)
@@ -154,7 +154,7 @@ func (s *Service) handleGetProject(w http.ResponseWriter, r *http.Request, token
 		respond(w, errDenied)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
 	if _, err := s.mayTouchProject(ctx, token, projectID, register.RoleViewer); err != nil {
 		respond(w, err)

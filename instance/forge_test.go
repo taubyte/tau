@@ -43,6 +43,6 @@ func TestAFrontendFollowsAForgesEventStream(t *testing.T) {
 	select {
 	case <-dialled:
 	case <-time.After(10 * time.Second):
-		t.Fatal("the frontend never dialled the forge's event stream")
+		t.Fatal("ingress never dialled the forge's event stream")
 	}
 }

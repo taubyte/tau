@@ -23,7 +23,7 @@ func (f fakeAssets) Read(_ context.Context, cid string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader(v)), nil
 }
 
-// lzwOf is the log of a run that said text, as the backend stores it.
+// lzwOf is the log of a run that said text, as build stores it.
 func lzwOf(t *testing.T, text string) string {
 	t.Helper()
 	stored, err := io.ReadAll(livelog.Compressed(bytes.NewReader(logSaying(text))))

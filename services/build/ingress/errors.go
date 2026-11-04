@@ -95,7 +95,7 @@ func translate(err error) (int, string) {
 	}
 	switch connect.CodeOf(err) {
 	case connect.CodeNotFound, connect.CodePermissionDenied:
-		// PermissionDenied is the backend refusing this node, a deployment fault, still
+		// PermissionDenied is jobs refusing this node, a deployment fault, still
 		// answered 404.
 		return errDenied.status, errDenied.msg
 	case connect.CodeInvalidArgument:
@@ -107,12 +107,12 @@ func translate(err error) (int, string) {
 		// cancelling a finished one.
 		return http.StatusConflict, "conflict"
 	case connect.CodeResourceExhausted:
-		// Admission control at the backend. A build was NOT refused, it was
+		// Admission control at the queue. A build was NOT refused, it was
 		// not accepted yet, so the honest answer is "come back".
 		return http.StatusServiceUnavailable, "busy"
 	case connect.CodeUnavailable:
-		// Every backend peer said ask somebody else, or there were none.
-		return http.StatusServiceUnavailable, "no backend available"
+		// Every build node said ask somebody else, or there were none.
+		return http.StatusServiceUnavailable, "no build node available"
 	case connect.CodeDeadlineExceeded:
 		return http.StatusGatewayTimeout, "upstream timeout"
 	default:

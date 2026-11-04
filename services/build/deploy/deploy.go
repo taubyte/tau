@@ -1,6 +1,6 @@
 // Package deploy is what a push to a project's configuration repository does, and
-// the only writer of the register: a deploy is a commit that arrived through the
-// frontend, was authorized, and became a watched job.
+// the only writer of the register: a deploy is a commit that arrived through
+// build's ingress, was authorized, and became a watched job.
 //
 // The pushed branch picks the deployments through the project's environment
 // table, each one a job of its own; the revision is the published one plus one.

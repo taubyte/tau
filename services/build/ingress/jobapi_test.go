@@ -38,7 +38,7 @@ func TestGetJobAnswersTheSchemasOwnShape(t *testing.T) {
 
 func TestListJobsStreamsAJSONArray(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.backend.list = func(_ string, emit func(string) error) error {
+	h.jobs.list = func(_ string, emit func(string) error) error {
 		for _, id := range []string{"a", "b", "c"} {
 			if err := emit(id); err != nil {
 				return err
@@ -55,7 +55,7 @@ func TestListJobsStreamsAJSONArray(t *testing.T) {
 
 func TestAProjectWithNoJobsIsAnEmptyArrayAndNotNull(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.backend.list = func(string, func(string) error) error { return nil }
+	h.jobs.list = func(string, func(string) error) error { return nil }
 
 	w := h.do(t, authed(http.MethodGet, "/jobs/"+testProject, testToken))
 
@@ -65,7 +65,7 @@ func TestAProjectWithNoJobsIsAnEmptyArrayAndNotNull(t *testing.T) {
 
 func TestAListThatBreaksAfterItStartedIsLeftVisiblyTruncated(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.backend.list = func(_ string, emit func(string) error) error {
+	h.jobs.list = func(_ string, emit func(string) error) error {
 		if err := emit("a"); err != nil {
 			return err
 		}
@@ -82,8 +82,8 @@ func TestAListThatBreaksAfterItStartedIsLeftVisiblyTruncated(t *testing.T) {
 
 func TestAListThatBreaksBeforeItStartedStillChoosesAStatus(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.backend.list = func(string, func(string) error) error {
-		return connect.NewError(connect.CodeUnavailable, errors.New("no backend"))
+	h.jobs.list = func(string, func(string) error) error {
+		return connect.NewError(connect.CodeUnavailable, errors.New("no build node"))
 	}
 
 	w := h.do(t, authed(http.MethodGet, "/jobs/"+testProject, testToken))
@@ -106,7 +106,7 @@ func TestCancelSaysNothingAndRetrySaysQueued(t *testing.T) {
 
 func TestRetryingARunningJobIsAConflict(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.backend.retry = func(string) error {
+	h.jobs.retry = func(string) error {
 		return connect.NewError(connect.CodeFailedPrecondition, errors.New("job is Claimed, not finished"))
 	}
 
@@ -122,8 +122,8 @@ func TestAMutationIsAuthorizedBeforeItHappens(t *testing.T) {
 			h.projects.role = func(string, string) (register.Role, error) { return register.RoleViewer, nil }
 
 			acted := false
-			h.backend.cancel = func(string) error { acted = true; return nil }
-			h.backend.retry = func(string) error { acted = true; return nil }
+			h.jobs.cancel = func(string) error { acted = true; return nil }
+			h.jobs.retry = func(string) error { acted = true; return nil }
 
 			w := h.do(t, authed(http.MethodPost, route+testJobID, testToken))
 
@@ -135,7 +135,7 @@ func TestAMutationIsAuthorizedBeforeItHappens(t *testing.T) {
 
 func TestAnUnknownJobAndADeniedOneAreTheSameAnswer(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.backend.get = func(id string) (*buildv2.Job, error) {
+	h.jobs.get = func(id string) (*buildv2.Job, error) {
 		if id == "unknown" {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("no job"))
 		}
@@ -152,7 +152,7 @@ func TestAnUnknownJobAndADeniedOneAreTheSameAnswer(t *testing.T) {
 
 func TestAnIdTheBackendCouldNotHaveMintedIsABadRequest(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.backend.get = func(id string) (*buildv2.Job, error) {
+	h.jobs.get = func(id string) (*buildv2.Job, error) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%q is not a job id", id))
 	}
 
@@ -165,8 +165,8 @@ func TestAnOversizedIdNeverReachesTheBackend(t *testing.T) {
 		t.Run(path, func(t *testing.T) {
 			h := newHarness(t, Config{})
 			reached := false
-			h.backend.get = func(string) (*buildv2.Job, error) { reached = true; return nil, nil }
-			h.backend.list = func(string, func(string) error) error { reached = true; return nil }
+			h.jobs.get = func(string) (*buildv2.Job, error) { reached = true; return nil, nil }
+			h.jobs.list = func(string, func(string) error) error { reached = true; return nil }
 			h.projects.role = func(string, string) (register.Role, error) { reached = true; return register.RoleOwner, nil }
 
 			method := http.MethodGet
@@ -185,7 +185,7 @@ func TestNoJobRouteSpendsTheCloudOnceForEveryRequest(t *testing.T) {
 	const flood = 1000
 
 	countGets := func(h *harness, n *int) {
-		h.backend.get = func(string) (*buildv2.Job, error) {
+		h.jobs.get = func(string) (*buildv2.Job, error) {
 			*n++
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("no job"))
 		}
@@ -231,7 +231,7 @@ func TestRetryIsUnderTheSameCapsAsEveryOtherJobRoute(t *testing.T) {
 
 	h := newHarness(t, Config{})
 	queued := 0
-	h.backend.retry = func(string) error { queued++; return nil }
+	h.jobs.retry = func(string) error { queued++; return nil }
 
 	limited := 0
 	for range flood {

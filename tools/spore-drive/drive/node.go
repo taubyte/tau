@@ -305,16 +305,16 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 	out := &hostNodes{ignored: d.ignoredFields(hostName, droppedHere)}
 
 	if slices.Contains(services, instance.Build) && slices.Contains(services, instance.Runner) {
-		frontendKey, err := derivedKey(key, instance.Build)
+		buildKey, err := derivedKey(key, instance.Build)
 		if err != nil {
 			return nil, err
 		}
 		services = slices.DeleteFunc(services, func(s string) bool { return s == instance.Build })
-		frontend, err := file([]string{instance.Build, instance.Discovery}, mainPort+1, frontendKey)
+		split, err := file([]string{instance.Build, instance.Discovery}, mainPort+1, buildKey)
 		if err != nil {
 			return nil, err
 		}
-		out.instances = append(out.instances, unit{name: instance.Build, port: mainPort + 1, file: frontend})
+		out.instances = append(out.instances, unit{name: instance.Build, port: mainPort + 1, file: split})
 	}
 	main, err := file(services, mainPort, key)
 	if err != nil {

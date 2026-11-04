@@ -60,7 +60,7 @@ const (
 )
 
 // fleet is three nodes: two run cm and dns and are the zone's NS, and a
-// third runs only a gateway and the build frontend, and orders what it serves
+// third runs only a gateway and the build service, and orders what it serves
 // itself.
 type fleet struct {
 	addrs   [3]string

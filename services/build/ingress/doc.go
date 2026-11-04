@@ -1,11 +1,11 @@
-// Package frontend is build's public half, the one process in this service a
-// stranger can reach. It takes webhooks and the job API off the internet,
-// establishes the caller may cause what they ask, and calls the backend over
-// p2p. It holds no clone credentials, runtime or publish rights and serves no
-// RPC.
+// Package ingress is build's public side, the part of a cloud a stranger can
+// reach. It takes webhooks and the job API off the internet, establishes the
+// caller may cause what they ask, and hands the rest to build's jobs
+// (services/build/jobs), on this node or another build node over p2p. It holds
+// no clone credentials, runtime or publish rights and serves no RPC.
 //
-// Trust runs one way: this role asks the backend and is never asked; there is no
-// rpc.Listen here (boundary_test.go). The backend sees only this node's identity,
+// Trust runs one way: this side asks jobs and is never asked; there is no
+// rpc.Listen here (boundary_test.go). Jobs sees only the calling node's identity,
 // so authorization happens here: a webhook verifies under the secret of the hook
 // named in the path, for that hook's own repository; job routes check the
 // caller's role on the job's project (authz.go). Both checks cost this cloud

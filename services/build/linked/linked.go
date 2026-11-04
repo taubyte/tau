@@ -31,7 +31,7 @@ func notLinked(err error) error {
 	return err
 }
 
-// Project is the project a repository belongs to: the backend's admission check on
+// Project is the project a repository belongs to: build's admission check on
 // a push.
 func (p Projects) Project(ctx context.Context, repositoryKey string) (string, error) {
 	t, err := p.Table(ctx)
@@ -92,7 +92,7 @@ func (p Projects) ProjectRecord(ctx context.Context, projectID string) (pkgregis
 	return rec, notLinked(err)
 }
 
-// LinkProject writes a link: the frontend's, after authorizing the caller.
+// LinkProject writes a link: ingress's, after authorizing the caller.
 func (p Projects) LinkProject(ctx context.Context, l pkgregister.Link) (pkgregister.ProjectRecord, error) {
 	t, err := p.Table(ctx)
 	if err != nil {

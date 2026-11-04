@@ -111,7 +111,7 @@ func (users) Caller(_ context.Context, token string) (string, error) {
 	return user, nil
 }
 
-// registered is a frontend whose project table and callers are the register's
+// registered is an ingress whose project table and callers are the register's
 // and users'.
 func registered(t *testing.T, opts ...Option) (*harness, *linker) {
 	t.Helper()

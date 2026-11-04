@@ -172,7 +172,7 @@ func TestSecretsRoundTrip(t *testing.T) {
 	require.NoError(t, c.UnsetSecret(t.Context(), "p", "prod", "A"))
 }
 
-// eventsOf is text as the frontend serves a run's log from byte from: an event per
+// eventsOf is text as the build service serves a run's log from byte from: an event per
 // line, one JSON object per line, each carrying the offset after it.
 func eventsOf(text string, from int) []string {
 	var out []string

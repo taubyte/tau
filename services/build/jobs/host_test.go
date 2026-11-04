@@ -14,7 +14,7 @@ import (
 	"github.com/taubyte/tau/services/consensus"
 )
 
-// testHost is an instance as the backend sees it: a peer, a directory, the services
+// testHost is an instance as jobs sees it: a peer, a directory, the services
 // beside it, and the section an operator wrote.
 type testHost struct {
 	peer.Node
@@ -58,7 +58,7 @@ func (quick) Config(into any) error {
 }
 
 // hostWithConsensus is a host running a started consensus service, the one service
-// the backend cannot start without.
+// jobs cannot start without.
 func hostWithConsensus(t *testing.T, section map[string]any) *testHost {
 	t.Helper()
 	p := peer.Mock(t.Context())
@@ -91,7 +91,7 @@ func TestTheBackendNeedsConsensusBesideIt(t *testing.T) {
 	t.Cleanup(p.Close)
 	b := New()
 	require.ErrorIs(t, b.Start(t.Context(), &testHost{Node: p, root: t.TempDir()}), ErrNoConsensus)
-	require.NoError(t, b.Close(), "a backend that never started closes")
+	require.NoError(t, b.Close(), "jobs that never started close")
 }
 
 func TestTheBackendRefusesASectionOfTheWrongShape(t *testing.T) {

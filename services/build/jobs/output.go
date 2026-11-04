@@ -455,10 +455,9 @@ func (o *runOutput) end() {
 
 // Follow returns a reader of one run's log on this node, at `from`, blocking at
 // the end until more arrives or the build finishes. A late viewer forks at 0, a
-// reconnecting one at its offset. No route here: authorization is the frontend's
-// (write access to the job's repository), and routing to the node running the
-// build belongs to the backend topology change. A job running elsewhere is
-// NotFound here.
+// reconnecting one at its offset. No route here: authorization is ingress's
+// (write access to the job's repository), and a log another build node is
+// writing is that node's to serve: a job running elsewhere is NotFound here.
 func (s *server) Follow(jobID string, attempt uint32, from int64) (io.ReadCloser, error) {
 	_, r, err := s.fork(jobID, attempt, from)
 	if err != nil {

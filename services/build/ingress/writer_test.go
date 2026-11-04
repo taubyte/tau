@@ -35,7 +35,7 @@ func TestAListStopsWhenTheCallerGoesAway(t *testing.T) {
 		t.Run(fmt.Sprintf("after %d writes", after), func(t *testing.T) {
 			h := newHarness(t, Config{})
 			emitted := 0
-			h.backend.list = func(_ string, emit func(string) error) error {
+			h.jobs.list = func(_ string, emit func(string) error) error {
 				for _, id := range []string{"a", "b", "c", "d"} {
 					if err := emit(id); err != nil {
 						return err
@@ -56,7 +56,7 @@ func TestAListStopsWhenTheCallerGoesAway(t *testing.T) {
 
 func TestAJobThatCannotBeEncodedIsNotHalfWritten(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.backend.get = func(id string) (*buildv2.Job, error) {
+	h.jobs.get = func(id string) (*buildv2.Job, error) {
 		return &buildv2.Job{Id: id, RepositoryKey: testRepoKey, Ref: "refs/heads/\xff"}, nil
 	}
 

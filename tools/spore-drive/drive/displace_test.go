@@ -233,9 +233,9 @@ func testDisplace(t *testing.T, sd Spore, root string, secrets []string, openDel
 			return data
 		}
 
-		var main, frontend boot.File
+		var main, split boot.File
 		assert.NilError(t, yaml.Unmarshal(read("/tmp/shape1.yaml"), &main))
-		assert.NilError(t, yaml.Unmarshal(read("/tmp/build.yaml"), &frontend))
+		assert.NilError(t, yaml.Unmarshal(read("/tmp/build.yaml"), &split))
 
 		// the host's shapes are one node, keyed by its first shape
 		assert.Equal(t, main.PrivateKey, sdrive.parser.Hosts().Host(h.Name()).Shapes().Instance("shape1").Key())
@@ -257,7 +257,7 @@ func testDisplace(t *testing.T, sd Spore, root string, secrets []string, openDel
 		}))
 
 		// every node's certificate admits it, checked as the node checks it at boot
-		for _, f := range []boot.File{main, frontend} {
+		for _, f := range []boot.File{main, split} {
 			raw, err := base64.StdEncoding.DecodeString(f.PrivateKey)
 			assert.NilError(t, err)
 			key, err := crypto.UnmarshalPrivateKey(raw)
@@ -265,13 +265,13 @@ func testDisplace(t *testing.T, sd Spore, root string, secrets []string, openDel
 			_, err = sectls.NewCredentials([]byte(f.CA), []byte(f.Certificate), f.Node.Cloud, key)
 			assert.NilError(t, err)
 		}
-		assert.Equal(t, main.CA, frontend.CA, "one CA for the cloud")
+		assert.Equal(t, main.CA, split.CA, "one CA for the cloud")
 
 		// build is split off, on the next port, with its own identity
-		assert.DeepEqual(t, frontend.Node.Services, []string{"build", "discovery"})
-		assert.DeepEqual(t, frontend.Listen, []string{"/ip4/0.0.0.0/tcp/4243"})
-		assert.Assert(t, frontend.PrivateKey != main.PrivateKey)
-		assert.Equal(t, frontend.HTTP, "")
+		assert.DeepEqual(t, split.Node.Services, []string{"build", "discovery"})
+		assert.DeepEqual(t, split.Listen, []string{"/ip4/0.0.0.0/tcp/4243"})
+		assert.Assert(t, split.PrivateKey != main.PrivateKey)
+		assert.Equal(t, split.HTTP, "")
 
 		// the other host's node is the bootstrap peer
 		other := "host1"

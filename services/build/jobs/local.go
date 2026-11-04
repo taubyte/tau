@@ -6,12 +6,12 @@ import (
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
-// Local is the backend as build's own routes ask it in the same process: what an
+// Local is jobs as build's own routes ask them in the same process: what an
 // RPC does once its peer was allowed, with no peer to allow, since the caller is
 // this node's own ingress, which authorized the person asking.
 type Local struct{ s *server }
 
-// Local is this backend, in-process.
+// Local is this node's jobs, in-process.
 func (b *hosted) Local() Local { return Local{s: b.server} }
 
 func (l Local) Enqueue(ctx context.Context, repositoryKey, ref, commitSHA string) (string, error) {

@@ -1,8 +1,8 @@
-// Package backend is build's private half: the queue (raft), the jobs (events in
-// kvdb, events.go) and the run, served as build.proto's QueueService and
-// JobService to other tau nodes
-// over p2p/rpc and reachable no other way. The public half, taking webhooks off
-// the internet, is services/build/ingress.
+// Package jobs is build's private side: the queue (raft), the jobs (events in
+// kvdb, events.go), and each claimed job handed to a runner that opened a stream
+// to the leader (dispatch.go), served as build.proto's QueueService, JobService
+// and RunnerService to other tau nodes over p2p/rpc and reachable no other way.
+// The public side, taking webhooks off the internet, is services/build/ingress.
 //
 // Four rules:
 //
@@ -26,8 +26,8 @@
 //
 // New binds no port and opens nothing; it takes a host, the queue's raft store
 // (pkg/queue's Store), the kvdb database the jobs live in, and one question for
-// auth. The node supplies the Runner
-// and the storage service as Assets (instance/build.go).
+// auth. Logs go to the storage service as Assets; what a job builds is run and
+// stored by a runner (services/build/runner), which names it back up the stream.
 //
 // A push is a plan job: the runner reads which environments the commit feeds, and
 // each becomes a job of its own (id over repository, ref, commit, environment),

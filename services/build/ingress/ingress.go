@@ -3,7 +3,7 @@ package ingress
 import "net/http"
 
 // mount builds the route table. ingress.go exists only in the two publicly
-// reachable services; boundary_test.go refuses it in the backend.
+// reachable services; boundary_test.go refuses it in jobs.
 //
 // It binds net/http's ServeMux, not pkg/http, on purpose: pkg/http resolves a
 // route variable from the query string before the path (so `?hook=` would pick

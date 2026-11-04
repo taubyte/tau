@@ -20,10 +20,10 @@ import (
 
 // jobapi.go is the job API a person or the CLI calls. Every route authorizes
 // before it acts, and is admitted before it authorizes: authorizing reads the job
-// from the backend leader through a raft barrier, which a well-shaped header
+// from build's leader through a raft barrier, which a well-shaped header
 // alone must not be able to trigger (credentials()). Logs and artifacts are per
 // job (assetapi.go), never by bare cid. A running build is followed at
-// GET /job/{jid}/logs; the writer is found because every other backend answers
+// GET /job/{jid}/logs; the writer is found because every other build node answers
 // Unavailable and the pool walks on, resuming from the offset.
 
 // jobJSON is protojson over the generated Job, with proto field names, so the HTTP
@@ -32,7 +32,7 @@ var jobJSON = protojson.MarshalOptions{UseProtoNames: true}
 
 // handleGetJob is GET /job/{jid}.
 func (s *Service) handleGetJob(w http.ResponseWriter, r *http.Request, token, jobID string) {
-	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
 
 	job, err := s.mayTouchJob(ctx, token, jobID, register.RoleViewer)
@@ -53,7 +53,7 @@ func (s *Service) handleGetJob(w http.ResponseWriter, r *http.Request, token, jo
 }
 
 // handleFollowJob is GET /job/{jid}/logs; with ?snapshot=true it ends at what the
-// log holds now. Not bounded by BackendTimeout: it ends when the build does or the
+// log holds now. Not bounded by CallTimeout: it ends when the build does or the
 // caller hangs up. Authorization is decided once, before the first byte. The
 // response is one run's events (?attempt=N, else the current run) as JSON, one
 // object per line: its status as it moves and each line of its output, the last a
@@ -62,7 +62,7 @@ func (s *Service) handleGetJob(w http.ResponseWriter, r *http.Request, token, jo
 // for; an ended one is read from its record; one ended with no log is a 410, or a
 // cut response if found after the 200.
 func (s *Service) handleFollowJob(w http.ResponseWriter, r *http.Request, token, jobID string) {
-	authorize, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
+	authorize, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	job, err := s.mayTouchJob(authorize, token, jobID, register.RoleViewer)
 	cancel()
 	if err != nil {
@@ -111,7 +111,7 @@ const attemptHeader = "X-Job-Attempt"
 // following. The first ask is a snapshot, so the status can still be a 410 for an
 // unkept log.
 func (s *Service) readLog(ctx context.Context, jobID string, run int32, from int64, snapshot bool, out *logResponse) error {
-	reached, err := s.backend.Snapshot(ctx, jobID, run, from, out.emit)
+	reached, err := s.jobs.Snapshot(ctx, jobID, run, from, out.emit)
 	if !snapshot && (err == nil || connect.CodeOf(err) == connect.CodeUnavailable) {
 		out.open()
 		reached, err = s.followLog(ctx, jobID, run, reached, out.emit)
@@ -132,7 +132,7 @@ func (s *Service) readLog(ctx context.Context, jobID string, run int32, from int
 func (s *Service) followLog(ctx context.Context, jobID string, run int32, from int64, emit func(*buildv2.Job_Event) error) (int64, error) {
 	wait := s.cfg.FollowBackoff
 	for {
-		reached, err := s.backend.Follow(ctx, jobID, run, from, emit)
+		reached, err := s.jobs.Follow(ctx, jobID, run, from, emit)
 		if connect.CodeOf(err) != connect.CodeUnavailable {
 			return reached, err
 		}
@@ -153,8 +153,8 @@ func (s *Service) followLog(ctx context.Context, jobID string, run int32, from i
 // authorization's read predates the end. A run that never ran logged
 // nothing; one whose log was lost is errLogNotKept.
 func (s *Service) storedLog(ctx context.Context, jobID string, run int32, from int64, out *logResponse) error {
-	read, cancel := context.WithTimeout(ctx, s.cfg.BackendTimeout)
-	job, err := s.backend.Get(read, jobID)
+	read, cancel := context.WithTimeout(ctx, s.cfg.CallTimeout)
+	job, err := s.jobs.Get(read, jobID)
 	cancel()
 	if err != nil {
 		return err
@@ -300,18 +300,18 @@ func attemptOf(r *http.Request, job *buildv2.Job) (int32, error) {
 
 // handleCancelJob is POST /cancel/{jid}, answering 204.
 func (s *Service) handleCancelJob(w http.ResponseWriter, r *http.Request, token, jobID string) {
-	s.mutate(w, r, token, jobID, s.backend.Cancel, http.StatusNoContent)
+	s.mutate(w, r, token, jobID, s.jobs.Cancel, http.StatusNoContent)
 }
 
 // handleRetryJob is POST /retry/{jid}, answering 202 since the job is queued; a
 // still-open job is a 409.
 func (s *Service) handleRetryJob(w http.ResponseWriter, r *http.Request, token, jobID string) {
-	s.mutate(w, r, token, jobID, s.backend.Retry, http.StatusAccepted)
+	s.mutate(w, r, token, jobID, s.jobs.Retry, http.StatusAccepted)
 }
 
 // mutate is cancel and retry: authorize on the job, then act.
 func (s *Service) mutate(w http.ResponseWriter, r *http.Request, token, jobID string, act func(context.Context, string) error, status int) {
-	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
 
 	if _, err := s.mayTouchJob(ctx, token, jobID, register.RoleBuilder); err != nil {
@@ -329,7 +329,7 @@ func (s *Service) mutate(w http.ResponseWriter, r *http.Request, token, jobID st
 // whole list; a failure after the first id leaves the array unterminated so a
 // decoder sees truncation.
 func (s *Service) handleListJobs(w http.ResponseWriter, r *http.Request, token, projectID string) {
-	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
 
 	if _, err := s.mayTouchProject(ctx, token, projectID, register.RoleViewer); err != nil {
@@ -338,7 +338,7 @@ func (s *Service) handleListJobs(w http.ResponseWriter, r *http.Request, token, 
 	}
 
 	sent := 0
-	err := s.backend.List(ctx, projectID, func(jobID string) error {
+	err := s.jobs.List(ctx, projectID, func(jobID string) error {
 		if sent == 0 {
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("X-Content-Type-Options", "nosniff")

@@ -3,7 +3,7 @@
 //
 // The credentials are the developer's: `tau link` generates a webhook secret and a
 // deploy key locally, installs the public halves on the forge with the developer's
-// token, and stores the private halves here through the build frontend's secret
+// token, and stores the private halves here through the build service's secret
 // routes. The cloud generates neither and holds no forge token.
 //
 // Every name lives in Environment, a scope no deployment can be named ("@" is not in
@@ -15,7 +15,7 @@
 //	                                                  private half, OpenSSH PEM
 //
 // A name carries a digest of the normalised repository key, which may hold several
-// segments. The build frontend verifies pushes with the hook secret; the backend
+// segments. Build verifies pushes with the hook secret; a runner
 // clones with the deploy key. A Gerrit project's deploy key is the service account's
 // ssh key. A repository with no deploy key is cloned with none.
 package linkcreds

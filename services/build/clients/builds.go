@@ -14,14 +14,14 @@ import (
 	"github.com/taubyte/tau/services/build"
 )
 
-// BuildClient is the frontend's view of the backend: build.proto's five RPCs
+// BuildClient is ingress's view of another build node's jobs: build.proto's five RPCs
 // through the pool. A follower answers Unavailable and Pool.Do walks to the next
 // peer; only when every peer says so does ErrNoBackend come back.
 type BuildClient struct {
 	pool *Pool
 }
 
-// Builds adapts a pool dialling build's backend.
+// Builds adapts a pool dialling build nodes.
 func Builds(p *Pool) (*BuildClient, error) {
 	if err := requireProtocol(p, build.Protocol, "builds"); err != nil {
 		return nil, err
@@ -50,7 +50,7 @@ func (c *BuildClient) Enqueue(ctx context.Context, repositoryKey, ref, commitSHA
 		return "", err
 	}
 	if id == "" {
-		return "", connect.NewError(connect.CodeInternal, errors.New("build: backend enqueued a job with no id"))
+		return "", connect.NewError(connect.CodeInternal, errors.New("build: a build node queued a job with no id"))
 	}
 	return id, nil
 }

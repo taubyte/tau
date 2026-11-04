@@ -120,7 +120,7 @@ func TestCIRunMovesOnFromARunItCouldNotRead(t *testing.T) {
 	x.f.mu.Unlock()
 	r = x.run("ci", "run", "--dir", x.dir, "--commit", strings.Repeat("d", 40), "--branch", "main", "--interval", "10ms")
 	require.Zero(t, r.code, r.stderr)
-	require.Contains(t, r.stderr, "the job's log cannot be read: the cloud answered 503: no backend available")
+	require.Contains(t, r.stderr, "the job's log cannot be read: the cloud answered 503: no build node available")
 
 	// A log that does not say which run it is cannot be followed at all.
 	x.f.mu.Lock()

@@ -1,4 +1,4 @@
-// Package forgeauth answers the frontend's provider questions through pkg/forge:
+// Package forgeauth answers ingress's provider questions through pkg/forge:
 // whether a delivery is genuine and what it means, and the forges' push feeds.
 // The forge is the repository key's host in a forge.Registry, so no provider is
 // named here. Verification uses only the repository's scheme and secret, never a
@@ -15,7 +15,7 @@ import (
 	"github.com/taubyte/tau/services/build/ingress"
 )
 
-// Forges answers the frontend's provider questions from the forges one
+// Forges answers ingress's provider questions from the forges one
 // registry serves.
 type Forges struct {
 	forges *forge.Registry

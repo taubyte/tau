@@ -174,7 +174,7 @@ func (s *server) createEnvironment(plan jobRecord, environment, prelude string) 
 
 // admit is the bound on stranger-authored input. Both limits are per this
 // consistency domain, both are cheap listings of keys this service already
-// keeps, and both answer CodeResourceExhausted — which a frontend can turn
+// keeps, and both answer CodeResourceExhausted — which ingress can turn
 // into a 503 and a retry rather than into a failed build.
 func (s *server) admit(repositoryKey string) error {
 	ready, claimed := s.work.Depth()

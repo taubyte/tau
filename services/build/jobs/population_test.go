@@ -81,7 +81,7 @@ const packageLevel = "(package level)"
 // pairedQueueWrites pair with an event; Claim and Sweep do not.
 var pairedQueueWrites = map[string]bool{"Push": true, "Remove": true, "Ack": true, "Nack": true}
 
-// rowVerbs are backend/row's Set and Delete, the only calls that make a row. A
+// rowVerbs are jobs/row's Set and Delete, the only calls that make a row. A
 // method value alias still counts its taker as a caller, and a call through it
 // fails the key check (TestARespeltRowMakerIsStillCounted).
 var rowVerbs = map[string]bool{"Set": true, "Delete": true}
@@ -332,10 +332,10 @@ func parsePackage(t *testing.T) *ast.Package {
 		return !strings.HasSuffix(fi.Name(), "_test.go")
 	}, 0)
 	require.NoError(t, err)
-	require.Contains(t, parsed, "backend")
+	require.Contains(t, parsed, "jobs")
 
 	var read []string
-	for name := range parsed["backend"].Files {
+	for name := range parsed["jobs"].Files {
 		read = append(read, filepath.Base(name))
 	}
 	require.ElementsMatch(t, backendFiles, read,
@@ -346,7 +346,7 @@ func parsePackage(t *testing.T) *ast.Package {
 		"and the files on disk are that same set — a file added to the package and left out of "+
 			"backendFiles is one the parser could be told to skip without any list disagreeing")
 
-	return parsed["backend"]
+	return parsed["jobs"]
 }
 
 // fieldWritten names the field an assignment target writes: s.running[id] and
@@ -1099,7 +1099,7 @@ func TestEveryKeyAnEntryWritesIsBuiltWhereTheEntryIs(t *testing.T) {
 			if !ok || !neverTaken[sel.Sel.Name] || called[sel.Sel.NamePos] {
 				return true
 			}
-			require.Fail(t, "one of backend/row's verbs is taken as a value rather than called",
+			require.Fail(t, "one of jobs/row's verbs is taken as a value rather than called",
 				"%s at %v — a method value is not a call, so what is done through it is done in a "+
 					"function whose name the call does not carry, while the function that TOOK it "+
 					"still reads as an ordinary caller of %s", types.ExprString(sel), sel.Sel.NamePos, sel.Sel.Name)
@@ -1110,7 +1110,7 @@ func TestEveryKeyAnEntryWritesIsBuiltWhereTheEntryIs(t *testing.T) {
 
 func TestARespeltRowMakerIsStillCounted(t *testing.T) {
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "aliased.go", `package backend
+	file, err := parser.ParseFile(fset, "aliased.go", `package jobs
 
 func (e *entry) aliased(key string) {
 	mk := e.ops.Set
@@ -1458,7 +1458,7 @@ func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 		"an entry is made by the handle and nowhere else")
 	require.ElementsMatch(t, []string{"entry.event"}, assembles(all, "stated"))
 
-	// backend/section's two doors (Write, Subject) each have one caller here.
+	// jobs/section's two doors (Write, Subject) each have one caller here.
 	require.ElementsMatch(t, []string{"held.under"}, onTheHolding(t, "Write"),
 		"the gate is the only thing that asks the holding to write")
 	require.ElementsMatch(t, []string{"held.id"}, onTheHolding(t, "Subject"),

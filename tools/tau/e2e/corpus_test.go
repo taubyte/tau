@@ -153,7 +153,7 @@ func copyFile(from, to string) error {
 
 // universe is a development cloud that builds: one node running every private
 // service with a container daemon to build and run in, and one running the
-// public build frontend. It answers the frontend's address and the node that
+// public build service. It answers build's address and the node that
 // serves.
 func universe(t *testing.T, f *fake.Served, configure func(*instance.Config), opts ...instance.Option) (string, *instance.Instance) {
 	t.Helper()

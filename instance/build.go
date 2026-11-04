@@ -28,8 +28,8 @@ import (
 // and is asked here only what a worker's artifact lookup needs.
 
 // maxAuthConnections bounds the streams one node keeps to auth. It is small
-// because every answer is cached in front of it — the frontend caches hook
-// secrets (frontend/secrets.go) — and everything else is once per job.
+// because every answer is cached in front of it — ingress caches hook
+// secrets (ingress/secrets.go) — and everything else is once per job.
 const maxAuthConnections = 4
 
 // pollInterval is how often a waiting lookup looks again. The discovery view is
@@ -157,7 +157,7 @@ func (n *Instance) openAuth() error {
 	return nil
 }
 
-// BuildAddr is where this node's build frontend listens, nil when it runs
+// BuildAddr is where this node's build service listens, nil when it runs
 // none or it has not started.
 func (n *Instance) BuildAddr() net.Addr {
 	if f, ok := service.Get[hosted.Service](&added{node: n}); ok {
@@ -195,7 +195,7 @@ func (a *artifacts) Artifact(ctx context.Context, project, environment, kind, re
 		return cid, nil
 	}
 
-	// THIS NODE'S OWN BACKEND IS READ IN-PROCESS, as its own register is: a
+	// THIS NODE'S OWN JOBS ARE READ IN-PROCESS, as its own register is: a
 	// host does not dial itself, so a single-node cloud asking the swarm would
 	// find only itself and never resolve anything. A follower says
 	// Unavailable, and then the fleet is asked as before.
@@ -211,7 +211,7 @@ func (a *artifacts) Artifact(ctx context.Context, project, environment, kind, re
 	}
 
 	// The view is asked before the pool, since this is the request path:
-	// fromDiscovery.Peers would wait forever on a cloud with no build backend. A failed
+	// fromDiscovery.Peers would wait forever on a cloud with no build node. A failed
 	// lookup is not cached.
 	if len((&fromDiscovery{node: a.node, name: Build}).Known()) == 0 {
 		return "", fmt.Errorf("%w: %s/%s is built by the platform and no build service is reachable",

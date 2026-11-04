@@ -1,10 +1,11 @@
-// Package build holds what both of build's roles need: the protocol id the backend
-// serves and the frontend dials, the role descriptors, and how a run's log becomes
-// the events a follower reads (lines.go). The roles
-// sit on either side of a trust boundary: the frontend takes webhooks and the
-// job API off the internet and holds no credentials or runtime; the backend owns
-// the queue, the records and the run, reachable only over p2p. It imports p2p/rpc
-// and the generated code only, never pkg/http.
+// Package build holds what both build services need: the protocol id build serves
+// and a runner dials, the service descriptors, and how a run's log becomes the
+// events a follower reads (lines.go). The two sit on either side of a trust
+// boundary: build takes webhooks and the job API off the internet and holds the
+// queue and the job records, but no clone credentials and no runtime; a runner
+// clones, runs a repository's code and publishes what it built, is reachable by
+// nothing, and dials build to be handed work. It imports p2p/rpc and the
+// generated code only, never pkg/http.
 package build
 
 import (
@@ -14,8 +15,8 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
 )
 
-// Protocol is "/tau/build/v2", derived from the schema. Both service blocks mount
-// behind it.
+// Protocol is "/tau/build/v2", derived from the schema. Every service block of
+// build.proto mounts behind it.
 var Protocol = rpc.Protocol(buildv2connect.QueueServiceName)
 
 // QueueDomain names the consistency domain build's queue lives in, fixed by

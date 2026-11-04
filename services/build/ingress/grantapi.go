@@ -38,7 +38,7 @@ func (s *Service) owner(ctx context.Context, token, projectID string) (string, e
 }
 
 func (s *Service) handleListGrants(w http.ResponseWriter, r *http.Request, token, projectID string) {
-	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
 	if _, err := s.owner(ctx, token, projectID); err != nil {
 		respond(w, err)
@@ -67,7 +67,7 @@ func (s *Service) handleGrant(w http.ResponseWriter, r *http.Request, token, pro
 		respond(w, problem(http.StatusBadRequest, err.Error()))
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
 	by, err := s.owner(ctx, token, projectID)
 	if err != nil {
@@ -88,7 +88,7 @@ func (s *Service) handleRevoke(w http.ResponseWriter, r *http.Request, token, pr
 		respond(w, err)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
 	by, err := s.owner(ctx, token, projectID)
 	if err != nil {

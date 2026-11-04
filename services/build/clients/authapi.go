@@ -12,9 +12,9 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 )
 
-// AuthAPI carries a Connect call the public frontend received to auth, over
-// p2p, without reading it: the frontend already chose which calls pass, and
-// auth answers them. It satisfies frontend.AuthAPI.
+// AuthAPI carries a Connect call build's ingress received to auth, over
+// p2p, without reading it: ingress already chose which calls pass, and
+// auth answers them. It satisfies ingress.AuthAPI.
 type AuthAPI struct{ pool *Pool }
 
 // maxAuthAnswer bounds what is read back from auth.

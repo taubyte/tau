@@ -69,13 +69,13 @@ func (c *Client) Stream(ctx context.Context, job string, attempt int32, from int
 // Offset is where in the run's log the last event read ended.
 func (s *LogStream) Offset() int64 { return s.offset }
 
-// Attempt is the run being read, or 0 before the frontend has named it.
+// Attempt is the run being read, or 0 before the build service has named it.
 func (s *LogStream) Attempt() int32 { return s.attempt }
 
 // Ended is the status the run's log ended the job in, once it has said one.
 func (s *LogStream) Ended() (buildv2.JobStatus, bool) { return s.ended, s.settled }
 
-// eventJSON reads what the frontend writes, and what it may add.
+// eventJSON reads what the build service writes, and what it may add.
 var eventJSON = protojson.UnmarshalOptions{DiscardUnknown: true}
 
 // Next returns the next event, or io.EOF at the end of the log.

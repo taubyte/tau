@@ -221,7 +221,7 @@ func named(t *testing.T, said, prefix, end string) string {
 
 // queueBehind pushes a second commit to the configuration repository, its package
 // built by the recipe given, and has tau ci run queue its build, which waits for
-// the fleet's one build backend.
+// the fleet's one runner.
 func queueBehind(t *testing.T, f *fake.Served, work string, repo repokey.Key, yaml string) string {
 	t.Helper()
 	s, err := forges.For(repo, f.Token())

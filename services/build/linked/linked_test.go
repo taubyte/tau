@@ -64,7 +64,7 @@ func TestTheProjectTableAnswersBothBuildRoles(t *testing.T) {
 	require.Equal(t, linkedID, id)
 
 	_, err = p.Project(ctx, "github.com/nobody/here")
-	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err), "the backend reads an unlinked repository as NotFound")
+	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err), "build reads an unlinked repository as NotFound")
 
 	for repo, want := range map[string]bool{linkedCfg: true, linkedCode: false, "github.com/nobody/here": false} {
 		got, err := p.Configures(ctx, linkedID, repo)

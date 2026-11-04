@@ -1,6 +1,6 @@
-// Package joblog is a run's log as both halves of the build read it: its events,
+// Package joblog is a run's log as build and its runners read it: its events,
 // each a length-delimited Job.Event (protodelim) — its status as it moves and each
-// line of its output — written by the backend while the run goes on and stored,
+// line of its output — written by build while the run goes on and stored,
 // compressed, when it ends. So the stored log is everything that happened to that
 // run, and a follower reads the same records either way.
 package joblog

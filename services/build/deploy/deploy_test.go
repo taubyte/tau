@@ -119,7 +119,7 @@ func envsWork() run.Work {
 	return w
 }
 
-// pushed is a push as the backend runs it: the plan, then one job per environment
+// pushed is a push as build runs it: the plan, then one job per environment
 // it names, each told its own.
 func pushed(ctx context.Context, d *deploy.Deploy, w run.Work, out run.Output) error {
 	environments, err := d.Plan(ctx, w, out)

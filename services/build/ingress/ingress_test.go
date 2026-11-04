@@ -29,7 +29,7 @@ func TestAPathValueCannotBeOverriddenFromAnywhereElse(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t, Config{})
 			var asked []string
-			h.backend.get = func(id string) (*buildv2.Job, error) { asked = append(asked, id); return nil, errDenied }
+			h.jobs.get = func(id string) (*buildv2.Job, error) { asked = append(asked, id); return nil, errDenied }
 
 			r := authed(http.MethodGet, "/job/"+testJobID, testToken)
 			tc.mangle(r)

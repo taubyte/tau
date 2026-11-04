@@ -15,8 +15,8 @@ import (
 
 // buildapi.go is a build asked for by hand: `tau ci run`, and in a universe only,
 // `tau build` uploading its result. A manual build is authorized as a builder on
-// the project, then goes the way a delivered push does; the backend still confirms
-// the ref at the forge. The commit is the caller's to name.
+// the project, then goes the way a delivered push does; the runner that plans it
+// still confirms the ref at the forge. The commit is the caller's to name.
 
 // maxBuildBody bounds the one small body a manual build reads.
 const maxBuildBody = 4 << 10
@@ -54,7 +54,7 @@ func (s *Service) handleManualBuild(w http.ResponseWriter, r *http.Request, toke
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
 
 	if _, err := s.mayTouchProject(ctx, token, projectID, register.RoleBuilder); err != nil {
@@ -101,9 +101,9 @@ func (s *Service) queue(w http.ResponseWriter, ctx context.Context, push Push) {
 		return
 	}
 
-	jobID, err := s.backend.Enqueue(ctx, push.Repository, push.Ref, push.Commit)
+	jobID, err := s.jobs.Enqueue(ctx, push.Repository, push.Ref, push.Commit)
 	if err != nil {
-		// THE BACKEND'S REASON IS THE CALLER'S, for a refusal of the push
+		// THE QUEUE'S REASON IS THE CALLER'S, for a refusal of the push
 		// itself: a commit the forge does not hold at that ref is the one a
 		// person most needs named, and a builder on the project may know it.
 		if connect.CodeOf(err) == connect.CodeFailedPrecondition {
@@ -125,7 +125,7 @@ func (s *Service) queue(w http.ResponseWriter, ctx context.Context, push Push) {
 // unless it names one of its code repositories: a code repository's build is
 // uploaded as a commit of that repository, and built against what is published.
 func (s *Service) handleUpload(w http.ResponseWriter, r *http.Request, token, projectID string) {
-	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
 
 	if _, err := s.mayTouchProject(ctx, token, projectID, register.RoleBuilder); err != nil {
@@ -153,7 +153,7 @@ func (s *Service) handleUpload(w http.ResponseWriter, r *http.Request, token, pr
 		return
 	}
 
-	// THE BODY IS READ UNDER THE REQUEST'S OWN CONTEXT and not BackendTimeout,
+	// THE BODY IS READ UNDER THE REQUEST'S OWN CONTEXT and not CallTimeout,
 	// which bounds one call out of this process: a bundle is as slow as the
 	// developer's link.
 	commit, err := s.uploads.Put(repository, ref, http.MaxBytesReader(w, r.Body, MaxUploadBytes))
@@ -169,7 +169,7 @@ func (s *Service) handleUpload(w http.ResponseWriter, r *http.Request, token, pr
 // handleDeployments is GET /projects/{projectId}/deployments: the
 // environments a project has published.
 func (s *Service) handleDeployments(w http.ResponseWriter, r *http.Request, token, projectID string) {
-	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
 
 	if _, err := s.mayTouchProject(ctx, token, projectID, register.RoleViewer); err != nil {
@@ -197,7 +197,7 @@ func (s *Service) handlePublished(w http.ResponseWriter, r *http.Request, token,
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
 
 	if _, err := s.mayTouchProject(ctx, token, projectID, register.RoleViewer); err != nil {

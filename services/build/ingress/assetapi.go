@@ -69,7 +69,7 @@ func (s *Service) serveJobAsset(w http.ResponseWriter, r *http.Request, token, j
 		respond(w, err)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
 	job, err := s.mayTouchJob(ctx, token, jobID, register.RoleViewer)
 	if err != nil {
@@ -81,7 +81,7 @@ func (s *Service) serveJobAsset(w http.ResponseWriter, r *http.Request, token, j
 		respond(w, errDenied)
 		return
 	}
-	// The read outlives BackendTimeout: an artifact is as large as its build
+	// The read outlives CallTimeout: an artifact is as large as its build
 	// made it, and the transfer is bounded by the caller hanging up.
 	stored, err := s.assets.Read(r.Context(), cid)
 	if err != nil {
@@ -119,7 +119,7 @@ func (s *Service) handleCloud(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.cloudFqdn == "" {
-		respond(w, problem(http.StatusServiceUnavailable, "this build frontend was given no cloud fqdn"))
+		respond(w, problem(http.StatusServiceUnavailable, "this build node was given no cloud fqdn"))
 		return
 	}
 	writeJSON(w, http.StatusOK, cloudResponse{Fqdn: s.cloudFqdn, Uploads: s.uploads != nil})

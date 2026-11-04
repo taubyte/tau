@@ -23,9 +23,9 @@ const (
 	DefaultIdleTimeout = 60 * time.Second
 	// DefaultShutdownTimeout bounds how long Close waits for in-flight requests.
 	DefaultShutdownTimeout = 10 * time.Second
-	// DefaultBackendTimeout bounds one call into the backend or auth, so a silent
-	// backend costs bounded memory on internet-facing connections.
-	DefaultBackendTimeout = 30 * time.Second
+	// DefaultCallTimeout bounds one call into jobs or auth, so a silent
+	// one costs bounded memory on internet-facing connections.
+	DefaultCallTimeout = 30 * time.Second
 	// DefaultSecretCacheTTL is how long a hook's registration is believed, bounding
 	// how long a replaced secret or an unlinked project's deliveries still verify.
 	DefaultSecretCacheTTL = time.Minute
@@ -45,7 +45,7 @@ const (
 	DefaultStreamBackoffMax = time.Minute
 	// DefaultFollowBackoff and DefaultFollowBackoffMax pace a follow asking
 	// again for a log no node is writing yet: the first wait, doubled per ask
-	// up to the ceiling. Each ask walks the backends, the leader's answer
+	// up to the ceiling. Each ask walks the build nodes, the leader's answer
 	// behind a barrier, so the ceiling is what a long queue costs per viewer.
 	DefaultFollowBackoff    = 500 * time.Millisecond
 	DefaultFollowBackoffMax = 2 * time.Second
@@ -108,9 +108,9 @@ type Config struct {
 	IdleTimeout       time.Duration `yaml:"idleTimeout"`
 	ShutdownTimeout   time.Duration `yaml:"shutdownTimeout"`
 
-	// BackendTimeout bounds one call out of this process. Zero means
-	// DefaultBackendTimeout.
-	BackendTimeout time.Duration `yaml:"backendTimeout"`
+	// CallTimeout bounds one call out of this process. Zero means
+	// DefaultCallTimeout.
+	CallTimeout time.Duration `yaml:"callTimeout"`
 
 	// EligibleRefs are the refs a push is built for; nil means DefaultEligibleRefs.
 	// The one place that decides, before Enqueue.
@@ -151,7 +151,7 @@ type Config struct {
 
 	// Uploads is the directory a development cloud keeps a developer's build in
 	// (services/build/uploads); empty is a cloud with no upload door, which is every
-	// cloud but a development one. The backend names the same directory to read them.
+	// cloud but a development one. A runner names the same directory to read them.
 	Uploads string `yaml:"uploads"`
 }
 
@@ -164,7 +164,7 @@ func (c Config) withDefaults() (Config, error) {
 		{"readHeaderTimeout", c.ReadHeaderTimeout},
 		{"idleTimeout", c.IdleTimeout},
 		{"shutdownTimeout", c.ShutdownTimeout},
-		{"backendTimeout", c.BackendTimeout},
+		{"callTimeout", c.CallTimeout},
 		{"secretCacheTTL", c.SecretCacheTTL},
 		{"hookSecretGrace", c.HookSecretGrace},
 		{"streamBackoff", c.StreamBackoff},
@@ -213,8 +213,8 @@ func (c Config) withDefaults() (Config, error) {
 	if c.ShutdownTimeout == 0 {
 		c.ShutdownTimeout = DefaultShutdownTimeout
 	}
-	if c.BackendTimeout == 0 {
-		c.BackendTimeout = DefaultBackendTimeout
+	if c.CallTimeout == 0 {
+		c.CallTimeout = DefaultCallTimeout
 	}
 	if c.SecretCacheTTL == 0 {
 		c.SecretCacheTTL = DefaultSecretCacheTTL
@@ -380,13 +380,13 @@ type Linked interface {
 	LinkedRepositories(ctx context.Context) ([]string, error)
 }
 
-// Backend is build's private half as this role sees it: build.proto's five RPCs
+// Jobs is build's private side as ingress sees it: build.proto's five RPCs
 // and nothing else, an interface so routes test against a fake.
-type Backend interface {
+type Jobs interface {
 	Enqueue(ctx context.Context, repositoryKey, ref, commitSHA string) (jobID string, err error)
 	Get(ctx context.Context, jobID string) (*buildv2.Job, error)
-	// List hands each id to emit as it arrives, so neither this process nor the
-	// backend has to hold a project's whole job history to answer.
+	// List hands each id to emit as it arrives, so neither ingress nor jobs
+	// has to hold a project's whole job history to answer.
 	List(ctx context.Context, projectID string, emit func(jobID string) error) error
 	Cancel(ctx context.Context, jobID string) error
 	Retry(ctx context.Context, jobID string) error

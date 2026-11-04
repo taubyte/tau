@@ -62,7 +62,7 @@ func TestACallerWhoProvedNothingLearnsNothing(t *testing.T) {
 		t.Run(r.name, func(t *testing.T) {
 			h := newHarness(t, Config{}, WithLinker(linkedTestProject(t)), WithVault(&fakeVault{}))
 			reached := false
-			h.backend.get = func(string) (*buildv2.Job, error) { reached = true; return nil, nil }
+			h.jobs.get = func(string) (*buildv2.Job, error) { reached = true; return nil, nil }
 			h.projects.role = func(string, string) (register.Role, error) { reached = true; return register.RoleOwner, nil }
 
 			require.Equal(t, http.StatusUnauthorized, h.do(t, authed(r.method, r.path, "")).Code)
@@ -120,7 +120,7 @@ func TestTheRoleIsAskedForTheCallerOnTheJobsProject(t *testing.T) {
 
 func TestAJobWhoseRepositoryNoProjectOwnsIsDenied(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.backend.get = func(id string) (*buildv2.Job, error) {
+	h.jobs.get = func(id string) (*buildv2.Job, error) {
 		return &buildv2.Job{Id: id, RepositoryKey: "github.com/acme/orphan"}, nil
 	}
 	require.Equal(t, http.StatusNotFound, h.do(t, authed(http.MethodGet, "/job/"+testJobID, testToken)).Code)
@@ -143,7 +143,7 @@ func TestAnUnknownProjectIsTheSameAnswerAsADeniedOne(t *testing.T) {
 
 func TestABackendPermissionDenialDoesNotConfirmExistence(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.backend.get = func(string) (*buildv2.Job, error) {
+	h.jobs.get = func(string) (*buildv2.Job, error) {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("peer may not read"))
 	}
 

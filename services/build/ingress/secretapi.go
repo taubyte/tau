@@ -70,7 +70,7 @@ func (s *Service) handleSetSecret(w http.ResponseWriter, r *http.Request, token,
 		respond(w, err)
 		return
 	}
-	// A rotated hook secret is believed now on this frontend; other frontends catch up
+	// A rotated hook secret is believed now on this node; other build nodes catch up
 	// by re-asking on a failed verification (webhook.go).
 	s.secrets.drop(projectID)
 	w.WriteHeader(http.StatusNoContent)

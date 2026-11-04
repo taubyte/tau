@@ -160,7 +160,7 @@ func awaitOne(cmd *cobra.Command, cl *api.Client, job string, out *lines) (*api.
 	if err != nil {
 		return nil, err
 	}
-	// The run it follows is named, as the frontend would name it, so a note about one
+	// The run it follows is named, as the build service would name it, so a note about one
 	// it could not read can say which.
 	at := j.GetAttempt()
 	if at == 0 || j.GetStatus() == api.JobQueued {

@@ -76,7 +76,7 @@ func TestLinkInstallsEverythingFromTheClient(t *testing.T) {
 		require.Contains(t, string(names[linkcreds.DeployKey(k.String())]), "OPENSSH PRIVATE KEY")
 		hooks, keys := hooksOn(t, x, f, k)
 		require.Len(t, hooks, 1)
-		require.Equal(t, hookOf(id), hooks[0].Callback, "aimed at the cloud's own name for its frontend")
+		require.Equal(t, hookOf(id), hooks[0].Callback, "aimed at the cloud's own name for its build service")
 		require.Len(t, keys, 1)
 		require.Equal(t, "tau build.cloud.example", keys[0].Title)
 	}

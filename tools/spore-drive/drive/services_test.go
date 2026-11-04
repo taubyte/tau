@@ -125,7 +125,7 @@ func TestSignInAndCertificatesReachEveryNodeAndTheirSecretsOnlyTheBundle(t *test
 	assert.Assert(t, !bytes.Equal(sealed, second), "every deploy seals afresh")
 
 	assert.Assert(t, first.instances[0].keepsSecrets())
-	assert.Assert(t, !first.instances[1].keepsSecrets(), "a split-off frontend keeps no secrets")
+	assert.Assert(t, !first.instances[1].keepsSecrets(), "a split-off build instance keeps no secrets")
 }
 
 // fixedNow is the clock the deploy tests run on.

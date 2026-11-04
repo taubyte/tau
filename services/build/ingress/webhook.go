@@ -75,7 +75,7 @@ func (s *Service) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	event, err := s.deliveries.Verify(look.hook.accepting(s.now(), s.cfg.HookSecretGrace), r.Header, body)
 
 	// A remembered hook that refuses a delivery is asked again once and the delivery
-	// re-verified: this is what makes rotation correct on every frontend. Only a
+	// re-verified: this is what makes rotation correct on every build node. Only a
 	// cached answer, only on ErrUnverified, never twice.
 	if errors.Is(err, ErrUnverified) && look.cached {
 		s.log("hook %s: %v; asking again in case the secret was rotated", hookID, err)
@@ -117,10 +117,10 @@ func (s *Service) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
 
-	jobID, err := s.backend.Enqueue(ctx, event.Repository, event.Ref, event.Commit)
+	jobID, err := s.jobs.Enqueue(ctx, event.Repository, event.Ref, event.Commit)
 	if err != nil {
 		s.log("enqueue %s %s: %v", event.Repository, event.Commit, err)
 		respond(w, err)

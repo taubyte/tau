@@ -45,7 +45,7 @@ func TestABuilderQueuesABuildByHand(t *testing.T) {
 	var got queued
 	require.NoError(t, json.NewDecoder(strings.NewReader(bodyOf(t, w))).Decode(&got))
 	require.Equal(t, testJobID, got.JobID)
-	require.Equal(t, []enqueued{{testRepoKey, "refs/heads/main", testSHA}}, h.backend.enqueues())
+	require.Equal(t, []enqueued{{testRepoKey, "refs/heads/main", testSHA}}, h.jobs.enqueues())
 }
 
 func TestWhatAManualBuildRefuses(t *testing.T) {
@@ -109,7 +109,7 @@ func TestWhatAManualBuildRefuses(t *testing.T) {
 			w := h.do(t, manualBuild(token, project, c.body))
 			require.Equal(t, c.status, w.Code, w.Body.String())
 			require.Contains(t, w.Body.String(), c.says)
-			require.Empty(t, h.backend.enqueues())
+			require.Empty(t, h.jobs.enqueues())
 		})
 	}
 }
@@ -119,21 +119,21 @@ func TestAManualBuildOutsideTheTenancy(t *testing.T) {
 	h.projects.role = asBuilder
 	w := h.do(t, manualBuild(testToken, testProject, buildRequest{Repository: testRepoKey, Ref: "refs/heads/main", Commit: testSHA}))
 	require.Equal(t, http.StatusForbidden, w.Code)
-	require.Empty(t, h.backend.enqueues())
+	require.Empty(t, h.jobs.enqueues())
 }
 
 func TestAManualBuildTheBackendRefuses(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.projects.role = asBuilder
-	h.backend.enqueue = func(string, string, string) (string, error) {
+	h.jobs.enqueue = func(string, string, string) (string, error) {
 		return "", connect.NewError(connect.CodeFailedPrecondition, errors.New("github.com/acme/pay does not hold refs/heads/main at 1111"))
 	}
 	w := h.do(t, manualBuild(testToken, testProject, buildRequest{Repository: testRepoKey, Ref: "refs/heads/main", Commit: testSHA}))
 	require.Equal(t, http.StatusConflict, w.Code)
 	require.Contains(t, w.Body.String(), "does not hold refs/heads/main")
 
-	h.backend.enqueue = func(string, string, string) (string, error) {
-		return "", connect.NewError(connect.CodeUnavailable, errors.New("no backend"))
+	h.jobs.enqueue = func(string, string, string) (string, error) {
+		return "", connect.NewError(connect.CodeUnavailable, errors.New("no build node"))
 	}
 	w = h.do(t, manualBuild(testToken, testProject, buildRequest{Repository: testRepoKey, Ref: "refs/heads/main", Commit: testSHA}))
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
@@ -177,14 +177,14 @@ func TestAUniverseTakesAnUploadAsACommitOfTheConfiguration(t *testing.T) {
 	_, err := l.Register.LinkProject(t.Context(), register.Link{Project: testProject, Config: testRepoKey, Claimant: testUser})
 	require.NoError(t, err)
 
-	// THE BACKEND'S HALF reads the same directory.
+	// A RUNNER reads the same directory.
 	held, err := uploads.Open(dir)
 	require.NoError(t, err)
 	confirm := held.Confirm(confirmsNothing{})
 
 	w := h.do(t, upload("tok-"+testUser, testProject, "refs/heads/main", aBundle(t, "the bundle")))
 	require.Equal(t, http.StatusAccepted, w.Code, w.Body.String())
-	pushed := h.backend.enqueues()
+	pushed := h.jobs.enqueues()
 	require.Len(t, pushed, 1)
 	require.Equal(t, testRepoKey, pushed[0].repositoryKey)
 	require.Equal(t, "refs/heads/main", pushed[0].ref)
@@ -211,7 +211,7 @@ func TestAUniverseTakesAnUploadAsACommitOfTheConfiguration(t *testing.T) {
 	require.NoError(t, err)
 	w = h.do(t, withBody(authed(http.MethodPost, "/upload/"+testProject+"?ref=refs/heads/main&repository=github.com/acme/lib", "tok-"+testUser), aBundle(t, "code")))
 	require.Equal(t, http.StatusAccepted, w.Code, w.Body.String())
-	code := h.backend.enqueues()[1]
+	code := h.jobs.enqueues()[1]
 	require.Equal(t, "github.com/acme/lib", code.repositoryKey)
 	require.NoError(t, confirm.Confirm(t.Context(), "github.com/acme/lib", "refs/heads/main", code.commitSHA))
 	w = h.do(t, withBody(authed(http.MethodPost, "/upload/"+testProject+"?ref=refs/heads/main&repository=github.com/else/lib", "tok-"+testUser), aBundle(t, "code")))
@@ -221,7 +221,7 @@ func TestAUniverseTakesAnUploadAsACommitOfTheConfiguration(t *testing.T) {
 	w = h.do(t, upload("tok-"+testUser, testProject, "refs/heads/main", []byte("x")))
 	require.Equal(t, http.StatusBadRequest, w.Code)
 	require.Contains(t, w.Body.String(), "not a bundle")
-	require.Len(t, h.backend.enqueues(), 2)
+	require.Len(t, h.jobs.enqueues(), 2)
 }
 
 func TestAnUploadForAProjectThatCannotBeRead(t *testing.T) {
@@ -239,13 +239,13 @@ func (unreadable) ProjectRecord(context.Context, string) (register.ProjectRecord
 
 func TestUploadsNeedALinkerAndADirectory(t *testing.T) {
 	_, err := New(Config{Uploads: t.TempDir()}, WithHooks(&fakeHooks{}), WithDeliveries(&fakeDeliveries{}), WithProjects(&fakeProjects{}),
-		WithBackend(&fakeBackend{}), WithCallers(&fakeCallers{}))
+		WithJobs(&fakeJobs{}), WithCallers(&fakeCallers{}))
 	require.ErrorContains(t, err, "linker")
 
 	file := filepath.Join(t.TempDir(), "a file")
 	require.NoError(t, os.WriteFile(file, nil, 0o600))
 	_, err = New(Config{Uploads: filepath.Join(file, "below")}, WithHooks(&fakeHooks{}), WithDeliveries(&fakeDeliveries{}), WithProjects(&fakeProjects{}),
-		WithBackend(&fakeBackend{}), WithCallers(&fakeCallers{}), WithLinker(unreadable{}))
+		WithJobs(&fakeJobs{}), WithCallers(&fakeCallers{}), WithLinker(unreadable{}))
 	require.ErrorContains(t, err, "uploads")
 
 	_, err = New(Config{}, WithPublished(nil))
