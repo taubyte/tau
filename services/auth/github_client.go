@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/google/go-github/v71/github"
 	cu "github.com/taubyte/tau/services/auth/crypto"
@@ -59,7 +61,7 @@ func NewGitHubClient(ctx context.Context, token string) (GitHubClient, error) {
 		&oauth2.Token{AccessToken: token},
 	)))
 
-	user, _, err := client.Users.Get(ctx, "")
+	user, err := verifiedUser(ctx, client, token)
 	if err != nil {
 		return nil, err
 	}
@@ -219,4 +221,34 @@ func (client *githubClient) ShortRepositoryInfo(id string) RepositoryShortInfo {
 		URL:      *(_repoInfo.URL),
 		ID:       id,
 	}
+}
+
+// verifiedTokenTTL is how long a token GitHub accepted is trusted without
+// asking again. Every authenticated HTTP request builds a client, and asking
+// GitHub who the token belongs to took ~0.5s, so a CLI listing n jobs waited
+// n times that and spent n calls of the token's hourly rate limit.
+var verifiedTokenTTL = 5 * time.Minute
+
+type verifiedToken struct {
+	user    *github.User
+	expires time.Time
+}
+
+var verifiedTokens sync.Map // token -> verifiedToken
+
+func verifiedUser(ctx context.Context, client *github.Client, token string) (*github.User, error) {
+	if v, ok := verifiedTokens.Load(token); ok {
+		if vt := v.(verifiedToken); time.Now().Before(vt.expires) {
+			return vt.user, nil
+		}
+		verifiedTokens.Delete(token)
+	}
+
+	user, _, err := client.Users.Get(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+
+	verifiedTokens.Store(token, verifiedToken{user: user, expires: time.Now().Add(verifiedTokenTTL)})
+	return user, nil
 }

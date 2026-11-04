@@ -1,6 +1,7 @@
 package builds
 
 import (
+	"sync"
 	"time"
 
 	"github.com/jedib0t/go-pretty/v6/table"
@@ -67,13 +68,27 @@ func query(ctx *cli.Context) error {
 
 	rangeEnd := time.Now().Add(-sinceParsed).Unix()
 
-	// index string for unique jobs
+	// a project's job list only grows, and each job is its own request, so
+	// fetch them several at a time; results keep the list's order
+	fetched := make([]*patrick.Job, len(jobIds))
+	errs := make([]error, len(jobIds))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+	for i, id := range jobIds {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer func() { <-sem; wg.Done() }()
+			fetched[i], errs[i] = patrickC.Job(id)
+		}()
+	}
+	wg.Wait()
+
 	jobs := make([]*patrick.Job, 0, len(jobIds))
-	for _, id := range jobIds {
-		job, err := patrickC.Job(id)
-		if err != nil {
+	for i, job := range fetched {
+		if errs[i] != nil {
 			// use i18n
-			return err
+			return errs[i]
 		}
 
 		if job.Timestamp >= rangeEnd {
