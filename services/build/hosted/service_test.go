@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v3"
@@ -13,22 +14,27 @@ import (
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/git/gittest"
+	"github.com/taubyte/tau/pkg/raft"
+	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/frontend"
+	"github.com/taubyte/tau/services/consensus"
 )
 
-// node is an instance as build sees it: a peer, nothing beside it, and the section
-// an operator wrote.
+// node is an instance as build sees it: a peer, a directory, the consensus beside it,
+// and the section an operator wrote.
 type node struct {
 	peer.Node
+	root    string
+	running []service.Running
 	section map[string]any
 }
 
-func (n *node) Peer() peer.Node          { return n.Node }
-func (*node) Running() []service.Running { return nil }
-func (*node) Root() string               { return "" }
-func (*node) Cloud() string              { return "test" }
-func (*node) Region() string             { return "" }
-func (*node) Now() time.Time             { return time.Now() }
+func (n *node) Peer() peer.Node            { return n.Node }
+func (n *node) Running() []service.Running { return n.running }
+func (n *node) Root() string               { return n.root }
+func (*node) Cloud() string                { return "test" }
+func (*node) Region() string               { return "" }
+func (*node) Now() time.Time               { return time.Now() }
 
 func (n *node) Config(into any) error {
 	raw, err := yaml.Marshal(n.section)
@@ -38,18 +44,53 @@ func (n *node) Config(into any) error {
 	return yaml.Unmarshal(raw, into)
 }
 
+// quick is the node as consensus sees it: timed for a test, so a lone peer elects
+// itself in milliseconds.
+type quick struct{ *node }
+
+func (quick) Config(into any) error {
+	*into.(*consensus.Config) = consensus.Config{
+		Timeouts: raft.TimeoutConfig{
+			HeartbeatTimeout:   50 * time.Millisecond,
+			ElectionTimeout:    50 * time.Millisecond,
+			CommitTimeout:      25 * time.Millisecond,
+			LeaderLeaseTimeout: 25 * time.Millisecond,
+			SnapshotInterval:   time.Minute,
+			SnapshotThreshold:  1000,
+		},
+		BootstrapTimeout: 200 * time.Millisecond,
+	}
+	return nil
+}
+
+// lone is a node running nothing beside build but the consensus its queue is a group
+// of, as a lone build process is.
 func lone(t *testing.T, section map[string]any) *node {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	return &node{Node: p, section: section}
+	n := &node{Node: p, root: t.TempDir(), section: section}
+	agree := consensus.New()
+	require.NoError(t, agree.Start(t.Context(), quick{n}))
+	t.Cleanup(func() { agree.Close() })
+	n.running = []service.Running{{Name: consensus.Descriptor.Name, Service: agree}}
+	return n
 }
 
 func TestBuildStartsFromItsInstance(t *testing.T) {
 	s := New()
 	require.Nil(t, s.(Service).Addr(), "nothing bound before it starts")
+	_, err := s.(Service).Built("shop", "prod", "QmNothing")
+	require.ErrorIs(t, err, backend.ErrNotStarted)
+	require.ErrorIs(t, s.(Service).WaitForLeader(t.Context()), backend.ErrNotStarted)
 	require.NoError(t, s.Start(t.Context(), lone(t, map[string]any{"listen": "127.0.0.1:0", "cloudfqdn": "tau.example.io"})))
 	t.Cleanup(func() { s.Close() })
+
+	require.NoError(t, s.(Service).WaitForLeader(t.Context()), "it leads its own queue")
+	_, err = s.(Service).Built("shop", "prod", "QmNothing")
+	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err), "and nothing is built")
+	_, err = s.(Service).Local().Enqueue(t.Context(), "github.com/acme/app", "refs/heads/main", strings.Repeat("c", 40))
+	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err), "asked in-process, with no register to say whose the repository is")
 
 	addr := s.(Service).Addr()
 	require.NotNil(t, addr)

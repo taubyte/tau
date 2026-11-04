@@ -300,7 +300,7 @@ func receiver(fn *ast.FuncDecl) string {
 // sourceFiles what is on disk, and the parser what it read. A file a filter
 // silently dropped would take it out of every census at once.
 var backendFiles = []string{
-	"authz.go", "config.go", "doc.go", "errors.go", "events.go", "host.go", "jobid.go", "jobs.go",
+	"authz.go", "config.go", "dispatch.go", "doc.go", "errors.go", "events.go", "host.go", "jobid.go", "jobs.go", "local.go",
 	"leader.go", "meter.go", "output.go", "queue.go", "reconcile.go", "rpc.go",
 	"runner.go", "section.go", "service.go", "store.go",
 }
@@ -879,6 +879,9 @@ func TestEveryQueueWriteIsInsideTheSectionThatDecidedIt(t *testing.T) {
 				"and decided on no job. The event it pairs with is begin's, and THAT is a " +
 				"section: a claim whose job turns out to be finished is dropped there and " +
 				"acked there.",
+			"server.dispatch": "step's claim, made for a runner's stream instead of this node's " +
+				"own runner: the same transition under the queue's group lock, decided on no job, " +
+				"and begin's section is still what pairs with it.",
 			"server.drainDeadLetter": "the same, one queue over. The dead letter's group lock is " +
 				"what makes its claim exclusive; the event it pairs with is inside the " +
 				"section below it.",
@@ -1385,7 +1388,7 @@ func TestTheClaimAndTheRegistrationAreOneSection(t *testing.T) {
 	require.True(t, held, "cancel stops a run outside the section that decided it — %s", chain)
 }
 
-func TestTheClaimLoopIsTheOnlyGoroutineThisPackageStarts(t *testing.T) {
+func TestTheClaimLoopAndTheRunsItHandsToRunnersAreTheOnlyGoroutines(t *testing.T) {
 	var started []string
 	for _, file := range parsePackage(t).Files {
 		ast.Inspect(file, func(n ast.Node) bool {
@@ -1399,8 +1402,14 @@ func TestTheClaimLoopIsTheOnlyGoroutineThisPackageStarts(t *testing.T) {
 			return true
 		})
 	}
-	require.Equal(t, []string{"loop"}, started,
-		"a second goroutine in this package is a second writer, and the four loop-side transitions stop excluding each other by construction")
+	// A RUN HANDED TO A RUNNER is a goroutine of its own, one per runner holding a
+	// job, so a leader can keep N runners busy. Every write it makes is a section
+	// under jobLock, the one lock over the whole job table that the rpc goroutines'
+	// writes already take, so the transitions still exclude each other.
+	require.ElementsMatch(t, []string{"loop", "runOn"}, started,
+		"a third goroutine in this package is a writer no census here has named")
+	require.ElementsMatch(t, []string{"server.dispatch"}, names(callers(pkgFuncs(t), "runOn")),
+		"a run is handed to a runner only where a free one was taken")
 }
 
 func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
@@ -1541,10 +1550,12 @@ func TestEveryWriteToTheAssetStoreIsNamedAndPlaced(t *testing.T) {
 			written[n] = at
 		}
 	}
-	require.ElementsMatch(t, []string{"runOutput.Asset"}, names(written),
+	require.ElementsMatch(t, []string{"runOutput.keep"}, names(written),
 		"a second writer of the run's cids is a second opinion about what this run produced")
-	require.ElementsMatch(t, []string{"runOutput.Asset", "runOutput.produced"}, names(callers(all, "built")),
+	require.ElementsMatch(t, []string{"runOutput.keep", "runOutput.produced"}, names(callers(all, "built")),
 		"and a third toucher of them is a cid read somewhere the section that records it cannot see")
+	require.ElementsMatch(t, []string{"runOutput.Asset", "runOutput.stored"}, names(callers(all, "keep")),
+		"a cid is kept for what this node stored, or for what a runner stored and named")
 }
 
 // takenAsAValue is every place a method named verb appears as a value rather than

@@ -5,8 +5,8 @@ package services
 import (
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/services/build"
-	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/hosted"
+	"github.com/taubyte/tau/services/build/runner"
 	"github.com/taubyte/tau/services/consensus"
 	"github.com/taubyte/tau/services/database"
 	"github.com/taubyte/tau/services/discovery"
@@ -39,10 +39,10 @@ func catalog() []shipped {
 		{name: primitives.Descriptor.Name, new: func() service.Service { return primitives.New() }, needs: []string{consensus.Descriptor.Name}},
 		{name: database.Descriptor.Name, new: func() service.Service { return database.New() }, needs: []string{consensus.Descriptor.Name}},
 		{name: storage.Descriptor.Name, new: func() service.Service { return storage.New() }},
-		{name: build.Runner.Name, new: func() service.Service { return backend.New() }, needs: []string{consensus.Descriptor.Name}},
+		{name: build.Runner.Name, new: func() service.Service { return runner.New() }},
 		// Build is never part of the default: one node running every service runs the
-		// runner, and a node may not run both.
-		{name: build.Build.Name, new: func() service.Service { return hosted.New() }, onlyNamed: true},
+		// runner, and a node may not run both. Its queue is a raft group.
+		{name: build.Build.Name, new: func() service.Service { return hosted.New() }, needs: []string{consensus.Descriptor.Name}, onlyNamed: true},
 	}
 }
 

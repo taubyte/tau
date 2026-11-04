@@ -39,8 +39,10 @@ func (s *server) step(ctx context.Context) (bool, error) {
 		return drained, fmt.Errorf("sweep: %w", err)
 	}
 
+	// WITH NO RUNNER OF ITS OWN this node hands each job to a runner that opened a
+	// stream to it, as many at once as there are runners free.
 	if s.runner == nil {
-		return drained, nil
+		return drained, s.dispatch(ctx)
 	}
 
 	d, err := s.work.Claim()
@@ -51,11 +53,12 @@ func (s *server) step(ctx context.Context) (bool, error) {
 		return drained, fmt.Errorf("claim: %w", err)
 	}
 
-	return true, s.run(ctx, d)
+	return true, s.run(ctx, d, s.runner)
 }
 
-// run executes one claimed delivery.
-func (s *server) run(ctx context.Context, d queue.Delivery) error {
+// run executes one claimed delivery on r: this node's own runner, or a runner's
+// stream (dispatch.go).
+func (s *server) run(ctx context.Context, d queue.Delivery, r run.Runner) error {
 	deadline := s.claimDeadline(d)
 
 	// The run's context exists before the record is claimed, since begin registers its
@@ -87,10 +90,10 @@ func (s *server) run(ctx context.Context, d queue.Delivery) error {
 	started := s.now()
 
 	if rec.Environment == "" {
-		return s.plan(ctx, runCtx, d, rec, work, started)
+		return s.plan(ctx, runCtx, d, rec, work, started, r)
 	}
 
-	out, runErr := s.invoke(runCtx, work, rec.Prelude)
+	out, runErr := s.invoke(runCtx, work, rec.Prelude, r)
 	if out == nil {
 		// The run never started (no log could be opened): a failed build, which hands the
 		// job to another node.
@@ -102,10 +105,13 @@ func (s *server) run(ctx context.Context, d queue.Delivery) error {
 
 	// A shutdown abandons the delivery rather than failing the job: left unacked, the
 	// claim expires and the queue redelivers. The cause is read, not the error, so a
-	// failure at shutdown also costs only a redelivery. A run that returned nil is
-	// settled.
+	// failure at shutdown also costs only a redelivery. A runner that went away is
+	// abandoned the same way. A run that returned nil is settled.
 	if runErr != nil && errors.Is(context.Cause(ctx), errShuttingDown) {
 		return fmt.Errorf("job %s abandoned: %w", rec.ID, errShuttingDown)
+	}
+	if errors.Is(runErr, errRunnerLost) {
+		return fmt.Errorf("job %s abandoned: %w", rec.ID, runErr)
 	}
 
 	// Nothing is published for an abandoned delivery, which writes no record. settle
@@ -204,7 +210,7 @@ func (s *server) forget(id string) {
 
 // invoke opens the run's output and runs the job, returning the output even when
 // the run failed: those are the lines somebody wants.
-func (s *server) invoke(ctx context.Context, work run.Work, prelude string) (out *runOutput, err error) {
+func (s *server) invoke(ctx context.Context, work run.Work, prelude string, r run.Runner) (out *runOutput, err error) {
 	if out, err = s.output(work); err != nil {
 		return nil, err
 	}
@@ -217,15 +223,15 @@ func (s *server) invoke(ctx context.Context, work run.Work, prelude string) (out
 	// A panicking runner is a failed build, not a dead loop or a lingering claim. Why a
 	// run failed is the last line of its log, since the record carries no reason.
 	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("runner panicked: %v", r)
+		if p := recover(); p != nil {
+			err = fmt.Errorf("runner panicked: %v", p)
 		}
 		if err != nil {
 			fmt.Fprintf(out, "error: %v\n", err)
 		}
 	}()
 
-	return out, s.runner.Run(ctx, work, out)
+	return out, r.Run(ctx, work, out)
 }
 
 // maxPrelude bounds what a plan says, which every environment job's record carries.
@@ -235,7 +241,7 @@ const maxPrelude = 64 << 10
 // each, then the plan settled as their parent. The environment jobs are created
 // between its two sections, each in its own, like a push's: a section writes only
 // the job it read. Creating one is idempotent, so a plan run twice makes them once.
-func (s *server) plan(ctx, runCtx context.Context, d queue.Delivery, rec jobRecord, work run.Work, started time.Time) error {
+func (s *server) plan(ctx, runCtx context.Context, d queue.Delivery, rec jobRecord, work run.Work, started time.Time, r run.Runner) error {
 	// A PLAN'S LOG IS LIVE ONLY: what it said, which jobs it queued and how it ended,
 	// for whoever follows it while it plans. What it said also opens each environment
 	// job's. A plan that could not open one plans unfollowed.
@@ -247,9 +253,12 @@ func (s *server) plan(ctx, runCtx context.Context, d queue.Delivery, rec jobReco
 	}
 	defer out.discard()
 
-	environments, runErr := s.planned(runCtx, work, live)
+	environments, runErr := s.planned(runCtx, work, live, r)
 	if runErr != nil && errors.Is(context.Cause(ctx), errShuttingDown) {
 		return fmt.Errorf("job %s abandoned: %w", rec.ID, errShuttingDown)
+	}
+	if errors.Is(runErr, errRunnerLost) {
+		return fmt.Errorf("job %s abandoned: %w", rec.ID, runErr)
 	}
 	s.accountBuild(ctx, rec, started, runErr)
 
@@ -321,13 +330,13 @@ func (s *server) plan(ctx, runCtx context.Context, d queue.Delivery, rec jobReco
 }
 
 // planned runs the runner's plan; a panic is a failed plan, as for a build.
-func (s *server) planned(ctx context.Context, work run.Work, out io.Writer) (environments []string, err error) {
+func (s *server) planned(ctx context.Context, work run.Work, out io.Writer, r run.Runner) (environments []string, err error) {
 	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("runner panicked: %v", r)
+		if p := recover(); p != nil {
+			err = fmt.Errorf("runner panicked: %v", p)
 		}
 	}()
-	return s.runner.Plan(ctx, work, out)
+	return r.Plan(ctx, work, out)
 }
 
 // capped keeps what is written up to max bytes and drops the rest, saying so once.

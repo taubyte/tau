@@ -459,7 +459,12 @@ func (e *entry) commit(what string) error {
 
 // push puts this job's item in the queue.
 func (h *held) push() error {
-	return h.under(func() error { return h.s.work.Push(h.id(), nil) })
+	if err := h.under(func() error { return h.s.work.Push(h.id(), nil) }); err != nil {
+		return err
+	}
+	// A JOB TO HAND OUT wakes the loop, so a free runner gets it now.
+	h.s.runners.wake.ring()
+	return nil
 }
 
 // ack settles a delivery of this job, and only this job.

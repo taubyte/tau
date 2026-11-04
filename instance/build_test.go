@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/services/build/runner"
+
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/pkg/containers"
 
@@ -68,11 +70,11 @@ func TestANodeAdvertisesTheRolesItRuns(t *testing.T) {
 
 	require.NotNil(t, n.auth)
 	_, built := backendOf(n)
-	require.True(t, built)
+	require.False(t, built, "a runner holds no queue")
 	require.Nil(t, n.BuildAddr(), "and no build listens")
 }
 
-func TestBuildHoldsNeitherStore(t *testing.T) {
+func TestBuildHoldsTheQueueAndNotAuthsStore(t *testing.T) {
 	// BUILD BINDS ITS OWN LISTENER and there is no default port for it — a port
 	// baked into a service is why sibling worktrees collide — so an operator names
 	// one.
@@ -84,7 +86,7 @@ func TestBuildHoldsNeitherStore(t *testing.T) {
 
 	require.Nil(t, n.auth, "build does not hold auth's store")
 	_, built := backendOf(n)
-	require.False(t, built, "nor the queue's writer")
+	require.True(t, built, "it holds the queue")
 	require.NotNil(t, n.BuildAddr(), "it listens where a CLI can reach it")
 }
 
@@ -153,8 +155,7 @@ func TestARowThatIsNotAPeerIsSkipped(t *testing.T) {
 func TestARunnerWithNoContainerDaemon(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Discovery, Runner}})
 	require.NoError(t, n.Start(t.Context()))
-	_, built := backendOf(n)
-	require.True(t, built, "it still runs, and still deploys configuration")
+	require.Contains(t, n.serving(), Runner, "it still runs, and still deploys configuration")
 }
 
 func TestARunnerWithADaemonThatIsNotOne(t *testing.T) {
@@ -310,14 +311,14 @@ func TestAWorkloadsStreamsAreNamedByTheWorkload(t *testing.T) {
 	require.Equal(t, 16, n)
 }
 
-func TestAWorkerAsksARunnerOnAnotherNode(t *testing.T) {
+func TestAWorkerAsksBuildOnAnotherNode(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Discovery, Runner}},
+		Config{Services: []string{Register, Discovery, Build}, Sections: map[string]any{Build: frontend.Config{Listen: "127.0.0.1:0"}}},
 		Config{Services: []string{Worker, Discovery}},
 	)
 	compute := nodes[1]
 
-	sees(t, compute, Runner)
+	sees(t, compute, Build)
 
 	a := &artifacts{node: compute, seen: map[string]builtAt{}}
 
@@ -326,7 +327,7 @@ func TestAWorkerAsksARunnerOnAnotherNode(t *testing.T) {
 	// reachable" and "the build service says there is no artifact".
 	_, err := a.Artifact(t.Context(), "shop", "prod", "function", "checkout")
 	require.Error(t, err)
-	require.NotErrorIs(t, err, ErrNoRunner, "a runner answered; it just had nothing")
+	require.NotErrorIs(t, err, ErrNoBuild, "a runner answered; it just had nothing")
 
 	// AND THE FAILURE IS NOT CACHED. "Nothing has built this yet" ends the
 	// moment a build finishes.
@@ -347,15 +348,14 @@ func TestTheRegionANodeReadsIsTheOneItsConfigNames(t *testing.T) {
 	require.Equal(t, pkgregister.IDOf([]byte("region-1")), p.Object, "and the view it reads")
 }
 
-func TestADevelopmentCloudsBuildIsConfigured(t *testing.T) {
+func TestADevelopmentCloudsRunnerIsConfigured(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "uploads")
-	section := backend.Config{Uploads: dir, Local: map[string]string{"github.com/acme/app": t.TempDir()}}
+	section := runner.Config{Uploads: dir, Local: map[string]string{"github.com/acme/app": t.TempDir()}}
 	cfg := Config{Services: []string{Discovery, Runner}, Sections: map[string]any{Runner: section}}
 	n, _, _ := makeNode(t, cfg)
 	require.NoError(t, n.Start(t.Context()))
-	_, built := backendOf(n)
-	require.True(t, built)
-	require.DirExists(t, dir, "the uploads directory is the build's to make")
+	require.Contains(t, n.serving(), Runner)
+	require.DirExists(t, dir, "the uploads directory is the runner's to make")
 
 	// A DIRECTORY IT CANNOT MAKE refuses the node, rather than a door that fails
 	// on the first upload.
@@ -366,8 +366,9 @@ func TestADevelopmentCloudsBuildIsConfigured(t *testing.T) {
 	require.ErrorContains(t, refused.Start(t.Context()), "uploads")
 }
 
-func TestANodeReadsItsOwnRunner(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Discovery, Runner, Worker}})
+func TestANodeReadsItsOwnBuild(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Discovery, Build, Worker},
+		Sections: map[string]any{Build: frontend.Config{Listen: "127.0.0.1:0"}}})
 	require.NoError(t, n.Start(t.Context()))
 	built, ok := backendOf(n)
 	require.True(t, ok)
@@ -392,7 +393,7 @@ func TestAFollowerAsksTheFleetForAnArtifact(t *testing.T) {
 	n.provide(Runner, following{})
 
 	_, err := n.BuildArtifacts().Artifact(t.Context(), "shop", "prod", "function", "QmNothing")
-	require.ErrorIs(t, err, ErrNoRunner, "a follower beside it sends the question to the fleet")
+	require.ErrorIs(t, err, ErrNoBuild, "a follower beside it sends the question to the fleet")
 }
 
 // backendOf is the build backend this node runs, if it runs one.

@@ -11,8 +11,6 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/peer"
 
-	"github.com/taubyte/tau/pkg/containers"
-	"github.com/taubyte/tau/pkg/forge/drivers"
 	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/build"
@@ -119,33 +117,6 @@ type Config struct {
 	// is kept however old, since what runs is resolved through it. Zero means
 	// DefaultJobRetention.
 	JobRetention time.Duration `yaml:"jobRetention"`
-
-	// Uploads is the directory a development cloud's frontend keeps a developer's
-	// build in (services/build/uploads): a push of an uploaded commit is confirmed,
-	// checked out and built from it. Empty is a cloud with no uploads.
-	Uploads string `yaml:"uploads"`
-
-	// Local is repositories read from folders on this machine, by repository key, in
-	// place of the forge (services/build/folders): a development cloud's, so a CI run
-	// needs no forge to hold the code.
-	Local map[string]string `yaml:"local"`
-
-	// Domains is how a deploy treats the zones a project declares.
-	Domains Domains `yaml:"domains"`
-
-	// The cloud-wide keys the backend reads, one copy each on the node: the zone that
-	// completes generated names, the forges it clones from, and the container daemon
-	// a code build runs in.
-	CloudFqdn string              `yaml:"cloudfqdn,omitempty"`
-	Forges    []drivers.Forge     `yaml:"forges,omitempty"`
-	Container containers.Declared `yaml:"container,omitempty"`
-}
-
-// Domains is the zones a project declares, as a deploy treats them.
-type Domains struct {
-	// Trusted serves every zone a project declares without its TXT proof: a
-	// development cloud's, whose one developer owns every zone it is shown.
-	Trusted bool `yaml:"trusted"`
 }
 
 // defaultLogDir is the scratch log directory, per uid so a shared /tmp name cannot
@@ -313,6 +284,9 @@ const (
 	// ActArtifact is a read about a project rather than a job: what one resource of
 	// one deployment runs. Its own action because its subject is a project id.
 	ActArtifact
+
+	// ActServe is a runner opening its stream to be handed jobs. It has no subject.
+	ActServe
 )
 
 func (a Action) String() string {
@@ -327,6 +301,8 @@ func (a Action) String() string {
 		return "retry"
 	case ActArtifact:
 		return "artifact"
+	case ActServe:
+		return "serve"
 	default:
 		return fmt.Sprintf("action(%d)", int(a))
 	}

@@ -15,6 +15,7 @@ import (
 	"github.com/taubyte/tau/pkg/linkcreds"
 	"github.com/taubyte/tau/pkg/tenancy"
 	"github.com/taubyte/tau/services/build"
+	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/clients"
 	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/build/frontend/forgeauth"
@@ -25,14 +26,15 @@ import (
 	"github.com/taubyte/tau/services/storage"
 )
 
-// maxConnections bounds the streams build keeps to auth and to the
-// runner. It is small because every answer is cached in front of it (the hook
+// maxConnections bounds the streams build keeps to auth and to the other build
+// nodes. It is small because every answer is cached in front of it (the hook
 // secrets) and everything else is once per job.
 const maxConnections = 4
 
-// Service is the build service as an instance runs it.
+// Service is the build service as an instance runs it: the queue and the job
+// records, and the routes in front of them.
 type Service interface {
-	service.Service
+	backend.Service
 
 	// Addr is where it listens, nil before it starts.
 	Addr() net.Addr
@@ -52,11 +54,13 @@ type config struct {
 	CM        cm.Config       `yaml:"cm,omitempty"`
 }
 
-// server is the build service: the frontend Start built, and what Start opened
-// for it, closed with it.
+// server is the build service: the queue and the job records (control), the routes
+// in front of them (the frontend Start built), and what Start opened for them, closed
+// with them.
 type server struct {
 	*frontend.Service
-	also []io.Closer
+	control backend.Service
+	also    []io.Closer
 }
 
 var _ Service = (*server)(nil)
@@ -65,15 +69,22 @@ type closer func()
 
 func (c closer) Close() error { c(); return nil }
 
-// Start builds the service from its instance: auth and the runner reached over
-// p2p by discovery, the projects in the register, the link credentials in the vault,
-// logs and artifacts in storage, domain claims and its certificate from cm.
+// Start builds the service from its instance: the queue a raft group of the
+// consensus beside it and the job records a database on the peer (the control,
+// services/build/backend), then the routes in front of them, asking that control
+// in-process and the other build nodes over p2p when it does not lead; auth
+// reached by discovery, the projects in the register, the link credentials in the
+// vault, logs and artifacts in storage, domain claims and its certificate from cm.
 func (f *server) Start(ctx context.Context, h service.Host) error {
-	if f.Service != nil {
+	if f.control != nil {
 		return errors.New("build: already started")
 	}
 	var cfg config
 	if err := h.Config(&cfg); err != nil {
+		return err
+	}
+	f.control = backend.New()
+	if err := f.control.Start(ctx, h); err != nil {
 		return err
 	}
 	options, err := f.wire(h, cfg)
@@ -95,15 +106,16 @@ func (f *server) wire(h service.Host, cfg config) ([]frontend.Option, error) {
 		return nil, err
 	}
 	f.also = append(f.also, closer(auth.Close))
-	backends, err := clients.NewPool(self, clients.Discovered(h, build.Runner.Name), build.Protocol, maxConnections)
+	others, err := clients.NewPool(self, clients.Others(h, build.Build.Name), build.Protocol, maxConnections)
 	if err != nil {
 		return nil, err
 	}
-	f.also = append(f.also, closer(backends.Close))
-	builds, err := clients.Builds(backends)
+	f.also = append(f.also, closer(others.Close))
+	elsewhere, err := clients.Builds(others)
 	if err != nil {
 		return nil, err
 	}
+	builds := routed{here: f.control.Local(), elsewhere: elsewhere}
 	identities, err := clients.Identities(auth)
 	if err != nil {
 		return nil, err
@@ -194,11 +206,14 @@ func (f *server) wire(h service.Host, cfg config) ([]frontend.Option, error) {
 	return options, nil
 }
 
-// Close stops the frontend, then what Start opened for it.
+// Close stops the routes, then the control, then what Start opened for them.
 func (f *server) Close() error {
 	var errs []error
 	if f.Service != nil {
 		errs = append(errs, f.Service.Close())
+	}
+	if f.control != nil {
+		errs = append(errs, f.control.Close())
 	}
 	for i := len(f.also) - 1; i >= 0; i-- {
 		errs = append(errs, f.also[i].Close())
@@ -206,6 +221,24 @@ func (f *server) Close() error {
 	f.also = nil
 	return errors.Join(errs...)
 }
+
+// Built, WaitForLeader and Local are the control's: the build service is what a
+// worker asks what a deployment runs.
+func (f *server) Built(project, environment, resource string) (string, error) {
+	if f.control == nil {
+		return "", backend.ErrNotStarted
+	}
+	return f.control.Built(project, environment, resource)
+}
+
+func (f *server) WaitForLeader(ctx context.Context) error {
+	if f.control == nil {
+		return backend.ErrNotStarted
+	}
+	return f.control.WaitForLeader(ctx)
+}
+
+func (f *server) Local() backend.Local { return f.control.Local() }
 
 // Addr is nil before Start, as the frontend's own is.
 func (f *server) Addr() net.Addr {

@@ -277,7 +277,7 @@ func TestABuiltResourceWithNoBuildServiceIsRefused(t *testing.T) {
 
 	select {
 	case err := <-done:
-		require.ErrorIs(t, err, ErrNoRunner)
+		require.ErrorIs(t, err, ErrNoBuild)
 	case <-time.After(10 * time.Second):
 		t.Fatal("it waited instead of refusing")
 	}

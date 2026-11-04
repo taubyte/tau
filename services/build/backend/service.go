@@ -67,6 +67,11 @@ type server struct {
 	// waiting on the leader for the run it asked about.
 	runs notice
 
+	// runners is the runners with a stream open to this node and no job in hand, and
+	// dispatched the jobs handed to them that have not ended (dispatch.go).
+	runners    runners
+	dispatched sync.WaitGroup
+
 	// meter is where this service says what it accounted for. Nil is the
 	// ordinary case; see meter.go.
 	meter Meter
@@ -343,6 +348,9 @@ func (s *server) loop(ctx context.Context, done chan<- struct{}) {
 	reconcile := time.NewTicker(s.cfg.ReconcileEvery)
 	defer reconcile.Stop()
 
+	// THE WAKE IS ASKED FOR BEFORE THE CYCLE IT STARTS, so one rung while a cycle runs
+	// is the next cycle's, never lost.
+	wake := s.runners.wake.wait()
 	for {
 		select {
 		case <-ctx.Done():
@@ -352,6 +360,14 @@ func (s *server) loop(ctx context.Context, done chan<- struct{}) {
 			// deliverable, a store that refused. There is nobody to return
 			// them to and the next cycle is the retry.
 			s.step(ctx)
+		case <-wake:
+			// A job was queued, or a runner joined or finished one: handed out now
+			// by a node that hands jobs to runners. One that runs them itself keeps
+			// to its tick.
+			wake = s.runners.wake.wait()
+			if s.runner == nil {
+				s.step(ctx)
+			}
 		case <-reconcile.C:
 			s.reconcile()
 		}
@@ -381,6 +397,8 @@ func (s *server) Close() error {
 		if listener != nil {
 			s.closeErr = listener.Close()
 		}
+		// The listener ends every runner's stream, so a dispatched run ends too.
+		s.dispatched.Wait()
 	})
 	return s.closeErr
 }

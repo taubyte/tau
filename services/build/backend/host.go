@@ -8,27 +8,14 @@ import (
 	"time"
 
 	logging "github.com/ipfs/go-log/v2"
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
-	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/taubyte/tau/core/service"
-	"github.com/taubyte/tau/pkg/containers"
-	"github.com/taubyte/tau/pkg/forge/drivers"
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
-	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/services/build"
-	"github.com/taubyte/tau/services/build/artifact"
-	"github.com/taubyte/tau/services/build/deploy"
-	"github.com/taubyte/tau/services/build/folders"
 	"github.com/taubyte/tau/services/build/linked"
-	"github.com/taubyte/tau/services/build/run"
-	"github.com/taubyte/tau/services/build/uploads"
-	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/consensus"
 	"github.com/taubyte/tau/services/register"
-	"github.com/taubyte/tau/services/secrets"
 	"github.com/taubyte/tau/services/storage"
 )
 
@@ -43,6 +30,9 @@ type Service interface {
 	// from then a job is read or refused with who reads it. The group forms off the
 	// request path, so a composer that needs one waits here.
 	WaitForLeader(ctx context.Context) error
+
+	// Local is this backend as build's own routes ask it, in-process.
+	Local() Local
 }
 
 // New is the build backend, unstarted. Start builds it from its instance.
@@ -89,7 +79,7 @@ func (b *hosted) Start(ctx context.Context, h service.Host) error {
 	if !ok {
 		return ErrNoConsensus
 	}
-	cluster, err := agree.Raft(build.Runner.Name)
+	cluster, err := agree.Raft(build.Build.Name)
 	if err != nil {
 		return err
 	}
@@ -97,7 +87,7 @@ func (b *hosted) Start(ctx context.Context, h service.Host) error {
 
 	fleet := register.ViewsOn(h)
 	b.also = append(b.also, fleet)
-	records, err := pkgkvdb.Open(h.Peer(), build.Runner.Name+"/jobs",
+	records, err := pkgkvdb.Open(h.Peer(), build.Build.Name+"/jobs",
 		pkgkvdb.WithLogger(logging.Logger("tau.build")),
 		pkgkvdb.WithRetentionFrom(func(ctx context.Context) (time.Duration, error) {
 			return register.Retention(ctx, fleet)
@@ -108,30 +98,16 @@ func (b *hosted) Start(ctx context.Context, h service.Host) error {
 	b.also = append(b.also, closer(func() error { records.Close(); return nil }))
 
 	table := register.TableOn(h)
-	vault := secrets.VaultOn(h)
 	assets := storage.StoreOn(h)
-	b.also = append(b.also, table, vault, assets)
-	projects := linked.Projects{Table: table.Now}
-
-	domains, err := provers(h, cfg)
-	if err != nil {
-		return err
-	}
-	b.also = append(b.also, domains)
-	runner, confirm, err := runnerFor(h.Region(), cfg, projects, table.Now, vault, domains)
-	if err != nil {
-		return err
-	}
+	b.also = append(b.also, table, assets)
 
 	s, err := newServer(cfg,
 		withHost(h.Peer().Host()),
 		withStore(cluster),
 		withRecords(records),
-		withRepositories(projects),
-		withRunner(runner),
-		// A PUSH IS BUILT ONLY FOR WHAT THE REPOSITORY HOLDS: the ref is read at
-		// the forge over the repository's deploy key before it is queued.
-		withConfirmer(confirm),
+		// WHO A PUSH BELONGS TO is the register's project table; a repository no
+		// project links is refused before anything is queued.
+		withRepositories(linked.Projects{Table: table.Now}),
 		withAssets(assets),
 		withClock(h.Now),
 	)
@@ -158,151 +134,3 @@ func (b *hosted) Close() error {
 type closer func() error
 
 func (c closer) Close() error { return c() }
-
-// runnerFor is what a push is read and run with: the forge's clone, and the container
-// engine. The section's local folders and uploaded builds sit in front of them.
-func runnerFor(region string, cfg Config, projects linked.Projects, table func(context.Context) (register.Table, error), vault linked.Vault, domains deploy.Domains) (run.Runner, run.Confirmer, error) {
-	forges, err := drivers.Registry(cfg.Forges)
-	if err != nil {
-		return nil, nil, err
-	}
-	pinned, err := drivers.HostKeys(cfg.Forges)
-	if err != nil {
-		return nil, nil, err
-	}
-	// SSH WHERE A DEPLOY KEY IS, HTTPS WHERE NONE IS: a deploy key is an ssh key, and a
-	// repository without one is read anonymously or not at all. Both addresses, and the
-	// ssh account, are the forge's; an ssh host is pinned.
-	clone := deploy.NewClone(linked.Credentials{Projects: projects, Vault: vault},
-		deploy.WithAddress(deploy.Forged(forges)),
-		deploy.WithHostKeys(func(host string) []gossh.PublicKey { return pinned[host] }))
-
-	var (
-		checkout deploy.Checkout = clone
-		confirm  run.Confirmer   = clone
-		engine   artifact.Engine
-	)
-	// A NODE THAT CANNOT RUN A CONTAINER CANNOT BUILD CODE, and it says so on the push
-	// rather than starting and refusing every one. It still deploys configuration,
-	// which is most of what a small cloud does.
-	if cfg.Container.Any() {
-		daemon, err := containers.Open(cfg.Container)
-		if err != nil {
-			return nil, nil, err
-		}
-		if engine, err = artifact.NewEngine(daemon); err != nil {
-			return nil, nil, err
-		}
-	}
-	if len(cfg.Local) > 0 {
-		f, err := folders.New(cfg.Local)
-		if err != nil {
-			return nil, nil, err
-		}
-		checkout, confirm = f.Checkout(checkout), f.Confirm(confirm)
-	}
-	if cfg.Uploads != "" {
-		held, err := uploads.Open(cfg.Uploads)
-		if err != nil {
-			return nil, nil, fmt.Errorf("build: uploads: %w", err)
-		}
-		checkout, confirm, engine = held.Checkout(checkout), held.Confirm(confirm), held.Engine(engine)
-	}
-
-	// THE CLOUD HAS THE ONE REGION ITS NODES SERVE, so a deploy places everything there.
-	regions := schema.WithNoRegions()
-	if region != "" {
-		regions = schema.WithRegion(region)
-	}
-	options := []deploy.Option{
-		deploy.WithProjects(projects),
-		deploy.WithCheckout(checkout),
-		// THE ONLY WRITE PATH TO THE REGISTER: a deploy is what a push became.
-		deploy.WithRegister(func(ctx context.Context) (deploy.Register, error) { return table(ctx) }),
-		deploy.WithCloudFqdn(cfg.CloudFqdn),
-		deploy.WithRegions(regions),
-		deploy.WithDomains(domains),
-	}
-	if engine != nil {
-		builder, err := artifact.New(
-			artifact.WithRegister(tableReader{table}),
-			artifact.WithProjects(projects),
-			artifact.WithCheckout(checkout),
-			artifact.WithEngine(engine),
-			// A source's clone URL is keyed by the forge that serves it, the same
-			// function every push's repository key came out of.
-			artifact.WithKeys(forges),
-			artifact.WithSecrets(vault),
-		)
-		if err != nil {
-			return nil, nil, err
-		}
-		options = append(options, deploy.WithBuilder(builder))
-	}
-	runner, err := deploy.New(options...)
-	if err != nil {
-		return nil, nil, err
-	}
-	return runner, confirm, nil
-}
-
-// trusted proves every zone: a cloud whose operator serves declared zones unproven.
-type trusted struct{}
-
-func (trusted) Prove(context.Context, string, string) error { return nil }
-func (trusted) Close() error                                { return nil }
-
-// prover is a deploy's domain proof, closed with the backend.
-type prover interface {
-	deploy.Domains
-	io.Closer
-}
-
-// provers is what a deploy proves a zone with: nothing, in a cloud that trusts its
-// zones, else the cm service, beside it or wherever discovery finds one.
-func provers(h service.Host, cfg Config) (prover, error) {
-	if cfg.Domains.Trusted {
-		return trusted{}, nil
-	}
-	return cm.NewDomains(h.Peer().Host(),
-		func() []libp2ppeer.ID {
-			if dir, ok := service.Get[service.Directory](h); ok {
-				return dir.Peers(cm.Name)
-			}
-			return nil
-		},
-		func() *cm.Service {
-			local, _ := service.Get[*cm.Service](h)
-			return local
-		})
-}
-
-// tableReader is the register's table as a code build reads the configuration it
-// builds against, reached per call.
-type tableReader struct {
-	table func(context.Context) (register.Table, error)
-}
-
-func (r tableReader) Environments(ctx context.Context, project string) ([]string, error) {
-	t, err := r.table(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return t.Environments(ctx, project)
-}
-
-func (r tableReader) Resolve(ctx context.Context, project, environment string) (pkgregister.Pointer, error) {
-	t, err := r.table(ctx)
-	if err != nil {
-		return pkgregister.Pointer{}, err
-	}
-	return t.Resolve(ctx, project, environment)
-}
-
-func (r tableReader) Object(ctx context.Context, id pkgregister.ObjectID) ([]byte, error) {
-	t, err := r.table(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return t.Object(ctx, id)
-}

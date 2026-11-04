@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/taubyte/tau/services/build/frontend"
+	"github.com/taubyte/tau/services/build/runner"
 
-	"github.com/taubyte/tau/services/build/backend"
+	"github.com/taubyte/tau/services/build/frontend"
 
 	"github.com/taubyte/tau/pkg/containers"
 
@@ -377,8 +377,8 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	// and reads the repositories it was handed folders for.
 	// A node running the public build role listens on an ephemeral loopback port too.
 	nodeConfig.Sections[instance.Build] = frontend.Config{Uploads: uploads, Listen: "127.0.0.1:0"}
-	nodeConfig.Sections[instance.Runner] = backend.Config{
-		Uploads: uploads, Local: cfg.Local, Domains: backend.Domains{Trusted: true},
+	nodeConfig.Sections[instance.Runner] = runner.Config{
+		Uploads: uploads, Local: cfg.Local, Domains: runner.Domains{Trusted: true},
 	}
 	if cfg.Configure != nil {
 		cfg.Configure(index, &nodeConfig)

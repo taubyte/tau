@@ -42,7 +42,8 @@ func TestANameIsTheServiceItRuns(t *testing.T) {
 func TestAServiceNeedsWhatItCannotStartWithout(t *testing.T) {
 	require.Equal(t, []string{consensus.Descriptor.Name}, Needs(primitives.Descriptor.Name))
 	require.Equal(t, []string{consensus.Descriptor.Name}, Needs(database.Descriptor.Name))
-	require.Equal(t, []string{consensus.Descriptor.Name}, Needs(build.Runner.Name), "a build queue is a raft group")
+	require.Equal(t, []string{consensus.Descriptor.Name}, Needs(build.Build.Name), "a build queue is a raft group")
+	require.Empty(t, Needs(build.Runner.Name), "a runner holds no state")
 	require.Empty(t, Needs(consensus.Descriptor.Name))
 	require.Empty(t, Needs("nothing"))
 }

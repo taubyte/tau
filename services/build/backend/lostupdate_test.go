@@ -221,7 +221,7 @@ func TestACancelIsNotLostToTheClaimThatOverlapsIt(t *testing.T) {
 	cancelled := gated(t, h, eventPrefix(id)).on(t, func() { cancelErr = h.cancel(id) })
 
 	ran := make(chan error, 1)
-	go func() { ran <- h.run(context.Background(), d) }()
+	go func() { ran <- h.run(context.Background(), d, h.runner) }()
 
 	<-cancelled
 	require.NoError(t, <-ran)

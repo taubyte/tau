@@ -273,21 +273,38 @@ func (o *runOutput) Asset(ctx context.Context, resourceID string, content io.Rea
 	if v.Record.RootCID == "" {
 		return errInternal("build: job %s: the asset store returned no cid for %s", o.job, resourceID)
 	}
+	o.keep(ctx, resourceID, v.Record.RootCID, uint64(counted.n))
+	return nil
+}
 
+// stored is an artifact a runner kept in the storage service itself, so its bytes
+// never crossed this node: recorded as one this node stored would be.
+func (o *runOutput) stored(ctx context.Context, resourceID, cid string, bytes uint64) error {
+	switch {
+	case o.environment == "":
+		return errors.New("build: a plan builds nothing, so it has no asset to store")
+	case resourceID == "" || cid == "":
+		return errors.New("build: a stored asset names its resource and its cid")
+	}
+	o.keep(ctx, resourceID, cid, bytes)
+	return nil
+}
+
+// keep is what the run built for resourceID, counted where it was stored: a cid
+// says nothing about size.
+func (o *runOutput) keep(ctx context.Context, resourceID, cid string, bytes uint64) {
 	o.mu.Lock()
-	o.built[assetRef{environment: o.environment, resource: resourceID}] = v.Record.RootCID
+	o.built[assetRef{environment: o.environment, resource: resourceID}] = cid
 	o.mu.Unlock()
 
-	// Counted where stored: a cid says nothing about size.
 	o.s.emit(ctx, Accounted{
 		Project:     o.project,
 		Environment: o.environment,
 		Job:         o.job,
 		Attempt:     o.attempt,
 		Op:          OpArtifact,
-		Bytes:       uint64(counted.n),
+		Bytes:       bytes,
 	})
-	return nil
 }
 
 // publish ends the log and hands it to the asset store, between settle's two

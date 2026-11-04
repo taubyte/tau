@@ -40,7 +40,7 @@ func TestARetryBetweenACancelAndTheSettleOfTheRunItCancelledSurvives(t *testing.
 	}
 
 	ran := make(chan error, 1)
-	go func() { ran <- h.run(context.Background(), d) }()
+	go func() { ran <- h.run(context.Background(), d, h.runner) }()
 	<-building
 
 	require.NoError(t, h.cancel(id), "the caller cancels the build")
@@ -93,7 +93,7 @@ func TestTheDropDecisionAndItsAckAreOneSection(t *testing.T) {
 	var retryErr error
 	retried := gate.onRead(t, eventPrefix(id), 1, func() { retryErr = h.retry(id) })
 
-	require.NoError(t, h.run(context.Background(), d))
+	require.NoError(t, h.run(context.Background(), d, h.runner))
 	<-retried
 	require.NoError(t, retryErr, "the caller was told its retry was accepted")
 

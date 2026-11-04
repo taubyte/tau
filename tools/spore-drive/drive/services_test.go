@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/taubyte/tau/services/build/frontend"
+	"github.com/taubyte/tau/services/build/runner"
 
-	"github.com/taubyte/tau/services/build/backend"
+	"github.com/taubyte/tau/services/build/frontend"
 
 	"github.com/taubyte/tau/pkg/forge/drivers"
 
@@ -77,7 +77,7 @@ func TestSignInAndCertificatesReachEveryNodeAndTheirSecretsOnlyTheBundle(t *test
 		assert.Equal(t, acme.Directory, "https://ca.test.com/dir")
 		assert.Equal(t, acme.Email, "ops@test.com")
 		assert.Equal(t, acme.EAB.KeyID, "k")
-		var built backend.Config
+		var built runner.Config
 		assert.NilError(t, n.Section(instance.Runner, &built))
 		assert.Assert(t, built.Domains.Trusted, "a trusted cloud's runner serves declared zones unproven")
 		var public frontend.Config

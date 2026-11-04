@@ -16,16 +16,24 @@ import (
 const lookAgain = 250 * time.Millisecond
 
 // directory is a discovery.Resolver over the directory beside a service: the nodes it
-// says run one service, this one included, asked at call time.
+// says run one service, asked at call time.
 type directory struct {
 	h    service.Host
 	name string
+	// others leaves this node out: a host does not dial itself.
+	others bool
 }
 
 var _ discovery.Resolver = directory{}
 
 // Discovered is the nodes running name as the directory beside h names them.
 func Discovered(h service.Host, name string) discovery.Resolver { return directory{h: h, name: name} }
+
+// Others is Discovered without this node: the others running name, for a node that
+// answers locally first.
+func Others(h service.Host, name string) discovery.Resolver {
+	return directory{h: h, name: name, others: true}
+}
 
 // Known is nil on an instance running no directory: it looked nowhere, which is not
 // the same as having found nobody.
@@ -34,7 +42,18 @@ func (d directory) Known() []peer.ID {
 	if !ok {
 		return nil
 	}
-	return dir.Peers(d.name)
+	peers := dir.Peers(d.name)
+	if !d.others {
+		return peers
+	}
+	self := d.h.Peer().ID()
+	out := make([]peer.ID, 0, len(peers))
+	for _, id := range peers {
+		if id != self {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 func (d directory) Any(ctx context.Context) (peer.ID, error) {

@@ -36,9 +36,9 @@ const maxAuthConnections = 4
 // gossiped and changes on its own schedule; there is nothing to subscribe to.
 const pollInterval = 250 * time.Millisecond
 
-// ErrNoRunner is a resource the platform builds, on a node that can find
+// ErrNoBuild is a resource the platform builds, on a node that can find
 // nothing that builds.
-var ErrNoRunner = errors.New("node: no runner is reachable")
+var ErrNoBuild = errors.New("node: no build service is reachable")
 
 // ErrNotBuilt is a resource the platform builds and nothing has built yet.
 //
@@ -213,12 +213,12 @@ func (a *artifacts) Artifact(ctx context.Context, project, environment, kind, re
 	// The view is asked before the pool, since this is the request path:
 	// fromDiscovery.Peers would wait forever on a cloud with no build backend. A failed
 	// lookup is not cached.
-	if len((&fromDiscovery{node: a.node, name: Runner}).Known()) == 0 {
+	if len((&fromDiscovery{node: a.node, name: Build}).Known()) == 0 {
 		return "", fmt.Errorf("%w: %s/%s is built by the platform and no build service is reachable",
-			ErrNoRunner, project, environment)
+			ErrNoBuild, project, environment)
 	}
 
-	pool, err := a.node.dial(build.Protocol, Runner)
+	pool, err := a.node.dial(build.Protocol, Build)
 	if err != nil {
 		return "", err
 	}

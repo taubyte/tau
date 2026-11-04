@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/taubyte/tau/services/build/backend"
+	"github.com/taubyte/tau/services/build/runner"
 
 	"github.com/taubyte/tau/pkg/containers"
 
@@ -789,7 +789,7 @@ func (z *txtZone) LookupTXT(_ context.Context, name string) ([]string, error) {
 func TestTheDomainCorpusBuildsBothWays(t *testing.T) {
 	dns := &txtZone{m: map[string][]string{}}
 	u := signedIn(t, func(c *instance.Config) {
-		built := c.Sections[instance.Runner].(backend.Config)
+		built := c.Sections[instance.Runner].(runner.Config)
 		built.Domains.Trusted = false
 		c.Sections[instance.Runner] = built
 		c.Services = append(append(append([]string(nil), instance.All...), services.Default()...), instance.CM)

@@ -733,7 +733,7 @@ func TestAClaimedJobsWaitEndsWithTheRun(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	h.records.onList(eventPrefix(unknownJobID), cancel)
-	require.ErrorIs(t, h.run(ctx, d), context.Canceled)
+	require.ErrorIs(t, h.run(ctx, d, h.runner), context.Canceled)
 
 	_, found, err := h.readRecord(unknownJobID)
 	require.NoError(t, err)

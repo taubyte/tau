@@ -40,11 +40,11 @@ type Descriptor struct {
 	Ingress  Ingress
 }
 
-// Build is the public service: forges and people reach it. Its Protocol is empty:
-// it hosts no RPC surface, so the swarm cannot dial it.
-var Build = Descriptor{Name: "build", Protocol: "", Ingress: IngressPublic}
+// Build is the public service: forges and people reach it over HTTP, and it holds
+// the queue and the job records, serving build.proto behind Protocol to the other
+// build nodes and to the runners.
+var Build = Descriptor{Name: "build", Protocol: Protocol, Ingress: IngressPublic}
 
-// Runner is the private service that runs builds. It serves both of build.proto's
-// service blocks behind Protocol, and faces no internet: every caller it has is a
-// peer libp2p authenticated.
-var Runner = Descriptor{Name: "runner", Protocol: Protocol, Ingress: IngressNone}
+// Runner is the private service that runs builds. Its Protocol is empty: it serves
+// nothing and faces nothing, and opens its own stream to build.
+var Runner = Descriptor{Name: "runner", Protocol: "", Ingress: IngressNone}
