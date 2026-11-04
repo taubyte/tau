@@ -114,12 +114,14 @@ func (p *Pool) peers(ctx context.Context) ([]peer.ID, error) {
 		return nil, ErrClosed
 	}
 
+	// NO PEER TO ASK IS UNAVAILABLE, as every peer deferring is: come back, which a
+	// caller walking build nodes or following a log does.
 	peers, err := p.resolver.Peers(ctx, p.max)
 	if err != nil {
-		return nil, fmt.Errorf("%w: resolving %s: %w", ErrNoBackend, p.protocol, err)
+		return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("%w: resolving %s: %w", ErrNoBackend, p.protocol, err))
 	}
 	if len(peers) == 0 {
-		return nil, fmt.Errorf("%w: no peer serves %s", ErrNoBackend, p.protocol)
+		return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("%w: no peer serves %s", ErrNoBackend, p.protocol))
 	}
 	return peers, nil
 }

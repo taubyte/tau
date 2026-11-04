@@ -30,7 +30,8 @@ var _ discovery.Resolver = directory{}
 func Discovered(h service.Host, name string) discovery.Resolver { return directory{h: h, name: name} }
 
 // Others is Discovered without this node: the others running name, for a node that
-// answers locally first.
+// answers locally first. It does not wait for one: the node asking runs name itself,
+// and a cloud with one such node has no other to wait for.
 func Others(h service.Host, name string) discovery.Resolver {
 	return directory{h: h, name: name, others: true}
 }
@@ -71,6 +72,9 @@ func (d directory) Peers(ctx context.Context, want int) ([]peer.ID, error) {
 				known = known[:want]
 			}
 			return known, nil
+		}
+		if d.others {
+			return nil, fmt.Errorf("%w: no other %s is known", discovery.ErrNoPeers, d.name)
 		}
 		select {
 		case <-ctx.Done():

@@ -114,6 +114,7 @@ func TestDoWithNoPeersIsErrNoBackend(t *testing.T) {
 	called := false
 	err = p.Do(t.Context(), func(*rpc.Client) error { called = true; return nil })
 	require.ErrorIs(t, err, ErrNoBackend)
+	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err), "nobody to ask is come back, as everybody deferring is")
 	require.False(t, called)
 }
 
@@ -136,6 +137,7 @@ func TestDoReportsAResolverFailureAsNoBackend(t *testing.T) {
 
 	err = p.Do(t.Context(), func(*rpc.Client) error { return nil })
 	require.ErrorIs(t, err, ErrNoBackend)
+	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
 }
 
 func TestAnUnavailablePeerIsReportedAndDropped(t *testing.T) {
@@ -297,7 +299,9 @@ func TestAnEmptyPeerSetWithNoErrorIsStillNoBackend(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(p.Close)
 
-	require.ErrorIs(t, p.Do(t.Context(), func(*rpc.Client) error { return nil }), ErrNoBackend)
+	err = p.Do(t.Context(), func(*rpc.Client) error { return nil })
+	require.ErrorIs(t, err, ErrNoBackend)
+	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
 }
 
 func TestTheOldestClientIsEvictedOnceTheBoundIsReached(t *testing.T) {

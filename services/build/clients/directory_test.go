@@ -5,11 +5,15 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/service"
+	"github.com/taubyte/tau/p2p/discovery"
 	"github.com/taubyte/tau/p2p/peer"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	"github.com/taubyte/tau/services/build"
 )
 
 // instance is a host whose directory names the peers it was told.
@@ -52,4 +56,24 @@ func TestTheDirectoryNamesWhoRunsAServiceAndOthersLeavesThisNodeOut(t *testing.T
 	require.NoError(t, err)
 	require.Len(t, two, 2)
 	Discovered(h, "build").Failed("far")
+}
+
+func TestABuildNodeThatKnowsNoOtherIsToldSoAtOnce(t *testing.T) {
+	p := peer.Mock(t.Context())
+	t.Cleanup(p.Close)
+	h := &instance{Node: p, running: []service.Running{{Name: "discovery", Service: named{p.ID()}}}}
+
+	_, err := Others(h, "build").Peers(t.Context(), 4)
+	require.ErrorIs(t, err, discovery.ErrNoPeers, "the only build node it knows is itself")
+
+	pool, err := NewPool(p.Host(), Others(h, "build"), build.Protocol, 4)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	elsewhere, err := Builds(pool)
+	require.NoError(t, err)
+	// A LOG READ CARRIES NO DEADLINE, so this is the call that waited for a build
+	// node a one-node cloud never has.
+	_, err = elsewhere.Snapshot(t.Context(), "job-1", 1, 0, func(*buildv2.Job_Event) error { return nil })
+	require.ErrorIs(t, err, ErrNoBackend)
+	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
 }
