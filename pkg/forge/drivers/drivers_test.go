@@ -38,8 +38,6 @@ func TestForges(t *testing.T) {
 	require.NoError(t, err)
 	_, signs := drv.(forge.Signatures)
 	require.False(t, signs, "a gitlab without Signing verifies no deliveries")
-	_, err = Registry([]Forge{{Host: "gitlab.example.com", Driver: GitLab}}, "gitlab.example.com")
-	require.NoError(t, err, "a gitlab people sign in through")
 
 	reg, err = Registry([]Forge{
 		{Host: "codeberg.org", Driver: Gitea},

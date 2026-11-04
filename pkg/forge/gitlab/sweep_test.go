@@ -316,7 +316,7 @@ func (w *sweepWire) RoundTrip(r *http.Request) (*http.Response, error) {
 	w.hops = append(w.hops, sweepHop{
 		shape:      sweepShapeOf(r),
 		query:      r.URL.RawQuery,
-		credential: r.Header.Get("PRIVATE-TOKEN"),
+		credential: strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "),
 		carried:    private || bearer,
 		body:       sweepBodyOf(r),
 	})

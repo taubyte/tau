@@ -40,7 +40,7 @@ func TestAdvAnInstanceCanWriteTheCallersOwnCredentialIntoTausLogs(t *testing.T) 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, `{"message":"could not authenticate %s, try again"}`,
-			r.Header.Get("PRIVATE-TOKEN"))
+			strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 	})
 	sess, k := advSess(t, echo, "acme/pay")
 	ctx := context.Background()
@@ -257,7 +257,7 @@ func TestAdvNoInstanceChosenSentenceReachesAnError(t *testing.T) {
 			body := tc.answer
 			sess, k := advSess(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				io.WriteString(w, strings.ReplaceAll(body, "$TOKEN", r.Header.Get("PRIVATE-TOKEN")))
+				io.WriteString(w, strings.ReplaceAll(body, "$TOKEN", strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")))
 			}), "acme/pay")
 
 			err := tc.call(sess, k)

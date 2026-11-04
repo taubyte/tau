@@ -217,20 +217,13 @@ func TestCredentialHeaders(t *testing.T) {
 		answer(t, http.StatusOK, `{"id":1,"username":"alice"}`)(w, r)
 	}
 
+	// ONE HEADER FOR EVERY KIND: GitLab takes a personal token as a Bearer as
+	// well as an OAuth one, and forge.Credential carries no kind to choose by.
 	c, _ := stubClient(t, record)
 	_, err := c.Whoami(context.Background())
 	require.NoError(t, err)
-	assert.Equal(t, "stub-token", seen.Get("PRIVATE-TOKEN"))
-	assert.Empty(t, seen.Get("Authorization"), "a personal token was also sent as a Bearer")
-
-	// GitLab has two credential headers for two credential kinds, and
-	// forge.Credential is one opaque string with no kind — so the deployment
-	// says which.
-	c, _ = stubClient(t, record, OAuth())
-	_, err = c.Whoami(context.Background())
-	require.NoError(t, err)
 	assert.Equal(t, "Bearer stub-token", seen.Get("Authorization"))
-	assert.Empty(t, seen.Get("PRIVATE-TOKEN"))
+	assert.Empty(t, seen.Get("PRIVATE-TOKEN"), "nor in GitLab's other header")
 }
 
 func TestAnonymousSessionCarriesNoCredential(t *testing.T) {
@@ -902,7 +895,7 @@ func TestIsActiveMemberErrorsRatherThanDenying(t *testing.T) {
 func TestMembershipSpendsTheDeploymentsCredential(t *testing.T) {
 	var seen []string
 	d, _ := stub(t, func(w http.ResponseWriter, r *http.Request) {
-		seen = append(seen, r.Header.Get("PRIVATE-TOKEN"))
+		seen = append(seen, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 		if strings.Contains(r.URL.EscapedPath(), "/members/") {
 			answer(t, http.StatusOK, `{"access_level":40,"state":"active"}`)(w, r)
 			return

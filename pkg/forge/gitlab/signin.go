@@ -6,9 +6,8 @@ var _ forge.SignIn = (*driver)(nil)
 
 // OAuth is an application on this GitLab. Its device flow is GitLab 17.1's.
 //
-// A token from it is an OAuth token, which GitLab accepts only as a Bearer:
-// a deployment that signs people in here builds the driver with OAuth(), and
-// GitLab accepts a personal access token as a Bearer too.
+// A token from it is an OAuth token, which GitLab accepts only as a Bearer, and
+// every credential this driver sends is one.
 func (d *driver) OAuth() forge.OAuth {
 	at := func(path string) string { u := *d.cfg.base; u.Path = path; return u.String() }
 	return forge.OAuth{

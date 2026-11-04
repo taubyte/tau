@@ -48,9 +48,6 @@ type config struct {
 	// driver has no hook faces at all. See Signing.
 	signing bool
 
-	// oauth picks which of GitLab's two credential headers is used. See OAuth.
-	oauth bool
-
 	// transport is what PinnedTransport wraps. Nil means http.DefaultTransport.
 	transport http.RoundTripper
 
@@ -127,16 +124,6 @@ func BaseURL(raw string) Option {
 func Signing() Option {
 	return func(c *config) error {
 		c.signing = true
-		return nil
-	}
-}
-
-// OAuth sends the credential as "Authorization: Bearer" instead of
-// "PRIVATE-TOKEN": an OAuth access token is accepted only as Bearer, and
-// forge.Credential carries no kind.
-func OAuth() Option {
-	return func(c *config) error {
-		c.oauth = true
 		return nil
 	}
 }
@@ -241,11 +228,10 @@ func (c *config) httpClient(cred forge.Credential) *http.Client {
 			// dropped one is forge.ErrNoCredential at Bind.
 			return
 		}
-		if c.oauth {
-			h.Set("Authorization", "Bearer "+token)
-			return
-		}
-		h.Set("PRIVATE-TOKEN", token)
+		// BEARER FOR EVERY KIND: GitLab takes an OAuth token only as one, and a
+		// personal, group or project token as one too, so the header needs no
+		// knowledge of the credential's kind, which forge.Credential does not carry.
+		h.Set("Authorization", "Bearer "+token)
 	})}
 }
 

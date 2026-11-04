@@ -283,9 +283,8 @@ func (in *instance) serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// credential reads GitLab's two credential headers. Both are real and they carry
-// different credential kinds, which is the whole reason the driver has an option
-// to pick one.
+// credential reads GitLab's two credential headers, both real: the driver sends a
+// Bearer, and the instance takes either.
 func credential(r *http.Request) (string, bool) {
 	if t := r.Header.Get("PRIVATE-TOKEN"); t != "" {
 		return t, true

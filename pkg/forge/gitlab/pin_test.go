@@ -108,14 +108,14 @@ type pinClient struct {
 var pinClients = map[string]pinClient{
 	"the client a caller's token is bound to": {
 		client: pinCallerClient,
-		header: "PRIVATE-TOKEN",
-		value:  pinCallerToken,
+		header: "Authorization",
+		value:  "Bearer " + pinCallerToken,
 	},
 	"the client the deployment's own credential spends": {
 		opts:   []Option{Deployment(forge.Token(pinDeploymentToken))},
 		client: pinDeploymentClient,
-		header: "PRIVATE-TOKEN",
-		value:  pinDeploymentToken,
+		header: "Authorization",
+		value:  "Bearer " + pinDeploymentToken,
 	},
 }
 

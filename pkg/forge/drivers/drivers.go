@@ -8,7 +8,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"net/http"
-	"slices"
 
 	gossh "golang.org/x/crypto/ssh"
 
@@ -188,10 +187,8 @@ func parseHostKey(line string) (gossh.PublicKey, error) {
 	return key, err
 }
 
-// Registry binds the declared forges, or Default when none are. A gitlab whose host
-// is in oauth is one people sign in to through an OAuth app, so its tokens are sent
-// as Bearer, which an OAuth token needs.
-func Registry(declared []Forge, oauth ...string) (*forge.Registry, error) {
+// Registry binds the declared forges, or Default when none are.
+func Registry(declared []Forge) (*forge.Registry, error) {
 	if len(declared) == 0 {
 		declared = Default
 	}
@@ -213,9 +210,6 @@ func Registry(declared []Forge, oauth ...string) (*forge.Registry, error) {
 			opts := []gitlab.Option{gitlab.HTTPTransport(rt)}
 			if f.Signing {
 				opts = append(opts, gitlab.Signing())
-			}
-			if slices.Contains(oauth, f.Host) {
-				opts = append(opts, gitlab.OAuth())
 			}
 			d, err = gitlab.New(f.Host, opts...)
 		case Gitea:
