@@ -145,14 +145,14 @@ func (c CertificateConfig) served(name string) string {
 	return name
 }
 
-// Option configures a Service.
-type Option func(*Service)
+// Option configures a Store.
+type Option func(*Store)
 
 // WithClock injects the clock. Tests use it.
-func WithClock(now func() time.Time) Option { return func(s *Service) { s.now = now } }
+func WithClock(now func() time.Time) Option { return func(s *Store) { s.now = now } }
 
-// Service hosts the certificate store.
-type Service struct {
+// Store hosts the certificate store.
+type Store struct {
 	cfg    CertificateConfig
 	host   host.Host
 	db     kvdb.Instance
@@ -164,8 +164,8 @@ type Service struct {
 	signer   signer
 }
 
-// New builds a service.
-func New(h host.Host, db kvdb.Instance, whole Config, opts ...Option) (*Service, error) {
+// Open is the certificate store over db, unstarted.
+func Open(h host.Host, db kvdb.Instance, whole Config, opts ...Option) (*Store, error) {
 	switch {
 	case h == nil:
 		return nil, ErrNoHost
@@ -183,7 +183,7 @@ func New(h host.Host, db kvdb.Instance, whole Config, opts ...Option) (*Service,
 	} else if cfg.Zone = normal(cfg.Zone); cfg.Zone == "" {
 		return nil, ErrNoZone
 	}
-	s := &Service{cfg: cfg, host: h, db: db, now: time.Now, resolver: net.DefaultResolver}
+	s := &Store{cfg: cfg, host: h, db: db, now: time.Now, resolver: net.DefaultResolver}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -191,7 +191,7 @@ func New(h host.Host, db kvdb.Instance, whole Config, opts ...Option) (*Service,
 }
 
 // Start answers on Protocol.
-func (s *Service) Start(ctx context.Context) error {
+func (s *Store) Start(ctx context.Context) error {
 	server, err := rpc.Listen(ctx, s.host, Protocol, s.mount())
 	if err != nil {
 		return err
@@ -201,7 +201,7 @@ func (s *Service) Start(ctx context.Context) error {
 }
 
 // Close stops the listener.
-func (s *Service) Close() error {
+func (s *Store) Close() error {
 	if s.server != nil {
 		return s.server.Close()
 	}

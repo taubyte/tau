@@ -60,7 +60,7 @@ type cached struct {
 type Client struct {
 	host       host.Host
 	members    func() []peer.ID
-	local      func() *Service
+	local      func() *Store
 	vault      Vault
 	cfg        CertificateConfig
 	challenges *Challenges
@@ -120,7 +120,7 @@ func WithLogger(logf func(string, ...any)) ClientOption {
 
 // NewClient builds a client. members is the nodes reporting the service and
 // local this node's own, nil when it runs none; both are asked at call time.
-func NewClient(h host.Host, members func() []peer.ID, local func() *Service, v Vault, whole Config, opts ...ClientOption) (*Client, error) {
+func NewClient(h host.Host, members func() []peer.ID, local func() *Store, v Vault, whole Config, opts ...ClientOption) (*Client, error) {
 	if h == nil {
 		return nil, ErrNoHost
 	}

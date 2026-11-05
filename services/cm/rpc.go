@@ -12,7 +12,7 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2/cmv2connect"
 )
 
-func (s *Service) mount() http.Handler {
+func (s *Store) mount() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle(cmv2connect.NewCertificateServiceHandler(handler{s}, codec.Option()))
 	mux.Handle(cmv2connect.NewDomainServiceHandler(handler{s}, codec.Option()))
@@ -21,7 +21,7 @@ func (s *Service) mount() http.Handler {
 
 // handler is the generated surface. Its methods have the generated client's
 // signatures, so a Client on a cm node calls it without a stream.
-type handler struct{ s *Service }
+type handler struct{ s *Store }
 
 var (
 	_ cmv2connect.CertificateServiceHandler = handler{}

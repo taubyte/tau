@@ -45,7 +45,7 @@ func (r *records) LookupTXT(_ context.Context, name string) ([]string, error) {
 
 func (f *fleet) domains(t *testing.T) *Domains {
 	t.Helper()
-	d, err := NewDomains(newHost(t, f.mn), f.members, func() *Service { return nil })
+	d, err := NewDomains(newHost(t, f.mn), f.members, func() *Store { return nil })
 	require.NoError(t, err)
 	t.Cleanup(func() { d.Close() })
 	f.connect(t)
@@ -86,7 +86,7 @@ func TestAClaimInTheTXTRecordProvesTheDomain(t *testing.T) {
 	require.Len(t, keys, 2)
 
 	// A NODE REOPENED SIGNS WITH THE KEY IT KEPT.
-	again, err := New(f.nodes[0].host, f.db, f.cfg, WithVault(f.vault))
+	again, err := Open(f.nodes[0].host, f.db, f.cfg, WithVault(f.vault))
 	require.NoError(t, err)
 	_, public, err := again.signingKey(t.Context())
 	require.NoError(t, err)
@@ -167,13 +167,13 @@ func TestWhatAClaimRefuses(t *testing.T) {
 	_, err = NewDomains(nil, nil, nil)
 	require.ErrorIs(t, err, ErrNoHost)
 	h := newHost(t, f.mn)
-	none, err := NewDomains(h, func() []peer.ID { return nil }, func() *Service { return nil })
+	none, err := NewDomains(h, func() []peer.ID { return nil }, func() *Store { return nil })
 	require.NoError(t, err)
 	_, err = none.Claim(t.Context(), projectID, customZone)
 	require.ErrorIs(t, err, ErrNoMembers)
 	require.ErrorIs(t, none.Prove(t.Context(), projectID, customZone), ErrNoMembers)
 
-	gone, err := NewDomains(h, func() []peer.ID { return []peer.ID{"nobody"} }, func() *Service { return nil })
+	gone, err := NewDomains(h, func() []peer.ID { return []peer.ID{"nobody"} }, func() *Store { return nil })
 	require.NoError(t, err)
 	_, err = gone.Claim(t.Context(), projectID, customZone)
 	require.Error(t, err)
@@ -181,11 +181,11 @@ func TestWhatAClaimRefuses(t *testing.T) {
 
 	db, err := kvdbmock.New().New(nil, "d", 0)
 	require.NoError(t, err)
-	keyless, err := New(h, db, f.cfg)
+	keyless, err := Open(h, db, f.cfg)
 	require.NoError(t, err)
 	_, err = keyless.claim(t.Context(), customZone, projectID)
 	require.ErrorIs(t, err, ErrNoVault)
-	broken, err := New(h, db, f.cfg, WithVault(&vault{data: map[string][]byte{}, fail: errors.New("down")}))
+	broken, err := Open(h, db, f.cfg, WithVault(&vault{data: map[string][]byte{}, fail: errors.New("down")}))
 	require.NoError(t, err)
 	_, err = broken.claim(t.Context(), customZone, projectID)
 	require.ErrorContains(t, err, "down")
@@ -195,7 +195,7 @@ func TestWhatAClaimRefuses(t *testing.T) {
 	_, err = broken.claim(t.Context(), customZone, projectID)
 	require.ErrorContains(t, err, "reading the domain key")
 
-	local, err := NewDomains(h, func() []peer.ID { return nil }, func() *Service { return f.nodes[0] })
+	local, err := NewDomains(h, func() []peer.ID { return nil }, func() *Store { return f.nodes[0] })
 	require.NoError(t, err)
 	_, err = local.Claim(t.Context(), projectID, customZone)
 	require.NoError(t, err, "a cm node answers its own")

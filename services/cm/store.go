@@ -51,7 +51,7 @@ func parseRecord(rec *cmv2.Issued) (*kept, error) {
 }
 
 // newest is the issuance of name expiring last.
-func (s *Service) newest(ctx context.Context, name string) (*kept, error) {
+func (s *Store) newest(ctx context.Context, name string) (*kept, error) {
 	keys, err := s.db.List(ctx, certPrefix+name+"/")
 	if err != nil {
 		return nil, fmt.Errorf("cm: listing %s: %w", name, err)
@@ -72,7 +72,7 @@ func (s *Service) newest(ctx context.Context, name string) (*kept, error) {
 }
 
 // keep stores one issuance under a key of its own.
-func (s *Service) keep(ctx context.Context, rec *cmv2.Issued) error {
+func (s *Store) keep(ctx context.Context, rec *cmv2.Issued) error {
 	name := normal(rec.GetName())
 	if !s.cfg.inZone(name) {
 		zone := normal(rec.GetZone())

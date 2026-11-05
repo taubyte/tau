@@ -9,13 +9,14 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/consensus"
+	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/register"
 )
 
@@ -60,8 +61,8 @@ func newNode(t *testing.T) *node {
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
 	return &node{Node: p, root: t.TempDir(), sections: map[string]func(any) error{
-		consensus.Descriptor.Name: func(into any) error {
-			*into.(*consensus.Config) = consensus.Config{
+		cm.Name: func(into any) error {
+			raw, err := yaml.Marshal(cm.Section{Consensus: cm.ConsensusConfig{
 				Timeouts: raft.TimeoutConfig{
 					HeartbeatTimeout:   50 * time.Millisecond,
 					ElectionTimeout:    50 * time.Millisecond,
@@ -71,8 +72,11 @@ func newNode(t *testing.T) *node {
 					SnapshotThreshold:  1000,
 				},
 				BootstrapTimeout: 200 * time.Millisecond,
+			}})
+			if err != nil {
+				return err
 			}
-			return nil
+			return yaml.Unmarshal(raw, into)
 		},
 	}}
 }
@@ -93,7 +97,7 @@ func (n *node) start(t *testing.T, name string, s service.Service) {
 func TestPrimitivesRunsFromWhatItsInstanceGivesIt(t *testing.T) {
 	ctx := t.Context()
 	n := newNode(t)
-	n.start(t, consensus.Descriptor.Name, consensus.New())
+	n.start(t, cm.Name, cm.New())
 	reg := register.New()
 	n.start(t, register.Descriptor.Name, reg)
 	_, err := reg.Local().Publish(ctx, pkgregister.Publication{Project: projectID, Environment: "prod", Revision: 1, Compiled: compiled()})
@@ -140,7 +144,7 @@ func TestPrimitivesRefusesWhatItCannotStartWith(t *testing.T) {
 	require.ErrorContains(t, New().Start(t.Context(), on{node: n, name: Descriptor.Name}), "no such key")
 
 	// A DEAD LETTER BOUND THE OPERATOR SET is the one kept.
-	n.start(t, consensus.Descriptor.Name, consensus.New())
+	n.start(t, cm.Name, cm.New())
 	n.sections[Descriptor.Name] = func(into any) error {
 		*into.(*Config) = Config{Sweep: time.Hour, DeadLetter: DeadLetterConfig{Age: time.Hour, Size: 10}}
 		return nil

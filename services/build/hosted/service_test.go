@@ -17,10 +17,10 @@ import (
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/build/ingress"
 	"github.com/taubyte/tau/services/build/jobs"
-	"github.com/taubyte/tau/services/consensus"
+	"github.com/taubyte/tau/services/cm"
 )
 
-// node is an instance as build sees it: a peer, a directory, the consensus beside it,
+// node is an instance as build sees it: a peer, a directory, the cm beside it,
 // and the section an operator wrote.
 type node struct {
 	peer.Node
@@ -49,7 +49,7 @@ func (n *node) Config(into any) error {
 type quick struct{ *node }
 
 func (quick) Config(into any) error {
-	*into.(*consensus.Config) = consensus.Config{
+	raw, err := yaml.Marshal(cm.Section{Consensus: cm.ConsensusConfig{
 		Timeouts: raft.TimeoutConfig{
 			HeartbeatTimeout:   50 * time.Millisecond,
 			ElectionTimeout:    50 * time.Millisecond,
@@ -59,8 +59,11 @@ func (quick) Config(into any) error {
 			SnapshotThreshold:  1000,
 		},
 		BootstrapTimeout: 200 * time.Millisecond,
+	}})
+	if err != nil {
+		return err
 	}
-	return nil
+	return yaml.Unmarshal(raw, into)
 }
 
 // lone is a node running nothing beside build but the consensus its queue is a group
@@ -70,10 +73,10 @@ func lone(t *testing.T, section map[string]any) *node {
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
 	n := &node{Node: p, root: t.TempDir(), section: section}
-	agree := consensus.New()
+	agree := cm.New()
 	require.NoError(t, agree.Start(t.Context(), quick{n}))
 	t.Cleanup(func() { agree.Close() })
-	n.running = []service.Running{{Name: consensus.Descriptor.Name, Service: agree}}
+	n.running = []service.Running{{Name: cm.Name, Service: agree}}
 	return n
 }
 

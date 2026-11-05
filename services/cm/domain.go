@@ -68,10 +68,10 @@ type Resolver interface {
 
 // WithVault is where the domain signing key is kept. Without one this node
 // signs no claim.
-func WithVault(v Vault) Option { return func(s *Service) { s.vault = v } }
+func WithVault(v Vault) Option { return func(s *Store) { s.vault = v } }
 
 // WithResolver replaces net.DefaultResolver. Tests use it.
-func WithResolver(r Resolver) Option { return func(s *Service) { s.resolver = r } }
+func WithResolver(r Resolver) Option { return func(s *Store) { s.resolver = r } }
 
 // signer holds this node's key once it is read or made.
 type signer struct {
@@ -80,10 +80,10 @@ type signer struct {
 	public  []byte
 }
 
-func (s *Service) keyName() string { return "key-" + s.host.ID().String() }
+func (s *Store) keyName() string { return "key-" + s.host.ID().String() }
 
 // signingKey is this node's key pair, PEM, made on first use.
-func (s *Service) signingKey(ctx context.Context) ([]byte, []byte, error) {
+func (s *Store) signingKey(ctx context.Context) ([]byte, []byte, error) {
 	s.signer.mu.Lock()
 	defer s.signer.mu.Unlock()
 	if s.signer.private != nil {
@@ -135,7 +135,7 @@ func newSigningKey() ([]byte, []byte, error) {
 }
 
 // claim signs (fqdn, project) with this node's key.
-func (s *Service) claim(ctx context.Context, fqdn, project string) (*cmv2.DomainClaim, error) {
+func (s *Store) claim(ctx context.Context, fqdn, project string) (*cmv2.DomainClaim, error) {
 	fqdn = normal(fqdn)
 	id, err := cid.Decode(project)
 	if fqdn == "" || err != nil {
@@ -157,7 +157,7 @@ func (s *Service) claim(ctx context.Context, fqdn, project string) (*cmv2.Domain
 }
 
 // keys is every signing key this node's replica holds.
-func (s *Service) keys(ctx context.Context) ([][]byte, error) {
+func (s *Store) keys(ctx context.Context) ([][]byte, error) {
 	names, err := s.db.List(ctx, domainKeyPrefix)
 	if err != nil {
 		return nil, fmt.Errorf("cm: listing the domain keys: %w", err)
@@ -211,7 +211,7 @@ const (
 // per pair is its standing; of the pairs standing proven, the one whose proof
 // is oldest owns the zone, the project id breaking a tie, so every node reads
 // the same owner from the same replicated entries.
-func (s *Service) provenOwner(ctx context.Context, zone string) (string, bool, error) {
+func (s *Store) provenOwner(ctx context.Context, zone string) (string, bool, error) {
 	prefix := domainProvenPrefix + zone + "/"
 	names, err := s.db.List(ctx, prefix)
 	if err != nil {
@@ -245,7 +245,7 @@ func (s *Service) provenOwner(ctx context.Context, zone string) (string, bool, e
 // record writes one outcome, then deletes the pair's older ones: only the
 // latest per pair is ever read and no key is written twice, so a delete can
 // only remove what is already superseded.
-func (s *Service) record(ctx context.Context, zone, project, outcome string) error {
+func (s *Store) record(ctx context.Context, zone, project, outcome string) error {
 	prefix := domainProvenPrefix + zone + "/" + project + "/"
 	key := fmt.Sprintf("%s%020d", prefix, s.now().UnixNano())
 	if err := s.db.Put(ctx, key, []byte(outcome)); err != nil {
@@ -283,7 +283,7 @@ func ancestors(fqdn string) []string {
 // proven above or at fqdn decides: another project's is a refusal, the
 // project's own is the record checked, and with none fqdn's own record is.
 // Every outcome is recorded, so a record gone is the zone lost.
-func (s *Service) prove(ctx context.Context, project, fqdn string) error {
+func (s *Store) prove(ctx context.Context, project, fqdn string) error {
 	fqdn = normal(fqdn)
 	if _, err := cid.Decode(project); err != nil || fqdn == "" {
 		return fmt.Errorf("%w: %s: project %q", ErrUnproven, fqdn, project)
@@ -336,14 +336,14 @@ func (h handler) Prove(ctx context.Context, req *connect.Request[cmv2.ClaimReque
 type Domains struct {
 	host    host.Host
 	members func() []peer.ID
-	local   func() *Service
+	local   func() *Store
 
 	mu    sync.Mutex
 	conns map[peer.ID]*rpc.Client
 }
 
 // NewDomains builds the domain client. members and local are as NewClient's.
-func NewDomains(h host.Host, members func() []peer.ID, local func() *Service) (*Domains, error) {
+func NewDomains(h host.Host, members func() []peer.ID, local func() *Store) (*Domains, error) {
 	if h == nil {
 		return nil, ErrNoHost
 	}

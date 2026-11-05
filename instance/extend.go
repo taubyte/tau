@@ -81,7 +81,7 @@ func (o options) serviceNames() []string {
 }
 
 // builtIn is every name this package starts itself.
-func builtIn() []string { return append(append([]string(nil), All...), CM) }
+func builtIn() []string { return append([]string(nil), All...) }
 
 // startServices starts every service the config names, in its order. Each is closed
 // with the instance, a failed start included.

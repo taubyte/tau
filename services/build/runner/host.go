@@ -210,10 +210,7 @@ func provers(h service.Host, cfg Config) (prover, error) {
 			}
 			return nil
 		},
-		func() *cm.Service {
-			local, _ := service.Get[*cm.Service](h)
-			return local
-		})
+		cm.StoreOn(h))
 }
 
 // tableReader is the register's table as a code build reads the configuration it

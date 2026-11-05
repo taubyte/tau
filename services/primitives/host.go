@@ -10,7 +10,7 @@ import (
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
-	"github.com/taubyte/tau/services/consensus"
+	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/register"
 )
 
@@ -43,7 +43,7 @@ type DeadLetterConfig struct {
 // retentionPoll is how often the record store rereads the cloud's retention.
 const retentionPoll = time.Minute
 
-// Start runs primitives on an instance: its group from the consensus beside it, its
+// Start runs primitives on an instance: its group from the cm beside it, its
 // records in a replicated database on the peer, its declarations read through the
 // register in the instance's region, its clock the instance's, its fires through the
 // workloads beside it, and each minute's window handed to the node discovery names.
@@ -52,7 +52,7 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 	if err := h.Config(&cfg); err != nil {
 		return err
 	}
-	agree, ok := service.Get[consensus.Service](h)
+	agree, ok := service.Get[cm.Consensus](h)
 	if !ok {
 		return ErrNoConsensus
 	}

@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/services/consensus"
+	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/database"
 	"github.com/taubyte/tau/services/discovery"
 	"github.com/taubyte/tau/services/primitives"
@@ -17,8 +17,8 @@ import (
 )
 
 func TestANameIsTheServiceItRuns(t *testing.T) {
-	require.Equal(t, []string{consensus.Descriptor.Name, discovery.Descriptor.Name, register.Descriptor.Name, secrets.Descriptor.Name, primitives.Descriptor.Name, database.Descriptor.Name, storage.Descriptor.Name, build.Runner.Name, build.Build.Name}, Names(), "in start order")
-	require.Equal(t, []string{consensus.Descriptor.Name, discovery.Descriptor.Name, register.Descriptor.Name, secrets.Descriptor.Name, primitives.Descriptor.Name, database.Descriptor.Name, storage.Descriptor.Name, build.Runner.Name}, Default(),
+	require.Equal(t, []string{cm.Name, discovery.Descriptor.Name, register.Descriptor.Name, secrets.Descriptor.Name, primitives.Descriptor.Name, database.Descriptor.Name, storage.Descriptor.Name, build.Runner.Name, build.Build.Name}, Names(), "in start order")
+	require.Equal(t, []string{cm.Name, discovery.Descriptor.Name, register.Descriptor.Name, secrets.Descriptor.Name, primitives.Descriptor.Name, database.Descriptor.Name, storage.Descriptor.Name, build.Runner.Name}, Default(),
 		"every one but build, which may not run beside the runner")
 
 	s, ok := New(storage.Descriptor.Name)
@@ -40,10 +40,10 @@ func TestANameIsTheServiceItRuns(t *testing.T) {
 }
 
 func TestAServiceNeedsWhatItCannotStartWithout(t *testing.T) {
-	require.Equal(t, []string{consensus.Descriptor.Name}, Needs(primitives.Descriptor.Name))
-	require.Equal(t, []string{consensus.Descriptor.Name}, Needs(database.Descriptor.Name))
-	require.Equal(t, []string{consensus.Descriptor.Name}, Needs(build.Build.Name), "a build queue is a raft group")
+	require.Equal(t, []string{cm.Name}, Needs(primitives.Descriptor.Name))
+	require.Equal(t, []string{cm.Name}, Needs(database.Descriptor.Name))
+	require.Equal(t, []string{cm.Name}, Needs(build.Build.Name), "a build queue is a raft group")
 	require.Empty(t, Needs(build.Runner.Name), "a runner holds no state")
-	require.Empty(t, Needs(consensus.Descriptor.Name))
+	require.Empty(t, Needs(cm.Name))
 	require.Empty(t, Needs("nothing"))
 }

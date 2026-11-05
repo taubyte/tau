@@ -12,17 +12,14 @@ import (
 	secretsService "github.com/taubyte/tau/services/secrets"
 )
 
-// Wires the cm service (the cloud's certificate store) and the one client every
-// public listener takes certificates from. A node naming `cm` hosts the store;
+// Wires the one client every public listener takes certificates from, over the cm
+// beside it or wherever discovery finds one (services/cm runs from the catalog).
 // `cm.certificate.acme` makes every node a client ordering its own. DNS-01 values
-// are cache entries over their own replicated database (challengeDatabase).
+// are cache entries over their own replicated database (cm.ChallengeDatabase).
 
 // CM is the service that holds what the cloud keeps once for every
 // region.
 var CM = cm.Name
-
-// challengeDatabase is where the answers live while an order is proved.
-const challengeDatabase = "cm-challenges"
 
 // ErrNoZoneForCertificates is ACME on a node that does not know the zone.
 var ErrNoZoneForCertificates = errors.New("node: certificates are issued for the cloud's zone, and this node names none (cloudfqdn)")
@@ -33,43 +30,6 @@ func (n *Instance) certVault() secretsService.CloudVault {
 	n.sharedMu.Lock()
 	defer n.sharedMu.Unlock()
 	return n.shared.Cloud(cm.VaultService)
-}
-
-func (n *Instance) openCM() error {
-	if !n.cfg.runs(CM) {
-		return nil
-	}
-	if n.cfg.CloudFqdn == "" {
-		return ErrNoZoneForCertificates
-	}
-
-	db, err := n.kvdb(CM)
-	if err != nil {
-		return err
-	}
-	n.closers = append(n.closers, closerFunc(db.Close))
-	// A HOLDER OF THE CHALLENGE STORE TOO, so DNS-01 values replicate through
-	// a node that is always up.
-	if _, err := n.answers(); err != nil {
-		return err
-	}
-
-	cfg := n.cfg.CM
-	cfg.Certificate.Zone = n.cfg.CloudFqdn
-	options := []cm.Option{cm.WithVault(n.certVault())}
-	if n.opts.resolver != nil {
-		options = append(options, cm.WithResolver(n.opts.resolver))
-	}
-	if n.opts.now != nil {
-		options = append(options, cm.WithClock(n.opts.now))
-	}
-	svc, err := cm.New(n.Host(), db, cfg, options...)
-	if err != nil {
-		return err
-	}
-	n.cm = svc
-	n.closers = append(n.closers, svc)
-	return nil
 }
 
 // certificates is the client this node's listeners take certificates from,
@@ -104,7 +64,7 @@ func (n *Instance) certificates() (*cm.Client, error) {
 	options = append(options, cm.WithProver(d))
 	c, err := cm.NewClient(n.Host(),
 		func() []libp2ppeer.ID { return (&fromDiscovery{node: n, name: CM}).Known() },
-		func() *cm.Service { return n.cm },
+		cm.StoreOn(&added{node: n}),
 		n.certVault(), cfg, options...)
 	if err != nil {
 		return nil, err
@@ -134,7 +94,7 @@ func (n *Instance) challengeStore() (cacheStore, error) {
 	if n.challengeDB != nil {
 		return cacheStore{n.challengeDB}, nil
 	}
-	db, err := n.kvdb(challengeDatabase)
+	db, err := n.kvdb(cm.ChallengeDatabase)
 	if err != nil {
 		return cacheStore{}, err
 	}
@@ -172,7 +132,7 @@ func (n *Instance) challengeReader() (dns.Challenges, error) {
 	return local, nil
 }
 
-// WithResolver is where TXT records proving a custom domain are looked up.
+// WithResolver is where cm looks up the TXT records proving a custom domain.
 // Without it, net.DefaultResolver.
 func WithResolver(r cm.Resolver) Option {
 	return func(o *options) error {
@@ -193,7 +153,7 @@ func (n *Instance) domains() (*cm.Domains, error) {
 	}
 	d, err := cm.NewDomains(n.Host(),
 		func() []libp2ppeer.ID { return (&fromDiscovery{node: n, name: CM}).Known() },
-		func() *cm.Service { return n.cm })
+		cm.StoreOn(&added{node: n}))
 	if err != nil {
 		return nil, err
 	}

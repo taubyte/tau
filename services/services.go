@@ -7,7 +7,7 @@ import (
 	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/build/hosted"
 	"github.com/taubyte/tau/services/build/runner"
-	"github.com/taubyte/tau/services/consensus"
+	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/database"
 	"github.com/taubyte/tau/services/discovery"
 	"github.com/taubyte/tau/services/primitives"
@@ -32,17 +32,17 @@ type shipped struct {
 // service reaches beside it when it starts comes before it.
 func catalog() []shipped {
 	return []shipped{
-		{name: consensus.Descriptor.Name, new: func() service.Service { return consensus.New() }},
+		{name: cm.Name, new: func() service.Service { return cm.New() }},
 		{name: discovery.Descriptor.Name, new: func() service.Service { return discovery.New() }},
 		{name: register.Descriptor.Name, new: func() service.Service { return register.New() }},
 		{name: secrets.Descriptor.Name, new: func() service.Service { return secrets.New() }},
-		{name: primitives.Descriptor.Name, new: func() service.Service { return primitives.New() }, needs: []string{consensus.Descriptor.Name}},
-		{name: database.Descriptor.Name, new: func() service.Service { return database.New() }, needs: []string{consensus.Descriptor.Name}},
+		{name: primitives.Descriptor.Name, new: func() service.Service { return primitives.New() }, needs: []string{cm.Name}},
+		{name: database.Descriptor.Name, new: func() service.Service { return database.New() }, needs: []string{cm.Name}},
 		{name: storage.Descriptor.Name, new: func() service.Service { return storage.New() }},
 		{name: build.Runner.Name, new: func() service.Service { return runner.New() }},
 		// Build is never part of the default: one node running every service runs the
 		// runner, and a node may not run both. Its queue is a raft group.
-		{name: build.Build.Name, new: func() service.Service { return hosted.New() }, needs: []string{consensus.Descriptor.Name}, onlyNamed: true},
+		{name: build.Build.Name, new: func() service.Service { return hosted.New() }, needs: []string{cm.Name}, onlyNamed: true},
 	}
 }
 

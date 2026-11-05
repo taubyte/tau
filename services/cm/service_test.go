@@ -82,7 +82,7 @@ type fleet struct {
 	vault   *vault
 	cfg     Config
 	chStore *pkgcache.MemStore
-	nodes   []*Service
+	nodes   []*Store
 	ca      *ca.CAImpl
 	pebble  *httptest.Server
 	txt     *records
@@ -208,9 +208,9 @@ func newFleet(t *testing.T, n int, wildcard bool) *fleet {
 	return f
 }
 
-func (f *fleet) add(t *testing.T) *Service {
+func (f *fleet) add(t *testing.T) *Store {
 	t.Helper()
-	s, err := New(newHost(t, f.mn), f.db, f.cfg, WithClock(f.clock), WithVault(f.vault), WithResolver(f.txt))
+	s, err := Open(newHost(t, f.mn), f.db, f.cfg, WithClock(f.clock), WithVault(f.vault), WithResolver(f.txt))
 	require.NoError(t, err)
 	require.NoError(t, s.Start(t.Context()))
 	t.Cleanup(func() { s.Close() })
@@ -224,7 +224,7 @@ func (f *fleet) add(t *testing.T) *Service {
 // challenge store.
 func (f *fleet) client(t *testing.T, opts ...ClientOption) *Client {
 	t.Helper()
-	c, err := NewClient(newHost(t, f.mn), f.members, func() *Service { return nil }, f.vault, f.cfg, append([]ClientOption{
+	c, err := NewClient(newHost(t, f.mn), f.members, func() *Store { return nil }, f.vault, f.cfg, append([]ClientOption{
 		WithChallengeStore(f.challenges(t)), WithClientClock(f.clock), WithCertWait(0), WithLogger(t.Logf),
 	}, opts...)...)
 	require.NoError(t, err)
@@ -370,7 +370,7 @@ func TestADueCertificateIsRenewedAndAnOutageKeepsTheOldOne(t *testing.T) {
 	f := newFleet(t, 1, false)
 	s := f.nodes[0]
 	// A CLIENT ON THE GLOBALS NODE ITSELF calls it without a stream.
-	c, err := NewClient(s.host, func() []peer.ID { return nil }, func() *Service { return s }, f.vault, f.cfg,
+	c, err := NewClient(s.host, func() []peer.ID { return nil }, func() *Store { return s }, f.vault, f.cfg,
 		WithChallengeStore(f.challenges(t)), WithClientClock(f.clock), WithCertWait(0))
 	require.NoError(t, err)
 	const name = "r." + zone
@@ -413,29 +413,29 @@ func TestWhatIsRefused(t *testing.T) {
 	acmeOn := pkgcertificate.ACME{Enabled: true}
 	on := cfg(CertificateConfig{ACME: acmeOn, Zone: zone})
 
-	_, err = New(nil, database, on)
+	_, err = Open(nil, database, on)
 	require.ErrorIs(t, err, ErrNoHost)
-	_, err = New(h, nil, on)
+	_, err = Open(h, nil, on)
 	require.ErrorIs(t, err, ErrNoDB)
-	_, err = New(h, database, cfg(CertificateConfig{Zone: zone}))
+	_, err = Open(h, database, cfg(CertificateConfig{Zone: zone}))
 	require.NoError(t, err, "a cloud that issues nothing still proves its domains")
-	_, err = New(h, database, cfg(CertificateConfig{}))
+	_, err = Open(h, database, cfg(CertificateConfig{}))
 	require.ErrorIs(t, err, ErrNoZone)
-	_, err = New(h, database, cfg(CertificateConfig{ACME: acmeOn}))
+	_, err = Open(h, database, cfg(CertificateConfig{ACME: acmeOn}))
 	require.ErrorIs(t, err, ErrNoZone)
-	_, err = New(h, database, cfg(CertificateConfig{ACME: acmeOn, Zone: zone, Challenge: "tls-alpn-01"}))
+	_, err = Open(h, database, cfg(CertificateConfig{ACME: acmeOn, Zone: zone, Challenge: "tls-alpn-01"}))
 	require.ErrorContains(t, err, "neither")
-	_, err = New(h, database, cfg(CertificateConfig{ACME: acmeOn, Zone: zone, Challenge: ChallengeHTTP, Wildcard: true}))
+	_, err = Open(h, database, cfg(CertificateConfig{ACME: acmeOn, Zone: zone, Challenge: ChallengeHTTP, Wildcard: true}))
 	require.ErrorContains(t, err, "dns-01 only")
-	_, err = New(h, database, cfg(CertificateConfig{ACME: acmeOn, Zone: zone, Challenge: ChallengeDNS}))
+	_, err = Open(h, database, cfg(CertificateConfig{ACME: acmeOn, Zone: zone, Challenge: ChallengeDNS}))
 	require.NoError(t, err)
-	s, err := New(h, database, on)
+	s, err := Open(h, database, on)
 	require.NoError(t, err)
 	require.NoError(t, s.Close(), "closing what was never started")
 
 	empty := &vault{data: map[string][]byte{}}
 	none := func() []peer.ID { return nil }
-	nolocal := func() *Service { return nil }
+	nolocal := func() *Store { return nil }
 	_, err = NewClient(nil, none, nolocal, empty, on)
 	require.ErrorIs(t, err, ErrNoHost)
 	_, err = NewClient(h, none, nolocal, nil, on)
@@ -583,7 +583,7 @@ func TestAKeyNotReadableYetIsWaitedFor(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
 	v := &vault{data: map[string][]byte{}}
-	c, err := NewClient(newHost(t, mn), func() []peer.ID { return nil }, func() *Service { return nil }, v,
+	c, err := NewClient(newHost(t, mn), func() []peer.ID { return nil }, func() *Store { return nil }, v,
 		Config{Certificate: CertificateConfig{ACME: pkgcertificate.ACME{Enabled: true}, Zone: zone}})
 	require.NoError(t, err)
 	c.poll = time.Millisecond

@@ -71,7 +71,7 @@ type closer func()
 func (c closer) Close() error { c(); return nil }
 
 // Start builds the service from its instance: the queue a raft group of the
-// consensus beside it and the job records a database on the peer (the control,
+// cm beside it and the job records a database on the peer (the control,
 // services/build/jobs), then the routes in front of them, asking that control
 // in-process and the other build nodes over p2p when it does not lead; auth
 // reached by discovery, the projects in the register, the link credentials in the
@@ -151,11 +151,7 @@ func (f *server) wire(h service.Host, cfg config) ([]ingress.Option, error) {
 		}
 		return nil
 	}
-	local := func() *cm.Service {
-		here, _ := service.Get[*cm.Service](h)
-		return here
-	}
-	domains, err := cm.NewDomains(self, members, local)
+	domains, err := cm.NewDomains(self, members, cm.StoreOn(h))
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +194,7 @@ func (f *server) wire(h service.Host, cfg config) ([]ingress.Option, error) {
 		}
 		whole := cfg.CM
 		whole.Certificate.Zone = cfg.CloudFqdn
-		certificates, err := cm.NewClient(self, members, local, vault.Cloud(cm.VaultService), whole)
+		certificates, err := cm.NewClient(self, members, cm.StoreOn(h), vault.Cloud(cm.VaultService), whole)
 		if err != nil {
 			return nil, err
 		}

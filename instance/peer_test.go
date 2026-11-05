@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	fleetdoc "github.com/taubyte/tau/pkg/fleet"
-	"github.com/taubyte/tau/services/consensus"
+	"github.com/taubyte/tau/services/cm"
 )
 
 func TestADatabaseIsOpenedOncePerName(t *testing.T) {
@@ -95,9 +95,9 @@ func TestANodeWithNoRegisterFollowsNoFleet(t *testing.T) {
 	require.Zero(t, n.dbs.retention)
 }
 
-func TestABuiltInsGroupIsTimedByTheConsensusSection(t *testing.T) {
+func TestABuiltInsGroupIsTimedByCMsSection(t *testing.T) {
 	root := t.TempDir()
-	n := &Instance{Node: mockPeer(t), cfg: Config{Root: root, Sections: map[string]any{consensus.Descriptor.Name: quickConsensus}}}
+	n := &Instance{Node: mockPeer(t), cfg: Config{Root: root, Sections: map[string]any{cm.Name: cm.Section{Consensus: quickConsensus}}}}
 	c, err := n.raftGroup("built-in")
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
@@ -106,9 +106,9 @@ func TestABuiltInsGroupIsTimedByTheConsensusSection(t *testing.T) {
 	_, err = os.Stat(filepath.Join(root, "raft", "built-in"))
 	require.NoError(t, err)
 
-	n.cfg.Sections[consensus.Descriptor.Name] = map[string]any{"timeouts": "not a table"}
+	n.cfg.Sections[cm.Name] = map[string]any{"consensus": map[string]any{"timeouts": "not a table"}}
 	_, err = n.raftGroup("refused")
-	require.ErrorContains(t, err, consensus.Descriptor.Name)
+	require.ErrorContains(t, err, cm.Name)
 
 	n.cfg.Root = ""
 	_, err = n.raftGroup("rootless")

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
@@ -16,7 +17,7 @@ import (
 	"github.com/taubyte/tau/pkg/placement"
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/consensus"
+	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/discovery"
 	"github.com/taubyte/tau/services/register"
 )
@@ -62,8 +63,8 @@ func newMachine(t *testing.T) *machine {
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
 	return &machine{Node: p, root: t.TempDir(), sections: map[string]func(any) error{
-		consensus.Descriptor.Name: func(into any) error {
-			*into.(*consensus.Config) = consensus.Config{
+		cm.Name: func(into any) error {
+			raw, err := yaml.Marshal(cm.Section{Consensus: cm.ConsensusConfig{
 				Timeouts: raft.TimeoutConfig{
 					HeartbeatTimeout:   50 * time.Millisecond,
 					ElectionTimeout:    50 * time.Millisecond,
@@ -73,8 +74,11 @@ func newMachine(t *testing.T) *machine {
 					SnapshotThreshold:  1000,
 				},
 				BootstrapTimeout: 200 * time.Millisecond,
+			}})
+			if err != nil {
+				return err
 			}
-			return nil
+			return yaml.Unmarshal(raw, into)
 		},
 	}}
 }
@@ -100,7 +104,7 @@ func (f fleetOf) Placement() []placement.Member { return f }
 func TestTheDatabaseServiceRunsFromWhatItsInstanceGivesIt(t *testing.T) {
 	ctx := t.Context()
 	m := newMachine(t)
-	m.start(t, consensus.Descriptor.Name, consensus.New())
+	m.start(t, cm.Name, cm.New())
 	reg := register.New()
 	m.start(t, register.Descriptor.Name, reg)
 	_, err := reg.Local().Publish(ctx, pkgregister.Publication{Project: projectID, Environment: "prod", Revision: 1, Compiled: compiled()})
@@ -144,7 +148,7 @@ func TestTheDatabaseServiceRefusesWhatItCannotStartWith(t *testing.T) {
 	m.sections[Descriptor.Name] = func(any) error { return errors.New("no such key") }
 	require.ErrorContains(t, New().Start(t.Context(), as{machine: m, name: Descriptor.Name}), "no such key")
 
-	m.start(t, consensus.Descriptor.Name, consensus.New())
+	m.start(t, cm.Name, cm.New())
 	m.sections[Descriptor.Name] = func(into any) error {
 		*into.(*Config) = Config{Sweep: time.Hour, MaxResident: 3, Idle: time.Minute}
 		return nil

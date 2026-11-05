@@ -11,7 +11,7 @@ import (
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/raft"
-	"github.com/taubyte/tau/services/consensus"
+	"github.com/taubyte/tau/services/cm"
 )
 
 // testHost is an instance as jobs sees it: a peer, a directory, the services
@@ -43,7 +43,7 @@ func (h *testHost) Config(into any) error {
 type quick struct{ *testHost }
 
 func (quick) Config(into any) error {
-	*into.(*consensus.Config) = consensus.Config{
+	raw, err := yaml.Marshal(cm.Section{Consensus: cm.ConsensusConfig{
 		Timeouts: raft.TimeoutConfig{
 			HeartbeatTimeout:   50 * time.Millisecond,
 			ElectionTimeout:    50 * time.Millisecond,
@@ -53,21 +53,24 @@ func (quick) Config(into any) error {
 			SnapshotThreshold:  1000,
 		},
 		BootstrapTimeout: 200 * time.Millisecond,
+	}})
+	if err != nil {
+		return err
 	}
-	return nil
+	return yaml.Unmarshal(raw, into)
 }
 
-// hostWithConsensus is a host running a started consensus service, the one service
+// hostWithConsensus is a host running a started cm, the one service
 // jobs cannot start without.
 func hostWithConsensus(t *testing.T, section map[string]any) *testHost {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
 	h := &testHost{Node: p, root: t.TempDir(), section: section}
-	agree := consensus.New()
+	agree := cm.New()
 	require.NoError(t, agree.Start(t.Context(), quick{h}))
 	t.Cleanup(func() { agree.Close() })
-	h.running = []service.Running{{Name: consensus.Descriptor.Name, Service: agree}}
+	h.running = []service.Running{{Name: cm.Name, Service: agree}}
 	return h
 }
 

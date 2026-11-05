@@ -12,7 +12,7 @@ import (
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/consensus"
+	"github.com/taubyte/tau/services/cm"
 )
 
 // A node is made from its peer. Whatever a service's backing is built from is the
@@ -145,13 +145,13 @@ func (n *Instance) raftGroup(namespace string) (raft.Cluster, error) {
 	if n.cfg.Root == "" {
 		return nil, ErrNoRoot
 	}
-	// THE CONSENSUS SERVICE'S TIMING, for the built-ins that open a group before
-	// any configured service has started.
-	var timing consensus.Config
-	if err := n.cfg.Section(consensus.Descriptor.Name, &timing); err != nil {
+	// CM'S TIMING, for the built-ins that open a group before any configured service
+	// has started.
+	var section cm.Section
+	if err := n.cfg.Section(cm.Name, &section); err != nil {
 		return nil, err
 	}
-	return raft.New(n.Node, namespace, consensus.Options(n.cfg.Root, timing)...)
+	return raft.New(n.Node, namespace, cm.RaftOptions(n.cfg.Root, section.Consensus)...)
 }
 
 // ErrNoRoot is a node asked for what lives in a directory and given none.

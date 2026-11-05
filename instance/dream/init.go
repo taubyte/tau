@@ -22,7 +22,6 @@ import (
 	"github.com/taubyte/tau/pkg/containers"
 
 	auth "github.com/taubyte/tau/services/auth"
-	"github.com/taubyte/tau/services/consensus"
 
 	"github.com/taubyte/tau/instance/boot"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
@@ -361,7 +360,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	if nodeConfig.Sections == nil {
 		nodeConfig.Sections = map[string]any{}
 	}
-	nodeConfig.Sections[consensus.Descriptor.Name] = consensus.Config{Timeouts: dreamTimeouts, BootstrapTimeout: dreamBootstrapTimeout}
+	nodeConfig.Sections[cm.Name] = cm.Section{Consensus: cm.ConsensusConfig{Timeouts: dreamTimeouts, BootstrapTimeout: dreamBootstrapTimeout}}
 
 	options := []instance.Option{
 		instance.WithDatabaseEngines(engines),

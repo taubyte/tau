@@ -70,7 +70,7 @@ var All = []string{Worker, Gateway, Auth, Proxy, DNS}
 // package still starts itself and the ones services.New makes. All, the default
 // shape, is the first half of it.
 func Everything() []string {
-	return append(append(append([]string(nil), All...), CM), services.Names()...)
+	return append(append([]string(nil), All...), services.Names()...)
 }
 
 // Build is in no default shape: a single-node development cloud runs the runner,

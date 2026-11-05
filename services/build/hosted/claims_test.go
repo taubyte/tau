@@ -44,10 +44,10 @@ func TestTheClaimRouteSeamSaysWhatIsMalformed(t *testing.T) {
 	h := p.Host()
 	db, err := kvdbmock.New().New(nil, "cm", 0)
 	require.NoError(t, err)
-	svc, err := cm.New(h, db, cm.Config{Certificate: cm.CertificateConfig{Zone: "tau.example"}}, cm.WithVault(&memVault{m: map[string][]byte{}}))
+	svc, err := cm.Open(h, db, cm.Config{Certificate: cm.CertificateConfig{Zone: "tau.example"}}, cm.WithVault(&memVault{m: map[string][]byte{}}))
 	require.NoError(t, err)
 
-	d, err := cm.NewDomains(h, func() []libp2ppeer.ID { return nil }, func() *cm.Service { return svc })
+	d, err := cm.NewDomains(h, func() []libp2ppeer.ID { return nil }, func() *cm.Store { return svc })
 	require.NoError(t, err)
 	t.Cleanup(func() { d.Close() })
 
@@ -60,7 +60,7 @@ func TestTheClaimRouteSeamSaysWhatIsMalformed(t *testing.T) {
 	_, err = claims{d}.Claim(t.Context(), "not a cid", "shop.test")
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 
-	none, err := cm.NewDomains(h, func() []libp2ppeer.ID { return nil }, func() *cm.Service { return nil })
+	none, err := cm.NewDomains(h, func() []libp2ppeer.ID { return nil }, func() *cm.Store { return nil })
 	require.NoError(t, err)
 	_, err = claims{none}.Claim(t.Context(), "QmNTj7BY3YNySGaUrfuWjkomCME8fTcynvgHiNdX1hyLME", "shop.test")
 	require.ErrorIs(t, err, cm.ErrNoMembers)

@@ -1,4 +1,4 @@
-package consensus
+package cm
 
 import (
 	"errors"
@@ -11,10 +11,11 @@ import (
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
+	pkgcertificate "github.com/taubyte/tau/pkg/certificate"
 	"github.com/taubyte/tau/pkg/raft"
 )
 
-// instance is what consensus starts on: a peer, a directory, its section.
+// instance is what cm starts on: a peer, a directory, its section.
 type instance struct {
 	peer.Node
 	root   string
@@ -23,7 +24,7 @@ type instance struct {
 
 func (i instance) Peer() peer.Node          { return i.Node }
 func (instance) Running() []service.Running { return nil }
-func (instance) Cloud() string              { return "consensus-test" }
+func (instance) Cloud() string              { return "cm-test" }
 func (instance) Region() string             { return "" }
 func (instance) Now() time.Time             { return time.Now() }
 func (i instance) Root() string             { return i.root }
@@ -36,18 +37,18 @@ func (i instance) Config(into any) error {
 
 var _ service.Host = instance{}
 
-func newInstance(t *testing.T, root string, cfg Config) instance {
+func newInstance(t *testing.T, root string, cfg ConsensusConfig) instance {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
 	return instance{Node: p, root: root, config: func(into any) error {
-		*into.(*Config) = cfg
+		*into.(*hostConfig) = hostConfig{Section: Section{Consensus: cfg}}
 		return nil
 	}}
 }
 
 // quick is raft timed for one node in one process.
-var quick = Config{
+var quick = ConsensusConfig{
 	Timeouts: raft.TimeoutConfig{
 		HeartbeatTimeout:   50 * time.Millisecond,
 		ElectionTimeout:    50 * time.Millisecond,
@@ -82,10 +83,10 @@ func TestAGroupIsOpenedOnTheInstanceWithItsTiming(t *testing.T) {
 	require.NoError(t, err, "the group's snapshots are under the instance's directory")
 
 	_, err = s.Raft("")
-	require.ErrorContains(t, err, "consensus: ")
+	require.ErrorContains(t, err, "cm: ")
 }
 
-func TestClosingConsensusClosesItsGroups(t *testing.T) {
+func TestClosingCMClosesItsGroups(t *testing.T) {
 	s := New()
 	require.NoError(t, s.Start(t.Context(), newInstance(t, t.TempDir(), quick)))
 
@@ -108,7 +109,7 @@ func TestAGroupIsRefusedByName(t *testing.T) {
 
 	s := New()
 	t.Cleanup(func() { s.Close() })
-	require.NoError(t, s.Start(t.Context(), newInstance(t, "", quick)), "an instance with no directory still runs consensus")
+	require.NoError(t, s.Start(t.Context(), newInstance(t, "", quick)), "an instance with no directory still runs cm")
 	_, err = s.Raft("rootless")
 	require.ErrorIs(t, err, ErrNoRoot)
 
@@ -117,7 +118,22 @@ func TestAGroupIsRefusedByName(t *testing.T) {
 	require.ErrorContains(t, New().Start(t.Context(), i), "no such key")
 }
 
-func TestOptionsSayOnlyWhatIsSet(t *testing.T) {
-	require.Len(t, Options("/r", Config{}), 1, "the snapshot root alone: raft's own timing")
-	require.Len(t, Options("/r", quick), 3)
+func TestRaftOptionsSayOnlyWhatIsSet(t *testing.T) {
+	require.Len(t, RaftOptions("/r", ConsensusConfig{}), 1, "the snapshot root alone: raft's own timing")
+	require.Len(t, RaftOptions("/r", quick), 3)
+}
+
+func TestACloudWithNoZoneKeepsNoStore(t *testing.T) {
+	s := New()
+	t.Cleanup(func() { s.Close() })
+	require.NoError(t, s.Start(t.Context(), newInstance(t, t.TempDir(), quick)))
+	require.Nil(t, s.Store(), "nothing to keep certificates for")
+	require.Nil(t, StoreOn(instance{})(), "and none beside an instance running no cm")
+
+	i := newInstance(t, t.TempDir(), quick)
+	i.config = func(into any) error {
+		*into.(*hostConfig) = hostConfig{CM: Config{Certificate: CertificateConfig{ACME: pkgcertificate.ACME{Enabled: true}}}}
+		return nil
+	}
+	require.ErrorIs(t, New().Start(t.Context(), i), ErrNoZone, "a cloud issuing certificates issues them for its zone")
 }

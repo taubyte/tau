@@ -83,10 +83,9 @@ type Instance struct {
 
 	secrets secretsService.Service
 
-	// cm holds the cloud's certificates when this node runs it, certs is
-	// the client every public listener here takes them from, and challengeDB
-	// is where DNS-01 values are held. All nil in a cloud that issues none.
-	cm               *cmService.Service
+	// certs is the client every public listener here takes certificates from, and
+	// challengeDB is where DNS-01 values are held. All nil in a cloud that issues
+	// none.
 	certs            *cmService.Client
 	domainClaims     *cmService.Domains
 	challengeDB      kvdb.Instance
@@ -218,6 +217,10 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 	}
 	// The databases every service on this node shares.
 	n.provide("", n.dbs)
+	// Where cm looks a domain's proof up, when this node was handed one.
+	if o.resolver != nil {
+		n.provide("", o.resolver)
+	}
 	// What the built-ins add to this node's report.
 	n.provide("", builtIns{n})
 	// And the workloads the clock fires through, while the worker is one of them.
@@ -245,16 +248,6 @@ func (n *Instance) open() error {
 	// asks one of them who does what.
 	if err := n.openAuth(); err != nil {
 		return err
-	}
-	// BEFORE THE WORKER, which resolves a secret on the request path and takes
-	// the vault as a collaborator rather than looking one up per invocation.
-	// AFTER THE SECRETS SERVICE, which keeps its keys.
-	if err := n.openCM(); err != nil {
-		return err
-	}
-	// The cm store is a service beside the others, for a deploy proving a zone.
-	if n.cm != nil {
-		n.provide(CM, n.cm)
 	}
 	if err := n.openWorker(); err != nil {
 		return err
@@ -682,9 +675,6 @@ func (n *Instance) Start(ctx context.Context) error {
 	}
 
 	var order []starter
-	if n.cm != nil {
-		order = append(order, n.cm)
-	}
 	if n.worker != nil {
 		order = append(order, n.worker)
 	}

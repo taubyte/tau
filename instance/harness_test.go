@@ -23,7 +23,7 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
-	"github.com/taubyte/tau/services/consensus"
+	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -301,19 +301,19 @@ func rooted(t testing.TB, cfg Config) Config {
 	}
 	// RAFT TIMED FOR ONE PROCESS, as dream times it: by default a group of one waits
 	// out a 30s bootstrap before electing itself.
-	if _, ok := cfg.Sections[consensus.Descriptor.Name]; !ok {
+	if _, ok := cfg.Sections[cm.Name]; !ok {
 		sections := maps.Clone(cfg.Sections)
 		if sections == nil {
 			sections = map[string]any{}
 		}
-		sections[consensus.Descriptor.Name] = quickConsensus
+		sections[cm.Name] = cm.Section{Consensus: quickConsensus}
 		cfg.Sections = sections
 	}
 	return cfg
 }
 
 // quickConsensus is raft timed for nodes one process apart.
-var quickConsensus = consensus.Config{
+var quickConsensus = cm.ConsensusConfig{
 	Timeouts: raft.TimeoutConfig{
 		HeartbeatTimeout:   50 * time.Millisecond,
 		ElectionTimeout:    50 * time.Millisecond,
