@@ -151,8 +151,8 @@ func (t *hitTable) drop(h []byte) {
 
 type blockMemory struct {
 	hits hitTable
-	// deletes counts block deletes, each once it is done, so a Has that
-	// read a block before one and records it after sees that it moved.
+	// deletes counts block deletes, each once it is done, so a Has or a Put that
+	// met a block before one and records it after sees that it moved.
 	deletes atomic.Uint64
 	// bloom answers once ready; next, while a rebuild runs, takes every
 	// block added too.
