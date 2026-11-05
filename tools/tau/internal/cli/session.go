@@ -335,7 +335,7 @@ func loginCommand(env Env) *cobra.Command {
 				p.Cloud = v
 			}
 			if p.Cloud == "" {
-				if p.Cloud, err = need(cmd, env, "cloud", "Cloud URL (the build service)", validCloud); err != nil {
+				if p.Cloud, err = need(cmd, env, "cloud", "Cloud URL (the plm service)", validCloud); err != nil {
 					return err
 				}
 			}

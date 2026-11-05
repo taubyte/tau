@@ -99,7 +99,7 @@ func TestLoginPromptsAtATerminal(t *testing.T) {
 	x.interactive = true
 	x.prompter.answers = []string{x.f.srv.URL, "password", "root", "hunter2"}
 	x.ok("login")
-	require.Equal(t, []string{"Cloud URL (the build service)", "Sign in with", "User", "Password"}, x.prompter.asked)
+	require.Equal(t, []string{"Cloud URL (the plm service)", "Sign in with", "User", "Password"}, x.prompter.asked)
 }
 
 func TestInitValidateViews(t *testing.T) {

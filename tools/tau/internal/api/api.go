@@ -1,6 +1,6 @@
-// Package api is the build service's public HTTP API, as the CLI calls it
-// (services/build/ingress/ingress.go is the other side). Jobs are decoded into
-// the generated tau.build.v2 types with protojson — the build service encodes them
+// Package api is plm's public HTTP API, as the CLI calls it
+// (services/plm/ingress/ingress.go is the other side). Jobs are decoded into
+// the generated tau.plm.v2 types with protojson — plm encodes them
 // that way — so nothing here restates the schema.
 package api
 
@@ -22,12 +22,12 @@ import (
 	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 )
 
-// Job is the build service's job record.
+// Job is the plm service's job record.
 type Job = plmv2.Job
 
-// Error is a refusal from the build service: its status, the message it chose to
+// Error is a refusal from the plm service: its status, the message it chose to
 // give, and the headers it came with. A 404 is also what a denial looks like —
-// the build service does not say whether a project exists to someone who may not
+// the plm service does not say whether a project exists to someone who may not
 // touch it.
 type Error struct {
 	Status  int
@@ -54,7 +54,7 @@ func IsStatus(err error, status int) bool {
 	return errors.As(err, &e) && e.Status == status
 }
 
-// Client calls one cloud's build service with one token: the tau token.
+// Client calls one cloud's plm service with one token: the tau token.
 type Client struct {
 	base   *url.URL
 	tokens Tokens
@@ -63,7 +63,7 @@ type Client struct {
 	authed *http.Client
 }
 
-// New builds a client for the build service at base. A nil tokens is a client with
+// New builds a client for the plm service at base. A nil tokens is a client with
 // no credential, for signing in.
 func New(base string, tokens Tokens, hc *http.Client) (*Client, error) {
 	u, err := url.Parse(strings.TrimRight(base, "/"))
@@ -204,7 +204,7 @@ const attemptHeader = "X-Job-Attempt"
 var errUnnamedRun = errors.New("the cloud did not say which run the log is")
 
 // logs opens one run of a job's log at byte offset from (the run attempt names, or
-// 0 for the current one) and returns that run. The build service holds it open while the
+// 0 for the current one) and returns that run. The plm service holds it open while the
 // run is to come or running, or with snapshot ends at what is there; a caller
 // reopens the same run at its offset after a drop.
 func (c *Client) logs(ctx context.Context, jobID string, attempt int32, from int64, snapshot bool) (io.ReadCloser, int32, error) {
@@ -240,7 +240,7 @@ func runOf(h http.Header) int32 {
 }
 
 // Secrets lists the names set in a project's environment. Values never come
-// back: the build service has no route that reads one.
+// back: the plm service has no route that reads one.
 func (c *Client) Secrets(ctx context.Context, projectID, environment string) ([]string, error) {
 	var names []string
 	err := c.json(ctx, http.MethodGet, []string{"secrets", projectID, environment}, nil, &names)
@@ -292,7 +292,7 @@ func (c *Client) Projects(ctx context.Context) ([]Project, error) {
 	return out, err
 }
 
-// Fqdn is the name the cloud serves under; its build service is
+// Fqdn is the name the cloud serves under; its plm service is
 // build.<fqdn>.
 func (c *Client) Fqdn(ctx context.Context) (string, error) {
 	type domainAnswer struct {

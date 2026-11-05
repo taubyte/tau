@@ -41,10 +41,10 @@ const goodToken = "tok-good"
 // back to the CLI.
 var forgeToken = fake.New(fake.GitHubLike).TokenString()
 
-// takenID is a project id the fake build service says somebody else claimed.
+// takenID is a project id the fake plm service says somebody else claimed.
 const takenID = "QmTakenTakenTakenTakenTakenTakenTakenTakenTake"
 
-// fakeBuild is a fake build service: the routes ingress.go mounts, answering
+// fakeBuild is a fake plm service: the routes ingress.go mounts, answering
 // from memory, refusing any token but goodToken the way the real one does.
 type fakeBuild struct {
 	mu       sync.Mutex
@@ -159,7 +159,7 @@ func newFakeBuild(t *testing.T) *fakeBuild {
 		b, _ := protojson.MarshalOptions{UseProtoNames: true}.Marshal(j)
 		w.Write(b)
 	}))
-	// THE LOG ROUTE SERVES ONE RUN, as the build service's does: ?attempt=, or the
+	// THE LOG ROUTE SERVES ONE RUN, as the plm service's does: ?attempt=, or the
 	// job's current run, named in X-Job-Attempt. An ended run's log is the one
 	// it stored, and a run whose log was not kept is a 410.
 	mux.HandleFunc("GET /job/{jid}/logs", authed(func(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +207,7 @@ func newFakeBuild(t *testing.T) *fakeBuild {
 		f.mu.Unlock()
 		if refused {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			json.NewEncoder(w).Encode(map[string]string{"error": "no build node available"})
+			json.NewEncoder(w).Encode(map[string]string{"error": "no plm node available"})
 			return
 		}
 		if gone {
@@ -217,7 +217,7 @@ func newFakeBuild(t *testing.T) *fakeBuild {
 			return
 		}
 		if !ok && ended {
-			// AN ENDED RUN WITH NO LOG KEPT is a 410, as the build service answers it: a
+			// AN ENDED RUN WITH NO LOG KEPT is a 410, as the plm service answers it: a
 			// plan's log is live only.
 			w.Header().Set("X-Job-Attempt", attempt)
 			w.WriteHeader(http.StatusGone)
@@ -337,7 +337,7 @@ func newFakeBuild(t *testing.T) *fakeBuild {
 	mux.HandleFunc("GET /cloud", authed(func(w http.ResponseWriter, r *http.Request) {
 		if f.fqdn == "" {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			json.NewEncoder(w).Encode(map[string]string{"error": "this build node was given no cloud fqdn"})
+			json.NewEncoder(w).Encode(map[string]string{"error": "this plm node was given no cloud fqdn"})
 			return
 		}
 		json.NewEncoder(w).Encode(map[string]any{"fqdn": f.fqdn, "uploads": f.uploads})
@@ -503,7 +503,7 @@ func (f *fakeBuild) addJobLocked(project, id, log string) {
 	f.logs[id] = log
 }
 
-// liveLog is a running job's log the way the build service serves it: a
+// liveLog is a running job's log the way the plm service serves it: a
 // follow is held open and sent each line as it is written until the job ends,
 // and a snapshot is what is there now.
 type liveLog struct {
@@ -552,7 +552,7 @@ func (l *liveLog) start(first string) {
 }
 
 // currentRun is the run a log read is about when it names none, as the
-// build service decides it: the one claimed or last run, or a queued job's next.
+// plm service decides it: the one claimed or last run, or a queued job's next.
 func currentRun(j *plmv2.Job) int32 {
 	if j.GetStatus() == plmv2.JobStatus_JobStatusOpen || j.GetAttempt() == 0 {
 		return j.GetAttempt() + 1
@@ -596,7 +596,7 @@ func (l *liveLog) end() {
 func (l *liveLog) serve(w http.ResponseWriter, r *http.Request, attempt string) {
 	from, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	snapshot := r.URL.Query().Get("snapshot") == "true"
-	// The response opens before the first event, as the build service's does.
+	// The response opens before the first event, as the plm service's does.
 	w.Header().Set("X-Job-Attempt", attempt)
 	w.(http.Flusher).Flush()
 	if !snapshot {
@@ -808,7 +808,7 @@ func golden(t *testing.T, name, got string) {
 	require.Equal(t, string(want), got)
 }
 
-// eventsOf is text as the build service serves a run's log from byte from: an event per
+// eventsOf is text as the plm service serves a run's log from byte from: an event per
 // line, one JSON object per line, each carrying the offset after it.
 func eventsOf(text string, from int) []string {
 	var out []string

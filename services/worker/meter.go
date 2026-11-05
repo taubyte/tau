@@ -6,7 +6,7 @@ import (
 )
 
 // Meter is how something outside this service learns what it accounted for, in the
-// shape services/storage and services/build declare. A nil Meter is the ordinary
+// shape services/storage and services/plm declare. A nil Meter is the ordinary
 // case; no events are built.
 
 // Meter is told about an invocation this service accounted for. Record must not
@@ -53,7 +53,7 @@ type Accounted struct {
 	Revision string
 }
 
-// emit hands over one event, or does nothing. Not named record: services/build uses
+// emit hands over one event, or does nothing. Not named record: services/plm uses
 // that name for writing a job record.
 func (s *Service) emit(ctx context.Context, ev Accounted) {
 	if s.meter == nil {

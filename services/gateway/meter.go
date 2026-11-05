@@ -10,7 +10,7 @@ import (
 
 // Bandwidth is a billed unit, and this is the only service that sees every byte in
 // and out, including everything refused before a worker was asked. The shape matches
-// services/storage, services/build and services/worker so a sink totals all four
+// services/storage, services/plm and services/worker so a sink totals all four
 // alike. A nil Meter costs a nil check.
 
 // Meter is told about a request this service accounted for. Record must not

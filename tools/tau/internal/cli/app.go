@@ -1,4 +1,4 @@
-// Package cli is the tau command line: cobra commands over the build service's API
+// Package cli is the tau command line: cobra commands over the plm service's API
 // (internal/api) and the schema session (internal/project), drawn by internal/ui.
 //
 // Every command runs without a terminal: a value a command asks for is also a flag,
@@ -100,7 +100,7 @@ func New(env Env) *cobra.Command {
 	root.SetErr(env.Stderr)
 	pf := root.PersistentFlags()
 	pf.String("profile", os.Getenv("TAU_PROFILE"), "the profile to use (see `tau profiles`)")
-	pf.String("cloud", "", "the cloud's build service URL, overriding the profile's")
+	pf.String("cloud", "", "the cloud's plm service URL, overriding the profile's")
 	pf.StringP("output", "o", "text", "text or json")
 	pf.BoolP("yes", "y", false, "assume yes to every confirmation")
 

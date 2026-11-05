@@ -16,7 +16,7 @@ import (
 )
 
 // session.go is the cloud's sign-in and user calls (auth's SessionService
-// and UserService, carried by the build service as ConnectRPC), and the one
+// and UserService, carried by the plm service as ConnectRPC), and the one
 // credential every call carries.
 
 // Tokens is where a client's tau token comes from.

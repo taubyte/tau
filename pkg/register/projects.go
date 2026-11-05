@@ -18,7 +18,7 @@ import (
 //
 // Every key sits under recordsPrefix ("r/"); publications own o/, p/, h/, c/, m/ and
 // d/, so neither table can overwrite the other. A deploy reads this table to check
-// the compiled id is claimed by the repository pushed to (services/build/deploy).
+// the compiled id is claimed by the repository pushed to (services/plm/deploy).
 //
 //	r/claim/<project>/<config>          {at, claimant}  one per (project, config repository)
 //	r/code/<project>/<config>/<code>    {at}            one per code repository a claim attaches

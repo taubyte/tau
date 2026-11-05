@@ -17,7 +17,7 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 )
 
-// fakeAuth is auth's sign-in and user calls as the build service carries them,
+// fakeAuth is auth's sign-in and user calls as the plm service carries them,
 // answering from memory. A session is an access token naming a user. It
 // holds no forge credential: a forge sign-in hands it back.
 type fakeAuth struct {

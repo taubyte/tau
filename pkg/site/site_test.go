@@ -15,7 +15,7 @@ import (
 	"github.com/taubyte/tau/pkg/site"
 )
 
-// tarball is what services/build/artifact stores for a directory output.
+// tarball is what services/plm/artifact stores for a directory output.
 func tarball(t *testing.T, files map[string]string) []byte {
 	t.Helper()
 

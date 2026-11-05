@@ -160,7 +160,7 @@ var readers = map[string][]string{
 	"services/worker/schedule.go": {"cron"},
 
 	// The build service makes a package's artifact, the only kind that builds.
-	"services/build/artifact/artifact.go": {"package"},
+	"services/plm/artifact/artifact.go": {"package"},
 
 	// The two services that read a DECLARATION rather than the grant, each for
 	// its own kind - see the file docs, which say why.
@@ -198,9 +198,9 @@ var everyKind = []string{"*"}
 var exposed = map[string][]string{
 	// Project.Zones() is the one accessor in pkg/specs that hands a generated
 	// struct out, and these two are what read it.
-	"zone": {"instance/zone/zone.go", "services/build/deploy/deploy.go"},
+	"zone": {"instance/zone/zone.go", "services/plm/deploy/deploy.go"},
 	// A workload runs its package, which the worker reads by its generated reader.
-	"package": {"services/worker/resolve.go", "services/worker/unserved.go", "services/build/artifact/artifact.go"},
+	"package": {"services/worker/resolve.go", "services/worker/unserved.go", "services/plm/artifact/artifact.go"},
 }
 
 func TestEveryDeclaredAttributeIsReadBySomething(t *testing.T) {

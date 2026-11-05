@@ -937,7 +937,7 @@ func runtimeOf(kind string, pkg specs.Package) (string, error) {
 }
 
 // artifactOf is what the package is: an image names itself, a builtin ships with the
-// runtime, and anything built is the build service's to say.
+// runtime, and anything built is the plm service's to say.
 func (s *Service) artifactOf(ctx context.Context, t Target, pkg ranPackage) (string, error) {
 	// `source/kind` is the vocabulary's own discriminator, so which branch was
 	// taken is read rather than guessed from which field happens to be set.

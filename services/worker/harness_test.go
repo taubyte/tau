@@ -147,7 +147,7 @@ func newHost(t testing.TB, mn mocknet.Mocknet) host.Host {
 }
 
 // compiled is tcc compiling the vocabulary's own fixture, marshalled the way
-// the build service publishes it.
+// the plm service publishes it.
 func compiled(t testing.TB) []byte {
 	t.Helper()
 
