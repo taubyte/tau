@@ -12,18 +12,40 @@ import (
 	"golang.org/x/text/language"
 )
 
-func row(authClient *authHttp.Client, job *patrick.Job, timeZone *time.Location, showCommit bool) (table.Row, error) {
+// repoNames looks a repository up once per listing: a project has a few
+// repositories and many jobs, and each lookup is a call to GitHub that spends
+// the token's hourly limit and took ~0.4s.
+type repoNames map[string]string
+
+func (names repoNames) get(id string, lookup func(id string) (string, error)) (string, error) {
+	if name, ok := names[id]; ok {
+		return name, nil
+	}
+	name, err := lookup(id)
+	if err != nil {
+		return "", err
+	}
+	names[id] = name
+	return name, nil
+}
+
+func row(authClient *authHttp.Client, names repoNames, job *patrick.Job, timeZone *time.Location, showCommit bool) (table.Row, error) {
 	unixTime := time.Unix(job.Timestamp, 0).In(timeZone)
 	date := unixTime.Format("01/02/06")
 	time := unixTime.Format("3:04 PM")
 
-	repo, err := authClient.GetRepositoryById(fmt.Sprintf("%d", job.Meta.Repository.ID))
+	name, err := names.get(fmt.Sprintf("%d", job.Meta.Repository.ID), func(id string) (string, error) {
+		repo, err := authClient.GetRepositoryById(id)
+		if err != nil {
+			return "", err
+		}
+		return repo.Get().Name(), nil
+	})
 	if err != nil {
 		return nil, err
 	}
 
 	repoType := "Unknown"
-	name := repo.Get().Name()
 	nameSplit := strings.SplitN(name, "_", 3)
 	if nameSplit[0] == "tb" {
 		switch nameSplit[1] {
