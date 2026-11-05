@@ -36,12 +36,7 @@ func (u *Universe) serve(addr string) error {
 	return nil
 }
 
-func (s *served) Close() error {
-	if err := s.server.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return err
-	}
-	return nil
-}
+func (s *served) Close() error { return s.server.Close() }
 
 // Addr is where this universe answers DreamService, nil when its Config named no
 // Listen.

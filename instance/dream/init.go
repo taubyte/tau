@@ -8,7 +8,6 @@ package dream
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"slices"
 	"sync"
@@ -87,8 +86,7 @@ type builtNodes struct {
 var built = builtNodes{byPeer: map[string]running{}}
 
 type running struct {
-	node   *instance.Instance
-	assets Components
+	node *instance.Instance
 }
 
 // Node is the node running on a peer, for a test that has its id.
@@ -97,27 +95,6 @@ func Node(peerID string) (*instance.Instance, bool) {
 	defer built.Unlock()
 	r, ok := built.byPeer[peerID]
 	return r.node, ok
-}
-
-// Components is a node's own blocks, where a test puts content the node then reads
-// by cid.
-type Components struct{ node peer.Node }
-
-// Put writes content into the node's blocks and answers its cid.
-func (c Components) Put(ctx context.Context, content io.Reader) (string, error) {
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
-	return c.node.AddFile(content)
-}
-
-// Assets is the blocks that node reads content from, exposed so a test can put some
-// in.
-func Assets(peerID string) (Components, bool) {
-	built.Lock()
-	defer built.Unlock()
-	r, ok := built.byPeer[peerID]
-	return r.assets, ok
 }
 
 // Dream's raft timeouts. raft.DefaultTimeoutConfig is sized for distant nodes; in
@@ -315,8 +292,6 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		tiers = []invoke.Runtime{absent{}}
 	}
 
-	store := Components{node: p}
-
 	// A DIRECTORY PER PEER, so two nodes in one universe do not share a volume
 	// by accident — which would make a test of "the bytes moved" pass without
 	// anything moving.
@@ -401,7 +376,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 
 	id := h.ID().String()
 	built.Lock()
-	built.byPeer[id] = running{node: n, assets: store}
+	built.byPeer[id] = running{node: n}
 	built.Unlock()
 
 	m.OnClose(closer{id: id, node: n, root: root})

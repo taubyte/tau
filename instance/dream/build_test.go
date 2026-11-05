@@ -4,6 +4,7 @@ package dream_test
 
 import (
 	"net/http"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -178,4 +179,58 @@ func TestAUniverseThatCannotListenDoesNotStart(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
 	require.Nil(t, u.Addr(), "a universe named no Listen answers nowhere")
+}
+
+func TestACommitIsTheFolderAsItIsNow(t *testing.T) {
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Discovery}})
+	require.NoError(t, err)
+	t.Cleanup(u.Close)
+	require.Equal(t, t.Name(), u.Name())
+	require.NotNil(t, u.CA())
+
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "a", ".git"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a", "one"), []byte("1"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a", ".git", "HEAD"), []byte("not the tree"), 0o644))
+	first, err := u.Commit("github.com/acme/app", "main", dir)
+	require.NoError(t, err)
+
+	require.NoError(t, os.RemoveAll(filepath.Join(dir, "a")))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "two"), []byte("2"), 0o644))
+	second, err := u.Commit("github.com/acme/app", "main", dir)
+	require.NoError(t, err)
+	require.NotEqual(t, first, second)
+
+	held := filepath.Join(u.Mirror(), "github.com", "acme", "app")
+	_, err = os.Stat(filepath.Join(held, "a"))
+	require.True(t, os.IsNotExist(err), "what the folder no longer holds, the commit does not")
+	got, err := os.ReadFile(filepath.Join(held, "two"))
+	require.NoError(t, err)
+	require.Equal(t, "2", string(got))
+
+	_, err = u.Commit("github.com/acme/app", "main", filepath.Join(dir, "gone"))
+	require.Error(t, err, "a folder that is not there")
+	_, err = u.Commit("not a key", "main", dir)
+	require.ErrorContains(t, err, "is not a repository")
+}
+
+func TestAUniverseWithNothingThatBuildsSaysSo(t *testing.T) {
+	ctx := t.Context()
+	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{Services: []string{instance.Discovery}})
+	require.NoError(t, err)
+	t.Cleanup(u.Close)
+
+	_, err = u.Build(ctx, nodeDream.Push{Repository: "github.com/acme/app", Ref: "refs/heads/main", Commit: "1111111111111111111111111111111111111111"})
+	require.ErrorContains(t, err, "no node runs a build or a runner")
+	require.ErrorContains(t, u.Link(ctx, "QmProject", "github.com/acme/app"), "no node runs the register")
+	_, err = u.Upload("github.com/acme/code", "main", t.TempDir(), nil)
+	require.ErrorContains(t, err, "no node runs the register", "a code repository's recipes are what its project publishes")
+}
+
+func TestACodeRepositoryNoProjectLinksIsNotUploaded(t *testing.T) {
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Discovery, instance.Register}})
+	require.NoError(t, err)
+	t.Cleanup(u.Close)
+	_, err = u.Upload("github.com/acme/code", "main", t.TempDir(), nil)
+	require.ErrorContains(t, err, "is no project's")
 }
