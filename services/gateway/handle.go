@@ -49,7 +49,8 @@ var lookupTimeouts = []time.Duration{0, 200 * time.Millisecond, 2 * time.Second}
 type lookupResult struct {
 	websites, functions []wrappedResponse
 	discard             []*client.Response
-	answered, timedOut  bool // a substrate said it has no match; one did not answer in time
+	notFound            bool // a substrate looked and has no match
+	failed              bool // a substrate did not answer in time, or its lookup failed
 }
 
 func (l *lookupResult) close() {
@@ -66,9 +67,16 @@ func (l *lookupResult) close() {
 
 func (l *lookupResult) matched() bool { return len(l.websites)+len(l.functions) > 0 }
 
-// definite says a further attempt cannot change the answer: every substrate
-// that was asked answered that it has no match.
-func (l *lookupResult) definite() bool { return l.answered && !l.timedOut }
+// definite says a further attempt cannot change the answer: the substrates
+// that answered looked and found nothing, and none failed to look.
+func (l *lookupResult) definite() bool { return l.notFound && !l.failed }
+
+// substrateNotFound is how a substrate says it looked and has no match. Any other
+// error, a timeout or a lookup that failed under load, says nothing about
+// whether the page exists.
+const substrateNotFound = "no HTTP match found"
+
+func isNotFound(err error) bool { return strings.Contains(err.Error(), substrateNotFound) }
 
 func isTimeout(err error) bool {
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) {
@@ -97,10 +105,10 @@ func (g *Gateway) lookupOnce(r *goHttp.Request, timeout time.Duration) (*lookupR
 	for response := range resCh {
 		if err := response.Error(); err != nil {
 			logger.Debugf("response from node `%s` failed with: %s", response.PID().String(), err.Error())
-			if isTimeout(err) {
-				result.timedOut = true
+			if isNotFound(err) && !isTimeout(err) {
+				result.notFound = true
 			} else {
-				result.answered = true
+				result.failed = true
 			}
 			result.discard = append(result.discard, response)
 			continue

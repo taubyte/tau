@@ -31,9 +31,9 @@ func TestNoMatchSaysWhatHappened(t *testing.T) {
 		status int
 		retry  string
 	}{
-		{"every substrate said no", lookupResult{answered: true}, 404, ""},
-		{"one said no, one timed out", lookupResult{answered: true, timedOut: true}, 503, "1"},
-		{"all timed out", lookupResult{timedOut: true}, 503, "1"},
+		{"every substrate said no", lookupResult{notFound: true}, 404, ""},
+		{"one said no, one failed", lookupResult{notFound: true, failed: true}, 503, "1"},
+		{"all failed", lookupResult{failed: true}, 503, "1"},
 		{"nobody reachable", lookupResult{}, 503, "1"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -55,12 +55,26 @@ func TestOtherErrorsStay500(t *testing.T) {
 }
 
 func TestDefiniteStopsRetrying(t *testing.T) {
-	if !(&lookupResult{answered: true}).definite() {
+	if !(&lookupResult{notFound: true}).definite() {
 		t.Fatal("a clear no is final")
 	}
-	for _, r := range []*lookupResult{{}, {timedOut: true}, {answered: true, timedOut: true}} {
+	for _, r := range []*lookupResult{{}, {failed: true}, {notFound: true, failed: true}} {
 		if r.definite() {
 			t.Fatalf("%+v must be asked again", r)
+		}
+	}
+}
+
+func TestOnlyNoMatchIsNotFound(t *testing.T) {
+	for msg, want := range map[string]bool{
+		"lookup failed with: no HTTP match found for method `GET` on `https://a.b/x`": true,
+		"lookup failed with: creating new tns path failed with: i/o timeout":          false,
+		"lookup failed with: validating dns failed":                                   false,
+		"lookup failed with: no HTTP match found ... context deadline exceeded":       false,
+	} {
+		err := errors.New(msg)
+		if got := isNotFound(err) && !isTimeout(err); got != want {
+			t.Errorf("%q: got %v", msg, got)
 		}
 	}
 }
