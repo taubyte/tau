@@ -397,6 +397,7 @@ func TestAnEndedRunIsTheRecordsToSay(t *testing.T) {
 	b := hold(t, h, "cloning\n")
 	b.finish()
 	require.NoError(t, <-b.ended)
+	h.letGo(t)
 	for _, snapshot := range []bool{false, true} {
 		_, err := ask(t, h, id, 1, 0, snapshot)
 		require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "ended, snapshot=%v", snapshot)
@@ -502,8 +503,9 @@ func TestALogIsWholeWhileItIsHandedToTheStore(t *testing.T) {
 	require.NoError(t, <-done)
 	stored := h.assets.events(t, h.mustRecord(t, id).Logs[stamp(1)])
 	require.Equal(t, "cloning\ncompiling\n", messagesOf(stored))
+	h.letGo(t)
 	_, err := ask(t, h, id, 1, 0, true)
-	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "stored and named: the builder has let go")
+	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "stored and named, and let go by the builder")
 }
 
 func TestACancelledRunsLogIsFollowedUntilItIsStored(t *testing.T) {
@@ -551,6 +553,7 @@ func TestACancelledRunsLogIsFollowedUntilItIsStored(t *testing.T) {
 	require.Equal(t, []string{messagesOf(stored), messagesOf(stored)}, during, "what was followed is what was stored")
 	require.Equal(t, plmv2.JobStatus_JobStatusCancelled, statusesOf(stored)[len(statusesOf(stored))-1],
 		"and the log ends with the job's cancel")
+	h.letGo(t)
 	_, err := ask(t, h, id, 2, 0, false)
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 }

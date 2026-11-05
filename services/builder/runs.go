@@ -73,12 +73,14 @@ type inHand struct {
 
 // runLog is one run's log and what sealing it needs.
 type runLog struct {
-	work   run.Work
-	log    *livelog.Log
-	lines  lineWriter
-	size   int64
-	cut    bool
-	ended  bool
+	work  run.Work
+	log   *livelog.Log
+	lines lineWriter
+	size  int64
+	cut   bool
+	ended bool
+	// sealed is the log ended by plm's seal, still followed whole until expiry.
+	sealed bool
 	expiry *time.Timer
 	// written orders what is written to the log, which a build may do from more than
 	// one goroutine.
@@ -258,13 +260,30 @@ func (r *Runs) Seal(ctx context.Context, s *builderv2.Sealing) (*builderv2.Seale
 	case busy:
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("builder: attempt %d of job %s is still running", s.GetRun().GetAttempt(), s.GetRun().GetJobId()))
 	}
+	r.mu.Lock()
+	sealed := l.sealed
+	l.sealed = true
+	r.mu.Unlock()
+	if sealed {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("builder: attempt %d of job %s is sealed already", s.GetRun().GetAttempt(), s.GetRun().GetJobId()))
+	}
+	// A SEALED LOG IS STILL FOLLOWED WHOLE for KeepSealed, so a follower that comes
+	// as the run ends reads all of it; a discarded one goes at once.
 	defer func() {
 		r.mu.Lock()
-		if r.logs[key] == l {
-			r.drop(key, l)
+		defer r.mu.Unlock()
+		if r.logs[key] != l {
+			return
 		}
-		r.mu.Unlock()
+		if s.GetDiscard() {
+			r.drop(key, l)
+			return
+		}
+		l.expiry.Reset(r.cfg.KeepSealed)
 	}()
+	for _, line := range s.GetSaid() {
+		r.say(l, "%s\n", line)
+	}
 	if err := r.status(l, s.GetStatus()); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("builder: job %s: writing its end into its log: %w", l.work.JobID, err))
 	}
@@ -354,7 +373,8 @@ func (e *events) Close() error {
 	return e.fork.Close()
 }
 
-// expire drops a log nobody sealed in time: plm never asked, so nobody will.
+// expire drops a log whose time is up: unsealed after SealWithin, since nobody
+// will seal it now, and sealed after KeepSealed.
 func (r *Runs) expire(key string, l *runLog) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

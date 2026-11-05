@@ -266,18 +266,7 @@ func (d *direct) build(ctx context.Context, p Push) (Outcome, error) {
 	if err != nil {
 		return Outcome{}, err
 	}
-	plan := jobOf(work)
-	switch {
-	case planned.GetError() != "":
-		plan.Status, plan.Reason = plmv2.JobStatus_JobStatusFailed, strings.TrimSpace(planned.GetSaid()+"\nerror: "+planned.GetError())
-	case len(planned.GetEnvironments()) == 0:
-		plan.Status, plan.Reason = plmv2.JobStatus_JobStatusFailed, "the commit feeds no environment"
-	default:
-		plan.Status = plmv2.JobStatus_JobStatusSuccess
-		for _, environment := range planned.GetEnvironments() {
-			plan.Children = append(plan.Children, jobID(p, environment))
-		}
-	}
+	plan := planOf(p, work, planned)
 	d.seal(ctx, work, plan.Status)
 	out := Outcome{Plan: plan}
 	for _, environment := range planned.GetEnvironments() {
@@ -291,6 +280,24 @@ func (d *direct) build(ctx context.Context, p Push) (Outcome, error) {
 		out.Environments = append(out.Environments, job)
 	}
 	return out, nil
+}
+
+// planOf is how a plan ended, as plm would record its job: failed with what it said,
+// failed for feeding nothing, or the parent of a job per environment it feeds.
+func planOf(p Push, work run.Work, planned *builderv2.Planned) *plmv2.Job {
+	plan := jobOf(work)
+	switch {
+	case planned.GetError() != "":
+		plan.Status, plan.Reason = plmv2.JobStatus_JobStatusFailed, strings.TrimSpace(strings.TrimSpace(planned.GetSaid())+"\nerror: "+planned.GetError())
+	case len(planned.GetEnvironments()) == 0:
+		plan.Status, plan.Reason = plmv2.JobStatus_JobStatusFailed, "the commit feeds no environment"
+	default:
+		plan.Status = plmv2.JobStatus_JobStatusSuccess
+		for _, environment := range planned.GetEnvironments() {
+			plan.Children = append(plan.Children, jobID(p, environment))
+		}
+	}
+	return plan
 }
 
 // environment builds one environment a plan fed, and keeps what it built for the

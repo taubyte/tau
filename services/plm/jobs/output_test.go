@@ -37,7 +37,7 @@ func TestAFailedBuildKeepsWhatItPrintedBeforeItFailed(t *testing.T) {
 	require.Contains(t, rec.Reason, "compile error")
 	require.Equal(t, "undefined: Frobnicate\nerror: compile error\n", h.assets.content(t, rec.Logs[stamp(1)]),
 		"what it printed, then why it failed: the record carries no reason anybody can read")
-	require.Empty(t, logFiles(t, h), "a sealed log is not left on the builder")
+	h.letGo(t)
 }
 
 func TestAPanickingBuildKeepsWhatItPrinted(t *testing.T) {
@@ -94,7 +94,7 @@ func TestAnAbandonedRunKeepsNothing(t *testing.T) {
 
 	require.Zero(t, h.assets.count(), "nothing this run made is stored")
 	require.Empty(t, h.mustRecord(t, id).Logs)
-	require.Empty(t, logFiles(t, h), "and its log is let go on the builder")
+	h.letGo(t)
 	require.Equal(t, plmv2.JobStatus_JobStatusClaimed, h.status(t, id), "abandoned: its claim lapses and the queue hands it on")
 }
 
@@ -133,7 +133,7 @@ func TestABuilderWithNowhereToKeepAnythingBuildsAndKeepsNothing(t *testing.T) {
 	require.Equal(t, plmv2.JobStatus_JobStatusSuccess, rec.status())
 	require.Empty(t, rec.Logs)
 	require.Empty(t, rec.Assets)
-	require.Empty(t, logFiles(t, h))
+	h.letGo(t)
 }
 
 func TestAnAssetStoreThatRefusesTheLogLeavesTheJobWithoutOne(t *testing.T) {
@@ -179,6 +179,8 @@ func (slowSeal) Seal(ctx context.Context, _ *builderv2.Sealing) (*builderv2.Seal
 func TestALogTheBuilderCannotHandOverWholeIsNamedByNothing(t *testing.T) {
 	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
+	// The plan's log let go, so the build's is the one file there.
+	h.letGo(t)
 
 	h.builder.run = func(context.Context, run.Work, run.Output) error {
 		files, err := filepath.Glob(filepath.Join(h.logDir, "*.log"))
@@ -239,7 +241,7 @@ func TestNothingIsLeftOnTheBuilderAfterARun(t *testing.T) {
 			h.planned(t, testRef, tc.commit)
 			h.builder.run = tc.run
 			require.True(t, h.mustStep(t))
-			require.Empty(t, logFiles(t, h), "a log left on the builder is a file nothing will close")
+			h.letGo(t)
 		})
 	}
 }
@@ -263,7 +265,7 @@ func TestSettleKeepsNothingForARecordThatIsGone(t *testing.T) {
 	require.Zero(t, ready)
 	require.Zero(t, claimed, "the delivery is still acknowledged")
 	require.Zero(t, h.assets.count(), "there is no record to name a log, so the log is not kept")
-	require.Empty(t, logFiles(t, h))
+	h.letGo(t)
 }
 
 // ranOnTheBuilder is a run of id at attempt, ended on the harness's builder and left

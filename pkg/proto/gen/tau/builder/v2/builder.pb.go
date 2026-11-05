@@ -393,7 +393,10 @@ type Sealing struct {
 	Status v2.JobStatus           `protobuf:"varint,2,opt,name=status,proto3,enum=tau.plm.v2.JobStatus" json:"status,omitempty"`
 	// discard is a run whose log nothing will name: its job went, moved on before the
 	// run ended, or the run was abandoned. It is ended and not kept.
-	Discard       bool `protobuf:"varint,3,opt,name=discard,proto3" json:"discard,omitempty"`
+	Discard bool `protobuf:"varint,3,opt,name=discard,proto3" json:"discard,omitempty"`
+	// said is plm's own lines about the run, written before the status: the jobs a
+	// plan queued, or why plm failed it.
+	Said          []string `protobuf:"bytes,4,rep,name=said,proto3" json:"said,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -447,6 +450,13 @@ func (x *Sealing) GetDiscard() bool {
 		return x.Discard
 	}
 	return false
+}
+
+func (x *Sealing) GetSaid() []string {
+	if x != nil {
+		return x.Said
+	}
+	return nil
 }
 
 // Sealed is a run's log as the storage service keeps it: no cid is a log that
@@ -536,11 +546,12 @@ const file_tau_builder_v2_builder_proto_rawDesc = "" +
 	"\vresource_id\x18\x01 \x01(\tR\n" +
 	"resourceId\x12\x10\n" +
 	"\x03cid\x18\x02 \x01(\tR\x03cid\x12\x14\n" +
-	"\x05bytes\x18\x03 \x01(\x04R\x05bytes\"y\n" +
+	"\x05bytes\x18\x03 \x01(\x04R\x05bytes\"\x8d\x01\n" +
 	"\aSealing\x12%\n" +
 	"\x03run\x18\x01 \x01(\v2\x13.tau.builder.v2.RunR\x03run\x12-\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x15.tau.plm.v2.JobStatusR\x06status\x12\x18\n" +
-	"\adiscard\x18\x03 \x01(\bR\adiscard\"0\n" +
+	"\adiscard\x18\x03 \x01(\bR\adiscard\x12\x12\n" +
+	"\x04said\x18\x04 \x03(\tR\x04said\"0\n" +
 	"\x06Sealed\x12\x10\n" +
 	"\x03log\x18\x01 \x01(\tR\x03log\x12\x14\n" +
 	"\x05bytes\x18\x02 \x01(\x04R\x05bytes2\xa6\x02\n" +

@@ -861,7 +861,7 @@ func newRig(t testing.TB, mn mocknet.Mocknet, clock *testClock, keep builder.Ass
 	// default is a scratch directory shared by every process on the box — fine
 	// for a node, wrong for a test that must not see another test's leftovers.
 	logDir := t.TempDir()
-	runs, err := builder.NewRuns(build, nil, keep, stamped{clock}, builder.Logs{Dir: logDir})
+	runs, err := builder.NewRuns(build, nil, keep, stamped{clock}, builder.Logs{Dir: logDir, KeepSealed: keptSealed})
 	require.NoError(t, err)
 	t.Cleanup(func() { runs.Close() })
 	return rig{build: build, runs: runs, at: newHost(t, mn).ID(), logDir: logDir}
@@ -1026,6 +1026,18 @@ func (h *harness) deadLetter(t testing.TB) *queue.Queue {
 // logFiles is what is left in the log directory. A run's file is scratch: it is
 // removed when the log has been handed to the asset store, so a test that
 // finishes a build and finds one has found a leak.
+// keptSealed is how long the harness's builder still holds a sealed log: long enough
+// to be real, short enough that a test sees it let go.
+const keptSealed = 10 * time.Millisecond
+
+// letGo returns once the builder holds no log of a run: a sealed one is let go after
+// keptSealed, and from then a follow of an ended run is the record's to answer.
+func (h *harness) letGo(t testing.TB) {
+	t.Helper()
+	require.Eventually(t, func() bool { return len(logFiles(t, h)) == 0 }, 5*time.Second, time.Millisecond,
+		"the builder never let go of %v", logFiles(t, h))
+}
+
 func logFiles(t testing.TB, h *harness) []string {
 	t.Helper()
 	entries, err := os.ReadDir(h.logDir)

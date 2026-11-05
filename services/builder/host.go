@@ -66,6 +66,9 @@ type Logs struct {
 	// KeepWithin bounds handing a sealed log to the storage service. Zero is
 	// DefaultKeepWithin.
 	KeepWithin time.Duration `yaml:"keepWithin"`
+	// KeepSealed is how long a sealed log is still followed whole, for a follower
+	// that comes as its run ends. Zero is DefaultKeepSealed.
+	KeepSealed time.Duration `yaml:"keepSealed"`
 }
 
 const (
@@ -76,11 +79,13 @@ const (
 	DefaultSealWithin = 10 * time.Minute
 	// DefaultKeepWithin bounds keeping one sealed log.
 	DefaultKeepWithin = 10 * time.Second
+	// DefaultKeepSealed is how long a sealed log is still followed.
+	DefaultKeepSealed = time.Minute
 )
 
 // withDefaults fills in the zero values, and refuses a negative one.
 func (l Logs) withDefaults() (Logs, error) {
-	if l.MaxBytes < 0 || l.SealWithin < 0 || l.KeepWithin < 0 {
+	if l.MaxBytes < 0 || l.SealWithin < 0 || l.KeepWithin < 0 || l.KeepSealed < 0 {
 		return l, errors.New("builder: a log bound must not be negative")
 	}
 	if l.Dir == "" {
@@ -94,6 +99,9 @@ func (l Logs) withDefaults() (Logs, error) {
 	}
 	if l.KeepWithin == 0 {
 		l.KeepWithin = DefaultKeepWithin
+	}
+	if l.KeepSealed == 0 {
+		l.KeepSealed = DefaultKeepSealed
 	}
 	return l, nil
 }

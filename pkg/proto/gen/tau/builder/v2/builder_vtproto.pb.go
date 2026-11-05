@@ -353,6 +353,15 @@ func (m *Sealing) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if len(m.Said) > 0 {
+		for iNdEx := len(m.Said) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Said[iNdEx])
+			copy(dAtA[i:], m.Said[iNdEx])
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Said[iNdEx])))
+			i--
+			dAtA[i] = 0x22
+		}
+	}
 	if m.Discard {
 		i--
 		if m.Discard {
@@ -571,6 +580,12 @@ func (m *Sealing) SizeVT() (n int) {
 	}
 	if m.Discard {
 		n += 2
+	}
+	if len(m.Said) > 0 {
+		for _, s := range m.Said {
+			l = len(s)
+			n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+		}
 	}
 	n += len(m.unknownFields)
 	return n
@@ -1542,6 +1557,38 @@ func (m *Sealing) UnmarshalVT(dAtA []byte) error {
 				}
 			}
 			m.Discard = bool(v != 0)
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Said", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Said = append(m.Said, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])

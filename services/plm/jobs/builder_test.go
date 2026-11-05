@@ -70,9 +70,9 @@ func TestOneStepClaimsRunsAcksAndFinishes(t *testing.T) {
 	require.True(t, logged, "the log of attempt 1 is keyed by the attempt: %v", job.GetLogs())
 	require.Equal(t, "building "+testCommit+"\n", h.assets.content(t, logCID))
 
-	// And no file is left behind: the log is scratch, and what survives is the
-	// cid above.
-	require.Empty(t, logFiles(t, h), "the log file must not outlive the run that wrote it")
+	// And no file is left behind once the builder lets go: the log is scratch, and
+	// what survives is the cid above.
+	h.letGo(t)
 }
 
 func TestBeforeIsWhatThisServiceItselfLastFinished(t *testing.T) {

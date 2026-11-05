@@ -31,7 +31,8 @@ service BuilderService {
   rpc Seal(Sealing) returns (Sealed);
 
   // Follow streams a run's log from an offset, to its seal, or with snapshot to
-  // what it holds now. A run this builder holds no log of is NotFound.
+  // what it holds now. A sealed log is still followed whole for a while after its
+  // seal; a run this builder holds no log of is NotFound.
   rpc Follow(tau.plm.v2.FollowRequest) returns (stream tau.plm.v2.Job.Event);
 }
 
@@ -92,6 +93,9 @@ message Sealing {
   // discard is a run whose log nothing will name: its job went, moved on before the
   // run ended, or the run was abandoned. It is ended and not kept.
   bool discard = 3;
+  // said is plm's own lines about the run, written before the status: the jobs a
+  // plan queued, or why plm failed it.
+  repeated string said = 4;
 }
 
 // Sealed is a run's log as the storage service keeps it: no cid is a log that

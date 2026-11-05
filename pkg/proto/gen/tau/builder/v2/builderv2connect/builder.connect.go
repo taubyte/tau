@@ -70,7 +70,8 @@ type BuilderServiceClient interface {
 	// with no cid.
 	Seal(context.Context, *connect.Request[v2.Sealing]) (*connect.Response[v2.Sealed], error)
 	// Follow streams a run's log from an offset, to its seal, or with snapshot to
-	// what it holds now. A run this builder holds no log of is NotFound.
+	// what it holds now. A sealed log is still followed whole for a while after its
+	// seal; a run this builder holds no log of is NotFound.
 	Follow(context.Context, *connect.Request[v21.FollowRequest]) (*connect.ServerStreamForClient[v21.Job_Event], error)
 }
 
@@ -168,7 +169,8 @@ type BuilderServiceHandler interface {
 	// with no cid.
 	Seal(context.Context, *connect.Request[v2.Sealing]) (*connect.Response[v2.Sealed], error)
 	// Follow streams a run's log from an offset, to its seal, or with snapshot to
-	// what it holds now. A run this builder holds no log of is NotFound.
+	// what it holds now. A sealed log is still followed whole for a while after its
+	// seal; a run this builder holds no log of is NotFound.
 	Follow(context.Context, *connect.Request[v21.FollowRequest], *connect.ServerStream[v21.Job_Event]) error
 }
 

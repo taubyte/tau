@@ -255,7 +255,33 @@ func TestABuildKeepsWhatItBuiltAndItsLog(t *testing.T) {
 		"the log opens with the claim and ends with how the job was settled")
 
 	_, err = r.Seal(t.Context(), sealing("build", plmv2.JobStatus_JobStatusSuccess))
-	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err), "a sealed log is no longer here")
+	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "a log is sealed once")
+}
+
+func TestASealedLogIsFollowedWholeUntilItIsLetGo(t *testing.T) {
+	dir := t.TempDir()
+	r := newTestRuns(t, says{lines: "main feeds prod\n", environments: []string{"prod"}}, nil, Logs{Dir: dir, KeepSealed: 50 * time.Millisecond})
+	_, err := r.Plan(t.Context(), work("plan", ""))
+	require.NoError(t, err)
+	s := sealing("plan", plmv2.JobStatus_JobStatusSuccess)
+	s.Said = []string{"queued job j for prod"}
+	_, err = r.Seal(t.Context(), s)
+	require.NoError(t, err)
+
+	late, err := r.Follow(t.Context(), &plmv2.FollowRequest{JobId: "plan", Attempt: 1})
+	require.NoError(t, err, "a follower that comes as the run ends reads it")
+	lines, statuses := eventsOf(t, late.(*events).read)
+	late.Close()
+	require.Equal(t, []string{"main feeds prod", "queued job j for prod"}, lines, "plm's own lines close the log")
+	require.Equal(t, []plmv2.JobStatus{plmv2.JobStatus_JobStatusClaimed, plmv2.JobStatus_JobStatusSuccess}, statuses)
+
+	require.Eventually(t, func() bool {
+		_, err := r.Follow(t.Context(), &plmv2.FollowRequest{JobId: "plan", Attempt: 1})
+		return connect.CodeOf(err) == connect.CodeNotFound
+	}, 5*time.Second, 5*time.Millisecond, "and is let go after KeepSealed")
+	files, err := filepath.Glob(filepath.Join(dir, "*.log"))
+	require.NoError(t, err)
+	require.Empty(t, files)
 }
 
 func TestAFailedBuildKeepsWhatItPrintedThenWhy(t *testing.T) {
@@ -522,6 +548,9 @@ func TestTheLogDirectoryIsOneNobodyElseCanWriteIn(t *testing.T) {
 	require.Equal(t, int64(DefaultMaxLogBytes), logs.MaxBytes)
 	require.Equal(t, DefaultSealWithin, logs.SealWithin)
 	require.Equal(t, DefaultKeepWithin, logs.KeepWithin)
+	require.Equal(t, DefaultKeepSealed, logs.KeepSealed)
+	_, err = Logs{KeepSealed: -1}.withDefaults()
+	require.Error(t, err)
 }
 
 func TestARunningBuildsLogIsFollowedWhileItIsBeingWritten(t *testing.T) {
@@ -611,9 +640,11 @@ func TestALogNobodySealsIsLetGo(t *testing.T) {
 	_, err := r.Build(t.Context(), work("build", "prod"))
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
-		_, err := r.Seal(t.Context(), sealing("build", plmv2.JobStatus_JobStatusSuccess))
+		_, err := r.Follow(t.Context(), &plmv2.FollowRequest{JobId: "build", Attempt: 1})
 		return connect.CodeOf(err) == connect.CodeNotFound
 	}, 5*time.Second, 10*time.Millisecond)
+	_, err = r.Seal(t.Context(), sealing("build", plmv2.JobStatus_JobStatusSuccess))
+	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err), "a log let go is not sealed")
 	files, err := filepath.Glob(filepath.Join(dir, "*.log"))
 	require.NoError(t, err)
 	require.Empty(t, files)

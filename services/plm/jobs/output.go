@@ -26,10 +26,11 @@ type produced struct {
 }
 
 // notice is a ring a waiter can wait on without a timer: wait hands out the channel
-// the next ring closes.
+// the next ring closes, closed already when a ring came while nobody waited.
 type notice struct {
-	mu sync.Mutex
-	ch chan struct{}
+	mu   sync.Mutex
+	ch   chan struct{}
+	rung bool
 }
 
 func (n *notice) wait() <-chan struct{} {
@@ -37,6 +38,15 @@ func (n *notice) wait() <-chan struct{} {
 	defer n.mu.Unlock()
 	if n.ch == nil {
 		n.ch = make(chan struct{})
+		// A RING WITH NOBODY WAITING is the next waiter's, or it is lost to a waiter
+		// that asked a moment too late.
+		if n.rung {
+			n.rung = false
+			close(n.ch)
+			ch := n.ch
+			n.ch = nil
+			return ch
+		}
 	}
 	return n.ch
 }
@@ -44,8 +54,10 @@ func (n *notice) wait() <-chan struct{} {
 func (n *notice) ring() {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	if n.ch != nil {
-		close(n.ch)
-		n.ch = nil
+	if n.ch == nil {
+		n.rung = true
+		return
 	}
+	close(n.ch)
+	n.ch = nil
 }

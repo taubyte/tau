@@ -238,21 +238,27 @@ func (s *server) plan(ctx context.Context, d queue.Delivery, rec jobRecord, work
 		return err
 	}
 
+	// WHAT PLM DID WITH THE PLAN closes its log: the jobs it queued, or why it
+	// failed it.
 	var (
 		children []string
 		left     plmv2.JobStatus
+		lines    []string
 	)
 	if runErr == nil {
 		if len(planned.GetEnvironments()) == 0 {
 			runErr = errors.New("the commit feeds no environment")
+			lines = append(lines, "error: "+runErr.Error())
 		}
 		for _, environment := range planned.GetEnvironments() {
 			id, err := s.createEnvironment(rec, environment, said)
 			if err != nil {
 				runErr = fmt.Errorf("enqueueing %s: %w", environment, err)
+				lines = append(lines, "error: "+runErr.Error())
 				break
 			}
 			children = append(children, id)
+			lines = append(lines, fmt.Sprintf("queued job %s for %s", id, environment))
 		}
 	}
 
@@ -269,12 +275,12 @@ func (s *server) plan(ctx context.Context, d queue.Delivery, rec jobRecord, work
 		}
 		if runErr != nil {
 			left = plmv2.JobStatus_JobStatusFailed
-			return j.fail(strings.TrimSpace(said+"\nerror: "+runErr.Error()), produced{})
+			return j.fail(strings.TrimSpace(strings.TrimSpace(said)+"\nerror: "+runErr.Error()), produced{})
 		}
 		left = plmv2.JobStatus_JobStatusSuccess
 		return j.planned(children)
 	})
-	if _, sealErr := s.seal(ctx, r, &builderv2.Sealing{Run: which, Status: left}); err == nil {
+	if _, sealErr := s.seal(ctx, r, &builderv2.Sealing{Run: which, Status: left, Said: lines}); err == nil {
 		err = sealErr
 	}
 	return err

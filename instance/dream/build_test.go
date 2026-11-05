@@ -21,6 +21,7 @@ import (
 	dreamv2 "github.com/taubyte/tau/pkg/proto/gen/tau/dream/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/dream/v2/dreamv2connect"
 	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
+	"github.com/taubyte/tau/services/builder"
 	storageService "github.com/taubyte/tau/services/storage"
 )
 
@@ -278,4 +279,26 @@ func TestAMirrorRepositoryWithNoWorkingTreeTakesNoCommit(t *testing.T) {
 	require.NoError(t, err)
 	_, err = u.Commit("github.com/acme/bare", "main", projectDir("with/placement"))
 	require.ErrorIs(t, err, gogit.ErrIsBareRepository)
+}
+
+func TestAUniverseWhoseBuilderCannotBeMadeSaysSo(t *testing.T) {
+	ctx := t.Context()
+	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{
+		Services: []string{instance.Discovery, instance.Register},
+		Configure: func(_ int, c *instance.Config) {
+			c.Sections[instance.Builder] = builder.Config{Mirror: "https://not.a.folder"}
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(u.Close)
+	_, err = u.Build(ctx, nodeDream.Push{Repository: "github.com/acme/app", Ref: "refs/heads/main", Commit: "1111111111111111111111111111111111111111"})
+	require.ErrorContains(t, err, "not a file:// directory", "the builder's runs in place are made from the node's builder section")
+}
+
+func TestAClosedUniverseBuildsNothing(t *testing.T) {
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Discovery}})
+	require.NoError(t, err)
+	u.Close()
+	_, err = u.Build(t.Context(), nodeDream.Push{Repository: "github.com/acme/app", Ref: "refs/heads/main", Commit: "1111111111111111111111111111111111111111"})
+	require.ErrorContains(t, err, "no node builds nothing")
 }

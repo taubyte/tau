@@ -58,3 +58,19 @@ func TestAMeshAdmitsOnlyItsOwn(t *testing.T) {
 type closer func() error
 
 func (c closer) Close() error { return c() }
+
+func TestAGuestIsMeshedAndIsNoneOfThePeers(t *testing.T) {
+	m, err := New(t.Context(), "guests")
+	require.NoError(t, err)
+	member, err := m.Add(nil)
+	require.NoError(t, err)
+
+	guest, err := m.Guest()
+	require.NoError(t, err)
+	require.Equal(t, network.Connected, guest.Host().Network().Connectedness(member.ID()), "a guest reaches what runs here")
+	require.Len(t, m.Peers(), 1, "and is not one of the peers what runs here is on")
+
+	m.Close()
+	require.Empty(t, m.Peers())
+	require.NotEqual(t, network.Connected, guest.Host().Network().Connectedness(member.ID()), "a guest closes with the mesh")
+}
