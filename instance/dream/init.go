@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/taubyte/tau/services/build/jobs"
 	"github.com/taubyte/tau/services/build/runner"
 
 	"github.com/taubyte/tau/services/build/ingress"
@@ -261,6 +262,11 @@ func (d removed) Close() error { return os.RemoveAll(string(d)) }
 type Universe struct {
 	mesh *mesh.Mesh
 	pids []string
+	// mirror is where its runners clone from (Commit).
+	mirror string
+
+	aloneMu sync.Mutex
+	direct  *jobs.Direct
 }
 
 // Start runs a universe of cfg.Copies nodes, one after another, each meshed
@@ -295,11 +301,17 @@ func Start(ctx context.Context, name string, cfg Config) (*Universe, error) {
 		return nil, err
 	}
 	m.OnClose(removed(held))
+	mirror, err := os.MkdirTemp("", "tau-mirror-")
+	if err != nil {
+		m.Close()
+		return nil, err
+	}
+	m.OnClose(removed(mirror))
 
-	u := &Universe{mesh: m}
+	u := &Universe{mesh: m, mirror: mirror}
 	copies := max(cfg.Copies, 1)
 	for index := range copies {
-		p, err := m.Add(func(p peer.Node) error { return create(m, p, cfg, index, account, held) })
+		p, err := m.Add(func(p peer.Node) error { return create(m, p, cfg, index, account, held, mirror) })
 		if err != nil {
 			u.Close()
 			return nil, fmt.Errorf("dream: node %d: %w", index, err)
@@ -322,10 +334,18 @@ func (u *Universe) Peers() []peer.Node { return u.mesh.Peers() }
 // joins with a certificate from it, issued for the universe's name.
 func (u *Universe) CA() *sectls.CA { return u.mesh.CA() }
 
-// Close stops every node, then their peers.
-func (u *Universe) Close() { u.mesh.Close() }
+// Close stops what builds alone, then every node, then their peers.
+func (u *Universe) Close() {
+	u.aloneMu.Lock()
+	if u.direct != nil {
+		u.direct.Close()
+		u.direct = nil
+	}
+	u.aloneMu.Unlock()
+	u.mesh.Close()
+}
 
-func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secretsv2.InitSecret, uploads string) error {
+func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secretsv2.InitSecret, uploads, mirror string) error {
 	ctx := m.Context()
 	h := p.Host()
 
@@ -367,11 +387,12 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	nodeConfig.Sections = map[string]any{discovery.Descriptor.Name: discovery.Config{Stabilize: dreamStabilize}}
 	// A universe is one developer's cloud, so sign-up is open.
 	nodeConfig.Auth.SignUp = auth.SignUpOpen
-	// A development cloud serves declared zones unproven and takes a developer's build.
+	// A development cloud serves declared zones unproven, takes a developer's build,
+	// and clones from its mirror.
 	// A node running the public build role listens on an ephemeral loopback port too.
 	nodeConfig.Sections[instance.Build] = ingress.Config{Uploads: uploads, Listen: "127.0.0.1:0"}
 	nodeConfig.Sections[instance.Runner] = runner.Config{
-		Uploads: uploads, Domains: runner.Domains{Trusted: true},
+		Uploads: uploads, Mirror: "file://" + mirror, Domains: runner.Domains{Trusted: true},
 	}
 	if cfg.Configure != nil {
 		cfg.Configure(index, &nodeConfig)

@@ -1,0 +1,237 @@
+package dream
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"time"
+
+	"connectrpc.com/connect"
+	gogit "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
+
+	"github.com/taubyte/tau/core/service"
+	"github.com/taubyte/tau/instance"
+	"github.com/taubyte/tau/pkg/git/repokey"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/build/jobs"
+	"github.com/taubyte/tau/services/build/runner"
+)
+
+// Push is what a universe builds: a commit of a repository its mirror holds
+// (Commit), as a forge's delivery would name it.
+type Push struct {
+	Repository string
+	Ref        string
+	Commit     string
+}
+
+// Outcome is a push once it has ended: its plan, then the job of each environment
+// the plan queued, in the plan's order.
+type Outcome struct {
+	Plan         *buildv2.Job
+	Environments []*buildv2.Job
+}
+
+// builds is what a universe builds with: the build node leading the queue, or jobs
+// alone on a node running a runner.
+type builds interface {
+	Enqueue(ctx context.Context, repositoryKey, ref, commitSHA string) (string, error)
+	Await(ctx context.Context, jobID string) (*buildv2.Job, error)
+}
+
+// Mirror is the directory this universe's runners clone every repository from,
+// file:// in their configuration: a repository key's folder under it.
+func (u *Universe) Mirror() string { return u.mirror }
+
+// Commit makes dir the newest commit of repository's branch in the mirror, and is
+// that commit: what a push of the folder would carry. dir itself is only read.
+func (u *Universe) Commit(repository, branch, dir string) (string, error) {
+	key, err := repokey.Parse("https://" + repository)
+	if err != nil {
+		return "", fmt.Errorf("dream: %q is not a repository: %w", repository, err)
+	}
+	at := filepath.Join(u.mirror, filepath.FromSlash(key.String()))
+	repo, err := gogit.PlainOpen(at)
+	if errors.Is(err, gogit.ErrRepositoryNotExists) {
+		repo, err = gogit.PlainInitWithOptions(at, &gogit.PlainInitOptions{
+			InitOptions: gogit.InitOptions{DefaultBranch: plumbing.NewBranchReferenceName(branch)},
+		})
+	}
+	if err != nil {
+		return "", fmt.Errorf("dream: the mirror's %s: %w", key, err)
+	}
+	tree, err := repo.Worktree()
+	if err != nil {
+		return "", err
+	}
+	if err := replaceTree(at, dir); err != nil {
+		return "", fmt.Errorf("dream: copying %s into the mirror: %w", dir, err)
+	}
+	if err := tree.AddWithOptions(&gogit.AddOptions{All: true}); err != nil {
+		return "", err
+	}
+	sha, err := tree.Commit("dream: "+filepath.Base(dir), &gogit.CommitOptions{
+		AllowEmptyCommits: true,
+		Author:            &object.Signature{Name: "dream", Email: "dream@localhost", When: time.Now()},
+	})
+	if err != nil {
+		return "", err
+	}
+	return sha.String(), nil
+}
+
+// replaceTree makes at's working tree dir's files, its .git kept.
+func replaceTree(at, dir string) error {
+	entries, err := os.ReadDir(at)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.Name() != ".git" {
+			if err := os.RemoveAll(filepath.Join(at, e.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	return filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		if d.IsDir() && d.Name() == ".git" {
+			return filepath.SkipDir
+		}
+		to := filepath.Join(at, rel)
+		if d.IsDir() {
+			return os.MkdirAll(to, 0o755)
+		}
+		return copyFile(path, to)
+	})
+}
+
+func copyFile(from, to string) error {
+	in, err := os.Open(from)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(to)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
+}
+
+// Link names project's repositories in the universe's register, as `tau link`
+// would: config is the one whose pushes are deploys.
+func (u *Universe) Link(ctx context.Context, project, config string, code ...string) error {
+	for _, pid := range u.pids {
+		n, ok := Node(pid)
+		if !ok || n.Register() == nil || n.Register().Local() == nil {
+			continue
+		}
+		_, err := n.Register().Local().LinkProject(ctx, pkgregister.Link{Project: project, Config: config, Code: code, Claimant: "dream"})
+		return err
+	}
+	return errors.New("dream: no node runs the register")
+}
+
+// Build is p built as this universe builds: through the build node leading the
+// queue when one runs, else alone on a node running a runner, recorded where a
+// build node records. It returns once the push and the jobs it queued have ended.
+func (u *Universe) Build(ctx context.Context, p Push) (Outcome, error) {
+	b, id, err := u.enqueue(ctx, p)
+	if err != nil {
+		return Outcome{}, err
+	}
+	plan, err := b.Await(ctx, id)
+	if err != nil {
+		return Outcome{}, err
+	}
+	out := Outcome{Plan: plan}
+	for _, child := range plan.GetChildren() {
+		job, err := b.Await(ctx, child)
+		if err != nil {
+			return out, err
+		}
+		out.Environments = append(out.Environments, job)
+	}
+	return out, nil
+}
+
+// enqueue is p queued where this universe builds, and the job it became.
+func (u *Universe) enqueue(ctx context.Context, p Push) (builds, string, error) {
+	var tried bool
+	for _, pid := range u.pids {
+		n, ok := Node(pid)
+		if !ok {
+			continue
+		}
+		held, ok := service.Get[jobs.Service](n.HostOf(instance.Build))
+		if !ok {
+			continue
+		}
+		tried = true
+		if err := held.WaitForLeader(ctx); err != nil {
+			return nil, "", err
+		}
+		// A FOLLOWER SAYS UNAVAILABLE, and the leader is the node asked next.
+		id, err := held.Local().Enqueue(ctx, p.Repository, p.Ref, p.Commit)
+		if connect.CodeOf(err) == connect.CodeUnavailable {
+			continue
+		}
+		return held.Local(), id, err
+	}
+	if tried {
+		return nil, "", errors.New("dream: no build node leads the queue")
+	}
+	alone, err := u.alone()
+	if err != nil {
+		return nil, "", err
+	}
+	id, err := alone.Enqueue(ctx, p.Repository, p.Ref, p.Commit)
+	return alone, id, err
+}
+
+// alone is the universe's jobs where no build node runs, on the first node running
+// a runner, opened once and kept open until the universe closes, so its records
+// replicate.
+func (u *Universe) alone() (*jobs.Direct, error) {
+	u.aloneMu.Lock()
+	defer u.aloneMu.Unlock()
+	if u.direct != nil {
+		return u.direct, nil
+	}
+	for _, pid := range u.pids {
+		n, ok := Node(pid)
+		if !ok {
+			continue
+		}
+		h := n.HostOf(instance.Runner)
+		r, ok := service.Get[runner.Service](h)
+		if !ok {
+			continue
+		}
+		d, err := jobs.Alone(h, r)
+		if err != nil {
+			return nil, err
+		}
+		u.direct = d
+		return d, nil
+	}
+	return nil, errors.New("dream: no node runs a build or a runner")
+}

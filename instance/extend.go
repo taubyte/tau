@@ -109,6 +109,10 @@ func (a *added) Cloud() string              { return a.node.cfg.Cloud }
 func (a *added) Region() string             { return a.node.cfg.Region }
 func (a *added) Now() time.Time             { return a.node.clock() }
 
+// HostOf is this instance as the service named sees it: its peer, its directory,
+// the services running beside it, and that service's section.
+func (n *Instance) HostOf(name string) service.Host { return &added{node: n, name: name} }
+
 // Peers is every node discovery currently says runs service, this one included
 // when it does.
 func (n *Instance) Peers(service string) []libp2ppeer.ID {
