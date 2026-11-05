@@ -25,12 +25,15 @@ func NewDatastore(path string) (datastore.Batching, error) {
 			if err = MigratePebbleV1ToV2(path); err != nil {
 				return nil, err
 			}
-			return pds.NewDatastore(path, nil)
+			if ds, err = pds.NewDatastore(path, nil); err != nil {
+				return nil, err
+			}
+			return guardClose(ds), nil
 		}
 		return nil, err
 	}
 
-	return ds, nil
+	return guardClose(ds), nil
 }
 
 // cleanupInterruptedMigration handles cases where a previous migration was interrupted
