@@ -37,7 +37,7 @@ DREAM_P ?= $(shell n=$$(nproc 2>/dev/null || echo 4); p=$$((n / 4)); [ $$p -lt 1
 # it fails the package outright rather than skipping it.
 DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xargs grep -L '//go:build dreaming && ee' | sed 's|^\./||' | grep -vE '^(ee/|tools/tau/|\.)' | xargs -n1 dirname | sort -u | sed 's|^|./|')
 
-.PHONY: test test-cli test-acme test-acme-live test-dreaming test-raft test-docker test-containerd test-application test-build test-corpus test-external-databases forge-images test-forges test-containers cover-containers cover-containers-unit cover-containers-docker cover-containers-root cover-containers-rootless cover-containers-report test-taucorder test-race test-all proto-v2 proto-v2-check vault-helper
+.PHONY: test test-cli test-acme test-acme-live test-dreaming test-raft test-docker test-containerd test-application test-build test-corpus test-external-databases forge-images test-forges test-containers cover-containers cover-containers-unit cover-containers-docker cover-containers-root cover-containers-rootless cover-containers-report test-taucorder test-race test-all bench proto-v2 proto-v2-check vault-helper
 
 # THE TIMEOUT IS EXPLICIT BECAUSE THE DEFAULT IS A GUESS ABOUT THE MACHINE.
 # go test allows a package 10 minutes unless told otherwise, and pkg/kvdb spends
@@ -53,6 +53,15 @@ TAU_PKGS = $(shell go list -e ./... 2>/dev/null | grep -v '/ee/')
 
 test:
 	go test -exec $(LEAKCHECK) -timeout 20m $(FLAGS) $(TAU_PKGS)
+
+# bench is the request path's benchmarks, with allocations, COUNT times each so two
+# runs compare under benchstat: a gateway request, placement's route, the worker's
+# resolve and invoke over p2p, the invoke pool, and a wasm component's cold start
+# and warm call. BENCH= narrows it, e.g. BENCH=StartCold.
+BENCH_PKGS = ./services/gateway/ ./pkg/stats/ ./pkg/placement/ ./services/worker/ ./pkg/invoke/ ./pkg/invoke/wasm/ ./services/dns/ ./pkg/proto/codec/
+COUNT ?= 5
+bench:
+	go test -run '^$$' -bench '$(if $(BENCH),$(BENCH),.)' -benchmem -count=$(COUNT) -timeout 60m $(FLAGS) $(BENCH_PKGS)
 
 # test-race is test under the race detector, plus pkg/raft's integration tag:
 # two raft races of 2026-10-24 failed nothing until a -race run read them.
