@@ -23,8 +23,10 @@ func TestAPushIsBuiltWhereTheUniverseBuilds(t *testing.T) {
 	shared := []string{instance.Discovery, instance.Register, storageService.Descriptor.Name}
 	for name, cfg := range map[string]nodeDream.Config{
 		"alone on a runner": {Services: append([]string{instance.Runner}, shared...)},
+		// The register and storage on the build node alone, so the one the runner
+		// publishes to is the one read.
 		"through the build node": {Copies: 2, Configure: func(index int, c *instance.Config) {
-			c.Services = append([]string{instance.Runner}, shared...)
+			c.Services = []string{instance.Runner, instance.Discovery}
 			if index == 0 {
 				c.Services = append([]string{instance.Build}, shared...)
 			}
