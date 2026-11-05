@@ -84,38 +84,50 @@ func (b *hosted) Start(ctx context.Context, h service.Host) error {
 	}
 	b.also = append(b.also, closer(func() error { return cluster.Close() }))
 
-	fleet := register.ViewsOn(h)
-	b.also = append(b.also, fleet)
-	records, err := pkgkvdb.Open(h.Peer(), build.Build.Name+"/jobs",
-		pkgkvdb.WithLogger(logging.Logger("tau.build")),
-		pkgkvdb.WithRetentionFrom(func(ctx context.Context) (time.Duration, error) {
-			return register.Retention(ctx, fleet)
-		}, retentionPoll))
-	if err != nil {
-		return fmt.Errorf("build: opening the job records: %w", err)
-	}
-	b.also = append(b.also, closer(func() error { records.Close(); return nil }))
-
-	table := register.TableOn(h)
-	assets := storage.StoreOn(h)
-	b.also = append(b.also, table, assets)
-
-	s, err := newServer(cfg,
-		withHost(h.Peer().Host()),
-		withStore(cluster),
-		withRecords(records),
-		// WHO A PUSH BELONGS TO is the register's project table; a repository no
-		// project links is refused before anything is queued.
-		withRepositories(linked.Projects{Table: table.Now}),
-		withAssets(assets),
-		withClock(h.Now),
-	)
+	s, also, err := onInstance(h, cfg, cluster)
+	b.also = append(b.also, also...)
 	if err != nil {
 		return err
 	}
 	b.server, b.queue = s, cluster
 	return s.serve(ctx)
 }
+
+// onInstance is a server over h's records, register and storage, its queue in store,
+// and what it opened for them, closed after it.
+func onInstance(h service.Host, cfg Config, store Store, more ...option) (*server, []io.Closer, error) {
+	fleet := register.ViewsOn(h)
+	also := []io.Closer{fleet}
+	records, err := pkgkvdb.Open(h.Peer(), Records,
+		pkgkvdb.WithLogger(logging.Logger("tau.build")),
+		pkgkvdb.WithRetentionFrom(func(ctx context.Context) (time.Duration, error) {
+			return register.Retention(ctx, fleet)
+		}, retentionPoll))
+	if err != nil {
+		return nil, also, fmt.Errorf("build: opening the job records: %w", err)
+	}
+	also = append(also, closer(func() error { records.Close(); return nil }))
+
+	table := register.TableOn(h)
+	assets := storage.StoreOn(h)
+	also = append(also, table, assets)
+
+	s, err := newServer(cfg, append([]option{
+		withHost(h.Peer().Host()),
+		withStore(store),
+		withRecords(records),
+		// WHO A PUSH BELONGS TO is the register's project table; a repository no
+		// project links is refused before anything is queued.
+		withRepositories(linked.Projects{Table: table.Now}),
+		withAssets(assets),
+		withClock(h.Now),
+	}, more...)...)
+	return s, also, err
+}
+
+// Records is the replicated database build keeps its jobs in, on every node that
+// builds or reads what was built.
+var Records = build.Build.Name + "/jobs"
 
 // Close stops the server, then what Start opened for it.
 func (b *hosted) Close() error {

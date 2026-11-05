@@ -20,6 +20,26 @@ func (l Local) Enqueue(ctx context.Context, repositoryKey, ref, commitSHA string
 
 func (l Local) Get(_ context.Context, jobID string) (*buildv2.Job, error) { return l.s.job(jobID) }
 
+// Await is jobID once it has ended, waited for on this node's ring, which a job
+// ending here rings: where it is claimed, which is this node while it leads.
+func (l Local) Await(ctx context.Context, jobID string) (*buildv2.Job, error) {
+	for {
+		rung := l.s.runs.wait()
+		job, err := l.s.job(jobID)
+		if err != nil {
+			return nil, err
+		}
+		if finished(job.GetStatus()) {
+			return job, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-rung:
+		}
+	}
+}
+
 func (l Local) List(_ context.Context, projectID string, emit func(jobID string) error) error {
 	return l.s.list(projectID, func(ref *buildv2.JobRef) error { return emit(ref.GetId()) })
 }

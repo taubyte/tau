@@ -38,8 +38,34 @@ type Assets interface {
 	Put(ctx context.Context, at storage.Address, name string, o storage.Object, content io.Reader) (storage.Version, error)
 }
 
+// Service is the runner as an instance runs it: offered to build nodes, and its
+// work run in the caller where no build node is (jobs.Alone).
+type Service interface {
+	service.Service
+	run.Runner
+}
+
 // New is the runner service, unstarted. Start builds it from its instance.
-func New() service.Service { return &server{} }
+func New() Service { return &server{} }
+
+// ErrNotStarted is a runner asked to work before Start built what it works with.
+var ErrNotStarted = errors.New("runner: not started")
+
+// Plan is a push read here, confirmed first, as one handed down a stream is.
+func (s *server) Plan(ctx context.Context, w run.Work, out io.Writer) ([]string, error) {
+	if s.exec == nil {
+		return nil, ErrNotStarted
+	}
+	return s.plan(ctx, w, out)
+}
+
+// Run is a build run here, its artifacts kept by whatever out keeps them with.
+func (s *server) Run(ctx context.Context, w run.Work, out run.Output) error {
+	if s.exec == nil {
+		return ErrNotStarted
+	}
+	return s.exec.Run(ctx, w, out)
+}
 
 type server struct {
 	exec    run.Runner
