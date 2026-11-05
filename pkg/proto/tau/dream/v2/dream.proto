@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+// A dream universe as a tool outside its process reaches it: a development cloud
+// on one machine, whose builds start from folders on that machine. Each call is the
+// universe's own Go method of the same name (instance/dream/build.go), so what a
+// test does in process a tool does over the wire.
+//
+// A BUILD GOES THROUGH THE UNIVERSE'S BUILD NODE when it runs one, and runs alone on
+// a node running a runner when it does not, recorded where a build node records it
+// either way. Nothing here is a cloud's API: no cloud serves it.
+package tau.dream.v2;
+
+import "tau/build/v2/build.proto";
+
+service DreamService {
+  // Commit makes a folder the newest commit of a repository's branch in the
+  // universe's mirror, which its runners clone every repository from.
+  rpc Commit(CommitRequest) returns (Push);
+
+  // Upload keeps a folder, with what its packages build to, as a commit in the
+  // universe's uploads: what `tau build` hands a development cloud.
+  rpc Upload(UploadRequest) returns (Push);
+
+  // Link names a project's repositories in the universe's register, as a link does.
+  rpc Link(LinkRequest) returns (Linked);
+
+  // Build builds a push, and answers once it and the jobs it queued have ended.
+  rpc Build(Push) returns (Outcome);
+}
+
+message CommitRequest {
+  // repository is the repository's key, host/owner/name.
+  string repository = 1;
+  string branch = 2;
+  // dir is a folder on the machine the universe runs on. It is only read.
+  string dir = 3;
+}
+
+message UploadRequest {
+  string repository = 1;
+  string branch = 2;
+  string dir = 3;
+  // built is a package's name to the file, on the universe's machine, it builds to.
+  map<string, string> built = 4;
+}
+
+// Push is a commit of a repository, as a forge's delivery names one.
+message Push {
+  string repository = 1;
+  string ref = 2;
+  string commit = 3;
+}
+
+message LinkRequest {
+  string project = 1;
+  // config is the repository whose pushes are the project's deploys.
+  string config = 2;
+  repeated string code = 3;
+}
+
+message Linked {}
+
+// Outcome is a push once it has ended: its plan, then the job of each environment
+// the plan queued, in the plan's order.
+message Outcome {
+  tau.build.v2.Job plan = 1;
+  repeated tau.build.v2.Job environments = 2;
+}
