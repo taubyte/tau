@@ -619,7 +619,7 @@ func TestTwoProjectsNamingTheirKvTheSameThingNeverSeeEachOthersWrites(t *testing
 
 	// Each project writes on a different node and node 2 writes nothing, so whatever
 	// node 2 answers crossed the swarm. The private key goes first: it rides the same
-	// heads as token-1, so a node holding token-1 holds only-<project> too, making the
+	// heads as token-1, so a node holding token-1 holds its only- key too, making the
 	// final miss a fact rather than timing.
 	put(shop[0], shopID, "only-shop", "shop-kept")
 	put(shop[0], shopID, "token-1", "shop-kept")
@@ -629,11 +629,11 @@ func TestTwoProjectsNamingTheirKvTheSameThingNeverSeeEachOthersWrites(t *testing
 	// Both reach the node that took neither write, on a rebroadcast since node 2 opens
 	// its copy after both writes. 60s is nine 6.5s rebroadcast rounds (instance/locate.go,
 	// pkg/kvdb/crdt.go).
-	converged := func(fleet []*running, project, value string) {
+	converged := func(fleet []*running, project, only, value string) {
 		t.Helper()
 		var last string
 		require.Eventually(t, func() bool {
-			for _, key := range []string{"token-1", "only-" + project} {
+			for _, key := range []string{"token-1", only} {
 				got, err := read(fleet[2], project, key)
 				if err != nil {
 					last = err.Error()
@@ -647,8 +647,8 @@ func TestTwoProjectsNamingTheirKvTheSameThingNeverSeeEachOthersWrites(t *testing
 			return true
 		}, 60*time.Second, time.Second, "%s's kv never reached a node that never took its write: %s", project, &lastSaid{&last})
 	}
-	converged(shop, shopID, "shop-kept")
-	converged(market, marketID, "market-kept")
+	converged(shop, shopID, "only-shop", "shop-kept")
+	converged(market, marketID, "only-market", "market-kept")
 
 	// Each still answers its own value, asked again now both are live on this node: two
 	// values for one key from one node is what a single store cannot do.
