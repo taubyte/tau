@@ -58,11 +58,11 @@ type Verdict struct {
 // Admit instantiates spec as an instance validator and asks about one instance; an
 // instance per question, as for Authorize.
 func (r *Runtime) Admit(ctx context.Context, spec invoke.Spec, o Opening) (Verdict, error) {
-	instance, runtime, err := r.instantiate(ctx, spec, WorldValidator)
+	instance, held, err := r.instantiate(ctx, spec, WorldValidator)
 	if err != nil {
 		return Verdict{}, err
 	}
-	defer runtime.Close(ctx)
+	defer held.Close()
 
 	out, err := call(ctx, instance, admitExport, openingValue(o))
 	if err != nil {

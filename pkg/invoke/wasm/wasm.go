@@ -14,8 +14,8 @@
 //
 // The sandbox is empty by default: no filesystem, sockets or environment beyond the
 // resource's. Outbound HTTP is governed by the resource's `egress` over the node's
-// floor (egress.go). Each instance gets its own wazy runtime since a memory ceiling
-// is per runtime; the compilation cache is shared.
+// floor (egress.go). Instances of one artifact under one memory ceiling share a wazy
+// runtime, which compiles the component once (shared.go).
 package wasm
 
 import (
@@ -29,9 +29,10 @@ import (
 
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/samyfodil/wazy"
-	"github.com/samyfodil/wazy/api"
 	"github.com/samyfodil/wazy/component"
 	"github.com/samyfodil/wazy/imports/wasip2"
 
@@ -144,6 +145,12 @@ type Runtime struct {
 	assets Assets
 	cache  wazy.CompilationCache
 	mode   Mode
+
+	// compiled is a runtime per artifact its instances share (shared.go), and keep
+	// how long one no instance holds stays.
+	mu       sync.Mutex
+	compiled map[runtimeKey]*compiled
+	keep     time.Duration
 
 	// transport is what an allowed outbound request is finally sent over. Nil
 	// is the process default; a test points it at a scratch backend.
@@ -268,8 +275,12 @@ func (r *Runtime) Name() string { return Name }
 // Mode is how this tier runs components.
 func (r *Runtime) Mode() Mode { return r.mode }
 
-// Close releases the compilation cache. A Runtime is usable until it is called.
-func (r *Runtime) Close() error { return r.cache.Close(context.Background()) }
+// Close releases every compiled runtime and the compilation cache. A Runtime is
+// usable until it is called.
+func (r *Runtime) Close() error {
+	ctx := context.Background()
+	return errors.Join(r.closeCompiled(ctx), r.cache.Close(ctx))
+}
 
 // Start fetches a component and instantiates it. Its latency IS the cold start.
 func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance, error) {
@@ -289,7 +300,7 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 			ErrUnsupportedWorld, spec.Name, world, strings.Join(startableWorlds(), ", "))
 	}
 
-	instance, runtime, err := r.instantiate(ctx, spec, world)
+	instance, held, err := r.instantiate(ctx, spec, world)
 	if err != nil {
 		return nil, err
 	}
@@ -305,7 +316,7 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 	}
 
 	return &function{
-		runtime:  runtime,
+		held:     held,
 		instance: instance,
 		export:   export,
 		world:    world,
@@ -317,7 +328,7 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 // caller will drive, and brings it up. It checks the declaration, not the
 // artifact: a component mis-built against its own declaration surfaces on the first
 // call. An empty `implements` is the handler.
-func (r *Runtime) instantiate(ctx context.Context, spec invoke.Spec, world string) (*component.Instance, wazy.Runtime, error) {
+func (r *Runtime) instantiate(ctx context.Context, spec invoke.Spec, world string) (*component.Instance, io.Closer, error) {
 	// A spec for another tier is refused: guards, validators and resolvers reach this
 	// tier directly, not through the pool.
 	if spec.Runtime != "" && spec.Runtime != Name {
@@ -358,34 +369,17 @@ func (r *Runtime) instantiate(ctx context.Context, spec invoke.Spec, world strin
 		return nil, nil, err
 	}
 
-	content, err := r.assets.Read(ctx, spec.Artifact)
+	c, err := r.acquire(ctx, spec)
 	if err != nil {
-		return nil, nil, fmt.Errorf("wasm: fetching %s: %w", spec.Artifact, err)
+		return nil, nil, err
 	}
-	defer content.Close()
-
-	code, err := io.ReadAll(content)
+	instance, err := component.Instantiate(ctx, c.runtime, c.code,
+		append(append(r.sandbox(spec), imports...), component.WithCompileCache(c.cache))...)
 	if err != nil {
-		return nil, nil, fmt.Errorf("wasm: reading %s: %w", spec.Artifact, err)
-	}
-
-	config := r.mode.config().
-		WithCompilationCache(r.cache).
-		// WebAssembly 3.0, because toolchains emit it: componentize-py's
-		// CPython needs extended-const.
-		WithCoreFeatures(api.CoreFeaturesV3)
-	if pages := memoryPages(spec.Memory); pages > 0 {
-		config = config.WithMemoryLimitPages(pages)
-	}
-
-	runtime := wazy.NewRuntimeWithConfig(ctx, config)
-
-	instance, err := component.Instantiate(ctx, runtime, code, append(r.sandbox(spec), imports...)...)
-	if err != nil {
-		runtime.Close(ctx)
+		r.release(c)
 		return nil, nil, fmt.Errorf("wasm: instantiating %s: %w", spec.Name, err)
 	}
-	return instance, runtime, nil
+	return instance, &held{r: r, compiled: c, instance: instance}, nil
 }
 
 // exportsHTTPWorld reports whether this component is the standard world, read from
@@ -451,7 +445,7 @@ func memoryPages(bytes int64) uint32 {
 
 // function is one instantiated component.
 type function struct {
-	runtime  wazy.Runtime
+	held     io.Closer
 	instance *component.Instance
 	export   string
 
@@ -463,15 +457,8 @@ type function struct {
 	http bool
 }
 
-// Close takes the instance and its runtime with it.
-func (f *function) Close() error {
-	ctx := context.Background()
-	err := f.instance.Close(ctx)
-	if closeErr := f.runtime.Close(ctx); err == nil {
-		err = closeErr
-	}
-	return err
-}
+// Close closes the instance and lets go of its runtime.
+func (f *function) Close() error { return f.held.Close() }
 
 // call enters the guest unless the caller has already given up. A done context
 // stops a call only at the engine's preemption checks, and a short call reaches none.

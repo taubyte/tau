@@ -36,11 +36,11 @@ var ErrNotADNSResolver = errors.New("wasm: that component did not answer as a dn
 // Resolve instantiates spec as a dns resolver and asks one question; an instance
 // per question, as for AuthorizeRequest.
 func (r *Runtime) Resolve(ctx context.Context, spec invoke.Spec, q invoke.Question) (*invoke.Resolution, error) {
-	instance, runtime, err := r.instantiate(ctx, spec, WorldDNSResolver)
+	instance, held, err := r.instantiate(ctx, spec, WorldDNSResolver)
 	if err != nil {
 		return nil, err
 	}
-	defer runtime.Close(ctx)
+	defer held.Close()
 
 	out, err := call(ctx, instance, resolveExport, dnsQuestionValue(q))
 	if err != nil {

@@ -33,11 +33,11 @@ var ErrNotAnHTTPAuthorizer = errors.New("wasm: that component did not answer as 
 // AuthorizeRequest instantiates spec as an http authorizer and asks about one
 // request; an instance per question, as for Authorize.
 func (r *Runtime) AuthorizeRequest(ctx context.Context, spec invoke.Spec, req *invoke.Request) (*invoke.Admission, error) {
-	instance, runtime, err := r.instantiate(ctx, spec, WorldHTTPAuthorizer)
+	instance, held, err := r.instantiate(ctx, spec, WorldHTTPAuthorizer)
 	if err != nil {
 		return nil, err
 	}
-	defer runtime.Close(ctx)
+	defer held.Close()
 
 	// The same `request` record every HTTP world gets, lowered by the same function.
 	out, err := call(ctx, instance, authorizeExport, requestValue(req))

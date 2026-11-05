@@ -123,11 +123,11 @@ func guardedGrants(spec invoke.Spec) []invoke.Grant {
 // instance per question: a decision has no state worth keeping, and the returned
 // set keeps the cold start off every op.
 func (r *Runtime) Authorize(ctx context.Context, spec invoke.Spec, q Question) (Decision, error) {
-	instance, runtime, err := r.instantiate(ctx, spec, WorldAuthorizer)
+	instance, held, err := r.instantiate(ctx, spec, WorldAuthorizer)
 	if err != nil {
 		return Decision{}, err
 	}
-	defer runtime.Close(ctx)
+	defer held.Close()
 
 	out, err := call(ctx, instance, authorizeExport, questionValue(q))
 	if err != nil {
