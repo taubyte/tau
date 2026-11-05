@@ -35,11 +35,11 @@ func TestAWorkflowRunsEndToEnd(t *testing.T) {
 	require.NotEmpty(t, pids)
 
 	n := nodeOf(t, pids[0])
-	publish(t, u, pids[:1], deployed{project: "shop", name: "with/workflow"}, artifacts{"": cacherWASM(t)})
+	r := publish(t, u, pids[:1], deployed{name: "with/workflow"}, artifacts{"": cacherWASM(t)})[0]
 
 	// The deployment must be held before anything drains: a node drains the queues of
 	// what it serves.
-	producer := specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"}
+	producer := r.function("checkout")
 	spec, err := n.Worker().Resolve(t.Context(), producer)
 	require.NoError(t, err)
 
@@ -72,7 +72,7 @@ func TestAWorkflowRunsEndToEnd(t *testing.T) {
 	// charge invokes charge_card.
 	steps := map[string]string{}
 	for _, step := range []string{"reserve", "settle", "charge"} {
-		steps["checkout_"+step] = handleOf(t, n, "checkout_"+step)
+		steps["checkout_"+step] = handleOf(t, n, r.project, "checkout_"+step)
 	}
 
 	// A QUEUE NOTHING HAS OPENED HOLDS NOTHING, which is what `ok` reports: the
@@ -106,7 +106,7 @@ func TestAWorkflowRunsEndToEnd(t *testing.T) {
 
 	// Nothing reached the dead letter: the queue was never opened, so nothing was ever
 	// buried.
-	ready, claimed, ok := n.QueueDepth(deadLetterOf(t, n))
+	ready, claimed, ok := n.QueueDepth(deadLetterOf(t, n, r.project))
 	require.True(t, ok, "this node cannot read what was buried")
 	require.Zero(t, ready+claimed, "a step gave up and the run was buried")
 }
@@ -114,11 +114,11 @@ func TestAWorkflowRunsEndToEnd(t *testing.T) {
 // handleOf is the handle a workflow's produced queue opens under, resolved through
 // the read path (queues live at `workflow/<id>/queue/<name>`). It fails the test
 // rather than assembling a handle, which would name nothing and read as empty.
-func handleOf(t *testing.T, n *instance.Instance, step string) string {
+func handleOf(t *testing.T, n *instance.Instance, project, step string) string {
 	t.Helper()
 
 	spec, err := n.Worker().Resolve(t.Context(), specs.Address{
-		Project: "shop", Environment: "prod", Scope: []string{"checkout"},
+		Project: project, Environment: "prod", Scope: []string{"checkout"},
 		Kind: "function", Name: step,
 	})
 	require.NoError(t, err, "no driver for %s", step)
@@ -135,18 +135,18 @@ func handleOf(t *testing.T, n *instance.Instance, step string) string {
 // deadLetterOf is where a run stops when a step gives up. It has NO consumer by
 // design, so it is named by the step that routes into it rather than resolved
 // as a driver of its own.
-func deadLetterOf(t *testing.T, n *instance.Instance) string {
+func deadLetterOf(t *testing.T, n *instance.Instance, project string) string {
 	t.Helper()
 
 	spec, err := n.Worker().Resolve(t.Context(), specs.Address{
-		Project: "shop", Environment: "prod", Scope: []string{"checkout"},
+		Project: project, Environment: "prod", Scope: []string{"checkout"},
 		Kind: "function", Name: "checkout_charge",
 	})
 	require.NoError(t, err)
 
 	for _, g := range spec.Reaches {
 		if dead := g.Settings["queue/dead_letter/name"]; g.Kind == "sync" && dead != "" {
-			return specs.Handle("shop", "prod", dead)
+			return specs.Handle(project, "prod", dead)
 		}
 	}
 	t.Fatal("no step routes into a dead letter")

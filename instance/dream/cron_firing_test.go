@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	nodeDream "github.com/taubyte/tau/instance/dream"
-	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -21,9 +20,7 @@ func TestAScheduleCarriesTheFiringBlockItsAuthorWrote(t *testing.T) {
 	// The node must serve the project first: Schedules only enumerates what a node
 	// already holds.
 	require.Eventually(t, func() bool {
-		_, err := r.node.Worker().Resolve(t.Context(), specs.Address{
-			Project: "shop", Environment: "prod", Kind: "function", Name: "cacher",
-		})
+		_, err := r.node.Worker().Resolve(t.Context(), r.function("cacher"))
 		return err == nil
 	}, formingBudget, 250*time.Millisecond, "the node never came to serve the project")
 

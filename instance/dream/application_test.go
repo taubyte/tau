@@ -34,9 +34,9 @@ func TestAnApplicationAnswersThroughTheGateway(t *testing.T) {
 	require.NotEmpty(t, pids)
 
 	// NOTHING IS STAGED: the image is the artifact, named in the document.
-	at := publish(t, u, pids[:1], deployed{project: "shop", name: "with/application", host: "whoami.example.com"}, artifacts{})[0]
+	at := publish(t, u, pids[:1], deployed{name: "with/application", host: "whoami.example.com"}, artifacts{})[0]
 
-	whoami := specs.Address{Project: "shop", Environment: "prod", Kind: "application", Name: "whoami"}
+	whoami := specs.Address{Project: at.project, Environment: "prod", Kind: "application", Name: "whoami"}
 
 	// A REAL SOCKET IN FRONT OF THE GATEWAY, so the request is HTTP on the wire and
 	// not a handler call.

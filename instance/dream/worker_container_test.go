@@ -32,8 +32,8 @@ func TestAContainerWorkerRunsToCompletionPerInvocation(t *testing.T) {
 	require.NotEmpty(t, pids)
 
 	// NOTHING IS STAGED: the image is the artifact, named in the document.
-	at := publish(t, u, pids[:1], deployed{project: "shop", name: "with/worker/container", host: "exporter.example.com"}, artifacts{})[0]
-	exporter := specs.Address{Project: "shop", Environment: "prod", Kind: "worker", Name: "exporter"}
+	at := publish(t, u, pids[:1], deployed{name: "with/worker/container", host: "exporter.example.com"}, artifacts{})[0]
+	exporter := specs.Address{Project: at.project, Environment: "prod", Kind: "worker", Name: "exporter"}
 
 	// A successful run answers with what it printed; the container's shell evaluates the
 	// arithmetic and variable.
@@ -81,13 +81,13 @@ func TestAContainerWorkerReadsItsSecretThroughTheHelper(t *testing.T) {
 	pids := u.Pids()
 	require.NotEmpty(t, pids)
 
-	at := publish(t, u, pids[:1], deployed{project: "shop", name: "with/worker/vault", host: "exporter.example.com"}, artifacts{})[0]
-	exporter := specs.Address{Project: "shop", Environment: "prod", Kind: "worker", Name: "exporter"}
+	at := publish(t, u, pids[:1], deployed{name: "with/worker/vault", host: "exporter.example.com"}, artifacts{})[0]
+	exporter := specs.Address{Project: at.project, Environment: "prod", Kind: "worker", Name: "exporter"}
 	token := at.idOf(t, "secret", "token")
 
 	// SET THE WAY A DEVELOPER SETS ONE; the first run retries until it lands.
 	ctx := t.Context()
-	require.NoError(t, at.node.Vault().Set(ctx, "shop", "prod", token, []byte("sk_live_1")))
+	require.NoError(t, at.node.Vault().Set(ctx, at.project, "prod", token, []byte("sk_live_1")))
 
 	run := func(script string) (string, error) {
 		res, err := at.onCarrying(ctx, exporter, http.MethodPost, "/", script)
@@ -125,7 +125,7 @@ func TestAContainerWorkerReadsItsSecretThroughTheHelper(t *testing.T) {
 	require.ErrorContains(t, err, `names no secret "dbcreds"`)
 
 	// A ROTATION is what the next run reads; nothing restarts.
-	require.NoError(t, at.node.Vault().Set(ctx, "shop", "prod", token, []byte("sk_live_2")))
+	require.NoError(t, at.node.Vault().Set(ctx, at.project, "prod", token, []byte("sk_live_2")))
 	require.Eventually(t, func() bool {
 		answer, err = run(`/.taubyte/secret token`)
 		return err == nil && answer == "sk_live_2"

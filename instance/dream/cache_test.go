@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	nodeDream "github.com/taubyte/tau/instance/dream"
-	"github.com/taubyte/tau/pkg/specs"
 )
 
 // A real component reaching real replicated state across real nodes: the label an
@@ -36,12 +35,6 @@ const (
 	cacheFuncID    = "QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY"
 )
 
-// target is the workload this package invokes; `cacher` is the stem of
-// projects/with/cache/function/cacher.yaml.
-func target() specs.Address {
-	return specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "cacher"}
-}
-
 func TestARealComponentReachesARealCache(t *testing.T) {
 	// No injected tier: the nodes build their own.
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
@@ -50,7 +43,7 @@ func TestARealComponentReachesARealCache(t *testing.T) {
 
 	// The grant survived compile, publish and resolve. No retry: a crdt cache opens no
 	// group and deploy published on this node.
-	spec, err := r.node.Worker().Resolve(t.Context(), target())
+	spec, err := r.node.Worker().Resolve(t.Context(), r.function("cacher"))
 	require.NoError(t, err)
 	require.Equal(t, "wasm", spec.Runtime)
 	require.Len(t, spec.Reaches, 1)
@@ -62,27 +55,27 @@ func TestARealComponentReachesARealCache(t *testing.T) {
 
 	// A ROUND TRIP THROUGH THE GUEST: it writes the body into the cache and
 	// reads it back, so what comes out came through the host function.
-	res, err := r.onCarrying(t.Context(), target(), http.MethodPost, "/roundtrip/sessions/user:1", "alice")
+	res, err := r.onCarrying(t.Context(), r.function("cacher"), http.MethodPost, "/roundtrip/sessions/user:1", "alice")
 	require.NoError(t, err)
 	require.Equal(t, 200, res.Status, string(res.Body))
 	require.Equal(t, "alice", string(res.Body))
 
 	// AND THE ROW IS REALLY THERE, read back through a second invocation so
 	// the value survived the instance rather than living in it.
-	res, err = r.onCarrying(t.Context(), target(), http.MethodPost, "/get/sessions/user:1", "")
+	res, err = r.onCarrying(t.Context(), r.function("cacher"), http.MethodPost, "/get/sessions/user:1", "")
 	require.NoError(t, err)
 	require.Equal(t, 200, res.Status, string(res.Body))
 	require.Equal(t, "alice", string(res.Body))
 
 	// A key nobody wrote is a miss and not an outage.
-	res, err = r.onCarrying(t.Context(), target(), http.MethodPost, "/get/sessions/user:2", "")
+	res, err = r.onCarrying(t.Context(), r.function("cacher"), http.MethodPost, "/get/sessions/user:2", "")
 	require.NoError(t, err)
 	require.Equal(t, 404, res.Status)
 	require.Equal(t, "not-found", string(res.Body))
 
 	// And a cache the config never granted is refused BY NAME, with the
 	// instance still alive afterwards.
-	res, err = r.onCarrying(t.Context(), target(), http.MethodPost, "/get/somebody-elses/k", "")
+	res, err = r.onCarrying(t.Context(), r.function("cacher"), http.MethodPost, "/get/somebody-elses/k", "")
 	require.NoError(t, err)
 	require.Equal(t, "no-such-cache:somebody-elses", string(res.Body))
 }
@@ -94,14 +87,14 @@ func TestACacheReplicatesBetweenNodes(t *testing.T) {
 	first, second := cloud[0], cloud[1]
 
 	// Written on the first node, through its guest.
-	res, err := first.onCarrying(t.Context(), target(), http.MethodPost, "/put/sessions/shared", "crosses")
+	res, err := first.onCarrying(t.Context(), first.function("cacher"), http.MethodPost, "/put/sessions/shared", "crosses")
 	require.NoError(t, err)
 	require.Equal(t, 204, res.Status, string(res.Body))
 
 	// Read on the second node through its own guest, tier and kvdb; eventually, as the
 	// cache declared crdt.
 	require.Eventually(t, func() bool {
-		res, err := second.onCarrying(t.Context(), target(), http.MethodPost, "/get/sessions/shared", "")
+		res, err := second.onCarrying(t.Context(), second.function("cacher"), http.MethodPost, "/get/sessions/shared", "")
 		return err == nil && res.Status == 200 && string(res.Body) == "crosses"
 	}, 60*time.Second, 500*time.Millisecond, "a workload's own data never crossed the swarm")
 }

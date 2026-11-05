@@ -39,14 +39,15 @@ func inRegion(t *testing.T, region, name string) (*running, *nodeDream.Universe)
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
 
-	r := publish(t, u, u.Pids()[:1], deployed{project: "shop", name: name, host: "regional.example.com", regions: schema.WithRegion(region)}, artifacts{"": handlerWASM(t)})[0]
+	r := publish(t, u, u.Pids()[:1], deployed{name: name, host: "regional.example.com", regions: schema.WithRegion(region)}, artifacts{"": handlerWASM(t)})[0]
 	return r, u
 }
 
 // viewHeld is what a region's view of the shop deployment holds, by kind/name.
-func viewHeld(t *testing.T, n *instance.Instance, region string) (map[string]bool, uint64) {
+func viewHeld(t *testing.T, r *running, region string) (map[string]bool, uint64) {
 	t.Helper()
-	v, err := n.Register().Local().ResolveView(t.Context(), "shop", "prod", region)
+	n := r.node
+	v, err := n.Register().Local().ResolveView(t.Context(), r.project, "prod", region)
 	require.NoError(t, err)
 	body, err := n.Register().Local().Object(t.Context(), v.Object)
 	require.NoError(t, err)
@@ -63,8 +64,7 @@ func TestEachRegionServesItsOwnView(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
 	r1, _ := inRegion(t, "region-1", "with/views")
-	r1Node := r1.node
-	held, _ := viewHeld(t, r1Node, "region-1")
+	held, _ := viewHeld(t, r1, "region-1")
 	require.Equal(t, map[string]bool{"function/hello": true, "package/hello_code": true, "gateway/regional": true, "zone/example_com": true, "cache/sessions": true}, held)
 
 	var said string
@@ -78,7 +78,7 @@ func TestEachRegionServesItsOwnView(t *testing.T) {
 	// in front of one, so the name it answers on reaches no route.
 	r2, u2 := inRegion(t, "region-2", "with/views")
 	r2Node := r2.node
-	held, _ = viewHeld(t, r2Node, "region-2")
+	held, _ = viewHeld(t, r2, "region-2")
 	require.Equal(t, map[string]bool{"zone/example_com": true, "cache/sessions": true}, held)
 	got := r2.ask(t, http.MethodGet, "/")
 	require.NotEqual(t, http.StatusOK, got.Code, "region-2 holds no route, and does not borrow region-1's")
@@ -93,8 +93,8 @@ func TestEachRegionServesItsOwnView(t *testing.T) {
 	require.NoError(t, os.CopyFS(later, os.DirFS(projectDir("with/views"))))
 	require.NoError(t, os.Remove(filepath.Join(later, "cache", "sessions.yaml")))
 	_, _, built := projectAs(t, later, artifacts{"": handlerWASM(t)}, schema.WithRegion("region-2"))
-	build(t, u2, "shop", later, built)
-	held, revision := viewHeld(t, r2Node, "region-2")
+	build(t, u2, r2.project, later, built)
+	held, revision := viewHeld(t, r2, "region-2")
 	require.EqualValues(t, 2, revision)
 	require.Equal(t, map[string]bool{"zone/example_com": true}, held)
 }

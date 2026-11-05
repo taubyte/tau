@@ -28,7 +28,7 @@ func TestASQLDatabaseAnswersFromANodeThatNeverTookTheWrite(t *testing.T) {
 		t.Helper()
 		var last string
 		require.Eventually(t, func() bool {
-			res, err := cloud[at].onCarrying(ctx, keeper("shop"), http.MethodPost, "/exec/ledger", statement)
+			res, err := cloud[at].onCarrying(ctx, keeper(cloud[at].project), http.MethodPost, "/exec/ledger", statement)
 			if err != nil {
 				last = err.Error()
 				return false
@@ -46,7 +46,7 @@ func TestASQLDatabaseAnswersFromANodeThatNeverTookTheWrite(t *testing.T) {
 	reader := cloud[2]
 	var last string
 	require.Eventually(t, func() bool {
-		res, err := reader.onCarrying(ctx, keeper("shop"), http.MethodPost, "/query/ledger", `SELECT payee, amount FROM entries`)
+		res, err := reader.onCarrying(ctx, keeper(reader.project), http.MethodPost, "/query/ledger", `SELECT payee, amount FROM entries`)
 		if err != nil {
 			last = err.Error()
 			return false
@@ -58,7 +58,7 @@ func TestASQLDatabaseAnswersFromANodeThatNeverTookTheWrite(t *testing.T) {
 	// AND A WRITE ON THE READER COMES BACK TO THE WRITER: every copy writes.
 	exec(2, `INSERT INTO entries(payee, amount) VALUES('bob', 7)`)
 	require.Eventually(t, func() bool {
-		res, err := cloud[0].onCarrying(ctx, keeper("shop"), http.MethodPost, "/query/ledger", `SELECT payee FROM entries WHERE payee = 'bob'`)
+		res, err := cloud[0].onCarrying(ctx, keeper(cloud[0].project), http.MethodPost, "/query/ledger", `SELECT payee FROM entries WHERE payee = 'bob'`)
 		if err != nil {
 			last = err.Error()
 			return false

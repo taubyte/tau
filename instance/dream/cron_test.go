@@ -14,7 +14,6 @@ import (
 	"github.com/taubyte/tau/instance"
 	nodeDream "github.com/taubyte/tau/instance/dream"
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/specs"
 )
 
 // A schedule firing with only the cloud watching the clock: two nodes holding one
@@ -36,7 +35,7 @@ func TestAScheduleFiresOnceAcrossAFleet(t *testing.T) {
 
 	// Both nodes must hold it; the budget is a stall report.
 	holds := func(n *instance.Instance) bool {
-		_, err := n.Worker().Resolve(t.Context(), scheduleTarget())
+		_, err := n.Worker().Resolve(t.Context(), cloud[0].function("cacher"))
 		return err == nil
 	}
 	require.Eventually(t, func() bool { return holds(first) && holds(second) },
@@ -99,12 +98,6 @@ func (s *steppable) add(d time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.offset += d
-}
-
-// scheduleTarget is what projects/with/cron's schedule edges to, its own rather
-// than cache_test's target().
-func scheduleTarget() specs.Address {
-	return specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "cacher"}
 }
 
 // firing is a tier that records every request its instances are handed.

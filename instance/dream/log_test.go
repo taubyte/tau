@@ -77,7 +77,7 @@ func TestRecordsReadBackInTheOrderTheyWereAppended(t *testing.T) {
 	// answers ErrNotWritable. Budget: formingBudget.
 	var last string
 	require.Eventually(t, func() bool {
-		res, err := r.onCarrying(t.Context(), target(), http.MethodPost, "/append/audit/", written[0])
+		res, err := r.onCarrying(t.Context(), r.function("cacher"), http.MethodPost, "/append/audit/", written[0])
 		if err != nil {
 			last = err.Error()
 			return false
@@ -92,7 +92,7 @@ func TestRecordsReadBackInTheOrderTheyWereAppended(t *testing.T) {
 
 	// The rest are not retried: the group now has a leader.
 	for _, record := range written[1:] {
-		res, err := r.onCarrying(t.Context(), target(), http.MethodPost, "/append/audit/", record)
+		res, err := r.onCarrying(t.Context(), r.function("cacher"), http.MethodPost, "/append/audit/", record)
 		require.NoError(t, err)
 		require.Equal(t, 200, res.Status, "appending %q: %s", record, res.Body)
 		cursors = append(cursors, string(res.Body))
@@ -107,7 +107,7 @@ func TestRecordsReadBackInTheOrderTheyWereAppended(t *testing.T) {
 	require.Len(t, held, len(written), "two records were given the same position: %v", cursors)
 
 	// READ FROM THE START, which for this fixture is an empty key.
-	from, err := r.onCarrying(t.Context(), target(), http.MethodPost, "/read/audit/", "")
+	from, err := r.onCarrying(t.Context(), r.function("cacher"), http.MethodPost, "/read/audit/", "")
 	require.NoError(t, err)
 	require.Equal(t, 200, from.Status, "reading the log: %s", from.Body)
 
@@ -123,7 +123,7 @@ func TestRecordsReadBackInTheOrderTheyWereAppended(t *testing.T) {
 
 	// A cursor is a position: reading after the first answers the records that follow
 	// it.
-	after, err := r.onCarrying(t.Context(), target(), http.MethodPost, "/read/audit/"+cursors[0], "")
+	after, err := r.onCarrying(t.Context(), r.function("cacher"), http.MethodPost, "/read/audit/"+cursors[0], "")
 	require.NoError(t, err)
 	require.Equal(t, 200, after.Status, "reading after the first record: %s", after.Body)
 
@@ -136,12 +136,12 @@ func TestRecordsReadBackInTheOrderTheyWereAppended(t *testing.T) {
 
 	// Nothing rewrites what is there: a fourth record lands at its own position and the
 	// first three read back identically.
-	fourth, err := r.onCarrying(t.Context(), target(), http.MethodPost, "/append/audit/", "four")
+	fourth, err := r.onCarrying(t.Context(), r.function("cacher"), http.MethodPost, "/append/audit/", "four")
 	require.NoError(t, err)
 	require.Equal(t, 200, fourth.Status, "appending a fourth record: %s", fourth.Body)
 	require.NotContains(t, cursors, string(fourth.Body), "the fourth record took a position that was already taken")
 
-	again, err := r.onCarrying(t.Context(), target(), http.MethodPost, "/read/audit/", "")
+	again, err := r.onCarrying(t.Context(), r.function("cacher"), http.MethodPost, "/read/audit/", "")
 	require.NoError(t, err)
 	require.Equal(t, 200, again.Status, "reading the log again: %s", again.Body)
 
@@ -151,7 +151,7 @@ func TestRecordsReadBackInTheOrderTheyWereAppended(t *testing.T) {
 	require.Equal(t, "four", grown[len(written)].data)
 
 	// A limit is honoured, taking the oldest from the cursor forward.
-	paged, err := r.onLimited(t.Context(), target(), "/read/audit/", 2)
+	paged, err := r.onLimited(t.Context(), r.function("cacher"), "/read/audit/", 2)
 	require.NoError(t, err)
 	require.Equal(t, 200, paged.Status, "reading a page: %s", paged.Body)
 
@@ -160,12 +160,12 @@ func TestRecordsReadBackInTheOrderTheyWereAppended(t *testing.T) {
 	require.Equal(t, got[:2], page, "a page is not the front of the log")
 
 	// An ungranted log is refused by name (`no-such-log`), and the instance survives.
-	refused, err := r.onCarrying(t.Context(), target(), http.MethodPost, "/append/somebody-elses/", "ship it")
+	refused, err := r.onCarrying(t.Context(), r.function("cacher"), http.MethodPost, "/append/somebody-elses/", "ship it")
 	require.NoError(t, err, "the instance died rather than refusing")
 	require.Equal(t, 403, refused.Status)
 	require.Equal(t, "no-such-log:somebody-elses", string(refused.Body))
 
-	alive, err := r.onCarrying(t.Context(), target(), http.MethodPost, "/read/audit/", "")
+	alive, err := r.onCarrying(t.Context(), r.function("cacher"), http.MethodPost, "/read/audit/", "")
 	require.NoError(t, err)
 	require.Equal(t, 200, alive.Status, "the guest could not be asked anything after the refusal: %s", alive.Body)
 	require.Len(t, logLinesOf(t, alive.Body), len(written)+1, "the refused append wrote something")
@@ -182,7 +182,7 @@ func TestARecordAppendedOnOneNodeIsReadOnAnother(t *testing.T) {
 	var cursor, last string
 	for deadline := time.Now().Add(formingBudget); time.Now().Before(deadline); {
 		for i, r := range cloud {
-			res, err := r.onCarrying(t.Context(), target(), http.MethodPost, "/append/audit/", "crosses")
+			res, err := r.onCarrying(t.Context(), r.function("cacher"), http.MethodPost, "/append/audit/", "crosses")
 			if err != nil {
 				last = err.Error()
 				continue
@@ -203,12 +203,12 @@ func TestARecordAppendedOnOneNodeIsReadOnAnother(t *testing.T) {
 	// Read on the node that never took it, through its own guest, tier, cluster and
 	// store; eventually, as the record crosses in a CRDT.
 	require.Eventually(t, func() bool {
-		res, err := reader.onCarrying(t.Context(), target(), http.MethodPost, "/read/audit/", "")
+		res, err := reader.onCarrying(t.Context(), reader.function("cacher"), http.MethodPost, "/read/audit/", "")
 		return err == nil && res.Status == 200 && strings.Contains(string(res.Body), ":crosses")
 	}, 60*time.Second, 500*time.Millisecond, "a record never crossed the swarm")
 
 	// And it crossed whole, paired with its append's cursor.
-	res, err := reader.onCarrying(t.Context(), target(), http.MethodPost, "/read/audit/", "")
+	res, err := reader.onCarrying(t.Context(), reader.function("cacher"), http.MethodPost, "/read/audit/", "")
 	require.NoError(t, err)
 	require.Equal(t, 200, res.Status, "reading the log on the node that never took the append: %s", res.Body)
 

@@ -148,10 +148,18 @@ func (l *lastSaid) String() string { return *l.at }
 type running struct {
 	node *instance.Instance
 	host string
+	// project is its project.yaml's id, which is the register's.
+	project string
 
 	// object is the compiled project this universe was published, kept so a
 	// test can ask what a label became rather than say it — see idOf.
 	object map[string]any
+}
+
+// function is one of the project's functions, addressed with the fields the gateway
+// fills in.
+func (r *running) function(name string) specs.Address {
+	return specs.Address{Project: r.project, Environment: "prod", Kind: "function", Name: name}
 }
 
 // ask puts a request to the gateway the way the internet would.
@@ -207,13 +215,12 @@ func (r *running) idOf(t *testing.T, group, label string) string {
 	return ""
 }
 
-// deployed names one project for a universe: the register's project (the isolation
-// boundary every key is built from, unlike project.yaml's `id:`), the corpus
-// directory, and the host, which two projects cannot share.
+// deployed names one project for a universe: the corpus directory, whose
+// project.yaml's id is the register's project, and the host, which two projects
+// cannot share.
 type deployed struct {
-	project string
-	name    string
-	host    string
+	name string
+	host string
 
 	// regions places it; nil is WithNoRegions, the corpus's one region.
 	regions schema.Regions
@@ -230,7 +237,8 @@ func publish(t *testing.T, u *nodeDream.Universe, pids []string, at deployed, co
 		regions = schema.WithNoRegions()
 	}
 	_, obj, built := projectAs(t, at.name, components, regions)
-	outcome := build(t, u, at.project, at.name, built)
+	project := projectIDOf(t, at.name)
+	outcome := build(t, u, project, at.name, built)
 	packages, _ := obj["package"].(map[string]any)
 
 	out := make([]*running, 0, len(pids))
@@ -243,13 +251,27 @@ func publish(t *testing.T, u *nodeDream.Universe, pids []string, at deployed, co
 				continue
 			}
 			require.Eventually(t, func() bool {
-				_, err := n.BuildArtifacts().Artifact(t.Context(), at.project, "prod", specs.KindPackage, pkgID)
+				_, err := n.BuildArtifacts().Artifact(t.Context(), project, "prod", specs.KindPackage, pkgID)
 				return err == nil
 			}, time.Minute, 50*time.Millisecond, "%s never read package %s of job %s", id, pkgID, outcome.Environments[0].GetId())
 		}
-		out = append(out, &running{node: n, host: at.host, object: obj})
+		out = append(out, &running{node: n, host: at.host, project: project, object: obj})
 	}
 	return out
+}
+
+// projectIDOf is the id the project under projects/name says it is.
+func projectIDOf(t *testing.T, name string) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(projectDir(name), "project.yaml"))
+	require.NoError(t, err)
+	for _, line := range strings.Split(string(raw), "\n") {
+		if id, ok := strings.CutPrefix(line, "id: "); ok {
+			return strings.TrimSpace(id)
+		}
+	}
+	require.FailNow(t, "no id", "%s's project.yaml names no id", name)
+	return ""
 }
 
 func nameOf(v any) string {
@@ -315,7 +337,7 @@ func deployServing(t *testing.T, name, host string, wasm []byte, extra map[strin
 		held[label] = code
 	}
 
-	return publish(t, u, pids[:1], deployed{project: "shop", name: name, host: host}, held)[0]
+	return publish(t, u, pids[:1], deployed{name: name, host: host}, held)[0]
 }
 
 func handlerWASM(t *testing.T) []byte {
@@ -462,7 +484,7 @@ func TestAKvDatabaseAnswersFromANodeThatNeverTookTheWrite(t *testing.T) {
 	cloud := deployFleet(t, 3, "with/database/distributed/kv/crdt", "keep.example.com", kitchenSinkWASM(t))
 
 	// A CRDT write is 204 on the first try: no group to form.
-	stored, err := cloud[0].on(t.Context(), keeper("shop"), http.MethodPost, "/kv-put/sessions/token-1")
+	stored, err := cloud[0].on(t.Context(), keeper(cloud[0].project), http.MethodPost, "/kv-put/sessions/token-1")
 	require.NoError(t, err)
 	require.Equal(t, 204, stored.Status, "the write was refused: %s", stored.Body)
 
@@ -488,7 +510,7 @@ func TestAKvDatabaseAnswersFromANodeThatNeverTookTheWrite(t *testing.T) {
 	reader := cloud[untouched[0]]
 	var last string
 	require.Eventually(t, func() bool {
-		got, err := reader.on(t.Context(), keeper("shop"), http.MethodGet, "/kv-get/sessions/token-1")
+		got, err := reader.on(t.Context(), keeper(cloud[0].project), http.MethodGet, "/kv-get/sessions/token-1")
 		if err != nil {
 			last = err.Error()
 			return false
@@ -505,7 +527,7 @@ func TestAKvDatabaseAnswersFromANodeThatNeverTookTheWrite(t *testing.T) {
 	// A key nobody wrote is a miss on every node, or a store answering everything would
 	// pass the assertion above.
 	for i, at := range cloud {
-		missing, err := at.on(t.Context(), keeper("shop"), http.MethodGet, "/kv-get/sessions/never-written")
+		missing, err := at.on(t.Context(), keeper(cloud[0].project), http.MethodGet, "/kv-get/sessions/never-written")
 		require.NoError(t, err)
 		require.Equal(t, 404, missing.Status, "node %d answered a key nobody wrote: %s", i, missing.Body)
 	}
@@ -515,9 +537,10 @@ func TestTwoProjectsNamingTheirKvTheSameThingNeverSeeEachOthersWrites(t *testing
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
 	u := deployFleetOf(t, 3, kitchenSinkWASM(t), nil,
-		deployed{project: "shop", name: "with/database/distributed/kv/crdt", host: "keep.example.com"},
-		deployed{project: "market", name: "with/database/distributed/kv/crdt-b", host: "keepb.example.com"})
+		deployed{name: "with/database/distributed/kv/crdt", host: "keep.example.com"},
+		deployed{name: "with/database/distributed/kv/crdt-b", host: "keepb.example.com"})
 	shop, market := u.fleets[0], u.fleets[1]
+	shopID, marketID := shop[0].project, market[0].project
 
 	// Pinned, not routed through the gateway: this test is about which node holds what.
 	put := func(through *running, project, key, value string) {
@@ -534,10 +557,10 @@ func TestTwoProjectsNamingTheirKvTheSameThingNeverSeeEachOthersWrites(t *testing
 	// node 2 answers crossed the swarm. The private key goes first: it rides the same
 	// heads as token-1, so a node holding token-1 holds only-<project> too, making the
 	// final miss a fact rather than timing.
-	put(shop[0], "shop", "only-shop", "shop-kept")
-	put(shop[0], "shop", "token-1", "shop-kept")
-	put(market[1], "market", "only-market", "market-kept")
-	put(market[1], "market", "token-1", "market-kept")
+	put(shop[0], shopID, "only-shop", "shop-kept")
+	put(shop[0], shopID, "token-1", "shop-kept")
+	put(market[1], marketID, "only-market", "market-kept")
+	put(market[1], marketID, "token-1", "market-kept")
 
 	// Both reach the node that took neither write, on a rebroadcast since node 2 opens
 	// its copy after both writes. 60s is nine 6.5s rebroadcast rounds (instance/locate.go,
@@ -560,8 +583,8 @@ func TestTwoProjectsNamingTheirKvTheSameThingNeverSeeEachOthersWrites(t *testing
 			return true
 		}, 60*time.Second, time.Second, "%s's kv never reached a node that never took its write: %s", project, &lastSaid{&last})
 	}
-	converged(shop, "shop", "shop-kept")
-	converged(market, "market", "market-kept")
+	converged(shop, shopID, "shop-kept")
+	converged(market, marketID, "market-kept")
 
 	// Each still answers its own value, asked again now both are live on this node: two
 	// values for one key from one node is what a single store cannot do.
@@ -570,7 +593,7 @@ func TestTwoProjectsNamingTheirKvTheSameThingNeverSeeEachOthersWrites(t *testing
 		project string
 		value   string
 	}
-	for _, at := range []testCase{{shop, "shop", "shop-kept"}, {market, "market", "market-kept"}} {
+	for _, at := range []testCase{{shop, shopID, "shop-kept"}, {market, marketID, "market-kept"}} {
 		got, err := read(at.fleet[2], at.project, "token-1")
 		require.NoError(t, err)
 		require.Equal(t, 200, got.Status, "%s lost its own key: %s", at.project, got.Body)
@@ -579,11 +602,11 @@ func TestTwoProjectsNamingTheirKvTheSameThingNeverSeeEachOthersWrites(t *testing
 
 	// Neither sees the key the other kept. The row is on this node (it came with
 	// token-1), so no wait is needed.
-	missed, err := read(market[2], "market", "only-shop")
+	missed, err := read(market[2], marketID, "only-shop")
 	require.NoError(t, err)
 	require.Equal(t, 404, missed.Status, "market read a key only shop ever wrote: %s", missed.Body)
 
-	missed, err = read(shop[2], "shop", "only-market")
+	missed, err = read(shop[2], shopID, "only-market")
 	require.NoError(t, err)
 	require.Equal(t, 404, missed.Status, "shop read a key only market ever wrote: %s", missed.Body)
 
@@ -598,8 +621,8 @@ func TestTwoProjectsNamingTheirKvTheSameThingNeverSeeEachOthersWrites(t *testing
 	// leaving the project as the only separator.
 	const sessions = "QmVLDAzEjEbfBPuoyLPWnPMhKp8ceDXwGdmMKY5W3nZWfG"
 	topics := map[string]bool{
-		"databases/shop/prod/kv/" + sessions + "/broadcast":   false,
-		"databases/market/prod/kv/" + sessions + "/broadcast": false,
+		"databases/" + shopID + "/prod/kv/" + sessions + "/broadcast":   false,
+		"databases/" + marketID + "/prod/kv/" + sessions + "/broadcast": false,
 	}
 	for _, n := range u.dream.Peers() {
 		for _, topic := range n.Messaging().GetTopics() {
@@ -620,9 +643,10 @@ func TestTwoProjectsNamingTheirLedgerTheSameThingAreTwoGroups(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
 	u := deployFleetOf(t, 3, kitchenSinkWASM(t), nil,
-		deployed{project: "shop", name: "with/database/distributed/kv/raft", host: "ledger.example.com"},
-		deployed{project: "market", name: "with/database/distributed/kv/raft-b", host: "ledgerb.example.com"})
+		deployed{name: "with/database/distributed/kv/raft", host: "ledger.example.com"},
+		deployed{name: "with/database/distributed/kv/raft-b", host: "ledgerb.example.com"})
 	shop, market := u.fleets[0], u.fleets[1]
+	shopID, marketID := shop[0].project, market[0].project
 
 	put := func(through *running, project, key, value string) (*invoke.Response, error) {
 		return through.onCarrying(t.Context(), keeper(project), http.MethodPost, "/kv-put/ledger/"+key, value)
@@ -646,23 +670,23 @@ func TestTwoProjectsNamingTheirLedgerTheSameThingAreTwoGroups(t *testing.T) {
 			return got.Status == 204
 		}, formingBudget, time.Second, "no node ever led %s's ledger: %s", project, &lastSaid{&last})
 	}
-	commit(shop, "shop", "entry-1", "shop-kept")
-	commit(market, "market", "entry-1", "market-kept")
+	commit(shop, shopID, "entry-1", "shop-kept")
+	commit(market, marketID, "entry-1", "market-kept")
 
 	// A second entry, first try: the group now has a leader. Only shop has it; market is
 	// asked about it below.
-	only, err := put(shop[0], "shop", "only-shop", "shop-kept")
+	only, err := put(shop[0], shopID, "only-shop", "shop-kept")
 	require.NoError(t, err)
 	require.Equal(t, 204, only.Status, "shop's group stopped committing: %s", only.Body)
 
 	// Every node answers each project with its own entry, first try, pinned not routed.
 	for i := range shop {
-		kept, err := read(shop[i], "shop", "entry-1")
+		kept, err := read(shop[i], shopID, "entry-1")
 		require.NoError(t, err)
 		require.Equal(t, 200, kept.Status, "node %d refused shop's entry: %s", i, kept.Body)
 		require.Equal(t, "shop-kept", string(kept.Body), "node %d answered shop with something else", i)
 
-		other, err := read(market[i], "market", "entry-1")
+		other, err := read(market[i], marketID, "entry-1")
 		require.NoError(t, err)
 		require.Equal(t, 200, other.Status, "node %d refused market's entry: %s", i, other.Body)
 		require.Equal(t, "market-kept", string(other.Body), "node %d answered market with something else", i)
@@ -670,7 +694,7 @@ func TestTwoProjectsNamingTheirLedgerTheSameThingAreTwoGroups(t *testing.T) {
 
 	// AND AN ENTRY ONLY SHOP COMMITTED IS A MISS FOR MARKET, on every node.
 	for i := range market {
-		missing, err := read(market[i], "market", "only-shop")
+		missing, err := read(market[i], marketID, "only-shop")
 		require.NoError(t, err)
 		require.Equal(t, 404, missing.Status, "node %d let market read an entry shop committed: %s", i, missing.Body)
 	}
@@ -682,8 +706,8 @@ func TestTwoProjectsNamingTheirLedgerTheSameThingAreTwoGroups(t *testing.T) {
 	const ledger = "QmVYRA67L6sJ1c8bZTwcs7UBvFdYesu414kPa2V9whE42e"
 	const domain = "/tau/databases/v2"
 	groups := map[string]bool{
-		domain + "/shop/prod/kv/" + ledger:   false,
-		domain + "/market/prod/kv/" + ledger: false,
+		domain + "/" + shopID + "/prod/kv/" + ledger:   false,
+		domain + "/" + marketID + "/prod/kv/" + ledger: false,
 	}
 	for _, peer := range u.dream.Peers() {
 		for _, id := range peer.Host().Mux().Protocols() {
@@ -717,7 +741,7 @@ func deployFleet(t *testing.T, copies int, name, host string, wasm []byte) []*ru
 func deployFleetWith(t *testing.T, copies int, name, host string, wasm []byte, extra map[string][]byte) []*running {
 	t.Helper()
 	return deployFleetOf(t, copies, wasm, extra,
-		deployed{project: "shop", name: name, host: host}).fleets[0]
+		deployed{name: name, host: host}).fleets[0]
 }
 
 // universe is what deployFleetOf leaves running: dream's own handle on the
@@ -774,8 +798,8 @@ func deployFleetOf(t *testing.T, copies int, wasm []byte, extra map[string][]byt
 	require.Eventually(t, func() bool {
 		for _, n := range nodes {
 			for _, at := range projects {
-				if _, err := n.Register().Local().Resolve(t.Context(), at.project, "prod"); err != nil {
-					waiting = "the project " + at.project
+				if _, err := n.Register().Local().Resolve(t.Context(), projectIDOf(t, at.name), "prod"); err != nil {
+					waiting = "the project " + at.name
 					return false
 				}
 			}

@@ -71,7 +71,7 @@ func TestAGatewayNodeReachesAWorkerNode(t *testing.T) {
 
 	// BUILT AS A PUSH IS, by the universe's runner: the recording tier never reads the
 	// bytes.
-	publish(t, u, pids, deployed{project: "shop", name: "with/function/wasm", host: "hello.example.com"}, artifacts{"": []byte("never read")})
+	publish(t, u, pids, deployed{name: "with/function/wasm", host: "hello.example.com"}, artifacts{"": []byte("never read")})
 
 	// Both nodes see each other before anything is routed.
 	require.Eventually(t, func() bool {

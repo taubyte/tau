@@ -25,7 +25,7 @@ func TestAnObjectCrossesTheSwarm(t *testing.T) {
 
 	// A put answers the ETag it stored under, which is the content id. Not retried: a
 	// bucket's index is crdt, with no group to form.
-	res, err := first.onCarrying(t.Context(), target(), http.MethodPost, "/obj-put/receipts/2026/01", "a receipt")
+	res, err := first.onCarrying(t.Context(), first.function("cacher"), http.MethodPost, "/obj-put/receipts/2026/01", "a receipt")
 	require.NoError(t, err)
 	require.Equal(t, 200, res.Status, string(res.Body))
 	etag := string(res.Body)
@@ -33,7 +33,7 @@ func TestAnObjectCrossesTheSwarm(t *testing.T) {
 
 	// Read through the second node's guest, tier, kvdb and DAG.
 	require.Eventually(t, func() bool {
-		res, err := second.onCarrying(t.Context(), target(), http.MethodPost, "/obj-get/receipts/2026/01", "")
+		res, err := second.onCarrying(t.Context(), second.function("cacher"), http.MethodPost, "/obj-get/receipts/2026/01", "")
 		return err == nil && res.Status == 200 && string(res.Body) == "a receipt"
 	}, 60*time.Second, 500*time.Millisecond, "an object never crossed the swarm")
 
@@ -41,7 +41,7 @@ func TestAnObjectCrossesTheSwarm(t *testing.T) {
 	// second node read the replicated row and computed nothing.
 	var head string
 	require.Eventually(t, func() bool {
-		res, err := second.onCarrying(t.Context(), target(), http.MethodPost, "/obj-head/receipts/2026/01", "")
+		res, err := second.onCarrying(t.Context(), second.function("cacher"), http.MethodPost, "/obj-head/receipts/2026/01", "")
 		if err != nil || res.Status != 200 {
 			return false
 		}

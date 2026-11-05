@@ -29,10 +29,10 @@ func TestAChannelServedByAContainerDeliversToItsNamedPort(t *testing.T) {
 	pids := u.Pids()
 	require.NotEmpty(t, pids)
 
-	at := publish(t, u, pids[:1], deployed{project: "shop", name: "with/channel/application", host: "reserve.example.com"}, artifacts{"": cacherWASM(t)})[0]
+	at := publish(t, u, pids[:1], deployed{name: "with/channel/application", host: "reserve.example.com"}, artifacts{"": cacherWASM(t)})[0]
 
 	// THE GRANT CARRIES THE PORT'S NAME, and is not refused for naming one.
-	spec, err := at.node.Worker().Resolve(t.Context(), dialerTarget())
+	spec, err := at.node.Worker().Resolve(t.Context(), at.function("dialer"))
 	require.NoError(t, err)
 	require.Len(t, spec.Reaches, 1)
 	require.Empty(t, spec.Reaches[0].Refused)
@@ -43,7 +43,7 @@ func TestAChannelServedByAContainerDeliversToItsNamedPort(t *testing.T) {
 
 	var last string
 	require.Eventually(t, func() bool {
-		res, err := at.onCarrying(t.Context(), dialerTarget(), http.MethodPost, "/dial/reserve", request)
+		res, err := at.onCarrying(t.Context(), at.function("dialer"), http.MethodPost, "/dial/reserve", request)
 		if err != nil {
 			last = err.Error()
 			return false

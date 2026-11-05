@@ -14,7 +14,6 @@ import (
 	"github.com/taubyte/tau/instance"
 	nodeDream "github.com/taubyte/tau/instance/dream"
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/specs"
 )
 
 // Both halves of an authorizer real: fixtures/cacher reaches a guarded cache and
@@ -28,16 +27,6 @@ func guardWASM(t *testing.T) []byte {
 	code, err := os.ReadFile(filepath.Join("..", "..", "pkg", "invoke", "wasm", "fixtures", "guard.wasm"))
 	require.NoError(t, err, "run `cargo component build --release` in pkg/invoke/wasm/fixtures/guard")
 	return code
-}
-
-// guardedTarget is the guest and keeperTarget the function deciding for it,
-// filenames under projects/with/authorizer/function.
-func guardedTarget() specs.Address {
-	return specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "reacher"}
-}
-
-func keeperTarget() specs.Address {
-	return specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "keeper"}
 }
 
 func TestAGuardDecidesForARealGuest(t *testing.T) {
@@ -57,10 +46,10 @@ func TestAGuardDecidesForARealGuest(t *testing.T) {
 	// Two artifacts, so this cannot go through deploy: the guard is a different
 	// component in a different world. No gateway or zone; both halves are put to the
 	// worker directly.
-	publish(t, u, pids[:1], deployed{project: "shop", name: "with/cache/authorizer"}, artifacts{"": cacherWASM(t), "keeper": guardWASM(t)})
+	r := publish(t, u, pids[:1], deployed{name: "with/cache/authorizer"}, artifacts{"": cacherWASM(t), "keeper": guardWASM(t)})[0]
 
 	// THE GRANT CARRIES THE GUARD, resolved where the project was open.
-	spec, err := n.Worker().Resolve(t.Context(), guardedTarget())
+	spec, err := n.Worker().Resolve(t.Context(), r.function("reacher"))
 	require.NoError(t, err)
 	require.Len(t, spec.Reaches, 3)
 	for _, g := range spec.Reaches {
@@ -71,14 +60,14 @@ func TestAGuardDecidesForARealGuest(t *testing.T) {
 	// The compiled worlds: the guard's `authorizer`, the guest's defaulted `handler`.
 	require.Equal(t, "handler", spec.Settings["implements"])
 
-	guard, err := n.Worker().Resolve(t.Context(), keeperTarget())
+	guard, err := n.Worker().Resolve(t.Context(), r.function("keeper"))
 	require.NoError(t, err)
 	require.Equal(t, "authorizer", guard.Settings["implements"])
 	require.Equal(t, "authorize", guard.Settings["execution/call"])
 
 	ask := func(path string, body []byte) *invoke.Response {
 		t.Helper()
-		res, err := n.Worker().Invoke(t.Context(), guardedTarget(), &invoke.Request{
+		res, err := n.Worker().Invoke(t.Context(), r.function("reacher"), &invoke.Request{
 			Method: "POST", Path: path, Body: body,
 		})
 		require.NoError(t, err)

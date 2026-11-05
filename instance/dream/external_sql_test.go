@@ -135,13 +135,13 @@ func externalSQL(t *testing.T, name string, s server, port int) {
 	// The credentials are a secret set the way a developer sets one; the first exec
 	// retries until it lands.
 	ctx := t.Context()
-	require.NoError(t, r.node.Vault().Set(ctx, "shop", "prod", r.idOf(t, "secret", "dbcreds"), []byte("tau:s3cret")))
+	require.NoError(t, r.node.Vault().Set(ctx, r.project, "prod", r.idOf(t, "secret", "dbcreds"), []byte("tau:s3cret")))
 
 	exec := func(statement string) {
 		t.Helper()
 		var last string
 		require.Eventually(t, func() bool {
-			res, err := r.onCarrying(ctx, keeper("shop"), http.MethodPost, "/exec/orders", statement)
+			res, err := r.onCarrying(ctx, keeper(r.project), http.MethodPost, "/exec/orders", statement)
 			if err != nil {
 				last = err.Error()
 				return false
@@ -153,7 +153,7 @@ func externalSQL(t *testing.T, name string, s server, port int) {
 	exec(`CREATE TABLE entries (id INTEGER PRIMARY KEY, payee VARCHAR(64), amount INTEGER)`)
 	exec(`INSERT INTO entries(id, payee, amount) VALUES(1, 'alice', 42)`)
 
-	res, err := r.onCarrying(ctx, keeper("shop"), http.MethodPost, "/query/orders", `SELECT payee, amount FROM entries`)
+	res, err := r.onCarrying(ctx, keeper(r.project), http.MethodPost, "/query/orders", `SELECT payee, amount FROM entries`)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.Status, "the read was refused: %s", res.Body)
 	require.Contains(t, string(res.Body), "alice")

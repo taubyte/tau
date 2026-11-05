@@ -44,7 +44,7 @@ func TestACodePushIsWhatTheNextRequestRuns(t *testing.T) {
 		return code
 	}
 
-	at := deployed{project: "shop", name: "with/function/wasm", host: "hello.example.com"}
+	at := deployed{name: "with/function/wasm", host: "hello.example.com"}
 	r := publish(t, u, pids, at, artifacts{"": fixture("handler.wasm")})[0]
 
 	before := r.ask(t, http.MethodGet, "/")
@@ -52,7 +52,7 @@ func TestACodePushIsWhatTheNextRequestRuns(t *testing.T) {
 	require.Equal(t, "/", before.Header().Get("x-path"), "and it is the handler")
 
 	_, _, built := project(t, at.name, artifacts{"": fixture("cacher.wasm")})
-	build(t, u, at.project, at.name, built)
+	build(t, u, r.project, at.name, built)
 
 	var after *httptest.ResponseRecorder
 	require.Eventually(t, func() bool {

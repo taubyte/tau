@@ -31,7 +31,7 @@ func TestAnItemSentByAGuestIsDeliveredToOne(t *testing.T) {
 	// and an early send is told `unavailable`. Budget: formingBudget.
 	var last string
 	require.Eventually(t, func() bool {
-		res, err := r.onCarrying(t.Context(), target(), http.MethodPost, "/send/jobs/order-1", "ship it")
+		res, err := r.onCarrying(t.Context(), r.function("cacher"), http.MethodPost, "/send/jobs/order-1", "ship it")
 		if err != nil {
 			last = err.Error()
 			return false
@@ -45,7 +45,7 @@ func TestAnItemSentByAGuestIsDeliveredToOne(t *testing.T) {
 	// so the ceiling is one claim cycle (2s) plus a warm invoke; the rest is headroom
 	// for reporting a stall.
 	require.Eventually(t, func() bool {
-		res, err := r.onCarrying(t.Context(), target(), http.MethodPost, "/get/sessions/done", "")
+		res, err := r.onCarrying(t.Context(), r.function("cacher"), http.MethodPost, "/get/sessions/done", "")
 		return err == nil && res.Status == 200 && string(res.Body) == "ship it"
 	}, 60*time.Second, 500*time.Millisecond, "nothing ever delivered the item")
 

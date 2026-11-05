@@ -34,7 +34,7 @@ func TestAGuestsMessageCrossesTheSwarm(t *testing.T) {
 	// compiled project crossed.
 	var stream invoke.Grant
 	require.Eventually(t, func() bool {
-		spec, err := listening.node.Worker().Resolve(t.Context(), target())
+		spec, err := listening.node.Worker().Resolve(t.Context(), listening.function("cacher"))
 		if err != nil {
 			return false
 		}
@@ -78,7 +78,7 @@ func TestAGuestsMessageCrossesTheSwarm(t *testing.T) {
 	// publish is retried. No raft here; 60s is headroom for reporting a mesh that never
 	// formed.
 	require.Eventually(t, func() bool {
-		res, err := publishing.onCarrying(t.Context(), target(),
+		res, err := publishing.onCarrying(t.Context(), publishing.function("cacher"),
 			http.MethodPost, "/publish/orders/", "order:1")
 		require.NoError(t, err)
 		require.Equal(t, 204, res.Status, string(res.Body))

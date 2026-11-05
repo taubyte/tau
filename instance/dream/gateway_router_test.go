@@ -56,7 +56,7 @@ func TestAGatewayRoutedByAFunctionRunsRealComponents(t *testing.T) {
 	n := nodeOf(t, pids[0])
 
 	// Three artifacts, one per world.
-	publish(t, u, pids[:1], deployed{project: "shop", name: "with/gateway/router", host: routedHost}, artifacts{
+	publish(t, u, pids[:1], deployed{name: "with/gateway/router", host: routedHost}, artifacts{
 		"": cacherWASM(t), "shaper": shaperWASM(t), "picker": pickerWASM(t),
 	})
 
