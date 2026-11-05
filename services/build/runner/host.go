@@ -203,14 +203,7 @@ func provers(h service.Host, cfg Config) (prover, error) {
 	if cfg.Domains.Trusted {
 		return trusted{}, nil
 	}
-	return cm.NewDomains(h.Peer().Host(),
-		func() []libp2ppeer.ID {
-			if dir, ok := service.Get[service.Directory](h); ok {
-				return dir.Peers(cm.Name)
-			}
-			return nil
-		},
-		cm.StoreOn(h))
+	return cm.NewDomains(h.Peer().Host(), cm.On(h))
 }
 
 // tableReader is the register's table as a code build reads the configuration it

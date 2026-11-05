@@ -59,8 +59,7 @@ type cached struct {
 // Client reads, orders and keeps the cloud's certificates.
 type Client struct {
 	host       host.Host
-	members    func() []peer.ID
-	local      func() *Store
+	locate     Locator
 	vault      Vault
 	cfg        CertificateConfig
 	challenges *Challenges
@@ -118,9 +117,8 @@ func WithLogger(logf func(string, ...any)) ClientOption {
 	return func(c *Client) { c.logf = logf }
 }
 
-// NewClient builds a client. members is the nodes reporting the service and
-// local this node's own, nil when it runs none; both are asked at call time.
-func NewClient(h host.Host, members func() []peer.ID, local func() *Store, v Vault, whole Config, opts ...ClientOption) (*Client, error) {
+// NewClient builds a client over the cm at finds, asked at call time.
+func NewClient(h host.Host, at Locator, v Vault, whole Config, opts ...ClientOption) (*Client, error) {
 	if h == nil {
 		return nil, ErrNoHost
 	}
@@ -132,7 +130,7 @@ func NewClient(h host.Host, members func() []peer.ID, local func() *Store, v Vau
 		return nil, err
 	}
 	c := &Client{
-		host: h, members: members, local: local, vault: v, cfg: cfg,
+		host: h, locate: at, vault: v, cfg: cfg,
 		timeout: 30 * time.Second,
 		wait:    CertWait,
 		poll:    250 * time.Millisecond,
@@ -163,10 +161,10 @@ func (c *Client) Close() error {
 // targets is every cm node, this one first when it runs one.
 func (c *Client) targets() []peer.ID {
 	var all []peer.ID
-	if c.local() != nil {
+	if c.locate.Local() != nil {
 		all = append(all, c.host.ID())
 	}
-	for _, p := range c.members() {
+	for _, p := range c.locate.Members() {
 		if !slices.Contains(all, p) && p != c.host.ID() {
 			all = append(all, p)
 		}
@@ -176,7 +174,7 @@ func (c *Client) targets() []peer.ID {
 
 func (c *Client) at(p peer.ID) (cmv2connect.CertificateServiceClient, error) {
 	if p == c.host.ID() {
-		if s := c.local(); s != nil {
+		if s := c.locate.Local(); s != nil {
 			return handler{s}, nil
 		}
 	}

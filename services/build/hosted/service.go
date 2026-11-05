@@ -9,7 +9,6 @@ import (
 
 	"connectrpc.com/connect"
 	logging "github.com/ipfs/go-log/v2"
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/pkg/forge/drivers"
@@ -145,13 +144,7 @@ func (f *server) wire(h service.Host, cfg config) ([]ingress.Option, error) {
 	f.also = append(f.also, table, vault, assets)
 	projects := linked.Projects{Table: table.Now}
 
-	members := func() []libp2ppeer.ID {
-		if dir, ok := service.Get[service.Directory](h); ok {
-			return dir.Peers(cm.Name)
-		}
-		return nil
-	}
-	domains, err := cm.NewDomains(self, members, cm.StoreOn(h))
+	domains, err := cm.NewDomains(self, cm.On(h))
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +187,7 @@ func (f *server) wire(h service.Host, cfg config) ([]ingress.Option, error) {
 		}
 		whole := cfg.CM
 		whole.Certificate.Zone = cfg.CloudFqdn
-		certificates, err := cm.NewClient(self, members, cm.StoreOn(h), vault.Cloud(cm.VaultService), whole)
+		certificates, err := cm.NewClient(self, cm.On(h), vault.Cloud(cm.VaultService), whole)
 		if err != nil {
 			return nil, err
 		}

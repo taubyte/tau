@@ -334,20 +334,19 @@ func (h handler) Prove(ctx context.Context, req *connect.Request[cmv2.ClaimReque
 
 // Domains issues claims and proves them, against whichever cm nodes answer.
 type Domains struct {
-	host    host.Host
-	members func() []peer.ID
-	local   func() *Store
+	host   host.Host
+	locate Locator
 
 	mu    sync.Mutex
 	conns map[peer.ID]*rpc.Client
 }
 
-// NewDomains builds the domain client. members and local are as NewClient's.
-func NewDomains(h host.Host, members func() []peer.ID, local func() *Store) (*Domains, error) {
+// NewDomains builds the domain client over the cm at finds, asked at call time.
+func NewDomains(h host.Host, at Locator) (*Domains, error) {
 	if h == nil {
 		return nil, ErrNoHost
 	}
-	return &Domains{host: h, members: members, local: local, conns: map[peer.ID]*rpc.Client{}}, nil
+	return &Domains{host: h, locate: at, conns: map[peer.ID]*rpc.Client{}}, nil
 }
 
 // Close releases every stream.
@@ -363,10 +362,10 @@ func (d *Domains) Close() error {
 
 func (d *Domains) targets() []peer.ID {
 	var all []peer.ID
-	if d.local() != nil {
+	if d.locate.Local() != nil {
 		all = append(all, d.host.ID())
 	}
-	for _, p := range d.members() {
+	for _, p := range d.locate.Members() {
 		if p != d.host.ID() && !slices.Contains(all, p) {
 			all = append(all, p)
 		}
@@ -376,7 +375,7 @@ func (d *Domains) targets() []peer.ID {
 
 func (d *Domains) at(p peer.ID) (cmv2connect.DomainServiceClient, error) {
 	if p == d.host.ID() {
-		if s := d.local(); s != nil {
+		if s := d.locate.Local(); s != nil {
 			return handler{s}, nil
 		}
 	}

@@ -104,6 +104,22 @@ func (f *fleet) advance(d time.Duration) {
 	f.nowMu.Unlock()
 }
 
+// at is cm found where a test says: these members, and this store beside the
+// caller.
+type at struct {
+	members []peer.ID
+	local   *Store
+}
+
+func (a at) Members() []peer.ID { return a.members }
+func (a at) Local() *Store      { return a.local }
+
+// fleetAt is the fleet's cm nodes, as they are when asked, and none beside the caller.
+type fleetAt struct{ f *fleet }
+
+func (a fleetAt) Members() []peer.ID { return a.f.members() }
+func (fleetAt) Local() *Store        { return nil }
+
 func (f *fleet) members() []peer.ID {
 	f.nodesMu.Lock()
 	defer f.nodesMu.Unlock()
@@ -224,7 +240,7 @@ func (f *fleet) add(t *testing.T) *Store {
 // challenge store.
 func (f *fleet) client(t *testing.T, opts ...ClientOption) *Client {
 	t.Helper()
-	c, err := NewClient(newHost(t, f.mn), f.members, func() *Store { return nil }, f.vault, f.cfg, append([]ClientOption{
+	c, err := NewClient(newHost(t, f.mn), fleetAt{f}, f.vault, f.cfg, append([]ClientOption{
 		WithChallengeStore(f.challenges(t)), WithClientClock(f.clock), WithCertWait(0), WithLogger(t.Logf),
 	}, opts...)...)
 	require.NoError(t, err)
@@ -370,7 +386,7 @@ func TestADueCertificateIsRenewedAndAnOutageKeepsTheOldOne(t *testing.T) {
 	f := newFleet(t, 1, false)
 	s := f.nodes[0]
 	// A CLIENT ON THE GLOBALS NODE ITSELF calls it without a stream.
-	c, err := NewClient(s.host, func() []peer.ID { return nil }, func() *Store { return s }, f.vault, f.cfg,
+	c, err := NewClient(s.host, at{local: s}, f.vault, f.cfg,
 		WithChallengeStore(f.challenges(t)), WithClientClock(f.clock), WithCertWait(0))
 	require.NoError(t, err)
 	const name = "r." + zone
@@ -434,17 +450,16 @@ func TestWhatIsRefused(t *testing.T) {
 	require.NoError(t, s.Close(), "closing what was never started")
 
 	empty := &vault{data: map[string][]byte{}}
-	none := func() []peer.ID { return nil }
-	nolocal := func() *Store { return nil }
-	_, err = NewClient(nil, none, nolocal, empty, on)
+	none := at{}
+	_, err = NewClient(nil, none, empty, on)
 	require.ErrorIs(t, err, ErrNoHost)
-	_, err = NewClient(h, none, nolocal, nil, on)
+	_, err = NewClient(h, none, nil, on)
 	require.ErrorIs(t, err, ErrNoVault)
-	_, err = NewClient(h, none, nolocal, empty, cfg(CertificateConfig{ACME: acmeOn}))
+	_, err = NewClient(h, none, empty, cfg(CertificateConfig{ACME: acmeOn}))
 	require.ErrorIs(t, err, ErrNoZone)
 
 	// NO KEY IN THE VAULT: nothing is issued, and no challenge answered.
-	c, err := NewClient(h, none, nolocal, empty, on)
+	c, err := NewClient(h, none, empty, on)
 	require.NoError(t, err)
 	c.timeout, c.poll = 20*time.Millisecond, time.Millisecond
 	_, ok := c.Challenge("tok")
@@ -476,14 +491,14 @@ func TestWhatIsRefused(t *testing.T) {
 
 	// HTTP-01 needs no store.
 	httpOn := cfg(CertificateConfig{ACME: acmeOn, Zone: zone, Challenge: ChallengeHTTP})
-	c, err = NewClient(h, none, nolocal, empty, httpOn)
+	c, err = NewClient(h, none, empty, httpOn)
 	require.NoError(t, err)
 	_, err = c.acmeIssuer(t.Context())
 	require.NoError(t, err)
 
 	// A VAULT THAT FAILS fails a leaf key.
 	broken := &vault{data: map[string][]byte{}, fail: errors.New("down")}
-	c, err = NewClient(h, none, nolocal, broken, httpOn)
+	c, err = NewClient(h, none, broken, httpOn)
 	require.NoError(t, err)
 	require.ErrorContains(t, keeper{c}.Keep(t.Context(), "a."+zone, pemOf(t)), "down")
 }
@@ -583,7 +598,7 @@ func TestAKeyNotReadableYetIsWaitedFor(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
 	v := &vault{data: map[string][]byte{}}
-	c, err := NewClient(newHost(t, mn), func() []peer.ID { return nil }, func() *Store { return nil }, v,
+	c, err := NewClient(newHost(t, mn), at{}, v,
 		Config{Certificate: CertificateConfig{ACME: pkgcertificate.ACME{Enabled: true}, Zone: zone}})
 	require.NoError(t, err)
 	c.poll = time.Millisecond

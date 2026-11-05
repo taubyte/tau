@@ -100,8 +100,7 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 		require.NoError(t, err)
 		members = append(members, id)
 	}
-	domains, err := cm.NewDomains(u.Peers()[1].Host(), func() []libp2ppeer.ID { return slices.Clone(members) },
-		func() *cm.Store { return nil })
+	domains, err := cm.NewDomains(u.Peers()[1].Host(), fleetOf(members))
 	require.NoError(t, err)
 	t.Cleanup(func() { domains.Close() })
 
@@ -167,3 +166,9 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 	_, err = deployed("with/domain/child", customDomainID)
 	require.ErrorIs(t, err, buildDeploy.ErrUnproven)
 }
+
+// fleetOf is the cm nodes named, none of them beside the caller.
+type fleetOf []libp2ppeer.ID
+
+func (f fleetOf) Members() []libp2ppeer.ID { return slices.Clone(f) }
+func (fleetOf) Local() *cm.Store           { return nil }

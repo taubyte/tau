@@ -45,7 +45,7 @@ func (r *records) LookupTXT(_ context.Context, name string) ([]string, error) {
 
 func (f *fleet) domains(t *testing.T) *Domains {
 	t.Helper()
-	d, err := NewDomains(newHost(t, f.mn), f.members, func() *Store { return nil })
+	d, err := NewDomains(newHost(t, f.mn), fleetAt{f})
 	require.NoError(t, err)
 	t.Cleanup(func() { d.Close() })
 	f.connect(t)
@@ -164,16 +164,16 @@ func TestWhatAClaimRefuses(t *testing.T) {
 	_, err = d.Claim(t.Context(), projectID, "")
 	require.ErrorIs(t, err, ErrBadClaim)
 
-	_, err = NewDomains(nil, nil, nil)
+	_, err = NewDomains(nil, at{})
 	require.ErrorIs(t, err, ErrNoHost)
 	h := newHost(t, f.mn)
-	none, err := NewDomains(h, func() []peer.ID { return nil }, func() *Store { return nil })
+	none, err := NewDomains(h, at{})
 	require.NoError(t, err)
 	_, err = none.Claim(t.Context(), projectID, customZone)
 	require.ErrorIs(t, err, ErrNoMembers)
 	require.ErrorIs(t, none.Prove(t.Context(), projectID, customZone), ErrNoMembers)
 
-	gone, err := NewDomains(h, func() []peer.ID { return []peer.ID{"nobody"} }, func() *Store { return nil })
+	gone, err := NewDomains(h, at{members: []peer.ID{"nobody"}})
 	require.NoError(t, err)
 	_, err = gone.Claim(t.Context(), projectID, customZone)
 	require.Error(t, err)
@@ -195,7 +195,7 @@ func TestWhatAClaimRefuses(t *testing.T) {
 	_, err = broken.claim(t.Context(), customZone, projectID)
 	require.ErrorContains(t, err, "reading the domain key")
 
-	local, err := NewDomains(h, func() []peer.ID { return nil }, func() *Store { return f.nodes[0] })
+	local, err := NewDomains(h, at{local: f.nodes[0]})
 	require.NoError(t, err)
 	_, err = local.Claim(t.Context(), projectID, customZone)
 	require.NoError(t, err, "a cm node answers its own")

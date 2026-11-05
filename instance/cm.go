@@ -5,8 +5,6 @@ import (
 	"crypto/tls"
 	"errors"
 
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
-
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/dns"
 	secretsService "github.com/taubyte/tau/services/secrets"
@@ -63,9 +61,7 @@ func (n *Instance) certificates() (*cm.Client, error) {
 	}
 	options = append(options, cm.WithProver(d))
 	c, err := cm.NewClient(n.Host(),
-		func() []libp2ppeer.ID { return (&fromDiscovery{node: n, name: CM}).Known() },
-		cm.StoreOn(&added{node: n}),
-		n.certVault(), cfg, options...)
+		cm.On(&added{node: n}), n.certVault(), cfg, options...)
 	if err != nil {
 		return nil, err
 	}
@@ -151,9 +147,7 @@ func (n *Instance) domains() (*cm.Domains, error) {
 	if n.domainClaims != nil {
 		return n.domainClaims, nil
 	}
-	d, err := cm.NewDomains(n.Host(),
-		func() []libp2ppeer.ID { return (&fromDiscovery{node: n, name: CM}).Known() },
-		cm.StoreOn(&added{node: n}))
+	d, err := cm.NewDomains(n.Host(), cm.On(&added{node: n}))
 	if err != nil {
 		return nil, err
 	}

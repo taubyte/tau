@@ -7,6 +7,8 @@ import (
 	"io"
 	"sync"
 
+	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
+
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
@@ -122,15 +124,31 @@ func (s *server) database(h service.Host, name string) (kvdb.Instance, error) {
 
 func (s *server) Store() *Store { return s.store }
 
-// StoreOn is the certificate store the cm beside h keeps, asked at call time: nil
-// where none runs, or it keeps none.
-func StoreOn(h service.Host) func() *Store {
-	return func() *Store {
-		if local, ok := service.Get[Service](h); ok {
-			return local.Store()
-		}
-		return nil
+// Locator is where a caller finds cm: the nodes running it, and the store beside
+// the caller, nil where none is.
+type Locator interface {
+	Members() []libp2ppeer.ID
+	Local() *Store
+}
+
+// On is cm as the instance h finds it, asked at call time: the nodes its directory
+// names, and the store the cm beside it keeps.
+func On(h service.Host) Locator { return located{h} }
+
+type located struct{ h service.Host }
+
+func (l located) Members() []libp2ppeer.ID {
+	if dir, ok := service.Get[service.Directory](l.h); ok {
+		return dir.Peers(Name)
 	}
+	return nil
+}
+
+func (l located) Local() *Store {
+	if local, ok := service.Get[Service](l.h); ok {
+		return local.Store()
+	}
+	return nil
 }
 
 // Close stops the store, then every group still open, then what Start opened.

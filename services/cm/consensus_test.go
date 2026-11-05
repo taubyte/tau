@@ -131,7 +131,8 @@ func TestACloudWithNoZoneKeepsNoStore(t *testing.T) {
 	t.Cleanup(func() { s.Close() })
 	require.NoError(t, s.Start(t.Context(), newInstance(t, t.TempDir(), quick)))
 	require.Nil(t, s.Store(), "nothing to keep certificates for")
-	require.Nil(t, StoreOn(instance{})(), "and none beside an instance running no cm")
+	require.Nil(t, On(instance{}).Local(), "and none beside an instance running no cm")
+	require.Nil(t, On(instance{}).Members(), "nor any node, with no directory to ask")
 
 	i := newInstance(t, t.TempDir(), quick)
 	i.config = func(into any) error {
@@ -180,7 +181,7 @@ func TestCMKeepsTheStoreWhereTheCloudNamesAZone(t *testing.T) {
 	require.NoError(t, s.Start(t.Context(), alone), "its databases its own, opened on the peer")
 	require.NotNil(t, s.Store())
 	alone.running = []service.Running{{Name: Name, Service: s}}
-	require.Same(t, s.Store(), StoreOn(alone)(), "the store beside the instance")
+	require.Same(t, s.Store(), On(alone).Local(), "the store beside the instance")
 
 	shared := hosting{instance: zoned(t, Config{}), running: []service.Running{{Service: databases{}}, {Service: answering{}}}}
 	beside := New()

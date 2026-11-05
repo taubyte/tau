@@ -47,7 +47,7 @@ func TestTheClaimRouteSeamSaysWhatIsMalformed(t *testing.T) {
 	svc, err := cm.Open(h, db, cm.Config{Certificate: cm.CertificateConfig{Zone: "tau.example"}}, cm.WithVault(&memVault{m: map[string][]byte{}}))
 	require.NoError(t, err)
 
-	d, err := cm.NewDomains(h, func() []libp2ppeer.ID { return nil }, func() *cm.Store { return svc })
+	d, err := cm.NewDomains(h, beside{svc})
 	require.NoError(t, err)
 	t.Cleanup(func() { d.Close() })
 
@@ -60,8 +60,14 @@ func TestTheClaimRouteSeamSaysWhatIsMalformed(t *testing.T) {
 	_, err = claims{d}.Claim(t.Context(), "not a cid", "shop.test")
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 
-	none, err := cm.NewDomains(h, func() []libp2ppeer.ID { return nil }, func() *cm.Store { return nil })
+	none, err := cm.NewDomains(h, beside{})
 	require.NoError(t, err)
 	_, err = claims{none}.Claim(t.Context(), "QmNTj7BY3YNySGaUrfuWjkomCME8fTcynvgHiNdX1hyLME", "shop.test")
 	require.ErrorIs(t, err, cm.ErrNoMembers)
 }
+
+// beside is a cm store kept beside the caller, and no other cm node.
+type beside struct{ store *cm.Store }
+
+func (beside) Members() []libp2ppeer.ID { return nil }
+func (b beside) Local() *cm.Store       { return b.store }
