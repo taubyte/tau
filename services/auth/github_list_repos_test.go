@@ -27,7 +27,11 @@ func listServer(t *testing.T, pages int, failPage int) (*githubClient, *atomic.I
 			w.WriteHeader(http.StatusBadGateway)
 			return
 		}
-		w.Header().Set("Link", fmt.Sprintf(`<%s/user/repos?page=%d>; rel="last"`, srv.URL, pages))
+		link := fmt.Sprintf(`<%s/user/repos?page=%d>; rel="last"`, srv.URL, pages)
+		if n < pages {
+			link = fmt.Sprintf(`<%s/user/repos?page=%d>; rel="next", `, srv.URL, n+1) + link
+		}
+		w.Header().Set("Link", link)
 		w.Write([]byte(fmt.Sprintf(`[{"id":%d,"full_name":"me/r%d","url":"u"},{"id":%d,"full_name":"me/s%d","url":"u"}]`, n*10, n, n*10+1, n)))
 	}))
 	t.Cleanup(srv.Close)

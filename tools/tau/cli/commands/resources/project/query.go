@@ -17,6 +17,7 @@ func (link) Query() common.Command {
 			Flags: []cli.Flag{
 				flags.List,
 				flags.Select,
+				lastFlag,
 			},
 			Action: query,
 		},
@@ -26,6 +27,7 @@ func (link) Query() common.Command {
 func (link) List() common.Command {
 	return common.Create(
 		&cli.Command{
+			Flags:  []cli.Flag{lastFlag},
 			Action: list,
 		},
 	)
@@ -55,4 +57,12 @@ func query(ctx *cli.Context) error {
 	projectTable.Query(project, repos, description)
 
 	return nil
+}
+
+// lastFlag limits a project listing to the most recent projects.
+var lastFlag = &cli.IntFlag{
+	Name:    "last",
+	Aliases: []string{"n"},
+	Usage:   "show only the most recent projects (0 for all)",
+	Value:   10,
 }

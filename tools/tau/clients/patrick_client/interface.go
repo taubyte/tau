@@ -10,6 +10,7 @@ import (
 // Implementations can be the real HTTP client or a mock for tests.
 type Client interface {
 	Jobs(projectId string) ([]string, error)
+	JobsLast(projectId string, last int) ([]string, error)
 	Job(jid string) (*patrickIface.Job, error)
 	LogFile(jobId, resourceId string) (io.ReadCloser, error)
 	StreamLogs(jid string, w io.Writer) error

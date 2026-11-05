@@ -30,6 +30,26 @@ func (c *Client) GetProjectByIdWithCors(projectId string) (*ProjectReturnWithCor
 	return data, nil
 }
 
+// ProjectsLast returns the last projects, newest first. A server too old to
+// order them returns them all, unordered, and they are all kept: cutting an
+// unordered list would hide arbitrary projects.
+func (c *Client) ProjectsLast(last int) ([]*Project, error) {
+	if last <= 0 {
+		return c.Projects()
+	}
+	var data ProjectsReturn
+	if err := c.http.Get(fmt.Sprintf("/projects?last=%d", last), &data); err != nil {
+		return nil, err
+	}
+	if data.Newest && len(data.Projects) > last {
+		data.Projects = data.Projects[:last]
+	}
+	for _, p := range data.Projects {
+		p.client = c
+	}
+	return data.Projects, nil
+}
+
 // Projects returns a list of projects and an error
 func (c *Client) Projects() ([]*Project, error) {
 	var data ProjectsReturn

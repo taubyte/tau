@@ -49,6 +49,8 @@ type UserRepositoriesResponse struct {
 
 type UserProjectsResponse struct {
 	Projects []ProjectInfo `json:"projects"`
+	// Newest says Projects are the most recent first, cut to what was asked for.
+	Newest bool `json:"newest,omitempty"`
 }
 
 type RepositoryDetails struct {
@@ -419,6 +421,35 @@ func (srv *AuthService) getGitHubUserRepositories(ctx context.Context, client Gi
 	return &UserRepositoriesResponse{
 		Repositories: user_repos,
 	}, nil
+}
+
+// getGitHubRecentProjects is the caller's last projects, newest first: those of
+// its most recently created repositories, read until there are enough.
+func (srv *AuthService) getGitHubRecentProjects(ctx context.Context, client GitHubClient, last int) (*UserProjectsResponse, error) {
+	seen := make(map[string]bool)
+	projectsFound := make([]ProjectInfo, 0, last)
+	err := client.EachRepoPage(func(ids []string) bool {
+		for _, repoID := range ids {
+			v, err := srv.db.Get(ctx, fmt.Sprintf("/repositories/github/%s/project", repoID))
+			if err != nil || len(v) == 0 || seen[string(v)] {
+				continue
+			}
+			project, err := projects.Fetch(ctx, srv.KV(), string(v))
+			if err != nil {
+				continue
+			}
+			seen[string(v)] = true
+			projectsFound = append(projectsFound, ProjectInfo{ID: string(v), Name: project.Name()})
+			if len(projectsFound) >= last {
+				return false
+			}
+		}
+		return true
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &UserProjectsResponse{Projects: projectsFound, Newest: true}, nil
 }
 
 func (srv *AuthService) getGitHubUserProjects(ctx context.Context, client GitHubClient) (*UserProjectsResponse, error) {

@@ -19,7 +19,7 @@ func list(ctx *cli.Context) error {
 	}
 
 	stopGlobe := spinner.Globe()
-	projects, err := client.Projects()
+	projects, err := client.ProjectsLast(ctx.Int(lastFlag.Name))
 	if err != nil {
 		return fmt.Errorf("Query projects failed with %s", err.Error())
 	}

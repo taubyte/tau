@@ -27,6 +27,7 @@ type GitHubClient interface {
 	RemoveOtherDeployKeys(name string, keep string) error
 	CreatePushHook(name *string, url *string, devMode bool) (int64, string, error)
 	ListMyRepos() (map[string]RepositoryBasicInfo, error)
+	EachRepoPage(fn func(ids []string) (more bool)) error
 	ShortRepositoryInfo(id string) RepositoryShortInfo
 }
 
@@ -224,6 +225,26 @@ func (client *githubClient) CreatePushHook(name *string, url *string, devMode bo
 	}
 
 	return *(hk.ID), secret, err
+}
+
+// EachRepoPage hands the caller's repositories to fn a page at a time, newest
+// first, until fn returns false or there are no more. A caller after its few
+// most recent projects stops after a page or two.
+func (client *githubClient) EachRepoPage(fn func(ids []string) (more bool)) error {
+	for n := 1; ; n++ {
+		opts := github.RepositoryListByAuthenticatedUserOptions{ListOptions: github.ListOptions{Page: n, PerPage: 100}, Sort: "created", Direction: "desc"}
+		repos, resp, err := client.Repositories.ListByAuthenticatedUser(client.ctx, &opts)
+		if err != nil {
+			return fmt.Errorf("listing repositories failed with: %w", err)
+		}
+		ids := make([]string, 0, len(repos))
+		for _, r := range repos {
+			ids = append(ids, fmt.Sprintf("%d", r.GetID()))
+		}
+		if !fn(ids) || resp == nil || resp.NextPage == 0 {
+			return nil
+		}
+	}
 }
 
 // listReposConcurrency bounds the pages of repositories fetched at once.
