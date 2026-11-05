@@ -240,7 +240,7 @@ func TestACodeRepositoryNoProjectLinksIsNotUploaded(t *testing.T) {
 	require.ErrorContains(t, err, "is no project's")
 }
 
-func TestAFolderThatCannotBeReadIsNeitherCommittedNorUploaded(t *testing.T) {
+func TestAFolderHoldingALinkToNothingIsNotCommitted(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Discovery}})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
@@ -251,5 +251,5 @@ func TestAFolderThatCannotBeReadIsNeitherCommittedNorUploaded(t *testing.T) {
 	_, err = u.Commit("github.com/acme/placement", "main", dir)
 	require.ErrorContains(t, err, "dangling", "a file the folder names and cannot give")
 	_, err = u.Upload("github.com/acme/placement", "main", dir, nil)
-	require.ErrorContains(t, err, "dangling")
+	require.NoError(t, err, "an upload carries a folder's regular files, as `tau build` packs one")
 }
