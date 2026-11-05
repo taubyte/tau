@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/taubyte/tau/services/build/jobs"
 	storageService "github.com/taubyte/tau/services/storage"
 
 	"github.com/taubyte/tau/core/kvdb"
@@ -279,6 +280,13 @@ func (n *Instance) tiers() []invoke.Runtime { return n.runtimes }
 func (n *Instance) openWorker() error {
 	if !n.cfg.runs(Worker) {
 		return nil
+	}
+	// BUILD'S RECORDS ARE HELD FROM THE START, so this node's replica follows every
+	// build as it lands rather than starting to catch up on the first request.
+	if n.opts.artifacts == nil {
+		if _, err := n.dbs.at(jobs.Records); err != nil {
+			return err
+		}
 	}
 	tiers := append([]invoke.Runtime(nil), n.opts.runtimes...)
 

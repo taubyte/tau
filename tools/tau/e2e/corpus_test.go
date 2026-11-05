@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-openapi/testify/v2/assert"
 	"github.com/taubyte/tau/services/build/runner"
 
 	"github.com/taubyte/tau/pkg/containers"
@@ -390,13 +391,13 @@ var corpus = []corpusCase{
 		{host: "keep.example.com", method: http.MethodGet, path: "/kv-get/sessions/token-1", status: 200, answer: "body"},
 	}},
 	{name: "with/database/distributed/kv/crdt-b", probes: []probe{
-		{host: "keepb.example.com", method: http.MethodPost, path: "/kv-put/sessions/token-1", body: "body", status: 204},
+		{host: "keepb.example.org", method: http.MethodPost, path: "/kv-put/sessions/token-1", body: "body", status: 204},
 	}},
 	{name: "with/database/distributed/kv/raft", probes: []probe{
 		{host: "ledger.example.com", method: http.MethodPost, path: "/kv-put/ledger/entry-1", body: "body", status: 204, budget: 3 * time.Minute},
 	}},
 	{name: "with/database/distributed/kv/raft-b", probes: []probe{
-		{host: "ledgerb.example.com", method: http.MethodPost, path: "/kv-put/ledger/entry-1", body: "body", status: 204, budget: 3 * time.Minute},
+		{host: "ledgerb.example.org", method: http.MethodPost, path: "/kv-put/ledger/entry-1", body: "body", status: 204, budget: 3 * time.Minute},
 	}},
 	{name: "with/database/distributed/sql/crdt", probes: []probe{
 		{function: "keeper", method: http.MethodPost, path: "/query/ledger", body: "SELECT 1", status: 200},
@@ -637,10 +638,14 @@ func (u *underTest) bothWays(t *testing.T, c corpusCase) {
 	require.NoError(t, err)
 	p, err := specs.Load(object)
 	require.NoError(t, err)
+	// READ FROM THIS NODE'S REPLICA of build's records, which names the build once
+	// it has caught up with the node that settled it.
 	for _, b := range p.Buildables() {
-		cid, err := serving.BuildArtifacts().Artifact(t.Context(), id, "prod", specs.KindPackage, b.ID)
-		require.NoError(t, err, "package/%s", b.Name)
-		require.Equal(t, cloned["prod/"+b.ID], cid)
+		require.EventuallyWithT(t, func(c *assert.CollectT) {
+			cid, err := serving.BuildArtifacts().Artifact(t.Context(), id, "prod", specs.KindPackage, b.ID)
+			require.NoError(c, err, "package/%s", b.Name)
+			require.Equal(c, cloned["prod/"+b.ID], cid)
+		}, time.Minute, 50*time.Millisecond)
 	}
 }
 
