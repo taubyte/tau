@@ -171,4 +171,4 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 type fleetOf []libp2ppeer.ID
 
 func (f fleetOf) Members() []libp2ppeer.ID { return slices.Clone(f) }
-func (fleetOf) Local() *cm.Store           { return nil }
+func (fleetOf) Store() *cm.Store           { return nil }

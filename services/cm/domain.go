@@ -362,7 +362,7 @@ func (d *Domains) Close() error {
 
 func (d *Domains) targets() []peer.ID {
 	var all []peer.ID
-	if d.locate.Local() != nil {
+	if d.locate.Store() != nil {
 		all = append(all, d.host.ID())
 	}
 	for _, p := range d.locate.Members() {
@@ -375,7 +375,7 @@ func (d *Domains) targets() []peer.ID {
 
 func (d *Domains) at(p peer.ID) (cmv2connect.DomainServiceClient, error) {
 	if p == d.host.ID() {
-		if s := d.locate.Local(); s != nil {
+		if s := d.locate.Store(); s != nil {
 			return handler{s}, nil
 		}
 	}

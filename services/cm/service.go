@@ -128,7 +128,7 @@ func (s *server) Store() *Store { return s.store }
 // the caller, nil where none is.
 type Locator interface {
 	Members() []libp2ppeer.ID
-	Local() *Store
+	Store() *Store
 }
 
 // On is cm as the instance h finds it, asked at call time: the nodes its directory
@@ -144,7 +144,7 @@ func (l located) Members() []libp2ppeer.ID {
 	return nil
 }
 
-func (l located) Local() *Store {
+func (l located) Store() *Store {
 	if local, ok := service.Get[Service](l.h); ok {
 		return local.Store()
 	}

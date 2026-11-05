@@ -29,7 +29,7 @@ func TestACloudIssuingCertificatesNeedsItsZoneAndAWorkableConfig(t *testing.T) {
 	n, _, _ := makeNode(t, cfg)
 	require.NotNil(t, n.certs, "its gateway and dns server take the client")
 	require.NoError(t, n.Start(t.Context()))
-	require.NotNil(t, cm.On(&added{node: n}).Local(), "a cm node hosts the store")
+	require.NotNil(t, cm.On(&added{node: n}).Store(), "a cm node hosts the store")
 
 	cfg.CM.Certificate.ACME.EAB.KeyID = "half"
 	_, err = New(mockPeer(t), rootedIn(t, cfg, t.TempDir()), withKVDB(&memFactory{}))

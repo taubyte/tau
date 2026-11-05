@@ -70,4 +70,4 @@ func TestTheClaimRouteSeamSaysWhatIsMalformed(t *testing.T) {
 type beside struct{ store *cm.Store }
 
 func (beside) Members() []libp2ppeer.ID { return nil }
-func (b beside) Local() *cm.Store       { return b.store }
+func (b beside) Store() *cm.Store       { return b.store }

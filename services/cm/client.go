@@ -161,7 +161,7 @@ func (c *Client) Close() error {
 // targets is every cm node, this one first when it runs one.
 func (c *Client) targets() []peer.ID {
 	var all []peer.ID
-	if c.locate.Local() != nil {
+	if c.locate.Store() != nil {
 		all = append(all, c.host.ID())
 	}
 	for _, p := range c.locate.Members() {
@@ -174,7 +174,7 @@ func (c *Client) targets() []peer.ID {
 
 func (c *Client) at(p peer.ID) (cmv2connect.CertificateServiceClient, error) {
 	if p == c.host.ID() {
-		if s := c.locate.Local(); s != nil {
+		if s := c.locate.Store(); s != nil {
 			return handler{s}, nil
 		}
 	}

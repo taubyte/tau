@@ -112,13 +112,13 @@ type at struct {
 }
 
 func (a at) Members() []peer.ID { return a.members }
-func (a at) Local() *Store      { return a.local }
+func (a at) Store() *Store      { return a.local }
 
 // fleetAt is the fleet's cm nodes, as they are when asked, and none beside the caller.
 type fleetAt struct{ f *fleet }
 
 func (a fleetAt) Members() []peer.ID { return a.f.members() }
-func (fleetAt) Local() *Store        { return nil }
+func (fleetAt) Store() *Store        { return nil }
 
 func (f *fleet) members() []peer.ID {
 	f.nodesMu.Lock()
