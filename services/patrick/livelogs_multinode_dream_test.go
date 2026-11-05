@@ -136,6 +136,14 @@ func TestDream_LiveLogsAcrossPatricks(t *testing.T) {
 	time.Sleep(time.Second)
 
 	node := simple.PeerNode()
+	// the test publishes as the job's monkey
+	assert.NilError(t, service.AssignJob(u.Context(), patricks[0].KV(), jid, node.ID()))
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(200 * time.Millisecond) {
+		if _, err := patricks[1].KV().Get(u.Context(), "/assigned/"+jid); err == nil {
+			break
+		}
+		assert.Assert(t, time.Now().Before(deadline), "assignment did not reach the second patrick")
+	}
 	publish := func(run string, off int64, data string, done bool) {
 		t.Helper()
 		b, err := cbor.Marshal(servicesCommon.LiveLogChunk{Job: jid, Run: run, Offset: off, Data: []byte(data), Done: done})
@@ -143,9 +151,22 @@ func TestDream_LiveLogsAcrossPatricks(t *testing.T) {
 		assert.NilError(t, node.PubSubPublish(u.Context(), servicesCommon.LiveLogsTopic, b))
 	}
 
+	// a peer the job is not assigned to cannot write into its log
+	forged, err := cbor.Marshal(servicesCommon.LiveLogChunk{Job: jid, Run: "first", Offset: 0, Data: []byte("FORGED")})
+	assert.NilError(t, err)
+	assert.NilError(t, patricks[1].Node().PubSubPublish(u.Context(), servicesCommon.LiveLogsTopic, forged))
+	time.Sleep(time.Second)
+
 	publish("first", 0, "from monkey one", false)
 	wait(onFirst, "from monkey one")
 	wait(onSecond, "from monkey one")
+	for _, f := range []*follower{onFirst, onSecond} {
+		select {
+		case text := <-f.text:
+			assert.Assert(t, !strings.Contains(text, "FORGED"), "a forged chunk reached a follower: %q", text)
+		default:
+		}
+	}
 
 	// a monkey dies, another runs the job again: both nodes follow the new run
 	publish("second", 0, "from monkey two", false)

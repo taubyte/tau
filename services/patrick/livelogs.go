@@ -289,6 +289,9 @@ func (srv *PatrickService) subscribeLiveLogs(ctx context.Context) error {
 			if cbor.Unmarshal(msg.Data, chunk) != nil || chunk.Job == "" {
 				return
 			}
+			if !srv.liveLogSenders.allowed(ctx, srv.db, chunk.Job, msg.GetFrom()) {
+				return
+			}
 			srv.liveLogs.add(chunk)
 		},
 		func(err error) {

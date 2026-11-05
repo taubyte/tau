@@ -229,6 +229,9 @@ func (p *PatrickService) timeoutHandler(ctx context.Context, jid string, cid_log
 		if job.Attempt == servicesCommon.MaxJobAttempts {
 			job.Status = commonIface.JobStatusFailed
 			job.Logs = cid_log
+			if err := p.recordLogOwner(ctx, jid, cid_log); err != nil {
+				return fmt.Errorf("recording owners of job %s logs failed with %w", jid, err)
+			}
 
 			jobData, err := cbor.Marshal(job)
 			if err != nil {
@@ -321,6 +324,9 @@ func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid stri
 		job.Logs = cid_log
 		job.AssetCid = assetCid
 		job.Attempt++
+		if err := p.recordLogOwner(ctx, jid, cid_log); err != nil {
+			return fmt.Errorf("recording owners of job %s logs failed with %w", jid, err)
+		}
 	}
 
 	jobData, err := cbor.Marshal(job)
@@ -703,7 +709,7 @@ func (srv *PatrickService) setupJobRoutes() {
 			Validator: srv.GitHubTokenHTTPAuth,
 			GC:        srv.GitHubTokenHTTPAuthCleanup,
 		},
-		Handler:     srv.cidHandler,
+		Handler:     srv.withLogAccess(srv.cidHandler),
 		RawResponse: true,
 	})
 

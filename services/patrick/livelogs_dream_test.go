@@ -92,6 +92,8 @@ func TestDream_LiveLogs(t *testing.T) {
 	}
 
 	node := simple.PeerNode()
+	// the test publishes as the job's monkey
+	assert.NilError(t, service.AssignJob(u.Context(), u.Patrick().KV(), jid, node.ID()))
 	publish := func(off int64, data string, done bool) {
 		b, err := cbor.Marshal(servicesCommon.LiveLogChunk{Job: jid, Offset: off, Data: []byte(data), Done: done})
 		assert.NilError(t, err)

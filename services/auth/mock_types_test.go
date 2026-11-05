@@ -261,6 +261,8 @@ func (m *mockGitHubClient) CreateRepository(name *string, description *string, p
 	return nil
 }
 
+func (m *mockGitHubClient) RemoveOtherDeployKeys(name string, keep string) error { return nil }
+
 func (m *mockGitHubClient) CreateDeployKey(name *string, key *string) error {
 	return nil
 }
