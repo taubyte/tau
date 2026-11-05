@@ -3,6 +3,7 @@
 package dream_test
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	gogit "github.com/go-git/go-git/v5"
 
 	"github.com/stretchr/testify/require"
 
@@ -252,4 +254,24 @@ func TestAFolderHoldingALinkToNothingIsNotCommitted(t *testing.T) {
 	require.ErrorContains(t, err, "dangling", "a file the folder names and cannot give")
 	_, err = u.Upload("github.com/acme/placement", "main", dir, nil)
 	require.NoError(t, err, "an upload carries a folder's regular files, as `tau build` packs one")
+}
+
+func TestABuildItsCallerGaveUpOnIsNotQueued(t *testing.T) {
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Build, instance.Discovery, instance.Register}})
+	require.NoError(t, err)
+	t.Cleanup(u.Close)
+	gone, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err = u.Build(gone, nodeDream.Push{Repository: "github.com/acme/app", Ref: "refs/heads/main", Commit: "1111111111111111111111111111111111111111"})
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestAMirrorRepositoryWithNoWorkingTreeTakesNoCommit(t *testing.T) {
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Discovery}})
+	require.NoError(t, err)
+	t.Cleanup(u.Close)
+	_, err = gogit.PlainInit(filepath.Join(u.Mirror(), "github.com", "acme", "bare"), true)
+	require.NoError(t, err)
+	_, err = u.Commit("github.com/acme/bare", "main", projectDir("with/placement"))
+	require.ErrorIs(t, err, gogit.ErrIsBareRepository)
 }
