@@ -3,6 +3,7 @@ package containers
 import (
 	"bytes"
 	"io"
+	"time"
 
 	"github.com/taubyte/tau/utils/bundle"
 )
@@ -37,6 +38,15 @@ func Dockerfile(dockerfile string) ImageOption {
 func Output(output io.Writer) ImageOption {
 	return func(i *DockerImage) error {
 		i.output = output
+		return nil
+	}
+}
+
+// ReusePulled uses a local copy this process pulled less than age ago as is,
+// instead of asking the registry for a newer one every time.
+func ReusePulled(age time.Duration) ImageOption {
+	return func(i *DockerImage) error {
+		i.reusePulled = age
 		return nil
 	}
 }
@@ -116,4 +126,17 @@ func Variables(vars map[string]string) ContainerOption {
 
 func toEnvFormat(key, value string) string {
 	return key + "=" + value
+}
+
+// NamedVolume mounts the backend-managed volume name at containerPath, so its
+// contents outlive the container.
+func NamedVolume(name, containerPath string) ContainerOption {
+	return func(c *Container) error {
+		c.volumes = append(c.volumes, volume{
+			source: name,
+			target: containerPath,
+			named:  true,
+		})
+		return nil
+	}
 }

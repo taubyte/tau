@@ -20,9 +20,9 @@ func MaxAge(t time.Duration) Option {
 	}
 }
 
-// Reference scopes the sweep to a single image reference. Without it the
-// collector removes every image on the host old enough to qualify, including
-// ones that have nothing to do with tau.
+// Reference sweeps every image matching ref that was built more than maxAge
+// ago, whoever pulled it. Without it the collector only removes images this
+// process used and then left idle for maxAge.
 func Reference(ref string) Option {
 	return func(o *config) error {
 		o.reference = ref

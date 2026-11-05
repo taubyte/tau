@@ -42,6 +42,10 @@ type Context struct {
 	// NetworkFqdn is the cloud FQDN this monkey is compiling for. Empty in
 	// dream/local; WithCloud is a no-op when empty.
 	NetworkFqdn string
+
+	// reuseKey is what a website or library build is recorded under once
+	// published, so the next job with the same sources reuses it.
+	reuseKey string
 }
 
 type Op struct {

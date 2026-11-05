@@ -2,6 +2,7 @@ package containers
 
 import (
 	"io"
+	"time"
 
 	"github.com/taubyte/tau/pkg/containers/core"
 )
@@ -26,6 +27,7 @@ type Client struct {
 type volume struct {
 	source string
 	target string
+	named  bool
 }
 
 // Container wraps the methods of the docker container.
@@ -50,6 +52,7 @@ type DockerImage struct {
 	buildTarball     io.Reader
 	output           io.Writer
 	restrictedEgress bool
+	reusePulled      time.Duration
 	// Keep client reference for backward compatibility
 	client *Client // Kept for reference, but operations use backend
 }
