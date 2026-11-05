@@ -397,7 +397,10 @@ func (srv *AuthService) newGitHubProject(ctx context.Context, client GitHubClien
 }
 
 func (srv *AuthService) getGitHubUserRepositories(ctx context.Context, client GitHubClient) (*UserRepositoriesResponse, error) {
-	repos := client.ListMyRepos()
+	repos, err := client.ListMyRepos()
+	if err != nil {
+		return nil, err
+	}
 	logger.Debugf("User repos:%v", repos)
 
 	user_repos := make(map[string]RepositoryInfo, 0)
@@ -420,7 +423,11 @@ func (srv *AuthService) getGitHubUserRepositories(ctx context.Context, client Gi
 
 func (srv *AuthService) getGitHubUserProjects(ctx context.Context, client GitHubClient) (*UserProjectsResponse, error) {
 	user_projects := make(map[string]ProjectInfo, 0)
-	for repo_id := range client.ListMyRepos() {
+	repos, err := client.ListMyRepos()
+	if err != nil {
+		return nil, err
+	}
+	for repo_id := range repos {
 		repo_key := fmt.Sprintf("/repositories/github/%s/project", repo_id)
 		v, err := srv.db.Get(ctx, repo_key)
 		if err == nil && len(v) > 0 {
