@@ -169,12 +169,19 @@ func (b *Blockstore) Put(ctx context.Context, blk blocks.Block) error {
 			return ErrClosed
 		}
 		defer b.s.leave()
+		epoch := b.s.blocks.deletes.Load()
 		if err := b.s.db.Set(k, blk.RawData(), b.s.write); err != nil {
 			return fmt.Errorf("pebbleds: set: %w", err)
 		}
 		b.s.written.Add(int64(len(k) + len(blk.RawData())))
-		b.s.blocks.filter(b.s, hashOf(blk.Cid()))
-		b.s.blocks.hits.add(hashOf(blk.Cid()))
+		h := hashOf(blk.Cid())
+		b.s.blocks.filter(b.s, h)
+		// A DELETE THAT LANDED SINCE THE WRITE may have taken the block, so it is
+		// not remembered as held, as Has does.
+		b.s.blocks.hits.add(h)
+		if b.s.blocks.deletes.Load() != epoch {
+			b.s.blocks.hits.drop(h)
+		}
 		return nil
 	})
 }
