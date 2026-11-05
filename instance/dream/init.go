@@ -187,6 +187,10 @@ type Config struct {
 	// with, beside the universe's ACME account, as `taud init -` writes a
 	// sealed bundle (see secrets.Sealed).
 	Secrets []*secretsv2.InitSecret
+
+	// Listen is where the universe answers DreamService (rpc.go), "127.0.0.1:0"
+	// for a port of the kernel's choosing. Empty answers it nowhere.
+	Listen string
 }
 
 // removed is a directory a universe deletes when it closes.
@@ -204,6 +208,8 @@ type Universe struct {
 
 	aloneMu sync.Mutex
 	direct  *jobs.Direct
+
+	rpc *served
 }
 
 // Start runs a universe of cfg.Copies nodes, one after another, each meshed
@@ -255,6 +261,12 @@ func Start(ctx context.Context, name string, cfg Config) (*Universe, error) {
 		}
 		u.pids = append(u.pids, p.ID().String())
 	}
+	if cfg.Listen != "" {
+		if err := u.serve(cfg.Listen); err != nil {
+			u.Close()
+			return nil, fmt.Errorf("dream: answering DreamService: %w", err)
+		}
+	}
 	return u, nil
 }
 
@@ -271,8 +283,13 @@ func (u *Universe) Peers() []peer.Node { return u.mesh.Peers() }
 // joins with a certificate from it, issued for the universe's name.
 func (u *Universe) CA() *sectls.CA { return u.mesh.CA() }
 
-// Close stops what builds alone, then every node, then their peers.
+// Close stops answering DreamService, then what builds alone, then every node,
+// then their peers.
 func (u *Universe) Close() {
+	if u.rpc != nil {
+		u.rpc.Close()
+		u.rpc = nil
+	}
 	u.aloneMu.Lock()
 	if u.direct != nil {
 		u.direct.Close()

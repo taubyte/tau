@@ -7,11 +7,16 @@ import (
 	"path/filepath"
 	"testing"
 
+	"connectrpc.com/connect"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/instance"
 	nodeDream "github.com/taubyte/tau/instance/dream"
+	"github.com/taubyte/tau/pkg/proto/codec"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	dreamv2 "github.com/taubyte/tau/pkg/proto/gen/tau/dream/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/dream/v2/dreamv2connect"
 	storageService "github.com/taubyte/tau/services/storage"
 )
 
@@ -122,4 +127,54 @@ func TestAnUploadNamingAPackageTheTreeDoesNotBuildIsRefused(t *testing.T) {
 	require.ErrorContains(t, err, "builds no package/nobody")
 	_, err = u.Upload("github.com/acme/wasm", "main", t.TempDir(), nil)
 	require.Error(t, err, "a tree with no project")
+}
+
+// A TOOL OUTSIDE THE PROCESS BUILDS AS A TEST DOES: DreamService is the universe's
+// own Commit, Link, Upload and Build, over the wire.
+func TestAUniverseBuildsForAToolOverDreamService(t *testing.T) {
+	ctx := t.Context()
+	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{
+		Services:  []string{instance.Runner, instance.Discovery, instance.Register, storageService.Descriptor.Name},
+		Configure: func(_ int, c *instance.Config) { c.Region = "region-1" },
+		Listen:    "127.0.0.1:0",
+	})
+	require.NoError(t, err)
+	t.Cleanup(u.Close)
+	require.NotNil(t, u.Addr())
+	dream := dreamv2connect.NewDreamServiceClient(http.DefaultClient, "http://"+u.Addr().String(), codec.Option())
+
+	const repository = "github.com/acme/placement"
+	dir, err := filepath.Abs(projectDir("with/placement"))
+	require.NoError(t, err)
+	_, err = dream.Build(ctx, connect.NewRequest(&dreamv2.Push{Repository: repository, Ref: "refs/heads/main", Commit: "1111111111111111111111111111111111111111"}))
+	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err), "a repository no project links is the build's own refusal")
+
+	pushed, err := dream.Commit(ctx, connect.NewRequest(&dreamv2.CommitRequest{Repository: repository, Branch: "main", Dir: dir}))
+	require.NoError(t, err)
+	_, err = dream.Link(ctx, connect.NewRequest(&dreamv2.LinkRequest{Project: placementID, Config: repository}))
+	require.NoError(t, err)
+	out, err := dream.Build(ctx, connect.NewRequest(pushed.Msg))
+	require.NoError(t, err)
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, out.Msg.GetPlan().GetStatus(), "%s", out.Msg.GetPlan().GetReason())
+	require.Len(t, out.Msg.GetEnvironments(), 1)
+
+	_, err = dream.Upload(ctx, connect.NewRequest(&dreamv2.UploadRequest{Repository: repository, Branch: "main", Dir: dir, Built: map[string]string{"nobody": "x"}}))
+	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
+	uploaded, err := dream.Upload(ctx, connect.NewRequest(&dreamv2.UploadRequest{Repository: repository, Branch: "main", Dir: dir}))
+	require.NoError(t, err)
+	require.Equal(t, "refs/heads/main", uploaded.Msg.GetRef())
+	_, err = dream.Commit(ctx, connect.NewRequest(&dreamv2.CommitRequest{Repository: "not a key", Branch: "main", Dir: dir}))
+	require.Error(t, err)
+	_, err = dream.Link(ctx, connect.NewRequest(&dreamv2.LinkRequest{Project: placementID}))
+	require.Error(t, err, "a link names the repository it is")
+}
+
+func TestAUniverseThatCannotListenDoesNotStart(t *testing.T) {
+	_, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Discovery}, Listen: "nowhere:at:all"})
+	require.ErrorContains(t, err, "DreamService")
+
+	u, err := nodeDream.Start(t.Context(), t.Name()+"-quiet", nodeDream.Config{Services: []string{instance.Discovery}})
+	require.NoError(t, err)
+	t.Cleanup(u.Close)
+	require.Nil(t, u.Addr(), "a universe named no Listen answers nowhere")
 }
