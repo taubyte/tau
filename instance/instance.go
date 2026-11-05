@@ -216,6 +216,8 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 			}
 		}
 	}
+	// The databases every service on this node shares.
+	n.provide("", n.dbs)
 	// What the built-ins add to this node's report.
 	n.provide("", builtIns{n})
 	// And the workloads the clock fires through, while the worker is one of them.

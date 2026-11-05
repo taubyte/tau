@@ -258,7 +258,7 @@ func (f artifactFunc) Artifact(ctx context.Context, project, environment, kind, 
 	return f(ctx, project, environment, kind, resourceID)
 }
 
-func TestABuiltResourceWithNoBuildServiceIsRefused(t *testing.T) {
+func TestABuiltResourceNothingHasBuiltIsRefused(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}})
 	require.NoError(t, n.Start(t.Context()))
 
@@ -277,7 +277,7 @@ func TestABuiltResourceWithNoBuildServiceIsRefused(t *testing.T) {
 
 	select {
 	case err := <-done:
-		require.ErrorIs(t, err, ErrNoBuild)
+		require.ErrorIs(t, err, ErrNotBuilt)
 	case <-time.After(10 * time.Second):
 		t.Fatal("it waited instead of refusing")
 	}

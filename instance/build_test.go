@@ -2,7 +2,6 @@ package instance
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -192,15 +191,11 @@ func TestTheArtifactLookupIsCachedForTheDeployBudget(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "bafyone", cid)
 
-	// Past the budget it is asked again — and with no build node anywhere,
-	// asking waits for one until the caller gives up rather than serving
-	// something stale forever.
+	// Past the budget the records are read again, and they hold nothing for it,
+	// rather than something stale being served forever.
 	now = now.Add(2 * time.Minute)
-
-	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
-	defer cancel()
-	_, err = a.Artifact(ctx, "shop", "prod", "function", "res")
-	require.Error(t, err)
+	_, err = a.Artifact(t.Context(), "shop", "prod", "function", "res")
+	require.ErrorIs(t, err, ErrNotBuilt)
 }
 
 func TestAFailedArtifactLookupIsNotRemembered(t *testing.T) {
@@ -208,11 +203,8 @@ func TestAFailedArtifactLookupIsNotRemembered(t *testing.T) {
 	require.NoError(t, n.Start(t.Context()))
 
 	a := &artifacts{node: n, seen: map[string]builtAt{}}
-
-	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
-	defer cancel()
-	_, err := a.Artifact(ctx, "shop", "prod", "function", "res")
-	require.Error(t, err)
+	_, err := a.Artifact(t.Context(), "shop", "prod", "function", "res")
+	require.ErrorIs(t, err, ErrNotBuilt)
 	require.Empty(t, a.seen)
 }
 
@@ -311,7 +303,7 @@ func TestAWorkloadsStreamsAreNamedByTheWorkload(t *testing.T) {
 	require.Equal(t, 16, n)
 }
 
-func TestAWorkerAsksBuildOnAnotherNode(t *testing.T) {
+func TestAWorkerReadsBuildsRecordsOnItsOwnNode(t *testing.T) {
 	nodes := fleet(t,
 		Config{Services: []string{Register, Discovery, Build}, Sections: map[string]any{Build: ingress.Config{Listen: "127.0.0.1:0"}}},
 		Config{Services: []string{Worker, Discovery}},
@@ -322,12 +314,10 @@ func TestAWorkerAsksBuildOnAnotherNode(t *testing.T) {
 
 	a := &artifacts{node: compute, seen: map[string]builtAt{}}
 
-	// NOTHING HAS BUILT THIS, and the answer comes from build rather than
-	// from the view — which is the difference between "no build service is
-	// reachable" and "the build service says there is no artifact".
+	// NOTHING HAS BUILT THIS, read from the records this node holds, with no
+	// build node asked.
 	_, err := a.Artifact(t.Context(), "shop", "prod", "function", "checkout")
-	require.Error(t, err)
-	require.NotErrorIs(t, err, ErrNoBuild, "a runner answered; it just had nothing")
+	require.ErrorIs(t, err, ErrNotBuilt)
 
 	// AND THE FAILURE IS NOT CACHED. "Nothing has built this yet" ends the
 	// moment a build finishes.
@@ -378,22 +368,6 @@ func TestANodeReadsItsOwnBuild(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotBuilt)
 	require.NotEqual(t, connect.CodeNotFound, connect.CodeOf(err), "a site missing its artifact is broken, not unknown")
 	require.ErrorContains(t, err, "QmNothing")
-}
-
-// following is build beside the worker that does not lead its queue.
-type following struct{ jobs.Service }
-
-func (following) Built(string, string, string) (string, error) {
-	return "", connect.NewError(connect.CodeUnavailable, errors.New("not the leader"))
-}
-
-func TestAFollowerAsksTheFleetForAnArtifact(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Discovery}})
-	require.NoError(t, n.Start(t.Context()))
-	n.provide(Build, following{})
-
-	_, err := n.BuildArtifacts().Artifact(t.Context(), "shop", "prod", "function", "QmNothing")
-	require.ErrorIs(t, err, ErrNoBuild, "a follower beside it sends the question to the fleet")
 }
 
 // jobsOf is the build jobs this node runs, if it runs build.

@@ -58,6 +58,9 @@ func (d *databases) at(name string) (kvdb.Instance, error) {
 	return db, nil
 }
 
+// Database is the database called name, the one every service on this node shares.
+func (d *databases) Database(name string) (kvdb.Instance, error) { return d.at(name) }
+
 // forget drops name only while it is still db: a second Close of a database already
 // reopened must not drop the new one.
 func (d *databases) forget(name string, db kvdb.Instance) {

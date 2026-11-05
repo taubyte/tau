@@ -9,6 +9,7 @@ import (
 
 	logging "github.com/ipfs/go-log/v2"
 
+	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
@@ -96,17 +97,10 @@ func (b *hosted) Start(ctx context.Context, h service.Host) error {
 // onInstance is a server over h's records, register and storage, its queue in store,
 // and what it opened for them, closed after it.
 func onInstance(h service.Host, cfg Config, store Store, more ...option) (*server, []io.Closer, error) {
-	fleet := register.ViewsOn(h)
-	also := []io.Closer{fleet}
-	records, err := pkgkvdb.Open(h.Peer(), Records,
-		pkgkvdb.WithLogger(logging.Logger("tau.build")),
-		pkgkvdb.WithRetentionFrom(func(ctx context.Context) (time.Duration, error) {
-			return register.Retention(ctx, fleet)
-		}, retentionPoll))
+	records, also, err := recordsOn(h)
 	if err != nil {
 		return nil, also, fmt.Errorf("build: opening the job records: %w", err)
 	}
-	also = append(also, closer(func() error { records.Close(); return nil }))
 
 	table := register.TableOn(h)
 	assets := storage.StoreOn(h)
@@ -128,6 +122,46 @@ func onInstance(h service.Host, cfg Config, store Store, more ...option) (*serve
 // Records is the replicated database build keeps its jobs in, on every node that
 // builds or reads what was built.
 var Records = build.Build.Name + "/jobs"
+
+// recordsOn is h's replica of the job records: the instance's own when it shares
+// its databases, so a node holds one whoever reads them, else one opened here and
+// closed with what opened it.
+func recordsOn(h service.Host) (kvdb.Instance, []io.Closer, error) {
+	if dbs, ok := service.Get[service.Databases](h); ok {
+		db, err := dbs.Database(Records)
+		return db, nil, err
+	}
+	fleet := register.ViewsOn(h)
+	also := []io.Closer{fleet}
+	db, err := pkgkvdb.Open(h.Peer(), Records,
+		pkgkvdb.WithLogger(logging.Logger("tau.build")),
+		pkgkvdb.WithRetentionFrom(func(ctx context.Context) (time.Duration, error) {
+			return register.Retention(ctx, fleet)
+		}, retentionPoll))
+	if err != nil {
+		return nil, also, err
+	}
+	return db, append(also, closer(func() error { db.Close(); return nil })), nil
+}
+
+// Live is the artifact the newest success built for a deployment's resource, read
+// from db, a node's replica of the job records, with no build node asked. Nothing
+// built is NotFound.
+func Live(ctx context.Context, db kvdb.Instance, project, environment, resource string) (string, error) {
+	cid, _, ok, err := (&journal{db: db}).live(ctx, project, environment, resource)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		// Nothing built is NotFound, which differs from needing no build; the caller
+		// knows which it asked about.
+		return "", errNotFound("build: nothing has been built for %s/%s's %s", project, environment, resource)
+	}
+	if cid == "" {
+		return "", errInternal("build: %s/%s's %s names an empty artifact", project, environment, resource)
+	}
+	return cid, nil
+}
 
 // Close stops the server, then what Start opened for it.
 func (b *hosted) Close() error {

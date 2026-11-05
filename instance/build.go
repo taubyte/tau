@@ -16,7 +16,6 @@ import (
 
 	"github.com/taubyte/tau/core/service"
 	authService "github.com/taubyte/tau/services/auth"
-	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/build/clients"
 	"github.com/taubyte/tau/services/build/hosted"
 	"github.com/taubyte/tau/services/build/jobs"
@@ -24,8 +23,8 @@ import (
 )
 
 // Composes auth: who is admitted to this cloud, once a forge said who a caller is.
-// The build service, both its roles, runs from the catalog (services/build/hosted),
-// and is asked here only what a worker's artifact lookup needs.
+// The build service, both its roles, runs from the catalog (services/build/hosted);
+// what a worker runs is read from its job records, this node's replica of them.
 
 // maxAuthConnections bounds the streams one node keeps to auth. It is small
 // because every answer is cached in front of it — ingress caches hook
@@ -35,10 +34,6 @@ const maxAuthConnections = 4
 // pollInterval is how often a waiting lookup looks again. The discovery view is
 // gossiped and changes on its own schedule; there is nothing to subscribe to.
 const pollInterval = 250 * time.Millisecond
-
-// ErrNoBuild is a resource the platform builds, on a node that can find
-// nothing that builds.
-var ErrNoBuild = errors.New("node: no build service is reachable")
 
 // ErrNotBuilt is a resource the platform builds and nothing has built yet.
 //
@@ -182,8 +177,8 @@ type builtAt struct {
 }
 
 // BuildArtifacts is what this node's worker reads a built resource's artifact
-// from when nothing was injected: the build service, asked over p2p. A
-// composer that injects its own resolver hands this to it to fall back on.
+// from: build's job records, this node's replica of them, which it shares with any
+// build service running here. No build node is asked.
 func (n *Instance) BuildArtifacts() worker.Artifacts {
 	return &artifacts{node: n, seen: map[string]builtAt{}}
 }
@@ -194,47 +189,18 @@ func (a *artifacts) Artifact(ctx context.Context, project, environment, kind, re
 	if cid, ok := a.cached(key); ok {
 		return cid, nil
 	}
-
-	// THIS NODE'S OWN JOBS ARE READ IN-PROCESS, as its own register is: a
-	// host does not dial itself, so a single-node cloud asking the swarm would
-	// find only itself and never resolve anything. A follower says
-	// Unavailable, and then the fleet is asked as before.
-	if built, ok := service.Get[jobs.Service](&added{node: a.node}); ok {
-		cid, err := built.Built(project, environment, resource)
-		if err == nil {
-			a.remember(key, cid)
-			return cid, nil
-		}
-		if connect.CodeOf(err) != connect.CodeUnavailable {
-			return "", notBuilt(err, project, environment, resource)
-		}
-	}
-
-	// The view is asked before the pool, since this is the request path:
-	// fromDiscovery.Peers would wait forever on a cloud with no build node. A failed
-	// lookup is not cached.
-	if len((&fromDiscovery{node: a.node, name: Build}).Known()) == 0 {
-		return "", fmt.Errorf("%w: %s/%s is built by the platform and no build service is reachable",
-			ErrNoBuild, project, environment)
-	}
-
-	pool, err := a.node.dial(build.Protocol, Build)
+	records, err := a.node.dbs.at(jobs.Records)
 	if err != nil {
 		return "", err
 	}
-	client, err := clients.Builds(pool)
-	if err != nil {
-		return "", err
-	}
-
-	cid, err := client.Artifact(ctx, project, environment, resource)
+	cid, err := jobs.Live(ctx, records, project, environment, resource)
 	if err != nil {
 		// A FAILED LOOKUP IS NOT CACHED. "Nothing has built this yet" is a
-		// state that ends the moment a build finishes, and remembering it would
-		// keep a node refusing a resource for a TTL after it became runnable.
+		// state that ends the moment a build's records reach this node, and
+		// remembering it would keep a node refusing a resource for a TTL after it
+		// became runnable.
 		return "", notBuilt(err, project, environment, resource)
 	}
-
 	a.remember(key, cid)
 	return cid, nil
 }

@@ -229,19 +229,7 @@ func (s *server) Built(project, environment, resource string) (string, error) {
 
 	ctx, stop := context.WithTimeout(context.Background(), s.cfg.Queue.ApplyTimeout)
 	defer stop()
-	cid, _, ok, err := s.journal.live(ctx, project, environment, resource)
-	if err != nil {
-		return "", err
-	}
-	if !ok {
-		// Nothing built is NotFound, which differs from needing no build; the caller
-		// knows which it asked about.
-		return "", errNotFound("build: nothing has been built for %s/%s's %s", project, environment, resource)
-	}
-	if cid == "" {
-		return "", errInternal("build: %s/%s's %s names an empty artifact", project, environment, resource)
-	}
-	return cid, nil
+	return Live(ctx, s.records, project, environment, resource)
 }
 
 func (h *jobHandler) Follow(ctx context.Context, req *connect.Request[buildv2.FollowRequest], stream *connect.ServerStream[buildv2.Job_Event]) error {

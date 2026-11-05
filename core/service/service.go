@@ -14,6 +14,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
+	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/rpc"
 )
@@ -60,6 +61,13 @@ type Host interface {
 type Running struct {
 	Name    string
 	Service any
+}
+
+// Databases is the instance's replicated databases, one per name, shared by all
+// that runs on it: two opens of one name on one peer would be two replicas over one
+// store. The instance closes them.
+type Databases interface {
+	Database(name string) (kvdb.Instance, error)
 }
 
 // Directory says which nodes run a service: what discovery answers.
