@@ -42,30 +42,6 @@ func TestDiscovery(t *testing.T) {
 	}
 }
 
-func TestPidSetIntersection(t *testing.T) {
-	if got := pidSetIntersection([]int{1, 2, 3, 4}, []int{5, 2, 3, 4}); got != 3 {
-		t.Errorf("pidSetIntersection([1,2,3,4], [5,2,3,4]) = %d; want 3", got)
-	}
-	if got := pidSetIntersection([]int{1, 2}, []int{0, 1, 2}); got != 2 {
-		t.Errorf("pidSetIntersection([1,2], [0,1,2]) = %d; want 2", got)
-	}
-	if got := pidSetIntersection([]int{1, 2}, []int{2, 1}); got != 2 {
-		t.Errorf("pidSetIntersection([1,2], [2,1]) = %d; want 2 (set, order irrelevant)", got)
-	}
-	if got := pidSetIntersection([]int{}, []int{1}); got != 0 {
-		t.Errorf("pidSetIntersection([], [1]) = %d; want 0", got)
-	}
-	if got := pidSetIntersection([]int{10, 20, 30}, []int{10, 20, 30}); got != 3 {
-		t.Errorf("pidSetIntersection([10,20,30], [10,20,30]) = %d; want 3", got)
-	}
-	if got := pidSetIntersection([]int{100, 200, 300}, []int{999, 200, 300}); got != 2 {
-		t.Errorf("pidSetIntersection([100,200,300], [999,200,300]) = %d; want 2", got)
-	}
-	if got := pidSetIntersection([]int{1, 2, 3}, []int{4, 5, 6}); got != 0 {
-		t.Errorf("pidSetIntersection([1,2,3], [4,5,6]) = %d; want 0", got)
-	}
-}
-
 func TestAncestorPathFromRoot(t *testing.T) {
 	P := ancestorPathFromRoot(sessionMaxAncestors)
 	if len(P) > sessionMaxAncestors {
@@ -306,8 +282,8 @@ func TestPidSetIntersectionDistinguishesSiblings(t *testing.T) {
 	tabB := []int{6000, 3000, 2500, 2000, 1500, 1000}
 	storedA := []int{5000, 3000, 2500, 2000, 1500, 1000}
 
-	interA := pidSetIntersection(tabA, storedA)
-	interB := pidSetIntersection(tabB, storedA)
+	interA := longestCommonRun(tabA, storedA)
+	interB := longestCommonRun(tabB, storedA)
 
 	if interA != 6 {
 		t.Errorf("tab A intersection with stored A: got %d; want 6", interA)

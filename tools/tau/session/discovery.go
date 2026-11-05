@@ -129,21 +129,23 @@ func ancestorPathFromRoot(maxDepth int) []int {
 	return pids
 }
 
-// pidSetIntersection returns the count of PIDs that appear in both a and b (set intersection).
-func pidSetIntersection(a, b []int) int {
-	set := make(map[int]bool)
-	for _, p := range a {
-		if p > 0 {
-			set[p] = true
+// longestCommonRun returns the length of the longest run of PIDs that appears
+// in the same order in both chains. A real shared ancestry is a run; a single
+// PID in common can be the OS reusing it for an unrelated process.
+func longestCommonRun(a, b []int) int {
+	best := 0
+	for i := range a {
+		for j := range b {
+			n := 0
+			for i+n < len(a) && j+n < len(b) && a[i+n] > 0 && a[i+n] == b[j+n] {
+				n++
+			}
+			if n > best {
+				best = n
+			}
 		}
 	}
-	count := 0
-	for _, p := range b {
-		if p > 0 && set[p] {
-			count++
-		}
-	}
-	return count
+	return best
 }
 
 // sessionFileBaseName returns the session file base name (without .yaml) for the given leaf-first PIDs.
@@ -256,7 +258,7 @@ func discoverOrCreateConfigFileLoc() (string, error) {
 					continue
 				}
 			}
-			inter := pidSetIntersection(leafPIDs, storedPIDs)
+			inter := longestCommonRun(leafPIDs, storedPIDs)
 			if inter < 1 {
 				debugSession("discover: skip file=%q stored=%v intersection=%d (< 1)", base, storedPIDs, inter)
 				continue
