@@ -45,8 +45,19 @@ func _import(ctx *cli.Context) error {
 		return err
 	}
 
-	repos, err := ListRepos(ctx.Context, profile.Token, profile.GitUsername)
-	if err != nil {
+	// Named repositories are looked up by name. Listing every repository took
+	// several GitHub calls on a large account, and one failed page failed the
+	// import; the list is only needed to offer a choice.
+	var repos []*github.Repository
+	if ctx.String("config") != "" && ctx.String("code") != "" {
+		for _, name := range []string{ctx.String("config"), ctx.String("code")} {
+			repo, err := GetRepo(ctx.Context, profile.Token, name)
+			if err != nil {
+				return repositoryI18n.ErrorListRepositories(profile.GitUsername, err)
+			}
+			repos = append(repos, repo)
+		}
+	} else if repos, err = ListRepos(ctx.Context, profile.Token, profile.GitUsername); err != nil {
 		return err
 	}
 

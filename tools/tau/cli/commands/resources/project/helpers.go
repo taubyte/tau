@@ -3,7 +3,9 @@ package project
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"strings"
 	"sync"
 
 	"github.com/google/go-github/v71/github"
@@ -104,6 +106,16 @@ func newGithubClient(ctx context.Context, token string) *github.Client {
 
 	tc := oauth2.NewClient(ctx, ts)
 	return github.NewClient(tc)
+}
+
+// GetRepo looks one repository up by its full name (owner/name).
+var GetRepo = func(ctx context.Context, token, fullName string) (*github.Repository, error) {
+	owner, name, ok := strings.Cut(fullName, "/")
+	if !ok || owner == "" || name == "" {
+		return nil, fmt.Errorf("repository %q is not owner/name", fullName)
+	}
+	repo, _, err := newGithubClient(ctx, token).Repositories.Get(ctx, owner, name)
+	return repo, err
 }
 
 // Var to allow override in tests

@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/google/go-github/v71/github"
 	commonTest "github.com/taubyte/tau/tools/tau/common/test"
@@ -34,6 +35,14 @@ var (
 
 // used for tests
 func init() {
+	GetRepo = func(ctx context.Context, token, fullName string) (*github.Repository, error) {
+		for _, r := range []*github.Repository{mockConfigRepo, mockCodeRepo} {
+			if r.GetFullName() == fullName {
+				return r, nil
+			}
+		}
+		return nil, fmt.Errorf("no repository %s", fullName)
+	}
 	ListRepos = func(ctx context.Context, token, user string) ([]*github.Repository, error) {
 		return []*github.Repository{
 			mockConfigRepo,
