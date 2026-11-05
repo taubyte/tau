@@ -30,10 +30,10 @@ Everything a node runs is decided by its config file (`instance/boot`). Its
 | `secrets`        | `services/secrets`   | a project's secrets                                       |
 | `database`       | `services/database`  | a project's databases                                     |
 | `primitives`     | `services/primitives`| a project's queues and logs                               |
-| `build`          | `services/build`     | the public webhook and job API                            |
-| `runner`         | `services/build`     | the queue, job records, clones and runs                   |
+| `plm`            | `services/plm`       | pipelines: webhooks, the job API, the queue and job records |
+| `builder`        | `services/builder`   | clones and runs builds, keeping each run's log            |
 
-`build` and `runner` must run in different processes. `node/` composes the
+`node/` composes the
 services into a node; `instance/placement` is its request router. Services talk to
 each other over ConnectRPC carried on libp2p streams; their schemas are the
 `.proto` files under `pkg/proto` (regenerate with `make proto-v2`).

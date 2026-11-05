@@ -21,7 +21,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/taubyte/tau/services/build/jobs"
+	"github.com/taubyte/tau/services/plm/jobs"
 	storageService "github.com/taubyte/tau/services/storage"
 
 	"github.com/taubyte/tau/core/kvdb"
@@ -281,7 +281,7 @@ func (n *Instance) openWorker() error {
 	if !n.cfg.runs(Worker) {
 		return nil
 	}
-	// BUILD'S RECORDS ARE HELD FROM THE START, so this node's replica follows every
+	// PLM'S RECORDS ARE HELD FROM THE START, so this node's replica follows every
 	// build as it lands rather than starting to catch up on the first request.
 	if n.opts.artifacts == nil {
 		if _, err := n.dbs.at(jobs.Records); err != nil {
@@ -441,7 +441,7 @@ func (n *Instance) openWorker() error {
 		worker.WithRegister(n.views),
 		worker.WithPool(pool),
 	}
-	// WHAT A BUILT RESOURCE RUNS COMES FROM THE BUILD SERVICE, unless a
+	// WHAT A BUILT RESOURCE RUNS COMES FROM THE PLM SERVICE, unless a
 	// composer injected something else. An injected one wins because it is the
 	// more specific statement: somebody who handed this node an artifact
 	// resolver meant that one.
@@ -639,14 +639,14 @@ func (n *Instance) openGateway() error {
 }
 
 // Artifacts is what this node's worker looks a built resource's artifact up in: the
-// one it was given, else build's records on this node. Nil on a node with no
+// one it was given, else plm's records on this node. Nil on a node with no
 // discovery.
 func (n *Instance) Artifacts() worker.Artifacts {
 	switch {
 	case n.opts.artifacts != nil:
 		return n.opts.artifacts
 	case n.discovery != nil:
-		return n.BuildArtifacts()
+		return n.PLMArtifacts()
 	}
 	return nil
 }

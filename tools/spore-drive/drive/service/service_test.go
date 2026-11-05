@@ -137,12 +137,10 @@ func TestARealConfigShapeValidatesUnchangedAndPlans(t *testing.T) {
 	assert.Equal(t, len(plan.Msg.Hosts), 1)
 	h := plan.Msg.Hosts[0]
 	assert.Equal(t, h.Name, "node1.example.com")
-	// patrick and monkey are both here, so build is split off.
-	assert.Equal(t, len(h.Nodes), 2)
+	// patrick and monkey are both here, on the host's one node.
+	assert.Equal(t, len(h.Nodes), 1)
 	assert.Equal(t, h.Nodes[0].Name, "all")
 	assert.Equal(t, h.Nodes[0].Port, int32(4242))
-	assert.Equal(t, h.Nodes[1].Name, "build")
-	assert.Equal(t, h.Nodes[1].Port, int32(4243))
 }
 
 func TestValidateGeneratesWhatADocumentLeavesOut(t *testing.T) {

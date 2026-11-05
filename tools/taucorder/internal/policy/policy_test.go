@@ -8,9 +8,10 @@ import (
 	"google.golang.org/protobuf/reflect/protoregistry"
 
 	_ "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
-	_ "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	_ "github.com/taubyte/tau/pkg/proto/gen/tau/builder/v2"
 	_ "github.com/taubyte/tau/pkg/proto/gen/tau/database/v2"
 	_ "github.com/taubyte/tau/pkg/proto/gen/tau/discovery/v2"
+	_ "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 	_ "github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v2"
 	_ "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 	_ "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"

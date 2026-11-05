@@ -36,7 +36,7 @@ func serving(t *testing.T, compiled []byte, hosts ...string) *Instance {
 	require.NoError(t, n.Start(t.Context()))
 
 	// THE HOSTS ARE WHAT TURNS A QUERY INTO A PROJECT. A deploy publishes
-	// them beside the object — see services/build/deploy — and a zone's apex
+	// them beside the object — see services/plm/deploy — and a zone's apex
 	// is one of them, which is the only reason dns can find the records an
 	// author wrote.
 	// AND THE GENERATED ONES, completed by the zone exactly as a deploy completes them.
@@ -239,7 +239,7 @@ func TestANameDeepInAZoneFindsIt(t *testing.T) {
 func TestEveryServiceANodeCanRunIsAName(t *testing.T) {
 	n := &Instance{Node: mockPeer(t), opts: options{extra: map[string]service.Service{"billing": started{}}}}
 	names := n.knownServices()
-	for _, want := range append(append([]string(nil), All...), Build, "billing") {
+	for _, want := range append(append([]string(nil), All...), PLM, "billing") {
 		require.Contains(t, names, want)
 	}
 }

@@ -19,11 +19,11 @@ import (
 
 	"google.golang.org/protobuf/encoding/protojson"
 
-	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 )
 
 // Job is the build service's job record.
-type Job = buildv2.Job
+type Job = plmv2.Job
 
 // Error is a refusal from the build service: its status, the message it chose to
 // give, and the headers it came with. A 404 is also what a denial looks like —
@@ -425,9 +425,9 @@ func (c *Client) Published(ctx context.Context, projectID, environment string) (
 
 // The job statuses a caller waits through.
 const (
-	JobQueued    = buildv2.JobStatus_JobStatusOpen
-	JobRunning   = buildv2.JobStatus_JobStatusClaimed
-	JobSuccess   = buildv2.JobStatus_JobStatusSuccess
-	JobFailed    = buildv2.JobStatus_JobStatusFailed
-	JobCancelled = buildv2.JobStatus_JobStatusCancelled
+	JobQueued    = plmv2.JobStatus_JobStatusOpen
+	JobRunning   = plmv2.JobStatus_JobStatusClaimed
+	JobSuccess   = plmv2.JobStatus_JobStatusSuccess
+	JobFailed    = plmv2.JobStatus_JobStatusFailed
+	JobCancelled = plmv2.JobStatus_JobStatusCancelled
 )

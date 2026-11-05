@@ -26,7 +26,7 @@ import (
 	"github.com/taubyte/tau/pkg/fleet"
 	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/pkg/invoke"
-	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/pkg/specs"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
@@ -51,7 +51,7 @@ import (
 // (same database id, label, environment and model) under another project and host,
 // so isolation can be tested; its project id is a real CIDv0 of its name.
 // with/function/wasm is the smallest project and the first to read when the corpus
-// turns red. A project is built as a developer's build is: uploaded with what its
+// turns red. A project is built as a developer's plm is: uploaded with what its
 // packages build to, shipped components standing in for sources nobody built.
 
 // artifacts maps a workload's label to what its package builds to, "" being the
@@ -289,7 +289,7 @@ func nameOf(v any) string {
 	return name
 }
 
-// build is the project under projects/name built for project in u, its packages
+// plm is the project under projects/name built for project in u, its packages
 // standing in for their builds, and how the build ended, which is a success.
 func build(t *testing.T, u *nodeDream.Universe, project, name string, built map[string][]byte) nodeDream.Outcome {
 	t.Helper()
@@ -334,10 +334,10 @@ func built1(t *testing.T, u *nodeDream.Universe, name string, push nodeDream.Pus
 	t.Helper()
 	out, err := u.Build(t.Context(), push)
 	require.NoError(t, err)
-	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, out.Plan.GetStatus(), "%s's plan: %s", name, out.Plan.GetReason())
+	require.Equal(t, plmv2.JobStatus_JobStatusSuccess, out.Plan.GetStatus(), "%s's plan: %s", name, out.Plan.GetReason())
 	require.NotEmpty(t, out.Environments)
 	for _, job := range out.Environments {
-		require.Equal(t, buildv2.JobStatus_JobStatusSuccess, job.GetStatus(), "%s for %s: %s", name, job.GetEnvironment(), job.GetReason())
+		require.Equal(t, plmv2.JobStatus_JobStatusSuccess, job.GetStatus(), "%s for %s: %s", name, job.GetEnvironment(), job.GetReason())
 	}
 	return out
 }
@@ -385,9 +385,9 @@ func deployWith(t *testing.T, name, host string, wasm []byte, extra map[string][
 func deployServing(t *testing.T, name, host string, wasm []byte, extra map[string][]byte, services ...string) *running {
 	t.Helper()
 
-	// SOMEBODY BUILDS IT: the project is built as a push is, by a runner.
-	if !slices.Contains(services, instance.Runner) {
-		services = append(services, instance.Runner)
+	// SOMEBODY BUILDS IT: the project is built as a push is, by a builder.
+	if !slices.Contains(services, instance.Builder) {
+		services = append(services, instance.Builder)
 	}
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: services})
 	require.NoError(t, err)
@@ -824,7 +824,7 @@ func deployFleetOf(t *testing.T, copies int, wasm []byte, extra map[string][]byt
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Services: []string{
 			instance.Register, instance.Worker, instance.Discovery, instance.Gateway,
-			instance.Database, instance.Primitives, storageService.Descriptor.Name, instance.Runner},
+			instance.Database, instance.Primitives, storageService.Descriptor.Name, instance.Builder},
 		Copies: copies,
 	})
 	require.NoError(t, err)

@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/taubyte/tau/services/runner"
+	"github.com/taubyte/tau/services/builder"
 
 	"github.com/taubyte/tau/pkg/containers"
 
@@ -153,8 +153,8 @@ func copyFile(from, to string) error {
 }
 
 // universe is a development cloud that builds: one node running every private
-// service with a container daemon to build and run in, and one running the
-// public build service. It answers build's address and the node that
+// service with a container daemon to plm and run in, and one running the
+// public plm service. It answers build's address and the node that
 // serves.
 func universe(t *testing.T, f *fake.Served, configure func(*instance.Config), opts ...instance.Option) (string, *instance.Instance) {
 	t.Helper()
@@ -180,7 +180,7 @@ func universe(t *testing.T, f *fake.Served, configure func(*instance.Config), op
 				configure(c)
 			}
 			if index > 0 {
-				c.Services = []string{instance.Discovery, instance.Build}
+				c.Services = []string{instance.Discovery, instance.PLM}
 			}
 		},
 	})
@@ -191,7 +191,7 @@ func universe(t *testing.T, f *fake.Served, configure func(*instance.Config), op
 	require.True(t, ok)
 	front, ok := dream.Node(u.Pids()[1])
 	require.True(t, ok)
-	addr := front.BuildAddr()
+	addr := front.PLMAddr()
 	require.NotNil(t, addr)
 	return "http://" + addr.String(), serving
 }
@@ -638,7 +638,7 @@ func (u *underTest) bothWays(t *testing.T, c corpusCase) {
 	require.NoError(t, err)
 	p, err := specs.Load(object)
 	require.NoError(t, err)
-	// READ FROM THIS NODE'S REPLICA of build's records, which names the build once
+	// READ FROM THIS NODE'S REPLICA of plm's records, which names the build once
 	// it has caught up with the node that settled it.
 	for _, b := range p.Buildables() {
 		require.EventuallyWithT(t, func(c *assert.CollectT) {
@@ -794,9 +794,9 @@ func (z *txtZone) LookupTXT(_ context.Context, name string) ([]string, error) {
 func TestTheDomainCorpusBuildsBothWays(t *testing.T) {
 	dns := &txtZone{m: map[string][]string{}}
 	u := signedIn(t, func(c *instance.Config) {
-		built := c.Sections[instance.Runner].(runner.Config)
+		built := c.Sections[instance.Builder].(builder.Config)
 		built.Domains.Trusted = false
-		c.Sections[instance.Runner] = built
+		c.Sections[instance.Builder] = built
 		c.Services = append(append(append([]string(nil), instance.All...), services.Default()...), instance.CM)
 	}, instance.WithResolver(dns))
 

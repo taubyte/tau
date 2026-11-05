@@ -133,7 +133,7 @@ func testDisplace(t *testing.T, sd Spore, root string, secrets []string, openDel
 		rh.On("Sudo", ctx, "bash", "-c", "mkdir -p "+root+"/{bin,config,storage}").Return(nil, nil)
 
 		// one file per node, keys inline
-		for _, inst := range []string{"shape1", "build"} {
+		for _, inst := range []string{"shape1"} {
 			cf, _ := rhfs.OpenFile("/tmp/"+inst+".yaml", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0600)
 			rh.On("OpenFile", "/tmp/"+inst+".yaml", os.O_CREATE|os.O_RDWR|os.O_TRUNC, fs.FileMode(0600)).Once().Return(cf, nil)
 			rh.On("Sudo", ctx, "cp", "-f", "/tmp/"+inst+".yaml", root+"/config/").Return(nil, nil)
@@ -148,7 +148,6 @@ func testDisplace(t *testing.T, sd Spore, root string, secrets []string, openDel
 		rh.On("Sudo", ctx, "test", "-d", root+"/storage/shape1").Once().Return(nil, nil)
 		rh.On("Sudo", ctx, "grep", "-qs", "^node:", root+"/config/shape1.yaml").Once().Return(nil, errors.New("exit 1"))
 		rh.On("Sudo", ctx, "mv", root+"/storage/shape1", root+"/storage/shape1.v1-20261022T093000").Once().Return(nil, nil)
-		rh.On("Sudo", ctx, "test", "-d", root+"/storage/build").Once().Return(nil, errors.New("exit 1"))
 
 		if secrets != nil {
 			rh.On("SudoInput", ctx, mock.Anything, root+"/bin/tau", "init", "--config", root+"/config/shape1.yaml", "--root", root+"/storage/shape1", "-").
@@ -170,10 +169,7 @@ func testDisplace(t *testing.T, sd Spore, root string, secrets []string, openDel
 		for _, inst := range []string{"shape2", "node"} {
 			rh.On("Sudo", ctx, "systemctl", "disable", "tau@"+inst).Return(nil, nil)
 		}
-		rh.On("Sudo", ctx, "systemctl", "enable", "tau@build").Return(nil, nil)
-		for _, inst := range []string{"shape1", "build"} {
-			rh.On("Sudo", ctx, "systemctl", "start", "tau@"+inst).Return(nil, nil)
-		}
+		rh.On("Sudo", ctx, "systemctl", "start", "tau@shape1").Return(nil, nil)
 
 		rh.On("Remove", "/tmp/tau").Return(nil)
 		rh.On("Remove", "/tmp/tau@.service").Return(nil)
@@ -206,9 +202,9 @@ func testDisplace(t *testing.T, sd Spore, root string, secrets []string, openDel
 		assert.NilError(t, s.Error(), s.Name())
 	}
 	if updatingTau {
-		assert.Equal(t, len(steps), 66)
+		assert.Equal(t, len(steps), 64)
 	} else {
-		assert.Equal(t, len(steps), 60)
+		assert.Equal(t, len(steps), 58)
 	}
 
 	if secrets != nil {
@@ -233,13 +229,12 @@ func testDisplace(t *testing.T, sd Spore, root string, secrets []string, openDel
 			return data
 		}
 
-		var main, split boot.File
+		var main boot.File
 		assert.NilError(t, yaml.Unmarshal(read("/tmp/shape1.yaml"), &main))
-		assert.NilError(t, yaml.Unmarshal(read("/tmp/build.yaml"), &split))
 
 		// the host's shapes are one node, keyed by its first shape
 		assert.Equal(t, main.PrivateKey, sdrive.parser.Hosts().Host(h.Name()).Shapes().Instance("shape1").Key())
-		assert.DeepEqual(t, main.Node.Services, []string{"auth", "secrets", "discovery", "dns", "gateway", "runner"})
+		assert.DeepEqual(t, main.Node.Services, []string{"auth", "secrets", "discovery", "dns", "gateway", "plm", "builder"})
 		assert.Equal(t, main.Node.Cloud, "test.com")
 		assert.Equal(t, main.Node.CloudFqdn, "gtest.com")
 		assert.Equal(t, main.HTTP, ":80")
@@ -256,22 +251,13 @@ func testDisplace(t *testing.T, sd Spore, root string, secrets []string, openDel
 			return nil
 		}))
 
-		// every node's certificate admits it, checked as the node checks it at boot
-		for _, f := range []boot.File{main, split} {
-			raw, err := base64.StdEncoding.DecodeString(f.PrivateKey)
-			assert.NilError(t, err)
-			key, err := crypto.UnmarshalPrivateKey(raw)
-			assert.NilError(t, err)
-			_, err = sectls.NewCredentials([]byte(f.CA), []byte(f.Certificate), f.Node.Cloud, key)
-			assert.NilError(t, err)
-		}
-		assert.Equal(t, main.CA, split.CA, "one CA for the cloud")
-
-		// build is split off, on the next port, with its own identity
-		assert.DeepEqual(t, split.Node.Services, []string{"build", "discovery"})
-		assert.DeepEqual(t, split.Listen, []string{"/ip4/0.0.0.0/tcp/4243"})
-		assert.Assert(t, split.PrivateKey != main.PrivateKey)
-		assert.Equal(t, split.HTTP, "")
+		// the node's certificate admits it, checked as the node checks it at boot
+		raw, err := base64.StdEncoding.DecodeString(main.PrivateKey)
+		assert.NilError(t, err)
+		key, err := crypto.UnmarshalPrivateKey(raw)
+		assert.NilError(t, err)
+		_, err = sectls.NewCredentials([]byte(main.CA), []byte(main.Certificate), main.Node.Cloud, key)
+		assert.NilError(t, err)
 
 		// the other host's node is the bootstrap peer
 		other := "host1"

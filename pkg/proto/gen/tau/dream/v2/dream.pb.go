@@ -9,14 +9,14 @@
 // universe's own Go method of the same name (instance/dream/build.go), so what a
 // test does in process a tool does over the wire.
 //
-// A BUILD GOES THROUGH THE UNIVERSE'S BUILD NODE when it runs one, and runs alone on
-// a node running a runner when it does not, recorded where a build node records it
-// either way. Nothing here is a cloud's API: no cloud serves it.
+// A BUILD GOES THROUGH THE UNIVERSE'S PLM NODE when it runs one, else straight to
+// a builder over the builder's protocol, else to the builder's runs in the universe's
+// own process. Nothing here is a cloud's API: no cloud serves it.
 
 package dreamv2
 
 import (
-	v2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	v2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -378,7 +378,7 @@ var File_tau_dream_v2_dream_proto protoreflect.FileDescriptor
 
 const file_tau_dream_v2_dream_proto_rawDesc = "" +
 	"\n" +
-	"\x18tau/dream/v2/dream.proto\x12\ftau.dream.v2\x1a\x18tau/build/v2/build.proto\"Y\n" +
+	"\x18tau/dream/v2/dream.proto\x12\ftau.dream.v2\x1a\x14tau/plm/v2/plm.proto\"Y\n" +
 	"\rCommitRequest\x12\x1e\n" +
 	"\n" +
 	"repository\x18\x01 \x01(\tR\n" +
@@ -406,10 +406,10 @@ const file_tau_dream_v2_dream_proto_rawDesc = "" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12\x16\n" +
 	"\x06config\x18\x02 \x01(\tR\x06config\x12\x12\n" +
 	"\x04code\x18\x03 \x03(\tR\x04code\"\b\n" +
-	"\x06Linked\"g\n" +
-	"\aOutcome\x12%\n" +
-	"\x04plan\x18\x01 \x01(\v2\x11.tau.build.v2.JobR\x04plan\x125\n" +
-	"\fenvironments\x18\x02 \x03(\v2\x11.tau.build.v2.JobR\fenvironments2\xf1\x01\n" +
+	"\x06Linked\"c\n" +
+	"\aOutcome\x12#\n" +
+	"\x04plan\x18\x01 \x01(\v2\x0f.tau.plm.v2.JobR\x04plan\x123\n" +
+	"\fenvironments\x18\x02 \x03(\v2\x0f.tau.plm.v2.JobR\fenvironments2\xf1\x01\n" +
 	"\fDreamService\x129\n" +
 	"\x06Commit\x12\x1b.tau.dream.v2.CommitRequest\x1a\x12.tau.dream.v2.Push\x129\n" +
 	"\x06Upload\x12\x1b.tau.dream.v2.UploadRequest\x1a\x12.tau.dream.v2.Push\x127\n" +
@@ -439,12 +439,12 @@ var file_tau_dream_v2_dream_proto_goTypes = []any{
 	(*Linked)(nil),        // 4: tau.dream.v2.Linked
 	(*Outcome)(nil),       // 5: tau.dream.v2.Outcome
 	nil,                   // 6: tau.dream.v2.UploadRequest.BuiltEntry
-	(*v2.Job)(nil),        // 7: tau.build.v2.Job
+	(*v2.Job)(nil),        // 7: tau.plm.v2.Job
 }
 var file_tau_dream_v2_dream_proto_depIdxs = []int32{
 	6, // 0: tau.dream.v2.UploadRequest.built:type_name -> tau.dream.v2.UploadRequest.BuiltEntry
-	7, // 1: tau.dream.v2.Outcome.plan:type_name -> tau.build.v2.Job
-	7, // 2: tau.dream.v2.Outcome.environments:type_name -> tau.build.v2.Job
+	7, // 1: tau.dream.v2.Outcome.plan:type_name -> tau.plm.v2.Job
+	7, // 2: tau.dream.v2.Outcome.environments:type_name -> tau.plm.v2.Job
 	0, // 3: tau.dream.v2.DreamService.Commit:input_type -> tau.dream.v2.CommitRequest
 	1, // 4: tau.dream.v2.DreamService.Upload:input_type -> tau.dream.v2.UploadRequest
 	3, // 5: tau.dream.v2.DreamService.Link:input_type -> tau.dream.v2.LinkRequest

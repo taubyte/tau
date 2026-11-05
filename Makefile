@@ -178,7 +178,7 @@ test-application:
 # stranger's commands, and the engine will not start one it cannot firewall.
 
 test-build:
-	go test -exec '$(LEAKCHECK) $(AS_ROOT)' -tags docker_integration -count=1 -v -timeout 15m -run '^TestARealBuild' ./services/build/artifact/
+	go test -exec '$(LEAKCHECK) $(AS_ROOT)' -tags docker_integration -count=1 -v -timeout 15m -run '^TestARealBuild' ./services/plm/artifact/
 
 # test-external-databases deploys projects/with/database/{postgres,mysql}/sql
 # against real servers the test starts in docker. No firewall is installed for a

@@ -15,7 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/require"
 
-	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/session"
 	"github.com/taubyte/tau/tools/tau/internal/project"
@@ -55,11 +55,11 @@ func TestReportRendersFindingsWorstFirst(t *testing.T) {
 
 func TestJobRendering(t *testing.T) {
 	th := plain()
-	for _, s := range []buildv2.JobStatus{buildv2.JobStatus_JobStatusOpen, buildv2.JobStatus_JobStatusClaimed, buildv2.JobStatus_JobStatusSuccess, buildv2.JobStatus_JobStatusFailed, buildv2.JobStatus_JobStatusCancelled} {
+	for _, s := range []plmv2.JobStatus{plmv2.JobStatus_JobStatusOpen, plmv2.JobStatus_JobStatusClaimed, plmv2.JobStatus_JobStatusSuccess, plmv2.JobStatus_JobStatusFailed, plmv2.JobStatus_JobStatusCancelled} {
 		require.Equal(t, Status(s), th.status(s))
 	}
 	require.Equal(t, "-", when(0))
-	require.Contains(t, th.Job(&buildv2.Job{Id: "j"}), "queued      -")
+	require.Contains(t, th.Job(&plmv2.Job{Id: "j"}), "queued      -")
 }
 
 func TestViewsRendering(t *testing.T) {
@@ -237,16 +237,16 @@ func TestHuhPrompts(t *testing.T) {
 func TestTheJobAndListRenderers(t *testing.T) {
 	th := plain()
 	require.Contains(t, th.Jobs(nil), "no jobs yet")
-	jobs := th.Jobs([]*buildv2.Job{
-		{Id: "old", Status: buildv2.JobStatus_JobStatusSuccess, CommitSha: "0123456789abcdef0123", Timestamp: 1700000000, Attempt: 1},
-		{Id: "new", Status: buildv2.JobStatus_JobStatusFailed, CommitSha: "abc"},
+	jobs := th.Jobs([]*plmv2.Job{
+		{Id: "old", Status: plmv2.JobStatus_JobStatusSuccess, CommitSha: "0123456789abcdef0123", Timestamp: 1700000000, Attempt: 1},
+		{Id: "new", Status: plmv2.JobStatus_JobStatusFailed, CommitSha: "abc"},
 	})
 	require.Less(t, strings.Index(jobs, "old"), strings.Index(jobs, "new"), "newest first, and a job never queued sorts last")
 	require.Contains(t, jobs, "0123456789ab")
 	require.Contains(t, jobs, "2023-11-14T22:13:20Z")
 	require.Contains(t, jobs, "-")
 
-	one := th.Job(&buildv2.Job{Id: "j", Status: buildv2.JobStatus_JobStatusCancelled, AssetCid: map[string]string{"b": "2", "a": "1"}})
+	one := th.Job(&plmv2.Job{Id: "j", Status: plmv2.JobStatus_JobStatusCancelled, AssetCid: map[string]string{"b": "2", "a": "1"}})
 	require.Less(t, strings.Index(one, "a → 1"), strings.Index(one, "b → 2"))
 
 	table := th.Table([]string{"A", "B"}, [][]string{{"one", "two"}})

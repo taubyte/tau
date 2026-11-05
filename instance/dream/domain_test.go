@@ -20,9 +20,9 @@ import (
 	nodeDream "github.com/taubyte/tau/instance/dream"
 	cmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	buildDeploy "github.com/taubyte/tau/services/build/deploy"
-	"github.com/taubyte/tau/services/build/run"
 	"github.com/taubyte/tau/services/cm"
+	buildDeploy "github.com/taubyte/tau/services/plm/deploy"
+	"github.com/taubyte/tau/services/plm/run"
 )
 
 const (

@@ -95,7 +95,7 @@ func fleet(t *testing.T, f *fake.Served, opts ...instance.Option) (front, otherF
 			c.Forges = []drivers.Forge{{Host: f.Host(), Driver: drivers.GitHub, HostKeys: []string{f.HostKey()}, CA: f.CA()}}
 			c.Auth.Admin = auth.Admin{Name: "root"}
 			if index > 0 {
-				c.Services = []string{instance.Discovery, instance.Build}
+				c.Services = []string{instance.Discovery, instance.PLM}
 			}
 		},
 	})
@@ -115,7 +115,7 @@ func fleet(t *testing.T, f *fake.Served, opts ...instance.Option) (front, otherF
 	addr := func(i int) string {
 		n, found := dream.Node(u.Pids()[i])
 		require.True(t, found)
-		a := n.BuildAddr()
+		a := n.PLMAddr()
 		require.NotNil(t, a)
 		return "http://" + a.String()
 	}
@@ -180,7 +180,7 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 	wire := f.LastHookWire()
 	hooks := installed(t, f.Forge, configRepo)
 	require.Len(t, hooks, 1)
-	require.Equal(t, "https://"+instance.Build+"."+e2eCloud+"/hook/"+linked.ProjectID, hooks[0].Callback)
+	require.Equal(t, "https://"+instance.PLM+"."+e2eCloud+"/hook/"+linked.ProjectID, hooks[0].Callback)
 	require.True(t, f.LastDeployKeyReadOnly())
 
 	// Relinking keeps the config repository's hook, creates and wires the
@@ -206,7 +206,7 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 	}, names)
 
 	// THE PUSH IS VERIFIED BY THE REPOSITORY'S OWN SECRET, and confirmed at the
-	// forge over the deploy key by the runner that plans it: a commit the branch
+	// forge over the deploy key by the builder that plans it: a commit the branch
 	// does not hold is queued, and builds nothing.
 	hook := cloud + "/hook/" + linked.ProjectID
 	require.Equal(t, http.StatusNotFound, deliver(t, f.Forge, hook, configRepo, "not-the-secret", linked.Pushed).StatusCode)
@@ -222,7 +222,7 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 	}
 	// A PUSH IS A PLAN AND A JOB PER ENVIRONMENT IT FEEDS: this project's one, for
 	// the pushed commit, both succeeding; and one plan for the commit the branch
-	// does not hold, failed by the runner's confirm.
+	// does not hold, failed by the builder's confirm.
 	var jobs []job
 	ended := func(want string) (n int, last string) {
 		for _, j := range jobs {

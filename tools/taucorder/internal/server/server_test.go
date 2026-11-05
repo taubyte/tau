@@ -13,8 +13,8 @@ import (
 
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
-	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
+	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2/plmv2connect"
 	registerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/register/v2/registerv2connect"
 	"github.com/taubyte/tau/tools/taucorder/internal/fixture"
@@ -70,8 +70,8 @@ func TestReadIsForwardedInEveryProtocol(t *testing.T) {
 		}
 	}
 	// A server stream, over grpc-web on HTTP/1.1.
-	j := buildv2connect.NewJobServiceClient(http.DefaultClient, e.url, connect.WithGRPCWeb())
-	s, err := j.Follow(context.Background(), connect.NewRequest(&buildv2.FollowRequest{JobId: "j1"}))
+	j := plmv2connect.NewJobServiceClient(http.DefaultClient, e.url, connect.WithGRPCWeb())
+	s, err := j.Follow(context.Background(), connect.NewRequest(&plmv2.FollowRequest{JobId: "j1"}))
 	if err != nil {
 		t.Fatal(err)
 	}

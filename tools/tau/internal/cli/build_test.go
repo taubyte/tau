@@ -16,9 +16,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 	"github.com/taubyte/tau/pkg/vault"
-	"github.com/taubyte/tau/services/build/artifact"
+	"github.com/taubyte/tau/services/plm/artifact"
 	"github.com/taubyte/tau/tools/tau/internal/project"
 )
 
@@ -290,7 +290,7 @@ func TestABuildIsHandedOnlyToACloudThatTakesOne(t *testing.T) {
 	x.ok("build", x.dir)
 	require.Equal(t, "proj-linked upload refs/heads/main", x.f.queued[1])
 
-	x.f.finish = buildv2.JobStatus_JobStatusFailed
+	x.f.finish = plmv2.JobStatus_JobStatusFailed
 	r := x.run("build", x.dir)
 	require.Equal(t, 1, r.code)
 	require.Contains(t, r.stderr, "failed")

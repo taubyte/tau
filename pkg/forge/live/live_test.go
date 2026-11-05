@@ -37,7 +37,7 @@ import (
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/git/gittest"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	"github.com/taubyte/tau/services/build/deploy"
+	"github.com/taubyte/tau/services/plm/deploy"
 )
 
 // instance is one booted forge, set up the way the scenario needs it: an admin

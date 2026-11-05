@@ -235,7 +235,7 @@ func TestTheZoneIsProvedByDNS01AndItsWildcardAnswersEveryService(t *testing.T) {
 	require.Equal(t, []string{name}, res.TLS.PeerCertificates[0].DNSNames)
 
 	// A SERVICE'S NAME is answered by the wildcard, on a listener taking the
-	// node's ServiceTLS — which is what the build service's does.
+	// node's ServiceTLS — which is what the plm service's does.
 	secure, err := running.ServiceTLS()
 	require.NoError(t, err)
 	require.NotNil(t, secure)

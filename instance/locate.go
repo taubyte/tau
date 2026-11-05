@@ -49,7 +49,7 @@ type registerSeam interface {
 	Publish(ctx context.Context, p pkgregister.Publication) (pkgregister.ObjectID, error)
 	Manifest(ctx context.Context, project, environment string) (pkgregister.Manifest, pkgregister.ObjectID, error)
 
-	// The project table (projects.go): read by both build roles, written by
+	// The project table (projects.go): read by plm and the builder both, written by
 	// the frontend's link.
 	LinkProject(ctx context.Context, l pkgregister.Link) (pkgregister.ProjectRecord, error)
 	Project(ctx context.Context, id string) (pkgregister.ProjectRecord, error)

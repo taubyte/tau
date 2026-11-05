@@ -16,15 +16,15 @@ import (
 
 	"github.com/taubyte/tau/core/service"
 	authService "github.com/taubyte/tau/services/auth"
-	"github.com/taubyte/tau/services/build/clients"
-	"github.com/taubyte/tau/services/build/hosted"
-	"github.com/taubyte/tau/services/build/jobs"
+	"github.com/taubyte/tau/services/plm/clients"
+	"github.com/taubyte/tau/services/plm/hosted"
+	"github.com/taubyte/tau/services/plm/jobs"
 	"github.com/taubyte/tau/services/worker"
 )
 
 // Composes auth: who is admitted to this cloud, once a forge said who a caller is.
-// The build service, both its roles, runs from the catalog (services/build/hosted);
-// what a worker runs is read from its job records, this node's replica of them.
+// The plm service runs from the catalog (services/plm/hosted), and the builder from
+// services/builder; what a worker runs is read from its job records, this node's replica of them.
 
 // maxAuthConnections bounds the streams one node keeps to auth. It is small
 // because every answer is cached in front of it — ingress caches hook
@@ -37,7 +37,7 @@ const pollInterval = 250 * time.Millisecond
 
 // ErrNotBuilt is a resource the platform builds and nothing has built yet.
 //
-// IT IS NOT THE BUILD SERVICE'S NotFound, deliberately: what a gateway tells a
+// IT IS NOT THE PLM SERVICE'S NotFound, deliberately: what a gateway tells a
 // caller follows the error's code, and a deployment missing its artifact is a
 // broken site (502), not a name nobody serves (404).
 var ErrNotBuilt = errors.New("node: nothing has built this resource yet")
@@ -152,9 +152,9 @@ func (n *Instance) openAuth() error {
 	return nil
 }
 
-// BuildAddr is where this node's build service listens, nil when it runs
+// PLMAddr is where this node's plm listens, nil when it runs
 // none or it has not started.
-func (n *Instance) BuildAddr() net.Addr {
+func (n *Instance) PLMAddr() net.Addr {
 	if f, ok := service.Get[hosted.Service](&added{node: n}); ok {
 		return f.Addr()
 	}
@@ -176,10 +176,10 @@ type builtAt struct {
 	when time.Time
 }
 
-// BuildArtifacts is what this node's worker reads a built resource's artifact
-// from: build's job records, this node's replica of them, which it shares with any
-// build service running here. No build node is asked.
-func (n *Instance) BuildArtifacts() worker.Artifacts {
+// PLMArtifacts is what this node's worker reads a built resource's artifact
+// from: plm's job records, this node's replica of them, which it shares with any
+// plm service running here. No plm node is asked.
+func (n *Instance) PLMArtifacts() worker.Artifacts {
 	return &artifacts{node: n, seen: map[string]builtAt{}}
 }
 
@@ -205,7 +205,7 @@ func (a *artifacts) Artifact(ctx context.Context, project, environment, kind, re
 	return cid, nil
 }
 
-// notBuilt is the build service's NotFound as ErrNotBuilt, and anything else
+// notBuilt is the plm service's NotFound as ErrNotBuilt, and anything else
 // as it came.
 func notBuilt(err error, project, environment, resource string) error {
 	if connect.CodeOf(err) == connect.CodeNotFound {

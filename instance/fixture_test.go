@@ -71,7 +71,7 @@ func workerTarget() specs.Address {
 func gatewayConfig() gateway.Config { return gateway.Config{} }
 
 // builtByThePlatform is a project whose one function runs a package the platform
-// builds, so the only seam it needs is the build service's.
+// builds, so the only seam it needs is the plm service's.
 func builtByThePlatform() []byte {
 	return []byte(`{
 		"object": {

@@ -7,9 +7,9 @@
 // universe's own Go method of the same name (instance/dream/build.go), so what a
 // test does in process a tool does over the wire.
 //
-// A BUILD GOES THROUGH THE UNIVERSE'S BUILD NODE when it runs one, and runs alone on
-// a node running a runner when it does not, recorded where a build node records it
-// either way. Nothing here is a cloud's API: no cloud serves it.
+// A BUILD GOES THROUGH THE UNIVERSE'S PLM NODE when it runs one, else straight to
+// a builder over the builder's protocol, else to the builder's runs in the universe's
+// own process. Nothing here is a cloud's API: no cloud serves it.
 package dreamv2connect
 
 import (
@@ -54,7 +54,7 @@ const (
 // DreamServiceClient is a client for the tau.dream.v2.DreamService service.
 type DreamServiceClient interface {
 	// Commit makes a folder the newest commit of a repository's branch in the
-	// universe's mirror, which its runners clone every repository from.
+	// universe's mirror, which its builders clone every repository from.
 	Commit(context.Context, *connect.Request[v2.CommitRequest]) (*connect.Response[v2.Push], error)
 	// Upload keeps a folder, with what its packages build to, as a commit in the
 	// universe's uploads: what `tau build` hands a development cloud.
@@ -134,7 +134,7 @@ func (c *dreamServiceClient) Build(ctx context.Context, req *connect.Request[v2.
 // DreamServiceHandler is an implementation of the tau.dream.v2.DreamService service.
 type DreamServiceHandler interface {
 	// Commit makes a folder the newest commit of a repository's branch in the
-	// universe's mirror, which its runners clone every repository from.
+	// universe's mirror, which its builders clone every repository from.
 	Commit(context.Context, *connect.Request[v2.CommitRequest]) (*connect.Response[v2.Push], error)
 	// Upload keeps a folder, with what its packages build to, as a commit in the
 	// universe's uploads: what `tau build` hands a development cloud.

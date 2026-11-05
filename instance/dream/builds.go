@@ -19,24 +19,24 @@ import (
 	"github.com/taubyte/tau/instance"
 	"github.com/taubyte/tau/p2p/discovery"
 	"github.com/taubyte/tau/p2p/peer"
-	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
-	runnerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/runner/v2"
+	builderv2 "github.com/taubyte/tau/pkg/proto/gen/tau/builder/v2"
+	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/build"
-	"github.com/taubyte/tau/services/build/clients"
-	"github.com/taubyte/tau/services/build/joblog"
-	"github.com/taubyte/tau/services/build/run"
-	"github.com/taubyte/tau/services/runner"
+	"github.com/taubyte/tau/services/builder"
+	"github.com/taubyte/tau/services/plm"
+	"github.com/taubyte/tau/services/plm/clients"
+	"github.com/taubyte/tau/services/plm/joblog"
+	"github.com/taubyte/tau/services/plm/run"
 	"github.com/taubyte/tau/services/worker"
 )
 
-// builds.go is how a universe builds a push. Build and runner are two services, and
-// a universe runs either, both or neither: a push goes through build's queue when a
-// node runs build, else straight to a runner over its protocol when a node runs one,
-// else to the runner's runs in this process. Without build nothing records what was
+// builds.go is how a universe builds a push. PLM and builder are two services, and
+// a universe runs either, both or neither: a push goes through plm's queue when a
+// node runs build, else straight to a builder over its protocol when a node runs one,
+// else to the builder's runs in this process. Without build nothing records what was
 // built, so the universe answers its nodes' lookups of it (artifacts).
 
-// awaitEvery is how often a job queued at build is read again until it has ended.
+// awaitEvery is how often a job queued at plm is read again until it has ended.
 const awaitEvery = 50 * time.Millisecond
 
 // builds is what a universe builds a push with, and closes with it.
@@ -45,7 +45,7 @@ type builds interface {
 	io.Closer
 }
 
-// Build is p built as this universe builds it, returned once the push and every job
+// PLM is p built as this universe builds it, returned once the push and every job
 // it made have ended.
 func (u *Universe) Build(ctx context.Context, p Push) (Outcome, error) {
 	b, err := u.builder()
@@ -64,13 +64,13 @@ func (u *Universe) builder() (builds, error) {
 		return u.builds, nil
 	}
 	nodes := u.nodes()
-	var builders, runners []libp2ppeer.ID
+	var plms, builders []libp2ppeer.ID
 	for _, n := range nodes {
-		if slices.Contains(n.Services(), instance.Build) {
-			builders = append(builders, n.Host().ID())
+		if slices.Contains(n.Services(), instance.PLM) {
+			plms = append(plms, n.Host().ID())
 		}
-		if slices.Contains(n.Services(), instance.Runner) {
-			runners = append(runners, n.Host().ID())
+		if slices.Contains(n.Services(), instance.Builder) {
+			builders = append(builders, n.Host().ID())
 		}
 	}
 	var (
@@ -78,10 +78,10 @@ func (u *Universe) builder() (builds, error) {
 		err error
 	)
 	switch {
+	case len(plms) > 0:
+		b, err = u.queued(plms)
 	case len(builders) > 0:
-		b, err = u.queued(builders)
-	case len(runners) > 0:
-		b, err = u.runnerAt(runners[0])
+		b, err = u.builderAt(builders[0])
 	case len(nodes) > 0:
 		b, err = u.inPlace(nodes[0])
 	default:
@@ -113,12 +113,12 @@ type queued struct {
 	pool *clients.Pool
 }
 
-func (u *Universe) queued(builders []libp2ppeer.ID) (builds, error) {
+func (u *Universe) queued(plms []libp2ppeer.ID) (builds, error) {
 	g, err := u.guest()
 	if err != nil {
 		return nil, err
 	}
-	pool, err := clients.NewPool(g.Host(), discovery.Static(builders...), build.Protocol, len(builders))
+	pool, err := clients.NewPool(g.Host(), discovery.Static(plms...), plm.Protocol, len(plms))
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +150,7 @@ func (q *queued) build(ctx context.Context, p Push) (Outcome, error) {
 	return out, nil
 }
 
-// enqueue is p queued at build, asked again while build's nodes say Unavailable:
+// enqueue is p queued at build, asked again while plm's nodes say Unavailable:
 // what they say while none leads the queue, as when a universe has just started.
 func (q *queued) enqueue(ctx context.Context, p Push) (string, error) {
 	for {
@@ -165,7 +165,7 @@ func (q *queued) enqueue(ctx context.Context, p Push) (string, error) {
 }
 
 // await is a job once it has ended, read from build until it has.
-func (q *queued) await(ctx context.Context, id string) (*buildv2.Job, error) {
+func (q *queued) await(ctx context.Context, id string) (*plmv2.Job, error) {
 	for {
 		job, err := q.jobs.Get(ctx, id)
 		switch {
@@ -196,43 +196,43 @@ func (q *queued) Close() error {
 	return nil
 }
 
-// runnerAt is pushes run on the runner id, over its protocol.
-func (u *Universe) runnerAt(id libp2ppeer.ID) (builds, error) {
+// builderAt is pushes run on the builder id, over its protocol.
+func (u *Universe) builderAt(id libp2ppeer.ID) (builds, error) {
 	g, err := u.guest()
 	if err != nil {
 		return nil, err
 	}
-	r, err := clients.RunnerAt(g.Host(), id)
+	r, err := clients.BuilderAt(g.Host(), id)
 	if err != nil {
 		return nil, err
 	}
 	return &direct{u: u, runs: r, also: r}, nil
 }
 
-// inPlace is pushes run by the runner's runs in this process, beside n, whose
-// services they reach as a runner on n would.
+// inPlace is pushes run by the builder's runs in this process, beside n, whose
+// services they reach as a builder on n would.
 func (u *Universe) inPlace(n *instance.Instance) (builds, error) {
-	h := n.HostOf(instance.Runner)
-	var cfg runner.Config
+	h := n.HostOf(instance.Builder)
+	var cfg builder.Config
 	if err := h.Config(&cfg); err != nil {
 		return nil, err
 	}
-	runs, err := runner.Open(h, cfg)
+	runs, err := builder.Open(h, cfg)
 	if err != nil {
 		return nil, err
 	}
 	return &direct{u: u, runs: runs, also: runs}, nil
 }
 
-// direct is pushes run on a runner with no queue in front of it: the plan, then each
-// environment it feeds, one after another, as the jobs a build node would make.
+// direct is pushes run on a builder with no queue in front of it: the plan, then each
+// environment it feeds, one after another, as the jobs a plm node would make.
 type direct struct {
 	u    *Universe
-	runs run.Service
-	// also is what reaching the runner opened.
+	runs run.Builder
+	// also is what reaching the builder opened.
 	also io.Closer
 
-	// mu runs one push at a time: a runner runs one run at a time.
+	// mu runs one push at a time: a builder runs one run at a time.
 	mu     sync.Mutex
 	before map[string]string
 }
@@ -248,7 +248,7 @@ func (d *direct) build(ctx context.Context, p Push) (Outcome, error) {
 	}
 	linked, err := reg.Repository(ctx, p.Repository)
 	if errors.Is(err, pkgregister.ErrNotLinked) {
-		// REFUSED AS BUILD REFUSES IT, before anything runs.
+		// REFUSED AS PLM REFUSES IT, before anything runs.
 		return Outcome{}, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("repository %q is not registered with this cloud: %w", p.Repository, err))
 	}
 	if err != nil {
@@ -269,11 +269,11 @@ func (d *direct) build(ctx context.Context, p Push) (Outcome, error) {
 	plan := jobOf(work)
 	switch {
 	case planned.GetError() != "":
-		plan.Status, plan.Reason = buildv2.JobStatus_JobStatusFailed, strings.TrimSpace(planned.GetSaid()+"\nerror: "+planned.GetError())
+		plan.Status, plan.Reason = plmv2.JobStatus_JobStatusFailed, strings.TrimSpace(planned.GetSaid()+"\nerror: "+planned.GetError())
 	case len(planned.GetEnvironments()) == 0:
-		plan.Status, plan.Reason = buildv2.JobStatus_JobStatusFailed, "the commit feeds no environment"
+		plan.Status, plan.Reason = plmv2.JobStatus_JobStatusFailed, "the commit feeds no environment"
 	default:
-		plan.Status = buildv2.JobStatus_JobStatusSuccess
+		plan.Status = plmv2.JobStatus_JobStatusSuccess
 		for _, environment := range planned.GetEnvironments() {
 			plan.Children = append(plan.Children, jobID(p, environment))
 		}
@@ -281,7 +281,7 @@ func (d *direct) build(ctx context.Context, p Push) (Outcome, error) {
 	d.seal(ctx, work, plan.Status)
 	out := Outcome{Plan: plan}
 	for _, environment := range planned.GetEnvironments() {
-		if plan.Status != buildv2.JobStatus_JobStatusSuccess {
+		if plan.Status != plmv2.JobStatus_JobStatusSuccess {
 			break
 		}
 		job, err := d.environment(ctx, work, environment, planned.GetSaid())
@@ -295,7 +295,7 @@ func (d *direct) build(ctx context.Context, p Push) (Outcome, error) {
 
 // environment builds one environment a plan fed, and keeps what it built for the
 // universe's lookups when it succeeded.
-func (d *direct) environment(ctx context.Context, plan run.Work, environment, said string) (*buildv2.Job, error) {
+func (d *direct) environment(ctx context.Context, plan run.Work, environment, said string) (*plmv2.Job, error) {
 	w := plan
 	w.JobID, w.Environment, w.Prelude = jobID(Push{Repository: plan.RepositoryKey, Ref: plan.Ref, Commit: plan.CommitSHA}, environment), environment, said
 	anchor := strings.Join([]string{plan.RepositoryKey, plan.Ref, environment}, "\x00")
@@ -305,9 +305,9 @@ func (d *direct) environment(ctx context.Context, plan run.Work, environment, sa
 		return nil, err
 	}
 	job := jobOf(w)
-	job.Status = buildv2.JobStatus_JobStatusSuccess
+	job.Status = plmv2.JobStatus_JobStatusSuccess
 	if built.GetError() != "" {
-		job.Status, job.Reason = buildv2.JobStatus_JobStatusFailed, built.GetError()
+		job.Status, job.Reason = plmv2.JobStatus_JobStatusFailed, built.GetError()
 	}
 	job.AssetCid = map[string]string{}
 	for _, kept := range built.GetStored() {
@@ -316,7 +316,7 @@ func (d *direct) environment(ctx context.Context, plan run.Work, environment, sa
 	if cid := d.seal(ctx, w, job.Status).GetLog(); cid != "" {
 		job.Logs = map[string]string{fmt.Sprintf("%020d", w.Attempt): cid}
 	}
-	if job.Status == buildv2.JobStatus_JobStatusSuccess {
+	if job.Status == plmv2.JobStatus_JobStatusSuccess {
 		if d.before == nil {
 			d.before = map[string]string{}
 		}
@@ -327,17 +327,17 @@ func (d *direct) environment(ctx context.Context, plan run.Work, environment, sa
 }
 
 // seal ends a run's log with how it ended. A seal that fails costs the log.
-func (d *direct) seal(ctx context.Context, w run.Work, status buildv2.JobStatus) *runnerv2.Sealed {
-	sealed, err := d.runs.Seal(ctx, &runnerv2.Sealing{Run: &runnerv2.Run{JobId: w.JobID, Attempt: w.Attempt}, Status: status})
+func (d *direct) seal(ctx context.Context, w run.Work, status plmv2.JobStatus) *builderv2.Sealed {
+	sealed, err := d.runs.Seal(ctx, &builderv2.Sealing{Run: &builderv2.Run{JobId: w.JobID, Attempt: w.Attempt}, Status: status})
 	if err != nil {
-		return &runnerv2.Sealed{}
+		return &builderv2.Sealed{}
 	}
 	return sealed
 }
 
-// jobOf is a run's job as a build node would record it.
-func jobOf(w run.Work) *buildv2.Job {
-	return &buildv2.Job{
+// jobOf is a run's job as a plm node would record it.
+func jobOf(w run.Work) *plmv2.Job {
+	return &plmv2.Job{
 		Id:            w.JobID,
 		RepositoryKey: w.RepositoryKey,
 		Ref:           w.Ref,
@@ -357,7 +357,7 @@ func jobID(p Push, environment string) string {
 	return hex.EncodeToString(sum.Sum(nil))
 }
 
-// builtHere is what this universe built itself, with no build service to record it: a
+// builtHere is what this universe built itself, with no plm service to record it: a
 // deployment's resource to the cid of its artifact, the newest success's.
 type builtHere struct {
 	mu   sync.Mutex
@@ -368,7 +368,7 @@ func builtKey(project, environment, resource string) string {
 	return strings.Join([]string{project, environment, resource}, "\x00")
 }
 
-func (b *builtHere) keep(project, environment string, stored []*runnerv2.Stored) {
+func (b *builtHere) keep(project, environment string, stored []*builderv2.Stored) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.cids == nil {
@@ -387,7 +387,7 @@ func (b *builtHere) artifact(project, environment, resource string) (string, boo
 }
 
 // artifacts is what a node's worker looks a built resource up in: what the universe
-// built itself, else build's records on the node.
+// built itself, else plm's records on the node.
 type artifacts struct {
 	kept *builtHere
 
@@ -413,6 +413,6 @@ func (a *artifacts) Artifact(ctx context.Context, project, environment, kind, re
 // on is the lookup falling back to n's own records, once n has started.
 func (a *artifacts) on(n *instance.Instance) {
 	a.mu.Lock()
-	a.records = n.BuildArtifacts()
+	a.records = n.PLMArtifacts()
 	a.mu.Unlock()
 }

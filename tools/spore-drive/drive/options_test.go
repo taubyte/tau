@@ -201,11 +201,6 @@ func TestADownloadThatIsNotARelease(t *testing.T) {
 	assert.ErrorContains(t, err, "new http request")
 }
 
-func TestADerivedKeyNeedsAPrimaryOne(t *testing.T) {
-	_, err := derivedKey("not base64!", "build")
-	assert.ErrorContains(t, err, "decode private key")
-}
-
 func TestUploadsReportAHostThatCannotBeWritten(t *testing.T) {
 	ro := &fsHost{fs: afero.NewReadOnlyFs(afero.NewMemMapFs())}
 	d := &sporedrive{tauBinary: []byte("tau"), now: time.Now}

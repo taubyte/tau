@@ -26,8 +26,8 @@ import (
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
-	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
-	"github.com/taubyte/tau/services/build/artifact"
+	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
+	"github.com/taubyte/tau/services/plm/artifact"
 	"github.com/taubyte/tau/tools/tau/internal/config"
 )
 
@@ -48,7 +48,7 @@ const takenID = "QmTakenTakenTakenTakenTakenTakenTakenTakenTake"
 // from memory, refusing any token but goodToken the way the real one does.
 type fakeBuild struct {
 	mu       sync.Mutex
-	jobs     map[string]*buildv2.Job
+	jobs     map[string]*plmv2.Job
 	byProj   map[string][]string
 	logs     map[string]string
 	secrets  map[string]map[string][]byte
@@ -72,7 +72,7 @@ type fakeBuild struct {
 	queued   []string
 	// finish is the status a queued job ends in; published is what a
 	// deployment's compiled object reads back as.
-	finish      buildv2.JobStatus
+	finish      plmv2.JobStatus
 	endOnFollow bool
 	published   map[string][]byte
 	// live is the jobs still being built, whose logs are still being written.
@@ -96,12 +96,12 @@ type fakeBuild struct {
 
 func newFakeBuild(t *testing.T) *fakeBuild {
 	f := &fakeBuild{
-		finish:    buildv2.JobStatus_JobStatusSuccess,
+		finish:    plmv2.JobStatus_JobStatusSuccess,
 		published: map[string][]byte{},
-		jobs: map[string]*buildv2.Job{
-			"job-1":    {Id: "job-1", Status: buildv2.JobStatus_JobStatusSuccess, RepositoryKey: "github.com/acme/pay", Ref: "refs/heads/main", CommitSha: "0123456789abcdef0123", Timestamp: 1700000000, Attempt: 1, Environment: "prod", AssetCid: map[string]string{"res-a": "bafyA"}, Logs: map[string]string{"1": "bafylog"}},
-			"job-live": {Id: "job-live", Status: buildv2.JobStatus_JobStatusClaimed, RepositoryKey: "github.com/acme/pay", Ref: "refs/heads/main", CommitSha: "0123456789abcdef0123", Timestamp: 1700000050, Attempt: 1, Environment: "prod"},
-			"job-2":    {Id: "job-2", Status: buildv2.JobStatus_JobStatusFailed, RepositoryKey: "github.com/acme/cfg", Ref: "refs/heads/main", CommitSha: "fedcba", Timestamp: 1700000100, Attempt: 2, Environment: "prod"},
+		jobs: map[string]*plmv2.Job{
+			"job-1":    {Id: "job-1", Status: plmv2.JobStatus_JobStatusSuccess, RepositoryKey: "github.com/acme/pay", Ref: "refs/heads/main", CommitSha: "0123456789abcdef0123", Timestamp: 1700000000, Attempt: 1, Environment: "prod", AssetCid: map[string]string{"res-a": "bafyA"}, Logs: map[string]string{"1": "bafylog"}},
+			"job-live": {Id: "job-live", Status: plmv2.JobStatus_JobStatusClaimed, RepositoryKey: "github.com/acme/pay", Ref: "refs/heads/main", CommitSha: "0123456789abcdef0123", Timestamp: 1700000050, Attempt: 1, Environment: "prod"},
+			"job-2":    {Id: "job-2", Status: plmv2.JobStatus_JobStatusFailed, RepositoryKey: "github.com/acme/cfg", Ref: "refs/heads/main", CommitSha: "fedcba", Timestamp: 1700000100, Attempt: 2, Environment: "prod"},
 		},
 		byProj:  map[string][]string{"proj-1": {"job-1", "job-2"}},
 		logs:    map[string]string{"job-1": "step one\nstep two\n", "job-live": "step one\nstep two\n"},
@@ -257,8 +257,8 @@ func newFakeBuild(t *testing.T) *fakeBuild {
 		// A FOLLOWED BUILD ENDS when its log does, as build's follow
 		// returns when the build finishes.
 		f.mu.Lock()
-		if j := f.jobs[r.PathValue("jid")]; j != nil && f.endOnFollow && j.Status == buildv2.JobStatus_JobStatusClaimed {
-			j.Status = buildv2.JobStatus_JobStatusSuccess
+		if j := f.jobs[r.PathValue("jid")]; j != nil && f.endOnFollow && j.Status == plmv2.JobStatus_JobStatusClaimed {
+			j.Status = plmv2.JobStatus_JobStatusSuccess
 		}
 		f.mu.Unlock()
 	}))
@@ -349,11 +349,11 @@ func newFakeBuild(t *testing.T) *fakeBuild {
 		id := "job-" + strconv.Itoa(len(f.queued)+3)
 		built := id + "-prod"
 		f.queued = append(f.queued, what)
-		f.jobs[id] = &buildv2.Job{Id: id, Status: buildv2.JobStatus_JobStatusSuccess, Timestamp: 1700000300, Attempt: 1, Children: []string{built}}
+		f.jobs[id] = &plmv2.Job{Id: id, Status: plmv2.JobStatus_JobStatusSuccess, Timestamp: 1700000300, Attempt: 1, Children: []string{built}}
 		if f.planFails != "" {
-			f.jobs[id].Status, f.jobs[id].Children, f.jobs[id].Reason = buildv2.JobStatus_JobStatusFailed, nil, f.planFails
+			f.jobs[id].Status, f.jobs[id].Children, f.jobs[id].Reason = plmv2.JobStatus_JobStatusFailed, nil, f.planFails
 		}
-		f.jobs[built] = &buildv2.Job{Id: built, Status: f.finish, Timestamp: 1700000300, Attempt: 1, Environment: "prod", Logs: map[string]string{"1": "bafylog"}}
+		f.jobs[built] = &plmv2.Job{Id: built, Status: f.finish, Timestamp: 1700000300, Attempt: 1, Environment: "prod", Logs: map[string]string{"1": "bafylog"}}
 		f.logs[built] = "built " + what + "\n"
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusAccepted)
@@ -498,7 +498,7 @@ func (f *fakeBuild) pushLater(project, id, log string) {
 }
 
 func (f *fakeBuild) addJobLocked(project, id, log string) {
-	f.jobs[id] = &buildv2.Job{Id: id, Status: buildv2.JobStatus_JobStatusClaimed, Timestamp: 1700000200, Attempt: 1, Environment: "prod"}
+	f.jobs[id] = &plmv2.Job{Id: id, Status: plmv2.JobStatus_JobStatusClaimed, Timestamp: 1700000200, Attempt: 1, Environment: "prod"}
 	f.byProj[project] = append(f.byProj[project], id)
 	f.logs[id] = log
 }
@@ -522,7 +522,7 @@ type liveLog struct {
 func (f *fakeBuild) building(t *testing.T, id, first string) *liveLog {
 	l := &liveLog{f: f, id: id, text: first, grew: make(chan struct{}), attached: make(chan struct{})}
 	f.mu.Lock()
-	f.jobs[id] = &buildv2.Job{Id: id, Status: buildv2.JobStatus_JobStatusClaimed, Timestamp: 1700000400, Attempt: 1, Environment: "prod"}
+	f.jobs[id] = &plmv2.Job{Id: id, Status: plmv2.JobStatus_JobStatusClaimed, Timestamp: 1700000400, Attempt: 1, Environment: "prod"}
 	if f.live == nil {
 		f.live = map[string]*liveLog{}
 	}
@@ -538,7 +538,7 @@ func (f *fakeBuild) building(t *testing.T, id, first string) *liveLog {
 func (f *fakeBuild) queuedJob(t *testing.T, id string) *liveLog {
 	l := f.building(t, id, "")
 	f.mu.Lock()
-	f.jobs[id].Status, f.jobs[id].Attempt = buildv2.JobStatus_JobStatusOpen, 0
+	f.jobs[id].Status, f.jobs[id].Attempt = plmv2.JobStatus_JobStatusOpen, 0
 	f.mu.Unlock()
 	return l
 }
@@ -546,15 +546,15 @@ func (f *fakeBuild) queuedJob(t *testing.T, id string) *liveLog {
 // start is a queued job being claimed and printing its first line.
 func (l *liveLog) start(first string) {
 	l.f.mu.Lock()
-	l.f.jobs[l.id].Status, l.f.jobs[l.id].Attempt = buildv2.JobStatus_JobStatusClaimed, 1
+	l.f.jobs[l.id].Status, l.f.jobs[l.id].Attempt = plmv2.JobStatus_JobStatusClaimed, 1
 	l.f.mu.Unlock()
 	l.say(first)
 }
 
 // currentRun is the run a log read is about when it names none, as the
 // build service decides it: the one claimed or last run, or a queued job's next.
-func currentRun(j *buildv2.Job) int32 {
-	if j.GetStatus() == buildv2.JobStatus_JobStatusOpen || j.GetAttempt() == 0 {
+func currentRun(j *plmv2.Job) int32 {
+	if j.GetStatus() == plmv2.JobStatus_JobStatusOpen || j.GetAttempt() == 0 {
 		return j.GetAttempt() + 1
 	}
 	return j.GetAttempt()
@@ -585,7 +585,7 @@ func (l *liveLog) end() {
 		return
 	}
 	l.f.mu.Lock()
-	l.f.jobs[l.id].Status = buildv2.JobStatus_JobStatusSuccess
+	l.f.jobs[l.id].Status = plmv2.JobStatus_JobStatusSuccess
 	l.f.jobs[l.id].Logs = map[string]string{"1": "bafylog"}
 	l.f.logs[l.id] = l.text
 	l.f.mu.Unlock()
@@ -817,7 +817,7 @@ func eventsOf(text string, from int) []string {
 		if i := strings.IndexByte(text[at:], '\n'); i >= 0 {
 			end = at + i + 1
 		}
-		raw, _ := protojson.Marshal(&buildv2.Job_Event{Kind: &buildv2.Job_Event_Message{Message: strings.TrimSuffix(text[at:end], "\n")}, Offset: int64(end)})
+		raw, _ := protojson.Marshal(&plmv2.Job_Event{Kind: &plmv2.Job_Event_Message{Message: strings.TrimSuffix(text[at:end], "\n")}, Offset: int64(end)})
 		out = append(out, string(raw)+"\n")
 		at = end
 	}
@@ -825,7 +825,7 @@ func eventsOf(text string, from int) []string {
 }
 
 // statusEvent is the status a run's log ends the job in.
-func statusEvent(st buildv2.JobStatus, offset int64) string {
-	raw, _ := protojson.Marshal(&buildv2.Job_Event{Kind: &buildv2.Job_Event_Status{Status: st}, Offset: offset})
+func statusEvent(st plmv2.JobStatus, offset int64) string {
+	raw, _ := protojson.Marshal(&plmv2.Job_Event{Kind: &plmv2.Job_Event_Status{Status: st}, Offset: offset})
 	return string(raw) + "\n"
 }

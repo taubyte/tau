@@ -18,8 +18,8 @@ import (
 
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/proto/codec"
-	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
+	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2/plmv2connect"
 	registerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/register/v2/registerv2connect"
 )
@@ -62,7 +62,7 @@ type Cloud struct {
 	mu       sync.Mutex
 	Projects map[string]string   // id -> config repository
 	Envs     map[string][]string // project -> environments
-	Jobs     map[string][]*buildv2.Job
+	Jobs     map[string][]*plmv2.Job
 	// Ghosts are job ids List names that Get does not know.
 	Ghosts map[string][]string
 	// Calls counts calls per method, by "Service/Method".
@@ -76,13 +76,13 @@ func NewCloud() *Cloud {
 	return &Cloud{
 		Projects: map[string]string{"p1": "github/10", "p2": "github/20"},
 		Envs:     map[string][]string{"p1": {"main", "staging"}},
-		Jobs: map[string][]*buildv2.Job{
+		Jobs: map[string][]*plmv2.Job{
 			"p1": {
-				{Id: "j1", Status: buildv2.JobStatus_JobStatusSuccess, RepositoryKey: "github/1", Ref: "refs/heads/main", CommitSha: "0123456789abcdef", Timestamp: 1700000000, Attempt: 1},
-				{Id: "j2", Status: buildv2.JobStatus_JobStatusFailed, RepositoryKey: "github/1", Ref: "refs/heads/dev", CommitSha: "fedcba", Timestamp: 1700000100, Attempt: 2},
+				{Id: "j1", Status: plmv2.JobStatus_JobStatusSuccess, RepositoryKey: "github/1", Ref: "refs/heads/main", CommitSha: "0123456789abcdef", Timestamp: 1700000000, Attempt: 1},
+				{Id: "j2", Status: plmv2.JobStatus_JobStatusFailed, RepositoryKey: "github/1", Ref: "refs/heads/dev", CommitSha: "fedcba", Timestamp: 1700000100, Attempt: 2},
 			},
 			"p2": {
-				{Id: "j3", Status: buildv2.JobStatus_JobStatusClaimed, RepositoryKey: "github/2", Ref: "refs/heads/main", CommitSha: "abc", Timestamp: 1700000050, Attempt: 1},
+				{Id: "j3", Status: plmv2.JobStatus_JobStatusClaimed, RepositoryKey: "github/2", Ref: "refs/heads/main", CommitSha: "abc", Timestamp: 1700000050, Attempt: 1},
 			},
 		},
 		Calls: map[string]int{},
@@ -108,10 +108,10 @@ func (c *Cloud) Register() (string, http.Handler) {
 	return registerv2connect.RegisterServiceName, h
 }
 
-// Build serves JobService.
+// PLM serves JobService.
 func (c *Cloud) Build() (string, http.Handler) {
-	_, h := buildv2connect.NewJobServiceHandler(&jobs{c: c}, codec.Option())
-	return buildv2connect.JobServiceName, h
+	_, h := plmv2connect.NewJobServiceHandler(&jobs{c: c}, codec.Option())
+	return plmv2connect.JobServiceName, h
 }
 
 type register struct {
@@ -148,26 +148,26 @@ func (r *register) Publish(_ context.Context, req *connect.Request[registerv2.Pu
 }
 
 type jobs struct {
-	buildv2connect.UnimplementedJobServiceHandler
+	plmv2connect.UnimplementedJobServiceHandler
 	c *Cloud
 }
 
-func (j *jobs) List(_ context.Context, req *connect.Request[buildv2.ProjectRef], s *connect.ServerStream[buildv2.JobRef]) error {
+func (j *jobs) List(_ context.Context, req *connect.Request[plmv2.ProjectRef], s *connect.ServerStream[plmv2.JobRef]) error {
 	j.c.count("JobService/List")
 	for _, job := range j.c.Jobs[req.Msg.GetId()] {
-		if err := s.Send(&buildv2.JobRef{Id: job.GetId()}); err != nil {
+		if err := s.Send(&plmv2.JobRef{Id: job.GetId()}); err != nil {
 			return err
 		}
 	}
 	for _, id := range j.c.Ghosts[req.Msg.GetId()] {
-		if err := s.Send(&buildv2.JobRef{Id: id}); err != nil {
+		if err := s.Send(&plmv2.JobRef{Id: id}); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (j *jobs) Get(_ context.Context, req *connect.Request[buildv2.JobRef]) (*connect.Response[buildv2.Job], error) {
+func (j *jobs) Get(_ context.Context, req *connect.Request[plmv2.JobRef]) (*connect.Response[plmv2.Job], error) {
 	j.c.count("JobService/Get")
 	for _, list := range j.c.Jobs {
 		for _, job := range list {
@@ -179,12 +179,12 @@ func (j *jobs) Get(_ context.Context, req *connect.Request[buildv2.JobRef]) (*co
 	return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("no job %s", req.Msg.GetId()))
 }
 
-func (j *jobs) Follow(_ context.Context, req *connect.Request[buildv2.FollowRequest], s *connect.ServerStream[buildv2.Job_Event]) error {
+func (j *jobs) Follow(_ context.Context, req *connect.Request[plmv2.FollowRequest], s *connect.ServerStream[plmv2.Job_Event]) error {
 	j.c.count("JobService/Follow")
 	for i := range 3 {
-		if err := s.Send(&buildv2.Job_Event{Kind: &buildv2.Job_Event_Message{Message: fmt.Sprintf("line %d", i)}, Offset: int64(i + 1)}); err != nil {
+		if err := s.Send(&plmv2.Job_Event{Kind: &plmv2.Job_Event_Message{Message: fmt.Sprintf("line %d", i)}, Offset: int64(i + 1)}); err != nil {
 			return err
 		}
 	}
-	return s.Send(&buildv2.Job_Event{Kind: &buildv2.Job_Event_Status{Status: buildv2.JobStatus_JobStatusSuccess}, Offset: 3})
+	return s.Send(&plmv2.Job_Event{Kind: &plmv2.Job_Event_Status{Status: plmv2.JobStatus_JobStatusSuccess}, Offset: 3})
 }

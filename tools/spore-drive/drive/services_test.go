@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/taubyte/tau/services/runner"
+	"github.com/taubyte/tau/services/builder"
 
-	"github.com/taubyte/tau/services/build/ingress"
+	"github.com/taubyte/tau/services/plm/ingress"
 
 	"github.com/taubyte/tau/pkg/forge/drivers"
 
@@ -77,11 +77,11 @@ func TestSignInAndCertificatesReachEveryNodeAndTheirSecretsOnlyTheBundle(t *test
 		assert.Equal(t, acme.Directory, "https://ca.test.com/dir")
 		assert.Equal(t, acme.Email, "ops@test.com")
 		assert.Equal(t, acme.EAB.KeyID, "k")
-		var built runner.Config
-		assert.NilError(t, n.Section(instance.Runner, &built))
-		assert.Assert(t, built.Domains.Trusted, "a trusted cloud's runner serves declared zones unproven")
+		var built builder.Config
+		assert.NilError(t, n.Section(instance.Builder, &built))
+		assert.Assert(t, built.Domains.Trusted, "a trusted cloud's builder serves declared zones unproven")
 		var public ingress.Config
-		assert.NilError(t, n.Section(instance.Build, &public))
+		assert.NilError(t, n.Section(instance.PLM, &public))
 		assert.DeepEqual(t, public.Origins, []string{"https://console.test.com"})
 
 		raw, err := yaml.Marshal(inst.file)
@@ -125,7 +125,7 @@ func TestSignInAndCertificatesReachEveryNodeAndTheirSecretsOnlyTheBundle(t *test
 	assert.Assert(t, !bytes.Equal(sealed, second), "every deploy seals afresh")
 
 	assert.Assert(t, first.instances[0].keepsSecrets())
-	assert.Assert(t, !first.instances[1].keepsSecrets(), "a split-off build instance keeps no secrets")
+	assert.Equal(t, len(first.instances), 1, "one node per host")
 }
 
 // fixedNow is the clock the deploy tests run on.
@@ -259,8 +259,8 @@ func TestConsoleOriginsAreTheCallbacksOrigins(t *testing.T) {
 }
 
 func TestSporeDriveOwnsTheBuildSections(t *testing.T) {
-	_, err := withBuild(map[string]any{instance.Runner: map[string]any{}}, &cloudServices{trusted: true})
-	assert.ErrorContains(t, err, instance.Runner)
+	_, err := withBuild(map[string]any{instance.Builder: map[string]any{}}, &cloudServices{trusted: true})
+	assert.ErrorContains(t, err, instance.Builder)
 	kept, err := withBuild(map[string]any{"mail": 1}, &cloudServices{})
 	assert.NilError(t, err)
 	assert.DeepEqual(t, kept, map[string]any{"mail": 1})

@@ -17,10 +17,10 @@ import (
 	"github.com/taubyte/tau/pkg/tenancy"
 	"github.com/taubyte/tau/services"
 	auth "github.com/taubyte/tau/services/auth"
-	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/dns"
 	gateway "github.com/taubyte/tau/services/gateway"
+	"github.com/taubyte/tau/services/plm"
 	"github.com/taubyte/tau/services/primitives"
 	proxy "github.com/taubyte/tau/services/proxy"
 	"github.com/taubyte/tau/services/worker"
@@ -51,16 +51,16 @@ const (
 // service's descriptor so a rename cannot leave config naming nothing.
 var Primitives = primitives.Descriptor.Name
 
-// Build and Runner, named by the build packages themselves. Two processes: build
-// may not import runner (services/build/boundary_test.go), and withDefaults refuses
+// PLM and Builder, named by the build packages themselves. Two processes: build
+// may not import builder (services/plm/boundary_test.go), and withDefaults refuses
 // one node running both.
 var (
-	// Build is the webhook a provider posts to and the job API a developer reads.
+	// PLM is the webhook a provider posts to and the job API a developer reads.
 	// It is the only public service in this composition.
-	Build = build.Build.Name
-	// Runner holds the queue, the job records and the clone credentials, and runs
+	PLM = plm.PLM.Name
+	// Builder holds the queue, the job records and the clone credentials, and runs
 	// the builds.
-	Runner = build.Runner.Name
+	Builder = plm.Builder.Name
 )
 
 // All is every service this composition knows how to start.
@@ -73,9 +73,8 @@ func Everything() []string {
 	return append(append([]string(nil), All...), services.Names()...)
 }
 
-// Build is in no default shape: a single-node development cloud runs the runner,
-// and putting build beside it would make the default the one combination this file
-// refuses.
+// PLM is in no default shape: it binds a public listener, which has no default
+// port, so a node runs it when its config names it and where it listens.
 
 // Config is what an operator declared about this node, and ONLY that.
 type Config struct {
@@ -146,13 +145,7 @@ type Config struct {
 	Sections map[string]any `yaml:",inline"`
 }
 
-var (
-	ErrNoPeer = errors.New("instance: no peer to be made from")
-
-	// ErrBuildAndRunner is the one service combination this composition refuses.
-	ErrBuildAndRunner = errors.New("node: " + build.Build.Name + " and " + build.Runner.Name +
-		" must not run in one process; build is public so that a stranger's POST does not reach the queue or the clone credentials")
-)
+var ErrNoPeer = errors.New("instance: no peer to be made from")
 
 type Option func(*options) error
 
@@ -216,8 +209,8 @@ func WithRuntimes(rts ...invoke.Runtime) Option {
 }
 
 // WithArtifacts is what this node's worker looks a built resource's artifact up in,
-// in place of build's records: a development cloud's own, where it built with no
-// build service to record it (instance/dream). Optional.
+// in place of plm's records: a development cloud's own, where it built with no
+// plm service to record it (instance/dream). Optional.
 func WithArtifacts(a worker.Artifacts) Option {
 	return func(o *options) error {
 		if a == nil {
@@ -275,9 +268,6 @@ func (c Config) withDefaults(added ...string) (Config, error) {
 		if !slices.Contains(known, name) {
 			return Config{}, fmt.Errorf("node: %q is not a service this node can run; it runs %v", name, known)
 		}
-	}
-	if slices.Contains(c.Services, Build) && slices.Contains(c.Services, Runner) {
-		return Config{}, ErrBuildAndRunner
 	}
 	served, err := tenancy.Parse(c.Tenancy)
 	if err != nil {

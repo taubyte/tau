@@ -5,16 +5,16 @@ syntax = "proto3";
 // universe's own Go method of the same name (instance/dream/build.go), so what a
 // test does in process a tool does over the wire.
 //
-// A BUILD GOES THROUGH THE UNIVERSE'S BUILD NODE when it runs one, else straight to
-// a runner over the runner's protocol, else to the runner's runs in the universe's
+// A BUILD GOES THROUGH THE UNIVERSE'S PLM NODE when it runs one, else straight to
+// a builder over the builder's protocol, else to the builder's runs in the universe's
 // own process. Nothing here is a cloud's API: no cloud serves it.
 package tau.dream.v2;
 
-import "tau/build/v2/build.proto";
+import "tau/plm/v2/plm.proto";
 
 service DreamService {
   // Commit makes a folder the newest commit of a repository's branch in the
-  // universe's mirror, which its runners clone every repository from.
+  // universe's mirror, which its builders clone every repository from.
   rpc Commit(CommitRequest) returns (Push);
 
   // Upload keeps a folder, with what its packages build to, as a commit in the
@@ -63,6 +63,6 @@ message Linked {}
 // Outcome is a push once it has ended: its plan, then the job of each environment
 // the plan queued, in the plan's order.
 message Outcome {
-  tau.build.v2.Job plan = 1;
-  repeated tau.build.v2.Job environments = 2;
+  tau.plm.v2.Job plan = 1;
+  repeated tau.plm.v2.Job environments = 2;
 }

@@ -15,7 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 
-	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/interp"
 	"github.com/taubyte/tau/pkg/tcc/session"
@@ -118,18 +118,18 @@ func (t Theme) Report(r project.Report) string {
 }
 
 // Status is a job status without its enum prefix.
-func Status(s buildv2.JobStatus) string {
+func Status(s plmv2.JobStatus) string {
 	return strings.ToLower(strings.TrimPrefix(s.String(), "JobStatus"))
 }
 
-func (t Theme) status(s buildv2.JobStatus) string {
+func (t Theme) status(s plmv2.JobStatus) string {
 	label := Status(s)
 	switch s {
-	case buildv2.JobStatus_JobStatusSuccess:
+	case plmv2.JobStatus_JobStatusSuccess:
 		return t.OK.Render(label)
-	case buildv2.JobStatus_JobStatusFailed:
+	case plmv2.JobStatus_JobStatusFailed:
 		return t.Bad.Render(label)
-	case buildv2.JobStatus_JobStatusCancelled:
+	case plmv2.JobStatus_JobStatusCancelled:
 		return t.Muted.Render(label)
 	}
 	return t.Warn.Render(label)
@@ -150,11 +150,11 @@ func short(sha string) string {
 }
 
 // Jobs renders jobs as a table, newest first.
-func (t Theme) Jobs(jobs []*buildv2.Job) string {
+func (t Theme) Jobs(jobs []*plmv2.Job) string {
 	if len(jobs) == 0 {
 		return t.Muted.Render("no jobs yet — push the project's repositories to start one") + "\n"
 	}
-	sorted := append([]*buildv2.Job(nil), jobs...)
+	sorted := append([]*plmv2.Job(nil), jobs...)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].GetTimestamp() > sorted[j].GetTimestamp() })
 	rows := make([][]string, 0, len(sorted))
 	for _, j := range sorted {
@@ -163,7 +163,7 @@ func (t Theme) Jobs(jobs []*buildv2.Job) string {
 	return t.table([]string{"JOB", "STATUS", "REPOSITORY", "REF", "COMMIT", "TRY", "QUEUED"}, rows)
 }
 
-func (t Theme) Job(j *buildv2.Job) string {
+func (t Theme) Job(j *plmv2.Job) string {
 	var b strings.Builder
 	field := func(k, v string) { fmt.Fprintf(&b, "%s %s\n", t.Muted.Render(fmt.Sprintf("%-11s", k)), v) }
 	b.WriteString(t.Title.Render("job "+j.GetId()) + "\n")

@@ -1,8 +1,6 @@
 package drive
 
 import (
-	"bytes"
-	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"maps"
@@ -26,9 +24,7 @@ import (
 // node.go turns a spore-drive cloud config, written for v1 (one tau process per
 // shape), into the v2 node files a host runs. The input format does not change.
 //
-//   - One node per host: every shape's services are unioned, except that build and
-//     runner cannot share a node (instance.ErrBuildAndRunner), so build gets its own
-//     (frontendInstance).
+//   - One node per host: every shape's services are unioned.
 //   - v1 service names map onto the v2 services doing their work (v1Services).
 //   - What has no v2 home is read, not emitted, and logged per host
 //     (ignoredFields).
@@ -45,8 +41,8 @@ var v1Services = map[string][]string{
 	"substrate": {instance.Worker, instance.Gateway},
 	"gateway":   {instance.Gateway},
 	"hoarder":   {instance.Database, instance.Primitives},
-	"patrick":   {instance.Build},
-	"monkey":    {instance.Runner},
+	"patrick":   {instance.PLM},
+	"monkey":    {instance.Builder},
 }
 
 // dropped are v1 service names that are read and run nothing in v2.
@@ -55,8 +51,7 @@ var dropped = []string{"accounts"}
 // unit is one tau instance a host runs. The main one is named after the host's
 // primary shape, as its key and port already are: its systemd unit is
 // tau@<shape>, its file <root>/config/<shape>.yaml and its data
-// <root>/storage/<shape>. A split-off build node is named after that
-// service.
+// <root>/storage/<shape>.
 type unit struct {
 	name string
 	port int
@@ -164,27 +159,6 @@ func bootstrap(p config.Parser, self string) ([]string, error) {
 	return out, nil
 }
 
-// derivedKey is the build node's identity when it has to be split off
-// a host's node: a second peer needs a second key, and the cloud config — which
-// spore-drive must not rewrite — holds one per shape. Derived from the primary
-// key so it is the same on every deploy without being stored anywhere.
-func derivedKey(primary, purpose string) (string, error) {
-	raw, err := base64.StdEncoding.DecodeString(primary)
-	if err != nil {
-		return "", fmt.Errorf("decode private key failed with %w", err)
-	}
-	seed := sha256.Sum256(append([]byte(purpose+"\x00"), raw...))
-	priv, _, err := crypto.GenerateEd25519Key(bytes.NewReader(seed[:]))
-	if err != nil {
-		return "", err
-	}
-	out, err := crypto.MarshalPrivateKey(priv)
-	if err != nil {
-		return "", err
-	}
-	return base64.StdEncoding.EncodeToString(out), nil
-}
-
 // certificateValidity is a node certificate's life. Rotation is a redeploy,
 // which issues every node a new one.
 const certificateValidity = 365 * 24 * time.Hour
@@ -212,9 +186,6 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 		return nil, err
 	}
 	for _, shape := range hc.Shapes().List() {
-		if shape == instance.Build {
-			return nil, fmt.Errorf("host %s: a shape cannot be named %s, the name of the node split off for it", hostName, instance.Build)
-		}
 		if !safeName.MatchString(shape) {
 			return nil, fmt.Errorf("host %s: shape %q names a unit and a directory, so it is letters, digits, '.', '_' and '-'", hostName, shape)
 		}
@@ -304,23 +275,11 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 
 	out := &hostNodes{ignored: d.ignoredFields(hostName, droppedHere)}
 
-	if slices.Contains(services, instance.Build) && slices.Contains(services, instance.Runner) {
-		buildKey, err := derivedKey(key, instance.Build)
-		if err != nil {
-			return nil, err
-		}
-		services = slices.DeleteFunc(services, func(s string) bool { return s == instance.Build })
-		split, err := file([]string{instance.Build, instance.Discovery}, mainPort+1, buildKey)
-		if err != nil {
-			return nil, err
-		}
-		out.instances = append(out.instances, unit{name: instance.Build, port: mainPort + 1, file: split})
-	}
 	main, err := file(services, mainPort, key)
 	if err != nil {
 		return nil, err
 	}
-	out.instances = append([]unit{{name: primary, port: mainPort, file: main}}, out.instances...)
+	out.instances = []unit{{name: primary, port: mainPort, file: main}}
 	return out, nil
 }
 
@@ -379,14 +338,14 @@ func (d *sporedrive) Nodes(hostName string) (*Nodes, error) {
 
 // withBuild is the added services' sections and the two spore-drive writes for the
 // build services: build's origins, the consoles auth sends people back to, which may
-// call it; and the runner's word on whether declared zones are trusted unproven.
+// call it; and the builder's word on whether declared zones are trusted unproven.
 func withBuild(added map[string]any, cloud *cloudServices) (map[string]any, error) {
 	own := map[string]any{}
 	if origins := consoleOrigins(cloud.auth.Redirects); len(origins) > 0 {
-		own[instance.Build] = map[string]any{"origins": origins}
+		own[instance.PLM] = map[string]any{"origins": origins}
 	}
 	if cloud.trusted {
-		own[instance.Runner] = map[string]any{"domains": map[string]any{"trusted": true}}
+		own[instance.Builder] = map[string]any{"domains": map[string]any{"trusted": true}}
 	}
 	if len(own) == 0 {
 		return added, nil

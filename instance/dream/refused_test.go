@@ -11,8 +11,8 @@ import (
 
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
-	buildDeploy "github.com/taubyte/tau/services/build/deploy"
-	"github.com/taubyte/tau/services/build/run"
+	buildDeploy "github.com/taubyte/tau/services/plm/deploy"
+	"github.com/taubyte/tau/services/plm/run"
 )
 
 func TestAnApplicationWithNothingToRunIsBroken(t *testing.T) {

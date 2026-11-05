@@ -13,8 +13,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 
-	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
+	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2/plmv2connect"
 	registerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/register/v2/registerv2connect"
 	"github.com/taubyte/tau/tools/taucorder/internal/fixture"
@@ -63,8 +63,8 @@ func TestForwardsUnaryAndStreams(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	j := buildv2connect.NewJobServiceClient(tr.Client(), route.BaseURL, connect.WithGRPC())
-	s, err := j.Follow(context.Background(), connect.NewRequest(&buildv2.FollowRequest{JobId: "j1"}))
+	j := plmv2connect.NewJobServiceClient(tr.Client(), route.BaseURL, connect.WithGRPC())
+	s, err := j.Follow(context.Background(), connect.NewRequest(&plmv2.FollowRequest{JobId: "j1"}))
 	if err != nil {
 		t.Fatal(err)
 	}

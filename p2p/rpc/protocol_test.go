@@ -7,18 +7,18 @@ import (
 
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2/plmv2connect"
 )
 
 // The protocol ids are asserted against the generated names, so a package
 // rename fails in exactly one place.
 func TestProtocolIsTheProtoPackage(t *testing.T) {
 	require.EqualValues(t, "/tau/auth/v2", rpc.Protocol(authv2connect.IdentityServiceName))
-	require.EqualValues(t, "/tau/build/v2", rpc.Protocol(buildv2connect.QueueServiceName))
+	require.EqualValues(t, "/tau/plm/v2", rpc.Protocol(plmv2connect.QueueServiceName))
 
 	// Every service block in one package derives the same id — the id names
 	// the listener, and the blocks share one.
 	require.Equal(t,
-		rpc.Protocol(buildv2connect.QueueServiceName),
-		rpc.Protocol(buildv2connect.JobServiceName))
+		rpc.Protocol(plmv2connect.QueueServiceName),
+		rpc.Protocol(plmv2connect.JobServiceName))
 }

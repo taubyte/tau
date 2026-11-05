@@ -16,11 +16,11 @@ import (
 
 	"github.com/taubyte/tau/instance"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
-	"github.com/taubyte/tau/services/build/artifact"
-	"github.com/taubyte/tau/services/build/uploads"
+	"github.com/taubyte/tau/services/plm/artifact"
+	"github.com/taubyte/tau/services/plm/uploads"
 )
 
 // Push is what a universe builds: a commit of a repository its mirror holds
@@ -34,11 +34,11 @@ type Push struct {
 // Outcome is a push once it has ended: its plan, then the job of each environment
 // the plan queued, in the plan's order.
 type Outcome struct {
-	Plan         *buildv2.Job
-	Environments []*buildv2.Job
+	Plan         *plmv2.Job
+	Environments []*plmv2.Job
 }
 
-// Mirror is the directory this universe's runners clone every repository from,
+// Mirror is the directory this universe's builders clone every repository from,
 // file:// in their configuration: a repository key's folder under it.
 func (u *Universe) Mirror() string { return u.mirror }
 

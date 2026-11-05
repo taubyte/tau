@@ -14,8 +14,8 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/taubyte/tau/pkg/proto/codec"
-	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
+	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2/plmv2connect"
 	registerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/register/v2/registerv2connect"
 	"github.com/taubyte/tau/pkg/stats"
@@ -28,7 +28,7 @@ type Fleet interface {
 type Client struct {
 	fleet    Fleet
 	register registerv2connect.RegisterServiceClient
-	jobs     buildv2connect.JobServiceClient
+	jobs     plmv2connect.JobServiceClient
 }
 
 // New reads fleet state from f and calls services through hc at base.
@@ -36,7 +36,7 @@ func New(f Fleet, hc connect.HTTPClient, base string) *Client {
 	return &Client{
 		fleet:    f,
 		register: registerv2connect.NewRegisterServiceClient(hc, base, codec.Option()),
-		jobs:     buildv2connect.NewJobServiceClient(hc, base, codec.Option()),
+		jobs:     plmv2connect.NewJobServiceClient(hc, base, codec.Option()),
 	}
 }
 
@@ -182,7 +182,7 @@ func (c *Client) Jobs(ctx context.Context, project string) ([]Job, error) {
 }
 
 func (c *Client) jobsOf(ctx context.Context, project string) ([]Job, error) {
-	s, err := c.jobs.List(ctx, connect.NewRequest(&buildv2.ProjectRef{Id: project}))
+	s, err := c.jobs.List(ctx, connect.NewRequest(&plmv2.ProjectRef{Id: project}))
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +211,7 @@ func (c *Client) Job(ctx context.Context, id string) (Job, error) {
 	if id == "" {
 		return Job{}, errors.New("no job id")
 	}
-	got, err := c.jobs.Get(ctx, connect.NewRequest(&buildv2.JobRef{Id: id}))
+	got, err := c.jobs.Get(ctx, connect.NewRequest(&plmv2.JobRef{Id: id}))
 	if err != nil {
 		return Job{}, err
 	}
@@ -223,17 +223,17 @@ func (c *Client) Job(ctx context.Context, id string) (Job, error) {
 	}, nil
 }
 
-func status(s buildv2.JobStatus) string {
+func status(s plmv2.JobStatus) string {
 	switch s {
-	case buildv2.JobStatus_JobStatusOpen:
+	case plmv2.JobStatus_JobStatusOpen:
 		return "open"
-	case buildv2.JobStatus_JobStatusClaimed:
+	case plmv2.JobStatus_JobStatusClaimed:
 		return "running"
-	case buildv2.JobStatus_JobStatusSuccess:
+	case plmv2.JobStatus_JobStatusSuccess:
 		return "success"
-	case buildv2.JobStatus_JobStatusFailed:
+	case plmv2.JobStatus_JobStatusFailed:
 		return "failed"
-	case buildv2.JobStatus_JobStatusCancelled:
+	case plmv2.JobStatus_JobStatusCancelled:
 		return "cancelled"
 	}
 	return s.String()

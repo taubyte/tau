@@ -40,8 +40,8 @@ import (
 	"github.com/taubyte/tau/pkg/containers/backends/docker"
 	"github.com/taubyte/tau/pkg/containers/core"
 	"github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/build/ingress"
 	"github.com/taubyte/tau/services/cm"
+	"github.com/taubyte/tau/services/plm/ingress"
 )
 
 // Issuance with nothing in process but tau: pebble in its own container, resolving
@@ -60,7 +60,7 @@ const (
 )
 
 // fleet is three nodes: two run cm and dns and are the zone's NS, and a
-// third runs only a gateway and the build service, and orders what it serves
+// third runs only a gateway and the plm service, and orders what it serves
 // itself.
 type fleet struct {
 	addrs   [3]string
@@ -97,8 +97,8 @@ func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 				file.Node.DNSListen = "127.0.0.1:0"
 				file = initialized(t, bundle, file)
 			} else {
-				file.Node.Services = []string{instance.Register, instance.Discovery, instance.Gateway, instance.Build}
-				file.Node.Sections = map[string]any{instance.Build: ingress.Config{Listen: addr + ":8443"}}
+				file.Node.Services = []string{instance.Register, instance.Discovery, instance.Gateway, instance.PLM}
+				file.Node.Sections = map[string]any{instance.PLM: ingress.Config{Listen: addr + ":8443"}}
 			}
 			if i > 0 {
 				h := f.nodes[0].Host()
@@ -143,7 +143,7 @@ func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 		require.Equal(t, []string{name}, gen.DNSNames)
 		require.True(t, f.reached(resolverAddr, "_acme-challenge."+name, dns.TypeTXT), "pebble's DNS-01 lookup reached tau's dns")
 
-		frontendName := instance.Build + "." + liveCloud
+		frontendName := instance.PLM + "." + liveCloud
 		res := issued(t, f.addrs[2]+":8443", frontendName, roots)
 		wildcard := res.TLS.PeerCertificates[0]
 		require.Equal(t, []string{"*." + liveCloud}, wildcard.DNSNames)

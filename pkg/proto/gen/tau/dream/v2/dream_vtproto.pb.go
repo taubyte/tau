@@ -7,7 +7,7 @@ package dreamv2
 import (
 	fmt "fmt"
 	protohelpers "github.com/planetscale/vtprotobuf/protohelpers"
-	v2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	v2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 	proto "google.golang.org/protobuf/proto"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	io "io"

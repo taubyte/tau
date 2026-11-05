@@ -10,8 +10,8 @@ import (
 
 	"github.com/taubyte/tau/pkg/certificate"
 	"github.com/taubyte/tau/pkg/certificate/acme"
-	"github.com/taubyte/tau/services/build/ingress"
 	"github.com/taubyte/tau/services/cm"
+	"github.com/taubyte/tau/services/plm/ingress"
 )
 
 func TestACloudIssuingCertificatesNeedsItsZoneAndAWorkableConfig(t *testing.T) {
@@ -45,14 +45,14 @@ func accountKey(t *testing.T) string {
 
 func TestBuildServesTLSWhenTheCloudIssues(t *testing.T) {
 	n, _, _ := makeNode(t, Config{
-		Services:  []string{Discovery, Build},
-		Sections:  map[string]any{Build: ingress.Config{Listen: "127.0.0.1:0"}},
+		Services:  []string{Discovery, PLM},
+		Sections:  map[string]any{PLM: ingress.Config{Listen: "127.0.0.1:0"}},
 		CloudFqdn: "tau.example.io",
 		CM:        cm.Config{Certificate: cm.CertificateConfig{ACME: certificate.ACME{Enabled: true}}},
 	})
 	require.NoError(t, n.Start(t.Context()))
 
-	res, err := http.Get("http://" + n.BuildAddr().String() + "/")
+	res, err := http.Get("http://" + n.PLMAddr().String() + "/")
 	require.NoError(t, err)
 	body, err := io.ReadAll(res.Body)
 	res.Body.Close()
@@ -60,7 +60,7 @@ func TestBuildServesTLSWhenTheCloudIssues(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, res.StatusCode)
 	require.Contains(t, string(body), "HTTPS server")
 
-	_, err = tls.Dial("tcp", n.BuildAddr().String(), &tls.Config{ServerName: "build.tau.example.io"})
+	_, err = tls.Dial("tcp", n.PLMAddr().String(), &tls.Config{ServerName: "build.tau.example.io"})
 	require.Error(t, err, "no cm node keeps one, so nothing is presented")
 
 	secure, err := n.ServiceTLS()
@@ -68,7 +68,7 @@ func TestBuildServesTLSWhenTheCloudIssues(t *testing.T) {
 	require.NotNil(t, secure.GetCertificate)
 
 	// A CLOUD THAT ISSUES NOTHING serves its frontend as it did.
-	plain, _, _ := makeNode(t, Config{Services: []string{Discovery, Build}, Sections: map[string]any{Build: ingress.Config{Listen: "127.0.0.1:0"}}})
+	plain, _, _ := makeNode(t, Config{Services: []string{Discovery, PLM}, Sections: map[string]any{PLM: ingress.Config{Listen: "127.0.0.1:0"}}})
 	secure, err = plain.ServiceTLS()
 	require.NoError(t, err)
 	require.Nil(t, secure)

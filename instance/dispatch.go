@@ -42,7 +42,7 @@ const (
 	// IT IS A POLL AND THAT IS THE CEILING. pkg/queue is a replicated store
 	// with no notification, so an item pushed just after a cycle waits up to
 	// this long — which is what "a global FIFO with a visibility timeout"
-	// costs and is the same interval services/build runs at.
+	// costs and is the same interval services/plm runs at.
 	claimEvery = 2 * time.Second
 
 	// perCycle is how many items one goroutine takes before yielding.

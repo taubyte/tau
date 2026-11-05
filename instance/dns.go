@@ -109,7 +109,7 @@ func (n *Instance) DNSAddrs() []net.Addr {
 }
 
 // knownServices is every service name a node of this composition can report:
-// the built-in ones, the public build role All leaves out, and the ones added
+// the built-in ones, the public plm role All leaves out, and the ones added
 // with WithService.
 func (n *Instance) knownServices() []string {
 	return append(builtIn(), n.opts.serviceNames()...)

@@ -64,7 +64,7 @@ func TestAServiceNameIsIssuedOnceForTheFleet(t *testing.T) {
 			case 0, 1:
 				c.Services = append(append(slices.Clone(instance.All), services.Default()...), instance.CM)
 			default:
-				c.Services = []string{instance.Discovery, instance.Build}
+				c.Services = []string{instance.Discovery, instance.PLM}
 			}
 		},
 	})
@@ -89,7 +89,7 @@ func TestAServiceNameIsIssuedOnceForTheFleet(t *testing.T) {
 	h := front.Handler()
 	handler.Store(&h)
 
-	name := instance.Build + "." + cloud
+	name := instance.PLM + "." + cloud
 	var leaves [][]byte
 	for _, n := range nodes {
 		secure, err := n.ServiceTLS()

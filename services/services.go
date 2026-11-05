@@ -4,14 +4,14 @@ package services
 
 import (
 	"github.com/taubyte/tau/core/service"
-	"github.com/taubyte/tau/services/build"
-	"github.com/taubyte/tau/services/build/hosted"
+	"github.com/taubyte/tau/services/builder"
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/database"
 	"github.com/taubyte/tau/services/discovery"
+	"github.com/taubyte/tau/services/plm"
+	"github.com/taubyte/tau/services/plm/hosted"
 	"github.com/taubyte/tau/services/primitives"
 	"github.com/taubyte/tau/services/register"
-	"github.com/taubyte/tau/services/runner"
 	"github.com/taubyte/tau/services/secrets"
 	"github.com/taubyte/tau/services/storage"
 )
@@ -39,10 +39,10 @@ func catalog() []shipped {
 		{name: primitives.Descriptor.Name, new: func() service.Service { return primitives.New() }, needs: []string{cm.Name}},
 		{name: database.Descriptor.Name, new: func() service.Service { return database.New() }, needs: []string{cm.Name}},
 		{name: storage.Descriptor.Name, new: func() service.Service { return storage.New() }},
-		{name: build.Runner.Name, new: func() service.Service { return runner.New() }},
-		// Build is never part of the default: one node running every service runs the
-		// runner, and a node may not run both. Its queue is a raft group.
-		{name: build.Build.Name, new: func() service.Service { return hosted.New() }, needs: []string{cm.Name}, onlyNamed: true},
+		{name: plm.Builder.Name, new: func() service.Service { return builder.New() }},
+		// PLM is never part of the default: it binds a public listener, which has no
+		// default port. Its queue is a raft group.
+		{name: plm.PLM.Name, new: func() service.Service { return hosted.New() }, needs: []string{cm.Name}, onlyNamed: true},
 	}
 }
 

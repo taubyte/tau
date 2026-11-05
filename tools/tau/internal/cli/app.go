@@ -22,7 +22,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/taubyte/tau/pkg/forge"
-	"github.com/taubyte/tau/services/build/artifact"
+	"github.com/taubyte/tau/services/plm/artifact"
 	"github.com/taubyte/tau/tools/tau/internal/api"
 	"github.com/taubyte/tau/tools/tau/internal/config"
 	"github.com/taubyte/tau/tools/tau/internal/ui"

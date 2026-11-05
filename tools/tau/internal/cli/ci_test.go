@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 )
 
 func TestCIRunQueuesThisCheckoutsHead(t *testing.T) {
@@ -42,7 +42,7 @@ func TestCIRunThatFailsOrIsRefused(t *testing.T) {
 	x.login()
 	x.link("proj-1")
 
-	x.f.finish = buildv2.JobStatus_JobStatusFailed
+	x.f.finish = plmv2.JobStatus_JobStatusFailed
 	r := x.run("ci", "run", "--dir", x.dir, "--commit", strings.Repeat("b", 40), "--branch", "main")
 	require.Equal(t, 1, r.code)
 	require.Contains(t, r.stderr, "failed")
@@ -74,7 +74,7 @@ func TestCIRunFollowsARunningJob(t *testing.T) {
 	x := newTester(t)
 	x.login()
 	x.link("proj-1")
-	x.f.finish = buildv2.JobStatus_JobStatusClaimed
+	x.f.finish = plmv2.JobStatus_JobStatusClaimed
 	x.f.endOnFollow = true
 	r := x.run("ci", "run", "--dir", x.dir, "--commit", strings.Repeat("c", 40), "--branch", "main", "--interval", "10ms")
 	require.Zero(t, r.code, r.stderr)
@@ -86,7 +86,7 @@ func TestCIRunFollowsARerunFromItsStart(t *testing.T) {
 	x := newTester(t)
 	x.login()
 	x.link("proj-1")
-	x.f.finish = buildv2.JobStatus_JobStatusClaimed
+	x.f.finish = plmv2.JobStatus_JobStatusClaimed
 	x.f.endOnFollow = true
 	x.f.mu.Lock()
 	x.f.dropOnce, x.f.rerunOnDrop = true, true
@@ -104,7 +104,7 @@ func TestCIRunMovesOnFromARunItCouldNotRead(t *testing.T) {
 	x := newTester(t)
 	x.login()
 	x.link("proj-1")
-	x.f.finish = buildv2.JobStatus_JobStatusClaimed
+	x.f.finish = plmv2.JobStatus_JobStatusClaimed
 	x.f.endOnFollow = true
 	x.f.mu.Lock()
 	x.f.refused["job-3-prod/1"], x.f.rerunOnDrop = true, true
@@ -115,7 +115,7 @@ func TestCIRunMovesOnFromARunItCouldNotRead(t *testing.T) {
 	require.Contains(t, r.stderr, "job job-3-prod: the log of attempt 1 was read to byte 0; attempt 2 follows\nrebuilt\n")
 
 	x.f.mu.Lock()
-	x.f.finish, x.f.rerunOnDrop = buildv2.JobStatus_JobStatusSuccess, false
+	x.f.finish, x.f.rerunOnDrop = plmv2.JobStatus_JobStatusSuccess, false
 	x.f.refused["job-4-prod/1"] = true
 	x.f.mu.Unlock()
 	r = x.run("ci", "run", "--dir", x.dir, "--commit", strings.Repeat("d", 40), "--branch", "main", "--interval", "10ms")
@@ -124,7 +124,7 @@ func TestCIRunMovesOnFromARunItCouldNotRead(t *testing.T) {
 
 	// A log that does not say which run it is cannot be followed at all.
 	x.f.mu.Lock()
-	x.f.finish, x.f.unnamed = buildv2.JobStatus_JobStatusClaimed, true
+	x.f.finish, x.f.unnamed = plmv2.JobStatus_JobStatusClaimed, true
 	x.f.mu.Unlock()
 	r = x.run("ci", "run", "--dir", x.dir, "--commit", strings.Repeat("e", 40), "--branch", "main", "--interval", "10ms")
 	require.NotZero(t, r.code)

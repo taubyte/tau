@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/taubyte/tau/services/runner"
+	"github.com/taubyte/tau/services/builder"
 
-	"github.com/taubyte/tau/services/build/ingress"
+	"github.com/taubyte/tau/services/plm/ingress"
 
 	"github.com/taubyte/tau/pkg/containers"
 
@@ -154,7 +154,7 @@ type Config struct {
 
 	// Configure, when set, adjusts node index's config after the universe has
 	// filled it — the way a fleet gives different machines different roles,
-	// such as build on one node and a runner on another (a node
+	// such as build on one node and a builder on another (a node
 	// refuses to run both).
 	Configure func(index int, c *instance.Config)
 
@@ -177,8 +177,8 @@ func (d removed) Close() error { return os.RemoveAll(string(d)) }
 type Universe struct {
 	mesh *mesh.Mesh
 	pids []string
-	// mirror is where its runners clone from (Commit), and uploads where a
-	// developer's build is kept (Upload).
+	// mirror is where its builders clone from (Commit), and uploads where a
+	// developer's plm is kept (Upload).
 	mirror, uploads string
 
 	// buildsMu guards builds, how the universe builds (builds.go), settled on first
@@ -186,7 +186,7 @@ type Universe struct {
 	buildsMu sync.Mutex
 	builds   builds
 	visitor  peer.Node
-	// kept is what it built with no build service to record it.
+	// kept is what it built with no plm service to record it.
 	kept builtHere
 
 	rpc *served
@@ -216,7 +216,7 @@ func Start(ctx context.Context, name string, cfg Config) (*Universe, error) {
 	account := []*secretsv2.InitSecret{sealed}
 
 	// ONE UPLOADS DIRECTORY PER UNIVERSE, named in every node's build configuration,
-	// since build, which takes a developer's build, and the runner that builds it
+	// since build, which takes a developer's build, and the builder that builds it
 	// are often two nodes.
 	held, err := os.MkdirTemp("", "tau-uploads-")
 	if err != nil {
@@ -317,10 +317,10 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	nodeConfig.Auth.SignUp = auth.SignUpOpen
 	// A development cloud serves declared zones unproven, takes a developer's build,
 	// and clones from its mirror.
-	// A node running the public build role listens on an ephemeral loopback port too.
-	nodeConfig.Sections[instance.Build] = ingress.Config{Uploads: uploads, Listen: "127.0.0.1:0"}
-	nodeConfig.Sections[instance.Runner] = runner.Config{
-		Uploads: uploads, Mirror: "file://" + mirror, Domains: runner.Domains{Trusted: true},
+	// A node running the public plm role listens on an ephemeral loopback port too.
+	nodeConfig.Sections[instance.PLM] = ingress.Config{Uploads: uploads, Listen: "127.0.0.1:0"}
+	nodeConfig.Sections[instance.Builder] = builder.Config{
+		Uploads: uploads, Mirror: "file://" + mirror, Domains: builder.Domains{Trusted: true},
 	}
 	if cfg.Configure != nil {
 		cfg.Configure(index, &nodeConfig)
@@ -341,8 +341,8 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	}
 	nodeConfig.Sections[cm.Name] = cm.Section{Consensus: cm.ConsensusConfig{Timeouts: dreamTimeouts, BootstrapTimeout: dreamBootstrapTimeout}}
 
-	// WHAT THE UNIVERSE BUILT WITH NO BUILD SERVICE is looked up in what it kept, and
-	// anything else in build's records on the node.
+	// WHAT THE UNIVERSE BUILT WITH NO PLM SERVICE is looked up in what it kept, and
+	// anything else in plm's records on the node.
 	lookup := &artifacts{kept: kept}
 	options := []instance.Option{
 		instance.WithDatabaseEngines(engines),

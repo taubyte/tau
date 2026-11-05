@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/taubyte/tau/services/runner"
+	"github.com/taubyte/tau/services/builder"
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/pkg/containers"
@@ -24,73 +24,67 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/build/ingress"
-	"github.com/taubyte/tau/services/build/jobs"
+	"github.com/taubyte/tau/services/plm/ingress"
+	"github.com/taubyte/tau/services/plm/jobs"
 	"github.com/taubyte/tau/services/worker"
 )
 
-func TestANodeRefusesBothHalvesOfTheBuildService(t *testing.T) {
-	_, err := Config{Services: []string{Build, Runner}}.withDefaults(services.Names()...)
-	require.ErrorIs(t, err, ErrBuildAndRunner)
-	require.ErrorContains(t, err, Build)
-	require.ErrorContains(t, err, Runner)
-
-	// Either one alone is fine.
-	for _, only := range []string{Build, Runner} {
-		_, err := Config{Services: []string{only, Discovery}}.withDefaults(services.Names()...)
-		require.NoError(t, err, only)
+func TestANodeRunsPLMAndTheBuilderTogetherWhenItsConfigSaysSo(t *testing.T) {
+	for _, shape := range [][]string{{PLM, Builder}, {PLM, Discovery}, {Builder, Discovery}} {
+		_, err := Config{Services: shape}.withDefaults(services.Names()...)
+		require.NoError(t, err, "%v", shape)
 	}
 }
 
 func TestTheDefaultShapeStarts(t *testing.T) {
-	require.NotContains(t, All, Build)
-	require.Contains(t, services.Names(), Runner, "the runner is a service tau ships")
+	require.NotContains(t, All, PLM)
+	require.Contains(t, services.Names(), Builder, "the builder is a service tau ships")
 	require.Contains(t, All, Auth)
 
 	cfg, err := Config{}.withDefaults(services.Names()...)
 	require.NoError(t, err)
-	require.Equal(t, append(slices.Clone(All), services.Default()...), cfg.Services, "and every service tau ships but build")
-	require.NotContains(t, cfg.Services, Build, "which may not run beside the runner")
+	require.Equal(t, append(slices.Clone(All), services.Default()...), cfg.Services, "and every service tau ships but plm")
+	require.NotContains(t, cfg.Services, PLM, "which listens where its config says, and has no default")
 }
 
-func TestTheRoleNamesAreTheBuildServicesOwn(t *testing.T) {
-	require.Equal(t, "build", Build)
-	require.Equal(t, "runner", Runner)
+func TestTheServiceNamesArePLMAndBuilder(t *testing.T) {
+	require.Equal(t, "plm", PLM)
+	require.Equal(t, "builder", Builder)
 }
 
 func TestANodeAdvertisesTheRolesItRuns(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Discovery, Auth, Runner}})
+	n, _, _ := makeNode(t, Config{Services: []string{Discovery, Auth, Builder}})
 	require.NoError(t, n.Start(t.Context()))
 
 	serving := n.serving()
 	require.Contains(t, serving, Auth)
-	require.Contains(t, serving, Runner)
-	require.NotContains(t, serving, Build)
+	require.Contains(t, serving, Builder)
+	require.NotContains(t, serving, PLM)
 
 	require.NotNil(t, n.auth)
 	_, built := jobsOf(n)
-	require.False(t, built, "a runner holds no queue")
-	require.Nil(t, n.BuildAddr(), "and no build listens")
+	require.False(t, built, "a builder holds no queue")
+	require.Nil(t, n.PLMAddr(), "and no build listens")
 }
 
 func TestBuildHoldsTheQueueAndNotAuthsStore(t *testing.T) {
-	// BUILD BINDS ITS OWN LISTENER and there is no default port for it — a port
+	// PLM BINDS ITS OWN LISTENER and there is no default port for it — a port
 	// baked into a service is why sibling worktrees collide — so an operator names
 	// one.
 	n, _, _ := makeNode(t, Config{
-		Services: []string{Discovery, Build},
-		Sections: map[string]any{Build: ingress.Config{Listen: "127.0.0.1:0"}},
+		Services: []string{Discovery, PLM},
+		Sections: map[string]any{PLM: ingress.Config{Listen: "127.0.0.1:0"}},
 	})
 	require.NoError(t, n.Start(t.Context()))
 
-	require.Nil(t, n.auth, "build does not hold auth's store")
+	require.Nil(t, n.auth, "plm does not hold auth's store")
 	_, built := jobsOf(n)
 	require.True(t, built, "it holds the queue")
-	require.NotNil(t, n.BuildAddr(), "it listens where a CLI can reach it")
+	require.NotNil(t, n.PLMAddr(), "it listens where a CLI can reach it")
 }
 
 func TestANodeRunningNoBuildHasNoBuildAddress(t *testing.T) {
-	require.Nil(t, (&Instance{Node: mockPeer(t)}).BuildAddr())
+	require.Nil(t, (&Instance{Node: mockPeer(t)}).PLMAddr())
 }
 
 func TestTheResolverReadsTheSameViewAsEverythingElse(t *testing.T) {
@@ -130,8 +124,8 @@ func TestTheResolverGivesUp(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
 	defer cancel()
 
-	_, err := (&fromDiscovery{node: n, name: Runner}).Any(ctx)
-	require.ErrorContains(t, err, Runner)
+	_, err := (&fromDiscovery{node: n, name: Builder}).Any(ctx)
+	require.ErrorContains(t, err, Builder)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
@@ -151,15 +145,15 @@ func TestARowThatIsNotAPeerIsSkipped(t *testing.T) {
 	require.Equal(t, []libp2ppeer.ID(nil), (&fromDiscovery{node: &Instance{Node: mockPeer(t)}, name: Auth}).Known())
 }
 
-func TestARunnerWithNoContainerDaemon(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Discovery, Runner}})
+func TestABuilderWithNoContainerDaemon(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Discovery, Builder}})
 	require.NoError(t, n.Start(t.Context()))
-	require.Contains(t, n.serving(), Runner, "it still runs, and still deploys configuration")
+	require.Contains(t, n.serving(), Builder, "it still runs, and still deploys configuration")
 }
 
-func TestARunnerWithADaemonThatIsNotOne(t *testing.T) {
+func TestABuilderWithADaemonThatIsNotOne(t *testing.T) {
 	n, _, _ := makeNode(t, Config{
-		Services:  []string{Discovery, Runner},
+		Services:  []string{Discovery, Builder},
 		Container: containers.Declared{Backend: "not-a-backend"},
 	})
 	require.ErrorIs(t, n.Start(t.Context()), containers.ErrUnknownBackend, "the node's one daemon is the build's")
@@ -299,17 +293,17 @@ func TestAWorkloadsStreamsAreNamedByTheWorkload(t *testing.T) {
 
 func TestAWorkerReadsBuildsRecordsOnItsOwnNode(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Discovery, Build}, Sections: map[string]any{Build: ingress.Config{Listen: "127.0.0.1:0"}}},
+		Config{Services: []string{Register, Discovery, PLM}, Sections: map[string]any{PLM: ingress.Config{Listen: "127.0.0.1:0"}}},
 		Config{Services: []string{Worker, Discovery}},
 	)
 	compute := nodes[1]
 
-	sees(t, compute, Build)
+	sees(t, compute, PLM)
 
 	a := &artifacts{node: compute, seen: map[string]builtAt{}}
 
 	// NOTHING HAS BUILT THIS, read from the records this node holds, with no
-	// build node asked.
+	// plm node asked.
 	_, err := a.Artifact(t.Context(), "shop", "prod", "function", "checkout")
 	require.ErrorIs(t, err, ErrNotBuilt)
 
@@ -332,33 +326,33 @@ func TestTheRegionANodeReadsIsTheOneItsConfigNames(t *testing.T) {
 	require.Equal(t, pkgregister.IDOf([]byte("region-1")), p.Object, "and the view it reads")
 }
 
-func TestADevelopmentCloudsRunnerIsConfigured(t *testing.T) {
+func TestADevelopmentCloudsBuilderIsConfigured(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "uploads")
-	section := runner.Config{Uploads: dir, Mirror: "file://" + t.TempDir()}
-	cfg := Config{Services: []string{Discovery, Runner}, Sections: map[string]any{Runner: section}}
+	section := builder.Config{Uploads: dir, Mirror: "file://" + t.TempDir()}
+	cfg := Config{Services: []string{Discovery, Builder}, Sections: map[string]any{Builder: section}}
 	n, _, _ := makeNode(t, cfg)
 	require.NoError(t, n.Start(t.Context()))
-	require.Contains(t, n.serving(), Runner)
-	require.DirExists(t, dir, "the uploads directory is the runner's to make")
+	require.Contains(t, n.serving(), Builder)
+	require.DirExists(t, dir, "the uploads directory is the builder's to make")
 
 	// A DIRECTORY IT CANNOT MAKE refuses the node, rather than a door that fails
 	// on the first upload.
 	file := filepath.Join(t.TempDir(), "a file")
 	require.NoError(t, os.WriteFile(file, nil, 0o600))
 	section.Uploads = filepath.Join(file, "below")
-	refused, _, _ := makeNode(t, Config{Services: []string{Discovery, Runner}, Sections: map[string]any{Runner: section}})
+	refused, _, _ := makeNode(t, Config{Services: []string{Discovery, Builder}, Sections: map[string]any{Builder: section}})
 	require.ErrorContains(t, refused.Start(t.Context()), "uploads")
 }
 
 func TestANodeReadsItsOwnBuild(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Discovery, Build, Worker},
-		Sections: map[string]any{Build: ingress.Config{Listen: "127.0.0.1:0"}}})
+	n, _, _ := makeNode(t, Config{Services: []string{Discovery, PLM, Worker},
+		Sections: map[string]any{PLM: ingress.Config{Listen: "127.0.0.1:0"}}})
 	require.NoError(t, n.Start(t.Context()))
 	built, ok := jobsOf(n)
 	require.True(t, ok)
 	require.NoError(t, built.WaitForLeader(t.Context()))
 
-	_, err := n.BuildArtifacts().Artifact(t.Context(), "shop", "prod", "function", "QmNothing")
+	_, err := n.PLMArtifacts().Artifact(t.Context(), "shop", "prod", "function", "QmNothing")
 	require.ErrorIs(t, err, ErrNotBuilt)
 	require.NotEqual(t, connect.CodeNotFound, connect.CodeOf(err), "a site missing its artifact is broken, not unknown")
 	require.ErrorContains(t, err, "QmNothing")

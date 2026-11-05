@@ -21,7 +21,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/pkg/vault"
-	"github.com/taubyte/tau/services/build/artifact"
+	"github.com/taubyte/tau/services/plm/artifact"
 	"github.com/taubyte/tau/tools/tau/internal/config"
 	"github.com/taubyte/tau/tools/tau/internal/project"
 )

@@ -20,7 +20,7 @@ import (
 )
 
 // The semantic rules for the .proto schema, which buf does not check: buf lint
-// reads style, and nine semantic mutations of build.proto (a numeric repository
+// reads style, and nine semantic mutations of plm.proto (a numeric repository
 // id, a oneof over forge names, the webhook's changed paths crossing the queue,
 // RPCs named Clone and RunContainer) all passed buf lint, build and generate.
 //
@@ -83,7 +83,7 @@ func TestTheRulesBufCannotCheck(t *testing.T) {
 			}
 		}
 		// "never a `provider` field beside a repository key" is auth.proto's
-		// own phrasing and build.proto restates it: two fields that must
+		// own phrasing and plm.proto restates it: two fields that must
 		// always agree are one fact spelled twice, and the second one is the
 		// one an attacker gets to choose.
 		for _, m := range s.messages {

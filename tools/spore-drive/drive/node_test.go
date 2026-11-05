@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/spf13/afero"
 	"gotest.tools/v3/assert"
 
@@ -20,7 +19,7 @@ func driveFor(p config.Parser) *sporedrive {
 	return &sporedrive{parser: p, root: DefaultRoot, now: time.Now}
 }
 
-func TestAHostWithoutBothBuildHalvesIsOneNode(t *testing.T) {
+func TestAHostIsOneNode(t *testing.T) {
 	_, p := fixtures.VirtConfig()
 	assert.NilError(t, p.Shapes().Shape("shape2").Services().Set("gateway", "monkey", "proxy"))
 
@@ -29,7 +28,7 @@ func TestAHostWithoutBothBuildHalvesIsOneNode(t *testing.T) {
 	assert.Equal(t, len(nodes.instances), 1)
 	assert.Equal(t, nodes.instances[0].name, "shape1", "the main node is named after the primary shape")
 	assert.DeepEqual(t, nodes.instances[0].file.Node.Services,
-		[]string{instance.Auth, instance.Secrets, instance.Discovery, instance.DNS, instance.Gateway, instance.Runner, instance.Proxy})
+		[]string{instance.Auth, instance.Secrets, instance.Discovery, instance.DNS, instance.Gateway, instance.Builder, instance.Proxy})
 }
 
 func TestEveryNodeRunsDiscovery(t *testing.T) {
@@ -69,26 +68,6 @@ func TestWhatHasNoV2HomeIsReported(t *testing.T) {
 	assert.Assert(t, !slices.Contains(nodes.ignored, "shapes.shape1.ports.main"))
 }
 
-func TestTheSplitIdentityIsStable(t *testing.T) {
-	_, p := fixtures.VirtConfig()
-	primary := p.Hosts().Host("host1").Shapes().Instance("shape1").Key()
-
-	a, err := derivedKey(primary, instance.Build)
-	assert.NilError(t, err)
-	b, err := derivedKey(primary, instance.Build)
-	assert.NilError(t, err)
-	assert.Equal(t, a, b)
-	assert.Assert(t, a != primary)
-
-	raw, err := base64.StdEncoding.DecodeString(a)
-	assert.NilError(t, err)
-	_, err = crypto.UnmarshalPrivateKey(raw)
-	assert.NilError(t, err)
-
-	_, err = derivedKey("not base64!", instance.Build)
-	assert.ErrorContains(t, err, "decode")
-}
-
 func TestABrokenHostIsAnError(t *testing.T) {
 	_, p := fixtures.VirtConfig()
 	assert.NilError(t, p.Hosts().Host("host2").Addresses().Add("nonsense"))
@@ -122,7 +101,7 @@ func TestAddedServicesConfigurationReachesEveryNode(t *testing.T) {
 
 	nodes, err := driveFor(p).nodesFor("host1")
 	assert.NilError(t, err)
-	assert.Assert(t, len(nodes.instances) == 2)
+	assert.Assert(t, len(nodes.instances) == 1)
 	want := map[string]any{"svc": map[string]any{"host": "example.com", "admins": []any{"a", "b"}}}
 	for _, inst := range nodes.instances {
 		assert.DeepEqual(t, inst.file.Node.Sections, want)
@@ -133,10 +112,10 @@ func TestNodesIsThePlanOfOneHost(t *testing.T) {
 	_, p := fixtures.VirtConfig()
 	plan, err := driveFor(p).Nodes("host1")
 	assert.NilError(t, err)
-	assert.Equal(t, len(plan.Nodes), 2)
+	assert.Equal(t, len(plan.Nodes), 1, "plm and the builder share the host's node")
 	assert.Equal(t, plan.Nodes[0].Name, "shape1")
-	assert.Equal(t, plan.Nodes[1].Name, instance.Build)
-	assert.Equal(t, plan.Nodes[1].Port, plan.Nodes[0].Port+1)
+	assert.Assert(t, slices.Contains(plan.Nodes[0].Services, instance.PLM))
+	assert.Assert(t, slices.Contains(plan.Nodes[0].Services, instance.Builder))
 	assert.Assert(t, slices.Contains(plan.Ignored, "shapes.shape2.plugins"))
 
 	assert.NilError(t, p.Shapes().Shape("shape2").Services().Set("gatewya"))
@@ -152,7 +131,7 @@ func TestTheTenancyReachesEveryNode(t *testing.T) {
 
 	nodes, err := driveFor(p).nodesFor("host1")
 	assert.NilError(t, err)
-	assert.Assert(t, len(nodes.instances) == 2)
+	assert.Assert(t, len(nodes.instances) == 1)
 	for _, inst := range nodes.instances {
 		assert.DeepEqual(t, inst.file.Node.Tenancy, []string{"github.com/acme", "gitlab.example.com/team"})
 	}
@@ -190,9 +169,8 @@ func TestIssueRefusesAKeyThatIsNotOne(t *testing.T) {
 
 func TestAShapeMustNameAUnitAndADirectory(t *testing.T) {
 	for shape, want := range map[string]string{
-		instance.Build: "cannot be named",
-		"a b":          "letters, digits",
-		"../up":        "letters, digits",
+		"a b":   "letters, digits",
+		"../up": "letters, digits",
 	} {
 		_, p := fixtures.VirtConfig()
 		p.Shapes().Shape(shape).Ports().Set("main", 5242)

@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 )
 
 func server(t *testing.T, h http.HandlerFunc) *Client {
@@ -181,7 +181,7 @@ func eventsOf(text string, from int) []string {
 		if i := strings.IndexByte(text[at:], '\n'); i >= 0 {
 			end = at + i + 1
 		}
-		raw, _ := protojson.Marshal(&Event{Kind: &buildv2.Job_Event_Message{Message: strings.TrimSuffix(text[at:end], "\n")}, Offset: int64(end)})
+		raw, _ := protojson.Marshal(&Event{Kind: &plmv2.Job_Event_Message{Message: strings.TrimSuffix(text[at:end], "\n")}, Offset: int64(end)})
 		out = append(out, string(raw)+"\n")
 		at = end
 	}
@@ -428,7 +428,7 @@ func TestTheStreamSaysHowTheRunEnded(t *testing.T) {
 	c := server(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Job-Attempt", "1")
 		io.WriteString(w, strings.Join(eventsOf("built\n", 0), ""))
-		raw, _ := protojson.Marshal(&Event{Kind: &buildv2.Job_Event_Status{Status: buildv2.JobStatus_JobStatusSuccess}, Offset: 6})
+		raw, _ := protojson.Marshal(&Event{Kind: &plmv2.Job_Event_Status{Status: plmv2.JobStatus_JobStatusSuccess}, Offset: 6})
 		w.Write(append(raw, '\n'))
 	})
 	s := c.Stream(t.Context(), "j", 0, 0)
@@ -440,7 +440,7 @@ func TestTheStreamSaysHowTheRunEnded(t *testing.T) {
 	require.Equal(t, "built\n", out.String(), "a status is not a line of output")
 	status, ended := s.Ended()
 	require.True(t, ended)
-	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, status)
+	require.Equal(t, plmv2.JobStatus_JobStatusSuccess, status)
 }
 
 func TestBuildsByHandAndByUpload(t *testing.T) {

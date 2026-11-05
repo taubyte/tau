@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 	"github.com/taubyte/tau/tools/tau/internal/config"
 	"github.com/taubyte/tau/tools/tau/internal/project"
 )
@@ -379,7 +379,7 @@ func TestLogsOfACancelledJobAreItsLastRuns(t *testing.T) {
 	x := newTester(t)
 	x.login()
 	x.f.mu.Lock()
-	x.f.jobs["job-cx"] = &buildv2.Job{Id: "job-cx", Status: buildv2.JobStatus_JobStatusCancelled, RepositoryKey: "github.com/acme/pay", Attempt: 2, Environment: "prod",
+	x.f.jobs["job-cx"] = &plmv2.Job{Id: "job-cx", Status: plmv2.JobStatus_JobStatusCancelled, RepositoryKey: "github.com/acme/pay", Attempt: 2, Environment: "prod",
 		Logs: map[string]string{"00000000000000000001": "bafy1"}}
 	x.f.runLogs["job-cx/1"] = "the first run\n"
 	x.f.runLogs["job-cx/2"] = "the second run, cancelled\n"
@@ -513,9 +513,9 @@ func TestTheLogsOfAPlanAreItsJobs(t *testing.T) {
 	x := newTester(t)
 	x.login()
 	x.f.mu.Lock()
-	x.f.jobs["plan"] = &buildv2.Job{Id: "plan", Status: buildv2.JobStatus_JobStatusSuccess, Attempt: 1, Children: []string{"job-1"}}
-	x.f.jobs["waiting"] = &buildv2.Job{Id: "waiting", Status: buildv2.JobStatus_JobStatusOpen}
-	x.f.jobs["broken"] = &buildv2.Job{Id: "broken", Status: buildv2.JobStatus_JobStatusFailed, Attempt: 1, Reason: "the commit feeds no environment"}
+	x.f.jobs["plan"] = &plmv2.Job{Id: "plan", Status: plmv2.JobStatus_JobStatusSuccess, Attempt: 1, Children: []string{"job-1"}}
+	x.f.jobs["waiting"] = &plmv2.Job{Id: "waiting", Status: plmv2.JobStatus_JobStatusOpen}
+	x.f.jobs["broken"] = &plmv2.Job{Id: "broken", Status: plmv2.JobStatus_JobStatusFailed, Attempt: 1, Reason: "the commit feeds no environment"}
 	x.f.mu.Unlock()
 
 	r := x.run("logs", "plan")
@@ -545,7 +545,7 @@ func TestTheLogsOfAPlanAreItsJobs(t *testing.T) {
 	<-planning.attached
 	planning.say("queued job job-1 for prod\n")
 	x.f.mu.Lock()
-	x.f.jobs["planning"].Status, x.f.jobs["planning"].Children = buildv2.JobStatus_JobStatusSuccess, []string{"job-1"}
+	x.f.jobs["planning"].Status, x.f.jobs["planning"].Children = plmv2.JobStatus_JobStatusSuccess, []string{"job-1"}
 	x.f.mu.Unlock()
 	planning.end()
 	planned := <-done
@@ -573,17 +573,17 @@ func TestLogsAsJSONAreTheRunsEvents(t *testing.T) {
 	x.login()
 	out := x.ok("logs", "job-1", "-o", "json")
 	var said []string
-	var ended buildv2.JobStatus
+	var ended plmv2.JobStatus
 	for _, line := range strings.Split(strings.TrimSuffix(out, "\n"), "\n") {
-		var ev buildv2.Job_Event
+		var ev plmv2.Job_Event
 		require.NoError(t, protojson.Unmarshal([]byte(line), &ev), line)
 		switch k := ev.GetKind().(type) {
-		case *buildv2.Job_Event_Message:
+		case *plmv2.Job_Event_Message:
 			said = append(said, k.Message)
-		case *buildv2.Job_Event_Status:
+		case *plmv2.Job_Event_Status:
 			ended = k.Status
 		}
 	}
 	require.Equal(t, []string{"stored: step one", "step two"}, said)
-	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, ended)
+	require.Equal(t, plmv2.JobStatus_JobStatusSuccess, ended)
 }

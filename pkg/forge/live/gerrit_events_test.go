@@ -25,10 +25,10 @@ import (
 	"github.com/taubyte/tau/pkg/forge/gerrit"
 	"github.com/taubyte/tau/pkg/git/gittest"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 	"github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/build/ingress"
-	"github.com/taubyte/tau/services/build/ingress/forgeauth"
+	"github.com/taubyte/tau/services/plm/ingress"
+	"github.com/taubyte/tau/services/plm/ingress/forgeauth"
 )
 
 func TestARealGerritStreamsItsPushes(t *testing.T) {
@@ -278,7 +278,7 @@ func (b *recordingJobs) has(repo, ref, sha string) bool {
 	return false
 }
 
-func (b *recordingJobs) Get(context.Context, string) (*buildv2.Job, error) {
+func (b *recordingJobs) Get(context.Context, string) (*plmv2.Job, error) {
 	return nil, errors.New("unused")
 }
 func (b *recordingJobs) List(context.Context, string, func(string) error) error {
@@ -286,10 +286,10 @@ func (b *recordingJobs) List(context.Context, string, func(string) error) error 
 }
 func (b *recordingJobs) Cancel(context.Context, string) error { return errors.New("unused") }
 func (b *recordingJobs) Retry(context.Context, string) error  { return errors.New("unused") }
-func (b *recordingJobs) Follow(context.Context, string, int32, int64, func(*buildv2.Job_Event) error) (int64, error) {
+func (b *recordingJobs) Follow(context.Context, string, int32, int64, func(*plmv2.Job_Event) error) (int64, error) {
 	return 0, errors.New("unused")
 }
-func (b *recordingJobs) Snapshot(context.Context, string, int32, int64, func(*buildv2.Job_Event) error) (int64, error) {
+func (b *recordingJobs) Snapshot(context.Context, string, int32, int64, func(*plmv2.Job_Event) error) (int64, error) {
 	return 0, errors.New("unused")
 }
 

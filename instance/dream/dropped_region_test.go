@@ -14,8 +14,8 @@ import (
 	nodeDream "github.com/taubyte/tau/instance/dream"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
-	buildDeploy "github.com/taubyte/tau/services/build/deploy"
-	"github.com/taubyte/tau/services/build/run"
+	buildDeploy "github.com/taubyte/tau/services/plm/deploy"
+	"github.com/taubyte/tau/services/plm/run"
 )
 
 const viewsID = "QmWBYU7xWH1ZwyEE3qRgrRmSc7ng1G12UMKPtUNYCattB5"
