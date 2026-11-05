@@ -194,6 +194,17 @@ func (ll *liveLogs) unwatch(l *liveLog) {
 	l.watchers--
 }
 
+// reset forgets a job's log, for a job about to run again. A stream already on
+// it keeps its own copy and ends with it.
+func (ll *liveLogs) reset(jid string) {
+	ll.lock.Lock()
+	defer ll.lock.Unlock()
+	if l, ok := ll.jobs[jid]; ok {
+		ll.total -= len(l.data)
+		delete(ll.jobs, jid)
+	}
+}
+
 func (ll *liveLogs) gc() {
 	ll.lock.Lock()
 	defer ll.lock.Unlock()
@@ -265,6 +276,13 @@ type logStream struct {
 func (srv *PatrickService) newLogStream(ctx http.Context, conn http.WebSocketConnection) http.WebSocketHandler {
 	jid, err := ctx.GetStringVariable("jid")
 	if err != nil {
+		conn.Close()
+		return nil
+	}
+
+	// the upgrade already happened, so a refusal is a close frame
+	if err = srv.authorizeJob(ctx, jid); err != nil {
+		conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, err.Error()))
 		conn.Close()
 		return nil
 	}
