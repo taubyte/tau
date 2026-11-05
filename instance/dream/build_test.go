@@ -147,7 +147,8 @@ func TestAUniverseBuildsForAToolOverDreamService(t *testing.T) {
 	dir, err := filepath.Abs(projectDir("with/placement"))
 	require.NoError(t, err)
 	_, err = dream.Build(ctx, connect.NewRequest(&dreamv2.Push{Repository: repository, Ref: "refs/heads/main", Commit: "1111111111111111111111111111111111111111"}))
-	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err), "a repository no project links is the build's own refusal")
+	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "a repository no project links is the build's own refusal: %v", err)
+	require.ErrorContains(t, err, "not registered with this cloud")
 
 	pushed, err := dream.Commit(ctx, connect.NewRequest(&dreamv2.CommitRequest{Repository: repository, Branch: "main", Dir: dir}))
 	require.NoError(t, err)

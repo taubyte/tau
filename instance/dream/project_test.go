@@ -113,7 +113,13 @@ func projectAs(t *testing.T, name string, components artifacts, regions schema.R
 				continue
 			}
 			pkgID, _ := ref["name"].(string)
-			pkg, _ := packages[pkgID].(map[string]any)
+			if pkgID == "" {
+				// A shell's reference that names nothing, such as a workflow's: it runs
+				// nothing itself.
+				continue
+			}
+			pkg, ok := packages[pkgID].(map[string]any)
+			require.True(t, ok, "%s: %v runs package %s, which is not at the project's root", name, res["name"], pkgID)
 			// An image is its own artifact, read straight off the package, and a builtin
 			// ships with the runtime, so nothing is staged for either.
 			if src, ok := pkg["source"].(map[string]any); ok && (src["kind"] == "image" || src["kind"] == "builtin") {
@@ -291,7 +297,7 @@ func build(t *testing.T, u *nodeDream.Universe, project, name string, built map[
 		require.NoError(t, os.WriteFile(files[pkg], code, 0o644))
 	}
 	// One configuration repository per project, so a later build of it is a new commit.
-	repository := "dream.test/" + project + "/config"
+	repository := "dream.test/" + strings.ToLower(project) + "/config"
 	push, err := u.Upload(repository, "main", projectDir(name), files)
 	require.NoError(t, err)
 	require.NoError(t, u.Link(t.Context(), project, repository))
