@@ -186,18 +186,22 @@ func TestOpenNeedsADirectoryItCanMake(t *testing.T) {
 }
 
 func TestAnUploadsProductsAreNamedByTheRecipesACloudWorksOut(t *testing.T) {
-	const basic = "../../../pkg/tcc/taubyte/v2/fixtures/basic"
-	recipes, err := Recipes(basic, "main")
+	const fixtures = "../../../pkg/tcc/taubyte/v2/fixtures/"
+	recipes, err := Recipes(fixtures+"environments", "main")
 	require.NoError(t, err)
-	require.Contains(t, recipes, "prod", "the environment the branch feeds")
-	require.NotEmpty(t, recipes["prod"])
-	for name, digest := range recipes["prod"] {
-		require.Regexp(t, digestPattern, digest, "package/%s", name)
+	require.Contains(t, recipes, "production", "an environment main feeds")
+	require.Contains(t, recipes["production"], "checkout_code")
+	for environment, byName := range recipes {
+		for name, digest := range byName {
+			require.Regexp(t, digestPattern, digest, "%s's package/%s", environment, name)
+		}
 	}
-	again, err := Recipes(basic, "main")
+	again, err := Recipes(fixtures+"environments", "main")
 	require.NoError(t, err)
 	require.Equal(t, recipes, again, "one tree is one set of recipes")
 
+	_, err = Recipes(fixtures+"basic", "main")
+	require.ErrorIs(t, err, artifact.ErrNotBuiltHere, "a package a cloud refuses has no recipe")
 	_, err = Recipes(t.TempDir(), "main")
 	require.Error(t, err, "a tree with no project builds nothing")
 }
