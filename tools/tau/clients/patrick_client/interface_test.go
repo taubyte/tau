@@ -38,6 +38,10 @@ func (m *mockClient) LogFile(jobId, resourceId string) (io.ReadCloser, error) {
 	return nil, nil
 }
 
+func (m *mockClient) StreamLogs(jid string, w io.Writer) error {
+	return nil
+}
+
 func (m *mockClient) Cancel(jid string) (interface{}, error) {
 	if m.cancelFunc != nil {
 		return m.cancelFunc(jid)

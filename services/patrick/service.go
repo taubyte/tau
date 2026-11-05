@@ -101,6 +101,10 @@ func New(ctx context.Context, cfg tauConfig.Config) (*PatrickService, error) {
 		defer srv.http.Start()
 	}
 
+	if err = srv.startLiveLogs(srv.ctx); err != nil {
+		return nil, fmt.Errorf("subscribing to live logs failed with: %w", err)
+	}
+
 	srv.setupHTTPRoutes()
 
 	// Go routine to re announce any pending jobs (queue-based or pubsub-based)

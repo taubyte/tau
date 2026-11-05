@@ -22,10 +22,12 @@ func (m *Monkey) Run() {
 
 	errs := make(chan error, 1024)
 
+	stopLogs := m.streamLogs()
 	m.run(errs)
 	close(errs)
 
 	runErr := m.appendErrors(m.logFile, errs)
+	stopLogs()
 	cid, err := m.storeLogs(m.logFile)
 	if err != nil {
 		logger.Errorf("Writing cid of job `%s` failed: %s", m.Id, err.Error())
