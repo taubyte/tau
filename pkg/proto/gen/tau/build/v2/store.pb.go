@@ -284,12 +284,14 @@ func (x *JobCreated) GetCreatedAt() int64 {
 	return 0
 }
 
-// JobClaimed is a builder taking one attempt. claimed_until is unix nanoseconds.
+// JobClaimed is a build node taking one attempt, run on runner, a peer id.
+// claimed_until is unix nanoseconds.
 type JobClaimed struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Attempt       uint32                 `protobuf:"varint,1,opt,name=attempt,proto3" json:"attempt,omitempty"`
 	Holder        string                 `protobuf:"bytes,2,opt,name=holder,proto3" json:"holder,omitempty"`
 	ClaimedUntil  int64                  `protobuf:"varint,3,opt,name=claimed_until,json=claimedUntil,proto3" json:"claimed_until,omitempty"`
+	Runner        string                 `protobuf:"bytes,4,opt,name=runner,proto3" json:"runner,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -343,6 +345,13 @@ func (x *JobClaimed) GetClaimedUntil() int64 {
 		return x.ClaimedUntil
 	}
 	return 0
+}
+
+func (x *JobClaimed) GetRunner() string {
+	if x != nil {
+		return x.Runner
+	}
+	return ""
 }
 
 // JobSettled is how one attempt ended: success or failure, its log, what it
@@ -640,12 +649,13 @@ const file_tau_build_v2_store_proto_rawDesc = "" +
 	"\venvironment\x18\x05 \x01(\tR\venvironment\x12\x18\n" +
 	"\aprelude\x18\x06 \x01(\tR\aprelude\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\a \x01(\x03R\tcreatedAt\"c\n" +
+	"created_at\x18\a \x01(\x03R\tcreatedAt\"{\n" +
 	"\n" +
 	"JobClaimed\x12\x18\n" +
 	"\aattempt\x18\x01 \x01(\rR\aattempt\x12\x16\n" +
 	"\x06holder\x18\x02 \x01(\tR\x06holder\x12#\n" +
-	"\rclaimed_until\x18\x03 \x01(\x03R\fclaimedUntil\"\x96\x02\n" +
+	"\rclaimed_until\x18\x03 \x01(\x03R\fclaimedUntil\x12\x16\n" +
+	"\x06runner\x18\x04 \x01(\tR\x06runner\"\x96\x02\n" +
 	"\n" +
 	"JobSettled\x12\x18\n" +
 	"\aattempt\x18\x01 \x01(\rR\aattempt\x12/\n" +

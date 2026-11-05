@@ -60,14 +60,16 @@ func newWireHarness(t *testing.T, opts ...option) *wireHarness {
 
 	store := newStore()
 	repos := newRepositories(testRepo)
-	runner := &fakeRunner{}
 	clock := newClock()
+	assets := newAssets()
+	on := newRig(t, mn, clock, assets)
 
-	opts = append([]option{withClock(clock.now), withRunner(runner), withAuthorizer(authorizer)}, opts...)
+	opts = append([]option{withClock(clock.now), on.runners(), withAuthorizer(authorizer)}, opts...)
 	records := newRecords(t)
 	s, err := newServer(Config{}, append([]option{withHost(server), withStore(store), withRecords(records), withRepositories(repos)}, opts...)...)
 	require.NoError(t, err)
-	require.NoError(t, s.serve(t.Context()))
+	// LISTENING AND NOT CLAIMING: a test here steps the claim loop itself.
+	require.NoError(t, s.listen(t.Context()))
 	t.Cleanup(func() { s.Close() })
 
 	c, err := rpc.NewClient(callerHost, server.ID(), build.Protocol)
@@ -76,7 +78,8 @@ func newWireHarness(t *testing.T, opts ...option) *wireHarness {
 
 	return &wireHarness{
 		harness: &harness{
-			server: s, store: store, records: records, repos: repos, runner: runner, clock: clock, host: server,
+			server: s, store: store, records: records, repos: repos, clock: clock, host: server,
+			runner: on.build, onRunner: on.runs, runnerID: on.at, assets: assets, logDir: on.logDir,
 		},
 		authorizer: authorizer,
 		caller:     callerHost,
@@ -234,10 +237,11 @@ func TestASnapshotEndsOverTheWireWhileAFollowStaysOpen(t *testing.T) {
 	t.Cleanup(finish)
 
 	id := h.planned(t, testRef, testCommit)
+	go h.step(context.WithoutCancel(t.Context()))
 	select {
 	case <-started:
 	case <-time.After(10 * time.Second):
-		t.Fatal("the claim loop never started the build")
+		t.Fatal("the build never started")
 	}
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)

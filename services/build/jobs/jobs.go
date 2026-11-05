@@ -5,11 +5,13 @@ import (
 	"errors"
 	"io"
 	"slices"
+	"time"
 
 	"connectrpc.com/connect"
 
+	"github.com/libp2p/go-libp2p/core/peer"
+
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
-	"github.com/taubyte/tau/services/build/joblog"
 )
 
 // jobHandler is the connect adapter for JobService: each method authorizes, leads
@@ -239,14 +241,17 @@ func (h *jobHandler) Follow(ctx context.Context, req *connect.Request[buildv2.Fo
 	return h.s.follow(ctx, req.Msg, stream.Send)
 }
 
-// follow streams one run's events from the request's offset, as its log records
-// them: its claim, each line of its output, and the status it left the job in,
-// which is the last. A snapshot ends at what is written so far. Asked of the leader,
-// which is where every run is claimed, a follow of a run to come says the job is
-// queued and waits for the run to begin here, or for the job to end without it:
-// rung, not timed.
+// follow streams one run's events from the request's offset, as its runner's log
+// records them: its claim, each line of its output, and the status it left the job
+// in, which is the last. Any build node answers: the job record names the runner
+// each run went to, and the follow is proxied there. A run to come says the job is
+// queued and waits, read again each RecordReadInterval, for the record to name its
+// runner or for the job to end without it. A snapshot does not wait.
 func (s *server) follow(ctx context.Context, req *buildv2.FollowRequest, send func(*buildv2.Job_Event) error) error {
 	jobID, offset := req.GetJobId(), req.GetOffset()
+	if err := requireJobID(jobID); err != nil {
+		return err
+	}
 	if offset < 0 {
 		return errInvalidArgument("build: offset %d is before the start of the log", offset)
 	}
@@ -255,108 +260,91 @@ func (s *server) follow(ctx context.Context, req *buildv2.FollowRequest, send fu
 	}
 	attempt := uint32(req.GetAttempt())
 
-	var (
-		reader io.ReadCloser
-		waited bool
-	)
+	var queued bool
 	for {
-		rung := s.runs.wait()
-		var err error
+		rec, found, err := s.readRecord(jobID)
+		switch {
+		case err != nil:
+			return errUnavailable("build: reading job %s: %v", jobID, err)
+		case !found:
+			return errNotFound("build: no job %s", jobID)
+		case attempt > rec.Attempt+1:
+			return errInvalidArgument("build: job %s has run %d times: attempt %d is not its next", jobID, rec.Attempt, attempt)
+		case attempt < rec.Attempt, attempt == rec.Attempt+1 && rec.terminal():
+			return ended(jobID, attempt, rec)
+		}
+		if attempt == rec.Attempt {
+			if rec.Runner != "" {
+				err := s.proxy(ctx, rec.Runner, req, send)
+				if connect.CodeOf(err) != connect.CodeNotFound {
+					return err
+				}
+			}
+			// THE RUNNER HOLDS NO SUCH LOG: it let go of an ended run, or has not opened
+			// this one yet. Only the second is waited for.
+			if rec.status() != buildv2.JobStatus_JobStatusClaimed {
+				return ended(jobID, attempt, rec)
+			}
+		}
+		if !queued {
+			queued = true
+			ev := &buildv2.Job_Event{At: s.now().UnixNano(), Kind: &buildv2.Job_Event_Status{Status: buildv2.JobStatus_JobStatusOpen}, Offset: offset}
+			if err := send(ev); err != nil {
+				return err
+			}
+		}
 		if req.GetSnapshot() {
-			reader, err = s.Snapshot(jobID, attempt, offset)
-		} else {
-			reader, err = s.Follow(jobID, attempt, offset)
-		}
-		if err == nil {
-			break
-		}
-		// Only a missing log goes to notWritten; other refusals keep their codes so a bad
-		// request does not walk the fleet. A follow already held asks holds alone, which
-		// reads without the queue's barrier, so waiting costs no raft entry per ring.
-		if connect.CodeOf(err) != connect.CodeNotFound {
-			return err
-		}
-		if !waited || !s.holds(jobID, attempt) {
-			err = s.notWritten(jobID, attempt, err)
-			if req.GetSnapshot() || connect.CodeOf(err) != connect.CodeUnavailable || !s.holds(jobID, attempt) {
-				return err
-			}
-		}
-		if !waited {
-			waited = true
-			queued := &buildv2.Job_Event{At: s.now().UnixNano(), Kind: &buildv2.Job_Event_Status{Status: buildv2.JobStatus_JobStatusOpen}, Offset: offset}
-			if err := send(queued); err != nil {
-				return err
-			}
+			return nil
 		}
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-rung:
+		case <-time.After(s.cfg.RecordReadInterval):
 		}
 	}
-	defer reader.Close()
+}
 
-	events := joblog.Read(reader, offset)
+// ended is a follow of a run that is over and no longer on its runner: what
+// survives is the cid the record files under that attempt.
+func ended(jobID string, attempt uint32, rec jobRecord) error {
+	return errFailedPrecondition("build: attempt %d of job %s has ended, and the job is %s at attempt %d: its log is the one its record files under that attempt",
+		attempt, jobID, rec.status(), rec.Attempt)
+}
+
+// proxy is a follow read from the runner holding the run, event by event.
+func (s *server) proxy(ctx context.Context, runner string, req *buildv2.FollowRequest, send func(*buildv2.Job_Event) error) error {
+	id, err := peer.Decode(runner)
+	if err != nil {
+		return errInternal("build: job %s names runner %q: %v", req.GetJobId(), runner, err)
+	}
+	if s.runners == nil {
+		return errUnavailable("build: this node reaches no runner to follow job %s on", req.GetJobId())
+	}
+	r, err := s.runners.At(id)
+	if err != nil {
+		return errUnavailable("build: reaching runner %s: %v", runner, err)
+	}
+	events, err := r.Follow(ctx, req)
+	if err != nil {
+		if code := connect.CodeOf(err); code == connect.CodeNotFound || code == connect.CodeInvalidArgument {
+			return err
+		}
+		return errUnavailable("build: following job %s on runner %s: %v", req.GetJobId(), runner, err)
+	}
+	defer events.Close()
 	for {
-		// Checked before the read, which blocks until the writer appends or closes.
-		if ctx.Err() != nil {
+		ev, err := events.Receive()
+		if errors.Is(err, io.EOF) {
 			return nil
 		}
-		ev, err := events.Next()
 		if err != nil {
-			// EOF is the run's log ending (or, for a snapshot, the end of what was
-			// there): a complete answer.
-			if errors.Is(err, io.EOF) {
+			if ctx.Err() != nil {
 				return nil
 			}
-			return errUnavailable("build: following job %s: %v", jobID, err)
+			return errUnavailable("build: following job %s: %v", req.GetJobId(), err)
 		}
 		if err := send(ev); err != nil {
 			return err
 		}
 	}
-}
-
-// holds is whether a follow of that run waits here: on the leader, where every run
-// is claimed, for a run still to come, or claimed by this node and not writing yet.
-// A run another node claimed is that node's to answer, so its follow walks on.
-func (s *server) holds(jobID string, attempt uint32) bool {
-	if !s.store.IsLeader() {
-		return false
-	}
-	rec, found, err := s.readRecord(jobID)
-	if err != nil || !found {
-		return false
-	}
-	switch rec.status() {
-	case buildv2.JobStatus_JobStatusOpen:
-		return attempt == rec.Attempt+1
-	case buildv2.JobStatus_JobStatusClaimed:
-		return attempt == rec.Attempt && rec.Holder == s.host.ID().String()
-	}
-	return false
-}
-
-// notWritten answers for a node holding no log of that run. While the run is to
-// come or going on it is Unavailable, so the caller's pool walks to the node
-// running it. Once the run has ended it is FailedPrecondition from the leader:
-// what survives is the cid the record files under that attempt.
-func (s *server) notWritten(jobID string, attempt uint32, missing error) error {
-	job, err := s.job(jobID)
-	switch {
-	case connect.CodeOf(err) == connect.CodeUnavailable:
-		return errUnavailable("%v", missing)
-	case err != nil:
-		return err
-	}
-	last := uint32(job.GetAttempt())
-	switch {
-	case attempt > last+1:
-		return errInvalidArgument("build: job %s has run %d times: attempt %d is not its next", jobID, last, attempt)
-	case finished(job.GetStatus()), attempt < last, attempt == last && job.GetStatus() == buildv2.JobStatus_JobStatusOpen:
-		return errFailedPrecondition("build: attempt %d of job %s has ended, and the job is %s at attempt %d: its log is the one its record files under that attempt",
-			attempt, jobID, job.GetStatus(), last)
-	}
-	return errUnavailable("%v", missing)
 }

@@ -24,7 +24,6 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/cm"
-	"github.com/taubyte/tau/services/worker"
 )
 
 // A node is tested with real services and fake resources: a mocknet host, gossipsub
@@ -219,22 +218,17 @@ func (t *tier) Start(context.Context, invoke.Spec) (invoke.Instance, error) {
 	return nil, errors.New("tier: nothing is started in this test")
 }
 
-// prebuilt is the artifact seam of a cloud that has built everything, explicit rather
-// than a makeNode default since several tests are about its absence. Every built
-// resource needs it: a `source.component` is a configuration id, not an artifact.
-func prebuilt() Option {
-	return withArtifacts(artifactsFunc(func(_ context.Context, _, _, _, resource string) (string, error) {
-		return "bafy" + resource, nil
-	}))
-}
+// prebuilt is the artifact lookup of a cloud that has built everything, explicit
+// rather than a makeNode default since several tests are about its absence. Every
+// built resource needs it: a `source.component` is a configuration id, not an
+// artifact.
+func prebuilt() Option { return WithArtifacts(everythingBuilt{}) }
 
-// withArtifacts is a test's stand-in for build's records: what a built resource
-// runs, said rather than built.
-func withArtifacts(a worker.Artifacts) Option {
-	return func(o *options) error {
-		o.artifacts = a
-		return nil
-	}
+// everythingBuilt answers that every resource was built, to "bafy" and its id.
+type everythingBuilt struct{}
+
+func (everythingBuilt) Artifact(_ context.Context, _, _, _, resource string) (string, error) {
+	return "bafy" + resource, nil
 }
 
 // opensDatabases is what a test's database double does.

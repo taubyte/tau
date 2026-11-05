@@ -229,11 +229,8 @@ func TestOneNodeRunningEverythingNeedsNoStream(t *testing.T) {
 }
 
 func TestTheSeamsReachTheWorker(t *testing.T) {
-	asked := make(chan string, 4)
-	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Register, Worker}}), withKVDB(&memFactory{}), WithRuntimes(&tier{name: "wasm"}), withArtifacts(artifactFunc(func(_ context.Context, _, _, kind, id string) (string, error) {
-		asked <- "artifact"
-		return "registry/built@sha256:" + id, nil
-	})))
+	asked := askedFor(make(chan string, 4))
+	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Register, Worker}}), withKVDB(&memFactory{}), WithRuntimes(&tier{name: "wasm"}), WithArtifacts(asked))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.NoError(t, n.Start(t.Context()))
@@ -252,10 +249,12 @@ func TestTheSeamsReachTheWorker(t *testing.T) {
 	require.Len(t, asked, 1)
 }
 
-type artifactFunc func(ctx context.Context, project, environment, kind, resourceID string) (string, error)
+// askedFor is a lookup that says it was asked, and answers an image built for the id.
+type askedFor chan string
 
-func (f artifactFunc) Artifact(ctx context.Context, project, environment, kind, resourceID string) (string, error) {
-	return f(ctx, project, environment, kind, resourceID)
+func (a askedFor) Artifact(_ context.Context, _, _, _, id string) (string, error) {
+	a <- "artifact"
+	return "registry/built@sha256:" + id, nil
 }
 
 func TestABuiltResourceNothingHasBuiltIsRefused(t *testing.T) {

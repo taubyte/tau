@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/taubyte/tau/services/build/runner"
+	"github.com/taubyte/tau/services/runner"
 
 	"github.com/taubyte/tau/services/build/ingress"
 

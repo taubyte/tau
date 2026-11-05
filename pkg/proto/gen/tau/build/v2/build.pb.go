@@ -13,16 +13,15 @@
 // hostile CODE (a repository's build.sh), so consensus stays off the machine that
 // runs it.
 //
-// EVERY RPC BELOW IS SERVED BY BUILD, on /tau/build/v2. QueueService and JobService
-// answer build's own HTTP routes on whichever build node leads the queue;
-// RunnerService is what a runner asks for work. BUILD NEVER DIALS A RUNNER, and a
-// runner serves nothing: a runner opens the stream, so the side that runs hostile
-// code is never the side that is asked.
+// EVERY RPC BELOW IS SERVED BY BUILD, on /tau/build/v2: QueueService and JobService
+// answer build's own HTTP routes on whichever build node leads the queue. A runner
+// serves its own protocol (tau/runner/v2/runner.proto), which build calls to run a
+// job and proxies a follower's Follow to.
 //
 // ONE PACKAGE, SEVERAL `service` BLOCKS, as auth.proto does: a node's protocol id
 // is derived from the package (`tau.build.v2` -> `/tau/build/v2`), and the blocks
 // are facets of one job lifecycle — created through QueueService, observed and
-// administered through JobService, run through RunnerService.
+// administered through JobService.
 //
 // IDENTITY, as in auth.proto: a repository is named by its canonical clone-URL key
 // alone (pkg/git/repokey: host/owner/name), never a provider-native or numeric id,
@@ -36,9 +35,8 @@
 // authorization, never a field here.
 //
 // STREAMING, as in auth.proto: List is server-streaming because it enumerates an
-// unbounded store; Follow streams a run's events; RunnerService.Serve is one
-// runner's lifetime. Every other RPC is a single lookup or mutation and stays
-// unary.
+// unbounded store; Follow streams a run's events. Every other RPC is a single
+// lookup or mutation and stays unary.
 
 package buildv2
 
@@ -202,7 +200,7 @@ func (*Empty) Descriptor() ([]byte, []int) {
 // lacks. Instead a runner computes its own before..after diff AFTER the
 // clone: `commit_sha` is `after`, and `before` is whatever commit sha build
 // last finished for this exact (repository_key, ref) — read from build's own
-// job history and handed down in Work.before, never from the webhook. A ref
+// job history and handed down in the runner's Work.before, never from the webhook. A ref
 // with no prior processed commit has no `before` to diff against and is
 // built in full, exactly what a GitHub payload's all-zero
 // `before` signals today for a newly created branch.
@@ -752,451 +750,6 @@ func (x *Built) GetCid() string {
 	return ""
 }
 
-// Assignment is what build hands a runner: a job to plan or to build, or the word
-// to stop the job in hand.
-type Assignment struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Types that are valid to be assigned to Kind:
-	//
-	//	*Assignment_Plan
-	//	*Assignment_Build
-	//	*Assignment_Cancel
-	Kind          isAssignment_Kind `protobuf_oneof:"kind"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *Assignment) Reset() {
-	*x = Assignment{}
-	mi := &file_tau_build_v2_build_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Assignment) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Assignment) ProtoMessage() {}
-
-func (x *Assignment) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_build_v2_build_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Assignment.ProtoReflect.Descriptor instead.
-func (*Assignment) Descriptor() ([]byte, []int) {
-	return file_tau_build_v2_build_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *Assignment) GetKind() isAssignment_Kind {
-	if x != nil {
-		return x.Kind
-	}
-	return nil
-}
-
-func (x *Assignment) GetPlan() *Work {
-	if x != nil {
-		if x, ok := x.Kind.(*Assignment_Plan); ok {
-			return x.Plan
-		}
-	}
-	return nil
-}
-
-func (x *Assignment) GetBuild() *Work {
-	if x != nil {
-		if x, ok := x.Kind.(*Assignment_Build); ok {
-			return x.Build
-		}
-	}
-	return nil
-}
-
-func (x *Assignment) GetCancel() *Empty {
-	if x != nil {
-		if x, ok := x.Kind.(*Assignment_Cancel); ok {
-			return x.Cancel
-		}
-	}
-	return nil
-}
-
-type isAssignment_Kind interface {
-	isAssignment_Kind()
-}
-
-type Assignment_Plan struct {
-	// plan reads which environments the pushed commit feeds; Finished.environments
-	// answers it.
-	Plan *Work `protobuf:"bytes,1,opt,name=plan,proto3,oneof"`
-}
-
-type Assignment_Build struct {
-	// build builds one environment.
-	Build *Work `protobuf:"bytes,2,opt,name=build,proto3,oneof"`
-}
-
-type Assignment_Cancel struct {
-	// cancel stops the job in hand: it was cancelled, or its claim ran out.
-	Cancel *Empty `protobuf:"bytes,3,opt,name=cancel,proto3,oneof"`
-}
-
-func (*Assignment_Plan) isAssignment_Kind() {}
-
-func (*Assignment_Build) isAssignment_Kind() {}
-
-func (*Assignment_Cancel) isAssignment_Kind() {}
-
-// Work is everything a run is given, derived by build from the job record and
-// never from the webhook.
-type Work struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	RepositoryKey string                 `protobuf:"bytes,2,opt,name=repository_key,json=repositoryKey,proto3" json:"repository_key,omitempty"`
-	Ref           string                 `protobuf:"bytes,3,opt,name=ref,proto3" json:"ref,omitempty"`
-	CommitSha     string                 `protobuf:"bytes,4,opt,name=commit_sha,json=commitSha,proto3" json:"commit_sha,omitempty"`
-	// before is the last commit build finished for this (repository, ref), from its
-	// own history; empty is a full build.
-	Before    string `protobuf:"bytes,5,opt,name=before,proto3" json:"before,omitempty"`
-	ProjectId string `protobuf:"bytes,6,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Attempt   uint32 `protobuf:"varint,7,opt,name=attempt,proto3" json:"attempt,omitempty"`
-	// environment is the deployment a build builds, empty for a plan.
-	Environment   string `protobuf:"bytes,8,opt,name=environment,proto3" json:"environment,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *Work) Reset() {
-	*x = Work{}
-	mi := &file_tau_build_v2_build_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Work) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Work) ProtoMessage() {}
-
-func (x *Work) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_build_v2_build_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Work.ProtoReflect.Descriptor instead.
-func (*Work) Descriptor() ([]byte, []int) {
-	return file_tau_build_v2_build_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *Work) GetJobId() string {
-	if x != nil {
-		return x.JobId
-	}
-	return ""
-}
-
-func (x *Work) GetRepositoryKey() string {
-	if x != nil {
-		return x.RepositoryKey
-	}
-	return ""
-}
-
-func (x *Work) GetRef() string {
-	if x != nil {
-		return x.Ref
-	}
-	return ""
-}
-
-func (x *Work) GetCommitSha() string {
-	if x != nil {
-		return x.CommitSha
-	}
-	return ""
-}
-
-func (x *Work) GetBefore() string {
-	if x != nil {
-		return x.Before
-	}
-	return ""
-}
-
-func (x *Work) GetProjectId() string {
-	if x != nil {
-		return x.ProjectId
-	}
-	return ""
-}
-
-func (x *Work) GetAttempt() uint32 {
-	if x != nil {
-		return x.Attempt
-	}
-	return 0
-}
-
-func (x *Work) GetEnvironment() string {
-	if x != nil {
-		return x.Environment
-	}
-	return ""
-}
-
-// RunnerReport is what a runner says on its stream.
-type RunnerReport struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Types that are valid to be assigned to Kind:
-	//
-	//	*RunnerReport_Ready
-	//	*RunnerReport_Output
-	//	*RunnerReport_Stored
-	//	*RunnerReport_Finished
-	Kind          isRunnerReport_Kind `protobuf_oneof:"kind"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *RunnerReport) Reset() {
-	*x = RunnerReport{}
-	mi := &file_tau_build_v2_build_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RunnerReport) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RunnerReport) ProtoMessage() {}
-
-func (x *RunnerReport) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_build_v2_build_proto_msgTypes[10]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RunnerReport.ProtoReflect.Descriptor instead.
-func (*RunnerReport) Descriptor() ([]byte, []int) {
-	return file_tau_build_v2_build_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *RunnerReport) GetKind() isRunnerReport_Kind {
-	if x != nil {
-		return x.Kind
-	}
-	return nil
-}
-
-func (x *RunnerReport) GetReady() *Empty {
-	if x != nil {
-		if x, ok := x.Kind.(*RunnerReport_Ready); ok {
-			return x.Ready
-		}
-	}
-	return nil
-}
-
-func (x *RunnerReport) GetOutput() []byte {
-	if x != nil {
-		if x, ok := x.Kind.(*RunnerReport_Output); ok {
-			return x.Output
-		}
-	}
-	return nil
-}
-
-func (x *RunnerReport) GetStored() *Stored {
-	if x != nil {
-		if x, ok := x.Kind.(*RunnerReport_Stored); ok {
-			return x.Stored
-		}
-	}
-	return nil
-}
-
-func (x *RunnerReport) GetFinished() *Finished {
-	if x != nil {
-		if x, ok := x.Kind.(*RunnerReport_Finished); ok {
-			return x.Finished
-		}
-	}
-	return nil
-}
-
-type isRunnerReport_Kind interface {
-	isRunnerReport_Kind()
-}
-
-type RunnerReport_Ready struct {
-	// ready is the first report: this runner takes work.
-	Ready *Empty `protobuf:"bytes,1,opt,name=ready,proto3,oneof"`
-}
-
-type RunnerReport_Output struct {
-	// output is what the job in hand wrote to its log, as it wrote it.
-	Output []byte `protobuf:"bytes,2,opt,name=output,proto3,oneof"`
-}
-
-type RunnerReport_Stored struct {
-	// stored is an artifact the runner put in the storage service.
-	Stored *Stored `protobuf:"bytes,3,opt,name=stored,proto3,oneof"`
-}
-
-type RunnerReport_Finished struct {
-	// finished ends the job in hand.
-	Finished *Finished `protobuf:"bytes,4,opt,name=finished,proto3,oneof"`
-}
-
-func (*RunnerReport_Ready) isRunnerReport_Kind() {}
-
-func (*RunnerReport_Output) isRunnerReport_Kind() {}
-
-func (*RunnerReport_Stored) isRunnerReport_Kind() {}
-
-func (*RunnerReport_Finished) isRunnerReport_Kind() {}
-
-// Stored is one artifact of the job in hand, already kept: the runner puts it in
-// the storage service itself, so its bytes never cross build.
-type Stored struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ResourceId    string                 `protobuf:"bytes,1,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
-	Cid           string                 `protobuf:"bytes,2,opt,name=cid,proto3" json:"cid,omitempty"`
-	Bytes         uint64                 `protobuf:"varint,3,opt,name=bytes,proto3" json:"bytes,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *Stored) Reset() {
-	*x = Stored{}
-	mi := &file_tau_build_v2_build_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Stored) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Stored) ProtoMessage() {}
-
-func (x *Stored) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_build_v2_build_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Stored.ProtoReflect.Descriptor instead.
-func (*Stored) Descriptor() ([]byte, []int) {
-	return file_tau_build_v2_build_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *Stored) GetResourceId() string {
-	if x != nil {
-		return x.ResourceId
-	}
-	return ""
-}
-
-func (x *Stored) GetCid() string {
-	if x != nil {
-		return x.Cid
-	}
-	return ""
-}
-
-func (x *Stored) GetBytes() uint64 {
-	if x != nil {
-		return x.Bytes
-	}
-	return 0
-}
-
-// Finished is how the job in hand ended: error empty is a success, anything else
-// is the build's failure, in its own words.
-type Finished struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	Error string                 `protobuf:"bytes,1,opt,name=error,proto3" json:"error,omitempty"`
-	// environments answers a plan.
-	Environments  []string `protobuf:"bytes,2,rep,name=environments,proto3" json:"environments,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *Finished) Reset() {
-	*x = Finished{}
-	mi := &file_tau_build_v2_build_proto_msgTypes[12]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Finished) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Finished) ProtoMessage() {}
-
-func (x *Finished) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_build_v2_build_proto_msgTypes[12]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Finished.ProtoReflect.Descriptor instead.
-func (*Finished) Descriptor() ([]byte, []int) {
-	return file_tau_build_v2_build_proto_rawDescGZIP(), []int{12}
-}
-
-func (x *Finished) GetError() string {
-	if x != nil {
-		return x.Error
-	}
-	return ""
-}
-
-func (x *Finished) GetEnvironments() []string {
-	if x != nil {
-		return x.Environments
-	}
-	return nil
-}
-
 // Event is one thing that happened to one run of a job, as a follower sees it:
 // the run's status as it moves, and each line of its output. A follower reads
 // until a terminal status.
@@ -1220,7 +773,7 @@ type Job_Event struct {
 
 func (x *Job_Event) Reset() {
 	*x = Job_Event{}
-	mi := &file_tau_build_v2_build_proto_msgTypes[15]
+	mi := &file_tau_build_v2_build_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1232,7 +785,7 @@ func (x *Job_Event) String() string {
 func (*Job_Event) ProtoMessage() {}
 
 func (x *Job_Event) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_build_v2_build_proto_msgTypes[15]
+	mi := &file_tau_build_v2_build_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1357,38 +910,7 @@ const file_tau_build_v2_build_proto_rawDesc = "" +
 	"\venvironment\x18\x02 \x01(\tR\venvironment\x12\x1a\n" +
 	"\bresource\x18\x03 \x01(\tR\bresource\"\x19\n" +
 	"\x05Built\x12\x10\n" +
-	"\x03cid\x18\x01 \x01(\tR\x03cid\"\x99\x01\n" +
-	"\n" +
-	"Assignment\x12(\n" +
-	"\x04plan\x18\x01 \x01(\v2\x12.tau.build.v2.WorkH\x00R\x04plan\x12*\n" +
-	"\x05build\x18\x02 \x01(\v2\x12.tau.build.v2.WorkH\x00R\x05build\x12-\n" +
-	"\x06cancel\x18\x03 \x01(\v2\x13.tau.build.v2.EmptyH\x00R\x06cancelB\x06\n" +
-	"\x04kind\"\xe8\x01\n" +
-	"\x04Work\x12\x15\n" +
-	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12%\n" +
-	"\x0erepository_key\x18\x02 \x01(\tR\rrepositoryKey\x12\x10\n" +
-	"\x03ref\x18\x03 \x01(\tR\x03ref\x12\x1d\n" +
-	"\n" +
-	"commit_sha\x18\x04 \x01(\tR\tcommitSha\x12\x16\n" +
-	"\x06before\x18\x05 \x01(\tR\x06before\x12\x1d\n" +
-	"\n" +
-	"project_id\x18\x06 \x01(\tR\tprojectId\x12\x18\n" +
-	"\aattempt\x18\a \x01(\rR\aattempt\x12 \n" +
-	"\venvironment\x18\b \x01(\tR\venvironment\"\xc3\x01\n" +
-	"\fRunnerReport\x12+\n" +
-	"\x05ready\x18\x01 \x01(\v2\x13.tau.build.v2.EmptyH\x00R\x05ready\x12\x18\n" +
-	"\x06output\x18\x02 \x01(\fH\x00R\x06output\x12.\n" +
-	"\x06stored\x18\x03 \x01(\v2\x14.tau.build.v2.StoredH\x00R\x06stored\x124\n" +
-	"\bfinished\x18\x04 \x01(\v2\x16.tau.build.v2.FinishedH\x00R\bfinishedB\x06\n" +
-	"\x04kind\"Q\n" +
-	"\x06Stored\x12\x1f\n" +
-	"\vresource_id\x18\x01 \x01(\tR\n" +
-	"resourceId\x12\x10\n" +
-	"\x03cid\x18\x02 \x01(\tR\x03cid\x12\x14\n" +
-	"\x05bytes\x18\x03 \x01(\x04R\x05bytes\"D\n" +
-	"\bFinished\x12\x14\n" +
-	"\x05error\x18\x01 \x01(\tR\x05error\x12\"\n" +
-	"\fenvironments\x18\x02 \x03(\tR\fenvironments*w\n" +
+	"\x03cid\x18\x01 \x01(\tR\x03cid*w\n" +
 	"\tJobStatus\x12\x11\n" +
 	"\rJobStatusOpen\x10\x00\x12\x14\n" +
 	"\x10JobStatusClaimed\x10\x01\x12\x14\n" +
@@ -1404,9 +926,7 @@ const file_tau_build_v2_build_proto_rawDesc = "" +
 	"\x06Cancel\x12\x14.tau.build.v2.JobRef\x1a\x13.tau.build.v2.Empty\x122\n" +
 	"\x05Retry\x12\x14.tau.build.v2.JobRef\x1a\x13.tau.build.v2.Empty\x12>\n" +
 	"\bArtifact\x12\x1d.tau.build.v2.ArtifactRequest\x1a\x13.tau.build.v2.Built\x12@\n" +
-	"\x06Follow\x12\x1b.tau.build.v2.FollowRequest\x1a\x17.tau.build.v2.Job.Event0\x012R\n" +
-	"\rRunnerService\x12A\n" +
-	"\x05Serve\x12\x1a.tau.build.v2.RunnerReport\x1a\x18.tau.build.v2.Assignment(\x010\x01B\xab\x01\n" +
+	"\x06Follow\x12\x1b.tau.build.v2.FollowRequest\x1a\x17.tau.build.v2.Job.Event0\x01B\xab\x01\n" +
 	"\x10com.tau.build.v2B\n" +
 	"BuildProtoP\x01Z9github.com/taubyte/tau/pkg/proto/gen/tau/build/v2;buildv2\xa2\x02\x03TBX\xaa\x02\fTau.Build.V2\xca\x02\fTau\\Build\\V2\xe2\x02\x18Tau\\Build\\V2\\GPBMetadata\xea\x02\x0eTau::Build::V2b\x06proto3"
 
@@ -1423,7 +943,7 @@ func file_tau_build_v2_build_proto_rawDescGZIP() []byte {
 }
 
 var file_tau_build_v2_build_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_tau_build_v2_build_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_tau_build_v2_build_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_tau_build_v2_build_proto_goTypes = []any{
 	(JobStatus)(0),          // 0: tau.build.v2.JobStatus
 	(*Empty)(nil),           // 1: tau.build.v2.Empty
@@ -1434,47 +954,34 @@ var file_tau_build_v2_build_proto_goTypes = []any{
 	(*FollowRequest)(nil),   // 6: tau.build.v2.FollowRequest
 	(*ArtifactRequest)(nil), // 7: tau.build.v2.ArtifactRequest
 	(*Built)(nil),           // 8: tau.build.v2.Built
-	(*Assignment)(nil),      // 9: tau.build.v2.Assignment
-	(*Work)(nil),            // 10: tau.build.v2.Work
-	(*RunnerReport)(nil),    // 11: tau.build.v2.RunnerReport
-	(*Stored)(nil),          // 12: tau.build.v2.Stored
-	(*Finished)(nil),        // 13: tau.build.v2.Finished
-	nil,                     // 14: tau.build.v2.Job.LogsEntry
-	nil,                     // 15: tau.build.v2.Job.AssetCidEntry
-	(*Job_Event)(nil),       // 16: tau.build.v2.Job.Event
+	nil,                     // 9: tau.build.v2.Job.LogsEntry
+	nil,                     // 10: tau.build.v2.Job.AssetCidEntry
+	(*Job_Event)(nil),       // 11: tau.build.v2.Job.Event
 }
 var file_tau_build_v2_build_proto_depIdxs = []int32{
 	0,  // 0: tau.build.v2.Job.status:type_name -> tau.build.v2.JobStatus
-	14, // 1: tau.build.v2.Job.logs:type_name -> tau.build.v2.Job.LogsEntry
-	15, // 2: tau.build.v2.Job.asset_cid:type_name -> tau.build.v2.Job.AssetCidEntry
-	10, // 3: tau.build.v2.Assignment.plan:type_name -> tau.build.v2.Work
-	10, // 4: tau.build.v2.Assignment.build:type_name -> tau.build.v2.Work
-	1,  // 5: tau.build.v2.Assignment.cancel:type_name -> tau.build.v2.Empty
-	1,  // 6: tau.build.v2.RunnerReport.ready:type_name -> tau.build.v2.Empty
-	12, // 7: tau.build.v2.RunnerReport.stored:type_name -> tau.build.v2.Stored
-	13, // 8: tau.build.v2.RunnerReport.finished:type_name -> tau.build.v2.Finished
-	0,  // 9: tau.build.v2.Job.Event.status:type_name -> tau.build.v2.JobStatus
-	2,  // 10: tau.build.v2.QueueService.Enqueue:input_type -> tau.build.v2.PushEvent
-	3,  // 11: tau.build.v2.JobService.Get:input_type -> tau.build.v2.JobRef
-	5,  // 12: tau.build.v2.JobService.List:input_type -> tau.build.v2.ProjectRef
-	3,  // 13: tau.build.v2.JobService.Cancel:input_type -> tau.build.v2.JobRef
-	3,  // 14: tau.build.v2.JobService.Retry:input_type -> tau.build.v2.JobRef
-	7,  // 15: tau.build.v2.JobService.Artifact:input_type -> tau.build.v2.ArtifactRequest
-	6,  // 16: tau.build.v2.JobService.Follow:input_type -> tau.build.v2.FollowRequest
-	11, // 17: tau.build.v2.RunnerService.Serve:input_type -> tau.build.v2.RunnerReport
-	3,  // 18: tau.build.v2.QueueService.Enqueue:output_type -> tau.build.v2.JobRef
-	4,  // 19: tau.build.v2.JobService.Get:output_type -> tau.build.v2.Job
-	3,  // 20: tau.build.v2.JobService.List:output_type -> tau.build.v2.JobRef
-	1,  // 21: tau.build.v2.JobService.Cancel:output_type -> tau.build.v2.Empty
-	1,  // 22: tau.build.v2.JobService.Retry:output_type -> tau.build.v2.Empty
-	8,  // 23: tau.build.v2.JobService.Artifact:output_type -> tau.build.v2.Built
-	16, // 24: tau.build.v2.JobService.Follow:output_type -> tau.build.v2.Job.Event
-	9,  // 25: tau.build.v2.RunnerService.Serve:output_type -> tau.build.v2.Assignment
-	18, // [18:26] is the sub-list for method output_type
-	10, // [10:18] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	9,  // 1: tau.build.v2.Job.logs:type_name -> tau.build.v2.Job.LogsEntry
+	10, // 2: tau.build.v2.Job.asset_cid:type_name -> tau.build.v2.Job.AssetCidEntry
+	0,  // 3: tau.build.v2.Job.Event.status:type_name -> tau.build.v2.JobStatus
+	2,  // 4: tau.build.v2.QueueService.Enqueue:input_type -> tau.build.v2.PushEvent
+	3,  // 5: tau.build.v2.JobService.Get:input_type -> tau.build.v2.JobRef
+	5,  // 6: tau.build.v2.JobService.List:input_type -> tau.build.v2.ProjectRef
+	3,  // 7: tau.build.v2.JobService.Cancel:input_type -> tau.build.v2.JobRef
+	3,  // 8: tau.build.v2.JobService.Retry:input_type -> tau.build.v2.JobRef
+	7,  // 9: tau.build.v2.JobService.Artifact:input_type -> tau.build.v2.ArtifactRequest
+	6,  // 10: tau.build.v2.JobService.Follow:input_type -> tau.build.v2.FollowRequest
+	3,  // 11: tau.build.v2.QueueService.Enqueue:output_type -> tau.build.v2.JobRef
+	4,  // 12: tau.build.v2.JobService.Get:output_type -> tau.build.v2.Job
+	3,  // 13: tau.build.v2.JobService.List:output_type -> tau.build.v2.JobRef
+	1,  // 14: tau.build.v2.JobService.Cancel:output_type -> tau.build.v2.Empty
+	1,  // 15: tau.build.v2.JobService.Retry:output_type -> tau.build.v2.Empty
+	8,  // 16: tau.build.v2.JobService.Artifact:output_type -> tau.build.v2.Built
+	11, // 17: tau.build.v2.JobService.Follow:output_type -> tau.build.v2.Job.Event
+	11, // [11:18] is the sub-list for method output_type
+	4,  // [4:11] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_tau_build_v2_build_proto_init() }
@@ -1482,18 +989,7 @@ func file_tau_build_v2_build_proto_init() {
 	if File_tau_build_v2_build_proto != nil {
 		return
 	}
-	file_tau_build_v2_build_proto_msgTypes[8].OneofWrappers = []any{
-		(*Assignment_Plan)(nil),
-		(*Assignment_Build)(nil),
-		(*Assignment_Cancel)(nil),
-	}
 	file_tau_build_v2_build_proto_msgTypes[10].OneofWrappers = []any{
-		(*RunnerReport_Ready)(nil),
-		(*RunnerReport_Output)(nil),
-		(*RunnerReport_Stored)(nil),
-		(*RunnerReport_Finished)(nil),
-	}
-	file_tau_build_v2_build_proto_msgTypes[15].OneofWrappers = []any{
 		(*Job_Event_Status)(nil),
 		(*Job_Event_Message)(nil),
 	}
@@ -1503,9 +999,9 @@ func file_tau_build_v2_build_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_build_v2_build_proto_rawDesc), len(file_tau_build_v2_build_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   16,
+			NumMessages:   11,
 			NumExtensions: 0,
-			NumServices:   3,
+			NumServices:   2,
 		},
 		GoTypes:           file_tau_build_v2_build_proto_goTypes,
 		DependencyIndexes: file_tau_build_v2_build_proto_depIdxs,

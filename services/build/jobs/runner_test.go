@@ -54,7 +54,8 @@ func TestOneStepClaimsRunsAcksAndFinishes(t *testing.T) {
 	require.Equal(t, run.Work{
 		JobID: id, RepositoryKey: testRepo, Ref: testRef, CommitSHA: testCommit,
 		Before: "", ProjectID: "project-of-" + testRepo, Attempt: 1, Environment: testEnvironment,
-	}, work[0])
+		Within: h.cfg.BuildTimeout,
+	}, work[0], "bounded by the build timeout, the lease being that and its margin")
 
 	job, err := h.job(id)
 	require.NoError(t, err)
@@ -202,7 +203,7 @@ func TestARunWhoseClaimExpiredMidRunPublishesNothing(t *testing.T) {
 		return nil
 	}
 
-	_, err := h.step(t.Context())
+	err := h.runNext(t)
 	require.ErrorIs(t, err, queue.ErrStaleDelivery)
 
 	rec := h.mustRecord(t, id)
@@ -224,7 +225,7 @@ func TestLeadershipLostMidRunPublishesNothing(t *testing.T) {
 		return nil
 	}
 
-	_, err := h.step(t.Context())
+	err := h.runNext(t)
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
 	require.ErrorContains(t, err, "not the leader of "+build.QueueDomain)
 	require.Equal(t, buildv2.JobStatus_JobStatusClaimed, h.status(t, id))
@@ -335,7 +336,7 @@ func TestOnlyTheLeaderOfTheDomainClaims(t *testing.T) {
 	id := h.planned(t, testRef, testCommit)
 
 	follower, err := newServer(Config{}, withHost(newHost(t, newMocknet(t))), withStore(h.store), withRecords(h.records), withRepositories(h.repos),
-		withClock(h.clock.now), withRunner(&fakeRunner{}))
+		withClock(h.clock.now), withRunners(oneRunner{id: h.runnerID, runs: h.onRunner}))
 	require.NoError(t, err)
 	t.Cleanup(func() { follower.Close() })
 
@@ -385,7 +386,7 @@ func TestStepReportsAStoreThatRefusesTheClaimWrite(t *testing.T) {
 	// The claimed event is the step's first write to the job's store.
 	h.records.failBatches(errors.New("the store is full"))
 
-	_, err := h.step(t.Context())
+	err := h.runNext(t)
 	require.Error(t, err)
 	require.Empty(t, h.runner.seen(), "a job whose claim could not be recorded must not run")
 }
@@ -395,7 +396,7 @@ func TestStepReportsACorruptEventRatherThanRunningIt(t *testing.T) {
 	id := h.planned(t, testRef, testCommit)
 	h.records.garble(t, id)
 
-	_, err := h.step(t.Context())
+	err := h.runNext(t)
 	require.Error(t, err)
 	require.Empty(t, h.runner.seen())
 }
@@ -473,7 +474,7 @@ func TestSettleReportsARecordItCannotRead(t *testing.T) {
 		return nil
 	}
 
-	_, err := h.step(t.Context())
+	err := h.runNext(t)
 	require.ErrorContains(t, err, "does not decode")
 
 	ready, claimed := h.work.Depth()
@@ -518,7 +519,7 @@ func TestASectionThatCannotBarrierDecidesNothing(t *testing.T) {
 		// The queue's own claim commits; begin's barrier is then refused.
 		h.store.onBatch(func() { h.store.failBarrier(errors.New("timed out")) })
 
-		_, err := h.step(t.Context())
+		err := h.runNext(t)
 		require.ErrorContains(t, err, "barrier on "+build.QueueDomain)
 		require.Empty(t, h.runner.seen(), "a job whose section could not barrier must not run")
 		require.Equal(t, buildv2.JobStatus_JobStatusOpen, h.status(t, id),
@@ -535,7 +536,7 @@ func TestASectionThatCannotBarrierDecidesNothing(t *testing.T) {
 			return nil
 		}
 
-		_, err := h.step(t.Context())
+		err := h.runNext(t)
 		require.ErrorContains(t, err, "barrier on "+build.QueueDomain)
 
 		h.store.failBarrier(nil)
@@ -605,8 +606,8 @@ func (m *meter) of(op Op) []Accounted {
 
 func TestASuccessfulBuildIsAccounted(t *testing.T) {
 	m := &meter{}
-	store := newAssets()
-	h := newHarness(t, withMeter(m), withAssets(store))
+	h := newHarness(t, withMeter(m))
+	store := h.assets
 	id := h.planned(t, testRef, testCommit)
 
 	h.runner.run = func(ctx context.Context, w run.Work, out run.Output) error {
@@ -645,7 +646,7 @@ func TestASuccessfulBuildIsAccounted(t *testing.T) {
 
 func TestAFailedBuildIsAccounted(t *testing.T) {
 	m := &meter{}
-	h := newHarness(t, withMeter(m), withAssets(newAssets()))
+	h := newHarness(t, withMeter(m))
 	h.planned(t, testRef, testCommit)
 
 	h.runner.run = func(context.Context, run.Work, run.Output) error {
@@ -661,7 +662,7 @@ func TestAFailedBuildIsAccounted(t *testing.T) {
 }
 
 func TestNoMeterIsTheOrdinaryCase(t *testing.T) {
-	h := newHarness(t, withAssets(newAssets()))
+	h := newHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
 	h.runner.run = func(ctx context.Context, w run.Work, out run.Output) error {
@@ -733,7 +734,7 @@ func TestAClaimedJobsWaitEndsWithTheRun(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	h.records.onList(eventPrefix(unknownJobID), cancel)
-	require.ErrorIs(t, h.run(ctx, d, h.runner), context.Canceled)
+	require.ErrorIs(t, h.run(ctx, d, h.runnerID, h.onRunner), context.Canceled)
 
 	_, found, err := h.readRecord(unknownJobID)
 	require.NoError(t, err)

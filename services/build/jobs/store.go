@@ -87,10 +87,13 @@ type jobRecord struct {
 	UpdatedAt int64
 	// ClaimedUntil is unix nanoseconds, set while Claimed.
 	ClaimedUntil int64
-	// Holder is the peer id running this job, set while Claimed. It is
+	// Holder is the build node that claimed this job, set while Claimed. It is
 	// diagnostic: nothing routes on it, because a cancel is a record write
 	// that the holder itself notices.
 	Holder string
+	// Runner is the runner the job's last run went to, kept once it ended: where a
+	// follow of that run is proxied, until the runner has let its log go.
+	Runner string
 	// Reason is why a job reached Failed. The proto's Job has no field for it,
 	// so it is stored and not served — it is what distinguishes a runner's own
 	// error from "attempts exhausted" when someone reads the store.

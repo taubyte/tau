@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/taubyte/tau/services/build/runner"
+	"github.com/taubyte/tau/services/runner"
 
 	"github.com/taubyte/tau/pkg/containers"
 
@@ -642,7 +642,7 @@ func (u *underTest) bothWays(t *testing.T, c corpusCase) {
 	// it has caught up with the node that settled it.
 	for _, b := range p.Buildables() {
 		require.EventuallyWithT(t, func(c *assert.CollectT) {
-			cid, err := serving.BuildArtifacts().Artifact(t.Context(), id, "prod", specs.KindPackage, b.ID)
+			cid, err := serving.Artifacts().Artifact(t.Context(), id, "prod", specs.KindPackage, b.ID)
 			require.NoError(c, err, "package/%s", b.Name)
 			require.Equal(c, cloned["prod/"+b.ID], cid)
 		}, time.Minute, 50*time.Millisecond)

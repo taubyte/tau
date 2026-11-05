@@ -35,11 +35,13 @@ message JobCreated {
   int64 created_at = 7;
 }
 
-// JobClaimed is a builder taking one attempt. claimed_until is unix nanoseconds.
+// JobClaimed is a build node taking one attempt, run on runner, a peer id.
+// claimed_until is unix nanoseconds.
 message JobClaimed {
   uint32 attempt = 1;
   string holder = 2;
   int64 claimed_until = 3;
+  string runner = 4;
 }
 
 // JobSettled is how one attempt ended: success or failure, its log, what it

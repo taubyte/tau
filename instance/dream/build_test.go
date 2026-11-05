@@ -27,13 +27,15 @@ import (
 // placementID is with/placement's own id, from its project.yaml.
 const placementID = "QmPigwAetxyyVvHj453JLsLhrWNGV4mW9ZG9yvjd7kUmMk"
 
-// A PUSH IS BUILT WHERE THE UNIVERSE BUILDS: by its build node when it runs one,
-// else alone on a node running a runner, and either way it ends deployed in the
-// register, cloned from a folder that is never written.
+// A PUSH IS BUILT WHERE THE UNIVERSE BUILDS: through its build node when it runs
+// one, else straight to a runner over its protocol, else by the runner's runs in
+// dream's own process; every way it ends deployed in the register, cloned from a
+// folder that is never written.
 func TestAPushIsBuiltWhereTheUniverseBuilds(t *testing.T) {
 	shared := []string{instance.Discovery, instance.Register, storageService.Descriptor.Name}
 	for name, cfg := range map[string]nodeDream.Config{
-		"alone on a runner": {Services: append([]string{instance.Runner}, shared...)},
+		"with neither build nor a runner": {Services: shared},
+		"straight to a runner":            {Services: append([]string{instance.Runner}, shared...)},
 		// The register and storage on the build node alone, so the one the runner
 		// publishes to is the one read.
 		"through the build node": {Copies: 2, Configure: func(index int, c *instance.Config) {
@@ -228,7 +230,7 @@ func TestAUniverseWithNothingThatBuildsSaysSo(t *testing.T) {
 	t.Cleanup(u.Close)
 
 	_, err = u.Build(ctx, nodeDream.Push{Repository: "github.com/acme/app", Ref: "refs/heads/main", Commit: "1111111111111111111111111111111111111111"})
-	require.ErrorContains(t, err, "no node runs a build or a runner")
+	require.ErrorContains(t, err, "no node runs the register", "the runner's runs in place, with no register to say whose the push is")
 	require.ErrorContains(t, u.Link(ctx, "QmProject", "github.com/acme/app"), "no node runs the register")
 	_, err = u.Upload("github.com/acme/code", "main", t.TempDir(), nil)
 	require.ErrorContains(t, err, "no node runs the register", "a code repository's recipes are what its project publishes")

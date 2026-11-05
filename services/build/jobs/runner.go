@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/peer"
+
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	runnerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/runner/v2"
 	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/services/build/run"
 )
@@ -39,26 +41,15 @@ func (s *server) step(ctx context.Context) (bool, error) {
 		return drained, fmt.Errorf("sweep: %w", err)
 	}
 
-	// WITH NO RUNNER OF ITS OWN this node hands each job to a runner that opened a
-	// stream to it, as many at once as there are runners free.
-	if s.runner == nil {
-		return drained, s.dispatch(ctx)
-	}
-
-	d, err := s.work.Claim()
-	if errors.Is(err, queue.ErrNoItem) {
-		return drained, nil
-	}
-	if err != nil {
-		return drained, fmt.Errorf("claim: %w", err)
-	}
-
-	return true, s.run(ctx, d, s.runner)
+	// Each job goes to a runner, as many at once as there are runners free.
+	handed, err := s.dispatch(ctx)
+	return drained || handed, err
 }
 
-// run executes one claimed delivery on r: this node's own runner, or a runner's
-// stream (dispatch.go).
-func (s *server) run(ctx context.Context, d queue.Delivery, r run.Runner) error {
+// run executes one claimed delivery on the runner id, r. A cancel, or the claim's
+// deadline, stops the run at its runner, and the run is still awaited, so what it
+// built and said comes back to be settled.
+func (s *server) run(ctx context.Context, d queue.Delivery, id peer.ID, r run.Service) error {
 	deadline := s.claimDeadline(d)
 
 	// The run's context exists before the record is claimed, since begin registers its
@@ -69,7 +60,7 @@ func (s *server) run(ctx context.Context, d queue.Delivery, r run.Runner) error 
 
 	// Both acks are inside the sections that decided them (begin's drop, settle's);
 	// the build in between holds no lock.
-	rec, claimed, err := s.awaitBegin(runCtx, d, deadline, stop)
+	rec, claimed, err := s.awaitBegin(runCtx, d, deadline, stop, id)
 	if err != nil || !claimed {
 		return err
 	}
@@ -84,40 +75,54 @@ func (s *server) run(ctx context.Context, d queue.Delivery, r run.Runner) error 
 		ProjectID:     rec.ProjectID,
 		Attempt:       rec.Attempt,
 		Environment:   rec.Environment,
+		Prelude:       rec.Prelude,
+		Within:        deadline.Sub(s.now()),
 	}
+	which := &runnerv2.Run{JobId: rec.ID, Attempt: rec.Attempt}
+	defer context.AfterFunc(runCtx, func() { r.Cancel(context.WithoutCancel(ctx), which) })()
 
 	// The build minute starts after the claim, before the run.
 	started := s.now()
 
 	if rec.Environment == "" {
-		return s.plan(ctx, runCtx, d, rec, work, started, r)
+		return s.plan(ctx, d, rec, work, started, r)
 	}
 
-	out, runErr := s.invoke(runCtx, work, rec.Prelude, r)
-	if out == nil {
-		// The run never started (no log could be opened): a failed build, which hands the
-		// job to another node.
-		s.accountBuild(ctx, rec, started, runErr)
-		return s.settle(ctx, d, nil, runErr)
+	built, err := r.Build(ctx, work)
+	if err := s.abandoned(ctx, r, which, err, built.GetError() != ""); err != nil {
+		return fmt.Errorf("job %s abandoned: %w", rec.ID, err)
 	}
-	// Whatever happens, the log closes and its scratch file goes.
-	defer out.discard()
-
-	// A shutdown abandons the delivery rather than failing the job: left unacked, the
-	// claim expires and the queue redelivers. The cause is read, not the error, so a
-	// failure at shutdown also costs only a redelivery. A runner that went away is
-	// abandoned the same way. A run that returned nil is settled.
-	if runErr != nil && errors.Is(context.Cause(ctx), errShuttingDown) {
-		return fmt.Errorf("job %s abandoned: %w", rec.ID, errShuttingDown)
+	var runErr error
+	if msg := built.GetError(); msg != "" {
+		runErr = errors.New(msg)
 	}
-	if errors.Is(runErr, errRunnerLost) {
-		return fmt.Errorf("job %s abandoned: %w", rec.ID, runErr)
+	p, err := s.produced(ctx, rec, built.GetStored())
+	if err != nil && runErr == nil {
+		runErr = err
 	}
-
-	// Nothing is published for an abandoned delivery, which writes no record. settle
-	// publishes after its ack.
 	s.accountBuild(ctx, rec, started, runErr)
-	return s.settle(ctx, d, out, runErr)
+	return s.settle(ctx, d, r, rec, p, runErr)
+}
+
+// produced is what a run stored, as the record files it, each artifact accounted
+// where it was stored: a cid says nothing about size.
+func (s *server) produced(ctx context.Context, rec jobRecord, stored []*runnerv2.Stored) (produced, error) {
+	p := produced{attempt: rec.Attempt, assets: make(map[assetRef]string, len(stored))}
+	for _, kept := range stored {
+		if kept.GetResourceId() == "" || kept.GetCid() == "" {
+			return p, errors.New("build: a stored artifact names its resource and its cid")
+		}
+		p.assets[assetRef{environment: rec.Environment, resource: kept.GetResourceId()}] = kept.GetCid()
+		s.emit(ctx, Accounted{
+			Project:     rec.ProjectID,
+			Environment: rec.Environment,
+			Job:         rec.ID,
+			Attempt:     rec.Attempt,
+			Op:          OpArtifact,
+			Bytes:       kept.GetBytes(),
+		})
+	}
+	return p, nil
 }
 
 // accountBuild emits what one run occupied a builder for, before settle, so a slow
@@ -143,7 +148,7 @@ func (s *server) accountBuild(ctx context.Context, rec jobRecord, started time.T
 // deduplicated item. Re-reading alone is not enough: without the section, a
 // cancel between read and entry would be overwritten with Claimed. Not claimed is
 // not an error.
-func (s *server) begin(d queue.Delivery, deadline time.Time, stop context.CancelFunc, last bool) (rec jobRecord, running, missing bool, err error) {
+func (s *server) begin(d queue.Delivery, deadline time.Time, stop context.CancelFunc, last bool, runner peer.ID) (rec jobRecord, running, missing bool, err error) {
 	var claimed jobRecord
 
 	err = s.withJob(d.ID, func(j *held) error {
@@ -158,8 +163,8 @@ func (s *server) begin(d queue.Delivery, deadline time.Time, stop context.Cancel
 			if err := j.ack(s.work, d); err != nil {
 				return err
 			}
-			return j.ended(j.writes().settled(buildv2.JobStatus_JobStatusFailed, orphanReason(s.cfg.RecordReads), produced{}).
-				retained().commit("failing"))
+			return j.writes().settled(buildv2.JobStatus_JobStatusFailed, orphanReason(s.cfg.RecordReads), produced{}).
+				retained().commit("failing")
 		}
 		// Cancelled is one of the three terminal states, so this is the cancel
 		// case as much as it is the redelivery case.
@@ -168,7 +173,7 @@ func (s *server) begin(d queue.Delivery, deadline time.Time, stop context.Cancel
 		}
 
 		// The entry's key is the section's subject, not the record's id.
-		taken := j.writes().claimed(j.rec().Attempt+1, deadline)
+		taken := j.writes().claimed(j.rec().Attempt+1, deadline, runner.String())
 		if err := taken.commit("claiming"); err != nil {
 			return err
 		}
@@ -186,9 +191,9 @@ func (s *server) begin(d queue.Delivery, deadline time.Time, stop context.Cancel
 // awaitBegin is begin, read again while the job is missing. THE CLAIM CAME
 // THROUGH RAFT AND THE JOB THROUGH KVDB, which can lag, so a missing job is read
 // RecordReads times at most, RecordReadInterval apart, and the last read decides.
-func (s *server) awaitBegin(ctx context.Context, d queue.Delivery, deadline time.Time, stop context.CancelFunc) (jobRecord, bool, error) {
+func (s *server) awaitBegin(ctx context.Context, d queue.Delivery, deadline time.Time, stop context.CancelFunc, runner peer.ID) (jobRecord, bool, error) {
 	for read := 1; ; read++ {
-		rec, running, missing, err := s.begin(d, deadline, stop, read >= s.cfg.RecordReads)
+		rec, running, missing, err := s.begin(d, deadline, stop, read >= s.cfg.RecordReads, runner)
 		if err != nil || !missing {
 			return rec, running, err
 		}
@@ -208,108 +213,54 @@ func (s *server) forget(id string) {
 	s.runningMu.Unlock()
 }
 
-// invoke opens the run's output and runs the job, returning the output even when
-// the run failed: those are the lines somebody wants.
-func (s *server) invoke(ctx context.Context, work run.Work, prelude string, r run.Runner) (out *runOutput, err error) {
-	if out, err = s.output(work); err != nil {
-		return nil, err
-	}
-	if prelude != "" {
-		if _, err := io.WriteString(out, prelude); err != nil {
-			return out, err
-		}
-	}
-
-	// A panicking runner is a failed build, not a dead loop or a lingering claim. Why a
-	// run failed is the last line of its log, since the record carries no reason.
-	defer func() {
-		if p := recover(); p != nil {
-			err = fmt.Errorf("runner panicked: %v", p)
-		}
-		if err != nil {
-			fmt.Fprintf(out, "error: %v\n", err)
-		}
-	}()
-
-	return out, r.Run(ctx, work, out)
-}
-
-// maxPrelude bounds what a plan says, which every environment job's record carries.
-const maxPrelude = 64 << 10
-
 // plan runs a plan job: which environments the commit feeds, one job enqueued for
 // each, then the plan settled as their parent. The environment jobs are created
 // between its two sections, each in its own, like a push's: a section writes only
 // the job it read. Creating one is idempotent, so a plan run twice makes them once.
-func (s *server) plan(ctx, runCtx context.Context, d queue.Delivery, rec jobRecord, work run.Work, started time.Time, r run.Runner) error {
-	// A PLAN'S LOG IS LIVE ONLY: what it said, which jobs it queued and how it ended,
-	// for whoever follows it while it plans. What it said also opens each environment
-	// job's. A plan that could not open one plans unfollowed.
-	said := &capped{max: maxPrelude}
-	var live io.Writer = said
-	out, err := s.output(work)
-	if err == nil {
-		live = io.MultiWriter(said, out)
+// What the plan said opens each environment job's log; the plan's own is sealed
+// with how it ended, and kept by nobody.
+func (s *server) plan(ctx context.Context, d queue.Delivery, rec jobRecord, work run.Work, started time.Time, r run.Service) error {
+	which := &runnerv2.Run{JobId: rec.ID, Attempt: rec.Attempt}
+	planned, err := r.Plan(ctx, work)
+	if err := s.abandoned(ctx, r, which, err, planned.GetError() != ""); err != nil {
+		return fmt.Errorf("job %s abandoned: %w", rec.ID, err)
 	}
-	defer out.discard()
-
-	environments, runErr := s.planned(runCtx, work, live, r)
-	if runErr != nil && errors.Is(context.Cause(ctx), errShuttingDown) {
-		return fmt.Errorf("job %s abandoned: %w", rec.ID, errShuttingDown)
+	var runErr error
+	if msg := planned.GetError(); msg != "" {
+		runErr = errors.New(msg)
 	}
-	if errors.Is(runErr, errRunnerLost) {
-		return fmt.Errorf("job %s abandoned: %w", rec.ID, runErr)
-	}
+	said := planned.GetSaid()
 	s.accountBuild(ctx, rec, started, runErr)
 
-	var wanted bool
-	err = s.withJob(d.ID, func(j *held) error {
-		if err := j.ack(s.work, d); err != nil {
-			return err
-		}
-		if !j.found() {
-			return nil
-		}
-		if !j.rec().terminal() && j.rec().status() != buildv2.JobStatus_JobStatusClaimed {
-			return j.requeue()
-		}
-		wanted = true
-		return nil
-	})
+	wanted, err := s.taken(d)
 	if err != nil || !wanted {
+		s.discard(ctx, r, which)
 		return err
 	}
 
-	var children []string
+	var (
+		children []string
+		left     buildv2.JobStatus
+	)
 	if runErr == nil {
-		if len(environments) == 0 {
+		if len(planned.GetEnvironments()) == 0 {
 			runErr = errors.New("the commit feeds no environment")
 		}
-		for _, environment := range environments {
-			id, err := s.createEnvironment(rec, environment, said.String())
+		for _, environment := range planned.GetEnvironments() {
+			id, err := s.createEnvironment(rec, environment, said)
 			if err != nil {
 				runErr = fmt.Errorf("enqueueing %s: %w", environment, err)
 				break
 			}
 			children = append(children, id)
-			if out != nil {
-				fmt.Fprintf(out, "queued job %s for %s\n", id, environment)
-			}
 		}
 	}
-	if runErr != nil && out != nil {
-		fmt.Fprintf(out, "error: %v\n", runErr)
-	}
 
-	var (
-		left    buildv2.JobStatus
-		settled bool
-	)
 	err = s.withJob(d.ID, func(j *held) error {
 		if !j.found() {
 			return nil
 		}
-		left, settled = j.rec().status(), true
+		left = j.rec().status()
 		if j.rec().terminal() {
 			return nil
 		}
@@ -318,91 +269,101 @@ func (s *server) plan(ctx, runCtx context.Context, d queue.Delivery, rec jobReco
 		}
 		if runErr != nil {
 			left = buildv2.JobStatus_JobStatusFailed
-			return j.fail(strings.TrimSpace(said.String()+"\nerror: "+runErr.Error()), produced{})
+			return j.fail(strings.TrimSpace(said+"\nerror: "+runErr.Error()), produced{})
 		}
 		left = buildv2.JobStatus_JobStatusSuccess
 		return j.planned(children)
 	})
-	if err == nil && settled {
-		out.status(left)
+	if _, sealErr := s.seal(ctx, r, &runnerv2.Sealing{Run: which, Status: left}); err == nil {
+		err = sealErr
 	}
 	return err
 }
 
-// planned runs the runner's plan; a panic is a failed plan, as for a build.
-func (s *server) planned(ctx context.Context, work run.Work, out io.Writer, r run.Runner) (environments []string, err error) {
-	defer func() {
-		if p := recover(); p != nil {
-			err = fmt.Errorf("runner panicked: %v", p)
-		}
-	}()
-	return r.Plan(ctx, work, out)
-}
-
-// capped keeps what is written up to max bytes and drops the rest, saying so once.
-type capped struct {
-	max  int
-	buf  strings.Builder
-	full bool
-}
-
-func (c *capped) Write(p []byte) (int, error) {
-	if room := c.max - c.buf.Len(); room > 0 {
-		c.buf.Write(p[:min(len(p), room)])
-	} else if !c.full {
-		c.full = true
-		c.buf.WriteString("\n... the plan said more than this\n")
-	}
-	return len(p), nil
-}
-
-func (c *capped) String() string { return c.buf.String() }
-
-// settle acks, writes the record, then hands off the log and files it: three
-// sections with the network call between the last two.
-//
-// The ack is the commit point: a node whose claim expired or which lost leadership
-// learns it in the first section and publishes nothing. The barrier is withJob's
-// like every section's, and the ack an ordinary write after the read. The first
-// section also asks whether the output is still wanted (record gone, or cancelled
-// and retried mid-build).
-//
-// The second section reads again, since the record may have become terminal (keep
-// the status, file what was built), stayed Claimed by this run, or been reopened by
-// a cancel and retry (put the item back). What it leaves the job as is the log's
-// last record, so the stored log is everything that happened to the run, its end
-// included.
-//
-// The publish is outside every section because jobLock covers the whole job table
-// and a slow asset store would stall every claim, Enqueue and Cancel on the node;
-// the third section files the log's cid. A log that could not be stored is lost and
-// says so; the job's status does not hang on it. A leadership loss between the two
-// leaves an unnamed object (doc.go).
-func (s *server) settle(ctx context.Context, d queue.Delivery, out *runOutput, runErr error) error {
-	var wanted bool
-	err := s.withJob(d.ID, func(j *held) error {
+// taken is settling's first section: the ack, which is the commit point, and
+// whether what the run made is still wanted. A record gone, or neither terminal nor
+// this run's claim, wants nothing: a reopened job's item goes back.
+func (s *server) taken(d queue.Delivery) (wanted bool, err error) {
+	err = s.withJob(d.ID, func(j *held) error {
 		if err := j.ack(s.work, d); err != nil {
 			return err
 		}
 		if !j.found() {
 			return nil
 		}
-		// A record that is neither terminal nor this run's claim is the
-		// reopening above: its item goes back and this run's output is nobody's.
 		if !j.rec().terminal() && j.rec().status() != buildv2.JobStatus_JobStatusClaimed {
 			return j.requeue()
 		}
 		wanted = true
 		return nil
 	})
+	return wanted, err
+}
+
+// abandoned is a run's call that did not get an answer about the run: the runner
+// gone, the run turned down, or this node shutting down while the run failed, which
+// may be the shutdown's doing however the runner answered. The delivery is
+// abandoned rather than the job failed: left unacked, the claim expires and the
+// queue redelivers. A run that succeeded is settled even on the way out. Nothing will
+// name what an abandoned run wrote, so its log is discarded.
+func (s *server) abandoned(ctx context.Context, r run.Service, which *runnerv2.Run, err error, failed bool) error {
+	shutdown := errors.Is(context.Cause(ctx), errShuttingDown)
+	switch {
+	case shutdown && (err != nil || failed):
+		err = errShuttingDown
+	case err != nil:
+		err = fmt.Errorf("%w: %v", errRunnerLost, err)
+	default:
+		return nil
+	}
+	s.discard(ctx, r, which)
+	return err
+}
+
+// discard ends a run's log at its runner without keeping it.
+func (s *server) discard(ctx context.Context, r run.Service, which *runnerv2.Run) {
+	s.seal(ctx, r, &runnerv2.Sealing{Run: which, Discard: true})
+}
+
+// seal ends a run's log at its runner, its last event the status its job was left
+// in. It is bounded by PublishTimeout off a context the run's cancellation cannot
+// reach. A store that would not take the log costs the log, never the job; a log
+// the runner could not hand over whole is an error, and named by nothing.
+func (s *server) seal(ctx context.Context, r run.Service, sealing *runnerv2.Sealing) (*runnerv2.Sealed, error) {
+	ctx, stop := context.WithTimeout(context.WithoutCancel(ctx), s.cfg.PublishTimeout)
+	defer stop()
+	sealed, err := r.Seal(ctx, sealing)
+	if err != nil {
+		return &runnerv2.Sealed{}, err
+	}
+	return sealed, nil
+}
+
+// settle acks, writes the record, then has the runner seal the log and files its
+// cid: three sections with the network call between the last two.
+//
+// The ack is the commit point: a node whose claim expired or which lost leadership
+// learns it in the first section and publishes nothing. The second section reads
+// again, since the record may have become terminal (keep the status, file what was
+// built), stayed Claimed by this run, or been reopened by a cancel and retry (put
+// the item back). What it leaves the job as is the log's last record, so the kept
+// log is everything that happened to the run, its end included.
+//
+// The seal is outside every section because jobLock covers the whole job table and
+// a slow runner or asset store would stall every claim, Enqueue and Cancel on the
+// node; the third section files the log's cid. A log that could not be kept is lost
+// and says so; the job's status does not hang on it.
+func (s *server) settle(ctx context.Context, d queue.Delivery, r run.Service, rec jobRecord, p produced, runErr error) error {
+	which := &runnerv2.Run{JobId: rec.ID, Attempt: rec.Attempt}
+	wanted, err := s.taken(d)
 	if err != nil || !wanted {
+		s.discard(ctx, r, which)
 		return err
 	}
 
-	p := out.produced()
 	var (
-		left    buildv2.JobStatus
 		settled bool
+		left    buildv2.JobStatus
 	)
 	err = s.withJob(d.ID, func(j *held) error {
 		if !j.found() {
@@ -425,9 +386,9 @@ func (s *server) settle(ctx context.Context, d queue.Delivery, out *runOutput, r
 		}
 
 		if runErr != nil {
-			// AN ERROR FROM Run IS TERMINAL. The queue's retry exists for a
-			// worker that DIED — which is a claim that expired, not an error
-			// returned — and retrying a compile error five times is waste.
+			// AN ERROR FROM A RUN IS TERMINAL. The queue's retry exists for a runner
+			// that DIED — which is a claim that expired, not an error returned — and
+			// retrying a compile error five times is waste.
 			left = buildv2.JobStatus_JobStatusFailed
 			return j.fail(runErr.Error(), p)
 		}
@@ -438,23 +399,32 @@ func (s *server) settle(ctx context.Context, d queue.Delivery, out *runOutput, r
 		return j.succeed(p)
 	})
 	if err != nil || !settled {
+		s.discard(ctx, r, which)
 		return err
 	}
 
 	// OUTSIDE EVERY SECTION, holding nothing. Past the record, so the log ends with
 	// what it left the job as.
-	if err := out.status(left); err != nil {
-		return errInternal("build: job %s: writing its end into its log: %v", d.ID, err)
+	sealed, err := s.seal(ctx, r, &runnerv2.Sealing{Run: which, Status: left})
+	if err != nil {
+		return errInternal("build: job %s: sealing its log: %v", rec.ID, err)
 	}
-	cid, err := out.publish(ctx)
-	if cid == "" {
-		return err
+	if sealed.GetLog() == "" {
+		return nil
 	}
+	s.emit(ctx, Accounted{
+		Project:     rec.ProjectID,
+		Environment: rec.Environment,
+		Job:         rec.ID,
+		Attempt:     rec.Attempt,
+		Op:          OpLog,
+		Bytes:       sealed.GetBytes(),
+	})
 	return s.withJob(d.ID, func(j *held) error {
 		if !j.found() {
 			return nil
 		}
-		return j.logged(produced{attempt: p.attempt, logCID: cid})
+		return j.logged(produced{attempt: p.attempt, logCID: sealed.GetLog()})
 	})
 }
 

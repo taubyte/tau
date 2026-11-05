@@ -165,8 +165,8 @@ type options struct {
 
 	engines  *database.Registry
 	runtimes []invoke.Runtime
-	// artifacts stands in for build's records, for a test of the worker beside no
-	// build. Nothing outside this package's tests can set it.
+	// artifacts is what the worker looks a built resource up in, in place of build's
+	// records.
 	artifacts worker.Artifacts
 	secrets   worker.Secrets
 	now       func() time.Time
@@ -211,6 +211,19 @@ func WithRuntimes(rts ...invoke.Runtime) Option {
 			}
 		}
 		o.runtimes = append(o.runtimes, rts...)
+		return nil
+	}
+}
+
+// WithArtifacts is what this node's worker looks a built resource's artifact up in,
+// in place of build's records: a development cloud's own, where it built with no
+// build service to record it (instance/dream). Optional.
+func WithArtifacts(a worker.Artifacts) Option {
+	return func(o *options) error {
+		if a == nil {
+			return errors.New("node: a nil artifact lookup")
+		}
+		o.artifacts = a
 		return nil
 	}
 }

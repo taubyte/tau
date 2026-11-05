@@ -1,13 +1,11 @@
 package jobs
 
 import (
-	"context"
 	"net/http"
 
 	"connectrpc.com/connect"
 
 	"github.com/taubyte/tau/pkg/proto/codec"
-	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
 )
 
@@ -18,12 +16,5 @@ func (s *server) mount() http.Handler {
 	max := connect.WithReadMaxBytes(s.cfg.MaxMessageBytes)
 	mux.Handle(buildv2connect.NewQueueServiceHandler(&queueHandler{s}, max, codec.Option()))
 	mux.Handle(buildv2connect.NewJobServiceHandler(&jobHandler{s}, max, codec.Option()))
-	mux.Handle(buildv2connect.NewRunnerServiceHandler(runnerHandler{s}, max, codec.Option()))
 	return mux
-}
-
-type runnerHandler struct{ s *server }
-
-func (h runnerHandler) Serve(ctx context.Context, stream *connect.BidiStream[buildv2.RunnerReport, buildv2.Assignment]) error {
-	return h.s.serveRunner(ctx, stream)
 }

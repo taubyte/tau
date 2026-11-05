@@ -6,12 +6,12 @@ import (
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/build/hosted"
-	"github.com/taubyte/tau/services/build/runner"
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/database"
 	"github.com/taubyte/tau/services/discovery"
 	"github.com/taubyte/tau/services/primitives"
 	"github.com/taubyte/tau/services/register"
+	"github.com/taubyte/tau/services/runner"
 	"github.com/taubyte/tau/services/secrets"
 	"github.com/taubyte/tau/services/storage"
 )

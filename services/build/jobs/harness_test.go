@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/peer"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
@@ -28,6 +29,7 @@ import (
 	"github.com/taubyte/tau/services/build/joblog"
 	"github.com/taubyte/tau/services/build/livelog"
 	"github.com/taubyte/tau/services/build/run"
+	"github.com/taubyte/tau/services/runner"
 	"github.com/taubyte/tau/services/storage"
 )
 
@@ -632,7 +634,7 @@ func (f *fakeAssets) put(ctx context.Context, content io.Reader, o storage.Objec
 	// A LOG IS KEPT COMPRESSED, and is its events; what a test reads back is what
 	// was said.
 	var logged []*buildv2.Job_Event
-	if o.Metadata["encoding"] == logEncoding {
+	if o.Metadata["encoding"] == livelog.Encoding {
 		plain, err := io.ReadAll(livelog.Decompressed(io.NopCloser(bytes.NewReader(raw))))
 		if err != nil {
 			return "", err
@@ -745,9 +747,53 @@ type harness struct {
 	records *fakeRecords
 	repos   *fakeRepositories
 	runner  *fakeRunner
-	assets  *fakeAssets
-	clock   *testClock
-	host    host.Host
+	// onRunner is the runner's runs the jobs go to, executed by runner and keeping
+	// what they made in assets, at runnerID.
+	onRunner *runner.Runs
+	runnerID peer.ID
+	assets   *fakeAssets
+	logDir   string
+	clock    *testClock
+	host     host.Host
+}
+
+// oneRunner is the one runner a harness hands runs to.
+type oneRunner struct {
+	id   peer.ID
+	runs run.Service
+}
+
+func (o oneRunner) Peers() []peer.ID { return []peer.ID{o.id} }
+
+func (o oneRunner) At(id peer.ID) (run.Service, error) {
+	if id != o.id {
+		return nil, errors.New("no such runner")
+	}
+	return o.runs, nil
+}
+
+// stamped is a test clock as the runner reads one.
+type stamped struct{ c *testClock }
+
+func (s stamped) Now() time.Time { return s.c.now() }
+
+// step is one claim cycle, returned once what it handed out has run: a run is on
+// its own goroutine, and a test reads what it did.
+func (h *harness) step(ctx context.Context) (bool, error) {
+	worked, err := h.server.step(ctx)
+	h.dispatched.Wait()
+	return worked, err
+}
+
+// runNext claims the next job and runs it here on the harness's runner, its error
+// the test's to read.
+func (h *harness) runNext(t testing.TB) error {
+	t.Helper()
+	d, err := h.work.Claim()
+	require.NoError(t, err)
+	r, err := h.runners.At(h.runnerID)
+	require.NoError(t, err)
+	return h.run(t.Context(), d, h.runnerID, r)
 }
 
 const (
@@ -756,23 +802,24 @@ const (
 	testCommit = "0123456789abcdef0123456789abcdef01234567"
 )
 
-// withoutRunner is a test-only option: a node that is a voter in the
-// consistency domain without being a builder, which withRunner cannot express
-// because it refuses nil — correctly, since in production a nil runner is a
-// mistake rather than a deployment choice.
-func withoutRunner() option {
-	return func(o *options) error { o.runner = nil; return nil }
-}
-
-// withoutAssets is the same for the asset store: a node that builds but has
-// nowhere to put what it produced. withAssets refuses nil for the same reason
-// withRunner does.
-func withoutAssets() option {
-	return func(o *options) error { o.assetStore = nil; return nil }
+// withoutRunners is a test-only option: a node that is a voter in the consistency
+// domain without dispatching, which withRunners cannot express because it refuses
+// nil — correctly, since in production no runners is a mistake rather than a
+// deployment choice.
+func withoutRunners() option {
+	return func(o *options) error { o.runners = nil; return nil }
 }
 
 func newHarness(t testing.TB, opts ...option) *harness {
 	return newHarnessCfg(t, nil, opts...)
+}
+
+// newHarnessKeeping is newHarness with the runner keeping what it made in keep, or,
+// nil, nowhere.
+func newHarnessKeeping(t testing.TB, keep runner.Assets, opts ...option) *harness {
+	t.Helper()
+	store := newStore()
+	return newHarnessRigged(t, store, store, nil, keep, opts...)
 }
 
 // newHarnessCfg is newHarness plus a tweak to the node config. It exists
@@ -784,6 +831,11 @@ func newHarnessCfg(t testing.TB, adjust func(*Config), opts ...option) *harness 
 	return newHarnessOverCfg(t, store, store, adjust, opts...)
 }
 
+func newHarnessOverCfg(t testing.TB, over Store, store *fakeStore, adjust func(*Config), opts ...option) *harness {
+	t.Helper()
+	return newHarnessRigged(t, over, store, adjust, newAssets(), opts...)
+}
+
 // newHarnessOver builds the service over `over`, which may wrap `store`. The queue
 // is opened over whatever New was given, so a wrapper must be passed here to sit
 // under both.
@@ -791,25 +843,42 @@ func newHarnessOver(t testing.TB, over Store, store *fakeStore, opts ...option) 
 	return newHarnessOverCfg(t, over, store, nil, opts...)
 }
 
-func newHarnessOverCfg(t testing.TB, over Store, store *fakeStore, adjust func(*Config), opts ...option) *harness {
+// rig is what a harness's jobs run on: a fake build executed by a runner's runs
+// at their own peer id, keeping what they make in keep.
+type rig struct {
+	build  *fakeRunner
+	runs   *runner.Runs
+	at     peer.ID
+	logDir string
+}
+
+func newRig(t testing.TB, mn mocknet.Mocknet, clock *testClock, keep runner.Assets) rig {
 	t.Helper()
-
-	repos := newRepositories(testRepo)
-	runner := &fakeRunner{}
-	assets := newAssets()
-	clock := newClock()
-	h := newHost(t, newMocknet(t))
-
-	opts = append([]option{
-		withClock(clock.now),
-		withRunner(runner),
-		withAssets(assets),
-	}, opts...)
-
+	build := &fakeRunner{}
 	// THE LOG DIRECTORY IS THIS TEST'S OWN. A run writes a real file, and the
 	// default is a scratch directory shared by every process on the box — fine
 	// for a node, wrong for a test that must not see another test's leftovers.
-	cfg := Config{LogDir: t.TempDir()}
+	logDir := t.TempDir()
+	runs, err := runner.NewRuns(build, nil, keep, stamped{clock}, runner.Logs{Dir: logDir})
+	require.NoError(t, err)
+	t.Cleanup(func() { runs.Close() })
+	return rig{build: build, runs: runs, at: newHost(t, mn).ID(), logDir: logDir}
+}
+
+func (r rig) runners() option { return withRunners(oneRunner{id: r.at, runs: r.runs}) }
+
+func newHarnessRigged(t testing.TB, over Store, store *fakeStore, adjust func(*Config), keep runner.Assets, opts ...option) *harness {
+	t.Helper()
+
+	repos := newRepositories(testRepo)
+	clock := newClock()
+	mn := newMocknet(t)
+	h := newHost(t, mn)
+	on := newRig(t, mn, clock, keep)
+
+	opts = append([]option{withClock(clock.now), on.runners()}, opts...)
+
+	var cfg Config
 	if adjust != nil {
 		adjust(&cfg)
 	}
@@ -818,9 +887,10 @@ func newHarnessOverCfg(t testing.TB, over Store, store *fakeStore, adjust func(*
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 
+	assets, _ := keep.(*fakeAssets)
 	return &harness{
 		server: s, store: store, records: records, repos: repos,
-		runner: runner, assets: assets, clock: clock, host: h,
+		runner: on.build, onRunner: on.runs, runnerID: on.at, assets: assets, logDir: on.logDir, clock: clock, host: h,
 	}
 }
 
@@ -956,7 +1026,7 @@ func (h *harness) deadLetter(t testing.TB) *queue.Queue {
 // finishes a build and finds one has found a leak.
 func logFiles(t testing.TB, h *harness) []string {
 	t.Helper()
-	entries, err := os.ReadDir(h.cfg.LogDir)
+	entries, err := os.ReadDir(h.logDir)
 	if os.IsNotExist(err) {
 		return nil
 	}
@@ -983,7 +1053,7 @@ func (h *harness) plantRecord(t testing.TB, rec jobRecord) {
 	}}}}
 	claim := func(attempt uint32) *buildv2.JobEvent {
 		return &buildv2.JobEvent{Kind: &buildv2.JobEvent_Claimed{Claimed: &buildv2.JobClaimed{
-			Attempt: attempt, Holder: rec.Holder, ClaimedUntil: rec.ClaimedUntil,
+			Attempt: attempt, Holder: rec.Holder, ClaimedUntil: rec.ClaimedUntil, Runner: rec.Runner,
 		}}}
 	}
 	settle := func(status buildv2.JobStatus, reason string) *buildv2.JobEvent {

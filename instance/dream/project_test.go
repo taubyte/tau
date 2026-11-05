@@ -253,14 +253,14 @@ func publish(t *testing.T, u *nodeDream.Universe, pids []string, at deployed, co
 	out := make([]*running, 0, len(pids))
 	for _, id := range pids {
 		n := nodeOf(t, id)
-		// WHAT WAS BUILT REACHES EVERY NODE through build's replicated records, so a
+		// WHAT WAS BUILT REACHES EVERY NODE through what its worker looks it up in, so a
 		// node is handed over once it reads each package's build.
 		for pkgID, v := range packages {
 			if _, ran := built[nameOf(v)]; !ran {
 				continue
 			}
 			require.Eventually(t, func() bool {
-				_, err := n.BuildArtifacts().Artifact(t.Context(), project, "prod", specs.KindPackage, pkgID)
+				_, err := n.Artifacts().Artifact(t.Context(), project, "prod", specs.KindPackage, pkgID)
 				return err == nil
 			}, time.Minute, 50*time.Millisecond, "%s never read package %s of job %s", id, pkgID, outcome.Environments[0].GetId())
 		}

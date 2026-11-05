@@ -15,12 +15,13 @@ func TestBothServiceBlocksDeriveOneProtocolID(t *testing.T) {
 	require.EqualValues(t, "/tau/build/v2", Protocol)
 }
 
-func TestOnlyBuildFacesTheInternetAndOnlyBuildServes(t *testing.T) {
+func TestOnlyBuildFacesTheInternetAndEachServesItsOwn(t *testing.T) {
 	require.Equal(t, IngressPublic, Build.Ingress)
-	require.Equal(t, Protocol, Build.Protocol, "build serves the queue to runners and to other build nodes")
+	require.Equal(t, Protocol, Build.Protocol, "build serves the queue and the job API to other build nodes")
 
 	require.Equal(t, IngressNone, Runner.Ingress)
-	require.EqualValues(t, "", Runner.Protocol, "a runner serves nothing; it opens its own stream")
+	require.Equal(t, RunnerProtocol, Runner.Protocol, "a runner serves its own protocol, over p2p alone")
+	require.NotEqual(t, Build.Protocol, Runner.Protocol)
 
 	require.NotEqual(t, Build.Name, Runner.Name)
 	require.NotEmpty(t, Build.Name)

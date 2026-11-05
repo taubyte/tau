@@ -672,12 +672,12 @@ func TestOnlyOneFunctionReadsAJob(t *testing.T) {
 	}
 
 	require.ElementsMatch(t,
-		[]string{"jobReader.First", "server.job", "server.holds"},
+		[]string{"jobReader.First", "server.job", "server.follow"},
 		names(callers(all, "readRecord")),
 		"another reader is either a section that did not go through the source enter names, or "+
 			"a read outside every section — and a read outside every section decides nothing, "+
-			"because there is no handle attached to it: job answers a caller, holds whether a "+
-			"follow waits")
+			"because there is no handle attached to it: job answers a caller, follow which "+
+			"runner to read a log from")
 
 	// The source is the only thing a section reads through; enter names one and does
 	// not read.
@@ -805,9 +805,12 @@ func TestEveryReadModifyWriteOfAJobRecordIsOneSection(t *testing.T) {
 		"server.createEnvironment": {record: true, queue: true, index: true},
 		// runner.go
 		// A claim, or the ending of a job whose events never arrived, retained.
-		"server.begin":           {record: true, queue: true, index: true},
-		"server.plan":            {record: true, queue: true, index: true},
-		"server.settle":          {record: true, queue: true, index: true},
+		"server.begin":  {record: true, queue: true, index: true},
+		"server.plan":   {record: true, queue: true, index: true},
+		"server.settle": {record: true, queue: true, index: true},
+		// Settling's first section, plan's and settle's alike: the ack, and a reopened
+		// job's item back.
+		"server.taken":           {queue: true},
 		"server.drainDeadLetter": {record: true, queue: true, index: true},
 		// The erase of an expired job, or the drop of a retention row it outlived.
 		"server.expireJob": {record: true, index: true},
@@ -875,13 +878,10 @@ func TestEveryQueueWriteIsInsideTheSectionThatDecidedIt(t *testing.T) {
 		"Ack":    {"held.ack": ""},
 		"Nack":   {},
 		"Claim": {
-			"server.step": "the queue's own transition, taken under the queue's own group lock " +
-				"and decided on no job. The event it pairs with is begin's, and THAT is a " +
-				"section: a claim whose job turns out to be finished is dropped there and " +
-				"acked there.",
-			"server.dispatch": "step's claim, made for a runner's stream instead of this node's " +
-				"own runner: the same transition under the queue's group lock, decided on no job, " +
-				"and begin's section is still what pairs with it.",
+			"server.dispatch": "the queue's own transition, taken for a free runner under the " +
+				"queue's own group lock and decided on no job. The event it pairs with is " +
+				"begin's, and THAT is a section: a claim whose job turns out to be finished is " +
+				"dropped there and acked there.",
 			"server.drainDeadLetter": "the same, one queue over. The dead letter's group lock is " +
 				"what makes its claim exclusive; the event it pairs with is inside the " +
 				"section below it.",
@@ -1483,79 +1483,42 @@ func TestEveryWriteIsMadeThroughTheHandleThatReadTheRecord(t *testing.T) {
 	}
 }
 
-func TestEveryWriteToTheAssetStoreIsNamedAndPlaced(t *testing.T) {
+func TestNothingHereWritesToTheAssetStore(t *testing.T) {
 	all := pkgFuncs(t)
 
-	// Who may name the asset store field at all; newServer assembles it from the options.
-	require.ElementsMatch(t, []string{"newServer", "withAssets", "runOutput.Asset", "runOutput.publish"},
-		names(callers(all, "assetStore")),
-		"a fifth function names the asset store: the constructor that assembles it, the option "+
-			"that carries it, the run's own content door and the publish inside settle's section "+
-			"are the whole population, and anything else is a write to another node that no "+
-			"section decided")
+	// A RUN'S BYTES ARE ITS RUNNER'S TO KEEP (services/runner): this package files
+	// the cids it is handed, and stores nothing.
+	for _, verb := range []string{"Put", "Asset", "assetStore"} {
+		require.Empty(t, names(callers(all, verb)),
+			"something in this package names %s: a write to another node that no section decided", verb)
+	}
 
-	// And who may call it: a door handed the store names no field.
-	require.ElementsMatch(t, []string{"runOutput.Asset", "runOutput.publish"},
-		names(callers(all, "Put")),
-		"a third caller of Put stores bytes on another node from a place this file has not "+
-			"placed, and a store this package cannot unreference keeps them")
-
-	// The log ships only from settle, between its two sections: before the ack it
-	// orphans the log on a lost claim, inside a section it stalls the node.
-	require.ElementsMatch(t, []string{"server.settle"}, names(callers(all, "publish")),
-		"a publish outside settle is a log shipped on a delivery nothing has acked, which is the "+
-			"orphan the shutdown path already declines to make")
+	// The log is sealed from settle and plan only, between their sections: before the
+	// ack it would keep a log on a lost claim, inside a section it stalls the node.
+	require.ElementsMatch(t, []string{"server.settle", "server.plan", "server.discard"}, names(callers(all, "seal")),
+		"a seal elsewhere is a log kept on a delivery nothing has acked")
 
 	settle := all["server.settle"]
-	require.Len(t, settle.bodies, 3,
-		"settle is the ack's section, the record's section, the publish, and the section that "+
-			"files the log — fewer sections means one of them is in the wrong place")
-	shipping := settle.posns["publish"]
-	require.Len(t, shipping, 1, "the log is handed over once, on one path")
-	require.False(t, covered(settle.bodies, shipping[0]),
-		"settle publishes inside one of its own sections, which holds jobLock — every job on "+
-			"this node — across a round trip to the asset store")
-	require.Greater(t, shipping[0], settle.bodies[1].to,
-		"settle publishes before the section that records, so the log cannot end with what the "+
-			"run left the job as, and a delivery this node had already lost still ships a log")
-	require.Less(t, shipping[0], settle.bodies[2].from,
-		"settle files the log before it is stored, naming a cid nothing holds")
-	require.True(t, covered([]span{settle.bodies[0]}, settle.at["ack"]),
-		"the ack is not in the first of settle's sections, so it is not what the publish is past")
+	require.Len(t, settle.bodies, 2,
+		"settle is the record's section and the section that files the log, its ack's being taken's")
+	sealing := settle.posns["seal"]
+	require.Len(t, sealing, 1, "the log is kept once, on one path")
+	require.False(t, covered(settle.bodies, sealing[0]),
+		"settle seals inside one of its own sections, which holds jobLock — every job on this "+
+			"node — across a round trip to the runner")
+	require.Greater(t, sealing[0], settle.bodies[0].to,
+		"settle seals before the section that records, so the log cannot end with what the run "+
+			"left the job as")
+	require.Less(t, sealing[0], settle.bodies[1].from,
+		"settle files the log before it is kept, naming a cid nothing holds")
+	require.Less(t, settle.at["taken"], settle.bodies[0].from, "the ack's section comes first")
 
 	// And settle's caller holds no section, or every position above is moot.
 	require.ElementsMatch(t, []string{"server.run"}, names(callers(all, "settle")),
-		"a second caller of settle is a second place the publish's position is decided")
+		"a second caller of settle is a second place the seal's position is decided")
 	require.Empty(t, all["server.run"].bodies,
-		"run opens a section of its own, so everything settle does inside it — the publish "+
+		"run opens a section of its own, so everything settle does inside it — the seal "+
 			"included — is under jobLock however settle is spelled")
-
-	// Asset is the runner's door; nothing in this package calls it.
-	require.Empty(t, names(callers(all, "Asset")),
-		"something in this package puts an asset: the door outside every section belongs to the "+
-			"runner, and what it may leave behind is content and not a decision")
-
-	// Put is only ever called, never taken as a value.
-	require.Empty(t, takenAsAValue(t, "Put"),
-		"the asset store's verb is taken as a value rather than called, so what is done through "+
-			"it is done in a function whose name the call does not carry")
-
-	// The run's cids reach a record by one path: Asset writes o.built, publish reads
-	// it.
-	require.Contains(t, fieldsOn(t, "runOutput"), "built",
-		"the run's cids are the field the two checks below name, so a rename would make them vacuous")
-	written := map[string][]token.Pos{}
-	for n, f := range all {
-		if at := f.writesTo["built"]; len(at) > 0 {
-			written[n] = at
-		}
-	}
-	require.ElementsMatch(t, []string{"runOutput.keep"}, names(written),
-		"a second writer of the run's cids is a second opinion about what this run produced")
-	require.ElementsMatch(t, []string{"runOutput.keep", "runOutput.produced"}, names(callers(all, "built")),
-		"and a third toucher of them is a cid read somewhere the section that records it cannot see")
-	require.ElementsMatch(t, []string{"runOutput.Asset", "runOutput.stored"}, names(callers(all, "keep")),
-		"a cid is kept for what this node stored, or for what a runner stored and named")
 }
 
 // takenAsAValue is every place a method named verb appears as a value rather than

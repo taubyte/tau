@@ -11,16 +11,15 @@
 // hostile CODE (a repository's build.sh), so consensus stays off the machine that
 // runs it.
 //
-// EVERY RPC BELOW IS SERVED BY BUILD, on /tau/build/v2. QueueService and JobService
-// answer build's own HTTP routes on whichever build node leads the queue;
-// RunnerService is what a runner asks for work. BUILD NEVER DIALS A RUNNER, and a
-// runner serves nothing: a runner opens the stream, so the side that runs hostile
-// code is never the side that is asked.
+// EVERY RPC BELOW IS SERVED BY BUILD, on /tau/build/v2: QueueService and JobService
+// answer build's own HTTP routes on whichever build node leads the queue. A runner
+// serves its own protocol (tau/runner/v2/runner.proto), which build calls to run a
+// job and proxies a follower's Follow to.
 //
 // ONE PACKAGE, SEVERAL `service` BLOCKS, as auth.proto does: a node's protocol id
 // is derived from the package (`tau.build.v2` -> `/tau/build/v2`), and the blocks
 // are facets of one job lifecycle — created through QueueService, observed and
-// administered through JobService, run through RunnerService.
+// administered through JobService.
 //
 // IDENTITY, as in auth.proto: a repository is named by its canonical clone-URL key
 // alone (pkg/git/repokey: host/owner/name), never a provider-native or numeric id,
@@ -34,9 +33,8 @@
 // authorization, never a field here.
 //
 // STREAMING, as in auth.proto: List is server-streaming because it enumerates an
-// unbounded store; Follow streams a run's events; RunnerService.Serve is one
-// runner's lifetime. Every other RPC is a single lookup or mutation and stays
-// unary.
+// unbounded store; Follow streams a run's events. Every other RPC is a single
+// lookup or mutation and stays unary.
 package buildv2connect
 
 import (
@@ -60,8 +58,6 @@ const (
 	QueueServiceName = "tau.build.v2.QueueService"
 	// JobServiceName is the fully-qualified name of the JobService service.
 	JobServiceName = "tau.build.v2.JobService"
-	// RunnerServiceName is the fully-qualified name of the RunnerService service.
-	RunnerServiceName = "tau.build.v2.RunnerService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -86,8 +82,6 @@ const (
 	JobServiceArtifactProcedure = "/tau.build.v2.JobService/Artifact"
 	// JobServiceFollowProcedure is the fully-qualified name of the JobService's Follow RPC.
 	JobServiceFollowProcedure = "/tau.build.v2.JobService/Follow"
-	// RunnerServiceServeProcedure is the fully-qualified name of the RunnerService's Serve RPC.
-	RunnerServiceServeProcedure = "/tau.build.v2.RunnerService/Serve"
 )
 
 // QueueServiceClient is a client for the tau.build.v2.QueueService service.
@@ -201,30 +195,20 @@ type JobServiceClient interface {
 	// each line of its output, and, for a follow, the status the run left the job
 	// in once that has settled, which is the stream's last event.
 	//
-	// ONLY THE NODE WRITING THE LOG CAN ANSWER, and while the run has not ended
-	// every other one says Unavailable rather than NotFound — which is what makes
-	// a caller's pool walk to the next build node instead of stopping at the first
-	// that does not have it. A run that has not started — the job is queued, or
-	// claimed and not writing yet — is held by the leader, which is where every
-	// run is claimed, until it starts there or the job ends without it; every
-	// other node says Unavailable. The alternative, forwarding to the claim
-	// record's holder the way Cancel does, would put a proxy hop in front of a
-	// stream that is already a proxy hop behind the public role.
+	// A RUN'S LOG IS ON ITS RUNNER, and any build node answers by proxying there:
+	// the job record names the runner holding each run (JobClaimed.runner). A run
+	// that has not started — the job is queued, or claimed with no runner named yet
+	// — is waited for until the record names one or the job ends without it. The
+	// runner answers until build seals the run, which writes the settled status as
+	// the log's last event. A runner that cannot be reached is Unavailable.
 	//
-	// THE NODE THAT WROTE A LOG ANSWERS FOR IT UNTIL THE RECORD NAMES IT. A
-	// run's log is handed to the asset store after the build ends and before the
-	// entry that records it — and a cancel makes the record terminal before
-	// either — so a log taken off the node at the end of the build would be
-	// neither followable nor stored for as long as the handoff takes.
-	//
-	// A RUN THAT HAS ENDED IS NOT HERE once its node has let go. What survives
-	// it is a content id on the job record (Job.logs, under its attempt), and
-	// reading one back is the asset store's business — so the leader, which
-	// reads the record, answers FailedPrecondition for a run that has ended: the
-	// job finished, or ran again. Not an empty stream that reads like a build
-	// with no output, nor an Unavailable that would have a follower ask again
-	// for a log no node will write. A run past the job's next is
-	// InvalidArgument.
+	// A RUN THAT HAS ENDED IS NOT ON ITS RUNNER once build has sealed it and the
+	// runner let go. What survives it is a content id on the job record (Job.logs,
+	// under its attempt), and reading one back is the asset store's business — so
+	// a run that has ended is FailedPrecondition: the job finished, or ran again.
+	// Not an empty stream that reads like a build with no output, nor an
+	// Unavailable that would have a follower ask again for a log no node will
+	// write. A run past the job's next is InvalidArgument.
 	Follow(context.Context, *connect.Request[v2.FollowRequest]) (*connect.ServerStreamForClient[v2.Job_Event], error)
 }
 
@@ -347,30 +331,20 @@ type JobServiceHandler interface {
 	// each line of its output, and, for a follow, the status the run left the job
 	// in once that has settled, which is the stream's last event.
 	//
-	// ONLY THE NODE WRITING THE LOG CAN ANSWER, and while the run has not ended
-	// every other one says Unavailable rather than NotFound — which is what makes
-	// a caller's pool walk to the next build node instead of stopping at the first
-	// that does not have it. A run that has not started — the job is queued, or
-	// claimed and not writing yet — is held by the leader, which is where every
-	// run is claimed, until it starts there or the job ends without it; every
-	// other node says Unavailable. The alternative, forwarding to the claim
-	// record's holder the way Cancel does, would put a proxy hop in front of a
-	// stream that is already a proxy hop behind the public role.
+	// A RUN'S LOG IS ON ITS RUNNER, and any build node answers by proxying there:
+	// the job record names the runner holding each run (JobClaimed.runner). A run
+	// that has not started — the job is queued, or claimed with no runner named yet
+	// — is waited for until the record names one or the job ends without it. The
+	// runner answers until build seals the run, which writes the settled status as
+	// the log's last event. A runner that cannot be reached is Unavailable.
 	//
-	// THE NODE THAT WROTE A LOG ANSWERS FOR IT UNTIL THE RECORD NAMES IT. A
-	// run's log is handed to the asset store after the build ends and before the
-	// entry that records it — and a cancel makes the record terminal before
-	// either — so a log taken off the node at the end of the build would be
-	// neither followable nor stored for as long as the handoff takes.
-	//
-	// A RUN THAT HAS ENDED IS NOT HERE once its node has let go. What survives
-	// it is a content id on the job record (Job.logs, under its attempt), and
-	// reading one back is the asset store's business — so the leader, which
-	// reads the record, answers FailedPrecondition for a run that has ended: the
-	// job finished, or ran again. Not an empty stream that reads like a build
-	// with no output, nor an Unavailable that would have a follower ask again
-	// for a log no node will write. A run past the job's next is
-	// InvalidArgument.
+	// A RUN THAT HAS ENDED IS NOT ON ITS RUNNER once build has sealed it and the
+	// runner let go. What survives it is a content id on the job record (Job.logs,
+	// under its attempt), and reading one back is the asset store's business — so
+	// a run that has ended is FailedPrecondition: the job finished, or ran again.
+	// Not an empty stream that reads like a build with no output, nor an
+	// Unavailable that would have a follower ask again for a log no node will
+	// write. A run past the job's next is InvalidArgument.
 	Follow(context.Context, *connect.Request[v2.FollowRequest], *connect.ServerStream[v2.Job_Event]) error
 }
 
@@ -462,74 +436,4 @@ func (UnimplementedJobServiceHandler) Artifact(context.Context, *connect.Request
 
 func (UnimplementedJobServiceHandler) Follow(context.Context, *connect.Request[v2.FollowRequest], *connect.ServerStream[v2.Job_Event]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("tau.build.v2.JobService.Follow is not implemented"))
-}
-
-// RunnerServiceClient is a client for the tau.build.v2.RunnerService service.
-type RunnerServiceClient interface {
-	Serve(context.Context) *connect.BidiStreamForClient[v2.RunnerReport, v2.Assignment]
-}
-
-// NewRunnerServiceClient constructs a client for the tau.build.v2.RunnerService service. By
-// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
-// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
-// connect.WithGRPC() or connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewRunnerServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) RunnerServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	runnerServiceMethods := v2.File_tau_build_v2_build_proto.Services().ByName("RunnerService").Methods()
-	return &runnerServiceClient{
-		serve: connect.NewClient[v2.RunnerReport, v2.Assignment](
-			httpClient,
-			baseURL+RunnerServiceServeProcedure,
-			connect.WithSchema(runnerServiceMethods.ByName("Serve")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// runnerServiceClient implements RunnerServiceClient.
-type runnerServiceClient struct {
-	serve *connect.Client[v2.RunnerReport, v2.Assignment]
-}
-
-// Serve calls tau.build.v2.RunnerService.Serve.
-func (c *runnerServiceClient) Serve(ctx context.Context) *connect.BidiStreamForClient[v2.RunnerReport, v2.Assignment] {
-	return c.serve.CallBidiStream(ctx)
-}
-
-// RunnerServiceHandler is an implementation of the tau.build.v2.RunnerService service.
-type RunnerServiceHandler interface {
-	Serve(context.Context, *connect.BidiStream[v2.RunnerReport, v2.Assignment]) error
-}
-
-// NewRunnerServiceHandler builds an HTTP handler from the service implementation. It returns the
-// path on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewRunnerServiceHandler(svc RunnerServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	runnerServiceMethods := v2.File_tau_build_v2_build_proto.Services().ByName("RunnerService").Methods()
-	runnerServiceServeHandler := connect.NewBidiStreamHandler(
-		RunnerServiceServeProcedure,
-		svc.Serve,
-		connect.WithSchema(runnerServiceMethods.ByName("Serve")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/tau.build.v2.RunnerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case RunnerServiceServeProcedure:
-			runnerServiceServeHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
-}
-
-// UnimplementedRunnerServiceHandler returns CodeUnimplemented from all methods.
-type UnimplementedRunnerServiceHandler struct{}
-
-func (UnimplementedRunnerServiceHandler) Serve(context.Context, *connect.BidiStream[v2.RunnerReport, v2.Assignment]) error {
-	return connect.NewError(connect.CodeUnimplemented, errors.New("tau.build.v2.RunnerService.Serve is not implemented"))
 }

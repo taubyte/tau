@@ -37,12 +37,8 @@ type server struct {
 	work  *queue.Queue
 	dead  *queue.Queue
 
-	runner run.Runner
-	// assetStore is the one door in this package off this machine, named for the door
-	// so the censuses can tell it from the record's Assets map and a run's cids.
-	assetStore Assets
-	authz      Authorizer
-	now        func() time.Time
+	authz Authorizer
+	now   func() time.Time
 
 	serverOptions []rpc.ServerOption
 
@@ -59,17 +55,10 @@ type server struct {
 	runningMu sync.Mutex
 	running   map[string]context.CancelFunc
 
-	// logs holds the log of every build this node is writing, for Follow, until the
-	// run's record names it. Decided by the run having started, not by a record read.
-	logsMu sync.Mutex
-	logs   map[string]runLog
-	// runs rings when a run starts on this node or a job ends here, for a follow
-	// waiting on the leader for the run it asked about.
-	runs notice
-
-	// runners is the runners with a stream open to this node and no job in hand, and
-	// dispatched the jobs handed to them that have not ended (dispatch.go).
-	runners    runners
+	// runners is who this node hands runs to, busy those holding one of its runs, and
+	// dispatched the runs handed out that have not ended (dispatch.go).
+	runners    Runners
+	busy       busy
 	dispatched sync.WaitGroup
 
 	// meter is where this service says what it accounted for. Nil is the
@@ -91,9 +80,8 @@ type options struct {
 	records kvdb.Instance
 	repos   Repositories
 
-	runner        run.Runner
+	runners       Runners
 	confirm       run.Confirmer
-	assetStore    Assets
 	meter         Meter
 	authz         Authorizer
 	now           func() time.Time
@@ -167,15 +155,14 @@ func withServerOptions(opts ...rpc.ServerOption) option {
 	}
 }
 
-// withRunner gives this node something to run claimed work with. Without one the
-// node claims nothing but still serves, replicates and sweeps: a voter need not
-// be a builder.
-func withRunner(r run.Runner) option {
+// withRunners is who this node hands claimed work to. Without them the node claims
+// nothing but still serves, replicates and sweeps: a voter need not dispatch.
+func withRunners(r Runners) option {
 	return func(o *options) error {
 		if r == nil {
-			return errors.New("build: runner must not be nil")
+			return errors.New("build: runners must not be nil")
 		}
-		o.runner = r
+		o.runners = r
 		return nil
 	}
 }
@@ -188,19 +175,6 @@ func withMeter(m Meter) option {
 			return errors.New("build: a nil meter")
 		}
 		o.meter = m
-		return nil
-	}
-}
-
-// withAssets gives this node somewhere to put logs and artifacts. Without one the
-// node still builds, but logs die with the run and jobs carry no cids (see
-// Assets in config.go).
-func withAssets(a Assets) option {
-	return func(o *options) error {
-		if a == nil {
-			return errors.New("build: asset store must not be nil")
-		}
-		o.assetStore = a
 		return nil
 	}
 }
@@ -266,14 +240,12 @@ func newServer(cfg Config, opts ...option) (*server, error) {
 		records:       o.records,
 		repos:         o.repos,
 		cfg:           effective,
-		runner:        o.runner,
+		runners:       o.runners,
 		confirm:       o.confirm,
-		assetStore:    o.assetStore,
 		authz:         o.authz,
 		now:           o.now,
 		serverOptions: o.serverOptions,
 		running:       map[string]context.CancelFunc{},
-		logs:          map[string]runLog{},
 	}
 
 	s.journal = newJournal(s.records, s.host.ID().String(), func() time.Time { return s.now() })
@@ -306,10 +278,29 @@ func newServer(cfg Config, opts ...option) (*server, error) {
 	return s, nil
 }
 
-// serve listens, serves, and starts the claim loop; twice or after Close is an
-// error. Both service blocks share build.Protocol; a second rpc.Listen on it
-// fails with ErrProtocolTaken.
+// serve listens and starts the claim loop; twice or after Close is an error.
 func (s *server) serve(ctx context.Context) error {
+	if err := s.listen(ctx); err != nil {
+		return err
+	}
+	s.startMu.Lock()
+	defer s.startMu.Unlock()
+	if s.closed.Load() {
+		return errors.New("build: closed")
+	}
+	// With a cause, since a run interrupted by shutdown otherwise looks like a failed
+	// build (errShuttingDown).
+	loopCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+	s.stop = cancel
+	s.stopped = make(chan struct{})
+	go s.loop(loopCtx, s.stopped)
+	return nil
+}
+
+// listen answers build.proto on the host, and claims nothing; twice or after Close
+// is an error. Both service blocks share build.Protocol; a second rpc.Listen on it
+// fails with ErrProtocolTaken.
+func (s *server) listen(ctx context.Context) error {
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
 
@@ -325,14 +316,6 @@ func (s *server) serve(ctx context.Context) error {
 		return fmt.Errorf("build: listen on %s: %w", build.Protocol, err)
 	}
 	s.server = listener
-
-	// With a cause, since a run interrupted by shutdown otherwise looks like a failed
-	// build (errShuttingDown).
-	loopCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
-	s.stop = cancel
-	s.stopped = make(chan struct{})
-	go s.loop(loopCtx, s.stopped)
-
 	return nil
 }
 
@@ -350,7 +333,7 @@ func (s *server) loop(ctx context.Context, done chan<- struct{}) {
 
 	// THE WAKE IS ASKED FOR BEFORE THE CYCLE IT STARTS, so one rung while a cycle runs
 	// is the next cycle's, never lost.
-	wake := s.runners.wake.wait()
+	wake := s.busy.wake.wait()
 	for {
 		select {
 		case <-ctx.Done():
@@ -361,13 +344,9 @@ func (s *server) loop(ctx context.Context, done chan<- struct{}) {
 			// them to and the next cycle is the retry.
 			s.step(ctx)
 		case <-wake:
-			// A job was queued, or a runner joined or finished one: handed out now
-			// by a node that hands jobs to runners. One that runs them itself keeps
-			// to its tick.
-			wake = s.runners.wake.wait()
-			if s.runner == nil {
-				s.step(ctx)
-			}
+			// A job was queued, or a runner finished one: handed out now.
+			wake = s.busy.wake.wait()
+			s.step(ctx)
 		case <-reconcile.C:
 			s.reconcile()
 		}
@@ -397,7 +376,7 @@ func (s *server) Close() error {
 		if listener != nil {
 			s.closeErr = listener.Close()
 		}
-		// The listener ends every runner's stream, so a dispatched run ends too.
+		// The loop's context ends every call to a runner, so a dispatched run ends too.
 		s.dispatched.Wait()
 	})
 	return s.closeErr

@@ -1,11 +1,10 @@
-// Package build holds what both build services need: the protocol id build serves
-// and a runner dials, the service descriptors, and how a run's log becomes the
-// events a follower reads (lines.go). The two sit on either side of a trust
-// boundary: build takes webhooks and the job API off the internet and holds the
-// queue and the job records, but no clone credentials and no runtime; a runner
-// clones, runs a repository's code and publishes what it built, is reachable by
-// nothing, and dials build to be handed work. It imports p2p/rpc and the
-// generated code only, never pkg/http.
+// Package build holds what both build services need: the protocol id each serves
+// and the service descriptors. The two sit on either side of a trust boundary:
+// build takes webhooks and the job API off the internet and holds the queue and the
+// job records, but no clone credentials and no runtime; a runner clones, runs a
+// repository's code and publishes what it built, and is reached over p2p alone, by
+// build handing it a run. It imports p2p/rpc and the generated code only, never
+// pkg/http.
 package build
 
 import (
@@ -13,11 +12,15 @@ import (
 
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/runner/v2/runnerv2connect"
 )
 
 // Protocol is "/tau/build/v2", derived from the schema. Every service block of
 // build.proto mounts behind it.
 var Protocol = rpc.Protocol(buildv2connect.QueueServiceName)
+
+// RunnerProtocol is "/tau/runner/v2", what a runner serves.
+var RunnerProtocol = rpc.Protocol(runnerv2connect.RunnerServiceName)
 
 // QueueDomain names the consistency domain build's queue lives in, fixed by
 // build.proto. Exported so the composer knows which domain to open.
@@ -43,9 +46,9 @@ type Descriptor struct {
 
 // Build is the public service: forges and people reach it over HTTP, and it holds
 // the queue and the job records, serving build.proto behind Protocol to the other
-// build nodes and to the runners.
+// build nodes.
 var Build = Descriptor{Name: "build", Protocol: Protocol, Ingress: IngressPublic}
 
-// Runner is the private service that runs builds. Its Protocol is empty: it serves
-// nothing and faces nothing, and opens its own stream to build.
-var Runner = Descriptor{Name: "runner", Protocol: "", Ingress: IngressNone}
+// Runner is the private service that runs builds, serving runner.proto behind
+// RunnerProtocol over p2p and facing nothing else.
+var Runner = Descriptor{Name: "runner", Protocol: RunnerProtocol, Ingress: IngressNone}

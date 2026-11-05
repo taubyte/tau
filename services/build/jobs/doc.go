@@ -25,25 +25,26 @@
 // censuses in population_test.go).
 //
 // New binds no port and opens nothing; it takes a host, the queue's raft store
-// (pkg/queue's Store), the kvdb database the jobs live in, and one question for
-// auth. Logs go to the storage service as Assets; what a job builds is run and
-// stored by a runner (services/build/runner), which names it back up the stream.
+// (pkg/queue's Store), the kvdb database the jobs live in, the runners it hands runs
+// to, and one question for auth. What a job builds is run and stored by a runner
+// (services/runner), over the runner's own protocol, which answers with the cids.
 //
 // A push is a plan job: the runner reads which environments the commit feeds, and
 // each becomes a job of its own (id over repository, ref, commit, environment),
 // since a build can depend on its environment. A plan keeps no log; what it said
 // opens each environment job's.
 //
-// A log is a file, and only its cid is replicated: while the build runs it is an
-// append-only file this node owns (services/build/livelog); followers read it at
-// an offset (server.Follow); when the build ends it is LZW-compressed into the
-// logs instance of its environment's assets bucket between settle's two sections,
-// and its cid lands on the record, only if the whole log was stored. An artifact
-// is a version of its package's instance in the same bucket.
+// A log lives on its runner, and only its cid is replicated: while the build runs it
+// is an append-only file the runner owns (services/build/livelog); a follower reads
+// it at an offset through any build node, which proxies to the runner the record
+// names; when the job is settled build has the runner seal it, which compresses it
+// into the logs instance of its environment's assets bucket, and its cid lands on
+// the record, only if the whole log was stored. An artifact is a version of its
+// package's instance in the same bucket.
 //
 // Known gaps: a record's identity fields other than ID are whatever the body
 // hands over; a log can reach the asset store with no cid reaching any job if
-// leadership is lost after the store takes it (bounded by PublishTimeout; the job
+// leadership is lost after the runner seals it (bounded by PublishTimeout; the job
 // is rebuilt); and nothing bounds how much a build stores. A finished job is
 // erased after JobRetention, unless what it built is still what a deployment
 // runs: that is resolved through the job.

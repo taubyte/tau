@@ -136,11 +136,11 @@ func shaOf(i int) string {
 	return testCommit[:len(testCommit)-2] + string("0123456789abcdef"[i/16]) + string("0123456789abcdef"[i%16])
 }
 
-// A HELD FOLLOW COSTS NO BARRIER PER RING: it takes one when it starts waiting and
-// one when it stops, however often the leader's runs ring while it waits.
-func TestAHeldFollowTakesNoBarrierPerRing(t *testing.T) {
-	cost := func(rings int) int64 {
-		h := newHarness(t)
+// A HELD FOLLOW COSTS NO BARRIER WHILE IT WAITS: it reads the record from this
+// node's replica each RecordReadInterval, which takes none, however long it waits.
+func TestAHeldFollowTakesNoBarrierWhileItWaits(t *testing.T) {
+	cost := func(wait time.Duration) int64 {
+		h := newHarnessCfg(t, func(c *Config) { c.RecordReadInterval = time.Millisecond })
 		id := h.planned(t, testRef, testCommit)
 		return spent(h, func() {
 			var out collector
@@ -149,14 +149,12 @@ func TestAHeldFollowTakesNoBarrierPerRing(t *testing.T) {
 				following <- h.follow(t.Context(), &buildv2.FollowRequest{JobId: id, Attempt: 1}, out.send)
 			}()
 			out.waitStatus(buildv2.JobStatus_JobStatusOpen)
-			for range rings {
-				h.runs.ring()
-			}
+			time.Sleep(wait)
 			require.NoError(t, h.cancel(id))
 			<-following
 		})
 	}
-	quiet, rung := cost(0), cost(5)
-	t.Logf("barriers quiet=%d rung=%d", quiet, rung)
-	require.Equal(t, quiet, rung)
+	quiet, long := cost(0), cost(50*time.Millisecond)
+	t.Logf("barriers quiet=%d long=%d", quiet, long)
+	require.Equal(t, quiet, long)
 }

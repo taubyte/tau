@@ -6,8 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
+	"time"
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/pkg/containers"
@@ -40,12 +39,63 @@ type Config struct {
 	// Domains is how a deploy treats the zones a project declares.
 	Domains Domains `yaml:"domains"`
 
+	// Logs is where a run's log lives until build seals it, and its bounds.
+	Logs Logs `yaml:"logs"`
+
 	// The cloud-wide keys a runner reads, one copy each on the node: the zone that
 	// completes generated names, the forges it clones from, and the container daemon
 	// a code build runs in.
 	CloudFqdn string              `yaml:"cloudfqdn,omitempty"`
 	Forges    []drivers.Forge     `yaml:"forges,omitempty"`
 	Container containers.Declared `yaml:"container,omitempty"`
+}
+
+// Logs is a runner's logs: where each run's lives, how much it may hold, and how
+// long it waits for its seal.
+type Logs struct {
+	// Dir is where a run's log lives while it is held; empty is a scratch directory,
+	// since a log that matters reaches the storage service. The runner owns it:
+	// livelog.OwnDir refuses another's directory.
+	Dir string `yaml:"dir"`
+	// MaxBytes bounds one run's log; past it the log says it was cut and the run
+	// carries on. Zero is DefaultMaxLogBytes.
+	MaxBytes int64 `yaml:"maxBytes"`
+	// SealWithin is how long an ended run's log waits for build to seal it before
+	// it is dropped. Zero is DefaultSealWithin.
+	SealWithin time.Duration `yaml:"sealWithin"`
+	// KeepWithin bounds handing a sealed log to the storage service. Zero is
+	// DefaultKeepWithin.
+	KeepWithin time.Duration `yaml:"keepWithin"`
+}
+
+const (
+	// DefaultMaxLogBytes bounds one run's log: the build script deciding how much to
+	// print is a stranger's.
+	DefaultMaxLogBytes = 16 << 20
+	// DefaultSealWithin is how long an unsealed log is held.
+	DefaultSealWithin = 10 * time.Minute
+	// DefaultKeepWithin bounds keeping one sealed log.
+	DefaultKeepWithin = 10 * time.Second
+)
+
+// withDefaults fills in the zero values, and refuses a negative one.
+func (l Logs) withDefaults() (Logs, error) {
+	if l.MaxBytes < 0 || l.SealWithin < 0 || l.KeepWithin < 0 {
+		return l, errors.New("runner: a log bound must not be negative")
+	}
+	if l.Dir == "" {
+		l.Dir = defaultLogDir()
+	}
+	if l.MaxBytes == 0 {
+		l.MaxBytes = DefaultMaxLogBytes
+	}
+	if l.SealWithin == 0 {
+		l.SealWithin = DefaultSealWithin
+	}
+	if l.KeepWithin == 0 {
+		l.KeepWithin = DefaultKeepWithin
+	}
+	return l, nil
 }
 
 // Domains is the zones a project declares, as a deploy treats them.
@@ -55,40 +105,31 @@ type Domains struct {
 	Trusted bool `yaml:"trusted"`
 }
 
-// Start runs the runner on an instance: its clone credentials in the vault, its
-// artifacts kept in the storage service, its deploys published to the register and
-// zones proven by cm, each wherever discovery finds them, and the jobs it runs
-// handed to it by the build node leading the queue.
-func (s *server) Start(ctx context.Context, h service.Host) error {
-	if s.stopped != nil {
-		return errors.New("runner: already started")
-	}
-	var cfg Config
-	if err := h.Config(&cfg); err != nil {
-		return err
+// Open is a runner's runs on an instance, configured by cfg: its clone credentials
+// in the vault, its artifacts and logs kept in the storage service, its deploys
+// published to the register and zones proven by cm, each wherever discovery finds
+// them. The runner service serves them; a development cloud running no runner
+// calls them in place.
+func Open(h service.Host, cfg Config) (*Runs, error) {
+	logs, err := cfg.Logs.withDefaults()
+	if err != nil {
+		return nil, err
 	}
 	table := register.TableOn(h)
 	vault := secrets.VaultOn(h)
 	assets := storage.StoreOn(h)
-	s.also = append(s.also, table, vault, assets)
-	projects := linked.Projects{Table: table.Now}
-
+	r := newRuns(nil, nil, assets, h, logs)
+	r.also = []io.Closer{table, vault, assets}
 	domains, err := provers(h, cfg)
 	if err != nil {
-		return err
+		return nil, errors.Join(err, r.Close())
 	}
-	s.also = append(s.also, domains)
-	exec, confirm, err := compose(h.Region(), cfg, projects, table.Now, vault, domains)
+	r.also = append(r.also, domains)
+	r.exec, r.confirm, err = compose(h.Region(), cfg, linked.Projects{Table: table.Now}, table.Now, vault, domains)
 	if err != nil {
-		return err
+		return nil, errors.Join(err, r.Close())
 	}
-	s.exec, s.confirm, s.assets, s.self = exec, confirm, assets, h.Peer().Host()
-	s.builders = directoryOn{h}
-
-	loop, stop := context.WithCancel(context.WithoutCancel(ctx))
-	s.stop, s.stopped = stop, make(chan struct{})
-	go s.serve(loop)
-	return nil
+	return r, nil
 }
 
 // compose is what a push is read and run with: the forge's clone, and the container
@@ -176,17 +217,6 @@ func compose(region string, cfg Config, projects linked.Projects, table func(con
 		return nil, nil, err
 	}
 	return exec, confirm, nil
-}
-
-// directoryOn is the directory beside h, asked at call time: nobody where none
-// runs.
-type directoryOn struct{ h service.Host }
-
-func (d directoryOn) Peers(name string) []libp2ppeer.ID {
-	if dir, ok := service.Get[service.Directory](d.h); ok {
-		return dir.Peers(name)
-	}
-	return nil
 }
 
 // trusted proves every zone: a cloud whose operator serves declared zones unproven.

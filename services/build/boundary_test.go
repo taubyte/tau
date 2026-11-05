@@ -91,13 +91,14 @@ func requireNoImport(t *testing.T, paths []string, banned, why string) {
 	}
 }
 
-func TestTheSharedPackageStaysThreeImportsWide(t *testing.T) {
+func TestTheSharedPackageImportsOnlyTheProtocols(t *testing.T) {
 	got, ok := imports(t, ".")
 	require.True(t, ok)
 	require.ElementsMatch(t, []string{
 		"github.com/libp2p/go-libp2p/core/protocol",
 		"github.com/taubyte/tau/p2p/rpc",
 		"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect",
+		"github.com/taubyte/tau/pkg/proto/gen/tau/runner/v2/runnerv2connect",
 	}, got)
 }
 

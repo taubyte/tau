@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/taubyte/tau/services/build/runner"
+	"github.com/taubyte/tau/services/runner"
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/pkg/containers"
@@ -218,17 +218,11 @@ func TestTheWorkerResolvesArtifactsThroughBuildsRecords(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Discovery, Worker}})
 	require.NotNil(t, n.worker)
 
-	injected := artifactsFunc(func(context.Context, string, string, string, string) (string, error) {
-		return "bafyinjected", nil
-	})
-	with, _, _ := makeNode(t, Config{Services: []string{Discovery, Worker}}, withArtifacts(injected))
+	with, _, _ := makeNode(t, Config{Services: []string{Discovery, Worker}}, WithArtifacts(everythingBuilt{}))
 	require.NotNil(t, with.worker)
-}
 
-type artifactsFunc func(ctx context.Context, project, environment, kind, resource string) (string, error)
-
-func (f artifactsFunc) Artifact(ctx context.Context, project, environment, kind, resource string) (string, error) {
-	return f(ctx, project, environment, kind, resource)
+	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Discovery, Worker}}), WithArtifacts(nil))
+	require.Error(t, err)
 }
 
 // tierNames is what this node's pool can run.

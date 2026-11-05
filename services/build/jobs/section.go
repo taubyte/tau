@@ -201,13 +201,13 @@ func (e *entry) created(rec jobRecord) stated {
 	}}}, rec)
 }
 
-// claimed is this node taking the job's next attempt.
-func (e *entry) claimed(attempt uint32, deadline time.Time) stated {
+// claimed is this node taking the job's next attempt, to run on runner.
+func (e *entry) claimed(attempt uint32, deadline time.Time, runner string) stated {
 	rec := e.h.rec()
 	rec.Status = int32(buildv2.JobStatus_JobStatusClaimed)
-	rec.Attempt, rec.Holder, rec.ClaimedUntil = attempt, e.h.s.host.ID().String(), deadline.UnixNano()
+	rec.Attempt, rec.Holder, rec.ClaimedUntil, rec.Runner = attempt, e.h.s.host.ID().String(), deadline.UnixNano(), runner
 	return e.event(&buildv2.JobEvent{Kind: &buildv2.JobEvent_Claimed{Claimed: &buildv2.JobClaimed{
-		Attempt: attempt, Holder: rec.Holder, ClaimedUntil: rec.ClaimedUntil,
+		Attempt: attempt, Holder: rec.Holder, ClaimedUntil: rec.ClaimedUntil, Runner: runner,
 	}}}, rec)
 }
 
@@ -219,7 +219,7 @@ func (e *entry) settled(status buildv2.JobStatus, reason string, p produced) sta
 	attempt := e.h.rec().Attempt
 	if e.h.rec().status() != buildv2.JobStatus_JobStatusClaimed {
 		attempt++
-		e.claimed(attempt, time.Unix(0, e.at))
+		e.claimed(attempt, time.Unix(0, e.at), "")
 	}
 	rec := e.h.rec().with(p)
 	rec.Attempt = attempt
@@ -463,7 +463,7 @@ func (h *held) push() error {
 		return err
 	}
 	// A JOB TO HAND OUT wakes the loop, so a free runner gets it now.
-	h.s.runners.wake.ring()
+	h.s.busy.wake.ring()
 	return nil
 }
 
@@ -527,28 +527,19 @@ func (h *held) ends(status buildv2.JobStatus, reason string, p produced) stated 
 }
 
 func (h *held) finish(status buildv2.JobStatus, reason string) error {
-	return h.ended(h.ends(status, reason, produced{}).commit("finishing"))
+	return h.ends(status, reason, produced{}).commit("finishing")
 }
 
 func (h *held) fail(reason string, p produced) error {
-	return h.ended(h.ends(buildv2.JobStatus_JobStatusFailed, reason, p).commit("finishing"))
+	return h.ends(buildv2.JobStatus_JobStatusFailed, reason, p).commit("finishing")
 }
 
 func (h *held) succeed(p produced) error {
-	return h.ended(h.ends(buildv2.JobStatus_JobStatusSuccess, "", p).artifacts(p).anchor().commit("finishing"))
+	return h.ends(buildv2.JobStatus_JobStatusSuccess, "", p).artifacts(p).anchor().commit("finishing")
 }
 
 func (h *held) planned(children []string) error {
-	return h.ended(h.ends(buildv2.JobStatus_JobStatusSuccess, "", produced{children: children}).commit("finishing"))
-}
-
-// ended rings this node's runs once an entry ending the job has committed, which is
-// what a follow waiting for the job's next run is waiting for too.
-func (h *held) ended(err error) error {
-	if err == nil {
-		h.s.runs.ring()
-	}
-	return err
+	return h.ends(buildv2.JobStatus_JobStatusSuccess, "", produced{children: children}).commit("finishing")
 }
 
 // logged files a run's output on a job that ended some other way.

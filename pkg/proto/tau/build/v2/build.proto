@@ -8,16 +8,15 @@ syntax = "proto3";
 // hostile CODE (a repository's build.sh), so consensus stays off the machine that
 // runs it.
 //
-// EVERY RPC BELOW IS SERVED BY BUILD, on /tau/build/v2. QueueService and JobService
-// answer build's own HTTP routes on whichever build node leads the queue;
-// RunnerService is what a runner asks for work. BUILD NEVER DIALS A RUNNER, and a
-// runner serves nothing: a runner opens the stream, so the side that runs hostile
-// code is never the side that is asked.
+// EVERY RPC BELOW IS SERVED BY BUILD, on /tau/build/v2: QueueService and JobService
+// answer build's own HTTP routes on whichever build node leads the queue. A runner
+// serves its own protocol (tau/runner/v2/runner.proto), which build calls to run a
+// job and proxies a follower's Follow to.
 //
 // ONE PACKAGE, SEVERAL `service` BLOCKS, as auth.proto does: a node's protocol id
 // is derived from the package (`tau.build.v2` -> `/tau/build/v2`), and the blocks
 // are facets of one job lifecycle — created through QueueService, observed and
-// administered through JobService, run through RunnerService.
+// administered through JobService.
 //
 // IDENTITY, as in auth.proto: a repository is named by its canonical clone-URL key
 // alone (pkg/git/repokey: host/owner/name), never a provider-native or numeric id,
@@ -31,9 +30,8 @@ syntax = "proto3";
 // authorization, never a field here.
 //
 // STREAMING, as in auth.proto: List is server-streaming because it enumerates an
-// unbounded store; Follow streams a run's events; RunnerService.Serve is one
-// runner's lifetime. Every other RPC is a single lookup or mutation and stays
-// unary.
+// unbounded store; Follow streams a run's events. Every other RPC is a single
+// lookup or mutation and stays unary.
 package tau.build.v2;
 
 // Empty is the response for a call whose only interesting outcome is
@@ -82,7 +80,7 @@ message Empty {}
 // lacks. Instead a runner computes its own before..after diff AFTER the
 // clone: `commit_sha` is `after`, and `before` is whatever commit sha build
 // last finished for this exact (repository_key, ref) — read from build's own
-// job history and handed down in Work.before, never from the webhook. A ref
+// job history and handed down in the runner's Work.before, never from the webhook. A ref
 // with no prior processed commit has no `before` to diff against and is
 // built in full, exactly what a GitHub payload's all-zero
 // `before` signals today for a newly created branch.
@@ -118,7 +116,7 @@ message PushEvent {
 // `dequeue`/`isAssigned`/`timeout` p2p actions). Build claims in-process, on
 // the node leading the "build/queue" raft group — claim, visibility timeout
 // and dead letter are the queue's own — and hands a claimed job to a runner
-// down RunnerService.Serve. A runner never claims; it is handed.
+// through the runner's own protocol. A runner never claims; it is handed.
 service QueueService {
   // Enqueue durably records a push and returns its job id. Idempotent: a
   // redelivered webhook for the same push (repository_key, ref, commit_sha)
@@ -322,101 +320,19 @@ service JobService {
   // each line of its output, and, for a follow, the status the run left the job
   // in once that has settled, which is the stream's last event.
   //
-  // ONLY THE NODE WRITING THE LOG CAN ANSWER, and while the run has not ended
-  // every other one says Unavailable rather than NotFound — which is what makes
-  // a caller's pool walk to the next build node instead of stopping at the first
-  // that does not have it. A run that has not started — the job is queued, or
-  // claimed and not writing yet — is held by the leader, which is where every
-  // run is claimed, until it starts there or the job ends without it; every
-  // other node says Unavailable. The alternative, forwarding to the claim
-  // record's holder the way Cancel does, would put a proxy hop in front of a
-  // stream that is already a proxy hop behind the public role.
+  // A RUN'S LOG IS ON ITS RUNNER, and any build node answers by proxying there:
+  // the job record names the runner holding each run (JobClaimed.runner). A run
+  // that has not started — the job is queued, or claimed with no runner named yet
+  // — is waited for until the record names one or the job ends without it. The
+  // runner answers until build seals the run, which writes the settled status as
+  // the log's last event. A runner that cannot be reached is Unavailable.
   //
-  // THE NODE THAT WROTE A LOG ANSWERS FOR IT UNTIL THE RECORD NAMES IT. A
-  // run's log is handed to the asset store after the build ends and before the
-  // entry that records it — and a cancel makes the record terminal before
-  // either — so a log taken off the node at the end of the build would be
-  // neither followable nor stored for as long as the handoff takes.
-  //
-  // A RUN THAT HAS ENDED IS NOT HERE once its node has let go. What survives
-  // it is a content id on the job record (Job.logs, under its attempt), and
-  // reading one back is the asset store's business — so the leader, which
-  // reads the record, answers FailedPrecondition for a run that has ended: the
-  // job finished, or ran again. Not an empty stream that reads like a build
-  // with no output, nor an Unavailable that would have a follower ask again
-  // for a log no node will write. A run past the job's next is
-  // InvalidArgument.
+  // A RUN THAT HAS ENDED IS NOT ON ITS RUNNER once build has sealed it and the
+  // runner let go. What survives it is a content id on the job record (Job.logs,
+  // under its attempt), and reading one back is the asset store's business — so
+  // a run that has ended is FailedPrecondition: the job finished, or ran again.
+  // Not an empty stream that reads like a build with no output, nor an
+  // Unavailable that would have a follower ask again for a log no node will
+  // write. A run past the job's next is InvalidArgument.
   rpc Follow(FollowRequest) returns (stream Job.Event);
-}
-
-// ────────────────────────────── Runners ──────────────────────────────
-
-// RunnerService is what a runner asks build: work. A runner opens Serve to the
-// build node leading the queue and keeps it open; build hands it one job at a
-// time down the stream, and the runner sends what the job produced back up it.
-// A follower ends the stream at once with Unavailable, so a runner walks to the
-// leader. A stream that breaks mid-job is a runner gone: the job is not failed but
-// left to its claim, which lapses, and the queue hands it to another runner.
-service RunnerService {
-  rpc Serve(stream RunnerReport) returns (stream Assignment);
-}
-
-// Assignment is what build hands a runner: a job to plan or to build, or the word
-// to stop the job in hand.
-message Assignment {
-  oneof kind {
-    // plan reads which environments the pushed commit feeds; Finished.environments
-    // answers it.
-    Work plan = 1;
-    // build builds one environment.
-    Work build = 2;
-    // cancel stops the job in hand: it was cancelled, or its claim ran out.
-    Empty cancel = 3;
-  }
-}
-
-// Work is everything a run is given, derived by build from the job record and
-// never from the webhook.
-message Work {
-  string job_id = 1;
-  string repository_key = 2;
-  string ref = 3;
-  string commit_sha = 4;
-  // before is the last commit build finished for this (repository, ref), from its
-  // own history; empty is a full build.
-  string before = 5;
-  string project_id = 6;
-  uint32 attempt = 7;
-  // environment is the deployment a build builds, empty for a plan.
-  string environment = 8;
-}
-
-// RunnerReport is what a runner says on its stream.
-message RunnerReport {
-  oneof kind {
-    // ready is the first report: this runner takes work.
-    Empty ready = 1;
-    // output is what the job in hand wrote to its log, as it wrote it.
-    bytes output = 2;
-    // stored is an artifact the runner put in the storage service.
-    Stored stored = 3;
-    // finished ends the job in hand.
-    Finished finished = 4;
-  }
-}
-
-// Stored is one artifact of the job in hand, already kept: the runner puts it in
-// the storage service itself, so its bytes never cross build.
-message Stored {
-  string resource_id = 1;
-  string cid = 2;
-  uint64 bytes = 3;
-}
-
-// Finished is how the job in hand ended: error empty is a success, anything else
-// is the build's failure, in its own words.
-message Finished {
-  string error = 1;
-  // environments answers a plan.
-  repeated string environments = 2;
 }

@@ -187,12 +187,12 @@ func TestACancelledJobLeavesNoWorkBehindItInTheQueue(t *testing.T) {
 	})
 
 	t.Run("a leader that runs no builds claims nothing, so nothing would ever reap it", func(t *testing.T) {
-		h := newHarness(t, withoutRunner())
+		h := newHarness(t, withoutRunners())
 		id := h.push(t, testRef, testCommit)
 
 		require.NoError(t, h.cancel(id))
 
-		// This node never claims (withRunner: a voter need not be a builder), so
+		// This node never claims (withRunners: a voter need not dispatch), so
 		// the claim path cannot be what drops the item. Nothing else would.
 		require.False(t, h.mustStep(t))
 		ready, claimed := h.work.Depth()
@@ -367,7 +367,7 @@ func TestRetryRemovesTheRetentionRowItActuallyWrote(t *testing.T) {
 }
 
 func TestASuccessfulBuildPointsTheDeploymentAtWhatItMade(t *testing.T) {
-	h := newWireHarness(t, withAssets(newAssets()))
+	h := newWireHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
 	h.runner.run = func(ctx context.Context, w run.Work, out run.Output) error {
@@ -385,7 +385,7 @@ func TestASuccessfulBuildPointsTheDeploymentAtWhatItMade(t *testing.T) {
 }
 
 func TestADeploymentsArtifactIsItsOwn(t *testing.T) {
-	h := newWireHarness(t, withAssets(newAssets()))
+	h := newWireHarness(t)
 	h.runner.plan = func(context.Context, run.Work, io.Writer) ([]string, error) {
 		return []string{"prod", "preview"}, nil
 	}
@@ -420,7 +420,7 @@ func TestADeploymentsArtifactIsItsOwn(t *testing.T) {
 }
 
 func TestAFailedBuildDoesNotMoveWhatADeploymentRuns(t *testing.T) {
-	h := newWireHarness(t, withAssets(newAssets()))
+	h := newWireHarness(t)
 	id := h.planned(t, testRef, testCommit)
 
 	h.runner.run = func(ctx context.Context, w run.Work, out run.Output) error {

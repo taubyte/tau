@@ -445,7 +445,7 @@ func (n *Instance) openWorker() error {
 	// composer injected something else. An injected one wins because it is the
 	// more specific statement: somebody who handed this node an artifact
 	// resolver meant that one.
-	if a := n.artifactSource(); a != nil {
+	if a := n.Artifacts(); a != nil {
 		options = append(options, worker.WithArtifacts(a))
 	}
 	// A SECRET IS RESOLVED THE SAME WAY AN ARTIFACT IS, and by the same rule:
@@ -625,7 +625,7 @@ func (n *Instance) openGateway() error {
 
 	// A PACKAGE HANDLER'S FILES are read from the build's artifact, as a worker
 	// reads one: the same lookup, the same storage service.
-	if a := n.artifactSource(); a != nil {
+	if a := n.Artifacts(); a != nil {
 		gatewayOptions = append(gatewayOptions, gateway.WithFiles(a, n.store))
 	}
 
@@ -638,9 +638,10 @@ func (n *Instance) openGateway() error {
 	return nil
 }
 
-// artifactSource is where a built resource's artifact is looked up: a test's
-// resolver, else build's records on this node. Nil on a node with no discovery.
-func (n *Instance) artifactSource() worker.Artifacts {
+// Artifacts is what this node's worker looks a built resource's artifact up in: the
+// one it was given, else build's records on this node. Nil on a node with no
+// discovery.
+func (n *Instance) Artifacts() worker.Artifacts {
 	switch {
 	case n.opts.artifacts != nil:
 		return n.opts.artifacts

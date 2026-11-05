@@ -357,7 +357,7 @@ func fold(id string, evs []*buildv2.JobEvent) (jobRecord, bool) {
 				break
 			}
 			rec.Status = int32(buildv2.JobStatus_JobStatusClaimed)
-			rec.Attempt, rec.Holder, rec.ClaimedUntil = c.Attempt, c.Holder, c.ClaimedUntil
+			rec.Attempt, rec.Holder, rec.ClaimedUntil, rec.Runner = c.Attempt, c.Holder, c.ClaimedUntil, c.Runner
 		case *buildv2.JobEvent_Settled:
 			st := k.Settled
 			orphan := !found

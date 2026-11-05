@@ -13,8 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/taubyte/tau/services/build/jobs"
-	"github.com/taubyte/tau/services/build/runner"
+	"github.com/taubyte/tau/services/runner"
 
 	"github.com/taubyte/tau/services/build/ingress"
 
@@ -182,8 +181,13 @@ type Universe struct {
 	// developer's build is kept (Upload).
 	mirror, uploads string
 
-	aloneMu sync.Mutex
-	direct  *jobs.Direct
+	// buildsMu guards builds, how the universe builds (builds.go), settled on first
+	// use, and visitor, its own peer, which calls its services from beside them.
+	buildsMu sync.Mutex
+	builds   builds
+	visitor  peer.Node
+	// kept is what it built with no build service to record it.
+	kept builtHere
 
 	rpc *served
 }
@@ -230,7 +234,7 @@ func Start(ctx context.Context, name string, cfg Config) (*Universe, error) {
 	u := &Universe{mesh: m, mirror: mirror, uploads: held}
 	copies := max(cfg.Copies, 1)
 	for index := range copies {
-		p, err := m.Add(func(p peer.Node) error { return create(m, p, cfg, index, account, held, mirror) })
+		p, err := m.Add(func(p peer.Node) error { return create(m, p, cfg, index, account, held, mirror, &u.kept) })
 		if err != nil {
 			u.Close()
 			return nil, fmt.Errorf("dream: node %d: %w", index, err)
@@ -259,23 +263,23 @@ func (u *Universe) Peers() []peer.Node { return u.mesh.Peers() }
 // joins with a certificate from it, issued for the universe's name.
 func (u *Universe) CA() *sectls.CA { return u.mesh.CA() }
 
-// Close stops answering DreamService, then what builds alone, then every node,
-// then their peers.
+// Close stops answering DreamService, then how it builds, then every node, then
+// their peers.
 func (u *Universe) Close() {
 	if u.rpc != nil {
 		u.rpc.Close()
 		u.rpc = nil
 	}
-	u.aloneMu.Lock()
-	if u.direct != nil {
-		u.direct.Close()
-		u.direct = nil
+	u.buildsMu.Lock()
+	if u.builds != nil {
+		u.builds.Close()
+		u.builds = nil
 	}
-	u.aloneMu.Unlock()
+	u.buildsMu.Unlock()
 	u.mesh.Close()
 }
 
-func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secretsv2.InitSecret, uploads, mirror string) error {
+func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secretsv2.InitSecret, uploads, mirror string, kept *builtHere) error {
 	ctx := m.Context()
 	h := p.Host()
 
@@ -337,9 +341,13 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	}
 	nodeConfig.Sections[cm.Name] = cm.Section{Consensus: cm.ConsensusConfig{Timeouts: dreamTimeouts, BootstrapTimeout: dreamBootstrapTimeout}}
 
+	// WHAT THE UNIVERSE BUILT WITH NO BUILD SERVICE is looked up in what it kept, and
+	// anything else in build's records on the node.
+	lookup := &artifacts{kept: kept}
 	options := []instance.Option{
 		instance.WithDatabaseEngines(engines),
 		instance.WithRuntimes(tiers...),
+		instance.WithArtifacts(lookup),
 	}
 	if now != nil {
 		options = append(options, instance.WithClock(now))
@@ -373,6 +381,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		os.RemoveAll(root)
 		return err
 	}
+	lookup.on(n)
 
 	id := h.ID().String()
 	built.Lock()

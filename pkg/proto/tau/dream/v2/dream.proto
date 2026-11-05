@@ -5,9 +5,9 @@ syntax = "proto3";
 // universe's own Go method of the same name (instance/dream/build.go), so what a
 // test does in process a tool does over the wire.
 //
-// A BUILD GOES THROUGH THE UNIVERSE'S BUILD NODE when it runs one, and runs alone on
-// a node running a runner when it does not, recorded where a build node records it
-// either way. Nothing here is a cloud's API: no cloud serves it.
+// A BUILD GOES THROUGH THE UNIVERSE'S BUILD NODE when it runs one, else straight to
+// a runner over the runner's protocol, else to the runner's runs in the universe's
+// own process. Nothing here is a cloud's API: no cloud serves it.
 package tau.dream.v2;
 
 import "tau/build/v2/build.proto";

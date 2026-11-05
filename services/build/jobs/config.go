@@ -3,10 +3,6 @@ package jobs
 import (
 	"context"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -14,7 +10,6 @@ import (
 	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/build"
-	"github.com/taubyte/tau/services/storage"
 )
 
 // Defaults, each a Config field set through New rather than a mutable package
@@ -40,10 +35,6 @@ const (
 	// does not bound one and says "every v2 service is expected to make that
 	// call"; this is build's.
 	DefaultMaxMessageBytes = 64 << 10
-	// DefaultMaxLogBytes bounds one attempt's log: the build script deciding how much
-	// to print is a stranger's. Past it the log says it was truncated and the build
-	// carries on.
-	DefaultMaxLogBytes = 16 << 20
 	// DefaultPublishTimeout bounds handing one finished log to the asset store.
 	// It is spent inside ClaimMargin, before the ack that is this service's
 	// commit point, which is why withDefaults refuses one that does not fit.
@@ -92,16 +83,6 @@ type Config struct {
 	// DefaultMaxMessageBytes.
 	MaxMessageBytes int `yaml:"maxMessageBytes"`
 
-	// LogDir is where a running build's log lives; empty means defaultLogDir(), a
-	// scratch location since a log that matters reached the asset store. The service
-	// owns it: livelog.OwnDir refuses another's directory and tightens a
-	// world-writable one, since file names derive from public values. A tmp sweep is
-	// harmless because each log is an inode its writer holds and readers pread.
-	LogDir string `yaml:"logDir"`
-
-	// MaxLogBytes bounds one attempt's log. Zero means DefaultMaxLogBytes.
-	MaxLogBytes int64 `yaml:"maxLogBytes"`
-
 	// PublishTimeout bounds the handoff of a finished log to the asset store.
 	// Zero means DefaultPublishTimeout.
 	PublishTimeout time.Duration `yaml:"publishTimeout"`
@@ -117,14 +98,6 @@ type Config struct {
 	// is kept however old, since what runs is resolved through it. Zero means
 	// DefaultJobRetention.
 	JobRetention time.Duration `yaml:"jobRetention"`
-}
-
-// defaultLogDir is the scratch log directory, per uid so a shared /tmp name cannot
-// be created first by another account (which livelog.OwnDir would then refuse).
-// Two nodes under one account share it safely: names are (job, attempt). On
-// windows Getuid is -1, harmless since the temp dir is per user.
-func defaultLogDir() string {
-	return filepath.Join(os.TempDir(), "tau-build-logs-"+strconv.Itoa(os.Getuid()))
 }
 
 // withDefaults fills in the zero values and refuses the combinations that have
@@ -155,7 +128,6 @@ func (c Config) withDefaults() (Config, error) {
 		{"maxQueueDepth", int64(c.MaxQueueDepth)},
 		{"maxOpenPerRepo", int64(c.MaxOpenPerRepo)},
 		{"maxMessageBytes", int64(c.MaxMessageBytes)},
-		{"maxLogBytes", c.MaxLogBytes},
 		{"recordReads", int64(c.RecordReads)},
 	} {
 		if n.value < 0 {
@@ -193,16 +165,9 @@ func (c Config) withDefaults() (Config, error) {
 	if c.MaxMessageBytes == 0 {
 		c.MaxMessageBytes = DefaultMaxMessageBytes
 	}
-	if c.MaxLogBytes == 0 {
-		c.MaxLogBytes = DefaultMaxLogBytes
-	}
 	if c.PublishTimeout == 0 {
 		c.PublishTimeout = DefaultPublishTimeout
 	}
-	if c.LogDir == "" {
-		c.LogDir = defaultLogDir()
-	}
-
 	// The publish is spent out of ClaimMargin (ack, ship the log, write the terminal
 	// record), so it must fit inside it.
 	if c.PublishTimeout >= c.ClaimMargin {
@@ -264,14 +229,6 @@ type Repositories interface {
 	Project(ctx context.Context, repositoryKey string) (projectID string, err error)
 }
 
-// Assets is the storage service, where a build's artifacts and logs are kept in its
-// project's assets bucket for the job's environment: an artifact as a version of
-// its package's instance, a log as a version of the logs instance. A node without
-// one still builds, but its logs and artifacts die with the run.
-type Assets interface {
-	Put(ctx context.Context, at storage.Address, name string, o storage.Object, content io.Reader) (storage.Version, error)
-}
-
 // Action names what a caller is trying to do, for the Authorizer.
 type Action int
 
@@ -284,9 +241,6 @@ const (
 	// ActArtifact is a read about a project rather than a job: what one resource of
 	// one deployment runs. Its own action because its subject is a project id.
 	ActArtifact
-
-	// ActServe is a runner opening its stream to be handed jobs. It has no subject.
-	ActServe
 )
 
 func (a Action) String() string {
@@ -301,8 +255,6 @@ func (a Action) String() string {
 		return "retry"
 	case ActArtifact:
 		return "artifact"
-	case ActServe:
-		return "serve"
 	default:
 		return fmt.Sprintf("action(%d)", int(a))
 	}

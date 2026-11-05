@@ -62,12 +62,9 @@ func TestNewRefusesWhatItCannotBeBuiltFrom(t *testing.T) {
 		"an option that fails": func() (*server, error) {
 			return newServer(Config{}, func(*options) error { return errors.New("no") })
 		},
-		"a nil runner":     func() (*server, error) { return newServer(Config{}, withRunner(nil)) },
+		"no runners":       func() (*server, error) { return newServer(Config{}, withRunners(nil)) },
 		"a nil authorizer": func() (*server, error) { return newServer(Config{}, withAuthorizer(nil)) },
-		"a nil asset store": func() (*server, error) {
-			return newServer(Config{}, withAssets(nil))
-		},
-		"a nil clock": func() (*server, error) { return newServer(Config{}, withClock(nil)) },
+		"a nil clock":      func() (*server, error) { return newServer(Config{}, withClock(nil)) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, err := tc()

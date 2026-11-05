@@ -14,10 +14,10 @@ import (
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/build"
+	"github.com/taubyte/tau/services/build/clients"
 	"github.com/taubyte/tau/services/build/linked"
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/register"
-	"github.com/taubyte/tau/services/storage"
 )
 
 // Service is build's jobs as an instance runs them.
@@ -64,8 +64,9 @@ func (b *hosted) WaitForLeader(ctx context.Context) error {
 	return b.queue.WaitForLeader(ctx)
 }
 
-// Start runs jobs on an instance: its queue a raft group of the cm beside it, its job records a replicated database on the peer, its logs in the storage
-// service and its projects in the register, both wherever discovery finds them.
+// Start runs jobs on an instance: its queue a raft group of the cm beside it, its
+// job records a replicated database on the peer, its projects in the register and
+// its runs on runners, both wherever discovery finds them.
 func (b *hosted) Start(ctx context.Context, h service.Host) error {
 	if b.server != nil {
 		return errors.New("build: already started")
@@ -102,8 +103,8 @@ func onInstance(h service.Host, cfg Config, store Store, more ...option) (*serve
 	}
 
 	table := register.TableOn(h)
-	assets := storage.StoreOn(h)
-	also = append(also, table, assets)
+	runners := clients.RunnersOn(h)
+	also = append(also, table, runners)
 
 	s, err := newServer(cfg, append([]option{
 		withHost(h.Peer().Host()),
@@ -112,7 +113,7 @@ func onInstance(h service.Host, cfg Config, store Store, more ...option) (*serve
 		// WHO A PUSH BELONGS TO is the register's project table; a repository no
 		// project links is refused before anything is queued.
 		withRepositories(linked.Projects{Table: table.Now}),
-		withAssets(assets),
+		withRunners(runners),
 		withClock(h.Now),
 	}, more...)...)
 	return s, also, err

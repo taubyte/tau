@@ -10,20 +10,16 @@ import (
 	"path/filepath"
 	"time"
 
-	"connectrpc.com/connect"
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 
-	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/instance"
 	"github.com/taubyte/tau/pkg/git/repokey"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/services/build/artifact"
-	"github.com/taubyte/tau/services/build/jobs"
-	"github.com/taubyte/tau/services/build/runner"
 	"github.com/taubyte/tau/services/build/uploads"
 )
 
@@ -40,13 +36,6 @@ type Push struct {
 type Outcome struct {
 	Plan         *buildv2.Job
 	Environments []*buildv2.Job
-}
-
-// builds is what a universe builds with: the build node leading the queue, or jobs
-// alone on a node running a runner.
-type builds interface {
-	Enqueue(ctx context.Context, repositoryKey, ref, commitSHA string) (string, error)
-	Await(ctx context.Context, jobID string) (*buildv2.Job, error)
 }
 
 // Mirror is the directory this universe's runners clone every repository from,
@@ -256,82 +245,4 @@ func (u *Universe) Link(ctx context.Context, project, config string, code ...str
 	}
 	_, err = reg.LinkProject(ctx, pkgregister.Link{Project: project, Config: config, Code: code, Claimant: "dream"})
 	return err
-}
-
-// Build is p built as this universe builds: through the build node leading the
-// queue when one runs, else alone on a node running a runner, recorded where a
-// build node records. It returns once the push and the jobs it queued have ended.
-func (u *Universe) Build(ctx context.Context, p Push) (Outcome, error) {
-	b, id, err := u.enqueue(ctx, p)
-	if err != nil {
-		return Outcome{}, err
-	}
-	plan, err := b.Await(ctx, id)
-	if err != nil {
-		return Outcome{}, err
-	}
-	out := Outcome{Plan: plan}
-	for _, child := range plan.GetChildren() {
-		job, err := b.Await(ctx, child)
-		if err != nil {
-			return out, err
-		}
-		out.Environments = append(out.Environments, job)
-	}
-	return out, nil
-}
-
-// enqueue is p queued where this universe builds, and the job it became.
-func (u *Universe) enqueue(ctx context.Context, p Push) (builds, string, error) {
-	var tried bool
-	for _, n := range u.nodes() {
-		held, ok := service.Get[jobs.Service](n.HostOf(instance.Build))
-		if !ok {
-			continue
-		}
-		tried = true
-		if err := held.WaitForLeader(ctx); err != nil {
-			return nil, "", err
-		}
-		// A FOLLOWER SAYS UNAVAILABLE, and the leader is the node asked next.
-		id, err := held.Local().Enqueue(ctx, p.Repository, p.Ref, p.Commit)
-		if connect.CodeOf(err) == connect.CodeUnavailable {
-			continue
-		}
-		return held.Local(), id, err
-	}
-	if tried {
-		return nil, "", errors.New("dream: no build node leads the queue")
-	}
-	alone, err := u.alone()
-	if err != nil {
-		return nil, "", err
-	}
-	id, err := alone.Enqueue(ctx, p.Repository, p.Ref, p.Commit)
-	return alone, id, err
-}
-
-// alone is the universe's jobs where no build node runs, on the first node running
-// a runner, opened once and kept open until the universe closes, so its records
-// replicate.
-func (u *Universe) alone() (*jobs.Direct, error) {
-	u.aloneMu.Lock()
-	defer u.aloneMu.Unlock()
-	if u.direct != nil {
-		return u.direct, nil
-	}
-	for _, n := range u.nodes() {
-		h := n.HostOf(instance.Runner)
-		r, ok := service.Get[runner.Service](h)
-		if !ok {
-			continue
-		}
-		d, err := jobs.Alone(h, r)
-		if err != nil {
-			return nil, err
-		}
-		u.direct = d
-		return d, nil
-	}
-	return nil, errors.New("dream: no node runs a build or a runner")
 }

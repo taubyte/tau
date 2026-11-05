@@ -125,6 +125,8 @@ func TestTheStartedLoopReconciles(t *testing.T) {
 		c.ReconcileEvery = time.Millisecond
 	})
 	id := h.planned(t, testRef, testCommit)
+	// NOTHING CLAIMS once the loop runs, or the job reconcile re-queues is gone again.
+	h.runners = nil
 
 	d, err := h.work.Claim()
 	require.NoError(t, err)

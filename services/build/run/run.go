@@ -6,6 +6,10 @@ import (
 	"context"
 	"errors"
 	"io"
+	"time"
+
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	runnerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/runner/v2"
 )
 
 // Confirmer asks a repository whether it holds ref at commit. A nil error is
@@ -43,6 +47,11 @@ type Work struct {
 	// run reads which environments the commit feeds, and each becomes a job of
 	// its own.
 	Environment string
+	// Prelude is what the plan said, which opens a build's log.
+	Prelude string
+	// Within is how long the run may take from when it is handed: its claim's
+	// deadline less the claim's margin. Zero is unbounded.
+	Within time.Duration
 }
 
 // Output is where a run puts what it produces, and is the log's writer. Nothing
@@ -59,7 +68,7 @@ type Output interface {
 	Asset(ctx context.Context, resourceID string, content io.Reader) error
 }
 
-// Runner executes one job, on a runner (services/build/runner).
+// Runner executes one job, on a runner (services/runner).
 type Runner interface {
 	// Plan reads which environments the pushed commit feeds, each of which
 	// becomes a job of its own. What it writes opens each of those jobs' logs.
@@ -71,4 +80,60 @@ type Runner interface {
 	// stale run before anything is published. An error from Run is terminal: the
 	// queue's retry is for a worker that died, not a build that failed.
 	Run(ctx context.Context, w Work, out Output) error
+}
+
+// Service is a runner as build hands it runs (pkg/proto/tau/runner/v2): over its
+// protocol, or in the caller where a development cloud runs no runner. It runs one
+// at a time, and keeps each run's log until build seals it.
+type Service interface {
+	// Plan reads which environments the pushed commit feeds.
+	Plan(ctx context.Context, w Work) (*runnerv2.Planned, error)
+	// Build builds w's environment, and returns once the run has ended.
+	Build(ctx context.Context, w Work) (*runnerv2.Built, error)
+	// Cancel stops the run, whose Plan or Build then returns as it ended.
+	Cancel(ctx context.Context, r *runnerv2.Run) error
+	// Seal ends the run's log with the status build settled its job with, and keeps
+	// a build's log in the storage service.
+	Seal(ctx context.Context, s *runnerv2.Sealing) (*runnerv2.Sealed, error)
+	// Follow reads the run's log from req's offset.
+	Follow(ctx context.Context, req *buildv2.FollowRequest) (Events, error)
+}
+
+// Events is a run's log as it is read: Receive blocks until the next event, and is
+// io.EOF once the log has ended.
+type Events interface {
+	Receive() (*buildv2.Job_Event, error)
+	Close() error
+}
+
+// WorkOf is a run's work as runner.proto carries it.
+func WorkOf(w *runnerv2.Work) Work {
+	return Work{
+		JobID:         w.GetJobId(),
+		RepositoryKey: w.GetRepositoryKey(),
+		Ref:           w.GetRef(),
+		CommitSHA:     w.GetCommitSha(),
+		Before:        w.GetBefore(),
+		ProjectID:     w.GetProjectId(),
+		Attempt:       w.GetAttempt(),
+		Environment:   w.GetEnvironment(),
+		Prelude:       w.GetPrelude(),
+		Within:        time.Duration(w.GetWithin()),
+	}
+}
+
+// Proto is w as runner.proto carries it.
+func (w Work) Proto() *runnerv2.Work {
+	return &runnerv2.Work{
+		JobId:         w.JobID,
+		RepositoryKey: w.RepositoryKey,
+		Ref:           w.Ref,
+		CommitSha:     w.CommitSHA,
+		Before:        w.Before,
+		ProjectId:     w.ProjectID,
+		Attempt:       w.Attempt,
+		Environment:   w.Environment,
+		Prelude:       w.Prelude,
+		Within:        int64(w.Within),
+	}
 }

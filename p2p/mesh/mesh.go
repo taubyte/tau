@@ -58,6 +58,7 @@ type Mesh struct {
 
 	mu      sync.RWMutex
 	peers   []peer.Node
+	guests  []peer.Node
 	added   int
 	closers []io.Closer
 }
@@ -106,6 +107,32 @@ func (m *Mesh) Peers() []peer.Node {
 // here. Starting first means a service's first moves do not race the connection.
 // start may be nil.
 func (m *Mesh) Add(start func(peer.Node) error) (peer.Node, error) {
+	n, err := m.join(start)
+	if err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	m.peers = append(m.peers, n)
+	m.mu.Unlock()
+	return n, nil
+}
+
+// Guest is a peer meshed with every one here that runs nothing and is not one of
+// Peers: how the mesh is reached from outside what runs on it, such as by whoever
+// made it. It closes with the mesh.
+func (m *Mesh) Guest() (peer.Node, error) {
+	n, err := m.join(nil)
+	if err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	m.guests = append(m.guests, n)
+	m.mu.Unlock()
+	return n, nil
+}
+
+// join makes a peer, starts what runs on it, and dials it to every peer already here.
+func (m *Mesh) join(start func(peer.Node) error) (peer.Node, error) {
 	existing := m.Peers()
 
 	m.mu.Lock()
@@ -142,10 +169,6 @@ func (m *Mesh) Add(start func(peer.Node) error) (peer.Node, error) {
 	// A peer alone in the mesh times out here, which is fine: the wait is
 	// bounded and best-effort, see swarmWait.
 	n.WaitForSwarm(swarmWait)
-
-	m.mu.Lock()
-	m.peers = append(m.peers, n)
-	m.mu.Unlock()
 	return n, nil
 }
 
@@ -199,8 +222,8 @@ func (m *Mesh) OnClose(c io.Closer) {
 // host.
 func (m *Mesh) Close() {
 	m.mu.Lock()
-	closers, peers := m.closers, m.peers
-	m.closers, m.peers = nil, nil
+	closers, peers := m.closers, append(m.peers, m.guests...)
+	m.closers, m.peers, m.guests = nil, nil, nil
 	m.mu.Unlock()
 
 	var wg sync.WaitGroup
