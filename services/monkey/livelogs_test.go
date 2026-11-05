@@ -68,9 +68,9 @@ func TestStreamLogs_PublishesWhileTheJobWrites(t *testing.T) {
 	// pubsub delivery is asynchronous
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
 		lock.Lock()
-		n := len(chunks)
+		ended := len(chunks) > 0 && chunks[len(chunks)-1].Done
 		lock.Unlock()
-		if n > 0 && chunks[n-1].Done {
+		if ended {
 			break
 		}
 	}

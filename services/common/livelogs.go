@@ -11,4 +11,7 @@ type LiveLogChunk struct {
 	Offset int64  `cbor:"2,keyasint"`
 	Data   []byte `cbor:"3,keyasint"`
 	Done   bool   `cbor:"4,keyasint"`
+	// Run tells apart runs of one job: a job a dead monkey left behind runs again
+	// on another, whose log starts over at offset 0.
+	Run string `cbor:"5,keyasint"`
 }

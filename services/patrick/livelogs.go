@@ -21,6 +21,7 @@ var (
 	liveLogsMaxJobs      = 1024
 	liveLogsMaxChunk     = 128 * 1024 // the monkey sends at most 64KiB
 	liveLogsMaxPending   = 32
+	liveLogsMaxRuns      = 16
 	liveLogsKeepDone     = 10 * time.Minute
 	liveLogsKeepIdle     = time.Hour
 	liveLogsHeartbeat    = 30 * time.Second
@@ -35,7 +36,9 @@ const (
 
 // liveLog is a job's log as far as the monkey has published it.
 type liveLog struct {
-	ending   bool // the final chunk arrived; final is the log's length
+	run      string          // the run being followed
+	oldRun   map[string]bool // runs replaced by a later one
+	ending   bool            // the final chunk arrived; final is the log's length
 	final    int64
 	data     []byte
 	next     int64            // monkey offset the next chunk should start at
@@ -89,6 +92,10 @@ func (ll *liveLogs) add(chunk *servicesCommon.LiveLogChunk) {
 		l = ll.get(chunk.Job, true)
 	}
 
+	if !ll.followRun(l, chunk) {
+		return
+	}
+
 	if len(chunk.Data) > 0 && chunk.Offset >= l.next {
 		l.pending[chunk.Offset] = chunk.Data
 	}
@@ -118,7 +125,15 @@ func (ll *liveLogs) add(chunk *servicesCommon.LiveLogChunk) {
 
 	if chunk.Done && !l.ending {
 		l.ending, l.final = true, chunk.Offset
-		time.AfterFunc(liveLogsDoneGrace, func() { ll.finish(l) })
+		run := l.run
+		time.AfterFunc(liveLogsDoneGrace, func() {
+			ll.lock.Lock()
+			current := l.run == run
+			ll.lock.Unlock()
+			if current {
+				ll.finish(l)
+			}
+		})
 	}
 	if l.ending && l.next >= l.final {
 		l.done = true
@@ -127,6 +142,34 @@ func (ll *liveLogs) add(chunk *servicesCommon.LiveLogChunk) {
 	l.updated = time.Now()
 	close(l.changed)
 	l.changed = make(chan struct{})
+}
+
+// followRun reports whether the chunk belongs to the run being followed, moving
+// on to a new run when one starts: its offsets start over, and streams keep
+// reading the same log, so they see the new run after a note.
+func (ll *liveLogs) followRun(l *liveLog, chunk *servicesCommon.LiveLogChunk) bool {
+	switch {
+	case chunk.Run == l.run:
+		return true
+	case l.oldRun[chunk.Run]:
+		return false
+	case l.run == "":
+		l.run = chunk.Run
+		return true
+	}
+
+	if l.oldRun == nil {
+		l.oldRun = make(map[string]bool)
+	}
+	if len(l.oldRun) >= liveLogsMaxRuns {
+		return false
+	}
+	l.oldRun[l.run] = true
+	l.run = chunk.Run
+	l.pending = make(map[int64][]byte)
+	l.next, l.ending, l.final = 0, false, 0
+	ll.append(l, []byte("\n[... this job started again on another node ...]\n"))
+	return true
 }
 
 // finish ends a log whose missing chunks did not arrive in time.

@@ -18,6 +18,7 @@ import (
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	servicesCommon "github.com/taubyte/tau/services/common"
+	service "github.com/taubyte/tau/services/patrick"
 	"gotest.tools/v3/assert"
 )
 
@@ -27,6 +28,8 @@ func TestDream_LiveLogs(t *testing.T) {
 	if token == "" {
 		t.Skip("TAU_TEST_GITHUB_TOKEN not set")
 	}
+
+	service.GrantRepoAccess(token, commonTest.ConfigRepo.ID)
 
 	http.DefaultClient = commonTest.CreateHttpClient()
 

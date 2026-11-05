@@ -2,6 +2,8 @@ package monkey
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"os"
 	"time"
 
@@ -22,6 +24,10 @@ func (m *Monkey) streamLogs() (stop func()) {
 	ctx, cancel := context.WithCancel(m.Service.ctx)
 	done := make(chan struct{})
 
+	id := make([]byte, 8)
+	rand.Read(id)
+	run := hex.EncodeToString(id)
+
 	go func() {
 		defer close(done)
 
@@ -40,7 +46,7 @@ func (m *Monkey) streamLogs() (stop func()) {
 				if n == 0 {
 					return
 				}
-				m.publishLogChunk(protocolCommon.LiveLogChunk{Job: m.Id, Offset: offset, Data: buf[:n]})
+				m.publishLogChunk(protocolCommon.LiveLogChunk{Job: m.Id, Run: run, Offset: offset, Data: buf[:n]})
 				offset += int64(n)
 			}
 		}
@@ -51,7 +57,7 @@ func (m *Monkey) streamLogs() (stop func()) {
 			select {
 			case <-ctx.Done():
 				flush()
-				m.publishLogChunk(protocolCommon.LiveLogChunk{Job: m.Id, Offset: offset, Done: true})
+				m.publishLogChunk(protocolCommon.LiveLogChunk{Job: m.Id, Run: run, Offset: offset, Done: true})
 				return
 			case <-ticker.C:
 				flush()
