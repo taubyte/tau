@@ -360,3 +360,28 @@ func TestClosingARunnerAbandonsItsJob(t *testing.T) {
 	require.NoError(t, s.Close(), "closing twice is closing once")
 	require.ErrorContains(t, s.Start(t.Context(), lone(t, nil)), "already started")
 }
+
+func TestARunnerWorksInTheCallerWhereNoBuildNodeIs(t *testing.T) {
+	idle := New()
+	_, err := idle.Plan(t.Context(), run.Work{}, io.Discard)
+	require.ErrorIs(t, err, ErrNotStarted)
+	require.ErrorIs(t, idle.Run(t.Context(), run.Work{}, nil), ErrNotStarted)
+
+	ran := false
+	s := &server{
+		exec: executor{
+			plan: func(context.Context, run.Work, io.Writer) ([]string, error) { return []string{"prod"}, nil },
+			run:  func(context.Context, run.Work, run.Output) error { ran = true; return nil },
+		},
+		confirm: confirmer{},
+	}
+	envs, err := s.Plan(t.Context(), workFrom(work("")), io.Discard)
+	require.NoError(t, err)
+	require.Equal(t, []string{"prod"}, envs)
+	require.NoError(t, s.Run(t.Context(), workFrom(work("prod")), nil))
+	require.True(t, ran)
+
+	s.confirm = confirmer{err: run.ErrNotAtCommit}
+	_, err = s.Plan(t.Context(), workFrom(work("")), io.Discard)
+	require.ErrorIs(t, err, run.ErrNotAtCommit, "a push is confirmed here as it is down a stream")
+}
