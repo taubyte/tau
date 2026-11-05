@@ -262,8 +262,9 @@ func (d removed) Close() error { return os.RemoveAll(string(d)) }
 type Universe struct {
 	mesh *mesh.Mesh
 	pids []string
-	// mirror is where its runners clone from (Commit).
-	mirror string
+	// mirror is where its runners clone from (Commit), and uploads where a
+	// developer's build is kept (Upload).
+	mirror, uploads string
 
 	aloneMu sync.Mutex
 	direct  *jobs.Direct
@@ -308,7 +309,7 @@ func Start(ctx context.Context, name string, cfg Config) (*Universe, error) {
 	}
 	m.OnClose(removed(mirror))
 
-	u := &Universe{mesh: m, mirror: mirror}
+	u := &Universe{mesh: m, mirror: mirror, uploads: held}
 	copies := max(cfg.Copies, 1)
 	for index := range copies {
 		p, err := m.Add(func(p peer.Node) error { return create(m, p, cfg, index, account, held, mirror) })

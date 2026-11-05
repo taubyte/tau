@@ -1,6 +1,7 @@
 package dream
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -20,8 +21,10 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/build/artifact"
 	"github.com/taubyte/tau/services/build/jobs"
 	"github.com/taubyte/tau/services/build/runner"
+	"github.com/taubyte/tau/services/build/uploads"
 )
 
 // Push is what a universe builds: a commit of a repository its mirror holds
@@ -134,6 +137,64 @@ func copyFile(from, to string) error {
 		return err
 	}
 	return out.Close()
+}
+
+// Upload keeps dir in the universe's uploads as a commit of repository's branch,
+// with built standing in for what its packages' recipes make: a package's name to
+// the file it builds to. It is the push that commit is, what `tau build` hands a
+// development cloud; dir itself is only read.
+func (u *Universe) Upload(repository, branch, dir string, built map[string]string) (Push, error) {
+	recipes, err := uploads.Recipes(dir, branch)
+	if err != nil {
+		return Push{}, err
+	}
+	products := map[string]string{}
+	named := map[string]bool{}
+	for _, byName := range recipes {
+		for name, digest := range byName {
+			if file, ok := built[name]; ok {
+				products[digest], named[name] = file, true
+			}
+		}
+	}
+	for name := range built {
+		if !named[name] {
+			return Push{}, fmt.Errorf("dream: %s builds no package/%s", dir, name)
+		}
+	}
+
+	var files []string
+	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel, err := filepath.Rel(dir, path)
+		files = append(files, rel)
+		return err
+	})
+	if err != nil {
+		return Push{}, err
+	}
+	var bundle bytes.Buffer
+	if err := artifact.PackBundle(&bundle, dir, files, products); err != nil {
+		return Push{}, err
+	}
+	held, err := uploads.Open(u.uploads)
+	if err != nil {
+		return Push{}, err
+	}
+	ref := "refs/heads/" + branch
+	commit, err := held.Put(repository, ref, &bundle)
+	if err != nil {
+		return Push{}, err
+	}
+	return Push{Repository: repository, Ref: ref, Commit: commit}, nil
 }
 
 // Link names project's repositories in the universe's register, as `tau link`

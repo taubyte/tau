@@ -3,6 +3,8 @@
 package dream_test
 
 import (
+	"net/http"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -79,4 +81,45 @@ func TestAPushOfWhatTheMirrorDoesNotHoldFails(t *testing.T) {
 	require.Equal(t, buildv2.JobStatus_JobStatusFailed, out.Plan.GetStatus())
 	require.Contains(t, out.Plan.GetReason(), "does not hold")
 	require.Empty(t, out.Environments)
+}
+
+// AN UPLOADED BUILD IS WHAT RUNS: the tree and its product go through the upload
+// door, the build records the product live, and the worker reads it from the
+// records to answer the request.
+func TestAnUploadedBuildIsWhatTheFunctionRuns(t *testing.T) {
+	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
+	ctx := t.Context()
+	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{Services: []string{
+		instance.Runner, instance.Register, instance.Worker, instance.Discovery, instance.Gateway,
+		instance.Database, instance.Primitives, storageService.Descriptor.Name,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(u.Close)
+
+	const repository = "github.com/acme/wasm"
+	push, err := u.Upload(repository, "main", projectDir("with/function/wasm"), map[string]string{
+		"hello_code": filepath.Join("..", "..", "pkg", "invoke", "wasm", "fixtures", "handler.wasm"),
+	})
+	require.NoError(t, err)
+	require.NoError(t, u.Link(ctx, "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR", repository))
+	out, err := u.Build(ctx, push)
+	require.NoError(t, err)
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, out.Plan.GetStatus(), "%s", out.Plan.GetReason())
+	require.Len(t, out.Environments, 1)
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, out.Environments[0].GetStatus(), "%s", out.Environments[0].GetReason())
+
+	r := &running{node: nodeOf(t, u.Pids()[0]), host: "hello.example.com"}
+	got := r.ask(t, http.MethodGet, "/")
+	require.Equal(t, 200, got.Code, "%s", got.Body.String())
+	require.Equal(t, "/", got.Header().Get("x-path"), "the handler built, answering")
+}
+
+func TestAnUploadNamingAPackageTheTreeDoesNotBuildIsRefused(t *testing.T) {
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Runner, instance.Discovery}})
+	require.NoError(t, err)
+	t.Cleanup(u.Close)
+	_, err = u.Upload("github.com/acme/wasm", "main", projectDir("with/function/wasm"), map[string]string{"nobody": "x"})
+	require.ErrorContains(t, err, "builds no package/nobody")
+	_, err = u.Upload("github.com/acme/wasm", "main", t.TempDir(), nil)
+	require.Error(t, err, "a tree with no project")
 }

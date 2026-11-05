@@ -324,6 +324,25 @@ func (d *Deploy) put(ctx context.Context, r Register, projectID, environment str
 	return id, revision, false, nil
 }
 
+// Compiled is what a push of the tree at dir to branch deploys: the project each
+// environment it feeds compiles to, compiled as a deploy compiles it.
+func Compiled(dir, branch string) (map[string]*specs.Project, error) {
+	fs := afero.NewOsFs()
+	names, err := deployments(fs, dir, branch)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]*specs.Project, len(names))
+	for _, name := range names {
+		_, p, _, err := compileFor(fs, dir, branch, name)
+		if err != nil {
+			return nil, err
+		}
+		out[name] = p
+	}
+	return out, nil
+}
+
 // deployments is which of a project's environments this push feeds.
 func deployments(fs afero.Fs, dir, branch string) ([]string, error) {
 	declared, err := schema.EnvironmentsOf(fs, dir)

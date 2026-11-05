@@ -556,3 +556,13 @@ func TestAProvenZonePublishes(t *testing.T) {
 	require.NoError(t, pushed(t.Context(), runner(t, &checkout{dir: fixture(t, basicFixture)}, registry(t), deploy.WithDomains(proven)), work(), &out{}))
 	require.Equal(t, 1, proven.asked)
 }
+
+func TestWhatAPushDeploysIsCompiledPerEnvironmentItFeeds(t *testing.T) {
+	projects, err := deploy.Compiled(fixture(t, basicFixture), "main")
+	require.NoError(t, err)
+	require.Contains(t, projects, "prod")
+	require.NotNil(t, projects["prod"])
+
+	_, err = deploy.Compiled(t.TempDir(), "main")
+	require.Error(t, err)
+}

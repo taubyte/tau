@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/services/build/artifact"
 	"github.com/taubyte/tau/services/build/deploy"
 	"github.com/taubyte/tau/services/build/run"
@@ -33,6 +34,36 @@ var (
 	commitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	digestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
+
+// Recipes is the recipe of each package a push of the tree at dir to branch builds,
+// by environment and then package name, worked out as a cloud's build works it out:
+// the digest an upload names that package's product by.
+func Recipes(dir, branch string) (map[string]map[string]string, error) {
+	projects, err := deploy.Compiled(dir, branch)
+	if err != nil {
+		return nil, err
+	}
+	deployments := make([]artifact.Deployment, 0, len(projects))
+	for environment, p := range projects {
+		deployments = append(deployments, artifact.Deployment{Environment: environment, Project: p})
+	}
+	items, err := artifact.Plan(deployments, func(specs.Buildable) (bool, error) { return true, nil })
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]map[string]string{}
+	for _, item := range items {
+		spec, err := artifact.Recipe(item, dir)
+		if err != nil {
+			return nil, err
+		}
+		if out[item.Environment] == nil {
+			out[item.Environment] = map[string]string{}
+		}
+		out[item.Environment][item.Name] = spec.Digest()
+	}
+	return out, nil
+}
 
 // Dir is the directory uploads are kept in.
 type Dir struct{ root string }
