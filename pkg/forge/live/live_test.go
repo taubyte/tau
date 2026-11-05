@@ -236,7 +236,7 @@ func walk(t *testing.T, in *instance) {
 		// CloneAddress can only derive the ssh one from the key's host — which
 		// carries the HTTP port. Repository() is the forge naming its own ssh
 		// address, which is the documented answer on a ported host.
-		deploy.WithAddress(func(string, forge.Protocol) (forge.Address, error) { return address, nil }),
+		deploy.WithAddress(fixed(address)),
 		deploy.WithHostKeys(func(host string) []gossh.PublicKey {
 			if host == in.host {
 				return in.hostKeys
@@ -652,3 +652,8 @@ func status(t *testing.T, url string, header http.Header) int {
 	resp.Body.Close()
 	return resp.StatusCode
 }
+
+// fixed is the one address a test's forge serves its repository at.
+type fixed forge.Address
+
+func (f fixed) Address(string, forge.Protocol) (forge.Address, error) { return forge.Address(f), nil }

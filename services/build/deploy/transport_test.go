@@ -27,15 +27,23 @@ type asked struct {
 }
 
 func (a *asked) address(ssh, https forge.Address) deploy.CloneOption {
-	return deploy.WithAddress(func(_ string, over forge.Protocol) (forge.Address, error) {
-		a.mu.Lock()
-		a.over = append(a.over, over)
-		a.mu.Unlock()
-		if over == forge.SSH {
-			return ssh, nil
-		}
-		return https, nil
-	})
+	return deploy.WithAddress(byProtocol{asked: a, ssh: ssh, https: https})
+}
+
+// byProtocol is an address over each protocol, recording which was asked for.
+type byProtocol struct {
+	asked      *asked
+	ssh, https forge.Address
+}
+
+func (b byProtocol) Address(_ string, over forge.Protocol) (forge.Address, error) {
+	b.asked.mu.Lock()
+	b.asked.over = append(b.asked.over, over)
+	b.asked.mu.Unlock()
+	if over == forge.SSH {
+		return b.ssh, nil
+	}
+	return b.https, nil
 }
 
 func (a *asked) protocols() []forge.Protocol {

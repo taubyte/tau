@@ -112,12 +112,12 @@ func compose(region string, cfg Config, projects linked.Projects, table func(con
 	// SSH WHERE A DEPLOY KEY IS, HTTPS WHERE NONE IS: a deploy key is an ssh key, and a
 	// repository without one is read anonymously or not at all. Both addresses, and the
 	// ssh account, are the forge's; an ssh host is pinned.
-	address := deploy.Forged(forges)
+	var address deploy.Addresses = deploy.Forged{Forges: forges}
 	if cfg.Mirror != "" {
 		if at, err := url.Parse(cfg.Mirror); err != nil || at.Scheme != "file" {
 			return nil, nil, fmt.Errorf("runner: mirror %q is not a file:// directory", cfg.Mirror)
 		}
-		address = deploy.Mirrored(cfg.Mirror, address)
+		address = deploy.Mirrored{Root: cfg.Mirror, Otherwise: address}
 	}
 	clone := deploy.NewClone(linked.Credentials{Projects: projects, Vault: vault},
 		deploy.WithAddress(address),

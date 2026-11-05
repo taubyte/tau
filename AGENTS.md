@@ -205,3 +205,20 @@ the program as a whole. See [testing](https://pkg.go.dev/testing#AllocsPerRun).
 - [ ] Are short-lived buffers reused, without relying on `sync.Pool` to keep anything?
 - [ ] Is large backing storage free of pointers?
 - [ ] Is every "does not allocate" claim backed by `AllocsPerRun` or `ReportAllocs`?
+
+## Write idiomatic Go
+
+A seam that is a behaviour is an interface, implemented by named types; where only
+the type varies, it is generic. A `func(...)` signature passed as a parameter, kept
+in a field or taken by an option is not the abstraction: `deploy.Addresses`, with
+`Forged`, `Mirrored` and `HTTPS` implementing it, is what a clone reaches a
+repository through, not a function it was handed.
+
+### Checklist
+
+- [ ] Is a function-typed parameter, field or option standing in for something
+      with implementations? Make it an interface.
+- [ ] Do the implementations differ only in a type? Make it generic.
+- [ ] Does a test implement the interface with a small named type rather than a
+      literal it adapts?
+- [ ] Was a func-typed seam found nearby converted rather than copied?

@@ -37,7 +37,7 @@ type Clone struct {
 	// address turns a repository key into a clone address over a protocol. The
 	// protocol follows the credential: ssh with a deploy key, anonymous https
 	// without.
-	address func(repositoryKey string, over forge.Protocol) (forge.Address, error)
+	address Addresses
 
 	// hostKeys are the ssh host keys a forge host may answer with. A clone over
 	// ssh to a host with none is refused: see git.SSHKeyAs.
@@ -51,7 +51,7 @@ var (
 
 // NewClone builds one. A nil credentials reads public repositories only.
 func NewClone(credentials Credentials, opts ...CloneOption) *Clone {
-	c := &Clone{credentials: credentials, address: HTTPS}
+	c := &Clone{credentials: credentials, address: HTTPS{}}
 	for _, apply := range opts {
 		apply(c)
 	}
@@ -61,9 +61,14 @@ func NewClone(credentials Credentials, opts ...CloneOption) *Clone {
 // CloneOption configures a Clone.
 type CloneOption func(*Clone)
 
+// Addresses is where a repository is reached over a protocol.
+type Addresses interface {
+	Address(repositoryKey string, over forge.Protocol) (forge.Address, error)
+}
+
 // WithAddress is how this cloud reaches a repository over a protocol. Default
 // HTTPS, which reaches nothing over ssh.
-func WithAddress(address func(repositoryKey string, over forge.Protocol) (forge.Address, error)) CloneOption {
+func WithAddress(address Addresses) CloneOption {
 	return func(c *Clone) {
 		if address != nil {
 			c.address = address
@@ -83,7 +88,9 @@ func WithHostKeys(keys func(host string) []gossh.PublicKey) CloneOption {
 
 // HTTPS is `https://<key>.git`, which reads what is public and nothing else.
 // Asked for ssh it refuses: it knows no forge, so no ssh address or account.
-func HTTPS(repositoryKey string, over forge.Protocol) (forge.Address, error) {
+type HTTPS struct{}
+
+func (HTTPS) Address(repositoryKey string, over forge.Protocol) (forge.Address, error) {
 	key, err := parse(repositoryKey)
 	if err != nil {
 		return forge.Address{}, err
@@ -97,36 +104,38 @@ func HTTPS(repositoryKey string, over forge.Protocol) (forge.Address, error) {
 // Forged is the address the forge serving a key's host gives it: over ssh with the
 // driver's account, over https its anonymous clone URL. Asked anonymously; the
 // clone's credential is the deploy key.
-func Forged(forges *forge.Registry) func(repositoryKey string, over forge.Protocol) (forge.Address, error) {
-	return func(repositoryKey string, over forge.Protocol) (forge.Address, error) {
-		key, err := parse(repositoryKey)
-		if err != nil {
-			return forge.Address{}, err
-		}
-		session, err := forges.For(key, forge.Anonymous())
-		if err != nil {
-			return forge.Address{}, fmt.Errorf("deploy: %w", err)
-		}
-		return session.CloneAddress(key, over)
+type Forged struct{ Forges *forge.Registry }
+
+func (f Forged) Address(repositoryKey string, over forge.Protocol) (forge.Address, error) {
+	key, err := parse(repositoryKey)
+	if err != nil {
+		return forge.Address{}, err
 	}
+	session, err := f.Forges.For(key, forge.Anonymous())
+	if err != nil {
+		return forge.Address{}, fmt.Errorf("deploy: %w", err)
+	}
+	return session.CloneAddress(key, over)
 }
 
-// Mirrored reaches a repository the file:// directory base holds a folder for,
-// its key joined on, read with no credential, and every other through otherwise: a
+// Mirrored reaches a repository the file:// directory Root holds a folder for, its
+// key joined on, read with no credential, and every other through Otherwise: a
 // development cloud's mirror of the repositories it was handed.
-func Mirrored(base string, otherwise func(repositoryKey string, over forge.Protocol) (forge.Address, error)) func(repositoryKey string, over forge.Protocol) (forge.Address, error) {
-	root := strings.TrimSuffix(strings.TrimPrefix(base, "file://"), "/")
-	return func(repositoryKey string, over forge.Protocol) (forge.Address, error) {
-		key, err := parse(repositoryKey)
-		if err != nil {
-			return forge.Address{}, err
-		}
-		at := root + "/" + key.String()
-		if info, err := os.Stat(at); err == nil && info.IsDir() {
-			return forge.Address{URL: "file://" + at}, nil
-		}
-		return otherwise(repositoryKey, over)
+type Mirrored struct {
+	Root      string
+	Otherwise Addresses
+}
+
+func (m Mirrored) Address(repositoryKey string, over forge.Protocol) (forge.Address, error) {
+	key, err := parse(repositoryKey)
+	if err != nil {
+		return forge.Address{}, err
 	}
+	at := strings.TrimSuffix(strings.TrimPrefix(m.Root, "file://"), "/") + "/" + key.String()
+	if info, err := os.Stat(at); err == nil && info.IsDir() {
+		return forge.Address{URL: "file://" + at}, nil
+	}
+	return m.Otherwise.Address(repositoryKey, over)
 }
 
 func parse(repositoryKey string) (repokey.Key, error) {
@@ -191,7 +200,7 @@ func (c *Clone) reach(ctx context.Context, repositoryKey string) ([]git.Option, 
 	if deployKey != "" {
 		over = forge.SSH
 	}
-	address, err := c.address(repositoryKey, over)
+	address, err := c.address.Address(repositoryKey, over)
 	if err != nil {
 		return nil, "", err
 	}

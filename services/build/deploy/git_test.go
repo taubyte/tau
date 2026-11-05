@@ -21,6 +21,19 @@ import (
 	"github.com/taubyte/tau/services/build/run"
 )
 
+// at is one address for every repository, over either protocol.
+type at forge.Address
+
+func (a at) Address(string, forge.Protocol) (forge.Address, error) { return forge.Address(a), nil }
+
+// unreached is a forge that holds nothing, and remembers who was asked of it.
+type unreached struct{ asked []string }
+
+func (u *unreached) Address(key string, _ forge.Protocol) (forge.Address, error) {
+	u.asked = append(u.asked, key)
+	return forge.Address{}, errors.New("not at this forge")
+}
+
 // repository stands up a real repository with two commits, so the clone is shown
 // to read the commit, not the head.
 
@@ -67,7 +80,7 @@ func TestACloneReadsTheCommitAndNotTheBranch(t *testing.T) {
 	path, first, second := repository(t)
 	require.NotEqual(t, first, second)
 
-	clone := deploy.NewClone(nil, deploy.WithAddress(func(string, forge.Protocol) (forge.Address, error) { return forge.Address{URL: path}, nil }))
+	clone := deploy.NewClone(nil, deploy.WithAddress(at(forge.Address{URL: path})))
 
 	for name, want := range map[string]string{first: "example.com", second: "moved.example"} {
 		dir, done, err := clone.Checkout(t.Context(), "local/repo", "main", name)
@@ -87,7 +100,7 @@ func TestACloneReadsTheCommitAndNotTheBranch(t *testing.T) {
 
 func TestACommitThatIsNotThere(t *testing.T) {
 	path, _, _ := repository(t)
-	clone := deploy.NewClone(nil, deploy.WithAddress(func(string, forge.Protocol) (forge.Address, error) { return forge.Address{URL: path}, nil }))
+	clone := deploy.NewClone(nil, deploy.WithAddress(at(forge.Address{URL: path})))
 
 	_, _, err := clone.Checkout(t.Context(), "local/repo", "main",
 		"1111111111111111111111111111111111111111")
@@ -106,11 +119,8 @@ func TestAMirrorIsWhereTheRepositoriesItHoldsAreClonedFrom(t *testing.T) {
 	base := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(base, "github.com", "acme"), 0o755))
 	require.NoError(t, os.Rename(path, filepath.Join(base, "github.com", "acme", "app")))
-	var forged []string
-	clone := deploy.NewClone(nil, deploy.WithAddress(deploy.Mirrored("file://"+base+"/", func(key string, _ forge.Protocol) (forge.Address, error) {
-		forged = append(forged, key)
-		return forge.Address{}, errors.New("not at this forge")
-	})))
+	elsewhere := &unreached{}
+	clone := deploy.NewClone(nil, deploy.WithAddress(deploy.Mirrored{Root: "file://" + base + "/", Otherwise: elsewhere}))
 
 	dir, done, err := clone.Checkout(t.Context(), "github.com/Acme/App", "main", first)
 	require.NoError(t, err)
@@ -122,7 +132,7 @@ func TestAMirrorIsWhereTheRepositoriesItHoldsAreClonedFrom(t *testing.T) {
 	require.NoError(t, clone.Confirm(t.Context(), "github.com/acme/app", "refs/heads/main", second))
 	require.ErrorIs(t, clone.Confirm(t.Context(), "github.com/acme/app", "refs/heads/main", first), run.ErrNotAtCommit)
 	require.ErrorContains(t, clone.Confirm(t.Context(), "github.com/acme/elsewhere", "refs/heads/main", first), "not at this forge")
-	require.Equal(t, []string{"github.com/acme/elsewhere"}, forged, "a repository the mirror holds no folder for is its forge's")
+	require.Equal(t, []string{"github.com/acme/elsewhere"}, elsewhere.asked, "a repository the mirror holds no folder for is its forge's")
 	require.ErrorContains(t, clone.Confirm(t.Context(), "", "refs/heads/main", first), "is not a repository")
 }
 
@@ -130,7 +140,7 @@ func TestAPushOfARealRepositoryDeploys(t *testing.T) {
 	path, first, second := repository(t)
 	r := registry(t)
 
-	clone := deploy.NewClone(nil, deploy.WithAddress(func(string, forge.Protocol) (forge.Address, error) { return forge.Address{URL: path}, nil }))
+	clone := deploy.NewClone(nil, deploy.WithAddress(at(forge.Address{URL: path})))
 	d, err := deploy.New(
 		deploy.WithRegions(schema.WithRegion("region-1")),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
@@ -165,34 +175,34 @@ func TestAPushOfARealRepositoryDeploys(t *testing.T) {
 }
 
 func TestHowACloudReachesARepository(t *testing.T) {
-	address, err := deploy.HTTPS("github.com/acme/shop", forge.HTTPS)
+	address, err := deploy.HTTPS{}.Address("github.com/acme/shop", forge.HTTPS)
 	require.NoError(t, err)
 	require.Equal(t, forge.Address{URL: "https://github.com/acme/shop.git"}, address)
-	_, err = deploy.HTTPS("", forge.HTTPS)
+	_, err = deploy.HTTPS{}.Address("", forge.HTTPS)
 	require.Error(t, err)
-	_, err = deploy.HTTPS("github.com/acme/shop", forge.SSH)
+	_, err = deploy.HTTPS{}.Address("github.com/acme/shop", forge.SSH)
 	require.ErrorContains(t, err, "no forge is bound", "a bare https address has no ssh answer to give")
 
 	f := fake.New(fake.GitHubLike)
 	forges, err := f.Registry(forge.Policy{})
 	require.NoError(t, err)
-	forged := deploy.Forged(forges)
+	forged := deploy.Forged{Forges: forges}
 
-	address, err = forged(f.Keys().Writable.String(), forge.SSH)
+	address, err = forged.Address(f.Keys().Writable.String(), forge.SSH)
 	require.NoError(t, err)
 	require.NotEmpty(t, address.SSHAccount, "an ssh address says which account a key authenticates as")
 	require.NotEmpty(t, address.URL)
 
-	anonymous, err := forged(f.Keys().Writable.String(), forge.HTTPS)
+	anonymous, err := forged.Address(f.Keys().Writable.String(), forge.HTTPS)
 	require.NoError(t, err)
 	require.Empty(t, anonymous.SSHAccount, "an https address authenticates as nobody")
 	require.True(t, strings.HasPrefix(anonymous.URL, "https://"), "the forge's own https clone url, got %q", anonymous.URL)
 
-	_, err = forged("codeberg.org/acme/shop", forge.SSH)
+	_, err = forged.Address("codeberg.org/acme/shop", forge.SSH)
 	var none *forge.NoDriverError
 	require.ErrorAs(t, err, &none, "a host no forge is bound to is not reached by guessing")
 
-	_, err = forged("", forge.HTTPS)
+	_, err = forged.Address("", forge.HTTPS)
 	require.ErrorContains(t, err, "not a repository")
 }
 
@@ -206,9 +216,7 @@ func (k keys) DeployKey(context.Context, string) (string, error) { return k.key,
 
 func TestReadingAPrivateRepository(t *testing.T) {
 	path, first, _ := repository(t)
-	local := deploy.WithAddress(func(string, forge.Protocol) (forge.Address, error) {
-		return forge.Address{URL: path, SSHAccount: "git"}, nil
-	})
+	local := deploy.WithAddress(at(forge.Address{URL: path, SSHAccount: "git"}))
 
 	// A repository that needs no key: auth says so with an empty string and no
 	// error, and the clone proceeds unauthenticated.
@@ -242,9 +250,7 @@ func TestReadingAPrivateRepository(t *testing.T) {
 
 	// A KEY OVER HTTPS AUTHENTICATES NOTHING, so it is refused by name rather
 	// than cloned anonymously and failed as a missing repository.
-	overHTTPS := deploy.WithAddress(func(string, forge.Protocol) (forge.Address, error) {
-		return forge.Address{URL: path}, nil
-	})
+	overHTTPS := deploy.WithAddress(at(forge.Address{URL: path}))
 	_, _, err = deploy.NewClone(keys{key: "any"}, overHTTPS).
 		Checkout(t.Context(), "local/repo", "main", first)
 	require.ErrorContains(t, err, "which is not ssh")
@@ -266,7 +272,7 @@ func hostPublicKey(t *testing.T) gossh.PublicKey {
 
 func TestAPushIsConfirmedAtTheRepository(t *testing.T) {
 	path, first, second := repository(t)
-	clone := deploy.NewClone(nil, deploy.WithAddress(func(string, forge.Protocol) (forge.Address, error) { return forge.Address{URL: path}, nil }))
+	clone := deploy.NewClone(nil, deploy.WithAddress(at(forge.Address{URL: path})))
 
 	require.NoError(t, clone.Confirm(t.Context(), "local/repo", "refs/heads/main", second))
 	require.ErrorIs(t, clone.Confirm(t.Context(), "local/repo", "refs/heads/main", first), run.ErrNotAtCommit,
@@ -278,9 +284,7 @@ func TestAPushIsConfirmedAtTheRepository(t *testing.T) {
 	err = deploy.NewClone(keys{err: errors.New("auth is down")}).Confirm(t.Context(), "local/repo", "refs/heads/main", second)
 	require.ErrorContains(t, err, "auth is down")
 
-	missing := deploy.NewClone(nil, deploy.WithAddress(func(string, forge.Protocol) (forge.Address, error) {
-		return forge.Address{URL: filepath.Join(t.TempDir(), "nothing")}, nil
-	}))
+	missing := deploy.NewClone(nil, deploy.WithAddress(at(forge.Address{URL: filepath.Join(t.TempDir(), "nothing")})))
 	err = missing.Confirm(t.Context(), "local/repo", "refs/heads/main", second)
 	require.ErrorContains(t, err, "listing local/repo")
 	require.NotErrorIs(t, err, run.ErrNotAtCommit)
