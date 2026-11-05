@@ -117,11 +117,6 @@ func generateKey() (string, string, string, error) {
 // permissions with it, so this costs no extra API call. Read access is not
 // enough: a public repository reads to everyone, which is what let an unrelated
 // caller reach another project's repositories.
-// RepoAccess is the same rule for services that hold a caller's client.
-func RepoAccess(client GitHubClient, repoID string) bool {
-	return repoAccess(client, repoID)
-}
-
 func repoAccess(client GitHubClient, repoID string) bool {
 	if client.GetByID(repoID) != nil {
 		return false
