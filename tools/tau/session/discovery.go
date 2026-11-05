@@ -214,7 +214,33 @@ func sessionBaseDir() string {
 	if sessionTempDirOverride != "" {
 		return sessionTempDirOverride
 	}
+	if runningTests() {
+		return filepath.Join(os.TempDir(), fmt.Sprintf("tau-tests-%d", os.Getpid()))
+	}
 	return os.TempDir()
+}
+
+// runningTests keeps a test binary off the user's real sessions: its session
+// file shares ancestors with the user's shell and would be picked up by the
+// next tau command there.
+func runningTests() bool {
+	return strings.HasSuffix(strings.TrimSuffix(os.Args[0], ".exe"), ".test")
+}
+
+// sessionMaxAge is how long an untouched session file is kept. Stale files are
+// what a reused PID can match, and nothing else removes them.
+const sessionMaxAge = 30 * 24 * time.Hour
+
+func pruneSessions(root string, now time.Time) {
+	files, err := filepath.Glob(filepath.Join(root, sessionDirPrefix+"-session-*.yaml"))
+	if err != nil {
+		return
+	}
+	for _, path := range files {
+		if info, err := os.Stat(path); err == nil && !info.IsDir() && now.Sub(info.ModTime()) > sessionMaxAge {
+			os.Remove(path)
+		}
+	}
 }
 
 // sessionRootDir returns the single directory that contains session YAML files.
@@ -285,6 +311,7 @@ func discoverOrCreateConfigFileLoc() (string, error) {
 	if fileBase == "" {
 		return "", fmt.Errorf("session: invalid path for file name")
 	}
+	pruneSessions(root, time.Now())
 	sessionFilePath := filepath.Join(root, fileBase+".yaml")
 	f, err := os.OpenFile(sessionFilePath, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
