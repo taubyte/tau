@@ -57,22 +57,21 @@ type Secrets interface {
 
 // spec reads a resource and says what to run. Every value comes off the compiled
 // resource: `execution/memory` and `execution/timeout` are PerEnv.
-func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *specs.Project, r specs.Resource, resourceID string) (invoke.Spec, error) {
+// specOf is everything in t's spec but its artifact, a function of the compiled
+// project alone (resolved.go), and the package the artifact is asked about.
+func specOf(t Target, p register.Pointer, proj *specs.Project, r specs.Resource, resourceID string) (resolvedSpec, error) {
 	// A kind this service answers itself has no runtime or artifact; asking for them
 	// would refuse it before Invoke's own branch.
 	workload := specs.ReadWorkloadBlock(r)
-	var runtime, artifact string
+	var runtime string
 	var pkg ranPackage
 	if !servedHere(t.Kind) {
 		var err error
 		if pkg, err = packageOf(t, proj, workload); err != nil {
-			return invoke.Spec{}, err
+			return resolvedSpec{}, err
 		}
 		if runtime, err = runtimeOf(t.Kind, pkg.Package); err != nil {
-			return invoke.Spec{}, err
-		}
-		if artifact, err = s.artifactOf(ctx, t, pkg); err != nil {
-			return invoke.Spec{}, err
+			return resolvedSpec{}, err
 		}
 	}
 
@@ -80,14 +79,13 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *
 
 	reaches, err := reachesOf(t, proj, r)
 	if err != nil {
-		return invoke.Spec{}, err
+		return resolvedSpec{}, err
 	}
 
 	spec := invoke.Spec{
 		Runtime:  runtime,
 		Name:     strings.Join([]string{t.Project, t.Environment, t.Kind, resourceID}, "/"),
 		Revision: string(p.Object),
-		Artifact: artifact,
 		Env:      env,
 		Reaches:  reaches,
 
@@ -125,10 +123,10 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *
 	// here runs on no tier.
 	if runtime != "" {
 		if err := appliedWith(&spec, t, proj, r, pkg, workload); err != nil {
-			return invoke.Spec{}, err
+			return resolvedSpec{}, err
 		}
 	}
-	return spec, nil
+	return resolvedSpec{spec: spec, pkg: pkg}, nil
 }
 
 // reachesOf turns the access block into grants. A label is scoped, so it is resolved
@@ -975,17 +973,27 @@ func (s *Service) Resolve(ctx context.Context, t Target) (invoke.Spec, error) {
 		return invoke.Spec{}, ErrNoTarget
 	}
 
-	proj, pointer, err := s.projects.At(ctx, register.Deployment{Project: t.Project, Environment: t.Environment})
+	deployment := register.Deployment{Project: t.Project, Environment: t.Environment}
+	proj, pointer, err := s.projects.At(ctx, deployment)
 	if err != nil {
 		return invoke.Spec{}, err
+	}
+
+	key := keyOf(t)
+	if held, ok := s.resolutions.get(deployment, pointer.Object, key); ok {
+		return s.resolved(ctx, t, held)
 	}
 
 	resource, resourceID, err := proj.Resource(t.Scope, t.Kind, t.Name)
 	if err != nil {
 		return invoke.Spec{}, err
 	}
-
-	return s.spec(ctx, t, pointer, proj, resource, resourceID)
+	held, err := specOf(t, pointer, proj, resource, resourceID)
+	if err != nil {
+		return invoke.Spec{}, err
+	}
+	s.resolutions.put(deployment, pointer.Object, key, held)
+	return s.resolved(ctx, t, held)
 }
 
 // mcpSettings is what an mcp declares about its listing.

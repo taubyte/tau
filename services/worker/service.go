@@ -50,6 +50,8 @@ type Service struct {
 	now func() time.Time
 
 	projects *register.Cache[*specs.Project]
+	// resolutions is what targets resolve to under each deployment's current object.
+	resolutions resolutions
 
 	serverOptions []rpc.ServerOption
 
