@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -185,7 +186,7 @@ func TestACommitIsTheFolderAsItIsNow(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Discovery}})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
-	require.Equal(t, t.Name(), u.Name())
+	require.Equal(t, strings.ToLower(t.Name()), u.Name(), "the cloud a universe is, named as a cloud is")
 	require.NotNil(t, u.CA())
 
 	dir := t.TempDir()
