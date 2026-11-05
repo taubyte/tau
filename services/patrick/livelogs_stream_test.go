@@ -8,10 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/gorilla/websocket"
-	"github.com/taubyte/tau/core/kvdb"
-	commonIface "github.com/taubyte/tau/core/services/patrick"
 )
 
 type fakeConn struct {
@@ -50,32 +47,6 @@ func (c *fakeConn) String() string {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	return c.text.String()
-}
-
-type fakeJobs struct {
-	kvdb.KVDB
-	lock sync.Mutex
-	keys map[string][]byte
-}
-
-func (d *fakeJobs) Get(_ context.Context, key string) ([]byte, error) {
-	d.lock.Lock()
-	defer d.lock.Unlock()
-	if v, ok := d.keys[key]; ok {
-		return v, nil
-	}
-	return nil, errors.New("not found")
-}
-
-func (d *fakeJobs) put(t *testing.T, key string) {
-	t.Helper()
-	data, err := cbor.Marshal(&commonIface.Job{Id: "j"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	d.lock.Lock()
-	defer d.lock.Unlock()
-	d.keys[key] = data
 }
 
 func newTestStream(t *testing.T) (*logStream, *fakeConn, *fakeJobs) {
