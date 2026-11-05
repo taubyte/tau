@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-openapi/testify/v2/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/taubyte/tau/services/build/runner"
 
 	"github.com/taubyte/tau/pkg/containers"
