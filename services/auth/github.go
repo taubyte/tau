@@ -153,6 +153,8 @@ func (srv *AuthService) authorizeProject(client GitHubClient, project projects.P
 }
 
 func (srv *AuthService) registerGitHubRepository(ctx context.Context, client GitHubClient, repoID string) (*RepositoryRegistrationResponse, error) {
+	defer forgetRepoList(client)
+
 	// If client is nil (P2P calls), skip GitHub API verification
 	if client != nil {
 		if !repoAccess(client, repoID) {
@@ -279,6 +281,8 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client Git
 }
 
 func (srv *AuthService) unregisterGitHubRepository(ctx context.Context, client GitHubClient, repoID string) error {
+	defer forgetRepoList(client)
+
 	// If client is nil (P2P calls), skip GitHub API verification
 	if client != nil {
 		// Registering already required write access and tenancy ownership;
@@ -331,6 +335,8 @@ func (srv *AuthService) unregisterGitHubRepository(ctx context.Context, client G
 }
 
 func (srv *AuthService) newGitHubProject(ctx context.Context, client GitHubClient, projectID, projectName, configID, codeID string) (*ProjectCreateResponse, error) {
+	defer forgetRepoList(client)
+
 	logger.Debug("Creating project " + projectName)
 
 	logger.Debug("Project ID=" + projectID)

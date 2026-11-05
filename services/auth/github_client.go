@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -232,6 +233,17 @@ func (client *githubClient) CreatePushHook(name *string, url *string, devMode bo
 // fetched a few at a time ahead of fn, so a caller with few projects still gets
 // them as fast as a full listing, and one with many stops after a page or two.
 func (client *githubClient) EachRepoPage(fn func(ids []string) (more bool)) error {
+	if cached, ok := cachedRepoList(client.Token); ok {
+		for ids := cached.newestFirst; len(ids) > 0; {
+			n := min(100, len(ids))
+			if !fn(ids[:n]) {
+				return nil
+			}
+			ids = ids[n:]
+		}
+		return nil
+	}
+
 	page := func(n int) ([]string, *github.Response, error) {
 		opts := github.RepositoryListByAuthenticatedUserOptions{ListOptions: github.ListOptions{Page: n, PerPage: 100}, Sort: "created", Direction: "desc"}
 		repos, resp, err := client.Repositories.ListByAuthenticatedUser(client.ctx, &opts)
@@ -291,8 +303,12 @@ var listReposConcurrency = 8
 // first page says how many there are; the others are fetched together, and any
 // failure is an error.
 func (client *githubClient) ListMyRepos() (map[string]RepositoryBasicInfo, error) {
+	if cached, ok := cachedRepoList(client.Token); ok {
+		return maps.Clone(cached.repos), nil
+	}
+
 	page := func(n int) ([]*github.Repository, *github.Response, error) {
-		opts := github.RepositoryListByAuthenticatedUserOptions{ListOptions: github.ListOptions{Page: n, PerPage: 100}, Sort: "created"}
+		opts := github.RepositoryListByAuthenticatedUserOptions{ListOptions: github.ListOptions{Page: n, PerPage: 100}, Sort: "created", Direction: "desc"}
 		return client.Repositories.ListByAuthenticatedUser(client.ctx, &opts)
 	}
 
@@ -323,11 +339,17 @@ func (client *githubClient) ListMyRepos() (map[string]RepositoryBasicInfo, error
 	}
 
 	repos := make(map[string]RepositoryBasicInfo)
+	newestFirst := make([]string, 0, 100*len(pages))
 	for _, p := range pages {
 		for _, v := range p {
-			repos[fmt.Sprintf("%d", v.GetID())] = RepositoryBasicInfo{Name: v.GetFullName(), URL: v.GetURL()}
+			id := fmt.Sprintf("%d", v.GetID())
+			if _, dup := repos[id]; !dup {
+				newestFirst = append(newestFirst, id)
+			}
+			repos[id] = RepositoryBasicInfo{Name: v.GetFullName(), URL: v.GetURL()}
 		}
 	}
+	storeRepoList(client.Token, newestFirst, repos)
 	return repos, nil
 }
 

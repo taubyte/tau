@@ -69,6 +69,10 @@ func (srv *AuthService) newGitHubProjectHTTPHandler(ctx http.Context) (interface
 }
 
 func (srv *AuthService) importGitHubProjectHTTPHandler(ctx http.Context) (interface{}, error) {
+	if client, err := getGithubClientFromContext(ctx); err == nil {
+		defer forgetRepoList(client)
+	}
+
 	client, err := getGithubClientFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -185,6 +189,10 @@ func (srv *AuthService) getGitHubUserProjectsHTTPHandler(ctx http.Context) (inte
 }
 
 func (srv *AuthService) deleteGitHubProjectHandler(ctx http.Context) (interface{}, error) {
+	if client, err := getGithubClientFromContext(ctx); err == nil {
+		defer forgetRepoList(client)
+	}
+
 	client, err := getGithubClientFromContext(ctx)
 	if err != nil {
 		return nil, err
