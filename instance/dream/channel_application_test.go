@@ -3,7 +3,6 @@
 package dream_test
 
 import (
-	"bytes"
 	"fmt"
 	"net/http"
 	"strings"
@@ -22,7 +21,7 @@ import (
 
 func TestAChannelServedByAContainerDeliversToItsNamedPort(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services:  []string{instance.Register, instance.Worker, instance.Discovery, storageService.Descriptor.Name},
+		Services:  []string{instance.Register, instance.Worker, instance.Discovery, storageService.Descriptor.Name, instance.Runner},
 		Container: containers.Docker,
 	})
 	require.NoError(t, err)
@@ -30,12 +29,7 @@ func TestAChannelServedByAContainerDeliversToItsNamedPort(t *testing.T) {
 	pids := u.Pids()
 	require.NotEmpty(t, pids)
 
-	store, ok := nodeDream.Assets(pids[0])
-	require.True(t, ok)
-	cid, err := store.Put(t.Context(), bytes.NewReader(cacherWASM(t)))
-	require.NoError(t, err)
-
-	at := publish(t, pids[:1], deployed{project: "shop", name: "with/channel/application", host: "reserve.example.com"}, artifacts{"": cid})[0]
+	at := publish(t, u, pids[:1], deployed{project: "shop", name: "with/channel/application", host: "reserve.example.com"}, artifacts{"": cacherWASM(t)})[0]
 
 	// THE GRANT CARRIES THE PORT'S NAME, and is not refused for naming one.
 	spec, err := at.node.Worker().Resolve(t.Context(), dialerTarget())

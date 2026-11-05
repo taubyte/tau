@@ -203,7 +203,7 @@ func TestTheClockReachesEverything(t *testing.T) {
 
 func TestWhatTheOptionsRefuse(t *testing.T) {
 	for _, opt := range []Option{
-		WithRuntimes(nil), WithArtifacts(nil), WithSecrets(nil), WithClock(nil),
+		WithRuntimes(nil), WithSecrets(nil), WithClock(nil),
 	} {
 		_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Discovery}}), opt)
 		require.Error(t, err)

@@ -1,0 +1,9 @@
+id: QmW51jXP49irnyXNUUK6xABa586BdzkYKtkHMMj7tYZF5y
+description: who admits an instance - the fixture refuses a room called denied, and its words are what the guest is told
+package:
+    name: admitter_code
+implements: instance-validator
+execution:
+    call: admit
+    timeout: 15s
+    memory: 8MiB

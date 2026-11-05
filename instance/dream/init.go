@@ -11,7 +11,6 @@ import (
 	"io"
 	"os"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -38,7 +37,6 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/discovery"
-	"github.com/taubyte/tau/services/worker"
 )
 
 type tierList struct {
@@ -90,60 +88,8 @@ type builtNodes struct {
 var built = builtNodes{byPeer: map[string]running{}}
 
 type running struct {
-	node      *instance.Instance
-	assets    Components
-	artifacts *Built
-}
-
-// Built is what a build service would have published, staged by a test running
-// none: the test writes a component into the asset store and hands the mapping
-// through worker.Artifacts, the seam a cloud's build service fills, leaving the
-// project's `source:` as written. The kind is dropped, as instance/build.go does, since
-// a resource id is unique. Whatever is not staged is asked of the build service.
-type Built struct {
-	mu       sync.Mutex
-	cids     map[string]string
-	fallback worker.Artifacts
-}
-
-// Publish records what a build produced for each resource of one deployment,
-// keyed by resource id — the shape a build service leaves behind, and the shape
-// the seam is asked in.
-func (b *Built) Publish(project, environment string, byResource map[string]string) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	if b.cids == nil {
-		b.cids = map[string]string{}
-	}
-	for resource, cid := range byResource {
-		b.cids[builtKey(project, environment, resource)] = cid
-	}
-}
-
-// Artifact is worker.Artifacts: what this resource runs. An unknown resource is a
-// refusal naming it, never "".
-func (b *Built) Artifact(ctx context.Context, project, environment, kind, resource string) (string, error) {
-	b.mu.Lock()
-	cid, ok := b.cids[builtKey(project, environment, resource)]
-	fallback := b.fallback
-	b.mu.Unlock()
-
-	if ok {
-		return cid, nil
-	}
-	if fallback == nil {
-		return "", fmt.Errorf("dream: nothing was staged for %s/%s/%s", project, environment, resource)
-	}
-	cid, err := fallback.Artifact(ctx, project, environment, kind, resource)
-	if err != nil {
-		return "", fmt.Errorf("dream: nothing was staged for %s/%s/%s, and the build service has nothing either: %w", project, environment, resource, err)
-	}
-	return cid, nil
-}
-
-func builtKey(project, environment, resource string) string {
-	return strings.Join([]string{project, environment, resource}, "\x00")
+	node   *instance.Instance
+	assets Components
 }
 
 // Node is the node running on a peer, for a test that has its id.
@@ -154,8 +100,8 @@ func Node(peerID string) (*instance.Instance, bool) {
 	return r.node, ok
 }
 
-// Components is a node's own blocks, where a test puts a real component the node
-// then reads by cid, as it reads what a build stored (see Artifacts).
+// Components is a node's own blocks, where a test puts content the node then reads
+// by cid.
 type Components struct{ node peer.Node }
 
 // Put writes content into the node's blocks and answers its cid.
@@ -166,23 +112,13 @@ func (c Components) Put(ctx context.Context, content io.Reader) (string, error) 
 	return c.node.AddFile(content)
 }
 
-// Assets is the blocks that node reads components from, exposed so a test can put a
-// real component in (see Artifacts).
+// Assets is the blocks that node reads content from, exposed so a test can put some
+// in.
 func Assets(peerID string) (Components, bool) {
 	built.Lock()
 	defer built.Unlock()
 	r, ok := built.byPeer[peerID]
 	return r.assets, ok
-}
-
-// Artifacts is this node's artifact seam, for a test that has to say what a
-// build produced. It is the other half of Assets: the bytes go in there, and
-// which resource runs them is said here.
-func Artifacts(peerID string) (*Built, bool) {
-	built.Lock()
-	defer built.Unlock()
-	r, ok := built.byPeer[peerID]
-	return r.artifacts, ok
 }
 
 // Dream's raft timeouts. raft.DefaultTimeoutConfig is sized for distant nodes; in
@@ -365,10 +301,6 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 
 	store := Components{node: p}
 
-	// The artifact seam, filled by staged components and otherwise by the build service
-	// (Built).
-	staged := &Built{}
-
 	// A DIRECTORY PER PEER, so two nodes in one universe do not share a volume
 	// by accident — which would make a test of "the bytes moved" pass without
 	// anything moving.
@@ -415,7 +347,6 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	nodeConfig.Sections[consensus.Descriptor.Name] = consensus.Config{Timeouts: dreamTimeouts, BootstrapTimeout: dreamBootstrapTimeout}
 
 	options := []instance.Option{
-		instance.WithArtifacts(staged),
 		instance.WithDatabaseEngines(engines),
 		instance.WithRuntimes(tiers...),
 	}
@@ -446,7 +377,6 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		os.RemoveAll(root)
 		return err
 	}
-	staged.fallback = n.BuildArtifacts()
 	if err := n.Start(ctx); err != nil {
 		n.Close()
 		os.RemoveAll(root)
@@ -455,7 +385,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 
 	id := h.ID().String()
 	built.Lock()
-	built.byPeer[id] = running{node: n, assets: store, artifacts: staged}
+	built.byPeer[id] = running{node: n, assets: store}
 	built.Unlock()
 
 	m.OnClose(closer{id: id, node: n, root: root})

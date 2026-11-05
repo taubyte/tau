@@ -41,8 +41,6 @@ func TestAFleetServesARequestEndToEnd(t *testing.T) {
 	registry := nodeOf(t, pids[0])
 	require.NotNil(t, registry.Register(), "the first node runs the register")
 
-	stagedOn(t, pids, "shop", map[string]string{checkoutPackageID: anArtifact})
-
 	_, err = registry.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 1,
 		Compiled: compiled(), Hosts: []string{"shop.example.com"},
@@ -71,14 +69,9 @@ func TestAGatewayNodeReachesAWorkerNode(t *testing.T) {
 
 	edge, compute := nodeOf(t, pids[0]), nodeOf(t, pids[1])
 
-	// A universe has no build service; the recording tier never reads the cid.
-	stagedOn(t, pids, "shop", map[string]string{checkoutPackageID: anArtifact})
-
-	_, err = edge.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1,
-		Compiled: compiled(), Hosts: []string{"shop.example.com"},
-	})
-	require.NoError(t, err)
+	// BUILT AS A PUSH IS, by the universe's runner: the recording tier never reads the
+	// bytes.
+	publish(t, u, pids, deployed{project: "shop", name: "with/function/wasm", host: "hello.example.com"}, artifacts{"": []byte("never read")})
 
 	// Both nodes see each other before anything is routed.
 	require.Eventually(t, func() bool {
@@ -88,7 +81,7 @@ func TestAGatewayNodeReachesAWorkerNode(t *testing.T) {
 
 	// A REQUEST, THROUGH THE GATEWAY, ALL THE WAY TO A TIER.
 	require.Eventually(t, func() bool {
-		r := httptest.NewRequest(http.MethodGet, "http://shop.example.com/", nil)
+		r := httptest.NewRequest(http.MethodGet, "http://hello.example.com/", nil)
 		r.RemoteAddr = "203.0.113.7:51000"
 
 		w := httptest.NewRecorder()

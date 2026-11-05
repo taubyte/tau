@@ -24,7 +24,7 @@ import (
 
 func TestAnApplicationAnswersThroughTheGateway(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services:  []string{instance.Register, instance.Worker, instance.Discovery, instance.Gateway, storageService.Descriptor.Name},
+		Services:  []string{instance.Register, instance.Worker, instance.Discovery, instance.Gateway, storageService.Descriptor.Name, instance.Runner},
 		Container: containers.Docker,
 	})
 	require.NoError(t, err)
@@ -34,7 +34,7 @@ func TestAnApplicationAnswersThroughTheGateway(t *testing.T) {
 	require.NotEmpty(t, pids)
 
 	// NOTHING IS STAGED: the image is the artifact, named in the document.
-	at := publish(t, pids[:1], deployed{project: "shop", name: "with/application", host: "whoami.example.com"}, artifacts{})[0]
+	at := publish(t, u, pids[:1], deployed{project: "shop", name: "with/application", host: "whoami.example.com"}, artifacts{})[0]
 
 	whoami := specs.Address{Project: "shop", Environment: "prod", Kind: "application", Name: "whoami"}
 

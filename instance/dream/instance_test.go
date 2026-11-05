@@ -3,10 +3,7 @@
 package dream_test
 
 import (
-	"bytes"
-	"encoding/json"
 	"testing"
-	"time"
 
 	storageService "github.com/taubyte/tau/services/storage"
 
@@ -15,110 +12,28 @@ import (
 	"github.com/taubyte/tau/instance"
 	nodeDream "github.com/taubyte/tau/instance/dream"
 	"github.com/taubyte/tau/pkg/invoke"
-	pkgregister "github.com/taubyte/tau/pkg/register"
 )
 
-// The `instances:` block end to end: a guest naming one of many, a real validator
-// function deciding, and two instances isolated from each other.
+// The `instances:` block end to end (projects/with/cache/instances): a guest naming
+// one of many, a real validator function deciding, and two instances isolated from
+// each other.
 
-const (
-	manyCacheID = "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zi"
-	mayOpenFunc = "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zj"
-
-	// What each of them runs.
-	cacherPackageID  = "QmSQWYU5v1UGYk8ABXTyewQFnG7VtCHQtVQ9D2LgBwrG5x"
-	mayOpenPackageID = "Qmcg5kkaVm6tkPFBNzRriUtr8XpWnRz5KkxesPSVtEgurk"
-)
-
-// withInstances is a project whose function reaches a many-instance cache, plus the
-// validator (`implements: instance-validator`, exporting `admit`). Their artifacts
-// reach the worker through the staged seam (stagedOn).
-func withInstances() []byte {
-	doc := map[string]any{
-		"object": map[string]any{
-			"id":   cacheProjectID,
-			"name": "shop",
-			"package": map[string]any{
-				cacherPackageID:  map[string]any{"name": "cacher_code", "type": "wasm", "source": "services/cacher"},
-				mayOpenPackageID: map[string]any{"name": "admitter_code", "type": "wasm", "source": "services/admitter"},
-			},
-			"function": map[string]any{
-				cacheFuncID: map[string]any{
-					"name":      "cacher",
-					"package":   map[string]any{"name": cacherPackageID},
-					"execution": map[string]any{"call": "handle", "memory": 33554432},
-					"cache": map[string]any{
-						"rooms": map[string]any{"ops": []any{"get", "put"}},
-					},
-				},
-				mayOpenFunc: map[string]any{
-					"name":       "may_open",
-					"implements": "instance-validator",
-					"package":    map[string]any{"name": mayOpenPackageID},
-					"execution":  map[string]any{"call": "admit", "memory": 8388608},
-				},
-			},
-			"cache": map[string]any{
-				manyCacheID: map[string]any{
-					"name": "rooms", "consensus": "crdt",
-					"size": 1000000, "ttl": float64(time.Hour),
-					// MANY INSTANCES, ADMITTED BY A FUNCTION AND BOUNDED.
-					"instances": map[string]any{
-						"admission": "validator",
-						"limit":     float64(3),
-						"validator": map[string]any{"name": "may_open"},
-					},
-				},
-			},
-		},
-		"indexes": map[string]any{
-			"projects/" + cacheProjectID + "/package/cacher_code/links": []any{
-				"branches/main/projects/" + cacheProjectID + "/package/" + cacherPackageID},
-			"projects/" + cacheProjectID + "/package/admitter_code/links": []any{
-				"branches/main/projects/" + cacheProjectID + "/package/" + mayOpenPackageID},
-			"projects/" + cacheProjectID + "/function/cacher/links": []any{
-				"branches/main/projects/" + cacheProjectID + "/function/" + cacheFuncID},
-			"projects/" + cacheProjectID + "/function/may_open/links": []any{
-				"branches/main/projects/" + cacheProjectID + "/function/" + mayOpenFunc},
-			"projects/" + cacheProjectID + "/cache/rooms/links": []any{
-				"branches/main/projects/" + cacheProjectID + "/cache/" + manyCacheID},
-		},
-	}
-
-	raw, err := json.Marshal(doc)
-	if err != nil {
-		panic(err)
-	}
-	return raw
+// instancesAt builds with/cache/instances in a universe of one node and is that node.
+func instancesAt(t *testing.T) *instance.Instance {
+	t.Helper()
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
+		Services: []string{instance.Register, instance.Worker, instance.Discovery, storageService.Descriptor.Name, instance.Runner},
+	})
+	require.NoError(t, err)
+	t.Cleanup(u.Close)
+	pids := u.Pids()
+	publish(t, u, pids[:1], deployed{project: "shop", name: "with/cache/instances"}, artifacts{"": cacherWASM(t), "may_open": admitterWASM(t)})
+	return nodeOf(t, pids[0])
 }
 
 func TestAnInstanceIsAdmittedByARealFunction(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
-	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services: []string{instance.Register, instance.Worker, instance.Discovery, storageService.Descriptor.Name},
-	})
-	require.NoError(t, err)
-	defer u.Close()
-
-	pids := u.Pids()
-	require.NotEmpty(t, pids)
-
-	n := nodeOf(t, pids[0])
-	store, ok := nodeDream.Assets(pids[0])
-	require.True(t, ok)
-
-	cid, err := store.Put(t.Context(), bytes.NewReader(cacherWASM(t)))
-	require.NoError(t, err)
-	admits, err := store.Put(t.Context(), bytes.NewReader(admitterWASM(t)))
-	require.NoError(t, err)
-
-	stagedOn(t, pids, "shop", map[string]string{cacherPackageID: cid, mayOpenPackageID: admits})
-
-	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1, Compiled: withInstances(),
-	})
-	require.NoError(t, err)
+	n := instancesAt(t)
 
 	// ONE INSTANCE, ADMITTED AND WRITTEN TO.
 	res, err := n.Worker().Invoke(t.Context(), target(), &invoke.Request{
@@ -167,29 +82,7 @@ func TestAnInstanceIsAdmittedByARealFunction(t *testing.T) {
 
 func TestTheInstanceLimitHoldsEndToEnd(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
-	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services: []string{instance.Register, instance.Worker, instance.Discovery, storageService.Descriptor.Name},
-	})
-	require.NoError(t, err)
-	defer u.Close()
-
-	pids := u.Pids()
-	n := nodeOf(t, pids[0])
-
-	store, ok := nodeDream.Assets(pids[0])
-	require.True(t, ok)
-	cid, err := store.Put(t.Context(), bytes.NewReader(cacherWASM(t)))
-	require.NoError(t, err)
-	admits, err := store.Put(t.Context(), bytes.NewReader(admitterWASM(t)))
-	require.NoError(t, err)
-
-	stagedOn(t, pids, "shop", map[string]string{cacherPackageID: cid, mayOpenPackageID: admits})
-
-	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1, Compiled: withInstances(),
-	})
-	require.NoError(t, err)
+	n := instancesAt(t)
 
 	for _, room := range []string{"one", "two", "three"} {
 		res, err := n.Worker().Invoke(t.Context(), target(), &invoke.Request{

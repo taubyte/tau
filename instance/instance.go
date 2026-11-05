@@ -637,8 +637,8 @@ func (n *Instance) openGateway() error {
 	return nil
 }
 
-// artifactSource is where a built resource's artifact is looked up: an injected
-// resolver, then the build service. Nil when neither is here.
+// artifactSource is where a built resource's artifact is looked up: a test's
+// resolver, else build's records on this node. Nil on a node with no discovery.
 func (n *Instance) artifactSource() worker.Artifacts {
 	switch {
 	case n.opts.artifacts != nil:

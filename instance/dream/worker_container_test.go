@@ -23,7 +23,7 @@ import (
 
 func TestAContainerWorkerRunsToCompletionPerInvocation(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services:  []string{instance.Register, instance.Worker, instance.Discovery, storageService.Descriptor.Name},
+		Services:  []string{instance.Register, instance.Worker, instance.Discovery, storageService.Descriptor.Name, instance.Runner},
 		Container: containers.Docker,
 	})
 	require.NoError(t, err)
@@ -32,7 +32,7 @@ func TestAContainerWorkerRunsToCompletionPerInvocation(t *testing.T) {
 	require.NotEmpty(t, pids)
 
 	// NOTHING IS STAGED: the image is the artifact, named in the document.
-	at := publish(t, pids[:1], deployed{project: "shop", name: "with/worker/container", host: "exporter.example.com"}, artifacts{})[0]
+	at := publish(t, u, pids[:1], deployed{project: "shop", name: "with/worker/container", host: "exporter.example.com"}, artifacts{})[0]
 	exporter := specs.Address{Project: "shop", Environment: "prod", Kind: "worker", Name: "exporter"}
 
 	// A successful run answers with what it printed; the container's shell evaluates the
@@ -73,7 +73,7 @@ func TestAContainerWorkerRunsToCompletionPerInvocation(t *testing.T) {
 
 func TestAContainerWorkerReadsItsSecretThroughTheHelper(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services:  []string{instance.Register, instance.Worker, instance.Discovery, instance.Secrets, storageService.Descriptor.Name},
+		Services:  []string{instance.Register, instance.Worker, instance.Discovery, instance.Secrets, storageService.Descriptor.Name, instance.Runner},
 		Container: containers.Docker,
 	})
 	require.NoError(t, err)
@@ -81,7 +81,7 @@ func TestAContainerWorkerReadsItsSecretThroughTheHelper(t *testing.T) {
 	pids := u.Pids()
 	require.NotEmpty(t, pids)
 
-	at := publish(t, pids[:1], deployed{project: "shop", name: "with/worker/vault", host: "exporter.example.com"}, artifacts{})[0]
+	at := publish(t, u, pids[:1], deployed{project: "shop", name: "with/worker/vault", host: "exporter.example.com"}, artifacts{})[0]
 	exporter := specs.Address{Project: "shop", Environment: "prod", Kind: "worker", Name: "exporter"}
 	token := at.idOf(t, "secret", "token")
 

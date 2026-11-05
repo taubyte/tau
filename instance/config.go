@@ -163,8 +163,10 @@ type options struct {
 	kvdbOpen func(name string) (kvdb.Instance, error)
 	raftOpen func(namespace string) (raft.Cluster, error)
 
-	engines   *database.Registry
-	runtimes  []invoke.Runtime
+	engines  *database.Registry
+	runtimes []invoke.Runtime
+	// artifacts stands in for build's records, for a test of the worker beside no
+	// build. Nothing outside this package's tests can set it.
 	artifacts worker.Artifacts
 	secrets   worker.Secrets
 	now       func() time.Time
@@ -209,17 +211,6 @@ func WithRuntimes(rts ...invoke.Runtime) Option {
 			}
 		}
 		o.runtimes = append(o.runtimes, rts...)
-		return nil
-	}
-}
-
-// WithArtifacts resolves what a built resource currently runs. Optional.
-func WithArtifacts(a worker.Artifacts) Option {
-	return func(o *options) error {
-		if a == nil {
-			return errors.New("node: a nil artifact resolver")
-		}
-		o.artifacts = a
 		return nil
 	}
 }

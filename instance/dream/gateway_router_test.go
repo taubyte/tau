@@ -16,7 +16,6 @@ import (
 
 	"github.com/taubyte/tau/instance"
 	nodeDream "github.com/taubyte/tau/instance/dream"
-	pkgregister "github.com/taubyte/tau/pkg/register"
 )
 
 // The whole edge path with every component real: an HTTP request reaching a
@@ -46,7 +45,7 @@ func TestAGatewayRoutedByAFunctionRunsRealComponents(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services: []string{instance.Register, instance.Worker, instance.Discovery, instance.Gateway, storageService.Descriptor.Name},
+		Services: []string{instance.Register, instance.Worker, instance.Discovery, instance.Gateway, storageService.Descriptor.Name, instance.Runner},
 	})
 	require.NoError(t, err)
 	defer u.Close()
@@ -55,28 +54,11 @@ func TestAGatewayRoutedByAFunctionRunsRealComponents(t *testing.T) {
 	require.NotEmpty(t, pids)
 
 	n := nodeOf(t, pids[0])
-	store, ok := nodeDream.Assets(pids[0])
-	require.True(t, ok)
-
-	handlerCID, err := store.Put(t.Context(), bytes.NewReader(cacherWASM(t)))
-	require.NoError(t, err)
-	shaperCID, err := store.Put(t.Context(), bytes.NewReader(shaperWASM(t)))
-	require.NoError(t, err)
-	pickerCID, err := store.Put(t.Context(), bytes.NewReader(pickerWASM(t)))
-	require.NoError(t, err)
 
 	// Three artifacts, one per world.
-	compiled, _, pointed := project(t, "with/gateway/router", artifacts{
-		"": handlerCID, "shaper": shaperCID, "picker": pickerCID,
+	publish(t, u, pids[:1], deployed{project: "shop", name: "with/gateway/router", host: routedHost}, artifacts{
+		"": cacherWASM(t), "shaper": shaperWASM(t), "picker": pickerWASM(t),
 	})
-	stagedOn(t, pids, "shop", pointed)
-
-	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1,
-		Compiled: compiled,
-		Hosts:    []string{routedHost},
-	})
-	require.NoError(t, err)
 
 	ask := func(path string, headers ...string) *httptest.ResponseRecorder {
 		t.Helper()

@@ -1,0 +1,19 @@
+id: QmVnHS3DuLJPCgnWL4uGeGer7UJzrFcyMwfE8R4Z2NAzFz
+description: reserve, wait, then charge - a step that gives up lands in the dead letter, which nothing drains
+start: reserve
+timeout: 1h
+steps:
+    - name: reserve
+      call:
+          function: reserve_stock
+      attempts: 4
+      backoff:
+          interval: 5s
+          factor: 2
+          ceiling: 1m
+    - name: settle
+      wait: 30s
+    - name: charge
+      call:
+          function: charge_card
+      attempts: 1

@@ -1,0 +1,6 @@
+id: QmQW4B6zykRaKXDj4V7qLYvR6vf6QXEwdGuahZ9cwLsSPn
+name: cacheinstances
+description: a guest naming one of many instances of one cache, and the function admitting each - so two rooms are two stores, and a room the validator refuses is not opened at all
+environments:
+    prod:
+        branches: ["*"]

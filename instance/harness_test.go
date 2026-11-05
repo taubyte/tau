@@ -24,6 +24,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/consensus"
+	"github.com/taubyte/tau/services/worker"
 )
 
 // A node is tested with real services and fake resources: a mocknet host, gossipsub
@@ -222,9 +223,18 @@ func (t *tier) Start(context.Context, invoke.Spec) (invoke.Instance, error) {
 // than a makeNode default since several tests are about its absence. Every built
 // resource needs it: a `source.component` is a configuration id, not an artifact.
 func prebuilt() Option {
-	return WithArtifacts(artifactsFunc(func(_ context.Context, _, _, _, resource string) (string, error) {
+	return withArtifacts(artifactsFunc(func(_ context.Context, _, _, _, resource string) (string, error) {
 		return "bafy" + resource, nil
 	}))
+}
+
+// withArtifacts is a test's stand-in for build's records: what a built resource
+// runs, said rather than built.
+func withArtifacts(a worker.Artifacts) Option {
+	return func(o *options) error {
+		o.artifacts = a
+		return nil
+	}
 }
 
 // opensDatabases is what a test's database double does.

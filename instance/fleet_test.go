@@ -230,7 +230,7 @@ func TestOneNodeRunningEverythingNeedsNoStream(t *testing.T) {
 
 func TestTheSeamsReachTheWorker(t *testing.T) {
 	asked := make(chan string, 4)
-	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Register, Worker}}), withKVDB(&memFactory{}), WithRuntimes(&tier{name: "wasm"}), WithArtifacts(artifactFunc(func(_ context.Context, _, _, kind, id string) (string, error) {
+	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Register, Worker}}), withKVDB(&memFactory{}), WithRuntimes(&tier{name: "wasm"}), withArtifacts(artifactFunc(func(_ context.Context, _, _, kind, id string) (string, error) {
 		asked <- "artifact"
 		return "registry/built@sha256:" + id, nil
 	})))

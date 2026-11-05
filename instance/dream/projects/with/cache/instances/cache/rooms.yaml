@@ -1,0 +1,9 @@
+id: QmUdmayKc7Eg2g9ocCnUYCKXfTSeJXneUtgzce8zGDVzq4
+description: many instances of one cache, each admitted by may_open and at most three of them
+size: 1MB
+ttl: 1h
+consensus: crdt
+instances:
+    limit: 3
+    validator:
+        name: may_open

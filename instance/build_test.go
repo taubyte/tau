@@ -214,14 +214,14 @@ func TestTheDeployBudgetHasAnEffectiveValue(t *testing.T) {
 	require.Equal(t, time.Minute, worker.Config{PointerTTL: time.Minute}.Pointer())
 }
 
-func TestTheWorkerResolvesArtifactsThroughTheBuildService(t *testing.T) {
+func TestTheWorkerResolvesArtifactsThroughBuildsRecords(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Discovery, Worker}})
 	require.NotNil(t, n.worker)
 
 	injected := artifactsFunc(func(context.Context, string, string, string, string) (string, error) {
 		return "bafyinjected", nil
 	})
-	with, _, _ := makeNode(t, Config{Services: []string{Discovery, Worker}}, WithArtifacts(injected))
+	with, _, _ := makeNode(t, Config{Services: []string{Discovery, Worker}}, withArtifacts(injected))
 	require.NotNil(t, with.worker)
 }
 

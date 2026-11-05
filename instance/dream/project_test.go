@@ -23,8 +23,8 @@ import (
 	nodeDream "github.com/taubyte/tau/instance/dream"
 	"github.com/taubyte/tau/pkg/fleet"
 	"github.com/taubyte/tau/pkg/invoke"
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/raft"
-	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
@@ -48,32 +48,32 @@ import (
 // (same database id, label, environment and model) under another project and host,
 // so isolation can be tested; its project id is a real CIDv0 of its name.
 // with/function/wasm is the smallest project and the first to read when the corpus
-// turns red. Sources nobody built are pointed at shipped components through the
-// artifact seam (nodeDream.Built), not by rewriting `source`.
+// turns red. A project is built as a developer's build is: uploaded with what its
+// packages build to, shipped components standing in for sources nobody built.
 
-// artifacts maps a workload's label to the build its package is, "" being the default;
-// a map since the authorizer project needs a second world.
-type artifacts map[string]string
+// artifacts maps a workload's label to what its package builds to, "" being the
+// default; a map since the authorizer project needs a second world.
+type artifacts map[string][]byte
 
 // of is the component this resource runs, which is its own entry when it has one.
-func (a artifacts) of(label string) string {
-	if cid, named := a[label]; named {
-		return cid
+func (a artifacts) of(label string) []byte {
+	if code, named := a[label]; named {
+		return code
 	}
 	return a[""]
 }
 
 // project compiles a project under projects/ and returns the published bytes, the
-// object they came from (for idOf), and the mapping the artifact seam is handed.
-// The compiled document is not touched.
-func project(t *testing.T, name string, components artifacts) ([]byte, map[string]any, map[string]string) {
+// object they came from (for idOf), and what each package it runs builds to, by
+// package name. The compiled document is not touched.
+func project(t *testing.T, name string, components artifacts) ([]byte, map[string]any, map[string][]byte) {
 	t.Helper()
 	return projectAs(t, name, components, schema.WithNoRegions())
 }
 
 // projectAs is project placed by the Regions given: WithNoRegions for the corpus,
 // or WithRegion("region-1") for one region of a larger cloud.
-func projectAs(t *testing.T, name string, components artifacts, regions schema.Regions) ([]byte, map[string]any, map[string]string) {
+func projectAs(t *testing.T, name string, components artifacts, regions schema.Regions) ([]byte, map[string]any, map[string][]byte) {
 	t.Helper()
 
 	c, err := schema.New(
@@ -93,10 +93,10 @@ func projectAs(t *testing.T, name string, components artifacts, regions schema.R
 		require.NotEqual(t, schema.Broken, f.Severity, "%s: %s", name, f)
 	}
 
-	// WHAT RUNS IS A PACKAGE, staged under the package's id, the one the seam is asked
-	// about; the workload naming it is what the author's label says to run.
+	// WHAT RUNS IS A PACKAGE, built under the package's name; the workload naming it
+	// is what the author's label says to run.
 	packages, _ := root["package"].(map[string]any)
-	pointed := map[string]string{}
+	pointed := map[string][]byte{}
 	runs := 0
 	for _, group := range root {
 		instances, ok := group.(map[string]any)
@@ -121,12 +121,13 @@ func projectAs(t *testing.T, name string, components artifacts, regions schema.R
 				continue
 			}
 			label, _ := res["name"].(string)
-			cid := components.of(label)
-			require.NotEmpty(t, cid, "%s names %q and nothing was handed in for it", name, label)
-			if held, staged := pointed[pkgID]; staged {
-				require.Equal(t, held, cid, "%s: two workloads run one package and were handed different builds", name)
+			code := components.of(label)
+			require.NotEmpty(t, code, "%s names %q and nothing was handed in for it", name, label)
+			pkgName, _ := pkg["name"].(string)
+			if held, built := pointed[pkgName]; built {
+				require.Equal(t, held, code, "%s: two workloads run one package and were handed different builds", name)
 			}
-			pointed[pkgID] = cid
+			pointed[pkgName] = code
 			runs++
 		}
 	}
@@ -218,51 +219,66 @@ type deployed struct {
 	regions schema.Regions
 }
 
-// publish puts one project into a running universe and answers a door onto it
-// through each node named. It takes peer ids because every node's artifact seam
-// gets what a build produced: placement chooses which node runs a workload.
-func publish(t *testing.T, pids []string, at deployed, components artifacts) []*running {
+// publish builds one project in a running universe, uploaded with what components
+// stand in for, and answers a door onto it through each node named, once each of
+// them reads what was built: placement chooses which node runs a workload.
+func publish(t *testing.T, u *nodeDream.Universe, pids []string, at deployed, components artifacts) []*running {
 	t.Helper()
 
 	regions := at.regions
 	if regions == nil {
 		regions = schema.WithNoRegions()
 	}
-	compiled, obj, pointed := projectAs(t, at.name, components, regions)
-	stagedOn(t, pids, at.project, pointed)
+	_, obj, built := projectAs(t, at.name, components, regions)
+	outcome := build(t, u, at.project, at.name, built)
+	packages, _ := obj["package"].(map[string]any)
 
-	nodes := make([]*instance.Instance, 0, len(pids))
+	out := make([]*running, 0, len(pids))
 	for _, id := range pids {
-		nodes = append(nodes, nodeOf(t, id))
-	}
-
-	// Cut as a deploy cuts it, one view per region; publishing uncut would let a node
-	// serve what is placed elsewhere.
-	var flat map[string]any
-	require.NoError(t, json.Unmarshal(compiled, &flat))
-	_, err := nodes[0].Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: at.project, Environment: "prod", Revision: 1,
-		Compiled: compiled, Hosts: []string{at.host}, Views: cutFor(t, flat, regions),
-	})
-	require.NoError(t, err)
-
-	out := make([]*running, 0, len(nodes))
-	for _, n := range nodes {
+		n := nodeOf(t, id)
+		// WHAT WAS BUILT REACHES EVERY NODE through build's replicated records, so a
+		// node is handed over once it reads each package's build.
+		for pkgID, v := range packages {
+			if _, ran := built[nameOf(v)]; !ran {
+				continue
+			}
+			require.Eventually(t, func() bool {
+				_, err := n.BuildArtifacts().Artifact(t.Context(), at.project, "prod", specs.KindPackage, pkgID)
+				return err == nil
+			}, time.Minute, 50*time.Millisecond, "%s never read package %s of job %s", id, pkgID, outcome.Environments[0].GetId())
+		}
 		out = append(out, &running{node: n, host: at.host, object: obj})
 	}
 	return out
 }
 
-// cutFor is the views a deploy publishes for a compiled project, one per region.
-func cutFor(t *testing.T, flat map[string]any, regions schema.Regions) []pkgregister.View {
+func nameOf(v any) string {
+	res, _ := v.(map[string]any)
+	name, _ := res["name"].(string)
+	return name
+}
+
+// build is the project under projects/name built for project in u, its packages
+// standing in for their builds, and how the build ended, which is a success.
+func build(t *testing.T, u *nodeDream.Universe, project, name string, built map[string][]byte) nodeDream.Outcome {
 	t.Helper()
-	views, _, err := schema.Views(flat, schema.WithRegions(regions))
+	files := map[string]string{}
+	at := t.TempDir()
+	for pkg, code := range built {
+		files[pkg] = filepath.Join(at, pkg)
+		require.NoError(t, os.WriteFile(files[pkg], code, 0o644))
+	}
+	// One configuration repository per project, so a later build of it is a new commit.
+	repository := "dream.test/" + project + "/config"
+	push, err := u.Upload(repository, "main", projectDir(name), files)
 	require.NoError(t, err)
-	out := make([]pkgregister.View, 0, len(views))
-	for region, v := range views {
-		b, err := json.Marshal(v.Object)
-		require.NoError(t, err)
-		out = append(out, pkgregister.View{Destination: region, Compiled: b})
+	require.NoError(t, u.Link(t.Context(), project, repository))
+	out, err := u.Build(t.Context(), push)
+	require.NoError(t, err)
+	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, out.Plan.GetStatus(), "%s's plan: %s", name, out.Plan.GetReason())
+	require.NotEmpty(t, out.Environments)
+	for _, job := range out.Environments {
+		require.Equal(t, buildv2.JobStatus_JobStatusSuccess, job.GetStatus(), "%s for %s: %s", name, job.GetEnvironment(), job.GetReason())
 	}
 	return out
 }
@@ -279,7 +295,7 @@ func deploy(t *testing.T, name, host string, wasm []byte) *running {
 func deployWith(t *testing.T, name, host string, wasm []byte, extra map[string][]byte) *running {
 	t.Helper()
 	return deployServing(t, name, host, wasm, extra,
-		instance.Register, instance.Worker, instance.Discovery, instance.Gateway, instance.Database, instance.Primitives, storageService.Descriptor.Name)
+		instance.Register, instance.Worker, instance.Discovery, instance.Gateway, instance.Database, instance.Primitives, storageService.Descriptor.Name, instance.Runner)
 }
 
 // deployServing is deployWith over a chosen set of services: a zone answered by a
@@ -294,20 +310,12 @@ func deployServing(t *testing.T, name, host string, wasm []byte, extra map[strin
 	pids := u.Pids()
 	require.NotEmpty(t, pids)
 
-	store, ok := nodeDream.Assets(pids[0])
-	require.True(t, ok)
-
-	cid, err := store.Put(t.Context(), bytes.NewReader(wasm))
-	require.NoError(t, err)
-
-	held := artifacts{"": cid}
+	held := artifacts{"": wasm}
 	for label, code := range extra {
-		id, err := store.Put(t.Context(), bytes.NewReader(code))
-		require.NoError(t, err)
-		held[label] = id
+		held[label] = code
 	}
 
-	return publish(t, pids[:1], deployed{project: "shop", name: name, host: host}, held)[0]
+	return publish(t, u, pids[:1], deployed{project: "shop", name: name, host: host}, held)[0]
 }
 
 func handlerWASM(t *testing.T) []byte {
@@ -728,7 +736,7 @@ func deployFleetOf(t *testing.T, copies int, wasm []byte, extra map[string][]byt
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Services: []string{
 			instance.Register, instance.Worker, instance.Discovery, instance.Gateway,
-			instance.Database, instance.Primitives, storageService.Descriptor.Name},
+			instance.Database, instance.Primitives, storageService.Descriptor.Name, instance.Runner},
 		Copies: copies,
 	})
 	require.NoError(t, err)
@@ -747,22 +755,15 @@ func deployFleetOf(t *testing.T, copies int, wasm []byte, extra map[string][]byt
 	_, err = nodes[0].Register().Local().PublishFleet(t.Context(), 1, document)
 	require.NoError(t, err)
 
-	store, ok := nodeDream.Assets(pids[0])
-	require.True(t, ok)
-	cid, err := store.Put(t.Context(), bytes.NewReader(wasm))
-	require.NoError(t, err)
-
-	// Every extra binary is stored the same way, keyed by the author's label.
-	held := artifacts{"": cid}
+	// Every extra binary is keyed by the author's label.
+	held := artifacts{"": wasm}
 	for label, code := range extra {
-		id, err := store.Put(t.Context(), bytes.NewReader(code))
-		require.NoError(t, err)
-		held[label] = id
+		held[label] = code
 	}
 
 	fleets := make([][]*running, 0, len(projects))
 	for _, at := range projects {
-		fleets = append(fleets, publish(t, pids, at, held))
+		fleets = append(fleets, publish(t, u, pids, at, held))
 	}
 
 	// Every node must have every project, the floor and the fleet before anything is

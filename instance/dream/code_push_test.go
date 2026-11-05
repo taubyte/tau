@@ -3,11 +3,12 @@
 package dream_test
 
 import (
-	"bytes"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	storageService "github.com/taubyte/tau/services/storage"
 
@@ -24,34 +25,40 @@ import (
 func TestACodePushIsWhatTheNextRequestRuns(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
-	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{
-		instance.Register, instance.Worker, instance.Discovery, instance.Gateway, instance.Database, instance.Primitives, storageService.Descriptor.Name,
-	}})
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
+		Services: []string{
+			instance.Register, instance.Worker, instance.Discovery, instance.Gateway, instance.Database, instance.Primitives,
+			storageService.Descriptor.Name, instance.Runner,
+		},
+		// A node may run the previous artifact for this long after a build, so the
+		// push is seen within it.
+		Configure: func(_ int, c *instance.Config) { c.Worker.PointerTTL = 100 * time.Millisecond },
+	})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
 	pids := u.Pids()[:1]
 
-	store, ok := nodeDream.Assets(pids[0])
-	require.True(t, ok)
-	build := func(fixture string) string {
-		code, err := os.ReadFile(filepath.Join("..", "..", "pkg", "invoke", "wasm", "fixtures", fixture))
+	fixture := func(name string) []byte {
+		code, err := os.ReadFile(filepath.Join("..", "..", "pkg", "invoke", "wasm", "fixtures", name))
 		require.NoError(t, err, "run `cargo component build --release` in pkg/invoke/wasm/fixtures")
-		cid, err := store.Put(t.Context(), bytes.NewReader(code))
-		require.NoError(t, err)
-		return cid
+		return code
 	}
-	first, second := build("handler.wasm"), build("cacher.wasm")
 
-	r := publish(t, pids, deployed{project: "shop", name: "with/function/wasm", host: "hello.example.com"}, artifacts{"": first})[0]
+	at := deployed{project: "shop", name: "with/function/wasm", host: "hello.example.com"}
+	r := publish(t, u, pids, at, artifacts{"": fixture("handler.wasm")})[0]
 
 	before := r.ask(t, http.MethodGet, "/")
 	require.Equal(t, 200, before.Code, "the first build answered")
 	require.Equal(t, "/", before.Header().Get("x-path"), "and it is the handler")
 
-	stagedOn(t, pids, "shop", map[string]string{r.idOf(t, "package", "hello_code"): second})
+	_, _, built := project(t, at.name, artifacts{"": fixture("cacher.wasm")})
+	build(t, u, at.project, at.name, built)
 
-	after := r.ask(t, http.MethodGet, "/")
-	require.Empty(t, after.Header().Get("x-path"), "the instance warmed by the first build answered after the push")
-	require.Equal(t, 400, after.Code, "the second build answers a path that names no operation")
-	require.Equal(t, "unknown op", after.Body.String())
+	var after *httptest.ResponseRecorder
+	require.Eventually(t, func() bool {
+		after = r.ask(t, http.MethodGet, "/")
+		return after.Code == 400
+	}, time.Minute, 50*time.Millisecond, "the second build never answered")
+	require.Empty(t, after.Header().Get("x-path"), "the instance warmed by the first build is not what answers after the push")
+	require.Equal(t, "unknown op", after.Body.String(), "the second build answers a path that names no operation")
 }

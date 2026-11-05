@@ -3,7 +3,6 @@
 package dream_test
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,7 +14,6 @@ import (
 	"github.com/taubyte/tau/instance"
 	nodeDream "github.com/taubyte/tau/instance/dream"
 	"github.com/taubyte/tau/pkg/invoke"
-	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 )
 
@@ -46,7 +44,7 @@ func TestAGuardDecidesForARealGuest(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services: []string{instance.Register, instance.Worker, instance.Discovery, storageService.Descriptor.Name},
+		Services: []string{instance.Register, instance.Worker, instance.Discovery, storageService.Descriptor.Name, instance.Runner},
 	})
 	require.NoError(t, err)
 	defer u.Close()
@@ -55,25 +53,11 @@ func TestAGuardDecidesForARealGuest(t *testing.T) {
 	require.NotEmpty(t, pids)
 
 	n := nodeOf(t, pids[0])
-	store, ok := nodeDream.Assets(pids[0])
-	require.True(t, ok)
-
-	reacher, err := store.Put(t.Context(), bytes.NewReader(cacherWASM(t)))
-	require.NoError(t, err)
-	keeper, err := store.Put(t.Context(), bytes.NewReader(guardWASM(t)))
-	require.NoError(t, err)
 
 	// Two artifacts, so this cannot go through deploy: the guard is a different
 	// component in a different world. No gateway or zone; both halves are put to the
 	// worker directly.
-	compiled, _, pointed := project(t, "with/cache/authorizer", artifacts{"": reacher, "keeper": keeper})
-	stagedOn(t, pids, "shop", pointed)
-
-	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1,
-		Compiled: compiled,
-	})
-	require.NoError(t, err)
+	publish(t, u, pids[:1], deployed{project: "shop", name: "with/cache/authorizer"}, artifacts{"": cacherWASM(t), "keeper": guardWASM(t)})
 
 	// THE GRANT CARRIES THE GUARD, resolved where the project was open.
 	spec, err := n.Worker().Resolve(t.Context(), guardedTarget())
