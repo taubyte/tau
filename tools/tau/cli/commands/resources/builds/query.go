@@ -26,10 +26,9 @@ func (link) Query() common.Command {
 					DefaultText: defaultTimeFilter,
 				},
 				&cli.IntFlag{
-					Name:    "last",
-					Aliases: []string{"n"},
-					Usage:   "show only the most recent jobs (0 for all)",
-					Value:   defaultLast,
+					Name:  "last",
+					Usage: "show only the most recent jobs (0 for all)",
+					Value: defaultLast,
 				},
 			},
 			Action: query,

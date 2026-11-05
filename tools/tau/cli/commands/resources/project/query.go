@@ -61,8 +61,7 @@ func query(ctx *cli.Context) error {
 
 // lastFlag limits a project listing to the most recent projects.
 var lastFlag = &cli.IntFlag{
-	Name:    "last",
-	Aliases: []string{"n"},
-	Usage:   "show only the most recent projects (0 for all)",
-	Value:   10,
+	Name:  "last",
+	Usage: "show only the most recent projects (0 for all)",
+	Value: 10,
 }
