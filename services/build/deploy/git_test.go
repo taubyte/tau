@@ -241,10 +241,7 @@ func TestReadingAPrivateRepository(t *testing.T) {
 	require.ErrorContains(t, err, "local/repo")
 
 	// A key that is not one fails at the clone rather than being ignored.
-	pinned := deploy.WithHostKeys(func(host string) []gossh.PublicKey {
-		require.Equal(t, "local", host, "keys are asked for by the host the repository key names")
-		return []gossh.PublicKey{hostPublicKey(t)}
-	})
+	pinned := deploy.WithHostKeys(deploy.Pinned{"local": {hostPublicKey(t)}})
 	_, _, err = deploy.NewClone(keys{key: "not a pem"}, local, pinned).
 		Checkout(t.Context(), "local/repo", "main", first)
 	require.ErrorContains(t, err, "parsing private key")

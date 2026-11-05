@@ -140,6 +140,11 @@ type confirmer struct{ err error }
 
 func (c confirmer) Confirm(context.Context, string, string, string) error { return c.err }
 
+// buildNodes is a directory naming these nodes for build.
+type buildNodes []libp2ppeer.ID
+
+func (b buildNodes) Peers(string) []libp2ppeer.ID { return b }
+
 // serving is a runner offering itself to the build nodes named, until the test ends.
 func serving(t *testing.T, mn mocknet.Mocknet, s *server, builders ...*buildNode) {
 	t.Helper()
@@ -148,13 +153,11 @@ func serving(t *testing.T, mn mocknet.Mocknet, s *server, builders ...*buildNode
 	require.NoError(t, mn.LinkAll())
 	require.NoError(t, mn.ConnectAllButSelf())
 	s.self = self
-	s.builders = func() []libp2ppeer.ID {
-		ids := []libp2ppeer.ID{self.ID()}
-		for _, b := range builders {
-			ids = append(ids, b.host.ID())
-		}
-		return ids
+	ids := buildNodes{self.ID()}
+	for _, b := range builders {
+		ids = append(ids, b.host.ID())
 	}
+	s.builders = ids
 	ctx, stop := context.WithCancel(context.Background())
 	s.stop, s.stopped = stop, make(chan struct{})
 	go s.serve(ctx)

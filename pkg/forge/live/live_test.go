@@ -237,12 +237,7 @@ func walk(t *testing.T, in *instance) {
 		// carries the HTTP port. Repository() is the forge naming its own ssh
 		// address, which is the documented answer on a ported host.
 		deploy.WithAddress(fixed(address)),
-		deploy.WithHostKeys(func(host string) []gossh.PublicKey {
-			if host == in.host {
-				return in.hostKeys
-			}
-			return nil
-		}))
+		deploy.WithHostKeys(deploy.Pinned{in.host: in.hostKeys}))
 	dir, release, err := clone.Checkout(ctx, key.String(), "main", pushed)
 	require.NoError(t, err)
 	readme, err := os.ReadFile(filepath.Join(dir, "README"))

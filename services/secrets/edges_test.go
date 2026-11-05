@@ -42,7 +42,7 @@ func single(t *testing.T, opts ...option) (*server, *Client, peerNode.Node) {
 	require.NoError(t, srv.serve(ctx))
 	t.Cleanup(func() { srv.Close() })
 
-	client, err := NewClient(node.Host(), nil, func() *server { return srv })
+	client, err := NewClient(node.Host(), located{local: srv})
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
 	return srv, client, node
@@ -75,7 +75,7 @@ func TestALocalClientNeedsNoStreamAndFormsAKeyOnFirstWrite(t *testing.T) {
 func TestAClientWithNobodyToAskSaysSo(t *testing.T) {
 	node := peerNode.Mock(t.Context())
 	t.Cleanup(func() { node.Close() })
-	client, err := NewClient(node.Host(), nil, nil)
+	client, err := NewClient(node.Host(), nil)
 	require.NoError(t, err)
 
 	require.ErrorIs(t, client.Set(t.Context(), Ref{Scope: Project("p", "e"), Name: "n"}, []byte("v")), ErrNoMembers)
@@ -87,12 +87,12 @@ func TestAClientWithNobodyToAskSaysSo(t *testing.T) {
 	// A member named but unreachable is unavailable, not absent.
 	unreachable := peerNode.Mock(t.Context())
 	t.Cleanup(func() { unreachable.Close() })
-	client, err = NewClient(node.Host(), func() []peerCore.ID { return []peerCore.ID{unreachable.ID(), node.ID()} }, nil)
+	client, err = NewClient(node.Host(), Peers{unreachable.ID(), node.ID()})
 	require.NoError(t, err)
 	err = client.Delete(t.Context(), Ref{Scope: Project("p", "e"), Name: "n"})
 	require.ErrorIs(t, err, ErrUnavailable)
 
-	_, err = NewClient(nil, nil, nil)
+	_, err = NewClient(nil, nil)
 	require.ErrorIs(t, err, ErrNoHost)
 }
 
@@ -334,3 +334,13 @@ func TestTheAtRestKeyIsDerivedPerNode(t *testing.T) {
 	_, err = a.open([]byte("short"))
 	require.Error(t, err)
 }
+
+// located is the service found where a test says: these members, and this one
+// beside the caller.
+type located struct {
+	members []peerCore.ID
+	local   *server
+}
+
+func (l located) Members() []peerCore.ID { return l.members }
+func (l located) beside() *server        { return l.local }

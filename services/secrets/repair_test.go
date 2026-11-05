@@ -9,7 +9,6 @@ import (
 	"time"
 
 	logging "github.com/ipfs/go-log/v2"
-	peerCore "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -176,7 +175,7 @@ func TestAClientRefusesBadReferencesBeforeAskingAnyone(t *testing.T) {
 	t.Cleanup(func() { node.Close() })
 
 	// Named as a member, but this node runs no service, so it is not a target.
-	client, err := NewClient(node.Host(), func() []peerCore.ID { return []peerCore.ID{node.ID()} }, func() *server { return nil })
+	client, err := NewClient(node.Host(), Peers{node.ID()})
 	require.NoError(t, err)
 	ctx := t.Context()
 

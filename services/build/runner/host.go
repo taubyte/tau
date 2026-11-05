@@ -8,14 +8,12 @@ import (
 	"net/url"
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
-	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/pkg/containers"
 	"github.com/taubyte/tau/pkg/forge/drivers"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
-	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/build/artifact"
 	"github.com/taubyte/tau/services/build/deploy"
 	"github.com/taubyte/tau/services/build/linked"
@@ -85,12 +83,7 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 		return err
 	}
 	s.exec, s.confirm, s.assets, s.self = exec, confirm, assets, h.Peer().Host()
-	s.builders = func() []libp2ppeer.ID {
-		if dir, ok := service.Get[service.Directory](h); ok {
-			return dir.Peers(build.Build.Name)
-		}
-		return nil
-	}
+	s.builders = directoryOn{h}
 
 	loop, stop := context.WithCancel(context.WithoutCancel(ctx))
 	s.stop, s.stopped = stop, make(chan struct{})
@@ -114,7 +107,7 @@ func compose(region string, cfg Config, projects linked.Projects, table func(con
 	// ssh account, are the forge's; an ssh host is pinned.
 	clone := deploy.NewClone(linked.Credentials{Projects: projects, Vault: vault},
 		deploy.WithAddress(deploy.Forged{Forges: forges}),
-		deploy.WithHostKeys(func(host string) []gossh.PublicKey { return pinned[host] }))
+		deploy.WithHostKeys(deploy.Pinned(pinned)))
 
 	var (
 		checkout deploy.Checkout = clone
@@ -183,6 +176,17 @@ func compose(region string, cfg Config, projects linked.Projects, table func(con
 		return nil, nil, err
 	}
 	return exec, confirm, nil
+}
+
+// directoryOn is the directory beside h, asked at call time: nobody where none
+// runs.
+type directoryOn struct{ h service.Host }
+
+func (d directoryOn) Peers(name string) []libp2ppeer.ID {
+	if dir, ok := service.Get[service.Directory](d.h); ok {
+		return dir.Peers(name)
+	}
+	return nil
 }
 
 // trusted proves every zone: a cloud whose operator serves declared zones unproven.

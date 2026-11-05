@@ -59,7 +59,7 @@ func TestTheCredentialDecidesTheTransport(t *testing.T) {
 	})
 	st, commit := gittest.Repository(t, map[string]string{"README": "over ssh\n"})
 	server.Serve("/acme/pay.git", st)
-	pinned := deploy.WithHostKeys(func(string) []gossh.PublicKey { return []gossh.PublicKey{server.HostKey} })
+	pinned := deploy.WithHostKeys(anyHost{server.HostKey})
 	sshAddress := forge.Address{URL: server.URL("/acme/pay.git"), SSHAccount: "git"}
 
 	// A KEYED REPOSITORY IS READ OVER SSH, with its key, end to end.
@@ -106,7 +106,7 @@ func TestAWrongKeyDoesNotFallBack(t *testing.T) {
 	var a asked
 	_, _, err := deploy.NewClone(keys{key: wrong},
 		a.address(forge.Address{URL: server.URL("/acme/pay.git"), SSHAccount: "git"}, forge.Address{URL: server.URL("/acme/pay.git")}),
-		deploy.WithHostKeys(func(string) []gossh.PublicKey { return []gossh.PublicKey{server.HostKey} })).
+		deploy.WithHostKeys(anyHost{server.HostKey})).
 		Checkout(t.Context(), server.Addr+"/acme/pay", "main", commit)
 	require.ErrorContains(t, err, "unable to authenticate")
 	require.NotContains(t, err.Error(), "tau link", "a keyed clone that fails is not a missing link")
@@ -151,3 +151,8 @@ func TestAKeylessPrivateRepositoryIsNamed(t *testing.T) {
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "tau link")
 }
+
+// anyHost is the one host key every forge host answers with.
+type anyHost []gossh.PublicKey
+
+func (a anyHost) For(string) []gossh.PublicKey { return a }

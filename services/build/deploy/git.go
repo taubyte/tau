@@ -41,7 +41,7 @@ type Clone struct {
 
 	// hostKeys are the ssh host keys a forge host may answer with. A clone over
 	// ssh to a host with none is refused: see git.SSHKeyAs.
-	hostKeys func(host string) []gossh.PublicKey
+	hostKeys HostKeys
 }
 
 var (
@@ -76,9 +76,19 @@ func WithAddress(address Addresses) CloneOption {
 	}
 }
 
-// WithHostKeys is the ssh host keys each forge host may answer a clone with,
-// keyed by the host a repository key names.
-func WithHostKeys(keys func(host string) []gossh.PublicKey) CloneOption {
+// HostKeys is the ssh host keys a forge host may answer a clone with, by the host
+// a repository key names.
+type HostKeys interface {
+	For(host string) []gossh.PublicKey
+}
+
+// Pinned is host keys declared by host.
+type Pinned map[string][]gossh.PublicKey
+
+func (p Pinned) For(host string) []gossh.PublicKey { return p[host] }
+
+// WithHostKeys is the ssh host keys each forge host may answer a clone with.
+func WithHostKeys(keys HostKeys) CloneOption {
 	return func(c *Clone) {
 		if keys != nil {
 			c.hostKeys = keys
@@ -250,7 +260,7 @@ func (c *Clone) reach(ctx context.Context, repositoryKey string) ([]git.Option, 
 		}
 		var pinned []gossh.PublicKey
 		if c.hostKeys != nil {
-			pinned = c.hostKeys(key.Host)
+			pinned = c.hostKeys.For(key.Host)
 		}
 		if len(pinned) == 0 {
 			return nil, "", fmt.Errorf("deploy: no ssh host key is pinned for %s, and a clone that accepts any host can be answered by anyone", repositoryKey)

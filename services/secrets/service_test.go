@@ -298,7 +298,7 @@ func (r refClient) List(ctx context.Context, project string) ([]Ref, error) {
 func (c *cluster) client(t *testing.T) refClient {
 	t.Helper()
 
-	secrets, err := NewClient(c.consumer.Host(), c.memberIDs, nil)
+	secrets, err := NewClient(c.consumer.Host(), clusterAt{c})
 	require.NoError(t, err)
 	t.Cleanup(func() { secrets.Close() })
 
@@ -306,6 +306,13 @@ func (c *cluster) client(t *testing.T) refClient {
 }
 
 // memberIDs are the nodes whose service is running.
+// clusterAt is the cluster's members as they are when asked, none beside the
+// consumer.
+type clusterAt struct{ c *cluster }
+
+func (a clusterAt) Members() []peerCore.ID { return a.c.memberIDs() }
+func (clusterAt) beside() *server          { return nil }
+
 func (c *cluster) memberIDs() []peerCore.ID {
 	c.mu.Lock()
 	defer c.mu.Unlock()

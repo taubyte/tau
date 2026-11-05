@@ -72,8 +72,8 @@ type server struct {
 	confirm run.Confirmer
 	assets  Assets
 	self    host.Host
-	// builders is the build nodes to offer this runner to, asked each time.
-	builders func() []libp2ppeer.ID
+	// builders names the build nodes to offer this runner to, asked each time.
+	builders service.Directory
 
 	stop    context.CancelFunc
 	stopped chan struct{}
@@ -85,7 +85,7 @@ type server struct {
 func (s *server) serve(ctx context.Context) {
 	defer close(s.stopped)
 	for ctx.Err() == nil {
-		for _, id := range s.builders() {
+		for _, id := range s.builders.Peers(build.Build.Name) {
 			if id == s.self.ID() || ctx.Err() != nil {
 				continue
 			}

@@ -22,10 +22,9 @@ import (
 // service: it encrypts before a write leaves it, and opens a read itself from a
 // threshold of partial decryptions. No member it talks to sees a plaintext.
 type Client struct {
-	host    host.Host
-	members func() []peerCore.ID
-	local   func() *server
-	conns   peers
+	host  host.Host
+	find  Locator
+	conns peers
 }
 
 // ErrNoMembers is a client that can find no node running the service.
@@ -36,20 +35,29 @@ var ErrNoMembers = errors.New("secrets: no secrets service is reachable")
 // replicate to the others whose partials the read needs.
 const settleWindow = 15 * time.Second
 
-// NewClient builds a client from h. members is who runs the service, asked on
-// every call; local is this node's own service, or nil, and is used instead of
-// a stream whenever a call is for this node.
-func NewClient(h host.Host, members func() []peerCore.ID, local func() *server) (*Client, error) {
+// Locator is where a client finds the service, asked on every call: who runs it,
+// and the one beside the caller, used instead of a stream whenever a call is for
+// this node. Only this package's types say the second.
+type Locator interface {
+	Members() []peerCore.ID
+	beside() *server
+}
+
+// Peers is a fixed set of members, none of them beside the caller.
+type Peers []peerCore.ID
+
+func (p Peers) Members() []peerCore.ID { return p }
+func (Peers) beside() *server          { return nil }
+
+// NewClient builds a client from h over the service at finds; nil finds none.
+func NewClient(h host.Host, at Locator) (*Client, error) {
 	if h == nil {
 		return nil, ErrNoHost
 	}
-	if members == nil {
-		members = func() []peerCore.ID { return nil }
+	if at == nil {
+		at = Peers(nil)
 	}
-	if local == nil {
-		local = func() *server { return nil }
-	}
-	return &Client{host: h, members: members, local: local, conns: peers{host: h, open: map[peerCore.ID]*rpc.Client{}}}, nil
+	return &Client{host: h, find: at, conns: peers{host: h, open: map[peerCore.ID]*rpc.Client{}}}, nil
 }
 
 func (c *Client) Close() error {
@@ -60,11 +68,11 @@ func (c *Client) Close() error {
 // targets are the members to ask, this node's own first when it runs one.
 func (c *Client) targets() []peerCore.ID {
 	var out []peerCore.ID
-	if c.local() != nil {
+	if c.find.beside() != nil {
 		out = append(out, c.host.ID())
 	}
-	for _, p := range c.members() {
-		if p != c.host.ID() || c.local() != nil {
+	for _, p := range c.find.Members() {
+		if p != c.host.ID() || c.find.beside() != nil {
 			if !containsPeer(out, p) {
 				out = append(out, p)
 			}
@@ -85,7 +93,7 @@ func containsPeer(ps []peerCore.ID, p peerCore.ID) bool {
 // at is the service on one member: this node's own handler, or a stream.
 func (c *Client) at(to peerCore.ID) (secretsv2connect.SecretsServiceClient, error) {
 	if to == c.host.ID() {
-		if srv := c.local(); srv != nil {
+		if srv := c.find.beside(); srv != nil {
 			return &secretsHandler{srv}, nil
 		}
 		return nil, ErrNoMembers

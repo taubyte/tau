@@ -8,7 +8,6 @@ import (
 	"time"
 
 	logging "github.com/ipfs/go-log/v2"
-	peerCore "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -23,7 +22,7 @@ func (c *cluster) localClient(t *testing.T, i int) *Client {
 	t.Helper()
 
 	srv := c.services[i]
-	client, err := NewClient(c.nodes[i].Host(), func() []peerCore.ID { return nil }, func() *server { return srv })
+	client, err := NewClient(c.nodes[i].Host(), located{local: srv})
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
 	return client

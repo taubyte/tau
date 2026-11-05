@@ -29,17 +29,7 @@ type Vault struct {
 // VaultOn is the vault h's services reach. Who runs the service is asked at call
 // time, so a vault made before the service starts finds it.
 func VaultOn(h service.Host) *Vault {
-	client, err := NewClient(h.Peer().Host(),
-		func() []peerCore.ID {
-			if d, ok := service.Get[service.Directory](h); ok {
-				return d.Peers(Descriptor.Name)
-			}
-			return nil
-		},
-		func() *server {
-			s, _ := service.Get[*server](h)
-			return s
-		})
+	client, err := NewClient(h.Peer().Host(), on{h})
 	if err != nil {
 		// NewClient refuses only a nil host, and a Host always has one.
 		panic(err)
@@ -48,6 +38,22 @@ func VaultOn(h service.Host) *Vault {
 }
 
 func (v *Vault) Close() error { return v.client.Close() }
+
+// on is the service as the instance h finds it: the nodes its directory names,
+// and the one running beside it.
+type on struct{ h service.Host }
+
+func (o on) Members() []peerCore.ID {
+	if d, ok := service.Get[service.Directory](o.h); ok {
+		return d.Peers(Descriptor.Name)
+	}
+	return nil
+}
+
+func (o on) beside() *server {
+	s, _ := service.Get[*server](o.h)
+	return s
+}
 
 // absent turns a vault with nobody to ask into the caller's own refusal.
 func absent(err error) error {

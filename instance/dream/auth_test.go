@@ -156,7 +156,7 @@ func TestTheAdminSignsInOnceItsPasswordIsWritten(t *testing.T) {
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(last), "%v", last)
 	require.ErrorContains(t, last, "the admin has no password in the secrets service yet")
 
-	vault, err := secrets.NewClient(u.Peers()[1].Host(), func() []libp2ppeer.ID { return targets }, nil)
+	vault, err := secrets.NewClient(u.Peers()[1].Host(), secrets.Peers(targets))
 	require.NoError(t, err)
 	defer vault.Close()
 	hash, err := auth.HashAdminPassword("correct horse battery")
