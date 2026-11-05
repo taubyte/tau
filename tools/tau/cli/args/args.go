@@ -130,15 +130,24 @@ func moveCommands(args []string, commands []*cli.Command, valued map[string]bool
 	return append(cmd_args, args...)
 }
 
-// valueFlags returns the names of every flag that takes a value, anywhere in
-// the command tree.
+// valueFlags returns the names of the flags that take a value wherever they
+// appear in the command tree. A name that takes a value in one command and none
+// in another (push --code, import --code VALUE) is left out: the word after it
+// is not known to be its value, and arguments are read as they always were.
 func valueFlags(global []cli.Flag, commands []*cli.Command) map[string]bool {
 	valued := make(map[string]bool)
+	boolean := make(map[string]bool)
 	add := func(flags []cli.Flag) {
 		for _, f := range flags {
-			if d, ok := f.(cli.DocGenerationFlag); ok && d.TakesValue() {
-				for _, name := range f.Names() {
+			takes := false
+			if d, ok := f.(cli.DocGenerationFlag); ok {
+				takes = d.TakesValue()
+			}
+			for _, name := range f.Names() {
+				if takes {
 					valued[name] = true
+				} else {
+					boolean[name] = true
 				}
 			}
 		}
@@ -152,6 +161,9 @@ func valueFlags(global []cli.Flag, commands []*cli.Command) map[string]bool {
 	}
 	add(global)
 	walk(commands)
+	for name := range boolean {
+		delete(valued, name)
+	}
 	return valued
 }
 
