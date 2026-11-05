@@ -61,3 +61,17 @@ func TestDatastoreUsedDuringClose(t *testing.T) {
 		t.Fatalf("second Close: %v", err)
 	}
 }
+
+func TestGuardKeepsWhatTheStoreOffers(t *testing.T) {
+	store, err := NewDatastore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if _, ok := store.(datastore.PersistentDatastore); !ok {
+		t.Fatal("the guarded store hides DiskUsage")
+	}
+	if _, err := datastore.DiskUsage(context.Background(), store); err != nil {
+		t.Fatal(err)
+	}
+}

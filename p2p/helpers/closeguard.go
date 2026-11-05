@@ -135,3 +135,14 @@ func (b *guardedBatch) Commit(ctx context.Context) error {
 	defer leave()
 	return b.Batch.Commit(ctx)
 }
+
+// DiskUsage keeps the pebble store a datastore.PersistentDatastore through the
+// guard, so libraries asking for its size still get it.
+func (g *closeGuard) DiskUsage(ctx context.Context) (uint64, error) {
+	leave, err := g.enter()
+	if err != nil {
+		return 0, err
+	}
+	defer leave()
+	return datastore.DiskUsage(ctx, g.Batching)
+}
