@@ -239,3 +239,17 @@ func TestACodeRepositoryNoProjectLinksIsNotUploaded(t *testing.T) {
 	_, err = u.Upload("github.com/acme/code", "main", t.TempDir(), nil)
 	require.ErrorContains(t, err, "is no project's")
 }
+
+func TestAFolderThatCannotBeReadIsNeitherCommittedNorUploaded(t *testing.T) {
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Discovery}})
+	require.NoError(t, err)
+	t.Cleanup(u.Close)
+
+	dir := t.TempDir()
+	require.NoError(t, os.CopyFS(dir, os.DirFS(projectDir("with/placement"))))
+	require.NoError(t, os.Symlink(filepath.Join(dir, "nowhere"), filepath.Join(dir, "dangling")))
+	_, err = u.Commit("github.com/acme/placement", "main", dir)
+	require.ErrorContains(t, err, "dangling", "a file the folder names and cannot give")
+	_, err = u.Upload("github.com/acme/placement", "main", dir, nil)
+	require.ErrorContains(t, err, "dangling")
+}
