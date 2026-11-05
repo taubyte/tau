@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	goHttp "net/http"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
@@ -19,13 +20,17 @@ type fakeRepos struct {
 	perms map[string]map[string]bool
 	asked int
 	cur   *github.Repository
+	fail  error // GetByID fails like this, when set
 }
 
 func (f *fakeRepos) GetByID(id string) error {
 	f.asked++
+	if f.fail != nil {
+		return f.fail
+	}
 	p, ok := f.perms[id]
 	if !ok {
-		return errors.New("not found")
+		return &github.ErrorResponse{Response: &goHttp.Response{StatusCode: goHttp.StatusNotFound}}
 	}
 	f.cur = &github.Repository{Permissions: p}
 	return nil
@@ -164,4 +169,31 @@ func TestLiveLogsResetStartsARetriedLogClean(t *testing.T) {
 		t.Fatalf("left %v total=%d", ll.jobs["j"], ll.total)
 	}
 	ll.reset("unknown")
+}
+
+// GitHub failing to answer must not lock the owner out for the cache's lifetime.
+func TestJobAccessDoesNotKeepADenialGitHubDidNotGive(t *testing.T) {
+	db := &fakeJobs{keys: map[string][]byte{}}
+	addJob(t, db, "/archive/jobs/", "j", 31)
+	srv := &PatrickService{db: db}
+	handler := srv.withJobAccess("jid", func(http.Context) (interface{}, error) { return "ok", nil })
+
+	flaky := &fakeRepos{perms: map[string]map[string]bool{"31": {"push": true}}}
+	flaky.fail = &github.ErrorResponse{Response: &goHttp.Response{StatusCode: goHttp.StatusBadGateway}}
+	if _, err := handler(accessCtx("flaky-token", flaky, map[string]any{"jid": "j"})); !errors.Is(err, errNoJobAccess) {
+		t.Fatalf("got %v while GitHub failed", err)
+	}
+
+	flaky.fail = nil
+	if _, err := handler(accessCtx("flaky-token", flaky, map[string]any{"jid": "j"})); err != nil {
+		t.Fatalf("owner still locked out after GitHub recovered: %v", err)
+	}
+
+	// GitHub's own no is kept
+	stranger := &fakeRepos{perms: map[string]map[string]bool{}}
+	handler(accessCtx("stranger-token", stranger, map[string]any{"jid": "j"}))
+	handler(accessCtx("stranger-token", stranger, map[string]any{"jid": "j"}))
+	if stranger.asked != 1 {
+		t.Fatalf("a certain denial was asked %d times", stranger.asked)
+	}
 }

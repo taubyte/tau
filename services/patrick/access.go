@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	goHttp "net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -13,6 +14,8 @@ import (
 	commonIface "github.com/taubyte/tau/core/services/patrick"
 	http "github.com/taubyte/tau/pkg/http"
 	httpAuth "github.com/taubyte/tau/pkg/http/auth"
+
+	"github.com/google/go-github/v71/github"
 	authService "github.com/taubyte/tau/services/auth"
 )
 
@@ -41,7 +44,10 @@ type repoAccessCache struct {
 
 var repoAccesses = &repoAccessCache{entries: make(map[[sha256.Size]byte]repoAccessEntry)}
 
-func (c *repoAccessCache) check(token string, repoID int, ask func(repoID string) bool) bool {
+// check asks once per token and repository. ask also says whether its answer is
+// certain: a denial because GitHub failed is not kept, or one bad answer would
+// lock the repository's owner out of its jobs until the entry expired.
+func (c *repoAccessCache) check(token string, repoID int, ask func(repoID string) (allowed, certain bool)) bool {
 	key := sha256.Sum256([]byte(token + "\x00" + strconv.Itoa(repoID)))
 	now := time.Now()
 
@@ -52,7 +58,10 @@ func (c *repoAccessCache) check(token string, repoID int, ask func(repoID string
 		return entry.allowed
 	}
 
-	allowed := ask(strconv.Itoa(repoID))
+	allowed, certain := ask(strconv.Itoa(repoID))
+	if !allowed && !certain {
+		return false
+	}
 
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -74,9 +83,30 @@ func callerRepoAccess(ctx http.Context, repoID int) (bool, error) {
 	if !ok {
 		return false, errNoJobAccess
 	}
-	return repoAccesses.check(auth.Token, repoID, func(id string) bool {
-		return authService.RepoAccess(client, id)
+	return repoAccesses.check(auth.Token, repoID, func(id string) (bool, bool) {
+		return repoWriteAccess(client, id)
 	}), nil
+}
+
+// repoWriteAccess is Auth's rule (write, maintain or admin on the repository),
+// and whether a "no" is GitHub's answer rather than GitHub failing to answer.
+func repoWriteAccess(client authService.GitHubClient, repoID string) (allowed, certain bool) {
+	if err := client.GetByID(repoID); err != nil {
+		var response *github.ErrorResponse
+		if errors.As(err, &response) && response.Response != nil {
+			switch response.Response.StatusCode {
+			case goHttp.StatusNotFound, goHttp.StatusForbidden, goHttp.StatusUnauthorized:
+				return false, true
+			}
+		}
+		return false, false
+	}
+	repo := client.Cur()
+	if repo == nil {
+		return false, false
+	}
+	perms := repo.GetPermissions()
+	return perms["admin"] || perms["maintain"] || perms["push"], true
 }
 
 // anyJob finds a job wherever it is stored, finished or not.
