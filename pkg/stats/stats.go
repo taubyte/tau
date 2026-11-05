@@ -300,13 +300,37 @@ func (v *View) snapshot(keep func(Node) bool) []Node {
 	v.forget(now)
 
 	out := make([]Node, 0, len(v.rows))
+	var names, sockets int
 	for peer, r := range v.rows {
 		if n := shared(peer, r, now); keep(n) {
-			out = append(out, owned(n))
+			out = append(out, n)
+			names += len(n.Serving) + len(n.Addresses)
+			sockets += len(n.Sockets)
 		}
+	}
+	// EVERY NODE GETS ITS OWN COPIES, cut from one backing array for the names and
+	// one for the sockets: three allocations a call rather than three a node.
+	strs, socks := make([]string, 0, names), make([]Socket, 0, sockets)
+	for i := range out {
+		out[i], strs, socks = ownedFrom(out[i], strs, socks)
 	}
 	slices.SortFunc(out, func(a, b Node) int { return strings.Compare(a.Peer, b.Peer) })
 	return out
+}
+
+// ownedFrom is n with its slices copied into the ends of strs and socks, each copy
+// capped so an append to it cannot reach the next node's.
+func ownedFrom(n Node, strs []string, socks []Socket) (Node, []string, []Socket) {
+	at := len(strs)
+	strs = append(strs, n.Serving...)
+	n.Serving = strs[at:len(strs):len(strs)]
+	at = len(strs)
+	strs = append(strs, n.Addresses...)
+	n.Addresses = strs[at:len(strs):len(strs)]
+	from := len(socks)
+	socks = append(socks, n.Sockets...)
+	n.Sockets = socks[from:len(socks):len(socks)]
+	return n, strs, socks
 }
 
 // forget drops rows nothing should still be routing to. The caller holds the
