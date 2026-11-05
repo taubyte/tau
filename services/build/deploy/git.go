@@ -118,24 +118,62 @@ func (f Forged) Address(repositoryKey string, over forge.Protocol) (forge.Addres
 	return session.CloneAddress(key, over)
 }
 
-// Mirrored reaches a repository the file:// directory Root holds a folder for, its
-// key joined on, read with no credential, and every other through Otherwise: a
-// development cloud's mirror of the repositories it was handed.
-type Mirrored struct {
-	Root      string
-	Otherwise Addresses
+// Mirror reads a repository the file:// directory it was opened on holds a folder
+// for from there, with no credential, and every other through what it sits in
+// front of: a development cloud's mirror of the repositories it was handed.
+type Mirror struct {
+	held     mirrored
+	clone    *Clone
+	checkout Checkout
+	confirm  run.Confirmer
 }
 
-func (m Mirrored) Address(repositoryKey string, over forge.Protocol) (forge.Address, error) {
+// NewMirror is the mirror at base in front of checkout and confirm.
+func NewMirror(base string, checkout Checkout, confirm run.Confirmer) Mirror {
+	held := mirrored{root: strings.TrimSuffix(strings.TrimPrefix(base, "file://"), "/")}
+	return Mirror{held: held, clone: NewClone(nil, WithAddress(held)), checkout: checkout, confirm: confirm}
+}
+
+func (m Mirror) Checkout(ctx context.Context, repositoryKey, branch, commit string) (string, func(), error) {
+	if m.held.holds(repositoryKey) {
+		return m.clone.Checkout(ctx, repositoryKey, branch, commit)
+	}
+	return m.checkout.Checkout(ctx, repositoryKey, branch, commit)
+}
+
+func (m Mirror) Confirm(ctx context.Context, repositoryKey, ref, commit string) error {
+	if m.held.holds(repositoryKey) {
+		return m.clone.Confirm(ctx, repositoryKey, ref, commit)
+	}
+	return m.confirm.Confirm(ctx, repositoryKey, ref, commit)
+}
+
+// mirrored is a mirror's folders, each a repository under its key.
+type mirrored struct{ root string }
+
+func (m mirrored) folder(repositoryKey string) (string, error) {
 	key, err := parse(repositoryKey)
+	if err != nil {
+		return "", err
+	}
+	return m.root + "/" + key.String(), nil
+}
+
+func (m mirrored) holds(repositoryKey string) bool {
+	at, err := m.folder(repositoryKey)
+	if err != nil {
+		return false
+	}
+	info, err := os.Stat(at)
+	return err == nil && info.IsDir()
+}
+
+func (m mirrored) Address(repositoryKey string, _ forge.Protocol) (forge.Address, error) {
+	at, err := m.folder(repositoryKey)
 	if err != nil {
 		return forge.Address{}, err
 	}
-	at := strings.TrimSuffix(strings.TrimPrefix(m.Root, "file://"), "/") + "/" + key.String()
-	if info, err := os.Stat(at); err == nil && info.IsDir() {
-		return forge.Address{URL: "file://" + at}, nil
-	}
-	return m.Otherwise.Address(repositoryKey, over)
+	return forge.Address{URL: "file://" + at}, nil
 }
 
 func parse(repositoryKey string) (repokey.Key, error) {

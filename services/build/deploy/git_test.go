@@ -29,9 +29,14 @@ func (a at) Address(string, forge.Protocol) (forge.Address, error) { return forg
 // unreached is a forge that holds nothing, and remembers who was asked of it.
 type unreached struct{ asked []string }
 
-func (u *unreached) Address(key string, _ forge.Protocol) (forge.Address, error) {
+func (u *unreached) Checkout(_ context.Context, key, _, _ string) (string, func(), error) {
 	u.asked = append(u.asked, key)
-	return forge.Address{}, errors.New("not at this forge")
+	return "", nil, errors.New("not at this forge")
+}
+
+func (u *unreached) Confirm(_ context.Context, key, _, _ string) error {
+	u.asked = append(u.asked, key)
+	return errors.New("not at this forge")
 }
 
 // repository stands up a real repository with two commits, so the clone is shown
@@ -120,7 +125,7 @@ func TestAMirrorIsWhereTheRepositoriesItHoldsAreClonedFrom(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(base, "github.com", "acme"), 0o755))
 	require.NoError(t, os.Rename(path, filepath.Join(base, "github.com", "acme", "app")))
 	elsewhere := &unreached{}
-	clone := deploy.NewClone(nil, deploy.WithAddress(deploy.Mirrored{Root: "file://" + base + "/", Otherwise: elsewhere}))
+	clone := deploy.NewMirror("file://"+base+"/", elsewhere, elsewhere)
 
 	dir, done, err := clone.Checkout(t.Context(), "github.com/Acme/App", "main", first)
 	require.NoError(t, err)
@@ -133,7 +138,9 @@ func TestAMirrorIsWhereTheRepositoriesItHoldsAreClonedFrom(t *testing.T) {
 	require.ErrorIs(t, clone.Confirm(t.Context(), "github.com/acme/app", "refs/heads/main", first), run.ErrNotAtCommit)
 	require.ErrorContains(t, clone.Confirm(t.Context(), "github.com/acme/elsewhere", "refs/heads/main", first), "not at this forge")
 	require.Equal(t, []string{"github.com/acme/elsewhere"}, elsewhere.asked, "a repository the mirror holds no folder for is its forge's")
-	require.ErrorContains(t, clone.Confirm(t.Context(), "", "refs/heads/main", first), "is not a repository")
+	_, _, err = clone.Checkout(t.Context(), "github.com/acme/elsewhere", "main", first)
+	require.ErrorContains(t, err, "not at this forge")
+	require.ErrorContains(t, clone.Confirm(t.Context(), "", "refs/heads/main", first), "not at this forge", "a key that is no repository is held by no folder")
 }
 
 func TestAPushOfARealRepositoryDeploys(t *testing.T) {
