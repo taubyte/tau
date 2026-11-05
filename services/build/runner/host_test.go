@@ -59,7 +59,8 @@ func TestARunnerRefusesWhatItCannotBuildWith(t *testing.T) {
 		"a daemon nothing opens":       {"container": map[string]any{"backend": "podman"}},
 		"a forge with no driver":       {"forges": []any{map[string]any{"host": "code.example.com", "driver": "fossil"}}},
 		"a host key that is junk":      {"forges": []any{map[string]any{"host": "git.example.com", "driver": "gitea", "hostkeys": []any{"junk"}}}},
-		"a section of the wrong shape": {"local": "many"},
+		"a section of the wrong shape": {"mirror": map[string]any{"many": "places"}},
+		"a mirror that is not a url":   {"mirror": "somewhere"},
 		"uploads it cannot keep":       {"uploads": "/dev/null/uploads"},
 	} {
 		t.Run(name, func(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	gossh "golang.org/x/crypto/ssh"
@@ -133,6 +134,9 @@ func compose(region string, cfg Config, projects linked.Projects, table func(con
 		}
 	}
 	if cfg.Mirror != "" {
+		if at, err := url.Parse(cfg.Mirror); err != nil || at.Scheme == "" {
+			return nil, nil, fmt.Errorf("runner: mirror %q is not a url", cfg.Mirror)
+		}
 		mirror := deploy.NewClone(nil, deploy.WithAddress(deploy.Mirrored(cfg.Mirror)))
 		checkout, confirm = mirror, mirror
 	}
