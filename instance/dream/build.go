@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -124,20 +123,11 @@ func replaceTree(at, dir string) error {
 }
 
 func copyFile(from, to string) error {
-	in, err := os.Open(from)
+	content, err := os.ReadFile(from)
 	if err != nil {
 		return err
 	}
-	defer in.Close()
-	out, err := os.Create(to)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		return err
-	}
-	return out.Close()
+	return os.WriteFile(to, content, 0o644)
 }
 
 // Upload keeps dir in the universe's uploads as a commit of repository's branch,

@@ -213,6 +213,10 @@ func TestACommitIsTheFolderAsItIsNow(t *testing.T) {
 	require.Error(t, err, "a folder that is not there")
 	_, err = u.Commit("not a key", "main", dir)
 	require.ErrorContains(t, err, "is not a repository")
+
+	require.NoError(t, os.WriteFile(filepath.Join(u.Mirror(), "github.com", "acme", "file"), nil, 0o644))
+	_, err = u.Commit("github.com/acme/file", "main", dir)
+	require.ErrorContains(t, err, "the mirror's github.com/acme/file", "a mirror holding a file where a repository goes")
 }
 
 func TestAUniverseWithNothingThatBuildsSaysSo(t *testing.T) {
