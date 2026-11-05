@@ -17,7 +17,6 @@ import (
 	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/build/artifact"
 	"github.com/taubyte/tau/services/build/deploy"
-	"github.com/taubyte/tau/services/build/folders"
 	"github.com/taubyte/tau/services/build/linked"
 	"github.com/taubyte/tau/services/build/run"
 	"github.com/taubyte/tau/services/build/uploads"
@@ -34,10 +33,10 @@ type Config struct {
 	// out and built from it. Empty is a cloud with no uploads.
 	Uploads string `yaml:"uploads"`
 
-	// Local is repositories read from folders on this machine, by repository key, in
-	// place of the forge (services/build/folders): a development cloud's, so a CI run
-	// needs no forge to hold the code.
-	Local map[string]string `yaml:"local"`
+	// Mirror is where every repository is cloned from in place of its forge, its key
+	// joined on: a development cloud's file:// directory of repositories, so a CI run
+	// needs no forge to hold the code. Empty is each repository's own forge.
+	Mirror string `yaml:"mirror,omitempty"`
 
 	// Domains is how a deploy treats the zones a project declares.
 	Domains Domains `yaml:"domains"`
@@ -99,7 +98,7 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 }
 
 // compose is what a push is read and run with: the forge's clone, and the container
-// engine. The section's local folders and uploaded builds sit in front of them.
+// engine. The section's mirror replaces the forge, and uploaded builds sit in front.
 func compose(region string, cfg Config, projects linked.Projects, table func(context.Context) (register.Table, error), vault linked.Vault, domains deploy.Domains) (run.Runner, run.Confirmer, error) {
 	forges, err := drivers.Registry(cfg.Forges)
 	if err != nil {
@@ -133,12 +132,9 @@ func compose(region string, cfg Config, projects linked.Projects, table func(con
 			return nil, nil, err
 		}
 	}
-	if len(cfg.Local) > 0 {
-		f, err := folders.New(cfg.Local)
-		if err != nil {
-			return nil, nil, err
-		}
-		checkout, confirm = f.Checkout(checkout), f.Confirm(confirm)
+	if cfg.Mirror != "" {
+		mirror := deploy.NewClone(nil, deploy.WithAddress(deploy.Mirrored(cfg.Mirror)))
+		checkout, confirm = mirror, mirror
 	}
 	if cfg.Uploads != "" {
 		held, err := uploads.Open(cfg.Uploads)

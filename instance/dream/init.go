@@ -250,12 +250,6 @@ type Config struct {
 	// with, beside the universe's ACME account, as `taud init -` writes a
 	// sealed bundle (see secrets.Sealed).
 	Secrets []*secretsv2.InitSecret
-
-	// Local is repositories read from folders on this machine, by repository
-	// key (github.com/acme/app), in place of the forge: each is a git
-	// repository, cloned and confirmed at the commit a push or `tau ci run`
-	// names, so a CI run needs no forge to hold the code.
-	Local map[string]string
 }
 
 // removed is a directory a universe deletes when it closes.
@@ -373,12 +367,11 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	nodeConfig.Sections = map[string]any{discovery.Descriptor.Name: discovery.Config{Stabilize: dreamStabilize}}
 	// A universe is one developer's cloud, so sign-up is open.
 	nodeConfig.Auth.SignUp = auth.SignUpOpen
-	// A development cloud serves declared zones unproven, takes a developer's build,
-	// and reads the repositories it was handed folders for.
+	// A development cloud serves declared zones unproven and takes a developer's build.
 	// A node running the public build role listens on an ephemeral loopback port too.
 	nodeConfig.Sections[instance.Build] = ingress.Config{Uploads: uploads, Listen: "127.0.0.1:0"}
 	nodeConfig.Sections[instance.Runner] = runner.Config{
-		Uploads: uploads, Local: cfg.Local, Domains: runner.Domains{Trusted: true},
+		Uploads: uploads, Domains: runner.Domains{Trusted: true},
 	}
 	if cfg.Configure != nil {
 		cfg.Configure(index, &nodeConfig)

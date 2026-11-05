@@ -350,7 +350,7 @@ func TestTheRegionANodeReadsIsTheOneItsConfigNames(t *testing.T) {
 
 func TestADevelopmentCloudsRunnerIsConfigured(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "uploads")
-	section := runner.Config{Uploads: dir, Local: map[string]string{"github.com/acme/app": t.TempDir()}}
+	section := runner.Config{Uploads: dir, Mirror: "file://" + t.TempDir()}
 	cfg := Config{Services: []string{Discovery, Runner}, Sections: map[string]any{Runner: section}}
 	n, _, _ := makeNode(t, cfg)
 	require.NoError(t, n.Start(t.Context()))

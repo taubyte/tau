@@ -136,11 +136,11 @@ func TestARunnerConfirmsAPrivateRepositoryWithTheDeployKeyALinkStored(t *testing
 	require.ErrorIs(t, confirm.Confirm(t.Context(), repository, "refs/heads/main", strings.Repeat("0", 40)), run.ErrNotAtCommit)
 }
 
-func TestADevelopmentCloudsRunnerReadsItsFoldersAndUploads(t *testing.T) {
+func TestADevelopmentCloudsRunnerReadsItsMirrorAndUploads(t *testing.T) {
 	uploads := t.TempDir() + "/uploads"
 	h := lone(t, map[string]any{
 		"uploads": uploads,
-		"local":   map[string]any{"github.com/acme/app": t.TempDir()},
+		"mirror":  "file://" + t.TempDir(),
 		"domains": map[string]any{"trusted": true},
 	})
 	r := New()

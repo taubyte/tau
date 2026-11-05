@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -107,6 +108,19 @@ func Forged(forges *forge.Registry) func(repositoryKey string, over forge.Protoc
 			return forge.Address{}, fmt.Errorf("deploy: %w", err)
 		}
 		return session.CloneAddress(key, over)
+	}
+}
+
+// Mirrored reaches every repository under base, its key joined on, in place of its
+// forge: a development cloud's file:// directory of repositories, read with no
+// credential.
+func Mirrored(base string) func(repositoryKey string, over forge.Protocol) (forge.Address, error) {
+	return func(repositoryKey string, _ forge.Protocol) (forge.Address, error) {
+		key, err := parse(repositoryKey)
+		if err != nil {
+			return forge.Address{}, err
+		}
+		return forge.Address{URL: strings.TrimSuffix(base, "/") + "/" + key.String()}, nil
 	}
 }
 
