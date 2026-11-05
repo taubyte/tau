@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/services/build/artifact"
 	"github.com/taubyte/tau/services/build/deploy"
@@ -35,9 +36,11 @@ var (
 	digestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
-// Recipes is the recipe of each package a push of the tree at dir to branch builds,
-// by environment and then package name, worked out as a cloud's build works it out:
-// the digest an upload names that package's product by.
+// Recipes is the recipe of each package a push of the configuration tree at dir to
+// branch builds, by environment and then package name, worked out as a cloud's
+// build works it out: the digest an upload names that package's product by. A
+// package whose source is another repository is built by a push of that one
+// (CodeRecipes).
 func Recipes(dir, branch string) (map[string]map[string]string, error) {
 	projects, err := deploy.Compiled(dir, branch)
 	if err != nil {
@@ -47,10 +50,35 @@ func Recipes(dir, branch string) (map[string]map[string]string, error) {
 	for environment, p := range projects {
 		deployments = append(deployments, artifact.Deployment{Environment: environment, Project: p})
 	}
-	items, err := artifact.Plan(deployments, func(specs.Buildable) (bool, error) { return true, nil })
+	items, err := artifact.Plan(deployments, func(res specs.Buildable) (bool, error) { return res.Source.Git == "", nil })
 	if err != nil {
 		return nil, err
 	}
+	return recipesOf(items, dir)
+}
+
+// CodeRecipes is the recipe of each package of deployments a push of the code
+// repository's tree at dir builds, by environment and then package name: a package
+// whose source names that repository, planned against what is published, as a
+// cloud's code build plans it.
+func CodeRecipes(deployments []artifact.Deployment, repository, dir string) (map[string]map[string]string, error) {
+	items, err := artifact.Plan(deployments, func(res specs.Buildable) (bool, error) {
+		if res.Source.Git == "" {
+			return false, nil
+		}
+		key, err := repokey.Parse(res.Source.Git)
+		if err != nil {
+			return false, fmt.Errorf("uploads: package/%s names %q, which is not a repository: %w", res.Name, res.Source.Git, err)
+		}
+		return key.String() == repository, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return recipesOf(items, dir)
+}
+
+func recipesOf(items []artifact.Item, dir string) (map[string]map[string]string, error) {
 	out := map[string]map[string]string{}
 	for _, item := range items {
 		spec, err := artifact.Recipe(item, dir)

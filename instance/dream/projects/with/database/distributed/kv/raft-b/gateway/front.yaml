@@ -3,7 +3,7 @@ description: the one way in
 host:
     zone:
         in:
-            name: example_com
+            name: example_org
         name: ledgerb
 route:
     path: /

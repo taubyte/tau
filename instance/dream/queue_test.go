@@ -52,7 +52,7 @@ func TestAnItemSentByAGuestIsDeliveredToOne(t *testing.T) {
 	// And it is acknowledged, so the queue is empty. The handle is resolved once, out
 	// here, since a failed require inside Eventually's goroutine would leave this
 	// waiting out the budget.
-	jobs := "shop/prod/" + r.idOf(t, "sync", "jobs")
+	jobs := r.project + "/prod/" + r.idOf(t, "sync", "jobs")
 	require.Eventually(t, func() bool {
 		ready, claimed, ok := r.node.QueueDepth(jobs)
 		return ok && ready == 0 && claimed == 0
@@ -60,7 +60,7 @@ func TestAnItemSentByAGuestIsDeliveredToOne(t *testing.T) {
 
 	// The dead letter is read too: a buried item also leaves the source queue empty
 	// (pkg/queue/queue.go). By now the source holds nothing, so a moment suffices.
-	buried, held, ok := r.node.QueueDepth("shop/prod/" + r.idOf(t, "sync", "jobs_dead"))
+	buried, held, ok := r.node.QueueDepth(r.project + "/prod/" + r.idOf(t, "sync", "jobs_dead"))
 	require.True(t, ok, "the dead letter could not be read at all")
 	require.Zero(t, buried, "the item was buried rather than acknowledged")
 	require.Zero(t, held, "something is holding an item in the dead letter")

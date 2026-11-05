@@ -21,6 +21,7 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/services/build/artifact"
 	"github.com/taubyte/tau/services/build/jobs"
 	"github.com/taubyte/tau/services/build/runner"
@@ -144,7 +145,7 @@ func copyFile(from, to string) error {
 // the file it builds to. It is the push that commit is, what `tau build` hands a
 // development cloud; dir itself is only read.
 func (u *Universe) Upload(repository, branch, dir string, built map[string]string) (Push, error) {
-	recipes, err := uploads.Recipes(dir, branch)
+	recipes, err := u.recipes(repository, branch, dir)
 	if err != nil {
 		return Push{}, err
 	}
@@ -197,18 +198,65 @@ func (u *Universe) Upload(repository, branch, dir string, built map[string]strin
 	return Push{Repository: repository, Ref: ref, Commit: commit}, nil
 }
 
+// recipes is the recipe of each package a push of the tree at dir builds: a
+// project's configuration, from its own compile, or a code repository's, against
+// what the register publishes for the project it is linked to, as a cloud plans
+// either.
+func (u *Universe) recipes(repository, branch, dir string) (map[string]map[string]string, error) {
+	if _, err := os.Stat(filepath.Join(dir, "project.yaml")); err == nil {
+		return uploads.Recipes(dir, branch)
+	}
+	reg, err := u.register()
+	if err != nil {
+		return nil, err
+	}
+	ctx := context.Background()
+	linked, err := reg.Repository(ctx, repository)
+	if err != nil {
+		return nil, fmt.Errorf("dream: %s is no project's: %w", repository, err)
+	}
+	environments, err := reg.Environments(ctx, linked.Project)
+	if err != nil {
+		return nil, err
+	}
+	deployments := make([]artifact.Deployment, 0, len(environments))
+	for _, environment := range environments {
+		pointer, err := reg.Resolve(ctx, linked.Project, environment)
+		if err != nil {
+			return nil, err
+		}
+		compiled, err := reg.Object(ctx, pointer.Object)
+		if err != nil {
+			return nil, err
+		}
+		p, err := specs.Load(compiled)
+		if err != nil {
+			return nil, err
+		}
+		deployments = append(deployments, artifact.Deployment{Environment: environment, Project: p})
+	}
+	return uploads.CodeRecipes(deployments, repository, dir)
+}
+
+// register is the universe's register, on the first node running one.
+func (u *Universe) register() (*pkgregister.Register, error) {
+	for _, pid := range u.pids {
+		if n, ok := Node(pid); ok && n.Register() != nil && n.Register().Local() != nil {
+			return n.Register().Local(), nil
+		}
+	}
+	return nil, errors.New("dream: no node runs the register")
+}
+
 // Link names project's repositories in the universe's register, as `tau link`
 // would: config is the one whose pushes are deploys.
 func (u *Universe) Link(ctx context.Context, project, config string, code ...string) error {
-	for _, pid := range u.pids {
-		n, ok := Node(pid)
-		if !ok || n.Register() == nil || n.Register().Local() == nil {
-			continue
-		}
-		_, err := n.Register().Local().LinkProject(ctx, pkgregister.Link{Project: project, Config: config, Code: code, Claimant: "dream"})
+	reg, err := u.register()
+	if err != nil {
 		return err
 	}
-	return errors.New("dream: no node runs the register")
+	_, err = reg.LinkProject(ctx, pkgregister.Link{Project: project, Config: config, Code: code, Claimant: "dream"})
+	return err
 }
 
 // Build is p built as this universe builds: through the build node leading the

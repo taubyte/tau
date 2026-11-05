@@ -49,7 +49,7 @@ func TestARealComponentReachesARealCache(t *testing.T) {
 	require.Len(t, spec.Reaches, 1)
 	require.Equal(t, "sessions", spec.Reaches[0].Label)
 	// The handle is asked of the compiled project rather than restated (idOf).
-	require.Equal(t, "shop/prod/"+r.idOf(t, "cache", "sessions"), spec.Reaches[0].Handle,
+	require.Equal(t, r.project+"/prod/"+r.idOf(t, "cache", "sessions"), spec.Reaches[0].Handle,
 		"the resolved id, not the label")
 	require.Empty(t, spec.Reaches[0].Refused)
 

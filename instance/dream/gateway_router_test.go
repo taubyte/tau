@@ -56,9 +56,9 @@ func TestAGatewayRoutedByAFunctionRunsRealComponents(t *testing.T) {
 	n := nodeOf(t, pids[0])
 
 	// Three artifacts, one per world.
-	publish(t, u, pids[:1], deployed{name: "with/gateway/router", host: routedHost}, artifacts{
+	routed := publish(t, u, pids[:1], deployed{name: "with/gateway/router", host: routedHost}, artifacts{
 		"": cacherWASM(t), "shaper": shaperWASM(t), "picker": pickerWASM(t),
-	})
+	})[0]
 
 	ask := func(path string, headers ...string) *httptest.ResponseRecorder {
 		t.Helper()
@@ -78,7 +78,7 @@ func TestAGatewayRoutedByAFunctionRunsRealComponents(t *testing.T) {
 	// worlds ran behind one request.
 	res := ask("/whoami")
 	require.Equal(t, http.StatusOK, res.Code, res.Body.String())
-	require.Contains(t, res.Body.String(), "shop/prod/function/saw_whoami",
+	require.Contains(t, res.Body.String(), routed.project+"/prod/function/saw_whoami",
 		"the handler the ROUTER named is the one that ran")
 
 	// THE TRANSFORMER CAN STOP IT, and then neither the router nor the handler

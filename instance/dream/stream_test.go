@@ -48,7 +48,7 @@ func TestAGuestsMessageCrossesTheSwarm(t *testing.T) {
 
 	require.Equal(t, "orders", stream.Label)
 	// Asked of the compiled project rather than restated (see idOf).
-	require.Equal(t, "shop/prod/"+listening.idOf(t, "stream", "orders"), stream.Handle,
+	require.Equal(t, listening.project+"/prod/"+listening.idOf(t, "stream", "orders"), stream.Handle,
 		"the resolved id, not the label")
 	require.Empty(t, stream.Refused,
 		"the stream named the swarm's own engine, which is the one this cloud drives")

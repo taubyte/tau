@@ -95,8 +95,8 @@ func TestAGatewayNodeReachesAWorkerNode(t *testing.T) {
 
 	spec := recorder.specs()[0]
 	require.Equal(t, "wasm", spec.Runtime, "read off the kind's own Engines()")
-	require.Equal(t, int64(33554432), spec.Memory, "and the limit the author wrote")
-	require.Contains(t, spec.Name, "shop/prod/function/")
+	require.Equal(t, int64(32_000_000), spec.Memory, "and the limit the author wrote: 32MB")
+	require.Contains(t, spec.Name, projectIDOf(t, "with/function/wasm")+"/prod/function/")
 }
 
 func nodeOf(t *testing.T, peerID string) *instance.Instance {

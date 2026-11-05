@@ -28,7 +28,7 @@ func TestAGuestDialsAChannelAndASecondGuestAnswers(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, spec.Reaches, 1)
 	require.Empty(t, spec.Reaches[0].Refused, "a function answers it and no port is named")
-	require.Equal(t, "shop/prod/"+r.idOf(t, "channel", "reserve"), spec.Reaches[0].Handle)
+	require.Equal(t, r.project+"/prod/"+r.idOf(t, "channel", "reserve"), spec.Reaches[0].Handle)
 
 	// `serve/name` stays the author's label (ByName), so the far end is located in the
 	// running deployment.

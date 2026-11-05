@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/services/build/artifact"
+	"github.com/taubyte/tau/services/build/deploy"
 )
 
 type forgeClone struct{ checked, confirmed []string }
@@ -199,4 +200,25 @@ func TestAnUploadsProductsAreNamedByTheRecipesACloudWorksOut(t *testing.T) {
 	require.ErrorIs(t, err, artifact.ErrNotBuiltHere, "a package a cloud refuses has no recipe")
 	_, err = Recipes(t.TempDir(), "main")
 	require.Error(t, err, "a tree with no project builds nothing")
+}
+
+func TestACodeRepositorysProductsAreNamedAgainstWhatIsPublished(t *testing.T) {
+	const component = "../../../instance/dream/projects/with/component"
+	projects, err := deploy.Compiled(component, "main")
+	require.NoError(t, err)
+	deployments := make([]artifact.Deployment, 0, len(projects))
+	for environment, p := range projects {
+		deployments = append(deployments, artifact.Deployment{Environment: environment, Project: p})
+	}
+
+	recipes, err := CodeRecipes(deployments, "github.com/acme/handler", t.TempDir())
+	require.NoError(t, err)
+	require.Regexp(t, digestPattern, recipes["prod"]["handler"], "the package its source names this repository for")
+	config, err := Recipes(component, "main")
+	require.NoError(t, err)
+	require.Empty(t, config, "and no push of the configuration builds it")
+
+	others, err := CodeRecipes(deployments, "github.com/acme/other", t.TempDir())
+	require.NoError(t, err)
+	require.Empty(t, others, "a repository no package names builds nothing")
 }

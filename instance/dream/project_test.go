@@ -7,10 +7,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -22,6 +24,7 @@ import (
 	"github.com/taubyte/tau/instance"
 	nodeDream "github.com/taubyte/tau/instance/dream"
 	"github.com/taubyte/tau/pkg/fleet"
+	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/pkg/invoke"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/raft"
@@ -296,17 +299,68 @@ func build(t *testing.T, u *nodeDream.Universe, project, name string, built map[
 		files[pkg] = filepath.Join(at, pkg)
 		require.NoError(t, os.WriteFile(files[pkg], code, 0o644))
 	}
+	// A PACKAGE BUILT FROM ANOTHER REPOSITORY is built by a push of that one, after
+	// the configuration it is built against is published.
+	from := gitSources(t, name)
+	config, code := map[string]string{}, map[string]map[string]string{}
+	for pkg, file := range files {
+		repository, elsewhere := from[pkg]
+		if !elsewhere {
+			config[pkg] = file
+			continue
+		}
+		if code[repository] == nil {
+			code[repository] = map[string]string{}
+		}
+		code[repository][pkg] = file
+	}
+
 	// One configuration repository per project, so a later build of it is a new commit.
 	repository := "dream.test/" + strings.ToLower(project) + "/config"
-	push, err := u.Upload(repository, "main", projectDir(name), files)
+	push, err := u.Upload(repository, "main", projectDir(name), config)
 	require.NoError(t, err)
-	require.NoError(t, u.Link(t.Context(), project, repository))
+	require.NoError(t, u.Link(t.Context(), project, repository, slices.Collect(maps.Keys(code))...))
+	out := built1(t, u, name, push)
+	for repository, files := range code {
+		pushed, err := u.Upload(repository, "main", t.TempDir(), files)
+		require.NoError(t, err)
+		built1(t, u, repository, pushed)
+	}
+	return out
+}
+
+// built1 is one push built, which succeeds, plan and environments alike.
+func built1(t *testing.T, u *nodeDream.Universe, name string, push nodeDream.Push) nodeDream.Outcome {
+	t.Helper()
 	out, err := u.Build(t.Context(), push)
 	require.NoError(t, err)
 	require.Equal(t, buildv2.JobStatus_JobStatusSuccess, out.Plan.GetStatus(), "%s's plan: %s", name, out.Plan.GetReason())
 	require.NotEmpty(t, out.Environments)
 	for _, job := range out.Environments {
 		require.Equal(t, buildv2.JobStatus_JobStatusSuccess, job.GetStatus(), "%s for %s: %s", name, job.GetEnvironment(), job.GetReason())
+	}
+	return out
+}
+
+// gitSources is the repository each package of the project under projects/name is
+// built from when that is not the project's own, by package name.
+func gitSources(t *testing.T, name string) map[string]string {
+	t.Helper()
+	c, err := schema.New(schema.WithLocal(projectDir(name)), schema.WithBranch("main"))
+	require.NoError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	require.NoError(t, err)
+	root, _ := obj.Flat()["object"].(map[string]any)
+	packages, _ := root["package"].(map[string]any)
+	out := map[string]string{}
+	for _, v := range packages {
+		pkg, _ := v.(map[string]any)
+		source, _ := pkg["source"].(map[string]any)
+		if git, _ := source["git"].(string); git != "" {
+			key, err := repokey.Parse(git)
+			require.NoError(t, err)
+			out[nameOf(pkg)] = key.String()
+		}
 	}
 	return out
 }
@@ -323,7 +377,7 @@ func deploy(t *testing.T, name, host string, wasm []byte) *running {
 func deployWith(t *testing.T, name, host string, wasm []byte, extra map[string][]byte) *running {
 	t.Helper()
 	return deployServing(t, name, host, wasm, extra,
-		instance.Register, instance.Worker, instance.Discovery, instance.Gateway, instance.Database, instance.Primitives, storageService.Descriptor.Name, instance.Runner)
+		instance.Register, instance.Worker, instance.Discovery, instance.Gateway, instance.Database, instance.Primitives, storageService.Descriptor.Name)
 }
 
 // deployServing is deployWith over a chosen set of services: a zone answered by a
@@ -331,6 +385,10 @@ func deployWith(t *testing.T, name, host string, wasm []byte, extra map[string][
 func deployServing(t *testing.T, name, host string, wasm []byte, extra map[string][]byte, services ...string) *running {
 	t.Helper()
 
+	// SOMEBODY BUILDS IT: the project is built as a push is, by a runner.
+	if !slices.Contains(services, instance.Runner) {
+		services = append(services, instance.Runner)
+	}
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: services})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
@@ -544,7 +602,7 @@ func TestTwoProjectsNamingTheirKvTheSameThingNeverSeeEachOthersWrites(t *testing
 
 	u := deployFleetOf(t, 3, kitchenSinkWASM(t), nil,
 		deployed{name: "with/database/distributed/kv/crdt", host: "keep.example.com"},
-		deployed{name: "with/database/distributed/kv/crdt-b", host: "keepb.example.com"})
+		deployed{name: "with/database/distributed/kv/crdt-b", host: "keepb.example.org"})
 	shop, market := u.fleets[0], u.fleets[1]
 	shopID, marketID := shop[0].project, market[0].project
 
@@ -650,7 +708,7 @@ func TestTwoProjectsNamingTheirLedgerTheSameThingAreTwoGroups(t *testing.T) {
 
 	u := deployFleetOf(t, 3, kitchenSinkWASM(t), nil,
 		deployed{name: "with/database/distributed/kv/raft", host: "ledger.example.com"},
-		deployed{name: "with/database/distributed/kv/raft-b", host: "ledgerb.example.com"})
+		deployed{name: "with/database/distributed/kv/raft-b", host: "ledgerb.example.org"})
 	shop, market := u.fleets[0], u.fleets[1]
 	shopID, marketID := shop[0].project, market[0].project
 
