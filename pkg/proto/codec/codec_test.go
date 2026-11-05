@@ -1,12 +1,19 @@
 package codec
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 
+	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 
+	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 )
 
@@ -147,4 +154,53 @@ func TestDecodeRefusesAFieldTheRecordDoesNotDeclare(t *testing.T) {
 	require.ErrorIs(t, Decode(raw, &keys), ErrNotTheRecord)
 
 	require.Error(t, Decode([]byte{0xff}, &raftv2.Entry{}), "bytes that are not protobuf")
+}
+
+// sized answers a job whose id is as long as the request asks.
+type sized struct{}
+
+func (sized) Get(_ context.Context, req *connect.Request[plmv2.JobRef]) (*connect.Response[plmv2.Job], error) {
+	n, err := strconv.Atoi(req.Msg.GetId())
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&plmv2.Job{Id: strings.Repeat("a", n)}), nil
+}
+
+func TestAMessageIsCompressedOnlyWhenItIsLarge(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.Handle("/get", connect.NewUnaryHandler("/get", sized{}.Get, Option()))
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	client := connect.NewClient[plmv2.JobRef, plmv2.Job](server.Client(), server.URL+"/get", Option())
+
+	for size, compressed := range map[int]bool{100: false, CompressMinBytes * 2: true} {
+		res, err := client.CallUnary(t.Context(), connect.NewRequest(&plmv2.JobRef{Id: strconv.Itoa(size)}))
+		require.NoError(t, err)
+		require.Len(t, res.Msg.GetId(), size)
+		require.Equal(t, compressed, res.Header().Get("Content-Encoding") == "gzip", "%d bytes", size)
+	}
+}
+
+func TestTheCodecIsBinaryProtoAndRefusesWhatIsNotAMessage(t *testing.T) {
+	require.True(t, Codec.IsBinary())
+	require.Equal(t, "proto", Codec.Name())
+
+	_, err := Codec.Marshal("not a message")
+	require.ErrorContains(t, err, "is not a proto message")
+	_, err = Codec.MarshalStable("not a message")
+	require.ErrorContains(t, err, "is not a proto message")
+	require.ErrorContains(t, Codec.Unmarshal(nil, "not a message"), "is not a proto message")
+
+	require.Error(t, Codec.Unmarshal([]byte{0xff}, &raftv2.ExportFSMResponse{}), "bytes that are no message, read by vtproto")
+	require.Error(t, Codec.Unmarshal([]byte{0xff}, &structpb.Struct{}), "and by protobuf-go")
+
+	stable, err := Codec.MarshalStable(sample())
+	require.NoError(t, err)
+	again, err := Codec.MarshalStable(sample())
+	require.NoError(t, err)
+	require.Equal(t, stable, again, "a map is written in one order")
+	var back raftv2.ExportFSMResponse
+	require.NoError(t, Codec.Unmarshal(stable, &back))
+	require.True(t, proto.Equal(sample(), &back))
 }

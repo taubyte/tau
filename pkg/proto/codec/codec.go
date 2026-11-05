@@ -19,9 +19,18 @@ import (
 // invalid UTF-8, and every peer tau talks to is tau.
 var Codec = codec{}
 
-// Option is Codec as a handler or client option. Every handler and client tau
-// builds takes it; TestEveryConnectSiteTakesTheCodec holds them to it.
-func Option() connect.Option { return connect.WithCodec(Codec) }
+// Option is Codec as a handler or client option, with a message compressed only from
+// CompressMinBytes up. Every handler and client tau builds takes it;
+// TestEveryConnectSiteTakesTheCodec holds them to it.
+func Option() connect.Option {
+	return connect.WithOptions(connect.WithCodec(Codec), connect.WithCompressMinBytes(CompressMinBytes))
+}
+
+// CompressMinBytes is the smallest message worth gzipping. Connect compresses every
+// message it can by default, and between tau's nodes a message is mostly small: a
+// warm invoke spent 15% of its CPU making a new gzip writer for a response of a few
+// hundred bytes. Past this a body is large enough for the bytes saved to matter.
+const CompressMinBytes = 64 << 10
 
 type codec struct{}
 
