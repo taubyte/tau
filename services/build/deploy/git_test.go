@@ -101,12 +101,16 @@ func TestACommitThatIsNotThere(t *testing.T) {
 	require.ErrorContains(t, err, "not a commit")
 }
 
-func TestAMirrorIsWhereEveryRepositoryIsClonedFrom(t *testing.T) {
+func TestAMirrorIsWhereTheRepositoriesItHoldsAreClonedFrom(t *testing.T) {
 	path, first, second := repository(t)
 	base := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(base, "github.com", "acme"), 0o755))
 	require.NoError(t, os.Rename(path, filepath.Join(base, "github.com", "acme", "app")))
-	clone := deploy.NewClone(nil, deploy.WithAddress(deploy.Mirrored("file://"+base+"/")))
+	var forged []string
+	clone := deploy.NewClone(nil, deploy.WithAddress(deploy.Mirrored("file://"+base+"/", func(key string, _ forge.Protocol) (forge.Address, error) {
+		forged = append(forged, key)
+		return forge.Address{}, errors.New("not at this forge")
+	})))
 
 	dir, done, err := clone.Checkout(t.Context(), "github.com/Acme/App", "main", first)
 	require.NoError(t, err)
@@ -117,7 +121,8 @@ func TestAMirrorIsWhereEveryRepositoryIsClonedFrom(t *testing.T) {
 
 	require.NoError(t, clone.Confirm(t.Context(), "github.com/acme/app", "refs/heads/main", second))
 	require.ErrorIs(t, clone.Confirm(t.Context(), "github.com/acme/app", "refs/heads/main", first), run.ErrNotAtCommit)
-	require.Error(t, clone.Confirm(t.Context(), "github.com/acme/elsewhere", "refs/heads/main", first), "a repository the mirror does not hold")
+	require.ErrorContains(t, clone.Confirm(t.Context(), "github.com/acme/elsewhere", "refs/heads/main", first), "not at this forge")
+	require.Equal(t, []string{"github.com/acme/elsewhere"}, forged, "a repository the mirror holds no folder for is its forge's")
 	require.ErrorContains(t, clone.Confirm(t.Context(), "", "refs/heads/main", first), "is not a repository")
 }
 

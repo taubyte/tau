@@ -111,16 +111,21 @@ func Forged(forges *forge.Registry) func(repositoryKey string, over forge.Protoc
 	}
 }
 
-// Mirrored reaches every repository under base, its key joined on, in place of its
-// forge: a development cloud's file:// directory of repositories, read with no
-// credential.
-func Mirrored(base string) func(repositoryKey string, over forge.Protocol) (forge.Address, error) {
-	return func(repositoryKey string, _ forge.Protocol) (forge.Address, error) {
+// Mirrored reaches a repository the file:// directory base holds a folder for,
+// its key joined on, read with no credential, and every other through otherwise: a
+// development cloud's mirror of the repositories it was handed.
+func Mirrored(base string, otherwise func(repositoryKey string, over forge.Protocol) (forge.Address, error)) func(repositoryKey string, over forge.Protocol) (forge.Address, error) {
+	root := strings.TrimSuffix(strings.TrimPrefix(base, "file://"), "/")
+	return func(repositoryKey string, over forge.Protocol) (forge.Address, error) {
 		key, err := parse(repositoryKey)
 		if err != nil {
 			return forge.Address{}, err
 		}
-		return forge.Address{URL: strings.TrimSuffix(base, "/") + "/" + key.String()}, nil
+		at := root + "/" + key.String()
+		if info, err := os.Stat(at); err == nil && info.IsDir() {
+			return forge.Address{URL: "file://" + at}, nil
+		}
+		return otherwise(repositoryKey, over)
 	}
 }
 

@@ -34,9 +34,9 @@ type Config struct {
 	// out and built from it. Empty is a cloud with no uploads.
 	Uploads string `yaml:"uploads"`
 
-	// Mirror is where every repository is cloned from in place of its forge, its key
-	// joined on: a development cloud's file:// directory of repositories, so a CI run
-	// needs no forge to hold the code. Empty is each repository's own forge.
+	// Mirror is a file:// directory of repositories, each under its key, cloned from
+	// in place of its forge: a development cloud's, so a CI run needs no forge to hold
+	// the code. A repository it holds no folder for is its forge's.
 	Mirror string `yaml:"mirror,omitempty"`
 
 	// Domains is how a deploy treats the zones a project declares.
@@ -99,7 +99,7 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 }
 
 // compose is what a push is read and run with: the forge's clone, and the container
-// engine. The section's mirror replaces the forge, and uploaded builds sit in front.
+// engine. The section's mirror sits in front of the forge, and uploaded builds in front of both.
 func compose(region string, cfg Config, projects linked.Projects, table func(context.Context) (register.Table, error), vault linked.Vault, domains deploy.Domains) (run.Runner, run.Confirmer, error) {
 	forges, err := drivers.Registry(cfg.Forges)
 	if err != nil {
@@ -112,8 +112,15 @@ func compose(region string, cfg Config, projects linked.Projects, table func(con
 	// SSH WHERE A DEPLOY KEY IS, HTTPS WHERE NONE IS: a deploy key is an ssh key, and a
 	// repository without one is read anonymously or not at all. Both addresses, and the
 	// ssh account, are the forge's; an ssh host is pinned.
+	address := deploy.Forged(forges)
+	if cfg.Mirror != "" {
+		if at, err := url.Parse(cfg.Mirror); err != nil || at.Scheme != "file" {
+			return nil, nil, fmt.Errorf("runner: mirror %q is not a file:// directory", cfg.Mirror)
+		}
+		address = deploy.Mirrored(cfg.Mirror, address)
+	}
 	clone := deploy.NewClone(linked.Credentials{Projects: projects, Vault: vault},
-		deploy.WithAddress(deploy.Forged(forges)),
+		deploy.WithAddress(address),
 		deploy.WithHostKeys(func(host string) []gossh.PublicKey { return pinned[host] }))
 
 	var (
@@ -132,13 +139,6 @@ func compose(region string, cfg Config, projects linked.Projects, table func(con
 		if engine, err = artifact.NewEngine(daemon); err != nil {
 			return nil, nil, err
 		}
-	}
-	if cfg.Mirror != "" {
-		if at, err := url.Parse(cfg.Mirror); err != nil || at.Scheme == "" {
-			return nil, nil, fmt.Errorf("runner: mirror %q is not a url", cfg.Mirror)
-		}
-		mirror := deploy.NewClone(nil, deploy.WithAddress(deploy.Mirrored(cfg.Mirror)))
-		checkout, confirm = mirror, mirror
 	}
 	if cfg.Uploads != "" {
 		held, err := uploads.Open(cfg.Uploads)
