@@ -92,6 +92,10 @@ func (u *Universe) Commit(repository, branch, dir string) (string, error) {
 
 // replaceTree makes at's working tree dir's files, its .git kept.
 func replaceTree(at, dir string) error {
+	files, err := filesOf(dir)
+	if err != nil {
+		return err
+	}
 	entries, err := os.ReadDir(at)
 	if err != nil {
 		return err
@@ -103,31 +107,37 @@ func replaceTree(at, dir string) error {
 			}
 		}
 	}
-	return filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+	for _, rel := range files {
+		content, err := os.ReadFile(filepath.Join(dir, rel))
 		if err != nil {
 			return err
-		}
-		rel, err := filepath.Rel(dir, path)
-		if err != nil {
-			return err
-		}
-		if d.IsDir() && d.Name() == ".git" {
-			return filepath.SkipDir
 		}
 		to := filepath.Join(at, rel)
-		if d.IsDir() {
-			return os.MkdirAll(to, 0o755)
+		if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
+			return err
 		}
-		return copyFile(path, to)
-	})
+		if err := os.WriteFile(to, content, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func copyFile(from, to string) error {
-	content, err := os.ReadFile(from)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(to, content, 0o644)
+// filesOf is every file under dir, relative to it, outside any .git.
+func filesOf(dir string) ([]string, error) {
+	var files []string
+	err := fs.WalkDir(os.DirFS(dir), ".", func(rel string, d fs.DirEntry, err error) error {
+		switch {
+		case err != nil:
+			return err
+		case d.IsDir() && d.Name() == ".git":
+			return fs.SkipDir
+		case !d.IsDir():
+			files = append(files, filepath.FromSlash(rel))
+		}
+		return nil
+	})
+	return files, err
 }
 
 // Upload keeps dir in the universe's uploads as a commit of repository's branch,
@@ -154,21 +164,7 @@ func (u *Universe) Upload(repository, branch, dir string, built map[string]strin
 		}
 	}
 
-	var files []string
-	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if d.Name() == ".git" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		rel, err := filepath.Rel(dir, path)
-		files = append(files, rel)
-		return err
-	})
+	files, err := filesOf(dir)
 	if err != nil {
 		return Push{}, err
 	}
@@ -228,10 +224,23 @@ func (u *Universe) recipes(repository, branch, dir string) (map[string]map[strin
 	return uploads.CodeRecipes(deployments, repository, dir)
 }
 
+// nodes is the universe's nodes, in the order they started.
+func (u *Universe) nodes() []*instance.Instance {
+	built.Lock()
+	defer built.Unlock()
+	out := make([]*instance.Instance, 0, len(u.pids))
+	for _, pid := range u.pids {
+		if r, ok := built.byPeer[pid]; ok {
+			out = append(out, r.node)
+		}
+	}
+	return out
+}
+
 // register is the universe's register, on the first node running one.
 func (u *Universe) register() (*pkgregister.Register, error) {
-	for _, pid := range u.pids {
-		if n, ok := Node(pid); ok && n.Register() != nil && n.Register().Local() != nil {
+	for _, n := range u.nodes() {
+		if n.Register() != nil && n.Register().Local() != nil {
 			return n.Register().Local(), nil
 		}
 	}
@@ -275,11 +284,7 @@ func (u *Universe) Build(ctx context.Context, p Push) (Outcome, error) {
 // enqueue is p queued where this universe builds, and the job it became.
 func (u *Universe) enqueue(ctx context.Context, p Push) (builds, string, error) {
 	var tried bool
-	for _, pid := range u.pids {
-		n, ok := Node(pid)
-		if !ok {
-			continue
-		}
+	for _, n := range u.nodes() {
 		held, ok := service.Get[jobs.Service](n.HostOf(instance.Build))
 		if !ok {
 			continue
@@ -315,11 +320,7 @@ func (u *Universe) alone() (*jobs.Direct, error) {
 	if u.direct != nil {
 		return u.direct, nil
 	}
-	for _, pid := range u.pids {
-		n, ok := Node(pid)
-		if !ok {
-			continue
-		}
+	for _, n := range u.nodes() {
 		h := n.HostOf(instance.Runner)
 		r, ok := service.Get[runner.Service](h)
 		if !ok {
