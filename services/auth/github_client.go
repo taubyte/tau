@@ -228,24 +228,58 @@ func (client *githubClient) CreatePushHook(name *string, url *string, devMode bo
 }
 
 // EachRepoPage hands the caller's repositories to fn a page at a time, newest
-// first, until fn returns false or there are no more. A caller after its few
-// most recent projects stops after a page or two.
+// first, until fn returns false or there are no more. Pages after the first are
+// fetched a few at a time ahead of fn, so a caller with few projects still gets
+// them as fast as a full listing, and one with many stops after a page or two.
 func (client *githubClient) EachRepoPage(fn func(ids []string) (more bool)) error {
-	for n := 1; ; n++ {
+	page := func(n int) ([]string, *github.Response, error) {
 		opts := github.RepositoryListByAuthenticatedUserOptions{ListOptions: github.ListOptions{Page: n, PerPage: 100}, Sort: "created", Direction: "desc"}
 		repos, resp, err := client.Repositories.ListByAuthenticatedUser(client.ctx, &opts)
 		if err != nil {
-			return fmt.Errorf("listing repositories failed with: %w", err)
+			return nil, nil, fmt.Errorf("listing repositories failed with: %w", err)
 		}
 		ids := make([]string, 0, len(repos))
 		for _, r := range repos {
 			ids = append(ids, fmt.Sprintf("%d", r.GetID()))
 		}
-		if !fn(ids) || resp == nil || resp.NextPage == 0 {
-			return nil
+		return ids, resp, nil
+	}
+
+	ids, resp, err := page(1)
+	if err != nil {
+		return err
+	}
+	if !fn(ids) || resp == nil || resp.LastPage <= 1 {
+		return nil
+	}
+
+	for start := 2; start <= resp.LastPage; start += repoPagesAhead {
+		end := min(start+repoPagesAhead-1, resp.LastPage)
+		batch := make([][]string, end-start+1)
+		errs := make([]error, len(batch))
+		var wg sync.WaitGroup
+		for i := range batch {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				batch[i], _, errs[i] = page(start + i)
+			}()
+		}
+		wg.Wait()
+		for i := range batch {
+			if errs[i] != nil {
+				return errs[i]
+			}
+			if !fn(batch[i]) {
+				return nil
+			}
 		}
 	}
+	return nil
 }
+
+// repoPagesAhead is how many pages EachRepoPage fetches at once.
+var repoPagesAhead = 4
 
 // listReposConcurrency bounds the pages of repositories fetched at once.
 var listReposConcurrency = 8
