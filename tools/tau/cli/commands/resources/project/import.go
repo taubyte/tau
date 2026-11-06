@@ -127,7 +127,18 @@ func _import(ctx *cli.Context) error {
 		return repositoryI18n.RegisteringRepositoryFailed(configRepoName, err)
 	}
 
-	if err = clientProject.Create(auth, configId, codeId); err != nil {
+	// A project with an id keeps it: its builds are filed under the id in its
+	// config, so a cloud that gave it a new one served none of them.
+	projectID, err := ConfigProjectID(ctx.Context, profile.Token, configRepoName)
+	if err != nil {
+		return projectI18n.CreatingProjectFailed(fmt.Errorf("reading the project id from %s failed with: %w", configRepoName, err))
+	}
+	if projectID != "" {
+		err = clientProject.Import(auth, projectID, configId, codeId)
+	} else {
+		err = clientProject.Create(auth, configId, codeId)
+	}
+	if err != nil {
 		return projectI18n.CreatingProjectFailed(err)
 	}
 

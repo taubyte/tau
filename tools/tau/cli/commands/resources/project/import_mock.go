@@ -43,6 +43,9 @@ func init() {
 		}
 		return nil, fmt.Errorf("no repository %s", fullName)
 	}
+	ConfigProjectID = func(ctx context.Context, token, fullName string) (string, error) {
+		return "", nil
+	}
 	ListRepos = func(ctx context.Context, token, user string) ([]*github.Repository, error) {
 		return []*github.Repository{
 			mockConfigRepo,
