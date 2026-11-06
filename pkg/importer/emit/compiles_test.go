@@ -64,7 +64,7 @@ func TestABranchThatWasNotSelectedRequiresNothing(t *testing.T) {
 	// A stream on the swarm's own engine. Kafka's host and credentials are
 	// required ONLY on the kafka branch, which this did not write.
 	result.Set("stream", "orders", map[string]any{
-		"distributed": map[string]any{"local": false},
+		"distributed": map[string]any{},
 	})
 
 	report, err := emit.To(fs, "/project", "shop", result)
