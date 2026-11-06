@@ -123,7 +123,17 @@ func (sr *simReplica) open(t testing.TB) {
 		t.Fatal(err)
 	}
 	sr.r = r
-	t.Cleanup(func() { sr.r.Close() })
+	t.Cleanup(sr.release)
+}
+
+// release closes the replica if it is open and lets go of its store. A test's
+// cleanups are held until its parent ends, so a seed run in parallel with a hundred
+// others would otherwise keep every one of their stores alive.
+func (sr *simReplica) release() {
+	if sr.r != nil {
+		sr.r.Close()
+	}
+	sr.r, sr.store, sr.dag, sr.out = nil, nil, nil, nil
 }
 
 func (sr *simReplica) reopen(t testing.TB) {

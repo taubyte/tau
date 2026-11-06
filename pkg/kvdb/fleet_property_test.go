@@ -436,6 +436,8 @@ func (f *propFleet) kill(i int) {
 	if err := f.reps[i].r.Close(); err != nil {
 		f.t.Fatal(err)
 	}
+	f.reps[i].r = nil
+	f.reps[i].release()
 	f.reps[i] = nil
 	f.replaced[i] = true
 	f.log("kill r%d", i)
@@ -507,7 +509,7 @@ func (f *propFleet) clone(i int) {
 	f.lastHeard[j] = f.lastHeard[i]
 	if i == f.wrong {
 		// A copy of the wrong clock's store runs on the same wrong clock.
-		f.reps[j].r.Close()
+		f.reps[j].release()
 		f.reps[j] = nil
 		return
 	}
@@ -813,6 +815,13 @@ func runFleet(t *testing.T, seed int64, length int, tvaries bool) {
 	st := newSimTime()
 	rng := rand.New(rand.NewSource(seed))
 	f := &propFleet{t: t, seed: seed, st: st, rng: rng, wrong: -1, cut: map[[2]int]bool{}, puts: map[string]*propPut{}, gens: map[int]int{}, lastHeard: map[int]time.Time{}, tvaries: tvaries, incLast: map[string]time.Time{}, rejoins: map[int]bool{}, replaced: map[int]bool{}}
+	defer func() {
+		for _, sr := range f.reps {
+			if sr != nil {
+				sr.release()
+			}
+		}
+	}()
 	n := 2 + rng.Intn(5)
 	wrong := rng.Intn(3) == 0
 	if wrong && n == 2 {
