@@ -372,12 +372,12 @@ func (p *Pool) on(ctx context.Context, spec Spec, fn func(context.Context, Insta
 		timeout = p.opts.timeout
 	}
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
-	l := &linger{}
-	err = fn(context.WithValue(callCtx, lingerKey{}, l), s.inst)
+	c := &calling{Context: callCtx}
+	err = fn(c, s.inst)
 	cancel()
 
-	if err == nil && l.claimed.Load() {
-		go p.settle(spec, s, sem, l)
+	if err == nil && c.l.claimed.Load() {
+		go p.settle(spec, s, sem, &c.l)
 		return nil
 	}
 	p.release(spec, s, err != nil)
@@ -405,6 +405,19 @@ func Linger(ctx context.Context) (done func(failed bool), ok bool) {
 }
 
 type lingerKey struct{}
+
+// calling is a pooled call's context, carrying its linger: one allocation for both.
+type calling struct {
+	context.Context
+	l linger
+}
+
+func (c *calling) Value(key any) any {
+	if key == (lingerKey{}) {
+		return &c.l
+	}
+	return c.Context.Value(key)
+}
 
 // settled is made at the claim, so a call that never lingers allocates no channel.
 type linger struct {

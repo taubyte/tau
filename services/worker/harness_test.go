@@ -18,6 +18,7 @@ import (
 
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
+	"github.com/taubyte/tau/pkg/proto/codec"
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
@@ -119,7 +120,7 @@ func build(t testing.TB, cfg Config, opts ...Option) *harness {
 		Worker:   s,
 		Register: counting,
 		Runtime:  rt,
-		Client:   workerv2connect.NewWorkerServiceClient(c.HTTP(), c.URL()),
+		Client:   workerv2connect.NewWorkerServiceClient(c.HTTP(), c.URL(), codec.Option()),
 
 		CallerHost: caller,
 		ServerHost: server,
@@ -301,7 +302,11 @@ func (r *fakeRuntime) Start(_ context.Context, spec invoke.Spec) (invoke.Instanc
 	sink.mu.Lock()
 	sink.started = append(sink.started, spec)
 	sink.mu.Unlock()
-	return &fakeInstance{spec: spec}, nil
+	body, err := json.Marshal(spec)
+	if err != nil {
+		return nil, err
+	}
+	return &fakeInstance{spec: spec, body: body}, nil
 }
 
 func (r *fakeRuntime) specs() []invoke.Spec {
@@ -310,14 +315,18 @@ func (r *fakeRuntime) specs() []invoke.Spec {
 	return append([]invoke.Spec(nil), r.started...)
 }
 
-type fakeInstance struct{ spec invoke.Spec }
+// fakeInstance answers with the spec it was started from, encoded once: a spec never
+// changes for an instance.
+type fakeInstance struct {
+	spec invoke.Spec
+	body []byte
+}
 
 func (i *fakeInstance) Serve(_ context.Context, req *invoke.Request) (*invoke.Response, error) {
-	body, _ := json.Marshal(i.spec)
 	return &invoke.Response{
 		Status:  200,
 		Headers: map[string][]string{"X-Path": {req.Path}},
-		Body:    body,
+		Body:    i.body,
 	}, nil
 }
 

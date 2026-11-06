@@ -1055,3 +1055,33 @@ func TestLingerNeedsAPooledCall(t *testing.T) {
 	require.False(t, ok)
 	require.Nil(t, done)
 }
+
+// A context the guest's host derives from its call's still finds the linger, and
+// still ends with the call.
+type valueKey struct{}
+
+func TestAContextDerivedFromACallStillLingersAndEndsWithIt(t *testing.T) {
+	e := newFakeRuntime("fake")
+	derived := make(chan context.Context, 1)
+	e.serve = func(ctx context.Context, req *Request) (*Response, error) {
+		child, cancel := context.WithCancel(context.WithValue(ctx, valueKey{}, "kept"))
+		t.Cleanup(cancel)
+		_, ok := Linger(child)
+		require.True(t, ok, "the linger is reached through the contexts above it")
+		require.Equal(t, "kept", child.Value(valueKey{}))
+		derived <- child
+		return &Response{Status: 200}, nil
+	}
+	p, _ := newPool(t, e, nil)
+	ctx := context.WithValue(t.Context(), valueKey{}, "outer")
+
+	_, err := p.Do(ctx, spec("shop", "r1"), &Request{})
+	require.NoError(t, err)
+	child := <-derived
+	select {
+	case <-child.Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("a context derived from the call outlived it")
+	}
+	require.ErrorIs(t, child.Err(), context.Canceled)
+}

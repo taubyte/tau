@@ -265,8 +265,12 @@ func toWire(in map[string][]string) map[string]*workerv2.Headers {
 		return nil
 	}
 	out := make(map[string]*workerv2.Headers, len(in))
+	held := make([]workerv2.Headers, len(in))
+	i := 0
 	for name, values := range in {
-		out[name] = &workerv2.Headers{Values: values}
+		held[i].Values = values
+		out[name] = &held[i]
+		i++
 	}
 	return out
 }
