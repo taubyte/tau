@@ -77,10 +77,19 @@ func (m *Monkey) publishLogChunk(chunk protocolCommon.LiveLogChunk) {
 		return
 	}
 
+	// Patrick takes a job's log only from the peer the job was assigned to,
+	// and the job was taken through the client node, so the log goes out
+	// through it too. Sent from the main node, every chunk of a node running
+	// with a client node was refused.
+	node := m.Service.clientNode
+	if node == nil {
+		node = m.Service.node
+	}
+
 	// the job's own context may already be cancelled; the last chunks still go out
-	ctx, cancel := context.WithTimeout(m.Service.node.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(node.Context(), 5*time.Second)
 	defer cancel()
-	if err = m.Service.node.PubSubPublish(ctx, protocolCommon.LiveLogsTopic, data); err != nil {
+	if err = node.PubSubPublish(ctx, protocolCommon.LiveLogsTopic, data); err != nil {
 		logger.Debugf("Publishing log of job `%s` failed: %s", m.Id, err.Error())
 	}
 }
