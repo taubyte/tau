@@ -111,25 +111,35 @@ func (o *options) withDefaults() error {
 }
 
 // Pool keeps warm instances and routes requests to them.
+//
+// A call takes no pool-wide lock. runtimes is never written after NewPool, closed is
+// atomic, and groups is a specKey's *group; each group locks its own slots, so two
+// specs never contend. mu orders Close against a Reap.
 type Pool struct {
 	opts     options
 	runtimes map[string]Runtime
 
 	mu     sync.Mutex
-	groups map[specKey]*group
-	closed bool
+	groups sync.Map
+	closed atomic.Bool
 }
 
-// group is every instance of one spec — one revision of one thing.
+// group is every instance of one spec — one revision of one thing. mu guards slots,
+// starting and gone, and each slot's inUse and lastUsed.
 type group struct {
 	spec  Spec
+	mu    sync.Mutex
 	slots []*slot
+
+	// gone is set when the group leaves the pool. A caller still holding it looks its
+	// spec up again, so no instance is added where Reap and Close cannot reach it.
+	gone bool
 
 	// sem bounds total in-flight requests for this group at
 	// MaxInstances * Concurrency. Holding a token guarantees a slot is
 	// available or can be created, by pigeonhole, so the code under the mutex
 	// never has to wait.
-	sem chan struct{}
+	sem *gate
 
 	// starting is closed when the in-flight cold start finishes, nil when none is.
 	// Without it a burst on a cold spec would start one instance per request; waiters
@@ -155,7 +165,7 @@ func NewPool(opts ...Option) (*Pool, error) {
 		return nil, err
 	}
 
-	p := &Pool{opts: o, runtimes: map[string]Runtime{}, groups: map[specKey]*group{}}
+	p := &Pool{opts: o, runtimes: map[string]Runtime{}}
 	for _, rt := range o.runtimes {
 		if _, dup := p.runtimes[rt.Name()]; dup {
 			return nil, fmt.Errorf("invoke: %q registered twice", rt.Name())
@@ -254,37 +264,30 @@ func (p *Pool) Conn(ctx context.Context, spec Spec, port string) (net.Conn, erro
 		spec.Concurrency = 1
 	}
 
-	p.mu.Lock()
-	if p.closed {
-		p.mu.Unlock()
+	if p.closed.Load() {
 		return nil, ErrPoolClosed
 	}
 	rt, ok := p.runtimes[spec.Runtime]
 	if !ok {
-		p.mu.Unlock()
 		return nil, fmt.Errorf("%w: %q", ErrNoRuntime, spec.Runtime)
 	}
 	g := p.groupFor(spec)
 	sem := g.sem
-	p.mu.Unlock()
-
-	select {
-	case sem <- struct{}{}:
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-
-	s, err := p.acquire(ctx, rt, spec)
-	if err != nil {
-		<-sem
+	if err := sem.enter(ctx); err != nil {
 		return nil, err
 	}
-	release := func(failed bool) { p.release(spec, s, failed) }
+
+	s, g, err := p.acquire(ctx, rt, g)
+	if err != nil {
+		sem.leave()
+		return nil, err
+	}
+	release := func(failed bool) { p.release(g, s, failed) }
 
 	dials, ok := s.inst.(Dials)
 	if !ok {
 		release(false)
-		<-sem
+		sem.leave()
 		return nil, fmt.Errorf("%w: the %s tier hands out no connection", ErrNoRuntime, spec.Runtime)
 	}
 
@@ -293,7 +296,7 @@ func (p *Pool) Conn(ctx context.Context, spec Spec, port string) (net.Conn, erro
 	conn, err := dials.Dial(ctx, port)
 	if err != nil {
 		release(true)
-		<-sem
+		sem.leave()
 		return nil, err
 	}
 
@@ -305,7 +308,7 @@ type pooled struct {
 	net.Conn
 	release func(failed bool)
 	once    sync.Once
-	sem     chan struct{}
+	sem     *gate
 }
 
 // CloseWrite forwards a half-close, written out because embedding the net.Conn
@@ -324,7 +327,7 @@ func (c *pooled) Close() error {
 	// Once: Close is often called twice, and releasing twice would double the ceiling.
 	c.once.Do(func() {
 		c.release(false)
-		<-c.sem
+		c.sem.leave()
 	})
 	return err
 }
@@ -339,31 +342,25 @@ func (p *Pool) on(ctx context.Context, spec Spec, fn func(context.Context, Insta
 		spec.Concurrency = 1
 	}
 
-	p.mu.Lock()
-	if p.closed {
-		p.mu.Unlock()
+	if p.closed.Load() {
 		return ErrPoolClosed
 	}
 	rt, ok := p.runtimes[spec.Runtime]
 	if !ok {
-		p.mu.Unlock()
 		return fmt.Errorf("%w: %q", ErrNoRuntime, spec.Runtime)
 	}
 	g := p.groupFor(spec)
 	sem := g.sem
-	p.mu.Unlock()
 
 	// Wait for room: a burst queues rather than failing, bounded by the caller's
 	// context.
-	select {
-	case sem <- struct{}{}:
-	case <-ctx.Done():
-		return ctx.Err()
+	if err := sem.enter(ctx); err != nil {
+		return err
 	}
 
-	s, err := p.acquire(ctx, rt, spec)
+	s, g, err := p.acquire(ctx, rt, g)
 	if err != nil {
-		<-sem
+		sem.leave()
 		return err
 	}
 
@@ -377,18 +374,18 @@ func (p *Pool) on(ctx context.Context, spec Spec, fn func(context.Context, Insta
 	cancel()
 
 	if err == nil && c.l.claimed.Load() {
-		go p.settle(spec, s, sem, &c.l)
+		go p.settle(g, s, sem, &c.l)
 		return nil
 	}
-	p.release(spec, s, err != nil)
-	<-sem
+	p.release(g, s, err != nil)
+	sem.leave()
 	return err
 }
 
 // settle releases a lingering call's slot once the work it kept going is done.
-func (p *Pool) settle(spec Spec, s *slot, sem chan struct{}, l *linger) {
-	p.release(spec, s, <-l.settled)
-	<-sem
+func (p *Pool) settle(g *group, s *slot, sem *gate, l *linger) {
+	p.release(g, s, <-l.settled)
+	sem.leave()
 }
 
 // Linger keeps the instance serving ctx's call checked out after it answered, until
@@ -429,21 +426,27 @@ type linger struct {
 
 func (l *linger) done(failed bool) { l.once.Do(func() { l.settled <- failed }) }
 
-// acquire finds a slot with room or starts one, outside the lock so one cold start
-// does not block other specs.
-func (p *Pool) acquire(ctx context.Context, rt Runtime, spec Spec) (*slot, error) {
+// acquire finds a slot in g with room or starts one, outside the lock so one cold
+// start does not block other callers. It answers the group the slot is in: g's spec
+// again if g left the pool meanwhile.
+func (p *Pool) acquire(ctx context.Context, rt Runtime, g *group) (*slot, *group, error) {
+	spec := g.spec
 	for {
-		p.mu.Lock()
-		if p.closed {
-			p.mu.Unlock()
-			return nil, ErrPoolClosed
+		g.mu.Lock()
+		if g.gone {
+			g.mu.Unlock()
+			g = p.groupFor(spec)
+			continue
 		}
-		g := p.groupFor(spec)
+		if p.closed.Load() {
+			g.mu.Unlock()
+			return nil, nil, ErrPoolClosed
+		}
 		for _, s := range g.slots {
 			if s.inUse < spec.Concurrency {
 				s.inUse++
-				p.mu.Unlock()
-				return s, nil
+				g.mu.Unlock()
+				return s, g, nil
 			}
 		}
 		if len(g.slots) >= p.opts.maxInstances {
@@ -451,72 +454,67 @@ func (p *Pool) acquire(ctx context.Context, rt Runtime, spec Spec) (*slot, error
 			// MaxInstances*Concurrency, and it is checked anyway: the
 			// alternative to this branch is starting an unbounded number of
 			// instances if that sizing ever changes.
-			p.mu.Unlock()
-			return nil, ErrAtCapacity
+			g.mu.Unlock()
+			return nil, nil, ErrAtCapacity
 		}
 
 		// Somebody else is already starting one. Wait for it and look again
 		// rather than starting a second — see group.starting.
 		if g.starting != nil {
 			wait := g.starting
-			p.mu.Unlock()
+			g.mu.Unlock()
 			select {
 			case <-wait:
 				continue
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return nil, nil, ctx.Err()
 			}
 		}
 
 		started := make(chan struct{})
 		g.starting = started
-		p.mu.Unlock()
+		g.mu.Unlock()
 
-		// Outside the lock.
+		// Outside the lock. A group starting an instance is never removed, so the
+		// slot below lands in a group the pool still holds.
 		inst, err := rt.Start(ctx, spec)
 
-		p.mu.Lock()
-		g = p.groupFor(spec)
+		g.mu.Lock()
 		g.starting = nil
 		close(started) // whatever happened, the waiters must look again
 
 		if err != nil {
-			p.mu.Unlock()
-			return nil, fmt.Errorf("engine: starting %s/%s: %w", spec.Name, spec.Revision, err)
+			g.mu.Unlock()
+			return nil, nil, fmt.Errorf("engine: starting %s/%s: %w", spec.Name, spec.Revision, err)
 		}
-		if p.closed {
-			p.mu.Unlock()
+		if p.closed.Load() {
+			g.mu.Unlock()
 			inst.Close()
-			return nil, ErrPoolClosed
+			return nil, nil, ErrPoolClosed
 		}
 		s := &slot{inst: inst, inUse: 1, lastUsed: p.opts.now()}
 		g.slots = append(g.slots, s)
-		p.mu.Unlock()
-		return s, nil
+		g.mu.Unlock()
+		return s, g, nil
 	}
 }
 
 // release returns a slot, or retires the instance if the request failed: a
 // malformed request and a wedged process look alike, and a cold start is cheaper
-// than a broken warm instance.
-func (p *Pool) release(spec Spec, s *slot, failed bool) {
-	p.mu.Lock()
+// than guessing which.
+func (p *Pool) release(g *group, s *slot, failed bool) {
+	g.mu.Lock()
 	s.inUse--
 	s.lastUsed = p.opts.now()
 
 	if !failed {
-		p.mu.Unlock()
+		g.mu.Unlock()
 		return
 	}
-	g, ok := p.groups[spec.key()]
-	if ok {
-		g.slots = removeSlot(g.slots, s)
-		if len(g.slots) == 0 {
-			delete(p.groups, spec.key())
-		}
-	}
+	g.slots = removeSlot(g.slots, s)
+	p.leaveIfEmpty(g)
 	inUse := s.inUse
-	p.mu.Unlock()
+	g.mu.Unlock()
 
 	// With Concurrency > 1 others may still be in Serve, so the last one out closes.
 	if inUse == 0 {
@@ -524,18 +522,26 @@ func (p *Pool) release(spec Spec, s *slot, failed bool) {
 	}
 }
 
-// groupFor returns the group for spec, creating it. The caller holds the lock.
+// leaveIfEmpty takes g out of the pool when it holds no instance and is starting
+// none. It is called with g.mu held.
+func (p *Pool) leaveIfEmpty(g *group) {
+	if len(g.slots) == 0 && g.starting == nil && !g.gone {
+		g.gone = true
+		p.groups.CompareAndDelete(g.spec.key(), g)
+	}
+}
+
+// groupFor is spec's group, made on its first call.
 func (p *Pool) groupFor(spec Spec) *group {
 	k := spec.key()
-	if g, ok := p.groups[k]; ok {
-		return g
+	if g, ok := p.groups.Load(k); ok {
+		return g.(*group)
 	}
-	g := &group{
+	g, _ := p.groups.LoadOrStore(k, &group{
 		spec: spec,
-		sem:  make(chan struct{}, p.opts.maxInstances*spec.Concurrency),
-	}
-	p.groups[k] = g
-	return g
+		sem:  newGate(p.opts.maxInstances * spec.Concurrency),
+	})
+	return g.(*group)
 }
 
 // Reap closes instances idle longer than IdleTimeout and returns how many, a method
@@ -545,7 +551,9 @@ func (p *Pool) Reap() int {
 
 	p.mu.Lock()
 	var dead []Instance
-	for k, g := range p.groups {
+	p.groups.Range(func(_, held any) bool {
+		g := held.(*group)
+		g.mu.Lock()
 		kept := g.slots[:0]
 		for _, s := range g.slots {
 			if s.inUse == 0 && now.Sub(s.lastUsed) >= p.opts.idleTimeout {
@@ -555,10 +563,10 @@ func (p *Pool) Reap() int {
 			kept = append(kept, s)
 		}
 		g.slots = kept
-		if len(g.slots) == 0 {
-			delete(p.groups, k)
-		}
-	}
+		p.leaveIfEmpty(g)
+		g.mu.Unlock()
+		return true
+	})
 	p.mu.Unlock()
 
 	for _, inst := range dead {
@@ -585,29 +593,35 @@ func (p *Pool) StartReaper(ctx context.Context, every time.Duration) {
 
 // Warm reports how many instances of a spec are currently held.
 func (p *Pool) Warm(spec Spec) int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if g, ok := p.groups[spec.key()]; ok {
-		return len(g.slots)
+	held, ok := p.groups.Load(spec.key())
+	if !ok {
+		return 0
 	}
-	return 0
+	g := held.(*group)
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return len(g.slots)
 }
 
 // Close shuts every instance down. It is safe to call twice.
 func (p *Pool) Close() error {
 	p.mu.Lock()
-	if p.closed {
+	if p.closed.Swap(true) {
 		p.mu.Unlock()
 		return nil
 	}
-	p.closed = true
 	var dead []Instance
-	for _, g := range p.groups {
+	p.groups.Range(func(k, held any) bool {
+		g := held.(*group)
+		g.mu.Lock()
 		for _, s := range g.slots {
 			dead = append(dead, s.inst)
 		}
-	}
-	p.groups = map[specKey]*group{}
+		g.slots, g.gone = nil, true
+		g.mu.Unlock()
+		p.groups.Delete(k)
+		return true
+	})
 	p.mu.Unlock()
 
 	for _, inst := range dead {
