@@ -24,18 +24,18 @@ import (
 
 var errNoRegister = fmt.Errorf("%w: %s", service.ErrNoneRuns, Descriptor.Name)
 
-// registers is where a watcher finds register nodes.
+// registers is where a watcher finds register nodes, or why it found none.
 type registers interface {
-	registers() []libp2ppeer.ID
+	registers() ([]libp2ppeer.ID, error)
 }
 
 // discovered is the registers the directory on a node knows of, other than the node.
 type discovered struct{ h service.Host }
 
-func (d discovered) registers() []libp2ppeer.ID {
+func (d discovered) registers() ([]libp2ppeer.ID, error) {
 	dir, ok := service.Get[service.Directory](d.h)
 	if !ok {
-		return nil
+		return nil, fmt.Errorf("%w: %s, and no directory runs here to ask", service.ErrNoneRuns, Descriptor.Name)
 	}
 	self := d.h.Peer().Host().ID()
 	var out []libp2ppeer.ID
@@ -44,7 +44,10 @@ func (d discovered) registers() []libp2ppeer.ID {
 			out = append(out, id)
 		}
 	}
-	return out
+	if len(out) == 0 {
+		return nil, errNoRegister
+	}
+	return out, nil
 }
 
 // watcherLimits shape a reader's sessions.
@@ -110,23 +113,26 @@ func (w *watcher) pick() *watchSession {
 
 // clientFor is the client a read goes through: the session's own, or, with none, one
 // to any register node.
-func (w *watcher) clientFor(s *watchSession) *Client {
+func (w *watcher) clientFor(s *watchSession) (*Client, error) {
 	if s != nil {
-		return s.client
+		return s.client, nil
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.fallback != nil {
-		return w.fallback
+		return w.fallback, nil
 	}
-	for _, id := range w.from.registers() {
-		c, err := NewClient(w.h, id)
-		if err == nil {
+	ids, err := w.from.registers()
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		if c, err := NewClient(w.h, id); err == nil {
 			w.fallback = c
-			return c
+			return c, nil
 		}
 	}
-	return nil
+	return nil, errNoRegister
 }
 
 // failedThrough drops c as the fallback after a read through it could not look, so
@@ -185,8 +191,13 @@ func (w *watcher) top() {
 	for _, s := range w.live {
 		used[s.peer] = true
 	}
+	ids, err := w.from.registers()
+	if err != nil {
+		// No register is known yet: nothing to open a session on.
+		return
+	}
 	now := time.Now()
-	for _, id := range w.from.registers() {
+	for _, id := range ids {
 		if want == 0 {
 			break
 		}

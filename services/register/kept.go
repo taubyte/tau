@@ -152,9 +152,9 @@ func (k *kept[R, V]) load(ctx context.Context, a *answer[R, V]) {
 			s = nil
 		}
 	}
-	c := k.w.clientFor(s)
-	if c == nil {
-		a.err = errNoRegister
+	c, err := k.w.clientFor(s)
+	if err != nil {
+		a.err = err
 		k.answers.CompareAndDelete(a.r, a)
 		return
 	}
@@ -187,10 +187,10 @@ func (k *kept[R, V]) load(ctx context.Context, a *answer[R, V]) {
 // unkept reads r without keeping it: an answer somebody else read changed before it
 // could be handed on.
 func (k *kept[R, V]) unkept(ctx context.Context, r R) (V, error) {
-	c := k.w.clientFor(nil)
-	if c == nil {
+	c, err := k.w.clientFor(nil)
+	if err != nil {
 		var zero V
-		return zero, errNoRegister
+		return zero, err
 	}
 	v, _, err := r.from(ctx, c, bindAs{})
 	return v, err

@@ -41,10 +41,10 @@ type Pool interface {
 // Config is only what an operator declares in yaml; injected collaborators are not
 // here.
 type Config struct {
-	// PointerTTL is how long a resolved pointer is trusted before the register is
-	// asked again. Default 5s. It is the deploy propagation budget: compiled objects
-	// are immutable and cached forever, so it only bounds how long old code is served
-	// after a deploy. Zero would add a register round trip to every invocation.
+	// PointerTTL is how long a resource's built artifact, read from the build
+	// records, is trusted before they are read again. Default 5s. A deployment's
+	// pointer is not bounded by it: the register reader keeps that until the register
+	// says it moved.
 	PointerTTL time.Duration
 
 	// MaxProjects is how many compiled projects to hold at once. Default 64.
@@ -72,7 +72,7 @@ type Engines struct {
 }
 
 // Pointer is PointerTTL with the default applied. The raw field is zero when unset,
-// which would mean asking the register on every request.
+// which would mean reading the build records on every request.
 func (c Config) Pointer() time.Duration {
 	if c.PointerTTL <= 0 {
 		return DefaultPointerTTL

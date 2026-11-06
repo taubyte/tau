@@ -10,10 +10,11 @@ import (
 	"time"
 )
 
-// Two caches, for opposite reasons. A compiled project is named by its content, so
-// once fetched it is correct forever and only memory bounds it. A pointer moves, so
-// it is held only as long as a deploy may take to propagate. Workers and gateways
-// share this so "how long until old code stops being served" has one answer.
+// A compiled project is named by its content, so once fetched it is correct forever
+// and only memory bounds it. A pointer moves, so it is asked of the registry every
+// time: a registry that keeps it (services/register's Views keeps it until the
+// register says it moved) is what makes that cheap, and a second copy kept here on a
+// clock would only serve old code for as long as the clock ran.
 
 // Registry is where compiled projects come from: the two reads a register offers,
 // and no publish. Both *Register and a register client satisfy it.
@@ -37,8 +38,8 @@ var (
 	ErrNoParse    = errors.New("register: a cache with no way to read an object cannot hold one")
 	ErrNoRegistry = errors.New("project: a cache with nothing to read from has nothing to answer")
 
-	// DefaultTTL is how long a resolved pointer is trusted: the deploy propagation
-	// budget. Objects are immutable, so it only sets how long old code keeps answering.
+	// DefaultTTL is the deploy propagation budget: how long an answer nothing
+	// watches may be trusted.
 	DefaultTTL = 5 * time.Second
 
 	// DefaultMax is how many compiled projects are held. Old content addresses
@@ -50,20 +51,7 @@ var (
 type CacheOption func(*cacheOptions) error
 
 type cacheOptions struct {
-	ttl time.Duration
 	max int
-	now func() time.Time
-}
-
-// WithTTL is how long a resolved pointer is trusted.
-func WithTTL(d time.Duration) CacheOption {
-	return func(o *cacheOptions) error {
-		if d < 0 {
-			return fmt.Errorf("project: ttl %s: a negative deploy budget is not one", d)
-		}
-		o.ttl = d
-		return nil
-	}
 }
 
 // WithMax bounds how many compiled projects are held.
@@ -73,17 +61,6 @@ func WithMax(n int) CacheOption {
 			return fmt.Errorf("project: %d projects: a cache that holds nothing reloads on every request", n)
 		}
 		o.max = n
-		return nil
-	}
-}
-
-// WithClock injects the local clock. Tests use it; production does not.
-func WithClock(now func() time.Time) CacheOption {
-	return func(o *cacheOptions) error {
-		if now == nil {
-			return errors.New("project: a nil clock")
-		}
-		o.now = now
 		return nil
 	}
 }
@@ -98,24 +75,19 @@ type Cache[T any] struct {
 	parse func([]byte) (T, error)
 	opts  cacheOptions
 
-	// A hit takes no lock: every request reads both tables, and a mutex there held
-	// every core to one. pointers is a Deployment's pointerEntry, refreshed in place.
-	// objects is an ObjectID's *objectEntry; mu serialises what changes it, a load
-	// claiming an id and the eviction that may follow, and guards held.
-	pointers sync.Map
-	objects  sync.Map
-	mu       sync.Mutex
-	held     int
+	// A hit takes no lock: every request reads the table, and a mutex there held
+	// every core to one. seen is every Deployment asked for, the hint Deployments
+	// gives. objects is an ObjectID's *objectEntry; mu serialises what changes it, a
+	// load claiming an id and the eviction that may follow, and guards held.
+	seen    sync.Map
+	objects sync.Map
+	mu      sync.Mutex
+	held    int
 
 	// used is the LRU's clock. An entry carries the stamp of its last use, unique, so
 	// the least recently used is the smallest; a hit on the entry already most
 	// recent writes nothing.
 	used atomic.Uint64
-}
-
-type pointerEntry struct {
-	pointer Pointer
-	at      time.Time
 }
 
 // objectEntry is one cached compiled project. ready is closed when the load that
@@ -139,7 +111,7 @@ func NewCache[T any](registry Registry, parse func([]byte) (T, error), opts ...C
 		return nil, ErrNoParse
 	}
 
-	o := cacheOptions{ttl: DefaultTTL, max: DefaultMax, now: time.Now}
+	o := cacheOptions{max: DefaultMax}
 	for _, apply := range opts {
 		if err := apply(&o); err != nil {
 			return nil, err
@@ -172,17 +144,13 @@ func (c *Cache[T]) Held() int {
 }
 
 func (c *Cache[T]) pointer(ctx context.Context, at Deployment) (Pointer, error) {
-	if held, ok := c.pointers.Load(at); ok {
-		if entry := held.(pointerEntry); c.opts.now().Sub(entry.at) < c.opts.ttl {
-			return entry.pointer, nil
-		}
-	}
-
 	p, err := c.registry.Resolve(ctx, at.Project, at.Environment)
 	if err != nil {
 		return Pointer{}, err
 	}
-	c.pointers.Store(at, pointerEntry{pointer: p, at: c.opts.now()})
+	if _, ok := c.seen.Load(at); !ok {
+		c.seen.Store(at, struct{}{})
+	}
 	return p, nil
 }
 
@@ -258,12 +226,12 @@ func (c *Cache[T]) evict() {
 	}
 }
 
-// Deployments is every (project, environment) this cache holds a pointer for. A
+// Deployments is every (project, environment) this cache has been asked for. A
 // router may send traffic where it is already warm; it is a hint, never a rule, or
 // a project nobody has loaded would have nowhere to go.
 func (c *Cache[T]) Deployments() []Deployment {
 	var out []Deployment
-	c.pointers.Range(func(at, _ any) bool {
+	c.seen.Range(func(at, _ any) bool {
 		out = append(out, at.(Deployment))
 		return true
 	})

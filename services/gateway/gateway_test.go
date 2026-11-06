@@ -299,43 +299,22 @@ func TestTheWorkersAnswerIsPassedThrough(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestTheHostTableIsRemembered(t *testing.T) {
-	h := newHarness(t, Config{HostTTL: 30 * time.Second})
-
+// The gateway asks its host source every request: keeping names is the register
+// reader's (services/register's Views), which drops an answer when its register says
+// it moved, where a table here would serve the old owner for as long as its clock ran.
+func TestTheGatewayKeepsNoHostTableOfItsOwn(t *testing.T) {
+	h := newHarness(t, Config{})
 	counting := &countingHosts{inner: h.Reg}
-	s, err := New(Config{HostTTL: 30 * time.Second},
-		WithHosts(counting), WithSource(h.Reg), WithWorkers(h.Workers), WithClock(h.clock.Now))
+	s, err := New(Config{}, WithHosts(counting), WithSource(h.Reg), WithWorkers(h.Workers), WithClock(h.clock.Now))
 	require.NoError(t, err)
 
-	for range 5 {
-		r := httptestRequest(http.MethodPost, "/", "ask.example.com")
+	for range 3 {
 		w := recorder()
-		s.Handler().ServeHTTP(w, r)
+		s.Handler().ServeHTTP(w, httptestRequest(http.MethodPost, "/", "ask.example.com"))
 		require.Equal(t, http.StatusOK, w.Code)
 	}
-	require.Equal(t, 1, counting.count())
-
-	h.clock.advance(31 * time.Second)
-
-	r := httptestRequest(http.MethodPost, "/", "ask.example.com")
-	s.Handler().ServeHTTP(recorder(), r)
-	require.Equal(t, 2, counting.count())
-
-	projects, names := s.Held()
-	require.Equal(t, 1, projects)
-	require.Equal(t, 1, names)
-}
-
-func TestTheHostTableIsBounded(t *testing.T) {
-	h := newHarness(t, Config{MaxHosts: 2})
-
-	for _, name := range []string{"shop.example.com", "ask.example.com", "api.example.com"} {
-		r := httptestRequest(http.MethodPost, "/", name)
-		h.Gateway.Handler().ServeHTTP(recorder(), r)
-	}
-
-	_, names := h.Gateway.Held()
-	require.LessOrEqual(t, names, 2)
+	require.Equal(t, 3, counting.count())
+	require.Equal(t, 1, s.Held())
 }
 
 func TestAnUnreachableHostTableIsNotAMissingName(t *testing.T) {

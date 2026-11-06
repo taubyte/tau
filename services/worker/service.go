@@ -121,15 +121,7 @@ func New(h host.Host, cfg Config, opts ...Option) (*Service, error) {
 	if o.pool == nil {
 		return nil, ErrNoPool
 	}
-	cacheOptions := []register.CacheOption{
-		register.WithTTL(cfg.PointerTTL),
-		register.WithMax(cfg.MaxProjects),
-	}
-	if o.now != nil {
-		cacheOptions = append(cacheOptions, register.WithClock(o.now))
-	}
-
-	projects, err := register.NewCache(o.register, specs.Load, cacheOptions...)
+	projects, err := register.NewCache(o.register, specs.Load, register.WithMax(cfg.MaxProjects))
 	if err != nil {
 		return nil, err
 	}

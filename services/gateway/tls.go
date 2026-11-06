@@ -65,7 +65,7 @@ func (s *Service) Certificate(hello *tls.ClientHelloInfo) (*tls.Certificate, err
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.Timeout)
 	defer cancel()
 
-	projectName, environment, err := s.ownerOf(ctx, name)
+	projectName, environment, err := s.hosts.ResolveHost(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s: %w", ErrNoCertificate, name, err)
 	}

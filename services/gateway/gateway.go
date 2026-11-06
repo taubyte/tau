@@ -62,13 +62,6 @@ type Service struct {
 	issuer     Issuer
 	terminates bool
 
-	// owner is the host table, a name's ownerEntry: which project owns it, and when
-	// that was last asked. A request reads it without a lock; mu orders the writes
-	// and guards order, the names in the order they were added, which bounds it.
-	owner sync.Map
-	mu    sync.Mutex
-	order []string
-
 	// artifacts and assets are where a package handler's files come from, and files
 	// what is unpacked of them. See files.go.
 	artifacts Artifacts
@@ -92,12 +85,6 @@ type candKey struct {
 
 // maxCandidateProjects bounds cands; past it the table starts over.
 const maxCandidateProjects = 256
-
-type ownerEntry struct {
-	project     string
-	environment string
-	at          time.Time
-}
 
 // New validates and allocates. It binds nothing: Handler is what a composer
 // serves, and where it serves it is the composer's.
@@ -126,10 +113,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		o.now = time.Now
 	}
 
-	cacheOptions := []register.CacheOption{register.WithClock(o.now)}
-	if cfg.PointerTTL != 0 {
-		cacheOptions = append(cacheOptions, register.WithTTL(cfg.PointerTTL))
-	}
+	var cacheOptions []register.CacheOption
 	if cfg.MaxProjects != 0 {
 		cacheOptions = append(cacheOptions, register.WithMax(cfg.MaxProjects))
 	}
@@ -197,7 +181,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	projectName, environment, err := s.ownerOf(ctx, name)
+	projectName, environment, err := s.hosts.ResolveHost(ctx, name)
 	if err == nil {
 		billed.project, billed.environment = projectName, environment
 	}
@@ -585,7 +569,6 @@ func readCandidates(p *specs.Project, lookup string) []candidate {
 // raw connection, never a request.
 const gatewayKind = specs.KindGateway
 
-// ownerOf says whose name this is, remembering the answer for HostTTL.
 // exchange is one request's metering and, once it reaches a workload, what it hands
 // one: a single allocation for both.
 type exchange struct {
@@ -608,32 +591,6 @@ func readBody(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, erro
 		return body[:n], err
 	}
 	return io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
-}
-
-func (s *Service) ownerOf(ctx context.Context, name string) (string, string, error) {
-	if held, ok := s.owner.Load(name); ok {
-		if entry := held.(ownerEntry); s.now().Sub(entry.at) < s.cfg.HostTTL {
-			return entry.project, entry.environment, nil
-		}
-	}
-
-	projectName, environment, err := s.hosts.ResolveHost(ctx, name)
-	if err != nil {
-		return "", "", err
-	}
-
-	s.mu.Lock()
-	if _, held := s.owner.Load(name); !held {
-		s.order = append(s.order, name)
-		for len(s.order) > s.cfg.MaxHosts {
-			s.owner.Delete(s.order[0])
-			s.order = s.order[1:]
-		}
-	}
-	s.owner.Store(name, ownerEntry{project: projectName, environment: environment, at: s.now()})
-	s.mu.Unlock()
-
-	return projectName, environment, nil
 }
 
 // hostOf is the name the request was made to, without its port and lowercased,
@@ -682,11 +639,7 @@ func refuse(w http.ResponseWriter, status int, why string) {
 	fmt.Fprintln(w, why)
 }
 
-// Held is how many compiled projects and names are cached. It exists for a test
-// and for an operator asking what a node is holding.
-func (s *Service) Held() (projects, names int) {
-	s.mu.Lock()
-	names = len(s.order)
-	s.mu.Unlock()
-	return s.projects.Held(), names
-}
+// Held is how many compiled projects are cached. It exists for a test and for an
+// operator asking what a node is holding. Names are kept by the register reader the
+// gateway resolves them through, not here.
+func (s *Service) Held() int { return s.projects.Held() }

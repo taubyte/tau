@@ -18,7 +18,12 @@ import (
 // fixed is a reader's register nodes, named.
 type fixed []libp2ppeer.ID
 
-func (f fixed) registers() []libp2ppeer.ID { return f }
+func (f fixed) registers() ([]libp2ppeer.ID, error) {
+	if len(f) == 0 {
+		return nil, errNoRegister
+	}
+	return f, nil
+}
 
 // connected starts a register on each of n nodes, links them and a reader, and
 // connects every pair.

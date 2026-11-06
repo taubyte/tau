@@ -124,24 +124,13 @@ type Config struct {
 	// the node's cloudfqdn, set by the instance, never a key of its own.
 	CloudFqdn string `yaml:"-"`
 
-	// PointerTTL is how long a resolved pointer is trusted — the deploy
-	// propagation budget. Default project.DefaultTTL.
-	PointerTTL time.Duration
-
 	// MaxProjects bounds how many compiled projects are held. Default
 	// project.DefaultMax.
 	MaxProjects int
 
-	// HostTTL is how long a name's owner is remembered. Default 30s.
-	//
-	// SEPARATE FROM PointerTTL BECAUSE IT ANSWERS A DIFFERENT QUESTION. A
-	// pointer moves on every deploy; who owns a name changes when somebody adds
-	// or removes a domain, which is rarer and much more expensive to get wrong
-	// — a stale answer here sends a request to the wrong PROJECT, where a stale
-	// pointer only serves the previous revision of the right one.
-	HostTTL time.Duration
-
-	// MaxHosts bounds the host table. Default 4096.
+	// MaxHosts bounds the rate limiter's table of keys. Default 4096. Who owns a
+	// name is kept by the register reader the gateway resolves it through, until
+	// the register says it moved.
 	MaxHosts int
 
 	// Timeout bounds one request end to end. Default 30s.
@@ -169,7 +158,6 @@ type Config struct {
 }
 
 const (
-	DefaultHostTTL  = 30 * time.Second
 	DefaultMaxHosts = 4096
 	DefaultTimeout  = 30 * time.Second
 	DefaultMaxBody  = 32 << 20
@@ -348,9 +336,6 @@ func WithClock(now func() time.Time) Option {
 }
 
 func (c Config) withDefaults() (Config, error) {
-	if c.HostTTL == 0 {
-		c.HostTTL = DefaultHostTTL
-	}
 	if c.MaxHosts == 0 {
 		c.MaxHosts = DefaultMaxHosts
 	}
@@ -364,8 +349,6 @@ func (c Config) withDefaults() (Config, error) {
 		c.FilesBudget = DefaultFilesBudget
 	}
 	switch {
-	case c.HostTTL < 0:
-		return Config{}, fmt.Errorf("gateway: host ttl %s is not a duration to remember for", c.HostTTL)
 	case c.MaxHosts < 1:
 		return Config{}, fmt.Errorf("gateway: %d hosts: a table that holds nothing asks on every request", c.MaxHosts)
 	case c.Timeout <= 0:

@@ -32,11 +32,9 @@ func TestTheConfigRefusesNumbersThatMeanNothing(t *testing.T) {
 	h := newHarness(t, Config{})
 
 	for _, cfg := range []Config{
-		{HostTTL: -time.Second},
 		{MaxHosts: -1},
 		{Timeout: -time.Second},
 		{MaxBody: -1},
-		{PointerTTL: -time.Second},
 		{MaxProjects: -1},
 	} {
 		_, err := New(cfg, WithHosts(h.Reg), WithSource(h.Reg), WithWorkers(h.Workers))
@@ -50,7 +48,6 @@ func TestTheDefaultsAreApplied(t *testing.T) {
 	s, err := New(Config{}, WithHosts(h.Reg), WithSource(h.Reg), WithWorkers(h.Workers))
 	require.NoError(t, err)
 
-	require.Equal(t, DefaultHostTTL, s.cfg.HostTTL)
 	require.Equal(t, DefaultMaxHosts, s.cfg.MaxHosts)
 	require.Equal(t, DefaultTimeout, s.cfg.Timeout)
 	require.Equal(t, int64(DefaultMaxBody), s.cfg.MaxBody)
@@ -59,12 +56,11 @@ func TestTheDefaultsAreApplied(t *testing.T) {
 func TestTheCacheSettingsReachTheCache(t *testing.T) {
 	h := newHarness(t, Config{})
 
-	s, err := New(Config{PointerTTL: time.Minute, MaxProjects: 3},
+	s, err := New(Config{MaxProjects: 3},
 		WithHosts(h.Reg), WithSource(h.Reg), WithWorkers(h.Workers), WithClock(h.clock.Now))
 	require.NoError(t, err)
 
-	projects, _ := s.Held()
-	require.Zero(t, projects)
+	require.Zero(t, s.Held())
 }
 
 func TestThisIsThePublicService(t *testing.T) {

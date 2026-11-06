@@ -94,9 +94,7 @@ func TestTheOptionsRefuseWhatWouldMakeTheCacheUseless(t *testing.T) {
 		opt  CacheOption
 	}
 	for _, tc := range []testCase{
-		{"a negative deploy budget", WithTTL(-time.Second)},
 		{"a cache that holds nothing", WithMax(0)},
-		{"a nil clock", WithClock(nil)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := NewCache(&fakeRegistry{}, asString, tc.opt)
@@ -105,13 +103,15 @@ func TestTheOptionsRefuseWhatWouldMakeTheCacheUseless(t *testing.T) {
 	}
 }
 
-func TestAPointerIsTrustedForTheDeployBudgetAndNoLonger(t *testing.T) {
+// The pointer is asked of the registry every time: a registry that keeps it is what
+// makes that cheap, and a deploy is served the moment the registry says so. The
+// object it names is fetched once.
+func TestAPointerIsAskedEveryTimeAndAnObjectOnce(t *testing.T) {
 	reg := &fakeRegistry{}
 	at := Deployment{"shop", "prod"}
 	reg.put(at, "one", 1)
 
-	now := time.Unix(0, 0)
-	c, err := NewCache(reg, asString, WithTTL(5*time.Second), WithClock(func() time.Time { return now }))
+	c, err := NewCache(reg, asString)
 	assert.NilError(t, err)
 
 	body, pointer, err := c.At(t.Context(), at)
@@ -119,25 +119,17 @@ func TestAPointerIsTrustedForTheDeployBudgetAndNoLonger(t *testing.T) {
 	assert.Equal(t, body, "one")
 	assert.Equal(t, pointer.Revision, uint64(1))
 
-	// Inside the budget nothing is asked again — neither the pointer nor the
-	// object it names.
 	_, _, err = c.At(t.Context(), at)
 	assert.NilError(t, err)
 	resolves, fetches := reg.counts()
-	assert.Equal(t, resolves, 1)
+	assert.Equal(t, resolves, 2)
 	assert.Equal(t, fetches, 1)
 
-	// A deploy lands, and until the budget expires the old code keeps answering.
 	reg.put(at, "two", 2)
-	_, pointer, err = c.At(t.Context(), at)
-	assert.NilError(t, err)
-	assert.Equal(t, pointer.Revision, uint64(1))
-
-	now = now.Add(5 * time.Second)
 	body, pointer, err = c.At(t.Context(), at)
 	assert.NilError(t, err)
 	assert.Equal(t, body, "two")
-	assert.Equal(t, pointer.Revision, uint64(2))
+	assert.Equal(t, pointer.Revision, uint64(2), "a deploy is served the moment the registry answers with it")
 }
 
 func TestOneFetchServesEveryReaderThatWantedItAtTheSameInstant(t *testing.T) {
@@ -223,7 +215,7 @@ func TestWhatParseRefusesTheCacheRefuses(t *testing.T) {
 
 func TestTheOldestProjectIsTheOneDropped(t *testing.T) {
 	reg := &fakeRegistry{}
-	c, err := NewCache(reg, asString, WithMax(2), WithTTL(0))
+	c, err := NewCache(reg, asString, WithMax(2))
 	assert.NilError(t, err)
 
 	first := Deployment{"shop", "prod"}

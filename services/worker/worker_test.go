@@ -125,11 +125,13 @@ func TestTheCompiledProjectIsFetchedOnce(t *testing.T) {
 
 	resolves, objects := h.Register.counts()
 	require.Equal(t, 1, objects, "the object crossed the wire once")
-	require.Equal(t, 1, resolves, "and the pointer was read once inside its ttl")
+	require.Equal(t, 5, resolves, "and the pointer is the registry's to keep, asked every time")
 }
 
-func TestADeployTakesEffectWhenTheBudgetIsSpent(t *testing.T) {
-	h := newHarnessWith(t, Config{PointerTTL: 5 * time.Second})
+// A deploy takes effect on the next request: the pointer is asked of the registry
+// every time, and the registry is what keeps it until the register says it moved.
+func TestADeployTakesEffectOnTheNextRequest(t *testing.T) {
+	h := newHarness(t)
 
 	invokeOver(t, h, target("application", "api"))
 	require.Equal(t, int64(512_000_000), h.Runtime.specs()[0].Memory)
@@ -140,12 +142,6 @@ func TestADeployTakesEffectWhenTheBudgetIsSpent(t *testing.T) {
 		Project: "shop", Environment: "prod", Revision: 2, Compiled: next,
 	})
 	require.NoError(t, err)
-
-	// Inside the budget nothing changes, which is the cost being paid for.
-	invokeOver(t, h, target("application", "api"))
-	require.Len(t, h.Runtime.specs(), 1, "still warm on the old revision")
-
-	h.clock.advance(6 * time.Second)
 
 	invokeOver(t, h, target("application", "api"))
 	started := h.Runtime.specs()
