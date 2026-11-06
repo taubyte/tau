@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"sort"
 
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/register"
@@ -31,7 +30,8 @@ type Subscriber struct {
 // subscribeOp is the vocabulary's own verb for the delivered half of a stream.
 const subscribeOp = "subscribe"
 
-// Subscribers is every stream subscriber in the deployments this node holds.
+// Subscribers is every stream subscriber in the deployments this node holds, in no
+// particular order.
 func (s *Service) Subscribers(ctx context.Context) []Subscriber {
 	var out []Subscriber
 	for _, at := range s.projects.Deployments() {
@@ -43,19 +43,6 @@ func (s *Service) Subscribers(ctx context.Context) []Subscriber {
 			out = append(out, subs...)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Stream.Handle != out[j].Stream.Handle {
-			return out[i].Stream.Handle < out[j].Stream.Handle
-		}
-		a, b := keyOf(out[i].Target), keyOf(out[j].Target)
-		if a.scope != b.scope {
-			return a.scope < b.scope
-		}
-		if a.kind != b.kind {
-			return a.kind < b.kind
-		}
-		return a.name < b.name
-	})
 	return out
 }
 
