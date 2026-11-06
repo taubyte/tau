@@ -2,9 +2,11 @@ package stream
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,7 +28,8 @@ func kafkaCluster(t *testing.T) string {
 	cluster, err := kfake.NewCluster(kfake.NumBrokers(1), kfake.DefaultNumPartitions(6), kfake.EnableSASL(),
 		kfake.Superuser("SCRAM-SHA-512", "tau", "s3cret"),
 		kfake.Superuser("SCRAM-SHA-256", "tau256", "s3cret"),
-		kfake.Superuser("PLAIN", "plain", "s3cret"))
+		kfake.Superuser("PLAIN", "plain", "s3cret"),
+		kfake.Superuser("SCRAM-SHA-512", "rotated", "n3w"))
 	require.NoError(t, err)
 	t.Cleanup(cluster.Close)
 	return strings.Join(cluster.ListenAddrs(), ",")
@@ -298,7 +301,7 @@ func TestAMisdeclaredLogIsRefusedAtDial(t *testing.T) {
 		_, err := natsEngine{}.dial(ctx, at)
 		require.Error(t, err, "nats: %s", name)
 	}
-	_, err := dial(ctx, vault{}, invoke.Grant{Settings: map[string]string{specs.StreamKeyEngine: "rabbitmq"}}, publisherName)
+	_, err := dialWith(ctx, invoke.Grant{Settings: map[string]string{specs.StreamKeyEngine: "rabbitmq"}}, "", publisherName)
 	require.ErrorIs(t, err, ErrUnknownEngine)
 }
 
@@ -351,6 +354,149 @@ func TestAKafkaRebalanceDeliversNothingTwice(t *testing.T) {
 	node(t, to, "tau:s3cret").Reconcile(mailer)
 	require.Eventually(t, func() bool { return len(marked(to, "mailer")) >= 15 }, 30*time.Second, 10*time.Millisecond)
 	node(t, to, "tau:s3cret").Reconcile(mailer)
+
+	require.Eventually(t, func() bool { return len(marked(to, "mailer")) == sent }, 60*time.Second, 50*time.Millisecond,
+		"got %d of %d", len(marked(to, "mailer")), sent)
+	time.Sleep(time.Second)
+	for body, times := range marked(to, "mailer") {
+		require.Equal(t, 1, times, "%s was delivered %d times", body, times)
+	}
+}
+
+// rotating is a vault whose secret is changed under it, the way an operator rotates one.
+type rotating struct {
+	mu     sync.Mutex
+	secret string
+}
+
+func (r *rotating) Secret(_ context.Context, _, _, id string) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.secret == "" {
+		return "", errors.New("no secret " + id)
+	}
+	return r.secret, nil
+}
+
+func (r *rotating) set(secret string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.secret = secret
+}
+
+// usersOf is who each connection a nats server holds logged in as, by its name.
+func usersOf(t *testing.T, s *natsserver.Server) map[string][]string {
+	t.Helper()
+	connz, err := s.Connz(&natsserver.ConnzOptions{Username: true})
+	require.NoError(t, err)
+	out := map[string][]string{}
+	for _, c := range connz.Conns {
+		out[c.Name] = append(out[c.Name], c.AuthorizedUser)
+	}
+	return out
+}
+
+func TestARotatedCredentialIsLoggedInWithWithinARecheck(t *testing.T) {
+	opts := natsserver.Options{Users: []*natsserver.User{{Username: "tau", Password: "s3cret"}, {Username: "rotated", Password: "n3w"}}}
+	opts.Host, opts.Port = "127.0.0.1", -1
+	opts.JetStream, opts.StoreDir = true, t.TempDir()
+	opts.NoLog, opts.NoSigs = true, true
+	server, err := natsserver.NewServer(&opts)
+	require.NoError(t, err)
+	server.Start()
+	t.Cleanup(server.Shutdown)
+	require.True(t, server.ReadyForConnections(10*time.Second))
+
+	vault := &rotating{secret: "tau:s3cret"}
+	to := &recorder{}
+	settings := onLog(specs.StreamEngineNats, strings.TrimPrefix(server.ClientURL(), "nats://"))
+	mailer := subscriber("mailer", settings)
+
+	subs, err := NewSubscriptions(to, vault)
+	require.NoError(t, err)
+	t.Cleanup(func() { subs.Close() })
+	subs.recheck = 100 * time.Millisecond
+	subs.Reconcile([]worker.Subscriber{mailer})
+
+	p, err := NewPublisher(subscribed{}, to, vault)
+	require.NoError(t, err)
+	t.Cleanup(func() { p.Close() })
+	p.logs.recheck = 100 * time.Millisecond
+	grant := invoke.Grant{Handle: ordersHandle, Settings: settings}
+	untilDelivered(t, p, grant, to, "mailer")
+
+	group := groupOf(&mailer)
+	require.Equal(t, []string{"tau"}, usersOf(t, server)[group])
+
+	// Rotated: the consumer logs in again on its own, the publisher at its next publish
+	// after the recheck, and the connection it replaced stays open for what was in
+	// flight on it.
+	vault.set("rotated:n3w")
+	require.Eventually(t, func() bool {
+		users := usersOf(t, server)[group]
+		return len(users) == 1 && users[0] == "rotated"
+	}, 10*time.Second, 50*time.Millisecond, "the consumer never logged in again: %v", usersOf(t, server))
+	time.Sleep(200 * time.Millisecond)
+	require.NoError(t, p.Publish(t.Context(), grant, []byte("order:rotated")))
+	require.ElementsMatch(t, []string{"tau", "rotated"}, usersOf(t, server)[publisherName])
+
+	require.Eventually(t, func() bool { return marked(to, "mailer")["order:rotated"] == 1 }, 30*time.Second, 50*time.Millisecond,
+		"nothing published after the rotation arrived: %v", marked(to, "mailer"))
+	time.Sleep(500 * time.Millisecond)
+	require.Equal(t, 1, marked(to, "mailer")["order:rotated"], "and it arrived once")
+}
+
+func TestAPublishingConnectionIsReplacedOnlyWhenItsCredentialChanged(t *testing.T) {
+	host := kafkaCluster(t)
+	vault := &rotating{secret: "tau:s3cret"}
+	l := newLogs(vault)
+	t.Cleanup(func() { l.Close() })
+	l.recheck = 0
+	grant := invoke.Grant{Handle: ordersHandle, Settings: onLog(specs.StreamEngineKafka, host)}
+	key := connKey(grant)
+
+	require.NoError(t, l.publish(t.Context(), grant, []byte("one")))
+	first := l.open[key].conn
+	require.NoError(t, l.publish(t.Context(), grant, []byte("two")))
+	require.Same(t, first, l.open[key].conn, "read again and unchanged: the same connection")
+
+	vault.set("rotated:n3w")
+	require.NoError(t, l.publish(t.Context(), grant, []byte("three")))
+	second := l.open[key].conn
+	require.NotSame(t, first, second, "rotated: a new login")
+	require.Same(t, first, l.retired[key], "and the old one kept for what was in flight")
+
+	vault.set("")
+	require.NoError(t, l.publish(t.Context(), grant, []byte("four")), "a credential that cannot be read keeps what works")
+	require.Same(t, second, l.open[key].conn)
+
+	vault.set("tau:s3cret")
+	require.NoError(t, l.publish(t.Context(), grant, []byte("five")))
+	require.Same(t, second, l.retired[key], "the next rotation closes the one retired before")
+}
+
+func TestAKafkaConsumerRotatedMidStreamLosesAndRepeatsNothing(t *testing.T) {
+	vault := &rotating{secret: "tau:s3cret"}
+	to := &recorder{slow: 50 * time.Millisecond}
+	settings := onLog(specs.StreamEngineKafka, kafkaCluster(t))
+	subs, err := NewSubscriptions(to, vault)
+	require.NoError(t, err)
+	t.Cleanup(func() { subs.Close() })
+	subs.recheck = 100 * time.Millisecond
+	subs.Reconcile([]worker.Subscriber{subscriber("mailer", settings)})
+
+	p, err := NewPublisher(subscribed{}, to, &rotating{secret: "tau:s3cret"})
+	require.NoError(t, err)
+	t.Cleanup(func() { p.Close() })
+	grant := invoke.Grant{Handle: ordersHandle, Settings: settings}
+	untilDelivered(t, p, grant, to, "mailer")
+
+	const sent = 30
+	for i := range sent {
+		require.NoError(t, p.Publish(t.Context(), grant, []byte("order:"+strconv.Itoa(i))))
+	}
+	require.Eventually(t, func() bool { return len(marked(to, "mailer")) >= 5 }, 30*time.Second, 10*time.Millisecond)
+	vault.set("rotated:n3w")
 
 	require.Eventually(t, func() bool { return len(marked(to, "mailer")) == sent }, 60*time.Second, 50*time.Millisecond,
 		"got %d of %d", len(marked(to, "mailer")), sent)

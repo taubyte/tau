@@ -127,7 +127,7 @@ func (c *natsConn) ensure(ctx context.Context, topic string) error {
 	return nil
 }
 
-func (c *natsConn) consume(ctx context.Context, topic, group string, to handler) error {
+func (c *natsConn) consume(ctx context.Context, topic, group string, to handler, drain <-chan struct{}) error {
 	if err := c.ensure(ctx, topic); err != nil {
 		return err
 	}
@@ -142,21 +142,27 @@ func (c *natsConn) consume(ctx context.Context, topic, group string, to handler)
 		return fmt.Errorf("stream: nats consumer %s on %s: %w", group, topic, err)
 	}
 
+	taking, stop := drained(ctx, drain)
+	defer stop()
 	for ctx.Err() == nil {
-		if err := c.fetch(ctx, consumer, to); err != nil {
+		if taking.Err() != nil {
+			return errDrained
+		}
+		if err := c.fetch(ctx, taking, consumer, to); err != nil {
 			return err
 		}
 	}
 	return ctx.Err()
 }
 
-// fetch takes what is waiting, up to a few seconds' worth, and settles each message.
-func (c *natsConn) fetch(ctx context.Context, consumer jetstream.Consumer, to handler) error {
-	wait, stop := context.WithTimeout(ctx, 5*time.Second)
+// fetch takes what is waiting, up to a few seconds' worth, under taking, and settles
+// each message under ctx.
+func (c *natsConn) fetch(ctx, taking context.Context, consumer jetstream.Consumer, to handler) error {
+	wait, stop := context.WithTimeout(taking, 5*time.Second)
 	defer stop()
 	batch, err := consumer.Fetch(16, jetstream.FetchContext(wait))
 	if err != nil {
-		if ctx.Err() != nil || errors.Is(err, context.DeadlineExceeded) {
+		if taking.Err() != nil || errors.Is(err, context.DeadlineExceeded) {
 			return nil
 		}
 		return fmt.Errorf("stream: nats fetch: %w", err)

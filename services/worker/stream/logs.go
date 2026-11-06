@@ -31,8 +31,9 @@ type conn interface {
 	publish(ctx context.Context, topic string, message []byte) error
 
 	// consume hands each message published from now on to to, as the consumer
-	// named group, until ctx ends or the connection fails.
-	consume(ctx context.Context, topic, group string, to handler) error
+	// named group, until ctx ends or the connection fails. Once drain closes it takes
+	// nothing more, finishes what it holds and returns errDrained.
+	consume(ctx context.Context, topic, group string, to handler, drain <-chan struct{}) error
 
 	Close() error
 }
@@ -66,7 +67,28 @@ const (
 
 	// retryEvery is how long a consumer whose connection failed waits to dial again.
 	retryEvery = 5 * time.Second
+
+	// recheckEvery is how often a connection reads its credential again: a rotated
+	// one is in use within it, not at the connection's next failure.
+	recheckEvery = time.Minute
 )
+
+// errDrained is a consumer that stopped because it was told to, between messages.
+var errDrained = errors.New("stream: drained")
+
+// drained is ctx for taking messages, ended when drain closes too; delivering one
+// keeps ctx, so draining never cuts a delivery off.
+func drained(ctx context.Context, drain <-chan struct{}) (context.Context, context.CancelFunc) {
+	taking, stop := context.WithCancel(ctx)
+	go func() {
+		select {
+		case <-drain:
+			stop()
+		case <-taking.Done():
+		}
+	}()
+	return taking, stop
+}
 
 // backoff is the wait before the attempt after this one: 1s, 2s, 4s, capped.
 func backoff(attempt int) time.Duration {
@@ -76,12 +98,26 @@ func backoff(attempt int) time.Duration {
 // logs holds this node's publishing connections, one per log and login.
 type logs struct {
 	secrets Secrets
+	recheck time.Duration
 
 	mu   sync.Mutex
-	open map[string]conn
+	open map[string]*held
+	// retired is the connection each key replaced at its last rotation, closed at
+	// the next one: a publish in flight on it when it was replaced finishes.
+	retired map[string]conn
 }
 
-func newLogs(secrets Secrets) *logs { return &logs{secrets: secrets, open: map[string]conn{}} }
+// held is one publishing connection, the credential it logged in with and when that
+// was last read.
+type held struct {
+	conn    conn
+	secret  string
+	checked time.Time
+}
+
+func newLogs(secrets Secrets) *logs {
+	return &logs{secrets: secrets, recheck: recheckEvery, open: map[string]*held{}, retired: map[string]conn{}}
+}
 
 func (l *logs) publish(ctx context.Context, grant invoke.Grant, message []byte) error {
 	key := connKey(grant)
@@ -90,31 +126,52 @@ func (l *logs) publish(ctx context.Context, grant invoke.Grant, message []byte) 
 		return err
 	}
 	if err := c.publish(ctx, grant.Settings[specs.StreamKeyName], message); err != nil {
-		// Dropped so the next publish dials again and reads the secret again, which is
-		// how a rotated credential is picked up.
+		// Dropped so the next publish dials again and reads the secret again: a
+		// credential revoked before its recheck is picked up here.
 		l.drop(key, c)
 		return err
 	}
 	return nil
 }
 
+// conn is the key's connection, dialled again when its credential was rotated. A
+// credential that cannot be read right now keeps the connection that works.
 func (l *logs) conn(ctx context.Context, key string, grant invoke.Grant) (conn, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if c, ok := l.open[key]; ok {
-		return c, nil
+	h, ok := l.open[key]
+	if ok && time.Since(h.checked) < l.recheck {
+		return h.conn, nil
 	}
-	c, err := dial(ctx, l.secrets, grant, publisherName)
+
+	secret, err := credential(ctx, l.secrets, grant)
+	switch {
+	case err != nil && ok:
+		return h.conn, nil
+	case err != nil:
+		return nil, err
+	case ok && secret == h.secret:
+		h.checked = time.Now()
+		return h.conn, nil
+	}
+
+	c, err := dialWith(ctx, grant, secret, publisherName)
 	if err != nil {
 		return nil, err
 	}
-	l.open[key] = c
+	if ok {
+		if old := l.retired[key]; old != nil {
+			old.Close()
+		}
+		l.retired[key] = h.conn
+	}
+	l.open[key] = &held{conn: c, secret: secret, checked: time.Now()}
 	return c, nil
 }
 
 func (l *logs) drop(key string, c conn) {
 	l.mu.Lock()
-	if l.open[key] == c {
+	if h := l.open[key]; h != nil && h.conn == c {
 		delete(l.open, key)
 	}
 	l.mu.Unlock()
@@ -125,10 +182,14 @@ func (l *logs) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	var err error
-	for _, c := range l.open {
+	for _, h := range l.open {
+		err = errors.Join(err, h.conn.Close())
+	}
+	for _, c := range l.retired {
 		err = errors.Join(err, c.Close())
 	}
 	clear(l.open)
+	clear(l.retired)
 	return err
 }
 
@@ -141,25 +202,32 @@ func connKey(grant invoke.Grant) string {
 		s[specs.StreamKeyTls], s[specs.StreamKeySasl], s[specs.StreamCredentialsKeyName]}, "\x00")
 }
 
-// dial opens a connection to the log a grant names, reading its credential now.
-func dial(ctx context.Context, secrets Secrets, grant invoke.Grant, name string) (conn, error) {
+// credential is the secret a grant's credentials name, read now; empty when it names
+// none.
+func credential(ctx context.Context, secrets Secrets, grant invoke.Grant) (string, error) {
+	reference := grant.Settings[specs.StreamCredentialsKeyName]
+	if reference == "" {
+		return "", nil
+	}
+	project, environment, _ := specs.SplitHandle(grant.Handle)
+	secret, err := secrets.Secret(ctx, project, environment, reference)
+	if err != nil {
+		return "", fmt.Errorf("stream: reading the credentials for %s: %w", grant.Label, err)
+	}
+	return secret, nil
+}
+
+// dialWith opens a connection to the log a grant names, logging in with secret and
+// calling itself name.
+func dialWith(ctx context.Context, grant invoke.Grant, secret, name string) (conn, error) {
 	s := grant.Settings
 	engine := s[specs.StreamKeyEngine]
 	e, ok := engines[engine]
 	if !ok {
 		return nil, fmt.Errorf("%w: %q", ErrUnknownEngine, engine)
 	}
-
-	at := broker{host: s[specs.StreamKeyHost], tls: s[specs.StreamKeyTls], sasl: s[specs.StreamKeySasl], name: name}
-	if reference := s[specs.StreamCredentialsKeyName]; reference != "" {
-		project, environment, _ := specs.SplitHandle(grant.Handle)
-		secret, err := secrets.Secret(ctx, project, environment, reference)
-		if err != nil {
-			return nil, fmt.Errorf("stream: reading the credentials for %s: %w", grant.Label, err)
-		}
-		at.secret = secret
-	}
-	return e.dial(ctx, at)
+	return e.dial(ctx, broker{host: s[specs.StreamKeyHost], tls: s[specs.StreamKeyTls], sasl: s[specs.StreamKeySasl],
+		secret: secret, name: name})
 }
 
 // tlsOf is the connection's protection. Absent is verify-full, the hostname taken

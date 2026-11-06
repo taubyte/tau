@@ -20,6 +20,7 @@ import (
 type Subscriptions struct {
 	invoker Invoker
 	secrets Secrets
+	recheck time.Duration
 
 	ctx  context.Context
 	stop context.CancelFunc
@@ -39,7 +40,7 @@ func NewSubscriptions(invoker Invoker, secrets Secrets) (*Subscriptions, error) 
 		return nil, errors.New("stream: subscriptions need an invoker and secrets")
 	}
 	ctx, stop := context.WithCancel(context.Background())
-	return &Subscriptions{invoker: invoker, secrets: secrets, ctx: ctx, stop: stop, running: map[string]*consuming{}}, nil
+	return &Subscriptions{invoker: invoker, secrets: secrets, recheck: recheckEvery, ctx: ctx, stop: stop, running: map[string]*consuming{}}, nil
 }
 
 // Reconcile starts a consumer for each subscriber on a log that has none, and stops
@@ -85,6 +86,9 @@ func (s *Subscriptions) consume(ctx context.Context, sub worker.Subscriber, done
 		if ctx.Err() != nil {
 			return
 		}
+		if errors.Is(err, errRotated) {
+			continue
+		}
 		logger.Warnf("stream: %s consuming %s: %s", sub.Target.Name, sub.Stream.Label, err)
 		select {
 		case <-ctx.Done():
@@ -94,14 +98,45 @@ func (s *Subscriptions) consume(ctx context.Context, sub worker.Subscriber, done
 	}
 }
 
+// errRotated is a consumer that stopped to log in again with a rotated credential.
+var errRotated = errors.New("stream: credential rotated")
+
+// once runs one connection's consumer until it fails, or until its credential is
+// rotated: then it drains between messages and answers errRotated.
 func (s *Subscriptions) once(ctx context.Context, sub *worker.Subscriber, to handler) error {
+	secret, err := credential(ctx, s.secrets, sub.Stream)
+	if err != nil {
+		return err
+	}
 	group := groupOf(sub)
-	c, err := dial(ctx, s.secrets, sub.Stream, group)
+	c, err := dialWith(ctx, sub.Stream, secret, group)
 	if err != nil {
 		return err
 	}
 	defer c.Close()
-	return c.consume(ctx, sub.Stream.Settings[specs.StreamKeyName], group, to)
+
+	drain := make(chan struct{})
+	done := make(chan error, 1)
+	go func() { done <- c.consume(ctx, sub.Stream.Settings[specs.StreamKeyName], group, to, drain) }()
+
+	recheck := time.NewTicker(s.recheck)
+	defer recheck.Stop()
+	for {
+		select {
+		case err := <-done:
+			return err
+		case <-recheck.C:
+			now, err := credential(ctx, s.secrets, sub.Stream)
+			if err != nil || now == secret {
+				continue
+			}
+			close(drain)
+			if err := <-done; !errors.Is(err, errDrained) {
+				return err
+			}
+			return errRotated
+		}
+	}
 }
 
 // Running is how many consumers this node runs.

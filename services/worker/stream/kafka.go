@@ -97,7 +97,7 @@ const rebalanceWithin = maxAttempts*deliverWithin + time.Minute
 // consume takes one record per poll and holds rebalancing off until it is delivered
 // and marked, so partitions only move between records and the revoke commits every
 // one delivered. A record is delivered twice only when its node dies mid-delivery.
-func (c *kafkaConn) consume(ctx context.Context, topic, group string, to handler) error {
+func (c *kafkaConn) consume(ctx context.Context, topic, group string, to handler, drain <-chan struct{}) error {
 	client, err := kgo.NewClient(append(slices.Clone(c.opts),
 		kgo.ConsumerGroup(group),
 		kgo.ConsumeTopics(topic),
@@ -114,20 +114,25 @@ func (c *kafkaConn) consume(ctx context.Context, topic, group string, to handler
 	defer commitMarked(context.Background(), client, nil)
 
 	c.ensure(ctx, client, topic)
+	taking, stop := drained(ctx, drain)
+	defer stop()
 	for {
-		if err := deliverOne(ctx, client, topic, to); err != nil {
+		if err := deliverOne(ctx, taking, client, topic, to); err != nil {
 			return err
 		}
 	}
 }
 
 // deliverOne polls at most one record and delivers it, rebalancing held off until
-// it returns.
-func deliverOne(ctx context.Context, client *kgo.Client, topic string, to handler) error {
-	fetches := client.PollRecords(ctx, 1)
+// it returns. It polls under taking and delivers under ctx.
+func deliverOne(ctx, taking context.Context, client *kgo.Client, topic string, to handler) error {
+	fetches := client.PollRecords(taking, 1)
 	defer client.AllowRebalance()
 	if ctx.Err() != nil || fetches.IsClientClosed() {
 		return ctx.Err()
+	}
+	if taking.Err() != nil {
+		return errDrained
 	}
 	if errs := fetches.Errors(); len(errs) > 0 {
 		return fmt.Errorf("stream: kafka %s: %w", topic, errs[0].Err)
