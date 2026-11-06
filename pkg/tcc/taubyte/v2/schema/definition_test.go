@@ -1495,6 +1495,10 @@ func TestStreamEngineIsClosedAndBranchScoped(t *testing.T) {
 
 	// Neither branch borrows the other's fields: a connection is an external engine's.
 	assert.ErrorContains(t, compile("distributed:\n    host: b:9092\n"), "unknown key 'host'")
+	// How credentials are presented is Kafka's question alone, and its answers a closed set.
+	assert.NilError(t, compile("kafka:\n    host: b:9092\n    sasl: plain\n    credentials:\n        name: k\n"))
+	assert.ErrorContains(t, compile("kafka:\n    host: b:9092\n    sasl: gssapi\n    credentials:\n        name: k\n"), "valid values here: scram-sha-512, scram-sha-256, plain")
+	assert.ErrorContains(t, compile("nats:\n    host: n:4222\n    sasl: plain\n    credentials:\n        name: k\n"), "unknown key 'sasl'")
 	assert.ErrorContains(t, compile("kafka:\n    credentials:\n        name: k\n"), "required attribute 'kafka/host'")
 	assert.ErrorContains(t, compile("kafka:\n    host: b:9092\n"), "required attribute 'kafka/credentials/name'")
 
@@ -1512,6 +1516,7 @@ func TestStreamEngineIsClosedAndBranchScoped(t *testing.T) {
 	assert.Equal(t, shipments["engine"], "kafka")
 	assert.Equal(t, shipments["host"], "broker.example.com:9092")
 	assert.Equal(t, shipments["tls"], "verify-full")
+	assert.Equal(t, shipments["sasl"], "scram-sha-256")
 }
 
 func TestAStreamIsNamedNotMatched(t *testing.T) {

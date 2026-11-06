@@ -290,15 +290,10 @@ func TestAStreamAccessEntryBecomesAGrant(t *testing.T) {
 	require.Contains(t, grants["orders"].Handle, "shop/prod/")
 }
 
-func TestAStreamOnAnEngineThisCloudLacksIsRefused(t *testing.T) {
+func TestAStreamOnALogIsServed(t *testing.T) {
 	for _, engine := range []string{"kafka", "nats"} {
-		reason := unservable(
-			specs.Reach{Kind: streamKind, Label: "orders"},
-			specs.Resource{"engine": engine},
-		)
-		require.Contains(t, reason, engine, "it names which engine")
-		require.Contains(t, reason, "no driver")
-		require.Contains(t, reason, "gossipsub", "and what it does have")
+		require.Empty(t, unservable(specs.Reach{Kind: streamKind, Label: "orders"}, specs.Resource{"engine": engine}),
+			"this cloud drives %s", engine)
 	}
 }
 

@@ -57,7 +57,7 @@ func newDatabases(n *Instance) (*databaseBacking, error) {
 	// THE COMPOSER'S REGISTRY AS IT IS, nil included: nothing here links a
 	// database driver, and which engines a deployment has is WithDatabaseEngines'
 	// to say. tau's own three are registered by the adapter on first use.
-	databases, err := nodeDatabase.New(n.opts.engines, holdings.Entries, databaseSecrets{node: n})
+	databases, err := nodeDatabase.New(n.opts.engines, holdings.Entries, vaultSecrets{node: n})
 	if err != nil {
 		return nil, fmt.Errorf("node: %s: %w", Database, err)
 	}
@@ -78,13 +78,13 @@ func (b *databaseBacking) Close() error {
 	return err
 }
 
-// databaseSecrets reads the secret a connection's credentials were declared as, with
+// vaultSecrets reads the secret a connection's credentials were declared as, with
 // its own vault per read so resolving does not depend on which other services run.
-type databaseSecrets struct{ node *Instance }
+type vaultSecrets struct{ node *Instance }
 
-var _ nodeDatabase.Secrets = databaseSecrets{}
+var _ nodeDatabase.Secrets = vaultSecrets{}
 
-func (s databaseSecrets) Secret(ctx context.Context, project, environment, name string) (string, error) {
+func (s vaultSecrets) Secret(ctx context.Context, project, environment, name string) (string, error) {
 	vault := newVault(s.node)
 	defer vault.Close()
 	return vault.Secret(ctx, project, environment, name)

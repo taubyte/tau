@@ -81,6 +81,7 @@ export type ProxyCertSource = "generated" | "provided";
 export type ProxyKey = "ip" | "subnet";
 export type StreamEngine = "distributed" | "kafka" | "nats";
 export type StreamRegionsPolicy = "pinned" | "cdn" | "failover";
+export type StreamSasl = "scram-sha-512" | "scram-sha-256" | "plain";
 export type StreamTls = "verify-full" | "require" | "disable";
 export type BusInstancesAdmission = "validator";
 export type BusRegionsPolicy = "pinned" | "cdn" | "failover";
@@ -3944,6 +3945,16 @@ export class StreamConfig extends ResourceConfig {
     return undefined;
   }
 
+  async sasl(): Promise<StreamSasl | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["kafka", "sasl"])) as StreamSasl | undefined;
+  }
+  setSasl(v: StreamSasl): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["kafka", "sasl"], v);
+  }
+  unsetSasl(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["kafka", "sasl"]);
+  }
+
   /** Lives under the stream's kind, so the branch is explicit. */
   async host(engine: StreamEngine): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, [engine, "host"])) as string | undefined;
@@ -5611,6 +5622,7 @@ export interface Stream {
   "regions/main"?: string;
   "regions/standby"?: string;
   engine?: string;
+  sasl?: StreamSasl;
   host?: string;
   credentialsnamespace?: string;
   credentialsname?: string;

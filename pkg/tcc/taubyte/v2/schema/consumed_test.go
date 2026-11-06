@@ -70,8 +70,6 @@ var (
 
 	replicationRaftOnly = excuse{handled, "whether a cache keeps a copy on every peer. The vocabulary says it is only a question under raft consensus, because crdt and gossip both put a copy on every peer whatever it says - and worker refuses a raft cache by name (unservableKind), so the one branch where this field decides anything is never served."}
 
-	externalStreamRefused = excuse{handled, "where somebody else's broker is and how to reach it: its host, its tls and its credentials, which only a kafka or nats stream declares. worker refuses a stream on any engine but tau's by name (unservableKind), so none of them is ever served weaker than written."}
-
 	agentLowered = excuse{handled, "consumed by the agent's lowering: limits/timeout and limits/memory become the loop function's execution/timeout and execution/memory, and the memory block becomes a vector database's dimensions and size. The interpreter keeps its lowering terms unexported, so this test cannot see that consumption."}
 
 	websiteLowered  = excuse{handled, "consumed by the website's lowering: host/* and certificate/* become its gateway's, and serve/* the package handler's index, mode and not_found, which the gateway reads. The interpreter keeps its lowering terms unexported, so this test cannot see that consumption."}
@@ -108,12 +106,8 @@ var unread = map[string]excuse{
 	"sync/queue/dead_letter/namespace":   deadLetterScopeConsumed,
 	"proxy/certificate/secret/namespace": proxyCertScopeConsumed,
 
-	"cache/replicated":             replicationRaftOnly,
-	"storage/streaming/ttl":        streamingStorageRefused,
-	"stream/credentials/name":      externalStreamRefused,
-	"stream/credentials/namespace": externalStreamRefused,
-	"stream/host":                  externalStreamRefused,
-	"stream/tls":                   externalStreamRefused,
+	"cache/replicated":      replicationRaftOnly,
+	"storage/streaming/ttl": streamingStorageRefused,
 
 	"agent/limits/timeout":            agentLowered,
 	"agent/limits/memory":             agentLowered,
@@ -157,7 +151,8 @@ var readers = map[string][]string{
 	// carried to the tier that honours it, or refused by name.
 	"services/worker/unserved.go": everyKind,
 	// schedule.go is the cron arm of the same service.
-	"services/worker/schedule.go": {"cron"},
+	"services/worker/schedule.go":  {"cron"},
+	"services/worker/subscribe.go": {"stream"},
 
 	// The build service makes a package's artifact, the only kind that builds.
 	"services/plm/artifact/artifact.go": {"package"},

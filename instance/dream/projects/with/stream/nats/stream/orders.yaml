@@ -1,0 +1,7 @@
+id: QmQEJ4XnSZVpC7UsqoUQ3CPHwkiedS2grTU8AYJUdFWzkp
+description: the topic itself, in a nats the test starts - only host is rewritten to point at it
+nats:
+    host: 127.0.0.1:4222
+    credentials:
+        name: natscreds
+    tls: disable

@@ -42,9 +42,11 @@ var (
 	ErrNoBus = errors.New("wasm: this resource publishes to a bus and this tier has nothing to publish with")
 )
 
-// Streams is what a guest publishes through; what a handle means is the composer's.
+// Streams is what a guest publishes through. The grant travels whole because where
+// a message goes is the stream's engine, which the composer reads off its settings.
+// message may be the guest's memory and is only valid for the call.
 type Streams interface {
-	Publish(ctx context.Context, handle string, message []byte) error
+	Publish(ctx context.Context, grant invoke.Grant, message []byte) error
 }
 
 // WithStreams is what backs `taubyte:stream/publisher`; without it a publishing
@@ -146,7 +148,7 @@ func (r *Runtime) publishImports(spec invoke.Spec, iface string, grants map[stri
 			return errorResult(streamFailure(errStreamUnavailable, "this node has nothing to publish with")), nil
 		}
 
-		if err := to.Publish(ctx, grant.Handle, message); err != nil {
+		if err := to.Publish(ctx, grant, message); err != nil {
 			return errorResult(streamFailure(errStreamUnavailable, err.Error())), nil
 		}
 		return []component.Value{component.ResultValue{}}, nil

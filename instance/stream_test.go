@@ -8,25 +8,18 @@ import (
 	"github.com/taubyte/tau/services/worker/stream"
 )
 
-// Only the wiring: which gossip and cloud a backing was built over, and that a bus has
-// one backing.
+// Only the wiring: which gossip and cloud the bus was built over, and that it has one
+// backing.
 
-func TestTheNodeExposesBothTopics(t *testing.T) {
+func TestTheNodeExposesTheBusTopic(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Worker, Discovery}})
-
-	require.Equal(t, stream.Topic(stream.Bus, n.cfg.Cloud, "h"), n.BusTopic("h"))
-	require.Equal(t, stream.Topic(stream.Stream, n.cfg.Cloud, "h"), n.StreamTopic("h"))
-	require.NotEqual(t, n.BusTopic("h"), n.StreamTopic("h"))
+	require.Equal(t, stream.Topic(n.cfg.Cloud, "h"), n.BusTopic("h"))
 }
 
 func TestOneBusBackingIsSharedByBothConsumers(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Worker, Discovery, Gateway}})
 
-	first, err := n.busStreams()
-	require.NoError(t, err)
-	again, err := n.busStreams()
-	require.NoError(t, err)
-
-	require.Same(t, first, again)
+	first := n.busStreams()
+	require.Same(t, first, n.busStreams())
 	require.Same(t, n.bus, first, "and it is the one the composition kept")
 }

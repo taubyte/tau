@@ -45,7 +45,7 @@ func TestWhatMayBeWrittenPerEnvironment(t *testing.T) {
 		"sandbox/lifetime/idle", "sandbox/lifetime/max",
 		"sandbox/value",
 		"storage/instances/limit", "storage/size", "storage/streaming/ttl",
-		"stream/host", "stream/tls",
+		"stream/host", "stream/sasl", "stream/tls",
 		"volume/checkpoint/interval", "volume/checkpoint/rpo_budget", "volume/quota",
 		"worker/egress", "worker/execution/cpu",
 		"worker/execution/memory", "worker/execution/timeout",

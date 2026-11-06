@@ -52,6 +52,8 @@ type Service struct {
 	projects *register.Cache[*specs.Project]
 	// resolutions is what targets resolve to under each deployment's current object.
 	resolutions resolutions
+	// subscriptions is a *subscriptions per register.Deployment (subscribe.go).
+	subscriptions sync.Map
 
 	serverOptions []rpc.ServerOption
 

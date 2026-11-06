@@ -21704,7 +21704,7 @@
           ]
         }
       ],
-      "description": "A pubsub stream: what is published to it reaches every subscriber. On the swarm's own gossipsub, or on an external Kafka or NATS cluster.",
+      "description": "A pubsub stream: what is published to it reaches every subscriber. On the swarm itself, or on an external Kafka or NATS cluster.",
       "properties": {
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
@@ -21738,12 +21738,34 @@
           "x-tau-section": "identity"
         },
         "engine": {
-          "description": "Which engine holds the topic: distributed is the swarm's own gossipsub; kafka and nats are external clusters reached over the network.",
+          "description": "Which engine holds the topic: distributed is the swarm itself, delivering each message once to every subscriber and keeping nothing; kafka and nats are external clusters reached over the network, delivering at least once.",
           "title": "Engine",
           "type": "string",
           "x-tau-dynamic": true,
           "x-tau-path": "{distributed|kafka|nats}",
           "x-tau-section": "engine"
+        },
+        "kafka": {
+          "properties": {
+            "sasl": {
+              "description": "How the credentials are presented to the cluster. Omitted means scram-sha-512. The scram mechanisms prove the password without sending it; plain sends it, so it is only as private as the connection's tls.",
+              "enum": [
+                "scram-sha-512",
+                "scram-sha-256",
+                "plain"
+              ],
+              "title": "SASL",
+              "type": "string",
+              "x-tau-section": "engine",
+              "x-tau-show-when": {
+                "field": "engine",
+                "in": [
+                  "kafka"
+                ]
+              }
+            }
+          },
+          "type": "object"
         },
         "host": {
           "description": "Where the external server is reached, as host or host:port.",

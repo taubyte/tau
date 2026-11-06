@@ -1,0 +1,6 @@
+id: QmZ8SdAvGi93BYwtUz4WewTzGrpzFGUWg5yDwevBDv3ghf
+name: streamnocredentials
+description: a kafka stream with no credentials - a log somebody else runs is never reached anonymously
+environments:
+    prod:
+        branches: ["*"]

@@ -151,14 +151,9 @@ func (d *dispatcher) drain(ctx context.Context, consumer worker.Consumer, work p
 	return int(delivered.Load())
 }
 
-// invoke runs a workload through placement: claims are leader-only, so running what
-// was claimed locally would put all queued work on one node. A node with no stats can
-// only reach itself.
+// invoke runs a workload through placement (see placed).
 func (d *dispatcher) invoke(ctx context.Context, at worker.Target, req *invoke.Request) (*invoke.Response, error) {
-	if d.node.workers == nil {
-		return d.node.worker.Invoke(ctx, at, req)
-	}
-	return d.node.workers.Invoke(ctx, at, req)
+	return placed{node: d.node}.Invoke(ctx, at, req)
 }
 
 // deliver hands one item to the workload and settles on the answer; 2xx acknowledges.

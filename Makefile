@@ -191,8 +191,8 @@ test-application:
 test-build:
 	go test -exec '$(LEAKCHECK) $(AS_ROOT)' -tags docker_integration -count=1 -v -timeout 15m -run '^TestARealBuild' ./services/plm/artifact/
 
-# test-external-databases deploys projects/with/database/{postgres,mysql}/sql
-# against real servers the test starts in docker. No firewall is installed for a
+# test-external-databases deploys projects/with/database/{postgres,mysql}/sql and
+# projects/with/stream/kafka against real servers the test starts in docker. No firewall is installed for a
 # server the TEST runs, so it needs a docker daemon and no sudo.
 test-external-databases:
 	go test -exec $(LEAKCHECK) -tags 'dreaming docker_integration' -run '^TestAnExternal' -count=1 -timeout 15m $(FLAGS) ./instance/dream/

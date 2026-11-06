@@ -1,0 +1,5 @@
+id: QmPZVNdFnq1vBqWQ56rTHJkFUuA16uBpHUZSDzLToCVdVz
+description: where a delivery becomes visible - function/cacher.yaml routes each arriving message to a key in here, exactly as the queue project routes a claimed item, so a read of that key is what proves one arrived
+size: 1MB
+ttl: 1h
+consensus: crdt

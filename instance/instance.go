@@ -127,7 +127,11 @@ type Instance struct {
 	// the gateway's attach. Both reach the same topic, and a second would be a
 	// second join of it — a mesh each, with the browser on the one the workload
 	// is not.
-	bus *stream.Streams
+	bus *stream.Bus
+
+	// subscriptions is the consumers delivering streams on a log to this node's
+	// subscribers, matched to them by subscribe.
+	subscriptions *stream.Subscriptions
 
 	// syncs is this node's one reach into the primitives service, shared by the
 	// wasm tier's `send` and `append` and the dispatcher's claim. A second
@@ -161,6 +165,7 @@ type Instance struct {
 	// neither a worker nor consensus.
 	loopsStop      context.CancelFunc
 	dispatchDone   chan struct{}
+	subscribeDone  chan struct{}
 	proxyDone      chan struct{}
 	checkpointDone chan struct{}
 	retentionDone  chan struct{}
@@ -323,7 +328,7 @@ func (n *Instance) openWorker() error {
 	// A function's println goes to the node's log. The backings are always given and open
 	// nothing until reached; without them the tier would refuse resources the node could
 	// serve.
-	publisher, err := n.streamBacking(stream.Stream)
+	publisher, err := n.streamPublisher()
 	if err != nil {
 		return err
 	}
@@ -347,10 +352,7 @@ func (n *Instance) openWorker() error {
 		return err
 	}
 
-	bus, err := n.busStreams()
-	if err != nil {
-		return err
-	}
+	bus := n.busStreams()
 
 	// INFERENCE IS ALWAYS OFFERED, even on a node that resolves no secret:
 	// a model served by something needing no credential — ollama on this
@@ -575,11 +577,7 @@ func (n *Instance) openGateway() error {
 	// "not available here" rather than accepting the connection and never
 	// delivering anything.
 	if n.Messaging() != nil {
-		backing, err := n.busStreams()
-		if err != nil {
-			return err
-		}
-		buses, err := stream.NewBuses(backing)
+		buses, err := stream.NewBuses(n.busStreams())
 		if err != nil {
 			return err
 		}
@@ -741,6 +739,11 @@ func (n *Instance) Start(ctx context.Context) error {
 		n.dispatchDone = make(chan struct{})
 		go (&dispatcher{node: n}).loop(loopCtx, n.dispatchDone)
 
+		if n.subscriptions != nil {
+			n.subscribeDone = make(chan struct{})
+			go n.subscribe(loopCtx, n.subscribeDone)
+		}
+
 		// The clock is the primitives service's (services/primitives/cron.go); this node only
 		// supplies which crons exist and how to reach a workload.
 	}
@@ -807,6 +810,9 @@ func (n *Instance) Close() error {
 			}
 			if n.dispatchDone != nil {
 				<-n.dispatchDone
+			}
+			if n.subscribeDone != nil {
+				<-n.subscribeDone
 			}
 			if n.checkpointDone != nil {
 				<-n.checkpointDone

@@ -1,0 +1,6 @@
+id: QmR9yqy2F319XxtpgNdx6191DcoPEQb2w2iQ3ZNj6EGgrh
+name: streamsasl
+description: a kafka stream presenting its credentials by a mechanism tau has no client for
+environments:
+    prod:
+        branches: ["*"]

@@ -423,6 +423,8 @@ func settingsFor(kind string, reach specs.Reach, target specs.Resource) map[stri
 		return storageSettings(target)
 	case modelKind:
 		return modelSettings(target)
+	case streamKind:
+		return streamSettings(target)
 	case mcpToolKind:
 		// A tool needs a description (see mcp.go); it travels for every function.
 		if d := specs.ReadFunction(target).Description; d != "" {
@@ -717,15 +719,6 @@ func instanceSettings(target specs.Resource) map[string]string {
 // written.
 func unservableKind(reach specs.Reach, target specs.Resource) string {
 	switch reach.Kind {
-	case streamKind:
-		// An external engine needs a driver this cloud lacks (no Kafka or NATS client), so a
-		// stream on one is refused by name. Which engine is ours is the vocabulary's to say.
-		if engine := specs.ReadStream(target).Engine; engine != "" && engine != schema.TauEngine() {
-			return fmt.Sprintf("%s %q is on the %q engine, and this cloud has no driver for it — "+
-				"it publishes to the swarm's own gossipsub and nothing else",
-				reach.Kind, reach.Label, engine)
-		}
-		return ""
 	case volumeKind:
 		// Nothing measures a volume's last snapshot against a budget, so a budget is refused.
 		checkpoint := specs.ReadVolume(target).Checkpoint

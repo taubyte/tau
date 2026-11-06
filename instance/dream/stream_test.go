@@ -3,38 +3,66 @@
 package dream_test
 
 import (
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	natsserver "github.com/nats-io/nats-server/v2/server"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/instance"
 	nodeDream "github.com/taubyte/tau/instance/dream"
 	"github.com/taubyte/tau/pkg/invoke"
+	storageService "github.com/taubyte/tau/services/storage"
 )
 
-// Fan-out over real gossipsub: a guest publishes to a topic and a listener on
-// another node gets the bytes, showing a guest's label resolves to the topic another
-// node listens on.
+// A stream's subscriber is invoked by the platform: projects/with/stream/* declare one
+// function on both ends, delivering what it published to `/put/sessions/delivered`,
+// so a read of that key is what proves a message arrived.
 
-// `subscribe` is a DeliveredOp and nothing in this tree dispatches one
-// (services/worker/consume.go keeps only queues; instance/dispatch.go drains only
-// node.syncs). Choosing between fan-out and exactly-once is an open product decision
-// (pkg/invoke/wasm/queue.go). instance/stream.go's subscribe backs browser buses, not
-// workloads. So this asserts the declaration reaches the worker as a grant, not
-// arrival; when delivery exists, assert the key.
+// delivered waits until the subscriber has written what was published.
+func delivered(t *testing.T, reading *running, message string) {
+	t.Helper()
+	var last string
+	require.Eventually(t, func() bool {
+		res, err := reading.on(t.Context(), reading.function("cacher"), http.MethodPost, "/get/sessions/delivered")
+		if err != nil {
+			last = err.Error()
+			return false
+		}
+		last = fmt.Sprintf("%d %s", res.Status, res.Body)
+		return res.Status == 200 && string(res.Body) == message
+	}, 60*time.Second, 250*time.Millisecond, "%q never reached the subscriber: %s", message, &lastSaid{&last})
+}
 
-func TestAGuestsMessageCrossesTheSwarm(t *testing.T) {
+// publish has the guest publish message, retried until the deployment is served.
+func publish(t *testing.T, on *running, message string) {
+	t.Helper()
+	var last string
+	require.Eventually(t, func() bool {
+		res, err := on.onCarrying(t.Context(), on.function("cacher"), http.MethodPost, "/publish/orders/", message)
+		if err != nil {
+			last = err.Error()
+			return false
+		}
+		last = fmt.Sprintf("%d %s", res.Status, res.Body)
+		return res.Status == 204
+	}, 60*time.Second, 250*time.Millisecond, "the publish was refused: %s", &lastSaid{&last})
+}
+
+func TestAPublishedMessageReachesItsSubscriberAcrossTheSwarm(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
 	cloud := deployFleet(t, 2, "with/stream/distributed", "orders.example.com", cacherWASM(t))
-	publishing, listening := cloud[0], cloud[1]
+	publishing, reading := cloud[0], cloud[1]
 
-	// The listener is the other node, resolving the handle itself, which also proves the
-	// compiled project crossed.
 	var stream invoke.Grant
 	require.Eventually(t, func() bool {
-		spec, err := listening.node.Worker().Resolve(t.Context(), listening.function("cacher"))
+		spec, err := reading.node.Worker().Resolve(t.Context(), reading.function("cacher"))
 		if err != nil {
 			return false
 		}
@@ -45,50 +73,73 @@ func TestAGuestsMessageCrossesTheSwarm(t *testing.T) {
 		}
 		return stream.Handle != ""
 	}, 60*time.Second, 500*time.Millisecond, "the project never reached the second node")
-
-	require.Equal(t, "orders", stream.Label)
-	// Asked of the compiled project rather than restated (see idOf).
-	require.Equal(t, listening.project+"/prod/"+listening.idOf(t, "stream", "orders"), stream.Handle,
+	require.Equal(t, reading.project+"/prod/"+reading.idOf(t, "stream", "orders"), stream.Handle,
 		"the resolved id, not the label")
-	require.Empty(t, stream.Refused,
-		"the stream named the swarm's own engine, which is the one this cloud drives")
+	require.True(t, stream.Allows("publish"))
+	require.True(t, stream.Allows("subscribe"))
+	require.Equal(t, "distributed", stream.Settings["engine"])
 
-	// Both verbs survived the compile; nothing invokes on `subscribe` yet.
-	require.True(t, stream.Allows("publish"), "the verb the guest calls")
-	require.True(t, stream.Allows("subscribe"),
-		"the verb the platform would deliver on, declared and carried but never dispatched")
+	// Published on one node, read back on the other: the publishing node invoked the
+	// subscriber through placement and it wrote the replicated cache.
+	publish(t, publishing, "order:1")
+	delivered(t, reading, "order:1")
+	publish(t, publishing, "order:2")
+	delivered(t, reading, "order:2")
+}
 
-	topic, err := listening.node.PubSub().Join(listening.node.StreamTopic(stream.Handle))
+func TestANatsStreamIsDeliveredByItsConsumer(t *testing.T) {
+	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
+
+	opts := natsserver.Options{Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(),
+		Username: "tau", Password: "s3cret", NoLog: true, NoSigs: true}
+	server, err := natsserver.NewServer(&opts)
 	require.NoError(t, err)
-	defer topic.Close()
+	server.Start()
+	t.Cleanup(server.Shutdown)
+	require.True(t, server.ReadyForConnections(10*time.Second))
 
-	sub, err := topic.Subscribe()
-	require.NoError(t, err)
-	defer sub.Cancel()
+	streamOnLog(t, "with/stream/nats", "127.0.0.1:4222", strings.TrimPrefix(server.ClientURL(), "nats://"))
+}
 
-	received := make(chan []byte, 1)
-	go func() {
-		msg, err := sub.Next(t.Context())
-		if err == nil {
-			received <- msg.Data
-		}
-	}()
+// streamOnLog deploys a project whose stream lives on a log the test started at
+// address, sets its credential, and publishes until the subscriber has a message:
+// a consumer starts at the end of the log, so the first may precede it.
+func streamOnLog(t *testing.T, name, declared, address string) {
+	t.Helper()
+	r := deployServing(t, streamPointedAt(t, name, declared, address), "orders.example.com", cacherWASM(t), nil,
+		instance.Register, instance.Worker, instance.Discovery, instance.Gateway, instance.Database, instance.Primitives,
+		instance.Secrets, storageService.Descriptor.Name)
 
-	// A gossipsub mesh needs both sides joined before a publish reaches anybody, so the
-	// publish is retried. No raft here; 60s is headroom for reporting a mesh that never
-	// formed.
+	creds := map[string]string{"with/stream/nats": "natscreds", "with/stream/kafka": "kafkacreds"}[name]
+	require.NoError(t, r.node.Vault().Set(t.Context(), r.project, "prod", r.idOf(t, "secret", creds), []byte("tau:s3cret")))
+
+	var last string
 	require.Eventually(t, func() bool {
-		res, err := publishing.onCarrying(t.Context(), publishing.function("cacher"),
-			http.MethodPost, "/publish/orders/", "order:1")
-		require.NoError(t, err)
-		require.Equal(t, 204, res.Status, string(res.Body))
-
-		select {
-		case got := <-received:
-			require.Equal(t, "order:1", string(got))
-			return true
-		default:
+		publish(t, r, "order:1")
+		res, err := r.on(t.Context(), r.function("cacher"), http.MethodPost, "/get/sessions/delivered")
+		if err != nil {
+			last = err.Error()
 			return false
 		}
-	}, 60*time.Second, 500*time.Millisecond, "a guest's message never crossed the swarm")
+		last = fmt.Sprintf("%d %s", res.Status, res.Body)
+		return res.Status == 200 && string(res.Body) == "order:1"
+	}, 2*time.Minute, time.Second, "nothing the guest published reached it as a subscriber: %s", &lastSaid{&last})
+
+	publish(t, r, "order:2")
+	delivered(t, r, "order:2")
+}
+
+// streamPointedAt copies the named project with its stream's host replaced.
+func streamPointedAt(t *testing.T, name, declared, address string) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "project")
+	require.NoError(t, os.CopyFS(dir, os.DirFS(projectDir(name))))
+
+	file := filepath.Join(dir, "stream", "orders.yaml")
+	yaml, err := os.ReadFile(file)
+	require.NoError(t, err)
+	rewritten := strings.Replace(string(yaml), "host: "+declared, "host: "+address, 1)
+	require.NotEqual(t, string(yaml), rewritten, "the project names no host to point at the server")
+	require.NoError(t, os.WriteFile(file, []byte(rewritten), 0o644))
+	return dir
 }

@@ -2271,6 +2271,7 @@ type Stream struct {
 	Id          string
 	Name        string
 	Regions     Regions
+	Sasl        string // authored at kafka/sasl
 	Tags        []string
 	Tls         string // authored at {kafka|nats}/tls
 }
@@ -2286,6 +2287,7 @@ func ReadStream(r Resource) Stream {
 	out.Id = r.String("id")
 	out.Name = r.String("name")
 	out.Regions = ReadRegions(r)
+	out.Sasl = r.String("sasl")
 	out.Tags = r.Strings("tags")
 	out.Tls = r.String("tls")
 	return out
@@ -2301,11 +2303,15 @@ const (
 	StreamKeyId             = "id"
 	StreamKeyName           = "name"
 	StreamKeyRegions        = "regions"
+	StreamKeySasl           = "sasl"
 	StreamKeyTags           = "tags"
 	StreamKeyTls            = "tls"
 	StreamEngineDistributed = "distributed"
 	StreamEngineKafka       = "kafka"
 	StreamEngineNats        = "nats"
+	StreamSaslScramSha512   = "scram-sha-512"
+	StreamSaslScramSha256   = "scram-sha-256"
+	StreamSaslPlain         = "plain"
 	StreamTlsVerifyFull     = "verify-full"
 	StreamTlsRequire        = "require"
 	StreamTlsDisable        = "disable"

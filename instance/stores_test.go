@@ -102,6 +102,6 @@ func TestADatabaseStoreIsOpenedAndReleasedByName(t *testing.T) {
 
 func TestADatabaseCredentialNeedsAVault(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register}})
-	_, err := databaseSecrets{node: n}.Secret(t.Context(), "shop", "prod", "dbpass")
+	_, err := vaultSecrets{node: n}.Secret(t.Context(), "shop", "prod", "dbpass")
 	require.ErrorIs(t, err, secretsService.ErrNoSecrets)
 }

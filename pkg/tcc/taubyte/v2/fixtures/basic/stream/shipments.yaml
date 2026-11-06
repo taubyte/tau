@@ -5,3 +5,4 @@ kafka:
     credentials:
         name: stripe
     tls: verify-full
+    sasl: scram-sha-256

@@ -1,0 +1,6 @@
+id: Qma5HTzmmYBCcLshFSzS8JGzTHVAfEQEJ2JEnqejwwvCQ4
+name: streamnats
+description: one function on both ends of a stream on nats - it publishes to the topic, and the consumer the platform runs delivers what it published back to it as a subscriber
+environments:
+    prod:
+        branches: ["*"]

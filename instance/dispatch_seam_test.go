@@ -96,14 +96,8 @@ func TestAStepWithNoBackingCannotSendOn(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoPrimitives)
 }
 
-func TestAStreamBackingIsOneOfTwoKinds(t *testing.T) {
+func TestABusBackingIsClosedWithTheNode(t *testing.T) {
 	n := &Instance{Node: mockPeer(t)}
-	_, err := n.streamBacking("queue")
-	require.ErrorContains(t, err, `"queue"`)
-	require.Empty(t, n.closers)
-
-	s, err := n.streamBacking("bus")
-	require.NoError(t, err)
-	require.NotNil(t, s)
+	require.NotNil(t, n.busStreams())
 	require.Len(t, n.closers, 1)
 }

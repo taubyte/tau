@@ -1,15 +1,14 @@
 package stream_test
 
 import (
-	"context"
 	"errors"
 	"testing"
-	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/pkg/invoke"
 	gateway "github.com/taubyte/tau/services/gateway"
 	"github.com/taubyte/tau/services/worker/stream"
 )
@@ -61,133 +60,92 @@ func (j *joiner) Join(topic string, opts ...pubsub.TopicOpt) (*pubsub.Topic, err
 	return joined, nil
 }
 
-// publishing is a stream backing over a fresh router.
-func publishing(t *testing.T, kind string) (*stream.Streams, *joiner) {
+// publishing is a bus backing over a fresh router.
+func publishing(t *testing.T) (*stream.Bus, *joiner) {
 	t.Helper()
 
 	gossip := &joiner{ps: gossiping(t)}
-	s, err := stream.New(gossip, kind, "cloud")
-	require.NoError(t, err)
+	s := stream.NewBus(gossip, "cloud")
 	t.Cleanup(func() { s.Close() })
 	return s, gossip
 }
 
-func TestTheAdapterNeedsToKnowWhichKindItServes(t *testing.T) {
-	gossip := &joiner{ps: gossiping(t)}
-
-	for _, kind := range []string{"", "queue", "streams"} {
-		_, err := stream.New(gossip, kind, "cloud")
-		require.ErrorContains(t, err, "not a kind", "kind %q", kind)
-	}
-
-	for _, kind := range []string{stream.Stream, stream.Bus} {
-		s, err := stream.New(gossip, kind, "cloud")
-		require.NoError(t, err)
-		require.NotNil(t, s)
-	}
-}
+// on is the grant a guest publishes under; the bus reads only its handle.
+func on(handle string) invoke.Grant { return invoke.Grant{Kind: "bus", Handle: handle} }
 
 func TestNoCloudIsAllowed(t *testing.T) {
 	gossip := &joiner{ps: gossiping(t)}
 
-	bare, err := stream.New(gossip, stream.Stream, "")
-	require.NoError(t, err)
+	bare := stream.NewBus(gossip, "")
 	t.Cleanup(func() { bare.Close() })
 
-	require.NoError(t, bare.Publish(t.Context(), "shop/prod/QmOrders", []byte("x")))
-	require.Equal(t, []string{"/tau/stream//shop/prod/QmOrders"}, gossip.joined)
+	require.NoError(t, bare.Publish(t.Context(), on("shop/prod/QmOrders"), []byte("x")))
+	require.Equal(t, []string{"/tau/bus//shop/prod/QmOrders"}, gossip.joined)
 }
 
 func TestTheTopicCarriesTheProjectAndDeployment(t *testing.T) {
-	mine := stream.Topic(stream.Stream, "cloud", "shop/prod/QmOrders")
-	theirs := stream.Topic(stream.Stream, "cloud", "other/prod/QmOrders")
-	staging := stream.Topic(stream.Stream, "cloud", "shop/staging/QmOrders")
+	mine := stream.Topic("cloud", "shop/prod/QmOrders")
+	theirs := stream.Topic("cloud", "other/prod/QmOrders")
+	staging := stream.Topic("cloud", "shop/staging/QmOrders")
 
 	require.NotEqual(t, mine, theirs, "two projects")
 	require.NotEqual(t, mine, staging, "two deployments of one project")
-	require.Equal(t, "/tau/stream/cloud/shop/prod/QmOrders", mine)
+	require.Equal(t, "/tau/bus/cloud/shop/prod/QmOrders", mine)
 }
 
 func TestTheTopicCarriesTheCloud(t *testing.T) {
 	require.NotEqual(t,
-		stream.Topic(stream.Stream, "one", "shop/prod/QmOrders"),
-		stream.Topic(stream.Stream, "two", "shop/prod/QmOrders"))
+		stream.Topic("one", "shop/prod/QmOrders"),
+		stream.Topic("two", "shop/prod/QmOrders"))
 }
 
 func TestTheTopicIsNotTheLabel(t *testing.T) {
-	require.NotContains(t, stream.Topic(stream.Stream, "cloud", "shop/prod/QmOrders"), "orders")
-}
-
-func TestTheKindIsInTheTopic(t *testing.T) {
-	require.NotEqual(t,
-		stream.Topic(stream.Stream, "cloud", "shop/prod/QmX"),
-		stream.Topic(stream.Bus, "cloud", "shop/prod/QmX"))
+	require.NotContains(t, stream.Topic("cloud", "shop/prod/QmOrders"), "orders")
 }
 
 func TestATopicIsJoinedOncePerHandle(t *testing.T) {
-	s, gossip := publishing(t, stream.Stream)
+	s, gossip := publishing(t)
 	ctx := t.Context()
 
-	require.NoError(t, s.Publish(ctx, "shop/prod/QmOrders", []byte("one")))
-	require.NoError(t, s.Publish(ctx, "shop/prod/QmOrders", []byte("two")))
-	require.Equal(t, []string{"/tau/stream/cloud/shop/prod/QmOrders"}, gossip.joined)
+	require.NoError(t, s.Publish(ctx, on("shop/prod/QmOrders"), []byte("one")))
+	require.NoError(t, s.Publish(ctx, on("shop/prod/QmOrders"), []byte("two")))
+	require.Equal(t, []string{"/tau/bus/cloud/shop/prod/QmOrders"}, gossip.joined)
 
-	require.NoError(t, s.Publish(ctx, "shop/prod/QmOther", []byte("three")))
+	require.NoError(t, s.Publish(ctx, on("shop/prod/QmOther"), []byte("three")))
 	require.Len(t, gossip.joined, 2, "a second handle is a second topic")
 }
 
-func TestAStreamAndABusJoinDifferentTopicsForOneHandle(t *testing.T) {
-	gossip := &joiner{ps: gossiping(t)}
-
-	publisher, err := stream.New(gossip, stream.Stream, "cloud")
-	require.NoError(t, err)
-	t.Cleanup(func() { publisher.Close() })
-
-	bus, err := stream.New(gossip, stream.Bus, "cloud")
-	require.NoError(t, err)
-	t.Cleanup(func() { bus.Close() })
-
-	require.NoError(t, publisher.Publish(t.Context(), "shop/prod/QmX", []byte("a")))
-	require.NoError(t, bus.Publish(t.Context(), "shop/prod/QmX", []byte("b")))
-
-	require.Equal(t, []string{
-		"/tau/stream/cloud/shop/prod/QmX",
-		"/tau/bus/cloud/shop/prod/QmX",
-	}, gossip.joined, "one handle, two topics")
-}
-
 func TestPublishingNeedsPubSub(t *testing.T) {
-	bare, err := stream.New(nil, stream.Stream, "cloud")
-	require.NoError(t, err, "a node with no gossip still composes")
+	bare := stream.NewBus(nil, "cloud")
 
-	err = bare.Publish(t.Context(), "shop/prod/QmOrders", []byte("x"))
+	err := bare.Publish(t.Context(), on("shop/prod/QmOrders"), []byte("x"))
 	require.ErrorIs(t, err, stream.ErrNoPubSub)
 }
 
 func TestAJoinThatFailsCarriesTheHandle(t *testing.T) {
-	s, gossip := publishing(t, stream.Stream)
+	s, gossip := publishing(t)
 	gossip.err = errors.New("the router is shutting down")
 
-	err := s.Publish(t.Context(), "shop/prod/QmOrders", []byte("x"))
+	err := s.Publish(t.Context(), on("shop/prod/QmOrders"), []byte("x"))
 	require.ErrorContains(t, err, "shutting down")
 	require.ErrorContains(t, err, "shop/prod/QmOrders")
 }
 
 func TestClosingReleasesTheTopics(t *testing.T) {
-	s, gossip := publishing(t, stream.Stream)
+	s, gossip := publishing(t)
 
-	require.NoError(t, s.Publish(t.Context(), "shop/prod/QmOrders", []byte("x")))
+	require.NoError(t, s.Publish(t.Context(), on("shop/prod/QmOrders"), []byte("x")))
 	require.NoError(t, s.Close())
 	require.NoError(t, s.Close(), "Close is idempotent")
 
-	require.NoError(t, s.Publish(t.Context(), "shop/prod/QmOrders", []byte("x")))
+	require.NoError(t, s.Publish(t.Context(), on("shop/prod/QmOrders"), []byte("x")))
 	require.Len(t, gossip.joined, 2)
 }
 
-func attaching(t *testing.T) (*stream.Streams, *stream.Buses, *joiner) {
+func attaching(t *testing.T) (*stream.Bus, *stream.Buses, *joiner) {
 	t.Helper()
 
-	backing, gossip := publishing(t, stream.Bus)
+	backing, gossip := publishing(t)
 	buses, err := stream.NewBuses(backing)
 	require.NoError(t, err)
 	return backing, buses, gossip
@@ -206,7 +164,7 @@ func TestAnAttachmentGetsWhatTheTierPublishes(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { at.Close() })
 
-	require.NoError(t, tier.Publish(ctx, "shop/prod/QmChat", []byte("hello")))
+	require.NoError(t, tier.Publish(ctx, on("shop/prod/QmChat"), []byte("hello")))
 
 	message, err := at.Next(ctx)
 	require.NoError(t, err)
@@ -244,7 +202,7 @@ func TestAttachingDoesNotRejoinTheTopic(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(func() { at.Close() })
 	}
-	require.NoError(t, tier.Publish(ctx, "shop/prod/QmChat", []byte("x")))
+	require.NoError(t, tier.Publish(ctx, on("shop/prod/QmChat"), []byte("x")))
 
 	require.Len(t, gossip.joined, 1, "three attachments and a publish, one joined topic")
 }
@@ -260,7 +218,7 @@ func TestClosingOneAttachmentLeavesTheOthers(t *testing.T) {
 	t.Cleanup(func() { staying.Close() })
 
 	require.NoError(t, leaving.Close())
-	require.NoError(t, tier.Publish(ctx, "shop/prod/QmChat", []byte("still here")))
+	require.NoError(t, tier.Publish(ctx, on("shop/prod/QmChat"), []byte("still here")))
 
 	message, err := staying.Next(ctx)
 	require.NoError(t, err)
@@ -268,30 +226,8 @@ func TestClosingOneAttachmentLeavesTheOthers(t *testing.T) {
 	require.Len(t, gossip.joined, 1, "and the topic was not left")
 }
 
-func TestAnAttachmentDoesNotSeeAStream(t *testing.T) {
-	_, buses, gossip := attaching(t)
-	ctx := t.Context()
-
-	at, err := buses.Attach(ctx, "shop/prod/QmX")
-	require.NoError(t, err)
-	t.Cleanup(func() { at.Close() })
-
-	// The same router, the same handle, the other kind.
-	published, err := stream.New(gossip, stream.Stream, "cloud")
-	require.NoError(t, err)
-	t.Cleanup(func() { published.Close() })
-	require.NoError(t, published.Publish(ctx, "shop/prod/QmX", []byte("on the stream")))
-
-	// Nothing arrives, so the assertion is a deadline that has to expire.
-	short, stop := context.WithTimeout(ctx, 250*time.Millisecond)
-	defer stop()
-	_, err = at.Next(short)
-	require.ErrorIs(t, err, context.DeadlineExceeded)
-}
-
 func TestAttachingNeedsPubSub(t *testing.T) {
-	bare, err := stream.New(nil, stream.Bus, "cloud")
-	require.NoError(t, err)
+	bare := stream.NewBus(nil, "cloud")
 
 	buses, err := stream.NewBuses(bare)
 	require.NoError(t, err)
@@ -302,8 +238,7 @@ func TestAttachingNeedsPubSub(t *testing.T) {
 
 func TestASubscriptionThatFailsIsReported(t *testing.T) {
 	gossip := &joiner{ps: gossiping(t), closed: true}
-	backing, err := stream.New(gossip, stream.Bus, "cloud")
-	require.NoError(t, err)
+	backing := stream.NewBus(gossip, "cloud")
 
 	buses, err := stream.NewBuses(backing)
 	require.NoError(t, err)

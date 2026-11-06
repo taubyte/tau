@@ -98,11 +98,27 @@ func TestAProjectWithNoEnvironmentsIsRefused(t *testing.T) {
 }
 
 func TestAFunctionWithoutATierItRunsOnIsRefused(t *testing.T) {
-	type testCase struct{ project, id, reason string }
-	for _, tc := range []testCase{
+	refusedAtCompile(t, []refusal{
 		{"refused/function/noruntime", "QmckTZTPqB6a5thN1vZNAjoXUBdEUXWL3vA1gFxcx3xBk9", "required attribute 'type'"},
 		{"refused/function/unknownruntime", "QmTSpD9SVJriUVp9EHdp1okVF71Ua9FvmeCYXwFABkQiD7", `invalid value "nodejs"; valid values here: wasm, warp, oci, assets`},
-	} {
+	})
+}
+
+func TestAStreamDeclaredWronglyIsRefused(t *testing.T) {
+	refusedAtCompile(t, []refusal{
+		{"refused/stream/local", "QmXrKNgp7fzmMJjcfxqMVpjXaMvgFYwayNrRNVJbDvCdW3", "unknown key 'local'"},
+		{"refused/stream/sasl", "QmR9yqy2F319XxtpgNdx6191DcoPEQb2w2iQ3ZNj6EGgrh", `invalid value "gssapi"; valid values here: scram-sha-512, scram-sha-256, plain`},
+		{"refused/stream/nocredentials", "QmZ8SdAvGi93BYwtUz4WewTzGrpzFGUWg5yDwevBDv3ghf", "required attribute 'kafka/credentials/name'"},
+	})
+}
+
+// refusal is a project that must not compile, and why.
+type refusal struct{ project, id, reason string }
+
+// refusedAtCompile compiles each project, then runs it through the build as a push
+// would, and holds both to refusing it with the reason and publishing nothing.
+func refusedAtCompile(t *testing.T, refusals []refusal) {
+	for _, tc := range refusals {
 		t.Run(tc.project, func(t *testing.T) {
 			dir := filepath.Join("projects", tc.project)
 			c, err := schema.New(schema.WithLocal(dir), schema.WithBranch("main"))

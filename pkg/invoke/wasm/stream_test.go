@@ -1,6 +1,7 @@
 package wasm_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"sync"
@@ -24,13 +25,13 @@ type publisher struct {
 
 func newPublisher() *publisher { return &publisher{sent: map[string][][]byte{}} }
 
-func (p *publisher) Publish(_ context.Context, handle string, message []byte) error {
+func (p *publisher) Publish(_ context.Context, grant invoke.Grant, message []byte) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.err != nil {
 		return p.err
 	}
-	p.sent[handle] = append(p.sent[handle], message)
+	p.sent[grant.Handle] = append(p.sent[grant.Handle], bytes.Clone(message))
 	return nil
 }
 

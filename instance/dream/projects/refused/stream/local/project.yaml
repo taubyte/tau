@@ -1,0 +1,6 @@
+id: QmXrKNgp7fzmMJjcfxqMVpjXaMvgFYwayNrRNVJbDvCdW3
+name: streamlocal
+description: a stream asking for a node-local scope, which no stream has - one is a topic across the swarm
+environments:
+    prod:
+        branches: ["*"]

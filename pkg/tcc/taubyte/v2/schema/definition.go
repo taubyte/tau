@@ -1362,25 +1362,30 @@ var V2Resources = []*Node{
 	//	                                     credentials: { name: k }
 	//
 	// `kafka` and `nats` (JetStream) are logs with ordering, consumer groups and
-	// replay, and require host and credential. `distributed` is the swarm's gossipsub
-	// with none of that; the key makes moving a topic onto a log an engine block, not
-	// a rewrite. A stream is its name: one resource, one topic, no pattern.
+	// replay, and require host and credential. `distributed` is the swarm itself with
+	// none of that: the node a message is published on invokes each subscriber once,
+	// and keeps nothing. The key makes moving a topic onto a log an engine block, not
+	// a rewrite. A stream is its name: one resource, one topic, no pattern; on a log
+	// the name is the topic's (Kafka) or the stream's and subject's (JetStream).
 	DefineGroup("stream",
 		resource(
 			commonAttributes(append([]*Attribute{
 				String("engine", Path(Either(streamEngines...)), Captures(), InSection("engine"),
-					Doc("Engine", "Which engine holds the topic: distributed is the swarm's own gossipsub; kafka and nats are external clusters reached over the network.")),
+					Doc("Engine", "Which engine holds the topic: distributed is the swarm itself, delivering each message once to every subscriber and keeping nothing; kafka and nats are external clusters reached over the network, delivering at least once.")),
+				// Absent is the strongest, as with tls: sending the password has to be written.
+				String("sasl", Path("kafka", "sasl"), InSet("scram-sha-512", "scram-sha-256", "plain"), PerEnv(), InSection("engine"), ShowWhen("engine", "kafka"),
+					Doc("SASL", "How the credentials are presented to the cluster. Omitted means scram-sha-512. The scram mechanisms prove the password without sending it; plain sends it, so it is only as private as the connection's tls.")),
 			}, externalEngineAttributes(nil, nil, externalStreamEngines, Key("engine"), "engine", ShowWhen("engine", externalStreamEngines...))...)...),
-			GroupDoc("A pubsub stream: what is published to it reaches every subscriber. On the swarm's own gossipsub, or on an external Kafka or NATS cluster."), Icon("message"), Category("trigger"),
+			GroupDoc("A pubsub stream: what is published to it reaches every subscriber. On the swarm itself, or on an external Kafka or NATS cluster."), Icon("message"), Category("trigger"),
 			secIdentity, secAccess,
 			Section("engine", "Engine", "Which engine holds the topic, and its settings."),
 			Ops(DeliveredOp("subscribe"), WriteOp("publish")), // never collapse these into "write"
 			Resource("stream", "Stream", "Stream", "stream"),
 		)),
 
-	// An n:n bus that can never rewind. On tau's engine it delivers like a
-	// `distributed` stream; the difference is that a stream names an engine and can
-	// move onto a log, a bus cannot. No engine axis, since a bus has nothing to
+	// An n:n bus that can never rewind, delivered over the swarm's gossipsub to
+	// whatever is attached; a stream is delivered to the workloads that subscribe,
+	// names an engine and can move onto a log, and a bus cannot. No engine axis, since a bus has nothing to
 	// choose. Writing `host:` gives it a websocket at that name; without one it is
 	// reachable only inside the project. A browser names the instance, so
 	// `instances:` is where the project can say no. Its verbs are `stream`'s.

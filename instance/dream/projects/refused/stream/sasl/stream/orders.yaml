@@ -1,0 +1,6 @@
+id: QmQEJ4XnSZVpC7UsqoUQ3CPHwkiedS2grTU8AYJUdFWzkp
+kafka:
+    host: broker.example.com:9092
+    sasl: gssapi
+    credentials:
+        name: kafkacreds
