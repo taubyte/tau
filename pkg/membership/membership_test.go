@@ -1,6 +1,8 @@
 package membership
 
 import (
+	"fmt"
+	"math/rand"
 	"reflect"
 	"sort"
 	"testing"
@@ -336,4 +338,39 @@ func TestABeatCarriesNoClockOfItsOwn(t *testing.T) {
 		require.NotEqual(t, reflect.TypeOf(time.Time{}), tp.Field(i).Type)
 		require.NotEqual(t, reflect.TypeOf(time.Duration(0)), tp.Field(i).Type)
 	}
+}
+
+// The kept placement is the computed one at every instant: across beats, evictions,
+// declines and the stability thresholds that time alone crosses.
+func TestTheKeptPlacementIsAlwaysTheComputedOne(t *testing.T) {
+	c := &clock{t: time.Unix(1_700_000_000, 0)}
+	s := newSet(t, c)
+	rng := rand.New(rand.NewSource(11))
+	steps := []time.Duration{time.Second, 4 * time.Second, 5 * time.Second, 30 * time.Second, 60 * time.Second, 61 * time.Second}
+
+	for range 5000 {
+		switch peer := fmt.Sprintf("p%d", rng.Intn(6)); rng.Intn(10) {
+		case 0, 1, 2:
+			require.NoError(t, s.Observe(Beat{Peer: peer, Incarnation: 1, Accepts: rng.Intn(5) != 0}))
+		case 3:
+			s.Evict(peer)
+		default:
+			c.advance(steps[rng.Intn(len(steps))])
+		}
+		require.Equal(t, forPlacement(s.Stable()), s.StablePlacement(), "at %s", c.t)
+	}
+}
+
+func TestAKeptPlacementIsTheCallersToChange(t *testing.T) {
+	c := &clock{t: time.Unix(1_700_000_000, 0)}
+	s := newSet(t, c)
+	for range 16 {
+		require.NoError(t, s.Observe(Beat{Peer: "a", Incarnation: 1, Accepts: true}))
+		c.advance(4 * time.Second)
+	}
+
+	first := s.StablePlacement()
+	require.Len(t, first, 1)
+	first[0].ID = "mutated"
+	require.Equal(t, "a", s.StablePlacement()[0].ID, "each call is handed its own copy")
 }

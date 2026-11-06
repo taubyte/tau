@@ -26,8 +26,10 @@ package membership
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/taubyte/tau/pkg/placement"
@@ -102,6 +104,16 @@ type Set struct {
 
 	mu    sync.Mutex
 	peers map[string]*state
+
+	// placed is StablePlacement's answer while it holds, read without the lock:
+	// every write clears it, and it is good until the first instant a peer's
+	// stability can change with no beat. A database call places on every request.
+	placed atomic.Pointer[placed]
+}
+
+type placed struct {
+	members []placement.Member
+	until   time.Time
 }
 
 type state struct {
@@ -156,6 +168,7 @@ func (s *Set) Observe(b Beat) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.advance(now)
+	s.placed.Store(nil)
 
 	st, known := s.peers[b.Peer]
 	if !known {
@@ -191,6 +204,7 @@ func (s *Set) Observe(b Beat) error {
 func (s *Set) Evict(peer string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.placed.Store(nil)
 	delete(s.peers, peer)
 }
 
@@ -228,8 +242,48 @@ func (s *Set) Get(peer string) (Member, bool) {
 // mapping slightly differently — a caller that dropped it would be scoring a
 // declining node into a placement set, which is the one direction the decline
 // mechanism must never fail in.
-func (s *Set) LivePlacement() []placement.Member   { return forPlacement(s.Live()) }
-func (s *Set) StablePlacement() []placement.Member { return forPlacement(s.Stable()) }
+func (s *Set) LivePlacement() []placement.Member { return forPlacement(s.Live()) }
+
+// StablePlacement is Stable in placement's shape. Every database call asks for it.
+func (s *Set) StablePlacement() []placement.Member {
+	now := s.opts.Now()
+	if p := s.placed.Load(); p != nil && now.Before(p.until) {
+		return slices.Clone(p.members)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.advance(now)
+	members := forPlacement(s.collect(now, func(m Member) bool { return m.Stable }))
+	if until, ok := s.settles(now); ok {
+		s.placed.Store(&placed{members: members, until: until})
+	}
+	return slices.Clone(members)
+}
+
+// settles is the first instant after now at which a peer's stability can change with
+// no beat: a live peer turning stable, or a stable one, silent past Liveness, turning
+// unstable. ok is false when nothing can, an empty set. It is called with mu held,
+// after advance(now).
+func (s *Set) settles(now time.Time) (until time.Time, ok bool) {
+	for _, st := range s.peers {
+		var at time.Time
+		switch {
+		case live(st, now, s.opts.Liveness) && !st.stable:
+			at = st.liveSince.Add(s.opts.Stabilize)
+		case live(st, now, s.opts.Liveness):
+			at = st.lastBeat.Add(s.opts.Liveness).Add(s.opts.Stabilize)
+		case st.stable:
+			at = st.absentSince.Add(s.opts.Stabilize)
+		default:
+			continue
+		}
+		if !ok || at.Before(until) {
+			until, ok = at, true
+		}
+	}
+	return until, ok
+}
 
 func forPlacement(ms []Member) []placement.Member {
 	out := make([]placement.Member, 0, len(ms))
@@ -244,7 +298,11 @@ func (s *Set) snapshot(keep func(Member) bool) []Member {
 	defer s.mu.Unlock()
 	now := s.opts.Now()
 	s.advance(now)
+	return s.collect(now, keep)
+}
 
+// collect is every peer keep holds, ordered by peer id. It is called with mu held.
+func (s *Set) collect(now time.Time, keep func(Member) bool) []Member {
 	out := make([]Member, 0, len(s.peers))
 	for peer, st := range s.peers {
 		m := member(peer, st, now, s.opts.Liveness)
