@@ -174,7 +174,8 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	// A deferred emission accounts every exit, including ones added later.
-	billed := &crossing{w: w, started: s.now()}
+	x := &exchange{crossing: crossing{w: w, started: s.now()}}
+	billed := &x.crossing
 	w = billed
 	defer func() { s.emit(ctx, billed.accounted(s.now())) }()
 
@@ -262,14 +263,15 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, s.cfg.MaxBody))
+	body, err := readBody(w, r, s.cfg.MaxBody)
 	billed.in = int64(len(body))
 	if err != nil {
 		refuse(w, http.StatusRequestEntityTooLarge, "the request body is too large")
 		return
 	}
 
-	req := &invoke.Request{
+	req := &x.req
+	*req = invoke.Request{
 		Method:  r.Method,
 		Path:    m.stripped(r.URL.Path),
 		Headers: r.Header,
@@ -567,6 +569,30 @@ func readCandidates(p *specs.Project, lookup string) []candidate {
 const gatewayKind = specs.KindGateway
 
 // ownerOf says whose name this is, remembering the answer for HostTTL.
+// exchange is one request's metering and, once it reaches a workload, what it hands
+// one: a single allocation for both.
+type exchange struct {
+	crossing crossing
+	req      invoke.Request
+}
+
+// readBody reads r's body whole, at most limit bytes. A request declaring none reads
+// nothing, one declaring its length is read into exactly that, and one declaring
+// more than limit is refused unread. Only a body of unknown length grows a buffer.
+func readBody(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, error) {
+	switch {
+	case r.Body == nil || r.Body == http.NoBody || r.ContentLength == 0:
+		return nil, nil
+	case r.ContentLength > limit:
+		return nil, &http.MaxBytesError{Limit: limit}
+	case r.ContentLength > 0:
+		body := make([]byte, r.ContentLength)
+		n, err := io.ReadFull(http.MaxBytesReader(w, r.Body, limit), body)
+		return body[:n], err
+	}
+	return io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
+}
+
 func (s *Service) ownerOf(ctx context.Context, name string) (string, string, error) {
 	s.mu.Lock()
 	entry, ok := s.owner[name]

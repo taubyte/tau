@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -546,4 +549,36 @@ func TestAWorkloadThatCannotServeIsLoggedWithItsReason(t *testing.T) {
 
 	_, err := New(Config{}, WithLogger(nil))
 	require.Error(t, err)
+}
+
+// undeclared is a body whose length the request does not state, as a chunked
+// upload arrives.
+type undeclared struct{ io.Reader }
+
+func (undeclared) Close() error { return nil }
+
+func TestABodyOfUnknownLengthIsStillBoundedAndReadWhole(t *testing.T) {
+	h := newHarness(t, Config{MaxBody: 8})
+	send := func(body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodPost, "http://ask.example.com/", nil)
+		r.Body, r.ContentLength = undeclared{strings.NewReader(body)}, -1
+		w := httptest.NewRecorder()
+		h.Gateway.Handler().ServeHTTP(w, r)
+		return w
+	}
+
+	require.Equal(t, http.StatusRequestEntityTooLarge, send("more than eight bytes").Code)
+	require.Empty(t, h.Workers.seen())
+
+	require.Equal(t, http.StatusOK, send("eight!!!").Code)
+	require.Equal(t, []byte("eight!!!"), h.Workers.seen()[0].req.Body)
+}
+
+func TestARequestWithNoBodyHandsOnNone(t *testing.T) {
+	h := newHarness(t, Config{})
+	require.Equal(t, http.StatusOK, h.do(t, http.MethodPost, "http://ask.example.com/", "").Code)
+	require.Empty(t, h.Workers.seen()[0].req.Body)
+
+	require.Equal(t, http.StatusOK, h.do(t, http.MethodPost, "http://ask.example.com/", "exactly this").Code)
+	require.Equal(t, []byte("exactly this"), h.Workers.seen()[1].req.Body, "a declared length is read whole")
 }
