@@ -280,3 +280,20 @@ func TestAReaderWithNoRegisterAnywhereIsRefusedByName(t *testing.T) {
 	_, _, err := v.ResolveHost(t.Context(), "shop.example.com")
 	require.ErrorIs(t, err, service.ErrNoneRuns)
 }
+
+func TestAnAnswerKeptBeforeAnySessionIsReadAgainOnceOneIsLive(t *testing.T) {
+	registers, services, reader := connected(t, 1)
+	v := viewsOn(reader, ids(registers), defaultWatcherLimits, watchedOnly)
+	t.Cleanup(func() { v.Close() })
+
+	// The first read opens the watcher and does not wait for it.
+	_, _, err := v.ResolveHost(t.Context(), "early.example.com")
+	require.ErrorIs(t, err, pkgregister.ErrNoHost)
+	live(t, v, 1)
+
+	claim(t, services[0], "shop", 1, "early.example.com")
+	require.Eventually(t, func() bool {
+		project, _, err := v.ResolveHost(t.Context(), "early.example.com")
+		return err == nil && project == "shop"
+	}, 5*time.Second, 10*time.Millisecond, "an answer kept unwatched for an hour is read again, and watched, once a session is live")
+}

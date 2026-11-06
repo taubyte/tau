@@ -74,6 +74,9 @@ type watcher struct {
 
 	ids atomic.Uint64
 	rr  atomic.Uint64
+	// sessions counts sessions that went live: an answer kept unwatched is kept only
+	// until one does, since then it can be watched.
+	sessions atomic.Uint64
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -224,6 +227,7 @@ func (w *watcher) open(id libp2ppeer.ID) {
 		return
 	}
 	w.live = append(w.live, s)
+	w.sessions.Add(1)
 	w.mu.Unlock()
 
 	go s.forgets(w.limits.forget)

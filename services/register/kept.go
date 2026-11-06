@@ -70,18 +70,23 @@ type kept[R read[V], V any] struct {
 // answer is one kept answer. Everything but changed is written before done closes
 // and read after.
 type answer[R read[V], V any] struct {
-	r     R
-	in    *kept[R, V]
-	done  chan struct{}
+	r    R
+	in   *kept[R, V]
+	done chan struct{}
+	// ready says done is closed without receiving from it: a receive takes the
+	// channel's lock even once closed, and every request reads a kept answer.
+	ready atomic.Bool
 	value V
 	err   error
 	at    time.Time
 	// ok is an answer, found or absent, rather than a failure to look.
 	ok bool
-	// s is the session watching it, nil for an answer kept unwatched.
-	s       *watchSession
-	entry   uint64
-	changed atomic.Bool
+	// s is the session watching it, nil for an answer kept unwatched; sessions is
+	// how many had gone live when it was read.
+	s        *watchSession
+	sessions uint64
+	entry    uint64
+	changed  atomic.Bool
 }
 
 func newKept[R read[V], V any](w *watcher, limits keptLimits, now func() time.Time) *kept[R, V] {
@@ -120,6 +125,9 @@ func (k *kept[R, V]) get(ctx context.Context, r R) (V, error) {
 }
 
 func (a *answer[R, V]) wait(ctx context.Context) error {
+	if a.ready.Load() {
+		return nil
+	}
 	select {
 	case <-a.done:
 		return nil
@@ -133,15 +141,19 @@ func (k *kept[R, V]) fresh(a *answer[R, V], now time.Time) bool {
 		return false
 	}
 	if a.s == nil {
-		return now.Sub(a.at) < k.limits.unwatched
+		return now.Sub(a.at) < k.limits.unwatched && a.sessions == k.w.sessions.Load()
 	}
 	return !a.s.dead.Load() && now.Sub(a.at) < k.limits.watched
 }
 
 // load reads a's answer and keeps it as far as it may be kept.
 func (k *kept[R, V]) load(ctx context.Context, a *answer[R, V]) {
-	defer close(a.done)
+	defer func() {
+		a.ready.Store(true)
+		close(a.done)
+	}()
 
+	a.sessions = k.w.sessions.Load()
 	s := k.w.pick()
 	var b bindAs
 	if s != nil {
