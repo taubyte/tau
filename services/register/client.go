@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"strconv"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -75,6 +77,74 @@ func (c *Client) Resolve(ctx context.Context, project, environment string) (pkgr
 	}, nil
 }
 
+// bindAs is the session and entry a read binds its answer to; the zero bindAs binds
+// nothing.
+type bindAs struct {
+	session string
+	entry   uint64
+}
+
+func (b bindAs) on(h http.Header) {
+	if b.session != "" {
+		h.Set(sessionHeader, b.session)
+		h.Set(entryHeader, strconv.FormatUint(b.entry, 10))
+	}
+}
+
+// wasBound reads the register's mark that it bound an answer, on a response's
+// headers or a refusal's metadata.
+func wasBound(h http.Header, err error) bool {
+	if err != nil {
+		var ce *connect.Error
+		return errors.As(err, &ce) && ce.Meta().Get(boundHeader) == "1"
+	}
+	return h.Get(boundHeader) == "1"
+}
+
+// hostAnswer is whose environment answers on a name.
+type hostAnswer struct{ project, environment string }
+
+func (c *Client) resolveHostAs(ctx context.Context, fqdn string, b bindAs) (hostAnswer, bool, error) {
+	req := connect.NewRequest(&registerv2.HostRequest{Fqdn: fqdn})
+	b.on(req.Header())
+	res, err := c.svc.ResolveHost(ctx, req)
+	if err != nil {
+		return hostAnswer{}, wasBound(nil, err), unwire(err)
+	}
+	return hostAnswer{project: res.Msg.GetProject(), environment: res.Msg.GetEnvironment()}, wasBound(res.Header(), nil), nil
+}
+
+func (c *Client) resolveViewAs(ctx context.Context, project, environment, destination string, b bindAs) (pkgregister.ViewPointer, bool, error) {
+	req := connect.NewRequest(&registerv2.ViewRequest{Project: project, Environment: environment, Destination: destination})
+	b.on(req.Header())
+	res, err := c.svc.ResolveView(ctx, req)
+	if err != nil {
+		return pkgregister.ViewPointer{}, wasBound(nil, err), unwire(err)
+	}
+	return viewFromWire(res.Msg), wasBound(res.Header(), nil), nil
+}
+
+func (c *Client) resolveFleetAs(ctx context.Context, b bindAs) (pkgregister.Pointer, bool, error) {
+	req := connect.NewRequest(&registerv2.FleetRequest{})
+	b.on(req.Header())
+	res, err := c.svc.ResolveFleet(ctx, req)
+	if err != nil {
+		return pkgregister.Pointer{}, wasBound(nil, err), unwire(err)
+	}
+	return pkgregister.Pointer{Object: pkgregister.ObjectID(res.Msg.GetObject()), Revision: res.Msg.GetRevision()}, wasBound(res.Header(), nil), nil
+}
+
+// watch opens a session on this register.
+func (c *Client) watch(ctx context.Context) (*connect.ServerStreamForClient[registerv2.WatchEvent], error) {
+	return c.svc.Watch(ctx, connect.NewRequest(&registerv2.WatchRequest{}))
+}
+
+// forget releases entries this reader no longer keeps on session.
+func (c *Client) forget(ctx context.Context, session string, entries []uint64) error {
+	_, err := c.svc.Forget(ctx, connect.NewRequest(&registerv2.ForgetRequest{Session: session, Entries: entries}))
+	return err
+}
+
 // ResolveHost says whose environment answers on a name.
 // Environments is which deployments a project has, sorted.
 func (c *Client) Environments(ctx context.Context, project string) ([]string, error) {
@@ -86,20 +156,14 @@ func (c *Client) Environments(ctx context.Context, project string) ([]string, er
 }
 
 func (c *Client) ResolveHost(ctx context.Context, fqdn string) (project, environment string, err error) {
-	res, err := c.svc.ResolveHost(ctx, connect.NewRequest(&registerv2.HostRequest{Fqdn: fqdn}))
-	if err != nil {
-		return "", "", unwire(err)
-	}
-	return res.Msg.GetProject(), res.Msg.GetEnvironment(), nil
+	a, _, err := c.resolveHostAs(ctx, fqdn, bindAs{})
+	return a.project, a.environment, err
 }
 
 // ResolveFleet is the cloud's own document in force.
 func (c *Client) ResolveFleet(ctx context.Context) (pkgregister.Pointer, error) {
-	res, err := c.svc.ResolveFleet(ctx, connect.NewRequest(&registerv2.FleetRequest{}))
-	if err != nil {
-		return pkgregister.Pointer{}, unwire(err)
-	}
-	return pkgregister.Pointer{Object: pkgregister.ObjectID(res.Msg.GetObject()), Revision: res.Msg.GetRevision()}, nil
+	p, _, err := c.resolveFleetAs(ctx, bindAs{})
+	return p, err
 }
 
 func (c *Client) Object(ctx context.Context, id pkgregister.ObjectID) ([]byte, error) {
@@ -135,13 +199,8 @@ func viewFromWire(p *registerv2.ViewPointer) pkgregister.ViewPointer {
 
 // ResolveView is which object a destination holds of a deployment.
 func (c *Client) ResolveView(ctx context.Context, project, environment, destination string) (pkgregister.ViewPointer, error) {
-	res, err := c.svc.ResolveView(ctx, connect.NewRequest(&registerv2.ViewRequest{
-		Project: project, Environment: environment, Destination: destination,
-	}))
-	if err != nil {
-		return pkgregister.ViewPointer{}, unwire(err)
-	}
-	return viewFromWire(res.Msg), nil
+	p, _, err := c.resolveViewAs(ctx, project, environment, destination, bindAs{})
+	return p, err
 }
 
 // Assigned is every deployment a destination holds a view of now.
