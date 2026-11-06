@@ -64,7 +64,8 @@ require (
 	github.com/pkg/sftp v1.13.9
 	github.com/pterm/pterm v0.12.65
 	github.com/samyfodil/musql v0.4.0
-	github.com/samyfodil/wazy v0.5.1-0.20261102034151-f4398bbb823e
+	github.com/samyfodil/warpjs v0.0.0
+	github.com/samyfodil/wazy v0.7.0
 	github.com/spf13/afero v1.11.0
 	github.com/stretchr/testify v1.11.1
 	github.com/taubyte/domain-validation v1.0.1
@@ -88,7 +89,6 @@ require (
 	gopkg.in/ini.v1 v1.67.0
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools/v3 v3.5.2
-	github.com/samyfodil/warpjs v0.0.0
 )
 
 require (
