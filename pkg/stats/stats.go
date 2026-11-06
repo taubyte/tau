@@ -309,6 +309,18 @@ func (v *View) Get(peer string) (Node, bool) {
 	return node(peer, r, now), true
 }
 
+// Serves says whether peer's row, however old but not forgotten, serves name: a
+// question a caller answers from the index, copying nothing.
+func (v *View) Serves(peer, name string) bool {
+	now := v.opts.Now()
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	if _, ok := v.names[name][peer]; !ok {
+		return false
+	}
+	return !v.forgotten(v.rows[peer], now)
+}
+
 // All is every remembered row, at any age, ordered by peer.
 func (v *View) All() []Node {
 	return v.snapshot(func(Node) bool { return true })

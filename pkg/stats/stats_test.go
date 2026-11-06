@@ -370,3 +370,17 @@ func TestRoutePeersIsRoutesOrderAndCopiesNothing(t *testing.T) {
 	dst := make([]string, 0, 8)
 	require.Zero(t, testing.AllocsPerRun(100, func() { v.RoutePeers("shop", time.Minute, dst[:0]) }))
 }
+
+func TestServesIsAskedOfTheIndex(t *testing.T) {
+	c := newClock()
+	v := view(t, c, Options{Fresh: time.Second, Forget: time.Minute})
+	require.NoError(t, v.Observe(Report{Peer: "a", Serving: []string{"storage", "worker"}}))
+	require.True(t, v.Serves("a", "storage"), "ready or not, fresh or not: a row says what it serves")
+	require.False(t, v.Serves("a", "database"))
+	require.False(t, v.Serves("nobody", "storage"))
+
+	c.advance(2 * time.Minute)
+	require.False(t, v.Serves("a", "storage"), "a forgotten row serves nothing")
+
+	require.Zero(t, testing.AllocsPerRun(100, func() { v.Serves("a", "storage") }))
+}

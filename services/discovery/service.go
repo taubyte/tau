@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -465,9 +464,10 @@ func (s *server) Peers(service string) []libp2ppeer.ID {
 // PlacementOf is the placement set narrowed to the members whose last report says
 // they serve role: data a role holds is placed only on nodes running it.
 func (s *server) PlacementOf(role string) []placement.Member {
-	var out []placement.Member
-	for _, m := range s.Placement() {
-		if node, ok := s.view.Get(m.ID); ok && slices.Contains(node.Serving, role) {
+	members := s.Placement()
+	out := members[:0]
+	for _, m := range members {
+		if s.view.Serves(m.ID, role) {
 			out = append(out, m)
 		}
 	}
