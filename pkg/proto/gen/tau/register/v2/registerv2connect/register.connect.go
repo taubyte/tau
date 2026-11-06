@@ -138,6 +138,10 @@ const (
 	// RegisterServiceResolveFleetProcedure is the fully-qualified name of the RegisterService's
 	// ResolveFleet RPC.
 	RegisterServiceResolveFleetProcedure = "/tau.register.v2.RegisterService/ResolveFleet"
+	// RegisterServiceWatchProcedure is the fully-qualified name of the RegisterService's Watch RPC.
+	RegisterServiceWatchProcedure = "/tau.register.v2.RegisterService/Watch"
+	// RegisterServiceForgetProcedure is the fully-qualified name of the RegisterService's Forget RPC.
+	RegisterServiceForgetProcedure = "/tau.register.v2.RegisterService/Forget"
 )
 
 // RegisterServiceClient is a client for the tau.register.v2.RegisterService service.
@@ -208,6 +212,17 @@ type RegisterServiceClient interface {
 	// the object read with Object. One nobody published is NotFound, as for a
 	// deployment, and every service then keeps its defaults.
 	ResolveFleet(context.Context, *connect.Request[v2.FleetRequest]) (*connect.Response[v2.Pointer], error)
+	// Watch is a session a reader binds the answers it caches to. A read sent with
+	// the session and an entry of the reader's choosing is bound when its answer
+	// comes back marked so: the register then names that entry on this stream,
+	// once, when anything the answer was read from changes, here or by a merge from
+	// another node. The stream opens with the session and its limits and beats while
+	// nothing changes, so a reader can tell a quiet register from a gone one. A
+	// reader keeping answers from more than one node holds one session on each.
+	Watch(context.Context, *connect.Request[v2.WatchRequest]) (*connect.ServerStreamForClient[v2.WatchEvent], error)
+	// Forget releases entries a reader no longer keeps. An entry that changed is
+	// already released.
+	Forget(context.Context, *connect.Request[v2.ForgetRequest]) (*connect.Response[v2.ForgetResponse], error)
 }
 
 // NewRegisterServiceClient constructs a client for the tau.register.v2.RegisterService service. By
@@ -329,6 +344,18 @@ func NewRegisterServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(registerServiceMethods.ByName("ResolveFleet")),
 			connect.WithClientOptions(opts...),
 		),
+		watch: connect.NewClient[v2.WatchRequest, v2.WatchEvent](
+			httpClient,
+			baseURL+RegisterServiceWatchProcedure,
+			connect.WithSchema(registerServiceMethods.ByName("Watch")),
+			connect.WithClientOptions(opts...),
+		),
+		forget: connect.NewClient[v2.ForgetRequest, v2.ForgetResponse](
+			httpClient,
+			baseURL+RegisterServiceForgetProcedure,
+			connect.WithSchema(registerServiceMethods.ByName("Forget")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -352,6 +379,8 @@ type registerServiceClient struct {
 	assigned     *connect.Client[v2.DestinationRequest, v2.Assignments]
 	manifest     *connect.Client[v2.ResolveRequest, v2.DeploymentManifest]
 	resolveFleet *connect.Client[v2.FleetRequest, v2.Pointer]
+	watch        *connect.Client[v2.WatchRequest, v2.WatchEvent]
+	forget       *connect.Client[v2.ForgetRequest, v2.ForgetResponse]
 }
 
 // Link calls tau.register.v2.RegisterService.Link.
@@ -444,6 +473,16 @@ func (c *registerServiceClient) ResolveFleet(ctx context.Context, req *connect.R
 	return c.resolveFleet.CallUnary(ctx, req)
 }
 
+// Watch calls tau.register.v2.RegisterService.Watch.
+func (c *registerServiceClient) Watch(ctx context.Context, req *connect.Request[v2.WatchRequest]) (*connect.ServerStreamForClient[v2.WatchEvent], error) {
+	return c.watch.CallServerStream(ctx, req)
+}
+
+// Forget calls tau.register.v2.RegisterService.Forget.
+func (c *registerServiceClient) Forget(ctx context.Context, req *connect.Request[v2.ForgetRequest]) (*connect.Response[v2.ForgetResponse], error) {
+	return c.forget.CallUnary(ctx, req)
+}
+
 // RegisterServiceHandler is an implementation of the tau.register.v2.RegisterService service.
 type RegisterServiceHandler interface {
 	// Link claims a project id for a configuration repository and attaches
@@ -512,6 +551,17 @@ type RegisterServiceHandler interface {
 	// the object read with Object. One nobody published is NotFound, as for a
 	// deployment, and every service then keeps its defaults.
 	ResolveFleet(context.Context, *connect.Request[v2.FleetRequest]) (*connect.Response[v2.Pointer], error)
+	// Watch is a session a reader binds the answers it caches to. A read sent with
+	// the session and an entry of the reader's choosing is bound when its answer
+	// comes back marked so: the register then names that entry on this stream,
+	// once, when anything the answer was read from changes, here or by a merge from
+	// another node. The stream opens with the session and its limits and beats while
+	// nothing changes, so a reader can tell a quiet register from a gone one. A
+	// reader keeping answers from more than one node holds one session on each.
+	Watch(context.Context, *connect.Request[v2.WatchRequest], *connect.ServerStream[v2.WatchEvent]) error
+	// Forget releases entries a reader no longer keeps. An entry that changed is
+	// already released.
+	Forget(context.Context, *connect.Request[v2.ForgetRequest]) (*connect.Response[v2.ForgetResponse], error)
 }
 
 // NewRegisterServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -629,6 +679,18 @@ func NewRegisterServiceHandler(svc RegisterServiceHandler, opts ...connect.Handl
 		connect.WithSchema(registerServiceMethods.ByName("ResolveFleet")),
 		connect.WithHandlerOptions(opts...),
 	)
+	registerServiceWatchHandler := connect.NewServerStreamHandler(
+		RegisterServiceWatchProcedure,
+		svc.Watch,
+		connect.WithSchema(registerServiceMethods.ByName("Watch")),
+		connect.WithHandlerOptions(opts...),
+	)
+	registerServiceForgetHandler := connect.NewUnaryHandler(
+		RegisterServiceForgetProcedure,
+		svc.Forget,
+		connect.WithSchema(registerServiceMethods.ByName("Forget")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/tau.register.v2.RegisterService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case RegisterServiceLinkProcedure:
@@ -667,6 +729,10 @@ func NewRegisterServiceHandler(svc RegisterServiceHandler, opts ...connect.Handl
 			registerServiceManifestHandler.ServeHTTP(w, r)
 		case RegisterServiceResolveFleetProcedure:
 			registerServiceResolveFleetHandler.ServeHTTP(w, r)
+		case RegisterServiceWatchProcedure:
+			registerServiceWatchHandler.ServeHTTP(w, r)
+		case RegisterServiceForgetProcedure:
+			registerServiceForgetHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -746,4 +812,12 @@ func (UnimplementedRegisterServiceHandler) Manifest(context.Context, *connect.Re
 
 func (UnimplementedRegisterServiceHandler) ResolveFleet(context.Context, *connect.Request[v2.FleetRequest]) (*connect.Response[v2.Pointer], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.ResolveFleet is not implemented"))
+}
+
+func (UnimplementedRegisterServiceHandler) Watch(context.Context, *connect.Request[v2.WatchRequest], *connect.ServerStream[v2.WatchEvent]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.Watch is not implemented"))
+}
+
+func (UnimplementedRegisterServiceHandler) Forget(context.Context, *connect.Request[v2.ForgetRequest]) (*connect.Response[v2.ForgetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.Forget is not implemented"))
 }

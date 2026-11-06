@@ -21,8 +21,12 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 	// THE REGISTER IS BUILT OVER THE DATABASE IT FOLLOWS, so the follower reads
 	// it once it exists and the default until then.
 	var built atomic.Pointer[register.Register]
+	// The watches hear every change the database commits, merged from another
+	// register node as much as written here, so a reader is told either way.
+	s.watches = newWatches(defaultWatchLimits)
 	db, err := pkgkvdb.Open(h.Peer(), Descriptor.Name,
 		pkgkvdb.WithLogger(logging.Logger("tau.register")),
+		pkgkvdb.WithObserver(s.watches),
 		pkgkvdb.WithRetentionFrom(func(ctx context.Context) (time.Duration, error) {
 			reg := built.Load()
 			if reg == nil {

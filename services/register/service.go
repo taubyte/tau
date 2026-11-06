@@ -68,6 +68,9 @@ type server struct {
 	// db is the database Start opened for the store, closed with the service.
 	db kvdb.Instance
 
+	// watches is every reader's session on this node; see watch.go.
+	watches *watches
+
 	// startMu guards server: Start and Close both read-then-write it, and
 	// nothing about this type promises one Service is only ever touched from
 	// one goroutine.
@@ -85,6 +88,7 @@ type option func(*options) error
 type options struct {
 	store         register.Store
 	serverOptions []rpc.ServerOption
+	watchLimits   *watchLimits
 }
 
 // withStore is where objects and pointers live. Required.
@@ -100,6 +104,14 @@ func withStore(s register.Store) option {
 			return ErrNoStore
 		}
 		o.store = s
+		return nil
+	}
+}
+
+// withWatchLimits bounds this node's reader sessions.
+func withWatchLimits(l watchLimits) option {
+	return func(o *options) error {
+		o.watchLimits = &l
 		return nil
 	}
 }
@@ -141,7 +153,14 @@ func (s *server) assemble(h host.Host, opts ...option) error {
 	if o.store == nil {
 		return ErrNoStore
 	}
-	reg, err := register.New(register.WithStore(o.store))
+	if s.watches == nil {
+		limits := defaultWatchLimits
+		if o.watchLimits != nil {
+			limits = *o.watchLimits
+		}
+		s.watches = newWatches(limits)
+	}
+	reg, err := register.New(register.WithStore(observed{Store: o.store, w: s.watches}))
 	if err != nil {
 		// Unreachable while o.store is checked above. Kept rather than
 		// dropped so a change to pkg/register's construction rules cannot
@@ -187,6 +206,9 @@ func (s *server) Close() error {
 		s.startMu.Unlock()
 		if s.db != nil {
 			s.db.Close()
+		}
+		if s.watches != nil {
+			s.watches.close()
 		}
 	})
 	return s.closeErr

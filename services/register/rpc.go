@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -57,11 +58,13 @@ func (h *handler) Publish(ctx context.Context, req *connect.Request[registerv2.P
 // request path, and it returns the pointer rather than the object for the
 // reason the schema gives: the pointer is the part that changes.
 func (h *handler) Resolve(ctx context.Context, req *connect.Request[registerv2.ResolveRequest]) (*connect.Response[registerv2.Pointer], error) {
-	p, err := h.s.reg.Resolve(ctx, req.Msg.GetProject(), req.Msg.GetEnvironment())
+	p, bound, err := boundRead(h.s, req.Header(), func(r *pkgregister.Register) (pkgregister.Pointer, error) {
+		return r.Resolve(ctx, req.Msg.GetProject(), req.Msg.GetEnvironment())
+	})
 	if err != nil {
-		return nil, wire(err)
+		return nil, marked(wire(err), bound)
 	}
-	return connect.NewResponse(&registerv2.Pointer{Object: string(p.Object), Revision: p.Revision}), nil
+	return markedResponse(connect.NewResponse(&registerv2.Pointer{Object: string(p.Object), Revision: p.Revision}), bound), nil
 }
 
 // Object is one compiled project by its content address. A caller makes this
@@ -75,12 +78,14 @@ func (h *handler) Object(ctx context.Context, req *connect.Request[registerv2.Ob
 }
 
 // ResolveFleet is the cloud's own document in force.
-func (h *handler) ResolveFleet(ctx context.Context, _ *connect.Request[registerv2.FleetRequest]) (*connect.Response[registerv2.Pointer], error) {
-	p, err := h.s.reg.ResolveFleet(ctx)
+func (h *handler) ResolveFleet(ctx context.Context, req *connect.Request[registerv2.FleetRequest]) (*connect.Response[registerv2.Pointer], error) {
+	p, bound, err := boundRead(h.s, req.Header(), func(r *pkgregister.Register) (pkgregister.Pointer, error) {
+		return r.ResolveFleet(ctx)
+	})
 	if err != nil {
-		return nil, wire(err)
+		return nil, marked(wire(err), bound)
 	}
-	return connect.NewResponse(&registerv2.Pointer{Object: string(p.Object), Revision: p.Revision}), nil
+	return markedResponse(connect.NewResponse(&registerv2.Pointer{Object: string(p.Object), Revision: p.Revision}), bound), nil
 }
 
 // ResolveHost says whose environment answers on a name — the first thing a
@@ -94,11 +99,14 @@ func (h *handler) Environments(ctx context.Context, req *connect.Request[registe
 }
 
 func (h *handler) ResolveHost(ctx context.Context, req *connect.Request[registerv2.HostRequest]) (*connect.Response[registerv2.HostAnswer], error) {
-	project, environment, err := h.s.reg.ResolveHost(ctx, req.Msg.GetFqdn())
+	answer, bound, err := boundRead(h.s, req.Header(), func(r *pkgregister.Register) (*registerv2.HostAnswer, error) {
+		project, environment, err := r.ResolveHost(ctx, req.Msg.GetFqdn())
+		return &registerv2.HostAnswer{Project: project, Environment: environment}, err
+	})
 	if err != nil {
-		return nil, wire(err)
+		return nil, marked(wire(err), bound)
 	}
-	return connect.NewResponse(&registerv2.HostAnswer{Project: project, Environment: environment}), nil
+	return markedResponse(connect.NewResponse(answer), bound), nil
 }
 
 // viewsFromWire keeps the one distinction a repeated field cannot: nil is a revision
@@ -120,11 +128,81 @@ func viewPointer(p pkgregister.ViewPointer) *registerv2.ViewPointer {
 
 // ResolveView answers which object a destination holds of a deployment.
 func (h *handler) ResolveView(ctx context.Context, req *connect.Request[registerv2.ViewRequest]) (*connect.Response[registerv2.ViewPointer], error) {
-	p, err := h.s.reg.ResolveView(ctx, req.Msg.GetProject(), req.Msg.GetEnvironment(), req.Msg.GetDestination())
+	p, bound, err := boundRead(h.s, req.Header(), func(r *pkgregister.Register) (pkgregister.ViewPointer, error) {
+		return r.ResolveView(ctx, req.Msg.GetProject(), req.Msg.GetEnvironment(), req.Msg.GetDestination())
+	})
 	if err != nil {
-		return nil, wire(err)
+		return nil, marked(wire(err), bound)
 	}
-	return connect.NewResponse(viewPointer(p)), nil
+	return markedResponse(connect.NewResponse(viewPointer(p)), bound), nil
+}
+
+// Watch is a reader's session: it opens with the session's id and limits, then names
+// the entries whose answers changed, a message at a time, and beats while quiet.
+func (h *handler) Watch(ctx context.Context, _ *connect.Request[registerv2.WatchRequest], stream *connect.ServerStream[registerv2.WatchEvent]) error {
+	w := h.s.watches
+	s := w.open()
+	defer w.end(s)
+
+	if err := stream.Send(&registerv2.WatchEvent{Event: &registerv2.WatchEvent_Ready{Ready: &registerv2.WatchReady{
+		Session: s.id, MaxEntries: uint32(w.limits.entries), BeatMs: uint32(w.limits.beat.Milliseconds()),
+	}}}); err != nil {
+		return err
+	}
+
+	beat := time.NewTicker(w.limits.beat)
+	defer beat.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-s.gone:
+			return connect.NewError(connect.CodeUnavailable, errSessionDropped)
+		case <-beat.C:
+			if err := stream.Send(&registerv2.WatchEvent{Event: &registerv2.WatchEvent_Beat{Beat: &registerv2.WatchBeat{}}}); err != nil {
+				return err
+			}
+		case <-s.wake:
+			// A change waits a moment for the ones that came with it.
+			select {
+			case <-time.After(w.limits.flush):
+			case <-ctx.Done():
+				return nil
+			}
+			for entries := w.take(s); len(entries) > 0; entries = w.take(s) {
+				if err := stream.Send(&registerv2.WatchEvent{Event: &registerv2.WatchEvent_Changed{Changed: &registerv2.WatchChanged{Entries: entries}}}); err != nil {
+					return err
+				}
+			}
+		}
+	}
+}
+
+var errSessionDropped = errors.New("register: this session was dropped; what it bound is released")
+
+// Forget releases entries a reader no longer keeps.
+func (h *handler) Forget(_ context.Context, req *connect.Request[registerv2.ForgetRequest]) (*connect.Response[registerv2.ForgetResponse], error) {
+	if s, ok := h.s.watches.find(req.Msg.GetSession()); ok {
+		h.s.watches.forget(s, req.Msg.GetEntries()...)
+	}
+	return connect.NewResponse(&registerv2.ForgetResponse{}), nil
+}
+
+// marked and markedResponse say whether an answer was bound, on an error's metadata
+// or a response's headers, which is all a reader reads it from.
+func marked(err error, bound bool) error {
+	var ce *connect.Error
+	if bound && errors.As(err, &ce) {
+		ce.Meta().Set(boundHeader, "1")
+	}
+	return err
+}
+
+func markedResponse[T any](r *connect.Response[T], bound bool) *connect.Response[T] {
+	if bound {
+		r.Header().Set(boundHeader, "1")
+	}
+	return r
 }
 
 // Assigned is every deployment a destination holds a view of now.

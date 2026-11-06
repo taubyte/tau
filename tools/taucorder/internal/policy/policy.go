@@ -57,6 +57,8 @@ var Table = map[string]map[string]Class{
 		"Publish": W, "Resolve": R, "Object": R, "Environments": R,
 		"ResolveHost": R, "ResolveView": R, "Assigned": R, "Manifest": R, "ResolveFleet": R,
 		"Grant": W, "Revoke": W, "Grants": R, "Role": R,
+		// A reader's session over what it caches, and its releases.
+		"Watch": R, "Forget": R,
 	},
 	"tau.plm.v2.QueueService": {"Enqueue": W},
 	"tau.plm.v2.JobService": {

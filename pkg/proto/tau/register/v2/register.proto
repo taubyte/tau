@@ -382,6 +382,51 @@ service RegisterService {
   // the object read with Object. One nobody published is NotFound, as for a
   // deployment, and every service then keeps its defaults.
   rpc ResolveFleet(FleetRequest) returns (Pointer);
+
+  // Watch is a session a reader binds the answers it caches to. A read sent with
+  // the session and an entry of the reader's choosing is bound when its answer
+  // comes back marked so: the register then names that entry on this stream,
+  // once, when anything the answer was read from changes, here or by a merge from
+  // another node. The stream opens with the session and its limits and beats while
+  // nothing changes, so a reader can tell a quiet register from a gone one. A
+  // reader keeping answers from more than one node holds one session on each.
+  rpc Watch(WatchRequest) returns (stream WatchEvent);
+
+  // Forget releases entries a reader no longer keeps. An entry that changed is
+  // already released.
+  rpc Forget(ForgetRequest) returns (ForgetResponse);
 }
 
 message FleetRequest {}
+
+message WatchRequest {}
+
+message WatchEvent {
+  oneof event {
+    WatchReady ready = 1;
+    WatchChanged changed = 2;
+    WatchBeat beat = 3;
+  }
+}
+
+// WatchReady opens a session: its id, how many entries it may hold bound at once,
+// and how often it beats.
+message WatchReady {
+  string session = 1;
+  uint32 max_entries = 2;
+  uint32 beat_ms = 3;
+}
+
+// WatchChanged is entries whose answers may have changed. Each is released.
+message WatchChanged {
+  repeated uint64 entries = 1;
+}
+
+message WatchBeat {}
+
+message ForgetRequest {
+  string session = 1;
+  repeated uint64 entries = 2;
+}
+
+message ForgetResponse {}

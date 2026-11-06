@@ -32,7 +32,7 @@ type harness struct {
 	ServerHost host.Host
 }
 
-func newHarness(t testing.TB, store pkgregister.Store) *harness {
+func newHarness(t testing.TB, store pkgregister.Store, opts ...option) *harness {
 	t.Helper()
 
 	mn := mocknet.New()
@@ -41,7 +41,7 @@ func newHarness(t testing.TB, store pkgregister.Store) *harness {
 	serverHost := newHost(t, mn)
 	caller := newHost(t, mn)
 
-	s, err := build(serverHost, withStore(store))
+	s, err := build(serverHost, append([]option{withStore(store)}, opts...)...)
 	require.NoError(t, err)
 	require.NoError(t, s.serve(t.Context()))
 	t.Cleanup(func() { s.Close() })
