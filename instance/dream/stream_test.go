@@ -182,14 +182,14 @@ func TestStreamsKeepTheirSubscribersApartAcrossNamespaces(t *testing.T) {
 	server, address := natsServer(t)
 	r := servingLog(t, "with/stream/namespaces", "natscreds", "127.0.0.1:4222", address)
 
-	// Both subscribers of orders, one in each namespace and both called cacher, get it.
-	untilKeyed(t, r, "order:1", "orders", "eu-orders", "us-orders")
-	untilKeyed(t, r, "refund:1", "refunds", "us-refunds")
+	// Both subscribers of orders, one in billing and one in shipping, both called cacher, get it.
+	untilKeyed(t, r, "order:1", "orders", "billing-orders", "shipping-orders")
+	untilKeyed(t, r, "refund:1", "refunds", "shipping-refunds")
 
 	// A refund reaches only the one subscriber of refunds, and nobody's orders key.
 	publishTo(t, r, "refunds", "refund:2")
-	deliveredAt(t, r, "us-refunds", "refund:2")
-	for _, key := range []string{"eu-orders", "us-orders"} {
+	deliveredAt(t, r, "shipping-refunds", "refund:2")
+	for _, key := range []string{"billing-orders", "shipping-orders"} {
 		got, err := read(t, r, key)
 		require.NoError(t, err)
 		require.Equal(t, "order:1", got, "%s took a refund", key)

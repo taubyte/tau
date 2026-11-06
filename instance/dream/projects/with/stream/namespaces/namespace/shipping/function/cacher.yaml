@@ -1,5 +1,5 @@
 id: QmNP8ZJRT6En1LVfTwkbiD4HgdeRxvpHGn4m5Sp2cY8UxS
-description: a subscriber in us, named as the one in the other namespace is - it writes each message under a key of its own
+description: a subscriber in shipping, named as the one in the other namespace is - it writes each message under a key of its own
 package:
     name: cacher_code
 execution:
@@ -15,9 +15,9 @@ stream:
         namespace: /
         ops: [subscribe]
         deliver:
-            path: /put/sessions/us-orders
+            path: /put/sessions/shipping-orders
     refunds:
         namespace: /
         ops: [subscribe]
         deliver:
-            path: /put/sessions/us-refunds
+            path: /put/sessions/shipping-refunds
