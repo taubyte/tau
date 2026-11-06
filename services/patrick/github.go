@@ -87,10 +87,10 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 
 	switch payload.(type) {
 	case github.PushPayload:
-		logger.Debugf("Hook triggred. Push: %v", payload)
+		logger.Debugf("Hook triggered: push")
 		pl, err := json.Marshal(payload)
 		if err != nil {
-			logger.Errorf("new pipeline for payload `%#v` failed with: %s", payload, err.Error())
+			logger.Errorf("encoding push payload failed with: %s", err.Error())
 			return nil, errors.New("can't decode push payload")
 		}
 
@@ -130,7 +130,7 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 			return nil, fmt.Errorf("failed registering job with error: %w", err)
 		}
 
-		logger.Debugf("Got job: %#v", newJob)
+		logger.Debugf("Got job: %s", newJob.Id)
 
 		return newJob, nil
 	default:

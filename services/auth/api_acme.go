@@ -24,7 +24,7 @@ func (srv *AuthService) setACMECertificate(ctx context.Context, fqdn string, cer
 		return err
 	}
 
-	logger.Debugf("Set acme certificate for `%s` = %v", fqdn, certificate)
+	logger.Debugf("Set acme certificate for `%s`: %d bytes", fqdn, len(certificate))
 
 	return nil
 }
@@ -39,7 +39,7 @@ func (srv *AuthService) setACMEStaticCertificate(ctx context.Context, fqdn strin
 		return fmt.Errorf("failed setting static certificate with %v", err)
 	}
 
-	logger.Debugf("Set certificate for `%s` = %v", fqdn, certificate)
+	logger.Debugf("Set certificate for `%s`: %d bytes", fqdn, len(certificate))
 
 	return nil
 }
@@ -51,7 +51,7 @@ func (srv *AuthService) getACMECertificate(ctx context.Context, fqdn string) ([]
 	key := "/acme/" + base64.StdEncoding.EncodeToString([]byte(fqdn)) + "/certificate/pem"
 	certificate, err := srv.db.Get(ctx, key)
 	if err != nil {
-		logger.Debugf("Get acme certificate for %s returned %w", fqdn, err)
+		logger.Debugf("Get acme certificate for %s returned %v", fqdn, err)
 		return srv.getACMEStaticCertificate(ctx, fqdn)
 	}
 
@@ -61,7 +61,7 @@ func (srv *AuthService) getACMECertificate(ctx context.Context, fqdn string) ([]
 		return nil, autocert.ErrCacheMiss
 	}
 
-	logger.Debugf("Get acme certificate for `%s`: %v", fqdn, certificate)
+	logger.Debugf("Get acme certificate for `%s`: %d bytes", fqdn, len(certificate))
 
 	return certificate, nil
 }
@@ -77,7 +77,7 @@ func (srv *AuthService) getACMEStaticCertificate(ctx context.Context, fqdn strin
 		key := "/static/" + base64.StdEncoding.EncodeToString([]byte(wildCard)) + "/certificate/pem"
 		certificate, err = srv.db.Get(ctx, key)
 		if err != nil {
-			logger.Debugf("Get certificate for %s returned %w", fqdn, err)
+			logger.Debugf("Get certificate for %s returned %v", fqdn, err)
 			return nil, autocert.ErrCacheMiss
 		}
 	}
@@ -88,7 +88,7 @@ func (srv *AuthService) getACMEStaticCertificate(ctx context.Context, fqdn strin
 		return nil, autocert.ErrCacheMiss
 	}
 
-	logger.Debugf("Get static certificate for `%s`: %v", fqdn, certificate)
+	logger.Debugf("Get static certificate for `%s`: %d bytes", fqdn, len(certificate))
 
 	return certificate, nil
 }
@@ -110,7 +110,7 @@ func (srv *AuthService) getACMECache(ctx context.Context, key string) ([]byte, e
 		return nil, autocert.ErrCacheMiss
 	}
 
-	logger.Debugf("Get acme cache for `%s`: %v", key, data)
+	logger.Debugf("Get acme cache for `%s`: %d bytes", key, len(data))
 
 	return data, nil
 }

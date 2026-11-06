@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -66,13 +67,14 @@ func (b *builder) buildImage() (clientImage *ci.DockerImage, err error) {
 // run will initialize and run the container with the given image
 func (b *builder) run(output *output, image *ci.DockerImage, environment specs.Environment, ops ...ci.ContainerOption) (err error) {
 	json.NewEncoder(b.output).Encode(struct {
-		Op        string            `json:"op"`
-		Timestamp int64             `json:"timestamp"`
-		Env       map[string]string `json:"env"`
+		Op        string   `json:"op"`
+		Timestamp int64    `json:"timestamp"`
+		Env       []string `json:"env"`
 	}{
 		Op:        "run container",
 		Timestamp: time.Now().UnixNano(),
-		Env:       environment.Variables,
+		// names only: job logs are kept by CID and streamed, values may be secrets
+		Env: slices.Sorted(maps.Keys(environment.Variables)),
 	})
 
 	output.outDir, err = os.MkdirTemp("", "*")

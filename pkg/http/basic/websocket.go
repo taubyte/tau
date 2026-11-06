@@ -11,7 +11,7 @@ import (
 
 func (s *Service) WebSocket(def *service.WebSocketDefinition) {
 	route := s.Router.HandleFunc(def.Path, func(w http.ResponseWriter, r *http.Request) {
-		logger.Debugf("[WS] %s", r.RequestURI)
+		logger.Debugf("[WS] %s", r.URL.Path)
 
 		ctx, err := context.New(&request.Request{ResponseWriter: w, HttpRequest: r}, &def.Vars)
 		if err != nil {
@@ -33,7 +33,7 @@ func (s *Service) WebSocket(def *service.WebSocketDefinition) {
 
 		conn, err := service.Upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			logger.Errorf("[WS] %s -> %w", r.RequestURI, err)
+			logger.Errorf("[WS] %s -> %v", r.URL.Path, err)
 			return
 		}
 

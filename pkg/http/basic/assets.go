@@ -22,7 +22,7 @@ func (s *Service) ServeAssets(def *service.AssetsDefinition) {
 	fileServer := http.FileServer(afero.NewHttpFs(fs))
 
 	route := s.Router.PathPrefix(def.Path).HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logger.Debugf("[Asset] %s", r.RequestURI)
+		logger.Debugf("[Asset] %s", r.URL.Path)
 
 		_ctx, err := context.New(&request.Request{ResponseWriter: w, HttpRequest: r}, &def.Vars, context.RawResponse())
 		if err != nil {

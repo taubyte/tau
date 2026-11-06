@@ -33,12 +33,13 @@ func (s *Service) handleRequest(req *request.Request, vars *service.Variables, s
 		logger.Error(fmt.Errorf("calling %s failed with %v", req.HttpRequest.URL, err))
 	}
 
-	logger.Debugf("%s | %v", string(req.HttpRequest.RequestURI), ctx.Variables())
+	// never the variables: they hold the caller's token
+	logger.Debugf("%s done", req.HttpRequest.URL.Path)
 }
 
 func (s *Service) buildRouteFromDef(def *service.RouteDefinition) *mux.Route {
 	route := s.Router.HandleFunc(def.Path, func(w http.ResponseWriter, h *http.Request) {
-		logger.Debugf("[GET] %s", h.RequestURI)
+		logger.Debugf("[GET] %s", h.URL.Path)
 		options := make([]context.Option, 0)
 		if def.RawResponse {
 			options = append(options, context.RawResponse())
