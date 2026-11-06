@@ -61,6 +61,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -415,35 +416,49 @@ func weightOf(load float64) uint16 {
 // resolvers that shuffle will at least be shuffling a set drawn from the least
 // loaded nodes rather than from the whole fleet.
 func (s *Service) records(nodes []stats.Node, qname string, wantV6 bool) []dns.RR {
-	var out []dns.RR
+	var held [32]netip.Addr
+	addrs := held[:0]
+collect:
 	for _, n := range nodes {
 		for _, a := range n.Addresses {
-			ip := net.ParseIP(a)
-			if ip == nil {
+			ip, err := netip.ParseAddr(a)
+			if err != nil || ip.Zone() != "" {
 				continue // a hostname is a legitimate report and not an A record
 			}
-			v4 := ip.To4()
-			if wantV6 {
-				if v4 != nil {
-					continue
-				}
-				out = append(out, &dns.AAAA{
-					Hdr:  dns.RR_Header{Name: qname, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: s.ttlSeconds()},
-					AAAA: ip,
-				})
-			} else {
-				if v4 == nil {
-					continue
-				}
-				out = append(out, &dns.A{
-					Hdr: dns.RR_Header{Name: qname, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: s.ttlSeconds()},
-					A:   v4,
-				})
+			ip = ip.Unmap()
+			if ip.Is4() == wantV6 {
+				continue
 			}
-			if len(out) >= s.cfg.MaxRecords {
-				return out
+			addrs = append(addrs, ip)
+			if len(addrs) >= s.cfg.MaxRecords {
+				break collect
 			}
 		}
+	}
+	if len(addrs) == 0 {
+		return nil
+	}
+
+	// The records and their addresses are cut from one array each.
+	out := make([]dns.RR, len(addrs))
+	hdr := dns.RR_Header{Name: qname, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: s.ttlSeconds()}
+	if wantV6 {
+		hdr.Rrtype = dns.TypeAAAA
+		rrs, ips := make([]dns.AAAA, len(addrs)), make([]byte, 0, net.IPv6len*len(addrs))
+		for i, ip := range addrs {
+			at, b := len(ips), ip.As16()
+			ips = append(ips, b[:]...)
+			rrs[i] = dns.AAAA{Hdr: hdr, AAAA: ips[at:len(ips):len(ips)]}
+			out[i] = &rrs[i]
+		}
+		return out
+	}
+	rrs, ips := make([]dns.A, len(addrs)), make([]byte, 0, net.IPv4len*len(addrs))
+	for i, ip := range addrs {
+		at, b := len(ips), ip.As4()
+		ips = append(ips, b[:]...)
+		rrs[i] = dns.A{Hdr: hdr, A: ips[at:len(ips):len(ips)]}
+		out[i] = &rrs[i]
 	}
 	return out
 }

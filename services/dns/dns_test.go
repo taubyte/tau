@@ -616,3 +616,51 @@ func TestAPeerThatIsNotBase58GetsNoLabel(t *testing.T) {
 	require.Empty(t, nodeLabel("peer00"), "0 is not in the base58 alphabet")
 	require.Empty(t, nodeLabel("not a peer id"))
 }
+
+// TestAMappedAddressIsAnARecordAndAZonedOneIsNone: an IPv4 address written in its
+// IPv6 form answers A, as net.ParseIP's To4 did, and a link-local address with a
+// zone answers nothing anywhere else.
+func TestAMappedAddressIsAnARecordAndAZonedOneIsNone(t *testing.T) {
+	s := newService(t, serving("shop.example.com",
+		stats.Node{Peer: "a", Ready: true, Addresses: []string{"::ffff:203.0.113.7", "fe80::1%eth0", "2001:db8::5"}},
+	), nil)
+
+	a := s.Answer(query("shop.example.com", dns.TypeA)).Answer
+	require.Len(t, a, 1)
+	require.Equal(t, "203.0.113.7", a[0].(*dns.A).A.String())
+
+	aaaa := s.Answer(query("shop.example.com", dns.TypeAAAA)).Answer
+	require.Len(t, aaaa, 1, "the zoned address is not an answer")
+	require.Equal(t, "2001:db8::5", aaaa[0].(*dns.AAAA).AAAA.String())
+}
+
+// TestManyAddressesUnderALargeCapAreEachTheirOwn: past the addresses held on the
+// stack, and every record keeps its own address.
+func TestManyAddressesUnderALargeCapAreEachTheirOwn(t *testing.T) {
+	var addrs []string
+	for i := range 50 {
+		addrs = append(addrs, net.IPv4(203, 0, 113, byte(i+1)).String(), fmt.Sprintf("2001:db8::%x", i+1))
+	}
+	s := newService(t, serving("shop.example.com", stats.Node{Ready: true, Addresses: addrs}),
+		func(c *Config) { c.MaxRecords = 64 })
+
+	a := s.Answer(query("shop.example.com", dns.TypeA)).Answer
+	require.Len(t, a, 50)
+	aaaa := s.Answer(query("shop.example.com", dns.TypeAAAA)).Answer
+	require.Len(t, aaaa, 50)
+	for i := range 50 {
+		require.Equal(t, net.IPv4(203, 0, 113, byte(i+1)).String(), a[i].(*dns.A).A.String())
+		require.Equal(t, fmt.Sprintf("2001:db8::%x", i+1), aaaa[i].(*dns.AAAA).AAAA.String())
+	}
+}
+
+func TestAnAnswersRecordsAreThreeAllocations(t *testing.T) {
+	var nodes []stats.Node
+	for i := range 8 {
+		nodes = append(nodes, stats.Node{Ready: true, Addresses: []string{net.IPv4(203, 0, 113, byte(i+1)).String(), fmt.Sprintf("2001:db8::%x", i+1)}})
+	}
+	s := newService(t, serving("shop.example.com"), nil)
+	require.LessOrEqual(t, testing.AllocsPerRun(100, func() { s.records(nodes, "shop.example.com.", false) }), 3.0,
+		"the record list, the records and their addresses")
+	require.LessOrEqual(t, testing.AllocsPerRun(100, func() { s.records(nodes, "shop.example.com.", true) }), 3.0)
+}
