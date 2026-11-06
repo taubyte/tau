@@ -725,13 +725,6 @@ func unservableKind(reach specs.Reach, target specs.Resource) string {
 				"it publishes to the swarm's own gossipsub and nothing else",
 				reach.Kind, reach.Label, engine)
 		}
-		// `local: true` asks for a stream only this node hears; a stream here is one topic
-		// across the swarm.
-		if local := specs.ReadStream(target).Local; local != nil && *local {
-			return fmt.Sprintf("%s %q is local, and a stream here is one topic across the swarm — "+
-				"what it publishes would reach every node subscribed to it",
-				reach.Kind, reach.Label)
-		}
 		return ""
 	case volumeKind:
 		// Nothing measures a volume's last snapshot against a budget, so a budget is refused.

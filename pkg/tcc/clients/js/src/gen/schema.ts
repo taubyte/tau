@@ -3944,16 +3944,6 @@ export class StreamConfig extends ResourceConfig {
     return undefined;
   }
 
-  async local(): Promise<boolean | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["distributed", "local"])) as boolean | undefined;
-  }
-  setLocal(v: boolean): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["distributed", "local"], v);
-  }
-  unsetLocal(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["distributed", "local"]);
-  }
-
   /** Lives under the stream's kind, so the branch is explicit. */
   async host(engine: StreamEngine): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, [engine, "host"])) as string | undefined;
@@ -5621,7 +5611,6 @@ export interface Stream {
   "regions/main"?: string;
   "regions/standby"?: string;
   engine?: string;
-  local?: boolean;
   host?: string;
   credentialsnamespace?: string;
   credentialsname?: string;

@@ -21745,23 +21745,6 @@
           "x-tau-path": "{distributed|kafka|nats}",
           "x-tau-section": "engine"
         },
-        "distributed": {
-          "properties": {
-            "local": {
-              "description": "Restrict the stream to the local node / project scope. Only tau's own engine has a notion of this.",
-              "title": "Local",
-              "type": "boolean",
-              "x-tau-section": "engine",
-              "x-tau-show-when": {
-                "field": "engine",
-                "in": [
-                  "distributed"
-                ]
-              }
-            }
-          },
-          "type": "object"
-        },
         "host": {
           "description": "Where the external server is reached, as host or host:port.",
           "title": "Host",

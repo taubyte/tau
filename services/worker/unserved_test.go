@@ -126,12 +126,6 @@ func refusal(kind string, target specs.Resource) string {
 	return unservable(specs.Reach{Kind: kind, Label: "it"}, target)
 }
 
-func TestALocalStreamIsRefusedAndAnUnlocalOneIsServed(t *testing.T) {
-	require.Contains(t, refusal(streamKind, specs.Resource{"local": true}), "is local")
-	require.Empty(t, refusal(streamKind, specs.Resource{"local": false}))
-	require.Empty(t, refusal(streamKind, specs.Resource{}))
-}
-
 func TestACheckpointBudgetIsRefusedAndTheDefaultsAreNot(t *testing.T) {
 	defaults := map[string]any{"interval": float64(time.Minute), "on_budget_exceeded": "alert"}
 	require.Empty(t, refusal(volumeKind, specs.Resource{"checkpoint": defaults}))

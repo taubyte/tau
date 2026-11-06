@@ -1,4 +1,3 @@
 id: QmXk7RtVbHqL2nDpFsWc9YgAeM4vZuNJ3TbrKQ8dxCwPhG
 description: what the slack poller publishes; on tau's own engine, because nothing outside owns this topic
-distributed:
-    local: false
+distributed: {}

@@ -1440,7 +1440,7 @@ func TestChannelIsOneToOneAndStreamFansOut(t *testing.T) {
 		return err
 	}
 	const conduit = "protocol: pgwire\nserve:\n    application:\n        name: db\n        port: pg\n"
-	const fanout = "distributed:\n    local: true\n"
+	const fanout = "distributed: {}\n"
 
 	assert.NilError(t, compile("/channel/sync.yaml", conduit), "a channel names a protocol and one server")
 	assert.NilError(t, compile("/stream/orders.yaml", fanout), "a stream is named by its own name")
@@ -1448,7 +1448,7 @@ func TestChannelIsOneToOneAndStreamFansOut(t *testing.T) {
 	// One offending key per probe: strict mode reports the first unknown key in map
 	// order.
 	assert.ErrorContains(t, compile("/stream/x.yaml", fanout+"protocol: pgwire\n"), "unknown key 'protocol'")
-	assert.ErrorContains(t, compile("/channel/x.yaml", conduit+"distributed:\n    local: true\n"), "unknown key 'distributed'")
+	assert.ErrorContains(t, compile("/channel/x.yaml", conduit+"distributed: {}\n"), "unknown key 'distributed'")
 
 	// And the verbs, which is the other half of what each name means.
 	dial := schema.OpsOf("channel")
@@ -1481,7 +1481,7 @@ func TestStreamEngineIsClosedAndBranchScoped(t *testing.T) {
 	}
 
 	assert.NilError(t, compile("distributed: {}\n"))
-	assert.NilError(t, compile("distributed:\n    local: true\n"))
+	assert.ErrorContains(t, compile("distributed:\n    local: true\n"), "unknown key 'local'", "a stream is one topic across the swarm, with no node-local scope to declare")
 	assert.NilError(t, compile("kafka:\n    host: b:9092\n    credentials:\n        name: k\n"))
 	assert.NilError(t, compile("nats:\n    host: n:4222\n    credentials:\n        name: k\n"))
 
@@ -1493,9 +1493,7 @@ func TestStreamEngineIsClosedAndBranchScoped(t *testing.T) {
 	assert.ErrorContains(t, compile("distributed: {}\nkafka:\n    host: b:9092\n"),
 		"ambiguous path: distributed and kafka each match")
 
-	// Neither branch borrows the other's fields. `local` is a thing the swarm's own
-	// gossipsub does and a Kafka cluster has no notion of; a connection is the reverse.
-	assert.ErrorContains(t, compile("kafka:\n    host: b:9092\n    local: true\n"), "unknown key 'local'")
+	// Neither branch borrows the other's fields: a connection is an external engine's.
 	assert.ErrorContains(t, compile("distributed:\n    host: b:9092\n"), "unknown key 'host'")
 	assert.ErrorContains(t, compile("kafka:\n    credentials:\n        name: k\n"), "required attribute 'kafka/host'")
 	assert.ErrorContains(t, compile("kafka:\n    host: b:9092\n"), "required attribute 'kafka/credentials/name'")
@@ -1508,13 +1506,12 @@ func TestStreamEngineIsClosedAndBranchScoped(t *testing.T) {
 	flat := compileBasic(t)
 	orders := namedResource(t, resources(t, flat, "stream"), "orders")
 	assert.Equal(t, orders["engine"], "distributed")
-	assert.Equal(t, orders["local"], false)
+	_, kept := orders["local"]
+	assert.Assert(t, !kept, "a stream has no node-local scope to declare")
 	shipments := namedResource(t, resources(t, flat, "stream"), "shipments")
 	assert.Equal(t, shipments["engine"], "kafka")
 	assert.Equal(t, shipments["host"], "broker.example.com:9092")
 	assert.Equal(t, shipments["tls"], "verify-full")
-	_, leaked := shipments["local"]
-	assert.Assert(t, !leaked, "a kafka-backed stream carries no claim about node-local scope")
 }
 
 func TestAStreamIsNamedNotMatched(t *testing.T) {

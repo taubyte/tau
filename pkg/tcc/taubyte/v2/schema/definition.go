@@ -1357,22 +1357,19 @@ var V2Resources = []*Node{
 	//
 	// The engine is a key from a closed set, and the topic lives where it says:
 	//
-	//	distributed:                     kafka:
-	//	    local: true                      host: broker:9092
+	//	distributed: {}                  kafka:
+	//	                                     host: broker:9092
 	//	                                     credentials: { name: k }
 	//
 	// `kafka` and `nats` (JetStream) are logs with ordering, consumer groups and
 	// replay, and require host and credential. `distributed` is the swarm's gossipsub
 	// with none of that; the key makes moving a topic onto a log an engine block, not
-	// a rewrite. `local` is gossipsub-only, so it sits under `distributed`. A stream is
-	// its name: one resource, one topic, no pattern.
+	// a rewrite. A stream is its name: one resource, one topic, no pattern.
 	DefineGroup("stream",
 		resource(
 			commonAttributes(append([]*Attribute{
 				String("engine", Path(Either(streamEngines...)), Captures(), InSection("engine"),
 					Doc("Engine", "Which engine holds the topic: distributed is the swarm's own gossipsub; kafka and nats are external clusters reached over the network.")),
-				Bool("local", Path(tauEngine, "local"), InSection("engine"), ShowWhen("engine", tauEngine),
-					Doc("Local", "Restrict the stream to the local node / project scope. Only tau's own engine has a notion of this.")),
 			}, externalEngineAttributes(nil, nil, externalStreamEngines, Key("engine"), "engine", ShowWhen("engine", externalStreamEngines...))...)...),
 			GroupDoc("A pubsub stream: what is published to it reaches every subscriber. On the swarm's own gossipsub, or on an external Kafka or NATS cluster."), Icon("message"), Category("trigger"),
 			secIdentity, secAccess,

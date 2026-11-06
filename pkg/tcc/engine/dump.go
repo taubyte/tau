@@ -412,8 +412,17 @@ func writeValueToPath(n *Node, query *yaseer.Query, path []StringMatch, attr *At
 	}
 
 	// A captured value is the key: writing it back would write the key's name into
-	// it. Reaching the branch is the write.
+	// it. Reaching the branch is the write, and a branch nothing else fills is still
+	// the choice, so it is written as an empty block; one a sibling filled is left as
+	// it is.
 	if attr.Captures {
+		var held any
+		if err := q.Value(&held); err == nil && held != nil {
+			return nil
+		}
+		if err := q.Set(map[string]any{}).Commit(); err != nil {
+			return fmt.Errorf("writing the %s branch failed: %w", attr.Name, err)
+		}
 		return nil
 	}
 

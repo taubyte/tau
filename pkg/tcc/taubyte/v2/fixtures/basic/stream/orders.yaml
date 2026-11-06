@@ -1,6 +1,5 @@
 id: QmdmQXB2d1q5PVFHrpKgHqPnnGSuVYd3ZWZAJf1YXcvJcz
-distributed:
-    local: false
+distributed: {}
 function:
     checkout:
         ops: [invoke]

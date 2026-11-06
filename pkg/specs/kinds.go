@@ -2269,7 +2269,6 @@ type Stream struct {
 	Engine      string // which of distributed, kafka, nats was written
 	Host        string // authored at {kafka|nats}/host
 	Id          string
-	Local       *bool // authored at distributed/local
 	Name        string
 	Regions     Regions
 	Tags        []string
@@ -2285,7 +2284,6 @@ func ReadStream(r Resource) Stream {
 	out.Engine = r.String("engine")
 	out.Host = r.String("host")
 	out.Id = r.String("id")
-	out.Local = present[bool](r.Bool("local"))
 	out.Name = r.String("name")
 	out.Regions = ReadRegions(r)
 	out.Tags = r.Strings("tags")
@@ -2301,7 +2299,6 @@ const (
 	StreamKeyEngine         = "engine"
 	StreamKeyHost           = "host"
 	StreamKeyId             = "id"
-	StreamKeyLocal          = "local"
 	StreamKeyName           = "name"
 	StreamKeyRegions        = "regions"
 	StreamKeyTags           = "tags"
