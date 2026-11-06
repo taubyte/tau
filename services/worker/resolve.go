@@ -83,8 +83,11 @@ func specOf(t Target, p register.Pointer, proj *specs.Project, r specs.Resource,
 	}
 
 	spec := invoke.Spec{
-		Runtime:  runtime,
-		Name:     strings.Join([]string{t.Project, t.Environment, t.Kind, resourceID}, "/"),
+		Runtime: runtime,
+		// The namespace chain is in it: an id is derived from the bare name, so two
+		// workloads of one name in two namespaces share it, and the pool keeps warm
+		// instances by this name.
+		Name:     strings.Join(slices.Concat([]string{t.Project, t.Environment}, t.Scope, []string{t.Kind, resourceID}), "/"),
 		Revision: string(p.Object),
 		Env:      env,
 		Reaches:  reaches,

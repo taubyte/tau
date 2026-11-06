@@ -67,3 +67,17 @@ func TestAKafkaStreamCarriesWhatAConsumerNeeds(t *testing.T) {
 		specs.StreamCredentialsKeyName: "QmSecret", specs.StreamCredentialsKeyNamespace: "/",
 	}, got)
 }
+
+func TestAWorkloadsNameCarriesItsNamespaces(t *testing.T) {
+	h := newHarness(t)
+
+	// An id is derived from the bare name, so the namespace chain is what keeps two
+	// workloads of one name apart wherever a spec is keyed by its name.
+	nested, err := h.Worker.Resolve(t.Context(), Target{Project: "shop", Environment: "prod", Scope: []string{"shop"}, Kind: "function", Name: "notify"})
+	require.NoError(t, err)
+	require.Regexp(t, `^shop/prod/shop/function/Qm\w+$`, nested.Name)
+
+	root, err := h.Worker.Resolve(t.Context(), Target{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"})
+	require.NoError(t, err)
+	require.Regexp(t, `^shop/prod/function/Qm\w+$`, root.Name)
+}

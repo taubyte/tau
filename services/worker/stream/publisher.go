@@ -183,7 +183,7 @@ func invokeSubscriber(ctx context.Context, invoker Invoker, to *worker.Subscribe
 		return err
 	}
 	if res.Status < 200 || res.Status > 299 {
-		return fmt.Errorf("answered %d", res.Status)
+		return fmt.Errorf("answered %d: %.200s", res.Status, res.Body)
 	}
 	return nil
 }
