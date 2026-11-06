@@ -47,7 +47,7 @@ func (p *PatrickService) ReannounceJobs(ctx context.Context) error {
 
 // republishJob pushes a job back onto the queue (idempotent by id).
 func (p *PatrickService) republishJob(ctx context.Context, jid string) error {
-	if err := p.jobQueue.Push(jid, nil, 5*time.Second); err != nil {
+	if err := p.enqueue(jid); err != nil {
 		return fmt.Errorf("failed to re-push job in republishJob: %w", err)
 	}
 	return nil

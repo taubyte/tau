@@ -273,7 +273,7 @@ func (p *PatrickService) timeoutHandler(ctx context.Context, jid string, cid_log
 			return err
 		}
 
-		if err = p.jobQueue.Push(jid, nil, 5*time.Second); err != nil {
+		if err = p.enqueue(jid); err != nil {
 			return fmt.Errorf("failed to push job %s back onto queue: %w", jid, err)
 		}
 
@@ -568,7 +568,7 @@ func (srv *PatrickService) retryJob(ctx http.Context) (iface interface{}, err er
 			return nil, fmt.Errorf("failed putting job %s with %w", job.Id, err)
 		}
 
-		if err = srv.jobQueue.Push(job.Id, nil, 5*time.Second); err != nil {
+		if err = srv.enqueue(job.Id); err != nil {
 			return nil, fmt.Errorf("failed to push retried job %s onto queue: %w", job.Id, err)
 		}
 

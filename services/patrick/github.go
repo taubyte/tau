@@ -205,7 +205,7 @@ func (srv *PatrickService) RegisterJob(ctx context.Context, newJob *iface.Job) e
 	if exists {
 		return nil
 	}
-	if err = srv.jobQueue.Push(newJob.Id, nil, 5*time.Second); err != nil {
+	if err = srv.enqueue(newJob.Id); err != nil {
 		return fmt.Errorf("failed to push job onto queue: %w", err)
 	}
 	return nil
