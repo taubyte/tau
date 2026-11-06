@@ -17,6 +17,10 @@ func (f *Factory) storageNew(ctx context.Context, module common.Module,
 		return uint32(err)
 	}
 
+	if open := f.openedStorage(storageMatch); open != nil {
+		return uint32(f.WriteUint32Le(module, idPtr, open.id))
+	}
+
 	_ctx := f.parent.Context()
 	storageContext := storage.Context{
 		ProjectId:     _ctx.Project(),
@@ -29,7 +33,7 @@ func (f *Factory) storageNew(ctx context.Context, module common.Module,
 		return uint32(errno.ErrorDatabaseCreateFailed)
 	}
 
-	_storage := f.createStoragePointer(storage)
+	_storage := f.createStoragePointer(storage, storageMatch)
 
 	return uint32(f.WriteUint32Le(module, idPtr, uint32(_storage.id)))
 }

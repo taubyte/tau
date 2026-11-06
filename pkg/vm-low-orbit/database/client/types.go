@@ -18,11 +18,17 @@ type Factory struct {
 	databaseLock     sync.RWMutex
 	databaseIdToGrab uint32
 	database         map[uint32]*Database
+	// byMatch is the open handle of each database this instance uses. An
+	// instance is pooled across calls, and a function opening its database on
+	// every call without closing it added a handle per call.
+	byMatch map[string]*Database
 }
 
 var _ vm.Factory = &Factory{}
 
 type Database struct {
 	dbIface.Database
-	Id uint32
+	Id    uint32
+	match string
+	refs  int // opens not yet closed; the handle goes at the last close
 }

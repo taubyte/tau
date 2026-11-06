@@ -20,10 +20,14 @@ type Factory struct {
 	versionLock      sync.RWMutex
 	storagesIdToGrab uint32
 	storages         map[uint32]*Storage
-	version          map[string]string
-	contentLock      sync.RWMutex
-	contents         map[uint32]*content
-	contentIdToGrab  uint32
+	// byMatch is the handle of each storage this instance opened. Handles have
+	// no close, and an instance is pooled across calls, so a function opening
+	// its storage on every call added a handle per call.
+	byMatch         map[string]*Storage
+	version         map[string]string
+	contentLock     sync.RWMutex
+	contents        map[uint32]*content
+	contentIdToGrab uint32
 }
 
 var _ vm.Factory = &Factory{}

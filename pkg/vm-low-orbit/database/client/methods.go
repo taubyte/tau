@@ -108,11 +108,7 @@ func (f *Factory) databaseClose(ctx context.Context, module common.Module,
 		return uint32(err)
 	}
 
-	f.databaseLock.Lock()
-	defer f.databaseLock.Unlock()
-	delete(f.database, databaseId)
-
-	database.Close()
+	f.releaseDatabase(database)
 	return 0
 }
 

@@ -20,6 +20,10 @@ func (f *Factory) storageGet(ctx context.Context,
 		return uint32(err)
 	}
 
+	if open := f.openedStorage(storageMatch); open != nil {
+		return uint32(f.WriteUint32Le(module, idPtr, open.id))
+	}
+
 	_ctx := f.parent.Context()
 	storageContext := storage.Context{
 		Context:       _ctx.Context(),
@@ -33,7 +37,7 @@ func (f *Factory) storageGet(ctx context.Context,
 		return uint32(errno.ErrorStorageNotFound)
 	}
 
-	_storage := f.createStoragePointer(storage)
+	_storage := f.createStoragePointer(storage, storageMatch)
 
 	return uint32(f.WriteUint32Le(module, idPtr, uint32(_storage.id)))
 }
@@ -72,7 +76,7 @@ func (f *Factory) storageListFiles(ctx context.Context, module common.Module,
 	return uint32(f.WriteStringSlice(module, sizePtr, filePaths))
 }
 
-func (f *Factory) createStoragePointer(storage storage.Storage) *Storage {
+func (f *Factory) createStoragePointer(storage storage.Storage, match string) *Storage {
 	e := &Storage{
 		Storage: storage,
 		id:      f.generateStorageid(),
@@ -81,6 +85,10 @@ func (f *Factory) createStoragePointer(storage storage.Storage) *Storage {
 	f.storagesLock.Lock()
 	defer f.storagesLock.Unlock()
 	f.storages[e.id] = e
+	if f.byMatch == nil {
+		f.byMatch = make(map[string]*Storage)
+	}
+	f.byMatch[match] = e
 
 	return e
 }
@@ -101,4 +109,11 @@ func (f *Factory) generateStorageid() uint32 {
 		f.storagesLock.Unlock()
 	}()
 	return f.storagesIdToGrab
+}
+
+// openedStorage returns the handle already open for match, or nil.
+func (f *Factory) openedStorage(match string) *Storage {
+	f.storagesLock.RLock()
+	defer f.storagesLock.RUnlock()
+	return f.byMatch[match]
 }
