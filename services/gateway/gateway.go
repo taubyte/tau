@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/textproto"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -368,9 +370,18 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // writeTo sends one invocation's answer, whoever produced it.
 func writeTo(w http.ResponseWriter, res *invoke.Response) {
+	// A response's values are its own and are handed over rather than copied a
+	// value at a time, clipped so a later Add copies instead of writing past them.
+	h := w.Header()
 	for key, values := range res.Headers {
-		for _, v := range values {
-			w.Header().Add(key, v)
+		if len(values) == 0 {
+			continue
+		}
+		k := textproto.CanonicalMIMEHeaderKey(key)
+		if held, ok := h[k]; ok {
+			h[k] = append(held, values...)
+		} else {
+			h[k] = slices.Clip(values)
 		}
 	}
 	status := res.Status

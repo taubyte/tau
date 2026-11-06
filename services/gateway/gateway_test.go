@@ -582,3 +582,25 @@ func TestARequestWithNoBodyHandsOnNone(t *testing.T) {
 	require.Equal(t, http.StatusOK, h.do(t, http.MethodPost, "http://ask.example.com/", "exactly this").Code)
 	require.Equal(t, []byte("exactly this"), h.Workers.seen()[1].req.Body, "a declared length is read whole")
 }
+
+func TestAResponsesHeadersReachTheClientCanonicalAndAppendedToWhatWasSet(t *testing.T) {
+	w := httptest.NewRecorder()
+	w.Header().Set("Vary", "Origin")
+	writeTo(w, &invoke.Response{Status: 201, Headers: map[string][]string{
+		"x-path": {"/"},
+		"vary":   {"Accept"},
+		"empty":  {},
+	}, Body: []byte("ok")})
+
+	require.Equal(t, 201, w.Code)
+	require.Equal(t, []string{"/"}, w.Header()["X-Path"])
+	require.Equal(t, []string{"Origin", "Accept"}, w.Header()["Vary"], "what the gateway set first is kept")
+	require.NotContains(t, w.Header(), "Empty")
+
+	values := []string{"a", "b", "c"}
+	held := &invoke.Response{Headers: map[string][]string{"x-many": values[:2]}}
+	w = httptest.NewRecorder()
+	writeTo(w, held)
+	w.Header().Add("X-Many", "added")
+	require.Equal(t, []string{"a", "b", "c"}, values, "an Add after it does not write into the response's values")
+}
