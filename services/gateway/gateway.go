@@ -60,10 +60,11 @@ type Service struct {
 	issuer     Issuer
 	terminates bool
 
-	// mu guards the host table: which project owns a name, and when that was
-	// last asked.
+	// owner is the host table, a name's ownerEntry: which project owns it, and when
+	// that was last asked. A request reads it without a lock; mu orders the writes
+	// and guards order, the names in the order they were added, which bounds it.
+	owner sync.Map
 	mu    sync.Mutex
-	owner map[string]ownerEntry
 	order []string
 
 	// artifacts and assets are where a package handler's files come from, and files
@@ -72,10 +73,19 @@ type Service struct {
 	assets    Assets
 	files     *unpacked
 
-	// cands memoises candidatesAt per compiled project, which never changes once
-	// loaded; the candidates are shared, so nothing may write through them.
-	candMu sync.Mutex
-	cands  map[*specs.Project]map[string][]candidate
+	// cands memoises candidatesAt, a candKey's []candidate: a compiled project never
+	// changes once loaded. The candidates are shared, so nothing may write through
+	// them. A request reads it without a lock; candMu orders the writes and guards
+	// candProjects, the projects it holds, which bounds it.
+	cands        sync.Map
+	candMu       sync.Mutex
+	candProjects map[*specs.Project]struct{}
+}
+
+// candKey is a name within one compiled project.
+type candKey struct {
+	project *specs.Project
+	name    string
 }
 
 // maxCandidateProjects bounds cands; past it the table starts over.
@@ -138,7 +148,6 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		now:      o.now,
 		meter:    o.meter,
 		logf:     o.logf,
-		owner:    map[string]ownerEntry{},
 
 		secrets:    o.secrets,
 		issuer:     o.issuer,
@@ -526,25 +535,22 @@ func (s *Service) unbuilt(m match) (int, string) {
 func (s *Service) candidatesAt(p *specs.Project, name, projectName string) []candidate {
 	lookup := s.lookupName(name)
 
-	s.candMu.Lock()
-	out, ok := s.cands[p][lookup]
-	s.candMu.Unlock()
-	if ok {
-		return out
+	k := candKey{project: p, name: lookup}
+	if held, ok := s.cands.Load(k); ok {
+		return held.([]candidate)
 	}
 
-	out = readCandidates(p, lookup)
+	out := readCandidates(p, lookup)
 
 	s.candMu.Lock()
-	byName := s.cands[p]
-	if byName == nil {
-		if s.cands == nil || len(s.cands) >= maxCandidateProjects {
-			s.cands = map[*specs.Project]map[string][]candidate{}
+	if _, ok := s.candProjects[p]; !ok {
+		if s.candProjects == nil || len(s.candProjects) >= maxCandidateProjects {
+			s.cands.Clear()
+			s.candProjects = map[*specs.Project]struct{}{}
 		}
-		byName = map[string][]candidate{}
-		s.cands[p] = byName
+		s.candProjects[p] = struct{}{}
 	}
-	byName[lookup] = out
+	s.cands.Store(k, out)
 	s.candMu.Unlock()
 	return out
 }
@@ -594,12 +600,10 @@ func readBody(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, erro
 }
 
 func (s *Service) ownerOf(ctx context.Context, name string) (string, string, error) {
-	s.mu.Lock()
-	entry, ok := s.owner[name]
-	s.mu.Unlock()
-
-	if ok && s.now().Sub(entry.at) < s.cfg.HostTTL {
-		return entry.project, entry.environment, nil
+	if held, ok := s.owner.Load(name); ok {
+		if entry := held.(ownerEntry); s.now().Sub(entry.at) < s.cfg.HostTTL {
+			return entry.project, entry.environment, nil
+		}
 	}
 
 	projectName, environment, err := s.hosts.ResolveHost(ctx, name)
@@ -608,14 +612,14 @@ func (s *Service) ownerOf(ctx context.Context, name string) (string, string, err
 	}
 
 	s.mu.Lock()
-	if _, held := s.owner[name]; !held {
+	if _, held := s.owner.Load(name); !held {
 		s.order = append(s.order, name)
 		for len(s.order) > s.cfg.MaxHosts {
-			delete(s.owner, s.order[0])
+			s.owner.Delete(s.order[0])
 			s.order = s.order[1:]
 		}
 	}
-	s.owner[name] = ownerEntry{project: projectName, environment: environment, at: s.now()}
+	s.owner.Store(name, ownerEntry{project: projectName, environment: environment, at: s.now()})
 	s.mu.Unlock()
 
 	return projectName, environment, nil
@@ -671,7 +675,7 @@ func refuse(w http.ResponseWriter, status int, why string) {
 // and for an operator asking what a node is holding.
 func (s *Service) Held() (projects, names int) {
 	s.mu.Lock()
-	names = len(s.owner)
+	names = len(s.order)
 	s.mu.Unlock()
 	return s.projects.Held(), names
 }
