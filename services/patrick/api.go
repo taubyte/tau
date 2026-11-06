@@ -168,7 +168,10 @@ func (p *PatrickService) infoHandler(ctx context.Context, jid string) (cr.Respon
 func (p *PatrickService) dequeueHandler(ctx context.Context, conn streams.Connection) (cr.Response, error) {
 	id, _, err := p.jobQueue.Pop(5 * time.Second)
 	if err != nil {
-		if errors.Is(err, raft.ErrQueueEmpty) {
+		// A follower cannot pop, and removes nothing trying: it has no job to
+		// give, which is an answer, not a failure. The monkey asks the next
+		// Patrick, and the leader hands the job out.
+		if errors.Is(err, raft.ErrQueueEmpty) || errors.Is(err, raft.ErrNotLeader) {
 			return cr.Response{"available": false}, nil
 		}
 		return nil, fmt.Errorf("queue pop: %w", err)

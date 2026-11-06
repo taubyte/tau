@@ -58,14 +58,7 @@ func (srv *Service) pollJobs() {
 // tryDequeueJob attempts to dequeue a single job from Patrick and returns the
 // monkey that will run it, or nil when there is nothing new to run.
 func (srv *Service) tryDequeueJob() *Monkey {
-	peers := srv.discoverPatrickPeers()
-	client := srv.patrickClient.Peers(peers...)
-
-	job, err := client.Dequeue()
-	if err != nil {
-		logger.Debugf("Dequeue failed: %v", err)
-		return nil
-	}
+	job := srv.dequeueFromAny(srv.discoverPatrickPeers())
 	if job == nil {
 		return nil
 	}
