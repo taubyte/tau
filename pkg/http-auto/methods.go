@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/jellydator/ttlcache/v3"
 	authP2P "github.com/taubyte/tau/clients/p2p/auth"
@@ -104,8 +105,8 @@ func newAuto(ctx context.Context, node peer.Node, opts ...options.Option) (*Serv
 		return nil, err
 	}
 
-	s.positiveCache = ttlcache.New(ttlcache.WithTTL[string, bool](PositiveTTL))
-	s.negativeCache = ttlcache.New(ttlcache.WithTTL[string, bool](NegativeTTL))
+	s.positiveCache = newValidationCache(PositiveTTL)
+	s.negativeCache = newValidationCache(NegativeTTL)
 
 	return s, nil
 }
@@ -224,4 +225,12 @@ func (s *Service) GetListenAddress() (*url.URL, error) {
 
 func (s *Service) Error() error {
 	return s.err
+}
+
+// newValidationCache keeps a domain check's answer for ttl. A read must not
+// extend an entry: by default ttlcache restarts the TTL on every hit, so a
+// client retrying a domain that was not yet published kept its refusal alive
+// for as long as it kept retrying.
+func newValidationCache(ttl time.Duration) *ttlcache.Cache[string, bool] {
+	return ttlcache.New(ttlcache.WithTTL[string, bool](ttl), ttlcache.WithDisableTouchOnHit[string, bool]())
 }
