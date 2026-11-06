@@ -58,6 +58,7 @@ func (f *Function) Handle(w goHttp.ResponseWriter, r *goHttp.Request, matcher co
 	defer instance.Free()
 
 	ev := instance.SDK().CreateHttpEvent(w, r)
+	defer instance.SDK().ReleaseEvent(ev.Id)
 
 	return time.Now(), f.Call(instance, ev.Id)
 }

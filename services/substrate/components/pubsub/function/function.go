@@ -34,6 +34,7 @@ func (f *Function) HandleMessage(msg iface.Message) (t time.Time, err error) {
 
 	// Pass the interface message directly to the SDK
 	ev := instance.SDK().CreatePubsubEvent(msg)
+	defer instance.SDK().ReleaseEvent(ev.Id)
 
 	return time.Now(), f.Call(instance, ev.Id)
 }

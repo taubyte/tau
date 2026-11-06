@@ -38,3 +38,5 @@ func (ts *TestSdk) CreateP2PEvent(cmd *command.Command, response response.Respon
 }
 
 func (ts *TestSdk) AttachEvent(*event.Event) {}
+
+func (ts *TestSdk) ReleaseEvent(uint32) {}
