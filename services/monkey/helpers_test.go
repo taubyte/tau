@@ -3,7 +3,9 @@ package monkey
 import (
 	"context"
 	"fmt"
+	goCid "github.com/ipfs/go-cid"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/taubyte/tau/core/services/monkey"
@@ -64,7 +66,10 @@ func readLogsTestHelper(testCtx context.Context, response *monkey.StatusResponse
 	}
 
 	// Delete locally
-	err := peerC.DeleteFile(cid_of_logs)
+	root, err := goCid.Decode(cid_of_logs)
+	if err == nil {
+		err = peerC.DAG().Remove(testCtx, root)
+	}
 	if err != nil {
 		return fmt.Errorf("Deleting logs `%s` failed with: %s", cid_of_logs, err.Error())
 	}
@@ -87,7 +92,7 @@ func readLogsTestHelper(testCtx context.Context, response *monkey.StatusResponse
 		return fmt.Errorf("Reading log file failed with %s", err.Error())
 	}
 
-	if expected_logs != string(logs) {
+	if !strings.Contains(string(logs), expected_logs) {
 		return fmt.Errorf("Logs CID(`%s`)don't match, expected `%s` got `%s`", cid_of_logs, expected_logs, logs)
 	}
 

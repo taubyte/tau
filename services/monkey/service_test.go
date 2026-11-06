@@ -11,20 +11,33 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/dream"
+	dreamCommon "github.com/taubyte/tau/dream/common"
 	"github.com/taubyte/tau/p2p/peer"
+	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 	protocolCommon "github.com/taubyte/tau/services/common"
 	_ "github.com/taubyte/tau/services/hoarder/dream"
 	"gotest.tools/v3/assert"
 )
 
 func init() {
+	// This test is inside package monkey, so it cannot import monkey/dream (an
+	// import cycle); register the service with Dream the way that package does.
+	if err := dream.Registry.Set(commonSpecs.Monkey, func(u *dream.Universe, config *commonIface.ServiceConfig) (commonIface.Service, error) {
+		cfg, err := dreamCommon.NewConfig(u, config)
+		if err != nil {
+			return nil, err
+		}
+		return New(u.Context(), cfg)
+	}, nil); err != nil {
+		panic(err)
+	}
+
 	NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
 		return &mock.Starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
 	}
 }
 
 func TestService_Dreaming(t *testing.T) {
-	t.Skip("Times out, needs to be relooked at")
 	protocolCommon.MockedPatrick = true
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
@@ -76,7 +89,8 @@ func TestService_Dreaming(t *testing.T) {
 		Logs:     make(map[string]string),
 		AssetCid: make(map[string]string),
 	}
-	failed_job.Meta.Repository.ID = 1
+	// Repository ID 0 is RunJob's defined failure: no repository.
+	failed_job.Meta.Repository.ID = 0
 	if err = u.Monkey().Patrick().(*mock.Starfish).AddJob(t, u.Monkey().Node(), failed_job); err != nil {
 		t.Error(err)
 		return
@@ -103,7 +117,7 @@ func TestService_Dreaming(t *testing.T) {
 		client:       monkey,
 		jid:          failed_job.Id,
 		expectStatus: patrick.JobStatusFailed,
-		expectLog:    "Running job `fake_jid_failed` was successful",
+		expectLog:    "Running job `fake_jid_failed` failed with error: no repository defined for job: fake_jid_failed",
 	}).waitForStatus(); err != nil {
 		t.Error(err)
 		return
