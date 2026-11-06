@@ -815,17 +815,26 @@ type universe struct {
 	fleets [][]*running
 }
 
+// fleetServices is what every node of a fleet runs.
+var fleetServices = []string{
+	instance.Register, instance.Worker, instance.Discovery, instance.Gateway,
+	instance.Database, instance.Primitives, storageService.Descriptor.Name, instance.Builder}
+
 // deployFleetOf is deployFleet over several projects in one universe: a publish per
 // project and a settle barrier waiting for all of them.
 func deployFleetOf(t *testing.T, copies int, wasm []byte, extra map[string][]byte, projects ...deployed) universe {
 	t.Helper()
+	return deployFleetServing(t, copies, fleetServices, wasm, extra, projects...)
+}
+
+// deployFleetServing is deployFleetOf with the services every node runs named.
+func deployFleetServing(t *testing.T, copies int, services []string, wasm []byte, extra map[string][]byte, projects ...deployed) universe {
+	t.Helper()
 	require.NotEmpty(t, projects, "a universe with nothing published in it proves nothing")
 
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services: []string{
-			instance.Register, instance.Worker, instance.Discovery, instance.Gateway,
-			instance.Database, instance.Primitives, storageService.Descriptor.Name, instance.Builder},
-		Copies: copies,
+		Services: services,
+		Copies:   copies,
 	})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)

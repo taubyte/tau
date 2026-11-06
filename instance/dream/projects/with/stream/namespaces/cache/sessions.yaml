@@ -1,0 +1,5 @@
+id: QmPZVNdFnq1vBqWQ56rTHJkFUuA16uBpHUZSDzLToCVdVz
+description: where each subscriber writes what reached it, under a key of its own, so a read says which subscriber got which stream
+size: 1MB
+ttl: 1h
+consensus: crdt

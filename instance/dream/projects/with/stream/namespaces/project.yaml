@@ -1,0 +1,6 @@
+id: QmRofSGtSLt5wPEFWHRLQCsTw6yJZhEDXmVtrCWJ1dsuW6
+name: streamnamespaces
+description: two streams and two subscribers of one name in two namespaces - each subscriber gets the streams it subscribed to, once, and never the other's
+environments:
+    prod:
+        branches: ["*"]

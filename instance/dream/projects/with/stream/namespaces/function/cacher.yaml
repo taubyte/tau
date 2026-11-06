@@ -1,0 +1,16 @@
+id: QmNP8ZJRT6En1LVfTwkbiD4HgdeRxvpHGn4m5Sp2cY8UxS
+description: the publisher, at the root - it publishes to both streams and reads back what the subscribers wrote
+package:
+    name: cacher_code
+execution:
+    call: handle
+    timeout: 15s
+    memory: 32MiB
+cache:
+    sessions:
+        ops: [get]
+stream:
+    orders:
+        ops: [publish]
+    refunds:
+        ops: [publish]

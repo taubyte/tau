@@ -27,7 +27,7 @@ func TestAnExternalKafkaStreamIsDeliveredByItsConsumer(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 	kafkaPort, adminPort := freePort(t), freePort(t)
 	startRedpanda(t, kafkaPort, adminPort)
-	streamOnLog(t, "with/stream/kafka", "127.0.0.1:9092", fmt.Sprintf("127.0.0.1:%d", kafkaPort))
+	streamOnLog(t, "with/stream/kafka", "kafkacreds", "127.0.0.1:9092", fmt.Sprintf("127.0.0.1:%d", kafkaPort))
 }
 
 func startRedpanda(t *testing.T, kafkaPort, adminPort int) {
