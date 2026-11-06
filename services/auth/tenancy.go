@@ -35,7 +35,9 @@ const (
 // owning namespace configured. Refusing beats falling open: an unconfigured
 // cloud would otherwise accept a registration from anyone holding a valid
 // provider token.
-var ErrNoTenancy = errors.New("no tenancy configured: this cloud registers repositories for a configured namespace only")
+var ErrNoTenancy = errors.New("no tenancy configured: set tenancy.owner in this node's config " +
+	"to the GitHub account that owns the cloud, or to an organization together with tenancy.app " +
+	"(a GitHub App with organization Members: read, installed on it)")
 
 // MembershipVerifier answers whether a user belongs to a namespace. A
 // (false, nil) result is a definitive non-member; everything else -- missing
