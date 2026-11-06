@@ -89,29 +89,31 @@ type UserResponse struct {
 	User UserInfo `json:"user"`
 }
 
-func generateKey() (string, string, string, error) {
+// generateKey makes a deploy key pair: the public half as an authorized_keys
+// line, the private half PEM encoded.
+func generateKey() (string, string, error) {
 	_privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return "", "", "", err
+		return "", "", err
 	}
 
 	privateKey, err := x509.MarshalECPrivateKey(_privateKey)
 	if err != nil {
-		return "", "", "", err
+		return "", "", err
 	}
 
 	privateKeyPEM := &pem.Block{Type: "EC PRIVATE KEY", Bytes: privateKey}
 	var private bytes.Buffer
 	if err := pem.Encode(&private, privateKeyPEM); err != nil {
-		return "", "", "", err
+		return "", "", err
 	}
 
 	pub, err := ssh.NewPublicKey(&_privateKey.PublicKey)
 	if err != nil {
-		return "", "", "", err
+		return "", "", err
 	}
 
-	return deployKeyName, string(ssh.MarshalAuthorizedKey(pub)), private.String(), nil
+	return string(ssh.MarshalAuthorizedKey(pub)), private.String(), nil
 }
 
 // repoAccess reports whether the caller may act on a repository. GetByID already
@@ -188,7 +190,11 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client Git
 		secret = "mock-secret"
 	}
 
-	kname, kpub, kpriv, err := generateKey()
+	kname := srv.deployKeyName
+	if kname == "" {
+		kname = deployKeyTitle(srv.devMode, "")
+	}
+	kpub, kpriv, err := generateKey()
 	if err != nil {
 		return nil, fmt.Errorf("generate key failed with %s", err)
 	}

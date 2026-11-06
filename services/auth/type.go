@@ -28,6 +28,8 @@ type AuthService struct {
 	config     tauConfig.Config
 	devMode    bool
 	webHookUrl string
+	// deployKeyName titles the deploy keys this cloud adds to repositories.
+	deployKeyName string
 
 	dvPrivateKey []byte
 	dvPublicKey  []byte
