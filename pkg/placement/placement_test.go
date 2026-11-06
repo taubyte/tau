@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"reflect"
+	"slices"
 	"sort"
 	"testing"
 
@@ -276,4 +277,55 @@ func contains(s []string, v string) bool {
 		}
 	}
 	return false
+}
+
+// rankThenFilter is Desired as it was first written: the whole fleet ranked, then the
+// accepting members taken in order, once each.
+func rankThenFilter(resource string, members []Member, target int) []string {
+	if target <= 0 {
+		return nil
+	}
+	out := []string{}
+	for _, m := range Rank(resource, members) {
+		if !m.Accepts || slices.Contains(out, m.ID) {
+			continue
+		}
+		out = append(out, m.ID)
+		if len(out) == target {
+			break
+		}
+	}
+	return out
+}
+
+func TestDesiredIsWhatRankingTheWholeFleetGives(t *testing.T) {
+	rng := rand.New(rand.NewSource(7))
+	for round := range 2000 {
+		members := make([]Member, rng.Intn(40))
+		for i := range members {
+			members[i] = Member{ID: fmt.Sprintf("peer%02d", rng.Intn(30)), Accepts: rng.Intn(4) != 0}
+		}
+		resource := fmt.Sprintf("index/s%03d", round)
+		for _, target := range []int{0, 1, 3, 5, 12} {
+			want := rankThenFilter(resource, members, target)
+			got := Desired(resource, members, target)
+			if len(want) == 0 {
+				require.Empty(t, got, "round %d target %d", round, target)
+				continue
+			}
+			require.Equal(t, want, got, "round %d target %d", round, target)
+			for _, m := range members {
+				require.Equal(t, slices.Contains(want, m.ID), Holds(resource, members, target, m.ID))
+			}
+		}
+	}
+}
+
+func TestHoldingIsAskedWithoutAllocating(t *testing.T) {
+	members := make([]Member, 50)
+	for i := range members {
+		members[i] = Member{ID: fmt.Sprintf("12D3KooWpeer%03d", i), Accepts: true}
+	}
+	require.Zero(t, testing.AllocsPerRun(100, func() { Holds("index/s042", members, 3, members[10].ID) }))
+	require.LessOrEqual(t, testing.AllocsPerRun(100, func() { Desired("index/s042", members, 3) }), 1.0)
 }

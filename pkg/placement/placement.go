@@ -48,14 +48,21 @@ type Member struct {
 // length-delimited rather than separated by a byte, so ("a\x00b", "c") and
 // ("a", "b\x00c") score differently.
 func Score(resource, member string) uint64 {
+	d := scoring(resource)
+	d.WriteString(member)
+	return d.Sum64()
+}
+
+// scoring is the digest every member's score starts from: the resource, written
+// once and copied per member.
+func scoring(resource string) xxhash.Digest {
 	var n [8]byte
 	binary.BigEndian.PutUint64(n[:], uint64(len(resource)))
 	var d xxhash.Digest
 	d.Reset()
 	d.Write(n[:])
 	d.WriteString(resource)
-	d.WriteString(member)
-	return d.Sum64()
+	return d
 }
 
 // Rank returns every member ordered by descending score, ties broken by
@@ -65,9 +72,12 @@ func Score(resource, member string) uint64 {
 // It copies rather than sorting the caller's slice: a ranking function that
 // reorders its input makes every caller's second call depend on its first.
 func Rank(resource string, members []Member) []Member {
+	base := scoring(resource)
 	scored := make([]scoredMember, len(members))
 	for i, m := range members {
-		scored[i] = scoredMember{Member: m, score: Score(resource, m.ID)}
+		d := base
+		d.WriteString(m.ID)
+		scored[i] = scoredMember{Member: m, score: d.Sum64()}
 	}
 	slices.SortFunc(scored, func(a, b scoredMember) int {
 		if a.score != b.score {
@@ -97,23 +107,64 @@ func Desired(resource string, members []Member, target int) []string {
 	if target <= 0 {
 		return nil
 	}
-	out := make([]string, 0, target)
-	for _, m := range Rank(resource, members) {
-		if !m.Accepts || slices.Contains(out, m.ID) {
-			continue
-		}
-		out = append(out, m.ID)
-		if len(out) == target {
-			break
-		}
+	var held [8]scored
+	top := best(held[:0], resource, members, target)
+	out := make([]string, len(top))
+	for i, m := range top {
+		out[i] = m.id
 	}
 	return out
 }
 
+type scored struct {
+	id    string
+	score uint64
+}
+
+// best is the top target accepting members, distinct, in Rank's order, appended to
+// dst: what Rank and then a filter give, without ranking the whole fleet.
+func best(dst []scored, resource string, members []Member, target int) []scored {
+	base := scoring(resource)
+	for _, m := range members {
+		if !m.Accepts {
+			continue
+		}
+		d := base
+		d.WriteString(m.ID)
+		c := scored{id: m.ID, score: d.Sum64()}
+
+		at := len(dst)
+		for at > 0 && ahead(c, dst[at-1]) {
+			at--
+		}
+		if at == target || slices.ContainsFunc(dst, func(s scored) bool { return s.id == c.id }) {
+			continue
+		}
+		if len(dst) < target {
+			dst = append(dst, scored{})
+		}
+		copy(dst[at+1:], dst[at:len(dst)-1])
+		dst[at] = c
+	}
+	return dst
+}
+
+// ahead is Rank's order: the higher score first, a tie by the lower id.
+func ahead(a, b scored) bool {
+	if a.score != b.score {
+		return a.score > b.score
+	}
+	return a.id < b.id
+}
+
 // Holds reports whether one member is in the desired set: "is this mine?"
 func Holds(resource string, members []Member, target int, id string) bool {
-	for _, m := range Desired(resource, members, target) {
-		if m == id {
+	if target <= 0 {
+		return false
+	}
+	var held [8]scored
+	for _, m := range best(held[:0], resource, members, target) {
+		if m.id == id {
 			return true
 		}
 	}
