@@ -151,7 +151,14 @@ func pointerKey(project, environment string) string {
 
 // hostKey holds who answers on a name; claimsKey holds which names one
 // environment claimed last time, so a republish can release the ones it dropped.
-func hostKey(fqdn string) string { return hostPrefix + strings.ToLower(fqdn) }
+func hostKey(fqdn string) string { return hostPrefix + CanonicalHost(fqdn) }
+
+// CanonicalHost is a name as every claim, lookup and cache keys it: trimmed,
+// lowercased and without the root's trailing dot, so "Shop.Example.com." and
+// "shop.example.com" are one name, as they are to DNS.
+func CanonicalHost(fqdn string) string {
+	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(fqdn)), ".")
+}
 
 func claimsKey(project, environment string) string {
 	return claimsPrefix + project + sep + environment
@@ -284,7 +291,7 @@ func (r *Register) claim(ctx context.Context, project, environment string, hosts
 
 	wanted := map[string]bool{}
 	for _, h := range hosts {
-		if h = strings.ToLower(strings.TrimSpace(h)); h != "" {
+		if h = CanonicalHost(h); h != "" {
 			wanted[h] = true
 		}
 	}
@@ -332,7 +339,7 @@ func (r *Register) claims(ctx context.Context, project, environment string) ([]s
 // ResolveHost is the read a gateway makes: whose is this name. It is
 // case-insensitive, as DNS is.
 func (r *Register) ResolveHost(ctx context.Context, fqdn string) (project, environment string, err error) {
-	fqdn = strings.ToLower(strings.TrimSpace(fqdn))
+	fqdn = CanonicalHost(fqdn)
 	if fqdn == "" {
 		return "", "", ErrNoHost
 	}
