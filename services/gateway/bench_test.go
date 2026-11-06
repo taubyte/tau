@@ -83,3 +83,21 @@ func BenchmarkServeHTTP(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkServeHTTPParallel is a routed request from every core at once: what one
+// costs when the host table and the project cache are contended.
+func BenchmarkServeHTTPParallel(b *testing.B) {
+	gw := benchGateway(b)
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			r := httptest.NewRequest(http.MethodGet, "http://api.example.com/v1/orders", nil)
+			r.RemoteAddr = "203.0.113.7:51000"
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, r)
+			if w.Code == 0 {
+				b.Fatal("no answer")
+			}
+		}
+	})
+}

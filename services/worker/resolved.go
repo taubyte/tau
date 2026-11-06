@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"maps"
 	"strings"
 	"sync"
 
@@ -33,41 +34,38 @@ type resolvedSpec struct {
 	pkg  ranPackage
 }
 
-// deployed is what one deployment's targets resolve to under its current object.
+// deployed is what one deployment's targets resolve to under its current object. It
+// is never written once held: a new target replaces it with a copy.
 type deployed struct {
 	object  register.ObjectID
 	targets map[resolvedKey]resolvedSpec
 }
 
-// resolutions is every deployment's, replaced whole when its pointer moves.
+// resolutions is every deployment's *deployed, replaced whole when its pointer moves.
+// A read takes no lock; mu orders the writes, so two targets added at once both stay.
 type resolutions struct {
+	held sync.Map
 	mu   sync.Mutex
-	held map[register.Deployment]*deployed
 }
 
 func (r *resolutions) get(d register.Deployment, object register.ObjectID, k resolvedKey) (resolvedSpec, bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	at, ok := r.held[d]
-	if !ok || at.object != object {
+	held, ok := r.held.Load(d)
+	if !ok || held.(*deployed).object != object {
 		return resolvedSpec{}, false
 	}
-	got, ok := at.targets[k]
+	got, ok := held.(*deployed).targets[k]
 	return got, ok
 }
 
 func (r *resolutions) put(d register.Deployment, object register.ObjectID, k resolvedKey, s resolvedSpec) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.held == nil {
-		r.held = map[register.Deployment]*deployed{}
+	next := &deployed{object: object, targets: map[resolvedKey]resolvedSpec{}}
+	if held, ok := r.held.Load(d); ok && held.(*deployed).object == object {
+		next.targets = maps.Clone(held.(*deployed).targets)
 	}
-	at, ok := r.held[d]
-	if !ok || at.object != object {
-		at = &deployed{object: object, targets: map[resolvedKey]resolvedSpec{}}
-		r.held[d] = at
-	}
-	at.targets[k] = s
+	next.targets[k] = s
+	r.held.Store(d, next)
 }
 
 // resolved is t's spec as held, its artifact asked now.

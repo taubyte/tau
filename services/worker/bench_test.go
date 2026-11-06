@@ -41,3 +41,21 @@ func BenchmarkInvokeOverRPC(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkResolveParallel is a function's resolve from every core at once.
+func BenchmarkResolveParallel(b *testing.B) {
+	h := newHarness(b)
+	t := Target{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"}
+	if _, err := h.Worker.Resolve(b.Context(), t); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			if _, err := h.Worker.Resolve(b.Context(), t); err != nil {
+				b.Error(err)
+				return
+			}
+		}
+	})
+}

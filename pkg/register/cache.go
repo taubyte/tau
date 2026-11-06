@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -97,14 +98,19 @@ type Cache[T any] struct {
 	parse func([]byte) (T, error)
 	opts  cacheOptions
 
-	// mu guards both maps. It is a plain mutex rather than an RWMutex: every
-	// path that reads also writes — the pointer path refreshes, the project
-	// path touches the LRU — so a read lock would be taken and immediately
-	// upgraded.
+	// A hit takes no lock: every request reads both tables, and a mutex there held
+	// every core to one. pointers is a Deployment's pointerEntry, refreshed in place.
+	// objects is an ObjectID's *objectEntry; mu serialises what changes it, a load
+	// claiming an id and the eviction that may follow, and guards held.
+	pointers sync.Map
+	objects  sync.Map
 	mu       sync.Mutex
-	pointers map[Deployment]pointerEntry
-	objects  map[ObjectID]*objectEntry[T]
-	lru      []ObjectID
+	held     int
+
+	// used is the LRU's clock. An entry carries the stamp of its last use, unique, so
+	// the least recently used is the smallest; a hit on the entry already most
+	// recent writes nothing.
+	used atomic.Uint64
 }
 
 type pointerEntry struct {
@@ -114,11 +120,14 @@ type pointerEntry struct {
 
 // objectEntry is one cached compiled project. ready is closed when the load that
 // claimed it finishes, so concurrent readers wait for one fetch: a deploy makes every
-// in-flight request want the same project at once.
+// in-flight request want the same project at once. loaded says so without the channel,
+// whose receive takes its lock even once closed.
 type objectEntry[T any] struct {
-	ready chan struct{}
-	proj  T
-	err   error
+	ready  chan struct{}
+	loaded atomic.Bool
+	proj   T
+	err    error
+	used   atomic.Uint64
 }
 
 // NewCache builds a cache over a registry.
@@ -137,13 +146,7 @@ func NewCache[T any](registry Registry, parse func([]byte) (T, error), opts ...C
 		}
 	}
 
-	return &Cache[T]{
-		registry: registry,
-		parse:    parse,
-		opts:     o,
-		pointers: map[Deployment]pointerEntry{},
-		objects:  map[ObjectID]*objectEntry[T]{},
-	}, nil
+	return &Cache[T]{registry: registry, parse: parse, opts: o}, nil
 }
 
 // At is what an environment currently runs.
@@ -165,42 +168,38 @@ func (c *Cache[T]) At(ctx context.Context, at Deployment) (T, Pointer, error) {
 func (c *Cache[T]) Held() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return len(c.objects)
+	return c.held
 }
 
 func (c *Cache[T]) pointer(ctx context.Context, at Deployment) (Pointer, error) {
-
-	c.mu.Lock()
-	entry, ok := c.pointers[at]
-	c.mu.Unlock()
-
-	if ok && c.opts.now().Sub(entry.at) < c.opts.ttl {
-		return entry.pointer, nil
+	if held, ok := c.pointers.Load(at); ok {
+		if entry := held.(pointerEntry); c.opts.now().Sub(entry.at) < c.opts.ttl {
+			return entry.pointer, nil
+		}
 	}
 
 	p, err := c.registry.Resolve(ctx, at.Project, at.Environment)
 	if err != nil {
 		return Pointer{}, err
 	}
-
-	c.mu.Lock()
-	c.pointers[at] = pointerEntry{pointer: p, at: c.opts.now()}
-	c.mu.Unlock()
-
+	c.pointers.Store(at, pointerEntry{pointer: p, at: c.opts.now()})
 	return p, nil
 }
 
 func (c *Cache[T]) object(ctx context.Context, id ObjectID) (T, error) {
+	if held, ok := c.objects.Load(id); ok {
+		return c.read(held.(*objectEntry[T]))
+	}
+
 	c.mu.Lock()
-	if entry, ok := c.objects[id]; ok {
-		c.touch(id)
+	if held, ok := c.objects.Load(id); ok {
 		c.mu.Unlock()
-		<-entry.ready
-		return entry.proj, entry.err
+		return c.read(held.(*objectEntry[T]))
 	}
 	entry := &objectEntry[T]{ready: make(chan struct{})}
-	c.objects[id] = entry
-	c.touch(id)
+	c.touch(entry)
+	c.objects.Store(id, entry)
+	c.held++
 	c.evict()
 	c.mu.Unlock()
 
@@ -209,15 +208,16 @@ func (c *Cache[T]) object(ctx context.Context, id ObjectID) (T, error) {
 		entry.proj, err = c.parse(compiled)
 	}
 	entry.err = err
+	entry.loaded.Store(true)
 	close(entry.ready)
 
 	// A failed load is not cached: it is usually the register being unreachable, and
 	// remembering it would make the project never load again.
 	if err != nil {
 		c.mu.Lock()
-		if c.objects[id] == entry {
-			delete(c.objects, id)
-			c.forget(id)
+		if held, ok := c.objects.Load(id); ok && held == entry {
+			c.objects.Delete(id)
+			c.held--
 		}
 		c.mu.Unlock()
 		var zero T
@@ -226,25 +226,35 @@ func (c *Cache[T]) object(ctx context.Context, id ObjectID) (T, error) {
 	return entry.proj, nil
 }
 
-// touch, forget and evict are the LRU. They are called with c.mu held.
-func (c *Cache[T]) touch(id ObjectID) {
-	c.forget(id)
-	c.lru = append(c.lru, id)
+// read waits for an entry another caller is loading, and counts the use.
+func (c *Cache[T]) read(entry *objectEntry[T]) (T, error) {
+	c.touch(entry)
+	if !entry.loaded.Load() {
+		<-entry.ready
+	}
+	return entry.proj, entry.err
 }
 
-func (c *Cache[T]) forget(id ObjectID) {
-	for i, held := range c.lru {
-		if held == id {
-			c.lru = append(c.lru[:i], c.lru[i+1:]...)
-			return
-		}
+func (c *Cache[T]) touch(entry *objectEntry[T]) {
+	if latest := c.used.Load(); latest == 0 || entry.used.Load() != latest {
+		entry.used.Store(c.used.Add(1))
 	}
 }
 
+// evict drops the least recently used until the budget holds. It is called with c.mu
+// held, on a load, so its scan of the at most max+1 entries is a load's cost.
 func (c *Cache[T]) evict() {
-	for len(c.lru) > c.opts.max {
-		delete(c.objects, c.lru[0])
-		c.lru = c.lru[1:]
+	for c.held > c.opts.max {
+		var oldest any
+		least := uint64(0)
+		c.objects.Range(func(id, held any) bool {
+			if used := held.(*objectEntry[T]).used.Load(); oldest == nil || used < least {
+				oldest, least = id, used
+			}
+			return true
+		})
+		c.objects.Delete(oldest)
+		c.held--
 	}
 }
 
@@ -252,13 +262,11 @@ func (c *Cache[T]) evict() {
 // router may send traffic where it is already warm; it is a hint, never a rule, or
 // a project nobody has loaded would have nowhere to go.
 func (c *Cache[T]) Deployments() []Deployment {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	out := make([]Deployment, 0, len(c.pointers))
-	for at := range c.pointers {
-		out = append(out, at)
-	}
+	var out []Deployment
+	c.pointers.Range(func(at, _ any) bool {
+		out = append(out, at.(Deployment))
+		return true
+	})
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Project != out[j].Project {
 			return out[i].Project < out[j].Project

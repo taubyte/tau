@@ -8,6 +8,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -92,7 +93,7 @@ func build(t testing.TB, cfg Config, opts ...Option) *harness {
 	require.NoError(t, err)
 	t.Cleanup(func() { pool.Close() })
 
-	clock := &fakeClock{at: time.Unix(1_700_000_000, 0)}
+	clock := newFakeClock(time.Unix(1_700_000_000, 0))
 
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -365,19 +366,28 @@ func (i *fakeInstance) Dial(_ context.Context, port string) (net.Conn, error) {
 	return net.Dial("tcp", l.Addr().String())
 }
 
+// fakeClock is read on every resolve, from every core in a parallel benchmark, so a
+// read takes no lock.
 type fakeClock struct {
-	mu sync.Mutex
-	at time.Time
+	at atomic.Pointer[time.Time]
 }
 
 func (c *fakeClock) Now() time.Time {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.at
+	return *c.at.Load()
 }
 
 func (c *fakeClock) advance(d time.Duration) {
-	c.mu.Lock()
-	c.at = c.at.Add(d)
-	c.mu.Unlock()
+	for {
+		was := c.at.Load()
+		next := was.Add(d)
+		if c.at.CompareAndSwap(was, &next) {
+			return
+		}
+	}
+}
+
+func newFakeClock(at time.Time) *fakeClock {
+	c := &fakeClock{}
+	c.at.Store(&at)
+	return c
 }
