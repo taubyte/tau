@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
@@ -164,11 +163,16 @@ func (n *Instance) PLMAddr() net.Addr {
 // artifacts is what a built resource currently runs. It drops the kind, since a
 // resource id is unique. The answer is cached for the register pointer's TTL, how
 // long a node may run the previous artifact after a build.
+// artifacts' seen is a built resource's builtAt, read on every request without a
+// lock.
 type artifacts struct {
 	node *Instance
+	seen sync.Map
+}
 
-	mu   sync.Mutex
-	seen map[string]builtAt
+// builtKey is a resource within one deployment.
+type builtKey struct {
+	project, environment, resource string
 }
 
 type builtAt struct {
@@ -180,11 +184,11 @@ type builtAt struct {
 // from: plm's job records, this node's replica of them, which it shares with any
 // plm service running here. No plm node is asked.
 func (n *Instance) PLMArtifacts() worker.Artifacts {
-	return &artifacts{node: n, seen: map[string]builtAt{}}
+	return &artifacts{node: n}
 }
 
 func (a *artifacts) Artifact(ctx context.Context, project, environment, kind, resource string) (string, error) {
-	key := strings.Join([]string{project, environment, resource}, "\x00")
+	key := builtKey{project: project, environment: environment, resource: resource}
 
 	if cid, ok := a.cached(key); ok {
 		return cid, nil
@@ -214,18 +218,17 @@ func notBuilt(err error, project, environment, resource string) error {
 	return err
 }
 
-func (a *artifacts) remember(key, cid string) {
-	a.mu.Lock()
-	a.seen[key] = builtAt{cid: cid, when: a.node.clock()}
-	a.mu.Unlock()
+func (a *artifacts) remember(key builtKey, cid string) {
+	a.seen.Store(key, builtAt{cid: cid, when: a.node.clock()})
 }
 
-func (a *artifacts) cached(key string) (string, bool) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	at, ok := a.seen[key]
-	if !ok || a.node.clock().Sub(at.when) >= a.node.cfg.Worker.Pointer() {
+func (a *artifacts) cached(key builtKey) (string, bool) {
+	held, ok := a.seen.Load(key)
+	if !ok {
+		return "", false
+	}
+	at := held.(builtAt)
+	if a.node.clock().Sub(at.when) >= a.node.cfg.Worker.Pointer() {
 		return "", false
 	}
 	return at.cid, true

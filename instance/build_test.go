@@ -178,8 +178,8 @@ func TestTheArtifactLookupIsCachedForTheDeployBudget(t *testing.T) {
 		Config{Services: []string{Discovery}, Worker: worker.Config{PointerTTL: time.Minute}},
 		WithClock(func() time.Time { return now }))
 
-	a := &artifacts{node: n, seen: map[string]builtAt{}}
-	a.seen["shop\x00prod\x00res"] = builtAt{cid: "bafyone", when: now}
+	a := &artifacts{node: n}
+	a.remember(builtKey{project: "shop", environment: "prod", resource: "res"}, "bafyone")
 
 	cid, err := a.Artifact(t.Context(), "shop", "prod", "function", "res")
 	require.NoError(t, err)
@@ -196,10 +196,11 @@ func TestAFailedArtifactLookupIsNotRemembered(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Discovery}})
 	require.NoError(t, n.Start(t.Context()))
 
-	a := &artifacts{node: n, seen: map[string]builtAt{}}
+	a := &artifacts{node: n}
 	_, err := a.Artifact(t.Context(), "shop", "prod", "function", "res")
 	require.ErrorIs(t, err, ErrNotBuilt)
-	require.Empty(t, a.seen)
+	_, held := a.seen.Load(builtKey{project: "shop", environment: "prod", resource: "res"})
+	require.False(t, held)
 }
 
 func TestTheDeployBudgetHasAnEffectiveValue(t *testing.T) {
@@ -300,7 +301,7 @@ func TestAWorkerReadsBuildsRecordsOnItsOwnNode(t *testing.T) {
 
 	sees(t, compute, PLM)
 
-	a := &artifacts{node: compute, seen: map[string]builtAt{}}
+	a := &artifacts{node: compute}
 
 	// NOTHING HAS BUILT THIS, read from the records this node holds, with no
 	// plm node asked.
@@ -309,7 +310,8 @@ func TestAWorkerReadsBuildsRecordsOnItsOwnNode(t *testing.T) {
 
 	// AND THE FAILURE IS NOT CACHED. "Nothing has built this yet" ends the
 	// moment a build finishes.
-	require.Empty(t, a.seen)
+	_, held := a.seen.Load(builtKey{project: "shop", environment: "prod", resource: "checkout"})
+	require.False(t, held)
 }
 
 func TestTheRegionANodeReadsIsTheOneItsConfigNames(t *testing.T) {
