@@ -23,7 +23,7 @@ import (
 
 func kafkaCluster(t *testing.T) string {
 	t.Helper()
-	cluster, err := kfake.NewCluster(kfake.NumBrokers(1), kfake.EnableSASL(),
+	cluster, err := kfake.NewCluster(kfake.NumBrokers(1), kfake.DefaultNumPartitions(6), kfake.EnableSASL(),
 		kfake.Superuser("SCRAM-SHA-512", "tau", "s3cret"),
 		kfake.Superuser("SCRAM-SHA-256", "tau256", "s3cret"),
 		kfake.Superuser("PLAIN", "plain", "s3cret"))
@@ -326,4 +326,36 @@ func TestBackoffDoublesToACap(t *testing.T) {
 	require.Equal(t, 4*time.Second, backoff(3))
 	require.Equal(t, 30*time.Second, backoff(20))
 	require.Equal(t, []string{"a:1", "b:2"}, hosts(" a:1 ,, b:2"))
+}
+
+func TestAKafkaRebalanceDeliversNothingTwice(t *testing.T) {
+	to := &recorder{slow: 150 * time.Millisecond}
+	settings := onLog(specs.StreamEngineKafka, kafkaCluster(t))
+	mailer := []worker.Subscriber{subscriber("mailer", settings)}
+	node(t, to, "tau:s3cret").Reconcile(mailer)
+
+	p, err := NewPublisher(subscribed{}, to, vault{secret: "tau:s3cret"})
+	require.NoError(t, err)
+	t.Cleanup(func() { p.Close() })
+	grant := invoke.Grant{Handle: ordersHandle, Settings: settings}
+	untilDelivered(t, p, grant, to, "mailer")
+
+	// A second node joins while the first is mid-delivery, and a third later: each
+	// moves partitions, and a message being delivered as its partition moves is the
+	// one that would arrive twice.
+	const sent = 40
+	for i := range sent {
+		require.NoError(t, p.Publish(t.Context(), grant, []byte("order:"+strconv.Itoa(i))))
+	}
+	require.Eventually(t, func() bool { return len(marked(to, "mailer")) >= 5 }, 30*time.Second, 10*time.Millisecond)
+	node(t, to, "tau:s3cret").Reconcile(mailer)
+	require.Eventually(t, func() bool { return len(marked(to, "mailer")) >= 15 }, 30*time.Second, 10*time.Millisecond)
+	node(t, to, "tau:s3cret").Reconcile(mailer)
+
+	require.Eventually(t, func() bool { return len(marked(to, "mailer")) == sent }, 60*time.Second, 50*time.Millisecond,
+		"got %d of %d", len(marked(to, "mailer")), sent)
+	time.Sleep(time.Second)
+	for body, times := range marked(to, "mailer") {
+		require.Equal(t, 1, times, "%s was delivered %d times", body, times)
+	}
 }

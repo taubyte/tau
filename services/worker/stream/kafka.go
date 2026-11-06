@@ -90,12 +90,21 @@ func (c *kafkaConn) ensure(ctx context.Context, client *kgo.Client, topic string
 	}
 }
 
+// rebalanceWithin is how long a rebalance may wait on this consumer: one record's
+// worst case, every attempt timing out with the backoffs between them.
+const rebalanceWithin = maxAttempts*deliverWithin + time.Minute
+
+// consume takes one record per poll and holds rebalancing off until it is delivered
+// and marked, so partitions only move between records and the revoke commits every
+// one delivered. A record is delivered twice only when its node dies mid-delivery.
 func (c *kafkaConn) consume(ctx context.Context, topic, group string, to handler) error {
 	client, err := kgo.NewClient(append(slices.Clone(c.opts),
 		kgo.ConsumerGroup(group),
 		kgo.ConsumeTopics(topic),
 		kgo.ConsumeResetOffset(kgo.NewOffset().AtEnd()),
 		kgo.AutoCommitMarks(),
+		kgo.BlockRebalanceOnPoll(),
+		kgo.RebalanceTimeout(rebalanceWithin),
 		kgo.OnPartitionsRevoked(commitMarked),
 	)...)
 	if err != nil {
@@ -106,22 +115,32 @@ func (c *kafkaConn) consume(ctx context.Context, topic, group string, to handler
 
 	c.ensure(ctx, client, topic)
 	for {
-		fetches := client.PollFetches(ctx)
-		if ctx.Err() != nil || fetches.IsClientClosed() {
-			return ctx.Err()
-		}
-		if errs := fetches.Errors(); len(errs) > 0 {
-			return fmt.Errorf("stream: kafka %s: %w", topic, errs[0].Err)
-		}
-		for iter := fetches.RecordIter(); !iter.Done(); {
-			record := iter.Next()
-			id := strconv.Itoa(int(record.Partition)) + "-" + strconv.FormatInt(record.Offset, 10)
-			if !offer(ctx, to, record.Value, id) {
-				return ctx.Err()
-			}
-			client.MarkCommitRecords(record)
+		if err := deliverOne(ctx, client, topic, to); err != nil {
+			return err
 		}
 	}
+}
+
+// deliverOne polls at most one record and delivers it, rebalancing held off until
+// it returns.
+func deliverOne(ctx context.Context, client *kgo.Client, topic string, to handler) error {
+	fetches := client.PollRecords(ctx, 1)
+	defer client.AllowRebalance()
+	if ctx.Err() != nil || fetches.IsClientClosed() {
+		return ctx.Err()
+	}
+	if errs := fetches.Errors(); len(errs) > 0 {
+		return fmt.Errorf("stream: kafka %s: %w", topic, errs[0].Err)
+	}
+	for iter := fetches.RecordIter(); !iter.Done(); {
+		record := iter.Next()
+		id := strconv.Itoa(int(record.Partition)) + "-" + strconv.FormatInt(record.Offset, 10)
+		if !offer(ctx, to, record.Value, id) {
+			return ctx.Err()
+		}
+		client.MarkCommitRecords(record)
+	}
+	return nil
 }
 
 // commitMarked commits what was delivered before partitions move to another node,

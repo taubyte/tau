@@ -42,9 +42,16 @@ type recorder struct {
 	failures int
 	failing  string
 	status   int
+
+	// slow is how long each invocation takes, so one is in flight when something
+	// else happens.
+	slow time.Duration
 }
 
 func (r *recorder) Invoke(_ context.Context, at specs.Address, req *invoke.Request) (*invoke.Response, error) {
+	if r.slow > 0 {
+		time.Sleep(r.slow)
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.calls = append(r.calls, call{
