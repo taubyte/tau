@@ -73,8 +73,9 @@ func viewsOn(h service.Host, from registers, wl watcherLimits, kl keptLimits) *V
 	}
 }
 
-// local is the register on this instance, when one runs here.
-func (v *Views) local() (*server, bool) { return service.Get[*server](v.h) }
+// local is the register on this instance, when one runs here: whatever reads as one,
+// as Reach finds it.
+func (v *Views) local() (Reader, bool) { return service.Get[Reader](v.h) }
 
 // Resolve is the view of project's environment placed in this instance's region.
 func (v *Views) Resolve(ctx context.Context, project, environment string) (pkgregister.Pointer, error) {
