@@ -668,7 +668,13 @@ func diffOps(prev, next map[string]any, base []string) []fieldOp {
 	at := func(k string) []string { return append(append([]string{}, base...), k) }
 	for k, nv := range next {
 		if nm, ok := nv.(map[string]any); ok {
-			pm, _ := prev[k].(map[string]any)
+			pm, had := prev[k].(map[string]any)
+			// An empty block has no leaves to set and is still written: choosing a
+			// branch by its key alone is a value.
+			if len(nm) == 0 && !had {
+				ops = append(ops, fieldOp{path: at(k), value: map[string]any{}})
+				continue
+			}
 			ops = append(ops, diffOps(pm, nm, at(k))...)
 			continue
 		}

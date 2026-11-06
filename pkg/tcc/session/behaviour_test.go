@@ -408,6 +408,20 @@ func TestSetResource(t *testing.T) {
 	assert.Equal(t, v, "f")
 
 	assert.ErrorContains(t, s.SetResource([]string{"pipeline"}, map[string]any{"id": "x"}), "not a resource address")
+
+	// An empty block is written, since a key can be a choice with nothing under it; and
+	// written again it is no change.
+	empty := []string{"pipeline", "empty"}
+	assert.NilError(t, s.SetResource(empty, map[string]any{"id": "e", "chosen": map[string]any{}}))
+	v, err = s.Get(empty, []string{"chosen"})
+	assert.NilError(t, err)
+	assert.DeepEqual(t, v, map[string]any{})
+	_, data, err = s.Serialize(empty)
+	assert.NilError(t, err)
+	assert.NilError(t, s.SetResource(empty, map[string]any{"id": "e", "chosen": map[string]any{}}))
+	_, again, err := s.Serialize(empty)
+	assert.NilError(t, err)
+	assert.Equal(t, string(again), string(data))
 }
 
 func TestSetResourceFailureLeavesParentUntouched(t *testing.T) {
