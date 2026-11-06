@@ -99,7 +99,7 @@ func TestAGatewayNodeReachesAWorkerNode(t *testing.T) {
 	require.Contains(t, spec.Name, projectIDOf(t, "with/function/wasm")+"/prod/function/")
 }
 
-func nodeOf(t *testing.T, peerID string) *instance.Instance {
+func nodeOf(t testing.TB, peerID string) *instance.Instance {
 	t.Helper()
 	n, ok := nodeDream.Node(peerID)
 	require.True(t, ok, "no node on %s", peerID)

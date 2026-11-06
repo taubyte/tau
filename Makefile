@@ -57,11 +57,13 @@ test:
 # bench is the request path's benchmarks, with allocations, COUNT times each so two
 # runs compare under benchstat: a gateway request, placement's route, the worker's
 # resolve and invoke over p2p, the invoke pool, and a wasm component's cold start
-# and warm call. BENCH= narrows it, e.g. BENCH=StartCold.
-BENCH_PKGS = ./services/gateway/ ./pkg/stats/ ./pkg/placement/ ./services/worker/ ./pkg/invoke/ ./pkg/invoke/wasm/ ./services/dns/ ./pkg/proto/codec/
+# and warm call, then the whole path in a dream universe, which is what they add up
+# to. BENCH= narrows it, e.g. BENCH=StartCold.
+BENCH_PKGS = ./services/gateway/ ./pkg/stats/ ./pkg/placement/ ./pkg/membership/ ./services/worker/ ./pkg/invoke/ ./pkg/invoke/wasm/ ./services/dns/ ./pkg/proto/codec/
 COUNT ?= 5
 bench:
 	go test -run '^$$' -bench '$(if $(BENCH),$(BENCH),.)' -benchmem -count=$(COUNT) -timeout 60m $(FLAGS) $(BENCH_PKGS)
+	GOMEMLIMIT=$(GOMEMLIMIT) go test -tags dreaming -run '^$$' -bench '$(if $(BENCH),$(BENCH),.)' -benchmem -count=$(COUNT) -timeout 60m $(FLAGS) ./instance/dream/
 
 # test-race is test under the race detector, plus pkg/raft's integration tag:
 # two raft races of 2026-10-24 failed nothing until a -race run read them.

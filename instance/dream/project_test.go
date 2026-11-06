@@ -76,7 +76,7 @@ func project(t *testing.T, name string, components artifacts) ([]byte, map[strin
 
 // projectAs is project placed by the Regions given: WithNoRegions for the corpus,
 // or WithRegion("region-1") for one region of a larger cloud.
-func projectAs(t *testing.T, name string, components artifacts, regions schema.Regions) ([]byte, map[string]any, map[string][]byte) {
+func projectAs(t testing.TB, name string, components artifacts, regions schema.Regions) ([]byte, map[string]any, map[string][]byte) {
 	t.Helper()
 
 	c, err := schema.New(
@@ -238,7 +238,7 @@ type deployed struct {
 // publish builds one project in a running universe, uploaded with what components
 // stand in for, and answers a door onto it through each node named, once each of
 // them reads what was built: placement chooses which node runs a workload.
-func publish(t *testing.T, u *nodeDream.Universe, pids []string, at deployed, components artifacts) []*running {
+func publish(t testing.TB, u *nodeDream.Universe, pids []string, at deployed, components artifacts) []*running {
 	t.Helper()
 
 	regions := at.regions
@@ -270,7 +270,7 @@ func publish(t *testing.T, u *nodeDream.Universe, pids []string, at deployed, co
 }
 
 // projectIDOf is the id the project under projects/name says it is.
-func projectIDOf(t *testing.T, name string) string {
+func projectIDOf(t testing.TB, name string) string {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(projectDir(name), "project.yaml"))
 	require.NoError(t, err)
@@ -291,7 +291,7 @@ func nameOf(v any) string {
 
 // plm is the project under projects/name built for project in u, its packages
 // standing in for their builds, and how the build ended, which is a success.
-func build(t *testing.T, u *nodeDream.Universe, project, name string, built map[string][]byte) nodeDream.Outcome {
+func build(t testing.TB, u *nodeDream.Universe, project, name string, built map[string][]byte) nodeDream.Outcome {
 	t.Helper()
 	files := map[string]string{}
 	at := t.TempDir()
@@ -330,7 +330,7 @@ func build(t *testing.T, u *nodeDream.Universe, project, name string, built map[
 }
 
 // built1 is one push built, which succeeds, plan and environments alike.
-func built1(t *testing.T, u *nodeDream.Universe, name string, push nodeDream.Push) nodeDream.Outcome {
+func built1(t testing.TB, u *nodeDream.Universe, name string, push nodeDream.Push) nodeDream.Outcome {
 	t.Helper()
 	out, err := u.Build(t.Context(), push)
 	require.NoError(t, err)
@@ -344,7 +344,7 @@ func built1(t *testing.T, u *nodeDream.Universe, name string, push nodeDream.Pus
 
 // gitSources is the repository each package of the project under projects/name is
 // built from when that is not the project's own, by package name.
-func gitSources(t *testing.T, name string) map[string]string {
+func gitSources(t testing.TB, name string) map[string]string {
 	t.Helper()
 	c, err := schema.New(schema.WithLocal(projectDir(name)), schema.WithBranch("main"))
 	require.NoError(t, err)
@@ -368,13 +368,13 @@ func gitSources(t *testing.T, name string) map[string]string {
 // deploy starts a universe, publishes the named project, and answers a door onto
 // its one node. Nothing waits for the project to be in use: a node resolves it on
 // first ask, so a test's first assertion is the one that retries.
-func deploy(t *testing.T, name, host string, wasm []byte) *running {
+func deploy(t testing.TB, name, host string, wasm []byte) *running {
 	t.Helper()
 	return deployWith(t, name, host, wasm, nil)
 }
 
 // deployWith is deploy for a project needing more than one binary (see artifacts).
-func deployWith(t *testing.T, name, host string, wasm []byte, extra map[string][]byte) *running {
+func deployWith(t testing.TB, name, host string, wasm []byte, extra map[string][]byte) *running {
 	t.Helper()
 	return deployServing(t, name, host, wasm, extra,
 		instance.Register, instance.Worker, instance.Discovery, instance.Gateway, instance.Database, instance.Primitives, storageService.Descriptor.Name)
@@ -382,7 +382,7 @@ func deployWith(t *testing.T, name, host string, wasm []byte, extra map[string][
 
 // deployServing is deployWith over a chosen set of services: a zone answered by a
 // function is reached over UDP and needs no gateway.
-func deployServing(t *testing.T, name, host string, wasm []byte, extra map[string][]byte, services ...string) *running {
+func deployServing(t testing.TB, name, host string, wasm []byte, extra map[string][]byte, services ...string) *running {
 	t.Helper()
 
 	// SOMEBODY BUILDS IT: the project is built as a push is, by a builder.
@@ -404,7 +404,7 @@ func deployServing(t *testing.T, name, host string, wasm []byte, extra map[strin
 	return publish(t, u, pids[:1], deployed{name: name, host: host}, held)[0]
 }
 
-func handlerWASM(t *testing.T) []byte {
+func handlerWASM(t testing.TB) []byte {
 	t.Helper()
 	code, err := os.ReadFile(filepath.Join("..", "..", "pkg", "invoke", "wasm", "fixtures", "handler.wasm"))
 	require.NoError(t, err, "run `cargo component build --release` in pkg/invoke/wasm/fixtures/handler")
