@@ -71,11 +71,11 @@ func carriedBy(root *pb.Delta) map[cid.Cid]bool {
 
 // A tree's shape turns on the incarnation in its keys, so widePeer draws
 // replicas until one leaves at least fetch blocks to fetch.
-func widePeer(t testing.TB, n, fetch int) (*Datastore, *fetchThroughDAGSvc) {
+func widePeer(t testing.TB, name string, n, fetch int) (*Datastore, *fetchThroughDAGSvc) {
 	t.Helper()
 	for {
 		peerDag := newFetchThrough()
-		peer := manualReplica(t, dssync.MutexWrap(ds.NewMapDatastore()), peerDag, "peer: ")
+		peer := manualReplica(t, dssync.MutexWrap(ds.NewMapDatastore()), peerDag, name)
 		seedWide(t, peer, n, "p")
 		compact(t, peer)
 		if len(stateClosure(t, peer)) >= fetch {

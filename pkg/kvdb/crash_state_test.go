@@ -642,21 +642,27 @@ func TestAStateStoreFaultIsSurvived(t *testing.T) {
 }
 
 func TestACrashInAResumedFetchRecovers(t *testing.T) {
+	t.Parallel()
 	for _, m := range crashModes {
-		t.Run(m.String(), func(t *testing.T) { crashInAResumedFetch(t, m) })
+		t.Run(m.String(), func(t *testing.T) {
+			t.Parallel()
+			crashInAResumedFetch(t, m)
+		})
 	}
 }
 
+// Modes run in parallel, so every replica's name carries its mode: a name is a
+// replica id, and two replicas of one id resume each other's incarnations.
 func crashInAResumedFetch(t *testing.T, m crashMode) {
 	ctx := context.Background()
-	peer, peerDag := widePeer(t, 100, 4)
+	peer, peerDag := widePeer(t, m.String()+" peer: ", 100, 4)
 	defer peer.Close()
 	per := len(stateClosure(t, peer))/3 + 1
 	for at := 0; at < 20000; at++ {
 		inner := dssync.MutexWrap(ds.NewMapDatastore())
 		own := newFetchThrough()
 		c := crashAt(t, m, at, inner, own)
-		r := manualReplica(t, &crashStore{Datastore: inner, c: c}, &crashDAG{fetchThroughDAGSvc: own, c: c}, "crashing: ")
+		r := manualReplica(t, &crashStore{Datastore: inner, c: c}, &crashDAG{fetchThroughDAGSvc: own, c: c}, m.String()+" crashing: ")
 		link := newRationed(peerDag.DAGService)
 		own.setRemotes(link)
 
@@ -705,7 +711,7 @@ func crashInAResumedFetch(t *testing.T, m crashMode) {
 		}
 		forgetIncarnation(r.incarnationKey())
 		c.blocks.setRemotes(peerDag.DAGService)
-		re := manualReplica(t, c.disk, c.blocks, "reopened: ")
+		re := manualReplica(t, c.disk, c.blocks, m.String()+" reopened: ")
 		got := queryAll(t, re)
 		if !sameKV(got, before) && !sameKV(got, after) {
 			t.Fatalf("crash at write %d: the replica holds %d keys, neither the %d of before nor the %d of after", at, len(got), len(before), len(after))
@@ -738,7 +744,7 @@ func TestAStateStoreFaultInAResumedFetchIsSurvived(t *testing.T) {
 			store := newFaultyDatastore(ds.NewMapDatastore())
 			own := &removeFailing{fetchThroughDAGSvc: newFetchThrough()}
 			r := manualReplica(t, store, own, "faulty: ")
-			peer, peerDag := widePeer(t, 200, 6)
+			peer, peerDag := widePeer(t, "peer: ", 200, 6)
 			defer peer.Close()
 			link := newRationed(peerDag.DAGService)
 			own.setRemotes(link)
@@ -974,9 +980,13 @@ func (d syncingVolatileDAG) SyncBlocks(context.Context) error {
 }
 
 func TestAWriteSurvivesAnyLoss(t *testing.T) {
-	t.Run("blocks apart", func(t *testing.T) { writeSurvivesAnyLoss(t, blocksApart) })
-	t.Run("blocks in the datastore", func(t *testing.T) { writeSurvivesAnyLoss(t, blocksIn) })
-	t.Run("a shared log", func(t *testing.T) { writeSurvivesAnyLoss(t, sharedLog) })
+	t.Parallel()
+	for _, place := range []blockPlace{blocksApart, blocksIn, sharedLog} {
+		t.Run(place.String(), func(t *testing.T) {
+			t.Parallel()
+			writeSurvivesAnyLoss(t, place)
+		})
+	}
 }
 
 type blockPlace int
@@ -991,6 +1001,7 @@ func (p blockPlace) String() string {
 	return [...]string{"blocks apart", "blocks in the datastore", "a shared log"}[p]
 }
 
+// Placements run in parallel, so every replica's name carries its placement.
 func writeSurvivesAnyLoss(t *testing.T, place blockPlace) {
 	inner := dssync.MutexWrap(ds.NewMapDatastore())
 	vs := &volatileStore{Datastore: inner}
@@ -1007,12 +1018,12 @@ func writeSurvivesAnyLoss(t *testing.T, place blockPlace) {
 		log := prefixStore{vs}
 		d, store = loggedDAG{volatileDAG: vd, log: log}, log
 	}
-	r := manualReplica(t, store, d, "volatile: ")
+	r := manualReplica(t, store, d, place.String()+" volatile: ")
 	if r.logged != (place == sharedLog) {
 		t.Fatalf("a replica over %v orders by a shared log: %v", place, r.logged)
 	}
 	peerDag := newFetchThrough()
-	peer := manualReplica(t, dssync.MutexWrap(ds.NewMapDatastore()), peerDag, "peer: ")
+	peer := manualReplica(t, dssync.MutexWrap(ds.NewMapDatastore()), peerDag, place.String()+" peer: ")
 	defer peer.Close()
 	own.setRemotes(peerDag.DAGService)
 	put(t, r, "/a", "old")
@@ -1066,7 +1077,7 @@ func writeSurvivesAnyLoss(t *testing.T, place blockPlace) {
 			}
 			disk, blocks := afterLoss(t, base, events, n, lost), blocksAfterLoss(t, baseBlocks, events, n, lost)
 			blocks.setRemotes(peerDag.DAGService)
-			re, err := NewDatastore(disk, ds.NewKey("crdttest"), blocks, &nullBroadcaster{}, onManual(replicaOptions(noAutoCompact(), "reopened: ")))
+			re, err := NewDatastore(disk, ds.NewKey("crdttest"), blocks, &nullBroadcaster{}, onManual(replicaOptions(noAutoCompact(), place.String()+" reopened: ")))
 			if err != nil {
 				t.Fatalf("power off after event %d, losing %v of %v: the replica does not open: %v", n, lost, u, err)
 			}

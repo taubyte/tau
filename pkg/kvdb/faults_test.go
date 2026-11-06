@@ -840,7 +840,7 @@ func (g askGetter) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.Nod
 func TestAFailedDiscoverLeavesTheFetchToGoOn(t *testing.T) {
 	ctx := context.Background()
 	// Deep enough that a fetch discovers what the blocks it fetched link.
-	peer, peerDag := widePeer(t, 1000, 64)
+	peer, peerDag := widePeer(t, "peer: ", 1000, 64)
 	defer peer.Close()
 	state := stateClosure(t, peer)
 	want := queryAll(t, peer)

@@ -81,6 +81,7 @@ func TestAMergeReadsItsBaseFromTheCacheOfTreeNodes(t *testing.T) {
 }
 
 func TestTheCacheOfTreeNodesStaysWithinItsBudget(t *testing.T) {
+	t.Parallel()
 	// The tree's live upper levels alone outgrow the small budget: the cache forgets what
 	// no root reaches, so a smaller tree would never press it. At 6000 keys a loaded
 	// box pressed it as few as four times in a run; at 12000 never fewer than 2000.
