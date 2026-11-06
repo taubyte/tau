@@ -3,14 +3,18 @@ package peer
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"sync"
 
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	discovery "github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	netmock "github.com/libp2p/go-libp2p/p2p/net/mock"
+	ma "github.com/multiformats/go-multiaddr"
 
 	helpers "github.com/taubyte/tau/p2p/helpers"
 )
@@ -22,6 +26,33 @@ var (
 	// itself keeps every peer it ever made.
 	mocks = map[peer.ID]*node{}
 )
+
+// mockHost is a mocknet peer keyed like a real node. mocknet's GenPeer signs with
+// ECDSA where a node signs with Ed25519, and every pubsub message is signed and then
+// checked by its own sender: a mock kvdb spent half of each write on ECDSA.
+func mockHost() (host.Host, error) {
+	sk, _, err := crypto.GenerateKeyPair(crypto.Ed25519, -1)
+	if err != nil {
+		return nil, err
+	}
+	id, err := peer.IDFromPrivateKey(sk)
+	if err != nil {
+		return nil, err
+	}
+	// An address in the blackhole range mocknet gives its own peers, unique by the
+	// id's tail.
+	ip := net.ParseIP("100::")
+	suffix := []byte(id)
+	if len(suffix) > 8 {
+		suffix = suffix[len(suffix)-8:]
+	}
+	copy(ip[net.IPv6len-len(suffix):], suffix)
+	addr, err := ma.NewMultiaddr(fmt.Sprintf("/ip6/%s/tcp/4242", ip))
+	if err != nil {
+		return nil, err
+	}
+	return mocknet.AddPeer(sk, addr)
+}
 
 func Mock(ctx context.Context) Node {
 	mocknetLock.Lock()
@@ -37,7 +68,7 @@ func Mock(ctx context.Context) Node {
 
 	p.ctx, p.ctx_cancel = context.WithCancel(ctx)
 
-	p.host, err = mocknet.GenPeer()
+	p.host, err = mockHost()
 	if err != nil {
 		panic(err)
 	}
