@@ -39,8 +39,8 @@ func delivered(t *testing.T, reading *running, message string) {
 	}, 60*time.Second, 250*time.Millisecond, "%q never reached the subscriber: %s", message, &lastSaid{&last})
 }
 
-// publish has the guest publish message, retried until the deployment is served.
-func publish(t *testing.T, on *running, message string) {
+// publishOrder has the guest publish message, retried until the deployment is served.
+func publishOrder(t *testing.T, on *running, message string) {
 	t.Helper()
 	var last string
 	require.Eventually(t, func() bool {
@@ -81,9 +81,9 @@ func TestAPublishedMessageReachesItsSubscriberAcrossTheSwarm(t *testing.T) {
 
 	// Published on one node, read back on the other: the publishing node invoked the
 	// subscriber through placement and it wrote the replicated cache.
-	publish(t, publishing, "order:1")
+	publishOrder(t, publishing, "order:1")
 	delivered(t, reading, "order:1")
-	publish(t, publishing, "order:2")
+	publishOrder(t, publishing, "order:2")
 	delivered(t, reading, "order:2")
 }
 
@@ -115,7 +115,7 @@ func streamOnLog(t *testing.T, name, declared, address string) {
 
 	var last string
 	require.Eventually(t, func() bool {
-		publish(t, r, "order:1")
+		publishOrder(t, r, "order:1")
 		res, err := r.on(t.Context(), r.function("cacher"), http.MethodPost, "/get/sessions/delivered")
 		if err != nil {
 			last = err.Error()
@@ -125,7 +125,7 @@ func streamOnLog(t *testing.T, name, declared, address string) {
 		return res.Status == 200 && string(res.Body) == "order:1"
 	}, 2*time.Minute, time.Second, "nothing the guest published reached it as a subscriber: %s", &lastSaid{&last})
 
-	publish(t, r, "order:2")
+	publishOrder(t, r, "order:2")
 	delivered(t, r, "order:2")
 }
 
