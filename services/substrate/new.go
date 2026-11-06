@@ -66,8 +66,18 @@ func New(ctx context.Context, cfg tauConfig.Config) (*Service, error) {
 	// metadata and file bytes) to the hoarders before serving: bounded
 	// synchronous pass, background continuation past the bound. Fresh nodes
 	// pay one empty prefix query.
-	srv.migrator = migration.New(ctx, srv.node, srv.hoarderClient, srv.tns)
-	srv.migrator.Boot()
+	//
+	// The migration treats every kvdb namespace and every block in the node's
+	// store as substrate's own, so it runs only when substrate is alone on its
+	// node. Sharing a node (the "all" shape), the store also holds the other
+	// services' databases and blocks — monkey's build artifacts, hoarder's
+	// hosted instances — which a sweep would delete.
+	if others := coLocatedServices(cfg.Services()); len(others) == 0 {
+		srv.migrator = migration.New(ctx, srv.node, srv.hoarderClient, srv.tns)
+		srv.migrator.Boot()
+	} else {
+		logger.Infof("node-local data migration skipped: the node's store is shared with %v", others)
+	}
 
 	if err = srv.startVm(); err != nil {
 		return nil, fmt.Errorf("starting vm failed with %w", err)
@@ -173,4 +183,16 @@ func (s *Service) startCheckCpu() error {
 	}()
 
 	return nil
+}
+
+// coLocatedServices returns the services other than substrate that run on
+// this node and so share its datastore.
+func coLocatedServices(services []string) []string {
+	others := make([]string, 0, len(services))
+	for _, s := range services {
+		if s != protocolCommon.Substrate {
+			others = append(others, s)
+		}
+	}
+	return others
 }
