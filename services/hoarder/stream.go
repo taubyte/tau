@@ -169,7 +169,7 @@ func (srv *Service) stashReady(context.Context, streams.Connection, command.Body
 
 // stashReceive is the raw phase: read the framed header, import the streamed
 // bytes, verify the CID matches what the sender declared (reject on mismatch,
-// nothing kept), record the stash placement + this node's claim, fan out to
+// nothing recorded), record the stash placement + this node's claim, fan out to
 // co-claimants, then ack with the imported CID.
 func (srv *Service) stashReceive(ctx context.Context, rw io.ReadWriter) {
 	header, err := command.Decode(nil, rw)
@@ -196,8 +196,8 @@ func (srv *Service) stashReceive(ctx context.Context, rw io.ReadWriter) {
 		return
 	}
 	if gotCid.String() != cidStr {
-		// The bytes hash to something other than declared — do not keep them.
-		srv.node.DeleteFile(gotCid.String()) //nolint:errcheck
+		// Reject without deleting: the blocks it hashes to may be another
+		// owner's, already stashed here.
 		stashErr(rw, fmt.Sprintf("cid mismatch: declared %s, imported %s", cidStr, gotCid.String()))
 		return
 	}
@@ -256,8 +256,12 @@ func (srv *Service) fanoutStash(ctx context.Context, cid string, target int, own
 		if err != nil {
 			continue
 		}
-		f, err := srv.node.GetFile(ctx, cid)
+		// Bounded like the asset sweep: a file whose blocks no reachable node
+		// holds (e.g. one damaged before an upgrade) must not stall the loop.
+		fctx, cancel := context.WithTimeout(ctx, hoarderSpecs.AssetSweepFetchTimeout)
+		f, err := srv.node.GetFile(fctx, cid)
 		if err != nil {
+			cancel()
 			logger.Errorf("stash fan-out: reading %s failed with: %s", cid, err)
 			continue
 		}
@@ -266,6 +270,7 @@ func (srv *Service) fanoutStash(ctx context.Context, cid string, target int, own
 			hoarderIface.WithOwner(owner),
 			hoarderIface.WithoutFanout())
 		f.Close()
+		cancel()
 		if err != nil {
 			logger.Errorf("stash fan-out to %s failed with: %s", pidStr, err)
 			continue

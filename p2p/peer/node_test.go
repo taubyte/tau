@@ -154,23 +154,6 @@ func TestMock_AddFileForCid(t *testing.T) {
 	assert.Equal(t, testContent, buf.Bytes())
 }
 
-func TestMock_DeleteFile(t *testing.T) {
-	ctx := context.Background()
-	node := Mock(ctx)
-	require.NotNil(t, node)
-	defer node.Close()
-
-	testContent := []byte("content to delete")
-
-	// Add file
-	cid, err := node.AddFile(bytes.NewReader(testContent))
-	require.NoError(t, err)
-
-	// Delete file
-	err = node.DeleteFile(cid)
-	require.NoError(t, err)
-}
-
 func TestLinkAllPeers_NotInitialized(t *testing.T) {
 	// Reset mocknet
 	mocknetLock.Lock()
@@ -311,9 +294,6 @@ func TestClosedNodeOperations(t *testing.T) {
 	assert.Error(t, err)
 
 	_, err = node.AddFile(bytes.NewReader([]byte("test")))
-	assert.Error(t, err)
-
-	err = node.DeleteFile("somecid")
 	assert.Error(t, err)
 
 	_, err = node.GetFile(ctx, "somecid")
