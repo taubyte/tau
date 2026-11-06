@@ -80,4 +80,9 @@ func TestAWorkloadsNameCarriesItsNamespaces(t *testing.T) {
 	root, err := h.Worker.Resolve(t.Context(), Target{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"})
 	require.NoError(t, err)
 	require.Regexp(t, `^shop/prod/function/Qm\w+$`, root.Name)
+
+	// Where it lives, not who asked: the root's checkout reached from a namespace.
+	reached, err := h.Worker.Resolve(t.Context(), Target{Project: "shop", Environment: "prod", Scope: []string{"shop"}, Kind: "function", Name: "checkout"})
+	require.NoError(t, err)
+	require.Equal(t, root.Name, reached.Name)
 }

@@ -229,25 +229,34 @@ func (p *Project) Root() Resource { return Resource(p.root) }
 // author writes, split — and nil is the project itself. The returned id is the
 // resource's own, which is what an edge that already resolved carries.
 func (p *Project) Resource(scope []string, kind, name string) (Resource, string, error) {
+	r, id, _, err := p.Found(scope, kind, name)
+	return r, id, err
+}
+
+// Found is Resource, and the scope the resource was found in: the one that asked
+// or one of its parents, a prefix of scope. An id is derived from the bare name,
+// so the id alone does not tell two resources of one name in two namespaces
+// apart; the scope does.
+func (p *Project) Found(scope []string, kind, name string) (Resource, string, []string, error) {
 	if kind == "" || name == "" {
-		return nil, "", fmt.Errorf("%w: %s/%s", ErrNotFound, kind, name)
+		return nil, "", nil, fmt.Errorf("%w: %s/%s", ErrNotFound, kind, name)
 	}
 
 	cursor, err := p.scopeCursor(scope)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 
 	// Outward: this scope, then each parent, by dropping the `namespace/<id>`
-	// pair the level added.
+	// pair the level added. The project's own pair is the first two.
 	for {
 		if r, id, err := p.at(cursor, kind, name); err == nil {
-			return r, id, nil
+			return r, id, scope[:max(len(cursor)-2, 0)/2], nil
 		} else if !errors.Is(err, ErrNotFound) {
-			return nil, "", err
+			return nil, "", nil, err
 		}
 		if len(cursor) < 2 {
-			return nil, "", fmt.Errorf("%w: %s/%s", ErrNotFound, kind, name)
+			return nil, "", nil, fmt.Errorf("%w: %s/%s", ErrNotFound, kind, name)
 		}
 		cursor = cursor[:len(cursor)-2]
 	}

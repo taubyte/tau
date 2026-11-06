@@ -174,15 +174,6 @@ func TestCallTargetsTheResolvedAddressAndNotTheLabel(t *testing.T) {
 	for _, s := range h.Runtime.specs() {
 		reached = append(reached, s.Name)
 	}
-	require.Contains(t, reached, "shop/prod/function/"+relayID(t, h),
+	require.Contains(t, reached, resolveIn(t, h, []string{"shop", "local"}, "function", "relay").Name,
 		"the function in /shop/local ran, which the label alone could never have reached")
-}
-
-// relayID is what `relay` compiled to, read off the fixture rather than
-// written down here — an id in a test is a copy of the compiler's output that
-// stops agreeing with it.
-func relayID(t *testing.T, h *harness) string {
-	t.Helper()
-	spec := resolveIn(t, h, []string{"shop", "local"}, "function", "relay")
-	return spec.Name[len("shop/prod/function/"):]
 }

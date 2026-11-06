@@ -59,7 +59,7 @@ type Secrets interface {
 // resource: `execution/memory` and `execution/timeout` are PerEnv.
 // specOf is everything in t's spec but its artifact, a function of the compiled
 // project alone (resolved.go), and the package the artifact is asked about.
-func specOf(t Target, p register.Pointer, proj *specs.Project, r specs.Resource, resourceID string) (resolvedSpec, error) {
+func specOf(t Target, home []string, p register.Pointer, proj *specs.Project, r specs.Resource, resourceID string) (resolvedSpec, error) {
 	// A kind this service answers itself has no runtime or artifact; asking for them
 	// would refuse it before Invoke's own branch.
 	workload := specs.ReadWorkloadBlock(r)
@@ -84,10 +84,11 @@ func specOf(t Target, p register.Pointer, proj *specs.Project, r specs.Resource,
 
 	spec := invoke.Spec{
 		Runtime: runtime,
-		// The namespace chain is in it: an id is derived from the bare name, so two
-		// workloads of one name in two namespaces share it, and the pool keeps warm
-		// instances by this name.
-		Name:     strings.Join(slices.Concat([]string{t.Project, t.Environment}, t.Scope, []string{t.Kind, resourceID}), "/"),
+		// The scope the workload lives in is in it: an id is derived from the bare
+		// name, so two workloads of one name in two namespaces share it, and the pool
+		// keeps warm instances by this name. Where it lives, not who asked: one
+		// reached from a child scope is still one.
+		Name:     strings.Join(slices.Concat([]string{t.Project, t.Environment}, home, []string{t.Kind, resourceID}), "/"),
 		Revision: string(p.Object),
 		Env:      env,
 		Reaches:  reaches,
@@ -973,11 +974,11 @@ func (s *Service) Resolve(ctx context.Context, t Target) (invoke.Spec, error) {
 		return s.resolved(ctx, t, held)
 	}
 
-	resource, resourceID, err := proj.Resource(t.Scope, t.Kind, t.Name)
+	resource, resourceID, home, err := proj.Found(t.Scope, t.Kind, t.Name)
 	if err != nil {
 		return invoke.Spec{}, err
 	}
-	held, err := specOf(t, pointer, proj, resource, resourceID)
+	held, err := specOf(t, home, pointer, proj, resource, resourceID)
 	if err != nil {
 		return invoke.Spec{}, err
 	}
