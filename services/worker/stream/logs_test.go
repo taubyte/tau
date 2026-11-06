@@ -298,7 +298,7 @@ func TestAMisdeclaredLogIsRefusedAtDial(t *testing.T) {
 		_, err := natsEngine{}.dial(ctx, at)
 		require.Error(t, err, "nats: %s", name)
 	}
-	_, err := dial(ctx, vault{}, invoke.Grant{Settings: map[string]string{specs.StreamKeyEngine: "rabbitmq"}})
+	_, err := dial(ctx, vault{}, invoke.Grant{Settings: map[string]string{specs.StreamKeyEngine: "rabbitmq"}}, publisherName)
 	require.ErrorIs(t, err, ErrUnknownEngine)
 }
 

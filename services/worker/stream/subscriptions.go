@@ -95,12 +95,13 @@ func (s *Subscriptions) consume(ctx context.Context, sub worker.Subscriber, done
 }
 
 func (s *Subscriptions) once(ctx context.Context, sub *worker.Subscriber, to handler) error {
-	c, err := dial(ctx, s.secrets, sub.Stream)
+	group := groupOf(sub)
+	c, err := dial(ctx, s.secrets, sub.Stream, group)
 	if err != nil {
 		return err
 	}
 	defer c.Close()
-	return c.consume(ctx, sub.Stream.Settings[specs.StreamKeyName], groupOf(sub), to)
+	return c.consume(ctx, sub.Stream.Settings[specs.StreamKeyName], group, to)
 }
 
 // Running is how many consumers this node runs.

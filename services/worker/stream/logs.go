@@ -47,11 +47,17 @@ var engines = map[string]engine{
 	specs.StreamEngineNats:  natsEngine{},
 }
 
-// broker is where a log is and how to log in, read off a grant and the vault.
+// broker is where a log is and how to log in, read off a grant and the vault, and
+// the name the connection gives itself there: a consumer's, so whoever looks at the
+// log sees which subscriber each connection serves.
 type broker struct {
 	host, tls, sasl string
 	secret          string
+	name            string
 }
+
+// publisherName is what a publishing connection calls itself.
+const publisherName = "tau"
 
 const (
 	// maxAttempts is how often a message is offered to a subscriber that fails it
@@ -98,7 +104,7 @@ func (l *logs) conn(ctx context.Context, key string, grant invoke.Grant) (conn, 
 	if c, ok := l.open[key]; ok {
 		return c, nil
 	}
-	c, err := dial(ctx, l.secrets, grant)
+	c, err := dial(ctx, l.secrets, grant, publisherName)
 	if err != nil {
 		return nil, err
 	}
@@ -136,15 +142,15 @@ func connKey(grant invoke.Grant) string {
 }
 
 // dial opens a connection to the log a grant names, reading its credential now.
-func dial(ctx context.Context, secrets Secrets, grant invoke.Grant) (conn, error) {
+func dial(ctx context.Context, secrets Secrets, grant invoke.Grant, name string) (conn, error) {
 	s := grant.Settings
-	name := s[specs.StreamKeyEngine]
-	e, ok := engines[name]
+	engine := s[specs.StreamKeyEngine]
+	e, ok := engines[engine]
 	if !ok {
-		return nil, fmt.Errorf("%w: %q", ErrUnknownEngine, name)
+		return nil, fmt.Errorf("%w: %q", ErrUnknownEngine, engine)
 	}
 
-	at := broker{host: s[specs.StreamKeyHost], tls: s[specs.StreamKeyTls], sasl: s[specs.StreamKeySasl]}
+	at := broker{host: s[specs.StreamKeyHost], tls: s[specs.StreamKeyTls], sasl: s[specs.StreamKeySasl], name: name}
 	if reference := s[specs.StreamCredentialsKeyName]; reference != "" {
 		project, environment, _ := specs.SplitHandle(grant.Handle)
 		secret, err := secrets.Secret(ctx, project, environment, reference)

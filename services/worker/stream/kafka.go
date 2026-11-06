@@ -30,7 +30,7 @@ func (kafkaEngine) dial(_ context.Context, at broker) (conn, error) {
 	if len(seeds) == 0 {
 		return nil, errors.New("stream: a kafka stream names no host")
 	}
-	opts := []kgo.Opt{kgo.SeedBrokers(seeds...)}
+	opts := []kgo.Opt{kgo.SeedBrokers(seeds...), kgo.ClientID(at.name)}
 
 	protect, err := tlsOf(at.tls)
 	if err != nil {

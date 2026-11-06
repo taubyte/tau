@@ -36,7 +36,7 @@ func (natsEngine) dial(_ context.Context, at broker) (conn, error) {
 		}
 	}
 
-	opts := []nats.Option{nats.Name("tau"), nats.MaxReconnects(-1)}
+	opts := []nats.Option{nats.Name(at.name), nats.MaxReconnects(-1)}
 	protect, err := tlsOf(at.tls)
 	if err != nil {
 		return nil, err
