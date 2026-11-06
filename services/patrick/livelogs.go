@@ -326,8 +326,15 @@ func (srv *PatrickService) newLogStream(ctx http.Context, conn http.WebSocketCon
 		return nil
 	}
 
-	// the upgrade already happened, so a refusal is a close frame
-	if err = srv.authorizeJob(ctx, jid); err != nil {
+	// the upgrade already happened, so a refusal is a close frame. A job not
+	// known here yet is refused too: its live log may already be arriving from
+	// its monkey, and the stream is only checked once, when it opens.
+	if _, err = srv.anyJob(ctx.Request().Context(), jid); err != nil {
+		err = fmt.Errorf("job `%s` not found", jid)
+	} else {
+		err = srv.authorizeJob(ctx, jid)
+	}
+	if err != nil {
 		conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, err.Error()))
 		conn.Close()
 		return nil

@@ -57,6 +57,9 @@ func TestLogAccess(t *testing.T) {
 	finishedJob(t, db, "mine", 41, map[string]string{"mine": "bafy-mine"})
 	finishedJob(t, db, "theirs", 42, map[string]string{"theirs": "bafy-theirs"})
 	srv := &PatrickService{db: db}
+	if err := srv.backfillLogOwners(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	served := 0
 	handler := srv.withLogAccess(func(http.Context) (interface{}, error) { served++; return "log", nil })
 	owner := &fakeRepos{perms: map[string]map[string]bool{"41": {"push": true}, "42": {"pull": true}}}
@@ -82,11 +85,19 @@ func TestLogAccess(t *testing.T) {
 	}
 }
 
-// A log stored before owners were recorded is found once, then by its owner.
+// A log stored before owners were recorded is found after the one-time
+// backfill, and never by a scan on request.
 func TestLogOwnerIsRecordedForOldLogs(t *testing.T) {
 	db := &jobStore{fakeJobs: &fakeJobs{keys: map[string][]byte{}}}
 	finishedJob(t, db, "old", 7, map[string]string{"old": "bafy-old", "fn": "bafy-old-fn"})
 	srv := &PatrickService{db: db}
+
+	if _, err := srv.logOwner(context.Background(), "bafy-old-fn"); err != errLogNotFound {
+		t.Fatalf("an unrecorded log must not be looked up on request, got %v", err)
+	}
+	if err := srv.backfillLogOwners(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 
 	jid, err := srv.logOwner(context.Background(), "bafy-old-fn")
 	if err != nil || jid != "old" {

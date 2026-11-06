@@ -30,32 +30,45 @@ func (srv *PatrickService) recordLogOwner(ctx context.Context, jid string, logs 
 	return nil
 }
 
-// logOwner is the job a log belongs to. Logs stored before owners were recorded
-// are found by looking through finished jobs once, and recorded then.
+// logOwner is the job a log belongs to. A request only reads the recorded
+// owner: looking through every finished job per unknown id let any token make
+// Patrick scan its whole archive at will.
 func (srv *PatrickService) logOwner(ctx context.Context, cid string) (string, error) {
 	if jid, err := srv.db.Get(ctx, logOwnerPrefix+cid); err == nil && len(jid) > 0 {
 		return string(jid), nil
 	}
+	return "", errLogNotFound
+}
 
+// backfillLogOwners records the owners of logs stored before owners were
+// recorded, once, so their jobs' callers can still read them.
+func (srv *PatrickService) backfillLogOwners(ctx context.Context) error {
 	keys, err := srv.db.List(ctx, "/archive/jobs/")
 	if err != nil {
-		return "", err
+		return err
 	}
 	for _, key := range keys {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		job, err := srv.getJob(ctx, "/archive/jobs/", strings.TrimPrefix(key, "/archive/jobs/"))
 		if err != nil {
 			continue
 		}
-		for _, logCid := range job.Logs {
-			if logCid == cid {
-				if err := srv.recordLogOwner(ctx, job.Id, job.Logs); err != nil {
-					logger.Errorf("recording owners of job `%s` logs failed: %s", job.Id, err)
-				}
-				return job.Id, nil
+		missing := false
+		for _, cid := range job.Logs {
+			if _, err := srv.db.Get(ctx, logOwnerPrefix+cid); cid != "" && err != nil {
+				missing = true
+				break
+			}
+		}
+		if missing {
+			if err := srv.recordLogOwner(ctx, job.Id, job.Logs); err != nil {
+				return err
 			}
 		}
 	}
-	return "", errLogNotFound
+	return nil
 }
 
 // withLogAccess serves a log to a caller with access to the job it belongs to.
