@@ -3,10 +3,11 @@ package monkey
 import (
 	"context"
 	"fmt"
-	goCid "github.com/ipfs/go-cid"
 	"io"
 	"strings"
 	"time"
+
+	goCid "github.com/ipfs/go-cid"
 
 	"github.com/taubyte/tau/core/services/monkey"
 	"github.com/taubyte/tau/core/services/patrick"

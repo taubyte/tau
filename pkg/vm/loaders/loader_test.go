@@ -3,9 +3,10 @@ package loaders_test
 import (
 	"bytes"
 	"context"
-	goCid "github.com/ipfs/go-cid"
 	"io"
 	"testing"
+
+	goCid "github.com/ipfs/go-cid"
 
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
 	"github.com/taubyte/tau/pkg/vm/backend/dfs"
