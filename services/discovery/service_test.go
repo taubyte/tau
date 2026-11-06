@@ -126,6 +126,14 @@ func TestANodeIsRoutableBeforeTheFirstIntervalElapses(t *testing.T) {
 	})
 	require.Len(t, s.Route("shop", time.Minute), 1,
 		"and it is in its own routing answer without waiting to hear itself back")
+	require.Equal(t, []string{s.Peer()}, s.RoutePeers("shop", time.Minute, nil), "and by peer alone")
+}
+
+func TestAViewNotYetBuiltRoutesNobody(t *testing.T) {
+	s := newService(t, &memBus{}, fixedSnapshot(Snapshot{Ready: true, Serving: []string{"shop"}}), nil)
+	require.Empty(t, s.Route("shop", time.Minute))
+	held := []string{"kept"}
+	require.Equal(t, held, s.RoutePeers("shop", time.Minute, held), "what the caller held is handed back")
 }
 
 // TestThisNodeSeesItselfWithoutWaitingForTheBusToEchoIt. Whether a bus delivers

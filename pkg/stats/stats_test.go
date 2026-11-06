@@ -2,6 +2,7 @@ package stats
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -311,4 +312,61 @@ func TestWithinKeepsFreshNodes(t *testing.T) {
 
 	now = now.Add(2 * time.Minute)
 	require.Empty(t, v.Within(time.Minute), "a stale node was still placeable")
+}
+
+func TestTheIndexFollowsWhatANodeServes(t *testing.T) {
+	c := newClock()
+	v := view(t, c, Options{})
+	require.NoError(t, v.Observe(Report{Peer: "a", Ready: true, Serving: []string{"shop", "blog"}}))
+	require.NoError(t, v.Observe(Report{Peer: "b", Ready: true, Serving: []string{"shop"}}))
+	require.Equal(t, []string{"a", "b"}, peers(v.Route("shop", time.Minute)))
+
+	require.NoError(t, v.Observe(Report{Peer: "a", Ready: true, Serving: []string{"blog"}}))
+	require.Equal(t, []string{"b"}, peers(v.Route("shop", time.Minute)), "a stopped serving shop")
+	require.Equal(t, []string{"a"}, peers(v.Route("blog", time.Minute)))
+
+	require.NoError(t, v.Observe(Report{Peer: "a", Ready: true, Serving: []string{"blog"}}), "the same list again")
+	require.Equal(t, []string{"a"}, peers(v.Route("blog", time.Minute)))
+
+	v.Evict("a")
+	require.Empty(t, v.Route("blog", time.Minute))
+	v.mu.RLock()
+	_, kept := v.names["blog"]
+	v.mu.RUnlock()
+	require.False(t, kept, "a name nobody serves leaves the index")
+}
+
+func TestAForgottenRowIsNoAnswerAndIsDroppedOnALaterWrite(t *testing.T) {
+	c := newClock()
+	v := view(t, c, Options{Fresh: time.Second, Forget: time.Minute})
+	require.NoError(t, v.Observe(Report{Peer: "gone", Ready: true, Serving: []string{"shop"}}))
+	c.advance(2 * time.Minute)
+
+	require.Empty(t, v.Route("shop", time.Hour), "older than Forget, whatever the caller tolerates")
+	require.Empty(t, v.RoutePeers("shop", time.Hour, nil))
+	require.Empty(t, v.All())
+	_, ok := v.Get("gone")
+	require.False(t, ok)
+
+	require.NoError(t, v.Observe(Report{Peer: "here", Ready: true, Serving: []string{"blog"}}))
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	require.NotContains(t, v.rows, "gone")
+	require.NotContains(t, v.names, "shop")
+}
+
+func TestRoutePeersIsRoutesOrderAndCopiesNothing(t *testing.T) {
+	c := newClock()
+	v := view(t, c, Options{})
+	for i, load := range []float64{0.5, 0.1, 0.5, 0.9, 0.1} {
+		require.NoError(t, v.Observe(Report{Peer: fmt.Sprintf("p%d", i), Load: load, Ready: true, Serving: []string{"shop"}}))
+	}
+	require.NoError(t, v.Observe(Report{Peer: "busy", Load: 0.2, Ready: false, Serving: []string{"shop"}}))
+
+	want := peers(v.Route("shop", time.Minute))
+	require.Equal(t, []string{"p1", "p4", "p0", "p2", "p3"}, want, "least loaded first, a tie by peer, not-ready left out")
+	require.Equal(t, want, v.RoutePeers("shop", time.Minute, nil))
+
+	dst := make([]string, 0, 8)
+	require.Zero(t, testing.AllocsPerRun(100, func() { v.RoutePeers("shop", time.Minute, dst[:0]) }))
 }

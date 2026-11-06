@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
+	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
@@ -34,11 +35,14 @@ type table struct {
 	asked  []string
 }
 
-func (t *table) Route(name string, _ time.Duration) []stats.Node {
+func (t *table) RoutePeers(name string, _ time.Duration, dst []string) []string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.asked = append(t.asked, name)
-	return t.byName[name]
+	for _, n := range t.byName[name] {
+		dst = append(dst, n.Peer)
+	}
+	return dst
 }
 
 func (t *table) questions() []string {
@@ -239,6 +243,50 @@ func TestCloseIsIdempotentAndFinal(t *testing.T) {
 
 	_, err := w.Invoke(t.Context(), at(), &invoke.Request{})
 	require.Error(t, err)
+}
+
+// A peer is asked over one client, kept and reused, and Close lets go of it: after
+// it, nobody is reached, not even through a client already held.
+func TestAPeersClientIsKeptAndCloseLetsGoOfIt(t *testing.T) {
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
+	h, other := newHost(t, mn), newHost(t, mn)
+	require.NoError(t, mn.LinkAll())
+	w, err := New(h, &table{})
+	require.NoError(t, err)
+
+	first, err := w.invokerFor(other.ID().String())
+	require.NoError(t, err)
+	again, err := w.invokerFor(other.ID().String())
+	require.NoError(t, err)
+	require.Same(t, first, again)
+
+	_, err = w.invokerFor("not a peer")
+	require.ErrorContains(t, err, "is not a peer")
+
+	require.NoError(t, w.Close())
+	_, err = w.invokerFor(other.ID().String())
+	require.ErrorIs(t, err, errClosed)
+}
+
+// This node is recognised however its id is spelt: one written another way still
+// decodes to this node and is answered here.
+func TestThisNodeIsAnsweredHereUnderAnyEncodingOfItsID(t *testing.T) {
+	local := &recording{}
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
+	h := newHost(t, mn)
+	w, err := New(h, &table{}, WithLocal(local))
+	require.NoError(t, err)
+	t.Cleanup(func() { w.Close() })
+
+	got, err := w.invokerFor(h.ID().String())
+	require.NoError(t, err)
+	require.Same(t, Invoker(local), got)
+
+	asCID, err := w.invokerFor(libp2ppeer.ToCid(h.ID()).String())
+	require.NoError(t, err)
+	require.Same(t, Invoker(local), asCID)
 }
 
 // full is a local worker that offers every world a worker can serve, so what is

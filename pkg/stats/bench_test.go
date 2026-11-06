@@ -8,7 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func BenchmarkRoute(b *testing.B) {
+// benchView is 50 nodes serving 20 names each, every name served by 25 of them.
+func benchView(b *testing.B) *View {
 	v, err := New(Options{})
 	require.NoError(b, err)
 	for i := range 50 {
@@ -19,9 +20,25 @@ func BenchmarkRoute(b *testing.B) {
 		require.NoError(b, v.Observe(Report{Peer: fmt.Sprintf("p%02d", i), Load: float64(i%10) / 10,
 			Ready: true, Serving: serving, Addresses: []string{"203.0.113.1"}}))
 	}
+	return v
+}
+
+func BenchmarkRoute(b *testing.B) {
+	v := benchView(b)
 	b.ReportAllocs()
 	for b.Loop() {
 		v.Route("name7.example.com", time.Minute)
+	}
+}
+
+// BenchmarkRoutePeers is the same read as placement makes it: peers alone, into a
+// buffer the caller holds.
+func BenchmarkRoutePeers(b *testing.B) {
+	v := benchView(b)
+	dst := make([]string, 0, 64)
+	b.ReportAllocs()
+	for b.Loop() {
+		dst = v.RoutePeers("name7.example.com", time.Minute, dst[:0])
 	}
 }
 

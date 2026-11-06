@@ -10,7 +10,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
@@ -18,7 +20,6 @@ import (
 
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/specs"
-	"github.com/taubyte/tau/pkg/stats"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -27,7 +28,7 @@ import (
 // *services/discovery.Service satisfies it. The interface is here so that placement
 // can be tested against a table of nodes rather than a swarm.
 type Router interface {
-	Route(name string, maxAge time.Duration) []stats.Node
+	RoutePeers(name string, maxAge time.Duration, dst []string) []string
 }
 
 // Invoker is what a chosen node is asked to do. *services/worker.Client
@@ -142,12 +143,16 @@ type Workers struct {
 	router Router
 	opts   options
 
-	// mu guards the client cache. A client is one libp2p stream multiplexing
-	// every call to that peer, so it is worth keeping and worth not opening
-	// twice.
+	// clients is a peer id's *worker.Client, read without a lock. A client is one
+	// libp2p stream multiplexing every call to that peer, so it is worth keeping and
+	// worth not opening twice; mu orders opening one against Close.
+	clients sync.Map
 	mu      sync.Mutex
-	clients map[libp2ppeer.ID]*worker.Client
-	closed  bool
+	closed  atomic.Bool
+
+	// self is this node's id as discovery reports it, so a request for this node
+	// is recognised without decoding a peer id.
+	self string
 }
 
 // New builds a router over a host and a view.
@@ -166,7 +171,7 @@ func New(h host.Host, router Router, opts ...Option) (*Workers, error) {
 		}
 	}
 
-	return &Workers{host: h, router: router, opts: o, clients: map[libp2ppeer.ID]*worker.Client{}}, nil
+	return &Workers{host: h, router: router, opts: o, self: h.ID().String()}, nil
 }
 
 // Invoke runs one request on whichever node should take it.
@@ -273,18 +278,19 @@ func (w *Workers) Shape(ctx context.Context, at specs.Address, s *invoke.Stream)
 // worker was injected, the connection is made here rather than over a stream to
 // ourselves.
 func (w *Workers) Conn(ctx context.Context, at specs.Address, port string) (net.Conn, error) {
-	candidates := w.candidates(at)
+	var held [16]string
+	candidates := w.candidates(at, held[:0])
 	if len(candidates) == 0 {
 		return nil, ErrNoWorkers
 	}
 
 	var last error
-	for i, node := range candidates {
+	for i, peer := range candidates {
 		if i >= w.opts.attempts {
 			break
 		}
 
-		conn, err := w.connectTo(ctx, node.Peer, at, port)
+		conn, err := w.connectTo(ctx, peer, at, port)
 		if err == nil {
 			return conn, nil
 		}
@@ -320,18 +326,19 @@ func (w *Workers) connectTo(ctx context.Context, id string, at specs.Address, po
 // somewhere runs call against the warmest node that will take this address,
 // trying the next one only when a node could not be REACHED.
 func (w *Workers) somewhere(ctx context.Context, at specs.Address, call func(Invoker) error) error {
-	candidates := w.candidates(at)
+	var held [16]string
+	candidates := w.candidates(at, held[:0])
 	if len(candidates) == 0 {
 		return ErrNoWorkers
 	}
 
 	var last error
-	for i, node := range candidates {
+	for i, peer := range candidates {
 		if i >= w.opts.attempts {
 			break
 		}
 
-		invoker, err := w.invokerFor(node.Peer)
+		invoker, err := w.invokerFor(peer)
 		if err != nil {
 			last = err
 			continue
@@ -356,25 +363,23 @@ func (w *Workers) somewhere(ctx context.Context, at specs.Address, call func(Inv
 	return fmt.Errorf("placement: no worker took %s/%s: %w", at.Kind, at.Name, last)
 }
 
-// candidates is the nodes that could take this, warmest first.
+// candidates appends to dst the peers that could take this, warmest first.
 //
 // The two lists are concatenated rather than merged: within each, discovery has
 // already ordered by load, and a warm node at higher load is still the better
 // choice than a cold one at lower — the fetch it saves is a whole compiled
 // project over the wire.
-func (w *Workers) candidates(at specs.Address) []stats.Node {
-	warm := w.router.Route(worker.Descriptor.Name+"/"+at.Project+"/"+at.Environment, w.opts.maxAge)
-	any := w.router.Route(worker.Descriptor.Name, w.opts.maxAge)
+func (w *Workers) candidates(at specs.Address, dst []string) []string {
+	dst = w.router.RoutePeers(worker.Descriptor.Name+"/"+at.Project+"/"+at.Environment, w.opts.maxAge, dst)
+	warm := len(dst)
+	dst = w.router.RoutePeers(worker.Descriptor.Name, w.opts.maxAge, dst)
 
-	held := map[string]bool{}
-	for _, n := range warm {
-		held[n.Peer] = true
-	}
-
-	out := append([]stats.Node(nil), warm...)
-	for _, n := range any {
-		if !held[n.Peer] {
-			out = append(out, n)
+	// The second list loses what the first holds, compacted in place: the slot
+	// written never passes the one read.
+	out := dst[:warm]
+	for _, peer := range dst[warm:] {
+		if !slices.Contains(dst[:warm], peer) {
+			out = append(out, peer)
 		}
 	}
 	return out
@@ -383,6 +388,16 @@ func (w *Workers) candidates(at specs.Address) []stats.Node {
 // invokerFor is how this node talks to that one: directly when it is this node,
 // and over one kept stream otherwise.
 func (w *Workers) invokerFor(id string) (Invoker, error) {
+	if w.opts.local != nil && id == w.self {
+		return w.opts.local, nil
+	}
+	if w.closed.Load() {
+		return nil, errClosed
+	}
+	if held, ok := w.clients.Load(id); ok {
+		return held.(*worker.Client), nil
+	}
+
 	peerID, err := libp2ppeer.Decode(id)
 	if err != nil {
 		return nil, fmt.Errorf("placement: %q is not a peer: %w", id, err)
@@ -394,34 +409,36 @@ func (w *Workers) invokerFor(id string) (Invoker, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if w.closed {
-		return nil, errors.New("placement: closed")
+	if w.closed.Load() {
+		return nil, errClosed
 	}
-	if c, ok := w.clients[peerID]; ok {
-		return c, nil
+	if held, ok := w.clients.Load(id); ok {
+		return held.(*worker.Client), nil
 	}
 
 	c, err := worker.NewClient(w.host, peerID)
 	if err != nil {
 		return nil, err
 	}
-	w.clients[peerID] = c
+	w.clients.Store(id, c)
 	return c, nil
 }
+
+var errClosed = errors.New("placement: closed")
 
 // Close releases every stream this holds. It is idempotent.
 func (w *Workers) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if w.closed {
+	if w.closed.Swap(true) {
 		return nil
 	}
-	w.closed = true
-	for _, c := range w.clients {
-		c.Close()
-	}
-	w.clients = map[libp2ppeer.ID]*worker.Client{}
+	w.clients.Range(func(id, held any) bool {
+		held.(*worker.Client).Close()
+		w.clients.Delete(id)
+		return true
+	})
 	return nil
 }
 

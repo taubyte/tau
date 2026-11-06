@@ -168,11 +168,22 @@ func (o Options) withDefaults() (Options, error) {
 }
 
 // View is a stats view. It is safe for concurrent use.
+//
+// Reads take mu shared and write nothing: every request routes through this twice.
+// A row silent past Forget is skipped by a read and dropped by the next write.
 type View struct {
 	opts Options
 
-	mu   sync.Mutex
+	mu   sync.RWMutex
 	rows map[string]*row
+
+	// names is who serves each name, so a route reads the rows answering for it
+	// rather than every row.
+	names map[string]map[string]struct{}
+
+	// swept is when forget last ran. A read skips a forgotten row, so dropping
+	// one only bounds memory, and a write sweeps at most once a Fresh window.
+	swept time.Time
 }
 
 type row struct {
@@ -193,7 +204,7 @@ func New(opts Options) (*View, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &View{opts: o, rows: map[string]*row{}}, nil
+	return &View{opts: o, rows: map[string]*row{}, names: map[string]map[string]struct{}{}}, nil
 }
 
 // Observe records what a peer says about itself, stamped with the local clock.
@@ -211,20 +222,22 @@ func (v *View) Observe(r Report) error {
 
 	now := v.opts.Now()
 
-	v.mu.Lock()
-	defer v.mu.Unlock()
-
-	if cur, ok := v.rows[r.Peer]; ok && r.Incarnation < cur.incarnation {
-		return fmt.Errorf("%w: %s sent %d, holding %d", ErrStaleRun, r.Peer, r.Incarnation, cur.incarnation)
-	}
-
 	// The slice is copied because the caller may reuse the report, and a row
 	// that aliased a caller's slice would change under a reader holding the
 	// lock's result.
 	serving := append([]string(nil), r.Serving...)
 	sort.Strings(serving)
 
-	v.rows[r.Peer] = &row{
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.forget(now)
+
+	cur, had := v.rows[r.Peer]
+	if had && r.Incarnation < cur.incarnation {
+		return fmt.Errorf("%w: %s sent %d, holding %d", ErrStaleRun, r.Peer, r.Incarnation, cur.incarnation)
+	}
+
+	next := &row{
 		incarnation: r.Incarnation,
 		load:        r.Load,
 		serving:     serving,
@@ -235,7 +248,38 @@ func (v *View) Observe(r Report) error {
 		pending:     r.DatabasesPending,
 		received:    now,
 	}
+	// A heartbeat mostly repeats what it served, and then the index stands.
+	if !had || !slices.Equal(cur.serving, serving) {
+		if had {
+			v.unindex(r.Peer, cur)
+		}
+		v.index(r.Peer, next)
+	}
+	v.rows[r.Peer] = next
 	return nil
+}
+
+// index and unindex keep names. They are called with mu held.
+func (v *View) index(peer string, r *row) {
+	for _, name := range r.serving {
+		peers := v.names[name]
+		if peers == nil {
+			peers = map[string]struct{}{}
+			v.names[name] = peers
+		}
+		peers[peer] = struct{}{}
+	}
+}
+
+func (v *View) unindex(peer string, r *row) {
+	for _, name := range r.serving {
+		if peers := v.names[name]; peers != nil {
+			delete(peers, peer)
+			if len(peers) == 0 {
+				delete(v.names, name)
+			}
+		}
+	}
 }
 
 // Evict drops a peer immediately — it said goodbye, or something else knows it
@@ -243,17 +287,23 @@ func (v *View) Observe(r Report) error {
 func (v *View) Evict(peer string) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	delete(v.rows, peer)
+	v.drop(peer)
+}
+
+func (v *View) drop(peer string) {
+	if r, ok := v.rows[peer]; ok {
+		v.unindex(peer, r)
+		delete(v.rows, peer)
+	}
 }
 
 // Get is one peer's row, however old.
 func (v *View) Get(peer string) (Node, bool) {
 	now := v.opts.Now()
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	v.forget(now)
+	v.mu.RLock()
+	defer v.mu.RUnlock()
 	r, ok := v.rows[peer]
-	if !ok {
+	if !ok || v.forgotten(r, now) {
 		return Node{}, false
 	}
 	return node(peer, r, now), true
@@ -276,45 +326,89 @@ func (v *View) Fresh() []Node {
 // Not-ready nodes are excluded. A busy node is still returned when it is the only
 // one serving the name.
 func (v *View) Route(name string, maxAge time.Duration) []Node {
-	return v.sortedByLoad(func(n Node) bool {
-		return n.Ready && n.Age <= maxAge && serves(n.Serving, name)
+	now := v.opts.Now()
+
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+
+	var held [32]pick
+	picks := v.routable(held[:0], name, now, maxAge)
+	out := make([]Node, len(picks))
+	var names, sockets int
+	for i, p := range picks {
+		out[i] = shared(p.peer, p.r, now)
+		names += len(p.r.serving) + len(p.r.addresses)
+		sockets += len(p.r.sockets)
+	}
+	return ownAll(out, names, sockets)
+}
+
+// RoutePeers is Route's peers alone, in its order, appended to dst: a caller choosing
+// a node by identity copies nothing else.
+func (v *View) RoutePeers(name string, maxAge time.Duration, dst []string) []string {
+	now := v.opts.Now()
+
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+
+	var held [32]pick
+	for _, p := range v.routable(held[:0], name, now, maxAge) {
+		dst = append(dst, p.peer)
+	}
+	return dst
+}
+
+// pick is a row that may take a request, small so that ordering them moves two
+// words, not a Node.
+type pick struct {
+	peer string
+	r    *row
+}
+
+// routable appends to dst every row serving name that may take a request, least
+// loaded first, a tie by peer. It is called with mu held.
+func (v *View) routable(dst []pick, name string, now time.Time, maxAge time.Duration) []pick {
+	for peer := range v.names[name] {
+		r := v.rows[peer]
+		if r != nil && !v.forgotten(r, now) && r.ready && now.Sub(r.received) <= maxAge {
+			dst = append(dst, pick{peer: peer, r: r})
+		}
+	}
+	slices.SortFunc(dst, func(a, b pick) int {
+		return cmp.Or(cmp.Compare(a.r.load, b.r.load), strings.Compare(a.peer, b.peer))
 	})
-}
-
-func serves(serving []string, name string) bool {
-	i := sort.SearchStrings(serving, name)
-	return i < len(serving) && serving[i] == name
-}
-
-func (v *View) sortedByLoad(keep func(Node) bool) []Node {
-	out := v.snapshot(keep)
-	slices.SortStableFunc(out, func(a, b Node) int { return cmp.Compare(a.Load, b.Load) })
-	return out
+	return dst
 }
 
 func (v *View) snapshot(keep func(Node) bool) []Node {
 	now := v.opts.Now()
 
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	v.forget(now)
+	v.mu.RLock()
+	defer v.mu.RUnlock()
 
 	out := make([]Node, 0, len(v.rows))
 	var names, sockets int
 	for peer, r := range v.rows {
+		if v.forgotten(r, now) {
+			continue
+		}
 		if n := shared(peer, r, now); keep(n) {
 			out = append(out, n)
 			names += len(n.Serving) + len(n.Addresses)
 			sockets += len(n.Sockets)
 		}
 	}
-	// EVERY NODE GETS ITS OWN COPIES, cut from one backing array for the names and
-	// one for the sockets: three allocations a call rather than three a node.
+	slices.SortFunc(out, func(a, b Node) int { return strings.Compare(a.Peer, b.Peer) })
+	return ownAll(out, names, sockets)
+}
+
+// ownAll gives every node its own copies, cut from one backing array for the names
+// and one for the sockets: three allocations a call rather than three a node.
+func ownAll(out []Node, names, sockets int) []Node {
 	strs, socks := make([]string, 0, names), make([]Socket, 0, sockets)
 	for i := range out {
 		out[i], strs, socks = ownedFrom(out[i], strs, socks)
 	}
-	slices.SortFunc(out, func(a, b Node) int { return strings.Compare(a.Peer, b.Peer) })
 	return out
 }
 
@@ -333,12 +427,19 @@ func ownedFrom(n Node, strs []string, socks []Socket) (Node, []string, []Socket)
 	return n, strs, socks
 }
 
-// forget drops rows nothing should still be routing to. The caller holds the
-// lock.
+func (v *View) forgotten(r *row, now time.Time) bool {
+	return now.Sub(r.received) > v.opts.Forget
+}
+
+// forget drops every row silent past Forget. It is called with mu held for writing.
 func (v *View) forget(now time.Time) {
+	if now.Sub(v.swept) < v.opts.Fresh {
+		return
+	}
+	v.swept = now
 	for peer, r := range v.rows {
-		if now.Sub(r.received) > v.opts.Forget {
-			delete(v.rows, peer)
+		if v.forgotten(r, now) {
+			v.drop(peer)
 		}
 	}
 }

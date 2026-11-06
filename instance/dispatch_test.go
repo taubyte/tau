@@ -14,7 +14,6 @@ import (
 	"github.com/taubyte/tau/instance/placement"
 	"github.com/taubyte/tau/pkg/invoke"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/pkg/stats"
 )
 
 // Drives the claim loop synchronously; every branch here decides whether work is
@@ -397,7 +396,7 @@ func (i *answeringInstance) Close() error { return nil }
 // no candidate to choose.
 type nowhere struct{}
 
-func (nowhere) Route(string, time.Duration) []stats.Node { return nil }
+func (nowhere) RoutePeers(_ string, _ time.Duration, dst []string) []string { return dst }
 
 func TestADeliveryIsPlacedRatherThanRunWhereItWasClaimed(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}

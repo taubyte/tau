@@ -43,6 +43,8 @@ type Service interface {
 	Peer() string
 	// Route is who can answer for a name, no older than maxAge, least loaded first.
 	Route(name string, maxAge time.Duration) []stats.Node
+	// RoutePeers is Route's peers alone, appended to dst.
+	RoutePeers(name string, maxAge time.Duration, dst []string) []string
 	// Routes is Route at this service's own freshness.
 	Routes(name string) []stats.Node
 	// Fresh is every node whose report arrived within that window.
@@ -340,6 +342,14 @@ func (s *server) Route(name string, maxAge time.Duration) []stats.Node {
 		return nil
 	}
 	return s.view.Route(name, maxAge)
+}
+
+// RoutePeers is Route's peers alone, appended to dst.
+func (s *server) RoutePeers(name string, maxAge time.Duration, dst []string) []string {
+	if !s.built.Load() {
+		return dst
+	}
+	return s.view.RoutePeers(name, maxAge, dst)
 }
 
 // Routes is Route judged by this service's own freshness.
