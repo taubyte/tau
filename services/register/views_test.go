@@ -35,7 +35,7 @@ type directory []libp2ppeer.ID
 
 func (d directory) Peers(string) []libp2ppeer.ID { return d }
 
-func mockNode(t *testing.T) *node {
+func mockNode(t testing.TB) *node {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)

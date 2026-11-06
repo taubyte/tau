@@ -59,7 +59,7 @@ test:
 # resolve and invoke over p2p, the invoke pool, and a wasm component's cold start
 # and warm call, then the whole path in a dream universe, which is what they add up
 # to. BENCH= narrows it, e.g. BENCH=StartCold.
-BENCH_PKGS = ./services/gateway/ ./pkg/stats/ ./pkg/placement/ ./pkg/membership/ ./services/worker/ ./pkg/invoke/ ./pkg/invoke/wasm/ ./services/dns/ ./pkg/proto/codec/
+BENCH_PKGS = ./services/gateway/ ./services/register/ ./pkg/stats/ ./pkg/placement/ ./pkg/membership/ ./services/worker/ ./pkg/invoke/ ./pkg/invoke/wasm/ ./services/dns/ ./pkg/proto/codec/
 COUNT ?= 5
 bench:
 	go test -run '^$$' -bench '$(if $(BENCH),$(BENCH),.)' -benchmem -count=$(COUNT) -timeout 60m $(FLAGS) $(BENCH_PKGS)

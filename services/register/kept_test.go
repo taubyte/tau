@@ -27,7 +27,7 @@ func (f fixed) registers() ([]libp2ppeer.ID, error) {
 
 // connected starts a register on each of n nodes, links them and a reader, and
 // connects every pair.
-func connected(t *testing.T, n int) (registers []*node, services []Service, reader *node) {
+func connected(t testing.TB, n int) (registers []*node, services []Service, reader *node) {
 	t.Helper()
 	for range n {
 		at := mockNode(t)
