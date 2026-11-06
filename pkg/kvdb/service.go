@@ -115,11 +115,11 @@ func (f *factory) New(logger logging.StandardLogger, path string, rebroadcastInt
 
 	opts.RebroadcastInterval = time.Duration(rebroadcastIntervalSec * int(time.Second))
 	opts.PutHook = func(k ds.Key, v []byte) {
-		logger.Infof("Added: [%s] -> %s\n", k, string(v))
+		logger.Debug(putLogLine(k, v))
 	}
 
 	opts.DeleteHook = func(k ds.Key) {
-		logger.Infof("Removed: [%s]\n", k)
+		logger.Debugf("Removed: [%s]", k)
 	}
 
 	s.datastore, err = NewDatastore(f.node.Store(), ds.NewKey("crdt/"+path), f.node.DAG(), s.broadcaster, opts)

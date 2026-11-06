@@ -788,7 +788,7 @@ func (srv *PatrickService) GitHubTokenHTTPAuth(ctx http.Context) (interface{}, e
 		}
 		ctx.SetVariable("GithubClient", client)
 		ctx.SetVariable("GithubClientDone", rctx_cancel)
-		logger.Debugf("[GitHubTokenHTTPAuth] ctx=%v", ctx.Variables())
+		logger.Debugf("[GitHubTokenHTTPAuth] %s", ctx.Request().URL.Path) // never the variables: they hold the token
 		return nil, nil
 	}
 	return nil, errors.New("valid Github token required")
