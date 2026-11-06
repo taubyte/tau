@@ -66,9 +66,15 @@ func newLocalStore(t *testing.T, node peer.Node, project string) *Store {
 // bitswap wait forever on a lone node, so a stuck read counts as unreadable.
 func readBack(t *testing.T, s *Store, name string, want []byte) {
 	t.Helper()
+	readVersion(t, s, name, 0, want)
+}
+
+// readVersion is readBack for one version; 0 is the latest.
+func readVersion(t *testing.T, s *Store, name string, version int, want []byte) {
+	t.Helper()
 	done := make(chan error, 1)
 	go func() {
-		meta, err := s.Meta(context.Background(), name, 0)
+		meta, err := s.Meta(context.Background(), name, version)
 		if err != nil {
 			done <- err
 			return
