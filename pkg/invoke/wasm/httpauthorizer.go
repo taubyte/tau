@@ -40,7 +40,7 @@ func (r *Runtime) AuthorizeRequest(ctx context.Context, spec invoke.Spec, req *i
 	defer held.Close()
 
 	// The same `request` record every HTTP world gets, lowered by the same function.
-	out, err := call(ctx, instance, authorizeExport, requestValue(req))
+	out, err := call(ctx, instance, authorizeExport, requestArgs(req)...)
 	if err != nil {
 		return nil, fmt.Errorf("wasm: asking %s: %w", spec.Name, err)
 	}

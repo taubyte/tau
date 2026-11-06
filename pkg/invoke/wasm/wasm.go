@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 
 	"github.com/taubyte/tau/pkg/specs"
@@ -478,7 +479,7 @@ func (f *function) Serve(ctx context.Context, req *invoke.Request) (*invoke.Resp
 		return f.serveHTTP(ctx, req)
 	}
 
-	out, err := call(ctx, f.instance, f.export, requestValue(req))
+	out, err := call(ctx, f.instance, f.export, requestArgs(req)...)
 	if err != nil {
 		return nil, fmt.Errorf("wasm: calling %s: %w", f.export, err)
 	}
@@ -488,28 +489,65 @@ func (f *function) Serve(ctx context.Context, req *invoke.Request) (*invoke.Resp
 	return responseFrom(out[0], f.export)
 }
 
-// requestValue lowers a Request into the `request` record. Fields in order, so
-// wit/handler.wit's field order is load-bearing here.
-func requestValue(req *invoke.Request) component.Value {
+// requestArgs lowers a Request into a handler's one argument, the `request` record.
+// Fields in order, so wit/handler.wit's field order is load-bearing here. The
+// argument list, the record, the header list and every header's pair are cut from
+// one array.
+func requestArgs(req *invoke.Request) []component.Value {
 	if req == nil {
 		req = &invoke.Request{}
 	}
 
-	headers := make([]component.Value, 0, len(req.Headers))
-	for _, name := range sortedKeys(req.Headers) {
+	var held [16]string
+	names, n := held[:0], 0
+	for name, values := range req.Headers {
+		names = append(names, name)
+		n += len(values)
+	}
+	slices.Sort(names)
+
+	all := make([]component.Value, 5+3*n)
+	args, record, headers, pairs := all[:1:1], all[1:5:5], all[5:5+n:5+n], all[5+n:]
+	i := 0
+	for _, name := range names {
+		boxed := component.Value(name)
 		for _, value := range req.Headers[name] {
-			headers = append(headers, []component.Value{name, value})
+			pair := pairs[2*i : 2*i+2 : 2*i+2]
+			pair[0], pair[1] = boxed, value
+			headers[i] = pair
+			i++
 		}
 	}
 
-	body := req.Body
-	if body == nil {
-		// A nil body is an empty list and not a null: the world says list<u8>,
-		// which has no absent case.
-		body = []byte{}
+	// A nil body is an empty list and not a null: the world says list<u8>, which
+	// has no absent case.
+	body := emptyBody
+	if req.Body != nil {
+		body = req.Body
 	}
 
-	return []component.Value{req.Method, req.Path, headers, body}
+	record[0], record[1], record[2], record[3] = boxedMethod(req.Method), req.Path, headers, body
+	args[0] = record
+	return args
+}
+
+var emptyBody component.Value = []byte{}
+
+// methods are the standard methods boxed once, so lowering one allocates nothing. A
+// fixed table: a method a client makes up is boxed per call, never kept.
+var methods = func() map[string]component.Value {
+	out := map[string]component.Value{}
+	for _, m := range []string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodConnect, http.MethodOptions, http.MethodTrace} {
+		out[m] = m
+	}
+	return out
+}()
+
+func boxedMethod(m string) component.Value {
+	if boxed, ok := methods[m]; ok {
+		return boxed
+	}
+	return m
 }
 
 // responseFrom lifts the `response` record back, checking every field.
@@ -549,7 +587,10 @@ func headersFrom(value component.Value, export string) (map[string][]string, err
 		return nil, nil
 	}
 
+	// Every name's values are cut from one array, capped so a repeated name's append
+	// copies rather than writing into the next name's.
 	out := make(map[string][]string, len(list))
+	values := make([]string, 0, len(list))
 	for _, entry := range list {
 		pair, ok := entry.([]component.Value)
 		if !ok || len(pair) != 2 {
@@ -560,16 +601,12 @@ func headersFrom(value component.Value, export string) (map[string][]string, err
 		if !nameOK || !valueOK {
 			return nil, fmt.Errorf("%w: %s answered with a header that is not two strings", ErrNotAHandler, export)
 		}
-		out[name] = append(out[name], body)
+		if had, ok := out[name]; ok {
+			out[name] = append(had, body)
+			continue
+		}
+		values = append(values, body)
+		out[name] = values[len(values)-1 : len(values) : len(values)]
 	}
 	return out, nil
-}
-
-func sortedKeys(m map[string][]string) []string {
-	out := make([]string, 0, len(m))
-	for key := range m {
-		out = append(out, key)
-	}
-	sort.Strings(out)
-	return out
 }
