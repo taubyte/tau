@@ -32,6 +32,22 @@ type openOptions struct {
 	// follow reads the cloud's T, every poll.
 	follow func(context.Context) (time.Duration, error)
 	poll   time.Duration
+
+	observer Observer
+}
+
+// Observer hears every change the database commits, written on this node or merged
+// from another: a key whose value appears or changes, or one that goes absent. It is
+// called on the merge path, so it must not block and must not call into the
+// database. Keys are as Put takes them, with no leading slash.
+type Observer interface {
+	Put(key string, value []byte)
+	Delete(key string)
+}
+
+// WithObserver has o hear every change this database commits.
+func WithObserver(o Observer) OpenOption {
+	return func(opts *openOptions) { opts.observer = o }
 }
 
 // WithLogger is where the database says what it does. Default the package's own.
@@ -118,9 +134,15 @@ func open(p peer.Node, path string, options ...OpenOption) (*kvDatabase, error) 
 	// operator raises this logger.
 	opts.PutHook = func(k ds.Key, v []byte) {
 		o.logger.Infof("Added: [%s] (%d bytes)", k, len(v))
+		if o.observer != nil {
+			o.observer.Put(strings.TrimPrefix(k.String(), "/"), v)
+		}
 	}
 	opts.DeleteHook = func(k ds.Key) {
 		o.logger.Infof("Removed: [%s]\n", k)
+		if o.observer != nil {
+			o.observer.Delete(strings.TrimPrefix(k.String(), "/"))
+		}
 	}
 
 	d.datastore, err = NewDatastore(p.Store(), storeKey(path), p.DAG(), d.broadcaster, opts)
