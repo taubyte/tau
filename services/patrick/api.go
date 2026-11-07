@@ -752,6 +752,19 @@ func (srv *PatrickService) setupJobRoutes() {
 
 	srv.http.GET(&http.RouteDefinition{
 		Hosts: hosts,
+		Path:  "/usage/{projectId}",
+		Vars: http.Variables{
+			Required: []string{"projectId"},
+		},
+		Auth: http.RouteAuthHandler{
+			Validator: srv.GitHubTokenHTTPAuth,
+			GC:        srv.GitHubTokenHTTPAuthCleanup,
+		},
+		Handler: srv.withProjectAccess(srv.usageHandler),
+	})
+
+	srv.http.GET(&http.RouteDefinition{
+		Hosts: hosts,
 		Path:  "/job/{jid}",
 		Vars: http.Variables{
 			Required: []string{"jid"},

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -105,6 +106,32 @@ func TestDequeueSkipsProjectAtBuildCap(t *testing.T) {
 	delete(db.keys, "/assigned/a1")
 	if resp, _ = p.dequeueHandler(context.Background(), &mockConnection{}); resp["available"] != true {
 		t.Fatalf("a2 must run once a1 is done, got %v", resp)
+	}
+}
+
+// Usage counts the project's claimed jobs and shows its caps, only to a writer of its repositories.
+func TestUsage(t *testing.T) {
+	jobs := &fakeJobs{keys: map[string][]byte{}}
+	addJob(t, jobs, "/jobs/", "a1", 21)
+	addJob(t, jobs, "/jobs/", "a2", 21)
+	db := &listJobs{fakeJobs: jobs, listed: map[string][]string{
+		"/by/project/a/": {"/by/project/a/a1", "/by/project/a/a2"},
+		"/assigned/":     {"/assigned/a1", "/assigned/b1"},
+	}}
+	srv := &PatrickService{db: db, config: quotaConfig{q: tauConfig.Quotas{Default: tauConfig.Caps{Builds: 2}}}}
+	handler := srv.withProjectAccess(srv.usageHandler)
+
+	got, err := handler(accessCtx("usage-writer", &fakeRepos{perms: map[string]map[string]bool{"21": {"push": true}}}, map[string]any{"projectId": "a"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	usage := got.(map[string]any)
+	if usage["builds_running"] != 1 || usage["caps"].(tauConfig.Caps).Builds != 2 {
+		t.Fatalf("got %v", usage)
+	}
+
+	if _, err := handler(accessCtx("usage-stranger", &fakeRepos{perms: map[string]map[string]bool{"21": {"pull": true}}}, map[string]any{"projectId": "a"})); !errors.Is(err, errNoJobAccess) {
+		t.Fatalf("a stranger must be refused, got %v", err)
 	}
 }
 
