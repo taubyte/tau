@@ -59,6 +59,28 @@ func TestCheckedOutInstanceHoldsSlot(t *testing.T) {
 	}
 }
 
+// Free on a full pool closes the instance instead of blocking.
+func TestFreeOnFullPoolCloses(t *testing.T) {
+	f := &Function{
+		config:             &structureSpec.Function{Name: "someFunc"},
+		serviceable:        newMockServiceable(),
+		vmConfig:           &vm.Config{MemoryLimitPages: 4},
+		availableInstances: make(chan Instance, 1),
+	}
+	f.availableInstances <- &instance{runtime: &fakeRuntime{}, parent: f}
+	rt := &fakeRuntime{size: vm.MemoryPageSize}
+	done := make(chan error, 1)
+	go func() { done <- (&instance{runtime: rt, parent: f}).Free() }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Free blocked on a full pool")
+	}
+	if rt.closed != 1 {
+		t.Fatalf("the instance must be closed, closed=%d", rt.closed)
+	}
+}
+
 // A caller that left before its instance arrived does not strand it: the
 // instance goes back to the pool and its slot is released.
 func TestInstanceForGoneCallerIsReturned(t *testing.T) {

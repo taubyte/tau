@@ -74,7 +74,12 @@ func (i *instance) Free() error {
 
 	i.pooled = true
 	i.unhold()
-	i.parent.availableInstances <- i
+	// never block a caller (it may hold a request lock) on a full pool
+	select {
+	case i.parent.availableInstances <- i:
+	default:
+		i.Close()
+	}
 	return nil
 }
 
