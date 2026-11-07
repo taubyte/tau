@@ -327,7 +327,7 @@ func (c *code) checkConfig() error {
 			Branch:    c.Job.Meta.Repository.Branch,
 			Timestamp: time.Now().UnixNano(),
 		})
-		configRepo, err := c.openRepo(strconv.Itoa(c.ConfigRepoId), url, c.ConfigPrivateKey)
+		configRepo, err := c.openRepo(strconv.Itoa(c.ConfigRepoId), url, c.ConfigPrivateKey, "")
 		if err != nil {
 			json.NewEncoder(c.LogFile).Encode(struct {
 				Op        string `json:"op"`

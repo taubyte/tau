@@ -61,3 +61,20 @@ func TestRepoCachePrunesOldIdleDirs(t *testing.T) {
 	_, err = os.Stat(held)
 	assert.NilError(t, err)
 }
+
+// A clone dir held by a monkey in another process (its flock) is waited on.
+func TestRepoDirWaitsForOtherProcess(t *testing.T) {
+	gitCacheRoot = t.TempDir()
+	dir := filepath.Join(gitCacheRoot, "projA", "1")
+	assert.NilError(t, os.MkdirAll(filepath.Dir(dir), 0755))
+	other, err := fileLock(context.Background(), dir+".lock")
+	assert.NilError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	_, _, err = lockRepoDir(ctx, "projA", "1")
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	other()
+	_, unlock, err := lockRepoDir(context.Background(), "projA", "1")
+	assert.NilError(t, err)
+	unlock()
+}

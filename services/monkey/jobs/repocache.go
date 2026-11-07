@@ -47,8 +47,17 @@ func lockRepoDir(ctx context.Context, projectID, repoID string) (dir string, unl
 	case <-ctx.Done():
 		return "", nil, ctx.Err()
 	}
+	if err = os.MkdirAll(filepath.Dir(dir), 0755); err != nil {
+		<-l
+		return "", nil, err
+	}
+	funlock, err := fileLock(ctx, dir+".lock")
+	if err != nil {
+		<-l
+		return "", nil, err
+	}
 	pruneRepoCache()
-	return dir, func() { <-l }, nil
+	return dir, func() { funlock(); <-l }, nil
 }
 
 // pruneRepoCache removes clone dirs unused for a week, at most hourly, and
@@ -65,13 +74,16 @@ func pruneRepoCache() {
 	dirs, _ := filepath.Glob(filepath.Join(gitCacheRoot, "*", "*"))
 	for _, d := range dirs {
 		fi, err := os.Stat(d)
-		if err != nil || time.Since(fi.ModTime()) < repoCacheMaxAge {
+		if err != nil || !fi.IsDir() || time.Since(fi.ModTime()) < repoCacheMaxAge {
 			continue
 		}
 		l := repoLock(d)
 		select {
 		case l <- struct{}{}:
-			os.RemoveAll(d)
+			if funlock, err := fileLock(nil, d+".lock"); err == nil {
+				os.RemoveAll(d) // the .lock file stays: removing it races another process's open
+				funlock()
+			}
 			<-l
 		default:
 		}
@@ -85,7 +97,8 @@ func touchRepoDir(dir string) {
 
 // openRepo clones url into the project's reusable dir (held until the job
 // ends), or into a throwaway temp dir when the ids are not safe path parts.
-func (c *Context) openRepo(repoID, url, key string, opts ...git.Option) (*git.Repository, error) {
+// commit is the one the tree ends on; empty means the branch tip.
+func (c *Context) openRepo(repoID, url, key, commit string, opts ...git.Option) (*git.Repository, error) {
 	opts = append([]git.Option{
 		git.URL(url), git.SSHKey(key), git.Shallow(),
 		git.Branch(c.Job.Meta.Repository.Branch), git.Output(c.LogFile),
@@ -102,7 +115,7 @@ func (c *Context) openRepo(repoID, url, key string, opts ...git.Option) (*git.Re
 		return nil, err
 	}
 	touchRepoDir(dir)
-	return git.New(c.ctx, append(opts, git.Root(dir), git.Reuse(c.Job.Meta.HeadCommit.ID))...)
+	return git.New(c.ctx, append(opts, git.Root(dir), git.Reuse(commit))...)
 }
 
 func (c *Context) releaseRepos() {
