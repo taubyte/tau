@@ -54,7 +54,7 @@ func TestACallThisNodeCannotAnswerGoesToTheOthers(t *testing.T) {
 	ctx := t.Context()
 	notLeading := connect.NewError(connect.CodeUnavailable, errors.New("not the leader"))
 	here, there := &answering{err: notLeading}, &answering{}
-	r := routed{here: here, elsewhere: there}
+	r := routed{here: here, elsewhere: there, queue: unelected{}}
 
 	_, err := r.Enqueue(ctx, "repo", "ref", "commit")
 	require.NoError(t, err)
@@ -79,7 +79,7 @@ func TestACallThisNodeAnswersStaysHere(t *testing.T) {
 	for name, here := range map[string]*answering{"answered": {}, "refused": {err: refused}} {
 		t.Run(name, func(t *testing.T) {
 			there := &answering{}
-			r := routed{here: here, elsewhere: there}
+			r := routed{here: here, elsewhere: there, queue: unelected{}}
 			_, err := r.Enqueue(ctx, "repo", "ref", "commit")
 			require.ErrorIs(t, err, here.err)
 			_, err = r.Get(ctx, "job")
@@ -94,4 +94,63 @@ func TestACallThisNodeAnswersStaysHere(t *testing.T) {
 			require.Zero(t, there.asked, "an answer, a refusal included, is the leader's")
 		})
 	}
+}
+
+// unelected is a queue whose group never knows a leader.
+type unelected struct{}
+
+func (unelected) WaitForLeader(ctx context.Context) error { return errors.New("no leader") }
+
+// electsHere is a queue whose group elects this node once asked: from then here answers.
+type electsHere struct{ here *answering }
+
+func (e electsHere) WaitForLeader(context.Context) error {
+	e.here.err = nil
+	return nil
+}
+
+// A cloud's only plm node, asked before its group elected, answers once it has
+// rather than telling the caller to come back.
+func TestACallNobodyElseAnswersWaitsForThisNodesElection(t *testing.T) {
+	ctx := t.Context()
+	notLeading := connect.NewError(connect.CodeUnavailable, errors.New("not the leader"))
+	nobody := connect.NewError(connect.CodeUnavailable, errors.New("no other plm node"))
+
+	calls := map[string]func(r routed) error{
+		"enqueue": func(r routed) error { _, err := r.Enqueue(ctx, "repo", "ref", "commit"); return err },
+		"get":     func(r routed) error { _, err := r.Get(ctx, "job"); return err },
+		"list":    func(r routed) error { return r.List(ctx, "project", func(string) error { return nil }) },
+		"cancel":  func(r routed) error { return r.Cancel(ctx, "job") },
+		"retry":   func(r routed) error { return r.Retry(ctx, "job") },
+		"follow":  func(r routed) error { _, err := r.Follow(ctx, "job", 1, 5, nil); return err },
+		"snapshot": func(r routed) error {
+			_, err := r.Snapshot(ctx, "job", 1, 5, nil)
+			return err
+		},
+	}
+	for name, call := range calls {
+		t.Run(name, func(t *testing.T) {
+			here, there := &answering{err: notLeading}, &answering{err: nobody}
+			require.NoError(t, call(routed{here: here, elsewhere: there, queue: electsHere{here}}))
+			require.Equal(t, 2, here.asked, "asked, then asked again once its group elected")
+			require.Equal(t, 1, there.asked)
+		})
+	}
+
+	t.Run("a group that never elects", func(t *testing.T) {
+		here, there := &answering{err: notLeading}, &answering{err: nobody}
+		_, err := routed{here: here, elsewhere: there, queue: unelected{}}.Enqueue(ctx, "repo", "ref", "commit")
+		require.ErrorIs(t, err, nobody, "the caller is told to come back, as before")
+		require.Equal(t, 1, here.asked)
+	})
+}
+
+// A follow resumes here from where the others left off, so nothing is said twice.
+func TestAFollowAskedHereAgainResumesWhereTheOthersStopped(t *testing.T) {
+	notLeading := connect.NewError(connect.CodeUnavailable, errors.New("not the leader"))
+	here, there := &answering{err: notLeading}, &answering{err: notLeading}
+	at, err := routed{here: here, elsewhere: there, queue: electsHere{here}}.Follow(t.Context(), "job", 1, 5, nil)
+	require.NoError(t, err)
+	require.Equal(t, int64(25), here.at, "here resumed at the offset the others answered")
+	require.Equal(t, int64(35), at)
 }

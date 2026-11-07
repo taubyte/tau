@@ -123,7 +123,7 @@ func (f *server) wire(h service.Host, cfg config) ([]ingress.Option, error) {
 	if err != nil {
 		return nil, err
 	}
-	builds := routed{here: f.control.Local(), elsewhere: elsewhere}
+	builds := routed{here: f.control.Local(), elsewhere: elsewhere, queue: f.control}
 	identities, err := clients.Identities(auth)
 	if err != nil {
 		return nil, err
