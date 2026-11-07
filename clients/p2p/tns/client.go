@@ -139,7 +139,7 @@ func (c *Client) Push(path []string, data interface{}) error {
 	if pushed && ok && pushed_type_ok {
 		// every cached ancestor must hear of it: a fetch of resolve/repo/github
 		// listens on another channel than a push to resolve/repo/github/<id>
-		for _, channel := range common.ChannelsFor(path...) {
+		for _, channel := range common.ChannelsForPush(path, data) {
 			if err := c.node.PubSubPublish(c.client.Context(), channel, nil); err != nil {
 				return fmt.Errorf("push failed to publish: %s", err.Error())
 			}
