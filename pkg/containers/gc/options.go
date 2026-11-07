@@ -29,3 +29,13 @@ func Reference(ref string) Option {
 		return nil
 	}
 }
+
+// Keep names images the collector never removes, however long they sit idle:
+// a node's base build images, which every build needs and which take minutes
+// to download again.
+func Keep(names ...string) Option {
+	return func(o *config) error {
+		o.keep = append(o.keep, names...)
+		return nil
+	}
+}

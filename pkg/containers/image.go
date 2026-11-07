@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
@@ -69,13 +70,14 @@ func pulledWithin(name string, age time.Duration) bool {
 }
 
 // CleanUnused removes the images this process has used but not for idle or
-// longer. Images it never used are left alone: they are not tau's to remove.
+// longer, except those named in keep. Images it never used are left alone:
+// they are not tau's to remove.
 // An image a container still holds fails to remove and is tried again later.
-func (c *Client) CleanUnused(ctx context.Context, idle time.Duration) error {
+func (c *Client) CleanUnused(ctx context.Context, idle time.Duration, keep ...string) error {
 	var errs []error
 	lastUsed.Range(func(key, value any) bool {
 		name := key.(string)
-		if time.Since(value.(time.Time)) < idle {
+		if slices.Contains(keep, name) || time.Since(value.(time.Time)) < idle {
 			return true
 		}
 		if err := c.backend.Image(name).Remove(ctx); err != nil {

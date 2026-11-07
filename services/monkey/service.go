@@ -34,13 +34,11 @@ func New(ctx context.Context, cfg tauConfig.Config) (*Service, error) {
 		srv.cluster = "main"
 	}
 
-	err = ci.Start(ctx, ci.Interval(ci.DefaultInterval), ci.MaxAge(ci.DefaultMaxAge))
+	err = ci.Start(ctx, ci.Interval(ci.DefaultInterval), ci.MaxAge(ci.DefaultMaxAge), ci.Keep(buildImages...))
 	if err != nil {
 		return nil, err
 	}
-	if srv.dev {
-		go warmBuildImages(ctx)
-	}
+	go warmBuildImages(ctx)
 
 	if srv.node = cfg.Node(); srv.node == nil {
 		srv.node, err = tauConfig.NewLiteNode(ctx, cfg, path.Join(cfg.Root(), protocolCommon.Monkey))

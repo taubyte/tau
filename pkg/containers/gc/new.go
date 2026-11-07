@@ -14,6 +14,7 @@ type config struct {
 	interval  time.Duration
 	maxAge    time.Duration
 	reference string
+	keep      []string
 }
 
 var (
@@ -52,7 +53,7 @@ func Start(ctx context.Context, options ...Option) error {
 					// built upstream: by that measure every build image is
 					// always too old, and it is downloaded again after each
 					// sweep. Images tau never used are not its to remove.
-					err = client.CleanUnused(ctx, cnf.maxAge)
+					err = client.CleanUnused(ctx, cnf.maxAge, cnf.keep...)
 				}
 				if err != nil {
 					logger.Errorf("image cleanup failed: %s", err)
