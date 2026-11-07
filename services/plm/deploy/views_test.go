@@ -162,35 +162,3 @@ func TestAnUnreadableManifestFailsTheDeploy(t *testing.T) {
 	require.NoError(t, pushed(t.Context(), builder(t, co, r, regions), work(), &out{}))
 	require.ErrorContains(t, pushed(t.Context(), builder(t, co, manifestless{r}, regions), work(), &out{}), "manifest unreadable")
 }
-
-// edge is the corpus's edge project as the shop: a route answered in both regions,
-// in front of a function in /origin that runs in region-1 alone.
-func edge(t *testing.T) string {
-	t.Helper()
-	dir := fixture(t, filepath.Join("..", "..", "..", "instance", "dream", "projects", "with", "regions", "edge"))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "project.yaml"), []byte("id: "+shopID+"\nname: shop\n"+
-		"regions:\n    topology: active\n    in: [region-1, region-2]\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
-	return dir
-}
-
-func TestARegionIsToldWhereARouteReachesWhatItDoesNotRun(t *testing.T) {
-	for _, regions := range []schema.Regions{schema.Preview("region-1", "region-2"), schema.WithRegion("region-2")} {
-		r := registry(t)
-		var log out
-		require.NoError(t, pushed(t.Context(), builder(t, &checkout{dir: edge(t)}, r, deploy.WithRegions(regions)), work(), &log), log.String())
-
-		two, err := r.Routing(t.Context(), shopID, "prod", "region-2")
-		require.NoError(t, err)
-		require.Equal(t, []register.Remote{{Kind: "function", Scope: "origin", Name: "api", In: []string{"region-1"}}}, two.Remote)
-		whole, err := r.Resolve(t.Context(), shopID, "prod")
-		require.NoError(t, err)
-		require.Equal(t, whole.Object, two.Release, "the release is the whole object")
-	}
-
-	r := registry(t)
-	var log out
-	require.NoError(t, pushed(t.Context(), builder(t, &checkout{dir: edge(t)}, r, deploy.WithRegions(schema.WithRegion("region-1"))), work(), &log))
-	one, err := r.Routing(t.Context(), shopID, "prod", "region-1")
-	require.NoError(t, err)
-	require.Empty(t, one.Remote, "region-1 runs what its routes reach")
-}

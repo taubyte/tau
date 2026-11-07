@@ -543,12 +543,6 @@ func (s *Service) shaped(ctx context.Context, m match, projectName, environment 
 // unbuilt reports the parts of the vocabulary this gateway cannot yet honour,
 // rather than serving a request as if they were not there.
 func (s *Service) unbuilt(m match) (int, string) {
-	if m.elsewhere {
-		// The compile let this route reach a handler held in another region, and
-		// nothing here carries a request between regions.
-		s.logf("gateway: %s %s routes to %s/%s, which this region does not run", m.host.Name, m.Path, m.handler().HandlerKind, m.handler().HandlerName)
-		return http.StatusBadGateway, "this route's handler runs in another region"
-	}
 	return 0, ""
 }
 
@@ -586,27 +580,9 @@ func readCandidates(p *specs.Project, lookup string) []candidate {
 		if err != nil {
 			continue
 		}
-		c := candidate{host: h, gateway: specs.ReadGateway(r)}
-		c.elsewhere = handlerElsewhere(p, c)
-		out = append(out, c)
+		out = append(out, candidate{host: h, gateway: specs.ReadGateway(r)})
 	}
 	return out
-}
-
-// handlerElsewhere is a route whose own handler this project's view does not hold: a
-// handler in a namespace that runs in other regions than the gateway's, which the
-// compile allows a route alone to reach.
-func handlerElsewhere(p *specs.Project, c candidate) bool {
-	route := c.gateway.Route
-	if route.HandlerName == "" || route.Target == specs.GatewayRouteTargetRouter {
-		return false
-	}
-	scope := c.host.Scope
-	if declared := route.HandlerNamespace; declared != "" {
-		scope = splitScope(declared)
-	}
-	_, _, err := p.Resource(scope, route.HandlerKind, route.HandlerName)
-	return errors.Is(err, specs.ErrNotFound)
 }
 
 // gatewayKind is an HTTP entry point. A proxy answers on a name too, but carries a

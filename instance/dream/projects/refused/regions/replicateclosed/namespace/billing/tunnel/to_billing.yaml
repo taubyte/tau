@@ -1,5 +1,0 @@
-id: QmRNzmEin5vY4LLNfqqTfQpmk6rmVL7evWcdoPG6f6DPvL
-description: lets the other database through, not the ledger
-to: /billing
-through:
-    - database: other

@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -73,7 +72,7 @@ func TestEachRegionServesItsOwnView(t *testing.T) {
 
 	r1, _ := inRegion(t, "region-1", "with/views")
 	held, _ := viewHeld(t, r1, "region-1")
-	require.Equal(t, map[string]bool{"function/hello": true, "package/hello_code": true, "gateway/regional": true, "zone/example_com": true, "cache/sessions": true, "tunnel/to_eu": true}, held)
+	require.Equal(t, map[string]bool{"function/hello": true, "package/hello_code": true, "gateway/regional": true, "zone/example_com": true, "cache/sessions": true}, held)
 
 	var said string
 	require.Eventually(t, func() bool {
@@ -83,24 +82,19 @@ func TestEachRegionServesItsOwnView(t *testing.T) {
 	}, 30*time.Second, 200*time.Millisecond, "region-1 answers the route it holds: %s", &lastSaid{&said})
 
 	// region-2 HOLDS WHAT RUNS ANYWHERE, and nothing that runs in region-1 alone: the
-	// gateway answers the name, and says the function behind it runs elsewhere rather
-	// than borrowing region-1's or answering as if the name served nothing.
+	// gateway runs with its function in region-1, so region-2 serves no such name.
 	r2, u2 := inRegion(t, "region-2", "with/views")
 	r2Node := r2.node
 	held, _ = viewHeld(t, r2, "region-2")
-	require.Equal(t, map[string]bool{"gateway/regional": true, "zone/example_com": true, "cache/sessions": true, "tunnel/to_eu": true}, held)
-	require.Eventually(t, func() bool {
-		got := r2.ask(t, http.MethodGet, "/")
-		said = got.Body.String()
-		return got.Code == http.StatusBadGateway && strings.Contains(said, "this route's handler runs in another region")
-	}, 30*time.Second, 200*time.Millisecond, "region-2 refuses by name: %s", &lastSaid{&said})
+	require.Equal(t, map[string]bool{"cache/sessions": true}, held)
+	require.Equal(t, http.StatusNotFound, r2.ask(t, http.MethodGet, "/").Code, "region-2 serves no gateway at that name")
 
 	as, err := r2Node.Register().Local().Assigned(t.Context(), "region-2")
 	require.NoError(t, err)
 	require.Len(t, as, 1, "region-2 learns of the deployment from its own index")
 
 	// A RESOURCE REMOVED IN A LATER REVISION LEAVES ITS REGION'S VIEW: the cache goes,
-	// region-2 still holds the deployment, at the new revision, without it.
+	// region-2 still holds the deployment, at the new revision, with nothing in it.
 	later := t.TempDir()
 	require.NoError(t, os.CopyFS(later, os.DirFS(projectDir("with/views"))))
 	require.NoError(t, os.Remove(filepath.Join(later, "cache", "sessions.yaml")))
@@ -108,7 +102,7 @@ func TestEachRegionServesItsOwnView(t *testing.T) {
 	build(t, u2, r2.project, later, built)
 	held, revision := viewHeld(t, r2, "region-2")
 	require.EqualValues(t, 2, revision)
-	require.Equal(t, map[string]bool{"gateway/regional": true, "zone/example_com": true, "tunnel/to_eu": true}, held)
+	require.Empty(t, held)
 }
 
 func TestAProjectReachingAcrossRegionsIsRefused(t *testing.T) {

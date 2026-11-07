@@ -34,7 +34,6 @@ const (
 	KindZone         = "zone"
 	KindGateway      = "gateway"
 	KindProxy        = "proxy"
-	KindTunnel       = "tunnel"
 	KindReplication  = "replication"
 	KindStream       = "stream"
 	KindBus          = "bus"
@@ -2186,90 +2185,6 @@ const (
 	ProxyTlsModeTerminate = "terminate"
 )
 
-// Tunnel is that kind, read from a compiled object.
-type Tunnel struct {
-	Description string
-	Id          string
-	Name        string
-	Tags        []string
-	Through     []TunnelThroughEntry
-	To          string
-}
-
-// ReadTunnel decodes one from a resource.
-func ReadTunnel(r Resource) Tunnel {
-	var out Tunnel
-	out.Description = r.String("description")
-	out.Id = r.String("id")
-	out.Name = r.String("name")
-	out.Tags = r.Strings("tags")
-	for _, e := range r.List("through") {
-		out.Through = append(out.Through, ReadTunnelThroughEntry(e))
-	}
-	out.To = r.String("to")
-	return out
-}
-
-// Tunnel's keys, and the values its fields may hold.
-const (
-	TunnelKeyDescription = "description"
-	TunnelKeyId          = "id"
-	TunnelKeyName        = "name"
-	TunnelKeyTags        = "tags"
-	TunnelKeyThrough     = "through"
-	TunnelKeyTo          = "to"
-)
-
-// TunnelThroughEntry is one entry of "through" in Tunnel, in the order written.
-type TunnelThroughEntry struct {
-	Agent       string
-	Application string
-	Cache       string
-	Database    string
-	Function    string
-	Gateway     string
-	Sandbox     string
-	Storage     string
-	Sync        string
-	Volume      string
-	Worker      string
-	Workflow    string
-}
-
-// ReadTunnelThroughEntry decodes one from a resource.
-func ReadTunnelThroughEntry(r Resource) TunnelThroughEntry {
-	var out TunnelThroughEntry
-	out.Agent = r.String("agent")
-	out.Application = r.String("application")
-	out.Cache = r.String("cache")
-	out.Database = r.String("database")
-	out.Function = r.String("function")
-	out.Gateway = r.String("gateway")
-	out.Sandbox = r.String("sandbox")
-	out.Storage = r.String("storage")
-	out.Sync = r.String("sync")
-	out.Volume = r.String("volume")
-	out.Worker = r.String("worker")
-	out.Workflow = r.String("workflow")
-	return out
-}
-
-// TunnelThroughEntry's keys, and the values its fields may hold.
-const (
-	TunnelThroughEntryKeyAgent       = "agent"
-	TunnelThroughEntryKeyApplication = "application"
-	TunnelThroughEntryKeyCache       = "cache"
-	TunnelThroughEntryKeyDatabase    = "database"
-	TunnelThroughEntryKeyFunction    = "function"
-	TunnelThroughEntryKeyGateway     = "gateway"
-	TunnelThroughEntryKeySandbox     = "sandbox"
-	TunnelThroughEntryKeyStorage     = "storage"
-	TunnelThroughEntryKeySync        = "sync"
-	TunnelThroughEntryKeyVolume      = "volume"
-	TunnelThroughEntryKeyWorker      = "worker"
-	TunnelThroughEntryKeyWorkflow    = "workflow"
-)
-
 // Replication is that kind, read from a compiled object.
 type Replication struct {
 	Between     []string
@@ -2278,7 +2193,6 @@ type Replication struct {
 	Name        string
 	Of          ReplicationOf
 	Tags        []string
-	Tunnel      ReplicationTunnel
 }
 
 // ReadReplication decodes one from a resource.
@@ -2290,7 +2204,6 @@ func ReadReplication(r Resource) Replication {
 	out.Name = r.String("name")
 	out.Of = ReadReplicationOf(r)
 	out.Tags = r.Strings("tags")
-	out.Tunnel = ReadReplicationTunnel(r)
 	return out
 }
 
@@ -2302,7 +2215,6 @@ const (
 	ReplicationKeyName        = "name"
 	ReplicationKeyOf          = "of"
 	ReplicationKeyTags        = "tags"
-	ReplicationKeyTunnel      = "tunnel"
 )
 
 // ReplicationOf is the "of" block of Replication, read from a compiled object.
@@ -2335,32 +2247,6 @@ const (
 	ReplicationOfKeyNamespace = "of/namespace"
 	ReplicationOfKindDatabase = "database"
 	ReplicationOfKindVolume   = "volume"
-)
-
-// ReplicationTunnel is the "tunnel" block of Replication, read from a compiled object.
-type ReplicationTunnel struct {
-	Name      string
-	Namespace string
-
-	// Declared says the author wrote this block: a field the compiler does not
-	// default is present. A block whose fields are all defaults reads false.
-	Declared bool
-}
-
-// ReadReplicationTunnel decodes one from a resource.
-func ReadReplicationTunnel(r Resource) ReplicationTunnel {
-	var out ReplicationTunnel
-	out.Name = r.String("tunnel", "name")
-	out.Namespace = r.String("tunnel", "namespace")
-	out.Declared = r.Has("tunnel", "name") ||
-		r.Has("tunnel", "namespace")
-	return out
-}
-
-// ReplicationTunnel's keys, and the values its fields may hold.
-const (
-	ReplicationTunnelKeyName      = "tunnel/name"
-	ReplicationTunnelKeyNamespace = "tunnel/namespace"
 )
 
 // Stream is that kind, read from a compiled object.
@@ -3124,6 +3010,7 @@ const (
 type NamespaceRegions struct {
 	In       []string
 	Topology string
+	Tunnel   *bool
 
 	// Declared says the author wrote this block: a field the compiler does not
 	// default is present. A block whose fields are all defaults reads false.
@@ -3135,8 +3022,10 @@ func ReadNamespaceRegions(r Resource) NamespaceRegions {
 	var out NamespaceRegions
 	out.In = r.Strings("regions", "in")
 	out.Topology = r.String("regions", "topology")
+	out.Tunnel = present[bool](r.Bool("regions", "tunnel"))
 	out.Declared = r.Has("regions", "in") ||
-		r.Has("regions", "topology")
+		r.Has("regions", "topology") ||
+		r.Has("regions", "tunnel")
 	return out
 }
 
@@ -3144,6 +3033,7 @@ func ReadNamespaceRegions(r Resource) NamespaceRegions {
 const (
 	NamespaceRegionsKeyIn            = "regions/in"
 	NamespaceRegionsKeyTopology      = "regions/topology"
+	NamespaceRegionsKeyTunnel        = "regions/tunnel"
 	NamespaceRegionsTopologySingle   = "single"
 	NamespaceRegionsTopologyFailover = "failover"
 	NamespaceRegionsTopologyActive   = "active"
@@ -3212,7 +3102,6 @@ var Readers = map[string]func(Resource) any{
 	"zone":         func(r Resource) any { return ReadZone(r) },
 	"gateway":      func(r Resource) any { return ReadGateway(r) },
 	"proxy":        func(r Resource) any { return ReadProxy(r) },
-	"tunnel":       func(r Resource) any { return ReadTunnel(r) },
 	"replication":  func(r Resource) any { return ReadReplication(r) },
 	"stream":       func(r Resource) any { return ReadStream(r) },
 	"bus":          func(r Resource) any { return ReadBus(r) },

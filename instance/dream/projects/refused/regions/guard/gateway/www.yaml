@@ -12,5 +12,5 @@ route:
     path: /
     handler:
         function:
-            namespace: /origin
+            namespace: /
             name: api

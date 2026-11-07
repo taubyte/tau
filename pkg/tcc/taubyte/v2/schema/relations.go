@@ -56,9 +56,6 @@ func Relations(obj map[string]any) []Relation {
 type declared struct {
 	Relation
 	turned bool
-	// opens: the declarer reaches nothing; what is in its scope may reach the target
-	// from a region the target is not in.
-	opens bool
 }
 
 // By is the resource that declared the relation, Of the one it names.
@@ -233,11 +230,7 @@ func resolveReference(res compiled, from map[string]any, ref Reference, byID map
 	if ref.Namespace != "" {
 		// the sibling holding the namespace is addressed by its key too —
 		// `authorizer/namespace` is two levels, not a flat entry
-		held := from
-		if ref.HeldNamespace {
-			held = res.fields
-		}
-		ns, _ = fieldValue(held, ref.Namespace).(string)
+		ns, _ = fieldValue(from, ref.Namespace).(string)
 	}
 	to, found := find(kind, val, res.scope, ns)
 	if !found {
@@ -249,7 +242,7 @@ func resolveReference(res compiled, from map[string]any, ref Reference, byID map
 	if ref.Serves {
 		class, verb = Handoff, "serves"
 	}
-	r := declared{Relation: Relation{From: res.id, To: to.id, Kind: kind, Verb: verb, Class: class}, opens: ref.Opens}
+	r := declared{Relation: Relation{From: res.id, To: to.id, Kind: kind, Verb: verb, Class: class}}
 	// Direction belongs to the reference, however its value is stored.
 	if ref.Inbound {
 		r.From, r.To, r.turned = to.id, res.id, true

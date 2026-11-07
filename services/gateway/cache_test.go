@@ -1,19 +1,16 @@
 package gateway
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
 
-	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
-	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
 // caching is the basic fixture with its mcp route answering any method and keeping
@@ -201,46 +198,4 @@ func TestWhatIsKeptIsBounded(t *testing.T) {
 func TestACacheBudgetOfNothingIsRefused(t *testing.T) {
 	_, err := Config{CacheBudget: -1}.withDefaults()
 	require.ErrorContains(t, err, "a cache budget of nothing keeps nothing")
-}
-
-// A ROUTE'S HANDLER IN ANOTHER REGION is a route the compile allows and this gateway
-// cannot carry: refused by name, not answered as if the name served nothing.
-func TestAHandlerInAnotherRegionIsRefusedByName(t *testing.T) {
-	fs := afero.NewMemMapFs()
-	for path, body := range map[string]string{
-		"/project.yaml": "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nname: shop\n" +
-			"regions:\n    topology: active\n    in: [region-1, region-2]\nenvironments:\n    prod:\n        branches: [\"*\"]\n",
-		"/namespace/eu/meta.yaml":         "id: QmTXGKe63GYuKA54yerPQmGyEtFjhUF5p1g2hahTpm6pkA\nregions:\n    in: [region-1]\n",
-		"/namespace/eu/function/api.yaml": "id: QmPjgiv816ygGgxYKEFHhDoabVar1Cv6CAQvEa8aFubUtG\npackage:\n    name: api_code\n    namespace: /\nexecution:\n    call: handle\n    timeout: 15s\n    memory: 32MB\n",
-		"/package/api_code.yaml":          "id: Qmf59hm7Wwxc4ZCNbqyF9N6zqKS1fVXB6tugiwHgEHpk2J\ntype: wasm\nsource: services/api\noutput: x.wasm\nbuild:\n    steps:\n        - name: build\n          image: rust:1.83\n          commands: [cargo build]\n",
-		"/zone/example_com.yaml":          "id: QmXZy3vTBqdo6va5ouo2muAh8kHF4j8t8HWtpgyKoBVn7y\nfqdn: example.com\n",
-		"/tunnel/to_eu.yaml":              "id: QmRiSFeb3qsJc7YTQCVirS2V9SYwdRsHWjr8h2YcNrt1oh\nto: /eu\nthrough:\n    - function: api\n",
-		"/gateway/www.yaml": "id: QmWhQewj3uuPM9f3qodPJTPDUXE9BvG33zkyewVurWGHiU\nhost:\n    zone:\n        in:\n            name: example_com\n        name: www\n" +
-			"route:\n    path: /\n    cache:\n        ttl: 1m\n    handler:\n        function:\n            namespace: /eu\n            name: api\n",
-	} {
-		require.NoError(t, afero.WriteFile(fs, path, []byte(body), 0o644))
-	}
-	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
-	require.NoError(t, err)
-	obj, _, err := c.Compile(context.Background())
-	require.NoError(t, err)
-
-	for region, want := range map[string]int{"region-1": http.StatusOK, "region-2": http.StatusBadGateway} {
-		views, findings, err := schema.Views(obj.Flat(), schema.WithRegions(schema.WithRegion(region)))
-		require.NoError(t, err, "%v", findings)
-		b, err := json.Marshal(views[region].Object)
-		require.NoError(t, err)
-
-		var said []string
-		h := newHarnessOf(t, b, Config{}, WithLogger(func(format string, args ...any) {
-			said = append(said, format)
-		}))
-		w := h.do(t, http.MethodGet, "http://www.example.com/", "")
-		require.Equal(t, want, w.Code, region)
-		if want == http.StatusBadGateway {
-			require.Contains(t, w.Body.String(), "this route's handler runs in another region")
-			require.Zero(t, h.Workers.count(), "nothing was asked to run it here")
-			require.Len(t, said, 1)
-		}
-	}
 }

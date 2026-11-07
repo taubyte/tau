@@ -181,15 +181,6 @@ type RefSpec struct {
 	// handler, a proxy's forward, a router).
 	Serves bool
 
-	// Opens: the declarer reaches nothing itself. It lets what is in its scope reach
-	// the target from a region the target is not in (a tunnel).
-	Opens bool
-
-	// Namespace names the attribute on the declaring resource that holds the target's
-	// namespace, for an entry of a list whose holder names it once. Empty means the
-	// sibling called `namespace`.
-	Namespace string
-
 	// ByName: the value stays a name rather than resolving to the target's id, for
 	// references crossing scopes the resolver does not follow or where the authored
 	// word is wanted. It is still a reference.
@@ -221,17 +212,6 @@ func KindFrom[T string | AKey](field T) RefOpt {
 // Serves declares that traffic GOES to the referenced resource — a handoff rather than a
 // dependency. See RefSpec.Serves.
 func Serves() RefOpt { return func(s *RefSpec) { s.Serves = true } }
-
-// Opens declares a reference that opens a way to its target rather than reaching
-// it. See RefSpec.Opens.
-func Opens() RefOpt { return func(s *RefSpec) { s.Opens = true } }
-
-// NamespaceAt reads the target's namespace from the declaring resource's field. See
-// RefSpec.Namespace.
-func NamespaceAt[T string | AKey](field T) RefOpt {
-	name := FieldName(field)
-	return func(s *RefSpec) { s.Namespace = name }
-}
 
 // Ref declares that this attribute's value references another resource group.
 func Ref(group string, opts ...RefOpt) Option {

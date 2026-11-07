@@ -78,7 +78,6 @@ var (
 // declaration on one is ignored and may be, because nothing runs the kind to
 // ignore it — checked, not trusted: see runtimeSpells.
 var preparatoryKinds = map[string]string{
-	"tunnel":      "nothing carries a request through a tunnel yet. The views read it to let an edge cross regions, and what it opens reaches each region as the routing table's remote lines; a region without the target answers the route by name.",
 	"replication": "nothing replicates between regions yet. It is context for the runtime that will keep the copies; the audit checks what config alone can answer (two regions, a tunnel letting it through).",
 	"agent":       "nothing runs an agent's loop. The lowering produces a function with `source: {builtin: agent}`, and no service or node dispatches that builtin — so which model it answers with, what it is told, and how far it may go reach nothing.",
 }

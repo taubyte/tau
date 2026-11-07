@@ -430,13 +430,12 @@ var corpus = []corpusCase{
 	}},
 	{name: "with/placement", region: "region-1"},
 	{name: "with/regions/topologies", region: "region-3"},
-	// THE EDGE in front of an origin in one region: region-1 answers, and region-2 says
-	// the handler runs elsewhere.
+	// THE EDGE in front of an origin running beside it: each region answers on its own.
 	{name: "with/regions/edge", region: "region-1", probes: []probe{
 		{host: "www.example.com", method: http.MethodGet, path: "/", status: 200},
 	}},
 	{name: "with/regions/edge", region: "region-2", probes: []probe{
-		{host: "www.example.com", method: http.MethodGet, path: "/", status: 502, contains: "this route's handler runs in another region"},
+		{host: "www.example.com", method: http.MethodGet, path: "/", status: 200},
 	}},
 	// A CLOUD OF ONE UNNAMED REGION serves no project that names its regions,
 	// and says which.
@@ -446,9 +445,10 @@ var corpus = []corpusCase{
 	{name: "refused/function/noruntime", refused: "required attribute 'type'"},
 	{name: "refused/function/unknownruntime", refused: "valid values here: wasm, warp, oci, assets"},
 	{name: "refused/views/across", region: "region-2", refused: `reaches cache/sessions_r1, which does not run in "region-2" where this does`},
-	// A NAMESPACE SAYS WHERE AND HOW: what serves reaches what serves, and only a
-	// gateway's route crosses to a region its handler runs in.
+	// A NAMESPACE SAYS WHERE AND HOW: what serves reaches what serves, and nothing
+	// reaches into another namespace's regions.
 	{name: "refused/regions/standby", region: "region-2", refused: `reaches cache/sessions, which only stands by in "region-2" where this serves`},
+	{name: "refused/regions/elsewhere", region: "region-2", refused: `reaches function/api, which does not run in "region-2" where this does`},
 	{name: "refused/regions/guard", region: "region-2", refused: `reaches function/doorman, which does not run in "region-2" where this does`},
 	{name: "refused/website/notfiles", refused: "serves package module, which is of type wasm"},
 }

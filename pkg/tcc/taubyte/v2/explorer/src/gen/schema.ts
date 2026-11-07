@@ -176,12 +176,6 @@ export class Session {
   proxyNames(app?: string): Promise<string[]> {
     return this.binding.list(this.handle, app ? ["namespace", app, "proxy"] : ["proxy"]);
   }
-  tunnel(name: string, app?: string): TunnelConfig {
-    return new TunnelConfig(this, name, app);
-  }
-  tunnelNames(app?: string): Promise<string[]> {
-    return this.binding.list(this.handle, app ? ["namespace", app, "tunnel"] : ["tunnel"]);
-  }
   replication(name: string, app?: string): ReplicationConfig {
     return new ReplicationConfig(this, name, app);
   }
@@ -3279,63 +3273,6 @@ export class ProxyConfig extends ResourceConfig {
   }
 }
 
-/** Typed accessors for a tunnel's config. */
-export class TunnelConfig extends ResourceConfig {
-  constructor(s: Session, name: string, app?: string) {
-    super(s, app ? ["namespace", app, "tunnel", name] : ["tunnel", name]);
-  }
-
-  async id(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
-  }
-  setId(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
-  }
-  unsetId(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
-  }
-
-  async name(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
-  }
-  setName(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
-  }
-  unsetName(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
-  }
-
-  async description(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
-  }
-  setDescription(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
-  }
-  unsetDescription(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
-  }
-
-  async tags(): Promise<string[] | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
-  }
-  setTags(v: string[]): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
-  }
-  unsetTags(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
-  }
-
-  async to(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["to"])) as string | undefined;
-  }
-  setTo(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["to"], v);
-  }
-  unsetTo(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["to"]);
-  }
-}
-
 /** Typed accessors for a replication's config. */
 export class ReplicationConfig extends ResourceConfig {
   constructor(s: Session, name: string, app?: string) {
@@ -3410,26 +3347,6 @@ export class ReplicationConfig extends ResourceConfig {
   }
   unsetOfName(ofKind: ReplicationOfKind): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["of", ofKind, "name"]);
-  }
-
-  async tunnelName(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["tunnel", "name"])) as string | undefined;
-  }
-  setTunnelName(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["tunnel", "name"], v);
-  }
-  unsetTunnelName(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["tunnel", "name"]);
-  }
-
-  async namespace(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["tunnel", "namespace"])) as string | undefined;
-  }
-  setNamespace(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["tunnel", "namespace"], v);
-  }
-  unsetNamespace(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["tunnel", "namespace"]);
   }
 
   async between(): Promise<string[] | undefined> {
@@ -4466,6 +4383,16 @@ export class NamespaceConfig extends ResourceConfig {
   unsetIn(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "in"]);
   }
+
+  async tunnel(): Promise<boolean | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "tunnel"])) as boolean | undefined;
+  }
+  setTunnel(v: boolean): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "tunnel"], v);
+  }
+  unsetTunnel(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "tunnel"]);
+  }
 }
 
 /** Typed accessors for a project's config. */
@@ -4542,6 +4469,16 @@ export class ProjectConfig extends ResourceConfig {
   }
   unsetIn(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "in"]);
+  }
+
+  async tunnel(): Promise<boolean | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "tunnel"])) as boolean | undefined;
+  }
+  setTunnel(v: boolean): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "tunnel"], v);
+  }
+  unsetTunnel(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "tunnel"]);
   }
 }
 
@@ -4848,15 +4785,6 @@ export interface Proxy {
   key?: ProxyKey;
 }
 
-/** Tunnel as decoded from the compiled config object. */
-export interface Tunnel {
-  id?: string;
-  name?: string;
-  description?: string;
-  tags?: string[];
-  to?: string;
-}
-
 /** Replication as decoded from the compiled config object. */
 export interface Replication {
   id?: string;
@@ -4866,7 +4794,6 @@ export interface Replication {
   ofkind?: string;
   ofnamespace?: string;
   ofname?: string;
-  namespace?: string;
   between?: string[];
 }
 

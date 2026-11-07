@@ -1,4 +1,2 @@
 id: QmPxpg7vjYUBbDa9wdVPbXm5GFrr3MXps8JjeWMnHk7xqF
-description: the origin - region-1 alone
-regions:
-    in: [region-1]
+description: the origin - in both of the root's regions

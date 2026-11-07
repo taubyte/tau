@@ -139,7 +139,7 @@ func Audit(obj map[string]any, r Resolver, opts ...AuditOption) []Finding {
 	out = append(out, checkDatabaseOps(all)...)
 	out = append(out, checkWorkflows(all)...)
 	out = append(out, checkRegions(root, all, in)...)
-	out = append(out, checkOpenings(all)...)
+	out = append(out, checkTunnels(root)...)
 	out = append(out, checkReplications(root, all)...)
 	// The record of what the compile produced sits BESIDE the project, so it is read
 	// from the object rather than from the project inside it.
@@ -929,6 +929,7 @@ type scopeAllowance struct {
 	name, id string
 	topology string   // as declared here; empty means the parent's
 	regions  []string // as declared here; empty means the parent's
+	tunnel   *bool    // as declared here; nil means the parent's
 }
 
 // declares is whether the scope wrote a `regions` block of its own.
@@ -940,7 +941,7 @@ func (s scopeAllowance) declares() bool { return s.topology != "" || len(s.regio
 // a chain also passes through levels like `workflow/checkout`.
 func scopeAllowances(root map[string]any) map[string]scopeAllowance {
 	scopes := scopeGroups()
-	out := map[string]scopeAllowance{"": {topology: stringIn(root, regionsTopology), regions: listAt(root, regionsIn)}}
+	out := map[string]scopeAllowance{"": {topology: stringIn(root, regionsTopology), regions: listAt(root, regionsIn), tunnel: boolIn(root, regionsTunnel)}}
 	var walk func(scope map[string]any, path string)
 	walk = func(scope map[string]any, path string) {
 		for group, val := range scope {
@@ -962,7 +963,7 @@ func scopeAllowances(root map[string]any) map[string]scopeAllowance {
 				}
 				child := strings.TrimPrefix(path+"/"+name, "/")
 				out[child] = scopeAllowance{parent: path, kind: group, name: name, id: id,
-					topology: stringIn(res, regionsTopology), regions: listAt(res, regionsIn)}
+					topology: stringIn(res, regionsTopology), regions: listAt(res, regionsIn), tunnel: boolIn(res, regionsTunnel)}
 				walk(res, child)
 			}
 		}
@@ -974,6 +975,7 @@ func scopeAllowances(root map[string]any) map[string]scopeAllowance {
 const (
 	regionsTopology = "regions/topology"
 	regionsIn       = "regions/in"
+	regionsTunnel   = "regions/tunnel"
 )
 
 func stringIn(fields map[string]any, key string) string {
@@ -1524,72 +1526,62 @@ func checkAuthoredBuiltins(low interp.Lowered, all []compiled) []Finding {
 	return out
 }
 
-// checkOpenings: what a tunnel lets through has to be where it leads, one resource
-// per entry. One naming nothing there opens nothing, and reads as if it did.
-func checkOpenings(all []compiled) []Finding {
-	find := finder(all)
-	var out []Finding
-	for _, res := range all {
-		byGroup := map[string][]Reference{}
-		var groups []string
-		for _, ref := range References() {
-			if ref.Opens && ref.On == res.kind {
-				if byGroup[ref.In] == nil {
-					groups = append(groups, ref.In)
-				}
-				byGroup[ref.In] = append(byGroup[ref.In], ref)
-			}
+// boolIn is the flag at key, nil when it is not written.
+func boolIn(m map[string]any, key string) *bool {
+	if b, ok := fieldValue(m, key).(bool); ok {
+		return &b
+	}
+	return nil
+}
+
+// tunneled is whether a scope's instances are meshed: the nearest `regions/tunnel` up
+// its chain.
+func tunneled(scopes map[string]scopeAllowance, path string) bool {
+	for {
+		s, known := scopes[path]
+		if !known {
+			return false
 		}
-		for _, in := range groups {
-			entries := []entry{{fields: res.fields}}
-			if in != "" {
-				entries = entriesOf(res, in)
+		if s.tunnel != nil {
+			return *s.tunnel
+		}
+		if path == "" {
+			return false
+		}
+		path = s.parent
+	}
+}
+
+// checkTunnels: a tunnel meshes a scope's instances, so the scope runs in two regions
+// or more.
+func checkTunnels(root map[string]any) []Finding {
+	scopes := scopeAllowances(root)
+	var out []Finding
+	for path, s := range scopes {
+		if s.tunnel == nil || !*s.tunnel {
+			continue
+		}
+		if _, in := resolvedRegions(scopes, path); len(in) < 2 {
+			kind, name := s.kind, s.name
+			if path == "" {
+				kind, name = "project", stringAt(root, "name")
 			}
-			for _, e := range entries {
-				var named []string
-				for _, ref := range byGroup[in] {
-					name, _ := fieldValue(e.fields, ref.Field).(string)
-					if name == "" {
-						continue
-					}
-					named = append(named, ref.Kind+"/"+name)
-					held := e.fields
-					if ref.HeldNamespace {
-						held = res.fields
-					}
-					ns := ""
-					if ref.Namespace != "" {
-						ns, _ = fieldValue(held, ref.Namespace).(string)
-					}
-					if _, ok := find(ref.Kind, name, res.scope, ns); !ok {
-						out = append(out, Finding{Broken, res.kind, res.name, res.scope,
-							fmt.Sprintf("lets through %s/%s, which %s does not have", ref.Kind, name, ns),
-							"A tunnel lets through what is in the namespace it leads to, by name. This one names nothing there, so it opens nothing.", res.id})
-					}
-				}
-				if len(named) != 1 {
-					out = append(out, Finding{Broken, res.kind, res.name, res.scope,
-						fmt.Sprintf("entry %s names %d resources", e.label, len(named)),
-						"Each entry lets one resource through, under the key of its kind.", res.id})
-				}
-			}
+			out = append(out, Finding{Broken, kind, name, s.parent,
+				"has a tunnel and runs in fewer than two regions, so there is nothing to mesh",
+				"A tunnel meshes every instance of a scope across the regions it runs in. Give it more than one region, or drop the tunnel.", s.id})
 		}
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Scope+out[i].Name < out[j].Scope+out[j].Name })
 	return out
 }
 
 // checkReplications: a replication copies something its namespace runs in more than
-// one region, between regions it runs in, through a tunnel letting it through. All of
+// one region, between regions it runs in, and its namespace has a tunnel for the
+// copies to travel through. All of
 // it spans documents, so only the audit sees it.
 func checkReplications(root map[string]any, all []compiled) []Finding {
 	find := finder(all)
 	scopes := scopeAllowances(root)
-	opened := map[string]bool{}
-	for _, d := range declaredRelations(all) {
-		if d.opens {
-			opened[d.By()+"\x00"+d.Of()] = true
-		}
-	}
 	var out []Finding
 	for _, res := range all {
 		kind := res.at("of", "kind")
@@ -1622,15 +1614,9 @@ func checkReplications(root map[string]any, all []compiled) []Finding {
 					"A copy is kept only where what is replicated runs: "+strings.Join(in, ", ")+".")
 			}
 		}
-		tunnel := res.at("tunnel", "name")
-		t, ok := find("tunnel", tunnel, res.scope, res.at("tunnel", "namespace"))
-		switch {
-		case !ok:
-			broken(fmt.Sprintf("travels through tunnel/%s, which does not exist", tunnel),
-				"The copies travel through a tunnel, named like any reference.")
-		case !opened[t.id+"\x00"+target.id]:
-			broken(fmt.Sprintf("travels through tunnel/%s, which does not let %s/%s through", tunnel, kind, name),
-				"Nothing crosses regions but what a tunnel names. Add it to the tunnel's entries.")
+		if !tunneled(scopes, target.scope) {
+			broken(fmt.Sprintf("replicates %s/%s, whose namespace has no tunnel", kind, name),
+				"The copies travel through the namespace's tunnel, and nothing else connects its regions. Set `regions: {tunnel: true}` on it.")
 		}
 	}
 	return out

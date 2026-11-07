@@ -148,7 +148,6 @@ func TestNoRegionsIsOneViewOfEverything(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, flat, v.Object)
 	require.False(t, v.Empty())
-	require.Empty(t, v.Remote)
 	require.Equal(t, map[string]schema.Role{
 		"function/api":     schema.RoleAnywhere,
 		"cache/sessions":   schema.RoleAnywhere,
@@ -308,20 +307,14 @@ func TestWhatServesReachesWhatServes(t *testing.T) {
 	}
 }
 
-// tunnelTo is a tunnel from the project root to ns, letting through kind/name.
-func tunnelTo(name, ns, kind, through string) string {
-	return "id: " + cidFor("tunnel/"+name) + "\nto: " + ns + "\nthrough:\n    - " + kind + ": " + through + "\n"
-}
-
-// NOTHING CROSSES BUT THROUGH A TUNNEL: a name answered everywhere, in front of a
-// handler in one region, is refused until a tunnel lets the handler through, and the
-// view then says where the handler is.
-func TestAGatewayRouteReachesItsHandlerThroughATunnel(t *testing.T) {
+// NOTHING REACHES INTO ANOTHER NAMESPACE'S REGIONS: a name answered everywhere, in
+// front of a handler in one region, is refused where the handler does not run.
+func TestAGatewayRouteDoesNotReachIntoAnotherNamespacesRegions(t *testing.T) {
 	docs := map[string]string{
 		"/project.yaml":                   regionsProject + regionsBlock("active", "[region-1, region-2, region-3]") + everyBranch,
 		"/namespace/eu/function/api.yaml": viewFunction("api", ""),
 		"/package/api_code.yaml":          viewPackage("api"),
-		"/gateway/api.yaml":               strings.Replace(viewGatewayIn("api", "/eu", ""), "route:\n", "route:\n    cache:\n        ttl: 1m\n", 1),
+		"/gateway/api.yaml":               viewGatewayIn("api", "/eu", ""),
 		"/zone/example_com.yaml":          viewZone,
 	}
 	viewNamespace(docs, "eu", "", "[region-1]")
@@ -332,60 +325,57 @@ func TestAGatewayRouteReachesItsHandlerThroughATunnel(t *testing.T) {
 		`gateway/api: reaches function/api, which does not run in "region-3" where this does`,
 	}, findingsTitled(findings, schema.Broken))
 
-	docs["/tunnel/to_eu.yaml"] = tunnelTo("to_eu", "/eu", "function", "api")
-	views, findings, err := viewsOf(t, several{"region-1", "region-2", "region-3"}, docs)
-	require.NoError(t, err)
-	require.Empty(t, findingsTitled(findings, schema.Broken))
-
-	api := cidFor("function/api")
-	require.Equal(t, map[string]schema.Role{
-		"gateway/api":      schema.RoleActive,
-		"function/api":     schema.RoleSingle,
-		"package/api_code": schema.RoleNeeded,
-		"zone/example_com": schema.RoleNeeded,
-		"tunnel/to_eu":     schema.RoleActive,
-	}, rolesByName(t, views["region-1"]))
-	require.Empty(t, views["region-1"].Remote, "held here, so nothing goes through")
-	for _, region := range []string{"region-2", "region-3"} {
-		require.Equal(t, map[string]schema.Role{
-			"gateway/api":      schema.RoleActive,
-			"zone/example_com": schema.RoleNeeded,
-			"tunnel/to_eu":     schema.RoleActive,
-		}, rolesByName(t, views[region]), region)
-		require.Equal(t, map[string][]string{api: {"region-1"}}, views[region].Remote, region)
-	}
-
-	// ONLY WHAT THE TUNNEL NAMES GOES THROUGH: a guard it does not name is refused.
-	docs["/namespace/eu/function/auth.yaml"] = viewFunction("auth", "implements: http-authorizer\n")
-	docs["/package/auth_code.yaml"] = viewPackage("auth")
-	docs["/gateway/api.yaml"] = viewGatewayIn("api", "/eu", "authorizer:\n    namespace: /eu\n    name: auth\n")
-	_, findings, err = viewsOf(t, several{"region-1", "region-2", "region-3"}, docs)
+	// A HANDLER THAT FAILS OVER stands by in its other region, and answers nothing there.
+	viewNamespace(docs, "eu", "failover", "[region-1, region-2]")
+	docs["/project.yaml"] = regionsProject + regionsBlock("active", "[region-1, region-2]") + everyBranch
+	_, findings, err = viewsOf(t, several{"region-1", "region-2"}, docs)
 	require.ErrorIs(t, err, schema.ErrUnviewable)
-	require.ElementsMatch(t, []string{
-		`gateway/api: reaches function/auth, which does not run in "region-2" where this does`,
-		`gateway/api: reaches function/auth, which does not run in "region-3" where this does`,
-	}, findingsTitled(findings, schema.Broken))
+	require.Equal(t, []string{`gateway/api: reaches function/api, which only stands by in "region-2" where this serves`},
+		findingsTitled(findings, schema.Broken))
 }
 
-// A proxy has no footprint: it is held where what it reaches is, and what it reaches
-// here shares no region.
-// A HANDLER THAT FAILS OVER is reached where it serves: the edge in its standby
-// region is told, through the tunnel, where its primary is, rather than refused.
-func TestAGatewayReachesAHandlerThatFailsOverThroughATunnel(t *testing.T) {
-	docs := map[string]string{
-		"/project.yaml":                   regionsProject + regionsBlock("active", "[region-1, region-2]") + everyBranch,
-		"/namespace/eu/function/api.yaml": viewFunction("api", ""),
-		"/package/api_code.yaml":          viewPackage("api"),
-		"/gateway/api.yaml":               viewGatewayIn("api", "/eu", ""),
-		"/zone/example_com.yaml":          viewZone,
-		"/tunnel/to_eu.yaml":              tunnelTo("to_eu", "/eu", "function", "api"),
+// A REPLICATION'S COPIES TRAVEL THROUGH ITS NAMESPACE'S TUNNEL, between regions that
+// namespace runs in, and a tunnel meshes two regions or more.
+func TestAReplicationTravelsThroughItsNamespacesTunnel(t *testing.T) {
+	replication := func(of, between string) string {
+		return "id: " + cidFor("replication/copies") + "\nof:\n    database:\n        name: " + of + "\nbetween: " + between + "\n"
 	}
-	viewNamespace(docs, "eu", "failover", "[region-1, region-2]")
-	views, findings, err := viewsOf(t, several{"region-1", "region-2"}, docs)
-	require.NoError(t, err, "%v", findings)
-	require.Empty(t, views["region-1"].Remote)
-	require.Equal(t, schema.RoleStandby, rolesByName(t, views["region-2"])["function/api"])
-	require.Equal(t, map[string][]string{cidFor("function/api"): {"region-1", "region-2"}}, views["region-2"].Remote)
+	for _, tc := range []struct {
+		name, billing, replication string
+		broken                     []string
+	}{
+		{name: "meshed", billing: "tunnel: true\n", replication: replication("ledger", "[region-1, region-2]")},
+		{name: "one region", billing: "tunnel: true\n    in: [region-1]\n", replication: replication("ledger", "[region-1, region-2]"),
+			broken: []string{
+				"namespace/billing: has a tunnel and runs in fewer than two regions, so there is nothing to mesh",
+				"replication/copies: replicates database/ledger, which runs in fewer than two regions",
+			}},
+		{name: "no tunnel", replication: replication("ledger", "[region-1, region-2]"),
+			broken: []string{"replication/copies: replicates database/ledger, whose namespace has no tunnel"}},
+		{name: "no such database", billing: "tunnel: true\n", replication: replication("nowhere", "[region-1, region-2]"),
+			broken: []string{"replication/copies: replicates database/nowhere, which does not exist"}},
+		{name: "a region it does not run in", billing: "tunnel: true\n", replication: replication("ledger", "[region-1, region-3]"),
+			broken: []string{`replication/copies: replicates in "region-3", where database/ledger does not run`}},
+		{name: "one region named", billing: "tunnel: true\n", replication: replication("ledger", "[region-1]"),
+			broken: []string{"replication/copies: replicates between fewer than two regions"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			docs := map[string]string{
+				"/project.yaml":                              regionsProject + regionsBlock("active", "[region-1, region-2]") + everyBranch,
+				"/namespace/billing/meta.yaml":               "id: " + cidFor("billing") + "\n",
+				"/namespace/billing/database/ledger.yaml":    "id: " + cidFor("database/ledger") + "\nkv:\n    distributed:\n        size: 64MB\n        consensus: crdt\n",
+				"/namespace/billing/replication/copies.yaml": tc.replication,
+			}
+			if tc.billing != "" {
+				docs["/namespace/billing/meta.yaml"] += "regions:\n    " + tc.billing
+			}
+			_, findings, err := viewsOf(t, several{"region-1", "region-2"}, docs)
+			require.ElementsMatch(t, tc.broken, findingsTitled(findings, schema.Broken))
+			if tc.broken == nil {
+				require.NoError(t, err)
+			}
+		})
+	}
 }
 
 func TestAnUnplacedResourceReachingTwoRegionsIsRefused(t *testing.T) {

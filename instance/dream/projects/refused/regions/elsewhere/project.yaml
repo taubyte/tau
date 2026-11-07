@@ -1,0 +1,9 @@
+id: QmWdD9J1VEu5sVXRsKSUUi876AcB68pJBRW5LpzgduVyaW
+name: elsewhere
+description: a gateway in both regions in front of a handler in another namespace that runs in one - nothing reaches into another namespace's regions
+regions:
+    topology: active
+    in: [region-1, region-2]
+environments:
+    prod:
+        branches: ["*"]

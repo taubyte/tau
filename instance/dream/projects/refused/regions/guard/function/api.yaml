@@ -1,5 +1,5 @@
 id: QmPjgiv816ygGgxYKEFHhDoabVar1Cv6CAQvEa8aFubUtG
-description: the route's handler, reached across regions
+description: the route's handler, in both regions
 package:
     name: hello_code
 execution:

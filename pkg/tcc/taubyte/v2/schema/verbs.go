@@ -525,15 +525,10 @@ type Reference struct {
 	// Serves: traffic goes there. Declared, not inferred from KindFrom — a router is a
 	// handoff whose kind is fixed.
 	Serves bool
-	// Opens: the declarer reaches nothing; what is in its scope may reach the target
-	// from a region the target is not in.
-	Opens bool
-	// Namespace is the field holding the target's namespace, when there is one: the
-	// entry's sibling, or the declaring resource's own when HeldNamespace.
-	Namespace     string
-	HeldNamespace bool
-	ByName        bool // the value stays a name rather than resolving to an id
-	Inbound       bool // the relationship runs toward the declarer
+	// Namespace is the sibling holding the target's namespace, when there is one.
+	Namespace string
+	ByName    bool // the value stays a name rather than resolving to an id
+	Inbound   bool // the relationship runs toward the declarer
 	// In is the nested group whose ENTRIES carry this, empty on the resource itself. A
 	// transformer entry's field is called `name`, and so is every resource's own — a
 	// consumer that applied one to the other drew every function pointing at itself.
@@ -557,10 +552,7 @@ func collectReferences(kind string, iter *engine.Node, in, at string, out *[]Ref
 		r := Reference{
 			On: kind, Field: name, Kind: spec.Group, KindFrom: spec.KindFrom,
 			ByName: spec.ByName, Inbound: spec.Inbound,
-			Serves: spec.Serves, Opens: spec.Opens, In: in,
-		}
-		if spec.Namespace != "" {
-			r.Namespace, r.HeldNamespace = spec.Namespace, in != ""
+			Serves: spec.Serves, In: in,
 		}
 		// The namespace is the sibling called `namespace` under the same parent
 		// (`source/component` -> `source/namespace`); missing it, resolution walks

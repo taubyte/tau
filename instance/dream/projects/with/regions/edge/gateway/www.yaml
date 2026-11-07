@@ -1,5 +1,5 @@
 id: QmWhQewj3uuPM9f3qodPJTPDUXE9BvG33zkyewVurWGHiU
-description: runs where the root does, in both regions, and reaches its handler through the tunnel to the origin
+description: runs where the root does, in both regions, in front of the origin running beside it
 host:
     zone:
         in:

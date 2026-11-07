@@ -123,16 +123,11 @@ func TestAnEdgeKeepsWhatItsOriginAnswered(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
 	flat := compiledCorpus(t, "with/regions/edge")
-	views, findings, err := schema.Views(flat, schema.WithRegions(schema.Preview("region-1", "region-2")))
+	_, findings, err := schema.Views(flat, schema.WithRegions(schema.Preview("region-1", "region-2")))
 	require.NoError(t, err, "%v", findings)
-	require.Empty(t, views["region-1"].Remote)
-	require.Len(t, views["region-2"].Remote, 1, "region-2 is told where the origin its tunnel lets through runs")
-	for _, regions := range views["region-2"].Remote {
-		require.Equal(t, []string{"region-1"}, regions)
-	}
 
-	// REGION-1 RUNS THE ORIGIN, and the edge in front of it keeps what it answered: the
-	// handler echoes a probe header, so a kept answer still shows the one that filled it.
+	// THE EDGE KEEPS WHAT ITS ORIGIN ANSWERED: the handler echoes a probe header, so a
+	// kept answer still shows the one that filled it.
 	r1, _ := inRegionAt(t, "region-1", "with/regions/edge", "www.example.com")
 	var first *httptest.ResponseRecorder
 	require.Eventually(t, func() bool {
@@ -151,34 +146,20 @@ func TestAnEdgeKeepsWhatItsOriginAnswered(t *testing.T) {
 	require.Equal(t, "miss", varied.Header().Get("X-Taubyte-Cache"), "the route varies on the language")
 	require.Equal(t, "two", varied.Header().Get("x-echo-x-probe"))
 
-	// REGION-2 ANSWERS THE NAME and holds no origin: the route is refused by name.
+	// REGION-2 ANSWERS THE NAME FROM ITS OWN ORIGIN, and keeps its own answers: nothing
+	// it holds came from region-1.
 	r2, _ := inRegionAt(t, "region-2", "with/regions/edge", "www.example.com")
-	held, _ := viewHeld(t, r2, "region-2")
-	require.Equal(t, map[string]bool{"gateway/www": true, "zone/example_com": true, "tunnel/to_origin": true}, held)
-	var said string
+	var own *httptest.ResponseRecorder
 	require.Eventually(t, func() bool {
-		got := askHeaders(t, r2, "/", "Accept-Language", "fr")
-		said = got.Body.String()
-		return got.Code == http.StatusBadGateway
-	}, 30*time.Second, 200*time.Millisecond, "%s", &lastSaid{&said})
-	require.Contains(t, said, "this route's handler runs in another region")
+		own = askHeaders(t, r2, "/", "X-Probe", "three", "Accept-Language", "fr")
+		return own.Code == http.StatusOK
+	}, 30*time.Second, 200*time.Millisecond)
+	require.Equal(t, "miss", own.Header().Get("X-Taubyte-Cache"), "region-2 keeps its own answers")
+	require.Equal(t, "three", own.Header().Get("x-echo-x-probe"))
 }
 
-// A TUNNEL LETS THROUGH WHAT IT NAMES, whatever its kind: the reader in region-2
-// reaches region-1's cache because the tunnel from its namespace names that cache.
-func TestATunnelLetsThroughWhatItNames(t *testing.T) {
-	flat := compiledCorpus(t, "with/regions/tunnel")
-	views, findings, err := schema.Views(flat, schema.WithRegions(threeRegions))
-	require.NoError(t, err, "%v", findings)
-
-	cache := idOf(t, flat, "cache", "sessions_r1")
-	require.Equal(t, map[string][]string{cache: {"region-1"}}, views["region-2"].Remote)
-	require.Empty(t, views["region-1"].Remote, "the cache runs where it is reached from")
-	require.Contains(t, views["region-2"].Roles, idOf(t, flat, "tunnel", "to_eu"), "the region reaching through holds the tunnel")
-}
-
-// A REPLICATION SAYS WHERE COPIES ARE KEPT, and travels through a tunnel: the ledger
-// runs in both of billing's regions, and both hold what says it is kept in copies.
+// A REPLICATION SAYS WHERE COPIES ARE KEPT, and they travel through its namespace's
+// tunnel: the ledger runs in both of billing's regions, and both hold the replication.
 func TestAReplicationKeepsCopiesBetweenTheRegionsItNames(t *testing.T) {
 	flat := compiledCorpus(t, "with/regions/replication")
 	views, findings, err := schema.Views(flat, schema.WithRegions(threeRegions))
@@ -187,7 +168,6 @@ func TestAReplicationKeepsCopiesBetweenTheRegionsItNames(t *testing.T) {
 	copies := idOf(t, flat, "replication", "ledger_copies")
 	for _, region := range []string{"region-1", "region-2"} {
 		require.Contains(t, views[region].Roles, copies, region)
-		require.Empty(t, views[region].Remote, "a replication reaches nothing across regions itself")
 	}
 	require.True(t, views["region-3"].Empty(), "billing does not run in region-3")
 }
@@ -206,20 +186,19 @@ func idOf(t *testing.T, flat map[string]any, kind, name string) string {
 
 func TestARegionConstraintIsRefused(t *testing.T) {
 	for name, want := range map[string][]string{
-		"refused/regions/widen":           {`namespace/eu: runs in region "region-3", which the scope above it does not`},
-		"refused/regions/unsaid":          {"project/unsaid: runs in 2 regions and does not say how"},
-		"refused/regions/single":          {"project/single: is single and runs in 2 regions"},
-		"refused/regions/failoverone":     {"project/failoverone: fails over with one region"},
-		"refused/regions/standby":         {`function/api: reaches cache/sessions, which only stands by in "region-2" where this serves`},
-		"refused/regions/order":           {`function/api: reaches cache/sessions, which only stands by in "region-1" where this serves`},
-		"refused/regions/guard":           {`gateway/www: reaches function/doorman, which does not run in "region-2" where this does`},
-		"refused/regions/untunneled":      {`gateway/www: reaches function/api, which does not run in "region-2" where this does`},
-		"refused/regions/replicateone":    {"replication/ledger_copies: replicates database/ledger, which runs in fewer than two regions"},
-		"refused/regions/replicateclosed": {"replication/ledger_copies: travels through tunnel/to_billing, which does not let database/ledger through"},
-		"refused/regions/missing": {
-			"tunnel/to_eu: lets through cache/nowhere, which /eu does not have",
-			`function/reader: reaches cache/sessions_r1, which does not run in "region-2" where this does`,
+		"refused/regions/widen":       {`namespace/eu: runs in region "region-3", which the scope above it does not`},
+		"refused/regions/unsaid":      {"project/unsaid: runs in 2 regions and does not say how"},
+		"refused/regions/single":      {"project/single: is single and runs in 2 regions"},
+		"refused/regions/failoverone": {"project/failoverone: fails over with one region"},
+		"refused/regions/standby":     {`function/api: reaches cache/sessions, which only stands by in "region-2" where this serves`},
+		"refused/regions/order":       {`function/api: reaches cache/sessions, which only stands by in "region-1" where this serves`},
+		"refused/regions/guard":       {`gateway/www: reaches function/doorman, which does not run in "region-2" where this does`},
+		"refused/regions/elsewhere":   {`gateway/www: reaches function/api, which does not run in "region-2" where this does`},
+		"refused/regions/replicateone": {
+			"namespace/billing: has a tunnel and runs in fewer than two regions, so there is nothing to mesh",
+			"replication/ledger_copies: replicates database/ledger, which runs in fewer than two regions",
 		},
+		"refused/regions/replicatenotunnel": {"replication/ledger_copies: replicates database/ledger, whose namespace has no tunnel"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, findings, err := schema.Views(compiledCorpus(t, name), schema.WithRegions(threeRegions))

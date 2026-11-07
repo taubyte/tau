@@ -50,40 +50,6 @@ const (
 type View struct {
 	Destination string
 	Compiled    []byte
-	// Remote is everything reached there through a tunnel that only other regions run.
-	Remote []Remote
-}
-
-// Remote is what a destination reaches through a tunnel that only other regions run,
-// and those regions, in the order its namespace names them: a failover's primary first.
-type Remote struct {
-	Kind, Name string
-	// Scope is the namespace path it is declared in, "" at the root.
-	Scope string
-	In    []string
-}
-
-// Routing is what one destination reaches elsewhere through its tunnels, under one
-// release.
-type Routing struct {
-	// Release is the whole compiled object, the one thing every region a deploy
-	// published to holds the same of it.
-	Release ObjectID
-	Remote  []Remote
-}
-
-// In is the regions running the handler a route in scope names, looked up as the
-// handler is: in that scope, then in each parent. Nil is a handler run nowhere else.
-func (r Routing) In(scope []string, kind, name string) []string {
-	for i := len(scope); i >= 0; i-- {
-		path := strings.Join(scope[:i], "/")
-		for _, h := range r.Remote {
-			if h.Kind == kind && h.Name == name && h.Scope == path {
-				return h.In
-			}
-		}
-	}
-	return nil
 }
 
 // Manifest is one revision of one deployment: the whole object and every view.
@@ -96,8 +62,6 @@ type Manifest struct {
 	Whole bool
 	// Views is each destination's object.
 	Views map[string]ObjectID
-	// Remote is, per destination, what its routes reach elsewhere.
-	Remote map[string][]Remote
 }
 
 // ViewPointer is what one destination of one deployment runs now.
@@ -142,16 +106,6 @@ func encodeManifest(m Manifest) []byte {
 	for _, d := range dests {
 		fmt.Fprintf(&b, "view %s %s\n", d, m.Views[d])
 	}
-	var remote []string
-	for d, handlers := range m.Remote {
-		for _, h := range handlers {
-			remote = append(remote, fmt.Sprintf("remote %s %s /%s %s %s\n", d, h.Kind, h.Scope, h.Name, strings.Join(h.In, ",")))
-		}
-	}
-	sort.Strings(remote)
-	for _, line := range remote {
-		b.WriteString(line)
-	}
 	return []byte(b.String())
 }
 
@@ -184,15 +138,6 @@ func decodeManifest(b []byte) (Manifest, error) {
 				return Manifest{}, fmt.Errorf("%w: manifest view %q", ErrMalformedPointer, rest)
 			}
 			m.Views[d] = ObjectID(id)
-		case "remote":
-			f := strings.Split(rest, " ")
-			if len(f) != 5 || !strings.HasPrefix(f[2], "/") || f[4] == "" {
-				return Manifest{}, fmt.Errorf("%w: manifest remote %q", ErrMalformedPointer, rest)
-			}
-			if m.Remote == nil {
-				m.Remote = map[string][]Remote{}
-			}
-			m.Remote[f[0]] = append(m.Remote[f[0]], Remote{Kind: f[1], Scope: f[2][1:], Name: f[3], In: strings.Split(f[4], ",")})
 		default:
 			return Manifest{}, fmt.Errorf("%w: manifest line %q", ErrMalformedPointer, line)
 		}
@@ -224,17 +169,6 @@ func (r *Register) publishViews(ctx context.Context, p Publication, object Objec
 			return fmt.Errorf("register: storing the view for %s: %w", v.Destination, err)
 		}
 		m.Views[v.Destination] = id
-		for _, h := range v.Remote {
-			if err := checkRemote(h); err != nil {
-				return fmt.Errorf("%w: the view for %s", err, v.Destination)
-			}
-		}
-		if len(v.Remote) > 0 {
-			if m.Remote == nil {
-				m.Remote = map[string][]Remote{}
-			}
-			m.Remote[v.Destination] = v.Remote
-		}
 	}
 
 	body := encodeManifest(m)
@@ -251,22 +185,6 @@ func (r *Register) publishViews(ctx context.Context, p Publication, object Objec
 	}
 	if err := r.store.Put(ctx, manifestKey(p.Project, p.Environment, p.Revision, id), nil); err != nil {
 		return fmt.Errorf("register: indexing the manifest: %w", err)
-	}
-	return nil
-}
-
-// ErrMalformedRemote is a remote handler the manifest cannot hold: a part missing,
-// or a space or comma inside one.
-var ErrMalformedRemote = errors.New("register: a remote handler needs a kind, a name and regions, none holding a space or a comma")
-
-func checkRemote(h Remote) error {
-	if len(h.In) == 0 || strings.HasPrefix(h.Scope, "/") || strings.ContainsAny(h.Scope, " ,") {
-		return ErrMalformedRemote
-	}
-	for _, part := range append([]string{h.Kind, h.Name}, h.In...) {
-		if part == "" || strings.ContainsAny(part, " ,") {
-			return ErrMalformedRemote
-		}
 	}
 	return nil
 }
@@ -400,29 +318,6 @@ func (r *Register) ResolveView(ctx context.Context, project, environment, destin
 		}
 	}
 	return ViewPointer{}, fmt.Errorf("%w: %s/%s for %s", ErrNotPublished, project, environment, destination)
-}
-
-// Routing is what destination's routes reach elsewhere in the revision it serves now.
-func (r *Register) Routing(ctx context.Context, project, environment, destination string) (Routing, error) {
-	v, err := r.ResolveView(ctx, project, environment, destination)
-	if err != nil {
-		return Routing{}, err
-	}
-	b, err := r.Object(ctx, v.Manifest)
-	if err != nil {
-		return Routing{}, err
-	}
-	return RoutingOf(b, destination)
-}
-
-// RoutingOf is destination's routing in the manifest whose bytes these are, as a
-// reader that resolved a ViewPointer reads it through Object.
-func RoutingOf(manifest []byte, destination string) (Routing, error) {
-	m, err := decodeManifest(manifest)
-	if err != nil {
-		return Routing{}, err
-	}
-	return Routing{Release: m.Object, Remote: m.Remote[destination]}, nil
 }
 
 // Assigned is every deployment a destination currently holds a view of, sorted, read

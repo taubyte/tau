@@ -426,7 +426,6 @@ func (d *Deploy) cut(flat map[string]any, environment string, out run.Output) ([
 		regions = append(regions, region)
 	}
 	sort.Strings(regions)
-	resources := schema.Resources(flat)
 	cut := make([]register.View, 0, len(regions))
 	for _, region := range regions {
 		v := views[region]
@@ -434,7 +433,7 @@ func (d *Deploy) cut(flat map[string]any, environment string, out run.Output) ([
 		if err != nil {
 			return nil, fmt.Errorf("deploy: %w", err)
 		}
-		cut = append(cut, register.View{Destination: region, Compiled: b, Remote: remoteIn(v, resources)})
+		cut = append(cut, register.View{Destination: region, Compiled: b})
 		if v.Empty() {
 			say(out, "%s in %s: nothing placed", environment, region)
 		} else {
@@ -442,18 +441,6 @@ func (d *Deploy) cut(flat map[string]any, environment string, out run.Output) ([
 		}
 	}
 	return cut, nil
-}
-
-// remoteIn is what v reaches elsewhere through a tunnel, named as a reference names
-// it: the view keys it by compiled id, and a reference by kind, namespace and name.
-func remoteIn(v schema.View, resources []schema.Instance) []register.Remote {
-	var out []register.Remote
-	for _, r := range resources {
-		if in, ok := v.Remote[r.ID]; ok {
-			out = append(out, register.Remote{Kind: r.Kind, Scope: r.Scope, Name: r.Name, In: in})
-		}
-	}
-	return out
 }
 
 // sameViews is whether the current manifest lists exactly these views, so an

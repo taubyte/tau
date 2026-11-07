@@ -58,7 +58,6 @@ var (
 	AnswersAt        = engine.AnswersAt
 	ByName           = engine.ByName
 	Serves           = engine.Serves
-	Opens            = engine.Opens
 	Inbound          = engine.Inbound
 	EmitValidation   = engine.EmitValidation
 	Field            = engine.Field
@@ -141,8 +140,6 @@ func DefaultWhen[T string | AKey](field T, in ...string) engine.Option {
 	return engine.DefaultWhen(field, in...)
 }
 func KindFrom[T string | AKey](field T) engine.RefOpt { return engine.KindFrom(field) }
-
-func NamespaceAt[T string | AKey](field T) engine.RefOpt { return engine.NamespaceAt(field) }
 
 // EnvironmentVar is THE NAME OF THIS VOCABULARY'S ONE VARIABLE. The engine has no such
 // word — it learns its axes from the root — so the word is declared here, once, and

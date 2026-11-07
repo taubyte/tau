@@ -89,28 +89,6 @@ func (v *Views) Resolve(ctx context.Context, project, environment string) (pkgre
 	return pkgregister.Pointer{Object: p.Object, Revision: p.Revision}, nil
 }
 
-// Routing is what this instance's region reaches elsewhere in the revision of
-// project's environment it serves now.
-func (v *Views) Routing(ctx context.Context, project, environment string) (pkgregister.Routing, error) {
-	var (
-		p   pkgregister.ViewPointer
-		err error
-	)
-	if s, ok := v.local(); ok {
-		p, err = s.ResolveView(ctx, project, environment, v.region)
-	} else {
-		p, err = v.views.get(ctx, viewRead{project: project, environment: environment, destination: v.region})
-	}
-	if err != nil {
-		return pkgregister.Routing{}, err
-	}
-	manifest, err := v.Object(ctx, p.Manifest)
-	if err != nil {
-		return pkgregister.Routing{}, err
-	}
-	return pkgregister.RoutingOf(manifest, v.region)
-}
-
 // Object is never kept here: an object is immutable, and a cache of compiled
 // projects keeps what it parsed from one.
 func (v *Views) Object(ctx context.Context, id pkgregister.ObjectID) ([]byte, error) {

@@ -111,8 +111,7 @@ export type Role =
 export interface Views {
   destinations: string[];
   named: string[];
-  /** remote: an origin reached from the region and run only elsewhere, by id, with where it runs. */
-  views?: Record<string, { object: Compiled; roles: Record<string, Role>; remote: Record<string, string[]>; empty: boolean }>;
+  views?: Record<string, { object: Compiled; roles: Record<string, Role>; empty: boolean }>;
   notes: Finding[];
   refused?: string;
 }
