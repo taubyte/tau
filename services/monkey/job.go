@@ -45,9 +45,8 @@ func (m *Monkey) RunJob() (err error) {
 
 	projectId = gitRepo.Project()
 	if projectId != "" {
-		p = ac.Projects().Get(projectId)
-		if p == nil {
-			return fmt.Errorf("project not found: %s", projectId)
+		if p, err = waitForProject(m.ctx, ac, projectId); err != nil {
+			return err
 		}
 
 		switch repo.ID {
@@ -70,9 +69,9 @@ func (m *Monkey) RunJob() (err error) {
 	}
 
 	if repoType == repositorytype.UnknownRepository {
-		p := ac.Projects().Get(projectId)
-		if p == nil {
-			return fmt.Errorf("project not found: %s", projectId)
+		_, err := waitForProject(m.ctx, ac, projectId)
+		if err != nil {
+			return err
 		}
 
 		_repoPathKey, err := methods.GetRepositoryPath(repo.Provider, repoID, projectId)
@@ -140,4 +139,22 @@ func waitForProjectID(ctx context.Context, lookup func() (string, error)) (strin
 		case <-time.After(time.Second):
 		}
 	}
+}
+
+// waitForProject reads a project from auth, waiting up to jobs.TnsRetryFor:
+// a new repository's job can reach this node before the project it belongs
+// to is readable here, and failing then failed the build for good.
+func waitForProject(ctx context.Context, ac projectGetter, projectId string) (*auth.Project, error) {
+	var p *auth.Project
+	_, err := waitForProjectID(ctx, func() (string, error) {
+		if p = ac.Projects().Get(projectId); p == nil {
+			return "", fmt.Errorf("project not found: %s", projectId)
+		}
+		return projectId, nil
+	})
+	return p, err
+}
+
+type projectGetter interface {
+	Projects() auth.Projects
 }
