@@ -3,6 +3,8 @@ package hoarder
 import (
 	"context"
 	"fmt"
+	"path"
+	"strings"
 	"time"
 
 	peerCore "github.com/libp2p/go-libp2p/core/peer"
@@ -197,6 +199,7 @@ func (srv *Service) kvPut(ctx context.Context, handle kvdb.KVDB, hash string, bo
 	mu := srv.writeLock(hash)
 	mu.Lock()
 	err = handle.Put(ctx, key, value)
+	srv.forgetUsageIfSize(hash, key)
 	mu.Unlock()
 	if err != nil {
 		return nil, fmt.Errorf("put failed with: %w", err)
@@ -231,6 +234,7 @@ func (srv *Service) kvPutNx(ctx context.Context, handle kvdb.KVDB, hash string, 
 		return cr.Response{hoarderSpecs.BodyExisted: true}, nil
 	}
 	err = handle.Put(ctx, key, value)
+	srv.forgetUsageIfSize(hash, key)
 	mu.Unlock()
 	if err != nil {
 		return nil, fmt.Errorf("putnx failed with: %w", err)
@@ -249,6 +253,7 @@ func (srv *Service) kvDelete(ctx context.Context, handle kvdb.KVDB, hash string,
 	mu := srv.writeLock(hash)
 	mu.Lock()
 	err = handle.Delete(ctx, key)
+	srv.forgetUsageIfSize(hash, key)
 	mu.Unlock()
 	if err != nil {
 		return nil, fmt.Errorf("delete failed with: %w", err)
@@ -390,7 +395,7 @@ func (srv *Service) kvBatch(ctx context.Context, handle kvdb.KVDB, hash string, 
 	// replication barrier runs after release.
 	mu := srv.writeLock(hash)
 	mu.Lock()
-	resp, err := srv.applyBatch(ctx, handle, body, rawOps)
+	resp, err := srv.applyBatch(ctx, handle, srv.usageOf(hash), body, rawOps)
 	mu.Unlock()
 	if resp != nil || err != nil {
 		return resp, err
@@ -401,8 +406,9 @@ func (srv *Service) kvBatch(ctx context.Context, handle kvdb.KVDB, hash string, 
 
 // applyBatch builds and commits the grouped ops. Runs under the instance write
 // lock. A non-nil response is a typed refusal (over-capacity); (nil, nil) is
-// success.
-func (srv *Service) applyBatch(ctx context.Context, handle kvdb.KVDB, body command.Body, rawOps []interface{}) (cr.Response, error) {
+// success. used is the instance's usage, kept up to date by every batch once
+// known, and checked against the optional BodyMaxSize.
+func (srv *Service) applyBatch(ctx context.Context, handle kvdb.KVDB, used *dbUsage, body command.Body, rawOps []interface{}) (cr.Response, error) {
 	// Check every op before applying any: the batch shares one pending delta,
 	// so ops added before a bad one would be published by the next batch.
 	type batchOp struct {
@@ -438,6 +444,48 @@ func (srv *Service) applyBatch(ctx context.Context, handle kvdb.KVDB, body comma
 		}
 	}
 
+	// The quota is checked before the batch opens, so a refusal leaves nothing.
+	// A K=2 copy (no-barrier) was already accepted by its first node: it updates
+	// used but is never refused.
+	max, _ := maps.Int(body, hoarderSpecs.BodyMaxSize)
+	copied, _ := maps.Bool(body, hoarderSpecs.BodyNoBarrier)
+	enforce := max > 0 && !copied
+	var delta int64
+	if enforce || used.known {
+		final := make(map[string]int64)
+		for _, op := range ops {
+			if k := path.Clean("/" + op.key); strings.HasPrefix(k, "/size/") {
+				final[k] = 0
+				if !op.del {
+					final[k] = parseSize(op.value)
+				}
+			}
+		}
+		for k, n := range final {
+			old, _ := handle.Get(ctx, k) // absent = 0
+			delta += n - parseSize(old)
+		}
+
+		fresh := !used.known
+		if fresh {
+			if err := used.scan(ctx, handle); err != nil {
+				return nil, err
+			}
+		}
+		if enforce && delta > 0 && used.bytes+delta > int64(max) {
+			// Refuse only on this node's exact state: the in-memory count misses
+			// writes merged from other replicas.
+			if !fresh {
+				if err := used.scan(ctx, handle); err != nil {
+					return nil, err
+				}
+			}
+			if used.bytes+delta > int64(max) {
+				return cr.Response{hoarderSpecs.BodyCode: hoarderSpecs.CodeOverCapacity}, nil
+			}
+		}
+	}
+
 	batch, err := handle.Batch(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("opening batch failed with: %w", err)
@@ -455,6 +503,9 @@ func (srv *Service) applyBatch(ctx context.Context, handle kvdb.KVDB, body comma
 
 	if err := batch.Commit(); err != nil {
 		return nil, fmt.Errorf("batch commit failed with: %w", err)
+	}
+	if used.known {
+		used.bytes += delta
 	}
 	return nil, nil
 }

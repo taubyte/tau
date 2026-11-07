@@ -18,7 +18,7 @@ func TestRefusedBatchLeavesNothingForTheNext(t *testing.T) {
 	}
 	defer handle.Close()
 
-	_, err = srv.applyBatch(ctx, handle, command.Body{}, []interface{}{
+	_, err = srv.applyBatch(ctx, handle, &dbUsage{}, command.Body{}, []interface{}{
 		map[string]interface{}{hoarderSpecs.BodyKVOp: hoarderSpecs.KVPut, hoarderSpecs.BodyKey: "/refused", hoarderSpecs.BodyValue: []byte("x")},
 		map[string]interface{}{hoarderSpecs.BodyKVOp: hoarderSpecs.KVPut}, // no key
 	})
@@ -26,7 +26,7 @@ func TestRefusedBatchLeavesNothingForTheNext(t *testing.T) {
 		t.Fatal("a batch with a malformed op was accepted")
 	}
 
-	if _, err = srv.applyBatch(ctx, handle, command.Body{}, []interface{}{
+	if _, err = srv.applyBatch(ctx, handle, &dbUsage{}, command.Body{}, []interface{}{
 		map[string]interface{}{hoarderSpecs.BodyKVOp: hoarderSpecs.KVPut, hoarderSpecs.BodyKey: "/next", hoarderSpecs.BodyValue: []byte("y")},
 	}); err != nil {
 		t.Fatal(err)

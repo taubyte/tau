@@ -16,6 +16,7 @@ const dataRebroadcastSec = 5
 type loadedInstance struct {
 	handle   kvdb.KVDB
 	lastUsed time.Time
+	used     dbUsage // guarded by the instance write lock, not by loader.lock
 }
 
 // loader holds per-node runtime state. Never persisted — loaded/lastUsed and
@@ -110,6 +111,17 @@ func (srv *Service) unload(hash string) {
 		inst.handle.Close()
 		delete(srv.ldr.loaded, hash)
 	}
+}
+
+// usageOf returns the loaded instance's in-memory usage; an instance that is
+// not loaded gets a throwaway one, filled by a scan when needed.
+func (srv *Service) usageOf(hash string) *dbUsage {
+	srv.ldr.lock.Lock()
+	defer srv.ldr.lock.Unlock()
+	if inst, ok := srv.ldr.loaded[hash]; ok {
+		return &inst.used
+	}
+	return &dbUsage{}
 }
 
 func (srv *Service) isLoaded(hash string) bool {

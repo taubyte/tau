@@ -70,6 +70,10 @@ const (
 	// BodyNoBarrier marks a write as a K=2 replication push from another hoarder
 	// — the receiver applies it locally without re-replicating (no barrier loop).
 	BodyNoBarrier = "noBarrier"
+	// BodyMaxSize is optional on a batch: the database quota in bytes. The
+	// hoarder refuses the batch with CodeOverCapacity when the sizes recorded
+	// under size/ would exceed it. Hoarders that predate it ignore it.
+	BodyMaxSize = "maxSize"
 )
 
 // kvdb sub-operations (Body[BodyKVOp]).

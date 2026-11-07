@@ -6,6 +6,9 @@ import (
 	"path"
 	"strconv"
 	"strings"
+
+	"github.com/taubyte/tau/core/kvdb"
+	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 )
 
 func (kv *kv) Get(ctx context.Context, key string) (data []byte, err error) {
@@ -18,14 +21,20 @@ func (kv *kv) Get(ctx context.Context, key string) (data []byte, err error) {
 }
 
 func (kv *kv) Put(ctx context.Context, key string, v []byte) error {
-	err := kv.checkValidSize(ctx, v)
-	if err != nil {
-		return err
-	}
-
 	// The value and its size go in one batch: one network call and one
-	// replicated write instead of two of each.
-	batch, err := kv.database.Batch(ctx)
+	// replicated write instead of two of each. A hoarder-backed database checks
+	// the quota on the hoarder from its local data; any other database is
+	// checked here by reading every size record.
+	var batch kvdb.Batch
+	var err error
+	if q, ok := kv.database.(hoarderIface.QuotaKVDB); ok {
+		batch, err = q.BatchWithMax(ctx, kv.maxSize)
+	} else {
+		if err = kv.checkValidSize(ctx, v); err != nil {
+			return err
+		}
+		batch, err = kv.database.Batch(ctx)
+	}
 	if err != nil {
 		return fmt.Errorf("failed opening a batch on database %s with error: %v", kv.name, err)
 	}
@@ -89,6 +98,7 @@ func (kv *kv) UpdateSize(size uint64) {
 	kv.maxSize = size
 }
 
+// shortcut: O(n) RPCs over a hoarder-backed database, move to hoarder when Size is hot.
 func (kv *kv) Size(ctx context.Context) (uint64, error) {
 	used, err := kv.used(ctx)
 	if err != nil {
