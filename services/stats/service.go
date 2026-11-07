@@ -1,5 +1,9 @@
-// Package stats collects what every node says about itself, so dns and gateway
-// can route from measurements instead of guesses.
+// Package stats collects what every node says about itself, so dns and placement
+// choose from measurements instead of guesses.
+//
+// IT IS NEVER HOW A SERVICE IS FOUND. A client finds the nodes serving a protocol
+// through p2p discovery (core/service.Finder); this table answers only which of
+// them is less loaded, for dns and placement.
 //
 // It is one half of v1's seer; dns is the other. The split is not tidiness: the
 // two halves have different shapes at scale (answering a query is read-mostly
