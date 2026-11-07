@@ -12,7 +12,6 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/specs"
-	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -75,7 +74,7 @@ func (c *channels) Dial(ctx context.Context, grant invoke.Grant, body []byte) ([
 	// and a container is a process listening on a socket: what it is handed is
 	// what the dialer sent, not an HTTP request wrapped around it. A component
 	// has no socket and is dispatched, below.
-	if schema.Connected(kind) {
+	if grant.Connects() {
 		return c.connect(ctx, grant, at, body)
 	}
 

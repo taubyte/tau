@@ -23,6 +23,7 @@ var composed = map[string]string{
 	"entry/start/handle": "the start queue's HANDLE, which a tier opens by. The shell records `entry/start/name`, and a name is not openable without the project.",
 	"invoke/name":        "what an `invoke` grant RESOLVED to. The attribute is the author's label, which may name a function of another name in another scope.",
 	"invoke/namespace":   "where that target was found, as a resolved scope chain rather than the sentence that produced it.",
+	"serve/runtime":      "the tier a channel's server RESOLVED to, through its package, which decides whether a dial connects or is dispatched.",
 }
 
 // carries names, per kind, the kinds whose settings may ride its grant: `start` on a

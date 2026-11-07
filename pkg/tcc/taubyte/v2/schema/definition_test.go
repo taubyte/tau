@@ -668,7 +668,7 @@ route:
 	// An unlisted handler key is refused as unknown, at the offending line.
 	assert.ErrorContains(t, err, "unknown key 'kv'",
 		"a real but non-HTTP kind must not be a handler")
-	assert.ErrorContains(t, err, "agent, service, bus, function, gateway, mcp, package",
+	assert.ErrorContains(t, err, "agent, bus, function, gateway, mcp, package, service",
 		"the refusal has to say what a handler may be")
 	// the position is the value's, so for a key holding a block it lands on the
 	// first line inside that block rather than on the key

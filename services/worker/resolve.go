@@ -315,17 +315,38 @@ func servedBy(proj *specs.Project, t Target, channel specs.Resource, id string, 
 	}
 
 	at := specs.ScopeOf(scope, declared.Serve.Namespace)
-	if _, _, err := proj.Resource(at, kind, name); err != nil {
+	server, _, err := proj.Resource(at, kind, name)
+	if err != nil {
 		grant.Refused = fmt.Sprintf("channel %q is served by %s/%s, which is not in this project: %s", grant.Label, kind, name, err)
 		return
 	}
 
+	// THE TIER DECIDES HOW THE BYTES ARRIVE, not the kind: a service on the container
+	// tier is a process on a socket, the same service on warp is dispatched.
+	served := Target{Project: t.Project, Environment: t.Environment, Kind: kind, Name: name}
+	pkg, err := packageOf(served, proj, specs.ReadWorkloadBlock(server))
+	if err != nil {
+		grant.Refused = fmt.Sprintf("channel %q is served by %s/%s, which runs nothing: %s", grant.Label, kind, name, err)
+		return
+	}
+	runtime, err := runtimeOf(kind, pkg.Package)
+	if err != nil {
+		grant.Refused = fmt.Sprintf("channel %q is served by %s/%s, which cannot run: %s", grant.Label, kind, name, err)
+		return
+	}
+	if declared.Serve.Port != "" && runtime != runtimeContainer {
+		grant.Refused = fmt.Sprintf("channel %q is delivered to the port %q of %s/%s, which runs on the %s tier and listens on no port — a port is reached on the container tier only",
+			grant.Label, declared.Serve.Port, kind, name, runtime)
+		return
+	}
+
 	grant.Settings = merged(grant.Settings, map[string]string{
-		settingProtocol:   declared.Protocol,
-		settingServeKind:  kind,
-		settingServeName:  name,
-		settingServeScope: "/" + strings.Join(at, "/"),
-		settingServePort:  declared.Serve.Port,
+		settingProtocol:     declared.Protocol,
+		settingServeKind:    kind,
+		settingServeName:    name,
+		settingServeScope:   "/" + strings.Join(at, "/"),
+		settingServePort:    declared.Serve.Port,
+		settingServeRuntime: runtime,
 	})
 }
 
@@ -337,6 +358,8 @@ const (
 	settingServeName  = specs.ChannelServeKeyName
 	settingServeScope = specs.ChannelServeKeyNamespace
 	settingServePort  = specs.ChannelServeKeyPort
+
+	settingServeRuntime = invoke.SettingServeRuntime
 )
 
 // invokedAt records which function an `invoke` grant resolved to, since an mcp looks

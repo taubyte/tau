@@ -440,21 +440,6 @@ var streamEngines = append([]string{tauEngine}, externalStreamEngines...)
 // to tell it apart from a server somebody else runs.
 func TauEngine() string { return tauEngine }
 
-// Connected reports whether a kind is reached over a socket rather than
-// dispatched as a call: every tier it may run on is the container tier.
-func Connected(kind string) bool {
-	engines := EnginesOf(kind)
-	if len(engines) == 0 {
-		return false
-	}
-	for _, e := range engines {
-		if e != ociPackage {
-			return false
-		}
-	}
-	return true
-}
-
 // channelServerKinds are what may answer a channel. A container gets the bytes on one of
 // its own ports; a function is dispatched with the connection in hand. Both are real, and
 // nothing else is: a website is HTTP by definition and a gateway is an ingress.
