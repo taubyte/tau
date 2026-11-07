@@ -30,6 +30,11 @@ func (c *Client) StartUniverseWithConfig(name string, config *dream.Config) erro
 	return c.post("/universe/"+strings.ToLower(name), map[string]interface{}{"config": config}, nil)
 }
 
+// StartFreshUniverseWithConfig deletes the universe's data first; it is still kept across restarts.
+func (c *Client) StartFreshUniverseWithConfig(name string, config *dream.Config) error {
+	return c.post("/universe/"+strings.ToLower(name), map[string]interface{}{"config": config, "fresh": true}, nil)
+}
+
 type Universe struct {
 	Name   string
 	client *Client

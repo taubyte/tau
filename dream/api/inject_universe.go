@@ -23,13 +23,9 @@ func (srv *Service) apiHandlerUniverse(ctx httpIface.Context) (interface{}, erro
 		return nil, fmt.Errorf("failed getting name with: %w", err)
 	}
 
-	_, err = srv.Universe(name)
-	if err == nil {
-		return nil, fmt.Errorf("universe `%s` already exists", name)
-	}
-
 	config := struct {
 		Config *dream.Config
+		Fresh  bool
 	}{}
 
 	err = ctx.ParseBody(&config)
@@ -37,8 +33,30 @@ func (srv *Service) apiHandlerUniverse(ctx httpIface.Context) (interface{}, erro
 		return nil, err
 	}
 
+	if u, err := srv.Universe(name); err == nil {
+		if !config.Fresh {
+			if u.Stopped() {
+				return nil, u.StartWithConfig(config.Config)
+			}
+			if u.Persistent() {
+				// a persisted universe Dream already brought back: resume it
+				return nil, nil
+			}
+			return nil, fmt.Errorf("universe `%s` already exists", name)
+		}
+		u.Stop()
+		srv.Delete(name)
+	}
+
+	if config.Fresh {
+		if err := dream.Reset(srv.Name(), name); err != nil {
+			return nil, err
+		}
+	}
+
 	u, err := srv.New(dream.UniverseConfig{
-		Name: name,
+		Name:     name,
+		KeepRoot: true,
 	})
 	if err != nil {
 		return nil, err

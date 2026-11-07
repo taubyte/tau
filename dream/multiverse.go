@@ -2,8 +2,10 @@ package dream
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"strings"
 
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
@@ -83,12 +85,28 @@ func (m *Multiverse) loadPersistentUniverses() (err error, fatal bool) {
 			dirName := entry.Name()
 			// Check if this directory follows the universe pattern
 			if universeName, found := strings.CutPrefix(dirName, "universe-"); found {
-				_, err := m.New(UniverseConfig{
+				// no universe.json (made before it existed, or never started): load it stopped, as before
+				var saved persistedUniverse
+				if data, err := os.ReadFile(path.Join(cacheFolder, dirName, universeFile)); err == nil {
+					if err := json.Unmarshal(data, &saved); err != nil {
+						logger.Errorf("reading %s of universe `%s` failed with: %s", universeFile, universeName, err)
+					}
+				}
+
+				u, err := m.New(UniverseConfig{
 					Name:     universeName,
+					Id:       saved.Id,
 					KeepRoot: true,
 				})
 				if err != nil {
 					return err, true
+				}
+
+				if saved.Config != nil {
+					freeSavedPorts(saved.Config)
+					if err := u.StartWithConfig(saved.Config); err != nil {
+						logger.Errorf("restarting universe `%s` failed with: %s", universeName, err)
+					}
 				}
 			}
 		}

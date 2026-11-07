@@ -15,6 +15,7 @@ import (
 	inject "github.com/taubyte/tau/tools/dream/cli/inject"
 	"github.com/taubyte/tau/tools/dream/cli/kill"
 	"github.com/taubyte/tau/tools/dream/cli/new"
+	"github.com/taubyte/tau/tools/dream/cli/reset"
 	"github.com/taubyte/tau/tools/dream/cli/start"
 	"github.com/taubyte/tau/tools/dream/cli/status"
 
@@ -84,6 +85,7 @@ func defineCLI(ctx *common.Context) *(cli.App) {
 			inject.Command(ctx),
 			kill.Command(ctx),
 			status.Command(ctx),
+			reset.Command(ctx),
 		},
 		Suggest:              true,
 		EnableBashCompletion: true,

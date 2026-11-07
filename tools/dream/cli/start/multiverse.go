@@ -2,6 +2,7 @@ package start
 
 import (
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/pterm/pterm"
@@ -31,6 +32,12 @@ func runMultiverse() cli.ActionFunc {
 		}
 
 		name := c.Args().First()
+
+		if c.Bool("fresh") {
+			if err := resetAll(name); err != nil {
+				return err
+			}
+		}
 
 		multiverse, err := dream.New(c.Context, dream.LoadPersistent(), dream.Name(name))
 		if err != nil {
@@ -71,4 +78,29 @@ func runMultiverse() cli.ActionFunc {
 
 		return nil
 	}
+}
+
+// resetAll deletes every kept universe of the multiverse.
+func resetAll(multiverse string) error {
+	if multiverse == "" {
+		multiverse = dream.DefaultMultiverseName
+	}
+
+	cacheFolder, err := dream.GetCacheFolder(multiverse)
+	if err != nil {
+		return err
+	}
+
+	roots, err := filepath.Glob(filepath.Join(cacheFolder, "universe-*"))
+	if err != nil {
+		return err
+	}
+
+	for _, root := range roots {
+		if err := os.RemoveAll(root); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

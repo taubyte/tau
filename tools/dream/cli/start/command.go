@@ -20,6 +20,10 @@ func Command(ctx *common.Context) *cli.Command {
 				Usage:       "List universes separated by comma",
 				DefaultText: "A single universe named 'default'",
 			},
+			&cli.BoolFlag{
+				Name:  "fresh",
+				Usage: "Delete the kept universes and start empty",
+			},
 			&cli.StringFlag{
 				Name:        "public",
 				DefaultText: "Expose APIs to all interfaces",
