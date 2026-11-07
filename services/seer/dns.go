@@ -2,9 +2,13 @@ package seer
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	validate "github.com/taubyte/domain-validation"
 	iface "github.com/taubyte/tau/core/services/seer"
@@ -13,11 +17,121 @@ import (
 	"github.com/jellydator/ttlcache/v3"
 	"github.com/miekg/dns"
 	"github.com/taubyte/tau/pkg/specs/common"
+	"golang.org/x/time/rate"
+)
+
+var (
+	DnsSummaryInterval = 5 * time.Minute
+	// Per source /24 (IPv4) or /56 (IPv6). Generous on purpose: Seer is
+	// authoritative, so its callers are shared resolvers speaking for many
+	// users; over the limit a reply asks for TCP, it is never dropped.
+	UdpRateLimit rate.Limit = 1000
+	UdpRateBurst            = 2000
+)
+
+const (
+	maxCountedNames = 1000
+	maxUdpSources   = 100000
 )
 
 type dnsHandler struct {
 	seer          *Service
 	serverIPCache *ttlcache.Cache[string, []string]
+	limiters      *ttlcache.Cache[string, *rate.Limiter]
+
+	mu           sync.Mutex
+	blocked      int
+	unregistered int
+	names        map[string]int
+}
+
+// count records a refused name; it is logged in the periodic summary instead of per query.
+func (h *dnsHandler) count(name string, blocked bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if blocked {
+		h.blocked++
+	} else {
+		h.unregistered++
+	}
+	if _, ok := h.names[name]; ok || len(h.names) < maxCountedNames {
+		h.names[name]++
+	}
+}
+
+// flush returns and resets the counters; top holds the 5 most refused names.
+func (h *dnsHandler) flush() (blocked, unregistered int, top []string) {
+	h.mu.Lock()
+	names := h.names
+	blocked, unregistered = h.blocked, h.unregistered
+	h.blocked, h.unregistered, h.names = 0, 0, make(map[string]int)
+	h.mu.Unlock()
+
+	for n := range names {
+		top = append(top, n)
+	}
+	sort.Slice(top, func(i, j int) bool {
+		if names[top[i]] != names[top[j]] {
+			return names[top[i]] > names[top[j]]
+		}
+		return top[i] < top[j]
+	})
+	if len(top) > 5 {
+		top = top[:5]
+	}
+	for i, n := range top {
+		top[i] = fmt.Sprintf("%s=%d", n, names[n])
+	}
+	return
+}
+
+func (h *dnsHandler) logSummary() {
+	if blocked, unregistered, top := h.flush(); blocked+unregistered > 0 {
+		logger.Infof("dns: %d blocked, %d unregistered in 5m; top: %v", blocked, unregistered, top)
+	}
+}
+
+func (h *dnsHandler) summarize(ctx context.Context) {
+	t := time.NewTicker(DnsSummaryInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			h.logSummary()
+		}
+	}
+}
+
+// slip reports whether a UDP query is over its source's rate. Such queries get an
+// empty truncated reply so real resolvers retry over TCP, which is never limited.
+// Keyed by prefix, never dropped: callers are shared resolvers and UDP sources can be spoofed.
+func (h *dnsHandler) slip(w dns.ResponseWriter) bool {
+	addr, ok := w.RemoteAddr().(*net.UDPAddr)
+	if !ok {
+		return false
+	}
+	var key string
+	if ip4 := addr.IP.To4(); ip4 != nil {
+		key = ip4.Mask(net.CIDRMask(24, 32)).String()
+	} else {
+		key = addr.IP.Mask(net.CIDRMask(56, 128)).String()
+	}
+	it := h.limiters.Get(key)
+	if it == nil {
+		it, _ = h.limiters.GetOrSet(key, rate.NewLimiter(UdpRateLimit, UdpRateBurst))
+	}
+	return !it.Value().Allow()
+}
+
+func newDnsHandler(s *Service) *dnsHandler {
+	return &dnsHandler{
+		seer:          s,
+		serverIPCache: ttlcache.New(ttlcache.WithTTL[string, []string](ServerIpCacheTTL), ttlcache.WithDisableTouchOnHit[string, []string]()),
+		limiters:      ttlcache.New(ttlcache.WithTTL[string, *rate.Limiter](time.Minute), ttlcache.WithCapacity[string, *rate.Limiter](maxUdpSources)),
+		names:         make(map[string]int),
+	}
 }
 
 func (srv *dnsServer) Start(ctx context.Context) {
@@ -45,15 +159,11 @@ func (srv *dnsServer) Stop() {
 	}
 }
 
-// TODO:  Why does handler point to positiveCache and negativeCache when already points to seer?
-func (s *Service) server(listen, net string) *dns.Server {
+func (s *Service) server(listen, net string, h *dnsHandler) *dns.Server {
 	return &dns.Server{
-		Addr: listen,
-		Net:  net,
-		Handler: &dnsHandler{
-			seer:          s,
-			serverIPCache: ttlcache.New(ttlcache.WithTTL[string, []string](ServerIpCacheTTL), ttlcache.WithDisableTouchOnHit[string, []string]()),
-		},
+		Addr:    listen,
+		Net:     net,
+		Handler: h,
 	}
 }
 
@@ -70,11 +180,14 @@ func (seer *Service) newDnsServer(devMode bool, port int) error {
 
 	listen := ":" + strconv.Itoa(port)
 
+	// one handler for UDP and TCP so the summary counts both
+	h := newDnsHandler(seer)
 	seer.dns = &dnsServer{
-		Tcp:  seer.server(listen, "tcp"),
-		Udp:  seer.server(listen, "udp"),
+		Tcp:  seer.server(listen, "tcp", h),
+		Udp:  seer.server(listen, "udp", h),
 		Seer: seer,
 	}
+	go h.summarize(seer.node.Context())
 
 	go seer.positiveCache.Start()
 	go seer.negativeCache.Start()
@@ -101,13 +214,21 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	ctx, ctxC := context.WithTimeout(h.seer.Node().Context(), MaxDnsResponseTime)
 	defer ctxC()
 
+	if h.slip(w) {
+		tc := new(dns.Msg).SetReply(r)
+		tc.Truncated = true
+		if err := w.WriteMsg(tc); err != nil {
+			logger.Debugf("writing truncated reply failed with: %s", err.Error())
+		}
+		return
+	}
+
 	msg := dns.Msg{}
 	msg.SetReply(r)
 	msg.Authoritative = true
 
-	_errMsg := *r
-	errMsg := &_errMsg
-	errMsg.Rcode = dns.RcodeNameError
+	errMsg := new(dns.Msg).SetRcode(r, dns.RcodeNameError)
+	errMsg.Authoritative = true
 
 	if len(msg.Question) > 0 {
 		name := msg.Question[0].Name
@@ -119,7 +240,8 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		logger.Debugf("request for %s (type: %d)", name, msg.Question[0].Qtype)
 
 		if spam := h.seer.negativeCache.Get(name); spam != nil {
-			logger.Errorf("%s is currently blocked", name)
+			logger.Debugf("%s is currently blocked", name)
+			h.count(name, true)
 			if err := w.WriteMsg(errMsg); err != nil {
 				logger.Errorf("writing error message `%s` failed with %s", errMsg, err.Error())
 			}
@@ -172,7 +294,8 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		}
 
 		// Store in negative cache as spam
-		logger.Errorf("%s (type: %d) is not registered", name, msg.Question[0].Qtype)
+		logger.Debugf("%s (type: %d) is not registered", name, msg.Question[0].Qtype)
+		h.count(name, false)
 		h.seer.negativeCache.Set(name, true, DefaultBlockTime)
 	}
 
@@ -203,7 +326,7 @@ func (h *dnsHandler) tauDnsResolve(ctx context.Context, service, name string, w 
 					logger.Errorf("scoring %s failed with: %s", id, err.Error())
 					return true
 				}
-				logger.Infof("scoring %s with: %v, result: %t", id, usageMap, ok)
+				logger.Debugf("scoring %s with: %v, result: %t", id, usageMap, ok)
 				return ok
 			}
 			return true
@@ -244,9 +367,11 @@ func (h *dnsHandler) tauDnsResolve(ctx context.Context, service, name string, w 
 			Tag:   "issue",
 			Value: h.seer.config.AcmeCAARecord(),
 		})
+	case dns.TypeANY:
+		msg.Answer = append(msg.Answer, rfc8482(r))
 	default:
+		// the name exists, it just has no record of this type: NOERROR with no data
 		logger.Debugf("request for %s (type: %d)", name, r.Question[0].Qtype)
-		msg.Rcode = dns.RcodeNameError
 	}
 
 	err := w.WriteMsg(&msg)
@@ -267,7 +392,7 @@ func (h *dnsHandler) replyWithHTTPServicingNodes(ctx context.Context, w dns.Resp
 				logger.Errorf("scoring %s failed with: %s", id, err.Error())
 				return true
 			}
-			logger.Infof("scoring %s with: %v, result: %t", id, usageMap, ok)
+			logger.Debugf("scoring %s with: %v, result: %t", id, usageMap, ok)
 			return ok
 		}
 		return true
@@ -282,7 +407,7 @@ func (h *dnsHandler) replyWithHTTPServicingNodes(ctx context.Context, w dns.Resp
 					logger.Errorf("scoring %s failed with: %s", id, err.Error())
 					return true
 				}
-				logger.Infof("scoring %s with: %v, result: %t", id, usageMap, ok)
+				logger.Debugf("scoring %s with: %v, result: %t", id, usageMap, ok)
 				return ok
 			}
 			return true
@@ -312,17 +437,27 @@ func (h *dnsHandler) replyWithHTTPServicingNodes(ctx context.Context, w dns.Resp
 			Tag:   "issue",
 			Value: h.seer.config.AcmeCAARecord(),
 		})
+	case dns.TypeANY:
+		msg.Answer = append(msg.Answer, rfc8482(r))
 	default:
+		// the name exists, it just has no record of this type: NOERROR with no data
 		logger.Debugf("request for %s (type: %d)", r.Question[0].Name, r.Question[0].Qtype)
-		msg.Rcode = dns.RcodeNameError
 	}
 
 	err = w.WriteMsg(&msg)
 	if err != nil {
-		logger.Error("write message failed with: %s", err.Error())
+		logger.Errorf("write message failed with: %s", err.Error())
 		err = w.WriteMsg(errMsg)
 		if err != nil {
 			logger.Error("writing error message for WriteMsg failed with:", err.Error())
 		}
+	}
+}
+
+// rfc8482 is the minimal answer to ANY (RFC 8482 section 4.2).
+func rfc8482(r *dns.Msg) dns.RR {
+	return &dns.HINFO{
+		Hdr: dns.RR_Header{Name: r.Question[0].Name, Rrtype: dns.TypeHINFO, Class: dns.ClassINET, Ttl: uint32(ValidServiceResponseTime.Seconds())},
+		Cpu: "RFC8482",
 	}
 }
