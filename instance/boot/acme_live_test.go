@@ -113,10 +113,19 @@ func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 			if i < 2 {
 				proxies[i].to(t, running)
 			}
-			_, err = running.Register().Local().Publish(t.Context(), register.Publication{
-				Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled, Hosts: hosts,
+			// ONE PUBLISH, which the fleet's register replicates: a second revision 1
+			// offered on another node is refused once the first has reached it.
+			if i == 0 {
+				_, err = running.Register().Local().Publish(t.Context(), register.Publication{
+					Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled, Hosts: hosts,
+				})
+				require.NoError(t, err)
+				continue
+			}
+			eventually(t, fmt.Sprintf("node %d holds shop/prod", i), time.Minute, func() bool {
+				_, err := running.Register().Local().Resolve(t.Context(), "shop", "prod")
+				return err == nil
 			})
-			require.NoError(t, err)
 		}
 		for i := range proxies {
 			eventually(t, fmt.Sprintf("NS %d answers %s itself", i, name), time.Minute, func() bool {
