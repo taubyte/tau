@@ -977,6 +977,48 @@ func echoOn(port int, say string) (closer, error) {
 
 // A host port taken between choosing it and the container binding it is chosen
 // again, rather than failing a start nothing else was wrong with.
+// The kernel may hand back a port it just gave out, once the probe that found it
+// free has closed; one container never maps two of its ports to it.
+func TestAPortGivenTwiceIsAskedForAgain(t *testing.T) {
+	given := []int{7001, 7001, 7001, 7002, 7003}
+	backend := newFakeBackend()
+	e := newRuntime(t, backend, Image{Ref: "ghcr.io/acme/many:1"}, func() []Option {
+		return []Option{WithPortAllocator(func() (int, error) {
+			port := given[0]
+			given = given[1:]
+			return port, nil
+		})}
+	})
+
+	e.Start(t.Context(), invoke.Spec{
+		Name:     "shop/prod/application/many",
+		Artifact: "ghcr.io/acme/many:1",
+		Ports:    map[string]int{"http": 8080, "admin": 9090, "metrics": 9100},
+	})
+
+	created, _, _ := backend.snapshot()
+	require.Len(t, created, 1)
+	hosts := map[int]bool{}
+	for _, m := range created[0].Network.PortMappings {
+		hosts[m.HostPort] = true
+	}
+	require.Equal(t, map[int]bool{7001: true, 7002: true, 7003: true}, hosts)
+}
+
+func TestAnAllocatorThatOnlyRepeatsEndsTheStart(t *testing.T) {
+	rt := newFakeBackend()
+	rt.imagePresent = true
+	e := newRuntime(t, rt, Image{Ref: "acme/shop:1"}, func() []Option {
+		return []Option{WithPortAllocator(func() (int, error) { return 7001, nil })}
+	})
+	_, err := e.Start(context.Background(), invoke.Spec{
+		Name:     "shop/prod/application/many",
+		Artifact: "acme/shop:1",
+		Ports:    map[string]int{"http": 8080, "admin": 9090},
+	})
+	require.ErrorContains(t, err, "gave only ports already mapped")
+}
+
 func TestAPortTakenBeforeTheContainerBindsIsChosenAgain(t *testing.T) {
 	taken, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

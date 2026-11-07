@@ -419,11 +419,13 @@ func (e *Runtime) portsFor(spec invoke.Spec) (mapped []core.PortMapping, told in
 		}}, port, nil
 	}
 
+	taken := make(map[int]bool, len(spec.Ports))
 	for _, name := range sortedPortNames(spec.Ports) {
-		host, err := e.opts.port()
+		host, err := e.distinctPort(taken)
 		if err != nil {
 			return nil, 0, fmt.Errorf("container: allocating a port for %q: %w", name, err)
 		}
+		taken[host] = true
 		mapped = append(mapped, core.PortMapping{
 			HostPort: host, ContainerPort: spec.Ports[name], Protocol: "tcp", HostIP: "127.0.0.1",
 		})
@@ -435,6 +437,21 @@ func (e *Runtime) portsFor(spec invoke.Spec) (mapped []core.PortMapping, told in
 	// perfectly ordinary thing to write.
 	return mapped, mapped[0].HostPort, nil
 }
+
+// distinctPort asks the allocator again when it hands back a port this container
+// already maps: a port found free by binding and closing is free again at once, and
+// the kernel may give it out twice in a row.
+func (e *Runtime) distinctPort(taken map[int]bool) (int, error) {
+	for range maxPortTries {
+		port, err := e.opts.port()
+		if err != nil || !taken[port] {
+			return port, err
+		}
+	}
+	return 0, fmt.Errorf("%d tries gave only ports already mapped", maxPortTries)
+}
+
+const maxPortTries = 16
 
 // config is what the container is created with, every security-relevant field set
 // here rather than left to a backend default. Egress is restricted because this is
