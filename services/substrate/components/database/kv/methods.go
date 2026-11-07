@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -74,30 +75,49 @@ func (kv *kv) Close() {
 	kv.database.Close()
 }
 
+// List returns keys as the user stored them: the store lists them with a
+// leading slash that Put, Get and Has accept without.
 func (kv *kv) List(ctx context.Context, prefix string) ([]string, error) {
-	if len(prefix) == 0 {
-		entries, err := kv.database.List(ctx, prefix)
-		if err != nil {
-			return nil, fmt.Errorf("listing with empty prefix failed wit: %s", err)
-		}
-
-		return withoutSizes(entries), nil
-	}
-
-	return kv.database.List(ctx, prefix)
-}
-
-// ListRegEx lists as List does, keeping the keys that match the patterns.
-func (kv *kv) ListRegEx(ctx context.Context, prefix string, regexs ...string) ([]string, error) {
-	entries, err := kv.database.ListRegEx(ctx, prefix, regexs...)
+	entries, err := kv.database.List(ctx, prefix)
 	if err != nil {
-		return nil, fmt.Errorf("listing %s in database %s failed with: %w", prefix, kv.name, err)
+		return nil, fmt.Errorf("listing %q failed with: %w", prefix, err)
 	}
 	if len(prefix) == 0 {
-		return withoutSizes(entries), nil
+		entries = withoutSizes(entries)
+	}
+	for i, k := range entries {
+		entries[i] = strings.TrimPrefix(k, "/")
 	}
 
 	return entries, nil
+}
+
+// ListRegEx lists as List does, keeping the keys that match any pattern; the
+// patterns run against the user keys.
+func (kv *kv) ListRegEx(ctx context.Context, prefix string, regexs ...string) ([]string, error) {
+	res := make([]*regexp.Regexp, 0, len(regexs))
+	for _, r := range regexs {
+		re, err := regexp.Compile(r)
+		if err != nil {
+			return nil, fmt.Errorf("listing %s in database %s failed with: %w", prefix, kv.name, err)
+		}
+		res = append(res, re)
+	}
+	keys, err := kv.List(ctx, prefix)
+	if err != nil {
+		return nil, err
+	}
+	out := keys[:0]
+	for _, k := range keys {
+		for _, re := range res {
+			if re.MatchString(k) {
+				out = append(out, k)
+				break
+			}
+		}
+	}
+
+	return out, nil
 }
 
 func withoutSizes(entries []string) []string {
