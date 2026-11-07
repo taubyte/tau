@@ -89,7 +89,7 @@ func TestWaitSuccess(t *testing.T) {
 		job("old", "c0", 1, patrick.JobStatusFailed),
 		job("j1", "c1", 1, patrick.JobStatusSuccess))
 
-	jobs, code := Wait(context.Background(), p, "p", []Repo{{Name: "code", Commit: "c1"}}, poll)
+	jobs, code := Wait(context.Background(), p, "p", []Repo{{Name: "code", Commit: "c1"}}, poll, nil)
 	assert.Equal(t, code, 0)
 	assert.Equal(t, len(jobs), 1)
 	assert.Equal(t, jobs[0].Id, "j1")
@@ -114,7 +114,7 @@ func TestWaitFollowsUntilFailed(t *testing.T) {
 		f.set(j)
 	}()
 
-	jobs, code := Wait(context.Background(), p, "p", []Repo{{Name: "code", Commit: "c1"}}, poll)
+	jobs, code := Wait(context.Background(), p, "p", []Repo{{Name: "code", Commit: "c1"}}, poll, nil)
 	assert.Equal(t, code, 1)
 	assert.Equal(t, jobs[0].Status, "failed")
 	assert.Equal(t, jobs[0].Attempt, 2)
@@ -131,7 +131,7 @@ func TestWaitTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 80*time.Millisecond)
 	defer cancel()
 
-	jobs, code := Wait(ctx, p, "p", []Repo{{Name: "code", Commit: "c1"}, {Name: "config", Commit: "never"}}, poll)
+	jobs, code := Wait(ctx, p, "p", []Repo{{Name: "code", Commit: "c1"}, {Name: "config", Commit: "never"}}, poll, nil)
 	assert.Equal(t, code, 2)
 	assert.Equal(t, jobs[0].Status, "open")
 	assert.Equal(t, jobs[1].Status, "no job")
@@ -161,7 +161,7 @@ func TestServeReportsSlowNode(t *testing.T) {
 	before["fast"] = "v1-hash" // the fast node already moved on before we looked again
 	time.AfterFunc(300*time.Millisecond, func() { flipped.Store(true) })
 
-	served, code := Serve(context.Background(), targets, func(t Target) string { return before[t.Node] }, poll)
+	served, code := Serve(context.Background(), targets, func(t Target) string { return before[t.Node] }, poll, time.Now())
 	assert.Equal(t, code, 0)
 	assert.Equal(t, served[1].Node, "slow")
 	assert.Assert(t, served[1].Changed)
@@ -181,7 +181,7 @@ func TestServeTimeoutUnchanged(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Millisecond)
 	defer cancel()
 
-	served, code := Serve(ctx, []Target{tg}, func(Target) string { return old }, poll)
+	served, code := Serve(ctx, []Target{tg}, func(Target) string { return old }, poll, time.Now())
 	assert.Equal(t, code, 2)
 	assert.Assert(t, !served[0].Changed)
 }
@@ -209,7 +209,7 @@ func TestStatusRenderAndJSON(t *testing.T) {
 	WriteStatus(&out, rep)
 	s := out.String()
 	assert.Assert(t, strings.Contains(s, "website site1"), s)
-	assert.Assert(t, strings.Contains(s, "tb_code_7"), s)
+	assert.Assert(t, strings.Contains(s, "code "), s)
 	assert.Assert(t, strings.Contains(s, "boom: exit status 1"), s)
 	assert.Assert(t, strings.Contains(s, "function fn"), s)
 

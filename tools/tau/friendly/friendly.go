@@ -13,10 +13,20 @@ import (
 
 	"github.com/google/go-github/v71/github"
 	"github.com/taubyte/tau/pkg/platformerr"
+	loginLib "github.com/taubyte/tau/tools/tau/lib/login"
 )
 
 // Debug shows the original error under the friendly one. Set by --debug.
 var Debug = os.Getenv("TAU_DEBUG") == "1"
+
+// Cloud names the selected cloud for messages; tests replace it.
+var Cloud = func() string {
+	p, err := loginLib.GetSelectedProfile()
+	if err != nil || p.Cloud == "" {
+		return "the selected cloud"
+	}
+	return p.Cloud
+}
 
 var codes = map[platformerr.Code][2]string{
 	platformerr.NotFound:          {"Nothing is deployed at that address.", "check the domain and path, then `tau push` and wait for the build"},
@@ -29,8 +39,9 @@ var codes = map[platformerr.Code][2]string{
 }
 
 var (
-	codeInBody = regexp.MustCompile(`"(?:error|code)"\s*:\s*"([a-z_]+)"`)
-	universe   = regexp.MustCompile("universe `([^`]+)` (?:was )?not found(?:; Dream has: (.*))?")
+	codeInBody  = regexp.MustCompile(`"(?:error|code)"\s*:\s*"([a-z_]+)"`)
+	projectName = regexp.MustCompile("project `([^`]+)` not found")
+	universe    = regexp.MustCompile("universe `([^`]+)` (?:was )?not found(?:; Dream has: (.*))?")
 )
 
 // Explain returns a sentence and a hint for err, or ok=false if it has none.
@@ -68,6 +79,9 @@ func Explain(err error) (msg, hint string, ok bool) {
 	}
 
 	if strings.Contains(text, "project not found") || strings.Contains(text, "project") && strings.Contains(text, "not found") {
+		if m := projectName.FindStringSubmatch(text); m != nil {
+			return fmt.Sprintf("Project %q is not on cloud %s.", m[1], Cloud()), "import it with `tau import project`, or `tau select project`", true
+		}
 		return "That project is not on the selected cloud.", "import it with `tau import project`, or `tau select project`", true
 	}
 

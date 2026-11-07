@@ -3,6 +3,7 @@ package doctor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -149,20 +150,24 @@ func run(p config.Profile, d deps) (out []result) {
 		}
 	} else if p.Cloud == "" {
 		add("FAIL", "cloud", "no cloud selected", "run `tau select cloud`")
-	} else if err := d.lookup(p.Cloud); err != nil {
-		add("FAIL", "cloud", "cannot resolve "+p.Cloud, "check the FQDN with `tau select cloud --fqdn`")
+	} else if seer := "seer.tau." + p.Cloud; d.lookup(seer) != nil { // the apex may have no record; seer is what tau calls
+		add("FAIL", "cloud", "cannot resolve "+seer, "check the FQDN with `tau select cloud --fqdn`")
 	} else {
-		add("PASS", "cloud", "cloud "+p.Cloud+" resolves", "")
+		add("PASS", "cloud", "cloud "+p.Cloud+" resolves ("+seer+")", "")
 	}
 
 	add("PASS", "tau", common.VersionLine(), "")
-	if v, err := d.dreamVersion(); err != nil {
+	// dream has no --version flag on some releases: its usage text is no version
+	switch v, err := d.dreamVersion(); {
+	case errors.Is(err, exec.ErrNotFound):
 		status := "PASS"
 		if p.CloudType == common.DreamCloud {
 			status = "WARN"
 		}
 		add(status, "dream version", "dream CLI not found", "install it with `npm i -g @taubyte/dream`")
-	} else {
+	case err != nil || v == "" || strings.Contains(v, "\n") || strings.Contains(strings.ToLower(v), "usage"):
+		add("WARN", "dream version", "dream CLI found, version unknown", "")
+	default:
 		add("PASS", "dream version", v, "")
 	}
 	return

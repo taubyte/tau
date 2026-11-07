@@ -2,6 +2,9 @@ package cloud
 
 import (
 	"fmt"
+	"maps"
+	stdSlices "slices"
+	"strings"
 
 	cliCommon "github.com/taubyte/tau/tools/tau/cli/common"
 	"github.com/taubyte/tau/tools/tau/clients/dream"
@@ -64,7 +67,7 @@ func _select(ctx *cli.Context) error {
 		universeName := ctx.String(cloudFlags.Universe.Name)
 		_, ok := universes[universeName]
 		if !ok {
-			return fmt.Errorf("universe `%s` was not found", universeName)
+			return fmt.Errorf("universe `%s` not found; Dream has: %s", universeName, strings.Join(stdSlices.Sorted(maps.Keys(universes)), ", "))
 		}
 
 		profile.CloudType = common.DreamCloud

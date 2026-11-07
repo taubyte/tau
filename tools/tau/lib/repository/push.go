@@ -1,6 +1,9 @@
 package repositoryLib
 
 import (
+	"errors"
+
+	gogit "github.com/go-git/go-git/v5"
 	"github.com/taubyte/tau/tools/tau/config"
 )
 
@@ -10,8 +13,9 @@ func (info *Info) Push(project config.Project, message, url string) (GitReposito
 		return nil, err
 	}
 
+	// nothing to commit: push what is already committed
 	err = repo.Commit(message, ".")
-	if err != nil {
+	if err != nil && !errors.Is(err, gogit.ErrEmptyCommit) {
 		return nil, err
 	}
 

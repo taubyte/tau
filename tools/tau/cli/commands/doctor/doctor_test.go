@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"net/http"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -87,8 +88,24 @@ func TestDoctorFailures(t *testing.T) {
 		{"remote unresolved", "cloud", "FAIL", "--fqdn", config.Profile{CloudType: common.RemoteCloud, Cloud: "nope.example"}, func(d *deps) {
 			d.lookup = func(string) error { return errors.New("no such host") }
 		}},
+		{"remote apex has no record", "cloud", "PASS", "seer.tau.t3.example", config.Profile{CloudType: common.RemoteCloud, Cloud: "t3.example"}, func(d *deps) {
+			d.lookup = func(h string) error {
+				if h != "seer.tau.t3.example" {
+					return errors.New("no such host")
+				}
+				return nil
+			}
+		}},
+		{"dream usage text", "dream version", "WARN", "unknown", config.Profile{CloudType: common.DreamCloud, Cloud: "blackhole"}, func(d *deps) {
+			d.dreamVersion = func() (string, error) {
+				return "Incorrect Usage: flag provided but not defined: -version NAME: dream", nil
+			}
+		}},
+		{"dream version fails", "dream version", "WARN", "unknown", config.Profile{CloudType: common.DreamCloud, Cloud: "blackhole"}, func(d *deps) {
+			d.dreamVersion = func() (string, error) { return "", errors.New("exit status 1") }
+		}},
 		{"no dream cli", "dream version", "WARN", "@taubyte/dream", config.Profile{CloudType: common.DreamCloud, Cloud: "blackhole"}, func(d *deps) {
-			d.dreamVersion = func() (string, error) { return "", errors.New("not found") }
+			d.dreamVersion = func() (string, error) { return "", exec.ErrNotFound }
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -59,9 +59,10 @@ func Targets(st *tcc.Store, withWebsites bool) ([]Target, error) {
 				continue
 			}
 			resource := strings.TrimSuffix(group, "s") + " " + name
+			method, _ := tcc.Get(doc, []string{"trigger", "method"}).(string)
 			if dreamNodes != nil {
 				for node, base := range dreamNodes {
-					out = append(out, Target{Resource: resource, Node: node, URL: base + p, Host: fqdn})
+					out = append(out, Target{Resource: resource, Node: node, URL: base + p, Host: fqdn, Method: strings.ToUpper(method)})
 				}
 				continue
 			}
@@ -70,7 +71,7 @@ func Targets(st *tcc.Store, withWebsites bool) ([]Target, error) {
 				return nil, fmt.Errorf("resolving %s: %w", fqdn, err)
 			}
 			for _, a := range addrs {
-				out = append(out, Target{Resource: resource, Node: a, URL: "https://" + net.JoinHostPort(a, "443") + p, Host: fqdn})
+				out = append(out, Target{Resource: resource, Node: a, URL: "https://" + net.JoinHostPort(a, "443") + p, Host: fqdn, Method: strings.ToUpper(method)})
 			}
 		}
 	}

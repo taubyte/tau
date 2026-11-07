@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path"
 	"sort"
 	"strings"
 	"sync"
@@ -28,9 +27,14 @@ type Patrick interface {
 }
 
 // Repo is a pushed repository and the commit its build must be for.
+// Remote (the GitHub repo name) and Since (push time, unix) match a job that
+// carries no commit or another one, as Dream's injected jobs do.
 type Repo struct {
 	Name   string
 	Commit string
+	Remote string
+	Since  int64
+	Branch string
 }
 
 // Job is one build as the user sees it.
@@ -88,10 +92,47 @@ func fetch(p Patrick, project string, last int, cache map[string]*patrick.Job) (
 	return out, nil
 }
 
-// Wait follows the newest job of each repo's pushed commit until all end.
-// Matching on the commit, not the time, keeps it right under clock skew.
+// match picks the newest job of the pushed commit, else the newest job of the
+// same repository created since the push (Dream's injected jobs carry a
+// placeholder commit). The commit match comes first: it is right under clock skew.
+func match(jobs []*patrick.Job, r Repo) *patrick.Job {
+	var exact, near *patrick.Job
+	for _, j := range jobs {
+		switch {
+		case j.Meta.HeadCommit.ID == r.Commit:
+			if exact == nil || j.Timestamp > exact.Timestamp {
+				exact = j
+			}
+		case r.Remote != "" && j.Timestamp >= r.Since && repoName(j.Meta.Repository) == r.Remote:
+			if near == nil || j.Timestamp > near.Timestamp {
+				near = j
+			}
+		}
+	}
+	if exact != nil {
+		return exact
+	}
+	return near
+}
+
+// progressLine says what changed in one repo's job, or "" when nothing did.
+func progressLine(prev, cur Job) string {
+	switch {
+	case cur.Id == "" || (prev.Id == cur.Id && prev.Status == cur.Status && prev.Attempt == cur.Attempt):
+		return ""
+	case cur.Status == "open":
+		return fmt.Sprintf("%-8s queued    job %s", cur.Repo, cur.Id)
+	case cur.Status == "locked":
+		return fmt.Sprintf("%-8s building attempt %d  job %s", cur.Repo, cur.Attempt, cur.Id)
+	default:
+		return fmt.Sprintf("%-8s %-8s %.0fs after push  job %s", cur.Repo, cur.Status, cur.Seconds, cur.Id)
+	}
+}
+
+// Wait follows each pushed repo's job (see match) until all end, writing a
+// line to progress (if not nil) as a job appears, starts, retries or ends.
 // Exit code: 0 all succeeded, 1 one failed or was canceled, 2 ctx ended first.
-func Wait(ctx context.Context, p Patrick, project string, repos []Repo, poll time.Duration) ([]Job, int) {
+func Wait(ctx context.Context, p Patrick, project string, repos []Repo, poll time.Duration, progress io.Writer) ([]Job, int) {
 	cache := map[string]*patrick.Job{}
 	out := make([]Job, len(repos))
 	for i, r := range repos {
@@ -101,18 +142,21 @@ func Wait(ctx context.Context, p Patrick, project string, repos []Repo, poll tim
 		jobs, _ := fetch(p, project, recentJobs, cache) // a missed poll is retried
 		done := 0
 		for i, r := range repos {
-			var newest *patrick.Job
-			for _, j := range jobs {
-				if j.Meta.HeadCommit.ID == r.Commit && (newest == nil || j.Timestamp > newest.Timestamp) {
-					newest = j
-				}
-			}
+			newest := match(jobs, r)
 			if newest == nil {
 				continue
 			}
 			prev := out[i]
+			// Seconds: from the push (else the job's creation) to when we saw it end
+			from := time.Unix(newest.Timestamp, 0)
+			if r.Since > 0 {
+				from = time.Unix(r.Since, 0)
+			}
 			out[i] = Job{Repo: r.Name, Id: newest.Id, Status: status(newest.Status), Attempt: newest.Attempt,
-				Seconds: time.Since(time.Unix(newest.Timestamp, 0)).Round(time.Second).Seconds()}
+				Seconds: time.Since(from).Round(time.Second).Seconds()}
+			if prev.Id == newest.Id && prev.Status == out[i].Status && finished(newest.Status) {
+				out[i].Seconds = prev.Seconds
+			}
 			if finished(newest.Status) {
 				done++
 				if newest.Status != patrick.JobStatusSuccess {
@@ -122,6 +166,9 @@ func Wait(ctx context.Context, p Patrick, project string, repos []Repo, poll tim
 						out[i].Error, out[i].Logs = logTail(p, newest)
 					}
 				}
+			}
+			if l := progressLine(prev, out[i]); l != "" && progress != nil {
+				fmt.Fprintln(progress, l)
 			}
 		}
 		if done == len(repos) {
@@ -185,7 +232,7 @@ func logTail(p Patrick, j *patrick.Job) (string, []string) {
 // WriteJobs prints one line per job, and the error and log tail of a failure.
 func WriteJobs(w io.Writer, jobs []Job) {
 	for _, j := range jobs {
-		fmt.Fprintf(w, "%-8s %-8s attempt %d  %4.0fs  %s\n", j.Repo, j.Status, j.Attempt, j.Seconds, j.Id)
+		fmt.Fprintf(w, "%-8s %-8s attempt %d  %4.0fs after push  %s\n", j.Repo, j.Status, j.Attempt, j.Seconds, j.Id)
 		if j.Error != "" {
 			fmt.Fprintf(w, "  error: %s\n", j.Error)
 			for _, l := range j.Logs {
@@ -201,11 +248,16 @@ type Target struct {
 	Node     string
 	URL      string // full URL on that node
 	Host     string // Host header (and TLS name) the node routes on
+	Method   string // the function's first method; "" is GET
 }
 
-// Probe GETs the target; code 0 means it did not answer.
+// Probe calls the target with its method; code 0 means it did not answer.
 func Probe(t Target) (int, []byte) {
-	req, err := http.NewRequest(http.MethodGet, t.URL, nil)
+	method := t.Method
+	if method == "" {
+		method = http.MethodGet
+	}
+	req, err := http.NewRequest(method, t.URL, nil)
 	if err != nil {
 		return 0, nil
 	}
@@ -240,51 +292,98 @@ type Served struct {
 	Hash     string  `json:"hash"`
 	Changed  bool    `json:"changed"`
 	Seconds  float64 `json:"seconds"`
+	Note     string  `json:"note,omitempty"`
 }
 
-// Serve polls every target until what it serves differs from before(target),
-// i.e. the node moved to the new build. Exit code 0, or 2 if ctx ended first.
-func Serve(ctx context.Context, targets []Target, before func(Target) string, poll time.Duration) ([]Served, int) {
-	start := time.Now()
+// Baseline probes each target before the push. A target that answers 404 or
+// not at all cannot show a new build: it is left out and its resource named once.
+func Baseline(targets []Target) (keep []Target, before map[Target]string, skipped []string) {
+	before = map[Target]string{}
+	seen := map[string]bool{}
+	for _, t := range targets {
+		code, body := Probe(t)
+		if code == 0 || code == http.StatusNotFound {
+			if !seen[t.Resource] {
+				seen[t.Resource] = true
+				skipped = append(skipped, fmt.Sprintf("%s: can't fingerprint it (HTTP %d on %s %s), not waited on", t.Resource, code, t.Node, t.URL))
+			}
+			continue
+		}
+		keep, before[t] = append(keep, t), Hash(code, body)
+	}
+	return keep, before, skipped
+}
+
+// Serve polls the targets until a resource the push changed serves the new
+// build on every node, and every resource seen changing does so on all its
+// nodes. The push may not touch every resource, so the ones still unchanged
+// then are not waited on: they are "not changed by this push".
+// shortcut: a resource that changes later than the others is cut off; upgrade
+// by matching the build's asset CIDs per function once Patrick exposes them.
+// Exit code 0, or 2 if ctx ended first.
+func Serve(ctx context.Context, targets []Target, before func(Target) string, poll time.Duration, start time.Time) ([]Served, int) {
 	out := make([]Served, len(targets))
-	var wg sync.WaitGroup
+	old := make([]string, len(targets))
 	for i, t := range targets {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			old := before(t)
-			out[i] = Served{Resource: t.Resource, Node: t.Node}
-			for {
+		out[i], old[i] = Served{Resource: t.Resource, Node: t.Node}, before(t)
+	}
+	for {
+		var wg sync.WaitGroup
+		for i, t := range targets {
+			if out[i].Changed {
+				continue
+			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
 				code, body := Probe(t)
 				out[i].Code, out[i].Hash = code, Hash(code, body)
-				if code != 0 && out[i].Hash != old {
+				if code != 0 && out[i].Hash != old[i] {
 					out[i].Changed = true
 					out[i].Seconds = time.Since(start).Round(100 * time.Millisecond).Seconds()
-					return
 				}
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(poll):
+			}()
+		}
+		wg.Wait()
+
+		all, some := map[string]bool{}, map[string]bool{}
+		for _, s := range out {
+			if _, ok := all[s.Resource]; !ok {
+				all[s.Resource] = true
+			}
+			all[s.Resource] = all[s.Resource] && s.Changed
+			some[s.Resource] = some[s.Resource] || s.Changed
+		}
+		settled, someDone := true, false
+		for r := range all {
+			settled = settled && all[r] == some[r]
+			someDone = someDone || all[r]
+		}
+		if settled && someDone {
+			for i := range out {
+				if !out[i].Changed {
+					out[i].Note = "not changed by this push"
 				}
 			}
-		}()
-	}
-	wg.Wait()
-	for _, s := range out {
-		if !s.Changed {
+			return out, 0
+		}
+		select {
+		case <-ctx.Done():
 			return out, 2
+		case <-time.After(poll):
 		}
 	}
-	return out, 0
 }
 
 // WriteServed prints per node how long it took to serve the new build.
 func WriteServed(w io.Writer, served []Served) {
 	for _, s := range served {
-		if s.Changed {
-			fmt.Fprintf(w, "%-20s %-24s serves new build after %.1fs (HTTP %d)\n", s.Resource, s.Node, s.Seconds, s.Code)
-		} else {
+		switch {
+		case s.Changed:
+			fmt.Fprintf(w, "%-20s %-24s serves new build %.1fs after push (HTTP %d)\n", s.Resource, s.Node, s.Seconds, s.Code)
+		case s.Note != "":
+			fmt.Fprintf(w, "%-20s %-24s %s (HTTP %d)\n", s.Resource, s.Node, s.Note, s.Code)
+		default:
 			fmt.Fprintf(w, "%-20s %-24s unchanged (HTTP %d)\n", s.Resource, s.Node, s.Code)
 		}
 	}
@@ -324,7 +423,7 @@ func GetStatus(p Patrick, project string, names map[int]string, targets []Target
 	for id, j := range newest {
 		name := names[id]
 		if name == "" {
-			name = repoName(j.Meta.Repository)
+			name = repoLabel(j.Meta.Repository)
 		}
 		r := RepoStatus{Repo: name, Job: j.Id, Status: status(j.Status), Attempt: j.Attempt,
 			AgeSeconds: time.Since(time.Unix(j.Timestamp, 0)).Round(time.Second).Seconds()}
@@ -357,8 +456,29 @@ func repoName(r patrick.Repository) string {
 	if u == "" {
 		return fmt.Sprintf("repo %d", r.ID)
 	}
-	u = u[strings.LastIndexAny(u, ":/")+1:]
-	return strings.TrimSuffix(path.Base(u), ".git")
+	return RepoName(u)
+}
+
+// repoLabel names a repo as tau does: config, code, website x, library x.
+func repoLabel(r patrick.Repository) string {
+	n := repoName(r)
+	switch {
+	case strings.HasPrefix(n, "tb_code_"):
+		return "code"
+	case strings.HasPrefix(n, "tb_website_"):
+		return "website " + strings.TrimPrefix(n, "tb_website_")
+	case strings.HasPrefix(n, "tb_library_"):
+		return "library " + strings.TrimPrefix(n, "tb_library_")
+	case strings.HasPrefix(n, "tb_"):
+		return "config"
+	}
+	return n
+}
+
+// RepoName is the repository name in a git URL or path.
+func RepoName(u string) string {
+	u = strings.TrimRight(u, "/")
+	return strings.TrimSuffix(u[strings.LastIndexAny(u, ":/")+1:], ".git")
 }
 
 // WriteStatus prints the report as two tables. A node whose answer differs
@@ -373,22 +493,33 @@ func WriteStatus(w io.Writer, rep Report) {
 		}
 	}
 	if len(rep.Serving) > 0 {
+		// count what the answering nodes of each resource serve
 		count := map[string]map[string]int{}
 		for _, s := range rep.Serving {
 			if count[s.Resource] == nil {
 				count[s.Resource] = map[string]int{}
 			}
-			count[s.Resource][s.Hash]++
+			if s.Code != 0 {
+				count[s.Resource][s.Hash]++
+			}
 		}
-		fmt.Fprintln(tw, "\t\t\t\t")
+		tw.Flush()
+		fmt.Fprintln(w)
 		fmt.Fprintln(tw, "RESOURCE\tNODE\tHTTP\tSERVES\t")
 		for _, s := range rep.Serving {
-			note := "same as other nodes"
+			answering, most := 0, 0
+			for _, n := range count[s.Resource] {
+				answering += n
+				most = max(most, n)
+			}
+			note := ""
 			switch {
 			case s.Code == 0:
 				note = "no answer"
-			case len(count[s.Resource]) > 1:
+			case count[s.Resource][s.Hash] < most || len(count[s.Resource]) > 1 && count[s.Resource][s.Hash] == most && most*2 <= answering:
 				note = "DIFFERS from other nodes"
+			case answering > 1:
+				note = "same as other nodes"
 			}
 			fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\n", s.Resource, s.Node, s.Code, s.Hash, note)
 		}

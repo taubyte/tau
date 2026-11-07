@@ -68,3 +68,14 @@ func TestErrorDebug(t *testing.T) {
 		t.Fatalf("original lost with --debug: %v", err)
 	}
 }
+
+// The sentence names the missing project and the cloud it was looked for on.
+func TestProjectNotFoundNamesProjectAndCloud(t *testing.T) {
+	prev := Cloud
+	Cloud = func() string { return "t3.example" }
+	t.Cleanup(func() { Cloud = prev })
+	msg, _, ok := Explain(errors.New("project `shop` not found"))
+	if !ok || !strings.Contains(msg, `"shop"`) || !strings.Contains(msg, "t3.example") {
+		t.Fatalf("got %q", msg)
+	}
+}

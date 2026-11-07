@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"io"
 	"log"
 	"os"
 
@@ -12,6 +14,13 @@ import (
 func main() {
 	err := friendly.Error(cli.Run(os.Args...))
 	if err != nil {
-		log.Fatal(i18n.AppCrashed(err))
+		if friendly.Debug {
+			log.Fatal(i18n.AppCrashed(err))
+		}
+		fail(os.Stderr, err)
+		os.Exit(1)
 	}
 }
+
+// fail prints the error as the user should read it: no log date or prefix.
+func fail(w io.Writer, err error) { fmt.Fprintln(w, err) }

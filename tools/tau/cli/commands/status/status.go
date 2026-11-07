@@ -46,7 +46,7 @@ func run(ctx *cli.Context) error {
 			}
 			id, _ := tcc.Get(doc, []string{"source", "github", "id"}).(string)
 			if i, err := strconv.Atoi(id); err == nil {
-				names[i] = group[:len(group)-1] + " " + n
+				names[i] = map[string]string{"websites": "website ", "libraries": "library "}[group] + n
 			}
 		}
 	}
