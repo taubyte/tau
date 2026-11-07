@@ -19,6 +19,7 @@ const (
 	FunctionError     Code = "function_error"
 	FunctionTimeout   Code = "function_timeout"
 	Internal          Code = "internal"
+	OverQuota         Code = "over_quota"
 	// Rejected is a request refused for what the caller sent (a bad signature):
 	// logged as a warning, since anyone can send one.
 	Rejected Code = "rejected"
@@ -58,6 +59,7 @@ var statuses = map[Code]int{
 	FunctionError:     http.StatusInternalServerError,
 	FunctionTimeout:   http.StatusGatewayTimeout,
 	Internal:          http.StatusInternalServerError,
+	OverQuota:         http.StatusTooManyRequests,
 	Rejected:          http.StatusUnauthorized,
 }
 

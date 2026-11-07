@@ -72,6 +72,7 @@ type Config interface {
 	Accounts() Accounts
 	Tenancy() Tenancy
 	Substrate() Substrate
+	Quotas() Quotas
 
 	SetNode(peer.Node)
 	SetRaftCluster(raft.Cluster)
@@ -363,6 +364,7 @@ type config struct {
 	accounts         Accounts
 	tenancy          Tenancy
 	substrate        Substrate
+	quotas           Quotas
 	// enterprise namespaces raw config for enterprise-only services (each decoded
 	// by //go:build ee code via EnterpriseConfig); empty in community builds.
 	enterprise map[string]yaml.Node
@@ -479,6 +481,7 @@ func (c *config) DomainValidation() DomainValidation { return c.domainValidation
 func (c *config) Accounts() Accounts                 { return c.accounts }
 func (c *config) Tenancy() Tenancy                   { return c.tenancy }
 func (c *config) Substrate() Substrate               { return c.substrate }
+func (c *config) Quotas() Quotas                     { return c.quotas }
 
 func (c *config) SetNode(n peer.Node)            { c.node = n }
 func (c *config) SetRaftCluster(rc raft.Cluster) { c.raftCluster = rc }
