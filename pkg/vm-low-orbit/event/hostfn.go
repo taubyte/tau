@@ -1,6 +1,11 @@
 package event
 
-import wazy "github.com/samyfodil/wazy"
+import (
+	"context"
+
+	wazy "github.com/samyfodil/wazy"
+	common "github.com/taubyte/tau/core/vm"
+)
 
 // RegisterHostFunctions registers this factory's host functions on the wasm
 // host-module builder.
@@ -17,6 +22,11 @@ func (f *Factory) RegisterHostFunctions(b wazy.HostModuleBuilder) {
 	wazy.HostProc2(b.NewFunctionBuilder(), f.getEventType).Export("getEventType")
 	wazy.HostFunc2(b.NewFunctionBuilder(), f.getHttpEventRequestHeaderKeysSize).Export("getHttpEventRequestHeaderKeysSize")
 	wazy.HostFunc3(b.NewFunctionBuilder(), f.getHttpEventRequestHeaderKeys).Export("getHttpEventRequestHeaderKeys")
+	// Names go-sdk <= v0.3.9 imports; its keys call has no index argument.
+	wazy.HostFunc2(b.NewFunctionBuilder(), f.getHttpEventRequestHeaderKeysSize).Export("getHttpEventHeaderVarNameByIdSize")
+	wazy.HostFunc2(b.NewFunctionBuilder(), func(ctx context.Context, m common.Module, id, bufPtr uint32) uint32 {
+		return f.getHttpEventRequestHeaderKeys(ctx, m, id, bufPtr, 0)
+	}).Export("getHttpEventHeaderVarNameById")
 	wazy.HostFunc5(b.NewFunctionBuilder(), f.eventHttpHeaderAdd).Export("eventHttpHeaderAdd")
 	wazy.HostFunc4(b.NewFunctionBuilder(), f.getHttpEventHeadersSize).Export("getHttpEventHeadersSize")
 	wazy.HostFunc5(b.NewFunctionBuilder(), f.getHttpEventHeaders).Export("getHttpEventHeaders")
