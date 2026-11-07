@@ -122,8 +122,14 @@ type recorder struct {
 	started atomic.Bool // atomic: a tunnel goroutine may still write while Serve reads it
 }
 
+// WriteHeader passes only the first status. A function that sets its status
+// after writing its body (an SDK ordering issue, plan WS.1) made net/http log
+// "superfluous response.WriteHeader call" on every such request; the late
+// status was ignored then too, so it is dropped quietly.
 func (r *recorder) WriteHeader(code int) {
-	r.started.Store(true)
+	if r.started.Swap(true) {
+		return
+	}
 	r.ResponseWriter.WriteHeader(code)
 }
 
