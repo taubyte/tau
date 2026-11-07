@@ -32,6 +32,9 @@ func (srv *PatrickService) githubCheckHookAndExtractSecret(ctx http.Context) (in
 		ctx.SetVariable("GithubSecret", "taubyte_secret")
 		return nil, nil
 	}
+	if isPing(ctx) {
+		return nil, nil
+	}
 	hook_uuid, err := ctx.GetStringVariable("hook")
 	if err != nil {
 		return nil, fmt.Errorf("get string context failed with %w", err)
@@ -51,7 +54,16 @@ func (srv *PatrickService) githubCheckHookAndExtractSecret(ctx http.Context) (in
 	return nil, nil
 }
 
+// isPing is GitHub's test delivery, sent when a hook is created. It carries no
+// push, so it is answered without the hook's secret and builds nothing.
+func isPing(ctx http.Context) bool {
+	return ctx.Request().Header.Get("X-GitHub-Event") == "ping"
+}
+
 func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, error) {
+	if isPing(ctx) {
+		return map[string]string{"ping": "pong"}, nil
+	}
 	newJob := &iface.Job{
 		Status:    iface.JobStatusOpen,
 		Timestamp: time.Now().Unix(),

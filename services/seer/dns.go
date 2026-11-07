@@ -54,6 +54,9 @@ func (h *dnsHandler) count(name string, blocked bool) {
 	} else {
 		h.unregistered++
 	}
+	if name == "" {
+		name = "." // the root
+	}
 	if _, ok := h.names[name]; ok || len(h.names) < maxCountedNames {
 		h.names[name]++
 	}
@@ -152,10 +155,10 @@ func (srv *dnsServer) Start(ctx context.Context) {
 
 func (srv *dnsServer) Stop() {
 	if err := srv.Udp.Shutdown(); err != nil {
-		logger.Error("stopping UDP Server failed with:", err.Error())
+		logger.Errorf("stopping UDP server failed with: %s", err)
 	}
 	if err := srv.Tcp.Shutdown(); err != nil {
-		logger.Error("stopping TCP Server failed with:", err.Error())
+		logger.Errorf("stopping TCP server failed with: %s", err)
 	}
 }
 

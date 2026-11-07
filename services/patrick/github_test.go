@@ -516,3 +516,21 @@ func TestGithubHookHandler_duplicateDeliverySameJobID(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, len(keys), 1)
 }
+
+// GitHub pings a hook when it is created, often before the hook record is
+// readable: the ping got 401 or 400 and an ERROR line. It is answered, and
+// builds nothing, without needing the hook.
+func TestPingIsAnsweredWithoutTheHook(t *testing.T) {
+	srv := &PatrickService{authClient: &mockAuthClient{repos: make(map[int]mockRepo)}}
+	ctx := newMockHTTPContext()
+	ctx.SetHeader("X-GitHub-Event", "ping")
+	ctx.SetVariables(map[string]interface{}{"hook": "not-registered-yet"})
+
+	if _, err := srv.githubCheckHookAndExtractSecret(ctx); err != nil {
+		t.Fatalf("auth refused a ping: %v", err)
+	}
+	got, err := srv.githubHookHandler(ctx)
+	if err != nil || got.(map[string]string)["ping"] != "pong" {
+		t.Fatalf("got %v, %v", got, err)
+	}
+}
