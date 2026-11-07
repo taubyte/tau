@@ -40,10 +40,10 @@ var codes = map[platformerr.Code][2]string{
 }
 
 var (
-	codeInBody  = regexp.MustCompile(`"(?:error|code)"\s*:\s*"([a-z_]+)"`)
-	projectName = regexp.MustCompile("project `([^`]+)` not found")
+	codeInBody   = regexp.MustCompile(`"(?:error|code)"\s*:\s*"([a-z_]+)"`)
+	projectName  = regexp.MustCompile("project `([^`]+)` not found")
 	unknownCloud = regexp.MustCompile("unknown cloud `([^`]*)`")
-	universe    = regexp.MustCompile("universe `([^`]+)` (?:was )?not found(?:; Dream has: (.*))?")
+	universe     = regexp.MustCompile("universe `([^`]+)` (?:was )?not found(?:; Dream has: (.*))?")
 )
 
 // Explain returns a sentence and a hint for err, or ok=false if it has none.

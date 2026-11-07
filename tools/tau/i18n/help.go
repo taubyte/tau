@@ -15,4 +15,3 @@ func (helper) TokenMayBeExpired(login string) {
 func (helper) BeSureToCloneProject() {
 	printer.Out.InfoPrintln("Be sure to clone the project ( $tau clone project )")
 }
-
