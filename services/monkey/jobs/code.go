@@ -92,9 +92,9 @@ func (c code) handleOps(ops []Op) error {
 }
 
 // buildAndStash builds op once a build slot is free and stashes the module.
-// On a development node it first looks for a module already built from the
-// same sources, by this job or an earlier one, and waits for one being built
-// right now rather than building it a second time alongside.
+// It first looks for a module this project already built from the same
+// sources, by this job or an earlier one, and waits for one being built right
+// now rather than building it a second time alongside.
 func (c code) buildAndStash(op Op, logs io.Writer, slots chan struct{}) (string, error) {
 	compile := func() (string, error) {
 		return buildThenStash(slots,
@@ -102,14 +102,11 @@ func (c code) buildAndStash(op Op, logs io.Writer, slots chan struct{}) (string,
 			c.StashBuildFile)
 	}
 
-	if !c.Monkey.Dev() {
-		return compile()
-	}
-
-	source, err := hashDir(c.opSourcePath(op))
+	sourceHash, err := hashDir(c.opSourcePath(op))
 	if err != nil {
 		return "", err
 	}
+	source := reuseKey(c.ProjectID, "", sourceHash)
 	for {
 		if cid, ok := c.previousBuild(source); ok {
 			fmt.Fprintf(logs, "Building %s ----- unchanged since %s was built, reusing it\n", op.name, cid)
@@ -140,26 +137,22 @@ func (c code) buildAndStash(op Op, logs io.Writer, slots chan struct{}) (string,
 // channel closed when that build ends.
 var building sync.Map
 
-// builtModules maps the content hash of a function's sources to the CID of
-// the module built from them, so a development node rebuilds only the
+// builtModules maps a project and the content hash of a function's sources
+// to the CID of the module built from them, so a node rebuilds only the
 // functions a push changed. A build reads nothing but its own directory (the
 // image and its settings are in .taubyte/config.yaml), so the same sources
 // build the same module.
 var builtModules sync.Map
 
-// reusePrevious publishes, on a development node, the build of a website or
-// library repository whose sources are unchanged since an earlier job, and
+// reusePrevious publishes the build of a website or library repository whose sources are unchanged since an earlier job, and
 // reports whether it did. Otherwise it keys the coming build for the next job.
 // A push of one repository re-pushes the project's others; most are unchanged.
 func (c *Context) reusePrevious(kind string) (bool, error) {
-	if !c.Monkey.Dev() {
-		return false, nil
-	}
 	source, err := hashDir(c.WorkDir)
 	if err != nil {
 		return false, err
 	}
-	key := kind + ":" + source
+	key := reuseKey(c.ProjectID, kind, source)
 	cid, ok := c.previousBuild(key)
 	if !ok {
 		c.reuseKey = key
@@ -364,4 +357,11 @@ func buildThenStash(slots chan struct{}, build func() (io.ReadSeekCloser, error)
 		return "", fmt.Errorf("handling build details failed with: %s", err)
 	}
 	return cid, nil
+}
+
+// reuseKey names a build for reuse. The project is part of it: on a shared
+// cloud two projects can hold the same sources, and one must never be handed a
+// module another project's build produced.
+func reuseKey(project, kind, source string) string {
+	return project + "/" + kind + ":" + source
 }
