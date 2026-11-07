@@ -159,13 +159,6 @@ func TestWhatAWorkflowsDriversDoNotDoIsRefused(t *testing.T) {
 	require.Contains(t, refusal(workflowKind, specs.Resource{"concurrency": float64(2)}), "runs in flight")
 }
 
-func TestARegionBlockIsNotRead(t *testing.T) {
-	pinned := specs.Resource{"regions": map[string]any{"policy": "pinned", "in": []any{"region-1"}}}
-	for _, kind := range []string{cacheKind, storageKind, volumeKind, syncKind, workflowKind, databaseKind, functionKind} {
-		require.Empty(t, unservable(specs.Reach{Kind: kind, Label: "x", Ops: []string{"get"}}, pinned), kind)
-	}
-}
-
 func fixture(t *testing.T) *specs.Project {
 	t.Helper()
 	p, err := specs.Load(compiled(t))

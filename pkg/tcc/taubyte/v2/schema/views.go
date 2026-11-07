@@ -10,28 +10,30 @@ import (
 )
 
 // One view per region, cut from the object as it runs (compiled, lowered,
-// placed). Each held resource has a Role, since membership means different things
-// by policy. What has no footprint follows what it reaches; a zone nothing ties
-// down is in every view. An edge to a resource held only in another region is
-// Broken, never stubbed or dropped. Every served region gets a view, even empty;
-// asking for an unserved one is an error.
+// placed). Each held resource has a Role, from its namespace's topology. What has
+// no footprint follows what it reaches; a zone nothing ties down is in every view.
+// Where something serves, what it reaches serves too: an edge to a resource held
+// only in another region, or only standing by in this one, is Broken, never stubbed
+// or dropped — except an origin, which a request is carried to and the view names
+// as Remote. Every served region gets a view, even empty; asking for an unserved
+// one is an error.
 
 // Role is how a resource is held in one region.
 type Role string
 
 const (
-	// RoleAnywhere: it wrote no placement, and this region is within its allowance.
+	// RoleAnywhere: no scope above it names a region, so it runs wherever the build
+	// places it.
 	RoleAnywhere Role = "anywhere"
-	// RolePinned: pinned here.
-	RolePinned Role = "pinned"
-	// RoleMain and RoleStandby: a failover's two halves — it serves from main, and
-	// standby takes over when main is gone.
-	RoleMain    Role = "main"
+	// RoleSingle: its namespace runs in this one region.
+	RoleSingle Role = "single"
+	// RoleActive: its namespace runs here and in its other regions at once.
+	RoleActive Role = "active"
+	// RolePrimary and RoleStandby: its namespace fails over — it serves from the
+	// primary, and a standby takes over, in order, when the one before is gone.
+	RolePrimary Role = "primary"
 	RoleStandby Role = "standby"
-	// RoleSeed: a cdn starts here. RoleDemand: it may arrive here when demand moves it.
-	RoleSeed   Role = "seed"
-	RoleDemand Role = "demand"
-	// RolePlaced: the build put it here although its placement named elsewhere — a
+	// RolePlaced: the build put it here although its namespace named elsewhere — a
 	// build serving fewer regions than the project was written for.
 	RolePlaced Role = "placed"
 	// RoleNeeded: it has no footprint, and something held here reaches it.
@@ -44,6 +46,10 @@ const (
 	RoleScope Role = "scope"
 )
 
+// Serves is whether a resource held in this role answers here now. A standby holds
+// what it needs to take over, and answers nothing until it does.
+func (r Role) Serves() bool { return r != RoleStandby }
+
 // View is one region's projection of a compiled object.
 type View struct {
 	Region string
@@ -52,6 +58,9 @@ type View struct {
 	Object map[string]any
 	// Roles is how each resource the view holds is in this region, by compiled id.
 	Roles map[string]Role
+	// Remote is every origin reached from here and held only elsewhere, by compiled
+	// id: the regions it is held in, in its namespace's order.
+	Remote map[string][]string
 }
 
 // Empty reports whether the view holds no resource at all — a region this build
@@ -94,7 +103,7 @@ func Views(obj map[string]any, opts ...AuditOption) (map[string]View, []Finding,
 				all[res.id] = RoleScope
 			}
 		}
-		out[region] = View{Region: region, Object: projected, Roles: all}
+		out[region] = View{Region: region, Object: projected, Roles: all, Remote: plan.Remote[region]}
 	}
 	return out, plan.Findings, nil
 }
@@ -115,6 +124,9 @@ type Plan struct {
 	// Roles is, per destination, every resource held there by its own placement or
 	// for what it reaches — not the scopes, which the projection keeps on its own.
 	Roles map[string]map[string]Role
+	// Remote is, per destination, every origin reached from there and held only
+	// elsewhere, with the regions it is held in.
+	Remote map[string]map[string][]string
 	// Findings is the placement half of the audit and every edge refused for crossing
 	// regions.
 	Findings []Finding
@@ -127,7 +139,7 @@ func PlanViews(obj map[string]any, opts ...AuditOption) Plan {
 	root := projectOf(obj)
 	all := collect(root, "")
 
-	plan := Plan{Roles: map[string]map[string]Role{}}
+	plan := Plan{Roles: map[string]map[string]Role{}, Remote: map[string]map[string][]string{}}
 	for _, r := range in.regions.Serves() {
 		if !slices.Contains(plan.Destinations, r) {
 			plan.Destinations = append(plan.Destinations, r)
@@ -151,16 +163,20 @@ func PlanViews(obj map[string]any, opts ...AuditOption) Plan {
 			// A region this build does not render is placed there all the same; it
 			// is just not a view here.
 			if roles, ok := plan.Roles[region]; ok {
-				roles[at.res.id] = roleOf(at.placement, at.answer, region)
+				roles[at.res.id] = roleOf(at.placement, region)
 			}
 		}
 	}
 
 	needs := map[string][]string{}
+	origins := map[string]bool{}
 	for _, d := range declaredRelations(all) {
 		by, of := d.By(), d.Of()
 		if by != of && !slices.Contains(needs[by], of) {
 			needs[by] = append(needs[by], of)
+		}
+		if d.origin {
+			origins[by+"\x00"+of] = true
 		}
 	}
 	for _, list := range needs {
@@ -193,15 +209,21 @@ func PlanViews(obj map[string]any, opts ...AuditOption) Plan {
 	}
 
 	refused := map[string]bool{}
-	refuse := func(from, to compiled, region string) {
+	refuse := func(from, to compiled, region, title, detail string) {
 		key := from.id + "\x00" + to.id + "\x00" + region
 		if refused[key] {
 			return
 		}
 		refused[key] = true
-		plan.Findings = append(plan.Findings, Finding{Broken, from.kind, from.name, from.scope,
-			fmt.Sprintf("reaches %s/%s, which is not placed in %q where this is", to.kind, to.name, region),
-			"Every resource is held only in the regions it is placed in, and nothing reaches across regions: there is no contract for it. Place both where they meet, or let the one reached be placed wherever this is.", from.id})
+		plan.Findings = append(plan.Findings, Finding{Broken, from.kind, from.name, from.scope, title, detail, from.id})
+	}
+	notHere := func(from, to compiled, region string) {
+		refuse(from, to, region, fmt.Sprintf("reaches %s/%s, which does not run in %q where this does", to.kind, to.name, region),
+			"A resource runs where its namespace does, and nothing reaches across regions but a gateway's route to its handler. Run both namespaces where they meet, or move one into the other's.")
+	}
+	standing := func(from, to compiled, region string) {
+		refuse(from, to, region, fmt.Sprintf("reaches %s/%s, which only stands by in %q where this serves", to.kind, to.name, region),
+			"A namespace that fails over serves from its first region alone. What reaches it from another of its regions is answered from elsewhere. Fail both over in the same order, or make the one reached active.")
 	}
 
 	// DEPENDED ON: what has no footprint and something placed reaches, through what has
@@ -230,8 +252,17 @@ func PlanViews(obj map[string]any, opts ...AuditOption) Plan {
 			queue = queue[1:]
 			for _, next := range needs[cur] {
 				if hasFootprint[next] {
-					if _, ok := roles[next]; !ok {
-						refuse(byID[cur], byID[next], region)
+					role, held := roles[next]
+					switch {
+					case !held && origins[cur+"\x00"+next]:
+						if plan.Remote[region] == nil {
+							plan.Remote[region] = map[string][]string{}
+						}
+						plan.Remote[region][next] = answers[next].answer.In
+					case !held:
+						notHere(byID[cur], byID[next], region)
+					case !role.Serves() && hasFootprint[cur] && roles[cur].Serves():
+						standing(byID[cur], byID[next], region)
 					}
 					continue
 				}
@@ -321,7 +352,7 @@ func meetElsewhere(targets []string, answers map[string]placed, rendered []strin
 		all := true
 		for _, id := range targets {
 			at := answers[id]
-			anywhere := at.placement.Policy == "" && at.placement.Allowed == nil
+			anywhere := at.placement.In == nil
 			if !anywhere && !slices.Contains(at.answer.In, r) {
 				all = false
 				break
@@ -360,33 +391,23 @@ func closureUnplaced(needs map[string][]string, hasFootprint map[string]bool, id
 }
 
 // roleOf is how a placement is in one of the regions the Regions answered for it.
-func roleOf(p Placement, a Answer, region string) Role {
-	switch p.Policy {
-	case "":
-		return RoleAnywhere
-	case "pinned":
-		if slices.Contains(p.In, region) {
-			return RolePinned
+func roleOf(p Placement, region string) Role {
+	if !slices.Contains(p.In, region) {
+		if p.Topology == "" && p.In == nil {
+			return RoleAnywhere
 		}
-	case "failover":
-		switch region {
-		case p.Main:
-			return RoleMain
-		case p.Standby:
-			return RoleStandby
-		}
-	case "cdn":
-		if slices.Contains(p.In, region) {
-			return RoleSeed
-		}
-		// NO SEED IT NAMED IS SERVED — none written, or none this build has — so the
-		// platform seeds the choice, and every region it runs in is a seed.
-		for _, r := range a.In {
-			if slices.Contains(p.In, r) {
-				return RoleDemand
-			}
-		}
-		return RoleSeed
+		return RolePlaced
 	}
-	return RolePlaced
+	switch p.Topology {
+	case TopologySingle:
+		return RoleSingle
+	case TopologyActive:
+		return RoleActive
+	case TopologyFailover:
+		if p.In[0] == region {
+			return RolePrimary
+		}
+		return RoleStandby
+	}
+	return RoleAnywhere
 }

@@ -57,7 +57,6 @@ type Application struct {
 	Package     PackageBlock
 	Ports       map[string]ApplicationPortsEntry
 	Readiness   ApplicationReadiness
-	Regions     Regions
 	Tags        []string
 	Variables   map[string]VariablesEntry
 }
@@ -80,7 +79,6 @@ func ReadApplication(r Resource) Application {
 		out.Ports[name] = ReadApplicationPortsEntry(r.Sub("ports", name))
 	}
 	out.Readiness = ReadApplicationReadiness(r)
-	out.Regions = ReadRegions(r)
 	out.Tags = r.Strings("tags")
 	for _, name := range r.Keys("variables") {
 		if out.Variables == nil {
@@ -103,7 +101,6 @@ const (
 	ApplicationKeyPackage     = "package"
 	ApplicationKeyPorts       = "ports"
 	ApplicationKeyReadiness   = "readiness"
-	ApplicationKeyRegions     = "regions"
 	ApplicationKeyTags        = "tags"
 	ApplicationKeyVariables   = "variables"
 )
@@ -286,43 +283,6 @@ const (
 	ApplicationReadinessKindFunction         = "function"
 )
 
-// Regions is the "regions" block of Agent, Application, Bus, Cache, Channel, Cron, Database, Function, Gateway, Mcp, Model, Package, Proxy, Sandbox, Secret, Storage, Stream, Sync, Volume, Website, Worker, Workflow, Zone, read from a compiled object.
-type Regions struct {
-	In      []string // authored at regions/{pinned|cdn}
-	Main    string   // authored at regions/failover/main
-	Policy  string   // which of pinned, cdn, failover was written
-	Standby string   // authored at regions/failover/standby
-
-	// Declared says the author wrote this block: a field the compiler does not
-	// default is present. A block whose fields are all defaults reads false.
-	Declared bool
-}
-
-// ReadRegions decodes one from a resource.
-func ReadRegions(r Resource) Regions {
-	var out Regions
-	out.In = r.Strings("regions", "in")
-	out.Main = r.String("regions", "main")
-	out.Policy = r.String("regions", "policy")
-	out.Standby = r.String("regions", "standby")
-	out.Declared = r.Has("regions", "in") ||
-		r.Has("regions", "main") ||
-		r.Has("regions", "policy") ||
-		r.Has("regions", "standby")
-	return out
-}
-
-// Regions's keys, and the values its fields may hold.
-const (
-	RegionsKeyIn          = "regions/in"
-	RegionsKeyMain        = "regions/main"
-	RegionsKeyPolicy      = "regions/policy"
-	RegionsKeyStandby     = "regions/standby"
-	RegionsPolicyPinned   = "pinned"
-	RegionsPolicyCdn      = "cdn"
-	RegionsPolicyFailover = "failover"
-)
-
 // VariablesEntry is one entry of "variables" in Agent, Application, Function, Package, Sandbox, Worker, keyed by name.
 type VariablesEntry struct {
 	As    string // defaulted
@@ -358,7 +318,6 @@ type Function struct {
 	Implements  string // defaulted
 	Name        string
 	Package     PackageBlock
-	Regions     Regions
 	Tags        []string
 	Variables   map[string]VariablesEntry
 }
@@ -374,7 +333,6 @@ func ReadFunction(r Resource) Function {
 	out.Implements = r.String("implements")
 	out.Name = r.String("name")
 	out.Package = ReadPackageBlock(r)
-	out.Regions = ReadRegions(r)
 	out.Tags = r.Strings("tags")
 	for _, name := range r.Keys("variables") {
 		if out.Variables == nil {
@@ -395,7 +353,6 @@ const (
 	FunctionKeyImplements                = "implements"
 	FunctionKeyName                      = "name"
 	FunctionKeyPackage                   = "package"
-	FunctionKeyRegions                   = "regions"
 	FunctionKeyTags                      = "tags"
 	FunctionKeyVariables                 = "variables"
 	FunctionImplementsHandler            = "handler"
@@ -479,7 +436,6 @@ type Worker struct {
 	Implements  string // defaulted
 	Name        string
 	Package     PackageBlock
-	Regions     Regions
 	Tags        []string
 	Variables   map[string]VariablesEntry
 }
@@ -495,7 +451,6 @@ func ReadWorker(r Resource) Worker {
 	out.Implements = r.String("implements")
 	out.Name = r.String("name")
 	out.Package = ReadPackageBlock(r)
-	out.Regions = ReadRegions(r)
 	out.Tags = r.Strings("tags")
 	for _, name := range r.Keys("variables") {
 		if out.Variables == nil {
@@ -516,7 +471,6 @@ const (
 	WorkerKeyImplements                = "implements"
 	WorkerKeyName                      = "name"
 	WorkerKeyPackage                   = "package"
-	WorkerKeyRegions                   = "regions"
 	WorkerKeyTags                      = "tags"
 	WorkerKeyVariables                 = "variables"
 	WorkerImplementsHandler            = "handler"
@@ -574,7 +528,6 @@ type Sandbox struct {
 	Lifetime    SandboxLifetime
 	Name        string
 	Package     PackageBlock
-	Regions     Regions
 	Tags        []string
 	Variables   map[string]VariablesEntry
 }
@@ -590,7 +543,6 @@ func ReadSandbox(r Resource) Sandbox {
 	out.Lifetime = ReadSandboxLifetime(r)
 	out.Name = r.String("name")
 	out.Package = ReadPackageBlock(r)
-	out.Regions = ReadRegions(r)
 	out.Tags = r.Strings("tags")
 	for _, name := range r.Keys("variables") {
 		if out.Variables == nil {
@@ -611,7 +563,6 @@ const (
 	SandboxKeyLifetime    = "lifetime"
 	SandboxKeyName        = "name"
 	SandboxKeyPackage     = "package"
-	SandboxKeyRegions     = "regions"
 	SandboxKeyTags        = "tags"
 	SandboxKeyVariables   = "variables"
 )
@@ -675,7 +626,6 @@ type Cron struct {
 	Jitter      *time.Duration
 	Name        string
 	OnOverlap   string // defaulted
-	Regions     Regions
 	Schedule    string
 	Tags        []string
 	Timezone    string // defaulted
@@ -689,7 +639,6 @@ func ReadCron(r Resource) Cron {
 	out.Jitter = present[time.Duration](r.Duration("jitter"))
 	out.Name = r.String("name")
 	out.OnOverlap = r.String("on_overlap")
-	out.Regions = ReadRegions(r)
 	out.Schedule = r.String("schedule")
 	out.Tags = r.Strings("tags")
 	out.Timezone = r.String("timezone")
@@ -703,7 +652,6 @@ const (
 	CronKeyJitter      = "jitter"
 	CronKeyName        = "name"
 	CronKeyOnOverlap   = "on_overlap"
-	CronKeyRegions     = "regions"
 	CronKeySchedule    = "schedule"
 	CronKeyTags        = "tags"
 	CronKeyTimezone    = "timezone"
@@ -719,7 +667,6 @@ type Package struct {
 	Id          string
 	Name        string
 	Output      string
-	Regions     Regions
 	Source      PackageSource
 	Tags        []string
 	Type        string
@@ -735,7 +682,6 @@ func ReadPackage(r Resource) Package {
 	out.Id = r.String("id")
 	out.Name = r.String("name")
 	out.Output = r.String("output")
-	out.Regions = ReadRegions(r)
 	out.Source = ReadPackageSource(r)
 	out.Tags = r.Strings("tags")
 	out.Type = r.String("type")
@@ -756,7 +702,6 @@ const (
 	PackageKeyId          = "id"
 	PackageKeyName        = "name"
 	PackageKeyOutput      = "output"
-	PackageKeyRegions     = "regions"
 	PackageKeySource      = "source"
 	PackageKeyTags        = "tags"
 	PackageKeyType        = "type"
@@ -930,7 +875,6 @@ type Website struct {
 	Name        string
 	Package     PackageBlock
 	Path        string // defaulted
-	Regions     Regions
 	Serve       WebsiteServe
 	Tags        []string
 }
@@ -945,7 +889,6 @@ func ReadWebsite(r Resource) Website {
 	out.Name = r.String("name")
 	out.Package = ReadPackageBlock(r)
 	out.Path = r.String("path")
-	out.Regions = ReadRegions(r)
 	out.Serve = ReadWebsiteServe(r)
 	out.Tags = r.Strings("tags")
 	return out
@@ -960,7 +903,6 @@ const (
 	WebsiteKeyName        = "name"
 	WebsiteKeyPackage     = "package"
 	WebsiteKeyPath        = "path"
-	WebsiteKeyRegions     = "regions"
 	WebsiteKeyServe       = "serve"
 	WebsiteKeyTags        = "tags"
 )
@@ -1071,7 +1013,6 @@ type Cache struct {
 	Id          string
 	Instances   Instances
 	Name        string
-	Regions     Regions
 	Replicated  *bool
 	Size        int64
 	Tags        []string
@@ -1088,7 +1029,6 @@ func ReadCache(r Resource) Cache {
 	out.Id = r.String("id")
 	out.Instances = ReadInstances(r)
 	out.Name = r.String("name")
-	out.Regions = ReadRegions(r)
 	out.Replicated = present[bool](r.Bool("replicated"))
 	out.Size, _ = r.Int("size")
 	out.Tags = r.Strings("tags")
@@ -1105,7 +1045,6 @@ const (
 	CacheKeyId           = "id"
 	CacheKeyInstances    = "instances"
 	CacheKeyName         = "name"
-	CacheKeyRegions      = "regions"
 	CacheKeyReplicated   = "replicated"
 	CacheKeySize         = "size"
 	CacheKeyTags         = "tags"
@@ -1185,7 +1124,6 @@ type Database struct {
 	Instances   Instances
 	Kv          DatabaseKv
 	Name        string
-	Regions     Regions
 	Sql         DatabaseSql
 	Tags        []string
 	Type        string // which of kv, document, sql, vector was written
@@ -1202,7 +1140,6 @@ func ReadDatabase(r Resource) Database {
 	out.Instances = ReadInstances(r)
 	out.Kv = ReadDatabaseKv(r)
 	out.Name = r.String("name")
-	out.Regions = ReadRegions(r)
 	out.Sql = ReadDatabaseSql(r)
 	out.Tags = r.Strings("tags")
 	out.Type = r.String("type")
@@ -1219,7 +1156,6 @@ const (
 	DatabaseKeyInstances   = "instances"
 	DatabaseKeyKv          = "kv"
 	DatabaseKeyName        = "name"
-	DatabaseKeyRegions     = "regions"
 	DatabaseKeySql         = "sql"
 	DatabaseKeyTags        = "tags"
 	DatabaseKeyType        = "type"
@@ -1430,7 +1366,6 @@ type Storage struct {
 	Instances   Instances
 	Name        string
 	Object      StorageObject
-	Regions     Regions
 	Size        int64 // authored at {object|streaming}/size
 	Streaming   StorageStreaming
 	Tags        []string
@@ -1446,7 +1381,6 @@ func ReadStorage(r Resource) Storage {
 	out.Instances = ReadInstances(r)
 	out.Name = r.String("name")
 	out.Object = ReadStorageObject(r)
-	out.Regions = ReadRegions(r)
 	out.Size, _ = r.Int("size")
 	out.Streaming = ReadStorageStreaming(r)
 	out.Tags = r.Strings("tags")
@@ -1462,7 +1396,6 @@ const (
 	StorageKeyInstances   = "instances"
 	StorageKeyName        = "name"
 	StorageKeyObject      = "object"
-	StorageKeyRegions     = "regions"
 	StorageKeySize        = "size"
 	StorageKeyStreaming   = "streaming"
 	StorageKeyTags        = "tags"
@@ -1523,7 +1456,6 @@ type Volume struct {
 	Id          string
 	Name        string
 	Quota       int64
-	Regions     Regions
 	Tags        []string
 }
 
@@ -1536,7 +1468,6 @@ func ReadVolume(r Resource) Volume {
 	out.Id = r.String("id")
 	out.Name = r.String("name")
 	out.Quota, _ = r.Int("quota")
-	out.Regions = ReadRegions(r)
 	out.Tags = r.Strings("tags")
 	return out
 }
@@ -1549,7 +1480,6 @@ const (
 	VolumeKeyId          = "id"
 	VolumeKeyName        = "name"
 	VolumeKeyQuota       = "quota"
-	VolumeKeyRegions     = "regions"
 	VolumeKeyTags        = "tags"
 )
 
@@ -1589,7 +1519,6 @@ type Secret struct {
 	Description string
 	Id          string
 	Name        string
-	Regions     Regions
 	Rotation    *time.Duration
 	Source      string // defaulted
 	Tags        []string
@@ -1602,7 +1531,6 @@ func ReadSecret(r Resource) Secret {
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
-	out.Regions = ReadRegions(r)
 	out.Rotation = present[time.Duration](r.Duration("rotation"))
 	out.Source = r.String("source")
 	out.Tags = r.Strings("tags")
@@ -1615,7 +1543,6 @@ const (
 	SecretKeyDescription = "description"
 	SecretKeyId          = "id"
 	SecretKeyName        = "name"
-	SecretKeyRegions     = "regions"
 	SecretKeyRotation    = "rotation"
 	SecretKeySource      = "source"
 	SecretKeyTags        = "tags"
@@ -1631,7 +1558,6 @@ type Sync struct {
 	Log         SyncLog
 	Name        string
 	Queue       SyncQueue
-	Regions     Regions
 	Tags        []string
 	Type        string // which of queue, log was written
 }
@@ -1645,7 +1571,6 @@ func ReadSync(r Resource) Sync {
 	out.Log = ReadSyncLog(r)
 	out.Name = r.String("name")
 	out.Queue = ReadSyncQueue(r)
-	out.Regions = ReadRegions(r)
 	out.Tags = r.Strings("tags")
 	out.Type = r.String("type")
 	return out
@@ -1659,7 +1584,6 @@ const (
 	SyncKeyLog         = "log"
 	SyncKeyName        = "name"
 	SyncKeyQueue       = "queue"
-	SyncKeyRegions     = "regions"
 	SyncKeyTags        = "tags"
 	SyncKeyType        = "type"
 	SyncTypeQueue      = "queue"
@@ -1766,7 +1690,6 @@ type Zone struct {
 	Id          string
 	Name        string
 	Records     []string
-	Regions     Regions
 	Resolver    ZoneResolver
 	Tags        []string
 }
@@ -1780,7 +1703,6 @@ func ReadZone(r Resource) Zone {
 	out.Id = r.String("id")
 	out.Name = r.String("name")
 	out.Records = r.Strings("records")
-	out.Regions = ReadRegions(r)
 	out.Resolver = ReadZoneResolver(r)
 	out.Tags = r.Strings("tags")
 	return out
@@ -1794,7 +1716,6 @@ const (
 	ZoneKeyId          = "id"
 	ZoneKeyName        = "name"
 	ZoneKeyRecords     = "records"
-	ZoneKeyRegions     = "regions"
 	ZoneKeyResolver    = "resolver"
 	ZoneKeyTags        = "tags"
 )
@@ -1835,7 +1756,6 @@ type Gateway struct {
 	Id           string
 	Name         string
 	RateLimit    GatewayRateLimit
-	Regions      Regions
 	Route        GatewayRoute
 	Router       Router
 	Routing      string // which of route, router was written
@@ -1854,7 +1774,6 @@ func ReadGateway(r Resource) Gateway {
 	out.Id = r.String("id")
 	out.Name = r.String("name")
 	out.RateLimit = ReadGatewayRateLimit(r)
-	out.Regions = ReadRegions(r)
 	out.Route = ReadGatewayRoute(r)
 	out.Router = ReadRouter(r)
 	out.Routing = r.String("routing")
@@ -1875,7 +1794,6 @@ const (
 	GatewayKeyId           = "id"
 	GatewayKeyName         = "name"
 	GatewayKeyRateLimit    = "rate_limit"
-	GatewayKeyRegions      = "regions"
 	GatewayKeyRoute        = "route"
 	GatewayKeyRouter       = "router"
 	GatewayKeyRouting      = "routing"
@@ -1958,6 +1876,8 @@ const (
 type GatewayRoute struct {
 	AuthorizerName      string
 	AuthorizerNamespace string
+	CacheTtl            *time.Duration
+	CacheVary           []string
 	HandlerIndex        string // authored at route/handler/package/index
 	HandlerKind         string // which of function, application, package, gateway, mcp, agent, bus was written
 	HandlerMode         string // authored at route/handler/package/mode
@@ -1983,6 +1903,8 @@ func ReadGatewayRoute(r Resource) GatewayRoute {
 	var out GatewayRoute
 	out.AuthorizerName = r.String("route", "authorizer", "name")
 	out.AuthorizerNamespace = r.String("route", "authorizer", "namespace")
+	out.CacheTtl = present[time.Duration](r.Duration("route", "cache", "ttl"))
+	out.CacheVary = r.Strings("route", "cache", "vary")
 	out.HandlerIndex = r.String("route", "handler", "index")
 	out.HandlerKind = r.String("route", "handler", "kind")
 	out.HandlerMode = r.String("route", "handler", "mode")
@@ -1999,6 +1921,8 @@ func ReadGatewayRoute(r Resource) GatewayRoute {
 	out.Target = r.String("route", "target")
 	out.Declared = r.Has("route", "authorizer", "name") ||
 		r.Has("route", "authorizer", "namespace") ||
+		r.Has("route", "cache", "ttl") ||
+		r.Has("route", "cache", "vary") ||
 		r.Has("route", "handler", "index") ||
 		r.Has("route", "handler", "kind") ||
 		r.Has("route", "handler", "mode") ||
@@ -2019,6 +1943,8 @@ func ReadGatewayRoute(r Resource) GatewayRoute {
 const (
 	GatewayRouteKeyAuthorizerName      = "route/authorizer/name"
 	GatewayRouteKeyAuthorizerNamespace = "route/authorizer/namespace"
+	GatewayRouteKeyCacheTtl            = "route/cache/ttl"
+	GatewayRouteKeyCacheVary           = "route/cache/vary"
 	GatewayRouteKeyHandlerIndex        = "route/handler/index"
 	GatewayRouteKeyHandlerKind         = "route/handler/kind"
 	GatewayRouteKeyHandlerMode         = "route/handler/mode"
@@ -2118,7 +2044,6 @@ type Proxy struct {
 	Id           string
 	Name         string
 	RateLimit    ProxyRateLimit
-	Regions      Regions
 	Router       Router
 	Routing      string // which of forward, router was written
 	Service      string
@@ -2137,7 +2062,6 @@ func ReadProxy(r Resource) Proxy {
 	out.Id = r.String("id")
 	out.Name = r.String("name")
 	out.RateLimit = ReadProxyRateLimit(r)
-	out.Regions = ReadRegions(r)
 	out.Router = ReadRouter(r)
 	out.Routing = r.String("routing")
 	out.Service = r.String("service")
@@ -2158,7 +2082,6 @@ const (
 	ProxyKeyId           = "id"
 	ProxyKeyName         = "name"
 	ProxyKeyRateLimit    = "rate_limit"
-	ProxyKeyRegions      = "regions"
 	ProxyKeyRouter       = "router"
 	ProxyKeyRouting      = "routing"
 	ProxyKeyService      = "service"
@@ -2270,7 +2193,6 @@ type Stream struct {
 	Host        string // authored at {kafka|nats}/host
 	Id          string
 	Name        string
-	Regions     Regions
 	Sasl        string // authored at kafka/sasl
 	Tags        []string
 	Tls         string // authored at {kafka|nats}/tls
@@ -2286,7 +2208,6 @@ func ReadStream(r Resource) Stream {
 	out.Host = r.String("host")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
-	out.Regions = ReadRegions(r)
 	out.Sasl = r.String("sasl")
 	out.Tags = r.Strings("tags")
 	out.Tls = r.String("tls")
@@ -2302,7 +2223,6 @@ const (
 	StreamKeyHost           = "host"
 	StreamKeyId             = "id"
 	StreamKeyName           = "name"
-	StreamKeyRegions        = "regions"
 	StreamKeySasl           = "sasl"
 	StreamKeyTags           = "tags"
 	StreamKeyTls            = "tls"
@@ -2350,7 +2270,6 @@ type Bus struct {
 	Id          string
 	Instances   Instances
 	Name        string
-	Regions     Regions
 	Tags        []string
 }
 
@@ -2362,7 +2281,6 @@ func ReadBus(r Resource) Bus {
 	out.Id = r.String("id")
 	out.Instances = ReadInstances(r)
 	out.Name = r.String("name")
-	out.Regions = ReadRegions(r)
 	out.Tags = r.Strings("tags")
 	return out
 }
@@ -2374,7 +2292,6 @@ const (
 	BusKeyId          = "id"
 	BusKeyInstances   = "instances"
 	BusKeyName        = "name"
-	BusKeyRegions     = "regions"
 	BusKeyTags        = "tags"
 )
 
@@ -2384,7 +2301,6 @@ type Mcp struct {
 	Description string
 	Id          string
 	Name        string
-	Regions     Regions
 	Tags        []string
 	Tools       McpTools
 }
@@ -2396,7 +2312,6 @@ func ReadMcp(r Resource) Mcp {
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
-	out.Regions = ReadRegions(r)
 	out.Tags = r.Strings("tags")
 	out.Tools = ReadMcpTools(r)
 	return out
@@ -2408,7 +2323,6 @@ const (
 	McpKeyDescription = "description"
 	McpKeyId          = "id"
 	McpKeyName        = "name"
-	McpKeyRegions     = "regions"
 	McpKeyTags        = "tags"
 	McpKeyTools       = "tools"
 )
@@ -2448,7 +2362,6 @@ type Channel struct {
 	Id          string
 	Name        string
 	Protocol    string
-	Regions     Regions
 	Serve       ChannelServe
 	Tags        []string
 }
@@ -2461,7 +2374,6 @@ func ReadChannel(r Resource) Channel {
 	out.Id = r.String("id")
 	out.Name = r.String("name")
 	out.Protocol = r.String("protocol")
-	out.Regions = ReadRegions(r)
 	out.Serve = ReadChannelServe(r)
 	out.Tags = r.Strings("tags")
 	return out
@@ -2474,7 +2386,6 @@ const (
 	ChannelKeyId          = "id"
 	ChannelKeyName        = "name"
 	ChannelKeyProtocol    = "protocol"
-	ChannelKeyRegions     = "regions"
 	ChannelKeyServe       = "serve"
 	ChannelKeyTags        = "tags"
 )
@@ -2525,7 +2436,6 @@ type Model struct {
 	Inference   ModelInference
 	Name        string
 	Parameters  ModelParameters
-	Regions     Regions
 	Tags        []string
 }
 
@@ -2540,7 +2450,6 @@ func ReadModel(r Resource) Model {
 	out.Inference = ReadModelInference(r)
 	out.Name = r.String("name")
 	out.Parameters = ReadModelParameters(r)
-	out.Regions = ReadRegions(r)
 	out.Tags = r.Strings("tags")
 	return out
 }
@@ -2555,7 +2464,6 @@ const (
 	ModelKeyInference    = "inference"
 	ModelKeyName         = "name"
 	ModelKeyParameters   = "parameters"
-	ModelKeyRegions      = "regions"
 	ModelKeyTags         = "tags"
 	ModelFormatOpenai    = "openai"
 	ModelFormatAnthropic = "anthropic"
@@ -2655,7 +2563,6 @@ type Agent struct {
 	Memory       AgentMemory
 	Model        AgentModel
 	Name         string
-	Regions      Regions
 	Source       AgentSource
 	Tags         []string
 	Variables    map[string]VariablesEntry
@@ -2673,7 +2580,6 @@ func ReadAgent(r Resource) Agent {
 	out.Memory = ReadAgentMemory(r)
 	out.Model = ReadAgentModel(r)
 	out.Name = r.String("name")
-	out.Regions = ReadRegions(r)
 	out.Source = ReadAgentSource(r)
 	out.Tags = r.Strings("tags")
 	for _, name := range r.Keys("variables") {
@@ -2696,7 +2602,6 @@ const (
 	AgentKeyMemory       = "memory"
 	AgentKeyModel        = "model"
 	AgentKeyName         = "name"
-	AgentKeyRegions      = "regions"
 	AgentKeySource       = "source"
 	AgentKeyTags         = "tags"
 	AgentKeyVariables    = "variables"
@@ -2845,7 +2750,6 @@ type Workflow struct {
 	Entry       map[string]WorkflowEntryEntry
 	Id          string
 	Name        string
-	Regions     Regions
 	Start       string
 	Steps       []WorkflowStepsEntry
 	Tags        []string
@@ -2866,7 +2770,6 @@ func ReadWorkflow(r Resource) Workflow {
 	}
 	out.Id = r.String("id")
 	out.Name = r.String("name")
-	out.Regions = ReadRegions(r)
 	out.Start = r.String("start")
 	for _, e := range r.List("steps") {
 		out.Steps = append(out.Steps, ReadWorkflowStepsEntry(e))
@@ -2884,7 +2787,6 @@ const (
 	WorkflowKeyEntry       = "entry"
 	WorkflowKeyId          = "id"
 	WorkflowKeyName        = "name"
-	WorkflowKeyRegions     = "regions"
 	WorkflowKeyStart       = "start"
 	WorkflowKeySteps       = "steps"
 	WorkflowKeyTags        = "tags"
@@ -3015,7 +2917,7 @@ type Namespace struct {
 	Description string
 	Id          string
 	Name        string
-	Regions     []string
+	Regions     NamespaceRegions
 	Tags        []string
 }
 
@@ -3025,7 +2927,7 @@ func ReadNamespace(r Resource) Namespace {
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
-	out.Regions = r.Strings("regions")
+	out.Regions = ReadNamespaceRegions(r)
 	out.Tags = r.Strings("tags")
 	return out
 }
@@ -3037,6 +2939,35 @@ const (
 	NamespaceKeyName        = "name"
 	NamespaceKeyRegions     = "regions"
 	NamespaceKeyTags        = "tags"
+)
+
+// NamespaceRegions is the "regions" block of Namespace, read from a compiled object.
+type NamespaceRegions struct {
+	In       []string
+	Topology string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadNamespaceRegions decodes one from a resource.
+func ReadNamespaceRegions(r Resource) NamespaceRegions {
+	var out NamespaceRegions
+	out.In = r.Strings("regions", "in")
+	out.Topology = r.String("regions", "topology")
+	out.Declared = r.Has("regions", "in") ||
+		r.Has("regions", "topology")
+	return out
+}
+
+// NamespaceRegions's keys, and the values its fields may hold.
+const (
+	NamespaceRegionsKeyIn            = "regions/in"
+	NamespaceRegionsKeyTopology      = "regions/topology"
+	NamespaceRegionsTopologySingle   = "single"
+	NamespaceRegionsTopologyFailover = "failover"
+	NamespaceRegionsTopologyActive   = "active"
 )
 
 // Environments is that kind, read from a compiled object.

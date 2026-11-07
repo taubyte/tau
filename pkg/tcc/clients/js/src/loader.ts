@@ -26,7 +26,7 @@ export interface ViewsOptions extends CompileOptions {
 
 /** How a resource is held in one region. */
 export type Role =
-  | "anywhere" | "pinned" | "main" | "standby" | "seed" | "demand"
+  | "anywhere" | "single" | "active" | "primary" | "standby"
   | "placed" | "needed" | "follows" | "scope";
 
 /** Something the cut had to say: a placement concern, or an edge it refused. */
@@ -45,6 +45,8 @@ export interface RegionView {
   object: Record<string, unknown>;
   /** Compiled id -> how it is held there. */
   roles: Record<string, Role>;
+  /** An origin reached from this region and run only elsewhere, by compiled id: where it runs. */
+  remote: Record<string, string[]>;
   /** A region served with nothing placed in it — unlike one not served at all. */
   empty: boolean;
 }

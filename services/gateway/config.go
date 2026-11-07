@@ -147,6 +147,10 @@ type Config struct {
 	// on disk at once. Default DefaultFilesBudget.
 	FilesBudget int64
 
+	// CacheBudget bounds the bytes of answers kept for routes that say `cache:`.
+	// Default DefaultCacheBudget.
+	CacheBudget int64
+
 	// Wildcard is the certificate for this cloud's own zone, which is what a
 	// generated name answers a handshake with.
 	//
@@ -348,6 +352,9 @@ func (c Config) withDefaults() (Config, error) {
 	if c.FilesBudget == 0 {
 		c.FilesBudget = DefaultFilesBudget
 	}
+	if c.CacheBudget == 0 {
+		c.CacheBudget = DefaultCacheBudget
+	}
 	switch {
 	case c.MaxHosts < 1:
 		return Config{}, fmt.Errorf("gateway: %d hosts: a table that holds nothing asks on every request", c.MaxHosts)
@@ -357,6 +364,8 @@ func (c Config) withDefaults() (Config, error) {
 		return Config{}, fmt.Errorf("gateway: %d bytes: a body limit of nothing refuses every request with a body", c.MaxBody)
 	case c.FilesBudget < 1:
 		return Config{}, fmt.Errorf("gateway: %d bytes: a files budget of nothing unpacks nothing", c.FilesBudget)
+	case c.CacheBudget < 1:
+		return Config{}, fmt.Errorf("gateway: %d bytes: a cache budget of nothing keeps nothing", c.CacheBudget)
 	}
 	return c, nil
 }

@@ -293,7 +293,7 @@ func TestScopeOfFindsTheChain(t *testing.T) {
 	assert.Assert(t, scopeOf(root, object.New[object.Refrence](), containers) == nil)
 }
 
-func TestAttrValuesAndString(t *testing.T) {
+func TestAttrValues(t *testing.T) {
 	inst := covObj(t, map[string]any{
 		"one":   "x",
 		"empty": "",
@@ -308,25 +308,21 @@ func TestAttrValuesAndString(t *testing.T) {
 	type testCase struct {
 		a    *engine.Attribute
 		vals []string
-		str  string
 	}
 	cases := []testCase{
-		{attr("one"), []string{"x"}, "x"},
-		{attr("empty"), nil, ""},
-		{attr("many"), []string{"a", "b"}, ""},
-		{attr("mixed"), []string{"a", "b"}, ""},
-		{attr("num"), nil, ""},
-		{attr("absent"), nil, ""},
-		{attr("deep-leaf", "deep", "leaf"), []string{"y"}, "y"},
-		{attr("deep-list", "deep", "list"), []string{"z"}, ""},
-		{attr("nowhere", "nowhere", "leaf"), nil, ""},
+		{attr("one"), []string{"x"}},
+		{attr("empty"), nil},
+		{attr("many"), []string{"a", "b"}},
+		{attr("mixed"), []string{"a", "b"}},
+		{attr("num"), nil},
+		{attr("absent"), nil},
+		{attr("deep-leaf", "deep", "leaf"), []string{"y"}},
+		{attr("deep-list", "deep", "list"), []string{"z"}},
+		{attr("nowhere", "nowhere", "leaf"), nil},
 	}
 	for _, c := range cases {
 		t.Run(c.a.Name, func(t *testing.T) {
 			assert.DeepEqual(t, attrValues(inst, c.a), c.vals)
-			s, ok := attrString(inst, c.a)
-			assert.Equal(t, s, c.str)
-			assert.Equal(t, ok, c.str != "")
 		})
 	}
 }

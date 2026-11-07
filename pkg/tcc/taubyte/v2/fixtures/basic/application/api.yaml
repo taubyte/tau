@@ -26,10 +26,6 @@ variables:
         value: info
     REGION:
         value: region-1
-regions:
-    failover:
-        main: region-1
-        standby: region-2
 egress: [api.stripe.com]
 cache:
     orders:

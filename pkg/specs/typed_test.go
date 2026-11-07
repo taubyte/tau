@@ -108,14 +108,11 @@ func TestADefaultedBlockIsNotADeclaredOne(t *testing.T) {
 	require.False(t, pool.Liveness.Declared, "and is not evidence anybody wrote a probe")
 	require.True(t, pool.Readiness.Declared)
 	require.Equal(t, specs.ApplicationReadinessKindFunction, pool.Readiness.Kind)
-	require.False(t, pool.Regions.Declared)
 
 	api := specs.ReadApplication(resource(t, nil, specs.KindApplication, "api"))
 	require.True(t, api.Liveness.Declared)
 	require.Equal(t, specs.ApplicationLivenessKindHttp, api.Liveness.Kind)
 	require.Equal(t, "/livez", api.Liveness.HttpPath)
-	require.Equal(t, specs.RegionsPolicyFailover, api.Regions.Policy)
-	require.Equal(t, "region-2", api.Regions.Standby)
 
 	site := specs.ReadGateway(resource(t, nil, specs.KindGateway, "api"))
 	require.Equal(t, specs.GatewayRoutingRouter, site.Routing)

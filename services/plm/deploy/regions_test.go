@@ -21,7 +21,7 @@ func TestARegionThisCloudDoesNotServeIsRefusedByDefault(t *testing.T) {
 	var log out
 	err = pushed(t.Context(), d, work(), &log)
 	require.ErrorIs(t, err, deploy.ErrBroken)
-	require.ErrorContains(t, err, `cache/sessions in shop: is placed in region "region-1", which this build does not serve`)
+	require.ErrorContains(t, err, `allows regions "region-1", "region-2", which this build does not serve`)
 	_, err = r.Resolve(t.Context(), shopID, "prod")
 	require.Error(t, err, "nothing was published")
 }

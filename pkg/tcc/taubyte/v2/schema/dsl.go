@@ -58,6 +58,7 @@ var (
 	AnswersAt        = engine.AnswersAt
 	ByName           = engine.ByName
 	Serves           = engine.Serves
+	Origin           = engine.Origin
 	Inbound          = engine.Inbound
 	EmitValidation   = engine.EmitValidation
 	Field            = engine.Field

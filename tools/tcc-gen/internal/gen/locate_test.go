@@ -43,15 +43,16 @@ func TestACapturedBranchIsReportedAsTheDiscriminator(t *testing.T) {
 	require.True(t, model.Captures)
 	require.Equal(t, []string{"object", "streaming"}, model.Branch)
 
-	region := locationOf(t, "storage", "regions/policy")
-	require.True(t, region.Captures, "a kind may be discriminated twice")
-	require.Equal(t, []string{"pinned", "cdn", "failover"}, region.Branch, "declaration order, which is the order an author reads them in")
+	handler := locationOf(t, "gateway", "route/handler/kind")
+	require.True(t, handler.Captures, "a kind may be discriminated twice")
+	require.Equal(t, []string{"function", "application", "package", "gateway", "mcp", "agent", "bus"}, handler.Branch,
+		"declaration order, which is the order an author reads them in")
 
-	// A PLAIN SEGMENT IS NOT A BRANCH. `regions/failover/main` is authored under a
-	// literal, so there is nothing to choose and nothing to report.
-	main := locationOf(t, "storage", "regions/main")
-	require.Empty(t, main.Branch)
-	require.Equal(t, "regions/failover/main", strings.Join(main.Authored, "/"))
+	// A PLAIN SEGMENT IS NOT A BRANCH. `route/cache/ttl` is authored under literals,
+	// so there is nothing to choose and nothing to report.
+	ttl := locationOf(t, "gateway", "route/cache/ttl")
+	require.Empty(t, ttl.Branch)
+	require.Equal(t, "route/cache/ttl", strings.Join(ttl.Authored, "/"))
 }
 
 func TestTheReaderIsChosenByTheDeclaredType(t *testing.T) {
@@ -85,8 +86,8 @@ func TestAKindsFieldsAreNotWhatItHolds(t *testing.T) {
 	for _, l := range Locations(root, "namespace") {
 		ns = append(ns, l.Path())
 	}
-	require.ElementsMatch(t, []string{"description", "id", "name", "regions", "tags"}, ns,
-		"a namespace has its identity and its allowance; everything else in it is a resource")
+	require.ElementsMatch(t, []string{"description", "id", "name", "regions/topology", "regions/in", "tags"}, ns,
+		"a namespace has its identity and its regions; everything else in it is a resource")
 
 	// AND NO KIND READS AN ACCESS ENTRY AS A FIELD OF ITS OWN. The ops live at
 	// `<kind>/<label>/ops` — a map of labels — so a flat read of the bare key is

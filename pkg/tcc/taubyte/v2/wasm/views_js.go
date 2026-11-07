@@ -60,7 +60,15 @@ func viewsResult(flat map[string]any, environment string, r schema.Regions) map[
 		for id, role := range v.Roles {
 			roles[id] = string(role)
 		}
-		byRegion[region] = map[string]any{"object": v.Object, "roles": roles, "empty": v.Empty()}
+		remote := map[string]any{}
+		for id, regions := range v.Remote {
+			held := make([]any, len(regions))
+			for i, r := range regions {
+				held[i] = r
+			}
+			remote[id] = held
+		}
+		byRegion[region] = map[string]any{"object": v.Object, "roles": roles, "remote": remote, "empty": v.Empty()}
 	}
 	out["views"] = byRegion
 	return out

@@ -232,16 +232,14 @@ func holderOf(sel object.Selector[object.Refrence], a *engine.Attribute) (object
 func (d *CompileDriver) applyRootOps(ct transform.Context[object.Refrence], o object.Object[object.Refrence], attrs []*engine.Attribute) error {
 	for _, a := range attrs {
 		if ve, ok := a.Meta["emitValidation"].(engine.ValidationEmit); ok {
-			// The same read emitAttrValidations does, by the path the key is; absent emits
-			// nothing.
-			val, held := attrString(o, a)
-			if !held {
-				continue
-			}
-			store := ct.Store().Validators()
-			vals := append(store.Get(), engine.NewNextValidation(ve.Key, val, ve.Validator, map[string]any{}))
-			if _, err := store.Set(vals); err != nil {
-				return fmt.Errorf("storing validations failed with %w", err)
+			// The same read emitAttrValidations does, by the path the key is, one value or
+			// a list of them; absent emits nothing.
+			for _, val := range attrValues(o, a) {
+				store := ct.Store().Validators()
+				vals := append(store.Get(), engine.NewNextValidation(ve.Key, val, ve.Validator, map[string]any{}))
+				if _, err := store.Set(vals); err != nil {
+					return fmt.Errorf("storing validations failed with %w", err)
+				}
 			}
 		}
 		if b, _ := a.Meta["wireDrop"].(bool); b {

@@ -15,6 +15,9 @@ import (
 type candidate struct {
 	host    specs.Host
 	gateway specs.Gateway
+
+	// elsewhere is a route whose handler runs only in another region.
+	elsewhere bool
 }
 
 // match is the winning route, decomposed.

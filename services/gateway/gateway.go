@@ -68,6 +68,9 @@ type Service struct {
 	assets    Assets
 	files     *unpacked
 
+	// answers is what routes that say `cache:` keep. See cache.go.
+	answers *answers
+
 	// cands memoises candidatesAt, a candKey's []candidate: a compiled project never
 	// changes once loaded. The candidates are shared, so nothing may write through
 	// them. A request reads it without a lock; candMu orders the writes and guards
@@ -142,6 +145,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		artifacts: o.artifacts,
 		assets:    o.assets,
 		files:     newUnpacked(cfg.FilesBudget),
+		answers:   newAnswers(cfg.CacheBudget),
 	}, nil
 }
 
@@ -194,7 +198,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	proj, _, err := s.projects.At(ctx, register.Deployment{Project: projectName, Environment: environment})
+	proj, release, err := s.projects.At(ctx, register.Deployment{Project: projectName, Environment: environment})
 	if err != nil {
 		refuse(w, statusFor(err), "this environment cannot be read")
 		return
@@ -303,6 +307,17 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A KEPT ANSWER is served after the guard and the chain, which decide per request,
+	// and before anything that would ask the handler.
+	key, cached := cacheKey(m, release.Object, name, r, req)
+	if cached {
+		if k, ok := s.answers.get(key, s.now()); ok {
+			billed.served = true
+			k.served(w, s.now())
+			return
+		}
+	}
+
 	// A package's files are read here rather than run: the same place in the order,
 	// and nothing is invoked.
 	if m.handler().HandlerKind == packageKind {
@@ -312,6 +327,9 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		billed.served = true
+		if cached {
+			s.keep(w, key, routeTtl(m.gateway), res)
+		}
 		writeTo(w, res)
 		return
 	}
@@ -349,6 +367,9 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// invocation count can show.
 	billed.served = true
 
+	if cached {
+		s.keep(w, key, routeTtl(m.gateway), res)
+	}
 	writeTo(w, res)
 }
 
@@ -522,7 +543,12 @@ func (s *Service) shaped(ctx context.Context, m match, projectName, environment 
 // unbuilt reports the parts of the vocabulary this gateway cannot yet honour,
 // rather than serving a request as if they were not there.
 func (s *Service) unbuilt(m match) (int, string) {
-
+	if m.elsewhere {
+		// The compile let this route reach a handler held in another region, and
+		// nothing here carries a request between regions.
+		s.logf("gateway: %s %s routes to %s/%s, which this region does not run", m.host.Name, m.Path, m.handler().HandlerKind, m.handler().HandlerName)
+		return http.StatusBadGateway, "this route's handler runs in another region"
+	}
 	return 0, ""
 }
 
@@ -560,9 +586,27 @@ func readCandidates(p *specs.Project, lookup string) []candidate {
 		if err != nil {
 			continue
 		}
-		out = append(out, candidate{host: h, gateway: specs.ReadGateway(r)})
+		c := candidate{host: h, gateway: specs.ReadGateway(r)}
+		c.elsewhere = handlerElsewhere(p, c)
+		out = append(out, c)
 	}
 	return out
+}
+
+// handlerElsewhere is a route whose own handler this project's view does not hold: a
+// handler in a namespace that runs in other regions than the gateway's, which the
+// compile allows a route alone to reach.
+func handlerElsewhere(p *specs.Project, c candidate) bool {
+	route := c.gateway.Route
+	if route.HandlerName == "" || route.Target == specs.GatewayRouteTargetRouter {
+		return false
+	}
+	scope := c.host.Scope
+	if declared := route.HandlerNamespace; declared != "" {
+		scope = splitScope(declared)
+	}
+	_, _, err := p.Resource(scope, route.HandlerKind, route.HandlerName)
+	return errors.Is(err, specs.ErrNotFound)
 }
 
 // gatewayKind is an HTTP entry point. A proxy answers on a name too, but carries a

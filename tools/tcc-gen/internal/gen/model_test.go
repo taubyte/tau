@@ -54,8 +54,8 @@ func TestANestedGroupIsEntriesNotFields(t *testing.T) {
 func TestSharedBlocksAreFoundNotListed(t *testing.T) {
 	_, types := modelOf(t)
 
-	for _, kind := range []string{"Application", "Function", "Storage", "Workflow"} {
-		require.Equal(t, "Regions", memberOf(t, types[kind], "Regions").goType(), kind)
+	for _, kind := range []string{"Function", "Storage", "Workflow"} {
+		require.Equal(t, "Authorizer", memberOf(t, types[kind], "Authorizer").goType(), kind)
 	}
 	require.Equal(t, "Instances", memberOf(t, types["Database"], "Instances").goType())
 	require.Equal(t, "Authorizer", memberOf(t, types["Cache"], "Authorizer").goType())

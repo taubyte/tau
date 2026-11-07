@@ -10,5 +10,3 @@ execution:
 function:
     checkout:
         ops: [invoke]
-regions:
-    pinned: [region-1]

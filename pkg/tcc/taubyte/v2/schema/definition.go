@@ -296,11 +296,10 @@ func instanceAttributes() []*Attribute {
 
 var secInstances = Section("instances", "Instances", "Whether this holds one instance or many, how many, and who admits a new one.")
 
-// Footprint marks a kind whose instances run or store bytes, so one stating no
-// placement still runs anywhere its allowance permits; a kind without one is held
-// where what reaches it is. It only decides what an absent region block means.
-// Not derived from Category: website, model, channel and secret are the
-// exceptions.
+// Footprint marks a kind that runs where its namespace does; a kind without one is
+// held where what reaches it is. Not derived from Category: website, model, channel
+// and secret have none, and a gateway has one, since the edge is where its namespace
+// puts it rather than where its handler runs.
 func Footprint() NodeOption { return GroupAnnotate("footprint", true) }
 
 // FootprintIter reports whether a kind's iterator declares Footprint().
@@ -336,54 +335,42 @@ func CompletesOf(kind string) bool {
 	return false
 }
 
-// attachPlacement hangs the Inherited() region block off every kind except a
-// scope container, whose `regions` is the allowance. It runs before
-// attachLowerable, which copies a kind's attributes into its lowered shape.
-func attachPlacement() {
-	for _, g := range V2Resources {
-		if len(g.Children) == 0 || g.Children[0].Group {
-			continue
-		}
-		iter := g.Children[0]
-		iter.Attributes = append(iter.Attributes, regionAttributes()...)
-		secPlacement(iter)
-	}
-}
+// Topologies are how a scope runs across the regions it is in. Only a scope states
+// one: a resource runs as the namespace holding it does. What a topology needs of a
+// kind (who writes during a failover, how an active store converges) is the
+// platform's to carry out or refuse by name, never the author's to spell.
+const (
+	TopologySingle   = "single"
+	TopologyFailover = "failover"
+	TopologyActive   = "active"
+)
 
-// regionAttributes is where one resource may run: its placement, within the
-// allowance (`regions` on the project and namespaces). A region name is an opaque
-// label the implementation defines, so the schema never checks one: checkRegions
-// does against a declared allowance, and the audit's Regions against what the
-// platform serves. The policy is a switch; failover names main and standby rather
-// than relying on list position.
+// Topologies is every topology, in the order an author reads them.
+var Topologies = []string{TopologySingle, TopologyFailover, TopologyActive}
+
+// scopeRegionAttributes is a scope's `regions` block: the regions everything in it
+// runs in, and how. Each field it omits is its parent's. A scope narrows the regions
+// above it and never widens them, and picks its own topology; both span documents,
+// so the audit checks them (checkRegions).
 //
-//	regions:                regions:                regions:
-//	    pinned: [eu, us]        cdn: [eu]               failover:
-//	                                                        main: eu
-//	                                                        standby: us
-//
-// Regions vary per environment on the chosen branch (`pinned_preview: [us]`);
-// the policy itself cannot, since it is the branch key. An absent block means
-// anywhere the allowance permits, so the switch is not Required().
-func regionAttributes() []*Attribute {
+//	regions:
+//	    topology: failover
+//	    in: [eu-1, eu-2]    # failover: the first is primary
+func scopeRegionAttributes(scope string, opts ...AttrOption) []*Attribute {
 	return []*Attribute{
-		String(Key("regions", "policy"), Path("regions", Either("pinned", "cdn", "failover")), Captures(), Inherited(), InSection("placement"),
-			Doc("Placement", "pinned: these regions only — the data-residency line. cdn: seeded here, then follows demand within the allowance. failover: exactly two, the first one main. Omit the block for anywhere the allowance permits.")),
-
-		// A list: a resource pinned to eu and us has copies in both.
-		StringSlice(Key("regions", "in"), Path("regions", Either("pinned", "cdn")),
-			RequiredWhen(Key("regions", "policy"), "pinned"), PerEnv(), Inherited(), EmitValidation("region", "region"), InSection("placement"),
-			Doc("Regions", "pinned: every region this is kept in. cdn: the regions it starts in before demand moves it — omit them and the platform seeds the choice.")),
-
-		// Failover keeps named fields: which region is main is the whole statement.
-		String(Key("regions", "main"), Path("regions", "failover", "main"), RequiredWhen(Key("regions", "policy"), "failover"), ShowWhen(Key("regions", "policy"), "failover"), Inherited(), EmitValidation("region", "region"), InSection("placement"),
-			Doc("Main", "Where this runs while it can.")),
-		String(Key("regions", "standby"), Path("regions", "failover", "standby"), RequiredWhen(Key("regions", "policy"), "failover"), ShowWhen(Key("regions", "policy"), "failover"), Inherited(), EmitValidation("region", "region"), InSection("placement"),
-			Doc("Standby", "Where it runs when the main is gone.")),
+		String(Key("regions", "topology"), append([]AttrOption{InSet(Topologies...), PerEnv(),
+			Doc("Topology", "How everything in this "+scope+" runs across its regions. single: in its one region. failover: in the first region, and in the next when that one is lost. active: in every region at once, each caller served by the nearest. Omitted means the parent's."+topologyRoot(scope))}, opts...)...),
+		StringSlice(Key("regions", "in"), append([]AttrOption{PerEnv(), EmitValidation("region", "region"),
+			Doc("Regions", "The regions everything in this "+scope+" runs in, as names the cloud offers; for failover, in the order it falls back. Omitted means the parent's. A scope below may narrow this list and never widen it.")}, opts...)...),
 	}
 }
 
-var secPlacement = Section("placement", "Placement", "Where this may run, within what its scopes allow.")
+func topologyRoot(scope string) string {
+	if scope == "project" {
+		return " Required once more than one region is named."
+	}
+	return ""
+}
 
 // A tier is named by the package type it runs, so the artifact and what runs it are
 // one word (package.go):
@@ -1243,12 +1230,20 @@ var V2Resources = []*Node{
 					Doc("Strip Prefix", "Remove the matched path prefix before handing the request on. A package's files mounted anywhere but / usually want this.")),
 				StringSlice(Key("route", "methods"), EachInSet(HttpMethods...), InSection("route"), Doc("Methods", "HTTP methods answered. Omit for any. GET/HEAD/OPTIONS read, the rest write.")),
 
+				// What the gateway keeps of an answer, so a name served in many regions answers
+				// where the caller is without asking a handler that may run in one. A release is
+				// a new key, so a deploy is never answered from the one before.
+				Duration(Key("route", "cache", "ttl"), PerEnv(), InSection("cache"),
+					Doc("Cache For", "Keep a GET or HEAD answer this long when the handler's Cache-Control does not say; its s-maxage or max-age wins, and no-store, private or a Set-Cookie keeps it out. Omitted keeps nothing.")),
+				StringSlice(Key("route", "cache", "vary"), InSection("cache"),
+					Doc("Vary On", "Request headers that make two answers different, besides the method, path and query.")),
+
 				// One handler and no weight: traffic splitting is not expressible here.
 				String(Key("route", "handler", "kind"), Path("route", "handler", Either(handlerKinds...)), Captures(), Field("HandlerKind"), InSection("handler"), Doc("Handler", "Which kind serves this path (the key selects the handler block).")),
 				String(Key("route", "handler", "namespace"), Path("route", "handler", Either(handlerKinds...), "namespace"), InSection("handler"), Doc("Namespace", "Path to the namespace holding the handler, e.g. \"/shop/eu\". Omitted means the project root.")),
 				// Required once there is a handler, so a route cannot name a kind and no
 				// resource; not outright, since a router has no handler block.
-				String(Key("route", "handler", "name"), Path("route", "handler", Either(handlerKinds...), "name"), RequiredWhen(Key("route", "target"), "handler"), IsVariableName(), Ref("", KindFrom(Key("route", "handler", "kind")), ByName(), Serves()), InSection("handler"), Doc("Name", "The handler resource's name within that namespace.")),
+				String(Key("route", "handler", "name"), Path("route", "handler", Either(handlerKinds...), "name"), RequiredWhen(Key("route", "target"), "handler"), IsVariableName(), Ref("", KindFrom(Key("route", "handler", "kind")), ByName(), Origin()), InSection("handler"), Doc("Name", "The handler resource's name within that namespace. It may run in fewer regions than this gateway: a request is carried to it from where it is not.")),
 				String(Key("route", "handler", "port"), Path("route", "handler", Either(handlerKinds...), "port"), IsVariableName(), InSection("handler"), Doc("Port", "Which of the handler's ports to reach, by name. A workload listening on more than one has to be told which, and the number is never written here — the platform assigns the external one, and there may be several instances of the workload on one host.")),
 
 				// A package handler is its built files, served by the gateway itself: only an
@@ -1271,12 +1266,13 @@ var V2Resources = []*Node{
 				String(Key("rate_limit", "key"), InSection("policy"), Doc("Rate Limit Key", "What the limit is counted per: \"ip\" or \"header:<name>\".")),
 			), httpAuthorizerAttributes()...), httpAuthorizerAttributes("route")...),
 			Nested(transformersGroup()),
-			GroupDoc("A name, the policy at it, and what it serves — one static route, or a function that routes."), Category("internet"), Icon("route"),
+			GroupDoc("A name, the policy at it, and what it serves — one static route, or a function that routes."), Category("internet"), Icon("route"), Footprint(),
 			AnswersAt("host"),
 			secIdentity, secTransformers,
 			Section("naming", "Naming", "The name served, and where its certificate comes from."),
 			Section("route", "Route", "The path served and how it is matched."),
 			Section("handler", "Handler", "What serves it."),
+			Section("cache", "Cache", "What this name keeps of an answer, and for how long."),
 			Section("policy", "Policy", "Who may reach this, and how often — the authorizer, CORS and rate limiting."),
 			Resource("gateway", "Gateway", "Gateway", "gateway"),
 		)),
@@ -1723,7 +1719,7 @@ var V2Resources = []*Node{
 
 // rootAttributes is the project root.
 func rootAttributes() []*Attribute {
-	return []*Attribute{
+	return append([]*Attribute{
 		String("id", IsCID(), Required(), Generated(GenCID), EmitValidation("project_id", "project_id"), Doc("ID", "Content-addressed identifier (CID) of the project.")),
 		String("name", IsVariableName(), Doc("Name", "Project name. Must be a valid variable name.")),
 
@@ -1740,15 +1736,7 @@ func rootAttributes() []*Attribute {
 			Doc("Zone Label", "The project's label in a cloud's generated zone, derived from its id. Read-only.")),
 		String("description", Doc("Description", "Free-form, human-readable description of the project.")),
 		StringSlice("tags", WireDrop(), Doc("Tags", "Project-level labels.")),
-
-		// The allowance, a scope's statement: where anything under it may be placed,
-		// inherited. Absent all the way up means wherever the platform's Regions places
-		// it. Narrowing only, enforced by the audit since the rule spans documents. It is
-		// also the default placement for a resource that declares none; PerEnv lets
-		// preview go somewhere cheaper.
-		StringSlice("regions", PerEnv(),
-			Doc("Regions", "The regions everything in this project may be in, and where anything that does not say otherwise is placed. Absent means wherever the platform places it. A scope below may narrow this list and may never widen it.")),
-	}
+	}, scopeRegionAttributes("project")...)
 }
 
 // MaxNamespaceDepth is how deep namespaces nest. A self-referential node would
@@ -1769,9 +1757,7 @@ func namespacesGroup(depth int) *Node {
 	return DefineGroup(scopeContainer,
 		// The allowance is on the scope, not in identityAttributes(), which every
 		// resource shares: a resource is placed, it does not bound placement.
-		DefineIterGroup(append(identityAttributes(),
-			StringSlice("regions", PerEnv(), InSection("identity"),
-				Doc("Regions", "The regions everything in this namespace may be in, and where anything that does not say otherwise is placed. Absent means the parent's. Narrows only; the audit reports a widening."))),
+		DefineIterGroup(append(identityAttributes(), scopeRegionAttributes("namespace", InSection("identity"))...),
 			children...).
 			With(Singular("Namespace"),
 				// namespace/shop/meta.yaml holds the scope's own fields. Not `namespace`: nested
@@ -1790,7 +1776,6 @@ func namespacesGroup(depth int) *Node {
 var scopeShape = namespacesGroup(MaxNamespaceDepth)
 
 var _ = func() any {
-	attachPlacement()
 	attachAccess()
 	attachIndexes()
 	attachLowerable()

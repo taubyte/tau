@@ -2,8 +2,6 @@ id: QmaozNR7DZHQK1ZcU9p7QdrshMvXqWK6gpu5rmrkPdT3L4
 description: shop's sessions - same NAME as billing's, a different resource; raft because a merged write is two half-sessions
 size: 8MB
 consensus: raft
-regions:
-    pinned: [region-1]
 instances:
     limit: 5000
     validator:

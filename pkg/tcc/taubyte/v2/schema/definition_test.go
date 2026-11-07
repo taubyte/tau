@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1875,108 +1876,63 @@ func TestInstancesTakeALimitAndAreNamedByAKey(t *testing.T) {
 	}
 }
 
-func TestRegionIsDeclaredOnEveryKind(t *testing.T) {
+func TestOnlyAScopeDeclaresRegions(t *testing.T) {
 	assert.DeepEqual(t, schema.FootprintKinds(), []string{
 		"application", "function", "worker", "sandbox",
 		"cache", "database", "storage", "volume", "sync",
-		"agent", "workflow",
+		"gateway", "agent", "workflow",
 	})
 
-	// Both shapes: KindRoot copies the iterator's attributes, so a block attached
-	// after the copy exists only in V2Resources.
-	kinds := map[string]bool{}
-	for _, g := range schema.V2Resources {
-		if kind, _ := g.Match.(string); !g.Children[0].Group {
-			kinds[kind] = true // a scope container's `regions` is the allowance
-		}
-	}
-	assert.Assert(t, len(kinds) > 20)
+	// Both shapes: KindRoot copies the iterator's attributes, so a field that leaked
+	// onto a kind in either would show in one of them.
 	for _, root := range [][]*engine.Node{schema.V2Resources, schema.KindRoot()} {
 		for _, g := range root {
-			if kind, _ := g.Match.(string); kinds[kind] {
-				fields := map[string]bool{}
-				for _, a := range g.Children[0].Attributes {
-					fields[a.Name] = true
-				}
-				for _, f := range []string{"regions/policy", "regions/in", "regions/main", "regions/standby"} {
-					assert.Assert(t, fields[f], "%s carries no %q", kind, f)
-				}
+			kind, _ := g.Match.(string)
+			if !slices.Contains(schema.Kinds(), kind) {
+				continue
+			}
+			for _, a := range g.Children[0].Attributes {
+				assert.Assert(t, !strings.HasPrefix(a.Name, "regions"), "%s carries %q: a resource runs where its namespace does", kind, a.Name)
 			}
 		}
 	}
 }
 
-func TestRegionPlacementIsASwitch(t *testing.T) {
-	compile := func(body string) (map[string]any, error) {
+func TestATopologyIsOneOfThree(t *testing.T) {
+	compile := func(project, cache string) (map[string]any, error) {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"+project), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/cache/c.yaml",
-			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n"+body), 0o644))
+			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n"+cache), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 		assert.NilError(t, err)
 		obj, _, err := c.Compile(context.Background())
 		if err != nil {
 			return nil, err
 		}
-		return namedResource(t, resources(t, obj.Flat(), "cache"), "c"), nil
+		return obj.Flat()["object"].(map[string]any), nil
 	}
 
-	res, err := compile("regions:\n    pinned: [region-1]\n")
+	for _, topology := range schema.Topologies {
+		root, err := compile("regions:\n    topology: "+topology+"\n    in: [region-1, region-2]\n", "")
+		assert.NilError(t, err)
+		assert.Equal(t, nested(root, "regions", "topology"), topology)
+		assert.DeepEqual(t, nested(root, "regions", "in"), []string{"region-1", "region-2"})
+	}
+
+	// An absent block writes nothing: the only spelling of "wherever the cloud places it".
+	root, err := compile("", "")
 	assert.NilError(t, err)
-	assert.Equal(t, nested(res, "regions", "policy"), "pinned")
-	assert.DeepEqual(t, nested(res, "regions", "in"), []string{"region-1"})
+	_, present := root["regions"]
+	assert.Assert(t, !present, "an absent block leaves no keys behind")
 
-	// AN EMPTY BRANCH STILL CAPTURES, so `cdn` needs no regions to be sayable —
-	// it is the branch whose regions the platform picks.
-	res, err = compile("regions:\n    cdn: []\n")
-	assert.NilError(t, err)
-	assert.Equal(t, nested(res, "regions", "policy"), "cdn")
+	_, err = compile("regions:\n    topology: cdn\n", "")
+	assert.ErrorContains(t, err, `"cdn"`)
 
-	res, err = compile("regions:\n    failover:\n        main: region-1\n        standby: region-2\n")
-	assert.NilError(t, err)
-	assert.Equal(t, nested(res, "regions", "policy"), "failover")
-	assert.Equal(t, nested(res, "regions", "main"), "region-1")
-	assert.Equal(t, nested(res, "regions", "standby"), "region-2")
-
-	// An absent block writes nothing: the only spelling of "anywhere".
-	res, err = compile("")
-	assert.NilError(t, err)
-	_, present := res["region"]
-	assert.Assert(t, !present, "an absent region block leaves no keys behind")
-
-	// EXACTLY TWO, AND ONLY TWO. A third has no key to arrive under and a missing one
-	// is a compile error — which is what "the first one is main" costs instead of a
-	// list whose order is load-bearing.
-	_, err = compile("regions:\n    failover:\n        main: region-1\n")
-	assert.ErrorContains(t, err, "required attribute 'regions/failover/standby'")
-	_, err = compile("regions:\n    failover:\n        standby: region-2\n")
-	assert.ErrorContains(t, err, "required attribute 'regions/failover/main'")
-	_, err = compile("regions:\n    failover:\n        main: region-1\n        standby: region-2\n        third: ap\n")
-	assert.ErrorContains(t, err, "unknown key 'third'")
-
-	// `name` IS ON THE TWO BRANCHES A SINGLE REGION MEANS SOMETHING ON. On failover it
-	// would name neither of the two, so the subset Either() refuses it.
-	_, err = compile("regions:\n    failover:\n        main: region-1\n        standby: region-2\n        name: local\n")
-	assert.ErrorContains(t, err, "unknown key 'name'")
-
-	// EXACTLY ONE BRANCH is a property of the declaration, not a check somebody wrote.
-	_, err = compile("regions:\n    pinned: [region-1]\n    cdn: []\n")
-	assert.ErrorContains(t, err, "each match")
-	_, err = compile("regions: {}\n")
-	assert.ErrorContains(t, err, "attribute regions/policy has an empty key")
-
-	// A PIN NAMING NO REGION PINS NOTHING, so the list is required on this branch
-	// and optional on `cdn`, where an absent one means seeded rather than unplaced.
-	_, err = compile("regions:\n    pinned: []\n")
-	assert.ErrorContains(t, err, "required attribute 'regions/pinned' is empty")
-
-	// ONE WORD, TWO SHAPES, AND THEY DO NOT COLLIDE. A scope writes `regions` as a
-	// LIST — its allowance, and the default for everything under it — and a resource
-	// writes it as the SWITCH above. A bare list on a resource picks no branch, so
-	// there is no policy to capture and the compile says so rather than guessing one.
-	_, err = compile("regions: [region-1]\n")
-	assert.ErrorContains(t, err, "attribute regions/policy has an empty key")
+	// A RESOURCE STATES NOTHING about where it runs: its namespace does.
+	_, err = compile("", "regions:\n    in: [region-1]\n")
+	assert.ErrorContains(t, err, "unknown key 'regions'")
 }
 
 func TestNoAuthoredFindingNamesADeletedKind(t *testing.T) {

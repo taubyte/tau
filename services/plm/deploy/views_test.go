@@ -56,9 +56,11 @@ func heldIn(t *testing.T, r *register.Register, region string) []string {
 func TestADeployPublishesOneViewPerRegion(t *testing.T) {
 	r := registry(t)
 	co := &checkout{dir: configDir(t, map[string]string{
-		"project.yaml": viewProject,
-		"cache/a.yaml": cacheDoc(cacheA, "regions:\n    pinned: [region-1]\n"),
-		"cache/b.yaml": cacheDoc(cacheB, "regions:\n    pinned: [region-2]\n"),
+		"project.yaml":              viewProject,
+		"namespace/eu/meta.yaml":    "id: QmTXGKe63GYuKA54yerPQmGyEtFjhUF5p1g2hahTpm6pkA\nregions:\n    in: [region-1]\n",
+		"namespace/us/meta.yaml":    "id: QmWXdfF6xBdc4pVfpHf6Gf3aaPZh7tb3fbRG9vNukpZXxc\nregions:\n    in: [region-2]\n",
+		"namespace/eu/cache/a.yaml": cacheDoc(cacheA, ""),
+		"namespace/us/cache/b.yaml": cacheDoc(cacheB, ""),
 	})}
 	var log out
 	require.NoError(t, pushed(t.Context(), builder(t, co, r, deploy.WithRegions(schema.Preview("region-1", "region-2"))), work(), &log))
@@ -85,7 +87,7 @@ func TestADeployPublishesOneViewPerRegion(t *testing.T) {
 	require.Empty(t, heldIn(t, r, "region-3"))
 
 	// A RESOURCE REMOVED IS GONE FROM ITS REGION'S VIEW, which is told so by an empty one.
-	require.NoError(t, os.Remove(filepath.Join(co.dir, "cache/b.yaml")))
+	require.NoError(t, os.Remove(filepath.Join(co.dir, "namespace/us/cache/b.yaml")))
 	log = out{}
 	require.NoError(t, pushed(t.Context(), builder(t, co, r, deploy.WithRegions(schema.Preview("region-1", "region-2", "region-3"))), work(), &log))
 	require.Contains(t, log.String(), "prod in region-2: nothing placed")
@@ -98,16 +100,18 @@ func TestADeployPublishesOneViewPerRegion(t *testing.T) {
 func TestADeployReachingAcrossRegionsIsRefused(t *testing.T) {
 	r := registry(t)
 	co := &checkout{dir: configDir(t, map[string]string{
-		"project.yaml":        viewProject,
-		"cache/a.yaml":        cacheDoc(cacheA, "regions:\n    pinned: [region-1]\n"),
-		"package/f_code.yaml": "id: QmP66dBkc5zUMF7W7HuU3HgTmPa1w92gGNG4zY854f4Wkt\ntype: wasm\n",
-		"function/f.yaml": "id: " + fnID + "\npackage:\n    name: f_code\n" +
-			"execution:\n    call: handle\n    timeout: 15s\n    memory: 32MiB\nregions:\n    pinned: [region-2]\ncache:\n    a:\n        ops: [get]\n",
+		"project.yaml":              viewProject,
+		"namespace/eu/meta.yaml":    "id: QmTXGKe63GYuKA54yerPQmGyEtFjhUF5p1g2hahTpm6pkA\nregions:\n    in: [region-1]\n",
+		"namespace/us/meta.yaml":    "id: QmWXdfF6xBdc4pVfpHf6Gf3aaPZh7tb3fbRG9vNukpZXxc\nregions:\n    in: [region-2]\n",
+		"namespace/eu/cache/a.yaml": cacheDoc(cacheA, ""),
+		"package/f_code.yaml":       "id: QmP66dBkc5zUMF7W7HuU3HgTmPa1w92gGNG4zY854f4Wkt\ntype: wasm\n",
+		"namespace/us/function/f.yaml": "id: " + fnID + "\npackage:\n    name: f_code\n" +
+			"execution:\n    call: handle\n    timeout: 15s\n    memory: 32MiB\ncache:\n    a:\n        namespace: /eu\n        ops: [get]\n",
 	})}
 	var log out
 	err := pushed(t.Context(), builder(t, co, r, deploy.WithRegions(schema.Preview("region-1", "region-2"))), work(), &log)
 	require.ErrorIs(t, err, deploy.ErrBroken)
-	require.ErrorContains(t, err, `function/f: reaches cache/a, which is not placed in "region-2" where this is`)
+	require.ErrorContains(t, err, `function/f in us: reaches cache/a, which does not run in "region-2" where this does`)
 	_, err = r.Resolve(t.Context(), shopID, "prod")
 	require.ErrorIs(t, err, register.ErrNotPublished)
 }

@@ -104,14 +104,15 @@ export interface LoweredProject {
 
 /** How a resource is held in one region. Decided by tcc — see schema/views.go. */
 export type Role =
-  | "anywhere" | "pinned" | "main" | "standby" | "seed" | "demand"
+  | "anywhere" | "single" | "active" | "primary" | "standby"
   | "placed" | "needed" | "follows" | "scope";
 
 /** One view per region, cut by tcc from what runs: what a deploy publishes. */
 export interface Views {
   destinations: string[];
   named: string[];
-  views?: Record<string, { object: Compiled; roles: Record<string, Role>; empty: boolean }>;
+  /** remote: an origin reached from the region and run only elsewhere, by id, with where it runs. */
+  views?: Record<string, { object: Compiled; roles: Record<string, Role>; remote: Record<string, string[]>; empty: boolean }>;
   notes: Finding[];
   refused?: string;
 }

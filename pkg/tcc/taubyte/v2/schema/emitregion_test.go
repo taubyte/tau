@@ -38,23 +38,13 @@ func regionsAsked(v []schema.NextValidation) []string {
 const projectID = "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"
 
 func TestARegionLabelIsHandedToTheCaller(t *testing.T) {
-	cache := func(regions string) string {
-		return "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n" + regions
-	}
-
 	asked := regionsAsked(validating(t, map[string]string{
-		"/project.yaml": projectID,
-		"/cache/c.yaml": cache("regions:\n    pinned: [region-1, region-2]\n"),
+		"/project.yaml": projectID + "regions:\n    topology: active\n    in: [region-1, region-2]\n",
+		"/namespace/shop/meta.yaml": "id: QmQPeNsJPyVWPFDVHb77w8G42Fvo15z4bmmjRoBHfW1YZv\n" +
+			"regions:\n    in: [region-3]\n",
 	}))
-	require.ElementsMatch(t, []string{"region-1", "region-2"}, asked,
-		"a nested, optional, REPEATED label was not carried")
-
-	// BOTH HALVES OF A FAILOVER, because either can be wrong on its own.
-	asked = regionsAsked(validating(t, map[string]string{
-		"/project.yaml": projectID,
-		"/cache/c.yaml": cache("regions:\n    failover:\n        main: region-2\n        standby: region-3\n"),
-	}))
-	require.ElementsMatch(t, []string{"region-2", "region-3"}, asked)
+	require.ElementsMatch(t, []string{"region-1", "region-2", "region-3"}, asked,
+		"a nested, optional, REPEATED label was not carried, on the project or a namespace")
 }
 
 func TestAnAbsentBlockAsksNothing(t *testing.T) {

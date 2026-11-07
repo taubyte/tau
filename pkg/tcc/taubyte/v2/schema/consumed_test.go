@@ -66,8 +66,6 @@ var (
 
 	streamingStorageRefused = excuse{handled, "the lifetime of a streaming storage's entries. worker refuses any storage whose type is not `object` by name (unservableKind), so this branch's only field is never served weaker than written — it is never served."}
 
-	oneRegion = excuse{notServed, "where a resource or a scope is placed across regions. Placement here is one region and reads no region, so the block is accepted and asks this build for nothing."}
-
 	replicationRaftOnly = excuse{handled, "whether a cache keeps a copy on every peer. The vocabulary says it is only a question under raft consensus, because crdt and gossip both put a copy on every peer whatever it says - and worker refuses a raft cache by name (unservableKind), so the one branch where this field decides anything is never served."}
 
 	agentLowered = excuse{handled, "consumed by the agent's lowering: limits/timeout and limits/memory become the loop function's execution/timeout and execution/memory, and the memory block becomes a vector database's dimensions and size. The interpreter keeps its lowering terms unexported, so this test cannot see that consumption."}
@@ -97,11 +95,6 @@ var unread = map[string]excuse{
 	"package/watch":                    watchEveryPush,
 
 	"secret/rotation": advisoryRotation,
-
-	"*/regions/policy":  oneRegion,
-	"*/regions/in":      oneRegion,
-	"*/regions/main":    oneRegion,
-	"*/regions/standby": oneRegion,
 
 	"sync/queue/dead_letter/namespace":   deadLetterScopeConsumed,
 	"proxy/certificate/secret/namespace": proxyCertScopeConsumed,
@@ -153,6 +146,8 @@ var readers = map[string][]string{
 	// schedule.go is the cron arm of the same service.
 	"services/worker/schedule.go":  {"cron"},
 	"services/worker/subscribe.go": {"stream"},
+	// cache.go is the gateway's arm for what a route keeps of an answer.
+	"services/gateway/cache.go": {"gateway"},
 
 	// The build service makes a package's artifact, the only kind that builds.
 	"services/plm/artifact/artifact.go": {"package"},

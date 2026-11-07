@@ -34,35 +34,11 @@ func declaring(t *testing.T, root map[string]any) *declarations {
 	return &declarations{projects: projects}
 }
 
-// kvAt is one kv database, with whatever regions block the case is about.
-func kvAt(region map[string]any) map[string]any {
-	out := map[string]any{
-		"name": "sessions", "type": "kv",
-		"kv": map[string]any{"engine": "distributed", "consensus": "crdt"},
-	}
-	if region != nil {
-		out["regions"] = region
-	}
-	return out
-}
-
 func sessions(t *testing.T, d *declarations) declared {
 	t.Helper()
 	got, err := d.of(context.Background(), address{project: projectID, environment: "prod", id: kvID})
 	require.NoError(t, err)
 	return got
-}
-
-func TestARegionBlockIsNotRead(t *testing.T) {
-	d := declaring(t, map[string]any{
-		"id": projectID, "name": "shop",
-		"regions": []string{"region-1"},
-		"database": map[string]any{kvID: kvAt(
-			map[string]any{"policy": "pinned", "in": []string{"region-2"}})},
-	})
-
-	got := sessions(t, d)
-	require.Equal(t, kvID, got.spec.Name)
 }
 
 func TestPerModelDeclarationsTravelAsOptions(t *testing.T) {

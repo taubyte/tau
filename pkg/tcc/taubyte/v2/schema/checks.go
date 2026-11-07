@@ -920,21 +920,25 @@ func startedBy(all []compiled, target compiled) bool {
 	return false
 }
 
-// scopeAllowance is one scope's own `regions` line, and where it sits.
+// scopeAllowance is one scope's own `regions` block, and where it sits.
 type scopeAllowance struct {
 	parent   string // the scope path above this one; "" is the project root
 	kind     string // what KIND of scope it is, for the finding
 	name, id string
-	regions  []string // as declared here; empty means "whatever the parent allows"
+	topology string   // as declared here; empty means the parent's
+	regions  []string // as declared here; empty means the parent's
 }
 
-// scopeAllowances records the allowance each scope declares, keyed by the scope
-// path collect() files resources under. A namespace is a container, not a kind,
-// so it never appears in `all`; and the walk covers every group ContainerKeys
-// names, since a chain also passes through levels like `workflow/checkout`.
+// declares is whether the scope wrote a `regions` block of its own.
+func (s scopeAllowance) declares() bool { return s.topology != "" || len(s.regions) > 0 }
+
+// scopeAllowances records the `regions` each scope declares, keyed by the scope path
+// collect() files resources under. A namespace is a container, not a kind, so it
+// never appears in `all`; and the walk covers every group ContainerKeys names, since
+// a chain also passes through levels like `workflow/checkout`.
 func scopeAllowances(root map[string]any) map[string]scopeAllowance {
 	scopes := scopeGroups()
-	out := map[string]scopeAllowance{"": {regions: listAt(root, "regions")}}
+	out := map[string]scopeAllowance{"": {topology: stringIn(root, regionsTopology), regions: listAt(root, regionsIn)}}
 	var walk func(scope map[string]any, path string)
 	walk = func(scope map[string]any, path string) {
 		for group, val := range scope {
@@ -956,7 +960,7 @@ func scopeAllowances(root map[string]any) map[string]scopeAllowance {
 				}
 				child := strings.TrimPrefix(path+"/"+name, "/")
 				out[child] = scopeAllowance{parent: path, kind: group, name: name, id: id,
-					regions: listAt(res, "regions")}
+					topology: stringIn(res, regionsTopology), regions: listAt(res, regionsIn)}
 				walk(res, child)
 			}
 		}
@@ -965,29 +969,46 @@ func scopeAllowances(root map[string]any) map[string]scopeAllowance {
 	return out
 }
 
-// effectiveAllowance is a scope's own list if it declared one, else the nearest one
-// above it. Nothing anywhere means no ceiling — wherever the Regions places it.
-func effectiveAllowance(scopes map[string]scopeAllowance, path string) []string {
+const (
+	regionsTopology = "regions/topology"
+	regionsIn       = "regions/in"
+)
+
+func stringIn(fields map[string]any, key string) string {
+	s, _ := fieldValue(fields, key).(string)
+	return s
+}
+
+// resolvedRegions is how a scope runs: each field its own, else the nearest one above
+// it. One region and no topology is single. Nothing anywhere is a nil list — wherever
+// the Regions places it.
+func resolvedRegions(scopes map[string]scopeAllowance, path string) (topology string, regions []string) {
 	for {
 		s, known := scopes[path]
 		if !known {
-			return nil
+			break
 		}
-		if len(s.regions) > 0 {
-			return s.regions
+		if topology == "" {
+			topology = s.topology
+		}
+		if regions == nil && len(s.regions) > 0 {
+			regions = s.regions
 		}
 		if path == "" {
-			return nil
+			break
 		}
 		path = s.parent
 	}
+	if topology == "" && len(regions) == 1 {
+		topology = TopologySingle
+	}
+	return topology, regions
 }
 
-// checkRegions: a scope narrows the regions it inherits and never widens them,
-// and a resource is placed inside its chain's allowance. Both span documents, so
-// only the audit sees both ends; both are Broken, since a widening runs a child
-// where its parent forbade and an outside placement has nowhere to run. A chain
-// with no allowance anywhere is the zero-config project and is not checked.
+// checkRegions: a scope narrows the regions it inherits and never widens them, and
+// what it resolves to says how it runs in them. All of it spans documents, so only
+// the audit sees it. A project with no `regions` anywhere is the zero-config project
+// and is not checked.
 func checkRegions(root map[string]any, all []compiled, in auditOf) []Finding {
 	scopes := scopeAllowances(root)
 	out := checkEnvironmentRegions(root)
@@ -998,64 +1019,75 @@ func checkRegions(root map[string]any, all []compiled, in auditOf) []Finding {
 	}
 	sort.Strings(paths)
 
+	environment := environmentRegions(root, in.environment)
 	for _, path := range paths {
 		s := scopes[path]
-		if path == "" || len(s.regions) == 0 {
+		if !s.declares() {
 			continue
 		}
-		above := effectiveAllowance(scopes, s.parent)
-		if len(above) == 0 {
-			continue
+		kind, name := s.kind, s.name
+		if path == "" {
+			kind, name = "project", stringAt(root, "name")
 		}
-		for _, r := range s.regions {
-			if slices.Contains(above, r) {
-				continue
+		finding := func(severity Severity, title, detail string) {
+			out = append(out, Finding{severity, kind, name, s.parent, title, detail, s.id})
+		}
+
+		if path != "" {
+			if _, above := resolvedRegions(scopes, s.parent); len(above) > 0 {
+				for _, r := range s.regions {
+					if !slices.Contains(above, r) {
+						finding(Broken, fmt.Sprintf("runs in region %q, which the scope above it does not", r),
+							"A scope narrows the regions it inherits and never widens them: a child may not run where its parent said nothing may.")
+					}
+				}
 			}
-			out = append(out, Finding{Broken, s.kind, s.name, s.parent,
-				fmt.Sprintf("allows region %q, which the scope above it does not", r),
-				"A scope narrows the regions it inherits and never widens them: a child may not run where its parent said nothing may.", s.id})
+		}
+
+		topology, regions := resolvedRegions(scopes, path)
+		switch {
+		case topology != "" && len(regions) == 0:
+			finding(Broken, fmt.Sprintf("is %s and names no region", topology),
+				"A topology is how a scope runs across its regions. Name them here or above.")
+		case topology == "" && len(regions) > 1:
+			finding(Broken, fmt.Sprintf("runs in %d regions and does not say how", len(regions)),
+				"Say failover to run in the first and fall back through the rest in order, or active to run in all of them at once.")
+		case topology == TopologySingle && len(regions) > 1:
+			finding(Broken, fmt.Sprintf("is single and runs in %d regions", len(regions)),
+				"single runs in one region. Name that one, or say failover or active.")
+		case topology == TopologyFailover && len(regions) == 1 && s.topology != "":
+			finding(Broken, "fails over with one region",
+				"failover falls back to the next region and there is none. Name a second, or say single.")
+		case topology != TopologySingle && len(regions) == 1:
+			finding(Note, fmt.Sprintf("is %s above and runs in %q alone", topology, regions[0]),
+				"It narrowed its parent's regions to one, so it runs as single there.")
+		case environment != nil && topology != TopologySingle && len(regions) > 1 && len(narrow(regions, environment)) == 1:
+			finding(Note, fmt.Sprintf("is %s and runs in %q alone in %s", topology, narrow(regions, environment)[0], in.environment),
+				"The environment keeps state in one of its regions, so it runs as single there.")
 		}
 	}
 
-	for _, res := range all {
-		allowed := effectiveAllowance(scopes, res.scope)
-		// Every field a label can be written in. They are read by identity — the
-		// attribute's key, joined — so a branch that is not taken simply holds nothing.
-		for _, r := range placedIn(res) {
-			if len(allowed) == 0 || slices.Contains(allowed, r) {
-				continue
-			}
-			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
-				fmt.Sprintf("is placed in region %q, which its scope does not allow", r),
-				"Placement is bounded by every scope above it. Widen the scope's regions, or place this within them.", res.id})
-		}
-
-		// Failover's two regions must differ: a standby equal to its main fails over to
-		// what is already gone. And a policy does not change between environments:
-		// `failover:` beside a `pinned_preview:` would resolve one policy with the other
-		// branch's regions.
-		if res.str("regions/policy") == "failover" && len(listAt(res.fields, "regions/in")) > 0 {
-			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
-				"fails over in one environment and is pinned in another",
-				"A policy is the same in every deployment. Write this resource for that environment instead of suffixing another branch.", res.id})
-		}
-
-		if main, standby := res.str("regions/main"), res.str("regions/standby"); main != "" && main == standby {
-			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
-				"fails over from " + main + " to itself",
-				"Failover takes two regions; the standby exists for when the main is gone.", res.id})
-		}
-	}
-
-	out = append(out, place(root, all, in)...)
-	return append(out, checkPlacedInsideTheEnvironment(root, all, in.environment)...)
+	return append(out, place(root, all, in)...)
 }
 
-// checkEnvironmentRegions: an environment narrows the project's allowance and
-// never widens it, as a namespace does; otherwise `regions: [ap]` under a
-// project allowing only `eu` would be honoured at runtime.
+// narrow is regions within the environment's, in regions' order. Never nil: a chain
+// and an environment that share no region allow nothing, which is not the same
+// statement as declaring nothing.
+func narrow(regions, environment []string) []string {
+	out := []string{}
+	for _, r := range regions {
+		if slices.Contains(environment, r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// checkEnvironmentRegions: an environment narrows the project's regions and never
+// widens them, as a namespace does; otherwise `regions: [ap]` under a project
+// running only in `eu` would be honoured at runtime.
 func checkEnvironmentRegions(root map[string]any) []Finding {
-	allowed := listAt(root, "regions")
+	allowed := listAt(root, regionsIn)
 	if len(allowed) == 0 {
 		return nil
 	}
@@ -1067,49 +1099,8 @@ func checkEnvironmentRegions(root map[string]any) []Finding {
 				continue
 			}
 			out = append(out, Finding{Broken, "environments", env.Name, "",
-				fmt.Sprintf("keeps state in region %q, which the project does not allow", region),
-				"An environment narrows the project's regions and never widens them: a deployment may not keep state where the project said nothing may.", ""})
-		}
-	}
-	return out
-}
-
-// checkPlacedInsideTheEnvironment: a resource is placed within the regions its
-// environment keeps state in. Silent without the environment's name (AuditIn):
-// the placement read is already resolved for this compile's environment.
-func checkPlacedInsideTheEnvironment(root map[string]any, all []compiled, environment string) []Finding {
-	if environment == "" {
-		return nil
-	}
-
-	// A shadow keeps no state of its own, so it is bounded by the environment it was
-	// written inside; see environmentRegions.
-	allowed := environmentRegions(root, environment)
-	if len(allowed) == 0 {
-		return nil
-	}
-
-	var out []Finding
-	for _, res := range all {
-		for _, region := range placedIn(res) {
-			if slices.Contains(allowed, region) {
-				continue
-			}
-			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
-				fmt.Sprintf("is placed in region %q, which %s does not keep state in", region, environment),
-				"A deployment keeps its state in the regions it declares. Widen the environment's regions, or place this within them.", res.id})
-		}
-	}
-	return out
-}
-
-// placedIn is every region a resource's block names across the branch it took:
-// `pinned` and `cdn` carry a list, `failover` its two by name.
-func placedIn(res compiled) []string {
-	out := listAt(res.fields, "regions/in")
-	for _, field := range []string{"regions/main", "regions/standby"} {
-		if r := res.str(field); r != "" {
-			out = append(out, r)
+				fmt.Sprintf("keeps state in region %q, which the project does not run in", region),
+				"An environment narrows the project's regions and never widens them: a deployment may not keep state where the project said nothing runs.", ""})
 		}
 	}
 	return out

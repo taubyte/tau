@@ -181,6 +181,11 @@ type RefSpec struct {
 	// handler, a proxy's forward, a router).
 	Serves bool
 
+	// Origin: what declares it may run where the target does not, and a request is
+	// carried to it — a handoff a cache can stand in front of. Only a Serves reference
+	// is one.
+	Origin bool
+
 	// ByName: the value stays a name rather than resolving to the target's id, for
 	// references crossing scopes the resolver does not follow or where the authored
 	// word is wanted. It is still a reference.
@@ -212,6 +217,10 @@ func KindFrom[T string | AKey](field T) RefOpt {
 // Serves declares that traffic GOES to the referenced resource — a handoff rather than a
 // dependency. See RefSpec.Serves.
 func Serves() RefOpt { return func(s *RefSpec) { s.Serves = true } }
+
+// Origin declares a handoff whose target may be elsewhere: the request is carried to
+// it. See RefSpec.Origin.
+func Origin() RefOpt { return func(s *RefSpec) { s.Serves, s.Origin = true, true } }
 
 // Ref declares that this attribute's value references another resource group.
 func Ref(group string, opts ...RefOpt) Option {

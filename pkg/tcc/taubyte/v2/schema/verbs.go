@@ -525,6 +525,8 @@ type Reference struct {
 	// Serves: traffic goes there. Declared, not inferred from KindFrom — a router is a
 	// handoff whose kind is fixed.
 	Serves bool
+	// Origin: a handoff the declarer may make from a region the target is not in.
+	Origin bool
 	// Namespace is the sibling holding the target's namespace, when there is one.
 	Namespace string
 	ByName    bool // the value stays a name rather than resolving to an id
@@ -552,7 +554,7 @@ func collectReferences(kind string, iter *engine.Node, in, at string, out *[]Ref
 		r := Reference{
 			On: kind, Field: name, Kind: spec.Group, KindFrom: spec.KindFrom,
 			ByName: spec.ByName, Inbound: spec.Inbound,
-			Serves: spec.Serves, In: in,
+			Serves: spec.Serves, Origin: spec.Origin, In: in,
 		}
 		// The namespace is the sibling called `namespace` under the same parent
 		// (`source/component` -> `source/namespace`); missing it, resolution walks

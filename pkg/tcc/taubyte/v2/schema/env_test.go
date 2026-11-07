@@ -86,39 +86,3 @@ func TestAnUndeclaredEnvironmentIsATypo(t *testing.T) {
 		"execution:\n    call: c\n    timeout: 1s\n    timeout_prevew: 5s\n    memory: 1MB\n")
 	assert.ErrorContains(t, err, "unknown key 'timeout_prevew'")
 }
-
-func TestAPlacementDiffersPerEnvironment(t *testing.T) {
-	const doc = "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n" +
-		"package:\n    name: redact_code\n" +
-		"execution:\n    call: c\n    timeout: 1s\n    memory: 1MB\n" +
-		"regions:\n    pinned: [region-1]\n    pinned_preview: [region-2]\n"
-
-	type testCase struct {
-		env  string
-		want []string
-	}
-	for _, tc := range []testCase{
-		{"production", []string{"region-1"}}, // declared nowhere in the document: the base
-		{"preview", []string{"region-2"}},
-	} {
-		t.Run(tc.env, func(t *testing.T) {
-			fn, err := compileInEnv(t, tc.env, doc)
-			assert.NilError(t, err)
-			assert.DeepEqual(t, nested(fn, "regions", "in"), tc.want)
-
-			// AND THE UNSUFFIXED BRANCH STILL NAMES THE CHOICE, which is the
-			// PerEnv contract: the override sits BESIDE the key and replaces its
-			// value, never its declaration.
-			assert.Equal(t, nested(fn, "regions", "policy"), "pinned")
-		})
-	}
-}
-
-func TestAPolicyIsTheSameInEveryDeployment(t *testing.T) {
-	fn, err := compileInEnv(t, "preview", "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n"+
-		"package:\n    name: redact_code\n"+
-		"execution: {call: c, timeout: 1s, memory: 1MB}\n"+
-		"regions:\n    failover:\n        main: region-1\n        standby: region-2\n    pinned_preview: [region-2]\n")
-	assert.NilError(t, err, "each key is legal on its own, so the compile cannot refuse it")
-	assert.Equal(t, nested(fn, "regions", "policy"), "failover")
-}

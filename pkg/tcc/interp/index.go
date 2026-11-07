@@ -407,29 +407,6 @@ func attrValues(instObj object.Object[object.Refrence], a *engine.Attribute) []s
 	return nil
 }
 
-// attrString reads an attribute off a compiled instance by the path its key is:
-// `region/name` is a level holding `name`. Absent is not-held, not an error.
-func attrString(instObj object.Object[object.Refrence], a *engine.Attribute) (string, bool) {
-	key := a.Segments
-	if len(key) == 0 {
-		key = []string{a.Name}
-	}
-
-	obj := instObj
-	if len(key) > 1 {
-		var err error
-		if obj, err = instObj.Fetch(key[:len(key)-1]...); err != nil || obj == nil {
-			return "", false
-		}
-	}
-
-	val, err := obj.GetString(key[len(key)-1])
-	if err != nil || val == "" {
-		return "", false
-	}
-	return val, true
-}
-
 // emitAttrValidations fires the deferred (index-time) validations declared on an
 // iterator's attributes — the domain fqdn's EmitValidation("domain","dns"),
 // carrying the {project[, app]} scope context pass4/domain.go attached. Distinct

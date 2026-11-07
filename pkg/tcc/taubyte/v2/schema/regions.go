@@ -12,31 +12,17 @@ import (
 // Which regions exist is the implementation's to say, through Regions; the audit
 // uses its answer as the one effective placement every check asks about.
 
-// Placement is everything the config states about where one resource runs.
+// Placement is everything the config states about where one resource runs: what
+// its namespace resolves to.
 type Placement struct {
-	// Policy is the branch the resource's own block took: "pinned", "cdn",
-	// "failover", or "" when it wrote no block.
-	Policy string
-	// In is a pinned or cdn resource's regions.
+	// Topology is how its namespace runs across its regions: TopologySingle,
+	// TopologyFailover, TopologyActive, or "" when no scope above it says.
+	Topology string
+	// In is the regions it runs in: the nearest `regions/in` up its scope chain,
+	// narrowed by the environment the audit was told it reads, in the order written.
+	// Nil when nothing declares any; empty when the chain and the environment share
+	// no region.
 	In []string
-	// Main and Standby are a failover's two regions.
-	Main, Standby string
-	// Allowed is the ceiling it is placed within: the nearest `regions` up its scope
-	// chain, narrowed by the regions of the environment the audit was told it reads.
-	// Nil when nothing above it declares one; empty when what is declared above it
-	// shares no region with the environment.
-	Allowed []string
-}
-
-// Named is every region the resource's own block names.
-func (p Placement) Named() []string {
-	out := slices.Clone(p.In)
-	for _, r := range []string{p.Main, p.Standby} {
-		if r != "" {
-			out = append(out, r)
-		}
-	}
-	return out
 }
 
 // Concern is something a Regions has to say about a placement or an allowance. The
@@ -86,37 +72,26 @@ type asRegion struct{ region string }
 func (a asRegion) Serves() []string         { return []string{a.region} }
 func (a asRegion) Allow([]string) []Concern { return nil }
 
-// Place answers every region the resource runs in that this build can name: the ones
-// it states, else its ceiling, else this region — a resource saying nothing runs
-// everywhere, which includes here.
+// Place answers every region the resource runs in, named or not here: what its
+// namespace says, else this region — a resource nothing places runs everywhere,
+// which includes here.
 func (a asRegion) Place(p Placement) Answer {
-	here := p.Allowed == nil || slices.Contains(p.Allowed, a.region)
-	switch {
-	case p.Policy == "cdn":
-		in := slices.Clone(p.In)
-		if here && !slices.Contains(in, a.region) {
-			in = append(in, a.region)
-		}
-		return Answer{In: in}
-	case len(p.Named()) > 0:
-		return Answer{In: p.Named()}
-	case p.Allowed != nil:
-		return Answer{In: slices.Clone(p.Allowed)}
+	if p.In == nil {
+		return Answer{In: []string{a.region}}
 	}
-	return Answer{In: []string{a.region}}
+	answer := Answer{In: slices.Clone(p.In)}
+	if p.Topology == TopologyFailover && slices.Contains(p.In[1:], a.region) {
+		answer.Concerns = []Concern{{Check, fmt.Sprintf("stands by in %q, and this build answers from a standby as from a primary", a.region),
+			"Nothing moves a failover between regions yet: each region runs the view it is published, so a standby is held and serves like its primary."}}
+	}
+	return answer
 }
 
 type oneRegion struct{ region string }
 
-func (o oneRegion) Place(p Placement) Answer {
-	placed := Answer{In: []string{o.region}}
-	if other := otherThan(o.region, p.Named()); len(other) > 0 {
-		placed.Concerns = []Concern{{Broken,
-			fmt.Sprintf("is placed in %s, which this build does not serve; it runs in %q", quoted(other), o.region),
-			fmt.Sprintf("This build serves one region, %q.", o.region)}}
-	}
-	return placed
-}
+// Place puts everything in the one region. A scope naming others is refused once, by
+// Allow, rather than once per resource under it.
+func (o oneRegion) Place(Placement) Answer { return Answer{In: []string{o.region}} }
 
 func (o oneRegion) Serves() []string { return []string{o.region} }
 
@@ -168,30 +143,21 @@ func Place(obj map[string]any, opts ...AuditOption) []Finding {
 	return place(root, collect(root, ""), in)
 }
 
-// placementOf is THE effective-placement calculation: what one resource states, within
-// the ceiling above it.
+// placementOf is THE effective-placement calculation: what one resource's namespace
+// resolves to, within the environment.
 func placementOf(res compiled, scopes map[string]scopeAllowance, environment []string) Placement {
-	p := Placement{
-		Policy:  res.str("regions/policy"),
-		In:      listAt(res.fields, "regions/in"),
-		Main:    res.str("regions/main"),
-		Standby: res.str("regions/standby"),
-		Allowed: effectiveAllowance(scopes, res.scope),
-	}
+	topology, in := resolvedRegions(scopes, res.scope)
+	p := Placement{Topology: topology, In: in}
 	switch {
-	case len(environment) == 0:
-	case len(p.Allowed) == 0:
-		p.Allowed = environment
+	case environment == nil:
+	case p.In == nil:
+		p.In = environment
 	default:
-		// Never nil: a chain and an environment that share no region allow
-		// nothing, which is not the same statement as declaring no ceiling.
-		narrowed := []string{}
-		for _, r := range p.Allowed {
-			if slices.Contains(environment, r) {
-				narrowed = append(narrowed, r)
-			}
-		}
-		p.Allowed = narrowed
+		p.In = narrow(p.In, environment)
+	}
+	// Narrowed to one region, whatever it was written as runs there alone.
+	if p.Topology != "" && len(p.In) == 1 {
+		p.Topology = TopologySingle
 	}
 	return p
 }
@@ -254,8 +220,7 @@ type placed struct {
 }
 
 // placementsOf asks the Regions where every placed resource runs, in the order collect
-// found them: every resource of a kind with a footprint, and every other one that states
-// a placement of its own.
+// found them: every resource of a kind with a footprint.
 func placementsOf(root map[string]any, all []compiled, in auditOf) []placed {
 	kinds := make(map[string]bool, len(FootprintKinds()))
 	for _, kind := range FootprintKinds() {
@@ -265,7 +230,7 @@ func placementsOf(root map[string]any, all []compiled, in auditOf) []placed {
 	environment := environmentRegions(root, in.environment)
 	var out []placed
 	for _, res := range all {
-		if !kinds[res.kind] && res.str("regions/policy") == "" {
+		if !kinds[res.kind] {
 			continue
 		}
 		p := placementOf(res, scopes, environment)
@@ -332,20 +297,11 @@ type preview struct{ regions []string }
 func (p preview) Serves() []string { return slices.Clone(p.regions) }
 
 func (p preview) Place(pl Placement) Answer {
-	var a Answer
-	if other := p.outside(pl.Named()); len(other) > 0 {
-		a.Concerns = []Concern{{Check, fmt.Sprintf("is placed in %s, which this preview does not show", quoted(other)), p.shows()}}
-	}
 	from := p.regions
-	if pl.Allowed != nil {
-		from = pl.Allowed
+	if pl.In != nil {
+		from = pl.In
 	}
-	switch {
-	case pl.Policy == "cdn":
-		from = append(slices.Clone(pl.In), from...)
-	case len(pl.Named()) > 0:
-		from = pl.Named()
-	}
+	var a Answer
 	for _, r := range from {
 		if slices.Contains(p.regions, r) && !slices.Contains(a.In, r) {
 			a.In = append(a.In, r)
@@ -379,30 +335,26 @@ func (p preview) shows() string {
 }
 
 // RegionsNamed is every region a compiled project names anywhere — a scope's or an
-// environment's allowance, a resource's placement — sorted: what a preview offers to
-// show when nobody has said which regions a cloud has.
+// environment's — sorted: what a preview offers to show when nobody has said which
+// regions a cloud has.
 func RegionsNamed(obj map[string]any) []string {
 	root := projectOf(obj)
 	seen := map[string]bool{}
-	add := func(rs ...string) {
-		for _, r := range rs {
-			if r != "" {
-				seen[r] = true
-			}
+	for _, s := range scopeAllowances(root) {
+		for _, r := range s.regions {
+			seen[r] = true
 		}
 	}
-	for _, s := range scopeAllowances(root) {
-		add(s.regions...)
-	}
 	for _, env := range EnvironmentsIn(root) {
-		add(env.Regions...)
-	}
-	for _, res := range collect(root, "") {
-		add(placementOf(res, nil, nil).Named()...)
+		for _, r := range env.Regions {
+			seen[r] = true
+		}
 	}
 	out := make([]string, 0, len(seen))
 	for r := range seen {
-		out = append(out, r)
+		if r != "" {
+			out = append(out, r)
+		}
 	}
 	sort.Strings(out)
 	return out
