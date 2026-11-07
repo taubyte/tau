@@ -142,7 +142,7 @@ func _import(ctx *cli.Context) error {
 		return projectI18n.CreatingProjectFailed(err)
 	}
 
-	projectI18n.ImportedProject(clientProject.Name, profile.Cloud)
+	projectI18n.ImportedProject(clientProject.Name, session.CloudName())
 
 	if prompts.ConfirmPrompt(ctx, fmt.Sprintf("select `%s` as current project?", clientProject.Name)) {
 		if err = session.Set().SelectedProject(clientProject.Name); err != nil {
