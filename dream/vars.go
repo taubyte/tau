@@ -49,29 +49,32 @@ var (
 // TODO: This should be generated
 var FixtureMap = map[string]FixtureDefinition{
 	"setBranch": {
-		Description: "set the default branch for services to resolve",
+		Description: "Set the git branch the services build from",
 		ImportRef:   "libdream/common/fixtures",
 		Variables: []FixtureVariable{
 			{
-				Name:     "name",
-				Alias:    "n",
-				Required: true,
+				Name:        "name",
+				Alias:       "n",
+				Description: "Branch name",
+				Required:    true,
 			},
 		},
 	},
 	"pushAll": {
-		Description: "pushes all ",
+		Description: "Build every repo Dream knows, as if each got a GitHub push",
 		ImportRef:   "patrick",
 		Variables: []FixtureVariable{
 			{
-				Name:     "project-id",
-				Alias:    "pid",
-				Required: false,
+				Name:        "project-id",
+				Alias:       "pid",
+				Description: "Only this project (default: every project)",
+				Required:    false,
 			},
 			{
-				Name:     "branch",
-				Alias:    "b",
-				Required: false,
+				Name:        "branch",
+				Alias:       "b",
+				Description: fmt.Sprintf("Branch to build (default: %v)", commonSpec.DefaultBranches[0]),
+				Required:    false,
 			},
 			{
 				Name:        "path",
@@ -150,36 +153,37 @@ var FixtureMap = map[string]FixtureDefinition{
 		Internal:    true,
 	},
 	"attachPlugin": {
-		Description: "inject a plugin binary built using VM-Orbit",
+		Description: "Load a VM-Orbit plugin binary into substrate",
 		ImportRef:   "substrate",
 		Variables: []FixtureVariable{
 			{
 				Name:        "paths",
-				Description: "comma separated list of binary paths",
+				Description: "Plugin binary paths, comma separated",
 				Alias:       "p",
 				Required:    true,
 			},
 		},
 	},
 	"pushSpecific": {
-		Description: "pushes specific repos",
+		Description: "Build one repo, as if it got a GitHub push",
 		ImportRef:   "patrick",
 		Variables: []FixtureVariable{
 			{
-				Name:     "repository-id",
-				Alias:    "rid",
-				Required: true,
+				Name:        "repository-id",
+				Alias:       "rid",
+				Description: "GitHub repository id (number)",
+				Required:    true,
 			},
 			{
 				Name:        "repository-fullname",
 				Alias:       "fn",
-				Description: "ex: taubyte-test/tb_repo",
+				Description: "GitHub owner/name, e.g. taubyte-test/tb_repo",
 				Required:    true,
 			},
 			{
 				Name:        "project-id",
 				Alias:       "pid",
-				Description: "Defaults to the test project id",
+				Description: "Project id (default: the repo's project)",
 				Required:    false,
 			},
 			{

@@ -9,7 +9,12 @@ import (
 
 func universe(multiverse *client.Client) *cli.Command {
 	c := &cli.Command{
-		Name:   "universe",
+		Name:  "universe",
+		Usage: "Stop a universe and all its nodes",
+		Description: `Stops the named universe (default: "default"). Its data stays on disk.
+
+Example:
+   dream kill universe blackhole`,
 		Action: killUniverse(multiverse),
 	}
 

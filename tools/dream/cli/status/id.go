@@ -12,6 +12,7 @@ import (
 func getID(multiverse *client.Client) *cli.Command {
 	c := &cli.Command{
 		Name:   "id",
+		Usage:  "Print the id of a universe",
 		Action: getIDStatus(multiverse),
 	}
 	command.NameWithDefault(c, dream.DefaultUniverseName)

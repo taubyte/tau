@@ -16,6 +16,8 @@ func Command(ctx *common.Context) *cli.Command {
 
 	return &cli.Command{
 		Name:        "kill",
+		Usage:       "Stop a universe, a service or a simple node in the running Dream",
+		Category:    "Start & stop",
 		Subcommands: commands,
 	}
 }

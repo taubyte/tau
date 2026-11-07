@@ -10,7 +10,10 @@ import (
 
 func services(multiverse *client.Client) *cli.Command {
 	c := &cli.Command{
-		Name:   "services",
+		Name:  "services",
+		Usage: "Stop several services at once",
+		Description: `Example:
+   dream kill services auth,tns blackhole`,
 		Action: killServices(multiverse),
 	}
 

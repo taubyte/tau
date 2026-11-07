@@ -8,6 +8,7 @@ import (
 var Universe = cli.StringFlag{
 	Name:        "universe",
 	Aliases:     []string{"u", "to"},
+	Usage:       "Universe to act on",
 	DefaultText: dream.DefaultUniverseName,
 	Value:       dream.DefaultUniverseName,
 }

@@ -14,6 +14,7 @@ func service(multiverse *client.Client) []*cli.Command {
 	for idx, _service := range validServices {
 		c := &cli.Command{
 			Name:   _service,
+			Usage:  "Stop the " + _service + " service",
 			Action: killService(_service, multiverse),
 		}
 		command.Universe0(c)

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/taubyte/tau/tools/dream/cli/common"
 	"github.com/taubyte/tau/tools/dream/cli/flags"
 	"github.com/urfave/cli/v2"
 )
@@ -24,9 +25,9 @@ func attachName(c *cli.Command, flag cli.Flag) {
 	c.Flags = append(c.Flags, flag)
 
 	if len(c.ArgsUsage) == 0 {
-		c.ArgsUsage = "name"
+		c.ArgsUsage = "[name]"
 	} else {
-		c.ArgsUsage = "name," + c.ArgsUsage
+		c.ArgsUsage = "[name] " + c.ArgsUsage
 	}
 
 	action := c.Action
@@ -49,12 +50,12 @@ func getName(c *cli.Context) (name string, err error) {
 	if len(name) == 0 {
 		name = c.String("name")
 		if len(name) == 0 {
-			err = errors.New("please provide a name")
+			err = errors.New("missing name: give it as the first argument or with --name")
 			return
 		}
 	} else {
 		if strings.HasPrefix(c.Args().Get(1), "-") {
-			err = errors.New("parse arguments failed: write [arguments] after -flags")
+			err = common.ErrFlagsAfterArgs
 			return
 		}
 	}

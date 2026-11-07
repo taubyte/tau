@@ -20,6 +20,7 @@ func service(multiverse *client.Client) []*cli.Command {
 	for idx, _service := range validServices {
 		c := &cli.Command{
 			Name:   _service,
+			Usage:  "Show the ports and URL of the " + _service + " service",
 			Action: runService(_service, multiverse),
 		}
 		command.Universe0(c)

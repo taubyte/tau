@@ -1,10 +1,10 @@
 package command
 
 import (
-	"errors"
 	"strings"
 
 	"github.com/taubyte/tau/dream"
+	"github.com/taubyte/tau/tools/dream/cli/common"
 	"github.com/taubyte/tau/tools/dream/cli/flags"
 	"github.com/urfave/cli/v2"
 )
@@ -13,9 +13,9 @@ func Universe0(c *cli.Command) {
 	c.Flags = append(c.Flags, &flags.Universe)
 
 	if len(c.ArgsUsage) == 0 {
-		c.ArgsUsage = "universe"
+		c.ArgsUsage = "[universe]"
 	} else {
-		c.ArgsUsage = "universe," + c.ArgsUsage
+		c.ArgsUsage = "[universe] " + c.ArgsUsage
 	}
 
 	action := c.Action
@@ -38,7 +38,7 @@ func getUniverse0(c *cli.Context) (universe string, err error) {
 		if len(args1) != 0 {
 			universe = c.Args().First()
 			if strings.HasPrefix(universe, "-") {
-				err = errors.New("parse arguments failed: write [arguments] after -flags")
+				err = common.ErrFlagsAfterArgs
 				return
 			}
 

@@ -1,11 +1,11 @@
 package command
 
 import (
-	"errors"
 	"log"
 	"strings"
 
 	"github.com/taubyte/tau/dream"
+	"github.com/taubyte/tau/tools/dream/cli/common"
 	"github.com/taubyte/tau/tools/dream/cli/flags"
 	"github.com/urfave/cli/v2"
 )
@@ -17,7 +17,7 @@ func Universe(c *cli.Command) {
 		log.Fatal("universe expected to be second argument")
 	}
 
-	c.ArgsUsage += ", universe"
+	c.ArgsUsage += " [universe]"
 
 	action := c.Action
 
@@ -39,7 +39,7 @@ func getUniverse(c *cli.Context) (universe string, err error) {
 		if len(args1) != 0 {
 			universe = c.Args().Get(1)
 			if strings.HasPrefix(universe, "-") {
-				err = errors.New("parse arguments failed: write [arguments] after -flags")
+				err = common.ErrFlagsAfterArgs
 				return
 			}
 
