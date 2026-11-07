@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/dream/helpers"
@@ -74,10 +75,11 @@ func createTestSetup(devMode bool) *testSetup {
 
 func (ts *testSetup) setupGitHubWebhook(body []byte, secret string) {
 	ts.ctx.SetHeaders(map[string]string{
-		"X-GitHub-Event":    "push",
-		"X-GitHub-Delivery": "test-delivery-id",
-		"X-Hub-Signature":   "sha1=" + generateHMAC(body, secret),
-		"Content-Type":      "application/json",
+		"X-GitHub-Event":      "push",
+		"X-GitHub-Delivery":   "test-delivery-id",
+		"X-Hub-Signature":     "sha1=" + generateHMAC(body, secret),
+		"X-Hub-Signature-256": "sha256=" + hmac256(body, secret),
+		"Content-Type":        "application/json",
 	})
 	ts.ctx.SetBody(body)
 }
@@ -434,6 +436,7 @@ func TestGithubHookHandler(t *testing.T) {
 			secret:   "test-secret",
 			body:     []byte("invalid json"),
 			setupMocks: func(ts *testSetup) {
+				ts.setupGitHubWebhook([]byte("invalid json"), "test-secret")
 				ts.setupSecretInContext("test-secret")
 			},
 			expectedError: "parsing hook failed",
@@ -443,7 +446,7 @@ func TestGithubHookHandler(t *testing.T) {
 			devMode:  false,
 			delayJob: false,
 			secret:   "test-secret",
-			body:     helpers.ConfigPayload,
+			body:     pushBody(t, time.Now()), // non-dev refuses pushes older than 24h
 			setupMocks: func(ts *testSetup) {
 				ts.setupHookInAuth("test-hook-1", "taubyte_secret")
 				ts.tnsClient.pushError = errors.New("tns push failed")
