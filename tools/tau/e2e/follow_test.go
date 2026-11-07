@@ -12,7 +12,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -95,11 +94,9 @@ func TestTauCIRunFollowsALiveBuild(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { f.Close() })
 	cloud, _ := universe(t, f, nil)
-	var login result
-	require.Eventually(t, func() bool {
-		login = tauIn(f.TokenString()+"\n", "login", "--cloud", cloud, "--sso", f.Host(), "--paste")
-		return login.code == 0
-	}, 2*time.Minute, time.Second, "login never succeeded: %s", login.stderr)
+	until(t, "login", func() result {
+		return tauIn(f.TokenString()+"\n", "login", "--cloud", cloud, "--sso", f.Host(), "--paste")
+	})
 
 	work := t.TempDir()
 	require.NoError(t, copyProject(filepath.Join("..", "..", "..", "instance", "dream", "projects", "with", "function", "wasm"), work))
@@ -107,11 +104,9 @@ func TestTauCIRunFollowsALiveBuild(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(work, "services", "hello", "README"), []byte("built by its recipe\n"), 0o644))
 	recipe(t, work, held)
 	configRepo := repokey.Key{Host: f.Host(), Owner: fake.Namespace, Name: "follow"}
-	var link result
-	require.Eventually(t, func() bool {
-		link = tau("link", "--create", "--push", "--dir", work, "--config-repo", configRepo.String(), "-o", "json")
-		return link.code == 0
-	}, 2*time.Minute, time.Second, "link never succeeded: %s", link.stderr)
+	until(t, "link", func() result {
+		return tau("link", "--create", "--push", "--dir", work, "--config-repo", configRepo.String(), "-o", "json")
+	})
 
 	live := &watched{want: "compiling the held build", seen: make(chan struct{})}
 	var out bytes.Buffer

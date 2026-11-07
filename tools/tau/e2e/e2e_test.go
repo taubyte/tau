@@ -58,6 +58,23 @@ var forges *forge.Registry
 func tau(args ...string) result { return tauIn("", args...) }
 
 // tauIn runs the CLI with stdin.
+// until runs a command until it succeeds, and says what it last answered when it
+// never does.
+func until(t *testing.T, what string, run func() result) result {
+	t.Helper()
+	var last result
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		if last = run(); last.code == 0 {
+			return last
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s never succeeded:\nstdout: %s\nstderr: %s", what, last.stdout, last.stderr)
+		}
+		time.Sleep(time.Second)
+	}
+}
+
 func tauIn(stdin string, args ...string) result {
 	var out, errs bytes.Buffer
 	code := cli.Run(cli.Env{Stdin: strings.NewReader(stdin), Stdout: &out, Stderr: &errs, HTTP: http.DefaultClient, Forges: forges}, args)
@@ -148,11 +165,9 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 	cloud, otherCloud := fleet(t, f)
 
 	// The forge sign-in hands its credential back, and the CLI keeps it.
-	var login result
-	require.Eventually(t, func() bool {
-		login = tauIn(f.TokenString()+"\n", "login", "--profile", "owner", "--cloud", cloud, "--sso", f.Host(), "--paste")
-		return login.code == 0
-	}, 2*time.Minute, time.Second, "login never succeeded: %s", login.stderr)
+	until(t, "login", func() result {
+		return tauIn(f.TokenString()+"\n", "login", "--profile", "owner", "--cloud", cloud, "--sso", f.Host(), "--paste")
+	})
 	path, err := config.Path()
 	require.NoError(t, err)
 	cfg, err := config.Load(path)
@@ -168,11 +183,9 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 	codeRepo := repokey.Key{Host: f.Host(), Owner: fake.Namespace, Name: "payments"}
 	require.NotEqual(t, "fake-user", configRepo.Owner, "owned by an organization, not the login")
 
-	var link result
-	require.Eventually(t, func() bool {
-		link = tau("link", "--profile", "owner", "--create", "--dir", dir, "--config-repo", configRepo.String(), "-o", "json")
-		return link.code == 0
-	}, 2*time.Minute, time.Second, "link never succeeded: %s", link.stderr)
+	link := until(t, "link", func() result {
+		return tau("link", "--profile", "owner", "--create", "--dir", dir, "--config-repo", configRepo.String(), "-o", "json")
+	})
 	type linkAnswer struct {
 		config.Link
 		Pushed string `json:"pushed"`
@@ -188,13 +201,9 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 
 	// Relinking keeps the config repository's hook, creates and wires the
 	// code repository, and pushes the project.
-	require.Eventually(t, func() bool {
-		link = tau("link", "--profile", "owner", "--create", "--push", "--keep-hook", "--dir", dir, "--config-repo", configRepo.String(), "--code-repo", codeRepo.String(), "-o", "json")
-		if link.code != 0 {
-			t.Log(link.stderr)
-		}
-		return link.code == 0
-	}, 2*time.Minute, time.Second, "relink never succeeded: %s", link.stderr)
+	link = until(t, "relink", func() result {
+		return tau("link", "--profile", "owner", "--create", "--push", "--keep-hook", "--dir", dir, "--config-repo", configRepo.String(), "--code-repo", codeRepo.String(), "-o", "json")
+	})
 	require.NoError(t, json.Unmarshal([]byte(link.stdout), &linked))
 	require.Len(t, linked.Pushed, 40)
 	require.Equal(t, []string{codeRepo.String()}, linked.Code)

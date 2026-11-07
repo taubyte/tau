@@ -105,7 +105,9 @@ func (p *Pool) Do(ctx context.Context, fn func(c *rpc.Client) error) error {
 	return fmt.Errorf("%w on %s: %w", ErrNoBackend, p.protocol, last)
 }
 
-// peers asks the resolver for as many peers as this pool will hold.
+// peers is every peer the resolver knows, up to as many as this pool holds, and
+// waits only when it knows none: a resolver that waits for want peers waits forever
+// in a cloud with fewer, and one is enough to answer.
 func (p *Pool) peers(ctx context.Context) ([]peer.ID, error) {
 	p.mu.Lock()
 	closed := p.closed
@@ -116,7 +118,10 @@ func (p *Pool) peers(ctx context.Context) ([]peer.ID, error) {
 
 	// NO PEER TO ASK IS UNAVAILABLE, as every peer deferring is: come back, which a
 	// caller walking plm nodes or following a log does.
-	peers, err := p.resolver.Peers(ctx, p.max)
+	if known := p.resolver.Known(); len(known) > 0 {
+		return known[:min(len(known), p.max)], nil
+	}
+	peers, err := p.resolver.Peers(ctx, 1)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("%w: resolving %s: %w", ErrNoBackend, p.protocol, err))
 	}

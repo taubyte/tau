@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -158,6 +159,39 @@ func TestAnUnavailablePeerIsReportedAndDropped(t *testing.T) {
 	require.Equal(t, 0, p.held())
 }
 
+// waitingResolver waits, as a live discovery.Discovery does, until it knows as
+// many peers as it is asked for.
+type waitingResolver struct{ known []peer.ID }
+
+func (w *waitingResolver) Any(ctx context.Context) (peer.ID, error) { return "", ctx.Err() }
+func (w *waitingResolver) Peers(ctx context.Context, want int) ([]peer.ID, error) {
+	if len(w.known) >= want {
+		return w.known[:want], nil
+	}
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+func (w *waitingResolver) Known() []peer.ID { return w.known }
+func (w *waitingResolver) Failed(peer.ID)   {}
+
+// A cloud with one auth node is asked at once by a pool that would hold four.
+func TestAPoolLargerThanTheCloudDoesNotWaitToFillIt(t *testing.T) {
+	mn := newMocknet(t)
+	only := newHost(t, mn)
+	p, err := NewPool(newHost(t, mn), &waitingResolver{known: []peer.ID{only.ID()}}, AuthProtocol, 4)
+	require.NoError(t, err)
+	t.Cleanup(p.Close)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	var asked []peer.ID
+	require.NoError(t, p.Do(ctx, func(c *rpc.Client) error {
+		asked = append(asked, only.ID())
+		return nil
+	}))
+	require.Equal(t, []peer.ID{only.ID()}, asked)
+}
+
 type recordingResolver struct {
 	peers  []peer.ID
 	failed []peer.ID
@@ -278,6 +312,8 @@ func TestCloseDuringADoIsRefusedRatherThanRaced(t *testing.T) {
 	})
 }
 
+// hookResolver runs onPeers whenever the pool resolves, whether it read what is
+// known or waited for a peer.
 type hookResolver struct {
 	peers   []peer.ID
 	onPeers func()
@@ -285,13 +321,15 @@ type hookResolver struct {
 
 func (h *hookResolver) Any(context.Context) (peer.ID, error) { return h.peers[0], nil }
 func (h *hookResolver) Peers(context.Context, int) ([]peer.ID, error) {
+	return h.Known(), nil
+}
+func (h *hookResolver) Known() []peer.ID {
 	if h.onPeers != nil {
 		h.onPeers()
 	}
-	return h.peers, nil
+	return h.peers
 }
-func (h *hookResolver) Known() []peer.ID { return h.peers }
-func (h *hookResolver) Failed(peer.ID)   {}
+func (h *hookResolver) Failed(peer.ID) {}
 
 func TestAnEmptyPeerSetWithNoErrorIsStillNoBackend(t *testing.T) {
 	mn := newMocknet(t)

@@ -34,11 +34,9 @@ func TestTheConsolePathAgainstARealFleet(t *testing.T) {
 	t.Cleanup(func() { f.Close() })
 	cloud, _ := fleet(t, f)
 
-	var login result
-	require.Eventually(t, func() bool {
-		login = tauIn(f.TokenString()+"\n", "login", "--cloud", cloud, "--sso", f.Host(), "--paste")
-		return login.code == 0
-	}, 2*time.Minute, time.Second, "login never succeeded: %s", login.stderr)
+	until(t, "login", func() result {
+		return tauIn(f.TokenString()+"\n", "login", "--cloud", cloud, "--sso", f.Host(), "--paste")
+	})
 	path, err := config.Path()
 	require.NoError(t, err)
 	cfg, err := config.Load(path)

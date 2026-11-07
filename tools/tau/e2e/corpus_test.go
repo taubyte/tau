@@ -513,11 +513,9 @@ func signedIn(t *testing.T, configure func(*instance.Config), opts ...instance.O
 	t.Cleanup(func() { f.Close() })
 	cloud, serving := universe(t, f, configure, opts...)
 
-	var login result
-	require.Eventually(t, func() bool {
-		login = tauIn(f.TokenString()+"\n", "login", "--cloud", cloud, "--sso", f.Host(), "--paste")
-		return login.code == 0
-	}, 2*time.Minute, time.Second, "login never succeeded: %s", login.stderr)
+	until(t, "login", func() result {
+		return tauIn(f.TokenString()+"\n", "login", "--cloud", cloud, "--sso", f.Host(), "--paste")
+	})
 	return &underTest{f: f, serving: serving}
 }
 
@@ -544,11 +542,7 @@ func (u *underTest) bothWays(t *testing.T, c corpusCase) {
 	for _, r := range code {
 		args = append(args, "--code-repo", r.key.String())
 	}
-	var link result
-	require.Eventually(t, func() bool {
-		link = tau(args...)
-		return link.code == 0
-	}, 2*time.Minute, time.Second, "link never succeeded: %s", link.stderr)
+	until(t, "link", func() result { return tau(args...) })
 	for _, r := range code {
 		pushed(t, f, r)
 	}
