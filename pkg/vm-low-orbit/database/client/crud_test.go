@@ -433,7 +433,7 @@ func TestOldImportsUnchanged(t *testing.T) {
 		func(p uint32) uint32 { return e.f.databaseListSize(e.ctx, e.mod, e.id, pp, pl, p) },
 		func(p uint32) uint32 { return e.f.databaseList(e.ctx, e.mod, e.id, pp, pl, p) },
 	))
-	if !sameSet(keys, "a", "b") {
+	if !sameSet(keys, "/a", "/b") {
 		t.Fatalf("list: %v", keys)
 	}
 	kp, kl := e.str(aPtr, "/a")
