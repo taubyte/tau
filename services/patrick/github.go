@@ -19,6 +19,7 @@ import (
 	authIface "github.com/taubyte/tau/core/services/auth"
 	iface "github.com/taubyte/tau/core/services/patrick"
 	http "github.com/taubyte/tau/pkg/http"
+	"github.com/taubyte/tau/pkg/platformerr"
 	servicesCommon "github.com/taubyte/tau/services/common"
 	"gopkg.in/go-playground/webhooks.v5/github"
 
@@ -89,10 +90,10 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 		parseSecret = secret
 	} else {
 		if secret == "" && !srv.devMode {
-			return nil, errors.New("hook has no secret")
+			return nil, platformerr.New(platformerr.Rejected, errors.New("hook has no secret"))
 		}
 		if secret != "" && !validSignature256(ctx.Request().Header.Get("X-Hub-Signature-256"), ctx.Body(), secret) {
-			return nil, errors.New("invalid X-Hub-Signature-256")
+			return nil, platformerr.New(platformerr.Rejected, errors.New("invalid X-Hub-Signature-256"))
 		}
 	}
 

@@ -19,6 +19,9 @@ const (
 	FunctionError     Code = "function_error"
 	FunctionTimeout   Code = "function_timeout"
 	Internal          Code = "internal"
+	// Rejected is a request refused for what the caller sent (a bad signature):
+	// logged as a warning, since anyone can send one.
+	Rejected Code = "rejected"
 )
 
 type Error struct {
@@ -55,6 +58,7 @@ var statuses = map[Code]int{
 	FunctionError:     http.StatusInternalServerError,
 	FunctionTimeout:   http.StatusGatewayTimeout,
 	Internal:          http.StatusInternalServerError,
+	Rejected:          http.StatusUnauthorized,
 }
 
 var messages = map[Code]string{
@@ -64,6 +68,7 @@ var messages = map[Code]string{
 	FunctionError:     "The function failed",
 	FunctionTimeout:   "The function took too long",
 	Internal:          "Internal error",
+	Rejected:          "Request rejected",
 }
 
 // Status is the HTTP status for c; unknown and empty codes are 500.
