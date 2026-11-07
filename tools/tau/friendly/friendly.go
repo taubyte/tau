@@ -14,7 +14,7 @@ import (
 	"github.com/google/go-github/v71/github"
 	"github.com/taubyte/tau/pkg/platformerr"
 	"github.com/taubyte/tau/tools/tau/i18n/selection"
-	loginLib "github.com/taubyte/tau/tools/tau/lib/login"
+	"github.com/taubyte/tau/tools/tau/session"
 )
 
 // Debug shows the original error under the friendly one. Set by --debug.
@@ -22,11 +22,10 @@ var Debug = os.Getenv("TAU_DEBUG") == "1"
 
 // Cloud names the selected cloud for messages; tests replace it.
 var Cloud = func() string {
-	p, err := loginLib.GetSelectedProfile()
-	if err != nil || p.Cloud == "" {
-		return "the selected cloud"
+	if c := session.CloudName(); c != "" {
+		return c
 	}
-	return p.Cloud
+	return "the selected cloud"
 }
 
 var codes = map[platformerr.Code][2]string{

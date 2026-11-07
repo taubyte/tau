@@ -142,7 +142,7 @@ func _import(ctx *cli.Context) error {
 		return projectI18n.CreatingProjectFailed(err)
 	}
 
-	projectI18n.ImportedProject(clientProject.Name, session.CloudName())
+	reportImported(clientProject.Name)
 
 	if prompts.ConfirmPrompt(ctx, fmt.Sprintf("select `%s` as current project?", clientProject.Name)) {
 		if err = session.Set().SelectedProject(clientProject.Name); err != nil {
@@ -154,4 +154,9 @@ func _import(ctx *cli.Context) error {
 	}
 
 	return nil
+}
+
+// reportImported names the cloud the session selected, not the profile's.
+func reportImported(name string) {
+	projectI18n.ImportedProject(name, session.CloudName())
 }
