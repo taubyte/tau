@@ -42,6 +42,7 @@ type Container struct {
 	env              []string
 	workDir          string
 	restrictedEgress bool
+	resources        *core.ResourceLimits
 }
 
 // DockerImage wraps the methods of the docker image.
@@ -53,6 +54,7 @@ type DockerImage struct {
 	output           io.Writer
 	restrictedEgress bool
 	reusePulled      time.Duration
+	trustLocal       bool
 	// Keep client reference for backward compatibility
 	client *Client // Kept for reference, but operations use backend
 }

@@ -348,6 +348,10 @@ func (b *DockerBackend) createDockerConfig(config *core.ContainerConfig) (*conta
 			// it. NET_RAW opens AF_PACKET, which writes frames straight to the
 			// device, and NET_ADMIN can rewrite the container's own routing.
 			hostConfig.CapDrop = append(hostConfig.CapDrop, "NET_RAW", "NET_ADMIN")
+			// Untrusted code runs as root (images and npm expect it), so take
+			// what root needs to reach past the container instead.
+			hostConfig.CapDrop = append(hostConfig.CapDrop, "SYS_ADMIN", "SYS_PTRACE", "MKNOD")
+			hostConfig.SecurityOpt = append(hostConfig.SecurityOpt, "no-new-privileges")
 		case config.Network.Mode != "":
 			hostConfig.NetworkMode = container.NetworkMode(config.Network.Mode)
 		}

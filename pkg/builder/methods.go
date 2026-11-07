@@ -39,6 +39,10 @@ func (b *builder) buildImage() (clientImage *ci.DockerImage, err error) {
 	ops := make([]ci.ImageOption, 0, 3)
 	ops = append(ops, ci.Output(b.output))
 	ops = append(ops, ci.ReusePulled(b.reusePulled()))
+	if b.dev {
+		// a laptop's own images, usable offline
+		ops = append(ops, ci.TrustLocal())
+	}
 
 	// if tarball is set then a new image is created
 	if b.tarball != nil {
@@ -100,7 +104,7 @@ func (b *builder) run(output *output, image *ci.DockerImage, environment specs.E
 			// build.sh is untrusted repo content: confine its network to the
 			// public internet so it cannot reach node-local services or the
 			// cloud metadata endpoint.
-			stepOps = append(stepOps, ci.RestrictedEgress())
+			stepOps = append(stepOps, ci.RestrictedEgress(), ci.Resources(buildLimits()))
 		}
 		if b.dev {
 			for volume, path := range devCaches {
