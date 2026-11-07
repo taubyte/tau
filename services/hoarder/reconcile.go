@@ -146,18 +146,19 @@ func (srv *Service) stashReconcile(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	target := targetReplicas(srv.fleetSize())
+	fleet := srv.fleetSize()
 	for _, cid := range mine {
 		claims, err := srv.listStashClaims(ctx, cid)
 		if err != nil {
 			continue
 		}
-		if len(srv.liveClaimants(claims)) >= target {
-			continue
-		}
 		owner := ""
 		if meta, err := srv.getStashMeta(ctx, cid); err == nil {
 			owner = meta.OwnerHash
+		}
+		target := stashTargetFor(owner, fleet)
+		if len(srv.liveClaimants(claims)) >= target {
+			continue
 		}
 		srv.fanoutStash(ctx, cid, target, owner)
 	}
