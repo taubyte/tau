@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/core/services/patrick"
 	"gotest.tools/v3/assert"
 )
 
@@ -48,6 +49,7 @@ func TestRepoCachePrunesOldIdleDirs(t *testing.T) {
 	old, held := filepath.Join(gitCacheRoot, "p", "old"), filepath.Join(gitCacheRoot, "p", "held")
 	for _, d := range []string{old, held} {
 		assert.NilError(t, os.MkdirAll(d, 0755))
+		assert.NilError(t, os.WriteFile(d+".lock", nil, 0644))
 		past := time.Now().Add(-8 * 24 * time.Hour)
 		assert.NilError(t, os.Chtimes(d, past, past))
 	}
@@ -60,6 +62,8 @@ func TestRepoCachePrunesOldIdleDirs(t *testing.T) {
 	assert.Assert(t, os.IsNotExist(err))
 	_, err = os.Stat(held)
 	assert.NilError(t, err)
+	_, err = os.Stat(old + ".lock")
+	assert.Assert(t, os.IsNotExist(err))
 }
 
 // A clone dir held by a monkey in another process (its flock) is waited on.
@@ -77,4 +81,22 @@ func TestRepoDirWaitsForOtherProcess(t *testing.T) {
 	_, unlock, err := lockRepoDir(context.Background(), "projA", "1")
 	assert.NilError(t, err)
 	unlock()
+}
+
+// A clone whose .git outgrew the limit is dropped and cloned afresh.
+func TestOpenRepoDropsOversizedClone(t *testing.T) {
+	gitCacheRoot, repoGitMaxBytes = t.TempDir(), 1024
+	defer func() { repoGitMaxBytes = 256 << 20 }()
+	dir := filepath.Join(gitCacheRoot, "projA", "1")
+	assert.NilError(t, os.MkdirAll(filepath.Join(dir, ".git"), 0755))
+	assert.NilError(t, os.WriteFile(filepath.Join(dir, ".git", "pack"), make([]byte, 2048), 0644))
+	assert.NilError(t, os.WriteFile(filepath.Join(dir, "stale"), nil, 0644))
+
+	c := &Context{ctx: context.Background(), ProjectID: "projA"}
+	c.Job = &patrick.Job{}
+	c.LogFile, _ = os.CreateTemp(t.TempDir(), "log")
+	c.openRepo("1", "file:///nonexistent", "", "") // the clone fails; the dir must already be gone
+	c.releaseRepos()
+	_, err := os.Stat(filepath.Join(dir, "stale"))
+	assert.Assert(t, os.IsNotExist(err))
 }

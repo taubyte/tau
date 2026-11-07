@@ -17,6 +17,12 @@ const (
 )
 
 var (
+	// repoGitMaxBytes bounds a reused clone: fetches only add packs, so past
+	// this the dir is cloned afresh.
+	repoGitMaxBytes int64 = 256 << 20
+)
+
+var (
 	// gitCacheRoot holds one clone per <projectID>/<repoID>, reused across jobs.
 	gitCacheRoot = filepath.Join(os.TempDir(), "tau-git")
 	cacheIDRe    = regexp.MustCompile(`^[a-zA-Z0-9]+$`)
@@ -81,7 +87,8 @@ func pruneRepoCache() {
 		select {
 		case l <- struct{}{}:
 			if funlock, err := fileLock(nil, d+".lock"); err == nil {
-				os.RemoveAll(d) // the .lock file stays: removing it races another process's open
+				os.RemoveAll(d)
+				os.Remove(d + ".lock")
 				funlock()
 			}
 			<-l
@@ -111,6 +118,11 @@ func (c *Context) openRepo(repoID, url, key, commit string, opts ...git.Option) 
 		return nil, err
 	}
 	c.unlocks = append(c.unlocks, unlock)
+	if dirSize(filepath.Join(dir, ".git")) > repoGitMaxBytes {
+		if err = os.RemoveAll(dir); err != nil {
+			return nil, err
+		}
+	}
 	if err = os.MkdirAll(dir, 0755); err != nil {
 		return nil, err
 	}
@@ -123,4 +135,16 @@ func (c *Context) releaseRepos() {
 		u()
 	}
 	c.unlocks = nil
+}
+
+func dirSize(dir string) (n int64) {
+	filepath.WalkDir(dir, func(_ string, e os.DirEntry, err error) error {
+		if err == nil && !e.IsDir() {
+			if fi, err := e.Info(); err == nil {
+				n += fi.Size()
+			}
+		}
+		return nil
+	})
+	return
 }
