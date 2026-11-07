@@ -9,7 +9,7 @@ import (
 
 var Command = &cli.Command{
 	Name:    "current",
-	Usage:   "Display current selected values",
+	Usage:   "Show the selected login, cloud, project and application",
 	Aliases: []string{"cur", "here", "this"},
 	Action:  Run,
 }

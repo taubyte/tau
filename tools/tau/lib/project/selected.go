@@ -11,7 +11,6 @@ import (
 func SelectedProjectConfig() (configProject config.Project, err error) {
 	selectedProject, err := config.GetSelectedProject()
 	if err != nil {
-		i18n.Help().BeSureToSelectProject()
 		return
 	}
 
@@ -25,9 +24,5 @@ func SelectedProjectConfig() (configProject config.Project, err error) {
 
 func ConfirmSelectedProject() error {
 	_, err := config.GetSelectedProject()
-	if err != nil {
-		i18n.Help().BeSureToSelectProject()
-	}
-
 	return err
 }

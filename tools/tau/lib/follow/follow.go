@@ -16,7 +16,9 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/pterm/pterm"
 	"github.com/taubyte/tau/core/services/patrick"
+	"github.com/taubyte/tau/tools/tau/output"
 )
 
 // Patrick is the part of the Patrick client this package reads.
@@ -247,7 +249,7 @@ func logTail(p Patrick, j *patrick.Job) (string, []string) {
 // WriteJobs prints one line per job, and the error and log tail of a failure.
 func WriteJobs(w io.Writer, jobs []Job) {
 	for _, j := range jobs {
-		fmt.Fprintf(w, "%-8s %-8s attempt %d  %4.0fs after push  %s\n", j.Repo, j.Status, j.Attempt, j.Seconds, j.Id)
+		fmt.Fprintf(w, "%s %-8s %-8s attempt %d  %4.0fs after push  %s\n", output.JobMark(j.Status), j.Repo, j.Status, j.Attempt, j.Seconds, j.Id)
 		if j.Error != "" {
 			fmt.Fprintf(w, "  error: %s\n", j.Error)
 			for _, l := range j.Logs {
@@ -395,11 +397,11 @@ func WriteServed(w io.Writer, served []Served) {
 	for _, s := range served {
 		switch {
 		case s.Changed:
-			fmt.Fprintf(w, "%-20s %-24s serves new build %.1fs after push (HTTP %d)\n", s.Resource, s.Node, s.Seconds, s.Code)
+			fmt.Fprintf(w, "%s %-20s %-24s serves new build %.1fs after push (HTTP %d)\n", output.OK(), s.Resource, s.Node, s.Seconds, s.Code)
 		case s.Note != "":
-			fmt.Fprintf(w, "%-20s %-24s %s (HTTP %d)\n", s.Resource, s.Node, s.Note, s.Code)
+			fmt.Fprintf(w, "%s %-20s %-24s %s (HTTP %d)\n", output.Warn(), s.Resource, s.Node, s.Note, s.Code)
 		default:
-			fmt.Fprintf(w, "%-20s %-24s unchanged (HTTP %d)\n", s.Resource, s.Node, s.Code)
+			fmt.Fprintf(w, "%s %-20s %-24s unchanged (HTTP %d)\n", output.Failed(), s.Resource, s.Node, s.Code)
 		}
 	}
 }
@@ -522,7 +524,8 @@ func WriteStatus(w io.Writer, rep Report) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "REPO\tSTATUS\tATTEMPT\tAGE\tJOB")
 	for _, r := range rep.Repos {
-		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\n", r.Repo, r.Status, r.Attempt, time.Duration(r.AgeSeconds)*time.Second, r.Job)
+		// no color in a table: tabwriter would count the escapes as width
+		fmt.Fprintf(tw, "%s\t%s %s\t%d\t%s\t%s\n", r.Repo, pterm.RemoveColorFromString(output.JobMark(r.Status)), r.Status, r.Attempt, time.Duration(r.AgeSeconds)*time.Second, r.Job)
 		if r.Error != "" {
 			fmt.Fprintf(tw, "  error: %s\t\t\t\t\n", r.Error)
 		}

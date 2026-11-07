@@ -25,7 +25,6 @@ type Store struct {
 func Open() (*Store, error) {
 	selected, err := config.GetSelectedProject()
 	if err != nil {
-		i18n.Help().BeSureToSelectProject()
 		return nil, err
 	}
 	cfg, err := config.Projects().Get(selected)

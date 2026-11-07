@@ -9,7 +9,6 @@ import (
 	"github.com/taubyte/tau/tools/tau/clients/dream"
 	"github.com/taubyte/tau/tools/tau/common"
 	"github.com/taubyte/tau/tools/tau/config"
-	"github.com/taubyte/tau/tools/tau/i18n"
 	cloudI18n "github.com/taubyte/tau/tools/tau/i18n/cloud"
 	singletonsI18n "github.com/taubyte/tau/tools/tau/i18n/shared"
 	loginLib "github.com/taubyte/tau/tools/tau/lib/login"
@@ -45,7 +44,6 @@ func loadClient() (config.Profile, Client, error) {
 		// Check for a default if no profiles are selected
 		profileName, _, _ = loginLib.GetProfiles()
 		if len(profileName) == 0 {
-			i18n.Help().HaveYouLoggedIn()
 			return config.Profile{}, nil, singletonsI18n.ProfileDoesNotExist()
 		}
 	}
@@ -57,7 +55,6 @@ func loadClient() (config.Profile, Client, error) {
 
 	selectedCloud, _ := session.GetSelectedCloud()
 	if selectedCloud == "" {
-		i18n.Help().HaveYouSelectedACloud()
 		return config.Profile{}, nil, singletonsI18n.NoCloudSelected()
 	}
 

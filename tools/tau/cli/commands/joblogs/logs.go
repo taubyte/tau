@@ -19,7 +19,7 @@ import (
 
 var Command = &cli.Command{
 	Name:      "logs",
-	Usage:     "a build job's logs, by job id or the last build of a repository (config, code, website <name>, library <name>)",
+	Usage:     "Show a build job's logs, by job id or a repository's last build",
 	ArgsUsage: "<job-id> | --last <repository> | function <name>",
 	Flags: []cli.Flag{
 		&cli.BoolFlag{Name: "last", Usage: "the last build of the repository named by the arguments, e.g. --last website site1"},

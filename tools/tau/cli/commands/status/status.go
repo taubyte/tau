@@ -14,7 +14,7 @@ import (
 
 var Command = &cli.Command{
 	Name:  "status",
-	Usage: "last build of each repository and what each node serves, for the selected project",
+	Usage: "Show each repository's last build and what each node serves",
 	Flags: []cli.Flag{
 		&cli.BoolFlag{Name: "watch", Aliases: []string{"w"}, Usage: "refresh every 2 seconds"},
 	},

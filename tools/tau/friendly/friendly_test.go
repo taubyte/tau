@@ -12,6 +12,7 @@ import (
 	"github.com/google/go-github/v71/github"
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/pkg/platformerr"
+	"github.com/taubyte/tau/tools/tau/i18n/selection"
 )
 
 func TestExplain(t *testing.T) {
@@ -39,6 +40,13 @@ func TestExplain(t *testing.T) {
 		{"universe none", &dream.UniverseNotFoundError{Name: "x"}, "dream new universe x"},
 		{"cli universe", errors.New("universe `foo` was not found"), `no universe "foo"`},
 		{"project", errors.New("project not found"), "tau import project"},
+		{"not logged in", errors.New("loading auth client failed with: profile does not exist"), "tau login"},
+		{"no user", selection.ErrorUserNotFound, "tau login"},
+		{"no cloud", errors.New("no cloud selected"), "tau select cloud"},
+		{"no project", fmt.Errorf("x: %w", selection.ErrorProjectNotFound), "No project is selected"},
+		{"unknown cloud", errors.New("unknown cloud `weird`"), `"weird"`},
+		{"repo 404", &github.ErrorResponse{Response: &http.Response{StatusCode: 404, Request: &http.Request{}}}, "repository not found"},
+		{"dream down", errors.New("Get http://127.0.0.1:1421/universes: dial tcp 127.0.0.1:1421: connect: connection refused"), "dream start"},
 		{"network", &net.OpError{Op: "dial", Err: errors.New("connection refused")}, "Could not reach"},
 		{"network text", errors.New("Get http://127.0.0.1:1421/status: dial tcp 127.0.0.1:1421: connect: connection refused"), "Could not reach"},
 	} {
