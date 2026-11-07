@@ -69,6 +69,10 @@ type Service struct {
 
 	poe poe.Engine
 
+	// acmeChallenge reads the pending DNS-01 value for acmeChallengeName (_acme-challenge.<generated domain>).
+	acmeChallengeName string
+	acmeChallenge     func() ([]byte, error)
+
 	shape   string
 	devMode bool
 }

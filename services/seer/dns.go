@@ -242,6 +242,10 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 
 		logger.Debugf("request for %s (type: %d)", name, msg.Question[0].Qtype)
 
+		if h.seer.acmeChallenge != nil && name == h.seer.acmeChallengeName && msg.Question[0].Qtype == dns.TypeTXT && h.replyACMEChallenge(w, r, msg) {
+			return
+		}
+
 		if spam := h.seer.negativeCache.Get(name); spam != nil {
 			logger.Debugf("%s is currently blocked", name)
 			h.count(name, true)
