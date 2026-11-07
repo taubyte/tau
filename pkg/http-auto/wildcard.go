@@ -55,7 +55,7 @@ func (s *Service) keepWildcard(ctx context.Context) {
 	for {
 		wait := WildcardCheckEvery
 		if err := s.ensureWildcard(ctx); err != nil {
-			logger.Warnf("wildcard *.%s: %s; generated hosts use per-host certificates", s.wildcardBase, err)
+			logger.Warnf("wildcard *.%s: %s; generated hosts use per-host certificates%s", s.wildcardBase, err, challengeHint(s.wildcardBase, err))
 			wait = WildcardRetry
 		}
 		select {
@@ -227,4 +227,14 @@ func (s *Service) orderWildcardACME(ctx context.Context, base string) ([]byte, e
 		out = append(out, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})...)
 	}
 	return out, nil
+}
+
+// challengeHint explains the usual cause of a failed DNS check: the challenge
+// name is answered by the parent zone (often a wildcard record at the
+// registrar) instead of this cloud's Seers.
+func challengeHint(base string, err error) string {
+	if msg := err.Error(); strings.Contains(msg, "Incorrect TXT record") || strings.Contains(msg, "NXDOMAIN") || strings.Contains(msg, "No TXT record") {
+		return fmt.Sprintf(". The ACME server did not reach Seer for _acme-challenge.%s: delegate that name to the Seers with an NS record at the DNS provider", base)
+	}
+	return ""
 }

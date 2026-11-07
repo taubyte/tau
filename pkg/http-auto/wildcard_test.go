@@ -12,6 +12,7 @@ import (
 	"errors"
 	"math/big"
 	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -162,4 +163,16 @@ func TestChallengeValue(t *testing.T) {
 	assert.Equal(t, txt, "tok")
 	_, ok = acmeStore.DecodeChallenge(acmeStore.EncodeChallenge("tok", time.Now().Add(-time.Second)))
 	assert.Assert(t, !ok)
+}
+
+// On t3 the challenge name was answered by the registrar's wildcard record,
+// and the log gave no way to tell. The warning now says what to change.
+func TestChallengeHintNamesTheDelegation(t *testing.T) {
+	err := errors.New(`authorization error for gen.example.com: 403 urn:ietf:params:acme:error:unauthorized: Incorrect TXT record "/ip4/1.2.3.4/tcp/4242" found at _acme-challenge.gen.example.com`)
+	if h := challengeHint("gen.example.com", err); !strings.Contains(h, "NS record") || !strings.Contains(h, "_acme-challenge.gen.example.com") {
+		t.Fatalf("hint %q", h)
+	}
+	if h := challengeHint("gen.example.com", errors.New("rate limited")); h != "" {
+		t.Fatalf("hint for another error: %q", h)
+	}
 }
