@@ -52,12 +52,12 @@ func TestHashDir(t *testing.T) {
 
 func TestDevBuildSlotCount(t *testing.T) {
 	const gib = 1 << 30
-	assert.Equal(t, devBuildSlotCount(12, 64*gib), 6, "half the cores")
-	assert.Equal(t, devBuildSlotCount(12, 7*gib+gib/2), 6)
-	assert.Equal(t, devBuildSlotCount(12, 3*gib), 3, "a GiB per build")
-	assert.Equal(t, devBuildSlotCount(64, 256*gib), 8, "at most 8")
-	assert.Equal(t, devBuildSlotCount(1, 512<<20), 1, "at least 1")
-	assert.Equal(t, devBuildSlotCount(8, 0), 2, "memory unknown")
+	assert.Equal(t, buildSlotCount(12, 64*gib), 6, "half the cores")
+	assert.Equal(t, buildSlotCount(12, 7*gib+gib/2), 6)
+	assert.Equal(t, buildSlotCount(12, 3*gib), 3, "a GiB per build")
+	assert.Equal(t, buildSlotCount(64, 256*gib), 8, "at most 8")
+	assert.Equal(t, buildSlotCount(1, 512<<20), 1, "at least 1")
+	assert.Equal(t, buildSlotCount(8, 0), 2, "memory unknown")
 }
 
 func TestRetryTns(t *testing.T) {

@@ -201,13 +201,13 @@ func (c Context) previousBuild(source string) (string, bool) {
 	return cid.(string), true
 }
 
-// devBuildSlots bounds the builds a development node runs at once, across all
-// of its jobs: half the cores, so the machine stays usable, and a GiB of
+// nodeBuildSlots bounds the builds a node runs at once, across all of its
+// jobs: half the cores, so the machine stays usable, and a GiB of
 // memory each, since a TinyGo build peaks around 400MiB and running out of
 // memory stalls the whole machine (a laptop's WSL froze at 14 builds on 7GiB).
-var devBuildSlots = make(chan struct{}, devBuildSlotCount(runtime.NumCPU(), memory.TotalMemory()))
+var nodeBuildSlots = make(chan struct{}, buildSlotCount(runtime.NumCPU(), memory.TotalMemory()))
 
-func devBuildSlotCount(cpus int, mem uint64) int {
+func buildSlotCount(cpus int, mem uint64) int {
 	byMemory := int(mem >> 30)
 	if mem == 0 {
 		byMemory = 2
@@ -215,14 +215,10 @@ func devBuildSlotCount(cpus int, mem uint64) int {
 	return min(max(min(cpus/2, byMemory), 1), 8)
 }
 
-// buildSlots is shared by every job on a development node. Off one, a job
-// builds one op at a time, as it always has: a build node's capacity is
-// planned around that.
+// buildSlots is shared by every job on the node: a job's ops build in parallel
+// up to the node's limit, and concurrent jobs share the same limit.
 func (c Context) buildSlots() chan struct{} {
-	if c.Monkey.Dev() {
-		return devBuildSlots
-	}
-	return make(chan struct{}, 1)
+	return nodeBuildSlots
 }
 
 func (c Context) opSourcePath(op Op) string {

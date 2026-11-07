@@ -4,19 +4,18 @@ import (
 	"time"
 )
 
-// devConcurrentJobs is how many jobs a development node runs at once, so a
-// website or library build does not hold up the project's code build. Off one,
-// a monkey runs one job at a time: Patrick hands a job to another monkey when
-// its assignment is not refreshed, and a busy monkey would not refresh it.
-const devConcurrentJobs = 3
+// concurrentJobs is how many jobs a monkey runs at once, so a website or
+// library build does not hold up the project's code build. Each running job
+// renews its claim (Monkey.refreshClaim), so a busy monkey keeps its jobs; the
+// builds themselves share the node-wide build slots.
+const concurrentJobs = 3
 
 // pollJobs periodically asks Patrick for available jobs.
 func (srv *Service) pollJobs() {
 	interval := 5 * time.Second
-	concurrent := 1
+	concurrent := concurrentJobs
 	if srv.dev {
 		interval = 500 * time.Millisecond
-		concurrent = devConcurrentJobs
 	}
 	slots := make(chan struct{}, concurrent)
 
