@@ -35,3 +35,14 @@ func TestPushOfAValueKeepsItsChannels(t *testing.T) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
 }
+
+// The compiler writes each index entry under its whole path as one key.
+func TestPushAtTheRootReachesFlatIndexKeys(t *testing.T) {
+	push := ChannelsForPush([]string{}, map[string]interface{}{
+		"http/websites/localtau/default/abc/links": []string{"x"},
+	})
+	want := GetChannelFor("http", "websites", "localtau", "default", "abc", "links")
+	if !slices.Contains(push, want) {
+		t.Fatalf("a fetch of the routing index listens on %q, which this push never reaches: %v", want, push)
+	}
+}

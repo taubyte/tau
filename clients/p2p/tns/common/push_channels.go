@@ -1,6 +1,9 @@
 package common
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // ChannelsForPush is every channel a push of data at path concerns. The config
 // compiler pushes the whole routing index at the root path, which has no
@@ -29,7 +32,8 @@ func ChannelsForPush(path []string, data interface{}) []string {
 			return
 		}
 		for k, child := range mapEntries(v) {
-			walk(append(key[:len(key):len(key)], k), child)
+			// the compiler writes index keys as whole paths: "http/websites/..."
+			walk(append(key[:len(key):len(key)], strings.FieldsFunc(k, isSlash)...), child)
 		}
 	}
 	walk(path, data)
@@ -50,3 +54,5 @@ func mapEntries(v interface{}) map[string]interface{} {
 	}
 	return nil
 }
+
+func isSlash(r rune) bool { return r == '/' }
