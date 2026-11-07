@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+// engine is what a node's raft engine sends and keeps for the groups it runs: the
+// frames one node streams another, carrying the raft messages of any of their
+// groups, and the proposal an entry wraps so the node that proposed it hears its
+// result.
+package tau.raft.v2;
+
+// Frame is one write on the stream between two nodes: every message the sender has
+// for the receiver after one cycle, whichever groups they belong to.
+message Frame {
+  repeated Envelope envelopes = 1;
+}
+
+// Envelope is one raft message and the group it belongs to. message is etcd raft's
+// own raftpb.Message, as its generated code marshals it. snapshot says it carries a
+// snapshot, whose delivery the sender reports back to raft.
+message Envelope {
+  string group = 1;
+  bytes message = 2;
+  bool snapshot = 3;
+}
+
+// Proposal is the data of one log entry: the command, and a number the proposing
+// node knows it by, so the node that proposed it hears its result when it applies.
+// The number is drawn at random, so two nodes' proposals never share one. Zero is an
+// entry nobody waits for.
+message Proposal {
+  uint64 id = 1;
+  bytes command = 2;
+}

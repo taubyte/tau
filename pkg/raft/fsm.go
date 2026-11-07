@@ -432,6 +432,17 @@ func (f *kvFSM) exportStateLocked() (map[string]CRDTEntry, error) {
 	return data, nil
 }
 
+// state is the whole machine as a snapshot carries it.
+func (f *kvFSM) state() ([]byte, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	data, err := f.exportStateLocked()
+	if err != nil {
+		return nil, err
+	}
+	return encodeSnapshot(data, f.clock)
+}
+
 type kvSnapshot struct {
 	data  map[string]CRDTEntry
 	clock uint64
