@@ -371,6 +371,28 @@ func TestAnUnplacedResourceReachingTwoRegionsIsRefused(t *testing.T) {
 		findingsTitled(findings, schema.Broken))
 }
 
+// A REGION THAT IS ONE OF MANY holds nothing that only follows what runs elsewhere:
+// a proxy in front of an application in region-1 is not region-2's, and is not
+// broken for it.
+func TestWhatFollowsSomethingElsewhereIsNotHeldHere(t *testing.T) {
+	docs := map[string]string{
+		"/project.yaml":                     regionsProject + everyBranch,
+		"/namespace/eu/application/db.yaml": "id: " + cidFor("application/db") + "\npackage:\n    name: db_code\n    namespace: /\nports:\n    pg:\n        number: 5432\nexecution:\n    memory: 64MB\n",
+		"/package/db_code.yaml":             "id: " + cidFor("package/db_code") + "\ntype: oci\nsource: services/db\nbuild:\n    dockerfile:\n        target: runtime\n",
+		"/proxy/db.yaml": "id: " + cidFor("proxy/db") + "\nhost:\n    generated:\n        name: db\nservice: postgres\n" +
+			"forward:\n    application:\n        namespace: /eu\n        name: db\n        port: pg\n",
+	}
+	viewNamespace(docs, "eu", "", "[region-1]")
+	views, findings, err := viewsOf(t, schema.WithRegion("region-2"), docs)
+	require.NoError(t, err, "%v", findings)
+	require.Empty(t, findingsTitled(findings, schema.Broken))
+	require.True(t, views["region-2"].Empty())
+
+	views, _, err = viewsOf(t, schema.WithRegion("region-1"), docs)
+	require.NoError(t, err)
+	require.Equal(t, schema.RoleFollows, rolesByName(t, views["region-1"])["proxy/db"])
+}
+
 func TestAnEmptyViewIsNotAnUnknownOne(t *testing.T) {
 	docs := map[string]string{
 		"/project.yaml":                regionsProject + everyBranch,
