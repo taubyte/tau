@@ -118,7 +118,7 @@ func TestTheProtocolIsDerived(t *testing.T) {
 }
 
 func TestTheTierIsThePackages(t *testing.T) {
-	for kind, typ := range map[string]string{"application": "oci", "function": "warp", "worker": "oci"} {
+	for kind, typ := range map[string]string{"service": "oci", "function": "warp", "worker": "oci"} {
 		got, err := runtimeOf(kind, specs.Package{Name: "p", Type: typ})
 		require.NoError(t, err)
 		require.Equal(t, typ, got, "%s runs its package's type", kind)
@@ -136,7 +136,7 @@ func TestHeadersSurviveTheRoundTrip(t *testing.T) {
 	h := newHarness(t)
 
 	res, err := h.Client.Invoke(t.Context(), connect.NewRequest(&workerv2.InvokeRequest{
-		Target: target("application", "api"),
+		Target: target("service", "api"),
 		Method: "POST",
 		Path:   "/checkout",
 		Headers: map[string]*workerv2.Headers{

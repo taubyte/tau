@@ -1,0 +1,6 @@
+id: QmcGVFLMY7K9RgEqKBFCZ2roUqCYHGynBeejyfnEi8di9j
+name: oneservice
+description: the smallest project a container answers - one service behind one route, and nothing else
+environments:
+    prod:
+        branches: ["*"]

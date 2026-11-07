@@ -55,7 +55,7 @@ func serving(t *testing.T, compiled []byte, hosts ...string) *Instance {
 	// A deployment is only visible to what this node SERVES once the worker
 	// holds it, so it is touched here the way a first request would.
 	_, err = n.Worker().Resolve(t.Context(),
-		specs.Address{Project: "shop", Environment: "prod", Kind: "application", Name: "db"})
+		specs.Address{Project: "shop", Environment: "prod", Kind: "service", Name: "db"})
 	require.NoError(t, err)
 
 	return n
@@ -174,13 +174,13 @@ func withZone(apex string, records []any) []byte {
 		"object": map[string]any{
 			"id":   projectID,
 			"name": "shop",
-			// The application is what the worker is asked to hold — see
+			// The service is what the worker is asked to hold — see
 			// serving. A zone declares no workload of its own.
 			"package": map[string]any{
 				imagePackageID: map[string]any{"name": "postgres", "type": "oci",
 					"source": map[string]any{"kind": "image", "image": "ghcr.io/acme/postgres:16"}},
 			},
-			"application": map[string]any{
+			"service": map[string]any{
 				proxyAppID: map[string]any{
 					"name":    "db",
 					"package": map[string]any{"name": imagePackageID},
@@ -193,8 +193,8 @@ func withZone(apex string, records []any) []byte {
 		"indexes": map[string]any{
 			"projects/" + projectID + "/package/postgres/links": []any{
 				"branches/main/projects/" + projectID + "/package/" + imagePackageID},
-			"projects/" + projectID + "/application/db/links": []any{
-				"branches/main/projects/" + projectID + "/application/" + proxyAppID},
+			"projects/" + projectID + "/service/db/links": []any{
+				"branches/main/projects/" + projectID + "/service/" + proxyAppID},
 			"projects/" + projectID + "/zone/own/links": []any{
 				"branches/main/projects/" + projectID + "/zone/" + zoneResourceID},
 		},

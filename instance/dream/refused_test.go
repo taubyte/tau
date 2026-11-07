@@ -15,12 +15,12 @@ import (
 	"github.com/taubyte/tau/services/plm/run"
 )
 
-func TestAnApplicationWithNothingToRunIsBroken(t *testing.T) {
-	broken := brokenIn(t, "refused/application/noartifact")
+func TestAServiceWithNothingToRunIsBroken(t *testing.T) {
+	broken := brokenIn(t, "refused/service/noartifact")
 	require.Contains(t, broken, "package: is of type oci and names no image and no build")
-	require.NotContains(t, broken, "application: is not placed anywhere")
+	require.NotContains(t, broken, "service: is not placed anywhere")
 
-	require.Empty(t, brokenIn(t, "with/application"),
+	require.Empty(t, brokenIn(t, "with/service"),
 		"the project that runs has nothing broken, so the refusal above is about the image")
 
 	const id = "QmZc65DUedgswsy18Ljq3GKmbX86Y7RWPJbosfPCdAVLWy"
@@ -28,7 +28,7 @@ func TestAnApplicationWithNothingToRunIsBroken(t *testing.T) {
 	require.NoError(t, err)
 	d, err := buildDeploy.New(
 		buildDeploy.WithProjects(configures{}),
-		buildDeploy.WithCheckout(corpus{filepath.Join("projects", "refused/application/noartifact")}),
+		buildDeploy.WithCheckout(corpus{filepath.Join("projects", "refused/service/noartifact")}),
 		buildDeploy.WithLocalRegister(r),
 		buildDeploy.WithCloudFqdn("tau.dream.test"),
 	)

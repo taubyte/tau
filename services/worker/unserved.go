@@ -3,6 +3,7 @@ package worker
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -41,8 +42,12 @@ func appliedWith(spec *invoke.Spec, t Target, proj *specs.Project, r specs.Resou
 			"each node would run up to its own ceiling", *most))
 	}
 
-	if t.Kind == specs.KindApplication {
-		refused = append(refused, probes(spec, specs.ReadApplication(r))...)
+	if t.Kind == specs.KindService {
+		if spec.Runtime == runtimeContainer {
+			refused = append(refused, probes(spec, specs.ReadService(r))...)
+		} else {
+			refused = append(refused, unlistened(spec.Runtime, specs.ReadService(r))...)
+		}
 	}
 
 	if t.Kind == specs.KindSandbox {
@@ -68,17 +73,17 @@ func appliedWith(spec *invoke.Spec, t Target, proj *specs.Project, r specs.Resou
 	return fmt.Errorf("%w: %s/%s: %s", ErrUnserved, t.Kind, t.Name, strings.Join(refused, "; "))
 }
 
-// probes carries an application's readiness check and refuses the rest.
-func probes(spec *invoke.Spec, app specs.Application) []string {
+// probes carries a service's readiness check and refuses the rest.
+func probes(spec *invoke.Spec, app specs.Service) []string {
 	var refused []string
 
 	// Readiness over HTTP is the container tier's existing wait, asking the named path on
 	// the named port.
 	readiness := app.Readiness
 	switch readiness.Kind {
-	case specs.ApplicationReadinessKindHttp:
+	case specs.ServiceReadinessKindHttp:
 		spec.Readiness = &invoke.Probe{Path: readiness.HttpPath, Port: readiness.HttpPort}
-	case specs.ApplicationReadinessKindFunction:
+	case specs.ServiceReadinessKindFunction:
 		refused = append(refused, fmt.Sprintf("readiness asks the function %s%s, and nothing here calls a function to decide whether an instance may take work",
 			readiness.FunctionName, inNamespace(readiness.FunctionNamespace)))
 	}
@@ -88,7 +93,7 @@ func probes(spec *invoke.Spec, app specs.Application) []string {
 	// written.
 	if liveness := app.Liveness; liveness.Declared {
 		check := fmt.Sprintf("GET %s on port %q", liveness.HttpPath, liveness.HttpPort)
-		if liveness.Kind == specs.ApplicationLivenessKindFunction {
+		if liveness.Kind == specs.ServiceLivenessKindFunction {
 			check = fmt.Sprintf("the function %s%s", liveness.FunctionName, inNamespace(liveness.FunctionNamespace))
 		}
 		failures := int64(0)
@@ -97,6 +102,26 @@ func probes(spec *invoke.Spec, app specs.Application) []string {
 		}
 		refused = append(refused, fmt.Sprintf("liveness (%s, replaced after %d failures) is declared, and nothing here checks a running instance — "+
 			"one that stops answering is kept until it exits", check, failures))
+	}
+	return refused
+}
+
+// unlistened refuses what only a process listening on its ports can honour, for a
+// service on a tier that answers requests: it binds no port and is asked nothing
+// before it takes work.
+func unlistened(runtime string, app specs.Service) []string {
+	var refused []string
+	if len(app.Ports) > 0 {
+		names := make([]string, 0, len(app.Ports))
+		for name := range app.Ports {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		refused = append(refused, fmt.Sprintf("ports %s are declared, and the %s tier answers requests and listens on no port — a service listens on its ports on the container tier only",
+			strings.Join(names, ", "), runtime))
+	}
+	if app.Readiness.Kind != "" || app.Liveness.Declared {
+		refused = append(refused, fmt.Sprintf("readiness or liveness is declared, and the %s tier probes nothing — a service is probed on the container tier only", runtime))
 	}
 	return refused
 }

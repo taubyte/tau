@@ -19,7 +19,7 @@ func TestARouteThatNamesAPortIsDeliveredOverIt(t *testing.T) {
 	w := h.do(t, http.MethodPost, "http://shop.example.com/checkout/cart", "an order")
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, "http", w.Header().Get("X-Port"), "the route's port, by name")
-	require.Equal(t, "application/api", w.Header().Get("X-Served"))
+	require.Equal(t, "service/api", w.Header().Get("X-Served"))
 	require.Equal(t, "/checkout/cart", w.Body.String())
 
 	seen := h.Workers.seen()
@@ -56,9 +56,9 @@ func (*hangUp) Conn(context.Context, specs.Address, string) (net.Conn, error) {
 
 func TestAWorkloadThatHangsUpIsAnError(t *testing.T) {
 	s := &Service{workers: &hangUp{}}
-	_, err := s.deliver(t.Context(), specs.Address{Kind: "application", Name: "api"}, "metrics", &invoke.Request{})
-	require.ErrorContains(t, err, `application/api on port "metrics"`)
+	_, err := s.deliver(t.Context(), specs.Address{Kind: "service", Name: "api"}, "metrics", &invoke.Request{})
+	require.ErrorContains(t, err, `service/api on port "metrics"`)
 
-	_, err = s.deliver(t.Context(), specs.Address{Kind: "application", Name: "api"}, "metrics", &invoke.Request{Method: "BAD METHOD"})
+	_, err = s.deliver(t.Context(), specs.Address{Kind: "service", Name: "api"}, "metrics", &invoke.Request{Method: "BAD METHOD"})
 	require.ErrorContains(t, err, "building the request")
 }

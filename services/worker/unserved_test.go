@@ -36,33 +36,42 @@ func appliedTo(t *testing.T, p *specs.Project, runtime, kind, name string) (invo
 	return spec, appliedWith(&spec, target, p, r, pkg, workload)
 }
 
-func TestTheFixturesApplicationsAreRefusedByName(t *testing.T) {
+func TestTheFixturesServicesAreRefusedByName(t *testing.T) {
 	p := untouched(t)
 
-	_, err := appliedTo(t, p, runtimeContainer, specs.KindApplication, "api")
+	_, err := appliedTo(t, p, runtimeContainer, specs.KindService, "api")
 	require.ErrorIs(t, err, ErrUnserved)
 	require.ErrorContains(t, err, "limits.max_instances is 10")
 	require.ErrorContains(t, err, `liveness (GET /livez on port "http", replaced after 5 failures)`)
 
-	_, err = appliedTo(t, p, runtimeContainer, specs.KindApplication, "db")
+	_, err = appliedTo(t, p, runtimeContainer, specs.KindService, "db")
 	require.ErrorIs(t, err, ErrUnserved)
 	require.ErrorContains(t, err, "names the pull secret")
 
-	_, err = appliedTo(t, p, runtimeContainer, specs.KindApplication, "worker_pool")
+	_, err = appliedTo(t, p, runtimeContainer, specs.KindService, "worker_pool")
 	require.ErrorIs(t, err, ErrUnserved)
 	require.ErrorContains(t, err, "readiness asks the function")
 }
 
 func TestACPUCeilingAndAReadinessProbeAreCarried(t *testing.T) {
-	spec, err := appliedTo(t, fixture(t), runtimeContainer, specs.KindApplication, "db")
+	spec, err := appliedTo(t, fixture(t), runtimeContainer, specs.KindService, "db")
 	require.NoError(t, err, "the harness's copy is servable")
 	require.Equal(t, int64(2000), spec.CPU)
 	require.Equal(t, &invoke.Probe{Path: "/", Port: "pg"}, spec.Readiness)
 
-	spec, err = appliedTo(t, fixture(t), runtimeContainer, specs.KindApplication, "api")
+	spec, err = appliedTo(t, fixture(t), runtimeContainer, specs.KindService, "api")
 	require.NoError(t, err)
 	require.Equal(t, &invoke.Probe{Path: "/healthz", Port: "http"}, spec.Readiness)
 	require.Zero(t, spec.CPU, "api declares no ceiling, and none is invented")
+}
+
+// A SERVICE OFF THE CONTAINER TIER answers requests and listens on nothing, so its
+// ports and probes are refused by name rather than dropped.
+func TestAServiceOnTheWarpTierRefusesItsPortsAndProbes(t *testing.T) {
+	_, err := appliedTo(t, fixture(t), specs.PackageTypeWarp, specs.KindService, "db")
+	require.ErrorIs(t, err, ErrUnserved)
+	require.ErrorContains(t, err, "ports pg are declared, and the warp tier answers requests and listens on no port")
+	require.ErrorContains(t, err, "readiness or liveness is declared, and the warp tier probes nothing")
 }
 
 // judge applies a resource's own declarations in an empty project.
@@ -90,12 +99,12 @@ func TestACPUCeilingOnTheWasmTierIsRefused(t *testing.T) {
 }
 
 func TestADefaultedLivenessBlockIsNotRefused(t *testing.T) {
-	_, err := judge(t, runtimeContainer, specs.KindApplication, specs.Resource{
+	_, err := judge(t, runtimeContainer, specs.KindService, specs.Resource{
 		"liveness": map[string]any{"failures": float64(3)},
 	})
 	require.NoError(t, err)
 
-	_, err = judge(t, runtimeContainer, specs.KindApplication, specs.Resource{
+	_, err = judge(t, runtimeContainer, specs.KindService, specs.Resource{
 		"liveness": map[string]any{"failures": float64(3), "kind": "function", "function": map[string]any{"name": "Qmcheck", "namespace": "/ops"}},
 	})
 	require.ErrorIs(t, err, ErrUnserved)

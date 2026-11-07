@@ -62,12 +62,12 @@ func hasNo(t *testing.T, found []schema.Finding, substr string) {
 const appBody = "id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY\npackage:\n    name: img\nexecution:\n    memory: 1MB\n"
 
 func TestAuditReachability(t *testing.T) {
-	found := auditDocs(t, nil, map[string]string{"/application/lonely.yaml": appBody})
+	found := auditDocs(t, nil, map[string]string{"/service/lonely.yaml": appBody})
 	has(t, found, schema.Broken, "nothing reaches it")
 
 	found = auditDocs(t, nil, map[string]string{
-		"/sync/work.yaml":     "id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o\nqueue:\n    consensus: raft\n    visibility_timeout: 30s\n",
-		"/application/w.yaml": appBody + "ports:\n    work:\n        number: 8080\nsync:\n    work:\n        ops: [receive]\n        deliver:\n            port: work\n            path: /w\n",
+		"/sync/work.yaml": "id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o\nqueue:\n    consensus: raft\n    visibility_timeout: 30s\n",
+		"/service/w.yaml": appBody + "ports:\n    work:\n        number: 8080\nsync:\n    work:\n        ops: [receive]\n        deliver:\n            port: work\n            path: /w\n",
 	})
 	has(t, found, schema.Note, "nothing fronts it, and nothing needs to")
 	hasNo(t, found, "nothing reaches it")
@@ -75,8 +75,8 @@ func TestAuditReachability(t *testing.T) {
 
 func TestAuditDelivery(t *testing.T) {
 	found := auditDocs(t, nil, map[string]string{
-		"/sync/work.yaml":     "id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o\nqueue:\n    consensus: raft\n    visibility_timeout: 30s\n",
-		"/application/w.yaml": appBody + "sync:\n    work:\n        ops: [receive]\n",
+		"/sync/work.yaml": "id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o\nqueue:\n    consensus: raft\n    visibility_timeout: 30s\n",
+		"/service/w.yaml": appBody + "sync:\n    work:\n        ops: [receive]\n",
 	})
 	has(t, found, schema.Broken, "declares no deliver port")
 
@@ -89,7 +89,7 @@ func TestAuditDelivery(t *testing.T) {
 
 func TestAuditVariables(t *testing.T) {
 	found := auditDocs(t, nil, map[string]string{
-		"/application/a.yaml": appBody + "variables:\n    X:\n        value: x\n",
+		"/service/a.yaml": appBody + "variables:\n    X:\n        value: x\n",
 	})
 	hasNo(t, found, "variable")
 }
@@ -108,8 +108,8 @@ func (refusing) ImagePullable(image, secret string) error {
 
 func TestAuditAsksTheResolver(t *testing.T) {
 	docs := map[string]string{
-		"/application/a.yaml": appBody,
-		"/zone/z.yaml":        "id: QmRgVLmWTBpgTbCPnHRUvKGnHqHf7Yd7t8ZffKeRXPkRLL\nfqdn: example.com\n",
+		"/service/a.yaml": appBody,
+		"/zone/z.yaml":    "id: QmRgVLmWTBpgTbCPnHRUvKGnHqHf7Yd7t8ZffKeRXPkRLL\nfqdn: example.com\n",
 	}
 
 	// the stub answers yes, so neither is reported
@@ -239,26 +239,26 @@ func TestAuditHostWorlds(t *testing.T) {
 		}
 		return body
 	}
-	gw := "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nroute:\n    path: /\n    handler:\n        application:\n            name: a\n            port: p\ntransformers:\n    - name: t\n"
+	gw := "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nroute:\n    path: /\n    handler:\n        service:\n            name: a\n            port: p\ntransformers:\n    - name: t\n"
 	app := appBody + "ports:\n    p:\n        number: 80\n"
 
 	// built for a gateway, used by a gateway
 	found := auditDocs(t, nil, map[string]string{
-		"/function/t.yaml": fn("gateway-transformer"), "/gateway/g.yaml": gw, "/application/a.yaml": app,
+		"/function/t.yaml": fn("gateway-transformer"), "/gateway/g.yaml": gw, "/service/a.yaml": app,
 	})
 	hasNo(t, found, "is used as a")
 
 	// built as a plain handler, used as a transformer
 	found = auditDocs(t, nil, map[string]string{
-		"/function/t.yaml": fn(""), "/gateway/g.yaml": gw, "/application/a.yaml": app,
+		"/function/t.yaml": fn(""), "/gateway/g.yaml": gw, "/service/a.yaml": app,
 	})
 	has(t, found, schema.Broken, "is used as a gateway-transformer")
 
 	// built for a gateway, used by a proxy
 	found = auditDocs(t, nil, map[string]string{
-		"/function/t.yaml":    fn("gateway-transformer"),
-		"/application/a.yaml": app,
-		"/proxy/p.yaml":       "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nhost:\n    generated:\n        name: db\ntransformers:\n    - name: t\nforward:\n    application:\n        name: a\n        port: p\n",
+		"/function/t.yaml": fn("gateway-transformer"),
+		"/service/a.yaml":  app,
+		"/proxy/p.yaml":    "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nhost:\n    generated:\n        name: db\ntransformers:\n    - name: t\nforward:\n    service:\n        name: a\n        port: p\n",
 	})
 	has(t, found, schema.Broken, "is used as a proxy-transformer")
 }
@@ -311,21 +311,21 @@ func TestAuditHandlerPorts(t *testing.T) {
 
 func TestAuditVariableAsFile(t *testing.T) {
 	found := auditDocs(t, nil, map[string]string{
-		"/application/a.yaml": appBody + "variables:\n    CERT:\n        value: pem\n        as: file\n",
+		"/service/a.yaml": appBody + "variables:\n    CERT:\n        value: pem\n        as: file\n",
 	})
 	has(t, found, schema.Broken, "names no path")
 
 	found = auditDocs(t, nil, map[string]string{
-		"/application/a.yaml": appBody + "variables:\n    CERT:\n        value: pem\n        as: file\n        path: /etc/tls/cert.pem\n",
+		"/service/a.yaml": appBody + "variables:\n    CERT:\n        value: pem\n        as: file\n        path: /etc/tls/cert.pem\n",
 	})
 	hasNo(t, found, "names no path")
 }
 
 func TestAuditGhostFunctions(t *testing.T) {
 	found := auditDocs(t, nil, map[string]string{
-		"/application/a.yaml": appBody + "ports:\n    p:\n        number: 80\n",
-		"/gateway/g.yaml":     "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nroute:\n    path: /\n    handler:\n        application:\n            name: a\n            port: p\ntransformers:\n    - name: ghost\n",
-		"/cache/c.yaml":       "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\nauthorizer:\n    name: alsoghost\n",
+		"/service/a.yaml": appBody + "ports:\n    p:\n        number: 80\n",
+		"/gateway/g.yaml": "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nroute:\n    path: /\n    handler:\n        service:\n            name: a\n            port: p\ntransformers:\n    - name: ghost\n",
+		"/cache/c.yaml":   "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\nauthorizer:\n    name: alsoghost\n",
 	})
 	has(t, found, schema.Broken, "is named as a gateway-transformer by gateway/g transformers, and does not exist")
 	has(t, found, schema.Broken, "is named as a authorizer by cache/c authorizer, and does not exist")
@@ -338,16 +338,16 @@ func TestAVolumeMayBeSharedByManyWriters(t *testing.T) {
 	}
 
 	found := auditDocs(t, nil, map[string]string{
-		"/volume/data.yaml":   vol,
-		"/application/a.yaml": mount("mount-rw"),
-		"/application/b.yaml": strings.Replace(mount("mount-rw"), "QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY", "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG", 1),
+		"/volume/data.yaml": vol,
+		"/service/a.yaml":   mount("mount-rw"),
+		"/service/b.yaml":   strings.Replace(mount("mount-rw"), "QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY", "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG", 1),
 	})
 	hasNo(t, found, "mounted for writing")
 	hasNo(t, found, "may run")
 
 	found = auditDocs(t, nil, map[string]string{
-		"/volume/data.yaml":   vol,
-		"/application/a.yaml": mount("mount-rw") + "limits:\n    max_instances: 10\n",
+		"/volume/data.yaml": vol,
+		"/service/a.yaml":   mount("mount-rw") + "limits:\n    max_instances: 10\n",
 	})
 	hasNo(t, found, "instances")
 
@@ -482,8 +482,8 @@ func TestATargetWithNoNameIsRefused(t *testing.T) {
 			"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zg\nhost:\n    generated:\n        name: ask\nroute:\n    path: /\n    handler:\n        agent: {}\n",
 			"route/handler/agent/name"},
 		{"a proxy's forward", "/proxy/postgres.yaml",
-			"id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nservice: postgres\nhost:\n    generated:\n        name: db\nforward:\n    application: {}\n",
-			"forward/application/name"},
+			"id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nservice: postgres\nhost:\n    generated:\n        name: db\nforward:\n    service: {}\n",
+			"forward/service/name"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()

@@ -12,7 +12,7 @@ route:
     match: prefix
     methods: [POST]
     handler:
-        application:
+        service:
             name: api
             port: http
 transformers:

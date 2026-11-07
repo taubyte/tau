@@ -241,7 +241,7 @@ func localWorkload(grant invoke.Grant) (specs.Address, string, error) {
 		Project:     projectName,
 		Environment: environment,
 		Scope:       scope,
-		Kind:        specs.KindApplication,
+		Kind:        specs.KindService,
 		Name:        name,
 	}, grant.Settings[specs.ModelInferenceKeyLocalPort], nil
 }

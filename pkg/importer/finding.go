@@ -66,7 +66,7 @@ func (f Finding) String() string {
 }
 
 // Resource is one thing an import produced: a v2 kind, a name, and the document. The
-// kind is per resource: one compose file becomes applications and their volumes.
+// kind is per resource: one compose file becomes services and their volumes.
 type Resource struct {
 	Kind string
 	Name string

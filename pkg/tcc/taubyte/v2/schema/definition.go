@@ -164,9 +164,9 @@ var secSource = Section("source", "Source", "Where the code is sourced from.")
 // cpuLimit is in millicores (1000 is one core), an integer so nothing rounds
 // differently. Optional, unlike memory: CPU is a rate, and an absent ceiling
 // competes fairly.
-// applicationAttributes is the container kind's shape; readiness and liveness are
+// serviceAttributes is the long-running kind's shape; readiness and liveness are
 // the same five fields twice.
-func applicationAttributes() []*Attribute {
+func serviceAttributes() []*Attribute {
 	out := probeAttributes("readiness", "network", "Whether this instance should be given work.")
 	out = append(out, probeAttributes("liveness", "network", "Whether this instance is still working, or should be replaced.")...)
 	return append(out,
@@ -391,6 +391,7 @@ func topologyRoot(scope string) string {
 var (
 	functionEngines = []string{wasmPackage, warpPackage}
 	workerEngines   = []string{wasmPackage, warpPackage, ociPackage}
+	serviceEngines  = []string{ociPackage, warpPackage}
 )
 
 // Engines declares which tiers may run a kind, so no consumer keeps its own
@@ -419,7 +420,7 @@ func EnginesOf(kind string) []string {
 // error. An agent answers a request like a function. A bus is reached through a
 // route like everything else, so it gets the whole pipeline (path, CORS, rate
 // limit, transformers, authorizer) rather than owning a name of its own.
-var handlerKinds = []string{"function", "application", "package", "gateway", "mcp", "agent", "bus"}
+var handlerKinds = []string{"function", "service", "package", "gateway", "mcp", "agent", "bus"}
 
 // externalStreamEngines are pubsub clusters reached over the network, and
 // streamEngines adds tau's own. Closed: each is a wire protocol and a client, a
@@ -457,12 +458,12 @@ func Connected(kind string) bool {
 // channelServerKinds are what may answer a channel. A container gets the bytes on one of
 // its own ports; a function is dispatched with the connection in hand. Both are real, and
 // nothing else is: a website is HTTP by definition and a gateway is an ingress.
-var channelServerKinds = []string{"application", "function"}
+var channelServerKinds = []string{"service", "function"}
 
 // proxyHandlerKinds are what may sit behind an L4 proxy: only a container can
 // hold a raw connection open. An Either() with one branch so it reads like a
 // route's handler.
-var proxyHandlerKinds = []string{"application"}
+var proxyHandlerKinds = []string{"service"}
 
 // hostAttributes is how anything internet-reachable gets its name. The generated
 // part stays out of the config: a project's label is derived from its id
@@ -897,16 +898,17 @@ func vectorIndexAttributes(t databaseType) []*Attribute {
 // is a workload's `egress` plus a `secret`.
 var V2Resources = []*Node{
 
-	// A container workload listening on HTTP. No port: the platform assigns one,
-	// passes it in the environment and tunnels it over p2p. No replica count: the
-	// platform places. No ops: HTTP arrives only through a gateway route.
-	DefineGroup("application",
+	// A long-running workload listening on its ports: a worker's sibling that stays
+	// up. No port number outside: the platform assigns one, passes it in the
+	// environment and tunnels it over p2p. No replica count: the platform places. No
+	// ops: traffic arrives only through a gateway route or a proxy.
+	DefineGroup("service",
 		resource(
-			commonAttributes(append(packageRef(), applicationAttributes()...)...),
+			commonAttributes(append(packageRef(), serviceAttributes()...)...),
 			Nested(portsGroup(), variablesGroup()),
-			GroupDoc("A long-running container that listens on HTTP. Mount a volume for anything it must keep."), Icon("box"), Category("compute"), Footprint(), Engines(ociPackage),
+			GroupDoc("A long-running workload that listens on its ports. Mount a volume for anything it must keep."), Icon("box"), Category("compute"), Footprint(), Engines(serviceEngines...),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
-			Resource("application", "Application", "Application", "application"),
+			Resource("service", "Service", "Service", "service"),
 		)),
 
 	// Code plus limits. An authorizer is a function built against the authorizer
@@ -1204,7 +1206,7 @@ var V2Resources = []*Node{
 	// policy. The handler switches on the target kind:
 	//
 	//	handler:
-	//	    function:                 # or application / package / gateway / mcp
+	//	    function:                 # or service / package / gateway / mcp
 	//	        namespace: /shop/eu   # omitted means the project root
 	//	        name: checkout
 	DefineGroup("gateway",
@@ -1228,7 +1230,7 @@ var V2Resources = []*Node{
 				String(Key("route", "path"), RequiredWhen(Key("routing"), "route"), InSection("route"), Doc("Path", "The path served, e.g. \"/checkout\" or \"/\". Required when this gateway declares a route; a gateway with a router has no paths of its own.")),
 				String(Key("route", "match"), InSet("prefix", "exact", "regex"), Default("prefix"), InSection("route"), Doc("Match", "How the path is compared: prefix, exact, or regex.")),
 				// A site built for / mounted at /docs 404s on every page unless the prefix is
-				// stripped; an application usually wants it kept. False by default; the audit
+				// stripped; a service usually wants it kept. False by default; the audit
 				// reports a package mounted at a prefix without it.
 				Bool(Key("route", "strip_prefix"), InSection("route"),
 					Doc("Strip Prefix", "Remove the matched path prefix before handing the request on. A package's files mounted anywhere but / usually want this.")),
@@ -1503,9 +1505,9 @@ var V2Resources = []*Node{
 				String(Key("inference", "remote", "credentials", "name"), IsVariableName(), Ref("secret", Inbound()), RequiredWhen(Key("inference", "kind"), "remote"), InSection("model"),
 					Doc("Credentials", "Secret holding the provider credential, as \"secret/<name>\". It lives here rather than on each caller, so rotating it is one edit.")),
 				String(Key("inference", "local", "namespace"), IsNamespacePath(), InSection("model"),
-					Doc("Namespace", "Where that application lives. Omitted means this resource's own scope, then its parents.")),
-				String(Key("inference", "local", "name"), IsVariableName(), Ref("application"), RequiredWhen(Key("inference", "kind"), "local"), InSection("model"),
-					Doc("Workload", "The application in this project that serves this model.")),
+					Doc("Namespace", "Where that service lives. Omitted means this resource's own scope, then its parents.")),
+				String(Key("inference", "local", "name"), IsVariableName(), Ref("service"), RequiredWhen(Key("inference", "kind"), "local"), InSection("model"),
+					Doc("Workload", "The service in this project that serves this model.")),
 				String(Key("inference", "local", "port"), IsVariableName(), InSection("model"),
 					Doc("Port", "Which of that workload's named ports inference is reached on.")),
 
@@ -1876,7 +1878,7 @@ var v2Root = Root(
 var TaubyteProject = SchemaDefinition(v2Root)
 
 // GenerationRoot is the node list a generator walks: the resource groups plus the
-// applications container, read off the real root so no curated list can drift.
+// namespace container, read off the real root so no curated list can drift.
 func GenerationRoot() []*Node { return v2Root.Children }
 
 // KindRoot is the shape of kinds in a compiled project. In particular workflow and agent

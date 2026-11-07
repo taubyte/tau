@@ -136,7 +136,7 @@ func RenderUnion(name string, root []*engine.Node, kinds []string, prefixes []st
 			// disagreement would be the vocabulary's to resolve, not this.
 			//
 			// ITS LEGAL VALUES ARE EVERY KIND'S, though: `source/kind` is
-			// image or git on an application and component or builtin on a
+			// image or git on a service and component or builtin on a
 			// function, and a consumer switching on the union's discriminator
 			// has to be able to name all of them.
 			held, ok := seen[l.Path()]

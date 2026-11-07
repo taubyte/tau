@@ -13,7 +13,7 @@ const (
 	secretID  = "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy"
 
 	// codePackageID is the package every function here runs, and imagePackageID the
-	// image every application does.
+	// image every service does.
 	codePackageID  = "QmUAdPDpqX8h9iMcn2ionxAkptmvD5bGqzMrRWHAcpU9fg"
 	imagePackageID = "QmUAdPDpqX8h9iMcn2ionxAkptmvD5bGqzMrRWHAcpU9fh"
 )

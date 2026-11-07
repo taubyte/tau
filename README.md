@@ -56,12 +56,12 @@ publish, resolve and serve, on an in-process multi-node cloud.
 | `make test-raft`               | `pkg/raft`'s integration suite                                |
 | `make test-docker`             | the container conformance suite on docker                     |
 | `make test-containerd`         | the same suite on containerd                                  |
-| `make test-application`        | an application served end to end by a container on docker    |
+| `make test-service`            | a service served end to end by a container on docker         |
 | `make test-build`              | the build service's builds in real containers                 |
 | `make test-external-databases` | projects against real postgres and mysql servers in docker    |
 | `make proto-v2-check`          | the generated RPC stubs match `pkg/proto`                     |
 
-`test-containerd`, `test-application` and `test-build` need root: they run the
+`test-containerd`, `test-service` and `test-build` need root: they run the
 test binary through `scripts/as-root`, which uses root or passwordless sudo
 when it has them and otherwise prints `SKIP` and exits 0. The binary is always
 built as the user. `scripts/rtest` runs any of these on another machine, and

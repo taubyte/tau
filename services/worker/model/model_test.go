@@ -350,7 +350,7 @@ func TestALocalModelIsDialledThroughPlacement(t *testing.T) {
 
 	// It asked placement for the right workload, on the right port, in the
 	// namespace the composer resolved.
-	require.Equal(t, "application", where.at.Kind)
+	require.Equal(t, "service", where.at.Kind)
 	require.Equal(t, "llama", where.at.Name)
 	require.Equal(t, "shop", where.at.Project)
 	require.Equal(t, "prod", where.at.Environment)

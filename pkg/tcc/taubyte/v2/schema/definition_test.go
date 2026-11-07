@@ -563,10 +563,10 @@ func TestNamespaceScope(t *testing.T) {
 	assert.Equal(t, kv["name"], "sessions")
 
 	flat := compileBasic(t)
-	app := namedResource(t, resources(t, flat, "application"), "api")
+	app := namedResource(t, resources(t, flat, "service"), "api")
 	image := namedResource(t, resources(t, flat, "package"), "api_image")
 	assert.Equal(t, nested(image, "source", "image"), "ghcr.io/acme/api:1.4")
-	assert.Assert(t, nested(app, "package", "name") != nil, "applications is a compute kind, not a scope")
+	assert.Assert(t, nested(app, "package", "name") != nil, "services is a compute kind, not a scope")
 	// what the platform assigns is never authored: the port is handed to the
 	// workload and tunnelled, and how many instances run is placement
 	for _, gone := range []string{"port", "replicas"} {
@@ -634,7 +634,7 @@ func TestGatewayRoute(t *testing.T) {
 	assert.DeepEqual(t, nested(gw, "route", "methods"), []string{"POST"})
 
 	// the switch, and the resource path through namespaces
-	assert.Equal(t, nested(gw, "route", "handler", "kind"), "application", "Captures() captures which branch the handler took")
+	assert.Equal(t, nested(gw, "route", "handler", "kind"), "service", "Captures() captures which branch the handler took")
 	assert.Equal(t, nested(gw, "route", "handler", "name"), "api")
 	assert.Equal(t, nested(gw, "route", "handler", "port"), "http", "a workload with two ports is told which")
 
@@ -668,7 +668,7 @@ route:
 	// An unlisted handler key is refused as unknown, at the offending line.
 	assert.ErrorContains(t, err, "unknown key 'kv'",
 		"a real but non-HTTP kind must not be a handler")
-	assert.ErrorContains(t, err, "agent, application, bus, function, gateway, mcp, package",
+	assert.ErrorContains(t, err, "agent, service, bus, function, gateway, mcp, package",
 		"the refusal has to say what a handler may be")
 	// the position is the value's, so for a key holding a block it lands on the
 	// first line inside that block rather than on the key
@@ -739,7 +739,7 @@ func TestEffectClasses(t *testing.T) {
 
 	// and an HTTP method is a route's, never a kind's: a workload nameable by GET
 	// would be a second door into it that no gateway knows about
-	for _, kind := range []string{"function", "application", "package", "gateway", "mcp"} {
+	for _, kind := range []string{"function", "service", "package", "gateway", "mcp"} {
 		for _, m := range []string{"GET", "POST"} {
 			_, ok := schema.EffectOf(kind, m)
 			assert.Assert(t, !ok, "%s must not carry the HTTP method %q as an op", kind, m)
@@ -935,7 +935,7 @@ func TestTargetOwnsThePolicy(t *testing.T) {
 func TestPortsAreNamed(t *testing.T) {
 	flat := compileBasic(t)
 
-	app := namedResource(t, resources(t, flat, "application"), "api")
+	app := namedResource(t, resources(t, flat, "service"), "api")
 	ports := app["ports"].(map[string]any)
 	assert.Equal(t, ports["http"].(map[string]any)["number"], 8080, "the number is the INTERNAL one")
 	assert.Equal(t, ports["metrics"].(map[string]any)["number"], 9090)
@@ -947,7 +947,7 @@ func TestPortsAreNamed(t *testing.T) {
 	assert.Equal(t, nested(app, "liveness", "http", "port"), "http")
 
 	// or a function decides, which is a different kind of answer and says so
-	pool := namedResource(t, resources(t, flat, "application"), "worker_pool")
+	pool := namedResource(t, resources(t, flat, "service"), "worker_pool")
 	assert.Equal(t, nested(pool, "readiness", "kind"), "function")
 	assert.Equal(t, nested(pool, "readiness", "function", "name"), "pool_ready")
 
@@ -960,7 +960,7 @@ func TestPortsAreNamed(t *testing.T) {
 
 	// so does a route targeting the workload
 	gw := namedResource(t, resources(t, flat, "gateway"), "shop")
-	assert.Equal(t, nested(gw, "route", "handler", "kind"), "application")
+	assert.Equal(t, nested(gw, "route", "handler", "kind"), "service")
 	assert.Equal(t, nested(gw, "route", "handler", "port"), "http")
 
 	// ceilings are authored; counts are not
@@ -973,7 +973,7 @@ func TestPortsAreNamed(t *testing.T) {
 }
 
 func TestEveryWorkloadCanDeclareEgress(t *testing.T) {
-	for _, kind := range []string{"application", "function", "worker", "sandbox"} {
+	for _, kind := range []string{"service", "function", "worker", "sandbox"} {
 		var found bool
 		for _, g := range schema.CompileRoot().Children {
 			if name, _ := g.Match.(string); name != kind || len(g.Children) == 0 {
@@ -1066,7 +1066,7 @@ func TestEverySectionAnAttributeClaimsIsDeclared(t *testing.T) {
 }
 
 func TestWorkloadVariables(t *testing.T) {
-	api := namedResource(t, resources(t, compileBasic(t), "application"), "api")
+	api := namedResource(t, resources(t, compileBasic(t), "service"), "api")
 	vars, ok := api["variables"].(map[string]any)
 	assert.Assert(t, ok, "no variables block")
 
@@ -1080,7 +1080,7 @@ func TestWorkloadVariables(t *testing.T) {
 	assert.DeepEqual(t, nested(api, "secret", "stripe", "ops"), []string{"get"})
 
 	// every workload kind can be configured, not just the container one
-	for _, kind := range []string{"application", "function", "worker", "sandbox"} {
+	for _, kind := range []string{"service", "function", "worker", "sandbox"} {
 		var found bool
 		for _, g := range schema.CompileRoot().Children {
 			if name, _ := g.Match.(string); name != kind || len(g.Children) == 0 {
@@ -1101,7 +1101,7 @@ func TestDefaultsThatWereUnreachable(t *testing.T) {
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/package/img.yaml", []byte(standingPackages["/package/img.yaml"]), 0o644))
-	assert.NilError(t, afero.WriteFile(fs, "/application/a.yaml", []byte(
+	assert.NilError(t, afero.WriteFile(fs, "/service/a.yaml", []byte(
 		"id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY\npackage:\n    name: img\nexecution:\n    memory: 1MB\nports:\n    p:\n        number: 80\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/sync/q.yaml",
 		[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nqueue:\n    consensus: raft\n"), 0o644))
@@ -1111,7 +1111,7 @@ func TestDefaultsThatWereUnreachable(t *testing.T) {
 	// a generated host needs no certificate even when TLS stops here — the cloud
 	// holds a wildcard for its own zone, which is the gateway's rule too
 	assert.NilError(t, afero.WriteFile(fs, "/proxy/p.yaml", []byte(
-		"id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nhost:\n    generated:\n        name: db\ntls:\n    mode: terminate\nforward:\n    application:\n        name: a\n        port: p\n"), 0o644))
+		"id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nhost:\n    generated:\n        name: db\ntls:\n    mode: terminate\nforward:\n    service:\n        name: a\n        port: p\n"), 0o644))
 
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
@@ -1432,7 +1432,7 @@ func TestChannelIsOneToOneAndStreamFansOut(t *testing.T) {
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/package/img.yaml", []byte(standingPackages["/package/img.yaml"]), 0o644))
-		assert.NilError(t, afero.WriteFile(fs, "/application/db.yaml",
+		assert.NilError(t, afero.WriteFile(fs, "/service/db.yaml",
 			[]byte("id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY\npackage:\n    name: img\nexecution:\n    memory: 1MB\nports:\n    pg:\n        number: 5432\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, path, []byte(id+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
@@ -1440,7 +1440,7 @@ func TestChannelIsOneToOneAndStreamFansOut(t *testing.T) {
 		_, _, err = c.Compile(context.Background())
 		return err
 	}
-	const conduit = "protocol: pgwire\nserve:\n    application:\n        name: db\n        port: pg\n"
+	const conduit = "protocol: pgwire\nserve:\n    service:\n        name: db\n        port: pg\n"
 	const fanout = "distributed: {}\n"
 
 	assert.NilError(t, compile("/channel/sync.yaml", conduit), "a channel names a protocol and one server")
@@ -1878,7 +1878,7 @@ func TestInstancesTakeALimitAndAreNamedByAKey(t *testing.T) {
 
 func TestOnlyAScopeDeclaresRegions(t *testing.T) {
 	assert.DeepEqual(t, schema.FootprintKinds(), []string{
-		"application", "function", "worker", "sandbox",
+		"service", "function", "worker", "sandbox",
 		"cache", "database", "storage", "volume", "sync",
 		"gateway", "agent", "workflow",
 	})

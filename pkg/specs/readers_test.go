@@ -71,7 +71,7 @@ func TestTheUnionsReadAcrossKinds(t *testing.T) {
 	require.NotEmpty(t, specs.ReadSourceBlock(image).SourceImage)
 
 	// and every workload names what it runs through the same field
-	for _, at := range [][2]string{{"function", "reserve_stock"}, {"application", "api"}} {
+	for _, at := range [][2]string{{"function", "reserve_stock"}, {"service", "api"}} {
 		r, _, err := p.Resource(nil, at[0], at[1])
 		require.NoError(t, err)
 		require.NotEmpty(t, specs.ReadWorkloadBlock(r).PackageName, "%s/%s", at[0], at[1])

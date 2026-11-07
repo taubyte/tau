@@ -45,7 +45,7 @@ func TestACapturedBranchIsReportedAsTheDiscriminator(t *testing.T) {
 
 	handler := locationOf(t, "gateway", "route/handler/kind")
 	require.True(t, handler.Captures, "a kind may be discriminated twice")
-	require.Equal(t, []string{"function", "application", "package", "gateway", "mcp", "agent", "bus"}, handler.Branch,
+	require.Equal(t, []string{"function", "service", "package", "gateway", "mcp", "agent", "bus"}, handler.Branch,
 		"declaration order, which is the order an author reads them in")
 
 	// A PLAIN SEGMENT IS NOT A BRANCH. `route/cache/ttl` is authored under literals,
@@ -101,14 +101,14 @@ func TestAKindsFieldsAreNotWhatItHolds(t *testing.T) {
 }
 
 func TestAUnionCarriesAGroupWhole(t *testing.T) {
-	out := string(RenderReaders("specs", v2.GenerationRoot(), []string{"application", "function"}))
+	out := string(RenderReaders("specs", v2.GenerationRoot(), []string{"service", "function"}))
 
 	require.Contains(t, out, "type WorkloadBlock struct {")
 	require.Contains(t, out, "\tVariables          map[string]VariablesEntry\n")
 	require.Contains(t, out, `out.Variables[name] = ReadVariablesEntry(r.Sub("variables", name))`)
 	require.Contains(t, out, `out.ExecutionCall = r.String("execution", "call")`,
 		"a field only one of the kinds declares is still the union's")
-	require.Contains(t, out, `out.Ports[name] = ReadApplicationPortsEntry(r.Sub("ports", name))`)
+	require.Contains(t, out, `out.Ports[name] = ReadServicePortsEntry(r.Sub("ports", name))`)
 }
 
 func TestAGroupTwoKindsReadDifferentlyStopsTheGenerator(t *testing.T) {
@@ -126,7 +126,7 @@ func TestAGroupTwoKindsReadDifferentlyStopsTheGenerator(t *testing.T) {
 }
 
 func TestAUnionsDiscriminatorNamesEveryKindsValues(t *testing.T) {
-	out := string(RenderReaders("specs", v2.GenerationRoot(), []string{"package", "agent", "application", "function"}))
+	out := string(RenderReaders("specs", v2.GenerationRoot(), []string{"package", "agent", "service", "function"}))
 
 	require.Contains(t, out, `SourceBlockKeySourceKind`)
 	for _, value := range []string{"Image", "Git", "Builtin"} {

@@ -36,7 +36,7 @@ func invokeOver(t *testing.T, h *harness, tgt *workerv2.Target) *workerv2.Invoke
 func TestTheWholeChain(t *testing.T) {
 	h := newHarness(t)
 
-	res := invokeOver(t, h, target("application", "api"))
+	res := invokeOver(t, h, target("service", "api"))
 	require.Equal(t, int32(200), res.GetStatus())
 	require.Equal(t, []string{"/orders"}, res.GetHeaders()["X-Path"].GetValues())
 
@@ -48,7 +48,7 @@ func TestTheWholeChain(t *testing.T) {
 	require.Equal(t, "ghcr.io/acme/api:1.4", spec.Artifact)
 	require.Equal(t, int64(512_000_000), spec.Memory, "512MB, in bytes, from execution/memory")
 	require.Equal(t, 80, spec.Concurrency)
-	require.Contains(t, spec.Name, "shop/prod/application/")
+	require.Contains(t, spec.Name, "shop/prod/service/")
 
 	// And the instance answered with the spec it was started from, which is
 	// how this test knows the request reached the code and not just the pool.
@@ -76,7 +76,7 @@ func TestANameResolvesInTheScopeThatAsked(t *testing.T) {
 	h := newHarness(t)
 
 	invokeOver(t, h, target("function", "relay", "shop", "local"))
-	invokeOver(t, h, target("application", "api", "shop", "local"))
+	invokeOver(t, h, target("service", "api", "shop", "local"))
 
 	started := h.Runtime.specs()
 	require.Len(t, started, 2)
@@ -84,7 +84,7 @@ func TestANameResolvesInTheScopeThatAsked(t *testing.T) {
 
 	// The same api reached from the root and from a grandchild scope is one
 	// instance, because it is one resource.
-	invokeOver(t, h, target("application", "api"))
+	invokeOver(t, h, target("service", "api"))
 	require.Len(t, h.Runtime.specs(), 2, "no third cold start: the third call found the api's instance warm")
 }
 
@@ -92,7 +92,7 @@ func TestABuiltResourceIsRefusedRatherThanGuessedAt(t *testing.T) {
 	h := newBareHarness(t)
 
 	_, err := h.Client.Invoke(t.Context(), connect.NewRequest(&workerv2.InvokeRequest{
-		Target: target("application", "worker_pool"),
+		Target: target("service", "worker_pool"),
 	}))
 	require.Error(t, err)
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
@@ -100,7 +100,7 @@ func TestABuiltResourceIsRefusedRatherThanGuessedAt(t *testing.T) {
 
 	// With a resolver, the same target runs.
 	with := newHarness(t)
-	invokeOver(t, with, target("application", "worker_pool"))
+	invokeOver(t, with, target("service", "worker_pool"))
 	require.Contains(t, with.Runtime.specs()[0].Artifact, "registry/shop/prod/package@sha256:")
 }
 
@@ -110,7 +110,7 @@ func TestASecretIsNeverInAWorkloadsEnvironment(t *testing.T) {
 	h := newHarness(t, WithSecrets(secretFunc(func(context.Context, string, string, string) (string, error) {
 		return "sk_live_never", nil
 	})))
-	invokeOver(t, h, target("application", "api"))
+	invokeOver(t, h, target("service", "api"))
 
 	env := h.Runtime.specs()[0].Env
 	require.Equal(t, map[string]string{"LOG_LEVEL": "info", "REGION": "region-1"}, env)
@@ -120,7 +120,7 @@ func TestTheCompiledProjectIsFetchedOnce(t *testing.T) {
 	h := newHarness(t)
 
 	for range 5 {
-		invokeOver(t, h, target("application", "api"))
+		invokeOver(t, h, target("service", "api"))
 	}
 
 	resolves, objects := h.Register.counts()
@@ -133,7 +133,7 @@ func TestTheCompiledProjectIsFetchedOnce(t *testing.T) {
 func TestADeployTakesEffectOnTheNextRequest(t *testing.T) {
 	h := newHarness(t)
 
-	invokeOver(t, h, target("application", "api"))
+	invokeOver(t, h, target("service", "api"))
 	require.Equal(t, int64(512_000_000), h.Runtime.specs()[0].Memory)
 
 	// A second deploy: the same project with one number changed.
@@ -143,7 +143,7 @@ func TestADeployTakesEffectOnTheNextRequest(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	invokeOver(t, h, target("application", "api"))
+	invokeOver(t, h, target("service", "api"))
 	started := h.Runtime.specs()
 	require.Len(t, started, 2, "a new revision never shares an instance with the old")
 	require.Equal(t, int64(1_024_000_000), started[1].Memory)
@@ -181,7 +181,7 @@ func TestTheProjectCacheIsBounded(t *testing.T) {
 		require.NoError(t, err)
 
 		h.clock.advance(time.Second)
-		invokeOver(t, h, target("application", "api"))
+		invokeOver(t, h, target("service", "api"))
 	}
 
 	require.LessOrEqual(t, h.Worker.Loaded(), 2)
@@ -192,7 +192,7 @@ func TestAFailedLoadIsNotRemembered(t *testing.T) {
 	h.Register.breakObjects(true)
 
 	_, err := h.Worker.Resolve(t.Context(), Target{
-		Project: "shop", Environment: "prod", Kind: "application", Name: "api",
+		Project: "shop", Environment: "prod", Kind: "service", Name: "api",
 	})
 	require.Error(t, err)
 	require.Zero(t, h.Worker.Loaded())
@@ -200,7 +200,7 @@ func TestAFailedLoadIsNotRemembered(t *testing.T) {
 	h.Register.breakObjects(false)
 
 	_, err = h.Worker.Resolve(t.Context(), Target{
-		Project: "shop", Environment: "prod", Kind: "application", Name: "api",
+		Project: "shop", Environment: "prod", Kind: "service", Name: "api",
 	})
 	require.NoError(t, err)
 }
@@ -216,9 +216,9 @@ func TestWhatIsMissingSaysWhichKindOfMissing(t *testing.T) {
 	for _, c := range []testCase{
 		{"no target at all", &workerv2.InvokeRequest{}, connect.CodeInvalidArgument},
 		{"an empty target", &workerv2.InvokeRequest{Target: &workerv2.Target{}}, connect.CodeInvalidArgument},
-		{"no such resource", &workerv2.InvokeRequest{Target: target("application", "nope")}, connect.CodeNotFound},
+		{"no such resource", &workerv2.InvokeRequest{Target: target("service", "nope")}, connect.CodeNotFound},
 		{"no such environment", &workerv2.InvokeRequest{Target: &workerv2.Target{
-			Project: "shop", Environment: "staging", Kind: "application", Name: "api",
+			Project: "shop", Environment: "staging", Kind: "service", Name: "api",
 		}}, connect.CodeNotFound},
 		{"a kind nothing runs", &workerv2.InvokeRequest{Target: target("cache", "orders")}, connect.CodeFailedPrecondition},
 	} {
@@ -266,7 +266,7 @@ func withAPIMemory(t *testing.T, base []byte, memory int64) []byte {
 	require.NoError(t, json.Unmarshal(base, &doc))
 
 	object := doc["object"].(map[string]any)
-	for _, r := range object["application"].(map[string]any) {
+	for _, r := range object["service"].(map[string]any) {
 		res := r.(map[string]any)
 		if res["name"] == "api" {
 			res["execution"].(map[string]any)["memory"] = memory
@@ -297,7 +297,7 @@ func TestTheClientIsTheSameWorker(t *testing.T) {
 	c := newWorkerClient(t, h)
 
 	res, err := c.Invoke(t.Context(), specs.Address{
-		Project: "shop", Environment: "prod", Kind: "application", Name: "api",
+		Project: "shop", Environment: "prod", Kind: "service", Name: "api",
 	}, &invoke.Request{Method: "GET", Path: "/orders"})
 	require.NoError(t, err)
 	require.Equal(t, 200, res.Status)
@@ -306,7 +306,7 @@ func TestTheClientIsTheSameWorker(t *testing.T) {
 	// A nil request is one with nothing in it rather than a panic: a queue
 	// delivery and a channel dial both carry no method and no path.
 	_, err = c.Invoke(t.Context(), specs.Address{
-		Project: "shop", Environment: "prod", Kind: "application", Name: "api",
+		Project: "shop", Environment: "prod", Kind: "service", Name: "api",
 	}, nil)
 	require.NoError(t, err)
 }
@@ -342,18 +342,18 @@ func TestEverySentinelSurvivesTheWireToTheClient(t *testing.T) {
 	_, err := c.Invoke(t.Context(), specs.Address{}, nil)
 	require.ErrorIs(t, err, ErrNoTarget)
 
-	_, err = c.Invoke(t.Context(), at("application", "nope"), nil)
+	_, err = c.Invoke(t.Context(), at("service", "nope"), nil)
 	require.ErrorIs(t, err, specs.ErrNotFound)
 
 	_, err = c.Invoke(t.Context(), specs.Address{
-		Project: "shop", Environment: "staging", Kind: "application", Name: "api",
+		Project: "shop", Environment: "staging", Kind: "service", Name: "api",
 	}, nil)
 	require.ErrorIs(t, err, register.ErrNotPublished)
 
 	_, err = c.Invoke(t.Context(), at("cache", "orders"), nil)
 	require.ErrorIs(t, err, ErrNoRuntime)
 
-	_, err = c.Invoke(t.Context(), at("application", "worker_pool"), nil)
+	_, err = c.Invoke(t.Context(), at("service", "worker_pool"), nil)
 	require.ErrorIs(t, err, ErrNoArtifact)
 
 	// A status this package did not build passes through rather than being
@@ -377,7 +377,7 @@ func TestAWebsiteIsServedAtItsGatewayAndNeverRun(t *testing.T) {
 
 	// A resource with no settings carries none, rather than an empty map every
 	// tier has to check for.
-	invokeOver(t, h, target("application", "api"))
+	invokeOver(t, h, target("service", "api"))
 	require.Nil(t, h.Runtime.specs()[0].Settings)
 }
 
@@ -427,7 +427,7 @@ func TestAnInvocationIsAccounted(t *testing.T) {
 	m := &meter{}
 	h := newHarness(t, WithMeter(m))
 
-	invokeOver(t, h, target("application", "api"))
+	invokeOver(t, h, target("service", "api"))
 
 	events := m.seen()
 	require.Len(t, events, 1)
@@ -436,7 +436,7 @@ func TestAnInvocationIsAccounted(t *testing.T) {
 	require.Equal(t, OpInvoke, ev.Op)
 	require.Equal(t, "shop", ev.Project)
 	require.Equal(t, "prod", ev.Environment)
-	require.Equal(t, "application", ev.Kind)
+	require.Equal(t, "service", ev.Kind)
 	require.Equal(t, "api", ev.Name)
 
 	// What it was allowed, not what it used.
@@ -463,7 +463,7 @@ func TestARefusedInvocationIsAccounted(t *testing.T) {
 
 func TestNoMeterIsTheOrdinaryCase(t *testing.T) {
 	h := newHarness(t)
-	res := invokeOver(t, h, target("application", "api"))
+	res := invokeOver(t, h, target("service", "api"))
 	require.Equal(t, int32(200), res.GetStatus())
 }
 

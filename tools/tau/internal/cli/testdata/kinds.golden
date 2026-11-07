@@ -1,6 +1,5 @@
 kinds
   agent
-  application
   bus
   cache
   channel
@@ -16,6 +15,7 @@ kinds
   replication
   sandbox
   secret
+  service
   storage
   stream
   sync

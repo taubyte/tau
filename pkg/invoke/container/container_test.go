@@ -763,13 +763,13 @@ func TestAnEgressAllowlistIsReportedRatherThanEnforced(t *testing.T) {
 	})
 
 	e.Start(t.Context(), invoke.Spec{
-		Name:     "shop/prod/application/api",
+		Name:     "shop/prod/service/api",
 		Artifact: "ghcr.io/acme/api:1.4",
 		Egress:   []string{"api.stripe.com", "hooks.slack.com"},
 	})
 
 	require.Len(t, said, 1)
-	require.Contains(t, said[0], "shop/prod/application/api")
+	require.Contains(t, said[0], "shop/prod/service/api")
 	require.Contains(t, said[0], "api.stripe.com")
 	require.Contains(t, said[0], "hooks.slack.com")
 	require.Contains(t, said[0], "cannot narrow")
@@ -800,7 +800,7 @@ func TestADeclaredPortIsTranslated(t *testing.T) {
 	e := newRuntime(t, backend, Image{Ref: "ghcr.io/acme/postgres:16"}, nil)
 
 	e.Start(t.Context(), invoke.Spec{
-		Name:     "shop/prod/application/db",
+		Name:     "shop/prod/service/db",
 		Artifact: "ghcr.io/acme/postgres:16",
 		Ports:    map[string]int{"pg": 5432},
 	})
@@ -820,7 +820,7 @@ func TestEveryDeclaredPortIsMapped(t *testing.T) {
 	e := newRuntime(t, backend, Image{Ref: "ghcr.io/acme/many:1"}, nil)
 
 	e.Start(t.Context(), invoke.Spec{
-		Name:     "shop/prod/application/many",
+		Name:     "shop/prod/service/many",
 		Artifact: "ghcr.io/acme/many:1",
 		Ports:    map[string]int{"http": 8080, "admin": 9090, "metrics": 9100},
 	})
@@ -843,7 +843,7 @@ func TestTheMappingIsOrderedByName(t *testing.T) {
 	e := newRuntime(t, backend, Image{Ref: "ghcr.io/acme/many:1"}, nil)
 
 	spec := invoke.Spec{
-		Name:     "shop/prod/application/many",
+		Name:     "shop/prod/service/many",
 		Artifact: "ghcr.io/acme/many:1",
 		Ports:    map[string]int{"http": 8080, "admin": 9090, "metrics": 9100},
 	}
@@ -991,7 +991,7 @@ func TestAPortGivenTwiceIsAskedForAgain(t *testing.T) {
 	})
 
 	e.Start(t.Context(), invoke.Spec{
-		Name:     "shop/prod/application/many",
+		Name:     "shop/prod/service/many",
 		Artifact: "ghcr.io/acme/many:1",
 		Ports:    map[string]int{"http": 8080, "admin": 9090, "metrics": 9100},
 	})
@@ -1012,7 +1012,7 @@ func TestAnAllocatorThatOnlyRepeatsEndsTheStart(t *testing.T) {
 		return []Option{WithPortAllocator(func() (int, error) { return 7001, nil })}
 	})
 	_, err := e.Start(context.Background(), invoke.Spec{
-		Name:     "shop/prod/application/many",
+		Name:     "shop/prod/service/many",
 		Artifact: "acme/shop:1",
 		Ports:    map[string]int{"http": 8080, "admin": 9090},
 	})

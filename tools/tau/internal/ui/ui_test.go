@@ -41,7 +41,7 @@ func TestReportRendersFindingsWorstFirst(t *testing.T) {
 	r := project.Report{
 		Findings: []session.Note{
 			{Severity: "note", Kind: "worker", Name: "drain", Title: "a queue consumer no ingress names"},
-			{Severity: "broken", Kind: "application", Name: "web", Scope: "shop", Title: "no ingress names it", Detail: "an http application\nanswers nobody"},
+			{Severity: "broken", Kind: "service", Name: "web", Scope: "shop", Title: "no ingress names it", Detail: "an http service\nanswers nobody"},
 			{Severity: "check", Kind: "gateway", Name: "front", Title: "probably not what was meant"},
 		},
 		Deferred: []engine.NextValidation{{Validator: "dns", Value: "example.com"}},

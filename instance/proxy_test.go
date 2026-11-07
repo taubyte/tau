@@ -21,13 +21,13 @@ const (
 	proxyAppID      = "QmZCstKkwsL212pMaf4xk4V5AbgVfJC2NNSJdu8UZtqSpS"
 )
 
-// withProxy is a project whose one proxy forwards to one application.
+// withProxy is a project whose one proxy forwards to one service.
 func withProxy(change func(map[string]any)) []byte {
 	res := map[string]any{
 		"name":    "pgwire",
 		"service": "postgres",
 		"host":    map[string]any{"kind": "generated", "name": "db"},
-		"forward": map[string]any{"kind": "application", "name": "db", "port": "pg"},
+		"forward": map[string]any{"kind": "service", "name": "db", "port": "pg"},
 	}
 	if change != nil {
 		change(res)
@@ -41,7 +41,7 @@ func withProxy(change func(map[string]any)) []byte {
 				imagePackageID: map[string]any{"name": "postgres", "type": "oci",
 					"source": map[string]any{"kind": "image", "image": "ghcr.io/acme/postgres:16"}},
 			},
-			"application": map[string]any{
+			"service": map[string]any{
 				proxyAppID: map[string]any{
 					"name":    "db",
 					"package": map[string]any{"name": imagePackageID},
@@ -53,8 +53,8 @@ func withProxy(change func(map[string]any)) []byte {
 		"indexes": map[string]any{
 			"projects/" + projectID + "/package/postgres/links": []any{
 				"branches/main/projects/" + projectID + "/package/" + imagePackageID},
-			"projects/" + projectID + "/application/db/links": []any{
-				"branches/main/projects/" + projectID + "/application/" + proxyAppID},
+			"projects/" + projectID + "/service/db/links": []any{
+				"branches/main/projects/" + projectID + "/service/" + proxyAppID},
 			"projects/" + projectID + "/proxy/pgwire/links": []any{
 				"branches/main/projects/" + projectID + "/proxy/" + proxyResourceID},
 		},
@@ -90,7 +90,7 @@ func proxying(t *testing.T, compiled []byte) *Instance {
 	// register does not enumerate, so what a node can serve is what it is
 	// already serving — this is the touch that makes it so.
 	_, err = n.Worker().Resolve(t.Context(),
-		specs.Address{Project: "shop", Environment: "prod", Kind: "application", Name: "db"})
+		specs.Address{Project: "shop", Environment: "prod", Kind: "service", Name: "db"})
 	require.NoError(t, err)
 
 	return n

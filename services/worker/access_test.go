@@ -141,7 +141,7 @@ func TestAResourceWithNoCacheAccessHasNoCacheGrants(t *testing.T) {
 
 func TestAVolumeGrantCarriesItsMountPathAndQuota(t *testing.T) {
 	h := newHarness(t)
-	spec := resolveIn(t, h, nil, "application", "db")
+	spec := resolveIn(t, h, nil, "service", "db")
 
 	var volume invoke.Grant
 	for _, g := range spec.Reaches {
@@ -157,7 +157,7 @@ func TestAVolumeGrantCarriesItsMountPathAndQuota(t *testing.T) {
 
 func TestTheFixturesDatabaseIsRefusedRatherThanStartedWithoutItsDisk(t *testing.T) {
 	h := newHarness(t)
-	spec := resolveIn(t, h, nil, "application", "db")
+	spec := resolveIn(t, h, nil, "service", "db")
 
 	tier, err := container.New(func(invoke.Spec) (container.Image, error) {
 		return container.Image{Ref: "postgres:16"}, nil
@@ -171,7 +171,7 @@ func TestTheFixturesDatabaseIsRefusedRatherThanStartedWithoutItsDisk(t *testing.
 
 func TestTheFixturesDatabaseStartsWhenSomethingCanGiveItTheDisk(t *testing.T) {
 	h := newHarness(t)
-	spec := resolveIn(t, h, nil, "application", "db")
+	spec := resolveIn(t, h, nil, "service", "db")
 
 	tier, err := container.New(func(invoke.Spec) (container.Image, error) {
 		return container.Image{Ref: "postgres:16"}, nil

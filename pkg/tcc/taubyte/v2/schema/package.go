@@ -2,7 +2,7 @@ package schema
 
 // A package is what a workload runs and the only kind that builds. One package is
 // one artifact: `type` says what the artifact is, `source` where its code is, and
-// `build` how it is made. A function, worker, application or sandbox names a
+// `build` how it is made. A function, worker, service or sandbox names a
 // package and says nothing about any of the three.
 //
 //	type: assets                     type: oci

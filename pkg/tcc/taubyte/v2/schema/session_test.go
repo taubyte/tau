@@ -143,7 +143,7 @@ func TestGenerateMintsWhatNobodyAuthors(t *testing.T) {
 func TestValidateResourceLooksInsideEveryEntry(t *testing.T) {
 	s := session(t)
 
-	app := []string{"application", "api"}
+	app := []string{"service", "api"}
 	assert.NilError(t, s.Delete(app, []string{"ports", "metrics", "number"}))
 	pkg := []string{"package", "shop_site"}
 	assert.NilError(t, s.Delete(pkg, []string{"build", "steps", "0", "image"}))

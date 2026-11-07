@@ -38,13 +38,13 @@ func memberOf(t *testing.T, td *typeDef, name string) member {
 }
 
 func TestANestedGroupIsEntriesNotFields(t *testing.T) {
-	for _, l := range Locations(v2.GenerationRoot(), "application") {
-		require.NotEqual(t, "number", l.Path(), "a port's number is not the application's")
+	for _, l := range Locations(v2.GenerationRoot(), "service") {
+		require.NotEqual(t, "number", l.Path(), "a port's number is not the service's")
 	}
 
 	_, types := modelOf(t)
-	ports := memberOf(t, types["Application"], "Ports")
-	require.Equal(t, "map[string]ApplicationPortsEntry", ports.goType())
+	ports := memberOf(t, types["Service"], "Ports")
+	require.Equal(t, "map[string]ServicePortsEntry", ports.goType())
 
 	steps := memberOf(t, types["Workflow"], "Steps")
 	require.Equal(t, "[]WorkflowStepsEntry", steps.goType(), "a DefineList is ordered")
@@ -65,8 +65,8 @@ func TestSharedBlocksAreFoundNotListed(t *testing.T) {
 		"a package's values are a workload's shape, so one entry")
 
 	require.Equal(t, "FunctionExecution", memberOf(t, types["Function"], "Execution").goType(),
-		"a function's execution is not an application's")
-	require.Equal(t, "ApplicationExecution", memberOf(t, types["Application"], "Execution").goType())
+		"a function's execution is not a service's")
+	require.Equal(t, "ServiceExecution", memberOf(t, types["Service"], "Execution").goType())
 
 }
 
@@ -87,7 +87,7 @@ func TestABlockOfDefaultsHasNoDeclared(t *testing.T) {
 	cp := types["VolumeCheckpoint"]
 	require.Equal(t, [][]string{{"checkpoint", "rpo_budget"}}, cp.declared)
 
-	live := types["ApplicationLiveness"]
+	live := types["ServiceLiveness"]
 	require.True(t, live.hasDeclared)
 	for _, k := range live.declared {
 		require.NotEqual(t, []string{"liveness", "failures"}, k, "a defaulted field is not evidence")
@@ -116,7 +116,7 @@ func TestConstantsAreNamedFromTheSchema(t *testing.T) {
 	require.Equal(t, `"POST"`, got["GatewayRouteMethodsPOST"], "a list of strings carries string values")
 	require.NotNil(t, types["Model"])
 
-	require.Contains(t, string(m.renderKindNames()), `KindApplication = "application"`)
+	require.Contains(t, string(m.renderKindNames()), `KindService = "service"`)
 }
 
 func TestValueIdent(t *testing.T) {

@@ -33,10 +33,10 @@ func TestAnUnheldDeploymentIsNotEnumerated(t *testing.T) {
 
 func TestAContainerConsumerCarriesItsDeclaredPath(t *testing.T) {
 	h := newHarness(t)
-	holding(t, h, "application", "worker_pool")
+	holding(t, h, "service", "worker_pool")
 
 	got := consumersOf(t, h)["worker_pool"]
-	require.Equal(t, "application", got.Target.Kind)
+	require.Equal(t, "service", got.Target.Kind)
 	require.Equal(t, "orders", got.Queue.Label)
 	require.Equal(t, "/work", got.Path, "the path the entry declared")
 	require.Contains(t, got.Queue.Handle, "shop/prod/", "the resolved id, scoped to the deployment")

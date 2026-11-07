@@ -10,7 +10,7 @@ func TestAContainersDeclaredPortsReachTheSpec(t *testing.T) {
 	h := newHarness(t)
 
 	spec, err := h.Worker.Resolve(t.Context(), Target{
-		Project: "shop", Environment: "prod", Kind: "application", Name: "db",
+		Project: "shop", Environment: "prod", Kind: "service", Name: "db",
 	})
 	require.NoError(t, err)
 	require.Equal(t, map[string]int{"pg": 5432}, spec.Ports,

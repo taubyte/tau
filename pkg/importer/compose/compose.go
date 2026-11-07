@@ -32,7 +32,7 @@ var (
 
 // containerKind is what a compose service becomes: the long-running, HTTP-listening
 // container kind, checked against the vocabulary so a rename fails at import.
-const containerKind = "application"
+const containerKind = "service"
 
 // ociPackage is the package type an image is, and the tier that runs one.
 const ociPackage = "oci"

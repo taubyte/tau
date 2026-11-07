@@ -13,6 +13,6 @@ rate_limit:
     concurrent: 40
     key: subnet
 forward:
-    application:
+    service:
         name: db
         port: pg

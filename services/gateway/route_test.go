@@ -27,7 +27,7 @@ func handler(kind, name string) map[string]any {
 func TestTheMostSpecificRouteWins(t *testing.T) {
 	candidates := []candidate{
 		gw("site", map[string]any{"path": "/", "match": "prefix", "handler": handler("package", "shop")}),
-		gw("api", map[string]any{"path": "/api", "match": "prefix", "handler": handler("application", "api")}),
+		gw("api", map[string]any{"path": "/api", "match": "prefix", "handler": handler("service", "api")}),
 		gw("deep", map[string]any{"path": "/api/v2", "match": "prefix", "handler": handler("function", "v2")}),
 	}
 
@@ -156,7 +156,7 @@ func TestStripPrefix(t *testing.T) {
 	require.Equal(t, "/", m.stripped("/docs"), "the mount point itself becomes the root")
 
 	keeping := []candidate{
-		gw("docs", map[string]any{"path": "/docs", "match": "prefix", "handler": handler("application", "api")}),
+		gw("docs", map[string]any{"path": "/docs", "match": "prefix", "handler": handler("service", "api")}),
 	}
 	m, _, _ = pick(keeping, "/docs/guide", "GET")
 	require.Equal(t, "/docs/guide", m.stripped("/docs/guide"), "passing it through unchanged surprises nobody")

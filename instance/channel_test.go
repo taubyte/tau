@@ -94,18 +94,18 @@ func TestAFailingServerIsAFailedChannel(t *testing.T) {
 
 func TestAConnectedKindIsDialled(t *testing.T) {
 	grant := channelGrant()
-	grant.Settings["serve/kind"] = "application"
+	grant.Settings["serve/kind"] = "service"
 	grant.Settings["serve/name"] = "absent"
 
 	n, _, _ := makeNode(t, Config{Services: []string{Register}})
 	_, err := (&channels{node: n}).Dial(t.Context(), grant, []byte("x"))
 	require.ErrorIs(t, err, wasmtier.ErrNoAnswer)
-	require.Contains(t, err.Error(), "application/absent")
+	require.Contains(t, err.Error(), "service/absent")
 
 	c := dialingNode(t, &answering{name: "wasm", status: 200})
 	_, err = c.Dial(t.Context(), grant, []byte("x"))
 	require.ErrorIs(t, err, wasmtier.ErrNoAnswer)
-	require.Contains(t, err.Error(), "application/absent")
+	require.Contains(t, err.Error(), "service/absent")
 	require.NotContains(t, err.Error(), "dialling")
 }
 
@@ -122,7 +122,7 @@ func TestAPlacedDialToNothingIsNoAnswer(t *testing.T) {
 	n, _ := consuming(t, &answering{name: "wasm", status: 200}, compiled())
 	require.NotNil(t, n.workers)
 	grant := channelGrant()
-	grant.Settings["serve/kind"] = "application"
+	grant.Settings["serve/kind"] = "service"
 	grant.Settings["serve/name"] = "absent"
 
 	_, err := (&channels{node: n}).Dial(t.Context(), grant, []byte("x"))

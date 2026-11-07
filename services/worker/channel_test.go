@@ -51,7 +51,7 @@ func TestANamedContainerPortTravelsOnTheGrant(t *testing.T) {
 	sync := grants["sync"]
 	require.Empty(t, sync.Refused)
 	require.True(t, sync.Allows("dial"))
-	require.Equal(t, "application", sync.Settings["serve/kind"])
+	require.Equal(t, "service", sync.Settings["serve/kind"])
 	require.NotEmpty(t, sync.Settings["serve/port"], "the port's name, for the dial to connect to")
 	require.Empty(t, grants["reserve"].Settings["serve/port"], "and a channel naming none carries none")
 }

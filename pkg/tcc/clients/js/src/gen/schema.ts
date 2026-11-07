@@ -15,8 +15,8 @@ import type {
 } from "../loader.js";
 import type { AsyncFs } from "../fs.js";
 
-export type ApplicationReadinessKind = "http" | "function";
-export type ApplicationLivenessKind = "http" | "function";
+export type ServiceReadinessKind = "http" | "function";
+export type ServiceLivenessKind = "http" | "function";
 export type FunctionImplements = "handler" | "authorizer" | "http-authorizer" | "dns-resolver" | "instance-validator" | "gateway-transformer" | "proxy-transformer" | "gateway-router" | "proxy-router";
 export type WorkerImplements = "handler" | "authorizer" | "http-authorizer" | "dns-resolver" | "instance-validator" | "gateway-transformer" | "proxy-transformer" | "gateway-router" | "proxy-router";
 export type CronOn_overlap = "skip" | "queue" | "allow";
@@ -51,7 +51,7 @@ export type SyncLogConsensus = "crdt" | "raft";
 export type GatewayHostKind = "generated" | "zone";
 export type GatewayRouting = "route" | "router";
 export type GatewayRouteTarget = "handler" | "router";
-export type GatewayHandlerKind = "function" | "application" | "package" | "gateway" | "mcp" | "agent" | "bus";
+export type GatewayHandlerKind = "function" | "service" | "package" | "gateway" | "mcp" | "agent" | "bus";
 export type GatewayCertSource = "generated" | "provided";
 export type GatewayMatch = "prefix" | "exact" | "regex";
 export type GatewayMethods = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "CONNECT" | "OPTIONS" | "TRACE" | "PATCH";
@@ -59,7 +59,7 @@ export type GatewayMode = "static" | "spa";
 export type GatewayCorsMethods = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "CONNECT" | "OPTIONS" | "TRACE" | "PATCH";
 export type ProxyHostKind = "generated" | "zone";
 export type ProxyRouting = "forward" | "router";
-export type ProxyHandlerKind = "application";
+export type ProxyHandlerKind = "service";
 export type ProxyTlsMode = "none" | "terminate";
 export type ProxyCertSource = "generated" | "provided";
 export type ProxyKey = "ip" | "subnet";
@@ -69,7 +69,7 @@ export type StreamSasl = "scram-sha-512" | "scram-sha-256" | "plain";
 export type StreamTls = "verify-full" | "require" | "disable";
 export type BusInstancesAdmission = "validator";
 export type MCPCache_scope = "none" | "public" | "principal";
-export type ChannelServeKind = "application" | "function";
+export type ChannelServeKind = "service" | "function";
 export type ModelInferenceKind = "remote" | "local";
 export type ModelFormat = "openai" | "anthropic" | "ollama";
 export type AgentKind = "git";
@@ -80,11 +80,11 @@ export type ProjectTopology = "single" | "failover" | "active";
 export class Session {
   constructor(readonly binding: SessionBinding, readonly handle: number) {}
 
-  application(name: string, app?: string): ApplicationConfig {
-    return new ApplicationConfig(this, name, app);
+  service(name: string, app?: string): ServiceConfig {
+    return new ServiceConfig(this, name, app);
   }
-  applicationNames(app?: string): Promise<string[]> {
-    return this.binding.list(this.handle, app ? ["namespace", app, "application"] : ["application"]);
+  serviceNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "service"] : ["service"]);
   }
   function(name: string, app?: string): FunctionConfig {
     return new FunctionConfig(this, name, app);
@@ -336,10 +336,10 @@ export class ResourceConfig {
   }
 }
 
-/** Typed accessors for a application's config. */
-export class ApplicationConfig extends ResourceConfig {
+/** Typed accessors for a service's config. */
+export class ServiceConfig extends ResourceConfig {
   constructor(s: Session, name: string, app?: string) {
-    super(s, app ? ["namespace", app, "application", name] : ["application", name]);
+    super(s, app ? ["namespace", app, "service", name] : ["service", name]);
   }
 
   async id(): Promise<string | undefined> {
@@ -402,11 +402,11 @@ export class ApplicationConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["package", "name"]);
   }
 
-  /** Which application this is — the key its settings live under. */
-  async readinessKind(): Promise<ApplicationReadinessKind | undefined> {
+  /** Which service this is — the key its settings live under. */
+  async readinessKind(): Promise<ServiceReadinessKind | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, ["readiness"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["http", "function"] as readonly string[]) if (k in block) return k as ApplicationReadinessKind;
+    for (const k of ["http", "function"] as readonly string[]) if (k in block) return k as ServiceReadinessKind;
     return undefined;
   }
 
@@ -450,11 +450,11 @@ export class ApplicationConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["readiness", "function", "namespace"]);
   }
 
-  /** Which application this is — the key its settings live under. */
-  async livenessKind(): Promise<ApplicationLivenessKind | undefined> {
+  /** Which service this is — the key its settings live under. */
+  async livenessKind(): Promise<ServiceLivenessKind | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, ["liveness"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["http", "function"] as readonly string[]) if (k in block) return k as ApplicationLivenessKind;
+    for (const k of ["http", "function"] as readonly string[]) if (k in block) return k as ServiceLivenessKind;
     return undefined;
   }
 
@@ -2859,7 +2859,7 @@ export class GatewayConfig extends ResourceConfig {
   async handlerKind(): Promise<GatewayHandlerKind | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, ["route", "handler"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["function", "application", "package", "gateway", "mcp", "agent", "bus"] as readonly string[]) if (k in block) return k as GatewayHandlerKind;
+    for (const k of ["function", "service", "package", "gateway", "mcp", "agent", "bus"] as readonly string[]) if (k in block) return k as GatewayHandlerKind;
     return undefined;
   }
 
@@ -3195,7 +3195,7 @@ export class ProxyConfig extends ResourceConfig {
   async handlerKind(): Promise<ProxyHandlerKind | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, ["forward"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["application"] as readonly string[]) if (k in block) return k as ProxyHandlerKind;
+    for (const k of ["service"] as readonly string[]) if (k in block) return k as ProxyHandlerKind;
     return undefined;
   }
 
@@ -3743,7 +3743,7 @@ export class ChannelConfig extends ResourceConfig {
   async serveKind(): Promise<ChannelServeKind | undefined> {
     const at = await this.s.binding.get(this.s.handle, this.res, ["serve"]).catch(() => null);
     const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
-    for (const k of ["application", "function"] as readonly string[]) if (k in block) return k as ChannelServeKind;
+    for (const k of ["service", "function"] as readonly string[]) if (k in block) return k as ChannelServeKind;
     return undefined;
   }
 
@@ -4484,8 +4484,8 @@ export class ProjectConfig extends ResourceConfig {
 
 // --- Compiled resource shapes (decoded from the TNS object) ---
 
-/** Application as decoded from the compiled config object. */
-export interface Application {
+/** Service as decoded from the compiled config object. */
+export interface Service {
   id?: string;
   name?: string;
   description?: string;

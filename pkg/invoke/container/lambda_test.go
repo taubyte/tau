@@ -379,7 +379,7 @@ func TestALambdaImageRunsOnThisTier(t *testing.T) {
 	}()
 
 	inst, err := e.Start(context.Background(), invoke.Spec{
-		Runtime: Name, Name: "shop/prod/application/Img", Revision: "r1",
+		Runtime: Name, Name: "shop/prod/service/Img", Revision: "r1",
 	})
 	require.NoError(t, err, "a polling image never became ready")
 	defer inst.Close()

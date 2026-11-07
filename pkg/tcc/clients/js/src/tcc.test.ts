@@ -298,7 +298,7 @@ test("session: kind-keyed addressing, listing and existence", async () => {
     ks.filter((k) => !k.container).map((k) => k.group).sort(),
     [
       "agent",
-      "application",
+      "service",
       "bus",
       "cache",
       "channel",

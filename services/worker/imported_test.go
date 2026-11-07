@@ -150,7 +150,7 @@ func runnable(t *testing.T, reg *register.Register) map[string]invoke.Spec {
 	require.NoError(t, err)
 
 	out := map[string]invoke.Spec{}
-	for _, kind := range []string{"function", "application", "worker", "sandbox"} {
+	for _, kind := range []string{"function", "service", "worker", "sandbox"} {
 		names, err := proj.Names(nil, kind)
 		require.NoError(t, err)
 

@@ -32,7 +32,7 @@ impl Guest for Component {
 
         if peeked.starts_with(b"pg") {
             return Decision::To(Destination {
-                kind: "application".to_string(),
+                kind: "service".to_string(),
                 namespace: "/shop".to_string(),
                 name: "db".to_string(),
                 port: "pg".to_string(),
@@ -40,7 +40,7 @@ impl Guest for Component {
         }
 
         Decision::To(Destination {
-            kind: "application".to_string(),
+            kind: "service".to_string(),
             namespace: String::new(),
             // What it was handed, so a test can see the argument rather than
             // only which arm was taken: the name it answers on, and the four

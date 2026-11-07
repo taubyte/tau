@@ -215,7 +215,7 @@ func Import(data []byte) (importer.Result, error) {
 }
 
 // appKind is what a Fly app becomes.
-const appKind = "application"
+const appKind = "service"
 
 // importBuild is the package a Fly app runs, or nil when the file names nothing to
 // run. A Dockerfile build takes the package's variables as its build arguments.

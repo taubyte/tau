@@ -34,7 +34,7 @@ func mountGrant(label, path string) invoke.Grant {
 
 func TestAWorkloadThatDeclaresAMountIsRefused(t *testing.T) {
 	_, err := mountTier(t, nil).Start(context.Background(), invoke.Spec{
-		Name:     "shop/prod/application/db",
+		Name:     "shop/prod/service/db",
 		Artifact: "postgres:16",
 		Reaches:  []invoke.Grant{mountGrant("pgdata", "/var/lib/postgresql/data")},
 	})
@@ -77,7 +77,7 @@ func TestOtherUnservedAccessWarnsRatherThanRefusing(t *testing.T) {
 	})
 
 	_, err := runtime.Start(context.Background(), invoke.Spec{
-		Name: "shop/prod/application/api", Artifact: "x",
+		Name: "shop/prod/service/api", Artifact: "x",
 		Reaches: []invoke.Grant{
 			{Kind: "database", Label: "ledger", Ops: []string{"query"}},
 			{Kind: "cache", Label: "sessions", Ops: []string{"get"}},
@@ -129,7 +129,7 @@ func TestADeclaredMountBecomesAContainerMount(t *testing.T) {
 	})
 
 	_, err := tier.Start(context.Background(), invoke.Spec{
-		Name:     "shop/prod/application/db",
+		Name:     "shop/prod/service/db",
 		Artifact: "postgres:16",
 		Reaches:  []invoke.Grant{mountGrant("pgdata", "/var/lib/postgresql/data")},
 	})
@@ -157,7 +157,7 @@ func TestAReadOnlyGrantIsMountedReadOnly(t *testing.T) {
 	grant.Ops = []string{"mount-ro"}
 
 	_, err := tier.Start(context.Background(), invoke.Spec{
-		Name: "shop/prod/application/web", Artifact: "acme/shop:1",
+		Name: "shop/prod/service/web", Artifact: "acme/shop:1",
 		Reaches: []invoke.Grant{grant},
 	})
 	require.NoError(t, err)
@@ -172,7 +172,7 @@ func TestMountsAreOrderedByDestination(t *testing.T) {
 	})
 
 	_, err := tier.Start(context.Background(), invoke.Spec{
-		Name: "shop/prod/application/db", Artifact: "acme/shop:1",
+		Name: "shop/prod/service/db", Artifact: "acme/shop:1",
 		Reaches: []invoke.Grant{
 			mountGrant("wal", "/var/lib/wal"),
 			mountGrant("pgdata", "/var/lib/postgresql/data"),
@@ -193,7 +193,7 @@ func TestARefusedMountGrantStillRefusesTheWorkload(t *testing.T) {
 	grant.Refused = "this cloud has no disk for it"
 
 	_, err := tier.Start(context.Background(), invoke.Spec{
-		Name: "shop/prod/application/db", Artifact: "postgres:16",
+		Name: "shop/prod/service/db", Artifact: "postgres:16",
 		Reaches: []invoke.Grant{grant},
 	})
 	require.ErrorIs(t, err, ErrNoMounts)
@@ -206,7 +206,7 @@ func TestAVolumeBackingThatFailsRefusesTheWorkload(t *testing.T) {
 	})
 
 	_, err := tier.Start(context.Background(), invoke.Spec{
-		Name: "shop/prod/application/db", Artifact: "postgres:16",
+		Name: "shop/prod/service/db", Artifact: "postgres:16",
 		Reaches: []invoke.Grant{mountGrant("pgdata", "/var/lib/postgresql/data")},
 	})
 	require.ErrorIs(t, err, ErrNoMounts)

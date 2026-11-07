@@ -2,6 +2,6 @@ id: QmVjqSMRfAxGyHmdSdTR4tchvucBXukUz38DtSLTvj7zZH
 description: delivered to the whoami container's http port, by name - the number is the container's own and is never written here
 protocol: reserve
 serve:
-    application:
+    service:
         name: whoami
         port: http

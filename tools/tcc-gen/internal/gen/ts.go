@@ -188,7 +188,7 @@ func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enu
 	seen := map[string]string{}
 	attrs := withBlocks(n, nil)
 	// A node may hold SEVERAL switches — a database's type and each type's
-	// engine, an application's readiness and its liveness — so the discriminator
+	// engine, a service's readiness and its liveness — so the discriminator
 	// is looked up per switch, keyed by WHERE the choice sits. One alias per node
 	// gave every switch the last one's name and values, which is how sqlEngine()
 	// came to be typed by the admission key.

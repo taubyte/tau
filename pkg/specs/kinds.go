@@ -18,7 +18,7 @@ import "time"
 
 // The kinds, by the name a compiled object files them under.
 const (
-	KindApplication  = "application"
+	KindService      = "service"
 	KindFunction     = "function"
 	KindWorker       = "worker"
 	KindSandbox      = "sandbox"
@@ -46,40 +46,40 @@ const (
 	KindEnvironments = "environments"
 )
 
-// Application is that kind, read from a compiled object.
-type Application struct {
+// Service is that kind, read from a compiled object.
+type Service struct {
 	Description string
 	Egress      []string
-	Execution   ApplicationExecution
+	Execution   ServiceExecution
 	Id          string
-	Limits      ApplicationLimits
-	Liveness    ApplicationLiveness
+	Limits      ServiceLimits
+	Liveness    ServiceLiveness
 	Name        string
 	Package     PackageBlock
-	Ports       map[string]ApplicationPortsEntry
-	Readiness   ApplicationReadiness
+	Ports       map[string]ServicePortsEntry
+	Readiness   ServiceReadiness
 	Tags        []string
 	Variables   map[string]VariablesEntry
 }
 
-// ReadApplication decodes one from a resource.
-func ReadApplication(r Resource) Application {
-	var out Application
+// ReadService decodes one from a resource.
+func ReadService(r Resource) Service {
+	var out Service
 	out.Description = r.String("description")
 	out.Egress = r.Strings("egress")
-	out.Execution = ReadApplicationExecution(r)
+	out.Execution = ReadServiceExecution(r)
 	out.Id = r.String("id")
-	out.Limits = ReadApplicationLimits(r)
-	out.Liveness = ReadApplicationLiveness(r)
+	out.Limits = ReadServiceLimits(r)
+	out.Liveness = ReadServiceLiveness(r)
 	out.Name = r.String("name")
 	out.Package = ReadPackageBlock(r)
 	for _, name := range r.Keys("ports") {
 		if out.Ports == nil {
-			out.Ports = map[string]ApplicationPortsEntry{}
+			out.Ports = map[string]ServicePortsEntry{}
 		}
-		out.Ports[name] = ReadApplicationPortsEntry(r.Sub("ports", name))
+		out.Ports[name] = ReadServicePortsEntry(r.Sub("ports", name))
 	}
-	out.Readiness = ReadApplicationReadiness(r)
+	out.Readiness = ReadServiceReadiness(r)
 	out.Tags = r.Strings("tags")
 	for _, name := range r.Keys("variables") {
 		if out.Variables == nil {
@@ -90,24 +90,24 @@ func ReadApplication(r Resource) Application {
 	return out
 }
 
-// Application's keys, and the values its fields may hold.
+// Service's keys, and the values its fields may hold.
 const (
-	ApplicationKeyDescription = "description"
-	ApplicationKeyEgress      = "egress"
-	ApplicationKeyExecution   = "execution"
-	ApplicationKeyId          = "id"
-	ApplicationKeyLimits      = "limits"
-	ApplicationKeyLiveness    = "liveness"
-	ApplicationKeyName        = "name"
-	ApplicationKeyPackage     = "package"
-	ApplicationKeyPorts       = "ports"
-	ApplicationKeyReadiness   = "readiness"
-	ApplicationKeyTags        = "tags"
-	ApplicationKeyVariables   = "variables"
+	ServiceKeyDescription = "description"
+	ServiceKeyEgress      = "egress"
+	ServiceKeyExecution   = "execution"
+	ServiceKeyId          = "id"
+	ServiceKeyLimits      = "limits"
+	ServiceKeyLiveness    = "liveness"
+	ServiceKeyName        = "name"
+	ServiceKeyPackage     = "package"
+	ServiceKeyPorts       = "ports"
+	ServiceKeyReadiness   = "readiness"
+	ServiceKeyTags        = "tags"
+	ServiceKeyVariables   = "variables"
 )
 
-// ApplicationExecution is the "execution" block of Application, read from a compiled object.
-type ApplicationExecution struct {
+// ServiceExecution is the "execution" block of Service, read from a compiled object.
+type ServiceExecution struct {
 	Cpu    *int64
 	Memory int64
 
@@ -116,9 +116,9 @@ type ApplicationExecution struct {
 	Declared bool
 }
 
-// ReadApplicationExecution decodes one from a resource.
-func ReadApplicationExecution(r Resource) ApplicationExecution {
-	var out ApplicationExecution
+// ReadServiceExecution decodes one from a resource.
+func ReadServiceExecution(r Resource) ServiceExecution {
+	var out ServiceExecution
 	out.Cpu = present[int64](r.Int("execution", "cpu"))
 	out.Memory, _ = r.Int("execution", "memory")
 	out.Declared = r.Has("execution", "cpu") ||
@@ -126,14 +126,14 @@ func ReadApplicationExecution(r Resource) ApplicationExecution {
 	return out
 }
 
-// ApplicationExecution's keys, and the values its fields may hold.
+// ServiceExecution's keys, and the values its fields may hold.
 const (
-	ApplicationExecutionKeyCpu    = "execution/cpu"
-	ApplicationExecutionKeyMemory = "execution/memory"
+	ServiceExecutionKeyCpu    = "execution/cpu"
+	ServiceExecutionKeyMemory = "execution/memory"
 )
 
-// ApplicationLimits is the "limits" block of Application, read from a compiled object.
-type ApplicationLimits struct {
+// ServiceLimits is the "limits" block of Service, read from a compiled object.
+type ServiceLimits struct {
 	Concurrency  *int64
 	MaxInstances *int64
 
@@ -142,9 +142,9 @@ type ApplicationLimits struct {
 	Declared bool
 }
 
-// ReadApplicationLimits decodes one from a resource.
-func ReadApplicationLimits(r Resource) ApplicationLimits {
-	var out ApplicationLimits
+// ReadServiceLimits decodes one from a resource.
+func ReadServiceLimits(r Resource) ServiceLimits {
+	var out ServiceLimits
 	out.Concurrency = present[int64](r.Int("limits", "concurrency"))
 	out.MaxInstances = present[int64](r.Int("limits", "max_instances"))
 	out.Declared = r.Has("limits", "concurrency") ||
@@ -152,14 +152,14 @@ func ReadApplicationLimits(r Resource) ApplicationLimits {
 	return out
 }
 
-// ApplicationLimits's keys, and the values its fields may hold.
+// ServiceLimits's keys, and the values its fields may hold.
 const (
-	ApplicationLimitsKeyConcurrency  = "limits/concurrency"
-	ApplicationLimitsKeyMaxInstances = "limits/max_instances"
+	ServiceLimitsKeyConcurrency  = "limits/concurrency"
+	ServiceLimitsKeyMaxInstances = "limits/max_instances"
 )
 
-// ApplicationLiveness is the "liveness" block of Application, read from a compiled object.
-type ApplicationLiveness struct {
+// ServiceLiveness is the "liveness" block of Service, read from a compiled object.
+type ServiceLiveness struct {
 	Failures          *int64 // defaulted
 	FunctionName      string
 	FunctionNamespace string
@@ -172,9 +172,9 @@ type ApplicationLiveness struct {
 	Declared bool
 }
 
-// ReadApplicationLiveness decodes one from a resource.
-func ReadApplicationLiveness(r Resource) ApplicationLiveness {
-	var out ApplicationLiveness
+// ReadServiceLiveness decodes one from a resource.
+func ReadServiceLiveness(r Resource) ServiceLiveness {
+	var out ServiceLiveness
 	out.Failures = present[int64](r.Int("liveness", "failures"))
 	out.FunctionName = r.String("liveness", "function", "name")
 	out.FunctionNamespace = r.String("liveness", "function", "namespace")
@@ -189,19 +189,19 @@ func ReadApplicationLiveness(r Resource) ApplicationLiveness {
 	return out
 }
 
-// ApplicationLiveness's keys, and the values its fields may hold.
+// ServiceLiveness's keys, and the values its fields may hold.
 const (
-	ApplicationLivenessKeyFailures          = "liveness/failures"
-	ApplicationLivenessKeyFunctionName      = "liveness/function/name"
-	ApplicationLivenessKeyFunctionNamespace = "liveness/function/namespace"
-	ApplicationLivenessKeyHttpPath          = "liveness/http/path"
-	ApplicationLivenessKeyHttpPort          = "liveness/http/port"
-	ApplicationLivenessKeyKind              = "liveness/kind"
-	ApplicationLivenessKindHttp             = "http"
-	ApplicationLivenessKindFunction         = "function"
+	ServiceLivenessKeyFailures          = "liveness/failures"
+	ServiceLivenessKeyFunctionName      = "liveness/function/name"
+	ServiceLivenessKeyFunctionNamespace = "liveness/function/namespace"
+	ServiceLivenessKeyHttpPath          = "liveness/http/path"
+	ServiceLivenessKeyHttpPort          = "liveness/http/port"
+	ServiceLivenessKeyKind              = "liveness/kind"
+	ServiceLivenessKindHttp             = "http"
+	ServiceLivenessKindFunction         = "function"
 )
 
-// PackageBlock is the "package" block of Application, Function, Sandbox, Website, Worker, read from a compiled object.
+// PackageBlock is the "package" block of Function, Sandbox, Service, Website, Worker, read from a compiled object.
 type PackageBlock struct {
 	Name      string
 	Namespace string
@@ -227,25 +227,25 @@ const (
 	PackageBlockKeyNamespace = "package/namespace"
 )
 
-// ApplicationPortsEntry is one entry of "ports" in Application, keyed by name.
-type ApplicationPortsEntry struct {
+// ServicePortsEntry is one entry of "ports" in Service, keyed by name.
+type ServicePortsEntry struct {
 	Number int64
 }
 
-// ReadApplicationPortsEntry decodes one from a resource.
-func ReadApplicationPortsEntry(r Resource) ApplicationPortsEntry {
-	var out ApplicationPortsEntry
+// ReadServicePortsEntry decodes one from a resource.
+func ReadServicePortsEntry(r Resource) ServicePortsEntry {
+	var out ServicePortsEntry
 	out.Number, _ = r.Int("number")
 	return out
 }
 
-// ApplicationPortsEntry's keys, and the values its fields may hold.
+// ServicePortsEntry's keys, and the values its fields may hold.
 const (
-	ApplicationPortsEntryKeyNumber = "number"
+	ServicePortsEntryKeyNumber = "number"
 )
 
-// ApplicationReadiness is the "readiness" block of Application, read from a compiled object.
-type ApplicationReadiness struct {
+// ServiceReadiness is the "readiness" block of Service, read from a compiled object.
+type ServiceReadiness struct {
 	FunctionName      string
 	FunctionNamespace string
 	HttpPath          string
@@ -257,9 +257,9 @@ type ApplicationReadiness struct {
 	Declared bool
 }
 
-// ReadApplicationReadiness decodes one from a resource.
-func ReadApplicationReadiness(r Resource) ApplicationReadiness {
-	var out ApplicationReadiness
+// ReadServiceReadiness decodes one from a resource.
+func ReadServiceReadiness(r Resource) ServiceReadiness {
+	var out ServiceReadiness
 	out.FunctionName = r.String("readiness", "function", "name")
 	out.FunctionNamespace = r.String("readiness", "function", "namespace")
 	out.HttpPath = r.String("readiness", "http", "path")
@@ -273,18 +273,18 @@ func ReadApplicationReadiness(r Resource) ApplicationReadiness {
 	return out
 }
 
-// ApplicationReadiness's keys, and the values its fields may hold.
+// ServiceReadiness's keys, and the values its fields may hold.
 const (
-	ApplicationReadinessKeyFunctionName      = "readiness/function/name"
-	ApplicationReadinessKeyFunctionNamespace = "readiness/function/namespace"
-	ApplicationReadinessKeyHttpPath          = "readiness/http/path"
-	ApplicationReadinessKeyHttpPort          = "readiness/http/port"
-	ApplicationReadinessKeyKind              = "readiness/kind"
-	ApplicationReadinessKindHttp             = "http"
-	ApplicationReadinessKindFunction         = "function"
+	ServiceReadinessKeyFunctionName      = "readiness/function/name"
+	ServiceReadinessKeyFunctionNamespace = "readiness/function/namespace"
+	ServiceReadinessKeyHttpPath          = "readiness/http/path"
+	ServiceReadinessKeyHttpPort          = "readiness/http/port"
+	ServiceReadinessKeyKind              = "readiness/kind"
+	ServiceReadinessKindHttp             = "http"
+	ServiceReadinessKindFunction         = "function"
 )
 
-// VariablesEntry is one entry of "variables" in Agent, Application, Function, Package, Sandbox, Worker, keyed by name.
+// VariablesEntry is one entry of "variables" in Agent, Function, Package, Sandbox, Service, Worker, keyed by name.
 type VariablesEntry struct {
 	As    string // defaulted
 	Path  string
@@ -1880,12 +1880,12 @@ type GatewayRoute struct {
 	CacheTtl            *time.Duration
 	CacheVary           []string
 	HandlerIndex        string // authored at route/handler/package/index
-	HandlerKind         string // which of function, application, package, gateway, mcp, agent, bus was written
+	HandlerKind         string // which of function, service, package, gateway, mcp, agent, bus was written
 	HandlerMode         string // authored at route/handler/package/mode
-	HandlerName         string // authored at route/handler/{function|application|package|gateway|mcp|agent|bus}/name
-	HandlerNamespace    string // authored at route/handler/{function|application|package|gateway|mcp|agent|bus}/namespace
+	HandlerName         string // authored at route/handler/{function|service|package|gateway|mcp|agent|bus}/name
+	HandlerNamespace    string // authored at route/handler/{function|service|package|gateway|mcp|agent|bus}/namespace
 	HandlerNotFound     string // authored at route/handler/package/not_found
-	HandlerPort         string // authored at route/handler/{function|application|package|gateway|mcp|agent|bus}/port
+	HandlerPort         string // authored at route/handler/{function|service|package|gateway|mcp|agent|bus}/port
 	Match               string // defaulted
 	Methods             []string
 	Path                string
@@ -1961,7 +1961,7 @@ const (
 	GatewayRouteKeyStripPrefix         = "route/strip_prefix"
 	GatewayRouteKeyTarget              = "route/target"
 	GatewayRouteHandlerKindFunction    = "function"
-	GatewayRouteHandlerKindApplication = "application"
+	GatewayRouteHandlerKindService     = "service"
 	GatewayRouteHandlerKindPackage     = "package"
 	GatewayRouteHandlerKindGateway     = "gateway"
 	GatewayRouteHandlerKindMcp         = "mcp"
@@ -2095,10 +2095,10 @@ const (
 
 // ProxyForward is the "forward" block of Proxy, read from a compiled object.
 type ProxyForward struct {
-	Kind      string // which of application was written
-	Name      string // authored at forward/{application}/name
-	Namespace string // authored at forward/{application}/namespace
-	Port      string // authored at forward/{application}/port
+	Kind      string // which of service was written
+	Name      string // authored at forward/{service}/name
+	Namespace string // authored at forward/{service}/namespace
+	Port      string // authored at forward/{service}/port
 
 	// Declared says the author wrote this block: a field the compiler does not
 	// default is present. A block whose fields are all defaults reads false.
@@ -2121,11 +2121,11 @@ func ReadProxyForward(r Resource) ProxyForward {
 
 // ProxyForward's keys, and the values its fields may hold.
 const (
-	ProxyForwardKeyKind         = "forward/kind"
-	ProxyForwardKeyName         = "forward/name"
-	ProxyForwardKeyNamespace    = "forward/namespace"
-	ProxyForwardKeyPort         = "forward/port"
-	ProxyForwardKindApplication = "application"
+	ProxyForwardKeyKind      = "forward/kind"
+	ProxyForwardKeyName      = "forward/name"
+	ProxyForwardKeyNamespace = "forward/namespace"
+	ProxyForwardKeyPort      = "forward/port"
+	ProxyForwardKindService  = "service"
 )
 
 // ProxyRateLimit is the "rate_limit" block of Proxy, read from a compiled object.
@@ -2457,10 +2457,10 @@ const (
 
 // ChannelServe is the "serve" block of Channel, read from a compiled object.
 type ChannelServe struct {
-	Kind      string // which of application, function was written
-	Name      string // authored at serve/{application|function}/name
-	Namespace string // authored at serve/{application|function}/namespace
-	Port      string // authored at serve/{application|function}/port
+	Kind      string // which of service, function was written
+	Name      string // authored at serve/{service|function}/name
+	Namespace string // authored at serve/{service|function}/namespace
+	Port      string // authored at serve/{service|function}/port
 
 	// Declared says the author wrote this block: a field the compiler does not
 	// default is present. A block whose fields are all defaults reads false.
@@ -2483,12 +2483,12 @@ func ReadChannelServe(r Resource) ChannelServe {
 
 // ChannelServe's keys, and the values its fields may hold.
 const (
-	ChannelServeKeyKind         = "serve/kind"
-	ChannelServeKeyName         = "serve/name"
-	ChannelServeKeyNamespace    = "serve/namespace"
-	ChannelServeKeyPort         = "serve/port"
-	ChannelServeKindApplication = "application"
-	ChannelServeKindFunction    = "function"
+	ChannelServeKeyKind      = "serve/kind"
+	ChannelServeKeyName      = "serve/name"
+	ChannelServeKeyNamespace = "serve/namespace"
+	ChannelServeKeyPort      = "serve/port"
+	ChannelServeKindService  = "service"
+	ChannelServeKindFunction = "function"
 )
 
 // Model is that kind, read from a compiled object.
@@ -3086,7 +3086,7 @@ const (
 
 // Readers is every kind's reader, by the kind's own name.
 var Readers = map[string]func(Resource) any{
-	"application":  func(r Resource) any { return ReadApplication(r) },
+	"service":      func(r Resource) any { return ReadService(r) },
 	"function":     func(r Resource) any { return ReadFunction(r) },
 	"worker":       func(r Resource) any { return ReadWorker(r) },
 	"sandbox":      func(r Resource) any { return ReadSandbox(r) },
@@ -3183,14 +3183,14 @@ type WorkloadBlock struct {
 	Name               string
 	PackageName        string
 	PackageNamespace   string
-	Ports              map[string]ApplicationPortsEntry
+	Ports              map[string]ServicePortsEntry
 	ServeIndex         string
-	ServeKind          string // which of application, function was written
+	ServeKind          string // which of service, function was written
 	ServeMode          string
-	ServeName          string // authored at serve/{application|function}/name
-	ServeNamespace     string // authored at serve/{application|function}/namespace
+	ServeName          string // authored at serve/{service|function}/name
+	ServeNamespace     string // authored at serve/{service|function}/namespace
 	ServeNotFound      string
-	ServePort          string // authored at serve/{application|function}/port
+	ServePort          string // authored at serve/{service|function}/port
 	Variables          map[string]VariablesEntry
 }
 
@@ -3214,9 +3214,9 @@ func ReadWorkloadBlock(r Resource) WorkloadBlock {
 	out.PackageNamespace = r.String("package", "namespace")
 	for _, name := range r.Keys("ports") {
 		if out.Ports == nil {
-			out.Ports = map[string]ApplicationPortsEntry{}
+			out.Ports = map[string]ServicePortsEntry{}
 		}
-		out.Ports[name] = ReadApplicationPortsEntry(r.Sub("ports", name))
+		out.Ports[name] = ReadServicePortsEntry(r.Sub("ports", name))
 	}
 	out.ServeIndex = r.String("serve", "index")
 	out.ServeKind = r.String("serve", "kind")
@@ -3269,7 +3269,7 @@ const (
 	WorkloadBlockImplementsProxyTransformer   = "proxy-transformer"
 	WorkloadBlockImplementsGatewayRouter      = "gateway-router"
 	WorkloadBlockImplementsProxyRouter        = "proxy-router"
-	WorkloadBlockServeKindApplication         = "application"
+	WorkloadBlockServeKindService             = "service"
 	WorkloadBlockServeKindFunction            = "function"
 	WorkloadBlockServeModeStatic              = "static"
 	WorkloadBlockServeModeSpa                 = "spa"

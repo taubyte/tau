@@ -11,7 +11,7 @@ import (
 func BenchmarkResolve(b *testing.B) {
 	h := newHarness(b)
 	for _, t := range []Target{
-		{Project: "shop", Environment: "prod", Kind: "application", Name: "api"},
+		{Project: "shop", Environment: "prod", Kind: "service", Name: "api"},
 		{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"},
 	} {
 		if _, err := h.Worker.Resolve(b.Context(), t); err != nil {
@@ -30,7 +30,7 @@ func BenchmarkResolve(b *testing.B) {
 
 func BenchmarkInvokeOverRPC(b *testing.B) {
 	h := newHarness(b)
-	req := &workerv2.InvokeRequest{Target: target("application", "api"), Method: "GET", Path: "/orders"}
+	req := &workerv2.InvokeRequest{Target: target("service", "api"), Method: "GET", Path: "/orders"}
 	if _, err := h.Client.Invoke(b.Context(), connect.NewRequest(req)); err != nil {
 		b.Fatal(err)
 	}

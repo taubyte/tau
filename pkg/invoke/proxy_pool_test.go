@@ -55,7 +55,7 @@ func conn() *Connection {
 
 func TestThePoolAsksAProxyRouterWhereAConnectionGoes(t *testing.T) {
 	inst := &steering{direct: func() (*Direction, error) {
-		return &Direction{To: &Endpoint{Kind: "application", Name: "db", Port: "pg"}}, nil
+		return &Direction{To: &Endpoint{Kind: "service", Name: "db", Port: "pg"}}, nil
 	}}
 	p, _ := newPool(t, steers{inst: inst}, nil)
 

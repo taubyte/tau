@@ -23,7 +23,7 @@ func resource(t *testing.T, scope []string, kind, name string) specs.Resource {
 }
 
 func TestEntriesAreReadPerEntry(t *testing.T) {
-	api := specs.ReadApplication(resource(t, nil, specs.KindApplication, "api"))
+	api := specs.ReadService(resource(t, nil, specs.KindService, "api"))
 	require.Equal(t, int64(8080), api.Ports["http"].Number)
 	require.Equal(t, int64(9090), api.Ports["metrics"].Number)
 
@@ -74,9 +74,9 @@ func TestEntriesAreReadPerEntry(t *testing.T) {
 }
 
 func TestAbsentIsNotZero(t *testing.T) {
-	db := specs.ReadApplication(resource(t, nil, specs.KindApplication, "db"))
+	db := specs.ReadService(resource(t, nil, specs.KindService, "db"))
 	require.Equal(t, int64(2000), *db.Execution.Cpu)
-	api := specs.ReadApplication(resource(t, nil, specs.KindApplication, "api"))
+	api := specs.ReadService(resource(t, nil, specs.KindService, "api"))
 	require.Nil(t, api.Execution.Cpu, "no cpu was written")
 	require.Equal(t, int64(512_000_000), api.Execution.Memory)
 
@@ -102,16 +102,16 @@ func TestAbsentIsNotZero(t *testing.T) {
 }
 
 func TestADefaultedBlockIsNotADeclaredOne(t *testing.T) {
-	pool := specs.ReadApplication(resource(t, nil, specs.KindApplication, "worker_pool"))
+	pool := specs.ReadService(resource(t, nil, specs.KindService, "worker_pool"))
 	require.NotNil(t, pool.Liveness.Failures, "the default is in the object")
 	require.Equal(t, int64(3), *pool.Liveness.Failures)
 	require.False(t, pool.Liveness.Declared, "and is not evidence anybody wrote a probe")
 	require.True(t, pool.Readiness.Declared)
-	require.Equal(t, specs.ApplicationReadinessKindFunction, pool.Readiness.Kind)
+	require.Equal(t, specs.ServiceReadinessKindFunction, pool.Readiness.Kind)
 
-	api := specs.ReadApplication(resource(t, nil, specs.KindApplication, "api"))
+	api := specs.ReadService(resource(t, nil, specs.KindService, "api"))
 	require.True(t, api.Liveness.Declared)
-	require.Equal(t, specs.ApplicationLivenessKindHttp, api.Liveness.Kind)
+	require.Equal(t, specs.ServiceLivenessKindHttp, api.Liveness.Kind)
 	require.Equal(t, "/livez", api.Liveness.HttpPath)
 
 	site := specs.ReadGateway(resource(t, nil, specs.KindGateway, "api"))
@@ -181,7 +181,7 @@ func TestTheKeysAreTheCompiledPaths(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, int64(3), n)
 	require.Equal(t, "postgres", resource(t, nil, specs.KindDatabase, "orders").String(segments(specs.DatabaseSqlKeyEngine)...))
-	require.Equal(t, "number", specs.ApplicationPortsEntryKeyNumber, "an entry's keys are its own")
+	require.Equal(t, "number", specs.ServicePortsEntryKeyNumber, "an entry's keys are its own")
 }
 
 func segments(key string) []string { return strings.Split(key, "/") }

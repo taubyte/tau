@@ -1,5 +1,5 @@
-BROKEN application/web in shop  no ingress names it
-       an http application
+BROKEN service/web in shop  no ingress names it
+       an http service
        answers nobody
 CHECK  gateway/front  probably not what was meant
 NOTE   worker/drain  a queue consumer no ingress names

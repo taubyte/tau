@@ -198,7 +198,7 @@ func publishedDocs(t testing.TB, docs map[string]string) *register.Register {
 	return reg
 }
 
-// servable removes what this cloud refuses of the fixture's applications (instance
+// servable removes what this cloud refuses of the fixture's services (instance
 // ceilings, liveness checks, a readiness function, a registry credential), so tests
 // can exercise ports, grants, scopes and the cache. unserved_test asserts the
 // refusals against the untouched fixture.
@@ -207,7 +207,7 @@ func servable(t testing.TB, flat map[string]any) map[string]any {
 
 	root, ok := flat["object"].(map[string]any)
 	require.True(t, ok)
-	applications, ok := root[specs.KindApplication].(map[string]any)
+	services, ok := root[specs.KindService].(map[string]any)
 	require.True(t, ok)
 
 	// a registry credential is the package's, which every workload naming it carries
@@ -221,17 +221,17 @@ func servable(t testing.TB, flat map[string]any) map[string]any {
 		}
 	}
 
-	for _, v := range applications {
+	for _, v := range services {
 		app, ok := v.(map[string]any)
 		if !ok {
 			continue
 		}
-		delete(app, specs.ApplicationKeyLiveness)
-		if limits, ok := app[specs.ApplicationKeyLimits].(map[string]any); ok {
+		delete(app, specs.ServiceKeyLiveness)
+		if limits, ok := app[specs.ServiceKeyLimits].(map[string]any); ok {
 			delete(limits, "max_instances")
 		}
-		if readiness, ok := app[specs.ApplicationKeyReadiness].(map[string]any); ok && readiness["kind"] == specs.ApplicationReadinessKindFunction {
-			delete(app, specs.ApplicationKeyReadiness)
+		if readiness, ok := app[specs.ServiceKeyReadiness].(map[string]any); ok && readiness["kind"] == specs.ServiceReadinessKindFunction {
+			delete(app, specs.ServiceKeyReadiness)
 		}
 	}
 	return flat

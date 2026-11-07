@@ -381,12 +381,12 @@ func TestAReplicationTravelsThroughItsNamespacesMesh(t *testing.T) {
 func TestAnUnplacedResourceReachingTwoRegionsIsRefused(t *testing.T) {
 	docs := map[string]string{
 		"/project.yaml":                     regionsProject + everyBranch,
-		"/namespace/eu/application/db.yaml": "id: " + cidFor("application/db") + "\npackage:\n    name: db_code\n    namespace: /\nports:\n    pg:\n        number: 5432\nexecution:\n    memory: 64MB\n",
+		"/namespace/eu/service/db.yaml":     "id: " + cidFor("service/db") + "\npackage:\n    name: db_code\n    namespace: /\nports:\n    pg:\n        number: 5432\nexecution:\n    memory: 64MB\n",
 		"/package/db_code.yaml":             "id: " + cidFor("package/db_code") + "\ntype: oci\nsource: services/db\nbuild:\n    dockerfile:\n        target: runtime\n",
 		"/namespace/us/function/audit.yaml": viewFunction("audit", "implements: proxy-transformer\n"),
 		"/package/audit_code.yaml":          viewPackage("audit"),
 		"/proxy/db.yaml": "id: " + cidFor("proxy/db") + "\nhost:\n    generated:\n        name: db\nservice: postgres\n" +
-			"transformers:\n    - name: audit\n      namespace: /us\nforward:\n    application:\n        namespace: /eu\n        name: db\n        port: pg\n",
+			"transformers:\n    - name: audit\n      namespace: /us\nforward:\n    service:\n        namespace: /eu\n        name: db\n        port: pg\n",
 	}
 	viewNamespace(docs, "eu", "", "[region-1]")
 	viewNamespace(docs, "us", "", "[region-2]")
@@ -397,15 +397,15 @@ func TestAnUnplacedResourceReachingTwoRegionsIsRefused(t *testing.T) {
 }
 
 // A REGION THAT IS ONE OF MANY holds nothing that only follows what runs elsewhere:
-// a proxy in front of an application in region-1 is not region-2's, and is not
+// a proxy in front of a service in region-1 is not region-2's, and is not
 // broken for it.
 func TestWhatFollowsSomethingElsewhereIsNotHeldHere(t *testing.T) {
 	docs := map[string]string{
-		"/project.yaml":                     regionsProject + everyBranch,
-		"/namespace/eu/application/db.yaml": "id: " + cidFor("application/db") + "\npackage:\n    name: db_code\n    namespace: /\nports:\n    pg:\n        number: 5432\nexecution:\n    memory: 64MB\n",
-		"/package/db_code.yaml":             "id: " + cidFor("package/db_code") + "\ntype: oci\nsource: services/db\nbuild:\n    dockerfile:\n        target: runtime\n",
+		"/project.yaml":                 regionsProject + everyBranch,
+		"/namespace/eu/service/db.yaml": "id: " + cidFor("service/db") + "\npackage:\n    name: db_code\n    namespace: /\nports:\n    pg:\n        number: 5432\nexecution:\n    memory: 64MB\n",
+		"/package/db_code.yaml":         "id: " + cidFor("package/db_code") + "\ntype: oci\nsource: services/db\nbuild:\n    dockerfile:\n        target: runtime\n",
 		"/proxy/db.yaml": "id: " + cidFor("proxy/db") + "\nhost:\n    generated:\n        name: db\nservice: postgres\n" +
-			"forward:\n    application:\n        namespace: /eu\n        name: db\n        port: pg\n",
+			"forward:\n    service:\n        namespace: /eu\n        name: db\n        port: pg\n",
 	}
 	viewNamespace(docs, "eu", "", "[region-1]")
 	views, findings, err := viewsOf(t, schema.WithRegion("region-2"), docs)
@@ -505,7 +505,7 @@ func TestTheBasicFixtureRendersPerRegion(t *testing.T) {
 	require.NoError(t, err, "%v", findings)
 	require.Equal(t, []string{"region-2"}, keysOf(r2))
 	roles := r2["region-2"].Roles
-	require.Equal(t, schema.RoleStandby, roles[idOfName(t, flat, "application", "api")])
+	require.Equal(t, schema.RoleStandby, roles[idOfName(t, flat, "service", "api")])
 	// THE PROJECT FAILS OVER: region-2 holds what it needs to take over, and nothing
 	// in it answers yet.
 	for id, role := range roles {

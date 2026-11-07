@@ -36,7 +36,7 @@ services:
       test: ["CMD", "true"]
 `)
 	require.Equal(t, Source, r.Source)
-	doc, ok := r.Doc("application", "api")
+	doc, ok := r.Doc("service", "api")
 	require.True(t, ok)
 	require.Equal(t, map[string]any{"name": "api_image"}, doc["package"])
 	pkg, ok := r.Doc("package", "api_image")

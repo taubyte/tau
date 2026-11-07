@@ -41,7 +41,7 @@ func TestAResourceIsFoundByName(t *testing.T) {
 	p := load(t)
 	require.NotEmpty(t, p.ID())
 
-	api, id, err := p.Resource(nil, "application", "api")
+	api, id, err := p.Resource(nil, "service", "api")
 	require.NoError(t, err)
 	require.NotEmpty(t, id)
 
@@ -79,14 +79,14 @@ func TestANameResolvesOutward(t *testing.T) {
 	p := load(t)
 
 	// `api` is declared at the project root and nowhere else.
-	_, rootID, err := p.Resource(nil, "application", "api")
+	_, rootID, err := p.Resource(nil, "service", "api")
 	require.NoError(t, err)
 
-	_, fromShop, err := p.Resource([]string{"shop"}, "application", "api")
+	_, fromShop, err := p.Resource([]string{"shop"}, "service", "api")
 	require.NoError(t, err)
 	require.Equal(t, rootID, fromShop, "the same resource, reached from a child scope")
 
-	_, fromEU, err := p.Resource([]string{"shop", "local"}, "application", "api")
+	_, fromEU, err := p.Resource([]string{"shop", "local"}, "service", "api")
 	require.NoError(t, err)
 	require.Equal(t, rootID, fromEU, "and from a grandchild")
 }
@@ -134,11 +134,11 @@ func TestWalkingTheProject(t *testing.T) {
 
 	kinds, err := p.Kinds(nil)
 	require.NoError(t, err)
-	require.Contains(t, kinds, "application")
+	require.Contains(t, kinds, "service")
 	require.Contains(t, kinds, "function")
 	require.NotContains(t, kinds, "namespace", "a namespace is where things are, not a thing")
 
-	names, err := p.Names(nil, "application")
+	names, err := p.Names(nil, "service")
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"api", "db", "worker_pool"}, names)
 
@@ -160,7 +160,7 @@ func TestTheEastWestEdgeIsReadable(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, "pgwire", ch.String("protocol"))
-	require.Equal(t, "application", ch.String("serve", "kind"))
+	require.Equal(t, "service", ch.String("serve", "kind"))
 	require.Equal(t, "db", ch.String("serve", "name"))
 	require.Equal(t, "pg", ch.String("serve", "port"))
 
@@ -175,7 +175,7 @@ func TestTheEastWestEdgeIsReadable(t *testing.T) {
 func TestMissingThingsSayWhatIsMissing(t *testing.T) {
 	p := load(t)
 
-	_, _, err := p.Resource(nil, "application", "nope")
+	_, _, err := p.Resource(nil, "service", "nope")
 	require.ErrorIs(t, err, specs.ErrNotFound)
 
 	_, _, err = p.Resource(nil, "nosuchkind", "api")
@@ -184,10 +184,10 @@ func TestMissingThingsSayWhatIsMissing(t *testing.T) {
 	_, _, err = p.Resource(nil, "", "api")
 	require.ErrorIs(t, err, specs.ErrNotFound)
 
-	_, _, err = p.Resource(nil, "application", "")
+	_, _, err = p.Resource(nil, "service", "")
 	require.ErrorIs(t, err, specs.ErrNotFound)
 
-	_, _, err = p.Resource([]string{"nosuchnamespace"}, "application", "api")
+	_, _, err = p.Resource([]string{"nosuchnamespace"}, "service", "api")
 	require.ErrorIs(t, err, specs.ErrNotFound)
 
 	_, err = p.Namespaces([]string{"nosuchnamespace"})
@@ -196,7 +196,7 @@ func TestMissingThingsSayWhatIsMissing(t *testing.T) {
 	_, err = p.Kinds([]string{"nosuchnamespace"})
 	require.ErrorIs(t, err, specs.ErrNotFound)
 
-	_, err = p.Names([]string{"nosuchnamespace"}, "application")
+	_, err = p.Names([]string{"nosuchnamespace"}, "service")
 	require.ErrorIs(t, err, specs.ErrNotFound)
 }
 

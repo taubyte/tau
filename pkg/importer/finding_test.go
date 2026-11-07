@@ -55,24 +55,24 @@ func TestFindingsSortStably(t *testing.T) {
 
 func TestSetCreatesTheMapOnDemand(t *testing.T) {
 	var r Result
-	r.Set("application", "api", map[string]any{"source": map[string]any{"image": "x"}})
+	r.Set("service", "api", map[string]any{"source": map[string]any{"image": "x"}})
 
-	doc, ok := r.Doc("application", "api")
+	doc, ok := r.Doc("service", "api")
 	require.True(t, ok)
 	require.Equal(t, map[string]any{"image": "x"}, doc["source"])
 
 	// The kind is per resource, so one result can hold both halves of a
 	// project: the workload and the volume it mounts.
 	r.Set("volume", "data", map[string]any{"size": "10GB"})
-	require.Equal(t, []string{"api"}, r.Names("application"))
+	require.Equal(t, []string{"api"}, r.Names("service"))
 	require.Equal(t, []string{"data"}, r.Names("volume"))
 
-	_, ok = r.Doc("application", "data")
+	_, ok = r.Doc("service", "data")
 	require.False(t, ok, "a name is only a name within a kind")
 
 	// Setting the same kind and name again replaces rather than appends.
-	r.Set("application", "api", map[string]any{"source": map[string]any{"image": "y"}})
+	r.Set("service", "api", map[string]any{"source": map[string]any{"image": "y"}})
 	require.Len(t, r.Resources, 2)
-	doc, _ = r.Doc("application", "api")
+	doc, _ = r.Doc("service", "api")
 	require.Equal(t, map[string]any{"image": "y"}, doc["source"])
 }

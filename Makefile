@@ -37,7 +37,7 @@ DREAM_P ?= $(shell n=$$(nproc 2>/dev/null || echo 4); p=$$((n / 4)); [ $$p -lt 1
 # it fails the package outright rather than skipping it.
 DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xargs grep -L '//go:build dreaming && ee' | sed 's|^\./||' | grep -vE '^(ee/|tools/tau/|\.)' | xargs -n1 dirname | sort -u | sed 's|^|./|')
 
-.PHONY: test test-cli test-acme test-acme-live test-dreaming test-raft test-docker test-containerd test-application test-build test-corpus test-external-databases forge-images test-forges test-containers cover-containers cover-containers-unit cover-containers-docker cover-containers-root cover-containers-rootless cover-containers-report test-taucorder test-race test-all bench proto-v2 proto-v2-check vault-helper
+.PHONY: test test-cli test-acme test-acme-live test-dreaming test-raft test-docker test-containerd test-service test-build test-corpus test-external-databases forge-images test-forges test-containers cover-containers cover-containers-unit cover-containers-docker cover-containers-root cover-containers-rootless cover-containers-report test-taucorder test-race test-all bench proto-v2 proto-v2-check vault-helper
 
 # THE TIMEOUT IS EXPLICIT BECAUSE THE DEFAULT IS A GUESS ABOUT THE MACHINE.
 # go test allows a package 10 minutes unless told otherwise, and pkg/kvdb spends
@@ -151,9 +151,9 @@ cover-containers-rootless:
 cover-containers-report:
 	scripts/cover-merge $(COVER_DIR)/*.out
 
-test-containers: test-docker test-containerd test-application test-build test-external-databases
+test-containers: test-docker test-containerd test-service test-build test-external-databases
 
-# test-application runs a real application end to end: a corpus project
+# test-service runs a real service end to end: a corpus project
 # compiled, published, routed by the gateway and served by a container the
 # container tier started on docker. It needs a docker daemon AND CAP_NET_ADMIN,
 # because the tier always restricts egress and the backend refuses to create a
@@ -181,11 +181,11 @@ test-acme:
 test-acme-live:
 	go test -exec '$(LEAKCHECK) $(AS_ROOT)' -tags docker_integration -count=1 -v -timeout 10m -run '^(TestARealCAIssuesThroughARealDelegation|TestTheLeftoverSweepTakesTheAnonymousVolumes)$$' ./instance/boot/
 
-test-application:
-	go test -exec '$(LEAKCHECK) $(AS_ROOT)' -tags 'dreaming docker_integration' -count=1 -v -timeout 10m -run '^(TestAnApplicationAnswersThroughTheGateway|TestAContainerWorkerRunsToCompletionPerInvocation|TestAContainerWorkerReadsItsSecretThroughTheHelper|TestAChannelServedByAContainerDeliversToItsNamedPort)$$' ./instance/dream/
+test-service:
+	go test -exec '$(LEAKCHECK) $(AS_ROOT)' -tags 'dreaming docker_integration' -count=1 -v -timeout 10m -run '^(TestAServiceAnswersThroughTheGateway|TestAContainerWorkerRunsToCompletionPerInvocation|TestAContainerWorkerReadsItsSecretThroughTheHelper|TestAChannelServedByAContainerDeliversToItsNamedPort)$$' ./instance/dream/
 
 # test-build runs the build service's builds in real containers, for the same
-# reason and under the same privilege as test-application: a build runs a
+# reason and under the same privilege as test-service: a build runs a
 # stranger's commands, and the engine will not start one it cannot firewall.
 
 test-build:

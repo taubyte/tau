@@ -104,7 +104,7 @@ func TestARouterPeeksAndThePeekedBytesStillArrive(t *testing.T) {
 		if len(peeked) < 6 {
 			return &invoke.Direction{More: 6}
 		}
-		return &invoke.Direction{To: &invoke.Endpoint{Kind: "application", Name: "db", Port: "pg"}}
+		return &invoke.Direction{To: &invoke.Endpoint{Kind: "service", Name: "db", Port: "pg"}}
 	}, proxy.Config{})
 
 	require.Equal(t, "pong:pgwire-hello", says(t, sock, "pgwire-hello"),
@@ -122,7 +122,7 @@ func TestARouterPeeksAndThePeekedBytesStillArrive(t *testing.T) {
 
 func TestARouterIsToldTheSourceAndTheName(t *testing.T) {
 	sock, st, _, _ := routing(t, func([]byte) *invoke.Direction {
-		return &invoke.Direction{To: &invoke.Endpoint{Kind: "application", Name: "db", Port: "pg"}}
+		return &invoke.Direction{To: &invoke.Endpoint{Kind: "service", Name: "db", Port: "pg"}}
 	}, proxy.Config{})
 
 	says(t, sock, "hello")
@@ -193,7 +193,7 @@ func TestARouterIsAskedOnceMoreWhenTheClientIsDone(t *testing.T) {
 		if !bytes.Contains(peeked, []byte("hi")) {
 			return &invoke.Direction{More: 64}
 		}
-		return &invoke.Direction{To: &invoke.Endpoint{Kind: "application", Name: "db", Port: "pg"}}
+		return &invoke.Direction{To: &invoke.Endpoint{Kind: "service", Name: "db", Port: "pg"}}
 	}, proxy.Config{})
 
 	require.Equal(t, "pong:hi", says(t, sock, "hi"))
@@ -206,7 +206,7 @@ func TestARouterIsAskedOnceMoreWhenTheClientIsDone(t *testing.T) {
 func TestARouterCanNameANamespace(t *testing.T) {
 	sock, _, w, _ := routing(t, func([]byte) *invoke.Direction {
 		return &invoke.Direction{To: &invoke.Endpoint{
-			Kind: "application", Namespace: "/local", Name: "db", Port: "pg",
+			Kind: "service", Namespace: "/local", Name: "db", Port: "pg",
 		}}
 	}, proxy.Config{})
 

@@ -228,10 +228,10 @@ func collect(f file) []fn {
 }
 
 // A zip-packaged Lambda becomes a `function` (wasm); a container-packaged one an
-// `application` (the only kind starting from an image).
+// `service` (the only kind starting from an image).
 const (
 	functionKind  = "function"
-	containerKind = "application"
+	containerKind = "service"
 )
 
 // imageOf reads the Serverless Framework's `image:`, which is a string or a
@@ -315,7 +315,7 @@ func importFunction(r *importer.Result, x fn) {
 			r.Runs(doc, name, map[string]any{"type": "oci", "source": map[string]any{"image": x.image}})
 		}
 
-		// An application is not invoked per request and has no timeout, so a Lambda's Timeout
+		// A service is not invoked per request and has no timeout, so a Lambda's Timeout
 		// is dropped and reported.
 		if execution, ok := doc["execution"].(map[string]any); ok {
 			if _, had := execution["timeout"]; had {
@@ -324,10 +324,10 @@ func importFunction(r *importer.Result, x fn) {
 					Code:  "NO_TAU_FEATURE:container-timeout",
 					Needs: "a per-invocation ceiling on the container tier",
 					Detail: fmt.Sprintf("this function is bounded at %ds; a container-packaged one becomes an "+
-						"application here, which has no per-request timeout, so nothing stops a run that hangs", x.timeout)})
+						"service here, which has no per-request timeout, so nothing stops a run that hangs", x.timeout)})
 			}
 		}
-		// AN application NEEDS A CEILING AND AWS'S DEFAULT IS 128MB, which is
+		// A service NEEDS A CEILING AND AWS'S DEFAULT IS 128MB, which is
 		// the number a Lambda that names none actually ran under.
 		if x.memory == 0 {
 			execution := doc["execution"]

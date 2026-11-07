@@ -62,7 +62,7 @@ func TestAWorkerResolvesAgainstARegisterAcrossTheSwarm(t *testing.T) {
 	require.Eventually(t, func() bool {
 		_, err := client.Invoke(t.Context(), connect.NewRequest(&workerv2.InvokeRequest{
 			Target: &workerv2.Target{
-				Project: "shop", Environment: "prod", Kind: "application", Name: "db",
+				Project: "shop", Environment: "prod", Kind: "service", Name: "db",
 			},
 			Method: "GET", Path: "/",
 		}))
@@ -79,7 +79,7 @@ func TestAWorkerResolvesAgainstARegisterAcrossTheSwarm(t *testing.T) {
 	require.Equal(t, "oci", spec.Runtime, "read off the type of the package it runs")
 	require.Equal(t, "ghcr.io/acme/postgres:16", spec.Artifact)
 	require.Equal(t, int64(2_000_000_000), spec.Memory, "2GB, in bytes, as the author wrote it")
-	require.Contains(t, spec.Name, "shop/prod/application/")
+	require.Contains(t, spec.Name, "shop/prod/service/")
 	require.NotEmpty(t, spec.Revision)
 }
 
@@ -114,7 +114,7 @@ func TestACloudWithNoTierSaysSo(t *testing.T) {
 	require.Eventually(t, func() bool {
 		_, last = client.Invoke(t.Context(), connect.NewRequest(&workerv2.InvokeRequest{
 			Target: &workerv2.Target{
-				Project: "shop", Environment: "prod", Kind: "application", Name: "db",
+				Project: "shop", Environment: "prod", Kind: "service", Name: "db",
 			},
 		}))
 		return last != nil && connect.CodeOf(last) == connect.CodeFailedPrecondition
@@ -162,8 +162,8 @@ func compiled(t *testing.T) []byte {
 	// that); these tests are about the lookup reaching a tier.
 	flat := obj.Flat()
 	root, _ := flat["object"].(map[string]any)
-	applications, _ := root["application"].(map[string]any)
-	for _, v := range applications {
+	services, _ := root["service"].(map[string]any)
+	for _, v := range services {
 		app, _ := v.(map[string]any)
 		if app["name"] != "db" {
 			continue

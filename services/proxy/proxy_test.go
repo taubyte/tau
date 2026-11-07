@@ -32,7 +32,7 @@ const (
 	zoneID    = "QmU1Vy6xqpYjRFFZqucyZULup6svHhsajomz71zWnSz9gk"
 )
 
-// compiled is a project with one proxy forwarding to one application.
+// compiled is a project with one proxy forwarding to one service.
 func compiled(t *testing.T, proxy map[string]any) *specs.Project {
 	t.Helper()
 
@@ -40,7 +40,7 @@ func compiled(t *testing.T, proxy map[string]any) *specs.Project {
 		"object": map[string]any{
 			"id":   projectID,
 			"name": "shop",
-			"application": map[string]any{
+			"service": map[string]any{
 				appID: map[string]any{
 					"name":   "db",
 					"source": map[string]any{"kind": "image", "image": "ghcr.io/acme/postgres:16"},
@@ -53,8 +53,8 @@ func compiled(t *testing.T, proxy map[string]any) *specs.Project {
 			"proxy": map[string]any{proxyID: proxy},
 		},
 		"indexes": map[string]any{
-			"projects/" + projectID + "/application/db/links": []any{
-				"branches/main/projects/" + projectID + "/application/" + appID},
+			"projects/" + projectID + "/service/db/links": []any{
+				"branches/main/projects/" + projectID + "/service/" + appID},
 			"projects/" + projectID + "/proxy/pgwire/links": []any{
 				"branches/main/projects/" + projectID + "/proxy/" + proxyID},
 			"projects/" + projectID + "/zone/shop/links": []any{
@@ -75,7 +75,7 @@ func servable() map[string]any {
 		"service": "postgres",
 		"host":    map[string]any{"kind": "generated", "name": "db"},
 		"forward": map[string]any{
-			"kind": "application", "name": "db", "port": "pg",
+			"kind": "service", "name": "db", "port": "pg",
 		},
 	}
 }
@@ -227,7 +227,7 @@ func TestAConnectionIsCarriedToTheWorkload(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "pong:ping", string(got), "the bytes went both ways")
 
-	require.Equal(t, "application", w.at.Kind)
+	require.Equal(t, "service", w.at.Kind)
 	require.Equal(t, "db", w.at.Name)
 	require.Equal(t, "pg", w.port, "the workload's own port, by the name the author declared")
 }

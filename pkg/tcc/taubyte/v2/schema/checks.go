@@ -24,7 +24,7 @@ const (
 
 type Finding struct {
 	Severity Severity
-	Kind     string // the resource kind, e.g. "application"
+	Kind     string // the resource kind, e.g. "service"
 	Name     string
 	Scope    string // namespace path, "" at the project root
 	Title    string
@@ -675,7 +675,7 @@ func checkServedPackages(all []compiled, pkgs map[string]compiled, lowered inter
 		}
 		out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 			fmt.Sprintf("serves package %s, which is of type %s", p.name, p.str("type")),
-			fmt.Sprintf("A route serves the files of an assets package. A %s package runs: route to the function or application that runs it.", p.str("type")), res.id})
+			fmt.Sprintf("A route serves the files of an assets package. A %s package runs: route to the function or service that runs it.", p.str("type")), res.id})
 	}
 	return out
 }
@@ -1358,12 +1358,12 @@ func checkHandlerPorts(all []compiled) []Finding {
 		for _, prefix := range InboundBlocks() {
 			port := res.at(prefix, "port")
 			kind := res.at(prefix, "kind")
-			if port == "" || kind == "" || kind == "application" {
+			if port == "" || kind == "" || kind == "service" {
 				continue
 			}
 			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 				fmt.Sprintf("names port %q on a %s", port, kind),
-				fmt.Sprintf("A %s does not listen on ports — only a container workload does — so there is nothing for this name to refer to.", kind), res.id})
+				fmt.Sprintf("A %s does not listen on ports — only a service does — so there is nothing for this name to refer to.", kind), res.id})
 		}
 	}
 	return out

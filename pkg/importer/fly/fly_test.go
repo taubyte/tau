@@ -26,11 +26,11 @@ func finding(t *testing.T, r importer.Result, key string) importer.Finding {
 	return importer.Finding{}
 }
 
-// docOf is one imported application's document.
+// docOf is one imported service's document.
 func docOf(t *testing.T, r importer.Result, name string) map[string]any {
 	t.Helper()
-	doc, ok := r.Doc("application", name)
-	require.True(t, ok, "no application called %q; got %v", name, r.Names("application"))
+	doc, ok := r.Doc("service", name)
+	require.True(t, ok, "no service called %q; got %v", name, r.Names("service"))
 	return doc
 }
 
@@ -145,7 +145,7 @@ app = "shop"
   web = "npm start"
   worker = "npm run worker"
 `)
-	require.Equal(t, []string{"shop_web", "shop_worker"}, r.Names("application"))
+	require.Equal(t, []string{"shop_web", "shop_worker"}, r.Names("service"))
 	// every process runs the one package
 	for _, process := range []string{"shop_web", "shop_worker"} {
 		require.Equal(t, map[string]any{"name": "shop_image"}, docOf(t, r, process)["package"], process)
@@ -175,7 +175,7 @@ app = "shop"
 	// The app names nothing to run, so nothing is emitted — the size is still
 	// reported, which is why this file's flag exists rather than an early
 	// return.
-	require.Empty(t, r.Names("application"))
+	require.Empty(t, r.Names("service"))
 	f := finding(t, r, "vm.size")
 	require.Equal(t, importer.Approximated, f.Level)
 	require.Contains(t, f.Detail, "shared-cpu-1x")
@@ -203,7 +203,7 @@ app = "shop"
 	require.Equal(t, importer.Blocked, f.Level)
 	require.Equal(t, "NEEDS_CNB_LIFECYCLE", f.Code)
 	require.NotEmpty(t, f.Needs)
-	_, ok := r.Doc("application", "shop")
+	_, ok := r.Doc("service", "shop")
 	require.False(t, ok, "a builder is not a source, so there is nothing to run")
 }
 
@@ -331,7 +331,7 @@ func TestAnAppWithNoNameStillImports(t *testing.T) {
 [build]
   image = "acme/thing:1"
 `)
-	require.Equal(t, []string{"app"}, r.Names("application"))
+	require.Equal(t, []string{"app"}, r.Names("service"))
 }
 
 func TestAnAppNameIsSanitised(t *testing.T) {
@@ -340,7 +340,7 @@ app = "my-shop"
 [build]
   image = "acme/thing:1"
 `)
-	require.Equal(t, []string{"my_shop"}, r.Names("application"))
+	require.Equal(t, []string{"my_shop"}, r.Names("service"))
 
 	f := finding(t, r, "app")
 	require.Equal(t, importer.Approximated, f.Level)

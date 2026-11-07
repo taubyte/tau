@@ -34,9 +34,9 @@ func TestGenerateTSCoversResources(t *testing.T) {
 	}
 	for _, want := range []string{
 		"export class Session {",
-		"export class ResourceConfig {",                         // the shared, kind-agnostic surface
-		"export class ApplicationConfig extends ResourceConfig", // the container is addressable too
-		"export class ProjectConfig extends ResourceConfig",     // ...and so is the project root
+		"export class ResourceConfig {",                     // the shared, kind-agnostic surface
+		"export class ServiceConfig extends ResourceConfig", // a kind is addressable
+		"export class ProjectConfig extends ResourceConfig", // ...and so is the project root
 	} {
 		if !strings.Contains(ts, want) {
 			t.Errorf("missing %s", want)
@@ -66,13 +66,13 @@ func TestGenerateTSAccessors(t *testing.T) {
 		`super(s, app ? ["namespace", app, "function", name] : ["function", name]);`,   // resource address
 		`functionNames(app?: string): Promise<string[]> {`,                             // list
 		`delete(): Promise<void> {`,                                                    // delete
-		`applicationNames(app?: string): Promise<string[]> {`,                          // the container's list, named like every other lister
+		`serviceNames(app?: string): Promise<string[]> {`,                              // a kind's list, named like every other lister
 		"async kind(): Promise<PackageKind | undefined> {",                             // async + union
 		`this.s.binding.get(this.s.handle, this.res, ["build", "dockerfile", "path"])`, // nested field path
 		`setMemory(v: string): Promise<void> {`,                                        // setter
 		"async memory(): Promise<string | undefined> {",                                // Bytes -> string (source form)
 		`.catch(() => null)`, // a block read that tolerates absence
-		`application(name: string, app?: string): ApplicationConfig {`, // the container is addressed like any resource
+		`service(name: string, app?: string): ServiceConfig {`,                   // a kind is addressed like any resource
 		`super(s, ["project"]);`,                                                 // the project root's own document
 		`resourceAt(path: string): Promise<string[] | null> {`,                   // path -> address
 		`serialize(): Promise<SerializedResource> {`,                             // one resource's file + YAML

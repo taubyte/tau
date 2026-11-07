@@ -10,5 +10,5 @@ route:
     match: prefix
     methods: [GET]
     handler:
-        application:
+        service:
             name: whoami

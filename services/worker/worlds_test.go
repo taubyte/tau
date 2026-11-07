@@ -60,7 +60,7 @@ func (i *fakeInstance) Direct(_ context.Context, conn *invoke.Connection, peeked
 	case "fail":
 		return nil, errors.New("the proxy router trapped")
 	}
-	return &invoke.Direction{To: &invoke.Endpoint{Kind: "application", Namespace: "/shop", Name: "db", Port: conn.Host}}, nil
+	return &invoke.Direction{To: &invoke.Endpoint{Kind: "service", Namespace: "/shop", Name: "db", Port: conn.Host}}, nil
 }
 
 func (i *fakeInstance) Shape(_ context.Context, s *invoke.Stream) (*invoke.Shaping, error) {
@@ -169,7 +169,7 @@ func TestAProxyRouterDirectsOverTheWire(t *testing.T) {
 
 	out, err := c.Direct(t.Context(), fn("picker"), conn, []byte("hello"))
 	require.NoError(t, err)
-	require.Equal(t, &invoke.Direction{To: &invoke.Endpoint{Kind: "application", Namespace: "/shop", Name: "db", Port: "postgres"}}, out,
+	require.Equal(t, &invoke.Direction{To: &invoke.Endpoint{Kind: "service", Namespace: "/shop", Name: "db", Port: "postgres"}}, out,
 		"the connection crossed the wire: its host came back as the port")
 
 	out, err = c.Direct(t.Context(), fn("picker"), conn, []byte("more"))

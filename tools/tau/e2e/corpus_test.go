@@ -105,7 +105,7 @@ func assemble(t *testing.T, name string) string {
 			require.NoError(t, copyTree(lang, filepath.Join(dir, source)))
 			continue
 		}
-		// A SOURCE NOTHING BUILDS has no crate: an application's source is
+		// A SOURCE NOTHING BUILDS has no crate: a service's source is
 		// a path its author never fills when it names no build.
 		if _, err := os.Stat(filepath.Join(fixtures, crate)); os.IsNotExist(err) {
 			continue
@@ -375,10 +375,10 @@ var corpus = []corpusCase{
 	{name: "with/channel/function", probes: []probe{
 		{function: "dialer", method: http.MethodPost, path: "/dial/reserve", body: "hello", status: 200},
 	}},
-	{name: "with/channel/application", probes: []probe{
+	{name: "with/channel/service", probes: []probe{
 		{function: "dialer", method: http.MethodPost, path: "/dial/reserve", body: "GET /tau-corpus HTTP/1.0\r\nHost: whoami\r\n\r\n", status: 200, contains: "GET /tau-corpus ", budget: 3 * time.Minute},
 	}},
-	{name: "with/application", probes: []probe{
+	{name: "with/service", probes: []probe{
 		{host: "whoami.example.com", method: http.MethodGet, path: "/tau-corpus", status: 200, contains: "GET /tau-corpus", budget: 3 * time.Minute},
 	}},
 	{name: "with/worker/container", probes: []probe{
@@ -440,7 +440,7 @@ var corpus = []corpusCase{
 	// A CLOUD OF ONE UNNAMED REGION serves no project that names its regions,
 	// and says which.
 	{name: "with/placement", refused: "which this build does not serve"},
-	{name: "refused/application/noartifact", refused: "is of type oci and names no image and no build"},
+	{name: "refused/service/noartifact", refused: "is of type oci and names no image and no build"},
 	{name: "refused/environments/missing", refused: "declares no environments"},
 	{name: "refused/function/noruntime", refused: "required attribute 'type'"},
 	{name: "refused/function/unknownruntime", refused: "valid values here: wasm, warp, oci, assets"},

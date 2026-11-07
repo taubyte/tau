@@ -55,8 +55,8 @@ func TestAComposeFileBecomesAProject(t *testing.T) {
 	// The layout is the DSL's, so a resource landed where an author would have
 	// put it and the project has its own document.
 	require.Contains(t, report.Written, "project.yaml")
-	require.Contains(t, report.Written, "application/api.yaml")
-	require.Contains(t, report.Written, "application/db.yaml")
+	require.Contains(t, report.Written, "service/api.yaml")
+	require.Contains(t, report.Written, "service/db.yaml")
 
 	// No memory limit or volume size, so this does not compile yet; it must say so and
 	// name every field.
@@ -71,7 +71,7 @@ func TestAProjectWithNothingMissingCompiles(t *testing.T) {
 	complete := importer.Result{Source: "hand"}
 	api := map[string]any{"execution": map[string]any{"memory": "512MB"}}
 	complete.Runs(api, "api", map[string]any{"type": "oci", "source": map[string]any{"image": "ghcr.io/acme/api:1.4"}})
-	complete.Set("application", "api", api)
+	complete.Set("service", "api", api)
 
 	report, err := emit.To(fs, "/project", "shop", complete)
 	require.NoError(t, err)
@@ -88,7 +88,7 @@ func TestIdsAreMintedAndDistinct(t *testing.T) {
 	require.NoError(t, err)
 
 	ids := map[string]bool{}
-	for _, path := range []string{"/project/project.yaml", "/project/application/api.yaml", "/project/application/db.yaml"} {
+	for _, path := range []string{"/project/project.yaml", "/project/service/api.yaml", "/project/service/db.yaml"} {
 		b, err := afero.ReadFile(fs, path)
 		require.NoError(t, err)
 
@@ -124,7 +124,7 @@ func TestSeveralResultsBecomeOneProject(t *testing.T) {
 	fs := afero.NewMemMapFs()
 
 	extra := importer.Result{Source: "hand"}
-	extra.Set("application", "cache", map[string]any{
+	extra.Set("service", "cache", map[string]any{
 		"source":    map[string]any{"image": "redis:7"},
 		"execution": map[string]any{"memory": "256MB"},
 	})
@@ -132,8 +132,8 @@ func TestSeveralResultsBecomeOneProject(t *testing.T) {
 	report, err := emit.To(fs, "/project", "shop", imported(t), extra)
 	require.NoError(t, err)
 
-	require.Contains(t, report.Written, "application/api.yaml")
-	require.Contains(t, report.Written, "application/cache.yaml")
+	require.Contains(t, report.Written, "service/api.yaml")
+	require.Contains(t, report.Written, "service/cache.yaml")
 	require.Contains(t, report.Written, "volume/pgdata.yaml")
 }
 
@@ -141,17 +141,17 @@ func TestWhatCouldNotBeFilledIsReported(t *testing.T) {
 	fs := afero.NewMemMapFs()
 
 	bare := importer.Result{Source: "hand"}
-	bare.Set("application", "empty", map[string]any{})
+	bare.Set("service", "empty", map[string]any{})
 
 	report, err := emit.To(fs, "/project", "shop", bare)
 	require.NoError(t, err)
 
-	require.NotEmpty(t, report.Missing, "an application with nothing in it is missing required fields")
+	require.NotEmpty(t, report.Missing, "a service with nothing in it is missing required fields")
 	for _, m := range report.Missing {
-		require.Equal(t, "application", m.Kind)
+		require.Equal(t, "service", m.Kind)
 		require.Equal(t, "empty", m.Name)
 		require.NotEmpty(t, m.Field)
-		require.Contains(t, m.String(), "application/empty")
+		require.Contains(t, m.String(), "service/empty")
 	}
 }
 
@@ -233,8 +233,8 @@ func TestElsewhereIsItsOwnList(t *testing.T) {
 
 func TestTheMissingListIsSorted(t *testing.T) {
 	source := importer.Result{Source: "hand"}
-	source.Set("application", "zebra", map[string]any{"source": map[string]any{"image": "x"}})
-	source.Set("application", "alpha", map[string]any{"source": map[string]any{"image": "x"}})
+	source.Set("service", "zebra", map[string]any{"source": map[string]any{"image": "x"}})
+	source.Set("service", "alpha", map[string]any{"source": map[string]any{"image": "x"}})
 
 	report, err := emit.To(afero.NewMemMapFs(), "/project", "shop", source)
 	require.NoError(t, err)
@@ -246,35 +246,35 @@ func TestTheMissingListIsSorted(t *testing.T) {
 		require.LessOrEqual(t, last, key)
 		last = key
 	}
-	require.Contains(t, report.Missing[0].String(), "application/alpha")
+	require.Contains(t, report.Missing[0].String(), "service/alpha")
 }
 
 func TestTheMissingListSortsAcrossKindsAndFields(t *testing.T) {
 	source := importer.Result{Source: "hand"}
 	source.Set("volume", "data", map[string]any{})
-	source.Set("application", "api", map[string]any{})
+	source.Set("service", "api", map[string]any{})
 
 	report, err := emit.To(afero.NewMemMapFs(), "/project", "shop", source)
 	require.NoError(t, err)
 	require.NotEmpty(t, report.Missing)
 
-	// Kinds first, then names, then fields — and an application sorts before a
+	// Kinds first, then names, then fields — and a service sorts before a
 	// volume, which is the comparator being exercised rather than assumed.
-	require.Equal(t, "application", report.Missing[0].Kind)
+	require.Equal(t, "service", report.Missing[0].Kind)
 	require.Equal(t, "volume", report.Missing[len(report.Missing)-1].Kind)
 
-	var applicationFields []string
+	var serviceFields []string
 	for _, m := range report.Missing {
-		if m.Kind == "application" {
-			applicationFields = append(applicationFields, m.Field)
+		if m.Kind == "service" {
+			serviceFields = append(serviceFields, m.Field)
 		}
 	}
-	require.Equal(t, sortedCopy(applicationFields), applicationFields)
+	require.Equal(t, sortedCopy(serviceFields), serviceFields)
 }
 
 func TestADocumentTheSessionRefusesIsReported(t *testing.T) {
 	source := importer.Result{Source: "hand"}
-	source.Set("application", "api", map[string]any{
+	source.Set("service", "api", map[string]any{
 		// `name` is the resource's own identity and is not a block.
 		"name": map[string]any{"nested": "wrong"},
 	})

@@ -2,6 +2,6 @@ id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEC
 description: how a workload reaches the postgres container without going out to the edge and back in
 protocol: pgwire
 serve:
-    application:
+    service:
         name: db
         port: pg

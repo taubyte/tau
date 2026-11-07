@@ -12,7 +12,7 @@ import (
 // A connection across a real libp2p stream, answered by the worker's raw listener.
 
 func dbTarget() specs.Address {
-	return specs.Address{Project: "shop", Environment: "prod", Kind: "application", Name: "db"}
+	return specs.Address{Project: "shop", Environment: "prod", Kind: "service", Name: "db"}
 }
 
 func TestAConnectionReachesAWorkload(t *testing.T) {
@@ -52,7 +52,7 @@ func TestAMissingTargetIsNotWorthAnotherNode(t *testing.T) {
 	h := newHarness(t)
 
 	_, err := DialWorkload(t.Context(), h.CallerHost, h.ServerHost.ID(),
-		specs.Address{Project: "shop", Environment: "prod", Kind: "application", Name: "ghost"}, "pg")
+		specs.Address{Project: "shop", Environment: "prod", Kind: "service", Name: "ghost"}, "pg")
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrNoConnection)
 	require.NotErrorIs(t, err, ErrUnreachableNode, "another node would say the same thing")

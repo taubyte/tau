@@ -29,7 +29,7 @@ func TestAChannelServedByAContainerDeliversToItsNamedPort(t *testing.T) {
 	pids := u.Pids()
 	require.NotEmpty(t, pids)
 
-	at := publish(t, u, pids[:1], deployed{name: "with/channel/application", host: "reserve.example.com"}, artifacts{"": cacherWASM(t)})[0]
+	at := publish(t, u, pids[:1], deployed{name: "with/channel/service", host: "reserve.example.com"}, artifacts{"": cacherWASM(t)})[0]
 
 	// THE GRANT CARRIES THE PORT'S NAME, and is not refused for naming one.
 	spec, err := at.node.Worker().Resolve(t.Context(), at.function("dialer"))

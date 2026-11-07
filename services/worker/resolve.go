@@ -211,7 +211,7 @@ const (
 
 // portsOf is what this workload binds inside its container, by name. Off-the-shelf
 // images bind fixed ports.
-func portsOf(declared map[string]specs.ApplicationPortsEntry) map[string]int {
+func portsOf(declared map[string]specs.ServicePortsEntry) map[string]int {
 	if len(declared) == 0 {
 		return nil
 	}

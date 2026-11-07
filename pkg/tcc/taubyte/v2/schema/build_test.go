@@ -271,7 +271,7 @@ func TestAVariableIsALiteral(t *testing.T) {
 	lib := namedResource(t, resources(t, flat, "package"), "paylib")
 	assert.Equal(t, nested(lib["variables"].(map[string]any), "GOPRIVATE", "value"), "github.com/acme/*")
 
-	api := namedResource(t, resources(t, flat, "application"), "api")
+	api := namedResource(t, resources(t, flat, "service"), "api")
 	assert.Equal(t, nested(api["variables"].(map[string]any), "LOG_LEVEL", "value"), "info")
 
 	// a secret is read through the vault, never handed over, and there is no second

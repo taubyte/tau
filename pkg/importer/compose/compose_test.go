@@ -30,11 +30,11 @@ func finding(t *testing.T, r importer.Result, service, key string) importer.Find
 	return importer.Finding{}
 }
 
-// docOf is one imported application's document.
+// docOf is one imported service's document.
 func docOf(t *testing.T, r importer.Result, name string) map[string]any {
 	t.Helper()
-	doc, ok := r.Doc("application", name)
-	require.True(t, ok, "no application called %q; got %v", name, r.Names("application"))
+	doc, ok := r.Doc("service", name)
+	require.True(t, ok, "no service called %q; got %v", name, r.Names("service"))
 	return doc
 }
 
@@ -184,7 +184,7 @@ services:
     environment:
       A: 1
 `)
-	_, ok := r.Doc("application", "api")
+	_, ok := r.Doc("service", "api")
 	require.False(t, ok, "there is nothing to run")
 	f := finding(t, r, "api", "image")
 	require.Equal(t, importer.Blocked, f.Level)
@@ -383,7 +383,7 @@ services:
     image: postgres
     restart: always
 `)
-	require.Len(t, r.Names("application"), 3)
+	require.Len(t, r.Names("service"), 3)
 
 	// Each service carries several findings, so the order is asserted: a service's
 	// findings together, services sorted.
@@ -445,7 +445,7 @@ services:
 volumes:
   pgdata: {}
 `)
-	require.Equal(t, []string{"api", "db", "web"}, r.Names("application"))
+	require.Equal(t, []string{"api", "db", "web"}, r.Names("service"))
 	require.Equal(t, map[string]any{"image": "acme/api:2"}, pkgOf(t, r, "api")["source"])
 	require.Equal(t, "web", pkgOf(t, r, "web")["source"])
 
@@ -631,7 +631,7 @@ services:
     volumes:
       - pg-data:/var/lib/data
 `)
-	require.Equal(t, []string{"my_api"}, r.Names("application"))
+	require.Equal(t, []string{"my_api"}, r.Names("service"))
 	require.Equal(t, []string{"pg_data"}, r.Names("volume"))
 	require.Contains(t, docOf(t, r, "my_api")["variables"], "MY_VAR")
 

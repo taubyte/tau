@@ -31,7 +31,7 @@ Before you start contributing, make sure you have the following prerequisites in
 - **Go** 1.27 or later ([install guide](https://golang.org/doc/install))
 - **Git** for version control
 - **Node.js** 18+ and **npm** (for JavaScript/TypeScript components)
-- **Docker** (needed for the container, application and build suites)
+- **Docker** (needed for the container, service and build suites)
 
 See the [README](README.md) for the node, its services and the test targets.
 

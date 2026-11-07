@@ -64,7 +64,7 @@ func TestAProxyRouterPicksADestinationAndANamedPort(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, out.To)
 
-	require.Equal(t, "application", out.To.Kind)
+	require.Equal(t, "service", out.To.Kind)
 	require.Equal(t, "/shop", out.To.Namespace)
 	require.Equal(t, "db", out.To.Name)
 	require.Equal(t, "pg", out.To.Port, "which of the workload's ports to stream to")

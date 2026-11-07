@@ -22,7 +22,7 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-func TestAnApplicationAnswersThroughTheGateway(t *testing.T) {
+func TestAServiceAnswersThroughTheGateway(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Services:  []string{instance.Register, instance.Worker, instance.Stats, instance.Gateway, storageService.Descriptor.Name, instance.Builder},
 		Container: containers.Docker,
@@ -34,9 +34,9 @@ func TestAnApplicationAnswersThroughTheGateway(t *testing.T) {
 	require.NotEmpty(t, pids)
 
 	// NOTHING IS STAGED: the image is the artifact, named in the document.
-	at := publish(t, u, pids[:1], deployed{name: "with/application", host: "whoami.example.com"}, artifacts{})[0]
+	at := publish(t, u, pids[:1], deployed{name: "with/service", host: "whoami.example.com"}, artifacts{})[0]
 
-	whoami := specs.Address{Project: at.project, Environment: "prod", Kind: "application", Name: "whoami"}
+	whoami := specs.Address{Project: at.project, Environment: "prod", Kind: "service", Name: "whoami"}
 
 	// A REAL SOCKET IN FRONT OF THE GATEWAY, so the request is HTTP on the wire and
 	// not a handler call.
@@ -72,5 +72,5 @@ func TestAnApplicationAnswersThroughTheGateway(t *testing.T) {
 		return res.StatusCode == http.StatusOK && strings.Contains(string(body), "GET "+proof+" ")
 	}, 3*time.Minute, time.Second,
 		// A cold pull and first start fit this budget.
-		"the application never answered: %s", &lastSaid{&last})
+		"the service never answered: %s", &lastSaid{&last})
 }
