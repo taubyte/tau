@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+
 	authIface "github.com/taubyte/tau/core/services/auth"
 	tnsIface "github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/dream"
@@ -114,10 +116,11 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 		return err
 	}
 
-	// A project's website and library repositories reach this list only when
-	// its config job publishes them, so on a new or re-imported project the
-	// first pass cannot see them: note the config's commit now, and once its
-	// job publishes a new one, push the repositories that appeared.
+	// The list above holds the repositories auth has registered; a re-imported
+	// project has only its config and code there. Its websites and libraries
+	// are named in its compiled config: note the config's commit now, and after
+	// the first pass push those (waiting for the config job if the project has
+	// no commit yet). pushSpecific registers each one it pushes.
 	configProject, commitBefore := "", ""
 	for _, r := range repos {
 		if repoKindOrder(r.fullName) == 0 {
@@ -168,27 +171,49 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 		}
 	}
 
-	// only a project TNS has no commit for yet (new, or re-imported into a new
-	// universe) can be missing repositories; waiting on an unchanged config
-	// would hold every push-all for newCommitWait
-	if configProject == "" || commitBefore != "" {
+	if configProject == "" {
 		return nil
 	}
-	waitForNewCommit(u.Context(), tns.Simple(), configProject, branch, commitBefore, newCommitWait)
-	later, err := list()
-	if err != nil {
-		return err
+	if commitBefore == "" {
+		waitForNewCommit(u.Context(), tns.Simple(), configProject, branch, commitBefore, newCommitWait)
 	}
-	for _, r := range later {
+	websites, _, _, _ := tns.Website().All(configProject, "", branch).List()
+	libraries, _, _, _ := tns.Library().All(configProject, "", branch).List()
+	for _, r := range configuredRepos(websites, libraries) {
 		if pushed[r.id] {
 			continue
 		}
-		if err := push(r); err != nil {
+		if err := push(repo(r)); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+type configuredRepo struct{ id, fullName string }
+
+// configuredRepos lists the repositories a project's config names for its
+// websites and libraries: libraries first, as their jobs come before.
+func configuredRepos(websites map[string]*structureSpec.Website, libraries map[string]*structureSpec.Library) []configuredRepo {
+	var repos []configuredRepo
+	seen := make(map[string]bool)
+	add := func(id, name string) {
+		if id != "" && name != "" && !seen[id] {
+			seen[id] = true
+			repos = append(repos, configuredRepo{id, name})
+		}
+	}
+	for _, l := range libraries {
+		add(l.RepoID, l.RepoName)
+	}
+	for _, w := range websites {
+		add(w.RepoID, w.RepoName)
+	}
+	slices.SortStableFunc(repos, func(a, b configuredRepo) int {
+		return cmp.Or(cmp.Compare(repoKindOrder(a.fullName), repoKindOrder(b.fullName)), cmp.Compare(a.id, b.id))
+	})
+	return repos
 }
 
 // newCommitWait is how long push-all waits for the config job to publish.

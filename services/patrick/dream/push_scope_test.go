@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+
 	authIface "github.com/taubyte/tau/core/services/auth"
 	tnsIface "github.com/taubyte/tau/core/services/tns"
 	"gotest.tools/v3/assert"
@@ -100,4 +102,23 @@ func TestWaitForNewCommit(t *testing.T) {
 
 	fresh := &commitTns{commits: []string{"", "c1"}}
 	assert.Assert(t, waitForNewCommit(context.Background(), fresh, "QmA", "main", "", 10*time.Second), "a first commit counts")
+}
+
+// A re-imported project registers only its config and code with auth, so the
+// repo list push-all reads misses its websites and libraries; their repositories
+// come from the project's compiled config instead.
+func TestConfiguredRepos(t *testing.T) {
+	got := configuredRepos(
+		map[string]*structureSpec.Website{
+			"w1": {RepoID: "11", RepoName: "me/tb_website_site1"},
+			"w2": {RepoID: "12", RepoName: "me/tb_website_site2"},
+			"w3": {RepoID: "", RepoName: "me/tb_website_broken"},
+		},
+		map[string]*structureSpec.Library{"l1": {RepoID: "21", RepoName: "me/tb_library_lib"}},
+	)
+	var names []string
+	for _, r := range got {
+		names = append(names, r.id+"="+r.fullName)
+	}
+	assert.DeepEqual(t, names, []string{"21=me/tb_library_lib", "11=me/tb_website_site1", "12=me/tb_website_site2"})
 }
