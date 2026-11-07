@@ -9,6 +9,7 @@ import (
 
 	"github.com/taubyte/tau/core/kvdb"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
+	dbIface "github.com/taubyte/tau/core/services/substrate/components/database"
 )
 
 func (kv *kv) Get(ctx context.Context, key string) (data []byte, err error) {
@@ -30,7 +31,7 @@ func (kv *kv) Put(ctx context.Context, key string, v []byte) error {
 	if q, ok := kv.database.(hoarderIface.QuotaKVDB); ok {
 		batch, err = q.BatchWithMax(ctx, kv.maxSize)
 	} else {
-		if err = kv.checkValidSize(ctx, v); err != nil {
+		if err = kv.checkValidSize(ctx, len(v)); err != nil {
 			return err
 		}
 		batch, err = kv.database.Batch(ctx)
@@ -80,18 +81,82 @@ func (kv *kv) List(ctx context.Context, prefix string) ([]string, error) {
 			return nil, fmt.Errorf("listing with empty prefix failed wit: %s", err)
 		}
 
-		newList := make([]string, 0)
-
-		for _, entry := range entries {
-			if !strings.HasPrefix(entry, "/size") {
-				newList = append(newList, entry)
-			}
-		}
-
-		return newList, nil
+		return withoutSizes(entries), nil
 	}
 
 	return kv.database.List(ctx, prefix)
+}
+
+// ListRegEx lists as List does, keeping the keys that match the patterns.
+func (kv *kv) ListRegEx(ctx context.Context, prefix string, regexs ...string) ([]string, error) {
+	entries, err := kv.database.ListRegEx(ctx, prefix, regexs...)
+	if err != nil {
+		return nil, fmt.Errorf("listing %s in database %s failed with: %w", prefix, kv.name, err)
+	}
+	if len(prefix) == 0 {
+		return withoutSizes(entries), nil
+	}
+
+	return entries, nil
+}
+
+func withoutSizes(entries []string) []string {
+	newList := make([]string, 0)
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry, "/size") {
+			newList = append(newList, entry)
+		}
+	}
+
+	return newList
+}
+
+// Batch writes ops and their size records in one commit, as Put and Delete do
+// for one key. The quota is checked against the bytes put.
+func (kv *kv) Batch(ctx context.Context, ops []dbIface.Op) error {
+	var putSize int
+	for _, op := range ops {
+		if !op.Delete {
+			putSize += len(op.Value)
+		}
+	}
+
+	var batch kvdb.Batch
+	var err error
+	if q, ok := kv.database.(hoarderIface.QuotaKVDB); ok && putSize > 0 {
+		batch, err = q.BatchWithMax(ctx, kv.maxSize)
+	} else {
+		if putSize > 0 {
+			if err = kv.checkValidSize(ctx, putSize); err != nil {
+				return err
+			}
+		}
+		batch, err = kv.database.Batch(ctx)
+	}
+	if err != nil {
+		return fmt.Errorf("failed opening a batch on database %s with error: %v", kv.name, err)
+	}
+
+	for _, op := range ops {
+		if op.Delete {
+			if err = batch.Delete(op.Key); err == nil {
+				err = batch.Delete(path.Join("size", op.Key))
+			}
+		} else {
+			if err = batch.Put(op.Key, op.Value); err == nil {
+				err = batch.Put(path.Join("size", op.Key), []byte(strconv.Itoa(len(op.Value))))
+			}
+		}
+		if err != nil {
+			return fmt.Errorf("failed batching %s in database %s with error: %v", op.Key, kv.name, err)
+		}
+	}
+
+	if err = batch.Commit(); err != nil {
+		return fmt.Errorf("failed committing a batch in database %s with error: %v", kv.name, err)
+	}
+
+	return nil
 }
 
 func (kv *kv) UpdateSize(size uint64) {

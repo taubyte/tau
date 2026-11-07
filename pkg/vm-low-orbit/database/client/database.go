@@ -72,6 +72,7 @@ func (f *Factory) releaseDatabase(e *Database) bool {
 		return false
 	}
 	delete(f.database, e.Id)
+	f.dropBatches(e)
 	if f.byMatch[e.match] == e {
 		delete(f.byMatch, e.match)
 	}

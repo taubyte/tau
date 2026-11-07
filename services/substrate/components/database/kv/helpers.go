@@ -27,13 +27,11 @@ func (kv *kv) used(ctx context.Context) (int, error) {
 	return used, nil
 }
 
-func (kv *kv) checkValidSize(ctx context.Context, input []byte) error {
+func (kv *kv) checkValidSize(ctx context.Context, inputSize int) error {
 	used, err := kv.used(ctx)
 	if err != nil {
 		return fmt.Errorf("getting usage for in kvdb failed with %w", err)
 	}
-
-	inputSize := len(input)
 
 	if kv.maxSize < uint64(used+inputSize) {
 		return fmt.Errorf("no space left for input")

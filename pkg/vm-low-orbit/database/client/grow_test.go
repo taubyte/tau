@@ -25,6 +25,10 @@ func (k *memKV) List(_ context.Context, prefix string) ([]string, error) {
 	return keys, nil
 }
 
+func (k *memKV) ListRegEx(ctx context.Context, prefix string, _ ...string) ([]string, error) {
+	return k.List(ctx, prefix)
+}
+
 type memDB struct {
 	dbIface.Database
 	kv *memKV
@@ -86,6 +90,21 @@ func TestDataStepRefusesValueThatGrew(t *testing.T) {
 			return f.databaseListSize(context.Background(), m, id, keyPtr, 1, sizePtr)
 		}, func(f *Factory, m vm.Module, id uint32) uint32 {
 			return f.databaseList(context.Background(), m, id, keyPtr, 1, dataPtr)
+		}},
+		{"databaseListEntries", func(f *Factory, m vm.Module, id uint32) uint32 {
+			return f.databaseListEntriesSize(context.Background(), m, id, keyPtr, 1, sizePtr)
+		}, func(f *Factory, m vm.Module, id uint32) uint32 {
+			return f.databaseListEntries(context.Background(), m, id, keyPtr, 1, dataPtr)
+		}},
+		{"databaseListMatch", func(f *Factory, m vm.Module, id uint32) uint32 {
+			return f.databaseListMatchSize(context.Background(), m, id, keyPtr, 1, keyPtr, 0, sizePtr)
+		}, func(f *Factory, m vm.Module, id uint32) uint32 {
+			return f.databaseListMatch(context.Background(), m, id, keyPtr, 1, keyPtr, 0, dataPtr)
+		}},
+		{"databaseListPage", func(f *Factory, m vm.Module, id uint32) uint32 {
+			return f.databaseListPageSize(context.Background(), m, id, keyPtr, 1, keyPtr, 0, 100, sizePtr)
+		}, func(f *Factory, m vm.Module, id uint32) uint32 {
+			return f.databaseListPage(context.Background(), m, id, keyPtr, 1, keyPtr, 0, 100, dataPtr)
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

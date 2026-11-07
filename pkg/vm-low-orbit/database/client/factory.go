@@ -26,6 +26,7 @@ func (f *Factory) Close() error {
 	for _, database := range f.database {
 		database.Close()
 	}
+	f.batches = nil
 
 	return nil
 }
