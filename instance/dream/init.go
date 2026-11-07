@@ -167,11 +167,8 @@ type Config struct {
 	// for a port of the kernel's choosing. Empty answers it nowhere.
 	Listen string
 
-	// Region is the region this dream cloud stands for, and Linked what links it
-	// to the dream clouds standing for the other regions (link.go). An empty Region
-	// is one unnamed region.
+	// Region is the region this dream cloud is. Empty is one unnamed region.
 	Region string
-	Linked *Regions
 }
 
 // removed is a directory a cloud deletes when it closes.
@@ -358,9 +355,6 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	}
 	if now != nil {
 		options = append(options, instance.WithClock(now))
-	}
-	if cfg.Linked != nil {
-		options = append(options, instance.WithRegionLink(cfg.Linked.End(nodeConfig.Region)))
 	}
 	options = append(options, cfg.Options...)
 

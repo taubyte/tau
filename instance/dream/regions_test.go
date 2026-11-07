@@ -12,14 +12,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/instance"
 	nodeDream "github.com/taubyte/tau/instance/dream"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	buildDeploy "github.com/taubyte/tau/services/plm/deploy"
 	"github.com/taubyte/tau/services/plm/run"
-	storageService "github.com/taubyte/tau/services/storage"
 )
 
 // projects/with/regions and projects/refused/regions: a namespace says where
@@ -204,56 +202,4 @@ func TestADeployReachingAStandbyPublishesNothing(t *testing.T) {
 	envs, err := r.Environments(t.Context(), id)
 	require.NoError(t, err)
 	require.Empty(t, envs, "nothing is published for a refused project")
-}
-
-// linkedAt is inRegionAt for a dream cloud standing for one of the regions link
-// reaches, with the cm that is the region's end of it.
-func linkedAt(t *testing.T, link *nodeDream.Regions, region, name, host string) *running {
-	t.Helper()
-	u, err := nodeDream.Start(t.Context(), t.Name()+"-"+region, nodeDream.Config{
-		Services: []string{
-			instance.Register, instance.Worker, instance.Stats, instance.Gateway, instance.Database, instance.Primitives,
-			storageService.Descriptor.Name, instance.Builder, instance.CM,
-		},
-		Region: region,
-		Linked: link,
-	})
-	require.NoError(t, err)
-	t.Cleanup(u.Close)
-	return publish(t, u, u.Pids()[:1], deployed{name: name, host: host, regions: schema.WithRegion(region)}, artifacts{"": handlerWASM(t)})[0]
-}
-
-// THE EDGE CARRIES WHAT IT DOES NOT RUN to the region that does, through the cm of
-// each, and keeps the answer like one it got at home.
-func TestAnEdgeIsAnsweredByTheRegionRunningItsOrigin(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
-	link := nodeDream.NewRegions()
-	linkedAt(t, link, "region-1", "with/regions/edge", "www.example.com")
-	r2 := linkedAt(t, link, "region-2", "with/regions/edge", "www.example.com")
-
-	var said string
-	var first *httptest.ResponseRecorder
-	require.Eventually(t, func() bool {
-		first = askHeaders(t, r2, "/", "X-Probe", "one", "Accept-Language", "fr")
-		said = first.Body.String()
-		return first.Code == http.StatusOK
-	}, time.Minute, 200*time.Millisecond, "%s", &lastSaid{&said})
-	require.Equal(t, "region-1", first.Header().Get("X-Taubyte-Region"), "answered where the origin runs")
-	require.Equal(t, "one", first.Header().Get("x-echo-x-probe"), "the request crossed as it was asked")
-	require.Equal(t, "miss", first.Header().Get("X-Taubyte-Cache"))
-
-	kept := askHeaders(t, r2, "/", "X-Probe", "two", "Accept-Language", "fr")
-	require.Equal(t, "hit", kept.Header().Get("X-Taubyte-Cache"), "kept at the edge that asked")
-	require.Equal(t, "one", kept.Header().Get("x-echo-x-probe"))
-
-	// A PARTITION IS SAID BY NAME, and the route answers again once it heals.
-	link.Cut("region-1", "region-2")
-	cut := askHeaders(t, r2, "/", "Accept-Language", "en")
-	require.Equal(t, http.StatusBadGateway, cut.Code)
-	require.Contains(t, cut.Body.String(), "this route's handler runs in another region, which did not answer")
-	link.Mend("region-1", "region-2")
-	healed := askHeaders(t, r2, "/", "X-Probe", "three", "Accept-Language", "en")
-	require.Equal(t, http.StatusOK, healed.Code, healed.Body.String())
-	require.Equal(t, "three", healed.Header().Get("x-echo-x-probe"))
 }
