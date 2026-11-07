@@ -28,6 +28,8 @@ func (f *Factory) RegisterHostFunctions(b wazy.HostModuleBuilder) {
 		return f.getHttpEventRequestHeaderKeys(ctx, m, id, bufPtr, 0)
 	}).Export("getHttpEventHeaderVarNameById")
 	wazy.HostFunc5(b.NewFunctionBuilder(), f.eventHttpHeaderAdd).Export("eventHttpHeaderAdd")
+	wazy.HostFunc5(b.NewFunctionBuilder(), f.eventHttpHeaderSet).Export("eventHttpHeaderSet")
+	wazy.HostFunc3(b.NewFunctionBuilder(), f.eventHttpHeaderDel).Export("eventHttpHeaderDel")
 	wazy.HostFunc4(b.NewFunctionBuilder(), f.getHttpEventHeadersSize).Export("getHttpEventHeadersSize")
 	wazy.HostFunc5(b.NewFunctionBuilder(), f.getHttpEventHeaders).Export("getHttpEventHeaders")
 	wazy.HostFunc2(b.NewFunctionBuilder(), f.getHttpEventMethodSize).Export("getHttpEventMethodSize")

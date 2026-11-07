@@ -73,3 +73,42 @@ func (f *Factory) getHttpEventHeaders(ctx context.Context, module common.Module,
 
 	return uint32(f.WriteString(module, bufPtr, r.Header.Get(key)))
 }
+
+// eventHttpHeaderSet replaces every value of the response header key.
+func (f *Factory) eventHttpHeaderSet(ctx context.Context, module common.Module, eventId uint32, keyPtr uint32, keyLen uint32, valPtr uint32, valLen uint32) uint32 {
+	w, err := f.getEventWriter(eventId)
+	if err != 0 {
+		return uint32(err)
+	}
+
+	key, err := f.ReadString(module, keyPtr, keyLen)
+	if err != 0 {
+		return uint32(err)
+	}
+
+	value, err := f.ReadString(module, valPtr, valLen)
+	if err != 0 {
+		return uint32(err)
+	}
+
+	w.Header().Set(key, value)
+
+	return 0
+}
+
+// eventHttpHeaderDel removes the response header key.
+func (f *Factory) eventHttpHeaderDel(ctx context.Context, module common.Module, eventId uint32, keyPtr uint32, keyLen uint32) uint32 {
+	w, err := f.getEventWriter(eventId)
+	if err != 0 {
+		return uint32(err)
+	}
+
+	key, err := f.ReadString(module, keyPtr, keyLen)
+	if err != 0 {
+		return uint32(err)
+	}
+
+	w.Header().Del(key)
+
+	return 0
+}
