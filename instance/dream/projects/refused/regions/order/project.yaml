@@ -1,0 +1,6 @@
+id: QmSaGFzc3xaDecdUUpH4dUAfvPRwfSvHfzXMuYou5UVbTX
+name: order
+description: two namespaces failing over in opposite orders - each serves where the other only stands by
+environments:
+    prod:
+        branches: ["*"]

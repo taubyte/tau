@@ -1,0 +1,6 @@
+id: QmfSTxRqyGPyrPn5G2UnRdJUhh3KtGFNuXRPfQNYjuTXGi
+description: the record billing keeps, held in both of its regions and served from the first
+kv:
+    distributed:
+        size: 64MB
+        consensus: crdt

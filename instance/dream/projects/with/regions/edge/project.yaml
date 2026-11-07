@@ -1,0 +1,9 @@
+id: QmZEDwPfbUF9WAui2sFGQJZyYucnV3zfuUHW8FahdJQB2B
+name: edge
+description: a name answered in every region, in front of an origin that runs in one - the gateway keeps what it answers, and a region without the origin says so by name
+regions:
+    topology: active
+    in: [region-1, region-2]
+environments:
+    prod:
+        branches: ["*"]

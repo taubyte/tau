@@ -1,0 +1,8 @@
+id: QmNYxqozc5Jv2x8RcpMZmazweD85hUyX5295LZ2csGSN3i
+description: answers in every region at once
+package:
+    name: hello_code
+execution:
+    call: handle
+    timeout: 15s
+    memory: 32MB

@@ -1,0 +1,9 @@
+id: Qmf3L4JaN8npUzdw6k6xd2uTgfx9197tm4LSVRvQ85FPf2
+name: widen
+description: a namespace naming a region its project does not run in - a scope narrows the regions above it and never widens them
+regions:
+    topology: active
+    in: [region-1, region-2]
+environments:
+    prod:
+        branches: ["*"]

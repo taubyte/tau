@@ -1,0 +1,5 @@
+id: QmXPypGZztDAW8vkuciFWNxVfYhx4b4AhCiM87twp5GddH
+description: fails over from region-1 to region-2
+regions:
+    topology: failover
+    in: [region-1, region-2]

@@ -1,0 +1,18 @@
+id: QmWhQewj3uuPM9f3qodPJTPDUXE9BvG33zkyewVurWGHiU
+description: runs where the root does, in both regions, and reaches its handler wherever that runs - the one edge allowed to cross
+host:
+    zone:
+        in:
+            name: example_com
+        name: www
+route:
+    path: /
+    match: prefix
+    methods: [GET]
+    cache:
+        ttl: 1m
+        vary: [Accept-Language]
+    handler:
+        function:
+            namespace: /origin
+            name: api

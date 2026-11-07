@@ -1,0 +1,5 @@
+id: QmPBn4xCaGJFkMDW1Be3VEHCqnFspzmD3r4LVo8g2gtE4x
+description: serves from region-1 and fails over to region-2 - within the root's regions, in an order of its own
+regions:
+    topology: failover
+    in: [region-1, region-2]

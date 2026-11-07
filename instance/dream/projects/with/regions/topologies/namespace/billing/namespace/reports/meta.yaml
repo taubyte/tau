@@ -1,0 +1,4 @@
+id: QmWtz9hrrP3K8oopjrecU8z6TzF1nLETjZNpGxPd1XL1Ah
+description: narrows billing's regions to region-2, so it runs there alone
+regions:
+    in: [region-2]

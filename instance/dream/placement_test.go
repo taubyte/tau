@@ -19,7 +19,7 @@ func TestAPlacementThisBuildDoesNotServeIsRefused(t *testing.T) {
 
 	want := []string{
 		`project/placement: allows regions "region-1", "region-2", which this build does not serve; everything under it runs in "default"`,
-		`cache/sessions: is placed in region "region-1", which this build does not serve; it runs in "default"`,
+		`namespace/eu: allows region "region-1", which this build does not serve; everything under it runs in "default"`,
 	}
 	for _, found := range [][]schema.Finding{
 		schema.Audit(obj.Flat(), schema.StubResolver()),

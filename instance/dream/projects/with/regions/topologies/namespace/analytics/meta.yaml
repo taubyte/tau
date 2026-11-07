@@ -1,0 +1,5 @@
+id: QmVCiYrQLPn32hhNtk9QyXBrVdfEGvo9StzVcNnkiQBVbv
+description: a cell of its own - region-3 alone
+regions:
+    topology: single
+    in: [region-3]

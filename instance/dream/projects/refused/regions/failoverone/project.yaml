@@ -1,0 +1,9 @@
+id: QmNh313K9xdBU79LTCjdiwpMDJY1majMEvGPRrdgoRLDgb
+name: failoverone
+description: failover with one region - there is nothing to fall back to
+regions:
+    topology: failover
+    in: [region-1]
+environments:
+    prod:
+        branches: ["*"]

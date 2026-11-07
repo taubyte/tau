@@ -1,0 +1,9 @@
+id: QmfDK4n1juqRB569ynR4qFhTejq9oUkFj6ovkqPfgiRszV
+name: topologies
+description: every topology, nested - the root active in three regions, billing failing over between two of them, its reports narrowed to one, and analytics in a region of its own
+regions:
+    topology: active
+    in: [region-1, region-2, region-3]
+environments:
+    prod:
+        branches: ["*"]

@@ -1,0 +1,9 @@
+id: Qmf6Xf1BXXxm3chNWtkJvXWETQPfXKrsjSbQwvQ2kXQKHs
+name: standby
+description: an active function reaching a cache that fails over - in region-2 the function serves and the cache only stands by
+regions:
+    topology: active
+    in: [region-1, region-2]
+environments:
+    prod:
+        branches: ["*"]

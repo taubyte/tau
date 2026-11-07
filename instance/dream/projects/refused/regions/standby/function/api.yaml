@@ -1,0 +1,12 @@
+id: QmPjgiv816ygGgxYKEFHhDoabVar1Cv6CAQvEa8aFubUtG
+description: serves in both regions
+package:
+    name: hello_code
+execution:
+    call: handle
+    timeout: 15s
+    memory: 32MB
+cache:
+    sessions:
+        namespace: /ha
+        ops: [get]

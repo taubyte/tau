@@ -1,0 +1,11 @@
+id: QmYXCSoH17sbd17NeSeWfGtmwZe8eZg7RrRNn6twHY1WYX
+description: fails over with the ledger it writes, in the same order, so wherever it serves the ledger does
+package:
+    name: hello_code
+execution:
+    call: handle
+    timeout: 15s
+    memory: 32MB
+database:
+    ledger:
+        ops: [get, put]

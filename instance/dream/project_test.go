@@ -101,45 +101,54 @@ func projectAs(t testing.TB, name string, components artifacts, regions schema.R
 	packages, _ := root["package"].(map[string]any)
 	pointed := map[string][]byte{}
 	runs := 0
-	for _, group := range root {
-		instances, ok := group.(map[string]any)
-		if !ok {
-			continue
-		}
-		for _, v := range instances {
-			res, ok := v.(map[string]any)
+	// A NAMESPACE HOLDS WORKLOADS TOO, and runs a package at the project's root.
+	var walk func(scope map[string]any)
+	walk = func(scope map[string]any) {
+		for group, v := range scope {
+			instances, ok := v.(map[string]any)
 			if !ok {
 				continue
 			}
-			ref, ok := res["package"].(map[string]any)
-			if !ok {
-				continue
-			}
-			pkgID, _ := ref["name"].(string)
-			if pkgID == "" {
-				// A shell's reference that names nothing, such as a workflow's: it runs
-				// nothing itself.
-				continue
-			}
-			pkg, ok := packages[pkgID].(map[string]any)
-			require.True(t, ok, "%s: %v runs package %s, which is not at the project's root", name, res["name"], pkgID)
-			// An image is its own artifact, read straight off the package, and a builtin
-			// ships with the runtime, so nothing is staged for either.
-			if src, ok := pkg["source"].(map[string]any); ok && (src["kind"] == "image" || src["kind"] == "builtin") {
+			for _, v := range instances {
+				res, ok := v.(map[string]any)
+				if !ok {
+					continue
+				}
+				if group == "namespace" {
+					walk(res)
+					continue
+				}
+				ref, ok := res["package"].(map[string]any)
+				if !ok {
+					continue
+				}
+				pkgID, _ := ref["name"].(string)
+				if pkgID == "" {
+					// A shell's reference that names nothing, such as a workflow's: it runs
+					// nothing itself.
+					continue
+				}
+				pkg, ok := packages[pkgID].(map[string]any)
+				require.True(t, ok, "%s: %v runs package %s, which is not at the project's root", name, res["name"], pkgID)
+				// An image is its own artifact, read straight off the package, and a builtin
+				// ships with the runtime, so nothing is staged for either.
+				if src, ok := pkg["source"].(map[string]any); ok && (src["kind"] == "image" || src["kind"] == "builtin") {
+					runs++
+					continue
+				}
+				label, _ := res["name"].(string)
+				code := components.of(label)
+				require.NotEmpty(t, code, "%s names %q and nothing was handed in for it", name, label)
+				pkgName, _ := pkg["name"].(string)
+				if held, built := pointed[pkgName]; built {
+					require.Equal(t, held, code, "%s: two workloads run one package and were handed different builds", name)
+				}
+				pointed[pkgName] = code
 				runs++
-				continue
 			}
-			label, _ := res["name"].(string)
-			code := components.of(label)
-			require.NotEmpty(t, code, "%s names %q and nothing was handed in for it", name, label)
-			pkgName, _ := pkg["name"].(string)
-			if held, built := pointed[pkgName]; built {
-				require.Equal(t, held, code, "%s: two workloads run one package and were handed different builds", name)
-			}
-			pointed[pkgName] = code
-			runs++
 		}
 	}
+	walk(root)
 	require.NotZero(t, runs, "%s has nothing to run", name)
 
 	raw, err := json.Marshal(flat)

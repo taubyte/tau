@@ -1,0 +1,9 @@
+id: QmYLKTDH9qnd9LoZeRQYdNkCALkYmZCuryvcdEqVLT94YA
+name: single
+description: single, across two regions - single names one
+regions:
+    topology: single
+    in: [region-1, region-2]
+environments:
+    prod:
+        branches: ["*"]

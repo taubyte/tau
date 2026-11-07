@@ -1,0 +1,4 @@
+id: QmTXGKe63GYuKA54yerPQmGyEtFjhUF5p1g2hahTpm6pkA
+description: region-1 and region-3, and the project runs in no region-3
+regions:
+    in: [region-1, region-3]

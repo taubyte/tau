@@ -1,7 +1,5 @@
 id: QmPZVNdFnq1vBqWQ56rTHJkFUuA16uBpHUZSDzLToCVdVz
-description: pinned to region-1, the data-residency line - kept in the config for a cloud that serves region-1
+description: kept where the eu namespace runs, and nowhere else
 size: 1MB
 ttl: 1h
 consensus: crdt
-regions:
-    pinned: [region-1]

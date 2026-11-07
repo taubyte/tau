@@ -1,0 +1,8 @@
+id: QmP6fkUX74PfqaNvnAQYARbqQPquhkkAeZcHo78gsdiMPa
+name: unsaid
+description: two regions and no word on how to run in them - failover and active are different deployments, so neither is guessed
+regions:
+    in: [region-1, region-2]
+environments:
+    prod:
+        branches: ["*"]

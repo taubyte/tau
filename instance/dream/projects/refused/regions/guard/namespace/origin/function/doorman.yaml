@@ -1,0 +1,9 @@
+id: QmVjvvMP9tfzUrjKH2qrQX52g1PL4ft5ewNum6ZftAxRip
+description: the guard, which is not
+package:
+    name: hello_code
+execution:
+    call: handle
+    timeout: 15s
+    memory: 32MB
+implements: http-authorizer

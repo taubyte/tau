@@ -1,6 +1,6 @@
 id: QmWBYU7xWH1ZwyEE3qRgrRmSc7ng1G12UMKPtUNYCattB5
 name: views
-description: one region's function behind a gateway, beside a cache that runs anywhere - each region is published only what is placed there
+description: a function in region-1 behind a gateway and a cache that run anywhere - each region is published only what runs there
 environments:
     prod:
         branches: ["*"]

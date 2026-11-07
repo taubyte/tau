@@ -1,0 +1,16 @@
+id: QmWhQewj3uuPM9f3qodPJTPDUXE9BvG33zkyewVurWGHiU
+description: answers in both regions, asking a guard that runs in region-1 alone
+host:
+    zone:
+        in:
+            name: example_com
+        name: www
+authorizer:
+    namespace: /origin
+    name: doorman
+route:
+    path: /
+    handler:
+        function:
+            namespace: /origin
+            name: api

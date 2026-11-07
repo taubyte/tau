@@ -1,0 +1,4 @@
+id: QmTXGKe63GYuKA54yerPQmGyEtFjhUF5p1g2hahTpm6pkA
+description: region-1 alone - the data-residency line, which a namespace draws for everything in it
+regions:
+    in: [region-1]

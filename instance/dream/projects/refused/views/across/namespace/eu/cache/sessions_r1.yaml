@@ -1,7 +1,5 @@
 id: QmPQdBgrKfCnxxKmvuLrWhPjMpe5Bfk4hPwjPi3iqdBWpk
-description: kept in region-1 only - the data-residency line
+description: kept where the eu namespace runs - region-1 only
 size: 1MB
 ttl: 1h
 consensus: crdt
-regions:
-    pinned: [region-1]

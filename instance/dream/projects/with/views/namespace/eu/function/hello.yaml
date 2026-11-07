@@ -1,10 +1,8 @@
 id: QmRN6wdp1S2A5EtjW9A3M1vKSBuQQGcgvuhoMUoEz4iiT5
-description: pinned to region-1, so only region-1's view holds it - and the gateway in front of it follows it there
+description: runs where the eu namespace does, so only region-1's view holds it
 package:
     name: hello_code
 execution:
     call: handle
     timeout: 15s
     memory: 32MB
-regions:
-    pinned: [region-1]

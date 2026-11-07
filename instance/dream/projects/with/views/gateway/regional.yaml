@@ -1,5 +1,5 @@
 id: QmdfHasko25A7PymGC1oYenVhzbtoNBx7D3GY1GMYBZJhj
-description: places nothing of its own - it is held wherever what it routes to is
+description: says nothing about where it runs, so every region answers the name - and region-2, which does not run hello, says so
 host:
     zone:
         in:
@@ -11,4 +11,5 @@ route:
     methods: [GET, POST]
     handler:
         function:
+            namespace: /eu
             name: hello

@@ -1,0 +1,5 @@
+id: QmSGkFU26J43H5ToS5VwoyS1eqP41F6VU1WUyNaNui4gXg
+description: serves from region-2
+regions:
+    topology: failover
+    in: [region-2, region-1]

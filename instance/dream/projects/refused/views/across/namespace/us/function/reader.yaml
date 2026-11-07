@@ -1,13 +1,12 @@
 id: QmSSumLpvBM8vHPASQuwdRwi1YyuXTwdR3opsg5VqzowuH
-description: runs in region-2, and reaches the cache in region-1
+description: runs in region-2, and reaches the eu namespace's cache in region-1
 package:
     name: reader_code
 execution:
     call: handle
     timeout: 15s
     memory: 32MB
-regions:
-    pinned: [region-2]
 cache:
     sessions_r1:
+        namespace: /eu
         ops: [get]

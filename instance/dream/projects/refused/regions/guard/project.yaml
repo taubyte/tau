@@ -1,0 +1,9 @@
+id: QmZmb7fd4KRqbRW2wSE43eDBfQAksEa9oaZMY6rforme4N
+name: guard
+description: a gateway in both regions guarded by a function in one - a route's handler is carried across regions, a guard asked about every request is not
+regions:
+    topology: active
+    in: [region-1, region-2]
+environments:
+    prod:
+        branches: ["*"]
