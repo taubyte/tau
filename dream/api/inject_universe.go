@@ -41,7 +41,7 @@ func (srv *Service) apiHandlerUniverse(ctx httpIface.Context) (interface{}, erro
 		Name: name,
 	})
 	if err != nil {
-		return err, nil
+		return nil, err
 	}
 
 	return nil, u.StartWithConfig(config.Config)

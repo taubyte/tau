@@ -106,8 +106,8 @@ func (m *Multiverse) Name() string {
 }
 
 func (m *Multiverse) Close() error {
-	m.universesLock.RLock()
-	defer m.universesLock.RUnlock()
+	m.universesLock.Lock()
+	defer m.universesLock.Unlock()
 	for _, u := range m.universes {
 		u.Cleanup()
 	}
@@ -163,8 +163,8 @@ func (m *Multiverse) Universe(name string) (*Universe, error) {
 
 func (m *Multiverse) Delete(name string) error {
 	name = strings.ToLower(name)
-	m.universesLock.RLock()
-	defer m.universesLock.RUnlock()
+	m.universesLock.Lock()
+	defer m.universesLock.Unlock()
 
 	if _, exists := m.universes[name]; !exists {
 		return fmt.Errorf("universe not found")
@@ -194,8 +194,6 @@ func (m *Multiverse) Status() Status {
 			}(),
 			Nodes: func() map[string][]string {
 				_nodes := make(map[string][]string)
-				u.lock.RLock()
-				defer u.lock.RUnlock()
 				for _, s := range u.all {
 					paddrs := s.Peer().Addrs()
 					addrs := make([]string, 0, len(paddrs))

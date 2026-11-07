@@ -349,22 +349,24 @@ func (u *Universe) Stop() {
 
 	u.Cleanup()
 
+	// if not persistent, we delete the universe from the multiverse; its lock is
+	// taken before the universe lock, the order Status and Close use
+	if !u.keepRoot {
+		u.multiverse.universesLock.Lock()
+		defer u.multiverse.universesLock.Unlock()
+		delete(u.multiverse.universes, u.name)
+	}
+
 	u.lock.Lock()
 	defer u.lock.Unlock()
 
 	// Transition to stopped state
 	u.state = UniverseStateStopped
 
-	// if not persistent, we delete the universe from the multiverse
-	if !u.keepRoot {
-		u.multiverse.universesLock.Lock()
-		defer u.multiverse.universesLock.Unlock()
-		delete(u.multiverse.universes, u.name)
-		return
-	}
-
 	// reset universe if persistent
-	u.init()
+	if u.keepRoot {
+		u.init()
+	}
 }
 
 func (u *Universe) Cleanup() {
