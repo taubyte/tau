@@ -86,6 +86,11 @@ func (s *Service) Node() peer.Node {
 	return s.node
 }
 
+// Caps returns the operator's caps for a project.
+func (s *Service) Caps(projectID string) config.Caps {
+	return s.config.Quotas().For(projectID)
+}
+
 func (s *Service) Dev() bool {
 	return s.dev
 }

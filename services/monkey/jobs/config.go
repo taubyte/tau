@@ -5,6 +5,7 @@ import (
 	"io"
 
 	_ "github.com/taubyte/tau/pkg/builder"
+	tauConfig "github.com/taubyte/tau/pkg/config"
 	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	tcc "github.com/taubyte/tau/utils/tcc"
 )
@@ -59,6 +60,14 @@ func (c config) handle() error {
 	indexes, ok := flat["indexes"].(map[string]any)
 	if !ok {
 		return fmt.Errorf("indexes not found in flat result")
+	}
+
+	// Only the real service carries caps; mocks do not.
+	if m, ok := c.Monkey.(interface{ Caps(string) tauConfig.Caps }); ok {
+		if err = tcc.CheckQuota(object, m.Caps(c.ProjectID)); err != nil {
+			io.WriteString(c.LogFile, err.Error()+"\n")
+			return err
+		}
 	}
 
 	err = tcc.Publish(
