@@ -35,7 +35,10 @@ func startCommand() *cli.Command {
 			shape := ctx.String("shape")
 			_, serviceConfig, _, err := parseSourceConfig(ctx, shape)
 			if err != nil {
-				return fmt.Errorf("parsing config failed with: %s", err)
+				return ConfigError{fmt.Errorf("parsing config failed with: %w", err)}
+			}
+			if err := checkStartable(serviceConfig); err != nil {
+				return ConfigError{err}
 			}
 
 			logger.Info("🚀 Starting Tau (shape: ", shape, ")")

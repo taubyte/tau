@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"os"
 
@@ -12,6 +13,10 @@ func main() {
 	profiling.Start()
 
 	if err := cli.Run(os.Args...); err != nil {
+		if errors.As(err, new(cli.ConfigError)) {
+			log.Print(err)
+			os.Exit(cli.ExitConfig)
+		}
 		log.Fatal(err)
 	}
 }

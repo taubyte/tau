@@ -408,6 +408,8 @@ func (d *sporedrive) uploadSystemdFile(h remoteHost) error {
 	service.Key("LimitNOFILE").SetValue("65536")
 	service.Key("Restart").SetValue("always")
 	service.Key("RestartSec").SetValue("1")
+	// a config error exits with 78 (EX_CONFIG): restarting it only fails again
+	service.Key("RestartPreventExitStatus").SetValue("78")
 
 	install := cnf.Section("Install")
 	install.Key("WantedBy").SetValue("multi-user.target")
