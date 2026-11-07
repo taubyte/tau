@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strconv"
 
 	"github.com/taubyte/go-sdk/errno"
@@ -212,7 +213,7 @@ func (f *Factory) storageListVersionsSize(ctx context.Context, module common.Mod
 		return uint32(errno.ErrorListFileVersionsFailed)
 	}
 
-	return uint32(f.WriteStringSliceSize(module, sizePtr, versions))
+	return uint32(f.WriteStringSliceSizeFor(module, fmt.Sprintf("storage.versions/%d/%s", storageId, fileName), sizePtr, versions))
 }
 
 func (f *Factory) storageListVersions(ctx context.Context, module common.Module,
@@ -235,7 +236,7 @@ func (f *Factory) storageListVersions(ctx context.Context, module common.Module,
 		return uint32(errno.ErrorListFileVersionsFailed)
 	}
 
-	return uint32(f.WriteStringSlice(module, versionsPtr, versions))
+	return uint32(f.WriteStringSliceFor(module, fmt.Sprintf("storage.versions/%d/%s", storageId, fileName), versionsPtr, versions))
 }
 
 func (f *Factory) storageCid(ctx context.Context,
@@ -322,7 +323,7 @@ func (f *Factory) storageUsedSize(ctx context.Context, module common.Module,
 		return uint32(errno.ErrorListingUsedSpaceFailed)
 	}
 
-	return uint32(f.WriteStringSize(module, sizePtr, strconv.Itoa(used)))
+	return uint32(f.WriteBytesSizeFor(module, fmt.Sprintf("storage.used/%d", storageId), sizePtr, []byte(strconv.Itoa(used))))
 }
 
 func (f *Factory) storageUsed(ctx context.Context, module common.Module,
@@ -339,7 +340,7 @@ func (f *Factory) storageUsed(ctx context.Context, module common.Module,
 		return uint32(errno.ErrorListingUsedSpaceFailed)
 	}
 
-	return uint32(f.WriteString(module, usedPtr, strconv.Itoa(used)))
+	return uint32(f.WriteBytesFor(module, fmt.Sprintf("storage.used/%d", storageId), usedPtr, []byte(strconv.Itoa(used))))
 }
 
 func (f *Factory) storageCapacitySize(ctx context.Context, module common.Module,

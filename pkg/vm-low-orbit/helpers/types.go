@@ -3,6 +3,7 @@ package helpers
 import (
 	"context"
 	"math/big"
+	"sync"
 
 	"github.com/ipfs/go-cid"
 	"github.com/taubyte/go-sdk/errno"
@@ -32,6 +33,10 @@ type Methods interface {
 	ReadStringSlice(module common.Module, ptr, len uint32) ([]string, errno.Error)
 	WriteStringSliceSize(module common.Module, ptr uint32, value []string) errno.Error
 	WriteStringSlice(module common.Module, ptr uint32, value []string) errno.Error
+	WriteBytesSizeFor(module common.Module, key string, ptr uint32, data []byte) errno.Error
+	WriteBytesFor(module common.Module, key string, ptr uint32, value []byte) errno.Error
+	WriteStringSliceSizeFor(module common.Module, key string, ptr uint32, value []string) errno.Error
+	WriteStringSliceFor(module common.Module, key string, ptr uint32, value []string) errno.Error
 	WriteUint32SliceSize(module common.Module, ptr uint32, value []uint32) errno.Error
 	WriteUint32Slice(module common.Module, ptr uint32, value []uint32) errno.Error
 	ReadUint64Le(module common.Module, ptr uint32) (uint64, errno.Error)
@@ -55,6 +60,9 @@ type Methods interface {
 
 type methods struct {
 	ctx context.Context
+
+	sizesLock sync.Mutex
+	sizes     map[string]uint32 // see sized.go
 }
 
 type ByteConvertible interface {

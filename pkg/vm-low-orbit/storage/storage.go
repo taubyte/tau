@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"path"
 
 	"github.com/taubyte/go-sdk/errno"
@@ -56,7 +57,7 @@ func (f *Factory) storageListFilesSize(ctx context.Context, module common.Module
 		return uint32(errno.ErrorStorageListFailed)
 	}
 
-	return uint32(f.WriteStringSliceSize(module, sizePtr, filePaths))
+	return uint32(f.WriteStringSliceSizeFor(module, fmt.Sprintf("storage.list/%d", storageId), sizePtr, filePaths))
 }
 
 func (f *Factory) storageListFiles(ctx context.Context, module common.Module,
@@ -73,7 +74,7 @@ func (f *Factory) storageListFiles(ctx context.Context, module common.Module,
 		return uint32(errno.ErrorStorageListFailed)
 	}
 
-	return uint32(f.WriteStringSlice(module, sizePtr, filePaths))
+	return uint32(f.WriteStringSliceFor(module, fmt.Sprintf("storage.list/%d", storageId), sizePtr, filePaths))
 }
 
 func (f *Factory) createStoragePointer(storage storage.Storage, match string) *Storage {
