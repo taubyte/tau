@@ -42,6 +42,9 @@ type Function struct {
 	// retire without ever pooling (memory config leaves no headroom).
 	noPoolWarned atomic.Bool
 
+	// pooledMem is the wasm memory held by idle pooled instances.
+	pooledMem atomic.Int64
+
 	// modules maps each wasm module the function loaded (its own, a library
 	// it runs as, or one it imports) to the address it resolved to, so a
 	// library push can be noticed. nil until the first call has run.
@@ -60,6 +63,9 @@ type instance struct {
 	// is in an unknown (possibly closed) state, so Free retires it instead of
 	// repooling.
 	failed bool
+
+	// poolMem is this instance's share of parent.pooledMem while pooled.
+	poolMem uint32
 
 	// held: the instance is checked out for a request and counts against its
 	// project's caps until it goes back to the pool or is closed.
