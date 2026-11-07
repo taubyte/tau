@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -1004,8 +1005,12 @@ func copyTree(src afero.Fs, srcDir string, dst afero.Fs, dstDir string) error {
 		if err != nil {
 			return err
 		}
-		rel := strings.TrimPrefix(p, srcDir)
-		target := path.Join(dstDir, rel)
+		// afero.Walk joins with OS separators: on Windows p is "\.git", not "/.git".
+		rel, err := filepath.Rel(srcDir, p)
+		if err != nil {
+			return err
+		}
+		target := path.Join(dstDir, filepath.ToSlash(rel))
 		if info.IsDir() {
 			return dst.MkdirAll(target, 0o755)
 		}
