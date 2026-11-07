@@ -14,6 +14,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -284,6 +285,7 @@ func checkCertName(name string) error {
 
 type deleteResult struct {
 	Name    string   `json:"name"`
+	InAuth  bool     `json:"in_auth"`
 	Removed []string `json:"removed_local"`
 	Others  string   `json:"other_nodes"`
 }
@@ -299,19 +301,34 @@ func deleteCert(ctx context.Context, root string, shapes []shapeConf, name strin
 	if err != nil {
 		return res, err
 	}
-	err = a.DeleteCertificate(name)
-	done()
-	if err != nil {
-		return res, err
+	defer done()
+	if names, err := a.ListCertificates(); err == nil {
+		res.InAuth = slices.Contains(names, name)
+	} else { // an older auth has no list action
+		data, err := a.GetRawCertificate(name)
+		res.InAuth = err == nil && len(data) > 0
 	}
+	var local []string
 	for _, sc := range shapes {
 		for _, dir := range acmeDirs(root, sc.shape) {
-			p := filepath.Join(dir, name)
-			if err := os.Remove(p); err == nil {
-				res.Removed = append(res.Removed, p)
-			} else if !os.IsNotExist(err) {
-				return res, err
+			if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+				local = append(local, filepath.Join(dir, name))
 			}
+		}
+	}
+	if !res.InAuth && len(local) == 0 {
+		return res, fmt.Errorf("certificate %s not found: not in auth, no local copy on this node", name)
+	}
+	if res.InAuth {
+		if err := a.DeleteCertificate(name); err != nil {
+			return res, err
+		}
+	}
+	for _, p := range local {
+		if err := os.Remove(p); err == nil {
+			res.Removed = append(res.Removed, p)
+		} else if !os.IsNotExist(err) {
+			return res, err
 		}
 	}
 	// the leading * is a glob in a shell: [*] matches only a literal *
@@ -321,6 +338,34 @@ func deleteCert(ctx context.Context, root string, shapes []shapeConf, name strin
 	}
 	res.Others = fmt.Sprintf("other nodes keep their local copy: on each, run rm -f %s/storage/*/local/acme/%s (or restart tau there)", root, glob)
 	return res, nil
+}
+
+// setTrailingFlags applies flags written after the positional argument
+// (urfave/cli v2 stops parsing at the first one) and returns the positionals.
+func setTrailingFlags(ctx *cli.Context) ([]string, error) {
+	var pos []string
+	args := ctx.Args().Slice()
+	for i := 0; i < len(args); i++ {
+		name, val, hasVal := strings.Cut(strings.TrimLeft(args[i], "-"), "=")
+		if !strings.HasPrefix(args[i], "-") || name == "" {
+			pos = append(pos, args[i])
+			continue
+		}
+		if !hasVal && name != "json" {
+			if i+1 == len(args) {
+				return nil, fmt.Errorf("flag %s needs a value", args[i])
+			}
+			i++
+			val = args[i]
+		}
+		if !hasVal && name == "json" {
+			val = "true"
+		}
+		if err := ctx.Set(name, val); err != nil {
+			return nil, fmt.Errorf("flag %s: %w", args[i], err)
+		}
+	}
+	return pos, nil
 }
 
 func certsCommand() *cli.Command {
@@ -351,21 +396,29 @@ func certsCommand() *cli.Command {
 				ArgsUsage: "<name>",
 				Flags:     operatorFlags,
 				Action: func(ctx *cli.Context) error {
-					if ctx.NArg() != 1 {
-						return errors.New("give one certificate name, e.g. tau certs delete '*.gen.example.com'")
+					args, err := setTrailingFlags(ctx)
+					if err != nil {
+						return err
+					}
+					if len(args) != 1 {
+						return fmt.Errorf("give one certificate name, e.g. tau certs delete '*.gen.example.com' (got %d: %q)", len(args), args)
 					}
 					root, shapes, err := loadShapes(ctx)
 					if err != nil {
 						return err
 					}
-					res, err := deleteCert(ctx.Context, root, shapes, ctx.Args().First())
+					res, err := deleteCert(ctx.Context, root, shapes, args[0])
 					if err != nil {
 						return err
 					}
 					if ctx.Bool("json") {
 						return printJSON(ctx.App.Writer, res)
 					}
-					fmt.Fprintf(ctx.App.Writer, "deleted %s from auth\n", res.Name)
+					if res.InAuth {
+						fmt.Fprintf(ctx.App.Writer, "deleted %s from auth\n", res.Name)
+					} else {
+						fmt.Fprintf(ctx.App.Writer, "%s was not in auth\n", res.Name)
+					}
 					for _, p := range res.Removed {
 						fmt.Fprintf(ctx.App.Writer, "removed %s\n", p)
 					}
@@ -396,7 +449,7 @@ type health struct {
 }
 
 func nodeHealth(ctx context.Context, shapes []shapeConf) health {
-	h := health{Version: Version, Commit: Commit}
+	h := health{Version: Version, Commit: buildCommit()}
 	for _, sc := range shapes {
 		s := shapeHealth{Shape: sc.shape, Services: sc.conf.Services(), Ports: map[string]bool{}, Errors: []string{}}
 		for name, port := range sc.conf.Ports() {

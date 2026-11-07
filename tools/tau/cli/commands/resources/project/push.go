@@ -169,7 +169,7 @@ func waitFor(ctx *cli.Context, pushed []follow.Repo, targets []follow.Target, be
 	}
 	result.Exit = code
 	if !output.Render(result) {
-		follow.WriteJobs(os.Stdout, jobs)
+		// each job's final line was written by Wait
 		follow.WriteServed(os.Stdout, result.Serving)
 	}
 	if code != 0 {

@@ -25,6 +25,8 @@ func fakePatrick(t *testing.T) Client {
 		switch r.URL.Path {
 		case "/job/j1":
 			json.NewEncoder(w).Encode(map[string]any{"Job": patrick.Job{Id: "j1", Status: patrick.JobStatusFailed, Logs: map[string]string{"res1": "cid1"}}})
+		case "/job/j2":
+			json.NewEncoder(w).Encode(map[string]any{"Job": patrick.Job{Id: "j2", Status: patrick.JobStatusSuccess, Logs: map[string]string{"2026-11-07T16:27:54Z": "cid1", "j2": "cid1"}}})
 		case "/logs/cid1":
 			io.WriteString(w, "step 1\nerror: go build failed\n")
 		case "/stream/logs/j1":
@@ -70,4 +72,12 @@ func TestFunctionLogsSaySo(t *testing.T) {
 	err := app.Run([]string{"tau", "logs", "function", "fn1"})
 	assert.ErrorIs(t, err, ErrFunctionLogs)
 	assert.Assert(t, !strings.Contains(ErrFunctionLogs.Error(), "\n"))
+}
+
+// B5: one log filed under a timestamp and the job id was printed twice.
+func TestShowLogOnceUnderJobID(t *testing.T) {
+	var buf bytes.Buffer
+	assert.NilError(t, Show(&buf, fakePatrick(t), "j2", false))
+	assert.Equal(t, strings.Count(buf.String(), "error: go build failed"), 1, buf.String())
+	assert.Assert(t, strings.Contains(buf.String(), "resource j2"), buf.String())
 }

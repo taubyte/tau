@@ -86,7 +86,14 @@ func Show(w io.Writer, p Client, jid string, followLog bool) error {
 		return err
 	}
 	res := Result{Job: jid, Status: strings.ToLower(job.Status.String()), Logs: map[string]string{}}
+	// Patrick can file one log under two keys (a timestamp and the job id): read each once
+	keyOf := map[string]string{}
 	for resource, cid := range job.Logs {
+		if k, ok := keyOf[cid]; !ok || resource == jid || (k != jid && resource < k) {
+			keyOf[cid] = resource
+		}
+	}
+	for cid, resource := range keyOf {
 		rc, err := p.LogFile(jid, cid)
 		if err != nil {
 			return err

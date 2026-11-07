@@ -124,18 +124,25 @@ func progressLine(prev, cur Job) string {
 		return fmt.Sprintf("%-8s queued    job %s", cur.Repo, cur.Id)
 	case cur.Status == "locked":
 		return fmt.Sprintf("%-8s building attempt %d  job %s", cur.Repo, cur.Attempt, cur.Id)
-	default:
-		return fmt.Sprintf("%-8s %-8s %.0fs after push  job %s", cur.Repo, cur.Status, cur.Seconds, cur.Id)
+	default: // finished: Wait writes it with WriteJobs, the job's one final line
+		return "final"
 	}
 }
 
+// heartbeat: Patrick may keep a job "open" until it ends (t3 said nothing for
+// 4m45s), so a running job gets a line this often when nothing changed.
+var heartbeat = time.Minute
+
 // Wait follows each pushed repo's job (see match) until all end, writing a
-// line to progress (if not nil) as a job appears, starts, retries or ends.
+// line to progress (if not nil) as a job appears, starts, retries or ends,
+// and every heartbeat while a job runs with no change.
 // Exit code: 0 all succeeded, 1 one failed or was canceled, 2 ctx ended first.
 func Wait(ctx context.Context, p Patrick, project string, repos []Repo, poll time.Duration, progress io.Writer) ([]Job, int) {
 	cache := map[string]*patrick.Job{}
 	out := make([]Job, len(repos))
+	said := make([]time.Time, len(repos))
 	for i, r := range repos {
+		said[i] = time.Now()
 		out[i] = Job{Repo: r.Name, Status: "no job"}
 	}
 	for {
@@ -167,8 +174,16 @@ func Wait(ctx context.Context, p Patrick, project string, repos []Repo, poll tim
 					}
 				}
 			}
-			if l := progressLine(prev, out[i]); l != "" && progress != nil {
+			switch l := progressLine(prev, out[i]); {
+			case progress == nil:
+			case l == "final":
+				WriteJobs(progress, out[i:i+1])
+			case l != "":
 				fmt.Fprintln(progress, l)
+				said[i] = time.Now()
+			case !finished(newest.Status) && time.Since(said[i]) >= heartbeat:
+				fmt.Fprintf(progress, "%-8s still building, %s after push  job %s\n", r.Name, time.Since(from).Round(time.Second), newest.Id)
+				said[i] = time.Now()
 			}
 		}
 		if done == len(repos) {
@@ -431,6 +446,26 @@ func GetStatus(p Patrick, project string, names map[int]string, targets []Target
 			r.Error, _ = logTail(p, j)
 		}
 		rep.Repos = append(rep.Repos, r)
+	}
+	// the serve table's websites and the project's repos all get a row
+	have := map[string]bool{}
+	for _, r := range rep.Repos {
+		have[r.Repo] = true
+	}
+	want := []string{}
+	for _, n := range names {
+		want = append(want, n)
+	}
+	for _, t := range targets {
+		if strings.HasPrefix(t.Resource, "website ") {
+			want = append(want, t.Resource)
+		}
+	}
+	for _, n := range want {
+		if !have[n] {
+			have[n] = true
+			rep.Repos = append(rep.Repos, RepoStatus{Repo: n, Status: "no build yet"})
+		}
 	}
 	sort.Slice(rep.Repos, func(a, b int) bool { return rep.Repos[a].Repo < rep.Repos[b].Repo })
 

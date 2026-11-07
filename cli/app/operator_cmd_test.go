@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
@@ -177,4 +178,43 @@ func TestHealthSkipsUnusedPorts(t *testing.T) {
 	if strings.Contains(b.String(), "ipfs:0") || !strings.Contains(b.String(), "main:4242") {
 		t.Fatalf("got:\n%s", b.String())
 	}
+}
+
+// B1: flags after the name were taken as more names.
+func TestCertsDeleteFlagAfterName(t *testing.T) {
+	root, fa := operatorRoot(t)
+	out, err := runApp(t, "certs", "delete", "*.gen.example.com", "--root", root, "-s", "test")
+	assert.NilError(t, err, out)
+	assert.DeepEqual(t, fa.deleted, []string{"*.gen.example.com"})
+
+	_, err = runApp(t, "certs", "delete", "--root", root, "a.example.com", "b.example.com")
+	assert.ErrorContains(t, err, `got 2: ["a.example.com" "b.example.com"]`)
+}
+
+// B2: a name nobody has was reported deleted.
+func TestCertsDeleteNotFound(t *testing.T) {
+	root, fa := operatorRoot(t)
+	_, err := runApp(t, "certs", "delete", "--root", root, "zz-nosuch.example.invalid")
+	assert.ErrorContains(t, err, "not found")
+	assert.Equal(t, len(fa.deleted), 0)
+
+	// only a local copy: auth is not asked to delete, and the output says so
+	out, err := runApp(t, "certs", "delete", "--root", root, "x.gen.example.com")
+	assert.NilError(t, err)
+	assert.Equal(t, len(fa.deleted), 0)
+	assert.Assert(t, strings.Contains(out, "x.gen.example.com was not in auth"), out)
+	assert.Assert(t, strings.Contains(out, "removed "), out)
+}
+
+// B3: health printed commit unknown when --version found vcs.revision.
+func TestNodeHealthCommitFromBuildInfo(t *testing.T) {
+	root, _ := operatorRoot(t)
+	old := debugInfo
+	t.Cleanup(func() { debugInfo = old })
+	debugInfo = func() (*debug.BuildInfo, bool) {
+		return &debug.BuildInfo{Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "5e4661e"}}}, true
+	}
+	out, err := runApp(t, "node", "health", "--root", root)
+	assert.NilError(t, err)
+	assert.Assert(t, strings.Contains(out, "(commit 5e4661e)"), out)
 }
