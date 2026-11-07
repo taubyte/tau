@@ -138,14 +138,8 @@ func headersOp(w http.ResponseWriter, r io.Reader) error {
 		return fmt.Errorf("decoding headers operation payload failed: %w", err)
 	}
 
-	// delete
-	for k := range w.Header() {
-		if _, ok := obj.Headers[k]; !ok {
-			w.Header().Del(k)
-		}
-	}
-
-	// add/set
+	// merge: the gateway's own headers (X-Substrate-Peer, CORS Vary) stay;
+	// a header the function sets overrides the gateway's.
 	for k, v := range obj.Headers {
 		for i := 0; i < len(v); i++ {
 			if i == 0 {
