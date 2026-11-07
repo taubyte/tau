@@ -83,6 +83,11 @@ func (n *Instance) ServiceTLS() (*tls.Config, error) {
 	return c.TLSConfig(), nil
 }
 
+// listeners is ServiceTLS as a service on this node asks for it.
+type listeners struct{ n *Instance }
+
+func (l listeners) ServiceTLS() (*tls.Config, error) { return l.n.ServiceTLS() }
+
 // challengeStore is the DNS-01 database, opened once per node.
 func (n *Instance) challengeStore() (cacheStore, error) {
 	n.sharedMu.Lock()

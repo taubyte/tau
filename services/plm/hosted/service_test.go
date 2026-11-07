@@ -1,6 +1,8 @@
 package hosted
 
 import (
+	"crypto/tls"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -127,18 +129,40 @@ func TestBuildRefusesWhatItCannotServeWith(t *testing.T) {
 	}
 }
 
+// servedTLS is the instance's certificate client as a service asks for it.
+type servedTLS struct {
+	config *tls.Config
+	err    error
+}
+
+func (s servedTLS) ServiceTLS() (*tls.Config, error) { return s.config, s.err }
+
+var issuing = map[string]any{
+	"listen": "127.0.0.1:0", "cloudfqdn": "tau.example.io",
+	"cm": map[string]any{"certificate": map[string]any{"acme": map[string]any{"enabled": true}}},
+}
+
 func TestACloudThatIssuesServesBuildOverTLS(t *testing.T) {
+	n := lone(t, issuing)
+	n.running = append(n.running, service.Running{Service: servedTLS{config: &tls.Config{}}})
 	s := New()
-	require.NoError(t, s.Start(t.Context(), lone(t, map[string]any{
-		"listen": "127.0.0.1:0", "cloudfqdn": "tau.example.io",
-		"cm": map[string]any{"certificate": map[string]any{"acme": map[string]any{"enabled": true}}},
-	})))
+	require.NoError(t, s.Start(t.Context(), n))
 	t.Cleanup(func() { s.Close() })
 
 	res, err := http.Get("http://" + s.(Service).Addr().String() + "/cloud")
 	require.NoError(t, err)
 	res.Body.Close()
 	require.Equal(t, http.StatusBadRequest, res.StatusCode, "plain http to its TLS listener is refused")
+}
+
+// ITS CERTIFICATE IS THE INSTANCE'S, from the client every listener on the node
+// takes one from: plm builds none of its own.
+func TestACloudThatIssuesNeedsTheInstancesCertificates(t *testing.T) {
+	require.ErrorIs(t, New().Start(t.Context(), lone(t, issuing)), ErrNoListenerTLS)
+
+	n := lone(t, issuing)
+	n.running = append(n.running, service.Running{Service: servedTLS{err: errors.New("no zone")}})
+	require.ErrorContains(t, New().Start(t.Context(), n), "no zone")
 }
 
 func TestAForgeWithAnEventStreamIsFollowed(t *testing.T) {

@@ -229,6 +229,8 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 	}
 	// What the built-ins add to this node's report.
 	n.provide("", builtIns{n})
+	// The certificate a service's own public listener answers with.
+	n.provide("", listeners{n})
 	// And the workloads the clock fires through, while the worker is one of them.
 	if cfg.runs(Worker) {
 		n.provide("", workloads{n})

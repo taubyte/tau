@@ -2,6 +2,7 @@ package hosted
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -40,9 +41,16 @@ type Service interface {
 	Addr() net.Addr
 }
 
-// ErrNoZoneForCertificates is a cloud that issues certificates and names no zone to
-// issue them in.
-var ErrNoZoneForCertificates = errors.New("build: certificates are issued for the cloud's zone, and this node names none (cloudfqdn)")
+// ListenerTLS is what the instance answers a service's public listener with: the
+// cloud's certificate for `<service>.<zone>`, from the one client every listener on
+// the node takes certificates from, or nil when the cloud issues none.
+type ListenerTLS interface {
+	ServiceTLS() (*tls.Config, error)
+}
+
+// ErrNoListenerTLS is a cloud that issues certificates on an instance that gives
+// this listener none.
+var ErrNoListenerTLS = errors.New("plm: the cloud issues certificates, and this instance gives its listener none")
 
 // config is the plm service's section, and the cloud-wide keys it reads.
 type config struct {
@@ -178,21 +186,21 @@ func (f *server) wire(h service.Host, cfg config) ([]ingress.Option, error) {
 	if len(registry.EventHosts()) > 0 {
 		options = append(options, ingress.WithStreams(forges, projects))
 	}
-	// TLS WHEN THE CLOUD ISSUES CERTIFICATES: the one cm keeps for this role's name,
-	// the zone's wildcard when it issues one, read by cm's client as every public
-	// listener reads its own.
+	// TLS WHEN THE CLOUD ISSUES CERTIFICATES, from the instance's one client: a
+	// second client here would order on its own, without the DNS-01 store or the
+	// domain proofs the instance wires into its own.
 	if cfg.CM.Certificate.ACME.Enabled {
-		if cfg.CloudFqdn == "" {
-			return nil, ErrNoZoneForCertificates
+		listener, ok := service.Get[ListenerTLS](h)
+		if !ok {
+			return nil, ErrNoListenerTLS
 		}
-		whole := cfg.CM
-		whole.Certificate.Zone = cfg.CloudFqdn
-		certificates, err := cm.NewClient(self, cm.On(h), vault.Cloud(cm.VaultService), whole)
+		config, err := listener.ServiceTLS()
 		if err != nil {
 			return nil, err
 		}
-		f.also = append(f.also, certificates)
-		options = append(options, ingress.WithTLS(certificates.TLSConfig()))
+		if config != nil {
+			options = append(options, ingress.WithTLS(config))
+		}
 	}
 	return options, nil
 }
