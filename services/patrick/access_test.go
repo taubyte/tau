@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	goHttp "net/http"
 	"testing"
@@ -109,6 +110,7 @@ func TestJobAccess(t *testing.T) {
 }
 
 func TestJobAccessAsksGitHubOncePerRepository(t *testing.T) {
+	freshRepoAccesses(t)
 	db := &fakeJobs{keys: map[string][]byte{}}
 	addJob(t, db, "/archive/jobs/", "a", 11)
 	addJob(t, db, "/archive/jobs/", "b", 11)
@@ -173,6 +175,7 @@ func TestLiveLogsResetStartsARetriedLogClean(t *testing.T) {
 
 // GitHub failing to answer must not lock the owner out for the cache's lifetime.
 func TestJobAccessDoesNotKeepADenialGitHubDidNotGive(t *testing.T) {
+	freshRepoAccesses(t)
 	db := &fakeJobs{keys: map[string][]byte{}}
 	addJob(t, db, "/archive/jobs/", "j", 31)
 	srv := &PatrickService{db: db}
@@ -196,4 +199,12 @@ func TestJobAccessDoesNotKeepADenialGitHubDidNotGive(t *testing.T) {
 	if stranger.asked != 1 {
 		t.Fatalf("a certain denial was asked %d times", stranger.asked)
 	}
+}
+
+// freshRepoAccesses gives a test its own access cache: the package-level one
+// keeps answers across runs, so a repeated run would never ask GitHub.
+func freshRepoAccesses(t *testing.T) {
+	old := repoAccesses
+	repoAccesses = &repoAccessCache{entries: make(map[[sha256.Size]byte]repoAccessEntry)}
+	t.Cleanup(func() { repoAccesses = old })
 }
