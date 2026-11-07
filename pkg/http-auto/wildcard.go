@@ -25,6 +25,9 @@ var (
 	// WildcardCheckEvery is how often a node reloads or renews the wildcard; WildcardRetry after a failure.
 	WildcardCheckEvery = 12 * time.Hour
 	WildcardRetry      = 10 * time.Minute
+	// WildcardWaitOther is how soon a node looks again while another node orders:
+	// the order takes about a minute, and until then this node serves per-host certificates.
+	WildcardWaitOther = time.Minute
 	// WildcardSettle lets a store write reach every auth node before it is relied on.
 	WildcardSettle  = 5 * time.Second
 	wildcardLockTTL = 10 * time.Minute
@@ -57,8 +60,13 @@ func (s *Service) keepWildcard(ctx context.Context) {
 	for {
 		wait := WildcardCheckEvery
 		if err := s.ensureWildcard(ctx); err != nil {
-			logger.Warnf("wildcard *.%s: %s; generated hosts use per-host certificates%s", s.wildcardBase, err, challengeHint(s.wildcardBase, err))
 			wait = WildcardRetry
+			if errors.Is(err, errOtherOrdering) {
+				wait = WildcardWaitOther
+				logger.Infof("wildcard *.%s: %s; looking again in %s", s.wildcardBase, err, wait)
+			} else {
+				logger.Warnf("wildcard *.%s: %s; generated hosts use per-host certificates%s", s.wildcardBase, err, challengeHint(s.wildcardBase, err))
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -111,7 +119,7 @@ func (s *Service) lockWildcard(ctx context.Context) error {
 	key, me := wildcardLockKey(s.wildcardBase), s.lockOwner()
 	if v, err := l.Lookup(key); err == nil {
 		if owner, ok := acmeStore.DecodeChallenge(v); ok && owner != me {
-			return fmt.Errorf("node %s is ordering it", owner)
+			return fmt.Errorf("node %s is ordering it: %w", owner, errOtherOrdering)
 		}
 	}
 	if err := s.certStore.Put(ctx, key, acmeStore.EncodeChallenge(me, time.Now().Add(wildcardLockTTL))); err != nil {
@@ -123,7 +131,7 @@ func (s *Service) lockWildcard(ctx context.Context) error {
 		return err
 	}
 	if owner, _ := acmeStore.DecodeChallenge(v); owner != me {
-		return fmt.Errorf("node %s is ordering it", owner)
+		return fmt.Errorf("node %s is ordering it: %w", owner, errOtherOrdering)
 	}
 	return nil
 }
@@ -305,3 +313,7 @@ func waitForChallenge(ctx context.Context, name, value string) {
 		}
 	}
 }
+
+// errOtherOrdering means another node holds the order lock; this node looks
+// again soon instead of after a failure's WildcardRetry.
+var errOtherOrdering = errors.New("another node is ordering the wildcard")

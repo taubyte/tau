@@ -10,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"math/big"
 	"net"
 	"regexp"
@@ -204,5 +205,18 @@ func TestWaitForChallengeWaitsForEveryNameserver(t *testing.T) {
 	}
 	if time.Since(start) > 20*time.Second {
 		t.Fatalf("waited too long: %s", time.Since(start))
+	}
+}
+
+// A node that started while another node was ordering waited WildcardRetry
+// (10 min) before loading the new wildcard, serving per-host certificates
+// meanwhile (seen on the 3-node cloud). It now looks again after a minute.
+func TestOtherNodeOrderingIsRecognised(t *testing.T) {
+	err := fmt.Errorf("node %s is ordering it: %w", "QmOther", errOtherOrdering)
+	if !errors.Is(err, errOtherOrdering) {
+		t.Fatal("not recognised")
+	}
+	if WildcardWaitOther >= WildcardRetry {
+		t.Fatalf("waits %s, as long as after a failure", WildcardWaitOther)
 	}
 }
