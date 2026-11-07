@@ -1,39 +1,75 @@
 package service
 
-import "sync"
+import (
+	"context"
+	"strings"
+	"time"
 
-// buildSlots counts the builds handed out per project and not yet finished.
-// shortcut: leader memory only, a restart forgets running builds; upgrade by rebuilding from /assigned.
-type buildSlots struct {
-	mu    sync.Mutex
-	byJob map[string]string // job id -> project id
-}
+	"github.com/fxamacker/cbor/v2"
+	"github.com/taubyte/tau/core/services/patrick"
+	tauConfig "github.com/taubyte/tau/pkg/config"
+	servicesCommon "github.com/taubyte/tau/services/common"
+)
 
-// take records jid as running for project unless the project already runs cap builds.
-func (b *buildSlots) take(jid, project string, cap int) bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.byJob == nil {
-		b.byJob = map[string]string{}
+// maxCappedSkips bounds the capped jobs one dequeue pops past, so a long queue
+// of one capped project costs a poll a few raft writes, not the whole queue.
+const maxCappedSkips = 16
+
+// buildCaps returns the quotas and whether any build cap is set.
+func (p *PatrickService) buildCaps() (tauConfig.Quotas, bool) {
+	if p.config == nil {
+		return tauConfig.Quotas{}, false
 	}
-	if _, ok := b.byJob[jid]; ok {
-		return true
+	q := p.config.Quotas()
+	if q.Default.Builds != 0 {
+		return q, true
 	}
-	n := 0
-	for _, p := range b.byJob {
-		if p == project {
-			n++
+	for _, c := range q.Projects {
+		if c.Builds != 0 {
+			return q, true
 		}
 	}
-	if cap > 0 && n >= cap {
-		return false
-	}
-	b.byJob[jid] = project
-	return true
+	return q, false
 }
 
-func (b *buildSlots) release(jid string) {
-	b.mu.Lock()
-	delete(b.byJob, jid)
-	b.mu.Unlock()
+// projectOf returns the job's project, looked up once per job; "" if unknown (never capped).
+func (p *PatrickService) projectOf(job *patrick.Job) string {
+	if v, ok := p.projects.Load(job.Id); ok {
+		return v.(string)
+	}
+	project, err := p.getProjectIDFromJob(job)
+	if err != nil {
+		logger.Warnf("job %s: project lookup for its build cap failed, not capping it: %s", job.Id, err)
+		return ""
+	}
+	p.projects.Store(job.Id, project)
+	return project
+}
+
+// runningBuilds counts live claims per project from the replicated /assigned
+// state, so every Patrick and every new leader sees the same counts. A claim
+// past its lock time (dead monkey) and the claim of the job being handed out
+// (re-announced) hold no slot.
+func (p *PatrickService) runningBuilds(ctx context.Context, jid string) map[string]int {
+	running := map[string]int{}
+	keys, err := p.db.List(ctx, "/assigned/")
+	if err != nil {
+		logger.Warnf("listing running builds for the build cap: %s", err)
+		return running
+	}
+	expired := time.Now().Unix() - int64(servicesCommon.DefaultLockTime.Seconds())
+	for _, key := range keys {
+		if strings.TrimPrefix(key, "/assigned/") == jid {
+			continue
+		}
+		data, err := p.db.Get(ctx, key)
+		if err != nil {
+			continue
+		}
+		var a Assignment
+		if cbor.Unmarshal(data, &a) == nil && a.Project != "" && a.Timestamp > expired {
+			running[a.Project]++
+		}
+	}
+	return running
 }

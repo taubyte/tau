@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	iface "github.com/taubyte/tau/core/services/patrick"
@@ -48,11 +49,14 @@ type PatrickService struct {
 	liveLogSenders liveLogSenders
 
 	config tauConfig.Config
-	builds buildSlots
+	// projects caches job id -> project id, so a job waiting on its cap is looked up once.
+	projects sync.Map
 }
 
 // Assignment tracks which Monkey is working on a job.
 type Assignment struct {
 	MonkeyPID string `cbor:"1,keyasint"`
 	Timestamp int64  `cbor:"2,keyasint"`
+	// Project is set when build caps are on: the claim counts against its project's cap.
+	Project string `cbor:"3,keyasint,omitempty"`
 }

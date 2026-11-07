@@ -168,17 +168,6 @@ func (p *PatrickService) infoHandler(ctx context.Context, jid string) (cr.Respon
 
 // dequeueHandler pops the next job from the queue, records the assignment, and returns the job.
 func (p *PatrickService) dequeueHandler(ctx context.Context, conn streams.Connection) (cr.Response, error) {
-	id, _, err := p.jobQueue.Pop(5 * time.Second)
-	if err != nil {
-		// A follower cannot pop, and removes nothing trying: it has no job to
-		// give, which is an answer, not a failure. The monkey asks the next
-		// Patrick, and the leader hands the job out.
-		if errors.Is(err, raft.ErrQueueEmpty) || errors.Is(err, raft.ErrNotLeader) {
-			return cr.Response{"available": false}, nil
-		}
-		return nil, fmt.Errorf("queue pop: %w", err)
-	}
-
 	// The job is already popped from the raft queue, so it must be fully
 	// assigned or it is stranded (popped-but-unassigned) until ReAnnounce
 	// re-homes it — a slow, avoidable round-trip. The pop is destructive, so
@@ -188,39 +177,62 @@ func (p *PatrickService) dequeueHandler(ctx context.Context, conn streams.Connec
 	opCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 	defer cancel()
 
-	job, err := p.getJob(opCtx, "/jobs/", id)
-	if err != nil {
-		return nil, fmt.Errorf("get job %s after pop: %w", id, err)
-	}
-
-	// A project at its build cap waits: its job goes back to the queue, others proceed.
-	if p.config != nil {
-		if q := p.config.Quotas(); q.Default.Builds != 0 || len(q.Projects) != 0 {
-			if pid, err := p.getProjectIDFromJob(job); err == nil && !p.builds.take(id, pid, q.For(pid).Builds) {
-				if err := p.enqueue(id); err != nil {
-					return nil, fmt.Errorf("requeue %s over the build cap: %w", id, err)
-				}
-				return cr.Response{"available": false}, nil
+	// Jobs of a project at its build cap are skipped and go back on the queue.
+	var skipped []string
+	defer func() {
+		for _, id := range skipped {
+			if err := p.enqueue(id); err != nil {
+				logger.Errorf("requeue %s over its project's build cap: %s", id, err)
 			}
 		}
-	}
+	}()
 
-	monkeyPID := conn.RemotePeer()
-	assignment := Assignment{
-		MonkeyPID: monkeyPID.String(),
-		Timestamp: time.Now().Unix(),
-	}
-	assignData, err := cbor.Marshal(assignment)
-	if err != nil {
-		return nil, fmt.Errorf("marshal assignment: %w", err)
-	}
+	quotas, capsOn := p.buildCaps()
+	var running map[string]int
+	for len(skipped) < maxCappedSkips {
+		id, _, err := p.jobQueue.Pop(5 * time.Second)
+		if err != nil {
+			// A follower cannot pop, and removes nothing trying: it has no job to
+			// give, which is an answer, not a failure. The monkey asks the next
+			// Patrick, and the leader hands the job out.
+			if errors.Is(err, raft.ErrQueueEmpty) || errors.Is(err, raft.ErrNotLeader) {
+				return cr.Response{"available": false}, nil
+			}
+			return nil, fmt.Errorf("queue pop: %w", err)
+		}
 
-	if err := p.db.Put(opCtx, "/assigned/"+id, assignData); err != nil {
-		p.builds.release(id)
-		return nil, fmt.Errorf("record assignment for %s: %w", id, err)
-	}
+		job, err := p.getJob(opCtx, "/jobs/", id)
+		if err != nil {
+			return nil, fmt.Errorf("get job %s after pop: %w", id, err)
+		}
 
-	return cr.Response{"available": true, "job": job}, nil
+		var project string
+		if capsOn {
+			project = p.projectOf(job)
+			if running == nil {
+				running = p.runningBuilds(opCtx, id)
+			}
+			if c := quotas.For(project).Builds; project != "" && c > 0 && running[project] >= c {
+				skipped = append(skipped, id)
+				continue
+			}
+		}
+
+		assignData, err := cbor.Marshal(Assignment{
+			MonkeyPID: conn.RemotePeer().String(),
+			Timestamp: time.Now().Unix(),
+			Project:   project,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("marshal assignment: %w", err)
+		}
+		if err := p.db.Put(opCtx, "/assigned/"+id, assignData); err != nil {
+			return nil, fmt.Errorf("record assignment for %s: %w", id, err)
+		}
+		p.projects.Delete(id)
+		return cr.Response{"available": true, "job": job}, nil
+	}
+	return cr.Response{"available": false}, nil
 }
 
 // callerAssignment returns the job's claim if the calling Monkey holds it, nil otherwise.
@@ -265,7 +277,6 @@ func (p *PatrickService) refreshHandler(ctx context.Context, jid string, conn st
 }
 
 func (p *PatrickService) timeoutHandler(ctx context.Context, jid string, cid_log map[string]string) error {
-	defer p.builds.release(jid)
 	if _, err := p.getJob(ctx, "/archive/jobs/", jid); err != nil {
 		job, err := p.getJob(ctx, "/jobs/", jid)
 		if err != nil {
@@ -347,7 +358,6 @@ func (p *PatrickService) deleteJob(ctx context.Context, jid string, loc ...strin
 }
 
 func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid string, cid_log map[string]string, status commonIface.JobStatus, assetCid map[string]string) error {
-	defer p.builds.release(jid)
 	if pid != "" {
 		data, err := p.db.Get(ctx, "/assigned/"+jid)
 		if err == nil {
