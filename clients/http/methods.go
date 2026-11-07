@@ -32,7 +32,9 @@ func (c *Client) do(path, method string, data interface{}, ret interface{}) erro
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("%s -- `%s` failed with status: %s", method, path, resp.Status)
+		// the body carries the platform error code the CLI turns into a sentence
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("%s -- `%s` failed with status: %s: %s", method, path, resp.Status, bytes.TrimSpace(body))
 	}
 
 	body, err := io.ReadAll(resp.Body)

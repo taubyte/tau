@@ -11,7 +11,7 @@ import (
 	"github.com/mitchellh/go-ps"
 )
 
-func debugEnabled() bool { return os.Getenv("DEBUG") == "1" }
+func debugEnabled() bool { return os.Getenv("DEBUG") == "1" || os.Getenv("TAU_DEBUG") == "1" }
 
 func debugSession(format string, args ...any) {
 	if debugEnabled() {

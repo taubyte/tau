@@ -6,10 +6,11 @@ import (
 
 	"github.com/taubyte/tau/pkg/cli/i18n"
 	"github.com/taubyte/tau/tools/tau/cli"
+	"github.com/taubyte/tau/tools/tau/friendly"
 )
 
 func main() {
-	err := cli.Run(os.Args...)
+	err := friendly.Error(cli.Run(os.Args...))
 	if err != nil {
 		log.Fatal(i18n.AppCrashed(err))
 	}

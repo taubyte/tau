@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/taubyte/tau/tools/tau/flags"
+
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/taubyte/tau/tools/tau/i18n/printer"
 	"github.com/taubyte/tau/tools/tau/prompts"
@@ -159,7 +161,7 @@ func (l link) validate(st *tcc.Store, name string, f tcc.Field, value any) error
 // separated list.
 func askList(ctx *cli.Context, flag, label string, prev []string) []string {
 	if ctx.IsSet(flag) {
-		return splitList(ctx.StringSlice(flag))
+		return urlPaths(flag, splitList(ctx.StringSlice(flag)))
 	}
 	if prompts.UseDefaults {
 		return prev
@@ -170,7 +172,18 @@ func askList(ctx *cli.Context, flag, label string, prev []string) []string {
 		inp.Default = strings.Join(prev, ", ")
 	}
 	prompts.AskOne(inp, &val)
-	return splitList([]string{val})
+	return urlPaths(flag, splitList([]string{val}))
+}
+
+// urlPaths undoes Git Bash path conversion on --paths values.
+func urlPaths(flag string, in []string) []string {
+	if flag != flags.Paths.Name {
+		return in
+	}
+	for i := range in {
+		in[i] = flags.URLPath(in[i])
+	}
+	return in
 }
 
 func splitList(in []string) []string {
