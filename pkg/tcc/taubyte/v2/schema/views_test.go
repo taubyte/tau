@@ -308,9 +308,15 @@ func TestWhatServesReachesWhatServes(t *testing.T) {
 	}
 }
 
-// A gateway's route is the one edge that crosses: a name answered everywhere, in
-// front of a handler in one region. The view says where the handler is.
-func TestAGatewayRouteReachesItsHandlerAcrossRegions(t *testing.T) {
+// tunnelTo is a tunnel from the project root to ns, letting through kind/name.
+func tunnelTo(name, ns, kind, through string) string {
+	return "id: " + cidFor("tunnel/"+name) + "\nto: " + ns + "\nthrough:\n    - kind: " + kind + "\n      name: " + through + "\n"
+}
+
+// NOTHING CROSSES BUT THROUGH A TUNNEL: a name answered everywhere, in front of a
+// handler in one region, is refused until a tunnel lets the handler through, and the
+// view then says where the handler is.
+func TestAGatewayRouteReachesItsHandlerThroughATunnel(t *testing.T) {
 	docs := map[string]string{
 		"/project.yaml":                   regionsProject + regionsBlock("active", "[region-1, region-2, region-3]") + everyBranch,
 		"/namespace/eu/function/api.yaml": viewFunction("api", ""),
@@ -319,6 +325,14 @@ func TestAGatewayRouteReachesItsHandlerAcrossRegions(t *testing.T) {
 		"/zone/example_com.yaml":          viewZone,
 	}
 	viewNamespace(docs, "eu", "", "[region-1]")
+	_, findings, err := viewsOf(t, several{"region-1", "region-2", "region-3"}, docs)
+	require.ErrorIs(t, err, schema.ErrUnviewable)
+	require.ElementsMatch(t, []string{
+		`gateway/api: reaches function/api, which does not run in "region-2" where this does`,
+		`gateway/api: reaches function/api, which does not run in "region-3" where this does`,
+	}, findingsTitled(findings, schema.Broken))
+
+	docs["/tunnel/to_eu.yaml"] = tunnelTo("to_eu", "/eu", "function", "api")
 	views, findings, err := viewsOf(t, several{"region-1", "region-2", "region-3"}, docs)
 	require.NoError(t, err)
 	require.Empty(t, findingsTitled(findings, schema.Broken))
@@ -329,17 +343,19 @@ func TestAGatewayRouteReachesItsHandlerAcrossRegions(t *testing.T) {
 		"function/api":     schema.RoleSingle,
 		"package/api_code": schema.RoleNeeded,
 		"zone/example_com": schema.RoleNeeded,
+		"tunnel/to_eu":     schema.RoleFollows,
 	}, rolesByName(t, views["region-1"]))
-	require.Empty(t, views["region-1"].Remote, "held here, so nothing is carried")
+	require.Empty(t, views["region-1"].Remote, "held here, so nothing goes through")
 	for _, region := range []string{"region-2", "region-3"} {
 		require.Equal(t, map[string]schema.Role{
 			"gateway/api":      schema.RoleActive,
 			"zone/example_com": schema.RoleNeeded,
+			"tunnel/to_eu":     schema.RoleFollows,
 		}, rolesByName(t, views[region]), region)
 		require.Equal(t, map[string][]string{api: {"region-1"}}, views[region].Remote, region)
 	}
 
-	// ONLY THE ROUTE'S HANDLER CROSSES: a guard asked about every request is not carried.
+	// ONLY WHAT THE TUNNEL NAMES GOES THROUGH: a guard it does not name is refused.
 	docs["/namespace/eu/function/auth.yaml"] = viewFunction("auth", "implements: http-authorizer\n")
 	docs["/package/auth_code.yaml"] = viewPackage("auth")
 	docs["/gateway/api.yaml"] = viewGatewayIn("api", "/eu", "authorizer:\n    namespace: /eu\n    name: auth\n")
@@ -353,15 +369,16 @@ func TestAGatewayRouteReachesItsHandlerAcrossRegions(t *testing.T) {
 
 // A proxy has no footprint: it is held where what it reaches is, and what it reaches
 // here shares no region.
-// AN ORIGIN THAT FAILS OVER is reached where it serves: the edge in its standby
-// region is told where its primary is, rather than refused.
-func TestAGatewayReachesAnOriginThatFailsOver(t *testing.T) {
+// A HANDLER THAT FAILS OVER is reached where it serves: the edge in its standby
+// region is told, through the tunnel, where its primary is, rather than refused.
+func TestAGatewayReachesAHandlerThatFailsOverThroughATunnel(t *testing.T) {
 	docs := map[string]string{
 		"/project.yaml":                   regionsProject + regionsBlock("active", "[region-1, region-2]") + everyBranch,
 		"/namespace/eu/function/api.yaml": viewFunction("api", ""),
 		"/package/api_code.yaml":          viewPackage("api"),
 		"/gateway/api.yaml":               viewGatewayIn("api", "/eu", ""),
 		"/zone/example_com.yaml":          viewZone,
+		"/tunnel/to_eu.yaml":              tunnelTo("to_eu", "/eu", "function", "api"),
 	}
 	viewNamespace(docs, "eu", "failover", "[region-1, region-2]")
 	views, findings, err := viewsOf(t, several{"region-1", "region-2"}, docs)

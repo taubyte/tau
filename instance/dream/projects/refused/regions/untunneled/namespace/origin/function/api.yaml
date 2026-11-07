@@ -1,0 +1,8 @@
+id: QmPjgiv816ygGgxYKEFHhDoabVar1Cv6CAQvEa8aFubUtG
+description: echoes what it was asked, so a kept answer shows the request that filled it
+package:
+    name: hello_code
+execution:
+    call: handle
+    timeout: 15s
+    memory: 32MB

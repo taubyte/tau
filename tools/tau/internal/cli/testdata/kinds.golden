@@ -18,6 +18,7 @@ kinds
   storage
   stream
   sync
+  tunnel
   volume
   website
   worker

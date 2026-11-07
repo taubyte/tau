@@ -62,6 +62,8 @@ var (
 
 	proxyCertScopeConsumed = excuse{handled, "the namespace half of a proxy's certificate secret. The compile resolved the name beside it to the secret's ID."}
 
+	tunnelScopeConsumed = excuse{handled, "the namespace a tunnel leads to. The views resolve each name the tunnel lets through in it, and what it opens reaches the region as the routing table's remote lines."}
+
 	deadLetterScopeConsumed = excuse{handled, "the namespace half of a dead-letter reference. The compile resolved the name to another queue's ID, so the scope was consumed resolving it."}
 
 	streamingStorageRefused = excuse{handled, "the lifetime of a streaming storage's entries. worker refuses any storage whose type is not `object` by name (unservableKind), so this branch's only field is never served weaker than written — it is never served."}
@@ -97,6 +99,7 @@ var unread = map[string]excuse{
 	"secret/rotation": advisoryRotation,
 
 	"sync/queue/dead_letter/namespace":   deadLetterScopeConsumed,
+	"tunnel/to":                          tunnelScopeConsumed,
 	"proxy/certificate/secret/namespace": proxyCertScopeConsumed,
 
 	"cache/replicated":      replicationRaftOnly,

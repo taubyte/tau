@@ -139,6 +139,7 @@ func Audit(obj map[string]any, r Resolver, opts ...AuditOption) []Finding {
 	out = append(out, checkDatabaseOps(all)...)
 	out = append(out, checkWorkflows(all)...)
 	out = append(out, checkRegions(root, all, in)...)
+	out = append(out, checkOpenings(all)...)
 	// The record of what the compile produced sits BESIDE the project, so it is read
 	// from the object rather than from the project inside it.
 	out = append(out, checkAuthoredBuiltins(interp.LoweredOf(obj), all)...)
@@ -1518,6 +1519,51 @@ func checkAuthoredBuiltins(low interp.Lowered, all []compiled) []Finding {
 			fmt.Sprintf("names the built-in program %q, which is not an author's to name", name),
 			"`source: {builtin: …}` is how a lowering says a workload's code is the platform's own — the agent loop, a workflow's step driver. The set is closed by what the runtime ships, so a resource somebody wrote can only name something that is not there. Point the package's `source` at this repository, a git URL or an image.",
 			res.id})
+	}
+	return out
+}
+
+// checkOpenings: what a tunnel lets through has to be where it leads. One naming
+// nothing there opens nothing, and reads as if it did.
+func checkOpenings(all []compiled) []Finding {
+	find := finder(all)
+	var out []Finding
+	for _, ref := range References() {
+		if !ref.Opens {
+			continue
+		}
+		for _, res := range all {
+			if res.kind != ref.On {
+				continue
+			}
+			entries := []entry{{fields: res.fields}}
+			if ref.In != "" {
+				entries = entriesOf(res, ref.In)
+			}
+			for _, e := range entries {
+				name, _ := fieldValue(e.fields, ref.Field).(string)
+				kind := ref.Kind
+				if ref.KindFrom != "" {
+					kind, _ = fieldValue(e.fields, ref.KindFrom).(string)
+				}
+				held := e.fields
+				if ref.HeldNamespace {
+					held = res.fields
+				}
+				ns := ""
+				if ref.Namespace != "" {
+					ns, _ = fieldValue(held, ref.Namespace).(string)
+				}
+				if name == "" || kind == "" {
+					continue
+				}
+				if _, ok := find(kind, name, res.scope, ns); !ok {
+					out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+						fmt.Sprintf("lets through %s/%s, which %s does not have", kind, name, ns),
+						"A tunnel lets through what is in the namespace it leads to, by name. This one names nothing there, so it opens nothing.", res.id})
+				}
+			}
+		}
 	}
 	return out
 }

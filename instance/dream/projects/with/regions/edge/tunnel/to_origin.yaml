@@ -1,0 +1,6 @@
+id: QmQup9zq8xxQiVYYD7xHtFKGEx6Be8cjvyr7r8c6gALArj
+description: lets the edge reach its origin from region-2, where the origin does not run
+to: /origin
+through:
+    - kind: function
+      name: api

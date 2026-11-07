@@ -1,0 +1,9 @@
+id: QmW4G8nakoZXYbUZq6yj2A81MCcU5zTA9npgLp6MpNXgK8
+name: untunneled
+description: the edge with no tunnel to its origin - region-2 reaches a handler that does not run there, and nothing lets it through
+regions:
+    topology: active
+    in: [region-1, region-2]
+environments:
+    prod:
+        branches: ["*"]

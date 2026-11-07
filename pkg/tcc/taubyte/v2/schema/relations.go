@@ -56,8 +56,9 @@ func Relations(obj map[string]any) []Relation {
 type declared struct {
 	Relation
 	turned bool
-	// origin is a handoff its declarer may make from a region the target is not in.
-	origin bool
+	// opens: the declarer reaches nothing; what is in its scope may reach the target
+	// from a region the target is not in.
+	opens bool
 }
 
 // By is the resource that declared the relation, Of the one it names.
@@ -76,24 +77,11 @@ func (d declared) Of() string {
 }
 
 func declaredRelations(all []compiled) []declared {
-
-	// what exists, by kind and scope, so a name can be looked up the way the compiler
-	// looks one up
-	byName := map[string]compiled{}
 	byID := map[string]compiled{}
 	for _, res := range all {
-		byName[res.kind+"\x00"+res.scope+"\x00"+res.name] = res
 		byID[res.id] = res
 	}
-	// own is where the reference was written, ns what it said about where to look.
-	find := func(kind, name, own, ns string) (compiled, bool) {
-		for _, scope := range scopeChain(own, ns) {
-			if r, ok := byName[kind+"\x00"+scope+"\x00"+name]; ok {
-				return r, true
-			}
-		}
-		return compiled{}, false
-	}
+	find := finder(all)
 
 	var out []declared
 	for _, res := range all {
@@ -111,6 +99,23 @@ func declaredRelations(all []compiled) []declared {
 		return out[i].Verb < out[j].Verb
 	})
 	return out
+}
+
+// finder looks a name up the way the compiler does: own is where the reference was
+// written, ns what it said about where to look.
+func finder(all []compiled) func(kind, name, own, ns string) (compiled, bool) {
+	byName := map[string]compiled{}
+	for _, res := range all {
+		byName[res.kind+"\x00"+res.scope+"\x00"+res.name] = res
+	}
+	return func(kind, name, own, ns string) (compiled, bool) {
+		for _, scope := range scopeChain(own, ns) {
+			if r, ok := byName[kind+"\x00"+scope+"\x00"+name]; ok {
+				return r, true
+			}
+		}
+		return compiled{}, false
+	}
 }
 
 // accessRelations: what a resource asked to do to another, one per verb. An
@@ -228,7 +233,11 @@ func resolveReference(res compiled, from map[string]any, ref Reference, byID map
 	if ref.Namespace != "" {
 		// the sibling holding the namespace is addressed by its key too —
 		// `authorizer/namespace` is two levels, not a flat entry
-		ns, _ = fieldValue(from, ref.Namespace).(string)
+		held := from
+		if ref.HeldNamespace {
+			held = res.fields
+		}
+		ns, _ = fieldValue(held, ref.Namespace).(string)
 	}
 	to, found := find(kind, val, res.scope, ns)
 	if !found {
@@ -240,7 +249,7 @@ func resolveReference(res compiled, from map[string]any, ref Reference, byID map
 	if ref.Serves {
 		class, verb = Handoff, "serves"
 	}
-	r := declared{Relation: Relation{From: res.id, To: to.id, Kind: kind, Verb: verb, Class: class}, origin: ref.Origin}
+	r := declared{Relation: Relation{From: res.id, To: to.id, Kind: kind, Verb: verb, Class: class}, opens: ref.Opens}
 	// Direction belongs to the reference, however its value is stored.
 	if ref.Inbound {
 		r.From, r.To, r.turned = to.id, res.id, true

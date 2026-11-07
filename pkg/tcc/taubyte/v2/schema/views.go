@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/taubyte/tau/pkg/tcc/interp"
 )
@@ -14,9 +15,9 @@ import (
 // no footprint follows what it reaches; a zone nothing ties down is in every view.
 // Where something serves, what it reaches serves too: an edge to a resource held
 // only in another region, or only standing by in this one, is Broken, never stubbed
-// or dropped — except an origin, which a request is carried to wherever it serves
-// and the view names as Remote. Every served region gets a view, even empty; asking for an unserved
-// one is an error.
+// or dropped — unless a tunnel opens it, and the view names the target as Remote.
+// Every served region gets a view, even empty; asking for an unserved one is an
+// error.
 
 // Role is how a resource is held in one region.
 type Role string
@@ -58,9 +59,9 @@ type View struct {
 	Object map[string]any
 	// Roles is how each resource the view holds is in this region, by compiled id.
 	Roles map[string]Role
-	// Remote is every origin reached from here that does not serve here, by compiled
-	// id: the regions it is held in, in its namespace's order — a failover's primary
-	// first.
+	// Remote is everything reached from here through a tunnel that does not serve
+	// here, by compiled id: the regions it is held in, in its namespace's order — a
+	// failover's primary first.
 	Remote map[string][]string
 }
 
@@ -125,8 +126,8 @@ type Plan struct {
 	// Roles is, per destination, every resource held there by its own placement or
 	// for what it reaches — not the scopes, which the projection keeps on its own.
 	Roles map[string]map[string]Role
-	// Remote is, per destination, every origin reached from there that does not
-	// serve there, with the regions it is held in.
+	// Remote is, per destination, everything reached from there through a tunnel
+	// that does not serve there, with the regions it is held in.
 	Remote map[string]map[string][]string
 	// Findings is the placement half of the audit and every edge refused for crossing
 	// regions.
@@ -169,16 +170,25 @@ func PlanViews(obj map[string]any, opts ...AuditOption) Plan {
 		}
 	}
 
+	// OPENED: a tunnel reaches nothing itself. What is in its scope may reach what it
+	// opens from a region that does not hold it.
 	needs := map[string][]string{}
-	origins := map[string]bool{}
+	opened := map[string][]string{}
 	for _, d := range declaredRelations(all) {
 		by, of := d.By(), d.Of()
+		if d.opens {
+			opened[of] = append(opened[of], byID[by].scope)
+			continue
+		}
 		if by != of && !slices.Contains(needs[by], of) {
 			needs[by] = append(needs[by], of)
 		}
-		if d.origin {
-			origins[by+"\x00"+of] = true
-		}
+	}
+	tunneled := func(from, to string) bool {
+		scope := byID[from].scope
+		return slices.ContainsFunc(opened[to], func(s string) bool {
+			return s == "" || s == scope || strings.HasPrefix(scope, s+"/")
+		})
 	}
 	for _, list := range needs {
 		sort.Strings(list)
@@ -220,7 +230,7 @@ func PlanViews(obj map[string]any, opts ...AuditOption) Plan {
 	}
 	notHere := func(from, to compiled, region string) {
 		refuse(from, to, region, fmt.Sprintf("reaches %s/%s, which does not run in %q where this does", to.kind, to.name, region),
-			"A resource runs where its namespace does, and nothing reaches across regions but a gateway's route to its handler. Run both namespaces where they meet, or move one into the other's.")
+			"A resource runs where its namespace does, and nothing reaches across regions but through a tunnel. Open one from this namespace to that one, through what this reaches, or run both namespaces where they meet.")
 	}
 	standing := func(from, to compiled, region string) {
 		refuse(from, to, region, fmt.Sprintf("reaches %s/%s, which only stands by in %q where this serves", to.kind, to.name, region),
@@ -255,7 +265,7 @@ func PlanViews(obj map[string]any, opts ...AuditOption) Plan {
 				if hasFootprint[next] {
 					role, held := roles[next]
 					switch {
-					case origins[cur+"\x00"+next] && (!held || !role.Serves()):
+					case (!held || !role.Serves()) && tunneled(cur, next):
 						if plan.Remote[region] == nil {
 							plan.Remote[region] = map[string][]string{}
 						}
@@ -326,7 +336,7 @@ func PlanViews(obj map[string]any, opts ...AuditOption) Plan {
 		if !held && len(plan.Destinations) > 0 && !meetElsewhere(reachedPlaced(res.id), answers, plan.Destinations) {
 			plan.Findings = append(plan.Findings, Finding{Broken, res.kind, res.name, res.scope,
 				"reaches resources placed in no one region together",
-				"It has no placement of its own, so it is held where what it reaches is; what it reaches shares no region, and nothing reaches across regions.", res.id})
+				"It has no placement of its own, so it is held where what it reaches is; what it reaches shares no region, and nothing reaches across regions but through a tunnel.", res.id})
 		}
 	}
 

@@ -1,0 +1,6 @@
+id: QmYLsYA6BuCMY4WzrWMzhSu8b8HpjfxLZoEPucwL7aRQBw
+name: tunnel
+description: a function in region-2 reaching a cache kept only in region-1, through a tunnel from its namespace that lets that cache through and nothing else
+environments:
+    prod:
+        branches: ["*"]

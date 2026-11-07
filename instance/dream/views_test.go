@@ -73,7 +73,7 @@ func TestEachRegionServesItsOwnView(t *testing.T) {
 
 	r1, _ := inRegion(t, "region-1", "with/views")
 	held, _ := viewHeld(t, r1, "region-1")
-	require.Equal(t, map[string]bool{"function/hello": true, "package/hello_code": true, "gateway/regional": true, "zone/example_com": true, "cache/sessions": true}, held)
+	require.Equal(t, map[string]bool{"function/hello": true, "package/hello_code": true, "gateway/regional": true, "zone/example_com": true, "cache/sessions": true, "tunnel/to_eu": true}, held)
 
 	var said string
 	require.Eventually(t, func() bool {
@@ -88,7 +88,7 @@ func TestEachRegionServesItsOwnView(t *testing.T) {
 	r2, u2 := inRegion(t, "region-2", "with/views")
 	r2Node := r2.node
 	held, _ = viewHeld(t, r2, "region-2")
-	require.Equal(t, map[string]bool{"gateway/regional": true, "zone/example_com": true, "cache/sessions": true}, held)
+	require.Equal(t, map[string]bool{"gateway/regional": true, "zone/example_com": true, "cache/sessions": true, "tunnel/to_eu": true}, held)
 	require.Eventually(t, func() bool {
 		got := r2.ask(t, http.MethodGet, "/")
 		said = got.Body.String()
@@ -108,7 +108,7 @@ func TestEachRegionServesItsOwnView(t *testing.T) {
 	build(t, u2, r2.project, later, built)
 	held, revision := viewHeld(t, r2, "region-2")
 	require.EqualValues(t, 2, revision)
-	require.Equal(t, map[string]bool{"gateway/regional": true, "zone/example_com": true}, held)
+	require.Equal(t, map[string]bool{"gateway/regional": true, "zone/example_com": true, "tunnel/to_eu": true}, held)
 }
 
 func TestAProjectReachingAcrossRegionsIsRefused(t *testing.T) {

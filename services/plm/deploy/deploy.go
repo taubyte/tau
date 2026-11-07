@@ -444,8 +444,8 @@ func (d *Deploy) cut(flat map[string]any, environment string, out run.Output) ([
 	return cut, nil
 }
 
-// remoteIn is what v's routes reach elsewhere, named as a route names a handler: the
-// view keys it by compiled id, and a route by kind, namespace and name.
+// remoteIn is what v reaches elsewhere through a tunnel, named as a reference names
+// it: the view keys it by compiled id, and a reference by kind, namespace and name.
 func remoteIn(v schema.View, resources []schema.Instance) []register.Remote {
 	var out []register.Remote
 	for _, r := range resources {

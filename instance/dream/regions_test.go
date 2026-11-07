@@ -126,7 +126,7 @@ func TestAnEdgeKeepsWhatItsOriginAnswered(t *testing.T) {
 	views, findings, err := schema.Views(flat, schema.WithRegions(schema.Preview("region-1", "region-2")))
 	require.NoError(t, err, "%v", findings)
 	require.Empty(t, views["region-1"].Remote)
-	require.Len(t, views["region-2"].Remote, 1, "region-2 is told where the origin runs")
+	require.Len(t, views["region-2"].Remote, 1, "region-2 is told where the origin its tunnel lets through runs")
 	for _, regions := range views["region-2"].Remote {
 		require.Equal(t, []string{"region-1"}, regions)
 	}
@@ -154,7 +154,7 @@ func TestAnEdgeKeepsWhatItsOriginAnswered(t *testing.T) {
 	// REGION-2 ANSWERS THE NAME and holds no origin: the route is refused by name.
 	r2, _ := inRegionAt(t, "region-2", "with/regions/edge", "www.example.com")
 	held, _ := viewHeld(t, r2, "region-2")
-	require.Equal(t, map[string]bool{"gateway/www": true, "zone/example_com": true}, held)
+	require.Equal(t, map[string]bool{"gateway/www": true, "zone/example_com": true, "tunnel/to_origin": true}, held)
 	var said string
 	require.Eventually(t, func() bool {
 		got := askHeaders(t, r2, "/", "Accept-Language", "fr")
@@ -164,20 +164,50 @@ func TestAnEdgeKeepsWhatItsOriginAnswered(t *testing.T) {
 	require.Contains(t, said, "this route's handler runs in another region")
 }
 
+// A TUNNEL LETS THROUGH WHAT IT NAMES, whatever its kind: the reader in region-2
+// reaches region-1's cache because the tunnel from its namespace names that cache.
+func TestATunnelLetsThroughWhatItNames(t *testing.T) {
+	flat := compiledCorpus(t, "with/regions/tunnel")
+	views, findings, err := schema.Views(flat, schema.WithRegions(threeRegions))
+	require.NoError(t, err, "%v", findings)
+
+	cache := idOf(t, flat, "cache", "sessions_r1")
+	require.Equal(t, map[string][]string{cache: {"region-1"}}, views["region-2"].Remote)
+	require.Empty(t, views["region-1"].Remote, "the cache runs where it is reached from")
+	require.Contains(t, views["region-2"].Roles, idOf(t, flat, "tunnel", "to_eu"), "the region reaching through holds the tunnel")
+}
+
+// idOf is the compiled id of the one resource of kind called name.
+func idOf(t *testing.T, flat map[string]any, kind, name string) string {
+	t.Helper()
+	for _, res := range schema.Resources(flat) {
+		if res.Kind == kind && res.Name == name {
+			return res.ID
+		}
+	}
+	t.Fatalf("no %s/%s", kind, name)
+	return ""
+}
+
 func TestARegionConstraintIsRefused(t *testing.T) {
-	for name, want := range map[string]string{
-		"refused/regions/widen":       `namespace/eu: runs in region "region-3", which the scope above it does not`,
-		"refused/regions/unsaid":      "project/unsaid: runs in 2 regions and does not say how",
-		"refused/regions/single":      "project/single: is single and runs in 2 regions",
-		"refused/regions/failoverone": "project/failoverone: fails over with one region",
-		"refused/regions/standby":     `function/api: reaches cache/sessions, which only stands by in "region-2" where this serves`,
-		"refused/regions/order":       `function/api: reaches cache/sessions, which only stands by in "region-1" where this serves`,
-		"refused/regions/guard":       `gateway/www: reaches function/doorman, which does not run in "region-2" where this does`,
+	for name, want := range map[string][]string{
+		"refused/regions/widen":       {`namespace/eu: runs in region "region-3", which the scope above it does not`},
+		"refused/regions/unsaid":      {"project/unsaid: runs in 2 regions and does not say how"},
+		"refused/regions/single":      {"project/single: is single and runs in 2 regions"},
+		"refused/regions/failoverone": {"project/failoverone: fails over with one region"},
+		"refused/regions/standby":     {`function/api: reaches cache/sessions, which only stands by in "region-2" where this serves`},
+		"refused/regions/order":       {`function/api: reaches cache/sessions, which only stands by in "region-1" where this serves`},
+		"refused/regions/guard":       {`gateway/www: reaches function/doorman, which does not run in "region-2" where this does`},
+		"refused/regions/untunneled":  {`gateway/www: reaches function/api, which does not run in "region-2" where this does`},
+		"refused/regions/missing": {
+			"tunnel/to_eu: lets through cache/nowhere, which /eu does not have",
+			`function/reader: reaches cache/sessions_r1, which does not run in "region-2" where this does`,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, findings, err := schema.Views(compiledCorpus(t, name), schema.WithRegions(threeRegions))
 			require.ErrorIs(t, err, schema.ErrUnviewable)
-			require.Equal(t, []string{want}, titled(findings, schema.Broken))
+			require.ElementsMatch(t, want, titled(findings, schema.Broken))
 		})
 	}
 }

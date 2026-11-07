@@ -1,0 +1,6 @@
+id: QmQup9zq8xxQiVYYD7xHtFKGEx6Be8cjvyr7r8c6gALArj
+description: lets the handler through from region-2, and not the guard
+to: /origin
+through:
+    - kind: function
+      name: api

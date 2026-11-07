@@ -175,6 +175,12 @@ export class Session {
   proxyNames(app?: string): Promise<string[]> {
     return this.binding.list(this.handle, app ? ["namespace", app, "proxy"] : ["proxy"]);
   }
+  tunnel(name: string, app?: string): TunnelConfig {
+    return new TunnelConfig(this, name, app);
+  }
+  tunnelNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "tunnel"] : ["tunnel"]);
+  }
   stream(name: string, app?: string): StreamConfig {
     return new StreamConfig(this, name, app);
   }
@@ -3266,6 +3272,63 @@ export class ProxyConfig extends ResourceConfig {
   }
 }
 
+/** Typed accessors for a tunnel's config. */
+export class TunnelConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["namespace", app, "tunnel", name] : ["tunnel", name]);
+  }
+
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  async to(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["to"])) as string | undefined;
+  }
+  setTo(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["to"], v);
+  }
+  unsetTo(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["to"]);
+  }
+}
+
 /** Typed accessors for a stream's config. */
 export class StreamConfig extends ResourceConfig {
   constructor(s: Session, name: string, app?: string) {
@@ -4669,6 +4732,15 @@ export interface Proxy {
   burst?: number;
   concurrent?: number;
   key?: ProxyKey;
+}
+
+/** Tunnel as decoded from the compiled config object. */
+export interface Tunnel {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  to?: string;
 }
 
 /** Stream as decoded from the compiled config object. */

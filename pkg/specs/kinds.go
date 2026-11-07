@@ -34,6 +34,7 @@ const (
 	KindZone         = "zone"
 	KindGateway      = "gateway"
 	KindProxy        = "proxy"
+	KindTunnel       = "tunnel"
 	KindStream       = "stream"
 	KindBus          = "bus"
 	KindMcp          = "mcp"
@@ -2184,6 +2185,72 @@ const (
 	ProxyTlsModeTerminate = "terminate"
 )
 
+// Tunnel is that kind, read from a compiled object.
+type Tunnel struct {
+	Description string
+	Id          string
+	Name        string
+	Tags        []string
+	Through     []TunnelThroughEntry
+	To          string
+}
+
+// ReadTunnel decodes one from a resource.
+func ReadTunnel(r Resource) Tunnel {
+	var out Tunnel
+	out.Description = r.String("description")
+	out.Id = r.String("id")
+	out.Name = r.String("name")
+	out.Tags = r.Strings("tags")
+	for _, e := range r.List("through") {
+		out.Through = append(out.Through, ReadTunnelThroughEntry(e))
+	}
+	out.To = r.String("to")
+	return out
+}
+
+// Tunnel's keys, and the values its fields may hold.
+const (
+	TunnelKeyDescription = "description"
+	TunnelKeyId          = "id"
+	TunnelKeyName        = "name"
+	TunnelKeyTags        = "tags"
+	TunnelKeyThrough     = "through"
+	TunnelKeyTo          = "to"
+)
+
+// TunnelThroughEntry is one entry of "through" in Tunnel, in the order written.
+type TunnelThroughEntry struct {
+	Kind string
+	Name string
+}
+
+// ReadTunnelThroughEntry decodes one from a resource.
+func ReadTunnelThroughEntry(r Resource) TunnelThroughEntry {
+	var out TunnelThroughEntry
+	out.Kind = r.String("kind")
+	out.Name = r.String("name")
+	return out
+}
+
+// TunnelThroughEntry's keys, and the values its fields may hold.
+const (
+	TunnelThroughEntryKeyKind         = "kind"
+	TunnelThroughEntryKeyName         = "name"
+	TunnelThroughEntryKindAgent       = "agent"
+	TunnelThroughEntryKindApplication = "application"
+	TunnelThroughEntryKindCache       = "cache"
+	TunnelThroughEntryKindDatabase    = "database"
+	TunnelThroughEntryKindFunction    = "function"
+	TunnelThroughEntryKindGateway     = "gateway"
+	TunnelThroughEntryKindSandbox     = "sandbox"
+	TunnelThroughEntryKindStorage     = "storage"
+	TunnelThroughEntryKindSync        = "sync"
+	TunnelThroughEntryKindVolume      = "volume"
+	TunnelThroughEntryKindWorker      = "worker"
+	TunnelThroughEntryKindWorkflow    = "workflow"
+)
+
 // Stream is that kind, read from a compiled object.
 type Stream struct {
 	Authorizer  Authorizer
@@ -3033,6 +3100,7 @@ var Readers = map[string]func(Resource) any{
 	"zone":         func(r Resource) any { return ReadZone(r) },
 	"gateway":      func(r Resource) any { return ReadGateway(r) },
 	"proxy":        func(r Resource) any { return ReadProxy(r) },
+	"tunnel":       func(r Resource) any { return ReadTunnel(r) },
 	"stream":       func(r Resource) any { return ReadStream(r) },
 	"bus":          func(r Resource) any { return ReadBus(r) },
 	"mcp":          func(r Resource) any { return ReadMcp(r) },

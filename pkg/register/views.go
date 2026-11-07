@@ -50,12 +50,12 @@ const (
 type View struct {
 	Destination string
 	Compiled    []byte
-	// Remote is every handler a route there reaches and only another region runs.
+	// Remote is everything reached there through a tunnel that only other regions run.
 	Remote []Remote
 }
 
-// Remote is a handler a destination's routes reach that only other regions run, and
-// those regions, in the order its namespace names them: a failover's primary first.
+// Remote is what a destination reaches through a tunnel that only other regions run,
+// and those regions, in the order its namespace names them: a failover's primary first.
 type Remote struct {
 	Kind, Name string
 	// Scope is the namespace path it is declared in, "" at the root.
@@ -63,7 +63,8 @@ type Remote struct {
 	In    []string
 }
 
-// Routing is what one destination's routes reach elsewhere, under one release.
+// Routing is what one destination reaches elsewhere through its tunnels, under one
+// release.
 type Routing struct {
 	// Release is the whole compiled object, the one thing every region a deploy
 	// published to holds the same of it.

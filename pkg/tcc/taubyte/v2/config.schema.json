@@ -10048,7 +10048,7 @@
           "x-tau-section": "handler"
         },
         "route/handler/name": {
-          "description": "The handler resource's name within that namespace. It may run in fewer regions than this gateway: a request is carried to it from where it is not.",
+          "description": "The handler resource's name within that namespace. Where it runs in fewer regions than this gateway, a tunnel has to let it through.",
           "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
           "title": "Name",
           "type": "string",
@@ -13343,6 +13343,13 @@
             "$ref": "#/$defs/Proxy"
           },
           "description": "Map of name -> Proxy (authored under proxy/<name>.yaml).",
+          "type": "object"
+        },
+        "tunnel": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Tunnel"
+          },
+          "description": "Map of name -> Tunnel (authored under tunnel/<name>.yaml).",
           "type": "object"
         },
         "stream": {
@@ -22013,6 +22020,961 @@
         }
       ]
     },
+    "Tunnel": {
+      "description": "A way between two namespaces, and what goes through it. Nothing reaches across regions otherwise, and a tunnel lets through only what it lists.",
+      "properties": {
+        "id": {
+          "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
+          "format": "cid",
+          "readOnly": true,
+          "title": "ID",
+          "type": "string",
+          "x-tau-generated": "cid",
+          "x-tau-section": "identity"
+        },
+        "name": {
+          "description": "Unique resource name within its scope. Must be a valid variable name.",
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "title": "Name",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "description": {
+          "description": "Free-form, human-readable description of this resource.",
+          "title": "Description",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "tags": {
+          "description": "Arbitrary labels for organizing and filtering this resource.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array",
+          "x-tau-section": "identity"
+        },
+        "to": {
+          "description": "The namespace at the other end, e.g. \"/billing\". What is in this tunnel's scope may reach what is listed below in it, from a region it does not run in.",
+          "pattern": "^(|/|/?[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*)$",
+          "title": "To",
+          "type": "string",
+          "x-tau-section": "tunnel"
+        },
+        "through": {
+          "description": "What goes through: resources of the namespace at the other end.",
+          "items": {
+            "description": "What goes through: resources of the namespace at the other end.",
+            "properties": {
+              "kind": {
+                "description": "The kind of what goes through.",
+                "enum": [
+                  "agent",
+                  "application",
+                  "cache",
+                  "database",
+                  "function",
+                  "gateway",
+                  "sandbox",
+                  "storage",
+                  "sync",
+                  "volume",
+                  "worker",
+                  "workflow"
+                ],
+                "title": "Kind",
+                "type": "string",
+                "x-tau-section": "tunnel"
+              },
+              "name": {
+                "description": "Its name, in the namespace the tunnel leads to.",
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                "title": "Name",
+                "type": "string",
+                "x-tau-ref": {
+                  "group": "",
+                  "kind-from": "kind"
+                },
+                "x-tau-section": "tunnel"
+              }
+            },
+            "required": [
+              "kind",
+              "name"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "function": {
+          "additionalProperties": {
+            "description": "A function this resource reaches, and what it may do to it.",
+            "properties": {
+              "name": {
+                "description": "The target's real name, when it differs from the label above — only needed to reach two resources that share a name in different namespaces. Omitted means the label above is the name.",
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                "title": "Name",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "namespace": {
+                "description": "Where it lives. \"/billing\" is absolute, from the project root; \"eu\" is relative to this resource's own namespace (or the root, for a resource at the root). Omitted means this resource's own scope, then its parents.",
+                "pattern": "^(|/|/?[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*)$",
+                "title": "Namespace",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "ops": {
+                "description": "What this resource asks to do to it: invoke. The target decides what it actually gets — see that resource's authorizer.",
+                "items": {
+                  "enum": [
+                    "invoke"
+                  ],
+                  "type": "string"
+                },
+                "title": "Ops",
+                "type": "array",
+                "x-tau-section": "access"
+              },
+              "timeout": {
+                "description": "How long one operation on it may take before it is given up on.",
+                "pattern": "^[-+]?(([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$",
+                "title": "Timeout",
+                "type": "string",
+                "x-tau-scalar": "duration",
+                "x-tau-section": "access"
+              }
+            },
+            "required": [
+              "ops"
+            ],
+            "type": "object"
+          },
+          "description": "A function this resource reaches, and what it may do to it.",
+          "type": "object"
+        },
+        "worker": {
+          "additionalProperties": {
+            "description": "A worker this resource reaches, and what it may do to it.",
+            "properties": {
+              "name": {
+                "description": "The target's real name, when it differs from the label above — only needed to reach two resources that share a name in different namespaces. Omitted means the label above is the name.",
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                "title": "Name",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "namespace": {
+                "description": "Where it lives. \"/billing\" is absolute, from the project root; \"eu\" is relative to this resource's own namespace (or the root, for a resource at the root). Omitted means this resource's own scope, then its parents.",
+                "pattern": "^(|/|/?[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*)$",
+                "title": "Namespace",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "ops": {
+                "description": "What this resource asks to do to it: invoke. The target decides what it actually gets — see that resource's authorizer.",
+                "items": {
+                  "enum": [
+                    "invoke"
+                  ],
+                  "type": "string"
+                },
+                "title": "Ops",
+                "type": "array",
+                "x-tau-section": "access"
+              },
+              "timeout": {
+                "description": "How long one operation on it may take before it is given up on.",
+                "pattern": "^[-+]?(([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$",
+                "title": "Timeout",
+                "type": "string",
+                "x-tau-scalar": "duration",
+                "x-tau-section": "access"
+              }
+            },
+            "required": [
+              "ops"
+            ],
+            "type": "object"
+          },
+          "description": "A worker this resource reaches, and what it may do to it.",
+          "type": "object"
+        },
+        "sandbox": {
+          "additionalProperties": {
+            "description": "A sandbox this resource reaches, and what it may do to it.",
+            "properties": {
+              "name": {
+                "description": "The target's real name, when it differs from the label above — only needed to reach two resources that share a name in different namespaces. Omitted means the label above is the name.",
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                "title": "Name",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "namespace": {
+                "description": "Where it lives. \"/billing\" is absolute, from the project root; \"eu\" is relative to this resource's own namespace (or the root, for a resource at the root). Omitted means this resource's own scope, then its parents.",
+                "pattern": "^(|/|/?[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*)$",
+                "title": "Namespace",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "ops": {
+                "description": "What this resource asks to do to it: exec, read, write. The target decides what it actually gets — see that resource's authorizer.",
+                "items": {
+                  "enum": [
+                    "exec",
+                    "read",
+                    "write"
+                  ],
+                  "type": "string"
+                },
+                "title": "Ops",
+                "type": "array",
+                "x-tau-section": "access"
+              },
+              "timeout": {
+                "description": "How long one operation on it may take before it is given up on.",
+                "pattern": "^[-+]?(([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$",
+                "title": "Timeout",
+                "type": "string",
+                "x-tau-scalar": "duration",
+                "x-tau-section": "access"
+              }
+            },
+            "required": [
+              "ops"
+            ],
+            "type": "object"
+          },
+          "description": "A sandbox this resource reaches, and what it may do to it.",
+          "type": "object"
+        },
+        "cache": {
+          "additionalProperties": {
+            "description": "A cache this resource reaches, and what it may do to it.",
+            "properties": {
+              "name": {
+                "description": "The target's real name, when it differs from the label above — only needed to reach two resources that share a name in different namespaces. Omitted means the label above is the name.",
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                "title": "Name",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "namespace": {
+                "description": "Where it lives. \"/billing\" is absolute, from the project root; \"eu\" is relative to this resource's own namespace (or the root, for a resource at the root). Omitted means this resource's own scope, then its parents.",
+                "pattern": "^(|/|/?[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*)$",
+                "title": "Namespace",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "ops": {
+                "description": "What this resource asks to do to it: get, list, watch, put, delete. The target decides what it actually gets — see that resource's authorizer.",
+                "items": {
+                  "enum": [
+                    "get",
+                    "list",
+                    "watch",
+                    "put",
+                    "delete"
+                  ],
+                  "type": "string"
+                },
+                "title": "Ops",
+                "type": "array",
+                "x-tau-section": "access"
+              },
+              "timeout": {
+                "description": "How long one operation on it may take before it is given up on.",
+                "pattern": "^[-+]?(([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$",
+                "title": "Timeout",
+                "type": "string",
+                "x-tau-scalar": "duration",
+                "x-tau-section": "access"
+              }
+            },
+            "required": [
+              "ops"
+            ],
+            "type": "object"
+          },
+          "description": "A cache this resource reaches, and what it may do to it.",
+          "type": "object"
+        },
+        "database": {
+          "additionalProperties": {
+            "description": "A database this resource reaches, and what it may do to it.",
+            "properties": {
+              "name": {
+                "description": "The target's real name, when it differs from the label above — only needed to reach two resources that share a name in different namespaces. Omitted means the label above is the name.",
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                "title": "Name",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "namespace": {
+                "description": "Where it lives. \"/billing\" is absolute, from the project root; \"eu\" is relative to this resource's own namespace (or the root, for a resource at the root). Omitted means this resource's own scope, then its parents.",
+                "pattern": "^(|/|/?[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*)$",
+                "title": "Namespace",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "ops": {
+                "description": "What this resource asks to do to it: get, list, watch, put, delete, query, exec, search, upsert. The target decides what it actually gets — see that resource's authorizer.",
+                "items": {
+                  "enum": [
+                    "get",
+                    "list",
+                    "watch",
+                    "put",
+                    "delete",
+                    "query",
+                    "exec",
+                    "search",
+                    "upsert"
+                  ],
+                  "type": "string"
+                },
+                "title": "Ops",
+                "type": "array",
+                "x-tau-section": "access"
+              },
+              "timeout": {
+                "description": "How long one operation on it may take before it is given up on.",
+                "pattern": "^[-+]?(([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$",
+                "title": "Timeout",
+                "type": "string",
+                "x-tau-scalar": "duration",
+                "x-tau-section": "access"
+              }
+            },
+            "required": [
+              "ops"
+            ],
+            "type": "object"
+          },
+          "description": "A database this resource reaches, and what it may do to it.",
+          "type": "object"
+        },
+        "storage": {
+          "additionalProperties": {
+            "description": "A storage this resource reaches, and what it may do to it.",
+            "properties": {
+              "name": {
+                "description": "The target's real name, when it differs from the label above — only needed to reach two resources that share a name in different namespaces. Omitted means the label above is the name.",
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                "title": "Name",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "namespace": {
+                "description": "Where it lives. \"/billing\" is absolute, from the project root; \"eu\" is relative to this resource's own namespace (or the root, for a resource at the root). Omitted means this resource's own scope, then its parents.",
+                "pattern": "^(|/|/?[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*)$",
+                "title": "Namespace",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "ops": {
+                "description": "What this resource asks to do to it: get, list, head, put, delete. The target decides what it actually gets — see that resource's authorizer.",
+                "items": {
+                  "enum": [
+                    "get",
+                    "list",
+                    "head",
+                    "put",
+                    "delete"
+                  ],
+                  "type": "string"
+                },
+                "title": "Ops",
+                "type": "array",
+                "x-tau-section": "access"
+              },
+              "timeout": {
+                "description": "How long one operation on it may take before it is given up on.",
+                "pattern": "^[-+]?(([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$",
+                "title": "Timeout",
+                "type": "string",
+                "x-tau-scalar": "duration",
+                "x-tau-section": "access"
+              }
+            },
+            "required": [
+              "ops"
+            ],
+            "type": "object"
+          },
+          "description": "A storage this resource reaches, and what it may do to it.",
+          "type": "object"
+        },
+        "volume": {
+          "additionalProperties": {
+            "description": "A volume this resource reaches, and what it may do to it.",
+            "properties": {
+              "name": {
+                "description": "The target's real name, when it differs from the label above — only needed to reach two resources that share a name in different namespaces. Omitted means the label above is the name.",
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                "title": "Name",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "namespace": {
+                "description": "Where it lives. \"/billing\" is absolute, from the project root; \"eu\" is relative to this resource's own namespace (or the root, for a resource at the root). Omitted means this resource's own scope, then its parents.",
+                "pattern": "^(|/|/?[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*)$",
+                "title": "Namespace",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "ops": {
+                "description": "What this resource asks to do to it: mount-ro, mount-rw. The target decides what it actually gets — see that resource's authorizer.",
+                "items": {
+                  "enum": [
+                    "mount-ro",
+                    "mount-rw"
+                  ],
+                  "type": "string"
+                },
+                "title": "Ops",
+                "type": "array",
+                "x-tau-section": "access"
+              },
+              "timeout": {
+                "description": "How long one operation on it may take before it is given up on.",
+                "pattern": "^[-+]?(([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$",
+                "title": "Timeout",
+                "type": "string",
+                "x-tau-scalar": "duration",
+                "x-tau-section": "access"
+              },
+              "path": {
+                "description": "Absolute path inside the workload where this filesystem appears, e.g. \"/var/lib/postgresql/data\".",
+                "title": "Mount Path",
+                "type": "string",
+                "x-tau-section": "access"
+              }
+            },
+            "required": [
+              "ops",
+              "path"
+            ],
+            "type": "object"
+          },
+          "description": "A volume this resource reaches, and what it may do to it.",
+          "type": "object"
+        },
+        "secret": {
+          "additionalProperties": {
+            "description": "A secret this resource reaches, and what it may do to it.",
+            "properties": {
+              "name": {
+                "description": "The target's real name, when it differs from the label above — only needed to reach two resources that share a name in different namespaces. Omitted means the label above is the name.",
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                "title": "Name",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "namespace": {
+                "description": "Where it lives. \"/billing\" is absolute, from the project root; \"eu\" is relative to this resource's own namespace (or the root, for a resource at the root). Omitted means this resource's own scope, then its parents.",
+                "pattern": "^(|/|/?[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*)$",
+                "title": "Namespace",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "ops": {
+                "description": "What this resource asks to do to it: get. The target decides what it actually gets — see that resource's authorizer.",
+                "items": {
+                  "enum": [
+                    "get"
+                  ],
+                  "type": "string"
+                },
+                "title": "Ops",
+                "type": "array",
+                "x-tau-section": "access"
+              },
+              "timeout": {
+                "description": "How long one operation on it may take before it is given up on.",
+                "pattern": "^[-+]?(([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$",
+                "title": "Timeout",
+                "type": "string",
+                "x-tau-scalar": "duration",
+                "x-tau-section": "access"
+              }
+            },
+            "required": [
+              "ops"
+            ],
+            "type": "object"
+          },
+          "description": "A secret this resource reaches, and what it may do to it.",
+          "type": "object"
+        },
+        "sync": {
+          "additionalProperties": {
+            "description": "A sync this resource reaches, and what it may do to it.",
+            "properties": {
+              "name": {
+                "description": "The target's real name, when it differs from the label above — only needed to reach two resources that share a name in different namespaces. Omitted means the label above is the name.",
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                "title": "Name",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "namespace": {
+                "description": "Where it lives. \"/billing\" is absolute, from the project root; \"eu\" is relative to this resource's own namespace (or the root, for a resource at the root). Omitted means this resource's own scope, then its parents.",
+                "pattern": "^(|/|/?[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*)$",
+                "title": "Namespace",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "ops": {
+                "description": "What this resource asks to do to it: receive, send, append, read. The target decides what it actually gets — see that resource's authorizer.",
+                "items": {
+                  "enum": [
+                    "receive",
+                    "send",
+                    "append",
+                    "read"
+                  ],
+                  "type": "string"
+                },
+                "title": "Ops",
+                "type": "array",
+                "x-tau-section": "access"
+              },
+              "timeout": {
+                "description": "How long one operation on it may take before it is given up on.",
+                "pattern": "^[-+]?(([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$",
+                "title": "Timeout",
+                "type": "string",
+                "x-tau-scalar": "duration",
+                "x-tau-section": "access"
+              },
+              "deliver": {
+                "properties": {
+                  "port": {
+                    "description": "Which of this workload's own named ports each item is posted to. Containers only: a WASM consumer is dispatched and has no port.",
+                    "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                    "title": "Deliver To Port",
+                    "type": "string",
+                    "x-tau-section": "access"
+                  },
+                  "path": {
+                    "description": "The path each item is posted to, e.g. \"/work\".",
+                    "title": "Deliver To Path",
+                    "type": "string",
+                    "x-tau-section": "access"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "required": [
+              "ops"
+            ],
+            "type": "object"
+          },
+          "description": "A sync this resource reaches, and what it may do to it.",
+          "type": "object"
+        },
+        "stream": {
+          "additionalProperties": {
+            "description": "A stream this resource reaches, and what it may do to it.",
+            "properties": {
+              "name": {
+                "description": "The target's real name, when it differs from the label above — only needed to reach two resources that share a name in different namespaces. Omitted means the label above is the name.",
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                "title": "Name",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "namespace": {
+                "description": "Where it lives. \"/billing\" is absolute, from the project root; \"eu\" is relative to this resource's own namespace (or the root, for a resource at the root). Omitted means this resource's own scope, then its parents.",
+                "pattern": "^(|/|/?[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*)$",
+                "title": "Namespace",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "ops": {
+                "description": "What this resource asks to do to it: subscribe, publish. The target decides what it actually gets — see that resource's authorizer.",
+                "items": {
+                  "enum": [
+                    "subscribe",
+                    "publish"
+                  ],
+                  "type": "string"
+                },
+                "title": "Ops",
+                "type": "array",
+                "x-tau-section": "access"
+              },
+              "timeout": {
+                "description": "How long one operation on it may take before it is given up on.",
+                "pattern": "^[-+]?(([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$",
+                "title": "Timeout",
+                "type": "string",
+                "x-tau-scalar": "duration",
+                "x-tau-section": "access"
+              },
+              "deliver": {
+                "properties": {
+                  "port": {
+                    "description": "Which of this workload's own named ports each item is posted to. Containers only: a WASM consumer is dispatched and has no port.",
+                    "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                    "title": "Deliver To Port",
+                    "type": "string",
+                    "x-tau-section": "access"
+                  },
+                  "path": {
+                    "description": "The path each item is posted to, e.g. \"/work\".",
+                    "title": "Deliver To Path",
+                    "type": "string",
+                    "x-tau-section": "access"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "required": [
+              "ops"
+            ],
+            "type": "object"
+          },
+          "description": "A stream this resource reaches, and what it may do to it.",
+          "type": "object"
+        },
+        "bus": {
+          "additionalProperties": {
+            "description": "A bus this resource reaches, and what it may do to it.",
+            "properties": {
+              "name": {
+                "description": "The target's real name, when it differs from the label above — only needed to reach two resources that share a name in different namespaces. Omitted means the label above is the name.",
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                "title": "Name",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "namespace": {
+                "description": "Where it lives. \"/billing\" is absolute, from the project root; \"eu\" is relative to this resource's own namespace (or the root, for a resource at the root). Omitted means this resource's own scope, then its parents.",
+                "pattern": "^(|/|/?[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*)$",
+                "title": "Namespace",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "ops": {
+                "description": "What this resource asks to do to it: subscribe, publish. The target decides what it actually gets — see that resource's authorizer.",
+                "items": {
+                  "enum": [
+                    "subscribe",
+                    "publish"
+                  ],
+                  "type": "string"
+                },
+                "title": "Ops",
+                "type": "array",
+                "x-tau-section": "access"
+              },
+              "timeout": {
+                "description": "How long one operation on it may take before it is given up on.",
+                "pattern": "^[-+]?(([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$",
+                "title": "Timeout",
+                "type": "string",
+                "x-tau-scalar": "duration",
+                "x-tau-section": "access"
+              },
+              "deliver": {
+                "properties": {
+                  "port": {
+                    "description": "Which of this workload's own named ports each item is posted to. Containers only: a WASM consumer is dispatched and has no port.",
+                    "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                    "title": "Deliver To Port",
+                    "type": "string",
+                    "x-tau-section": "access"
+                  },
+                  "path": {
+                    "description": "The path each item is posted to, e.g. \"/work\".",
+                    "title": "Deliver To Path",
+                    "type": "string",
+                    "x-tau-section": "access"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "required": [
+              "ops"
+            ],
+            "type": "object"
+          },
+          "description": "A bus this resource reaches, and what it may do to it.",
+          "type": "object"
+        },
+        "mcp": {
+          "additionalProperties": {
+            "description": "A mcp this resource reaches, and what it may do to it.",
+            "properties": {
+              "name": {
+                "description": "The target's real name, when it differs from the label above — only needed to reach two resources that share a name in different namespaces. Omitted means the label above is the name.",
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                "title": "Name",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "namespace": {
+                "description": "Where it lives. \"/billing\" is absolute, from the project root; \"eu\" is relative to this resource's own namespace (or the root, for a resource at the root). Omitted means this resource's own scope, then its parents.",
+                "pattern": "^(|/|/?[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*)$",
+                "title": "Namespace",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "ops": {
+                "description": "What this resource asks to do to it: list, call. The target decides what it actually gets — see that resource's authorizer.",
+                "items": {
+                  "enum": [
+                    "list",
+                    "call"
+                  ],
+                  "type": "string"
+                },
+                "title": "Ops",
+                "type": "array",
+                "x-tau-section": "access"
+              },
+              "timeout": {
+                "description": "How long one operation on it may take before it is given up on.",
+                "pattern": "^[-+]?(([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$",
+                "title": "Timeout",
+                "type": "string",
+                "x-tau-scalar": "duration",
+                "x-tau-section": "access"
+              },
+              "tools": {
+                "description": "Which of the server's tools this entry is for, by name. Omitted means every tool it advertises, including ones added later.",
+                "items": {
+                  "type": "string"
+                },
+                "title": "Tools",
+                "type": "array",
+                "x-tau-section": "access"
+              }
+            },
+            "required": [
+              "ops"
+            ],
+            "type": "object"
+          },
+          "description": "A mcp this resource reaches, and what it may do to it.",
+          "type": "object"
+        },
+        "channel": {
+          "additionalProperties": {
+            "description": "A channel this resource reaches, and what it may do to it.",
+            "properties": {
+              "name": {
+                "description": "The target's real name, when it differs from the label above — only needed to reach two resources that share a name in different namespaces. Omitted means the label above is the name.",
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                "title": "Name",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "namespace": {
+                "description": "Where it lives. \"/billing\" is absolute, from the project root; \"eu\" is relative to this resource's own namespace (or the root, for a resource at the root). Omitted means this resource's own scope, then its parents.",
+                "pattern": "^(|/|/?[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*)$",
+                "title": "Namespace",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "ops": {
+                "description": "What this resource asks to do to it: dial. The target decides what it actually gets — see that resource's authorizer.",
+                "items": {
+                  "enum": [
+                    "dial"
+                  ],
+                  "type": "string"
+                },
+                "title": "Ops",
+                "type": "array",
+                "x-tau-section": "access"
+              },
+              "timeout": {
+                "description": "How long one operation on it may take before it is given up on.",
+                "pattern": "^[-+]?(([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$",
+                "title": "Timeout",
+                "type": "string",
+                "x-tau-scalar": "duration",
+                "x-tau-section": "access"
+              }
+            },
+            "required": [
+              "ops"
+            ],
+            "type": "object"
+          },
+          "description": "A channel this resource reaches, and what it may do to it.",
+          "type": "object"
+        },
+        "model": {
+          "additionalProperties": {
+            "description": "A model this resource reaches, and what it may do to it.",
+            "properties": {
+              "name": {
+                "description": "The target's real name, when it differs from the label above — only needed to reach two resources that share a name in different namespaces. Omitted means the label above is the name.",
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                "title": "Name",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "namespace": {
+                "description": "Where it lives. \"/billing\" is absolute, from the project root; \"eu\" is relative to this resource's own namespace (or the root, for a resource at the root). Omitted means this resource's own scope, then its parents.",
+                "pattern": "^(|/|/?[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*)$",
+                "title": "Namespace",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "ops": {
+                "description": "What this resource asks to do to it: infer. The target decides what it actually gets — see that resource's authorizer.",
+                "items": {
+                  "enum": [
+                    "infer"
+                  ],
+                  "type": "string"
+                },
+                "title": "Ops",
+                "type": "array",
+                "x-tau-section": "access"
+              },
+              "timeout": {
+                "description": "How long one operation on it may take before it is given up on.",
+                "pattern": "^[-+]?(([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$",
+                "title": "Timeout",
+                "type": "string",
+                "x-tau-scalar": "duration",
+                "x-tau-section": "access"
+              }
+            },
+            "required": [
+              "ops"
+            ],
+            "type": "object"
+          },
+          "description": "A model this resource reaches, and what it may do to it.",
+          "type": "object"
+        },
+        "agent": {
+          "additionalProperties": {
+            "description": "An agent this resource reaches, and what it may do to it.",
+            "properties": {
+              "name": {
+                "description": "The target's real name, when it differs from the label above — only needed to reach two resources that share a name in different namespaces. Omitted means the label above is the name.",
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                "title": "Name",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "namespace": {
+                "description": "Where it lives. \"/billing\" is absolute, from the project root; \"eu\" is relative to this resource's own namespace (or the root, for a resource at the root). Omitted means this resource's own scope, then its parents.",
+                "pattern": "^(|/|/?[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*)$",
+                "title": "Namespace",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "ops": {
+                "description": "What this resource asks to do to it: invoke. The target decides what it actually gets — see that resource's authorizer.",
+                "items": {
+                  "enum": [
+                    "invoke"
+                  ],
+                  "type": "string"
+                },
+                "title": "Ops",
+                "type": "array",
+                "x-tau-section": "access"
+              },
+              "timeout": {
+                "description": "How long one operation on it may take before it is given up on.",
+                "pattern": "^[-+]?(([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$",
+                "title": "Timeout",
+                "type": "string",
+                "x-tau-scalar": "duration",
+                "x-tau-section": "access"
+              }
+            },
+            "required": [
+              "ops"
+            ],
+            "type": "object"
+          },
+          "description": "An agent this resource reaches, and what it may do to it.",
+          "type": "object"
+        },
+        "workflow": {
+          "additionalProperties": {
+            "description": "A workflow this resource reaches, and what it may do to it.",
+            "properties": {
+              "name": {
+                "description": "The target's real name, when it differs from the label above — only needed to reach two resources that share a name in different namespaces. Omitted means the label above is the name.",
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                "title": "Name",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "namespace": {
+                "description": "Where it lives. \"/billing\" is absolute, from the project root; \"eu\" is relative to this resource's own namespace (or the root, for a resource at the root). Omitted means this resource's own scope, then its parents.",
+                "pattern": "^(|/|/?[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*)$",
+                "title": "Namespace",
+                "type": "string",
+                "x-tau-section": "access"
+              },
+              "ops": {
+                "description": "What this resource asks to do to it: start. The target decides what it actually gets — see that resource's authorizer.",
+                "items": {
+                  "enum": [
+                    "start"
+                  ],
+                  "type": "string"
+                },
+                "title": "Ops",
+                "type": "array",
+                "x-tau-section": "access"
+              },
+              "timeout": {
+                "description": "How long one operation on it may take before it is given up on.",
+                "pattern": "^[-+]?(([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$",
+                "title": "Timeout",
+                "type": "string",
+                "x-tau-scalar": "duration",
+                "x-tau-section": "access"
+              }
+            },
+            "required": [
+              "ops"
+            ],
+            "type": "object"
+          },
+          "description": "A workflow this resource reaches, and what it may do to it.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "to"
+      ],
+      "title": "Tunnel",
+      "type": "object",
+      "x-tau-category": "regions",
+      "x-tau-icon": "cable",
+      "x-tau-sections": [
+        {
+          "description": "Resource identity and metadata.",
+          "id": "identity",
+          "title": "Identity"
+        },
+        {
+          "description": "Where it leads, and what goes through.",
+          "id": "tunnel",
+          "title": "Tunnel"
+        }
+      ]
+    },
     "Volume": {
       "description": "A quota'd directory with full POSIX semantics, checkpointed into the CAS. More than one workload may mount it read-write; the filesystem arbitrates. Bind mounts are refused.",
       "properties": {
@@ -27425,6 +28387,13 @@
         "$ref": "#/$defs/Proxy"
       },
       "description": "Map of name -> Proxy (authored under proxy/<name>.yaml).",
+      "type": "object"
+    },
+    "tunnel": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Tunnel"
+      },
+      "description": "Map of name -> Tunnel (authored under tunnel/<name>.yaml).",
       "type": "object"
     },
     "stream": {

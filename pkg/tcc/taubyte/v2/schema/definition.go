@@ -108,6 +108,7 @@ var secIdentity = Section("identity", "Identity", "Resource identity and metadat
 //	compute   runs code
 //	data      holds state
 //	code      a build artifact
+//	regions   connects what runs in different regions
 func Category(name string) NodeOption { return GroupAnnotate("category", name) }
 
 // egressAttribute is a workload's allowlist of hosts, on top of the node-wide
@@ -1243,7 +1244,7 @@ var V2Resources = []*Node{
 				String(Key("route", "handler", "namespace"), Path("route", "handler", Either(handlerKinds...), "namespace"), InSection("handler"), Doc("Namespace", "Path to the namespace holding the handler, e.g. \"/shop/eu\". Omitted means the project root.")),
 				// Required once there is a handler, so a route cannot name a kind and no
 				// resource; not outright, since a router has no handler block.
-				String(Key("route", "handler", "name"), Path("route", "handler", Either(handlerKinds...), "name"), RequiredWhen(Key("route", "target"), "handler"), IsVariableName(), Ref("", KindFrom(Key("route", "handler", "kind")), ByName(), Origin()), InSection("handler"), Doc("Name", "The handler resource's name within that namespace. It may run in fewer regions than this gateway: a request is carried to it from where it is not.")),
+				String(Key("route", "handler", "name"), Path("route", "handler", Either(handlerKinds...), "name"), RequiredWhen(Key("route", "target"), "handler"), IsVariableName(), Ref("", KindFrom(Key("route", "handler", "kind")), ByName(), Serves()), InSection("handler"), Doc("Name", "The handler resource's name within that namespace. Where it runs in fewer regions than this gateway, a tunnel has to let it through.")),
 				String(Key("route", "handler", "port"), Path("route", "handler", Either(handlerKinds...), "port"), IsVariableName(), InSection("handler"), Doc("Port", "Which of the handler's ports to reach, by name. A workload listening on more than one has to be told which, and the number is never written here — the platform assigns the external one, and there may be several instances of the workload on one host.")),
 
 				// A package handler is its built files, served by the gateway itself: only an
@@ -1345,6 +1346,27 @@ var V2Resources = []*Node{
 			Section("forward", "Forward", "The workload on the other end."),
 			Section("limits", "Limits", "What one source may open, and how fast."),
 			Resource("proxy", "Proxy", "Proxy", "proxy"),
+		)),
+
+	// Nothing reaches across regions but through a tunnel. One leads from its own
+	// scope to another namespace, and lets through only what it lists there: what is
+	// in its scope may reach those from a region they do not run in.
+	//
+	//	to: /billing
+	//	through:
+	//	    - kind: function
+	//	      name: charge
+	DefineGroup("tunnel",
+		resource(
+			commonAttributes(
+				String("to", IsNamespacePath(), Required(), InSection("tunnel"),
+					Doc("To", "The namespace at the other end, e.g. \"/billing\". What is in this tunnel's scope may reach what is listed below in it, from a region it does not run in.")),
+			),
+			Nested(throughGroup()),
+			GroupDoc("A way between two namespaces, and what goes through it. Nothing reaches across regions otherwise, and a tunnel lets through only what it lists."), Category("regions"), Icon("cable"),
+			secIdentity,
+			Section("tunnel", "Tunnel", "Where it leads, and what goes through."),
+			Resource("tunnel", "Tunnel", "Tunnel", "tunnel"),
 		)),
 
 	// Fan-out to every subscriber; subscribe and publish are two capabilities, never
@@ -1930,6 +1952,19 @@ func stepsGroup() *Node {
 		String("on_error", IsVariableName(), Default(terminalStep), InSection("steps"),
 			Doc("On Error", "Another step to run when this one has exhausted its attempts. The default sends the run to the {workflow}_failed queue, where a person picks it up.")),
 	}, GroupDoc("One step: what it does, how often it is attempted and how those attempts are spaced, and where failure goes."))
+}
+
+// tunnelKinds is what a tunnel lets through: every kind with a footprint, since
+// only what is placed can be in another region.
+var tunnelKinds = []string{"agent", "application", "cache", "database", "function", "gateway", "sandbox", "storage", "sync", "volume", "worker", "workflow"}
+
+func throughGroup() *Node {
+	return DefineList("through", []*Attribute{
+		String("kind", Required(), InSet(tunnelKinds...), InSection("tunnel"),
+			Doc("Kind", "The kind of what goes through.")),
+		String("name", Required(), IsVariableName(), Ref("", KindFrom("kind"), ByName(), Opens(), NamespaceAt("to")), InSection("tunnel"),
+			Doc("Name", "Its name, in the namespace the tunnel leads to.")),
+	}, GroupDoc("What goes through: resources of the namespace at the other end."))
 }
 
 func transformersGroup() *Node {
