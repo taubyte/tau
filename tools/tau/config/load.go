@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -11,6 +12,13 @@ import (
 )
 
 func loadConfig() error {
+	if err := openConfig(); err != nil {
+		return fmt.Errorf("tau config file %s: %w (TAU_CONFIG_FILE must be a path this OS opens: on Windows C:\\..., not a Git Bash /c/... path)", constants.TauConfigFileName, err)
+	}
+	return nil
+}
+
+func openConfig() error {
 	if !file.Exists(constants.TauConfigFileName) {
 		f, err := os.Create(constants.TauConfigFileName)
 		if err != nil {

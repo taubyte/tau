@@ -35,7 +35,7 @@ func (link) Push() common.Command {
 			projectFlags.ConfigOnly,
 			projectFlags.CodeOnly,
 			&cli.BoolFlag{Name: "wait", Usage: "follow the builds this push starts; exit 1 if one fails, 2 on timeout"},
-			&cli.BoolFlag{Name: "serve", Usage: "with --wait: then wait until every node serves the new functions"},
+			&cli.BoolFlag{Name: "serve", Usage: "with --wait: then wait until every node serves the new functions and websites"},
 			&cli.DurationFlag{Name: "timeout", Value: 10 * time.Minute, Usage: "with --wait: how long to wait in all"},
 		},
 		Action: push,
@@ -67,7 +67,7 @@ func push(ctx *cli.Context) error {
 		if err != nil {
 			return err
 		}
-		if targets, err = follow.Targets(st, false); err != nil {
+		if targets, err = follow.Targets(st, true); err != nil {
 			return err
 		}
 		var skipped []string
@@ -151,6 +151,8 @@ func waitFor(ctx *cli.Context, pushed []follow.Repo, targets []follow.Target, be
 		if err := injectDream(c, projectID, pushed[0].Branch); err != nil {
 			return cli.Exit(fmt.Sprintf("Dream gets no GitHub webhook: run `dream inject push-all` (the inject failed: %v)", err), 2)
 		}
+		// push-all builds every repo of the project: follow the websites and libraries too
+		pushed = append(pushed, follow.SourceRepos(st, pushed[0].Since)...)
 	}
 	fmt.Fprintln(os.Stderr, "waiting for builds...")
 	jobs, code := follow.Wait(c, p, projectID, pushed, 2*time.Second, os.Stderr)
@@ -159,13 +161,17 @@ func waitFor(ctx *cli.Context, pushed []follow.Repo, targets []follow.Target, be
 		Serving []follow.Served `json:"serving,omitempty"`
 		Exit    int             `json:"exit"`
 	}{Jobs: jobs}
-	if code == 0 && len(targets) > 0 {
+	switch {
+	case code != 0 || !ctx.Bool("serve"):
+	case len(targets) == 0:
+		fmt.Fprintln(os.Stderr, "no function or website to check: nothing to wait for")
+	default:
 		fmt.Fprintln(os.Stderr, "waiting for nodes to serve the new build...")
 		since := time.Now()
 		if len(pushed) > 0 {
 			since = time.Unix(pushed[0].Since, 0)
 		}
-		result.Serving, code = follow.Serve(c, targets, func(t follow.Target) string { return before[t] }, time.Second, since)
+		result.Serving, code = follow.Serve(c, targets, func(t follow.Target) string { return before[t] }, time.Second, since, os.Stderr)
 	}
 	result.Exit = code
 	if !output.Render(result) {

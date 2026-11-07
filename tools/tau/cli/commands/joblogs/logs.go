@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -86,15 +87,17 @@ func Show(w io.Writer, p Client, jid string, followLog bool) error {
 		return err
 	}
 	res := Result{Job: jid, Status: strings.ToLower(job.Status.String()), Logs: map[string]string{}}
-	// Patrick can file one log under two keys (a timestamp and the job id): read each once
-	keyOf := map[string]string{}
-	for resource, cid := range job.Logs {
-		if k, ok := keyOf[cid]; !ok || resource == jid || (k != jid && resource < k) {
-			keyOf[cid] = resource
-		}
+	// Patrick files one log under two keys (a timestamp and the job id) and two
+	// CIDs, the job-id copy ending with one more line: read it first, then skip a
+	// log that is the start of one already shown
+	keys := make([]string, 0, len(job.Logs))
+	for resource := range job.Logs {
+		keys = append(keys, resource)
 	}
-	for cid, resource := range keyOf {
-		rc, err := p.LogFile(jid, cid)
+	sort.Slice(keys, func(a, b int) bool { return keys[a] == jid || keys[b] != jid && keys[a] < keys[b] })
+	var shown []string
+	for _, resource := range keys {
+		rc, err := p.LogFile(jid, job.Logs[resource])
 		if err != nil {
 			return err
 		}
@@ -103,7 +106,10 @@ func Show(w io.Writer, p Client, jid string, followLog bool) error {
 		if err != nil {
 			return err
 		}
-		res.Logs[resource] = string(b)
+		if !slices.ContainsFunc(shown, func(s string) bool { return strings.HasPrefix(s, strings.TrimRight(string(b), "\n")) }) {
+			shown = append(shown, string(b))
+			res.Logs[resource] = string(b)
+		}
 	}
 	if output.Render(res) {
 		return nil

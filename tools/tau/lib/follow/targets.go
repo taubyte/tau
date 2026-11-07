@@ -42,7 +42,10 @@ func Targets(st *tcc.Store, withWebsites bool) ([]Target, error) {
 			}
 			p := firstString(tcc.Get(doc, []string{"trigger", "paths"}))
 			if group == "websites" {
-				p = firstString(tcc.Get(doc, []string{"source", "paths"}))
+				p = firstString(tcc.Get(doc, []string{"paths"})) // website yaml keeps paths at top level
+				if p == "/" {
+					p = firstString(tcc.Get(doc, []string{"source", "paths"}))
+				}
 			} else if t, _ := tcc.Get(doc, []string{"trigger", "type"}).(string); !strings.HasPrefix(t, "http") {
 				continue // p2p/pubsub functions have no URL
 			}
@@ -110,6 +113,25 @@ func dreamHTTPNodes() (map[string]string, error) {
 		return nodes, nil
 	}
 	return nil, fmt.Errorf("no gateway or substrate node in this Dream universe")
+}
+
+// SourceRepos are the project's website and library repositories, labelled as
+// RepoNames does, for Wait to follow the builds a Dream push-all starts for them.
+func SourceRepos(st *tcc.Store, since int64) []Repo {
+	var out []Repo
+	for _, group := range []string{"websites", "libraries"} {
+		list, _ := st.List(group)
+		for _, n := range list {
+			doc, err := st.Doc(group, n)
+			if err != nil {
+				continue
+			}
+			if full, _ := tcc.Get(doc, []string{"source", "github", "fullname"}).(string); full != "" {
+				out = append(out, Repo{Name: map[string]string{"websites": "website ", "libraries": "library "}[group] + n, Remote: RepoName(full), Since: since})
+			}
+		}
+	}
+	return out
 }
 
 // RepoNames labels the project's website and library repository ids as tau

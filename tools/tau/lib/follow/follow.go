@@ -101,7 +101,7 @@ func match(jobs []*patrick.Job, r Repo) *patrick.Job {
 	var exact, near *patrick.Job
 	for _, j := range jobs {
 		switch {
-		case j.Meta.HeadCommit.ID == r.Commit:
+		case r.Commit != "" && j.Meta.HeadCommit.ID == r.Commit:
 			if exact == nil || j.Timestamp > exact.Timestamp {
 				exact = j
 			}
@@ -134,6 +134,10 @@ func progressLine(prev, cur Job) string {
 // heartbeat: Patrick may keep a job "open" until it ends (t3 said nothing for
 // 4m45s), so a running job gets a line this often when nothing changed.
 var heartbeat = time.Minute
+
+// serveQuiet: a build serves within seconds of its job ending, so a push whose
+// targets all stay unchanged this long changed nothing served.
+var serveQuiet = time.Minute
 
 // Wait follows each pushed repo's job (see match) until all end, writing a
 // line to progress (if not nil) as a job appears, starts, retries or ends,
@@ -312,14 +316,15 @@ type Served struct {
 	Note     string  `json:"note,omitempty"`
 }
 
-// Baseline probes each target before the push. A target that answers 404 or
-// not at all cannot show a new build: it is left out and its resource named once.
+// Baseline probes each target before the push. A target that answers not at
+// all, or a function that answers 404, cannot show a new build: it is left out
+// and its resource named once. A website's 404 (a new site) is a fine baseline.
 func Baseline(targets []Target) (keep []Target, before map[Target]string, skipped []string) {
 	before = map[Target]string{}
 	seen := map[string]bool{}
 	for _, t := range targets {
 		code, body := Probe(t)
-		if code == 0 || code == http.StatusNotFound {
+		if code == 0 || code == http.StatusNotFound && !strings.HasPrefix(t.Resource, "website ") {
 			if !seen[t.Resource] {
 				seen[t.Resource] = true
 				skipped = append(skipped, fmt.Sprintf("%s: can't fingerprint it (HTTP %d on %s %s), not waited on", t.Resource, code, t.Node, t.URL))
@@ -337,8 +342,12 @@ func Baseline(targets []Target) (keep []Target, before map[Target]string, skippe
 // then are not waited on: they are "not changed by this push".
 // shortcut: a resource that changes later than the others is cut off; upgrade
 // by matching the build's asset CIDs per function once Patrick exposes them.
+// When no resource has changed serveQuiet after Serve began, the push changed
+// nothing served: Serve says so on progress and returns 0. While waiting it
+// writes a line to progress (if not nil) every heartbeat.
 // Exit code 0, or 2 if ctx ended first.
-func Serve(ctx context.Context, targets []Target, before func(Target) string, poll time.Duration, start time.Time) ([]Served, int) {
+func Serve(ctx context.Context, targets []Target, before func(Target) string, poll time.Duration, start time.Time, progress io.Writer) ([]Served, int) {
+	entered, said := time.Now(), time.Now()
 	out := make([]Served, len(targets))
 	old := make([]string, len(targets))
 	for i, t := range targets {
@@ -371,18 +380,33 @@ func Serve(ctx context.Context, targets []Target, before func(Target) string, po
 			all[s.Resource] = all[s.Resource] && s.Changed
 			some[s.Resource] = some[s.Resource] || s.Changed
 		}
-		settled, someDone := true, false
+		settled, someDone, anyChanged := true, false, false
 		for r := range all {
 			settled = settled && all[r] == some[r]
 			someDone = someDone || all[r]
+			anyChanged = anyChanged || some[r]
 		}
-		if settled && someDone {
+		quiet := !anyChanged && time.Since(entered) >= serveQuiet
+		if quiet && progress != nil {
+			fmt.Fprintf(progress, "nothing serves a new build %s after the builds ended: this push changed nothing served\n", serveQuiet)
+		}
+		if settled && someDone || quiet {
 			for i := range out {
 				if !out[i].Changed {
 					out[i].Note = "not changed by this push"
 				}
 			}
 			return out, 0
+		}
+		if progress != nil && time.Since(said) >= heartbeat {
+			waiting := 0
+			for _, s := range out {
+				if !s.Changed {
+					waiting++
+				}
+			}
+			fmt.Fprintf(progress, "still waiting for %d of %d nodes to serve the new build, %s after push\n", waiting, len(out), time.Since(start).Round(time.Second))
+			said = time.Now()
 		}
 		select {
 		case <-ctx.Done():
