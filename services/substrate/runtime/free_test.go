@@ -30,13 +30,21 @@ func TestShouldRetire(t *testing.T) {
 		// A module whose footprint fills the cap has no growth headroom;
 		// pooling it would only defer a mid-call OOM trap, so it cold-starts
 		// every call by design.
+		"grown past 16 MiB under a large cap": {
+			useMem: 17 << 20,
+			want:   true,
+		},
 		"at cap": {
 			useMem: 300000,
 			want:   true,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if got := shouldRetire(test.useMem, capBytes); got != test.want {
+			cb := capBytes
+			if test.useMem > 1<<20 {
+				cb = 512 << 20
+			}
+			if got := shouldRetire(test.useMem, cb); got != test.want {
 				t.Errorf("shouldRetire(%d, %d) = %v, want %v", test.useMem, capBytes, got, test.want)
 			}
 		})

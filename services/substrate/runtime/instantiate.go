@@ -40,8 +40,11 @@ func (i *instance) usedMemory() (uint32, error) {
 // the cap never pool — with no room to grow, reuse only defers a mid-call OOM
 // trap, so cold-starting every call is the correct behavior for such
 // under-provisioned functions.
+const maxPooledMem = 16 << 20
+
 func shouldRetire(useMem uint32, capBytes uint64) bool {
-	return uint64(useMem) > capBytes*2/3
+	// memory never shrinks, so pooled RSS would otherwise track the cap (64 slots x cap)
+	return uint64(useMem) > min(capBytes*2/3, maxPooledMem)
 }
 
 func (i *instance) Free() error {
