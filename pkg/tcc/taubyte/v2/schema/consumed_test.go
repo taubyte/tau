@@ -167,6 +167,9 @@ var readers = map[string][]string{
 	// tls.go is which certificate answers a gateway's name: the node binds
 	// the listener, and the gateway is asked per handshake.
 	"services/gateway/tls.go": {"gateway"},
+	// cm's region arm checks that a route carried to it is one its own
+	// release has, reaching the handler named.
+	"services/cm/region.go": {"gateway"},
 
 	// A proxy's. It terminates its own TLS — it IS its socket, where a
 	// gateway's is the node's.
