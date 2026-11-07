@@ -12,7 +12,9 @@ import (
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/rpc"
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
+	regionv2 "github.com/taubyte/tau/pkg/proto/gen/tau/region/v2"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/secrets"
 )
@@ -60,7 +62,13 @@ type server struct {
 
 	store *Store
 	also  []io.Closer
+
+	// link is this region's end of the link between regions, nil where the cloud
+	// links none.
+	link Link
 }
+
+var _ Carrier = (*server)(nil)
 
 // Start is cm on an instance: its groups on the instance's peer under its
 // directory, and the certificate store where the cloud names a zone, its key in
@@ -73,6 +81,9 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 	s.mu.Lock()
 	s.peer, s.root, s.timing = h.Peer(), h.Root(), cfg.Consensus
 	s.mu.Unlock()
+	if err := s.startRegions(ctx, h); err != nil {
+		return err
+	}
 	if cfg.CloudFqdn == "" {
 		// A cloud that issues certificates issues them for its zone, and one that
 		// names none keeps nothing here.
@@ -106,6 +117,40 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 	}
 	s.store = store
 	return nil
+}
+
+// startRegions answers this region's services on RegionProtocol and, where the
+// cloud links its regions, answers what the other regions carry here.
+func (s *server) startRegions(ctx context.Context, h service.Host) error {
+	server, err := rpc.Listen(ctx, h.Peer().Host(), RegionProtocol, mountRegions(s))
+	if err != nil {
+		return err
+	}
+	s.also = append(s.also, closer(server.Close))
+	link, ok := service.Get[Link](h)
+	if !ok {
+		return nil
+	}
+	if link.Region() != h.Region() {
+		return fmt.Errorf("cm: this node serves region %q, and its end of the link speaks for %q", h.Region(), link.Region())
+	}
+	s.link = link
+	origins, ok := service.Get[Origins](h)
+	if !ok {
+		return nil
+	}
+	a, err := newReceiving(h.Region(), origins)
+	if err != nil {
+		return err
+	}
+	s.also = append(s.also, link.Attach(a))
+	return nil
+}
+
+// Carry hands a call from a service of this region to the first region in its list
+// that the link reaches.
+func (s *server) Carry(ctx context.Context, req *regionv2.CarryRequest) (*regionv2.Answered, error) {
+	return carry(ctx, s.link, req.GetTo(), req.GetCarried())
 }
 
 // database is the database called name, the instance's own when it shares them,
