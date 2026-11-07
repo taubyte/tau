@@ -14,8 +14,8 @@ import (
 // no footprint follows what it reaches; a zone nothing ties down is in every view.
 // Where something serves, what it reaches serves too: an edge to a resource held
 // only in another region, or only standing by in this one, is Broken, never stubbed
-// or dropped — except an origin, which a request is carried to and the view names
-// as Remote. Every served region gets a view, even empty; asking for an unserved
+// or dropped — except an origin, which a request is carried to wherever it serves
+// and the view names as Remote. Every served region gets a view, even empty; asking for an unserved
 // one is an error.
 
 // Role is how a resource is held in one region.
@@ -58,8 +58,9 @@ type View struct {
 	Object map[string]any
 	// Roles is how each resource the view holds is in this region, by compiled id.
 	Roles map[string]Role
-	// Remote is every origin reached from here and held only elsewhere, by compiled
-	// id: the regions it is held in, in its namespace's order.
+	// Remote is every origin reached from here that does not serve here, by compiled
+	// id: the regions it is held in, in its namespace's order — a failover's primary
+	// first.
 	Remote map[string][]string
 }
 
@@ -124,8 +125,8 @@ type Plan struct {
 	// Roles is, per destination, every resource held there by its own placement or
 	// for what it reaches — not the scopes, which the projection keeps on its own.
 	Roles map[string]map[string]Role
-	// Remote is, per destination, every origin reached from there and held only
-	// elsewhere, with the regions it is held in.
+	// Remote is, per destination, every origin reached from there that does not
+	// serve there, with the regions it is held in.
 	Remote map[string]map[string][]string
 	// Findings is the placement half of the audit and every edge refused for crossing
 	// regions.
@@ -254,7 +255,7 @@ func PlanViews(obj map[string]any, opts ...AuditOption) Plan {
 				if hasFootprint[next] {
 					role, held := roles[next]
 					switch {
-					case !held && origins[cur+"\x00"+next]:
+					case origins[cur+"\x00"+next] && (!held || !role.Serves()):
 						if plan.Remote[region] == nil {
 							plan.Remote[region] = map[string][]string{}
 						}

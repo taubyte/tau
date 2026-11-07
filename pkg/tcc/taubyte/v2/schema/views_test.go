@@ -353,6 +353,24 @@ func TestAGatewayRouteReachesItsHandlerAcrossRegions(t *testing.T) {
 
 // A proxy has no footprint: it is held where what it reaches is, and what it reaches
 // here shares no region.
+// AN ORIGIN THAT FAILS OVER is reached where it serves: the edge in its standby
+// region is told where its primary is, rather than refused.
+func TestAGatewayReachesAnOriginThatFailsOver(t *testing.T) {
+	docs := map[string]string{
+		"/project.yaml":                   regionsProject + regionsBlock("active", "[region-1, region-2]") + everyBranch,
+		"/namespace/eu/function/api.yaml": viewFunction("api", ""),
+		"/package/api_code.yaml":          viewPackage("api"),
+		"/gateway/api.yaml":               viewGatewayIn("api", "/eu", ""),
+		"/zone/example_com.yaml":          viewZone,
+	}
+	viewNamespace(docs, "eu", "failover", "[region-1, region-2]")
+	views, findings, err := viewsOf(t, several{"region-1", "region-2"}, docs)
+	require.NoError(t, err, "%v", findings)
+	require.Empty(t, views["region-1"].Remote)
+	require.Equal(t, schema.RoleStandby, rolesByName(t, views["region-2"])["function/api"])
+	require.Equal(t, map[string][]string{cidFor("function/api"): {"region-1", "region-2"}}, views["region-2"].Remote)
+}
+
 func TestAnUnplacedResourceReachingTwoRegionsIsRefused(t *testing.T) {
 	docs := map[string]string{
 		"/project.yaml":                     regionsProject + everyBranch,
