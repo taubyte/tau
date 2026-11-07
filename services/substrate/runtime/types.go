@@ -41,6 +41,12 @@ type Function struct {
 	// noPoolWarned gates the once-per-function warning emitted when instances
 	// retire without ever pooling (memory config leaves no headroom).
 	noPoolWarned atomic.Bool
+
+	// modules maps each wasm module the function loaded (its own, a library
+	// it runs as, or one it imports) to the address it resolved to, so a
+	// library push can be noticed. nil until the first call has run.
+	modulesLock sync.Mutex
+	modules     map[string]string
 }
 
 type instance struct {

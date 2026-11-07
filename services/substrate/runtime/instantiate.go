@@ -49,6 +49,8 @@ func (i *instance) Free() error {
 		return nil
 	}
 
+	i.parent.recordModules(i.runtime)
+
 	useMem, err := i.usedMemory()
 	if err != nil {
 		i.Close()
