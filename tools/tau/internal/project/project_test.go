@@ -331,7 +331,7 @@ func TestValidateLeavesWhetherARegionIsServedToTheCloud(t *testing.T) {
 	}
 
 	across := corpusProject(t, "refused/views/across").Validate(t.Context(), "prod")
-	require.Equal(t, []string{`function/reader: reaches cache/sessions_r1, which is not placed in "region-2" where this is`}, brokenOf(across))
+	require.Equal(t, []string{`function/reader: reaches cache/sessions_r1, which does not run in "region-2" where this does`}, brokenOf(across))
 
 	plain := corpusProject(t, "with/function/wasm").Validate(t.Context(), "prod")
 	require.False(t, plain.Broken(), "a project naming no region is read as one region")
