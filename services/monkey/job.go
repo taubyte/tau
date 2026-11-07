@@ -2,6 +2,7 @@ package monkey
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -130,6 +131,9 @@ func waitForProjectID(ctx context.Context, lookup func() (string, error)) (strin
 	deadline := time.Now().Add(jobs.TnsRetryFor)
 	for {
 		id, err := lookup()
+		if err == nil && id == "" {
+			err = errors.New("repository has no project yet")
+		}
 		if err == nil || time.Now().After(deadline) {
 			return id, err
 		}

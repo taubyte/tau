@@ -61,3 +61,17 @@ func TestProjectRecordWaitsForANewProject(t *testing.T) {
 		t.Fatalf("got %v, %v after %d reads", p, err, projects.calls)
 	}
 }
+
+// An empty answer without an error is not a project: the lookup goes on.
+func TestProjectLookupWaitsPastAnEmptyAnswer(t *testing.T) {
+	calls := 0
+	id, err := waitForProjectID(context.Background(), func() (string, error) {
+		if calls++; calls < 3 {
+			return "", nil
+		}
+		return "project-1", nil
+	})
+	if err != nil || id != "project-1" {
+		t.Fatalf("got %q, %v after %d lookups", id, err, calls)
+	}
+}
