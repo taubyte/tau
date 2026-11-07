@@ -520,3 +520,14 @@ func toInt64(v interface{}) int64 {
 		return 0
 	}
 }
+
+// ClusterInfoOf asks target, a member of the namespace's cluster, for its view
+// of the cluster (leader, term, members) from a node that is not a member.
+func ClusterInfoOf(node taupeer.Node, namespace string, target peer.ID) (*ClusterInfoResponse, error) {
+	c, err := newInternalClient(node, namespace, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Close()
+	return c.ClusterInfo(target)
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/taubyte/tau/p2p/streams"
@@ -192,6 +193,12 @@ func (srv *AuthService) acmeServiceHandler(ctx context.Context, st streams.Conne
 			return nil, err
 		}
 		return nil, srv.db.Delete(ctx, "/acme/"+base64.StdEncoding.EncodeToString([]byte(fqdn))+"/certificate/pem")
+	case "list":
+		names, err := srv.listACMECertificates(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return cr.Response{"names": names}, nil
 	case "set-static":
 		fqdn, err := maps.String(body, "fqdn")
 		if err != nil {
@@ -235,4 +242,24 @@ func (srv *AuthService) acmeServiceHandler(ctx context.Context, st streams.Conne
 	default:
 		return nil, errors.New("Acme action `" + action + "` not recognized")
 	}
+}
+
+// listACMECertificates names the certificates stored in /acme (not the
+// /acme/cache entries: account keys, tokens and challenges).
+func (srv *AuthService) listACMECertificates(ctx context.Context) ([]string, error) {
+	keys, err := srv.db.List(ctx, "/acme/")
+	if err != nil {
+		return nil, err
+	}
+	names := []string{}
+	for _, k := range keys {
+		b64, ok := strings.CutSuffix(strings.TrimPrefix(k, "/acme/"), "/certificate/pem")
+		if !ok || strings.Contains(b64, "/") {
+			continue
+		}
+		if name, err := base64.StdEncoding.DecodeString(b64); err == nil {
+			names = append(names, string(name))
+		}
+	}
+	return names, nil
 }

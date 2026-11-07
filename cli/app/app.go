@@ -60,6 +60,8 @@ func newApp() *cli.App {
 			startCommand(),
 			configCommand(),
 			exportDataCommand(),
+			certsCommand(),
+			nodeCommand(),
 		},
 	}
 

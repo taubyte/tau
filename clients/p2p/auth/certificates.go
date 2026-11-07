@@ -32,6 +32,16 @@ func (c *Client) DeleteCertificate(domain string) error {
 	return nil
 }
 
+// ListCertificates names the certificates stored in /acme. An auth node
+// older than this client answers that the action is not recognized.
+func (c *Client) ListCertificates() ([]string, error) {
+	resp, err := c.client.Send("acme", command.Body{"action": "list"}, c.peers...)
+	if err != nil {
+		return nil, fmt.Errorf("failed listing certificates with %v", err)
+	}
+	return maps.StringArray(resp, "names")
+}
+
 func (c *Client) InjectKey(domain string, data []byte) error {
 	_, err := c.client.Send("acme", command.Body{"action": "cache-set", "key": domain, "data": data}, c.peers...)
 	if err != nil {

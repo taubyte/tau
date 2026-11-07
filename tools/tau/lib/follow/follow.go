@@ -526,3 +526,26 @@ func WriteStatus(w io.Writer, rep Report) {
 	}
 	tw.Flush()
 }
+
+// LastJob is the newest of the project's recent jobs for the repository
+// labelled label (config, code, website x, library x), as tau status names it.
+func LastJob(p Patrick, project string, names map[int]string, label string) (*patrick.Job, error) {
+	jobs, err := fetch(p, project, recentJobs, map[string]*patrick.Job{})
+	if err != nil {
+		return nil, err
+	}
+	var last *patrick.Job
+	for _, j := range jobs {
+		name := names[j.Meta.Repository.ID]
+		if name == "" {
+			name = repoLabel(j.Meta.Repository)
+		}
+		if name == label && (last == nil || j.Timestamp > last.Timestamp) {
+			last = j
+		}
+	}
+	if last == nil {
+		return nil, fmt.Errorf("no build of %s in the project's last %d jobs; see `tau status`", label, recentJobs)
+	}
+	return last, nil
+}
