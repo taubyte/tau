@@ -79,6 +79,12 @@ var FixtureMap = map[string]FixtureDefinition{
 				Description: "Absolute path to local project root",
 				Required:    false,
 			},
+			{
+				Name:        "force",
+				Alias:       "f",
+				Description: "true: rebuild every repo, even those whose commit already built",
+				Required:    false,
+			},
 		},
 	},
 	"pushConfig": {

@@ -44,6 +44,7 @@ type deps struct {
 	docker       func() error
 	lookup       func(host string) error
 	dreamVersion func() (string, error)
+	dreamAPI     func() (string, error) // the running Dream's GET /version
 	now          func() time.Time
 	project      func() []string // the selected project's files, "/"-separated; nil: none
 }
@@ -82,6 +83,14 @@ func live(ctx context.Context) deps {
 		dreamVersion: func() (string, error) {
 			out, err := exec.Command("dream", "--version").Output()
 			return strings.TrimSpace(string(out)), err
+		},
+		dreamAPI: func() (string, error) {
+			c, err := dreamClient.Client(ctx)
+			if err != nil {
+				return "", err
+			}
+			v, err := c.Version()
+			return v.String(), err
 		},
 		now:     time.Now,
 		project: projectFiles,
@@ -214,6 +223,12 @@ func run(p config.Profile, d deps) (out []result) {
 				fix = "run `tau select cloud --universe " + names[0] + "`"
 			}
 			add("FAIL", "cloud", fmt.Sprintf("universe %q not found; Dream has: %s", p.Cloud, strings.Join(names, ", ")), fix)
+		}
+		// older Dreams have no /version
+		if v, err := d.dreamAPI(); err == nil {
+			add("PASS", "dream api", v, "")
+		} else {
+			add("PASS", "dream api", "version unknown", "")
 		}
 		if err := d.docker(); err != nil {
 			add("FAIL", "docker", "Docker not reachable; Dream builds need it", "start Docker (Docker Desktop on Windows/macOS)")

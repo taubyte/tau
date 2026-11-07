@@ -37,3 +37,9 @@ func (u *Universe) Id() (resp api.UniverseInfo, err error) {
 	err = u.client.get("/id/"+u.Name, &resp)
 	return
 }
+
+// Version is the running Dream's version (GET /version).
+func (c *Client) Version() (resp dream.Version, err error) {
+	err = c.get("/version", &resp)
+	return
+}

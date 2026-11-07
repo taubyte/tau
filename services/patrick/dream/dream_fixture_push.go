@@ -15,6 +15,7 @@ import (
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 
 	authIface "github.com/taubyte/tau/core/services/auth"
+	patrickIface "github.com/taubyte/tau/core/services/patrick"
 	tnsIface "github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
@@ -73,6 +74,13 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 		}
 	}
 
+	force := false
+	if len(params) > 3 {
+		if f, ok := params[3].(string); ok {
+			force, _ = strconv.ParseBool(f)
+		}
+	}
+
 	tns, err := simple.TNS()
 	if err != nil {
 		return err
@@ -81,6 +89,17 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 	auth, err := simple.Auth()
 	if err != nil {
 		return err
+	}
+
+	// Each repo's newest job, to skip repos whose head already built. Without
+	// Patrick nothing is skipped.
+	var jobs map[int]*patrickIface.Job
+	if !force {
+		if err := simple.Provides("patrick"); err == nil {
+			if p, err := simple.Patrick(); err == nil {
+				jobs = newestJobs(p)
+			}
+		}
 	}
 
 	type repo struct{ id, fullName string }
@@ -137,9 +156,9 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 	push := func(r repo) error {
 		repoId, fullName := r.id, r.fullName
 		pushed[repoId] = true
-		var err error
 		pushedAt := time.Now().Unix() + int64(pushIdx)
 		pushIdx++
+		localPath := ""
 		if projectRoot != "" {
 			// Derive per-repo local path from fullname (e.g. taubyte-test/tb_code_foo -> projectRoot/code)
 			parts := strings.SplitN(fullName, "/", 2)
@@ -147,7 +166,6 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 			if len(parts) == 2 {
 				name = parts[1]
 			}
-			var localPath string
 			switch {
 			case strings.HasPrefix(name, "tb_code_"):
 				localPath = projectRoot + "/code"
@@ -158,11 +176,13 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 			default:
 				localPath = projectRoot + "/config"
 			}
-			err = pushSpecific(u, repoId, fullName, projectId, branch, localPath, pushedAt)
-		} else {
-			err = pushSpecific(u, repoId, fullName, projectId, branch, "", pushedAt)
+			// Without a local path the payload carries the default commit: always rebuilt.
+			if commit, err := commonTest.HeadCommitFromLocalRepo(localPath); err == nil && built(jobs, repoId, commit) {
+				fmt.Printf("Skipping %s: commit %s already built\n", fullName, commit)
+				return nil
+			}
 		}
-		return err
+		return pushSpecific(u, repoId, fullName, projectId, branch, localPath, pushedAt)
 	}
 
 	for _, r := range repos {
@@ -189,6 +209,37 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 	}
 
 	return nil
+}
+
+// newestJobs is each repository's newest job in Patrick.
+func newestJobs(p patrickIface.Client) map[int]*patrickIface.Job {
+	ids, err := p.List()
+	if err != nil {
+		return nil
+	}
+	jobs := make(map[int]*patrickIface.Job)
+	for _, id := range ids {
+		j, err := p.Get(id)
+		if err != nil {
+			continue
+		}
+		repo := j.Meta.Repository.ID
+		if old, ok := jobs[repo]; !ok || j.Timestamp > old.Timestamp {
+			jobs[repo] = j
+		}
+	}
+	return jobs
+}
+
+// built is true when repoId's newest job built commit successfully.
+// The default commit is what payloads carry with no local repo: never built.
+func built(jobs map[int]*patrickIface.Job, repoId, commit string) bool {
+	id, err := strconv.Atoi(repoId)
+	if err != nil || commit == "" || commit == commonTest.DefaultCommitID {
+		return false
+	}
+	j := jobs[id]
+	return j != nil && j.Status == patrickIface.JobStatusSuccess && j.Meta.HeadCommit.ID == commit
 }
 
 type configuredRepo struct{ id, fullName string }

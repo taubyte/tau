@@ -11,6 +11,7 @@ import (
 
 	// Relative
 	"github.com/pterm/pterm"
+	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/tools/dream/cli/common"
 	inject "github.com/taubyte/tau/tools/dream/cli/inject"
 	"github.com/taubyte/tau/tools/dream/cli/kill"
@@ -76,6 +77,11 @@ func main() {
 	}
 }
 
+func init() {
+	// prints "dream <version> (commit <short>)", the line tau doctor reads
+	cli.VersionPrinter = func(c *cli.Context) { fmt.Fprintln(c.App.Writer, c.App.Version) }
+}
+
 func defineCLI(ctx *common.Context) *(cli.App) {
 	app := &cli.App{
 		UseShortOptionHandling: true,
@@ -86,7 +92,13 @@ func defineCLI(ctx *common.Context) *(cli.App) {
 			kill.Command(ctx),
 			status.Command(ctx),
 			reset.Command(ctx),
+			{
+				Name:   "version",
+				Usage:  "print the version and commit",
+				Action: func(c *cli.Context) error { cli.ShowVersion(c); return nil },
+			},
 		},
+		Version:              dream.BuildVersion().String(),
 		Suggest:              true,
 		EnableBashCompletion: true,
 	}
