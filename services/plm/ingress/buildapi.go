@@ -13,7 +13,7 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 )
 
-// buildapi.go is a build asked for by hand: `tau ci run`, and in a universe only,
+// buildapi.go is a build asked for by hand: `tau ci run`, and in a cloud only,
 // `tau build` uploading its result. A manual plm is authorized as a builder on
 // the project, then goes the way a delivered push does; the builder that plans it
 // still confirms the ref at the forge. The commit is the caller's to name.
@@ -21,7 +21,7 @@ import (
 // maxBuildBody bounds the one small body a manual plm reads.
 const maxBuildBody = 4 << 10
 
-// MaxUploadBytes bounds a universe's upload: a project's tree and what its
+// MaxUploadBytes bounds a cloud's upload: a project's tree and what its
 // builds produced.
 const MaxUploadBytes = 512 << 20
 

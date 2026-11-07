@@ -27,15 +27,15 @@ import (
 // route by name, since its handler runs in region-1 alone.
 var twoRegions = schema.Preview("region-1", "region-2")
 
-// inRegion starts a universe that is one region of a cloud with region-1 and region-2, and
+// inRegion starts a dream cloud standing for one region of region-1 and region-2, and
 // publishes the project into it as that region: its own view, and only that.
-func inRegion(t *testing.T, region, name string) (*running, *nodeDream.Universe) {
+func inRegion(t *testing.T, region, name string) (*running, *nodeDream.Cloud) {
 	t.Helper()
 	return inRegionAt(t, region, name, "regional.example.com")
 }
 
 // inRegionAt is inRegion for a project answering on its own host.
-func inRegionAt(t *testing.T, region, name, host string) (*running, *nodeDream.Universe) {
+func inRegionAt(t *testing.T, region, name, host string) (*running, *nodeDream.Cloud) {
 	t.Helper()
 	u, err := nodeDream.Start(t.Context(), t.Name()+"-"+region, nodeDream.Config{
 		Services: []string{

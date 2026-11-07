@@ -32,7 +32,7 @@ import (
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// Authored projects, compiled by tcc, run in a universe: from yaml through publish
+// Authored projects, compiled by tcc, run in a cloud: from yaml through publish
 // to bytes on a socket, rather than hand-written compiled objects that stay green
 // when the compiler changes.
 //
@@ -162,14 +162,14 @@ type lastSaid struct{ at *string }
 
 func (l *lastSaid) String() string { return *l.at }
 
-// running is a universe holding one project, and a way to ask it something.
+// running is a cloud holding one project, and a way to ask it something.
 type running struct {
 	node *instance.Instance
 	host string
 	// project is its project.yaml's id, which is the register's.
 	project string
 
-	// object is the compiled project this universe was published, kept so a
+	// object is the compiled project this cloud was published, kept so a
 	// test can ask what a label became rather than say it — see idOf.
 	object map[string]any
 }
@@ -233,7 +233,7 @@ func (r *running) idOf(t *testing.T, group, label string) string {
 	return ""
 }
 
-// deployed names one project for a universe: the corpus directory, whose
+// deployed names one project for a cloud: the corpus directory, whose
 // project.yaml's id is the register's project, and the host, which two projects
 // cannot share.
 type deployed struct {
@@ -244,10 +244,10 @@ type deployed struct {
 	regions schema.Regions
 }
 
-// publish builds one project in a running universe, uploaded with what components
+// publish builds one project in a running cloud, uploaded with what components
 // stand in for, and answers a door onto it through each node named, once each of
 // them reads what was built: placement chooses which node runs a workload.
-func publish(t testing.TB, u *nodeDream.Universe, pids []string, at deployed, components artifacts) []*running {
+func publish(t testing.TB, u *nodeDream.Cloud, pids []string, at deployed, components artifacts) []*running {
 	t.Helper()
 
 	regions := at.regions
@@ -300,7 +300,7 @@ func nameOf(v any) string {
 
 // plm is the project under projects/name built for project in u, its packages
 // standing in for their builds, and how the build ended, which is a success.
-func build(t testing.TB, u *nodeDream.Universe, project, name string, built map[string][]byte) nodeDream.Outcome {
+func build(t testing.TB, u *nodeDream.Cloud, project, name string, built map[string][]byte) nodeDream.Outcome {
 	t.Helper()
 	files := map[string]string{}
 	at := t.TempDir()
@@ -339,7 +339,7 @@ func build(t testing.TB, u *nodeDream.Universe, project, name string, built map[
 }
 
 // built1 is one push built, which succeeds, plan and environments alike.
-func built1(t testing.TB, u *nodeDream.Universe, name string, push nodeDream.Push) nodeDream.Outcome {
+func built1(t testing.TB, u *nodeDream.Cloud, name string, push nodeDream.Push) nodeDream.Outcome {
 	t.Helper()
 	out, err := u.Build(t.Context(), push)
 	require.NoError(t, err)
@@ -374,7 +374,7 @@ func gitSources(t testing.TB, name string) map[string]string {
 	return out
 }
 
-// deploy starts a universe, publishes the named project, and answers a door onto
+// deploy starts a cloud, publishes the named project, and answers a door onto
 // its one node. Nothing waits for the project to be in use: a node resolves it on
 // first ask, so a test's first assertion is the one that retries.
 func deploy(t testing.TB, name, host string, wasm []byte) *running {
@@ -684,7 +684,7 @@ func TestTwoProjectsNamingTheirKvTheSameThingNeverSeeEachOthersWrites(t *testing
 	require.Equal(t, 404, missed.Status, "shop read a key only market ever wrote: %s", missed.Body)
 
 	// The node that answered both has two engines open. Held counts everything a node
-	// holds and this universe has exactly two databases; one shared store reads as 1.
+	// holds and this cloud has exactly two databases; one shared store reads as 1.
 	require.Equal(t, 2, shop[2].node.Database().Held(), "one node answered two projects out of one engine")
 
 	// The two stores are two topics on the wire, which the rows alone cannot show. A
@@ -703,7 +703,7 @@ func TestTwoProjectsNamingTheirKvTheSameThingNeverSeeEachOthersWrites(t *testing
 				continue
 			}
 			_, named := topics[topic]
-			require.True(t, named, "a store topic no database in this universe names: %s", topic)
+			require.True(t, named, "a store topic no database in this cloud names: %s", topic)
 			topics[topic] = true
 		}
 	}
@@ -792,7 +792,7 @@ func TestTwoProjectsNamingTheirLedgerTheSameThingAreTwoGroups(t *testing.T) {
 			// (pkg/raft/stream.go), both naming the namespace.
 			namespace = strings.TrimSuffix(namespace, "/transport")
 			_, named := groups[namespace]
-			require.True(t, named, "a raft group no database in this universe names: %s", namespace)
+			require.True(t, named, "a raft group no database in this cloud names: %s", namespace)
 			groups[namespace] = true
 		}
 	}
@@ -817,10 +817,10 @@ func deployFleetWith(t *testing.T, copies int, name, host string, wasm []byte, e
 		deployed{name: name, host: host}).fleets[0]
 }
 
-// universe is what deployFleetOf leaves running: dream's own handle on the
+// cloud is what deployFleetOf leaves running: dream's own handle on the
 // fleet, and one view of that fleet per project published into it.
-type universe struct {
-	dream  *nodeDream.Universe
+type cloud struct {
+	dream  *nodeDream.Cloud
 	fleets [][]*running
 }
 
@@ -829,17 +829,17 @@ var fleetServices = []string{
 	instance.Register, instance.Worker, instance.Stats, instance.Gateway,
 	instance.Database, instance.Primitives, storageService.Descriptor.Name, instance.Builder}
 
-// deployFleetOf is deployFleet over several projects in one universe: a publish per
+// deployFleetOf is deployFleet over several projects in one cloud: a publish per
 // project and a settle barrier waiting for all of them.
-func deployFleetOf(t *testing.T, copies int, wasm []byte, extra map[string][]byte, projects ...deployed) universe {
+func deployFleetOf(t *testing.T, copies int, wasm []byte, extra map[string][]byte, projects ...deployed) cloud {
 	t.Helper()
 	return deployFleetServing(t, copies, fleetServices, wasm, extra, projects...)
 }
 
 // deployFleetServing is deployFleetOf with the services every node runs named.
-func deployFleetServing(t *testing.T, copies int, services []string, wasm []byte, extra map[string][]byte, projects ...deployed) universe {
+func deployFleetServing(t *testing.T, copies int, services []string, wasm []byte, extra map[string][]byte, projects ...deployed) cloud {
 	t.Helper()
-	require.NotEmpty(t, projects, "a universe with nothing published in it proves nothing")
+	require.NotEmpty(t, projects, "a cloud with nothing published in it proves nothing")
 
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Services: services,
@@ -897,7 +897,7 @@ func deployFleetServing(t *testing.T, copies int, services []string, wasm []byte
 		return true
 	}, 120*time.Second, time.Second, "a node never reached %s", &lastSaid{&waiting})
 
-	return universe{dream: u, fleets: fleets}
+	return cloud{dream: u, fleets: fleets}
 }
 
 // projectDir is where a named project lives: under projects/, or — for a test

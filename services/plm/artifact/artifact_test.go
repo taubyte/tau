@@ -777,13 +777,13 @@ func TestABarePathIsTheMainRepositoryNotACodeRepository(t *testing.T) {
 }
 
 func TestABuildTheEngineDeclinesIsReportedUnbuilt(t *testing.T) {
-	e := &engine{err: fmt.Errorf("%w: this universe runs no containers", artifact.ErrNoEngine)}
+	e := &engine{err: fmt.Errorf("%w: this cloud runs no containers", artifact.ErrNoEngine)}
 	o := newOut()
 
 	require.NoError(t, planned(t.Context(), builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: source(t)}, e, mainRepo), work(mainRepo), o))
 	require.NotEmpty(t, e.seen())
 	require.Empty(t, o.stored())
 	require.Contains(t, o.text(), "not built: package/reserve_code for prod")
-	require.Contains(t, o.text(), "this universe runs no containers")
+	require.Contains(t, o.text(), "this cloud runs no containers")
 	require.Contains(t, o.text(), "(recipe ", "and every build it was asked for named its recipe")
 }

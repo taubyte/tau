@@ -1,5 +1,5 @@
 // Package dream runs the register on a peer of an in-process mesh, over a real
-// replicated kvdb, so a universe can show a project published on one node resolving
+// replicated kvdb, so a cloud can show a project published on one node resolving
 // on another.
 package dream
 

@@ -74,7 +74,7 @@ func TestAScheduleFiresOnceAcrossAFleet(t *testing.T) {
 // elapsed time, so a frozen clock would leave placement empty forever. Adding to it
 // jumps whole slots. Guarded, as both nodes read it.
 type steppable struct {
-	// base is where this universe's clock reads at from, and from is the real
+	// base is where this cloud's clock reads at from, and from is the real
 	// instant that reading was taken. Neither moves again.
 	base time.Time
 	from time.Time

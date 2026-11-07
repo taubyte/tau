@@ -93,7 +93,7 @@ func TestTauCIRunFollowsALiveBuild(t *testing.T) {
 	f, err := fake.Serve(fake.GitHubLike)
 	require.NoError(t, err)
 	t.Cleanup(func() { f.Close() })
-	cloud, _ := universe(t, f, nil)
+	cloud, _ := cloud(t, f, nil)
 	until(t, "login", func() result {
 		return tauIn(f.TokenString()+"\n", "login", "--cloud", cloud, "--sso", f.Host(), "--paste")
 	})

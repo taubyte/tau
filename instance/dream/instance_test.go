@@ -18,7 +18,7 @@ import (
 // one of many, a real validator function deciding, and two instances isolated from
 // each other.
 
-// instancesAt builds with/cache/instances in a universe of one node and is a door
+// instancesAt builds with/cache/instances in a cloud of one node and is a door
 // onto it.
 func instancesAt(t *testing.T) *running {
 	t.Helper()

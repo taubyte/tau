@@ -83,7 +83,7 @@ func TestAWorkerResolvesAgainstARegisterAcrossTheSwarm(t *testing.T) {
 	require.NotEmpty(t, spec.Revision)
 }
 
-func TestAUniverseWithNoTierSaysSo(t *testing.T) {
+func TestACloudWithNoTierSaysSo(t *testing.T) {
 	defer workerDream.Runtimes(workerDream.Runtimes()...)
 
 	m, err := mesh.New(t.Context(), t.Name())
@@ -185,7 +185,7 @@ func compiled(t *testing.T) []byte {
 	return b
 }
 
-// recordingTier is the compute tier a universe supplies when the point is what
+// recordingTier is the compute tier a cloud supplies when the point is what
 // the lookup produced rather than what running it does.
 type recordingTier struct {
 	name    string

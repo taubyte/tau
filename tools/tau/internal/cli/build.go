@@ -29,7 +29,7 @@ import (
 // build.go is `tau build`: the project built on this machine by the same plan,
 // recipes (artifact.Plan, artifact.Recipe) and engine a cloud's build uses, named by
 // the same recipe digest. It publishes nothing, except to a development cloud that
-// takes uploads (a dream universe), which deploys the result as a push.
+// takes uploads (a dream cloud), which deploys the result as a push.
 
 // OutDir is where a build's products land, per environment, relative to the
 // project directory.
@@ -157,7 +157,7 @@ func runBuild(cmd *cobra.Command, env Env, dir string) error {
 		return err
 	}
 	if out.Status == "failed" || out.Status == "cancelled" {
-		return &exitError{code: 1, msg: "the universe's build of job " + out.Pushed + " " + out.Status}
+		return &exitError{code: 1, msg: "the cloud's build of job " + out.Pushed + " " + out.Status}
 	}
 	return nil
 }

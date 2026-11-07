@@ -8,7 +8,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-func TestAUniverseWithNoComputeRefusesByName(t *testing.T) {
+func TestACloudWithNoComputeRefusesByName(t *testing.T) {
 	require.Equal(t, "none", absent{}.Name())
 	_, err := absent{}.Start(t.Context(), invoke.Spec{})
 	require.ErrorIs(t, err, invoke.ErrNoRuntime)

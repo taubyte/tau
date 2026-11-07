@@ -30,24 +30,24 @@ import (
 	"github.com/taubyte/tau/services/worker"
 )
 
-// builds.go is how a universe builds a push. PLM and builder are two services, and
-// a universe runs either, both or neither: a push goes through plm's queue when a
+// builds.go is how a cloud builds a push. PLM and builder are two services, and
+// a cloud runs either, both or neither: a push goes through plm's queue when a
 // node runs build, else straight to a builder over its protocol when a node runs one,
 // else to the builder's runs in this process. Without build nothing records what was
-// built, so the universe answers its nodes' lookups of it (artifacts).
+// built, so the cloud answers its nodes' lookups of it (artifacts).
 
 // awaitEvery is how often a job queued at plm is read again until it has ended.
 const awaitEvery = 50 * time.Millisecond
 
-// builds is what a universe builds a push with, and closes with it.
+// builds is what a cloud builds a push with, and closes with it.
 type builds interface {
 	build(ctx context.Context, p Push) (Outcome, error)
 	io.Closer
 }
 
-// PLM is p built as this universe builds it, returned once the push and every job
+// PLM is p built as this cloud builds it, returned once the push and every job
 // it made have ended.
-func (u *Universe) Build(ctx context.Context, p Push) (Outcome, error) {
+func (u *Cloud) Build(ctx context.Context, p Push) (Outcome, error) {
 	b, err := u.builder()
 	if err != nil {
 		return Outcome{}, err
@@ -55,9 +55,9 @@ func (u *Universe) Build(ctx context.Context, p Push) (Outcome, error) {
 	return b.build(ctx, p)
 }
 
-// builder is the universe's way of building, settled the first time it is asked for
-// and kept until the universe closes.
-func (u *Universe) builder() (builds, error) {
+// builder is the cloud's way of building, settled the first time it is asked for
+// and kept until the cloud closes.
+func (u *Cloud) builder() (builds, error) {
 	u.buildsMu.Lock()
 	defer u.buildsMu.Unlock()
 	if u.builds != nil {
@@ -85,7 +85,7 @@ func (u *Universe) builder() (builds, error) {
 	case len(nodes) > 0:
 		b, err = u.inPlace(nodes[0])
 	default:
-		err = errors.New("dream: a universe with no node builds nothing")
+		err = errors.New("dream: a cloud with no node builds nothing")
 	}
 	if err != nil {
 		return nil, err
@@ -94,9 +94,9 @@ func (u *Universe) builder() (builds, error) {
 	return b, nil
 }
 
-// guest is the universe's own peer, which calls its services the way a tool beside
+// guest is the cloud's own peer, which calls its services the way a tool beside
 // them would.
-func (u *Universe) guest() (peer.Node, error) {
+func (u *Cloud) guest() (peer.Node, error) {
 	if u.visitor == nil {
 		g, err := u.mesh.Guest()
 		if err != nil {
@@ -113,7 +113,7 @@ type queued struct {
 	pool *clients.Pool
 }
 
-func (u *Universe) queued(plms []libp2ppeer.ID) (builds, error) {
+func (u *Cloud) queued(plms []libp2ppeer.ID) (builds, error) {
 	g, err := u.guest()
 	if err != nil {
 		return nil, err
@@ -151,7 +151,7 @@ func (q *queued) build(ctx context.Context, p Push) (Outcome, error) {
 }
 
 // enqueue is p queued at build, asked again while plm's nodes say Unavailable:
-// what they say while none leads the queue, as when a universe has just started.
+// what they say while none leads the queue, as when a cloud has just started.
 func (q *queued) enqueue(ctx context.Context, p Push) (string, error) {
 	for {
 		id, err := q.jobs.Enqueue(ctx, p.Repository, p.Ref, p.Commit)
@@ -197,7 +197,7 @@ func (q *queued) Close() error {
 }
 
 // builderAt is pushes run on the builder id, over its protocol.
-func (u *Universe) builderAt(id libp2ppeer.ID) (builds, error) {
+func (u *Cloud) builderAt(id libp2ppeer.ID) (builds, error) {
 	g, err := u.guest()
 	if err != nil {
 		return nil, err
@@ -211,7 +211,7 @@ func (u *Universe) builderAt(id libp2ppeer.ID) (builds, error) {
 
 // inPlace is pushes run by the builder's runs in this process, beside n, whose
 // services they reach as a builder on n would.
-func (u *Universe) inPlace(n *instance.Instance) (builds, error) {
+func (u *Cloud) inPlace(n *instance.Instance) (builds, error) {
 	h := n.HostOf(instance.Builder)
 	var cfg builder.Config
 	if err := h.Config(&cfg); err != nil {
@@ -227,7 +227,7 @@ func (u *Universe) inPlace(n *instance.Instance) (builds, error) {
 // direct is pushes run on a builder with no queue in front of it: the plan, then each
 // environment it feeds, one after another, as the jobs a plm node would make.
 type direct struct {
-	u    *Universe
+	u    *Cloud
 	runs run.Builder
 	// also is what reaching the builder opened.
 	also io.Closer
@@ -301,7 +301,7 @@ func planOf(p Push, work run.Work, planned *builderv2.Planned) *plmv2.Job {
 }
 
 // environment builds one environment a plan fed, and keeps what it built for the
-// universe's lookups when it succeeded.
+// cloud's lookups when it succeeded.
 func (d *direct) environment(ctx context.Context, plan run.Work, environment, said string) (*plmv2.Job, error) {
 	w := plan
 	w.JobID, w.Environment, w.Prelude = jobID(Push{Repository: plan.RepositoryKey, Ref: plan.Ref, Commit: plan.CommitSHA}, environment), environment, said
@@ -364,7 +364,7 @@ func jobID(p Push, environment string) string {
 	return hex.EncodeToString(sum.Sum(nil))
 }
 
-// builtHere is what this universe built itself, with no plm service to record it: a
+// builtHere is what this cloud built itself, with no plm service to record it: a
 // deployment's resource to the cid of its artifact, the newest success's.
 type builtHere struct {
 	mu   sync.Mutex
@@ -393,7 +393,7 @@ func (b *builtHere) artifact(project, environment, resource string) (string, boo
 	return cid, ok
 }
 
-// artifacts is what a node's worker looks a built resource up in: what the universe
+// artifacts is what a node's worker looks a built resource up in: what the cloud
 // built itself, else plm's records on the node.
 type artifacts struct {
 	kept *builtHere

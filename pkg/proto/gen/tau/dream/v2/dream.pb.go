@@ -4,13 +4,13 @@
 // 	protoc        (unknown)
 // source: tau/dream/v2/dream.proto
 
-// A dream universe as a tool outside its process reaches it: a development cloud
+// A dream cloud as a tool outside its process reaches it: a development cloud
 // on one machine, whose builds start from folders on that machine. Each call is the
-// universe's own Go method of the same name (instance/dream/build.go), so what a
+// cloud's own Go method of the same name (instance/dream/build.go), so what a
 // test does in process a tool does over the wire.
 //
-// A BUILD GOES THROUGH THE UNIVERSE'S PLM NODE when it runs one, else straight to
-// a builder over the builder's protocol, else to the builder's runs in the universe's
+// A BUILD GOES THROUGH THE CLOUD'S PLM NODE when it runs one, else straight to
+// a builder over the builder's protocol, else to the builder's runs in the cloud's
 // own process. Nothing here is a cloud's API: no cloud serves it.
 
 package dreamv2
@@ -36,7 +36,7 @@ type CommitRequest struct {
 	// repository is the repository's key, host/owner/name.
 	Repository string `protobuf:"bytes,1,opt,name=repository,proto3" json:"repository,omitempty"`
 	Branch     string `protobuf:"bytes,2,opt,name=branch,proto3" json:"branch,omitempty"`
-	// dir is a folder on the machine the universe runs on. It is only read.
+	// dir is a folder on the machine the cloud runs on. It is only read.
 	Dir           string `protobuf:"bytes,3,opt,name=dir,proto3" json:"dir,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -98,7 +98,7 @@ type UploadRequest struct {
 	Repository string                 `protobuf:"bytes,1,opt,name=repository,proto3" json:"repository,omitempty"`
 	Branch     string                 `protobuf:"bytes,2,opt,name=branch,proto3" json:"branch,omitempty"`
 	Dir        string                 `protobuf:"bytes,3,opt,name=dir,proto3" json:"dir,omitempty"`
-	// built is a package's name to the file, on the universe's machine, it builds to.
+	// built is a package's name to the file, on the cloud's machine, it builds to.
 	Built         map[string]string `protobuf:"bytes,4,rep,name=built,proto3" json:"built,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

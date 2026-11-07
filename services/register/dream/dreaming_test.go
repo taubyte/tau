@@ -25,10 +25,10 @@ import (
 // question and not the register's. That is a correct division and it is also a
 // claim about something nothing in that package can test.
 //
-// So this is the test that pays for it: two register nodes in one universe,
+// So this is the test that pays for it: two register nodes in one cloud,
 // each with its own kvdb, a publish sent over the wire to one of them, and the
 // pointer read back over the wire from the OTHER. Nothing is faked but the
-// universe — real hosts, real gossipsub, real CRDT, the same code a node runs.
+// cloud — real hosts, real gossipsub, real CRDT, the same code a node runs.
 func TestAPublishOnOneNodeResolvesOnAnother(t *testing.T) {
 	m, err := mesh.New(t.Context(), t.Name())
 	require.NoError(t, err)

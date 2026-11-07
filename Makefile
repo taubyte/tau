@@ -3,13 +3,13 @@ FLAGS ?=
 
 # EVERY go test HERE RUNS ITS BINARIES THROUGH LEAKCHECK, which gives each
 # package's binary a TMPDIR of its own and fails the package if the binary
-# leaves a peer's repository or a universe behind (scripts/leakcheck). A target
+# leaves a peer's repository or a cloud behind (scripts/leakcheck). A target
 # whose binaries run as root puts it ahead of AS_ROOT, as one -exec.
 LEAKCHECK := $(CURDIR)/scripts/leakcheck
 
-# ONE DREAMING PACKAGE IS A MULTI-NODE UNIVERSE, so this is a share of the
+# ONE DREAMING PACKAGE IS A MULTI-NODE CLOUD, so this is a share of the
 # MACHINE and not a fixed number. It was 4, which on a four-core box runs four
-# universes against four cores: the raft and crdt tests there do not fail an
+# clouds against four cores: the raft and crdt tests there do not fail an
 # assertion, they MISS A DEADLINE -- a group that never finishes forming, a
 # rebroadcast that never lands inside its window -- and that reads as a bug in
 # the code rather than as a box with no headroom.
@@ -57,7 +57,7 @@ test:
 # bench is the request path's benchmarks, with allocations, COUNT times each so two
 # runs compare under benchstat: a gateway request, placement's route, the worker's
 # resolve and invoke over p2p, the invoke pool, and a wasm component's cold start
-# and warm call, then the whole path in a dream universe, which is what they add up
+# and warm call, then the whole path in a dream cloud, which is what they add up
 # to. BENCH= narrows it, e.g. BENCH=StartCold.
 BENCH_PKGS = ./services/gateway/ ./services/register/ ./pkg/stats/ ./pkg/placement/ ./pkg/membership/ ./services/worker/ ./pkg/invoke/ ./pkg/invoke/wasm/ ./services/dns/ ./pkg/proto/codec/
 COUNT ?= 5
@@ -81,7 +81,7 @@ test-cli:
 	$(MAKE) test-corpus
 
 # test-corpus puts every project under instance/dream/projects through `tau build`
-# and `tau ci run` against a universe that builds in containers, and follows a live
+# and `tau ci run` against a cloud that builds in containers, and follows a live
 # build that holds in one, so it needs a
 # docker daemon and, for the cloud's restricted build egress, root. The first
 # run on a machine builds the toolchain image the corpus names. RUN= replaces

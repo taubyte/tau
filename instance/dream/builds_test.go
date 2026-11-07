@@ -24,7 +24,7 @@ func (r recorded) Artifact(_ context.Context, project, environment, _, resource 
 	return cid, nil
 }
 
-func TestANodeLooksUpWhatTheUniverseBuiltThenPLMsRecords(t *testing.T) {
+func TestANodeLooksUpWhatTheCloudBuiltThenPLMsRecords(t *testing.T) {
 	kept := &builtHere{}
 	lookup := &artifacts{kept: kept}
 
@@ -34,7 +34,7 @@ func TestANodeLooksUpWhatTheUniverseBuiltThenPLMsRecords(t *testing.T) {
 	kept.keep("QmP", "prod", []*builderv2.Stored{{ResourceId: "QmR", Cid: "bafy-here"}})
 	cid, err := lookup.Artifact(t.Context(), "QmP", "prod", "package", "QmR")
 	require.NoError(t, err)
-	require.Equal(t, "bafy-here", cid, "what the universe built itself")
+	require.Equal(t, "bafy-here", cid, "what the cloud built itself")
 
 	lookup.records = recorded{builtKey("QmP", "prod", "QmOther"): "bafy-recorded"}
 	cid, err = lookup.Artifact(t.Context(), "QmP", "prod", "package", "QmOther")

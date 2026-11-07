@@ -15,7 +15,7 @@ func Start(m *mesh.Mesh) (peer.Node, error) {
 	return m.Add(func(node peer.Node) error {
 		svc := statsService.New()
 		m.OnClose(svc)
-		// The gossip is scoped to this universe: two universes on one machine must
+		// The gossip is scoped to this cloud: two clouds on one machine must
 		// not pool their load figures and route each other's traffic.
 		return service.On(node, m.Name()).Start(m.Context(), statsService.Descriptor.Name, svc)
 	})

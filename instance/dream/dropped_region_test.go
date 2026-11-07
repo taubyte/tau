@@ -38,7 +38,7 @@ type deployLog struct{ strings.Builder }
 
 func (*deployLog) Asset(context.Context, string, io.Reader) error { return nil }
 
-// deployAs runs the config push a cloud serving regions makes, into one universe's register.
+// deployAs runs the config push a cloud serving regions makes, into one cloud's register.
 func deployAs(t *testing.T, n *instance.Instance, regions schema.Regions) string {
 	t.Helper()
 	d, err := buildDeploy.New(

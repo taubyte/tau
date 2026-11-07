@@ -740,7 +740,7 @@ func newHost(t testing.TB, mn mocknet.Mocknet) host.Host {
 
 // harness is a constructed (but not started) server and everything under it.
 // Every dependency is a fake: a mocknet host, a map behind a raft mock, and two
-// interfaces. Nothing binds a port and nothing needs a universe.
+// interfaces. Nothing binds a port and nothing needs a cloud.
 type harness struct {
 	*server
 	store   *fakeStore

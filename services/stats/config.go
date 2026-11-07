@@ -85,7 +85,7 @@ type Config struct {
 	// max(4x Fresh, one minute); it must be at least Fresh.
 	//
 	// The minute is fleet policy: every placement move costs a copy handed over and one
-	// deleted. instance/dream sets it lower, since a universe's nodes do not restart.
+	// deleted. instance/dream sets it lower, since a cloud's nodes do not restart.
 	Stabilize time.Duration
 }
 

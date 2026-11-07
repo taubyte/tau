@@ -69,7 +69,7 @@ func TestAGatewayNodeReachesAWorkerNode(t *testing.T) {
 
 	edge, compute := nodeOf(t, pids[0]), nodeOf(t, pids[1])
 
-	// BUILT AS A PUSH IS, by the universe's builder: the recording tier never reads the
+	// BUILT AS A PUSH IS, by the cloud's builder: the recording tier never reads the
 	// bytes.
 	publish(t, u, pids, deployed{name: "with/function/wasm", host: "hello.example.com"}, artifacts{"": []byte("never read")})
 

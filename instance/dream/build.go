@@ -23,7 +23,7 @@ import (
 	"github.com/taubyte/tau/services/plm/uploads"
 )
 
-// Push is what a universe builds: a commit of a repository its mirror holds
+// Push is what a cloud builds: a commit of a repository its mirror holds
 // (Commit), as a forge's delivery would name it.
 type Push struct {
 	Repository string
@@ -38,13 +38,13 @@ type Outcome struct {
 	Environments []*plmv2.Job
 }
 
-// Mirror is the directory this universe's builders clone every repository from,
+// Mirror is the directory this cloud's builders clone every repository from,
 // file:// in their configuration: a repository key's folder under it.
-func (u *Universe) Mirror() string { return u.mirror }
+func (u *Cloud) Mirror() string { return u.mirror }
 
 // Commit makes dir the newest commit of repository's branch in the mirror, and is
 // that commit: what a push of the folder would carry. dir itself is only read.
-func (u *Universe) Commit(repository, branch, dir string) (string, error) {
+func (u *Cloud) Commit(repository, branch, dir string) (string, error) {
 	key, err := repokey.Parse("https://" + repository)
 	if err != nil {
 		return "", fmt.Errorf("dream: %q is not a repository: %w", repository, err)
@@ -129,11 +129,11 @@ func filesOf(dir string) ([]string, error) {
 	return files, err
 }
 
-// Upload keeps dir in the universe's uploads as a commit of repository's branch,
+// Upload keeps dir in the cloud's uploads as a commit of repository's branch,
 // with built standing in for what its packages' recipes make: a package's name to
 // the file it builds to. It is the push that commit is, what `tau build` hands a
 // development cloud; dir itself is only read.
-func (u *Universe) Upload(repository, branch, dir string, built map[string]string) (Push, error) {
+func (u *Cloud) Upload(repository, branch, dir string, built map[string]string) (Push, error) {
 	recipes, err := u.recipes(repository, branch, dir)
 	if err != nil {
 		return Push{}, err
@@ -177,7 +177,7 @@ func (u *Universe) Upload(repository, branch, dir string, built map[string]strin
 // project's configuration, from its own compile, or a code repository's, against
 // what the register publishes for the project it is linked to, as a cloud plans
 // either.
-func (u *Universe) recipes(repository, branch, dir string) (map[string]map[string]string, error) {
+func (u *Cloud) recipes(repository, branch, dir string) (map[string]map[string]string, error) {
 	if _, err := os.Stat(filepath.Join(dir, "project.yaml")); err == nil {
 		return uploads.Recipes(dir, branch)
 	}
@@ -213,8 +213,8 @@ func (u *Universe) recipes(repository, branch, dir string) (map[string]map[strin
 	return uploads.CodeRecipes(deployments, repository, dir)
 }
 
-// nodes is the universe's nodes, in the order they started.
-func (u *Universe) nodes() []*instance.Instance {
+// nodes is the cloud's nodes, in the order they started.
+func (u *Cloud) nodes() []*instance.Instance {
 	built.Lock()
 	defer built.Unlock()
 	out := make([]*instance.Instance, 0, len(u.pids))
@@ -226,8 +226,8 @@ func (u *Universe) nodes() []*instance.Instance {
 	return out
 }
 
-// register is the universe's register, on the first node running one.
-func (u *Universe) register() (*pkgregister.Register, error) {
+// register is the cloud's register, on the first node running one.
+func (u *Cloud) register() (*pkgregister.Register, error) {
 	for _, n := range u.nodes() {
 		if n.Register() != nil && n.Register().Local() != nil {
 			return n.Register().Local(), nil
@@ -236,9 +236,9 @@ func (u *Universe) register() (*pkgregister.Register, error) {
 	return nil, errors.New("dream: no node runs the register")
 }
 
-// Link names project's repositories in the universe's register, as `tau link`
+// Link names project's repositories in the cloud's register, as `tau link`
 // would: config is the one whose pushes are deploys.
-func (u *Universe) Link(ctx context.Context, project, config string, code ...string) error {
+func (u *Cloud) Link(ctx context.Context, project, config string, code ...string) error {
 	reg, err := u.register()
 	if err != nil {
 		return err

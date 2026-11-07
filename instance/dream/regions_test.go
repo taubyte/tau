@@ -206,8 +206,8 @@ func TestADeployReachingAStandbyPublishesNothing(t *testing.T) {
 	require.Empty(t, envs, "nothing is published for a refused project")
 }
 
-// linkedAt is inRegionAt for a universe that is one region of a cloud whose regions
-// link reaches, with the cm that is the region's end of it.
+// linkedAt is inRegionAt for a dream cloud standing for one of the regions link
+// reaches, with the cm that is the region's end of it.
 func linkedAt(t *testing.T, link *nodeDream.Regions, region, name, host string) *running {
 	t.Helper()
 	u, err := nodeDream.Start(t.Context(), t.Name()+"-"+region, nodeDream.Config{

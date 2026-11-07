@@ -132,7 +132,7 @@ func TestAReportCrossesTheMesh(t *testing.T) {
 	}, 30*time.Second, 100*time.Millisecond)
 }
 
-// TestTwoCloudsDoNotPoolTheirLoadFigures. Two universes on one machine, or two
+// TestTwoCloudsDoNotPoolTheirLoadFigures. Two clouds on one machine, or two
 // clouds bridged by a stray peer, would otherwise route each other's traffic.
 //
 // A report that could cross is given every chance to: the publisher knows the

@@ -28,11 +28,11 @@ import (
 // placementID is with/placement's own id, from its project.yaml.
 const placementID = "QmPigwAetxyyVvHj453JLsLhrWNGV4mW9ZG9yvjd7kUmMk"
 
-// A PUSH IS BUILT WHERE THE UNIVERSE BUILDS: through its plm node when it runs
+// A PUSH IS BUILT WHERE THE CLOUD BUILDS: through its plm node when it runs
 // one, else straight to a builder over its protocol, else by the builder's runs in
 // dream's own process; every way it ends deployed in the register, cloned from a
 // folder that is never written.
-func TestAPushIsBuiltWhereTheUniverseBuilds(t *testing.T) {
+func TestAPushIsBuiltWhereTheCloudBuilds(t *testing.T) {
 	shared := []string{instance.Stats, instance.Register, storageService.Descriptor.Name}
 	for name, cfg := range map[string]nodeDream.Config{
 		"with neither build nor a builder": {Services: shared},
@@ -138,9 +138,9 @@ func TestAnUploadNamingAPackageTheTreeDoesNotBuildIsRefused(t *testing.T) {
 	require.Error(t, err, "a tree with no project")
 }
 
-// A TOOL OUTSIDE THE PROCESS BUILDS AS A TEST DOES: DreamService is the universe's
+// A TOOL OUTSIDE THE PROCESS BUILDS AS A TEST DOES: DreamService is the cloud's
 // own Commit, Link, Upload and Build, over the wire.
-func TestAUniverseBuildsForAToolOverDreamService(t *testing.T) {
+func TestACloudBuildsForAToolOverDreamService(t *testing.T) {
 	ctx := t.Context()
 	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{
 		Services:  []string{instance.Builder, instance.Stats, instance.Register, storageService.Descriptor.Name},
@@ -179,21 +179,21 @@ func TestAUniverseBuildsForAToolOverDreamService(t *testing.T) {
 	require.Error(t, err, "a link names the repository it is")
 }
 
-func TestAUniverseThatCannotListenDoesNotStart(t *testing.T) {
+func TestACloudThatCannotListenDoesNotStart(t *testing.T) {
 	_, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Stats}, Listen: "nowhere:at:all"})
 	require.ErrorContains(t, err, "DreamService")
 
 	u, err := nodeDream.Start(t.Context(), t.Name()+"-quiet", nodeDream.Config{Services: []string{instance.Stats}})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
-	require.Nil(t, u.Addr(), "a universe named no Listen answers nowhere")
+	require.Nil(t, u.Addr(), "a cloud named no Listen answers nowhere")
 }
 
 func TestACommitIsTheFolderAsItIsNow(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Stats}})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
-	require.Equal(t, strings.ToLower(t.Name()), u.Name(), "the cloud a universe is, named as a cloud is")
+	require.Equal(t, strings.ToLower(t.Name()), u.Name(), "the cloud a cloud is, named as a cloud is")
 	require.NotNil(t, u.CA())
 
 	dir := t.TempDir()
@@ -226,7 +226,7 @@ func TestACommitIsTheFolderAsItIsNow(t *testing.T) {
 	require.ErrorContains(t, err, "the mirror's github.com/acme/file", "a mirror holding a file where a repository goes")
 }
 
-func TestAUniverseWithNothingThatBuildsSaysSo(t *testing.T) {
+func TestACloudWithNothingThatBuildsSaysSo(t *testing.T) {
 	ctx := t.Context()
 	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{Services: []string{instance.Stats}})
 	require.NoError(t, err)
@@ -281,7 +281,7 @@ func TestAMirrorRepositoryWithNoWorkingTreeTakesNoCommit(t *testing.T) {
 	require.ErrorIs(t, err, gogit.ErrIsBareRepository)
 }
 
-func TestAUniverseWhoseBuilderCannotBeMadeSaysSo(t *testing.T) {
+func TestACloudWhoseBuilderCannotBeMadeSaysSo(t *testing.T) {
 	ctx := t.Context()
 	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{
 		Services: []string{instance.Stats, instance.Register},
@@ -295,7 +295,7 @@ func TestAUniverseWhoseBuilderCannotBeMadeSaysSo(t *testing.T) {
 	require.ErrorContains(t, err, "not a file:// directory", "the builder's runs in place are made from the node's builder section")
 }
 
-func TestAClosedUniverseBuildsNothing(t *testing.T) {
+func TestAClosedCloudBuildsNothing(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Stats}})
 	require.NoError(t, err)
 	u.Close()

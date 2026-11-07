@@ -1,5 +1,5 @@
 // Package e2e runs taucorder against a real v2 fleet: instance/dream nodes
-// running register, discovery and worker, joined from outside the universe
+// running register, discovery and worker, joined from outside the cloud
 // with nothing but a certificate from its CA and a bootstrap address.
 package e2e
 
@@ -52,7 +52,7 @@ func TestBridgesADreamFleet(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// From outside: a key, a certificate from the universe's CA, and one
+	// From outside: a key, a certificate from the cloud's CA, and one
 	// bootstrap address.
 	dir := t.TempDir()
 	private, public, err := crypto.GenerateEd25519Key(rand.Reader)

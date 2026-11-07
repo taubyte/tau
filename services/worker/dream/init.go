@@ -1,7 +1,7 @@
 // Package dream runs the worker on a peer of an in-process mesh. It proves the
 // lookup over real streams and a real register. It cannot prove the tier without a
 // container backend: the pool is built from the runtimes set with Runtimes, and a
-// universe supplying none stops at the tier (proven in pkg/invoke/container).
+// cloud supplying none stops at the tier (proven in pkg/invoke/container).
 package dream
 
 import (
@@ -25,7 +25,7 @@ type tierList struct {
 	list []invoke.Runtime
 }
 
-// runtimes are the tiers a universe's workers run on, package-level because a tier
+// runtimes are the tiers a cloud's workers run on, package-level because a tier
 // is a live object shared by every worker a test starts.
 var runtimes tierList
 
@@ -57,7 +57,7 @@ func create(ctx context.Context, h host.Host, at libp2ppeer.ID) (io.Closer, erro
 	tiers := append([]invoke.Runtime(nil), runtimes.list...)
 	runtimes.Unlock()
 
-	// pkg/invoke refuses a pool with no tiers, so a universe that supplied none gets a
+	// pkg/invoke refuses a pool with no tiers, so a cloud that supplied none gets a
 	// single tier that starts nothing and says so.
 	if len(tiers) == 0 {
 		tiers = []invoke.Runtime{absent{}}
@@ -69,7 +69,7 @@ func create(ctx context.Context, h host.Host, at libp2ppeer.ID) (io.Closer, erro
 	}
 
 	svc, err := worker.New(h, worker.Config{},
-		worker.WithRegister(&universeRegister{host: h, at: at}),
+		worker.WithRegister(&cloudRegister{host: h, at: at}),
 		worker.WithPool(pool))
 	if err != nil {
 		pool.Close()
@@ -96,9 +96,9 @@ func (c closer) Close() error {
 	return err
 }
 
-// universeRegister reads from the register on one named peer, dialling on first use
+// cloudRegister reads from the register on one named peer, dialling on first use
 // so a worker can be up before its register answers.
-type universeRegister struct {
+type cloudRegister struct {
 	host host.Host
 	at   libp2ppeer.ID
 
@@ -106,7 +106,7 @@ type universeRegister struct {
 	client *registerService.Client
 }
 
-func (r *universeRegister) Resolve(ctx context.Context, project, environment string) (register.Pointer, error) {
+func (r *cloudRegister) Resolve(ctx context.Context, project, environment string) (register.Pointer, error) {
 	c, err := r.dial()
 	if err != nil {
 		return register.Pointer{}, err
@@ -114,7 +114,7 @@ func (r *universeRegister) Resolve(ctx context.Context, project, environment str
 	return c.Resolve(ctx, project, environment)
 }
 
-func (r *universeRegister) Object(ctx context.Context, id register.ObjectID) ([]byte, error) {
+func (r *cloudRegister) Object(ctx context.Context, id register.ObjectID) ([]byte, error) {
 	c, err := r.dial()
 	if err != nil {
 		return nil, err
@@ -122,7 +122,7 @@ func (r *universeRegister) Object(ctx context.Context, id register.ObjectID) ([]
 	return c.Object(ctx, id)
 }
 
-func (r *universeRegister) dial() (*registerService.Client, error) {
+func (r *cloudRegister) dial() (*registerService.Client, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.client != nil {

@@ -171,7 +171,7 @@ func TestACloudTakesNoUpload(t *testing.T) {
 	require.NotContains(t, w.Body.String(), "uploads")
 }
 
-func TestAUniverseTakesAnUploadAsACommitOfTheConfiguration(t *testing.T) {
+func TestACloudTakesAnUploadAsACommitOfTheConfiguration(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "uploads")
 	h, l := registeredWith(t, Config{Uploads: dir}, WithCloudFqdn("tau.example"))
 	_, err := l.Register.LinkProject(t.Context(), register.Link{Project: testProject, Config: testRepoKey, Claimant: testUser})

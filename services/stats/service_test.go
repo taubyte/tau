@@ -18,7 +18,7 @@ import (
 
 // Every dependency here is a fake: a mocknet host for identity, an in-memory
 // bus, and a function for this node's own numbers. Nothing binds a port and
-// nothing needs a universe — the point of pushing every rule down into
+// nothing needs a cloud — the point of pushing every rule down into
 // pkg/stats is that this file only has to prove the plumbing.
 
 func newHost(t testing.TB) host.Host {

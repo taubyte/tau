@@ -21,7 +21,7 @@
 // serving is visible to everyone it is connected to within a round trip, with
 // nothing published anywhere. It is also the source that works under mocknet
 // with no router in the picture at all, which is what lets a service test
-// resolve a peer and then call it without a universe underneath.
+// resolve a peer and then call it without a cloud underneath.
 //
 // Routing — the DHT — is the second, and it is optional because a host.Host
 // has no discovery of its own: pass WithRouting to get it. It is what finds a

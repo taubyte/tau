@@ -13,17 +13,17 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/dream/v2/dreamv2connect"
 )
 
-// rpc.go is DreamService (pkg/proto/tau/dream/v2): the universe's Go methods, for a
+// rpc.go is DreamService (pkg/proto/tau/dream/v2): the cloud's Go methods, for a
 // tool outside its process.
 
-// served is the DreamService a universe answers on, closed with it.
+// served is the DreamService a cloud answers on, closed with it.
 type served struct {
 	listener net.Listener
 	server   *http.Server
 }
 
 // serve answers DreamService for u on addr.
-func (u *Universe) serve(addr string) error {
+func (u *Cloud) serve(addr string) error {
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
@@ -38,16 +38,16 @@ func (u *Universe) serve(addr string) error {
 
 func (s *served) Close() error { return s.server.Close() }
 
-// Addr is where this universe answers DreamService, nil when its Config named no
+// Addr is where this cloud answers DreamService, nil when its Config named no
 // Listen.
-func (u *Universe) Addr() net.Addr {
+func (u *Cloud) Addr() net.Addr {
 	if u.rpc == nil {
 		return nil
 	}
 	return u.rpc.listener.Addr()
 }
 
-type handler struct{ u *Universe }
+type handler struct{ u *Cloud }
 
 var _ dreamv2connect.DreamServiceHandler = handler{}
 
@@ -86,7 +86,7 @@ func (h handler) Build(ctx context.Context, req *connect.Request[dreamv2.Push]) 
 	return connect.NewResponse(&dreamv2.Outcome{Plan: out.Plan, Environments: out.Environments}), nil
 }
 
-// refused keeps a code the universe's services said, and is a request the universe
+// refused keeps a code the cloud's services said, and is a request the cloud
 // could not do anything with otherwise.
 func refused(err error) error {
 	var coded *connect.Error

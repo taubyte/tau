@@ -1,7 +1,7 @@
 // Package dream runs a fleet of whole v2 nodes inside one process, v2's end-to-end
 // harness. Per-service dream registrations prove a service; this proves the
 // composition (a worker finding a register it does not run, a gateway routing to a
-// worker elsewhere). A universe is N nodes, each on its own libp2p peer meshed on
+// worker elsewhere). A cloud is N nodes, each on its own libp2p peer meshed on
 // loopback (p2p/mesh), running the services its Config names.
 package dream
 
@@ -97,14 +97,14 @@ func Node(peerID string) (*instance.Instance, bool) {
 }
 
 // Dream's raft timeouts. raft.DefaultTimeoutConfig is sized for distant nodes; in
-// a loopback universe voters find each other within one 200ms discovery poll and
+// a loopback cloud voters find each other within one 200ms discovery poll and
 // would otherwise sit out a 30s bootstrap window. Production keeps the default
 // (instance/boot/boot.go). Each number is a measured floor times the default's own
 // ratio; discovery measured p50 0.2s, p90 0.4s, worst 3.2s.
 const (
 	// dreamBootstrapTimeout is the window raft.New waits for peers before deciding who
 	// founds the group. A node seeing peers only after 0.8x of it joins late (slower,
-	// still correct; 4s vs the worst 3.2s measured). Only a universe where every node is
+	// still correct; 4s vs the worst 3.2s measured). Only a cloud where every node is
 	// late founds nothing, and at least one node always saw a peer within 0.8s (5x). A
 	// wider window would add its full length to most tests.
 	dreamBootstrapTimeout = 5 * time.Second
@@ -117,7 +117,7 @@ const (
 
 // dreamStabilize is how long a peer must be continuously present before data is
 // placed on it: one liveness window, pkg/membership's minimum. A cloud waits a
-// minute to avoid placement thrash on restarting peers; a universe's goroutine
+// minute to avoid placement thrash on restarting peers; a cloud's goroutine
 // nodes never restart. A shorter window is also harder to interrupt. It took the
 // settle barrier from 65s to 20s.
 var dreamStabilize = statsService.Config{}.Freshness()
@@ -134,7 +134,7 @@ var dreamTimeouts = raft.TimeoutConfig{
 	SnapshotThreshold:  raft.DefaultTimeoutConfig.SnapshotThreshold,
 }
 
-// Config is the shape of a universe: how many nodes, and what each runs.
+// Config is the shape of a cloud: how many nodes, and what each runs.
 type Config struct {
 	// Services each node runs. None named means all of them, which is what
 	// node.Config already says an empty list means.
@@ -152,42 +152,42 @@ type Config struct {
 	// node.WithService, which Services may then name.
 	Options []instance.Option
 
-	// Configure, when set, adjusts node index's config after the universe has
+	// Configure, when set, adjusts node index's config after the cloud has
 	// filled it — the way a fleet gives different machines different roles,
 	// such as build on one node and a builder on another (a node
 	// refuses to run both).
 	Configure func(index int, c *instance.Config)
 
 	// Secrets are cloud secrets every node that keeps secrets is initialized
-	// with, beside the universe's ACME account, as `taud init -` writes a
+	// with, beside the cloud's ACME account, as `taud init -` writes a
 	// sealed bundle (see secrets.Sealed).
 	Secrets []*secretsv2.InitSecret
 
-	// Listen is where the universe answers DreamService (rpc.go), "127.0.0.1:0"
+	// Listen is where the cloud answers DreamService (rpc.go), "127.0.0.1:0"
 	// for a port of the kernel's choosing. Empty answers it nowhere.
 	Listen string
 
-	// Region is the one region of a cloud this universe is, and Linked what links
-	// it to the cloud's other regions (link.go). An empty Region is a cloud of one
-	// unnamed region.
+	// Region is the region this dream cloud stands for, and Linked what links it
+	// to the dream clouds standing for the other regions (link.go). An empty Region
+	// is one unnamed region.
 	Region string
 	Linked *Regions
 }
 
-// removed is a directory a universe deletes when it closes.
+// removed is a directory a cloud deletes when it closes.
 type removed string
 
 func (d removed) Close() error { return os.RemoveAll(string(d)) }
 
-// Universe is a running fleet of nodes.
-type Universe struct {
+// Cloud is a running fleet of nodes.
+type Cloud struct {
 	mesh *mesh.Mesh
 	pids []string
 	// mirror is where its builders clone from (Commit), and uploads where a
 	// developer's plm is kept (Upload).
 	mirror, uploads string
 
-	// buildsMu guards builds, how the universe builds (builds.go), settled on first
+	// buildsMu guards builds, how the cloud builds (builds.go), settled on first
 	// use, and visitor, its own peer, which calls its services from beside them.
 	buildsMu sync.Mutex
 	builds   builds
@@ -198,16 +198,16 @@ type Universe struct {
 	rpc *served
 }
 
-// Start runs a universe of cfg.Copies nodes, one after another, each meshed
+// Start runs a cloud of cfg.Copies nodes, one after another, each meshed
 // with the ones before it. A node that fails to start closes whatever was
 // already running and is the error.
-func Start(ctx context.Context, name string, cfg Config) (*Universe, error) {
+func Start(ctx context.Context, name string, cfg Config) (*Cloud, error) {
 	m, err := mesh.New(ctx, name)
 	if err != nil {
 		return nil, err
 	}
 
-	// One ACME account per universe, sealed once and written by every secrets-keeping
+	// One ACME account per cloud, sealed once and written by every secrets-keeping
 	// node before it starts, as `taud init` does.
 	_, minted, err := acme.MintKey()
 	if err != nil {
@@ -221,7 +221,7 @@ func Start(ctx context.Context, name string, cfg Config) (*Universe, error) {
 	}
 	account := []*secretsv2.InitSecret{sealed}
 
-	// ONE UPLOADS DIRECTORY PER UNIVERSE, named in every node's build configuration,
+	// ONE UPLOADS DIRECTORY PER CLOUD, named in every node's build configuration,
 	// since build, which takes a developer's build, and the builder that builds it
 	// are often two nodes.
 	held, err := os.MkdirTemp("", "tau-uploads-")
@@ -237,7 +237,7 @@ func Start(ctx context.Context, name string, cfg Config) (*Universe, error) {
 	}
 	m.OnClose(removed(mirror))
 
-	u := &Universe{mesh: m, mirror: mirror, uploads: held}
+	u := &Cloud{mesh: m, mirror: mirror, uploads: held}
 	copies := max(cfg.Copies, 1)
 	for index := range copies {
 		p, err := m.Add(func(p peer.Node) error { return create(m, p, cfg, index, account, held, mirror, &u.kept) })
@@ -256,22 +256,22 @@ func Start(ctx context.Context, name string, cfg Config) (*Universe, error) {
 	return u, nil
 }
 
-// Name is the universe's name, which is also the cloud its nodes are in.
-func (u *Universe) Name() string { return u.mesh.Name() }
+// Name is the cloud's name, which is also the cloud its nodes are in.
+func (u *Cloud) Name() string { return u.mesh.Name() }
 
 // Pids are the nodes' peer ids, in the order they started.
-func (u *Universe) Pids() []string { return append([]string(nil), u.pids...) }
+func (u *Cloud) Pids() []string { return append([]string(nil), u.pids...) }
 
 // Peers are the nodes' libp2p peers, in the order they started.
-func (u *Universe) Peers() []peer.Node { return u.mesh.Peers() }
+func (u *Cloud) Peers() []peer.Node { return u.mesh.Peers() }
 
-// CA is the universe's own CA, random per universe: a peer from outside
-// joins with a certificate from it, issued for the universe's name.
-func (u *Universe) CA() *sectls.CA { return u.mesh.CA() }
+// CA is the cloud's own CA, random per cloud: a peer from outside
+// joins with a certificate from it, issued for the cloud's name.
+func (u *Cloud) CA() *sectls.CA { return u.mesh.CA() }
 
 // Close stops answering DreamService, then how it builds, then every node, then
 // their peers.
-func (u *Universe) Close() {
+func (u *Cloud) Close() {
 	if u.rpc != nil {
 		u.rpc.Close()
 		u.rpc = nil
@@ -298,11 +298,11 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	clock.Unlock()
 
 	if len(tiers) == 0 {
-		// A universe with no compute backend still composes; the tier is where it stops.
+		// A cloud with no compute backend still composes; the tier is where it stops.
 		tiers = []invoke.Runtime{absent{}}
 	}
 
-	// A DIRECTORY PER PEER, so two nodes in one universe do not share a volume
+	// A DIRECTORY PER PEER, so two nodes in one cloud do not share a volume
 	// by accident — which would make a test of "the bytes moved" pass without
 	// anything moving.
 	root, err := os.MkdirTemp("", "tau-node-"+h.ID().ShortString()+"-")
@@ -320,7 +320,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	}
 	nodeConfig.DNSListen = "127.0.0.1:0"
 	nodeConfig.Sections = map[string]any{statsService.Descriptor.Name: statsService.Config{Stabilize: dreamStabilize}}
-	// A universe is one developer's cloud, so sign-up is open.
+	// A cloud is one developer's cloud, so sign-up is open.
 	nodeConfig.Auth.SignUp = auth.SignUpOpen
 	// A development cloud serves declared zones unproven, takes a developer's build,
 	// and clones from its mirror.
@@ -339,7 +339,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		return err
 	}
 
-	// THE UNIVERSE'S OWN DIRECTORY, so a volume in a dream is a volume: a real
+	// THE CLOUD'S OWN DIRECTORY, so a volume in a dream is a volume: a real
 	// directory, checkpointed and restored the way it is on a machine; and raft
 	// timed for nodes one process apart.
 	nodeConfig.Root = root
@@ -348,7 +348,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	}
 	nodeConfig.Sections[cm.Name] = cm.Section{Consensus: cm.ConsensusConfig{Timeouts: dreamTimeouts, BootstrapTimeout: dreamBootstrapTimeout}}
 
-	// WHAT THE UNIVERSE BUILT WITH NO PLM SERVICE is looked up in what it kept, and
+	// WHAT THE CLOUD BUILT WITH NO PLM SERVICE is looked up in what it kept, and
 	// anything else in plm's records on the node.
 	lookup := &artifacts{kept: kept}
 	options := []instance.Option{

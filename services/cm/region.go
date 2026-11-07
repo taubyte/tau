@@ -62,7 +62,7 @@ var (
 // Link carries calls between the regions of one cloud, one end per region. The
 // region an end speaks for is the one every call it carries comes from, so the far
 // end knows who is asking from the link and never from the call. Dream links its
-// region universes with a mock; production links are the deployment's.
+// clouds, one per region, with a mock; production links are the deployment's.
 type Link interface {
 	// Region is the region this end speaks for.
 	Region() string

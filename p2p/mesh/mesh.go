@@ -40,7 +40,7 @@ const (
 	// a minute and more, wedging the mesh. Not relaxable.
 	swarmWait = time.Second
 
-	// A universe can run for as long as somebody leaves it up.
+	// A cloud can run for as long as somebody leaves it up.
 	certificateValidity = 10 * 365 * 24 * time.Hour
 
 	// drain is how long Close lets services finish before their peers go.

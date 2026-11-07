@@ -234,7 +234,7 @@ fi
 # ★ EVERY RUN GETS A TMPDIR OF ITS OWN: $tmp/N, for the scope tau-cap-N. Go's
 # work directories and t.TempDir follow TMPDIR, and so does whatever a test makes
 # with os.MkdirTemp — none of which a killed run cleans up. MEASURED on the build
-# servers, where /tmp is a tmpfs: 2,327 peer repositories and 437 universes,
+# servers, where /tmp is a tmpfs: 2,327 peer repositories and 437 clouds,
 # 7.9 GiB on one box, from runs long gone. A tmpfs page stays charged to the
 # cgroup that wrote it, so all of it counted against this slice.
 #

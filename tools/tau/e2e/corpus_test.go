@@ -48,8 +48,8 @@ import (
 )
 
 // Every project under instance/dream/projects/ goes through both ways a project reaches
-// a cloud: `tau build` (built here, handed to a universe) and `tau ci run` (the
-// universe's CI builds the pushed commit). Each must deploy and serve, a refused
+// a cloud: `tau build` (built here, handed to a cloud) and `tau ci run` (the
+// cloud's CI builds the pushed commit). Each must deploy and serve, a refused
 // project must be refused by name both ways, and both must build the same recipe.
 // Sources are the fixture crates (and pkg/invoke/wasm/fixtures/languages,
 // pkg/invoke/js/fixtures), placed under services/ with the world at wit/.
@@ -152,11 +152,11 @@ func copyFile(from, to string) error {
 	return os.WriteFile(to, data, 0o644)
 }
 
-// universe is a development cloud that builds: one node running every private
+// cloud is a development cloud that builds: one node running every private
 // service with a container daemon to plm and run in, and one running the
 // public plm service. It answers build's address and the node that
 // serves.
-func universe(t *testing.T, f *fake.Served, configure func(*instance.Config), opts ...instance.Option) (string, *instance.Instance) {
+func cloud(t *testing.T, f *fake.Served, configure func(*instance.Config), opts ...instance.Option) (string, *instance.Instance) {
 	t.Helper()
 	var err error
 	forges, err = f.Registry(forge.Policy{AllowInsecureCallback: true})
@@ -223,7 +223,7 @@ type corpusCase struct {
 	refused string
 	// prepare runs once the project is linked, before either build.
 	prepare func(t *testing.T, work string)
-	// region is the one region the universe is, for a project that says where
+	// region is the one region the cloud is, for a project that says where
 	// it runs; empty is a cloud of one unnamed region.
 	region string
 	// from writes the project somewhere other than instance/dream/projects and
@@ -246,7 +246,7 @@ type codeRepo struct {
 var gitSource = regexp.MustCompile(`git: (https://github\.com/acme/([a-z_-]+))\n(?:\s+branch: [a-z]+\n)?\s+path: (\S+)`)
 
 // codeRepos rewrites each `source.git` in the assembled project to the forge
-// the universe serves, and assembles the repository it names.
+// the cloud serves, and assembles the repository it names.
 func codeRepos(t *testing.T, work string, f *fake.Served) []codeRepo {
 	t.Helper()
 	var out []codeRepo
@@ -402,7 +402,7 @@ var corpus = []corpusCase{
 	{name: "with/database/distributed/sql/crdt", probes: []probe{
 		{function: "keeper", method: http.MethodPost, path: "/query/ledger", body: "SELECT 1", status: 200},
 	}},
-	// An external database needs a server this universe lacks
+	// An external database needs a server this cloud lacks
 	// (test-external-databases serves it); here it deploys, builds and resolves.
 	{name: "with/database/mysql/sql"},
 	{name: "with/database/postgres/sql"},
@@ -494,13 +494,13 @@ type builtResource struct {
 	Environment, Kind, Name, ID, Recipe string
 }
 
-// underTest is a universe a developer is signed in to, at a forge it serves.
+// underTest is a cloud a developer is signed in to, at a forge it serves.
 type underTest struct {
 	f       *fake.Served
 	serving *instance.Instance
 }
 
-// signedIn starts a forge and a universe and signs in to it.
+// signedIn starts a forge and a cloud and signs in to it.
 func signedIn(t *testing.T, configure func(*instance.Config), opts ...instance.Option) *underTest {
 	t.Helper()
 	t.Setenv(config.EnvConfig, filepath.Join(t.TempDir(), "config.yaml"))
@@ -511,7 +511,7 @@ func signedIn(t *testing.T, configure func(*instance.Config), opts ...instance.O
 	f, err := fake.Serve(fake.GitHubLike)
 	require.NoError(t, err)
 	t.Cleanup(func() { f.Close() })
-	cloud, serving := universe(t, f, configure, opts...)
+	cloud, serving := cloud(t, f, configure, opts...)
 
 	until(t, "login", func() result {
 		return tauIn(f.TokenString()+"\n", "login", "--cloud", cloud, "--sso", f.Host(), "--paste")
@@ -554,7 +554,7 @@ func (u *underTest) bothWays(t *testing.T, c corpusCase) {
 	local := tau("build", work, "-o", "json")
 	if c.refused != "" {
 		require.NotZero(t, local.code, "tau build of a refused project")
-		// REFUSED HERE OR BY THE UNIVERSE: what only a cloud can judge — its
+		// REFUSED HERE OR BY THE CLOUD: what only a cloud can judge — its
 		// regions, a zone's proof — is the deploy's refusal, in its log.
 		said := local.stdout + local.stderr
 		var b built
@@ -570,7 +570,7 @@ func (u *underTest) bothWays(t *testing.T, c corpusCase) {
 	if c.refused == "" {
 		var b built
 		require.NoError(t, json.Unmarshal([]byte(local.stdout), &b))
-		require.Equal(t, "success", b.Status, "the universe deployed the upload")
+		require.Equal(t, "success", b.Status, "the cloud deployed the upload")
 		uploads = append(uploads, b)
 		for _, r := range code {
 			res := tau("build", r.dir, "--project", id, "--repo", r.key.String(), "-o", "json")

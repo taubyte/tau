@@ -13,8 +13,8 @@ import (
 	"github.com/taubyte/tau/services/cm"
 )
 
-// Regions links the region universes it is handed to as the regions of one cloud
-// are linked: what one region's cm carries reaches another region's cm. It stands
+// Regions links the dream clouds it is handed, each standing for one region, as
+// the regions of a cloud are linked: what one region's cm carries reaches another region's cm. It stands
 // in for the deployment's own link, and keeps to the same contract
 // (tau/region/v2): an end speaks for the region it was made for, which is how the
 // far end knows who is asking, where a production link proves it.
@@ -33,8 +33,8 @@ func NewRegions() *Regions {
 	return &Regions{at: map[string][]*attached{}, next: map[string]int{}, cut: map[[2]string]bool{}}
 }
 
-// End is region's end of the link, which every node of that region's universe is
-// handed.
+// End is region's end of the link, handed to every node of the dream cloud
+// standing for it.
 func (r *Regions) End(region string) cm.Link { return end{r: r, region: region} }
 
 // Cut stops every call between a and b, both ways, as a partition would, until

@@ -72,7 +72,7 @@ trap 'rm -rf "$tmp"' EXIT
 # service exercised only through an external _test package is still counted.
 #
 # Heavy dreaming suites can flake under the cumulative load of a full gate run
-# (many universes back-to-back), so a failed run is retried once; the per-package
+# (many clouds back-to-back), so a failed run is retried once; the per-package
 # output is kept in $tmp/<pkg>.log for diagnosis.
 cover() {
 	local pkg="$1"

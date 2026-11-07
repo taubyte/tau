@@ -38,7 +38,7 @@ func TestAServiceIsResolvedByNameToTheNodeRunningIt(t *testing.T) {
 	}, 60*time.Second, 500*time.Millisecond, "the frontend's name never resolved")
 	a, ok := reply.Answer[0].(*dns.A)
 	require.True(t, ok, "answered a %T", reply.Answer[0])
-	require.Equal(t, "127.0.0.1", a.A.String(), "a universe binds loopback only")
+	require.Equal(t, "127.0.0.1", a.A.String(), "a cloud binds loopback only")
 
 	// The dns node's own service is a name too.
 	require.Eventually(t, func() bool {

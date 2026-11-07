@@ -22,7 +22,7 @@ import (
 
 // TopicOf is the gossipsub topic stats gossips on for one cloud.
 //
-// IT IS SCOPED, and that is not decoration: two universes sharing a machine, or
+// IT IS SCOPED, and that is not decoration: two clouds sharing a machine, or
 // two clouds bridged by a stray peer, would otherwise pool their load figures
 // and route each other's traffic. The scope is whatever the composer says
 // identifies this cloud.
