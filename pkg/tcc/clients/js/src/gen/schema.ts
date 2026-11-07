@@ -4384,14 +4384,14 @@ export class NamespaceConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "in"]);
   }
 
-  async tunnel(): Promise<boolean | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "tunnel"])) as boolean | undefined;
+  async mesh(): Promise<boolean | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "mesh"])) as boolean | undefined;
   }
-  setTunnel(v: boolean): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["regions", "tunnel"], v);
+  setMesh(v: boolean): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "mesh"], v);
   }
-  unsetTunnel(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["regions", "tunnel"]);
+  unsetMesh(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "mesh"]);
   }
 }
 
@@ -4471,14 +4471,14 @@ export class ProjectConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["regions", "in"]);
   }
 
-  async tunnel(): Promise<boolean | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "tunnel"])) as boolean | undefined;
+  async mesh(): Promise<boolean | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["regions", "mesh"])) as boolean | undefined;
   }
-  setTunnel(v: boolean): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["regions", "tunnel"], v);
+  setMesh(v: boolean): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["regions", "mesh"], v);
   }
-  unsetTunnel(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["regions", "tunnel"]);
+  unsetMesh(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["regions", "mesh"]);
   }
 }
 

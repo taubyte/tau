@@ -1,5 +1,5 @@
 id: QmPBn4xCaGJFkMDW1Be3VEHCqnFspzmD3r4LVo8g2gtE4x
-description: narrowed to region-1 alone, with a tunnel that has nothing to mesh
+description: narrowed to region-1 alone, meshed with nothing to connect
 regions:
     in: [region-1]
-    tunnel: true
+    mesh: true

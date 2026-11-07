@@ -357,15 +357,15 @@ var Topologies = []string{TopologySingle, TopologyFailover, TopologyActive}
 //	regions:
 //	    topology: failover
 //	    in: [eu-1, eu-2]    # failover: the first is primary
-//	    tunnel: true        # mesh this scope's instances across its regions
+//	    mesh: true          # connect this scope's instances across its regions
 func scopeRegionAttributes(scope string, opts ...AttrOption) []*Attribute {
 	return []*Attribute{
 		String(Key("regions", "topology"), append([]AttrOption{InSet(Topologies...), PerEnv(),
 			Doc("Topology", "How everything in this "+scope+" runs across its regions. single: in its one region. failover: in the first region, and in the next when that one is lost. active: in every region at once, each caller served by the nearest. Omitted means the parent's."+topologyRoot(scope))}, opts...)...),
 		StringSlice(Key("regions", "in"), append([]AttrOption{PerEnv(), EmitValidation("region", "region"),
 			Doc("Regions", "The regions everything in this "+scope+" runs in, as names the cloud offers; for failover, in the order it falls back. Omitted means the parent's. A scope below may narrow this list and never widen it.")}, opts...)...),
-		Bool(Key("regions", "tunnel"), append([]AttrOption{
-			Doc("Tunnel", "Mesh every instance of this "+scope+" across the regions it runs in. Nothing else connects its regions: a replication's copies travel through it. Omitted means the parent's.")}, opts...)...),
+		Bool(Key("regions", "mesh"), append([]AttrOption{
+			Doc("Mesh", "Connect every instance of this "+scope+" across the regions it runs in. Nothing else connects its regions: a replication's copies travel through the mesh. Omitted means the parent's.")}, opts...)...),
 	}
 }
 
@@ -1352,7 +1352,7 @@ var V2Resources = []*Node{
 		)),
 
 	// Which regions keep copies of one resource. The copies travel through its
-	// namespace's tunnel. It is context for the platform carrying it out: how a store
+	// namespace's mesh. It is context for the platform carrying it out: how a store
 	// keeps those copies in step is the platform's, never the author's to spell.
 	//
 	//	of:
@@ -1371,7 +1371,7 @@ var V2Resources = []*Node{
 				StringSlice("between", Required(), EmitValidation("region", "region"), InSection("replication"),
 					Doc("Between", "The regions that keep a copy: two or more of those its namespace runs in.")),
 			),
-			GroupDoc("Which regions keep copies of a database or a volume. The copies travel through its namespace's tunnel."), Category("regions"), Icon("stream"),
+			GroupDoc("Which regions keep copies of a database or a volume. The copies travel through its namespace's mesh."), Category("regions"), Icon("stream"),
 			secIdentity,
 			Section("replication", "Replication", "What is copied, and between which regions."),
 			Resource("replication", "Replication", "Replication", "replication"),

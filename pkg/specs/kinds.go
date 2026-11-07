@@ -3009,8 +3009,8 @@ const (
 // NamespaceRegions is the "regions" block of Namespace, read from a compiled object.
 type NamespaceRegions struct {
 	In       []string
+	Mesh     *bool
 	Topology string
-	Tunnel   *bool
 
 	// Declared says the author wrote this block: a field the compiler does not
 	// default is present. A block whose fields are all defaults reads false.
@@ -3021,19 +3021,19 @@ type NamespaceRegions struct {
 func ReadNamespaceRegions(r Resource) NamespaceRegions {
 	var out NamespaceRegions
 	out.In = r.Strings("regions", "in")
+	out.Mesh = present[bool](r.Bool("regions", "mesh"))
 	out.Topology = r.String("regions", "topology")
-	out.Tunnel = present[bool](r.Bool("regions", "tunnel"))
 	out.Declared = r.Has("regions", "in") ||
-		r.Has("regions", "topology") ||
-		r.Has("regions", "tunnel")
+		r.Has("regions", "mesh") ||
+		r.Has("regions", "topology")
 	return out
 }
 
 // NamespaceRegions's keys, and the values its fields may hold.
 const (
 	NamespaceRegionsKeyIn            = "regions/in"
+	NamespaceRegionsKeyMesh          = "regions/mesh"
 	NamespaceRegionsKeyTopology      = "regions/topology"
-	NamespaceRegionsKeyTunnel        = "regions/tunnel"
 	NamespaceRegionsTopologySingle   = "single"
 	NamespaceRegionsTopologyFailover = "failover"
 	NamespaceRegionsTopologyActive   = "active"

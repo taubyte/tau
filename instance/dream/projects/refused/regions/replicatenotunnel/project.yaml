@@ -1,9 +1,0 @@
-id: QmbpMVtB2n6pKa7jLiaKoTJLK7bV77z1ZNxzsaoQAdJhVL
-name: replicatenotunnel
-description: a replication of a ledger whose namespace has no tunnel - nothing connects its regions for the copies to travel through
-regions:
-    topology: active
-    in: [region-1, region-2]
-environments:
-    prod:
-        branches: ["*"]

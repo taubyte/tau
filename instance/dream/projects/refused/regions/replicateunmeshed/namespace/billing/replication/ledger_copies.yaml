@@ -1,5 +1,5 @@
 id: Qmaaa8Tv9NxdtvEm2sVT3PbZQREZSQeZ1mVVSKya8HNLpL
-description: the ledger kept in copies in both regions, though billing has no tunnel
+description: the ledger kept in copies in both regions, though billing is not meshed
 of:
     database:
         name: ledger

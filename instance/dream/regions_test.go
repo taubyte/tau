@@ -159,7 +159,7 @@ func TestAnEdgeKeepsWhatItsOriginAnswered(t *testing.T) {
 }
 
 // A REPLICATION SAYS WHERE COPIES ARE KEPT, and they travel through its namespace's
-// tunnel: the ledger runs in both of billing's regions, and both hold the replication.
+// mesh: the ledger runs in both of billing's regions, and both hold the replication.
 func TestAReplicationKeepsCopiesBetweenTheRegionsItNames(t *testing.T) {
 	flat := compiledCorpus(t, "with/regions/replication")
 	views, findings, err := schema.Views(flat, schema.WithRegions(threeRegions))
@@ -195,10 +195,10 @@ func TestARegionConstraintIsRefused(t *testing.T) {
 		"refused/regions/guard":       {`gateway/www: reaches function/doorman, which does not run in "region-2" where this does`},
 		"refused/regions/elsewhere":   {`gateway/www: reaches function/api, which does not run in "region-2" where this does`},
 		"refused/regions/replicateone": {
-			"namespace/billing: has a tunnel and runs in fewer than two regions, so there is nothing to mesh",
+			"namespace/billing: is meshed and runs in fewer than two regions, so there is nothing to connect",
 			"replication/ledger_copies: replicates database/ledger, which runs in fewer than two regions",
 		},
-		"refused/regions/replicatenotunnel": {"replication/ledger_copies: replicates database/ledger, whose namespace has no tunnel"},
+		"refused/regions/replicateunmeshed": {"replication/ledger_copies: replicates database/ledger, whose namespace is not meshed"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, findings, err := schema.Views(compiledCorpus(t, name), schema.WithRegions(threeRegions))

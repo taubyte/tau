@@ -1,5 +1,5 @@
 id: Qmaaa8Tv9NxdtvEm2sVT3PbZQREZSQeZ1mVVSKya8HNLpL
-description: the ledger kept in copies in both regions, through billing's tunnel
+description: the ledger kept in copies in both regions, through billing's mesh
 of:
     database:
         name: ledger

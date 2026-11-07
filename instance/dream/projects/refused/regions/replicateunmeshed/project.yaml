@@ -1,0 +1,9 @@
+id: QmXMLDQTvX5bi6cxVgcxd2kGCMR1DurqHCxh9RwnTznZef
+name: replicateunmeshed
+description: a replication of a ledger whose namespace is not meshed - nothing connects its regions for the copies to travel through
+regions:
+    topology: active
+    in: [region-1, region-2]
+environments:
+    prod:
+        branches: ["*"]

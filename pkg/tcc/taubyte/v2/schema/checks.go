@@ -139,7 +139,7 @@ func Audit(obj map[string]any, r Resolver, opts ...AuditOption) []Finding {
 	out = append(out, checkDatabaseOps(all)...)
 	out = append(out, checkWorkflows(all)...)
 	out = append(out, checkRegions(root, all, in)...)
-	out = append(out, checkTunnels(root)...)
+	out = append(out, checkMeshes(root)...)
 	out = append(out, checkReplications(root, all)...)
 	// The record of what the compile produced sits BESIDE the project, so it is read
 	// from the object rather than from the project inside it.
@@ -929,7 +929,7 @@ type scopeAllowance struct {
 	name, id string
 	topology string   // as declared here; empty means the parent's
 	regions  []string // as declared here; empty means the parent's
-	tunnel   *bool    // as declared here; nil means the parent's
+	mesh     *bool    // as declared here; nil means the parent's
 }
 
 // declares is whether the scope wrote a `regions` block of its own.
@@ -941,7 +941,7 @@ func (s scopeAllowance) declares() bool { return s.topology != "" || len(s.regio
 // a chain also passes through levels like `workflow/checkout`.
 func scopeAllowances(root map[string]any) map[string]scopeAllowance {
 	scopes := scopeGroups()
-	out := map[string]scopeAllowance{"": {topology: stringIn(root, regionsTopology), regions: listAt(root, regionsIn), tunnel: boolIn(root, regionsTunnel)}}
+	out := map[string]scopeAllowance{"": {topology: stringIn(root, regionsTopology), regions: listAt(root, regionsIn), mesh: boolIn(root, regionsMesh)}}
 	var walk func(scope map[string]any, path string)
 	walk = func(scope map[string]any, path string) {
 		for group, val := range scope {
@@ -963,7 +963,7 @@ func scopeAllowances(root map[string]any) map[string]scopeAllowance {
 				}
 				child := strings.TrimPrefix(path+"/"+name, "/")
 				out[child] = scopeAllowance{parent: path, kind: group, name: name, id: id,
-					topology: stringIn(res, regionsTopology), regions: listAt(res, regionsIn), tunnel: boolIn(res, regionsTunnel)}
+					topology: stringIn(res, regionsTopology), regions: listAt(res, regionsIn), mesh: boolIn(res, regionsMesh)}
 				walk(res, child)
 			}
 		}
@@ -975,7 +975,7 @@ func scopeAllowances(root map[string]any) map[string]scopeAllowance {
 const (
 	regionsTopology = "regions/topology"
 	regionsIn       = "regions/in"
-	regionsTunnel   = "regions/tunnel"
+	regionsMesh     = "regions/mesh"
 )
 
 func stringIn(fields map[string]any, key string) string {
@@ -1534,16 +1534,16 @@ func boolIn(m map[string]any, key string) *bool {
 	return nil
 }
 
-// tunneled is whether a scope's instances are meshed: the nearest `regions/tunnel` up
+// meshed is whether a scope's instances are connected: the nearest `regions/mesh` up
 // its chain.
-func tunneled(scopes map[string]scopeAllowance, path string) bool {
+func meshed(scopes map[string]scopeAllowance, path string) bool {
 	for {
 		s, known := scopes[path]
 		if !known {
 			return false
 		}
-		if s.tunnel != nil {
-			return *s.tunnel
+		if s.mesh != nil {
+			return *s.mesh
 		}
 		if path == "" {
 			return false
@@ -1552,13 +1552,13 @@ func tunneled(scopes map[string]scopeAllowance, path string) bool {
 	}
 }
 
-// checkTunnels: a tunnel meshes a scope's instances, so the scope runs in two regions
+// checkMeshes: a mesh connects a scope's instances, so the scope runs in two regions
 // or more.
-func checkTunnels(root map[string]any) []Finding {
+func checkMeshes(root map[string]any) []Finding {
 	scopes := scopeAllowances(root)
 	var out []Finding
 	for path, s := range scopes {
-		if s.tunnel == nil || !*s.tunnel {
+		if s.mesh == nil || !*s.mesh {
 			continue
 		}
 		if _, in := resolvedRegions(scopes, path); len(in) < 2 {
@@ -1567,8 +1567,8 @@ func checkTunnels(root map[string]any) []Finding {
 				kind, name = "project", stringAt(root, "name")
 			}
 			out = append(out, Finding{Broken, kind, name, s.parent,
-				"has a tunnel and runs in fewer than two regions, so there is nothing to mesh",
-				"A tunnel meshes every instance of a scope across the regions it runs in. Give it more than one region, or drop the tunnel.", s.id})
+				"is meshed and runs in fewer than two regions, so there is nothing to connect",
+				"A mesh connects every instance of a scope across the regions it runs in. Give it more than one region, or drop the mesh.", s.id})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Scope+out[i].Name < out[j].Scope+out[j].Name })
@@ -1576,7 +1576,7 @@ func checkTunnels(root map[string]any) []Finding {
 }
 
 // checkReplications: a replication copies something its namespace runs in more than
-// one region, between regions it runs in, and its namespace has a tunnel for the
+// one region, between regions it runs in, and its namespace has a mesh for the
 // copies to travel through. All of
 // it spans documents, so only the audit sees it.
 func checkReplications(root map[string]any, all []compiled) []Finding {
@@ -1614,9 +1614,9 @@ func checkReplications(root map[string]any, all []compiled) []Finding {
 					"A copy is kept only where what is replicated runs: "+strings.Join(in, ", ")+".")
 			}
 		}
-		if !tunneled(scopes, target.scope) {
-			broken(fmt.Sprintf("replicates %s/%s, whose namespace has no tunnel", kind, name),
-				"The copies travel through the namespace's tunnel, and nothing else connects its regions. Set `regions: {tunnel: true}` on it.")
+		if !meshed(scopes, target.scope) {
+			broken(fmt.Sprintf("replicates %s/%s, whose namespace is not meshed", kind, name),
+				"The copies travel through the namespace's mesh, and nothing else connects its regions. Set `regions: {mesh: true}` on it.")
 		}
 	}
 	return out

@@ -13230,9 +13230,9 @@
               "x-tau-section": "identity",
               "x-tau-validation": "region"
             },
-            "tunnel": {
-              "description": "Mesh every instance of this namespace across the regions it runs in. Nothing else connects its regions: a replication's copies travel through it. Omitted means the parent's.",
-              "title": "Tunnel",
+            "mesh": {
+              "description": "Connect every instance of this namespace across the regions it runs in. Nothing else connects its regions: a replication's copies travel through the mesh. Omitted means the parent's.",
+              "title": "Mesh",
               "type": "boolean",
               "x-tau-section": "identity"
             }
@@ -13465,9 +13465,9 @@
                     "x-tau-section": "identity",
                     "x-tau-validation": "region"
                   },
-                  "tunnel": {
-                    "description": "Mesh every instance of this namespace across the regions it runs in. Nothing else connects its regions: a replication's copies travel through it. Omitted means the parent's.",
-                    "title": "Tunnel",
+                  "mesh": {
+                    "description": "Connect every instance of this namespace across the regions it runs in. Nothing else connects its regions: a replication's copies travel through the mesh. Omitted means the parent's.",
+                    "title": "Mesh",
                     "type": "boolean",
                     "x-tau-section": "identity"
                   }
@@ -13532,9 +13532,9 @@
                           "x-tau-section": "identity",
                           "x-tau-validation": "region"
                         },
-                        "tunnel": {
-                          "description": "Mesh every instance of this namespace across the regions it runs in. Nothing else connects its regions: a replication's copies travel through it. Omitted means the parent's.",
-                          "title": "Tunnel",
+                        "mesh": {
+                          "description": "Connect every instance of this namespace across the regions it runs in. Nothing else connects its regions: a replication's copies travel through the mesh. Omitted means the parent's.",
+                          "title": "Mesh",
                           "type": "boolean",
                           "x-tau-section": "identity"
                         }
@@ -13599,9 +13599,9 @@
                                 "x-tau-section": "identity",
                                 "x-tau-validation": "region"
                               },
-                              "tunnel": {
-                                "description": "Mesh every instance of this namespace across the regions it runs in. Nothing else connects its regions: a replication's copies travel through it. Omitted means the parent's.",
-                                "title": "Tunnel",
+                              "mesh": {
+                                "description": "Connect every instance of this namespace across the regions it runs in. Nothing else connects its regions: a replication's copies travel through the mesh. Omitted means the parent's.",
+                                "title": "Mesh",
                                 "type": "boolean",
                                 "x-tau-section": "identity"
                               }
@@ -13666,9 +13666,9 @@
                                       "x-tau-section": "identity",
                                       "x-tau-validation": "region"
                                     },
-                                    "tunnel": {
-                                      "description": "Mesh every instance of this namespace across the regions it runs in. Nothing else connects its regions: a replication's copies travel through it. Omitted means the parent's.",
-                                      "title": "Tunnel",
+                                    "mesh": {
+                                      "description": "Connect every instance of this namespace across the regions it runs in. Nothing else connects its regions: a replication's copies travel through the mesh. Omitted means the parent's.",
+                                      "title": "Mesh",
                                       "type": "boolean",
                                       "x-tau-section": "identity"
                                     }
@@ -13733,9 +13733,9 @@
                                             "x-tau-section": "identity",
                                             "x-tau-validation": "region"
                                           },
-                                          "tunnel": {
-                                            "description": "Mesh every instance of this namespace across the regions it runs in. Nothing else connects its regions: a replication's copies travel through it. Omitted means the parent's.",
-                                            "title": "Tunnel",
+                                          "mesh": {
+                                            "description": "Connect every instance of this namespace across the regions it runs in. Nothing else connects its regions: a replication's copies travel through the mesh. Omitted means the parent's.",
+                                            "title": "Mesh",
                                             "type": "boolean",
                                             "x-tau-section": "identity"
                                           }
@@ -13800,9 +13800,9 @@
                                                   "x-tau-section": "identity",
                                                   "x-tau-validation": "region"
                                                 },
-                                                "tunnel": {
-                                                  "description": "Mesh every instance of this namespace across the regions it runs in. Nothing else connects its regions: a replication's copies travel through it. Omitted means the parent's.",
-                                                  "title": "Tunnel",
+                                                "mesh": {
+                                                  "description": "Connect every instance of this namespace across the regions it runs in. Nothing else connects its regions: a replication's copies travel through the mesh. Omitted means the parent's.",
+                                                  "title": "Mesh",
                                                   "type": "boolean",
                                                   "x-tau-section": "identity"
                                                 }
@@ -13867,9 +13867,9 @@
                                                         "x-tau-section": "identity",
                                                         "x-tau-validation": "region"
                                                       },
-                                                      "tunnel": {
-                                                        "description": "Mesh every instance of this namespace across the regions it runs in. Nothing else connects its regions: a replication's copies travel through it. Omitted means the parent's.",
-                                                        "title": "Tunnel",
+                                                      "mesh": {
+                                                        "description": "Connect every instance of this namespace across the regions it runs in. Nothing else connects its regions: a replication's copies travel through the mesh. Omitted means the parent's.",
+                                                        "title": "Mesh",
                                                         "type": "boolean",
                                                         "x-tau-section": "identity"
                                                       }
@@ -16625,7 +16625,7 @@
       ]
     },
     "Replication": {
-      "description": "Which regions keep copies of a database or a volume. The copies travel through its namespace's tunnel.",
+      "description": "Which regions keep copies of a database or a volume. The copies travel through its namespace's mesh.",
       "oneOf": [
         {
           "properties": {

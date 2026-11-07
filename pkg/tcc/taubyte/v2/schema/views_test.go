@@ -334,9 +334,9 @@ func TestAGatewayRouteDoesNotReachIntoAnotherNamespacesRegions(t *testing.T) {
 		findingsTitled(findings, schema.Broken))
 }
 
-// A REPLICATION'S COPIES TRAVEL THROUGH ITS NAMESPACE'S TUNNEL, between regions that
-// namespace runs in, and a tunnel meshes two regions or more.
-func TestAReplicationTravelsThroughItsNamespacesTunnel(t *testing.T) {
+// A REPLICATION'S COPIES TRAVEL THROUGH ITS NAMESPACE'S MESH, between regions that
+// namespace runs in, and a mesh connects two regions or more.
+func TestAReplicationTravelsThroughItsNamespacesMesh(t *testing.T) {
 	replication := func(of, between string) string {
 		return "id: " + cidFor("replication/copies") + "\nof:\n    database:\n        name: " + of + "\nbetween: " + between + "\n"
 	}
@@ -344,19 +344,19 @@ func TestAReplicationTravelsThroughItsNamespacesTunnel(t *testing.T) {
 		name, billing, replication string
 		broken                     []string
 	}{
-		{name: "meshed", billing: "tunnel: true\n", replication: replication("ledger", "[region-1, region-2]")},
-		{name: "one region", billing: "tunnel: true\n    in: [region-1]\n", replication: replication("ledger", "[region-1, region-2]"),
+		{name: "meshed", billing: "mesh: true\n", replication: replication("ledger", "[region-1, region-2]")},
+		{name: "one region", billing: "mesh: true\n    in: [region-1]\n", replication: replication("ledger", "[region-1, region-2]"),
 			broken: []string{
-				"namespace/billing: has a tunnel and runs in fewer than two regions, so there is nothing to mesh",
+				"namespace/billing: is meshed and runs in fewer than two regions, so there is nothing to connect",
 				"replication/copies: replicates database/ledger, which runs in fewer than two regions",
 			}},
-		{name: "no tunnel", replication: replication("ledger", "[region-1, region-2]"),
-			broken: []string{"replication/copies: replicates database/ledger, whose namespace has no tunnel"}},
-		{name: "no such database", billing: "tunnel: true\n", replication: replication("nowhere", "[region-1, region-2]"),
+		{name: "no mesh", replication: replication("ledger", "[region-1, region-2]"),
+			broken: []string{"replication/copies: replicates database/ledger, whose namespace is not meshed"}},
+		{name: "no such database", billing: "mesh: true\n", replication: replication("nowhere", "[region-1, region-2]"),
 			broken: []string{"replication/copies: replicates database/nowhere, which does not exist"}},
-		{name: "a region it does not run in", billing: "tunnel: true\n", replication: replication("ledger", "[region-1, region-3]"),
+		{name: "a region it does not run in", billing: "mesh: true\n", replication: replication("ledger", "[region-1, region-3]"),
 			broken: []string{`replication/copies: replicates in "region-3", where database/ledger does not run`}},
-		{name: "one region named", billing: "tunnel: true\n", replication: replication("ledger", "[region-1]"),
+		{name: "one region named", billing: "mesh: true\n", replication: replication("ledger", "[region-1]"),
 			broken: []string{"replication/copies: replicates between fewer than two regions"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

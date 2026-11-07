@@ -1,4 +1,4 @@
 id: QmPBn4xCaGJFkMDW1Be3VEHCqnFspzmD3r4LVo8g2gtE4x
-description: runs in both of the root's regions at once, its instances meshed
+description: runs in both of the root's regions at once, its instances connected by its mesh
 regions:
-    tunnel: true
+    mesh: true
