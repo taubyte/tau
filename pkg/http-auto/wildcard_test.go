@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"math/big"
+	"net"
 	"regexp"
 	"strings"
 	"sync"
@@ -174,5 +175,34 @@ func TestChallengeHintNamesTheDelegation(t *testing.T) {
 	}
 	if h := challengeHint("gen.example.com", errors.New("rate limited")); h != "" {
 		t.Fatalf("hint for another error: %q", h)
+	}
+}
+
+// Let's Encrypt's secondary check reached a Seer that did not have the value
+// yet. The order now waits until every nameserver answers it.
+func TestWaitForChallengeWaitsForEveryNameserver(t *testing.T) {
+	defer func(ns func(context.Context, string) ([]*net.NS, error), h func(context.Context, string) ([]string, error), x func(context.Context, string, string) ([]string, error), w time.Duration) {
+		lookupNS, lookupHost, lookupTXTAt, challengeWait = ns, h, x, w
+	}(lookupNS, lookupHost, lookupTXTAt, challengeWait)
+
+	lookupNS = func(context.Context, string) ([]*net.NS, error) { return []*net.NS{{Host: "seer.example.com."}}, nil }
+	lookupHost = func(context.Context, string) ([]string, error) { return []string{"10.0.0.1", "10.0.0.2"}, nil }
+	asked := map[string]int{}
+	lookupTXTAt = func(_ context.Context, server, _ string) ([]string, error) {
+		asked[server]++
+		if server == "10.0.0.2" && asked[server] < 3 {
+			return nil, nil // this Seer gets the value late
+		}
+		return []string{"v"}, nil
+	}
+	challengeWait = 30 * time.Second
+
+	start := time.Now()
+	waitForChallenge(context.Background(), "_acme-challenge.gen.example.com", "v")
+	if asked["10.0.0.2"] < 3 {
+		t.Fatalf("accepted before the late Seer answered: %v", asked)
+	}
+	if time.Since(start) > 20*time.Second {
+		t.Fatalf("waited too long: %s", time.Since(start))
 	}
 }

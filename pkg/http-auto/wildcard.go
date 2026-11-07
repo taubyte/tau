@@ -10,6 +10,8 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"net"
+	"slices"
 	"strings"
 	"time"
 
@@ -194,7 +196,7 @@ func (s *Service) orderWildcardACME(ctx context.Context, base string) ([]byte, e
 		if err := s.certStore.Put(ctx, challengeKey, acmeStore.EncodeChallenge(txt, time.Now().Add(10*time.Minute))); err != nil {
 			return nil, err
 		}
-		time.Sleep(WildcardSettle)
+		waitForChallenge(ctx, "_acme-challenge."+base, txt)
 		if _, err := client.Accept(ctx, chal); err != nil {
 			return nil, fmt.Errorf("accept: %w", err)
 		}
@@ -237,4 +239,69 @@ func challengeHint(base string, err error) string {
 		return fmt.Sprintf(". The ACME server did not reach Seer for _acme-challenge.%s: delegate that name to the Seers with an NS record at the DNS provider", base)
 	}
 	return ""
+}
+
+// The ACME server checks the challenge from several places, each of which may
+// reach a different Seer, and the value reaches every Seer's copy of the store
+// a moment apart: accepting after a fixed wait failed with "secondary
+// validation: No TXT record found". Before accepting, every address of every
+// nameserver for the name must answer the value.
+var (
+	lookupNS      = net.DefaultResolver.LookupNS
+	lookupHost    = net.DefaultResolver.LookupHost
+	lookupTXTAt   = txtAt
+	challengeWait = 2 * time.Minute
+)
+
+func txtAt(ctx context.Context, server, name string) ([]string, error) {
+	r := &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+		var d net.Dialer
+		return d.DialContext(ctx, network, net.JoinHostPort(server, "53"))
+	}}
+	return r.LookupTXT(ctx, name)
+}
+
+// waitForChallenge returns once every nameserver address answers value for
+// name, or after challengeWait. Without a delegation it falls back to
+// WildcardSettle, the fixed wait used before.
+func waitForChallenge(ctx context.Context, name, value string) {
+	nss, _ := lookupNS(ctx, name)
+	if len(nss) == 0 {
+		// resolvers may not hand out the delegation itself: ask the cloud Seers,
+		// seer.<cloud>, the name the delegation points to
+		if _, cloud, ok := strings.Cut(strings.TrimPrefix(name, "_acme-challenge."), "."); ok {
+			nss = []*net.NS{{Host: "seer." + cloud}}
+		}
+	}
+	var servers []string
+	for _, ns := range nss {
+		if addrs, err := lookupHost(ctx, ns.Host); err == nil {
+			servers = append(servers, addrs...)
+		}
+	}
+	if len(servers) == 0 {
+		time.Sleep(WildcardSettle)
+		return
+	}
+	deadline := time.Now().Add(challengeWait)
+	for {
+		missing := 0
+		for _, srv := range servers {
+			if vals, err := lookupTXTAt(ctx, srv, name); err != nil || !slices.Contains(vals, value) {
+				missing++
+			}
+		}
+		if missing == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			logger.Warnf("wildcard: %d of %d nameservers still do not answer %s after %s; accepting anyway", missing, len(servers), name, challengeWait)
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
+	}
 }
