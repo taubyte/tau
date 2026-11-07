@@ -39,7 +39,10 @@ func RequiredStringWithValidator(c *cli.Context, prompt string, f stringPromptMe
 	}
 
 	for ret == "" || err != nil {
-		if ret == "" && UseDefaults {
+		if UseDefaults {
+			if err != nil {
+				return "", err // an invalid flag value, not a missing one
+			}
 			return "", RequiredInDefaultsModeError(prompt)
 		}
 		if err == nil {

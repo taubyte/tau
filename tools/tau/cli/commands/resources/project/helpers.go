@@ -3,10 +3,10 @@ package project
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
-	"sync"
 
 	"github.com/google/go-github/v71/github"
 	"github.com/pterm/pterm"
@@ -38,63 +38,36 @@ type dualRepoHandler struct {
 	errorFormat func(string) error
 }
 
-// Run will parse for config-only || code-only
-// then Runs a go routine to commit the action on both
-// config and code repositories asynchronously or run config/code only
+// Run applies the action to the config repo, then the code repo (or only the
+// one --config-only/--code-only names). Config goes first and code is left
+// alone when config fails: a code build needs the resources config declares.
 func (h *dualRepoHandler) Run() error {
 	config, code, err := projectFlags.ParseConfigCodeFlags(h.ctx)
 	if err != nil {
 		return err
 	}
 
-	var (
-		configErr error
-		codeErr   error
-	)
-
-	var wg sync.WaitGroup
-
-	if config {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
-			var configRepo *git.Repository
-
-			configRepo, configErr = h.repository.Config()
-			if configErr != nil {
-				return
-			}
-
-			configErr = h.action(configRepo)
-			if configErr != nil {
-				pterm.Error.Printfln(projectI18n.ConfigRepo, configErr)
-			}
-		}()
+	steps := []struct {
+		on     bool
+		open   func() (*git.Repository, error)
+		format string
+	}{
+		{config, h.repository.Config, projectI18n.ConfigRepo},
+		{code, h.repository.Code, projectI18n.CodeRepo},
 	}
-
-	if code {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
-			var codeRepo *git.Repository
-
-			codeRepo, codeErr = h.repository.Code()
-			if codeErr != nil {
-				return
+	for _, s := range steps {
+		if !s.on {
+			continue
+		}
+		repo, err := s.open()
+		if err == nil {
+			if err = h.action(repo); err != nil {
+				pterm.Error.Printfln(s.format, err)
 			}
-
-			codeErr = h.action(codeRepo)
-			if codeErr != nil {
-				pterm.Error.Printfln(projectI18n.CodeRepo, codeErr)
-			}
-		}()
-	}
-
-	wg.Wait()
-	if configErr != nil || codeErr != nil {
-		return h.errorFormat(h.projectName)
+		}
+		if err != nil {
+			return errors.Join(h.errorFormat(h.projectName), err)
+		}
 	}
 
 	return nil

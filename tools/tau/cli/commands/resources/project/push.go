@@ -43,10 +43,9 @@ func push(ctx *cli.Context) error {
 		ctx:         ctx,
 		repository:  repoHandler,
 		projectName: project.Name,
-		errorFormat: projectI18n.PullingProjectFailed,
+		errorFormat: projectI18n.PushingProjectFailed,
 		action: func(r *git.Repository) error {
-			err = r.Commit(commitMessage, ".")
-			if err != nil {
+			if err := r.Commit(commitMessage, "."); err != nil {
 				return err
 			}
 

@@ -3,7 +3,6 @@ package templates
 import (
 	"context"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/taubyte/tau/pkg/git"
@@ -34,11 +33,5 @@ func loadTemplates() error {
 		return err
 	}
 
-	err = _templates.repository.Pull()
-	if err != nil && !strings.Contains(err.Error(), "already up-to-date") {
-		// TODO verbose
-		return err
-	}
-
-	return nil
+	return _templates.repository.Pull()
 }

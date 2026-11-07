@@ -33,14 +33,18 @@ func NewNextValidation(key string, value any, validator string, context map[stri
 
 var varNameRegex = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
+// ValidVariableName is the check IsVariableName installs, for callers that must
+// refuse a name before it reaches a config.
+func ValidVariableName(s string) error {
+	if varNameRegex.MatchString(s) {
+		return nil
+	}
+	return errors.New("invalid variable name")
+}
+
 func IsVariableName() Option {
 	return func(a *Attribute) {
-		Validator(func(s string) error {
-			if varNameRegex.MatchString(s) {
-				return nil
-			}
-			return errors.New("invalid variable name")
-		})(a)
+		Validator(ValidVariableName)(a)
 		// The check IS a regex, so record it as an introspectable pattern a
 		// generator can emit directly (JSON Schema `pattern`). No runtime effect.
 		Annotate("pattern", varNameRegex.String())(a)

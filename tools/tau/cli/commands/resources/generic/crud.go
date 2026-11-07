@@ -1,6 +1,10 @@
 package generic
 
 import (
+	"errors"
+	"fmt"
+	"strings"
+
 	"github.com/taubyte/tau/tools/tau/cli/common"
 	"github.com/taubyte/tau/tools/tau/flags"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
@@ -115,6 +119,9 @@ func (l link) new(ctx *cli.Context) error {
 	if err := l.fill(ctx, st, name, doc); err != nil {
 		return err
 	}
+	if err := l.requireComplete(st, name, doc); err != nil {
+		return err
+	}
 
 	if !l.confirm(ctx, "Create this "+l.group.Name+"?", name, doc) {
 		return nil
@@ -145,6 +152,9 @@ func (l link) edit(ctx *cli.Context) error {
 	if err := l.fill(ctx, st, name, doc); err != nil {
 		return err
 	}
+	if err := l.requireComplete(st, name, doc); err != nil {
+		return err
+	}
 	if !l.confirm(ctx, "Edit this "+l.group.Name+"?", name, doc) {
 		return nil
 	}
@@ -153,6 +163,37 @@ func (l link) edit(ctx *cli.Context) error {
 	}
 	l.success("Edited", name)
 	return nil
+}
+
+// requireComplete refuses, in --defaults mode, a resource the DSL would reject:
+// nothing was asked, so a required field no flag gave fails here, naming its
+// flag, instead of being written and failing later at validate or push.
+func (l link) requireComplete(st *tcc.Store, name string, doc tcc.Doc) error {
+	if !prompts.UseDefaults {
+		return nil
+	}
+	issues, err := st.Issues(l.group.Dir, name, doc)
+	if err != nil {
+		return err
+	}
+	errs := make([]error, 0, len(issues))
+	for _, is := range issues {
+		flag := ""
+		for _, f := range l.form.Fields {
+			if key(f.Path) == key(is.Field) {
+				flag = f.Flag
+			}
+		}
+		switch _, cond, required := strings.Cut(is.Message, " is required"); {
+		case flag == "":
+			errs = append(errs, errors.New(is.Message))
+		case required || strings.Contains(is.Message, "is missing"):
+			errs = append(errs, fmt.Errorf("--%s is required%s", flag, cond))
+		default:
+			errs = append(errs, fmt.Errorf("--%s: %s", flag, is.Message))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func (l link) delete(ctx *cli.Context) error {

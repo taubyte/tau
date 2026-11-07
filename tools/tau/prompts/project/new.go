@@ -1,6 +1,7 @@
 package projectPrompts
 
 import (
+	"github.com/taubyte/tau/tools/tau/flags"
 	projectFlags "github.com/taubyte/tau/tools/tau/flags/project"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
 	"github.com/taubyte/tau/tools/tau/prompts"
@@ -9,6 +10,13 @@ import (
 
 func New(ctx *cli.Context) (embedToken bool, project *projectLib.Project, err error) {
 	project = &projectLib.Project{}
+
+	// A bad --name is refused before listing projects calls auth (and GitHub).
+	if name := ctx.String(flags.Name.Name); name != "" {
+		if err = prompts.ResourceNameValidator(name); err != nil {
+			return
+		}
+	}
 
 	projectNames, err := projectLib.List()
 	if err != nil {
