@@ -90,3 +90,23 @@ func readFile(t *testing.T, path string) string {
 	assert.NilError(t, err)
 	return string(b)
 }
+
+// With --defaults and no --branch, a new website or library gets "main" rather
+// than an empty branch that fails the clone after the repo was created.
+func TestNewRepoDefaultsBranchMain(t *testing.T) {
+	defer testutil.ActivateAuthMock()()
+	dir, projectPath, cfg := withRepoProject(t)
+
+	_, _, err := testutil.RunCLIWithDirAndCwdWithAuthMock(t, cli.Run, dir, projectPath, cfg,
+		"--defaults", "-y", "new", "library", "lib1", "--color", "never",
+		"--git-provider", "github",
+		"--repository-id", "112233",
+		"--repository-name", "taubyte-test/lib1",
+		"--no-generate-repository",
+		"--no-clone",
+	)
+	assert.NilError(t, err)
+
+	yaml := readFile(t, filepath.Join(projectPath, "config", "libraries", "lib1.yaml"))
+	assert.Assert(t, strings.Contains(yaml, "branch: main"), "want branch: main in:\n%s", yaml)
+}
