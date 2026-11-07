@@ -314,7 +314,8 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 
 func (h *dnsHandler) tauDnsResolve(ctx context.Context, service, name string, w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
 	if err := common.ValidateServices([]string{service}); err != nil {
-		logger.Errorf("validating service `%s` failed with: %s", service, err.Error())
+		// the label comes from the query (e.g. a wildcard *.tau lookup): unknown is spam, not a fault
+		logger.Debugf("validating service `%s` failed with: %s", service, err.Error())
 		if err := w.WriteMsg(errMsg); err != nil {
 			logger.Errorf("writing error message `%s` failed with: %s", errMsg, err.Error())
 		}
