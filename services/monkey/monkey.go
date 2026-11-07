@@ -34,6 +34,9 @@ func (m *Monkey) Run() {
 	if err != nil {
 		logger.Errorf("Writing cid of job `%s` failed: %s", m.Id, err.Error())
 	}
+	// The log is stored by CID now; the temp file would otherwise stay in /tmp.
+	m.logFile.Close()
+	os.Remove(m.logFile.Name())
 
 	m.Job.Logs[m.Job.Id] = cid
 	m.LogCID = cid
