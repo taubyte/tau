@@ -12,6 +12,7 @@ import (
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/generic"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/logs"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/project"
+	"github.com/taubyte/tau/tools/tau/cli/commands/status"
 	"github.com/taubyte/tau/tools/tau/cli/commands/validate"
 	"github.com/taubyte/tau/tools/tau/cli/commands/version"
 	"github.com/taubyte/tau/tools/tau/cli/common"
@@ -56,6 +57,7 @@ func New() (*cli.App, error) {
 			current.Command,
 			buildCmd.Command,
 			validate.Command,
+		status.Command,
 		},
 	}
 
