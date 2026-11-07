@@ -97,20 +97,9 @@ func (c code) handleOps(ops []Op) error {
 // right now rather than building it a second time alongside.
 func (c code) buildAndStash(op Op, logs io.Writer, slots chan struct{}) (string, error) {
 	compile := func() (string, error) {
-		slots <- struct{}{}
-		defer func() { <-slots }()
-
-		module, err := c.buildOp(op, logs)
-		if err != nil {
-			return "", err
-		}
-		defer module.Close()
-
-		cid, err := c.StashBuildFile(module)
-		if err != nil {
-			return "", fmt.Errorf("handling build details failed with: %s", err)
-		}
-		return cid, nil
+		return buildThenStash(slots,
+			func() (io.ReadSeekCloser, error) { return c.buildOp(op, logs) },
+			c.StashBuildFile)
 	}
 
 	if !c.Monkey.Dev() {
@@ -357,4 +346,22 @@ func (c *code) checkConfig() error {
 	}
 
 	return nil
+}
+
+// buildThenStash holds a build slot only while building: stashing is a network
+// push, and the next op's build need not wait for it.
+func buildThenStash(slots chan struct{}, build func() (io.ReadSeekCloser, error), stash func(io.ReadSeekCloser) (string, error)) (string, error) {
+	slots <- struct{}{}
+	module, err := build()
+	<-slots
+	if err != nil {
+		return "", err
+	}
+	defer module.Close()
+
+	cid, err := stash(module)
+	if err != nil {
+		return "", fmt.Errorf("handling build details failed with: %s", err)
+	}
+	return cid, nil
 }
