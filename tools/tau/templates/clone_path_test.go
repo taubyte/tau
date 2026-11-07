@@ -34,3 +34,20 @@ func TestTemplateCloneUnderTempDir(t *testing.T) {
 	_, err = os.Stat(filepath.Join(dst, "code", "main.go"))
 	assert.NilError(t, err)
 }
+
+// Code templates (functions, smartops) are plain folders inside the already
+// cloned tb_templates, given as a native path: CloneTo copies them, no git.
+func TestCodeTemplateCloneFromLocalFolder(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "tb_templates", "code", "functions", "go", "empty")
+	assert.NilError(t, os.MkdirAll(filepath.Join(src, "common"), 0o755))
+	assert.NilError(t, os.WriteFile(filepath.Join(src, "empty.go"), []byte("package lib"), 0o644))
+
+	prev := templateFolder
+	templateFolder = filepath.Join(t.TempDir(), "taubyte_templates")
+	t.Cleanup(func() { templateFolder = prev })
+
+	dst := t.TempDir()
+	assert.NilError(t, (&TemplateInfo{HideURL: true, URL: src}).CloneTo(dst))
+	_, err := os.Stat(filepath.Join(dst, "empty.go"))
+	assert.NilError(t, err)
+}

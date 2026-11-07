@@ -38,13 +38,17 @@ func (info *TemplateInfo) templateRoot() (string, error) {
 // CloneTo will create the directory for the template and move
 // all files from the template repository except .git
 func (info *TemplateInfo) CloneTo(dir string) error {
-	root, err := info.templateRoot()
-	if err != nil {
-		return err
+	// Code templates are plain folders inside the cloned tb_templates: copy them
+	// as they are (cloning one as a git URL fails on Windows: "mkdir /\.git").
+	root := info.URL
+	if st, err := os.Stat(root); err != nil || !st.IsDir() {
+		if root, err = info.templateRoot(); err != nil {
+			return err
+		}
 	}
 
 	// copy all files from root to dir except `.git`
-	err = copyFiles(root, dir, func(f os.DirEntry) bool {
+	err := copyFiles(root, dir, func(f os.DirEntry) bool {
 		return f.Name() != ".git"
 	})
 	if err != nil {

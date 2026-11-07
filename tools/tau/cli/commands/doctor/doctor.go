@@ -6,9 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"maps"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -40,6 +45,7 @@ type deps struct {
 	lookup       func(host string) error
 	dreamVersion func() (string, error)
 	now          func() time.Time
+	project      func() []string // the selected project's files, "/"-separated; nil: none
 }
 
 func live(ctx context.Context) deps {
@@ -77,7 +83,73 @@ func live(ctx context.Context) deps {
 			out, err := exec.Command("dream", "--version").Output()
 			return strings.TrimSpace(string(out)), err
 		},
-		now: time.Now,
+		now:     time.Now,
+		project: projectFiles,
+	}
+}
+
+// projectFiles lists every file of the selected project's repos (without .git).
+func projectFiles() (files []string) {
+	name, err := config.GetSelectedProject()
+	if err != nil {
+		return nil
+	}
+	p, err := config.Projects().Get(name)
+	if err != nil || p.Location == "" {
+		return nil
+	}
+	filepath.WalkDir(p.Location, func(path string, d fs.DirEntry, err error) error {
+		if err == nil && d.IsDir() && d.Name() == ".git" {
+			return filepath.SkipDir
+		}
+		if err == nil && !d.IsDir() {
+			files = append(files, filepath.ToSlash(path))
+		}
+		return nil
+	})
+	return
+}
+
+var localtauName = regexp.MustCompile(`[A-Za-z0-9.-]+\.localtau`)
+
+// checkProject warns about what breaks a project on Windows: Dream names the
+// hosts file does not map, paths near MAX_PATH, file names that differ by case.
+func checkProject(files []string, lookup func(string) error, add func(status, name, msg, fix string)) {
+	names, long, seen := map[string]bool{}, []string{}, map[string]string{}
+	var clashes []string
+	for _, f := range files {
+		if len(f) >= 240 { // Windows MAX_PATH is 260 and builds add to it
+			long = append(long, f)
+		}
+		if other, ok := seen[strings.ToLower(f)]; ok && other != f {
+			clashes = append(clashes, other+" / "+f)
+		}
+		seen[strings.ToLower(f)] = f
+		if strings.HasSuffix(f, ".yaml") && strings.Contains(f, "/config/") {
+			if data, err := os.ReadFile(f); err == nil {
+				for _, n := range localtauName.FindAllString(string(data), -1) {
+					names[n] = true
+				}
+			}
+		}
+	}
+	var unresolved []string
+	for _, n := range slices.Sorted(maps.Keys(names)) {
+		if lookup(n) != nil {
+			unresolved = append(unresolved, n)
+		}
+	}
+	if len(unresolved) > 0 {
+		add("WARN", "localtau", "does not resolve: "+strings.Join(unresolved, ", "),
+			"add them to the hosts file (Windows and WSL have one each), or call the gateway with a Host header: curl -H 'Host: "+unresolved[0]+"' http://127.0.0.1:<gateway port>/")
+	}
+	if len(long) > 0 {
+		add("WARN", "long paths", fmt.Sprintf("%d path(s) near the 260-char Windows limit, e.g. %s", len(long), long[0]),
+			"move the project to a shorter folder, or enable Windows long paths and `git config --global core.longpaths true`")
+	}
+	if len(clashes) > 0 {
+		add("WARN", "file names", "names differing only by case: "+strings.Join(clashes, ", "),
+			"rename one of each pair: Windows and macOS see them as the same file")
 	}
 }
 
@@ -154,6 +226,10 @@ func run(p config.Profile, d deps) (out []result) {
 		add("FAIL", "cloud", "cannot resolve "+seer, "check the FQDN with `tau select cloud --fqdn`")
 	} else {
 		add("PASS", "cloud", "cloud "+p.Cloud+" resolves ("+seer+")", "")
+	}
+
+	if d.project != nil {
+		checkProject(d.project(), d.lookup, add)
 	}
 
 	add("PASS", "tau", common.VersionLine(), "")
