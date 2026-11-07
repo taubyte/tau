@@ -351,10 +351,10 @@ func removeTheLeader(t *testing.T, a, b Cluster) (removed, left Cluster) {
 		leader.RemoveServer(raft.ServerID(idOf(removed).String()), 0, 5*time.Second)
 		for time.Now().Before(deadline) {
 			members, err := left.Members()
-			if err == nil && len(members) == 1 && left.IsLeader() && removed.State() != raft.Leader {
+			if err == nil && len(members) == 1 && left.IsLeader() && removed.State() != Leader {
 				return removed, left
 			}
-			if removed.State() != raft.Leader && inConfiguration(leader, idOf(removed)) {
+			if removed.State() != Leader && inConfiguration(leader, idOf(removed)) {
 				break // refused: it no longer led when the removal was asked of it
 			}
 			time.Sleep(20 * time.Millisecond)
@@ -1325,7 +1325,7 @@ func TestCluster_State_AsLeader(t *testing.T) {
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 
 	state := cl.State()
-	assert.Equal(t, raft.Leader, state)
+	assert.Equal(t, Leader, state)
 }
 
 func TestCluster_Leader_AsLeader(t *testing.T) {
@@ -1561,7 +1561,7 @@ func TestCluster_LeaderInfo(t *testing.T) {
 
 	assert.True(t, cl.IsLeader())
 
-	assert.Equal(t, raft.Leader, cl.State())
+	assert.Equal(t, Leader, cl.State())
 
 	leader, err := cl.Leader()
 	require.NoError(t, err)
@@ -1583,7 +1583,7 @@ func TestCluster_MembersAfterBootstrap(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, members, 1)
 	assert.Equal(t, node.ID(), members[0].ID)
-	assert.Equal(t, raft.Voter, members[0].Suffrage)
+	assert.True(t, members[0].Voter)
 }
 
 func TestCluster_TwoMembersThatStartTogetherFormOneGroup(t *testing.T) {

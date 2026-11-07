@@ -216,7 +216,7 @@ func TestQueue_Integration_MultiNode_Replication(t *testing.T) {
 	assert.NilError(t, err, "failed to create cluster2")
 	defer cluster2.Close()
 
-	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node2.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node2 failed to join as voter")
 
 	ctx2, cancel2 := context.WithTimeout(t.Context(), 30*time.Second)
@@ -270,7 +270,7 @@ func TestQueue_Integration_MultiNode_PopEmpty(t *testing.T) {
 	assert.NilError(t, err, "failed to create cluster2")
 	defer cluster2.Close()
 
-	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node2.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node2 failed to join as voter")
 
 	ctx2, cancel2 := context.WithTimeout(t.Context(), 30*time.Second)
@@ -310,7 +310,7 @@ func TestQueue_Integration_MultiNode_Order(t *testing.T) {
 	assert.NilError(t, err, "failed to create cluster2")
 	defer cluster2.Close()
 
-	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node2.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node2 failed to join as voter")
 
 	ctx2, cancel2 := context.WithTimeout(t.Context(), 30*time.Second)
@@ -366,7 +366,7 @@ func TestQueue_Integration_MultiNode_ManyItems(t *testing.T) {
 	assert.NilError(t, err, "failed to create cluster2")
 	defer cluster2.Close()
 
-	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node2.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node2 failed to join as voter")
 
 	ctx2, cancel2 := context.WithTimeout(t.Context(), 30*time.Second)
@@ -424,7 +424,7 @@ func TestQueue_Integration_MultiNode_MultipleConsumers(t *testing.T) {
 	assert.NilError(t, err, "failed to create cluster2")
 	defer cluster2.Close()
 
-	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node2.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node2 failed to join as voter")
 
 	ctx2, cancel2 := context.WithTimeout(t.Context(), 30*time.Second)

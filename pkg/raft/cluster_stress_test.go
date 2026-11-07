@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hashicorp/raft"
 	"github.com/libp2p/go-libp2p/core/network"
 	peercore "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/p2p/keypair"
@@ -138,7 +137,7 @@ func waitAllConnected(t *testing.T, nodes []taupeer.Node, timeout time.Duration)
 			for i := 0; i < len(nodes); i++ {
 				for j := 0; j < len(nodes); j++ {
 					if i != j {
-						state := nodes[i].Peer().Network().Connectedness(nodes[j].ID())
+						state := nodes[i].Host().Network().Connectedness(nodes[j].ID())
 						if state == network.Connected {
 							connectedCount++
 						} else {
@@ -267,7 +266,7 @@ func verifyAllVoters(t *testing.T, clusters []Cluster, nodeIDs []peercore.ID, ti
 			for _, nodeID := range nodeIDs {
 				found := false
 				for _, member := range members {
-					if member.ID == nodeID && member.Suffrage == raft.Voter {
+					if member.ID == nodeID && member.Voter {
 						found = true
 						break
 					}
@@ -300,9 +299,9 @@ func verifyRaftStates(t *testing.T, clusters []Cluster) error {
 		state := cl.State()
 		stateStr := state.String()
 		switch state {
-		case raft.Leader:
+		case Leader:
 			leaderCount++
-		case raft.Follower:
+		case Follower:
 			followerCount++
 		default:
 			otherStates[stateStr]++
@@ -354,8 +353,8 @@ func verifyConfigurationConsistency(t *testing.T, clusters []Cluster) error {
 			if !exists {
 				return fmt.Errorf("cluster %d has member %s not found in cluster 0", i, member.ID)
 			}
-			if member.Suffrage != baseMember.Suffrage {
-				return fmt.Errorf("cluster %d member %s has suffrage %v, but cluster 0 has %v", i, member.ID, member.Suffrage, baseMember.Suffrage)
+			if member.Voter != baseMember.Voter {
+				return fmt.Errorf("cluster %d member %s votes %v, but cluster 0 has %v", i, member.ID, member.Voter, baseMember.Voter)
 			}
 		}
 	}
@@ -373,7 +372,7 @@ func verifyClusterStability(t *testing.T, clusters []Cluster, duration time.Dura
 		return fmt.Errorf("failed to get initial leader: %w", err)
 	}
 
-	initialStates := make([]raft.RaftState, len(clusters))
+	initialStates := make([]State, len(clusters))
 	for i, cl := range clusters {
 		initialStates[i] = cl.State()
 	}
@@ -398,9 +397,9 @@ func verifyClusterStability(t *testing.T, clusters []Cluster, duration time.Dura
 			leaderCount := 0
 			for i, cl := range clusters {
 				state := cl.State()
-				if state == raft.Leader {
+				if state == Leader {
 					leaderCount++
-					if initialStates[i] != raft.Leader {
+					if initialStates[i] != Leader {
 						return fmt.Errorf("check %d: cluster %d became leader (was %s)", checkCount, i, initialStates[i])
 					}
 				}
@@ -814,7 +813,7 @@ func testSequentialJoin(t *testing.T, nodeCount int, iterations int) {
 					assert.NilError(t, err, "failed to create cluster for node %d", i)
 				}
 
-				err = waitForMember(t, clusters[0], nodes[i].ID(), raft.Voter, joinTimeout)
+				err = waitForMember(t, clusters[0], nodes[i].ID(), true, joinTimeout)
 				if err != nil {
 					members, _ := clusters[0].Members()
 					stressLog(t, "Iteration %d/%d: ERROR node %d failed to join after %v (current members: %d): %v", iter+1, iterations, i, time.Since(joinStart), len(members), err)
@@ -1080,7 +1079,7 @@ func testPhasedJoin(t *testing.T, nodeCount int) {
 		if joinTimeout > 30*time.Second {
 			joinTimeout = 30 * time.Second
 		}
-		err = waitForMember(t, clusters[0], nodes[i].ID(), raft.Voter, joinTimeout)
+		err = waitForMember(t, clusters[0], nodes[i].ID(), true, joinTimeout)
 		if err != nil {
 			stressLog(t, "testPhasedJoin: Phase 2: ERROR node %d failed to join: %v", i, err)
 			assert.NilError(t, err, "node %d failed to join as voter", i)

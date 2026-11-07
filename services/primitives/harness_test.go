@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	hraft "github.com/hashicorp/raft"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-log/v2"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
@@ -208,11 +207,11 @@ func (c *fakeCluster) Batch(ops []raft.BatchOp, timeout time.Duration) error {
 	return c.MockCluster.Batch(ops, timeout)
 }
 
-func (c *fakeCluster) State() hraft.RaftState {
+func (c *fakeCluster) State() raft.State {
 	if c.IsLeader() {
-		return hraft.Leader
+		return raft.Leader
 	}
-	return hraft.Follower
+	return raft.Follower
 }
 
 // elsewhere is the node this fixture's group says may write: on no swarm, so a

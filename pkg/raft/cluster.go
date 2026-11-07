@@ -886,12 +886,19 @@ func leaderKnownTo(r *raft.Raft) (peer.ID, error) {
 	return peer.Decode(string(addr))
 }
 
-func (c *cluster) State() raft.RaftState {
+func (c *cluster) State() State {
 	if c.closed.Load() {
-		return raft.Shutdown
+		return Shutdown
 	}
-
-	return c.current().raft.State()
+	switch c.current().raft.State() {
+	case raft.Leader:
+		return Leader
+	case raft.Candidate:
+		return Candidate
+	case raft.Follower:
+		return Follower
+	}
+	return Shutdown
 }
 
 func (c *cluster) WaitForLeader(ctx context.Context) error {
@@ -937,11 +944,7 @@ func (m *member) members() ([]Member, error) {
 		if err != nil {
 			continue
 		}
-		members = append(members, Member{
-			ID:       peerID,
-			Address:  server.Address,
-			Suffrage: server.Suffrage,
-		})
+		members = append(members, Member{ID: peerID, Voter: server.Suffrage == raft.Voter})
 	}
 
 	return members, nil

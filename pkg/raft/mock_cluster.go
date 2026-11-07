@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hashicorp/raft"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
@@ -84,7 +83,7 @@ func (m *MockCluster) Namespace() string                                { return
 func (m *MockCluster) Barrier(time.Duration) error                      { return nil }
 func (m *MockCluster) IsLeader() bool                                   { return true }
 func (m *MockCluster) Leader() (peer.ID, error)                         { return "", nil }
-func (m *MockCluster) State() raft.RaftState                            { return raft.Leader }
+func (m *MockCluster) State() State                                     { return Leader }
 func (m *MockCluster) WaitForLeader(context.Context) error              { return nil }
 func (m *MockCluster) Members() ([]Member, error)                       { return nil, nil }
 func (m *MockCluster) AddVoter(peer.ID, time.Duration) error            { return nil }

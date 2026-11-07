@@ -55,7 +55,7 @@ type Cluster interface {
 
 	Leader() (peer.ID, error)
 
-	State() raft.RaftState
+	State() State
 
 	WaitForLeader(ctx context.Context) error
 
@@ -70,10 +70,34 @@ type Cluster interface {
 	TransferLeadership() error
 }
 
+// Member is one node of a group, and whether it votes.
 type Member struct {
-	ID       peer.ID
-	Address  raft.ServerAddress
-	Suffrage raft.ServerSuffrage
+	ID    peer.ID
+	Voter bool
+}
+
+// State is where a member stands in its group.
+type State uint8
+
+const (
+	Follower State = iota
+	Candidate
+	Leader
+	Shutdown
+)
+
+func (s State) String() string {
+	switch s {
+	case Follower:
+		return "Follower"
+	case Candidate:
+		return "Candidate"
+	case Leader:
+		return "Leader"
+	case Shutdown:
+		return "Shutdown"
+	}
+	return "Unknown"
 }
 
 type FSM interface {

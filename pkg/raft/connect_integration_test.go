@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hashicorp/raft"
 	"github.com/libp2p/go-libp2p"
 	peercore "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -204,7 +203,7 @@ func TestCluster_AGroupFormsWithNoIdentifyPush_Integration(t *testing.T) {
 
 		leader := leading(t, leaderNode)
 		joiner := joining(t, joinerNode)
-		assert.NilError(t, waitForMember(t, leader, joinerNode.ID(), raft.Voter, 20*time.Second), "the joiner never joined")
+		assert.NilError(t, waitForMember(t, leader, joinerNode.ID(), true, 20*time.Second), "the joiner never joined")
 		leaderOf(t, leader, joiner)
 	})
 
@@ -214,7 +213,7 @@ func TestCluster_AGroupFormsWithNoIdentifyPush_Integration(t *testing.T) {
 		linkTo(t, joinerNode, leaderNode)
 
 		joiner := joining(t, joinerNode)
-		assert.NilError(t, waitForMember(t, leader, joinerNode.ID(), raft.Voter, 20*time.Second), "the joiner never joined")
+		assert.NilError(t, waitForMember(t, leader, joinerNode.ID(), true, 20*time.Second), "the joiner never joined")
 		leaderOf(t, leader, joiner)
 	})
 
@@ -226,7 +225,7 @@ func TestCluster_AGroupFormsWithNoIdentifyPush_Integration(t *testing.T) {
 		leaderOf(t, clusters...)
 		for _, cl := range clusters {
 			for _, node := range nodes {
-				assert.NilError(t, waitForMember(t, cl, node.ID(), raft.Voter, 20*time.Second),
+				assert.NilError(t, waitForMember(t, cl, node.ID(), true, 20*time.Second),
 					"%s does not hold %s as a voter", idOf(cl), node.ID())
 			}
 		}

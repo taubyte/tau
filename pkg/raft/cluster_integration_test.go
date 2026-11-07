@@ -47,7 +47,7 @@ func newTestNode(t *testing.T) taupeer.Node {
 	return node
 }
 
-func waitForMember(t *testing.T, cl Cluster, memberID peercore.ID, suffrage raft.ServerSuffrage, timeout time.Duration) error {
+func waitForMember(t *testing.T, cl Cluster, memberID peercore.ID, voter bool, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(t.Context(), timeout)
 	defer cancel()
 
@@ -64,7 +64,7 @@ func waitForMember(t *testing.T, cl Cluster, memberID peercore.ID, suffrage raft
 				continue
 			}
 			for _, member := range members {
-				if member.ID == memberID && member.Suffrage == suffrage {
+				if member.ID == memberID && member.Voter == voter {
 					return nil
 				}
 			}
@@ -207,9 +207,9 @@ func TestCluster_MultiNode_LeaderElection_Integration(t *testing.T) {
 	assert.NilError(t, err, "failed to create cluster3")
 	defer cluster3.Close()
 
-	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node2.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node2 failed to join as voter")
-	err = waitForMember(t, cluster1, node3.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node3.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node3 failed to join as voter")
 
 	ctx2, cancel2 := context.WithTimeout(t.Context(), 30*time.Second)
@@ -260,7 +260,7 @@ func TestCluster_MultiNode_SendToNonLeader_Integration(t *testing.T) {
 	ctx2, cancel2 := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel2()
 
-	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node2.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node2 failed to join as voter")
 
 	err = cluster2.WaitForLeader(ctx2)
@@ -336,9 +336,9 @@ func TestCluster_AutoBootstrapThenJoiners_Integration(t *testing.T) {
 	assert.NilError(t, err, "failed to create cluster3")
 	defer cluster3.Close()
 
-	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node2.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node2 failed to join as voter")
-	err = waitForMember(t, cluster1, node3.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node3.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node3 failed to join as voter")
 
 	ctx2, cancel2 := context.WithTimeout(t.Context(), 30*time.Second)
@@ -377,7 +377,7 @@ func TestCluster_MultiNode_DiscoverPeers_Integration(t *testing.T) {
 	ctx2, cancel2 := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel2()
 
-	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node2.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node2 failed to join as voter")
 
 	err = cluster2.WaitForLeader(ctx2)
@@ -411,7 +411,7 @@ func TestCluster_MultiNode_StreamServiceForwarding_Integration(t *testing.T) {
 	ctx2, cancel2 := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel2()
 
-	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node2.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node2 failed to join as voter")
 
 	err = cluster2.WaitForLeader(ctx2)
@@ -482,7 +482,7 @@ func TestCluster_MultiNode_ClientOperations_Integration(t *testing.T) {
 	ctx2, cancel2 := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel2()
 
-	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node2.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node2 failed to join as voter")
 
 	err = cluster2.WaitForLeader(ctx2)
@@ -565,7 +565,7 @@ func TestCluster_MultiNode_ClientGetWithBarrier_Integration(t *testing.T) {
 	ctx2, cancel2 := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel2()
 
-	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node2.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node2 failed to join as voter")
 
 	err = cluster2.WaitForLeader(ctx2)
@@ -663,7 +663,7 @@ func TestCluster_MultiNode_Apply_InvalidTimeout_Integration(t *testing.T) {
 	ctx2, cancel2 := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel2()
 
-	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node2.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node2 failed to join as voter")
 
 	err = cluster2.WaitForLeader(ctx2)
@@ -839,7 +839,7 @@ func TestCluster_MultiCluster_MultiNode_Integration(t *testing.T) {
 
 	ctx3, cancel3 := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel3()
-	err = waitForMember(t, clusterA1, node2.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, clusterA1, node2.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node2 failed to join cluster A as voter")
 	assert.NilError(t, clusterA2.WaitForLeader(ctx3), "clusterA2 failed to wait for leader")
 
@@ -849,7 +849,7 @@ func TestCluster_MultiCluster_MultiNode_Integration(t *testing.T) {
 
 	ctx4, cancel4 := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel4()
-	err = waitForMember(t, clusterB1, node2.ID(), raft.Voter, 30*time.Second)
+	err = waitForMember(t, clusterB1, node2.ID(), true, 30*time.Second)
 	assert.NilError(t, err, "node2 failed to join cluster B as voter")
 	assert.NilError(t, clusterB2.WaitForLeader(ctx4), "clusterB2 failed to wait for leader")
 
@@ -919,7 +919,7 @@ func TestCluster_RejoinAfterLeave_Integration(t *testing.T) {
 	// left running outlives the node's store and panics the test binary.
 	defer cluster2.Close()
 
-	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node2.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node2 failed to join as voter")
 
 	err = onLeader(t, []Cluster{cluster1, cluster2}, func(leader Cluster) error {
@@ -933,7 +933,7 @@ func TestCluster_RejoinAfterLeave_Integration(t *testing.T) {
 	assert.NilError(t, err, "failed to recreate cluster2")
 	defer cluster2b.Close()
 
-	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node2.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node2 failed to rejoin as voter")
 }
 
@@ -1015,9 +1015,9 @@ func TestCluster_LeaderCrashAndFailover_Integration(t *testing.T) {
 	assert.NilError(t, err, "failed to create cluster3")
 	defer cluster3.Close()
 
-	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node2.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node2 failed to join as voter")
-	err = waitForMember(t, cluster1, node3.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node3.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node3 failed to join as voter")
 
 	ctx2, cancel2 := context.WithTimeout(t.Context(), 30*time.Second)
@@ -1088,9 +1088,9 @@ func TestCluster_NodeRebootWithDataPersistence_Integration(t *testing.T) {
 	assert.NilError(t, err, "failed to create cluster3")
 	defer cluster3.Close()
 
-	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node2.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node2 failed to join as voter")
-	err = waitForMember(t, cluster1, node3.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node3.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node3 failed to join as voter")
 
 	ctx2, cancel2 := context.WithTimeout(t.Context(), 30*time.Second)
@@ -1133,7 +1133,7 @@ func TestCluster_NodeRebootWithDataPersistence_Integration(t *testing.T) {
 	assert.NilError(t, err, "failed to recreate the follower after reboot")
 	defer rebootedB.Close()
 
-	err = waitForMember(t, survivors[0], idOf(rebooted), raft.Voter, 20*time.Second)
+	err = waitForMember(t, survivors[0], idOf(rebooted), true, 20*time.Second)
 	assert.NilError(t, err, "the follower failed to rejoin as voter after reboot")
 
 	ctx3, cancel3 := context.WithTimeout(t.Context(), 30*time.Second)
@@ -1243,12 +1243,12 @@ func rejoinSettled(back Cluster, members []Cluster, crashTerm uint64, writes map
 			return poll.Continue("%s holds %d members, not %d", idOf(m), len(config), len(members))
 		}
 		for _, v := range members {
-			if !slices.ContainsFunc(config, func(s Member) bool { return s.ID == idOf(v) && s.Suffrage == raft.Voter }) {
+			if !slices.ContainsFunc(config, func(s Member) bool { return s.ID == idOf(v) && s.Voter }) {
 				return poll.Continue("%s does not hold %s as a voter", idOf(m), idOf(v))
 			}
 		}
 	}
-	if back != leader && back.State() != raft.Follower {
+	if back != leader && back.State() != Follower {
 		return poll.Continue("%s neither leads nor follows: %v", idOf(back), back.State())
 	}
 	commit := getClusterInternal(leader).current().raft.CommitIndex()
@@ -1293,9 +1293,9 @@ func TestCluster_LeaderRebootAndRejoin_Integration(t *testing.T) {
 	assert.NilError(t, err, "failed to create cluster3")
 	defer cluster3.Close()
 
-	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node2.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node2 failed to join")
-	err = waitForMember(t, cluster1, node3.ID(), raft.Voter, 20*time.Second)
+	err = waitForMember(t, cluster1, node3.ID(), true, 20*time.Second)
 	assert.NilError(t, err, "node3 failed to join")
 
 	ctx2, cancel2 := context.WithTimeout(t.Context(), 30*time.Second)
@@ -1343,7 +1343,7 @@ func TestCluster_LeaderRebootAndRejoin_Integration(t *testing.T) {
 	assert.NilError(t, err, "failed to recreate the old leader")
 	defer rejoined.Close()
 
-	err = waitForMember(t, survivors[0], idOf(crashed), raft.Voter, 20*time.Second)
+	err = waitForMember(t, survivors[0], idOf(crashed), true, 20*time.Second)
 	assert.NilError(t, err, "the old leader failed to rejoin after reboot")
 
 	ctx4, cancel4 := context.WithTimeout(t.Context(), 30*time.Second)

@@ -2,8 +2,6 @@ package raft
 
 import (
 	"testing"
-
-	"github.com/hashicorp/raft"
 )
 
 func TestFSMResponse(t *testing.T) {
@@ -32,19 +30,17 @@ func TestFSMResponse_WithError(t *testing.T) {
 }
 
 func TestMember(t *testing.T) {
-	member := Member{
-		ID:       "test-id",
-		Address:  raft.ServerAddress("127.0.0.1:8080"),
-		Suffrage: raft.Voter,
-	}
+	member := Member{ID: "test-id", Voter: true}
 
 	if member.ID != "test-id" {
 		t.Errorf("expected 'test-id', got '%s'", member.ID)
 	}
-	if member.Address != raft.ServerAddress("127.0.0.1:8080") {
-		t.Errorf("expected '127.0.0.1:8080', got '%s'", member.Address)
+	if !member.Voter {
+		t.Error("expected a voter")
 	}
-	if member.Suffrage != raft.Voter {
-		t.Errorf("expected Voter, got %v", member.Suffrage)
+	for state, name := range map[State]string{Follower: "Follower", Candidate: "Candidate", Leader: "Leader", Shutdown: "Shutdown", State(9): "Unknown"} {
+		if state.String() != name {
+			t.Errorf("state %d reads %q, not %q", state, state.String(), name)
+		}
 	}
 }

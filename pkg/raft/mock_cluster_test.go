@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hashicorp/raft"
 	"github.com/stretchr/testify/require"
 )
 
@@ -63,7 +62,7 @@ func TestMockCluster_IsALeaderThatNeverRefuses(t *testing.T) {
 
 	require.Equal(t, "test", m.Namespace())
 	require.True(t, m.IsLeader())
-	require.Equal(t, raft.Leader, m.State())
+	require.Equal(t, Leader, m.State())
 	require.NoError(t, m.Barrier(time.Second))
 
 	ctx, cancel := context.WithCancel(context.Background())
