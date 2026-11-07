@@ -1,11 +1,8 @@
 package gateway
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"net"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -15,6 +12,7 @@ import (
 	"github.com/taubyte/tau/p2p/streams/client"
 	tunnel "github.com/taubyte/tau/p2p/streams/tunnels/http"
 	http "github.com/taubyte/tau/pkg/http"
+	"github.com/taubyte/tau/pkg/platformerr"
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
 	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
 	"github.com/taubyte/tau/services/substrate/components/metrics"
@@ -71,23 +69,18 @@ func (l *lookupResult) matched() bool { return len(l.websites)+len(l.functions) 
 // that answered looked and found nothing, and none failed to look.
 func (l *lookupResult) definite() bool { return l.notFound && !l.failed }
 
-// substrateNotFound is how a substrate says it looked and has no match. Any other
-// error, a timeout or a lookup that failed under load, says nothing about
-// whether the page exists.
-const substrateNotFound = "no HTTP match found"
-
-func isNotFound(err error) bool { return strings.Contains(err.Error(), substrateNotFound) }
-
-func isTimeout(err error) bool {
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) {
-		return true
+// notFound says a substrate looked and has no match. Any other error, a timeout
+// or a lookup that failed under load, says nothing about whether the page exists.
+func notFound(err error) bool {
+	if code := platformerr.CodeOf(err); code != "" {
+		return code == platformerr.NotFound
 	}
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
-		return true
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "deadline") || strings.Contains(msg, "timeout") || strings.Contains(msg, "timed out")
+	return legacyNotFound(err)
+}
+
+// shortcut: old substrates send no code; remove once every node runs this release.
+func legacyNotFound(err error) bool {
+	return strings.Contains(err.Error(), "no HTTP match found for method")
 }
 
 func (g *Gateway) lookupOnce(r *goHttp.Request, timeout time.Duration) (*lookupResult, error) {
@@ -105,7 +98,7 @@ func (g *Gateway) lookupOnce(r *goHttp.Request, timeout time.Duration) (*lookupR
 	for response := range resCh {
 		if err := response.Error(); err != nil {
 			logger.Debugf("response from node `%s` failed with: %s", response.PID().String(), err.Error())
-			if isNotFound(err) && !isTimeout(err) {
+			if notFound(err) {
 				result.notFound = true
 			} else {
 				result.failed = true
