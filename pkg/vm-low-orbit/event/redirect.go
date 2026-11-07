@@ -1,6 +1,7 @@
 package event
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 
@@ -31,6 +32,9 @@ func (f *Factory) eventHttpRedirect(ctx context.Context, module common.Module, e
 		return uint32(err)
 	}
 
+	e, _ := f.getEvent(eventId)
+	e.http.committed = true // the redirect is the response; held body is dropped
+	e.http.buf = bytes.Buffer{}
 	http.Redirect(w, r, url, int(code))
 	return 0
 }

@@ -16,12 +16,15 @@ func (f *Factory) eventHttpRetCode(ctx context.Context, module common.Module, ev
 		return uint32(errno.ErrorHttpWrite)
 	}
 
-	w, err := f.getEventWriter(eventId)
-	if err != 0 {
+	if _, err := f.getEventWriter(eventId); err != 0 {
 		return uint32(err)
 	}
 
-	w.WriteHeader(int(code))
+	e, _ := f.getEvent(eventId)
+	if e.http.committed {
+		return uint32(errno.ErrorHttpWrite)
+	}
+	e.http.status = int(code)
 
 	return 0
 }

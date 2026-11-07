@@ -71,6 +71,7 @@ func guestCall(t *testing.T, ctx context.Context, wasm, export string, req *http
 
 	w := httptest.NewRecorder()
 	ev := sdk.CreateHttpEvent(w, req)
+	defer sdk.ReleaseEvent(ev.Id)
 
 	module, err := rt.Module(wasm)
 	if err != nil {
@@ -90,6 +91,7 @@ func guestCall(t *testing.T, ctx context.Context, wasm, export string, req *http
 	if len(ret) > 0 {
 		code = ret[0]
 	}
+	sdk.ReleaseEvent(ev.Id)
 	return w, code
 }
 
@@ -146,6 +148,7 @@ func guestCallMulti(t *testing.T, ctx context.Context, modules map[string]string
 
 	w := httptest.NewRecorder()
 	ev := sdk.CreateHttpEvent(w, req)
+	defer sdk.ReleaseEvent(ev.Id)
 
 	module, err := rt.Module(entry)
 	if err != nil {
@@ -163,6 +166,7 @@ func guestCallMulti(t *testing.T, ctx context.Context, modules map[string]string
 	if len(ret) > 0 {
 		code = ret[0]
 	}
+	sdk.ReleaseEvent(ev.Id)
 	return w, code
 }
 
