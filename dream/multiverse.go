@@ -3,7 +3,6 @@ package dream
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path"
 	"strings"
@@ -174,7 +173,7 @@ func (m *Multiverse) Universe(name string) (*Universe, error) {
 	defer m.universesLock.RUnlock()
 	u, exists := m.universes[name]
 	if !exists {
-		return nil, fmt.Errorf("universe not found")
+		return nil, m.notFound(name)
 	}
 	return u, nil
 }
@@ -185,7 +184,7 @@ func (m *Multiverse) Delete(name string) error {
 	defer m.universesLock.Unlock()
 
 	if _, exists := m.universes[name]; !exists {
-		return fmt.Errorf("universe not found")
+		return m.notFound(name)
 	}
 
 	delete(m.universes, name)

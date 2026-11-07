@@ -24,7 +24,7 @@ func (srv *Service) killUniverse(ctx httpIface.Context) (interface{}, error) {
 
 	u, err := srv.Universe(name)
 	if err != nil {
-		return nil, fmt.Errorf("universe `%s` does not exist", name)
+		return nil, err
 	}
 
 	u.Stop()
