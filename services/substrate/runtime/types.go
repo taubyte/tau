@@ -61,6 +61,10 @@ type instance struct {
 	// repooling.
 	failed bool
 
+	// held: the instance counts against its project's caps until Close.
+	held     bool
+	released atomic.Bool
+
 	// pooled marks an instance that made it into the pool at least once,
 	// distinguishing normal growth-retirement from a config that never pools.
 	pooled bool

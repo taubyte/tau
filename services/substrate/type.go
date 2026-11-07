@@ -11,6 +11,7 @@ import (
 	streams "github.com/taubyte/tau/p2p/streams/service"
 
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/pkg/config"
 	http "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/services/substrate/migration"
 )
@@ -27,6 +28,7 @@ type Service struct {
 
 	cluster string
 	dev     bool
+	quotas  config.Quotas
 	verbose bool
 	stream  streams.CommandService
 

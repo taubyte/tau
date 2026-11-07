@@ -35,6 +35,7 @@ func New(ctx context.Context, cfg tauConfig.Config) (*Service, error) {
 
 	var err error
 	srv.dev = cfg.DevMode()
+	srv.quotas = cfg.Quotas()
 	srv.verbose = cfg.Verbose()
 	srv.cluster = cfg.Cluster()
 

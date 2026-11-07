@@ -2,6 +2,7 @@ package substrate
 
 import (
 	"github.com/taubyte/tau/core/vm"
+	"github.com/taubyte/tau/pkg/config"
 	protocolCommon "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/services/substrate/migration"
 )
@@ -33,6 +34,11 @@ func (srv *Service) Close() error {
 	srv.vm.Close()
 
 	return nil
+}
+
+// Caps returns the operator's caps for a project.
+func (srv *Service) Caps(projectID string) config.Caps {
+	return srv.quotas.For(projectID)
 }
 
 func (srv *Service) Dev() bool {
