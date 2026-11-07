@@ -2,6 +2,7 @@ package dream
 
 import (
 	"cmp"
+	"context"
 	_ "embed"
 	"errors"
 	"fmt"
@@ -75,42 +76,64 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 		return err
 	}
 
-	resp, err := tns.Fetch(spec.NewTnsPath([]string{"resolve", "repo", "github"}))
-	if err != nil {
-		return fmt.Errorf("failed calling tns fetch with error: %v", err)
-	}
-
-	_map := maps.SafeInterfaceToStringKeys(resp.Interface())
-
 	auth, err := simple.Auth()
 	if err != nil {
 		return err
 	}
 
 	type repo struct{ id, fullName string }
-	var repos []repo
-	for repoId, repoInfo := range _map {
-		fullName, ok := maps.SafeInterfaceToStringKeys(repoInfo)["fullname"].(string)
-		if !ok {
-			continue
+	list := func() ([]repo, error) {
+		resp, err := tns.Fetch(spec.NewTnsPath([]string{"resolve", "repo", "github"}))
+		if err != nil {
+			return nil, fmt.Errorf("failed calling tns fetch with error: %v", err)
 		}
-		// The universe's repos are every project's: with a project id, push
-		// only that project's, rather than rebuilding every project there is.
-		if projectId != "" {
-			if owner := repoProject(auth, tns, repoId); owner != "" && owner != projectId {
+		var repos []repo
+		for repoId, repoInfo := range maps.SafeInterfaceToStringKeys(resp.Interface()) {
+			fullName, ok := maps.SafeInterfaceToStringKeys(repoInfo)["fullname"].(string)
+			if !ok {
 				continue
 			}
+			// The universe's repos are every project's: with a project id, push
+			// only that project's, rather than rebuilding every project there is.
+			if projectId != "" {
+				if owner := repoProject(auth, tns, repoId); owner != "" && owner != projectId {
+					continue
+				}
+			}
+			repos = append(repos, repo{repoId, fullName})
 		}
-		repos = append(repos, repo{repoId, fullName})
+		// Config first: the other repos' jobs read what its job publishes.
+		slices.SortStableFunc(repos, func(a, b repo) int {
+			return cmp.Compare(repoKindOrder(a.fullName), repoKindOrder(b.fullName))
+		})
+		return repos, nil
 	}
-	// Config first: the other repos' jobs read what its job publishes.
-	slices.SortStableFunc(repos, func(a, b repo) int {
-		return cmp.Compare(repoKindOrder(a.fullName), repoKindOrder(b.fullName))
-	})
 
-	pushIdx := 0
+	repos, err := list()
+	if err != nil {
+		return err
+	}
+
+	// A project's website and library repositories reach this list only when
+	// its config job publishes them, so on a new or re-imported project the
+	// first pass cannot see them: note the config's commit now, and once its
+	// job publishes a new one, push the repositories that appeared.
+	configProject, commitBefore := "", ""
 	for _, r := range repos {
+		if repoKindOrder(r.fullName) == 0 {
+			if configProject = projectId; configProject == "" {
+				configProject = repoProject(auth, tns, r.id)
+			}
+			commitBefore, _, _ = tns.Simple().Commit(configProject, branch)
+			break
+		}
+	}
+
+	pushed := make(map[string]bool)
+	pushIdx := 0
+	push := func(r repo) error {
 		repoId, fullName := r.id, r.fullName
+		pushed[repoId] = true
 		var err error
 		pushedAt := time.Now().Unix() + int64(pushIdx)
 		pushIdx++
@@ -136,12 +159,58 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 		} else {
 			err = pushSpecific(u, repoId, fullName, projectId, branch, "", pushedAt)
 		}
-		if err != nil {
+		return err
+	}
+
+	for _, r := range repos {
+		if err := push(r); err != nil {
+			return err
+		}
+	}
+
+	// only a project TNS has no commit for yet (new, or re-imported into a new
+	// universe) can be missing repositories; waiting on an unchanged config
+	// would hold every push-all for newCommitWait
+	if configProject == "" || commitBefore != "" {
+		return nil
+	}
+	waitForNewCommit(u.Context(), tns.Simple(), configProject, branch, commitBefore, newCommitWait)
+	later, err := list()
+	if err != nil {
+		return err
+	}
+	for _, r := range later {
+		if pushed[r.id] {
+			continue
+		}
+		if err := push(r); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// newCommitWait is how long push-all waits for the config job to publish.
+var newCommitWait = 2 * time.Minute
+
+// waitForNewCommit returns once project's commit on branch differs from
+// before (the config job published), or after wait.
+func waitForNewCommit(ctx context.Context, tns tnsIface.SimpleIface, project, branch, before string, wait time.Duration) bool {
+	deadline := time.Now().Add(wait)
+	for {
+		if commit, _, err := tns.Commit(project, branch); err == nil && commit != "" && commit != before {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(time.Second):
+		}
+	}
 }
 
 // repoProject is the project a repository belongs to, or "" when neither auth
