@@ -37,9 +37,7 @@ func (b *builder) buildImage() (clientImage *ci.DockerImage, err error) {
 	// base options
 	ops := make([]ci.ImageOption, 0, 3)
 	ops = append(ops, ci.Output(b.output))
-	if b.dev {
-		ops = append(ops, ci.ReusePulled(devReusePulled))
-	}
+	ops = append(ops, ci.ReusePulled(b.reusePulled()))
 
 	// if tarball is set then a new image is created
 	if b.tarball != nil {

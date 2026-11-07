@@ -34,9 +34,20 @@ func (b *builder) restrictEgress() bool {
 	return !b.dev && runtime.GOOS == "linux"
 }
 
-// devReusePulled is how long a development node builds with an image it pulled
-// before asking the registry again; it saves a registry round trip per build.
-const devReusePulled = 6 * time.Hour
+// How long a node builds with an image it pulled before asking the registry
+// again: each check is a registry round trip, and anonymous Docker Hub pulls
+// are rate limited. A new tag is a new name, so it is always pulled.
+const (
+	devReusePulled = 6 * time.Hour
+	reusePulled    = time.Hour
+)
+
+func (b *builder) reusePulled() time.Duration {
+	if b.dev {
+		return devReusePulled
+	}
+	return reusePulled
+}
 
 // devCaches are the package-manager and compiler caches a development node
 // keeps in named volumes shared by every build, so a build only downloads and
