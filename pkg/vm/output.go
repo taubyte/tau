@@ -61,12 +61,14 @@ func newPipe() (io.ReadWriteCloser, error) {
 	// Open the file twice: for reading and writing
 	readFile, err := os.Open(tmpFileName)
 	if err != nil {
+		os.Remove(tmpFileName)
 		return nil, err
 	}
 
 	writeFile, err := os.OpenFile(tmpFileName, os.O_WRONLY, 0666)
 	if err != nil {
 		readFile.Close() // Make sure to close the readFile if opening writeFile fails
+		os.Remove(tmpFileName)
 		return nil, err
 	}
 
@@ -78,6 +80,8 @@ func newPipe() (io.ReadWriteCloser, error) {
 }
 
 func (p *pipe) Close() error {
+	defer os.Remove(p.filename) // even when a close fails
+
 	// Close the read file descriptor
 	if err := p.ReadCloser.Close(); err != nil {
 		p.WriteCloser.Close() // Attempt to close writeFile even if readFile.Close() fails
@@ -88,9 +92,6 @@ func (p *pipe) Close() error {
 	if err := p.WriteCloser.Close(); err != nil {
 		return err
 	}
-
-	// Optionally, remove the temporary file to clean up
-	os.Remove(p.filename)
 
 	return nil
 }

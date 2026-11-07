@@ -15,6 +15,7 @@ import (
 	"github.com/taubyte/tau/pkg/kvdb"
 	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
 	"github.com/taubyte/tau/utils/maps"
+	"golang.org/x/sync/singleflight"
 )
 
 // ErrNotFound is returned by the remote KVDB's Get when the key is absent.
@@ -43,6 +44,9 @@ func (c *Client) KVDB(kind hoarderIface.ResourceKind, project, application, matc
 		application: application,
 		match:       match,
 		branch:      branch,
+		resolve: func() ([]peerCore.ID, error) {
+			return c.ReplicasOf(kind, project, application, match)
+		},
 	}, nil
 }
 
@@ -54,6 +58,9 @@ type remoteKV struct {
 	match       string
 	branch      string
 
+	resolve func() ([]peerCore.ID, error) // replica lookup; a field so tests can stall it
+
+	lookup   singleflight.Group
 	mu       sync.Mutex
 	replicas []peerCore.ID
 	sticky   int
@@ -75,22 +82,45 @@ func (r *remoteKV) instanceBody() command.Body {
 
 // target returns the current sticky replica, resolving the set on first use.
 // An empty return means no replicas are known yet — the op goes to any hoarder,
-// which first-touches the resource.
-func (r *remoteKV) target() (peerCore.ID, error) {
+// which first-touches the resource. The lookup is network I/O, so it runs
+// outside r.mu and concurrent callers share one lookup; each caller waits only
+// until its own ctx ends.
+func (r *remoteKV) target(ctx context.Context) (peerCore.ID, error) {
+	if pid, ok := r.current(); ok {
+		return pid, nil
+	}
+	ch := r.lookup.DoChan("", func() (interface{}, error) {
+		peers, err := r.resolve()
+		if err == nil && len(peers) > 0 {
+			r.mu.Lock()
+			if len(r.replicas) == 0 {
+				r.replicas = peers
+				r.sticky = 0
+			}
+			r.mu.Unlock()
+		}
+		return nil, err
+	})
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case res := <-ch:
+		if res.Err != nil {
+			return "", res.Err
+		}
+	}
+	pid, _ := r.current()
+	return pid, nil
+}
+
+// current returns the sticky replica if the set is known.
+func (r *remoteKV) current() (peerCore.ID, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if len(r.replicas) == 0 {
-		peers, err := r.client.ReplicasOf(r.kind, r.project, r.application, r.match)
-		if err != nil {
-			return "", err
-		}
-		r.replicas = peers
-		r.sticky = 0
+		return "", false
 	}
-	if len(r.replicas) == 0 {
-		return "", nil
-	}
-	return r.replicas[r.sticky%len(r.replicas)], nil
+	return r.replicas[r.sticky%len(r.replicas)], true
 }
 
 func (r *remoteKV) failover() bool {
@@ -139,11 +169,20 @@ const (
 	coldStartBackoff = 1500 * time.Millisecond
 )
 
+// OpTimeout bounds a kvdb op whose caller gave no deadline, so a stuck
+// replica fails the op instead of holding the caller forever.
+var OpTimeout = 30 * time.Second
+
 // do sends a kvdb op to the sticky replica, retrying across mesh warmup and
 // failing over to other replicas on a transport error and following a
 // not-replica redirect. It honors ctx: a caller that gave up neither sleeps
 // through the cold-start backoff nor starts another round.
 func (r *remoteKV) do(ctx context.Context, extra command.Body) (cr.Response, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, OpTimeout)
+		defer cancel()
+	}
 	body := r.instanceBody()
 	for k, v := range extra {
 		body[k] = v
@@ -185,7 +224,10 @@ func (r *remoteKV) attempt(ctx context.Context, body command.Body) (cr.Response,
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		pid, err := r.target()
+		pid, err := r.target(ctx)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		if err != nil {
 			// No hoarder reachable yet — fall back to "any hoarder" so an unplaced
 			// resource can still first-touch once discovery completes.
@@ -333,14 +375,14 @@ func (r *remoteKV) Sync(ctx context.Context, key string) error {
 }
 
 func (r *remoteKV) Batch(ctx context.Context) (coreKvdb.Batch, error) {
-	return &remoteBatch{kv: r}, nil
+	return &remoteBatch{ctx: ctx, kv: r}, nil
 }
 
 // BatchWithMax is Batch with the database quota sent along, enforced by the
 // hoarder from its local data. A hoarder that predates the field ignores it,
 // so during a rolling upgrade the quota is not enforced.
 func (r *remoteKV) BatchWithMax(ctx context.Context, max uint64) (coreKvdb.Batch, error) {
-	return &remoteBatch{kv: r, max: max}, nil
+	return &remoteBatch{ctx: ctx, kv: r, max: max}, nil
 }
 
 // Stats over the wire is not yet mapped; return an empty CRDT stats so callers
@@ -357,6 +399,7 @@ func (r *remoteKV) Close() {}
 
 // remoteBatch buffers ops and applies them as one grouped batch on Commit.
 type remoteBatch struct {
+	ctx context.Context // from Batch(ctx): Commit takes no ctx
 	kv  *remoteKV
 	ops []command.Body
 	max uint64 // database quota in bytes; 0 = not sent
@@ -387,12 +430,11 @@ func (b *remoteBatch) Commit() error {
 	for i, o := range b.ops {
 		ops[i] = map[string]interface{}(o)
 	}
-	// The Batch interface's Commit carries no ctx; the op is not caller-cancellable.
 	body := command.Body{hoarderSpecs.BodyKVOp: hoarderSpecs.KVBatch, hoarderSpecs.BodyOps: ops}
 	if b.max > 0 {
 		body[hoarderSpecs.BodyMaxSize] = b.max
 	}
-	resp, err := b.kv.do(context.Background(), body)
+	resp, err := b.kv.do(b.ctx, body)
 	if err != nil {
 		return err
 	}

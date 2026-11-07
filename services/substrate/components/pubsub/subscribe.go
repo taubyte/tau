@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -39,6 +40,38 @@ func (s *Service) handle(startTime time.Time, matcher *common.MatchDefinition, m
 	waitGroup.Wait()
 }
 
+// MaxConcurrentMessages bounds the messages one subscription handles at once;
+// each holds a VM instance. Messages beyond it are dropped.
+var MaxConcurrentMessages = 64
+
+// dispatch runs fn in a goroutine when a worker slot is free and reports
+// whether it did. It never waits: a blocked handler must not pile up
+// goroutines and VM instances behind it.
+func dispatch(workers chan struct{}, fn func()) bool {
+	select {
+	case workers <- struct{}{}:
+	default:
+		return false
+	}
+	go func() {
+		defer func() { <-workers }()
+		fn()
+	}()
+	return true
+}
+
+var lastDropWarn atomic.Int64
+
+// warnDropped logs a dropped message at most once every 10 seconds.
+func warnDropped(channel string) {
+	now := time.Now().UnixNano()
+	last := lastDropWarn.Load()
+	if now-last < int64(10*time.Second) || !lastDropWarn.CompareAndSwap(last, now) {
+		return
+	}
+	common.Logger.Warnf("dropping pubsub messages on %s: %d handlers already busy", channel, MaxConcurrentMessages)
+}
+
 func (s *Service) Subscribe(projectId, appId, resource, path string) error {
 	start := time.Now()
 	matcher := &common.MatchDefinition{
@@ -51,19 +84,25 @@ func (s *Service) Subscribe(projectId, appId, resource, path string) error {
 		matcher.Channel = matcher.Channel[1:]
 	}
 
+	// A function that subscribes on every call must not add a handler per
+	// call: each one handles every message again.
+	key := matcher.String() + "/" + resource
+	if _, dup := s.subscribed.LoadOrStore(key, struct{}{}); dup {
+		return nil
+	}
+
 	picks, err := s.Lookup(matcher)
 	if err != nil {
+		s.subscribed.Delete(key)
 		return fmt.Errorf("lookup failed with: %s", err.Error())
 	}
 	if len(picks) == 0 {
+		s.subscribed.Delete(key)
 		return fmt.Errorf("lookup returned no picks")
 	}
 
 	ctx, ctxC := context.WithCancel(s.Context())
-	workers := make(chan struct{}, 64)
-	for range 64 {
-		workers <- struct{}{}
-	}
+	workers := make(chan struct{}, MaxConcurrentMessages)
 
 	_, err = websocket.AddSubscription(s, matcher.String(), func(msg *pubsub.Message) {
 		// unwarp the message first
@@ -77,25 +116,22 @@ func (s *Service) Subscribe(projectId, appId, resource, path string) error {
 			return
 		}
 
-		go func() {
-			defer func() {
-				workers <- struct{}{}
-			}()
-			select {
-			case <-workers:
-				s.handle(start, matcher, message)
-			case <-ctx.Done():
-				return
-			}
-		}()
+		if ctx.Err() != nil {
+			return
+		}
+		if !dispatch(workers, func() { s.handle(start, matcher, message) }) {
+			warnDropped(matcher.Channel)
+		}
 	}, func(err error) {
 		common.Logger.Error("handle error with:", err.Error())
 		ctxC()
+		s.subscribed.Delete(key)
 	})
 
 	if err != nil {
 		common.Logger.Error("subscribe failed with:", err.Error())
 		ctxC()
+		s.subscribed.Delete(key)
 		return err
 	}
 
