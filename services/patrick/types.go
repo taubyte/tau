@@ -48,6 +48,7 @@ type PatrickService struct {
 	liveLogSenders liveLogSenders
 
 	config tauConfig.Config
+	builds buildSlots
 }
 
 // Assignment tracks which Monkey is working on a job.

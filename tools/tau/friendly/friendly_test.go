@@ -32,6 +32,7 @@ func TestExplain(t *testing.T) {
 		{"function_timeout", body("function_timeout"), "took too long"},
 		{"rejected", body("rejected"), "rejected the request"},
 		{"internal", body("internal"), "internal error"},
+		{"over quota", fmt.Errorf("wrap: %w", platformerr.New(platformerr.OverQuota, errors.New("x"))), "limit"},
 		{"typed code", fmt.Errorf("wrap: %w", platformerr.New(platformerr.NodeBusy, errors.New("x"))), "node is busy"},
 		{"rate limit with reset", &github.RateLimitError{Rate: github.Rate{Reset: github.Timestamp{Time: reset}}, Response: &http.Response{Request: &http.Request{}}}, "resets at 14:05"},
 		{"rate limit text", errors.New("403 API rate limit exceeded for user"), "tau doctor"},

@@ -193,6 +193,18 @@ func (p *PatrickService) dequeueHandler(ctx context.Context, conn streams.Connec
 		return nil, fmt.Errorf("get job %s after pop: %w", id, err)
 	}
 
+	// A project at its build cap waits: its job goes back to the queue, others proceed.
+	if p.config != nil {
+		if q := p.config.Quotas(); q.Default.Builds != 0 || len(q.Projects) != 0 {
+			if pid, err := p.getProjectIDFromJob(job); err == nil && !p.builds.take(id, pid, q.For(pid).Builds) {
+				if err := p.enqueue(id); err != nil {
+					return nil, fmt.Errorf("requeue %s over the build cap: %w", id, err)
+				}
+				return cr.Response{"available": false}, nil
+			}
+		}
+	}
+
 	monkeyPID := conn.RemotePeer()
 	assignment := Assignment{
 		MonkeyPID: monkeyPID.String(),
@@ -204,6 +216,7 @@ func (p *PatrickService) dequeueHandler(ctx context.Context, conn streams.Connec
 	}
 
 	if err := p.db.Put(opCtx, "/assigned/"+id, assignData); err != nil {
+		p.builds.release(id)
 		return nil, fmt.Errorf("record assignment for %s: %w", id, err)
 	}
 
@@ -252,6 +265,7 @@ func (p *PatrickService) refreshHandler(ctx context.Context, jid string, conn st
 }
 
 func (p *PatrickService) timeoutHandler(ctx context.Context, jid string, cid_log map[string]string) error {
+	defer p.builds.release(jid)
 	if _, err := p.getJob(ctx, "/archive/jobs/", jid); err != nil {
 		job, err := p.getJob(ctx, "/jobs/", jid)
 		if err != nil {
@@ -333,6 +347,7 @@ func (p *PatrickService) deleteJob(ctx context.Context, jid string, loc ...strin
 }
 
 func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid string, cid_log map[string]string, status commonIface.JobStatus, assetCid map[string]string) error {
+	defer p.builds.release(jid)
 	if pid != "" {
 		data, err := p.db.Get(ctx, "/assigned/"+jid)
 		if err == nil {
