@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/core/common/repositorytype"
 	"github.com/taubyte/tau/core/services/patrick"
 	"gotest.tools/v3/assert"
 )
@@ -79,6 +80,25 @@ func TestRepoDirWaitsForOtherProcess(t *testing.T) {
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 	other()
 	_, unlock, err := lockRepoDir(context.Background(), "projA", "1")
+	assert.NilError(t, err)
+	unlock()
+}
+
+// A dir the handler locks (the config clone of a code job) is released when
+// the job ends: the handler works on a copy of the job's Context.
+func TestHandlerReposReleasedByRun(t *testing.T) {
+	gitCacheRoot = t.TempDir()
+	c := &Context{ctx: context.Background(), ProjectID: "projA", RepoType: repositorytype.CodeRepository}
+	c.Job = &patrick.Job{}
+	c.LogFile, _ = os.CreateTemp(t.TempDir(), "log")
+	h, err := c.Handler()
+	assert.NilError(t, err)
+	h.(*code).openRepo("1", "file:///nonexistent", "", "")
+	c.releaseRepos()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	_, unlock, err := lockRepoDir(ctx, "projA", "1")
 	assert.NilError(t, err)
 	unlock()
 }

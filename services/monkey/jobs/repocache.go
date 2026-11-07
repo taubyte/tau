@@ -117,7 +117,10 @@ func (c *Context) openRepo(repoID, url, key, commit string, opts ...git.Option) 
 	if err != nil {
 		return nil, err
 	}
-	c.unlocks = append(c.unlocks, unlock)
+	if c.unlocks == nil {
+		c.unlocks = new([]func())
+	}
+	*c.unlocks = append(*c.unlocks, unlock)
 	if dirSize(filepath.Join(dir, ".git")) > repoGitMaxBytes {
 		if err = os.RemoveAll(dir); err != nil {
 			return nil, err
@@ -131,10 +134,13 @@ func (c *Context) openRepo(repoID, url, key, commit string, opts ...git.Option) 
 }
 
 func (c *Context) releaseRepos() {
-	for _, u := range c.unlocks {
+	if c.unlocks == nil {
+		return
+	}
+	for _, u := range *c.unlocks {
 		u()
 	}
-	c.unlocks = nil
+	*c.unlocks = nil
 }
 
 func dirSize(dir string) (n int64) {
