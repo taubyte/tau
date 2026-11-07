@@ -3,6 +3,8 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -203,9 +205,10 @@ func TestACacheBudgetOfNothingIsRefused(t *testing.T) {
 	require.ErrorContains(t, err, "a cache budget of nothing keeps nothing")
 }
 
-// A ROUTE'S HANDLER IN ANOTHER REGION is a route the compile allows and this gateway
-// cannot carry: refused by name, not answered as if the name served nothing.
-func TestAHandlerInAnotherRegionIsRefusedByName(t *testing.T) {
+// edgeIn is a route answered in both regions, in front of a function in /eu that
+// runs in region-1 alone, as region's view.
+func edgeIn(t *testing.T, region string) []byte {
+	t.Helper()
 	fs := afero.NewMemMapFs()
 	for path, body := range map[string]string{
 		"/project.yaml": "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nname: shop\n" +
@@ -224,14 +227,20 @@ func TestAHandlerInAnotherRegionIsRefusedByName(t *testing.T) {
 	obj, _, err := c.Compile(context.Background())
 	require.NoError(t, err)
 
-	for region, want := range map[string]int{"region-1": http.StatusOK, "region-2": http.StatusBadGateway} {
-		views, findings, err := schema.Views(obj.Flat(), schema.WithRegions(schema.WithRegion(region)))
-		require.NoError(t, err, "%v", findings)
-		b, err := json.Marshal(views[region].Object)
-		require.NoError(t, err)
+	views, findings, err := schema.Views(obj.Flat(), schema.WithRegions(schema.WithRegion(region)))
+	require.NoError(t, err, "%v", findings)
+	b, err := json.Marshal(views[region].Object)
+	require.NoError(t, err)
+	return b
+}
 
+// A ROUTE'S HANDLER IN ANOTHER REGION is a route the compile allows. A node that
+// reaches no other region refuses it by name, rather than answering as if the name
+// served nothing.
+func TestAHandlerInAnotherRegionIsRefusedByName(t *testing.T) {
+	for region, want := range map[string]int{"region-1": http.StatusOK, "region-2": http.StatusBadGateway} {
 		var said []string
-		h := newHarnessOf(t, b, Config{}, WithLogger(func(format string, args ...any) {
+		h := newHarnessOf(t, edgeIn(t, region), Config{}, WithLogger(func(format string, args ...any) {
 			said = append(said, format)
 		}))
 		w := h.do(t, http.MethodGet, "http://www.example.com/", "")
@@ -242,4 +251,90 @@ func TestAHandlerInAnotherRegionIsRefusedByName(t *testing.T) {
 			require.Len(t, said, 1)
 		}
 	}
+}
+
+// carrying is a Regions that answers from region-1, or fails with err.
+type carrying struct {
+	err   error
+	calls []carriedCall
+}
+
+type carriedCall struct {
+	route, handler specs.Address
+	req            invoke.Request
+}
+
+func (c *carrying) Origin(_ context.Context, route, handler specs.Address, req *invoke.Request) (*invoke.Response, string, error) {
+	c.calls = append(c.calls, carriedCall{route: route, handler: handler, req: *req})
+	if c.err != nil {
+		return nil, "", c.err
+	}
+	return &invoke.Response{Status: http.StatusOK, Body: []byte("from far away")}, "region-1", nil
+}
+
+// A ROUTE TO A HANDLER ANOTHER REGION RUNS IS CARRIED THERE, after this region ran
+// what is the route's own, and what came back is kept like any answer.
+func TestARouteIsCarriedToTheRegionRunningItsHandler(t *testing.T) {
+	regions := &carrying{}
+	h := newHarnessOf(t, edgeIn(t, "region-2"), Config{}, WithRegions(regions))
+
+	w := h.do(t, http.MethodGet, "http://www.example.com/a?b=c", "", "X-Probe", "one")
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "from far away", w.Body.String())
+	require.Equal(t, "region-1", w.Header().Get(regionHeader))
+	require.Equal(t, "miss", w.Header().Get("X-Taubyte-Cache"))
+	require.Zero(t, h.Workers.count(), "nothing runs it here")
+
+	require.Len(t, regions.calls, 1)
+	call := regions.calls[0]
+	require.Equal(t, specs.Address{Project: "shop", Environment: "prod", Kind: gatewayKind, Name: "www"}, call.route)
+	require.Equal(t, specs.Address{Project: "shop", Environment: "prod", Scope: []string{"eu"}, Kind: specs.KindFunction, Name: "api"}, call.handler)
+	require.Equal(t, http.MethodGet, call.req.Method)
+	require.Equal(t, "/a", call.req.Path)
+	require.Equal(t, "one", http.Header(call.req.Headers).Get("X-Probe"))
+
+	kept := h.do(t, http.MethodGet, "http://www.example.com/a?b=c", "")
+	require.Equal(t, "hit", kept.Header().Get("X-Taubyte-Cache"))
+	require.Equal(t, "region-1", kept.Header().Get(regionHeader), "a kept answer still says where it came from")
+	require.Len(t, regions.calls, 1, "answered from what was kept")
+}
+
+func TestARouteNoRegionAnswersIsRefusedByName(t *testing.T) {
+	var said []string
+	regions := &carrying{err: errors.New("the link is down")}
+	h := newHarnessOf(t, edgeIn(t, "region-2"), Config{}, WithRegions(regions), WithLogger(func(format string, args ...any) {
+		said = append(said, fmt.Sprintf(format, args...))
+	}))
+
+	w := h.do(t, http.MethodGet, "http://www.example.com/", "")
+	require.Equal(t, http.StatusBadGateway, w.Code)
+	require.Contains(t, w.Body.String(), "this route's handler runs in another region, which did not answer")
+	require.NotContains(t, w.Body.String(), "the link is down", "the reason is the operator's")
+	require.Len(t, said, 1)
+	require.Contains(t, said[0], "the link is down")
+}
+
+// WHAT CROSSES IS ONE REQUEST FOR ONE ANSWER: a package's files, a port and a bus
+// are refused by name rather than carried.
+func TestOnlyARequestForAnAnswerIsCarried(t *testing.T) {
+	regions := &carrying{}
+	s := &Service{regions: regions, logf: func(string, ...any) {}}
+	for _, route := range []specs.GatewayRoute{
+		{HandlerKind: packageKind, HandlerName: "site"},
+		{HandlerKind: busKind, HandlerName: "events"},
+		{HandlerKind: specs.KindApplication, HandlerName: "shop", HandlerPort: "admin"},
+	} {
+		m := match{candidate: candidate{gateway: specs.Gateway{Route: route}, elsewhere: true}}
+		code, why := s.unbuilt(m)
+		require.Equal(t, http.StatusBadGateway, code)
+		require.Equal(t, "this route's handler runs in another region, and is not carried between regions", why)
+	}
+	code, _ := s.unbuilt(match{candidate: candidate{gateway: specs.Gateway{Route: specs.GatewayRoute{HandlerKind: specs.KindFunction, HandlerName: "api"}}, elsewhere: true}})
+	require.Zero(t, code)
+	require.Empty(t, regions.calls)
+}
+
+func TestNilRegionsAreRefused(t *testing.T) {
+	_, err := New(Config{}, WithRegions(nil))
+	require.ErrorContains(t, err, "nil regions")
 }

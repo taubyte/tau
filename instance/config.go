@@ -166,6 +166,7 @@ type options struct {
 	extra     map[string]service.Service
 	identity  func(Host) (auth.Identity, error)
 	resolver  cm.Resolver
+	link      cm.Link
 
 	// terminates says whatever serves Handler serves it over TLS too, with
 	// TLSConfig. See WithTLS.

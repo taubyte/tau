@@ -192,6 +192,29 @@ type options struct {
 
 	artifacts Artifacts
 	assets    Assets
+
+	regions Regions
+}
+
+// Regions carries a request to another region of this cloud: the way a route reaches
+// a handler only other regions run. services/cm's Regions is the one a node hands
+// over, through the cm of its own region.
+type Regions interface {
+	// Origin answers req with handler, run in another region, as the gateway at
+	// route asked for it, and says which region answered.
+	Origin(ctx context.Context, route, handler specs.Address, req *invoke.Request) (*invoke.Response, string, error)
+}
+
+// WithRegions is how a route reaches a handler only other regions run. Without it
+// such a route is refused by name.
+func WithRegions(r Regions) Option {
+	return func(o *options) error {
+		if r == nil {
+			return errors.New("gateway: nil regions")
+		}
+		o.regions = r
+		return nil
+	}
 }
 
 // Issuer issues a certificate for a generated name the operator's wildcard

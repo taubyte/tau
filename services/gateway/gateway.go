@@ -71,6 +71,9 @@ type Service struct {
 	// answers is what routes that say `cache:` keep. See cache.go.
 	answers *answers
 
+	// regions carries a route to a handler only other regions run. See carried.
+	regions Regions
+
 	// cands memoises candidatesAt, a candKey's []candidate: a compiled project never
 	// changes once loaded. The candidates are shared, so nothing may write through
 	// them. A request reads it without a lock; candMu orders the writes and guards
@@ -137,6 +140,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		now:      o.now,
 		meter:    o.meter,
 		logf:     o.logf,
+		regions:  o.regions,
 
 		secrets:    o.secrets,
 		issuer:     o.issuer,
@@ -355,6 +359,20 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if router, _ := m.router(); router == "" {
 		port = m.handler().HandlerPort
 	}
+	if m.elsewhere {
+		res, ok := s.carried(ctx, m, at, req)
+		if !ok {
+			refuse(w, http.StatusBadGateway, "this route's handler runs in another region, which did not answer")
+			return
+		}
+		billed.served = true
+		if cached {
+			s.keep(w, key, routeTtl(m.gateway), res)
+		}
+		writeTo(w, res)
+		return
+	}
+
 	res, err := s.deliver(ctx, at, port, req)
 	if err != nil {
 		s.logf("gateway: %s/%s %s/%s could not be served: %v", at.Project, at.Environment, at.Kind, at.Name, err)
@@ -543,14 +561,42 @@ func (s *Service) shaped(ctx context.Context, m match, projectName, environment 
 // unbuilt reports the parts of the vocabulary this gateway cannot yet honour,
 // rather than serving a request as if they were not there.
 func (s *Service) unbuilt(m match) (int, string) {
-	if m.elsewhere {
-		// The compile let this route reach a handler held in another region, and
-		// nothing here carries a request between regions.
-		s.logf("gateway: %s %s routes to %s/%s, which this region does not run", m.host.Name, m.Path, m.handler().HandlerKind, m.handler().HandlerName)
+	if !m.elsewhere {
+		return 0, ""
+	}
+	// The compile let this route reach a handler held in another region. What
+	// crosses is one request for one answer: a package's files are read by the
+	// gateway that serves them, and a port and a bus are connections.
+	handler := m.handler()
+	switch {
+	case s.regions == nil:
+		s.logf("gateway: %s %s routes to %s/%s, which this region does not run, and this node reaches no other region", m.host.Name, m.Path, handler.HandlerKind, handler.HandlerName)
 		return http.StatusBadGateway, "this route's handler runs in another region"
+	case handler.HandlerKind == packageKind, handler.HandlerKind == busKind, handler.HandlerPort != "":
+		s.logf("gateway: %s %s routes to %s/%s, which this region does not run and is not carried between regions", m.host.Name, m.Path, handler.HandlerKind, handler.HandlerName)
+		return http.StatusBadGateway, "this route's handler runs in another region, and is not carried between regions"
 	}
 	return 0, ""
 }
+
+// carried is a route's answer from the region that runs its handler, marked with
+// that region's name.
+func (s *Service) carried(ctx context.Context, m match, at specs.Address, req *invoke.Request) (*invoke.Response, bool) {
+	route := specs.Address{Project: at.Project, Environment: at.Environment, Scope: m.host.Scope, Kind: gatewayKind, Name: m.host.Name}
+	res, region, err := s.regions.Origin(ctx, route, at, req)
+	if err != nil {
+		s.logf("gateway: %s/%s %s/%s could not be answered in another region: %v", at.Project, at.Environment, at.Kind, at.Name, err)
+		return nil, false
+	}
+	if res.Headers == nil {
+		res.Headers = map[string][]string{}
+	}
+	res.Headers[regionHeader] = []string{region}
+	return res, true
+}
+
+// regionHeader names the region that answered a route carried to another.
+const regionHeader = "X-Taubyte-Region"
 
 // candidatesAt is every gateway resource in this project answering on a name.
 func (s *Service) candidatesAt(p *specs.Project, name, projectName string) []candidate {

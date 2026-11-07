@@ -166,6 +166,12 @@ type Config struct {
 	// Listen is where the universe answers DreamService (rpc.go), "127.0.0.1:0"
 	// for a port of the kernel's choosing. Empty answers it nowhere.
 	Listen string
+
+	// Region is the one region of a cloud this universe is, and Linked what links
+	// it to the cloud's other regions (link.go). An empty Region is a cloud of one
+	// unnamed region.
+	Region string
+	Linked *Regions
 }
 
 // removed is a directory a universe deletes when it closes.
@@ -310,6 +316,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		Services:  append([]string(nil), cfg.Services...),
 		Cloud:     m.Name(),
 		Container: containers.Declared{Backend: cfg.Container},
+		Region:    cfg.Region,
 	}
 	nodeConfig.DNSListen = "127.0.0.1:0"
 	nodeConfig.Sections = map[string]any{statsService.Descriptor.Name: statsService.Config{Stabilize: dreamStabilize}}
@@ -351,6 +358,9 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	}
 	if now != nil {
 		options = append(options, instance.WithClock(now))
+	}
+	if cfg.Linked != nil {
+		options = append(options, instance.WithRegionLink(cfg.Linked.End(nodeConfig.Region)))
 	}
 	options = append(options, cfg.Options...)
 

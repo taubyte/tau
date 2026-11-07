@@ -230,6 +230,12 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 	if o.resolver != nil {
 		n.provide("", o.resolver)
 	}
+	// This node's end of the link between regions, and what its region answers a
+	// call carried over it with.
+	if o.link != nil {
+		n.provide("", o.link)
+	}
+	n.provide("", regionOrigins{n})
 	// What the built-ins add to this node's report.
 	n.provide("", builtIns{n})
 	// The certificate a service's own public listener answers with.
@@ -631,6 +637,11 @@ func (n *Instance) openGateway() error {
 	// A PACKAGE HANDLER'S FILES are read from the build's artifact, as a worker
 	// reads one: the same lookup, the same storage service.
 	gatewayOptions = append(gatewayOptions, gateway.WithFiles(n.Artifacts(), n.store))
+
+	// A HANDLER ONLY OTHER REGIONS RUN is reached through the cm of this one.
+	regions := cm.RegionsOn(&added{node: n}, n.views)
+	n.closers = append(n.closers, regions)
+	gatewayOptions = append(gatewayOptions, gateway.WithRegions(regions))
 
 	svc, err := gateway.New(n.cfg.Gateway, gatewayOptions...)
 	if err != nil {
