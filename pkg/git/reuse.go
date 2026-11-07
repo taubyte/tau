@@ -13,15 +13,10 @@ import (
 // Cloned tells whether New had to clone (false: an existing clone was fetched).
 func (c *Repository) Cloned() bool { return c.i_cloned_it }
 
-// refresh fetches the branch into the opened clone and leaves the tree exactly
-// at the target commit: every file but .git is dropped first, so nothing
-// untracked or ignored survives from an earlier build.
-func (c *Repository) refresh() error {
-	branch := c.branches[0]
-	remote := plumbing.NewRemoteReferenceName(git.DefaultRemoteName, branch)
+func (c *Repository) fetch(refspec string) error {
 	err := c.repo.FetchContext(c.ctx, &git.FetchOptions{
 		RemoteName: git.DefaultRemoteName,
-		RefSpecs:   []config.RefSpec{config.RefSpec(fmt.Sprintf("+refs/heads/%s:%s", branch, remote))},
+		RefSpecs:   []config.RefSpec{config.RefSpec(refspec)},
 		Depth:      1,
 		Force:      true,
 		Auth:       c.auth,
@@ -30,13 +25,32 @@ func (c *Repository) refresh() error {
 	if err != nil && err != git.NoErrAlreadyUpToDate {
 		return err
 	}
+	return nil
+}
 
-	target, err := c.repo.ResolveRevision(plumbing.Revision(remote))
+// refresh fetches the branch tip into the opened clone; pin moves the tree.
+func (c *Repository) refresh() error {
+	branch := c.branches[0]
+	return c.fetch(fmt.Sprintf("+refs/heads/%s:%s", branch, plumbing.NewRemoteReferenceName(git.DefaultRemoteName, branch)))
+}
+
+// pin leaves the tree exactly at the target commit (the branch tip when none
+// is set or it cannot be fetched): every file but .git is dropped first, so
+// nothing untracked or ignored survives from an earlier build. It runs after
+// Checkout, which would otherwise move the tree back to the tip.
+func (c *Repository) pin() error {
+	target, err := c.repo.ResolveRevision(plumbing.Revision(plumbing.NewRemoteReferenceName(git.DefaultRemoteName, c.branches[0])))
 	if err != nil {
 		return err
 	}
-	if c.commit != "" {
+	if c.commit != "" && c.commit != target.String() {
 		h := plumbing.NewHash(c.commit)
+		if _, err := c.repo.CommitObject(h); err != nil {
+			// A depth-1 fetch of the branch only has its tip: ask for the commit itself.
+			if err := c.fetch(fmt.Sprintf("+%s:refs/tau/pin", c.commit)); err != nil {
+				fmt.Fprintf(c.output, "commit %s not fetched (%s), building the tip of %s\n", c.commit, err, c.branches[0])
+			}
+		}
 		if _, err := c.repo.CommitObject(h); err == nil {
 			target = &h
 		}

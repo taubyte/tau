@@ -66,6 +66,9 @@ func New(ctx context.Context, options ...Option) (c *Repository, err error) {
 		if err != nil {
 			return
 		}
+		if c.reuse {
+			err = c.pin()
+		}
 	}
 
 	return
