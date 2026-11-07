@@ -38,6 +38,27 @@ func pooledFunction(t *testing.T) *Function {
 	return f
 }
 
+// A checked-out instance holds a project slot; returning it to the pool frees the slot.
+func TestCheckedOutInstanceHoldsSlot(t *testing.T) {
+	f := pooledFunction(t)
+	project := f.serviceable.Project()
+	before := instancesOf(project)
+
+	inst, err := f.Instantiate(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := instancesOf(project); got != before+1 {
+		t.Fatalf("checked-out instance must hold a slot: %d -> %d", before, got)
+	}
+	if err := inst.Free(); err != nil {
+		t.Fatal(err)
+	}
+	if got := instancesOf(project); got != before {
+		t.Fatalf("an idle pooled instance must not hold a slot: %d -> %d", before, got)
+	}
+}
+
 // A caller that left before its instance arrived does not strand it: the
 // instance goes back to the pool and its slot is released.
 func TestInstanceForGoneCallerIsReturned(t *testing.T) {
