@@ -101,7 +101,7 @@ func TestAnAnswerIsAStatsReadTurnedIntoRecords(t *testing.T) {
 
 	name, maxAge := r.asked()
 	require.Equal(t, "shop.example.com", name,
-		"the trailing dot is not part of the name discovery knows")
+		"the trailing dot is not part of the name stats knows")
 	require.Equal(t, DefaultMaxAge, maxAge, "dns states its own staleness tolerance")
 }
 
@@ -439,7 +439,7 @@ func TestTheServiceNameIsWhatStatsKnows(t *testing.T) {
 	s.Answer(query("_https._tcp.shop.example.com", dns.TypeSRV))
 	name, _ := r.asked()
 	require.Equal(t, "shop.example.com", name,
-		"discovery is asked about the workload, not about the underscore labels")
+		"stats is asked about the workload, not about the underscore labels")
 }
 
 func TestAnSrvAnswerIsCapped(t *testing.T) {

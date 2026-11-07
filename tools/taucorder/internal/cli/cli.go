@@ -177,7 +177,7 @@ func App(env Env) *cli.App {
 			&cli.StringFlag{Name: "ca", Usage: "the cloud's CA root certificate, PEM"},
 			&cli.StringFlag{Name: "certificate", Usage: "this client's certificate from that CA, PEM"},
 			&cli.StringSliceFlag{Name: "bootstrap", Aliases: []string{"b"}, Usage: "bootstrap peer multiaddr (repeatable)"},
-			&cli.StringFlag{Name: "cloud", Usage: "the cloud's name, which scopes its discovery gossip"},
+			&cli.StringFlag{Name: "cloud", Usage: "the cloud's name, which scopes its stats gossip"},
 			&cli.StringSliceFlag{Name: "p2p-listen", Usage: "swarm listen multiaddr (default an ephemeral loopback port)"},
 		},
 		Commands: []*cli.Command{
@@ -204,7 +204,7 @@ func App(env Env) *cli.App {
 				},
 			},
 			{
-				Name: "nodes", Usage: "the fleet, from discovery", Flags: []cli.Flag{output, wait},
+				Name: "nodes", Usage: "the fleet, from stats", Flags: []cli.Flag{output, wait},
 				Action: func(c *cli.Context) error {
 					return withSeat(c, env, func(s Seat, q *query.Client) error {
 						listen(c)
@@ -214,7 +214,7 @@ func App(env Env) *cli.App {
 				},
 			},
 			{
-				Name: "services", Usage: "what the fleet serves, from discovery", Flags: []cli.Flag{output, wait},
+				Name: "services", Usage: "what the fleet serves, from stats", Flags: []cli.Flag{output, wait},
 				Action: func(c *cli.Context) error {
 					return withSeat(c, env, func(s Seat, q *query.Client) error {
 						listen(c)

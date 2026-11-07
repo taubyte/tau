@@ -111,7 +111,7 @@ func TestStartServesTheGatewayAndStops(t *testing.T) {
 	key, root, cert := admitted(t, "test")
 	config := writeConfig(t, ""+
 		"node:\n"+
-		"  services: [register, discovery, gateway]\n"+
+		"  services: [register, stats, gateway]\n"+
 		"  cloud: test\n"+
 		"root: /nonexistent/overridden\n"+
 		"listen: [\"/ip4/127.0.0.1/tcp/0\"]\n"+

@@ -21,7 +21,7 @@ func secretsConfig(t *testing.T) string {
 	key, root, cert := admitted(t, "test")
 	return writeConfig(t, ""+
 		"node:\n"+
-		"  services: [register, discovery, secrets]\n"+
+		"  services: [register, stats, secrets]\n"+
 		"  cloud: test\n"+
 		"root: "+t.TempDir()+"\n"+
 		"listen: [\"/ip4/127.0.0.1/tcp/0\"]\n"+
