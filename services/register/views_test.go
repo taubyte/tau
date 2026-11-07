@@ -44,6 +44,9 @@ func mockNode(t testing.TB) *node {
 	return &node{Node: p}
 }
 
+// api is a handler region-1's routes reach and only region-2 runs.
+var api = pkgregister.Remote{Kind: "function", Scope: "origin", Name: "api", In: []string{"region-2"}}
+
 // startRegister runs the register on n, holding one deployment cut in two regions and
 // whole for the cloud with none.
 func startRegister(t *testing.T, n *node) Service {
@@ -54,7 +57,7 @@ func startRegister(t *testing.T, n *node) Service {
 	_, err := s.Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("whole"), Hosts: []string{"shop.example.com"},
 		Views: []pkgregister.View{
-			{Destination: "region-1", Compiled: []byte("region-1")},
+			{Destination: "region-1", Compiled: []byte("region-1"), Remote: []pkgregister.Remote{api}},
 			{Destination: schema.DefaultRegion, Compiled: []byte("default")},
 		},
 	})
@@ -85,6 +88,10 @@ func TestViewsReadTheRegisterBesideThemInTheirRegion(t *testing.T) {
 	_, err = v.ResolveFleet(ctx)
 	require.ErrorIs(t, err, pkgregister.ErrNotPublished)
 
+	routing, err := v.Routing(ctx, "shop", "prod")
+	require.NoError(t, err)
+	require.Equal(t, pkgregister.Routing{Release: pkgregister.IDOf([]byte("whole")), Remote: []pkgregister.Remote{api}}, routing)
+
 	in.region = ""
 	p, err = ViewsOn(in).Resolve(ctx, "shop", "prod")
 	require.NoError(t, err)
@@ -108,6 +115,11 @@ func TestViewsReachARegisterElsewhere(t *testing.T) {
 	project, _, err := v.ResolveHost(ctx, "shop.example.com")
 	require.NoError(t, err)
 	require.Equal(t, "shop", project)
+	routing, err := v.Routing(ctx, "shop", "prod")
+	require.NoError(t, err)
+	require.Equal(t, []string{"region-2"}, routing.In([]string{"origin"}, "function", "api"), "read through what this node keeps")
+	_, err = v.Routing(ctx, "shop", "staging")
+	require.ErrorIs(t, err, pkgregister.ErrNotPublished)
 	require.NoError(t, v.Close())
 }
 
@@ -123,5 +135,7 @@ func TestViewsWithNoRegisterToReadAreRefusedByName(t *testing.T) {
 	_, _, err = v.ResolveHost(ctx, "shop.example.com")
 	require.ErrorIs(t, err, service.ErrNoneRuns)
 	_, err = v.ResolveFleet(ctx)
+	require.ErrorIs(t, err, service.ErrNoneRuns)
+	_, err = v.Routing(ctx, "shop", "prod")
 	require.ErrorIs(t, err, service.ErrNoneRuns)
 }
