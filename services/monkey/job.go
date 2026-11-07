@@ -1,8 +1,10 @@
 package monkey
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	authClient "github.com/taubyte/tau/clients/p2p/auth"
 	"github.com/taubyte/tau/core/common/repositorytype"
@@ -59,7 +61,9 @@ func (m *Monkey) RunJob() (err error) {
 	repo.Provider = strings.ToLower(repo.Provider)
 
 	if len(projectId) == 0 {
-		projectId, err = m.Service.tnsClient.Simple().GetRepositoryProjectId(repo.Provider, repoID)
+		projectId, err = waitForProjectID(m.ctx, func() (string, error) {
+			return m.Service.tnsClient.Simple().GetRepositoryProjectId(repo.Provider, repoID)
+		})
 		if err != nil {
 			return
 		}
@@ -117,4 +121,23 @@ func (m *Monkey) RunJob() (err error) {
 	}
 
 	return nil
+}
+
+// waitForProjectID retries a repository's project lookup for up to
+// jobs.TnsRetryFor. A new repository's project is published by the config
+// job; Patrick hands its job out once it sees the project, but this node's
+// TNS can lag a moment behind, and failing then cost the job a try.
+func waitForProjectID(ctx context.Context, lookup func() (string, error)) (string, error) {
+	deadline := time.Now().Add(jobs.TnsRetryFor)
+	for {
+		id, err := lookup()
+		if err == nil || time.Now().After(deadline) {
+			return id, err
+		}
+		select {
+		case <-ctx.Done():
+			return "", err
+		case <-time.After(time.Second):
+		}
+	}
 }
