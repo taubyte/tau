@@ -24,7 +24,7 @@ func TestNoMatchSaysWhatHappened(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			writeError(w, noMatch(&c.result))
+			platformerr.Write(w, noMatch(&c.result), "")
 			if w.Code != c.status || w.Header().Get("Retry-After") != c.retry {
 				t.Fatalf("status %d retry %q", w.Code, w.Header().Get("Retry-After"))
 			}
@@ -34,7 +34,7 @@ func TestNoMatchSaysWhatHappened(t *testing.T) {
 
 func TestOtherErrorsStay500(t *testing.T) {
 	w := httptest.NewRecorder()
-	writeError(w, errors.New("tunneling failed"))
+	platformerr.Write(w, errors.New("tunneling failed"), "")
 	if w.Code != goHttp.StatusInternalServerError {
 		t.Fatalf("status %d", w.Code)
 	}
@@ -74,7 +74,7 @@ func TestNotFoundWhenPathSaysTimeout(t *testing.T) {
 	} {
 		nf := notFound(err)
 		w := httptest.NewRecorder()
-		writeError(w, noMatch(&lookupResult{notFound: nf, failed: !nf}))
+		platformerr.Write(w, noMatch(&lookupResult{notFound: nf, failed: !nf}), "")
 		if w.Code != goHttp.StatusNotFound {
 			t.Fatalf("%v: status %d", err, w.Code)
 		}

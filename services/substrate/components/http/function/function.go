@@ -13,6 +13,7 @@ import (
 	"github.com/taubyte/tau/clients/p2p/seer/usage"
 	"github.com/taubyte/tau/core/services/substrate/components"
 	httpComp "github.com/taubyte/tau/core/services/substrate/components/http"
+	"github.com/taubyte/tau/pkg/platformerr"
 	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
 	"github.com/taubyte/tau/services/substrate/components/http/common"
 	"github.com/taubyte/tau/services/substrate/components/metrics"
@@ -41,7 +42,7 @@ func (f *Function) Provision() (function httpComp.Serviceable, err error) {
 	}
 
 	if f.Function, err = runtime.New(f.instanceCtx, f); err != nil {
-		return nil, fmt.Errorf("initializing wasm module failed with: %w", err)
+		return nil, platformerr.New(platformerr.ModuleUnavailable, fmt.Errorf("initializing wasm module failed with: %w", err))
 	}
 
 	f.metrics.Cached = 1

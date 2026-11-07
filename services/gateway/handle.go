@@ -22,9 +22,7 @@ func (g *Gateway) attach() {
 	g.http.LowLevel(&http.LowLevelDefinition{
 		PathPrefix: "/",
 		Handler: func(w goHttp.ResponseWriter, r *goHttp.Request) {
-			if err := g.handleHttp(w, r); err != nil {
-				writeError(w, err)
-			}
+			platformerr.Serve(w, r, logger, g.handleHttp)
 		},
 	})
 }
@@ -151,32 +149,12 @@ func (g *Gateway) lookup(r *goHttp.Request) (*lookupResult, error) {
 	return result, nil
 }
 
-// noMatchError carries the status for a request nothing could be picked for.
-type noMatchError struct {
-	status  int
-	message string
-}
-
-func (e *noMatchError) Error() string { return e.message }
-
+// noMatch says why nothing could be picked: a certain miss, or substrates that did not answer.
 func noMatch(result *lookupResult) error {
 	if result.definite() {
-		return &noMatchError{goHttp.StatusNotFound, "no substrate match found"}
+		return platformerr.New(platformerr.NotFound, errors.New("no substrate match found"))
 	}
-	return &noMatchError{goHttp.StatusServiceUnavailable, "no substrate answered in time"}
-}
-
-func writeError(w goHttp.ResponseWriter, err error) {
-	status := goHttp.StatusInternalServerError
-	var miss *noMatchError
-	if errors.As(err, &miss) {
-		status = miss.status
-		if status == goHttp.StatusServiceUnavailable {
-			w.Header().Set("Retry-After", "1")
-		}
-	}
-	w.WriteHeader(status)
-	w.Write([]byte(err.Error()))
+	return platformerr.New(platformerr.NodeBusy, errors.New("no substrate answered in time"))
 }
 
 func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {

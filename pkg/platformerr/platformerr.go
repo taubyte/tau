@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sync/atomic"
 )
 
 type Code string
@@ -86,3 +87,52 @@ func Write(w http.ResponseWriter, err error, requestID string) {
 	w.WriteHeader(Status(c))
 	json.NewEncoder(w).Encode(map[string]any{"code": Status(c), "error": c, "message": messages[c], "request_id": requestID})
 }
+
+// Logger is the part of a service logger Serve needs.
+type Logger interface {
+	Debugf(format string, args ...any)
+	Errorf(format string, args ...any)
+}
+
+// Serve runs h and answers its error with Write. The full error chain goes to
+// log only. If h already started the response, an error body would corrupt
+// it, so the error is only logged.
+func Serve(w http.ResponseWriter, r *http.Request, log Logger, h func(http.ResponseWriter, *http.Request) error) {
+	rec := &recorder{ResponseWriter: w}
+	if err := h(rec, r); err != nil {
+		logf := log.Errorf
+		if CodeOf(err) == NotFound {
+			logf = log.Debugf // every scan of a missing page lands here
+		}
+		logf("%s %s%s failed with: %s", r.Method, r.Host, r.URL.Path, err)
+		if !rec.started.Load() {
+			Write(w, err, "")
+		}
+	}
+}
+
+// recorder notes whether the response has started.
+type recorder struct {
+	http.ResponseWriter
+	started atomic.Bool // atomic: a tunnel goroutine may still write while Serve reads it
+}
+
+func (r *recorder) WriteHeader(code int) {
+	r.started.Store(true)
+	r.ResponseWriter.WriteHeader(code)
+}
+
+func (r *recorder) Write(b []byte) (int, error) {
+	r.started.Store(true)
+	return r.ResponseWriter.Write(b)
+}
+
+// Flush keeps streaming bodies working: guest code checks for http.Flusher.
+func (r *recorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		r.started.Store(true)
+		f.Flush()
+	}
+}
+
+func (r *recorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }

@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"runtime"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/taubyte/tau/core/vm"
+	"github.com/taubyte/tau/pkg/platformerr"
 	plugins "github.com/taubyte/tau/pkg/vm-low-orbit"
 	vmContext "github.com/taubyte/tau/pkg/vm/context"
 )
@@ -141,7 +143,7 @@ func (f *Function) Instantiate(ctx context.Context) (Instance, error) { //} (run
 	select {
 	case f.instanceReqs <- instCh:
 	default:
-		return nil, fmt.Errorf("instance request channel is full")
+		return nil, platformerr.New(platformerr.NodeBusy, errors.New("instance request channel is full"))
 	}
 
 	select {
@@ -225,7 +227,7 @@ func (f *Function) instantiate() (rt vm.Runtime, sdk plugins.Instance, err error
 
 		availableMemory := goMemory + (vmStat.Total - vmStat.Used)
 		if availableMemory*2/3 < f.config.Memory {
-			return nil, nil, fmt.Errorf("insufficient system memory available: %d bytes", availableMemory)
+			return nil, nil, platformerr.New(platformerr.NodeBusy, fmt.Errorf("insufficient system memory available: %d bytes", availableMemory))
 		}
 	}
 

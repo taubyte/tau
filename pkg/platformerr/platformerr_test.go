@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -69,5 +70,28 @@ func TestWriteNeverShowsErrText(t *testing.T) {
 		if w.Header().Get("Retry-After") != c.retry {
 			t.Fatalf("%q retry %q", c.code, w.Header().Get("Retry-After"))
 		}
+	}
+}
+
+type nopLog struct{}
+
+func (nopLog) Debugf(string, ...any) {}
+func (nopLog) Errorf(string, ...any) {}
+
+// Once the response has started, an error body would corrupt it.
+func TestServeLeavesStartedResponse(t *testing.T) {
+	w := httptest.NewRecorder()
+	Serve(w, httptest.NewRequest("GET", "/", nil), nopLog{}, func(w http.ResponseWriter, _ *http.Request) error {
+		w.WriteHeader(200)
+		w.Write([]byte("hi"))
+		return errors.New("secret-cid")
+	})
+	if w.Code != 200 || w.Body.String() != "hi" {
+		t.Fatalf("%d %q", w.Code, w.Body)
+	}
+	w = httptest.NewRecorder()
+	Serve(w, httptest.NewRequest("GET", "/", nil), nopLog{}, func(http.ResponseWriter, *http.Request) error { return errors.New("secret-cid") })
+	if w.Code != 500 || strings.Contains(w.Body.String(), "secret-cid") {
+		t.Fatalf("%d %q", w.Code, w.Body)
 	}
 }
