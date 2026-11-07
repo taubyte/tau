@@ -98,15 +98,11 @@ func (c *Context) openRepo(repoID, url, key string, opts ...git.Option) (*git.Re
 		return nil, err
 	}
 	c.unlocks = append(c.unlocks, unlock)
-	// S.9a: a clean slate each time; S.13 turns this into a fetch.
-	if err = os.RemoveAll(dir); err != nil {
-		return nil, err
-	}
 	if err = os.MkdirAll(dir, 0755); err != nil {
 		return nil, err
 	}
 	touchRepoDir(dir)
-	return git.New(c.ctx, append(opts, git.Root(dir))...)
+	return git.New(c.ctx, append(opts, git.Root(dir), git.Reuse(c.Job.Meta.HeadCommit.ID))...)
 }
 
 func (c *Context) releaseRepos() {

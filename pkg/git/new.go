@@ -89,6 +89,21 @@ func (c *Repository) open_or_clone() error {
 	}
 
 	c.repo, err = git.PlainOpen(c.root)
+	if c.reuse && c.usingSpecificBranch {
+		if err == nil {
+			if err = c.refresh(); err == nil {
+				return nil
+			}
+		}
+		// shortcut: any refresh failure re-clones, even a transient one.
+		if err = os.RemoveAll(c.root); err != nil {
+			return err
+		}
+		if err = os.MkdirAll(c.root, 0755); err != nil {
+			return err
+		}
+		return c.clone()
+	}
 	if err != nil {
 		return c.clone()
 	}
