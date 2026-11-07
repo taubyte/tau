@@ -10,6 +10,7 @@ import (
 	ds "github.com/ipfs/go-datastore"
 	query "github.com/ipfs/go-datastore/query"
 	ipld "github.com/ipfs/go-ipld-format"
+	"github.com/multiformats/go-multihash"
 )
 
 const blocksPrefix = "/blocks/"
@@ -20,12 +21,11 @@ const blocksPrefix = "/blocks/"
 //     read-back AND (for storage) every locally-held file CID shows stash
 //     claims at the fleet target — a stash ack alone proves one copy, not the
 //     replica target.
-//   - Blocks: a mark-and-sweep over /blocks. The keep-set is everything
-//     reachable from the namespaces still present (their CRDT DAGs and their
-//     file content DAGs); all other blocks on a substrate node are
-//     re-fetchable cache by architecture. The sweep only runs while legacy
-//     namespaces exist(ed) at pass start, so steady-state nodes never touch
-//     their cache.
+//   - Blocks: only those reachable from the namespaces scrubbed (their CRDT
+//     and file DAGs), minus everything reachable from every namespace left —
+//     foreign ones included. Nothing else in /blocks is ever touched.
+//
+// A pass over the delete threshold deletes nothing.
 func (m *Migrator) scrubAndSweep(ctx context.Context, report *Report, passHashes []string) {
 	if ctx.Err() != nil {
 		return
@@ -54,6 +54,7 @@ func (m *Migrator) scrubAndSweep(ctx context.Context, report *Report, passHashes
 		}
 	}
 
+	scrub := make(map[string][]string) // hash → its raw keys
 	for hash, rep := range report.Instances {
 		if !rep.Verified || rep.Err != "" {
 			continue
@@ -72,51 +73,101 @@ func (m *Migrator) scrubAndSweep(ctx context.Context, report *Report, passHashes
 				continue
 			}
 		}
-		n, err := m.scrubNamespace(ctx, hash)
+		keys, err := m.rawKeys(ctx, crdtPrefix+hash+"/")
 		if err != nil {
 			rep.Err = fmt.Sprintf("scrub: %s", err)
 			continue
 		}
-		report.SweptKeys += n
-		rep.Scrubbed = true
+		scrub[hash] = keys
 	}
 
-	if ctx.Err() != nil {
+	if len(scrub) == 0 || ctx.Err() != nil {
 		return
+	}
+
+	// Candidates are collected before anything is deleted, so the walk still
+	// finds the scrubbed namespaces' heads.
+	dag := offlineDAG(m.node.Store())
+	candidates := make(map[string]struct{})
+	nKeys := 0
+	for hash, keys := range scrub {
+		nKeys += len(keys)
+		if err := m.markHeads(ctx, dag, hash, candidates); err != nil {
+			logger.Errorf("collecting sweep candidates failed with: %s — deleting nothing this pass", err)
+			return
+		}
+		for _, cidStr := range report.Instances[hash].fileCids {
+			if c, err := cid.Decode(cidStr); err == nil {
+				m.markReachable(ctx, dag, c, candidates)
+			}
+		}
 	}
 
 	remaining := make([]string, 0, len(passHashes))
 	for _, h := range passHashes {
-		if rep, ok := report.Instances[h]; ok && rep.Scrubbed {
-			continue
+		if _, ok := scrub[h]; !ok {
+			remaining = append(remaining, h)
 		}
-		remaining = append(remaining, h)
 	}
-
 	keep, err := m.keepSet(ctx, remaining)
 	if err != nil {
-		logger.Errorf("building sweep keep-set failed with: %s — skipping block sweep", err)
+		logger.Errorf("building sweep keep-set failed with: %s — deleting nothing this pass", err)
 		return
 	}
-	swept, err := m.sweepBlocks(ctx, keep)
-	if err != nil {
-		logger.Errorf("block sweep failed with: %s", err)
+	doomed := make([]string, 0, len(candidates))
+	for k := range candidates {
+		if _, ok := keep[k]; !ok {
+			doomed = append(doomed, "/blocks"+dshelp.MultihashToDsKey(multihash.Multihash(k)).String())
+		}
 	}
-	report.SweptBlocks = swept
+
+	if err := m.overThreshold(ctx, len(doomed)); err != nil {
+		logger.Errorf("data migration stopped, nothing deleted: %s — set substrate.migration: false or raise the limit; the next boot tries again", err)
+		report.Err = err.Error()
+		report.thresholdHit = true
+		return
+	}
+	logger.Infof("data migration deleting %d namespace(s), %d key(s), %d block(s)", len(scrub), nKeys, len(doomed))
+
+	keptOne := false
+	for hash, keys := range scrub {
+		rep := report.Instances[hash]
+		// The instance's data now lives hoarder-side; a crash mid-scrub leaves
+		// keys the next pass re-verifies (already remote) and finishes.
+		if err := m.deleteKeys(ctx, keys); err != nil {
+			rep.Err = fmt.Sprintf("scrub: %s", err)
+			keptOne = true
+			continue
+		}
+		report.SweptKeys += len(keys)
+		rep.Scrubbed = true
+	}
+	// A namespace left behind may still reach candidates, so no block goes.
+	// shortcut: the scrubbed namespaces' blocks then stay orphaned; per-namespace candidate sets would free them.
+	if keptOne {
+		return
+	}
+
+	if err := m.deleteKeys(ctx, doomed); err != nil {
+		logger.Errorf("block sweep failed with: %s", err)
+		return
+	}
+	report.SweptBlocks = len(doomed)
 }
 
-// scrubNamespace deletes every raw datastore key of one /crdt/<hash>
-// namespace. The instance's data now lives hoarder-side; a crash mid-scrub
-// leaves keys the next pass re-verifies (already remote) and finishes.
-func (m *Migrator) scrubNamespace(ctx context.Context, hash string) (int, error) {
-	keys, err := m.rawKeys(ctx, crdtPrefix+hash+"/")
+// overThreshold refuses a pass whose deletions look like a misclassification.
+func (m *Migrator) overThreshold(ctx context.Context, blocks int) error {
+	if blocks <= MaxDeleteBlocks {
+		return nil
+	}
+	total, err := m.rawKeys(ctx, blocksPrefix)
 	if err != nil {
-		return 0, err
+		return fmt.Errorf("delete threshold: counting blocks: %w", err)
 	}
-	if err := m.deleteKeys(ctx, keys); err != nil {
-		return 0, err
+	if limit := max(MaxDeleteBlocks, int(MaxDeleteFraction*float64(len(total)))); blocks > limit {
+		return fmt.Errorf("delete threshold: would delete %d of %d blocks (limit %d)", blocks, len(total), limit)
 	}
-	return len(keys), nil
+	return nil
 }
 
 // keepSet marks every block reachable from the still-present namespaces:
@@ -128,18 +179,13 @@ func (m *Migrator) keepSet(ctx context.Context, remaining []string) (map[string]
 	keep := make(map[string]struct{})
 
 	for _, hash := range remaining {
-		// CRDT DAG: walk from the namespace's heads (/crdt/<hash>/h/<mh>).
-		headKeys, err := m.rawKeys(ctx, crdtPrefix+hash+"/h/")
-		if err != nil {
+		if err := m.markHeads(ctx, dag, hash, keep); err != nil {
 			return nil, err
 		}
-		for _, hk := range headKeys {
-			seg := strings.TrimPrefix(hk, crdtPrefix+hash+"/h")
-			c, err := dshelp.DsKeyToCidV1(ds.NewKey(seg), cid.DagProtobuf)
-			if err != nil {
-				continue
-			}
-			m.markReachable(ctx, dag, c, keep)
+		// A service db may be open live, and opening a view writes to it; it
+		// names no files.
+		if _, err := multihash.FromB58String(hash); err != nil {
+			continue
 		}
 
 		// File content DAGs named by this namespace's metadata.
@@ -161,6 +207,22 @@ func (m *Migrator) keepSet(ctx context.Context, remaining []string) (map[string]
 	return keep, nil
 }
 
+// markHeads marks a namespace's CRDT DAG, walked from its heads
+// (/crdt/<hash>/h/<mh>).
+func (m *Migrator) markHeads(ctx context.Context, dag ipld.DAGService, hash string, set map[string]struct{}) error {
+	headKeys, err := m.rawKeys(ctx, crdtPrefix+hash+"/h/")
+	if err != nil {
+		return err
+	}
+	for _, hk := range headKeys {
+		seg := strings.TrimPrefix(hk, crdtPrefix+hash+"/h")
+		if c, err := dshelp.DsKeyToCidV1(ds.NewKey(seg), cid.DagProtobuf); err == nil {
+			m.markReachable(ctx, dag, c, set)
+		}
+	}
+	return nil
+}
+
 // markReachable walks a DAG offline, adding every locally-present block's
 // multihash to the keep-set. Missing children are tolerated — what isn't here
 // can't be swept.
@@ -177,34 +239,6 @@ func (m *Migrator) markReachable(ctx context.Context, dag ipld.DAGService, c cid
 	for _, l := range nd.Links() {
 		m.markReachable(ctx, dag, l.Cid, keep)
 	}
-}
-
-// sweepBlocks deletes every /blocks entry whose multihash is not in the
-// keep-set.
-func (m *Migrator) sweepBlocks(ctx context.Context, keep map[string]struct{}) (int, error) {
-	res, err := m.node.Store().Query(ctx, query.Query{Prefix: blocksPrefix, KeysOnly: true})
-	if err != nil {
-		return 0, err
-	}
-	defer res.Close()
-
-	doomed := make([]string, 0)
-	for e := range res.Next() {
-		if e.Error != nil {
-			return 0, e.Error
-		}
-		mhash, err := dshelp.DsKeyToMultihash(ds.NewKey(strings.TrimPrefix(e.Key, "/blocks")))
-		if err != nil {
-			continue // foreign key shape — not ours to touch
-		}
-		if _, ok := keep[string(mhash)]; !ok {
-			doomed = append(doomed, e.Key)
-		}
-	}
-	if err := m.deleteKeys(ctx, doomed); err != nil {
-		return 0, err
-	}
-	return len(doomed), nil
 }
 
 // rawKeys lists raw datastore keys under a prefix.

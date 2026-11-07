@@ -71,6 +71,7 @@ type Config interface {
 	SensorsRegistry() *sensors.Registry
 	Accounts() Accounts
 	Tenancy() Tenancy
+	Substrate() Substrate
 
 	SetNode(peer.Node)
 	SetRaftCluster(raft.Cluster)
@@ -361,6 +362,7 @@ type config struct {
 	domainValidation DomainValidation
 	accounts         Accounts
 	tenancy          Tenancy
+	substrate        Substrate
 	// enterprise namespaces raw config for enterprise-only services (each decoded
 	// by //go:build ee code via EnterpriseConfig); empty in community builds.
 	enterprise map[string]yaml.Node
@@ -476,6 +478,7 @@ func (c *config) Plugins() Plugins                   { return c.plugins }
 func (c *config) DomainValidation() DomainValidation { return c.domainValidation }
 func (c *config) Accounts() Accounts                 { return c.accounts }
 func (c *config) Tenancy() Tenancy                   { return c.tenancy }
+func (c *config) Substrate() Substrate               { return c.substrate }
 
 func (c *config) SetNode(n peer.Node)            { c.node = n }
 func (c *config) SetRaftCluster(rc raft.Cluster) { c.raftCluster = rc }

@@ -65,15 +65,20 @@ func New(ctx context.Context, cfg tauConfig.Config) (*Service, error) {
 	// Move any node-local project data (an upgraded node's databases, storage
 	// metadata and file bytes) to the hoarders before serving: bounded
 	// synchronous pass, background continuation past the bound. Fresh nodes
-	// pay one empty prefix query.
+	// pay one empty prefix query, migrated nodes one key lookup.
 	//
-	// The migration treats every kvdb namespace and every block in the node's
-	// store as substrate's own, so it runs only when substrate is alone on its
-	// node. Sharing a node (the "all" shape), the store also holds the other
-	// services' databases and blocks — monkey's build artifacts, hoarder's
-	// hosted instances — which a sweep would delete.
+	// The migration treats every kvdb namespace and block it reaches in the
+	// node's store as substrate's own, so it runs only when substrate is alone
+	// on its node. Sharing a node (the "all" shape), the store also holds the
+	// other services' databases and blocks — monkey's build artifacts,
+	// hoarder's hosted instances — which a scrub would delete.
 	if others := coLocatedServices(cfg.Services()); len(others) == 0 {
-		srv.migrator = migration.New(ctx, srv.node, srv.hoarderClient, srv.tns)
+		var opts []migration.Option
+		if !cfg.Substrate().MigrationEnabled() {
+			logger.Info("node-local data migration disabled by config")
+			opts = append(opts, migration.Disabled())
+		}
+		srv.migrator = migration.New(ctx, srv.node, srv.hoarderClient, srv.tns, opts...)
 		srv.migrator.Boot()
 	} else {
 		logger.Infof("node-local data migration skipped: the node's store is shared with %v", others)

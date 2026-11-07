@@ -29,9 +29,12 @@ type InstanceReport struct {
 type Report struct {
 	Instances   map[string]*InstanceReport
 	Unresolved  []string // namespaces with no identity yet — left intact, retried
+	Foreign     []string // names that cannot be an instance hash — never touched, not remaining
 	SweptKeys   int      // raw namespace keys deleted
 	SweptBlocks int      // blockstore blocks deleted
 	Err         string
+
+	thresholdHit bool // the pass refused to delete: stop until the next boot
 }
 
 // RemainingCount is how many local namespaces still hold data after the pass.
@@ -65,8 +68,8 @@ func (r *Report) Summary() string {
 			failed++
 		}
 	}
-	s := fmt.Sprintf("%d instance(s): %d scrubbed, %d failed, %d unresolved; keys %d written / %d existing / %d superseded; %d file(s) stashed; swept %d keys, %d blocks",
-		len(r.Instances), scrubbed, failed, len(r.Unresolved), written, existed, superseded, stashed, r.SweptKeys, r.SweptBlocks)
+	s := fmt.Sprintf("%d instance(s): %d scrubbed, %d failed, %d unresolved, %d foreign; keys %d written / %d existing / %d superseded; %d file(s) stashed; swept %d keys, %d blocks",
+		len(r.Instances), scrubbed, failed, len(r.Unresolved), len(r.Foreign), written, existed, superseded, stashed, r.SweptKeys, r.SweptBlocks)
 	if r.Err != "" {
 		s += "; error: " + r.Err
 	}
