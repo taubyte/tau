@@ -62,8 +62,6 @@ var (
 
 	proxyCertScopeConsumed = excuse{handled, "the namespace half of a proxy's certificate secret. The compile resolved the name beside it to the secret's ID."}
 
-	tunnelScopeConsumed = excuse{handled, "the namespace a tunnel leads to. The views resolve each name the tunnel lets through in it, and what it opens reaches the region as the routing table's remote lines."}
-
 	deadLetterScopeConsumed = excuse{handled, "the namespace half of a dead-letter reference. The compile resolved the name to another queue's ID, so the scope was consumed resolving it."}
 
 	streamingStorageRefused = excuse{handled, "the lifetime of a streaming storage's entries. worker refuses any storage whose type is not `object` by name (unservableKind), so this branch's only field is never served weaker than written — it is never served."}
@@ -80,7 +78,9 @@ var (
 // declaration on one is ignored and may be, because nothing runs the kind to
 // ignore it — checked, not trusted: see runtimeSpells.
 var preparatoryKinds = map[string]string{
-	"agent": "nothing runs an agent's loop. The lowering produces a function with `source: {builtin: agent}`, and no service or node dispatches that builtin — so which model it answers with, what it is told, and how far it may go reach nothing.",
+	"tunnel":      "nothing carries a request through a tunnel yet. The views read it to let an edge cross regions, and what it opens reaches each region as the routing table's remote lines; a region without the target answers the route by name.",
+	"replication": "nothing replicates between regions yet. It is context for the runtime that will keep the copies; the audit checks what config alone can answer (two regions, a tunnel letting it through).",
+	"agent":       "nothing runs an agent's loop. The lowering produces a function with `source: {builtin: agent}`, and no service or node dispatches that builtin — so which model it answers with, what it is told, and how far it may go reach nothing.",
 }
 
 // unread is every declared attribute nothing reads, and why; `*` excuses it on
@@ -99,7 +99,6 @@ var unread = map[string]excuse{
 	"secret/rotation": advisoryRotation,
 
 	"sync/queue/dead_letter/namespace":   deadLetterScopeConsumed,
-	"tunnel/to":                          tunnelScopeConsumed,
 	"proxy/certificate/secret/namespace": proxyCertScopeConsumed,
 
 	"cache/replicated":      replicationRaftOnly,

@@ -214,7 +214,7 @@ func TestAHandlerInAnotherRegionIsRefusedByName(t *testing.T) {
 		"/namespace/eu/function/api.yaml": "id: QmPjgiv816ygGgxYKEFHhDoabVar1Cv6CAQvEa8aFubUtG\npackage:\n    name: api_code\n    namespace: /\nexecution:\n    call: handle\n    timeout: 15s\n    memory: 32MB\n",
 		"/package/api_code.yaml":          "id: Qmf59hm7Wwxc4ZCNbqyF9N6zqKS1fVXB6tugiwHgEHpk2J\ntype: wasm\nsource: services/api\noutput: x.wasm\nbuild:\n    steps:\n        - name: build\n          image: rust:1.83\n          commands: [cargo build]\n",
 		"/zone/example_com.yaml":          "id: QmXZy3vTBqdo6va5ouo2muAh8kHF4j8t8HWtpgyKoBVn7y\nfqdn: example.com\n",
-		"/tunnel/to_eu.yaml":              "id: QmRiSFeb3qsJc7YTQCVirS2V9SYwdRsHWjr8h2YcNrt1oh\nto: /eu\nthrough:\n    - kind: function\n      name: api\n",
+		"/tunnel/to_eu.yaml":              "id: QmRiSFeb3qsJc7YTQCVirS2V9SYwdRsHWjr8h2YcNrt1oh\nto: /eu\nthrough:\n    - function: api\n",
 		"/gateway/www.yaml": "id: QmWhQewj3uuPM9f3qodPJTPDUXE9BvG33zkyewVurWGHiU\nhost:\n    zone:\n        in:\n            name: example_com\n        name: www\n" +
 			"route:\n    path: /\n    cache:\n        ttl: 1m\n    handler:\n        function:\n            namespace: /eu\n            name: api\n",
 	} {

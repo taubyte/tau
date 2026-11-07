@@ -35,6 +35,7 @@ const (
 	KindGateway      = "gateway"
 	KindProxy        = "proxy"
 	KindTunnel       = "tunnel"
+	KindReplication  = "replication"
 	KindStream       = "stream"
 	KindBus          = "bus"
 	KindMcp          = "mcp"
@@ -2221,34 +2222,145 @@ const (
 
 // TunnelThroughEntry is one entry of "through" in Tunnel, in the order written.
 type TunnelThroughEntry struct {
-	Kind string
-	Name string
+	Agent       string
+	Application string
+	Cache       string
+	Database    string
+	Function    string
+	Gateway     string
+	Sandbox     string
+	Storage     string
+	Sync        string
+	Volume      string
+	Worker      string
+	Workflow    string
 }
 
 // ReadTunnelThroughEntry decodes one from a resource.
 func ReadTunnelThroughEntry(r Resource) TunnelThroughEntry {
 	var out TunnelThroughEntry
-	out.Kind = r.String("kind")
-	out.Name = r.String("name")
+	out.Agent = r.String("agent")
+	out.Application = r.String("application")
+	out.Cache = r.String("cache")
+	out.Database = r.String("database")
+	out.Function = r.String("function")
+	out.Gateway = r.String("gateway")
+	out.Sandbox = r.String("sandbox")
+	out.Storage = r.String("storage")
+	out.Sync = r.String("sync")
+	out.Volume = r.String("volume")
+	out.Worker = r.String("worker")
+	out.Workflow = r.String("workflow")
 	return out
 }
 
 // TunnelThroughEntry's keys, and the values its fields may hold.
 const (
-	TunnelThroughEntryKeyKind         = "kind"
-	TunnelThroughEntryKeyName         = "name"
-	TunnelThroughEntryKindAgent       = "agent"
-	TunnelThroughEntryKindApplication = "application"
-	TunnelThroughEntryKindCache       = "cache"
-	TunnelThroughEntryKindDatabase    = "database"
-	TunnelThroughEntryKindFunction    = "function"
-	TunnelThroughEntryKindGateway     = "gateway"
-	TunnelThroughEntryKindSandbox     = "sandbox"
-	TunnelThroughEntryKindStorage     = "storage"
-	TunnelThroughEntryKindSync        = "sync"
-	TunnelThroughEntryKindVolume      = "volume"
-	TunnelThroughEntryKindWorker      = "worker"
-	TunnelThroughEntryKindWorkflow    = "workflow"
+	TunnelThroughEntryKeyAgent       = "agent"
+	TunnelThroughEntryKeyApplication = "application"
+	TunnelThroughEntryKeyCache       = "cache"
+	TunnelThroughEntryKeyDatabase    = "database"
+	TunnelThroughEntryKeyFunction    = "function"
+	TunnelThroughEntryKeyGateway     = "gateway"
+	TunnelThroughEntryKeySandbox     = "sandbox"
+	TunnelThroughEntryKeyStorage     = "storage"
+	TunnelThroughEntryKeySync        = "sync"
+	TunnelThroughEntryKeyVolume      = "volume"
+	TunnelThroughEntryKeyWorker      = "worker"
+	TunnelThroughEntryKeyWorkflow    = "workflow"
+)
+
+// Replication is that kind, read from a compiled object.
+type Replication struct {
+	Between     []string
+	Description string
+	Id          string
+	Name        string
+	Of          ReplicationOf
+	Tags        []string
+	Tunnel      ReplicationTunnel
+}
+
+// ReadReplication decodes one from a resource.
+func ReadReplication(r Resource) Replication {
+	var out Replication
+	out.Between = r.Strings("between")
+	out.Description = r.String("description")
+	out.Id = r.String("id")
+	out.Name = r.String("name")
+	out.Of = ReadReplicationOf(r)
+	out.Tags = r.Strings("tags")
+	out.Tunnel = ReadReplicationTunnel(r)
+	return out
+}
+
+// Replication's keys, and the values its fields may hold.
+const (
+	ReplicationKeyBetween     = "between"
+	ReplicationKeyDescription = "description"
+	ReplicationKeyId          = "id"
+	ReplicationKeyName        = "name"
+	ReplicationKeyOf          = "of"
+	ReplicationKeyTags        = "tags"
+	ReplicationKeyTunnel      = "tunnel"
+)
+
+// ReplicationOf is the "of" block of Replication, read from a compiled object.
+type ReplicationOf struct {
+	Kind      string // which of database, volume was written
+	Name      string // authored at of/{database|volume}/name
+	Namespace string // authored at of/{database|volume}/namespace
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadReplicationOf decodes one from a resource.
+func ReadReplicationOf(r Resource) ReplicationOf {
+	var out ReplicationOf
+	out.Kind = r.String("of", "kind")
+	out.Name = r.String("of", "name")
+	out.Namespace = r.String("of", "namespace")
+	out.Declared = r.Has("of", "kind") ||
+		r.Has("of", "name") ||
+		r.Has("of", "namespace")
+	return out
+}
+
+// ReplicationOf's keys, and the values its fields may hold.
+const (
+	ReplicationOfKeyKind      = "of/kind"
+	ReplicationOfKeyName      = "of/name"
+	ReplicationOfKeyNamespace = "of/namespace"
+	ReplicationOfKindDatabase = "database"
+	ReplicationOfKindVolume   = "volume"
+)
+
+// ReplicationTunnel is the "tunnel" block of Replication, read from a compiled object.
+type ReplicationTunnel struct {
+	Name      string
+	Namespace string
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadReplicationTunnel decodes one from a resource.
+func ReadReplicationTunnel(r Resource) ReplicationTunnel {
+	var out ReplicationTunnel
+	out.Name = r.String("tunnel", "name")
+	out.Namespace = r.String("tunnel", "namespace")
+	out.Declared = r.Has("tunnel", "name") ||
+		r.Has("tunnel", "namespace")
+	return out
+}
+
+// ReplicationTunnel's keys, and the values its fields may hold.
+const (
+	ReplicationTunnelKeyName      = "tunnel/name"
+	ReplicationTunnelKeyNamespace = "tunnel/namespace"
 )
 
 // Stream is that kind, read from a compiled object.
@@ -3101,6 +3213,7 @@ var Readers = map[string]func(Resource) any{
 	"gateway":      func(r Resource) any { return ReadGateway(r) },
 	"proxy":        func(r Resource) any { return ReadProxy(r) },
 	"tunnel":       func(r Resource) any { return ReadTunnel(r) },
+	"replication":  func(r Resource) any { return ReadReplication(r) },
 	"stream":       func(r Resource) any { return ReadStream(r) },
 	"bus":          func(r Resource) any { return ReadBus(r) },
 	"mcp":          func(r Resource) any { return ReadMcp(r) },

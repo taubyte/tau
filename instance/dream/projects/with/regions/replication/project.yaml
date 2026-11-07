@@ -1,0 +1,9 @@
+id: QmfHsEpU1aardxEGqdck4WbgEan95Crc7PTkMoDCW5G3U9
+name: replication
+description: a ledger active in two regions and kept in copies between them, the copies travelling through a tunnel from billing to itself
+regions:
+    topology: active
+    in: [region-1, region-2]
+environments:
+    prod:
+        branches: ["*"]

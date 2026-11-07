@@ -1,0 +1,6 @@
+id: QmcxMvAr22AE2MPRjkFBy2pZBUNup3rTs3AZzGTpQ5xSsj
+description: a database the tunnel lets through
+kv:
+    distributed:
+        size: 64MB
+        consensus: crdt

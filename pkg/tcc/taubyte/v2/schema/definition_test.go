@@ -1880,7 +1880,7 @@ func TestOnlyAScopeDeclaresRegions(t *testing.T) {
 	assert.DeepEqual(t, schema.FootprintKinds(), []string{
 		"application", "function", "worker", "sandbox",
 		"cache", "database", "storage", "volume", "sync",
-		"gateway", "agent", "workflow",
+		"gateway", "tunnel", "agent", "workflow",
 	})
 
 	// Both shapes: KindRoot copies the iterator's attributes, so a field that leaked

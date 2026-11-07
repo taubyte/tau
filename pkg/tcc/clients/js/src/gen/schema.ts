@@ -63,6 +63,7 @@ export type ProxyHandlerKind = "application";
 export type ProxyTlsMode = "none" | "terminate";
 export type ProxyCertSource = "generated" | "provided";
 export type ProxyKey = "ip" | "subnet";
+export type ReplicationOfKind = "database" | "volume";
 export type StreamEngine = "distributed" | "kafka" | "nats";
 export type StreamSasl = "scram-sha-512" | "scram-sha-256" | "plain";
 export type StreamTls = "verify-full" | "require" | "disable";
@@ -180,6 +181,12 @@ export class Session {
   }
   tunnelNames(app?: string): Promise<string[]> {
     return this.binding.list(this.handle, app ? ["namespace", app, "tunnel"] : ["tunnel"]);
+  }
+  replication(name: string, app?: string): ReplicationConfig {
+    return new ReplicationConfig(this, name, app);
+  }
+  replicationNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["namespace", app, "replication"] : ["replication"]);
   }
   stream(name: string, app?: string): StreamConfig {
     return new StreamConfig(this, name, app);
@@ -3329,6 +3336,113 @@ export class TunnelConfig extends ResourceConfig {
   }
 }
 
+/** Typed accessors for a replication's config. */
+export class ReplicationConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["namespace", app, "replication", name] : ["replication", name]);
+  }
+
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  /** Which replication this is — the key its settings live under. */
+  async ofKind(): Promise<ReplicationOfKind | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["of"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["database", "volume"] as readonly string[]) if (k in block) return k as ReplicationOfKind;
+    return undefined;
+  }
+
+  /** Lives under the replication's kind, so the branch is explicit. */
+  async ofNamespace(ofKind: ReplicationOfKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["of", ofKind, "namespace"])) as string | undefined;
+  }
+  setOfNamespace(ofKind: ReplicationOfKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["of", ofKind, "namespace"], v);
+  }
+  unsetOfNamespace(ofKind: ReplicationOfKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["of", ofKind, "namespace"]);
+  }
+
+  /** Lives under the replication's kind, so the branch is explicit. */
+  async ofName(ofKind: ReplicationOfKind): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["of", ofKind, "name"])) as string | undefined;
+  }
+  setOfName(ofKind: ReplicationOfKind, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["of", ofKind, "name"], v);
+  }
+  unsetOfName(ofKind: ReplicationOfKind): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["of", ofKind, "name"]);
+  }
+
+  async tunnelName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tunnel", "name"])) as string | undefined;
+  }
+  setTunnelName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tunnel", "name"], v);
+  }
+  unsetTunnelName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tunnel", "name"]);
+  }
+
+  async namespace(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tunnel", "namespace"])) as string | undefined;
+  }
+  setNamespace(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tunnel", "namespace"], v);
+  }
+  unsetNamespace(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tunnel", "namespace"]);
+  }
+
+  async between(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["between"])) as string[] | undefined;
+  }
+  setBetween(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["between"], v);
+  }
+  unsetBetween(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["between"]);
+  }
+}
+
 /** Typed accessors for a stream's config. */
 export class StreamConfig extends ResourceConfig {
   constructor(s: Session, name: string, app?: string) {
@@ -4741,6 +4855,19 @@ export interface Tunnel {
   description?: string;
   tags?: string[];
   to?: string;
+}
+
+/** Replication as decoded from the compiled config object. */
+export interface Replication {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  ofkind?: string;
+  ofnamespace?: string;
+  ofname?: string;
+  namespace?: string;
+  between?: string[];
 }
 
 /** Stream as decoded from the compiled config object. */

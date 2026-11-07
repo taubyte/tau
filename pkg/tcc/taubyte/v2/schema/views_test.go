@@ -310,7 +310,7 @@ func TestWhatServesReachesWhatServes(t *testing.T) {
 
 // tunnelTo is a tunnel from the project root to ns, letting through kind/name.
 func tunnelTo(name, ns, kind, through string) string {
-	return "id: " + cidFor("tunnel/"+name) + "\nto: " + ns + "\nthrough:\n    - kind: " + kind + "\n      name: " + through + "\n"
+	return "id: " + cidFor("tunnel/"+name) + "\nto: " + ns + "\nthrough:\n    - " + kind + ": " + through + "\n"
 }
 
 // NOTHING CROSSES BUT THROUGH A TUNNEL: a name answered everywhere, in front of a
@@ -343,14 +343,14 @@ func TestAGatewayRouteReachesItsHandlerThroughATunnel(t *testing.T) {
 		"function/api":     schema.RoleSingle,
 		"package/api_code": schema.RoleNeeded,
 		"zone/example_com": schema.RoleNeeded,
-		"tunnel/to_eu":     schema.RoleFollows,
+		"tunnel/to_eu":     schema.RoleActive,
 	}, rolesByName(t, views["region-1"]))
 	require.Empty(t, views["region-1"].Remote, "held here, so nothing goes through")
 	for _, region := range []string{"region-2", "region-3"} {
 		require.Equal(t, map[string]schema.Role{
 			"gateway/api":      schema.RoleActive,
 			"zone/example_com": schema.RoleNeeded,
-			"tunnel/to_eu":     schema.RoleFollows,
+			"tunnel/to_eu":     schema.RoleActive,
 		}, rolesByName(t, views[region]), region)
 		require.Equal(t, map[string][]string{api: {"region-1"}}, views[region].Remote, region)
 	}

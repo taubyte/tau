@@ -1354,19 +1354,54 @@ var V2Resources = []*Node{
 	//
 	//	to: /billing
 	//	through:
-	//	    - kind: function
-	//	      name: charge
+	//	    - function: charge
+	//	    - database: ledger
+	//
+	// A tunnel grants nothing: what goes through is still only what its caller
+	// declares it reaches. It is held where its namespace runs, and its entries are
+	// attached once the kinds exist (attachThrough).
 	DefineGroup("tunnel",
 		resource(
 			commonAttributes(
 				String("to", IsNamespacePath(), Required(), InSection("tunnel"),
 					Doc("To", "The namespace at the other end, e.g. \"/billing\". What is in this tunnel's scope may reach what is listed below in it, from a region it does not run in.")),
 			),
-			Nested(throughGroup()),
-			GroupDoc("A way between two namespaces, and what goes through it. Nothing reaches across regions otherwise, and a tunnel lets through only what it lists."), Category("regions"), Icon("cable"),
+			GroupDoc("A way between two namespaces, and what goes through it. Nothing reaches across regions otherwise, and a tunnel lets through only what it lists."), Category("regions"), Icon("cable"), Footprint(),
 			secIdentity,
 			Section("tunnel", "Tunnel", "Where it leads, and what goes through."),
 			Resource("tunnel", "Tunnel", "Tunnel", "tunnel"),
+		)),
+
+	// Which regions keep copies of one resource, and the tunnel the copies travel
+	// through. It is context for the platform carrying it out: how a store keeps
+	// those copies in step is the platform's, never the author's to spell.
+	//
+	//	of:
+	//	    database:
+	//	        name: ledger
+	//	tunnel:
+	//	    name: to_billing
+	//	between: [region-1, region-2]
+	DefineGroup("replication",
+		resource(
+			commonAttributes(
+				String(Key("of", "kind"), Path("of", Either(replicatedKinds...)), Captures(), Required(), InSection("replication"),
+					Doc("Of", "Which kind is replicated (the key selects the block).")),
+				String(Key("of", "namespace"), Path("of", Either(replicatedKinds...), "namespace"), IsNamespacePath(), InSection("replication"),
+					Doc("Namespace", "Path to the namespace holding it, e.g. \"/billing\". Omitted means this resource's own scope, then its parents.")),
+				String(Key("of", "name"), Path("of", Either(replicatedKinds...), "name"), Required(), IsVariableName(), Ref("", KindFrom(Key("of", "kind")), ByName()), InSection("replication"),
+					Doc("Name", "The name of what is replicated, within that namespace.")),
+				String(Key("tunnel", "name"), Required(), IsVariableName(), Ref("tunnel", ByName()), InSection("replication"),
+					Doc("Tunnel", "The tunnel the copies travel through. It has to let what is replicated through.")),
+				String(Key("tunnel", "namespace"), IsNamespacePath(), InSection("replication"),
+					Doc("Tunnel Namespace", "Where that tunnel lives. Omitted means this resource's own scope, then its parents.")),
+				StringSlice("between", Required(), EmitValidation("region", "region"), InSection("replication"),
+					Doc("Between", "The regions that keep a copy: two or more of those its namespace runs in.")),
+			),
+			GroupDoc("Which regions keep copies of a database or a volume, and the tunnel the copies travel through."), Category("regions"), Icon("stream"),
+			secIdentity,
+			Section("replication", "Replication", "What is copied, between which regions, and through which tunnel."),
+			Resource("replication", "Replication", "Replication", "replication"),
 		)),
 
 	// Fan-out to every subscriber; subscribe and publish are two capabilities, never
@@ -1798,6 +1833,7 @@ func namespacesGroup(depth int) *Node {
 var scopeShape = namespacesGroup(MaxNamespaceDepth)
 
 var _ = func() any {
+	attachThrough()
 	attachAccess()
 	attachIndexes()
 	attachLowerable()
@@ -1954,17 +1990,36 @@ func stepsGroup() *Node {
 	}, GroupDoc("One step: what it does, how often it is attempted and how those attempts are spaced, and where failure goes."))
 }
 
-// tunnelKinds is what a tunnel lets through: every kind with a footprint, since
-// only what is placed can be in another region.
-var tunnelKinds = []string{"agent", "application", "cache", "database", "function", "gateway", "sandbox", "storage", "sync", "volume", "worker", "workflow"}
+// replicatedKinds are what a replication may copy: the stores whose copies the
+// platform keeps in step across regions.
+var replicatedKinds = []string{"database", "volume"}
 
-func throughGroup() *Node {
-	return DefineList("through", []*Attribute{
-		String("kind", Required(), InSet(tunnelKinds...), InSection("tunnel"),
-			Doc("Kind", "The kind of what goes through.")),
-		String("name", Required(), IsVariableName(), Ref("", KindFrom("kind"), ByName(), Opens(), NamespaceAt("to")), InSection("tunnel"),
-			Doc("Name", "Its name, in the namespace the tunnel leads to.")),
-	}, GroupDoc("What goes through: resources of the namespace at the other end."))
+// throughGroup is what a tunnel lets through: one entry per resource, keyed by its
+// kind, for every kind with a footprint but its own, since only what is placed can be
+// in another region. Which key is present is the entry's kind; checkOpenings refuses
+// an entry opening two, a list element having no captured switch.
+func throughGroup(own string) *Node {
+	kinds := FootprintKinds()
+	attrs := make([]*Attribute, 0, len(kinds))
+	for _, kind := range kinds {
+		if kind == own {
+			continue
+		}
+		attrs = append(attrs, String(kind, IsVariableName(), Ref(kind, ByName(), Opens(), NamespaceAt("to")), InSection("tunnel"),
+			Doc(strings.ToUpper(kind[:1])+kind[1:], fmt.Sprintf("The name of %s let through, in the namespace the tunnel leads to.", strings.ToLower(article(kind))))))
+	}
+	return DefineList("through", attrs, GroupDoc("What goes through: resources of the namespace at the other end, one per entry."))
+}
+
+// attachThrough gives the tunnel its entries once every kind's footprint is known.
+func attachThrough() {
+	for _, g := range V2Resources {
+		if key, _ := g.Match.(string); key == "tunnel" && len(g.Children) > 0 {
+			iter := g.Children[0]
+			iter.Nested = true
+			iter.Children = append(iter.Children, throughGroup(key))
+		}
+	}
 }
 
 func transformersGroup() *Node {

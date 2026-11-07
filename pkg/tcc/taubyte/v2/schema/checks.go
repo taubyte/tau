@@ -140,6 +140,7 @@ func Audit(obj map[string]any, r Resolver, opts ...AuditOption) []Finding {
 	out = append(out, checkWorkflows(all)...)
 	out = append(out, checkRegions(root, all, in)...)
 	out = append(out, checkOpenings(all)...)
+	out = append(out, checkReplications(root, all)...)
 	// The record of what the compile produced sits BESIDE the project, so it is read
 	// from the object rather than from the project inside it.
 	out = append(out, checkAuthoredBuiltins(interp.LoweredOf(obj), all)...)
@@ -1523,46 +1524,113 @@ func checkAuthoredBuiltins(low interp.Lowered, all []compiled) []Finding {
 	return out
 }
 
-// checkOpenings: what a tunnel lets through has to be where it leads. One naming
-// nothing there opens nothing, and reads as if it did.
+// checkOpenings: what a tunnel lets through has to be where it leads, one resource
+// per entry. One naming nothing there opens nothing, and reads as if it did.
 func checkOpenings(all []compiled) []Finding {
 	find := finder(all)
 	var out []Finding
-	for _, ref := range References() {
-		if !ref.Opens {
-			continue
-		}
-		for _, res := range all {
-			if res.kind != ref.On {
-				continue
+	for _, res := range all {
+		byGroup := map[string][]Reference{}
+		var groups []string
+		for _, ref := range References() {
+			if ref.Opens && ref.On == res.kind {
+				if byGroup[ref.In] == nil {
+					groups = append(groups, ref.In)
+				}
+				byGroup[ref.In] = append(byGroup[ref.In], ref)
 			}
+		}
+		for _, in := range groups {
 			entries := []entry{{fields: res.fields}}
-			if ref.In != "" {
-				entries = entriesOf(res, ref.In)
+			if in != "" {
+				entries = entriesOf(res, in)
 			}
 			for _, e := range entries {
-				name, _ := fieldValue(e.fields, ref.Field).(string)
-				kind := ref.Kind
-				if ref.KindFrom != "" {
-					kind, _ = fieldValue(e.fields, ref.KindFrom).(string)
+				var named []string
+				for _, ref := range byGroup[in] {
+					name, _ := fieldValue(e.fields, ref.Field).(string)
+					if name == "" {
+						continue
+					}
+					named = append(named, ref.Kind+"/"+name)
+					held := e.fields
+					if ref.HeldNamespace {
+						held = res.fields
+					}
+					ns := ""
+					if ref.Namespace != "" {
+						ns, _ = fieldValue(held, ref.Namespace).(string)
+					}
+					if _, ok := find(ref.Kind, name, res.scope, ns); !ok {
+						out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+							fmt.Sprintf("lets through %s/%s, which %s does not have", ref.Kind, name, ns),
+							"A tunnel lets through what is in the namespace it leads to, by name. This one names nothing there, so it opens nothing.", res.id})
+					}
 				}
-				held := e.fields
-				if ref.HeldNamespace {
-					held = res.fields
-				}
-				ns := ""
-				if ref.Namespace != "" {
-					ns, _ = fieldValue(held, ref.Namespace).(string)
-				}
-				if name == "" || kind == "" {
-					continue
-				}
-				if _, ok := find(kind, name, res.scope, ns); !ok {
+				if len(named) != 1 {
 					out = append(out, Finding{Broken, res.kind, res.name, res.scope,
-						fmt.Sprintf("lets through %s/%s, which %s does not have", kind, name, ns),
-						"A tunnel lets through what is in the namespace it leads to, by name. This one names nothing there, so it opens nothing.", res.id})
+						fmt.Sprintf("entry %s names %d resources", e.label, len(named)),
+						"Each entry lets one resource through, under the key of its kind.", res.id})
 				}
 			}
+		}
+	}
+	return out
+}
+
+// checkReplications: a replication copies something its namespace runs in more than
+// one region, between regions it runs in, through a tunnel letting it through. All of
+// it spans documents, so only the audit sees it.
+func checkReplications(root map[string]any, all []compiled) []Finding {
+	find := finder(all)
+	scopes := scopeAllowances(root)
+	opened := map[string]bool{}
+	for _, d := range declaredRelations(all) {
+		if d.opens {
+			opened[d.By()+"\x00"+d.Of()] = true
+		}
+	}
+	var out []Finding
+	for _, res := range all {
+		kind := res.at("of", "kind")
+		if res.kind != "replication" || kind == "" {
+			continue
+		}
+		broken := func(title, detail string) {
+			out = append(out, Finding{Broken, res.kind, res.name, res.scope, title, detail, res.id})
+		}
+		name := res.at("of", "name")
+		target, ok := find(kind, name, res.scope, res.at("of", "namespace"))
+		if !ok {
+			broken(fmt.Sprintf("replicates %s/%s, which does not exist", kind, name),
+				"What a replication copies is named like any reference: by name, in its namespace.")
+			continue
+		}
+		_, in := resolvedRegions(scopes, target.scope)
+		if len(in) < 2 {
+			broken(fmt.Sprintf("replicates %s/%s, which runs in fewer than two regions", kind, name),
+				"A copy is kept in another region its namespace runs in. Give the namespace more than one region, or drop the replication.")
+			continue
+		}
+		between := listAt(res.fields, "between")
+		if len(between) < 2 {
+			broken("replicates between fewer than two regions", "A replication keeps copies in two or more regions.")
+		}
+		for _, r := range between {
+			if !slices.Contains(in, r) {
+				broken(fmt.Sprintf("replicates in %q, where %s/%s does not run", r, kind, name),
+					"A copy is kept only where what is replicated runs: "+strings.Join(in, ", ")+".")
+			}
+		}
+		tunnel := res.at("tunnel", "name")
+		t, ok := find("tunnel", tunnel, res.scope, res.at("tunnel", "namespace"))
+		switch {
+		case !ok:
+			broken(fmt.Sprintf("travels through tunnel/%s, which does not exist", tunnel),
+				"The copies travel through a tunnel, named like any reference.")
+		case !opened[t.id+"\x00"+target.id]:
+			broken(fmt.Sprintf("travels through tunnel/%s, which does not let %s/%s through", tunnel, kind, name),
+				"Nothing crosses regions but what a tunnel names. Add it to the tunnel's entries.")
 		}
 	}
 	return out

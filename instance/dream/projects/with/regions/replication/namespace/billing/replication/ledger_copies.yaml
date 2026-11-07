@@ -1,0 +1,8 @@
+id: Qmaaa8Tv9NxdtvEm2sVT3PbZQREZSQeZ1mVVSKya8HNLpL
+description: the ledger kept in copies in both regions
+of:
+    database:
+        name: ledger
+tunnel:
+    name: to_billing
+between: [region-1, region-2]

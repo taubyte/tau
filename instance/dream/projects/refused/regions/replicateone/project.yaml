@@ -1,0 +1,9 @@
+id: QmPCeViJN6pHEBrt6DhhgU21TM8og5tTkHrbkbATU6u2SV
+name: replicateone
+description: a replication of a ledger whose namespace runs in one region - there is nowhere for a copy to go
+regions:
+    topology: active
+    in: [region-1, region-2]
+environments:
+    prod:
+        branches: ["*"]

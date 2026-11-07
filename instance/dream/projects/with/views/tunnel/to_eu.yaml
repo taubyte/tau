@@ -2,5 +2,4 @@ id: QmRiSFeb3qsJc7YTQCVirS2V9SYwdRsHWjr8h2YcNrt1oh
 description: lets the gateway reach hello from a region that does not run it
 to: /eu
 through:
-    - kind: function
-      name: hello
+    - function: hello

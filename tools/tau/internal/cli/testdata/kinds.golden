@@ -13,6 +13,7 @@ kinds
   namespace (a scope: resources go inside it with --in)
   package
   proxy
+  replication
   sandbox
   secret
   storage

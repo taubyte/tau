@@ -177,6 +177,21 @@ func TestATunnelLetsThroughWhatItNames(t *testing.T) {
 	require.Contains(t, views["region-2"].Roles, idOf(t, flat, "tunnel", "to_eu"), "the region reaching through holds the tunnel")
 }
 
+// A REPLICATION SAYS WHERE COPIES ARE KEPT, and travels through a tunnel: the ledger
+// runs in both of billing's regions, and both hold what says it is kept in copies.
+func TestAReplicationKeepsCopiesBetweenTheRegionsItNames(t *testing.T) {
+	flat := compiledCorpus(t, "with/regions/replication")
+	views, findings, err := schema.Views(flat, schema.WithRegions(threeRegions))
+	require.NoError(t, err, "%v", findings)
+
+	copies := idOf(t, flat, "replication", "ledger_copies")
+	for _, region := range []string{"region-1", "region-2"} {
+		require.Contains(t, views[region].Roles, copies, region)
+		require.Empty(t, views[region].Remote, "a replication reaches nothing across regions itself")
+	}
+	require.True(t, views["region-3"].Empty(), "billing does not run in region-3")
+}
+
 // idOf is the compiled id of the one resource of kind called name.
 func idOf(t *testing.T, flat map[string]any, kind, name string) string {
 	t.Helper()
@@ -191,14 +206,16 @@ func idOf(t *testing.T, flat map[string]any, kind, name string) string {
 
 func TestARegionConstraintIsRefused(t *testing.T) {
 	for name, want := range map[string][]string{
-		"refused/regions/widen":       {`namespace/eu: runs in region "region-3", which the scope above it does not`},
-		"refused/regions/unsaid":      {"project/unsaid: runs in 2 regions and does not say how"},
-		"refused/regions/single":      {"project/single: is single and runs in 2 regions"},
-		"refused/regions/failoverone": {"project/failoverone: fails over with one region"},
-		"refused/regions/standby":     {`function/api: reaches cache/sessions, which only stands by in "region-2" where this serves`},
-		"refused/regions/order":       {`function/api: reaches cache/sessions, which only stands by in "region-1" where this serves`},
-		"refused/regions/guard":       {`gateway/www: reaches function/doorman, which does not run in "region-2" where this does`},
-		"refused/regions/untunneled":  {`gateway/www: reaches function/api, which does not run in "region-2" where this does`},
+		"refused/regions/widen":           {`namespace/eu: runs in region "region-3", which the scope above it does not`},
+		"refused/regions/unsaid":          {"project/unsaid: runs in 2 regions and does not say how"},
+		"refused/regions/single":          {"project/single: is single and runs in 2 regions"},
+		"refused/regions/failoverone":     {"project/failoverone: fails over with one region"},
+		"refused/regions/standby":         {`function/api: reaches cache/sessions, which only stands by in "region-2" where this serves`},
+		"refused/regions/order":           {`function/api: reaches cache/sessions, which only stands by in "region-1" where this serves`},
+		"refused/regions/guard":           {`gateway/www: reaches function/doorman, which does not run in "region-2" where this does`},
+		"refused/regions/untunneled":      {`gateway/www: reaches function/api, which does not run in "region-2" where this does`},
+		"refused/regions/replicateone":    {"replication/ledger_copies: replicates database/ledger, which runs in fewer than two regions"},
+		"refused/regions/replicateclosed": {"replication/ledger_copies: travels through tunnel/to_billing, which does not let database/ledger through"},
 		"refused/regions/missing": {
 			"tunnel/to_eu: lets through cache/nowhere, which /eu does not have",
 			`function/reader: reaches cache/sessions_r1, which does not run in "region-2" where this does`,
