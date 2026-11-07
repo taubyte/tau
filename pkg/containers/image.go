@@ -39,15 +39,17 @@ func (c *Client) Image(ctx context.Context, name string, options ...ImageOption)
 			if err := image.buildImage(ctx); err != nil {
 				return nil, errorImageBuild(name, err)
 			}
+			locallyBuilt.Store(name, struct{}{})
 		}
 	} else if imageExists && pulledWithin(name, image.reusePulled) {
 		return image, nil
 	} else {
 		if _, err := image.Pull(ctx, nil); err != nil {
-			// A local copy outlives a registry outage only if this node pulled it
-			// itself: any other local image may be another tenant's build.
+			// A local copy outlives a registry outage only if this node pulled or
+			// built it itself: any other local image may be another tenant's build.
 			_, pulled := lastPulled.Load(name)
-			if imageExists && (pulled || image.trustLocal) {
+			_, built := locallyBuilt.Load(name)
+			if imageExists && (pulled || built || image.trustLocal) {
 				return image, nil
 			}
 			return nil, errorImagePull(name, err)
@@ -61,7 +63,9 @@ func (c *Client) Image(ctx context.Context, name string, options ...ImageOption)
 var (
 	// lastPulled and lastUsed are keyed by image name and hold a time.Time.
 	lastPulled sync.Map
-	lastUsed   sync.Map
+	// locallyBuilt holds the names this process built from a Dockerfile.
+	locallyBuilt sync.Map
+	lastUsed     sync.Map
 )
 
 func markPulled(name string) { lastPulled.Store(name, time.Now()) }
