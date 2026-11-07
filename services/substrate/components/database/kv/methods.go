@@ -23,32 +23,37 @@ func (kv *kv) Put(ctx context.Context, key string, v []byte) error {
 		return err
 	}
 
-	// Register actual data into the database
-	err = kv.database.Put(ctx, key, v)
+	// The value and its size go in one batch: one network call and one
+	// replicated write instead of two of each.
+	batch, err := kv.database.Batch(ctx)
 	if err != nil {
+		return fmt.Errorf("failed opening a batch on database %s with error: %v", kv.name, err)
+	}
+	if err = batch.Put(key, v); err != nil {
 		return fmt.Errorf("failed putting %s in database %s with error: %v", key, kv.name, err)
 	}
-
-	// Register size of input
-	sizeString := strconv.Itoa(len(v))
-	err = kv.database.Put(ctx, path.Join("size", key), []byte(sizeString))
-	if err != nil {
+	if err = batch.Put(path.Join("size", key), []byte(strconv.Itoa(len(v)))); err != nil {
 		return fmt.Errorf("failed putting size for key %s in database with error: %v", key, err)
+	}
+	if err = batch.Commit(); err != nil {
+		return fmt.Errorf("failed putting %s in database %s with error: %v", key, kv.name, err)
 	}
 
 	return nil
 }
 
 func (kv *kv) Delete(ctx context.Context, key string) error {
-	// Delete key
-	err := kv.database.Delete(ctx, key)
+	batch, err := kv.database.Batch(ctx)
 	if err != nil {
 		return fmt.Errorf("failed deleting key %s with error: %v", key, err)
 	}
-
-	// Delete size of key
-	err = kv.database.Delete(ctx, path.Join("size", key))
-	if err != nil {
+	if err = batch.Delete(key); err != nil {
+		return fmt.Errorf("failed deleting key %s with error: %v", key, err)
+	}
+	if err = batch.Delete(path.Join("size", key)); err != nil {
+		return fmt.Errorf("failed deleting key %s with error: %v", key, err)
+	}
+	if err = batch.Commit(); err != nil {
 		return fmt.Errorf("failed deleting key %s with error: %v", key, err)
 	}
 

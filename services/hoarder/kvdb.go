@@ -403,11 +403,14 @@ func (srv *Service) kvBatch(ctx context.Context, handle kvdb.KVDB, hash string, 
 // lock. A non-nil response is a typed refusal (over-capacity); (nil, nil) is
 // success.
 func (srv *Service) applyBatch(ctx context.Context, handle kvdb.KVDB, body command.Body, rawOps []interface{}) (cr.Response, error) {
-	batch, err := handle.Batch(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("opening batch failed with: %w", err)
+	// Check every op before applying any: the batch shares one pending delta,
+	// so ops added before a bad one would be published by the next batch.
+	type batchOp struct {
+		del   bool
+		key   string
+		value []byte
 	}
-
+	ops := make([]batchOp, 0, len(rawOps))
 	for _, ro := range rawOps {
 		opMap := maps.SafeInterfaceToStringKeys(ro)
 		kvop, err := maps.String(opMap, hoarderSpecs.BodyKVOp)
@@ -427,15 +430,26 @@ func (srv *Service) applyBatch(ctx context.Context, handle kvdb.KVDB, body comma
 			if err := srv.admitWrite(maps.TryString(body, hoarderSpecs.BodyProject), len(value)); err != nil {
 				return cr.Response{hoarderSpecs.BodyCode: hoarderSpecs.CodeOverCapacity}, nil
 			}
-			if err := batch.Put(key, value); err != nil {
-				return nil, err
-			}
+			ops = append(ops, batchOp{key: key, value: value})
 		case hoarderSpecs.KVDelete:
-			if err := batch.Delete(key); err != nil {
-				return nil, err
-			}
+			ops = append(ops, batchOp{del: true, key: key})
 		default:
 			return nil, fmt.Errorf("unsupported batch op %q", kvop)
+		}
+	}
+
+	batch, err := handle.Batch(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("opening batch failed with: %w", err)
+	}
+	for _, op := range ops {
+		if op.del {
+			err = batch.Delete(op.key)
+		} else {
+			err = batch.Put(op.key, op.value)
+		}
+		if err != nil {
+			return nil, err
 		}
 	}
 
