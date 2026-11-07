@@ -1,6 +1,8 @@
 package tns
 
 import (
+	"sync"
+
 	"github.com/taubyte/tau/core/kvdb"
 	iface "github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/p2p/peer"
@@ -16,6 +18,9 @@ type Service struct {
 	dbFactory kvdb.Factory
 	stream    streams.CommandService
 	engine    *engine.Engine
+
+	pendingLock sync.Mutex
+	pending     map[string]bool
 }
 
 func (s *Service) Node() peer.Node {
