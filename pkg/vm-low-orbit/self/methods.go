@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/taubyte/tau/core/vm"
-	spec "github.com/taubyte/tau/pkg/specs/common"
 )
 
 func (f *Factory) selfApplicationSize(ctx context.Context, module vm.Module, applicationSizePtr uint32) uint32 {
@@ -31,14 +30,20 @@ func (f *Factory) selfId(ctx context.Context, module vm.Module, functionPtr uint
 	return uint32(f.WriteString(module, functionPtr, f.parent.Context().Resource()))
 }
 
-// TODO: update SDK
-func (f *Factory) selfBranchSize(ctx context.Context, module vm.Module, branchSizePtr uint32) uint32 {
-	return uint32(f.WriteStringSliceSize(module, branchSizePtr, spec.DefaultBranches))
+// branch is the one the function was deployed from.
+func (f *Factory) branch() string {
+	if b := f.parent.Context().Branches(); len(b) > 0 {
+		return b[0]
+	}
+	return ""
 }
 
-// TODO: update SDK
+func (f *Factory) selfBranchSize(ctx context.Context, module vm.Module, branchSizePtr uint32) uint32 {
+	return uint32(f.WriteStringSize(module, branchSizePtr, f.branch()))
+}
+
 func (f *Factory) selfBranch(ctx context.Context, module vm.Module, branchPtr uint32) uint32 {
-	return uint32(f.WriteStringSlice(module, branchPtr, spec.DefaultBranches))
+	return uint32(f.WriteString(module, branchPtr, f.branch()))
 }
 
 func (f *Factory) selfCommitSize(ctx context.Context, module vm.Module, branchSizePtr uint32) uint32 {

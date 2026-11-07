@@ -23,7 +23,7 @@ func TestSelf(t *testing.T) {
 		vmContext.Application("app-456"),
 		vmContext.Resource("res-789"),
 		vmContext.Commit("commit-abc"),
-		vmContext.Branch("master"),
+		vmContext.Branch("feature-x"),
 	)
 
 	if ret != 0 {
@@ -31,7 +31,7 @@ func TestSelf(t *testing.T) {
 	}
 
 	body := w.Body.String()
-	for _, want := range []string{"res-789", "proj-123", "app-456", "commit-abc", "master"} {
+	for _, want := range []string{"res-789", "proj-123", "app-456", "commit-abc", `"branch": "feature-x"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("response missing %q\nbody: %s", want, body)
 		}
