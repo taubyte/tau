@@ -15,6 +15,8 @@ import (
 )
 
 func (r *runtime) Close() error {
+	// the instance owns the output files and a goroutine; nothing else closes it
+	defer r.instance.Close()
 	if err := r.runtime.Close(r.instance.ctx.Context()); err != nil {
 		return err
 	}
