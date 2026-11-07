@@ -154,8 +154,10 @@ func (f *Function) Instantiate(ctx context.Context) (Instance, error) { //} (run
 
 	select {
 	case <-f.ctx.Done():
+		instCh.leave()
 		return nil, fmt.Errorf("function context done with: %w", f.ctx.Err())
 	case <-ctx.Done():
+		instCh.leave()
 		return nil, fmt.Errorf("instance request not sent: %w", ctx.Err())
 	case instance := <-instCh.ch:
 		if instCh.err != nil {
@@ -189,7 +191,7 @@ func (f *Function) intanceManager() {
 func (f *Function) processRequest(reqCh *instanceRequest) {
 	select {
 	case instance := <-f.availableInstances:
-		reqCh.ch <- instance
+		reqCh.give(instance)
 	default:
 		// we need to instantiate a new instance
 		// hoever if that does not work we need to repush the request in a way that is it first in line
@@ -203,7 +205,7 @@ func (f *Function) processRequest(reqCh *instanceRequest) {
 			}
 		}
 		if err == nil {
-			reqCh.ch <- &instance{runtime: runtime, sdk: sdk, parent: f, held: true}
+			reqCh.give(&instance{runtime: runtime, sdk: sdk, parent: f, held: true})
 		} else {
 			logger.Errorf("creating new instance failed with: %s", err.Error())
 			// we reached some sort of limit
@@ -214,9 +216,9 @@ func (f *Function) processRequest(reqCh *instanceRequest) {
 				if platformerr.CodeOf(err) == platformerr.OverQuota {
 					reqCh.err = platformerr.New(platformerr.OverQuota, reqCh.err)
 				}
-				reqCh.ch <- nil
+				reqCh.give(nil)
 			case instance := <-f.availableInstances:
-				reqCh.ch <- instance
+				reqCh.give(instance)
 			case <-f.ctx.Done():
 				return
 			}
