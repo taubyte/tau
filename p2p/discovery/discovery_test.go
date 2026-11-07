@@ -3,6 +3,7 @@ package discovery_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -309,6 +310,24 @@ func TestFailedTakesAPeerOutAndTheRetryPutsItBack(t *testing.T) {
 	back, err := d.Any(within(t, 5*discovery.DefaultRetryInterval))
 	require.NoError(t, err)
 	assert.Equal(t, pid, back)
+}
+
+// Serving reads Known and never waits, so a peer held out for an interval must
+// come back on its own once the interval ends.
+func TestAFailedPeerComesBackWithNobodyWaiting(t *testing.T) {
+	server, client := newHost(t), newHost(t)
+	serve(t, server)
+	connectHosts(t, client, server)
+
+	d := atProductionSpeed(t, client)
+	pid, err := d.Any(within(t, 5*time.Second))
+	require.NoError(t, err)
+
+	d.Failed(pid)
+	require.Empty(t, d.Known())
+	require.Eventually(t, func() bool { return slices.Equal(d.Known(), []peer.ID{pid}) },
+		5*discovery.DefaultRetryInterval, 10*time.Millisecond,
+		"a peer that failed once stayed out for a caller that only reads what is known")
 }
 
 func TestTheRetryReissuesALookupThatCameBackEmpty(t *testing.T) {

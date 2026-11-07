@@ -324,7 +324,9 @@ func (d *Discovery) scan() {
 }
 
 // reap re-asks the question about every member, so a peer that stopped serving
-// leaves even if its event was missed. It also forgets expired quarantines.
+// leaves even if its event was missed. A peer whose quarantine ends is asked again
+// too: it left the set for one interval, and a caller reading Known with nobody
+// waiting would otherwise go without it until some event happened to name it.
 func (d *Discovery) reap() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -333,6 +335,9 @@ func (d *Discovery) reap() {
 	for pid, until := range d.quarantine {
 		if now.After(until) {
 			delete(d.quarantine, pid)
+			if d.admissible(pid, false) {
+				d.admitLocked(pid, false)
+			}
 		}
 	}
 	for pid, e := range d.peers {
