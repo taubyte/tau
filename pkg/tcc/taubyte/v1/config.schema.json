@@ -253,7 +253,7 @@
           "x-tau-section": "identity"
         },
         "fqdn": {
-          "description": "Fully-qualified domain name this resource represents.",
+          "description": "Fully-qualified domain name this resource represents. Generated domains on a remote cloud: lowercase, ending with the last 8 chars of the project ID (e.g. r58kxje80.gen.<cloud>).",
           "format": "hostname",
           "title": "FQDN",
           "type": "string",
