@@ -392,10 +392,12 @@ func TestALambdaImageRunsOnThisTier(t *testing.T) {
 	require.Equal(t, 201, res.Status, "the handler's own status")
 	require.Equal(t, "/orders", string(res.Body), "it saw the path, as an event")
 	require.Equal(t, []string{"lambda"}, res.Headers["x-from"])
+	// The answer came from the client, so it started; the goroutine hands it over
+	// after startClient returns, which can be after the client answered.
 	select {
 	case client := <-started:
 		require.Len(t, client.seen(), 1, "the handler saw exactly one event")
-	default:
+	case <-time.After(5 * time.Second):
 		t.Fatal("no runtime client ever started")
 	}
 }

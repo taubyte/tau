@@ -86,7 +86,7 @@ func TestAKindsFieldsAreNotWhatItHolds(t *testing.T) {
 	for _, l := range Locations(root, "namespace") {
 		ns = append(ns, l.Path())
 	}
-	require.ElementsMatch(t, []string{"description", "id", "name", "regions/topology", "regions/in", "tags"}, ns,
+	require.ElementsMatch(t, []string{"description", "id", "name", "regions/topology", "regions/in", "regions/mesh", "tags"}, ns,
 		"a namespace has its identity and its regions; everything else in it is a resource")
 
 	// AND NO KIND READS AN ACCESS ENTRY AS A FIELD OF ITS OWN. The ops live at
