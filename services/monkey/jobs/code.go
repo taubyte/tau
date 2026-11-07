@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,7 +20,6 @@ import (
 	"github.com/pbnjay/memory"
 	"github.com/taubyte/tau/core/builders"
 	build "github.com/taubyte/tau/pkg/builder"
-	"github.com/taubyte/tau/pkg/git"
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 )
 
@@ -327,15 +327,7 @@ func (c *code) checkConfig() error {
 			Branch:    c.Job.Meta.Repository.Branch,
 			Timestamp: time.Now().UnixNano(),
 		})
-		configRepo, err := git.New(
-			c.ctx,
-			git.URL(url),
-			git.SSHKey(c.ConfigPrivateKey),
-			git.Temporary(),
-			git.Shallow(),
-			git.Branch(c.Job.Meta.Repository.Branch),
-			git.Output(c.LogFile),
-		)
+		configRepo, err := c.openRepo(strconv.Itoa(c.ConfigRepoId), url, c.ConfigPrivateKey)
 		if err != nil {
 			json.NewEncoder(c.LogFile).Encode(struct {
 				Op        string `json:"op"`

@@ -46,6 +46,9 @@ type Context struct {
 	// reuseKey is what a website or library build is recorded under once
 	// published, so the next job with the same sources reuses it.
 	reuseKey string
+
+	// unlocks release the project clone dirs this job holds.
+	unlocks []func()
 }
 
 type Op struct {
