@@ -12,7 +12,8 @@ const concurrentJobs = 3
 
 // pollJobs periodically asks Patrick for available jobs.
 func (srv *Service) pollJobs() {
-	interval := 5 * time.Second
+	// A queued job waits at most this long for an idle monkey to notice it.
+	interval := time.Second
 	concurrent := concurrentJobs
 	if srv.dev {
 		interval = 500 * time.Millisecond
