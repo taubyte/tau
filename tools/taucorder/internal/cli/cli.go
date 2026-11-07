@@ -21,7 +21,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/taubyte/tau/pkg/stats"
-	"github.com/taubyte/tau/services/discovery"
+	statsService "github.com/taubyte/tau/services/stats"
 	"github.com/taubyte/tau/tools/taucorder/internal/bridge"
 	"github.com/taubyte/tau/tools/taucorder/internal/policy"
 	"github.com/taubyte/tau/tools/taucorder/internal/query"
@@ -167,7 +167,7 @@ func config(c *cli.Context) (bridge.Config, Profile, error) {
 
 func App(env Env) *cli.App {
 	output := &cli.StringFlag{Name: "output", Aliases: []string{"o"}, Value: "table", Usage: "table or json"}
-	wait := &cli.DurationFlag{Name: "wait", Value: discovery.DefaultInterval + time.Second, Usage: "how long to listen to the fleet's gossip before answering"}
+	wait := &cli.DurationFlag{Name: "wait", Value: statsService.DefaultInterval + time.Second, Usage: "how long to listen to the fleet's gossip before answering"}
 	return &cli.App{
 		Name:  "taucorder",
 		Usage: "bridge a tau cloud's v2 services to local clients, and watch the fleet",

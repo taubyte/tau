@@ -33,7 +33,7 @@ const placementID = "QmPigwAetxyyVvHj453JLsLhrWNGV4mW9ZG9yvjd7kUmMk"
 // dream's own process; every way it ends deployed in the register, cloned from a
 // folder that is never written.
 func TestAPushIsBuiltWhereTheUniverseBuilds(t *testing.T) {
-	shared := []string{instance.Discovery, instance.Register, storageService.Descriptor.Name}
+	shared := []string{instance.Stats, instance.Register, storageService.Descriptor.Name}
 	for name, cfg := range map[string]nodeDream.Config{
 		"with neither build nor a builder": {Services: shared},
 		"straight to a builder":            {Services: append([]string{instance.Builder}, shared...)},
@@ -42,7 +42,7 @@ func TestAPushIsBuiltWhereTheUniverseBuilds(t *testing.T) {
 		// The register and storage on the plm node alone, so the one the builder
 		// publishes to is the one read.
 		"through the plm node": {Copies: 2, Configure: func(index int, c *instance.Config) {
-			c.Services = []string{instance.Builder, instance.Discovery}
+			c.Services = []string{instance.Builder, instance.Stats}
 			if index == 0 {
 				c.Services = append([]string{instance.PLM}, shared...)
 			}
@@ -81,7 +81,7 @@ func TestAPushIsBuiltWhereTheUniverseBuilds(t *testing.T) {
 
 func TestAPushOfWhatTheMirrorDoesNotHoldFails(t *testing.T) {
 	ctx := t.Context()
-	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{Services: []string{instance.Builder, instance.Discovery, instance.Register, storageService.Descriptor.Name}})
+	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{Services: []string{instance.Builder, instance.Stats, instance.Register, storageService.Descriptor.Name}})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
 
@@ -104,7 +104,7 @@ func TestAnUploadedBuildIsWhatTheFunctionRuns(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 	ctx := t.Context()
 	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{Services: []string{
-		instance.Builder, instance.Register, instance.Worker, instance.Discovery, instance.Gateway,
+		instance.Builder, instance.Register, instance.Worker, instance.Stats, instance.Gateway,
 		instance.Database, instance.Primitives, storageService.Descriptor.Name,
 	}})
 	require.NoError(t, err)
@@ -129,7 +129,7 @@ func TestAnUploadedBuildIsWhatTheFunctionRuns(t *testing.T) {
 }
 
 func TestAnUploadNamingAPackageTheTreeDoesNotBuildIsRefused(t *testing.T) {
-	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Builder, instance.Discovery}})
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Builder, instance.Stats}})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
 	_, err = u.Upload("github.com/acme/wasm", "main", projectDir("with/function/wasm"), map[string]string{"nobody": "x"})
@@ -143,7 +143,7 @@ func TestAnUploadNamingAPackageTheTreeDoesNotBuildIsRefused(t *testing.T) {
 func TestAUniverseBuildsForAToolOverDreamService(t *testing.T) {
 	ctx := t.Context()
 	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{
-		Services:  []string{instance.Builder, instance.Discovery, instance.Register, storageService.Descriptor.Name},
+		Services:  []string{instance.Builder, instance.Stats, instance.Register, storageService.Descriptor.Name},
 		Configure: func(_ int, c *instance.Config) { c.Region = "region-1" },
 		Listen:    "127.0.0.1:0",
 	})
@@ -180,17 +180,17 @@ func TestAUniverseBuildsForAToolOverDreamService(t *testing.T) {
 }
 
 func TestAUniverseThatCannotListenDoesNotStart(t *testing.T) {
-	_, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Discovery}, Listen: "nowhere:at:all"})
+	_, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Stats}, Listen: "nowhere:at:all"})
 	require.ErrorContains(t, err, "DreamService")
 
-	u, err := nodeDream.Start(t.Context(), t.Name()+"-quiet", nodeDream.Config{Services: []string{instance.Discovery}})
+	u, err := nodeDream.Start(t.Context(), t.Name()+"-quiet", nodeDream.Config{Services: []string{instance.Stats}})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
 	require.Nil(t, u.Addr(), "a universe named no Listen answers nowhere")
 }
 
 func TestACommitIsTheFolderAsItIsNow(t *testing.T) {
-	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Discovery}})
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Stats}})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
 	require.Equal(t, strings.ToLower(t.Name()), u.Name(), "the cloud a universe is, named as a cloud is")
@@ -228,7 +228,7 @@ func TestACommitIsTheFolderAsItIsNow(t *testing.T) {
 
 func TestAUniverseWithNothingThatBuildsSaysSo(t *testing.T) {
 	ctx := t.Context()
-	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{Services: []string{instance.Discovery}})
+	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{Services: []string{instance.Stats}})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
 
@@ -240,7 +240,7 @@ func TestAUniverseWithNothingThatBuildsSaysSo(t *testing.T) {
 }
 
 func TestACodeRepositoryNoProjectLinksIsNotUploaded(t *testing.T) {
-	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Discovery, instance.Register}})
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Stats, instance.Register}})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
 	_, err = u.Upload("github.com/acme/code", "main", t.TempDir(), nil)
@@ -248,7 +248,7 @@ func TestACodeRepositoryNoProjectLinksIsNotUploaded(t *testing.T) {
 }
 
 func TestAFolderHoldingALinkToNothingIsNotCommitted(t *testing.T) {
-	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Discovery}})
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Stats}})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
 
@@ -262,7 +262,7 @@ func TestAFolderHoldingALinkToNothingIsNotCommitted(t *testing.T) {
 }
 
 func TestABuildItsCallerGaveUpOnIsNotQueued(t *testing.T) {
-	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.PLM, instance.Discovery, instance.Register}})
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.PLM, instance.Stats, instance.Register}})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
 	gone, cancel := context.WithCancel(t.Context())
@@ -272,7 +272,7 @@ func TestABuildItsCallerGaveUpOnIsNotQueued(t *testing.T) {
 }
 
 func TestAMirrorRepositoryWithNoWorkingTreeTakesNoCommit(t *testing.T) {
-	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Discovery}})
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Stats}})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
 	_, err = gogit.PlainInit(filepath.Join(u.Mirror(), "github.com", "acme", "bare"), true)
@@ -284,7 +284,7 @@ func TestAMirrorRepositoryWithNoWorkingTreeTakesNoCommit(t *testing.T) {
 func TestAUniverseWhoseBuilderCannotBeMadeSaysSo(t *testing.T) {
 	ctx := t.Context()
 	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{
-		Services: []string{instance.Discovery, instance.Register},
+		Services: []string{instance.Stats, instance.Register},
 		Configure: func(_ int, c *instance.Config) {
 			c.Sections[instance.Builder] = builder.Config{Mirror: "https://not.a.folder"}
 		},
@@ -296,7 +296,7 @@ func TestAUniverseWhoseBuilderCannotBeMadeSaysSo(t *testing.T) {
 }
 
 func TestAClosedUniverseBuildsNothing(t *testing.T) {
-	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Discovery}})
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Stats}})
 	require.NoError(t, err)
 	u.Close()
 	_, err = u.Build(t.Context(), nodeDream.Push{Repository: "github.com/acme/app", Ref: "refs/heads/main", Commit: "1111111111111111111111111111111111111111"})

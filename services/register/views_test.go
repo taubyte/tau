@@ -5,9 +5,11 @@ import (
 	"time"
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/service"
+	"github.com/taubyte/tau/p2p/discovery"
 	"github.com/taubyte/tau/p2p/peer"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
@@ -30,10 +32,10 @@ func (*node) Now() time.Time               { return time.Now() }
 
 var _ service.Host = (*node)(nil)
 
-// directory names the nodes it was told run the register.
-type directory []libp2ppeer.ID
+// finding is a finder that finds the nodes it was told serve the register.
+type finding []libp2ppeer.ID
 
-func (d directory) Peers(string) []libp2ppeer.ID { return d }
+func (f finding) Find(protocol.ID) discovery.Resolver { return discovery.Static(f...) }
 
 func mockNode(t testing.TB) *node {
 	t.Helper()
@@ -97,7 +99,7 @@ func TestViewsReachARegisterElsewhere(t *testing.T) {
 	require.NoError(t, from.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: at.ID(), Addrs: at.Host().Addrs()}))
 
 	from.region = "region-1"
-	from.running = []service.Running{{Name: "discovery", Service: directory{at.ID()}}}
+	from.running = []service.Running{{Service: finding{at.ID()}}}
 	v := ViewsOn(from)
 
 	p, err := v.Resolve(ctx, "shop", "prod")

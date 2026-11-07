@@ -7,12 +7,12 @@ import (
 	"github.com/taubyte/tau/services/builder"
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/database"
-	"github.com/taubyte/tau/services/discovery"
 	"github.com/taubyte/tau/services/plm"
 	"github.com/taubyte/tau/services/plm/hosted"
 	"github.com/taubyte/tau/services/primitives"
 	"github.com/taubyte/tau/services/register"
 	"github.com/taubyte/tau/services/secrets"
+	statsService "github.com/taubyte/tau/services/stats"
 	"github.com/taubyte/tau/services/storage"
 )
 
@@ -33,7 +33,7 @@ type shipped struct {
 func catalog() []shipped {
 	return []shipped{
 		{name: cm.Name, new: func() service.Service { return cm.New() }},
-		{name: discovery.Descriptor.Name, new: func() service.Service { return discovery.New() }},
+		{name: statsService.Descriptor.Name, new: func() service.Service { return statsService.New() }},
 		{name: register.Descriptor.Name, new: func() service.Service { return register.New() }},
 		{name: secrets.Descriptor.Name, new: func() service.Service { return secrets.New() }},
 		{name: primitives.Descriptor.Name, new: func() service.Service { return primitives.New() }, needs: []string{cm.Name}},

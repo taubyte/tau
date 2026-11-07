@@ -7,8 +7,6 @@ import (
 	"slices"
 	"time"
 
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
-
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/services"
@@ -109,15 +107,9 @@ func (a *added) Cloud() string              { return a.node.cfg.Cloud }
 func (a *added) Region() string             { return a.node.cfg.Region }
 func (a *added) Now() time.Time             { return a.node.clock() }
 
-// HostOf is this instance as the service named sees it: its peer, its directory,
-// the services running beside it, and that service's section.
+// HostOf is this instance as the service named sees it: its peer, its finder, the
+// services running beside it, and that service's section.
 func (n *Instance) HostOf(name string) service.Host { return &added{node: n, name: name} }
-
-// Peers is every node discovery currently says runs service, this one included
-// when it does.
-func (n *Instance) Peers(service string) []libp2ppeer.ID {
-	return (&fromDiscovery{node: n, name: service}).Known()
-}
 
 func (a *added) Config(into any) error { return a.node.cfg.Section(a.name, into) }
 

@@ -8,13 +8,15 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/host"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/p2p/discovery"
 	"github.com/taubyte/tau/p2p/peer"
 )
 
 // fake is an instance with one peer, the handles it was told about and the nodes
-// discovery names.
+// its finder names.
 type fake struct {
 	peer.Node
 	running []Running
@@ -38,7 +40,7 @@ func TestTheServiceHereIsReachedWithNoClient(t *testing.T) {
 	h := &fake{Node: p, running: []Running{{Service: 7}, {Name: "store", Service: answer("here")}}}
 
 	dialled := 0
-	r := Reach(h, "store", func(host.Host, libp2ppeer.ID) (answer, error) { dialled++; return "far", nil })
+	r := Reach(h, "/tau/store/v2", func(host.Host, libp2ppeer.ID) (answer, error) { dialled++; return "far", nil })
 	got, err := r.Now(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, answer("here"), got)
@@ -54,79 +56,101 @@ func TestAServiceHereIsReachedAsWhatItHolds(t *testing.T) {
 	h := &fake{Node: p, running: []Running{{Service: 7}, {Name: "store", Service: holder{held: "held"}}}}
 
 	dialled := 0
-	r := ReachAs(h, "store", func(s holder) answer { return s.held },
+	r := ReachAs(h, "/tau/store/v2", func(s holder) answer { return s.held },
 		func(host.Host, libp2ppeer.ID) (answer, error) { dialled++; return "far", nil })
 	got, err := r.Now(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, answer("held"), got)
 	require.Zero(t, dialled)
 
-	h.running = []Running{{Name: "discovery", Service: directory{"far"}}}
-	got, err = ReachAs(h, "store", func(s holder) answer { return s.held },
+	h.running = []Running{{Service: finding{"far"}}}
+	got, err = ReachAs(h, "/tau/store/v2", func(s holder) answer { return s.held },
 		func(host.Host, libp2ppeer.ID) (answer, error) { dialled++; return "far", nil }).Now(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, answer("far"), got, "none here is a client of one elsewhere")
 	require.Equal(t, 1, dialled)
 }
 
-func TestAServiceElsewhereIsDialledOnANodeDiscoveryNames(t *testing.T) {
+func TestAServiceElsewhereIsDialledOnANodeTheFinderNames(t *testing.T) {
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	h := &fake{Node: p, running: []Running{{Name: "discovery", Service: directory{p.ID(), "far"}}}}
+	h := &fake{Node: p, running: []Running{{Service: finding{p.ID(), "far"}}}}
 
 	var at libp2ppeer.ID
-	r := Reach(h, "store", func(_ host.Host, id libp2ppeer.ID) (answer, error) { at = id; return "far", nil })
+	r := Reach(h, "/tau/store/v2", func(_ host.Host, id libp2ppeer.ID) (answer, error) { at = id; return "far", nil })
 	got, err := r.Now(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, answer("far"), got)
 	require.Equal(t, libp2ppeer.ID("far"), at, "never itself")
+	require.Equal(t, []libp2ppeer.ID{"far"}, Serving(h, "/tau/store/v2"))
 
-	// A SERVICE OF ANOTHER TYPE is not the one asked for.
-	h.running = []Running{{Service: 7}, {Name: "discovery", Service: directory{"far"}}}
+	// A SERVICE OF ANOTHER TYPE is not the finder.
+	h.running = []Running{{Service: 7}, {Service: finding{"far"}}}
 	_, err = r.Now(t.Context())
 	require.NoError(t, err)
 
-	h.running = []Running{{Name: "discovery", Service: directory{p.ID()}}}
-	nowhere := Reach(h, "store", func(host.Host, libp2ppeer.ID) (answer, error) { return "", nil })
+	h.running = []Running{{Service: finding{p.ID()}}}
+	nowhere := Reach(h, "/tau/store/v2", func(host.Host, libp2ppeer.ID) (answer, error) { return "", nil })
 	_, err = nowhere.Now(t.Context())
 	require.ErrorIs(t, err, ErrNoneRuns)
 }
 
-func TestRoutedWorkGoesWhereTheDirectoryNamesFirst(t *testing.T) {
+func TestRoutedWorkLeavesForANodeTheFinderNames(t *testing.T) {
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	h := &fake{Node: p, running: []Running{{Name: "discovery", Service: directory{"far", p.ID()}}}}
+	h := &fake{Node: p, running: []Running{{Service: finding{p.ID(), "far"}}}}
 
 	var at libp2ppeer.ID
-	r := Routed(h, "clock", answer("here"), func(_ host.Host, id libp2ppeer.ID) (answer, error) { at = id; return "far", nil })
+	r := Routed(h, "/tau/clock/v2", answer("here"), func(_ host.Host, id libp2ppeer.ID) (answer, error) { at = id; return "far", nil })
 	got, err := r.Now(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, answer("far"), got, "the first named, even with this node among them")
+	require.Equal(t, answer("far"), got, "another node, whenever one is found")
 	require.Equal(t, libp2ppeer.ID("far"), at)
 
-	h.running = []Running{{Name: "discovery", Service: directory{p.ID(), "far"}}}
+	h.running = []Running{{Service: finding{p.ID()}}}
 	got, err = r.Now(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, answer("here"), got, "this node named first is this node, undialled")
+	require.Equal(t, answer("here"), got, "only this node found is this node, undialled")
 
 	h.running = nil
 	got, err = r.Now(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, answer("here"), got, "nobody named is nobody but this node")
+	require.Equal(t, answer("here"), got, "nothing to find with is nobody but this node")
 }
 
-// directory is a discovery that names these nodes for every service.
-type directory []libp2ppeer.ID
+// finding is a finder that finds these nodes for every protocol.
+type finding []libp2ppeer.ID
 
-func (d directory) Peers(string) []libp2ppeer.ID { return d }
+func (f finding) Find(protocol.ID) discovery.Resolver { return found(f) }
 
-func TestNoDirectoryIsNobodyToAsk(t *testing.T) {
+// found is a resolver that knows these nodes.
+type found []libp2ppeer.ID
+
+func (f found) Known() []libp2ppeer.ID { return f }
+func (f found) Any(ctx context.Context) (libp2ppeer.ID, error) {
+	peers, err := f.Peers(ctx, 1)
+	if err != nil {
+		return "", err
+	}
+	return peers[0], nil
+}
+func (f found) Peers(context.Context, int) ([]libp2ppeer.ID, error) {
+	if len(f) == 0 {
+		return nil, discovery.ErrNoPeers
+	}
+	return f, nil
+}
+func (found) Failed(libp2ppeer.ID) {}
+
+func TestNoFinderIsNobodyToAsk(t *testing.T) {
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	r := Reach(&fake{Node: p}, "store", func(host.Host, libp2ppeer.ID) (answer, error) { return "", nil })
+	h := &fake{Node: p}
+	r := Reach(h, "/tau/store/v2", func(host.Host, libp2ppeer.ID) (answer, error) { return "", nil })
 	_, err := r.Now(t.Context())
 	require.ErrorIs(t, err, ErrNoneRuns)
-	require.ErrorContains(t, err, "no directory")
+	require.ErrorContains(t, err, "nothing here finds peers")
+	require.Nil(t, Serving(h, "/tau/store/v2"))
 }
 
 // recorder is a service that keeps the host it started with.

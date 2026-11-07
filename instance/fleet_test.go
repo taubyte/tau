@@ -9,6 +9,7 @@ import (
 	"time"
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/peer"
@@ -18,6 +19,7 @@ import (
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 	databaseService "github.com/taubyte/tau/services/database"
+	registerService "github.com/taubyte/tau/services/register"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -77,19 +79,29 @@ func fleet(t *testing.T, configs ...Config) []*Instance {
 }
 
 // sees waits until one node's view has another serving a name.
+// finds waits until a node's finder knows another node serving id: how a lookup
+// finds a service, which never reads stats.
+func finds(t *testing.T, watcher *Instance, id protocol.ID) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		return len(watcher.finder.Find(id).Known()) > 0
+	}, 30*time.Second, 100*time.Millisecond, "nothing serving %s was ever found", id)
+}
+
+// sees waits until a node's stats view shows name: what placement chooses from.
 func sees(t *testing.T, watcher *Instance, name string) {
 	t.Helper()
 
 	stalled := stallSince()
 	require.Eventually(t, func() bool {
-		return len(watcher.Discovery().Route(name, time.Minute)) > 0
+		return len(watcher.Stats().Route(name, time.Minute)) > 0
 	}, 30*time.Second, 100*time.Millisecond, "%s never appeared in the view%s%s%s", name, viewOf{watcher}, gossipWith{watcher.Host()}, stalled)
 }
 
 func TestEveryNodeOfALargeFleetHasAStreamToEveryOther(t *testing.T) {
 	configs := make([]Config, 16)
 	for i := range configs {
-		configs[i] = Config{Services: []string{Discovery}}
+		configs[i] = Config{Services: []string{Stats}}
 	}
 	nodes := fleet(t, configs...)
 
@@ -105,8 +117,8 @@ func TestEveryNodeOfALargeFleetHasAStreamToEveryOther(t *testing.T) {
 
 func TestAWorkerFindsARegisterOnAnotherNode(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Discovery}},
-		Config{Services: []string{Worker, Discovery}},
+		Config{Services: []string{Register, Stats}},
+		Config{Services: []string{Worker, Stats}},
 	)
 	registry, compute := nodes[0], nodes[1]
 
@@ -115,7 +127,7 @@ func TestAWorkerFindsARegisterOnAnotherNode(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	sees(t, compute, Register)
+	finds(t, compute, registerService.Protocol)
 
 	spec, err := compute.Worker().Resolve(t.Context(), workerTarget())
 	require.NoError(t, err)
@@ -125,8 +137,8 @@ func TestAWorkerFindsARegisterOnAnotherNode(t *testing.T) {
 
 func TestTheStreamToARemoteRegisterIsKept(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Discovery}},
-		Config{Services: []string{Worker, Discovery}},
+		Config{Services: []string{Register, Stats}},
+		Config{Services: []string{Worker, Stats}},
 	)
 	registry, compute := nodes[0], nodes[1]
 
@@ -134,7 +146,7 @@ func TestTheStreamToARemoteRegisterIsKept(t *testing.T) {
 		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled(),
 	})
 	require.NoError(t, err)
-	sees(t, compute, Register)
+	finds(t, compute, registerService.Protocol)
 
 	first, err := compute.registers.Now(t.Context())
 	require.NoError(t, err)
@@ -146,8 +158,8 @@ func TestTheStreamToARemoteRegisterIsKept(t *testing.T) {
 
 func TestAGatewayReachesAWorkerOnAnotherNode(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Discovery, Gateway}},
-		Config{Services: []string{Worker, Discovery}},
+		Config{Services: []string{Register, Stats, Gateway}},
+		Config{Services: []string{Worker, Stats}},
 	)
 	edge, compute := nodes[0], nodes[1]
 
@@ -158,7 +170,7 @@ func TestAGatewayReachesAWorkerOnAnotherNode(t *testing.T) {
 	require.NoError(t, err)
 
 	sees(t, edge, Worker)
-	sees(t, compute, Register)
+	finds(t, compute, registerService.Protocol)
 
 	// The gateway has no worker of its own, so this can only have gone over
 	// the swarm. It reaches the tier and stops there, which is what this
@@ -171,8 +183,8 @@ func TestAGatewayReachesAWorkerOnAnotherNode(t *testing.T) {
 
 func TestAChannelDialCrossesToAnotherNode(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Discovery, Gateway}},
-		Config{Services: []string{Worker, Discovery}},
+		Config{Services: []string{Register, Stats, Gateway}},
+		Config{Services: []string{Worker, Stats}},
 	)
 	edge, compute := nodes[0], nodes[1]
 
@@ -182,7 +194,7 @@ func TestAChannelDialCrossesToAnotherNode(t *testing.T) {
 	require.NoError(t, err)
 
 	sees(t, edge, Worker)
-	sees(t, compute, Register)
+	finds(t, compute, registerService.Protocol)
 	require.Nil(t, edge.worker, "the dialing node runs none")
 
 	_, err = (&channels{node: edge}).Dial(t.Context(), channelGrant(), []byte("hello"))
@@ -194,8 +206,8 @@ func TestAChannelDialCrossesToAnotherNode(t *testing.T) {
 
 func TestAWarmWorkerIsAdvertised(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Discovery}},
-		Config{Services: []string{Worker, Discovery}},
+		Config{Services: []string{Register, Stats}},
+		Config{Services: []string{Worker, Stats}},
 	)
 	registry, compute := nodes[0], nodes[1]
 
@@ -203,7 +215,7 @@ func TestAWarmWorkerIsAdvertised(t *testing.T) {
 		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled(),
 	})
 	require.NoError(t, err)
-	sees(t, compute, Register)
+	finds(t, compute, registerService.Protocol)
 
 	_, err = compute.Worker().Resolve(t.Context(), workerTarget())
 	require.NoError(t, err)
@@ -258,7 +270,7 @@ func (a askedFor) Artifact(_ context.Context, _, _, _, id string) (string, error
 }
 
 func TestABuiltResourceNothingHasBuiltIsRefused(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
 	require.NoError(t, n.Start(t.Context()))
 
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
@@ -312,8 +324,8 @@ func withKvDatabase() []byte {
 
 func TestADatabaseServiceIsReachableFromAnotherNode(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Discovery, Database}},
-		Config{Services: []string{Worker, Discovery}},
+		Config{Services: []string{Register, Stats, Database}},
+		Config{Services: []string{Worker, Stats}},
 	)
 	holder, caller := nodes[0], nodes[1]
 

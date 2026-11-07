@@ -29,25 +29,11 @@ type registers interface {
 	registers() ([]libp2ppeer.ID, error)
 }
 
-// discovered is the registers the directory on a node knows of, other than the node.
+// discovered is the registers a node's finder knows of, other than the node.
 type discovered struct{ h service.Host }
 
 func (d discovered) registers() ([]libp2ppeer.ID, error) {
-	dir, ok := service.Get[service.Directory](d.h)
-	if !ok {
-		return nil, fmt.Errorf("%w: %s, and no directory runs here to ask", service.ErrNoneRuns, Descriptor.Name)
-	}
-	self := d.h.Peer().Host().ID()
-	var out []libp2ppeer.ID
-	for _, id := range dir.Peers(Descriptor.Name) {
-		if id != self {
-			out = append(out, id)
-		}
-	}
-	if len(out) == 0 {
-		return nil, errNoRegister
-	}
-	return out, nil
+	return service.Found(d.h, Protocol)
 }
 
 // watcherLimits shape a reader's sessions.

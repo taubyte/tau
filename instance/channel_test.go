@@ -56,19 +56,19 @@ func TestAHandleThatNamesNoDeploymentIsRefused(t *testing.T) {
 func TestANodeThatCanReachNoWorkerAnswersNothing(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register}})
 	require.Nil(t, n.worker, "this node runs none")
-	require.Nil(t, n.workers, "and runs no discovery to find one")
+	require.Nil(t, n.workers, "and runs no stats to place through")
 
 	_, err := (&channels{node: n}).Dial(t.Context(), channelGrant(), []byte("x"))
 	require.ErrorIs(t, err, wasmtier.ErrNoAnswer)
 }
 
-// dialingNode is a worker with no discovery — so a dial goes to its own worker,
+// dialingNode is a worker with no stats — so a dial goes to its own worker,
 // the only workload it can reach — serving the fixture's checkout function.
 func dialingNode(t *testing.T, answers *answering) *channels {
 	t.Helper()
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker}}, WithRuntimes(answers), prebuilt())
 	require.NoError(t, n.Start(t.Context()))
-	require.Nil(t, n.workers, "no discovery, so nothing to place through")
+	require.Nil(t, n.workers, "no stats, so nothing to place through")
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled(),
 	})

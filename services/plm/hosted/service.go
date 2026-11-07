@@ -109,12 +109,12 @@ func (f *server) Start(ctx context.Context, h service.Host) error {
 
 func (f *server) wire(h service.Host, cfg config) ([]ingress.Option, error) {
 	self := h.Peer().Host()
-	auth, err := clients.NewPool(self, clients.Discovered(h, clients.Auth), clients.AuthProtocol, maxConnections)
+	auth, err := clients.NewPool(self, clients.Discovered(h, clients.AuthProtocol), clients.AuthProtocol, maxConnections)
 	if err != nil {
 		return nil, err
 	}
 	f.also = append(f.also, closer(auth.Close))
-	others, err := clients.NewPool(self, clients.Others(h, plm.PLM.Name), plm.Protocol, maxConnections)
+	others, err := clients.NewPool(self, clients.Others(h, plm.Protocol), plm.Protocol, maxConnections)
 	if err != nil {
 		return nil, err
 	}

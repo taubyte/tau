@@ -31,7 +31,7 @@ func TestTheGroupAndTheStoreAgreeOnTheNameADatabaseHas(t *testing.T) {
 func TestTheRootPicksBetweenACrdtStoreAndAGroup(t *testing.T) {
 	cluster := &closing{MockCluster: raft.NewMockCluster()}
 
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery}},
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
 		withRaft(func(string) (raft.Cluster, error) { return cluster, nil }))
 	d, err := newDatabases(n)
 	require.NoError(t, err)

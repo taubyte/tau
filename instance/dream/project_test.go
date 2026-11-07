@@ -386,7 +386,7 @@ func deploy(t testing.TB, name, host string, wasm []byte) *running {
 func deployWith(t testing.TB, name, host string, wasm []byte, extra map[string][]byte) *running {
 	t.Helper()
 	return deployServing(t, name, host, wasm, extra,
-		instance.Register, instance.Worker, instance.Discovery, instance.Gateway, instance.Database, instance.Primitives, storageService.Descriptor.Name)
+		instance.Register, instance.Worker, instance.Stats, instance.Gateway, instance.Database, instance.Primitives, storageService.Descriptor.Name)
 }
 
 // deployServing is deployWith over a chosen set of services: a zone answered by a
@@ -826,7 +826,7 @@ type universe struct {
 
 // fleetServices is what every node of a fleet runs.
 var fleetServices = []string{
-	instance.Register, instance.Worker, instance.Discovery, instance.Gateway,
+	instance.Register, instance.Worker, instance.Stats, instance.Gateway,
 	instance.Database, instance.Primitives, storageService.Descriptor.Name, instance.Builder}
 
 // deployFleetOf is deployFleet over several projects in one universe: a publish per
@@ -889,7 +889,7 @@ func deployFleetServing(t *testing.T, copies int, services []string, wasm []byte
 				waiting = "the fleet document"
 				return false
 			}
-			if len(n.Discovery().Placement()) != copies {
+			if len(n.Stats().Placement()) != copies {
 				waiting = "the placement set"
 				return false
 			}

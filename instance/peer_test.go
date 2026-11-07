@@ -88,7 +88,7 @@ func TestTheFleetsTIsReadFromTheNodesRegister(t *testing.T) {
 }
 
 func TestANodeWithNoRegisterFollowsNoFleet(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Discovery}})
+	n, _, _ := makeNode(t, Config{Services: []string{Stats}})
 	require.NoError(t, n.Start(t.Context()))
 	// It returns rather than polling a register that is not there.
 	n.followRetention(t.Context())

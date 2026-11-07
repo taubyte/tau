@@ -195,6 +195,10 @@ func New(ctx context.Context, h host.Host, id protocol.ID, opts ...Option) (*Dis
 	// unprotect each other's connection.
 	d.tag = fmt.Sprintf("discovery:%s:%p", id, d)
 
+	// THE PEERSTORE IS READ BEFORE NEW RETURNS: a Discovery made on first ask is
+	// asked at once, and identify has already said what every connected peer serves.
+	d.scan()
+
 	go d.run(sub)
 
 	return d, nil
@@ -221,8 +225,6 @@ func (d *Discovery) run(sub event.Subscription) {
 	// first: nobody should see the set emptied by release before learning the loop is
 	// gone.
 	defer d.cancel()
-
-	d.scan()
 
 	retry := time.NewTicker(d.retry)
 	defer retry.Stop()

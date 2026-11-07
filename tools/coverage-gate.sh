@@ -68,7 +68,7 @@ trap 'rm -rf "$tmp"' EXIT
 #
 # One dreaming-tagged run of PKG/... measures the true union: unit tests build
 # under the dreaming tag too, and PKG/... pulls in sibling test packages (e.g.
-# services/discovery/dream) whose coverage -coverpkg attributes back to PKG. So a
+# services/stats/dream) whose coverage -coverpkg attributes back to PKG. So a
 # service exercised only through an external _test package is still counted.
 #
 # Heavy dreaming suites can flake under the cumulative load of a full gate run

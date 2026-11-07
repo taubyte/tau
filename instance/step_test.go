@@ -78,7 +78,7 @@ func withStepFunction() []byte {
 func stepping(t *testing.T, answers *answering) (*Instance, *dispatcher) {
 	t.Helper()
 
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Primitives}},
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Primitives}},
 		WithRuntimes(answers), prebuilt())
 	require.NoError(t, n.Start(t.Context()))
 
@@ -90,7 +90,7 @@ func stepping(t *testing.T, answers *answering) (*Instance, *dispatcher) {
 
 	// THE STEP IS PLACED, so this node has to be in its own view before it can
 	// take its own work. Without the wait the test asks placement for a worker
-	// while the first discovery report is still in flight, and gets "no worker is
+	// while the first stats report is still in flight, and gets "no worker is
 	// ready to take this" — on a machine slow enough to notice, which is a
 	// property of the machine and not of the step.
 	sees(t, n, Worker)

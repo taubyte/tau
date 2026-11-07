@@ -19,7 +19,7 @@ import (
 //
 // It is the local service or a node in the fleet, never a local fallback: a queue
 // answered either way would be two queues that cannot see each other. Which node is
-// asked per call from the discovery view. A routed node may be a follower that
+// asked per call of the finder. A routed node may be a follower that
 // refuses the write; the caller retries.
 
 // ErrNoPrimitives is a node that needs the `sync` kind and can reach nothing
@@ -29,7 +29,7 @@ var ErrNoPrimitives = errors.New("node: no primitives service is reachable")
 
 // openPrimitivesReach wires the send reach into the primitives service.
 func (n *Instance) openPrimitivesReach() {
-	pick := n.routeTo(Primitives, ErrNoPrimitives, "this node runs neither one nor discovery to find one")
+	pick := n.routeTo(primitivesService.Protocol, ErrNoPrimitives)
 
 	// A LOCAL SERVICE IS THE ABSENCE OF A HOP AND NOT A SHORTCUT, which is
 	// locate.go's sentence about the register and services/database's about an
@@ -87,7 +87,7 @@ func (n *Instance) syncBacking() (*primitive.Backing, error) {
 // leader-only, so every fire in the cloud is handed out by one node; a firer
 // that also RAN what it claimed would leave the rest of the fleet idle. This is
 // instance/dispatch.go's invoke, for its reasons and with its one exception — a
-// node with no discovery can only reach itself, so it runs what it claimed rather
+// node with no stats can place only on itself, so it runs what it claimed rather
 // than refusing it.
 func (n *Instance) fire(ctx context.Context, at primitivesService.Target, req *invoke.Request) (*invoke.Response, error) {
 	target := worker.Target{

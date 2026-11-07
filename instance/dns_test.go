@@ -14,23 +14,23 @@ import (
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/pkg/stats"
-	"github.com/taubyte/tau/services/discovery"
+	statsService "github.com/taubyte/tau/services/stats"
 )
 
-// The proxy's port, carried by discovery, comes back from a real resolver query.
+// The proxy's port, carried by stats, comes back from a real resolver query.
 
 // serving is a node that runs the whole chain and answers on an ephemeral port,
 // because :53 needs a privilege a test does not have.
 func serving(t *testing.T, compiled []byte, hosts ...string) *Instance {
 	t.Helper()
 
-	cfg := Config{Services: []string{Register, Worker, Discovery, Proxy, DNS}}
+	cfg := Config{Services: []string{Register, Worker, Stats, Proxy, DNS}}
 	cfg.CloudFqdn = "tau.example.io"
 	cfg.DNS.NodeZone = "nodes.tau.example.io"
 
-	// Both timers (proxy sweep and discovery tick) are wound down rather than waited out.
+	// Both timers (proxy sweep and stats tick) are wound down rather than waited out.
 	cfg.Proxy.Sweep = 100 * time.Millisecond
-	cfg.Sections = map[string]any{Discovery: discovery.Config{Interval: 200 * time.Millisecond}}
+	cfg.Sections = map[string]any{Stats: statsService.Config{Interval: 200 * time.Millisecond}}
 
 	n, _, _ := makeNode(t, cfg)
 	require.NoError(t, n.Start(t.Context()))
@@ -134,7 +134,7 @@ func TestANameNothingServesIsServfail(t *testing.T) {
 
 func TestDnsWithoutStatsIsRefusedAtConstruction(t *testing.T) {
 	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Register, DNS}}), withKVDB(&memFactory{}))
-	require.ErrorIs(t, err, ErrNoDiscoveryForDNS)
+	require.ErrorIs(t, err, ErrNoStatsForDNS)
 }
 
 func TestADnsNodeSaysWhereItBound(t *testing.T) {
@@ -153,7 +153,7 @@ func TestADnsNodeSaysWhereItBound(t *testing.T) {
 }
 
 func TestTheReportCarriesAddressesAndNotMultiaddrs(t *testing.T) {
-	n, h, _ := makeNode(t, Config{Services: []string{Register, Discovery}})
+	n, h, _ := makeNode(t, Config{Services: []string{Register, Stats}})
 	require.NoError(t, n.Start(t.Context()))
 
 	snap := reported(t, n, func(stats.Node) bool { return true })

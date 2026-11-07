@@ -53,7 +53,7 @@ func (i *storageNode) Running() []service.Running {
 	defer i.mu.Unlock()
 	out := slices.Clone(i.running)
 	if i.members != nil {
-		out = append(out, service.Running{Name: "discovery", Service: placed(i.members)})
+		out = append(out, service.Running{Name: "stats", Service: placed(i.members)})
 	}
 	return out
 }
@@ -72,7 +72,7 @@ func (i *storageNode) Root() string  { return i.t.TempDir() }
 
 var _ service.Host = (*storageNode)(nil)
 
-// placed is a discovery that places on the members it is given.
+// placed is a stats service that places on the members it is given.
 type placed func() []placement.Member
 
 func (p placed) PlacementOf(string) []placement.Member { return p() }

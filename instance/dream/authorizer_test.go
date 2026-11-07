@@ -33,7 +33,7 @@ func TestAGuardDecidesForARealGuest(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services: []string{instance.Register, instance.Worker, instance.Discovery, storageService.Descriptor.Name, instance.Builder},
+		Services: []string{instance.Register, instance.Worker, instance.Stats, storageService.Descriptor.Name, instance.Builder},
 	})
 	require.NoError(t, err)
 	defer u.Close()

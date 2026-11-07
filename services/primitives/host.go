@@ -82,7 +82,7 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 		views.Close()
 		return err
 	}
-	tasking := service.Routed(h, Descriptor.Name, Clocks(s.Local()), dialClocks)
+	tasking := service.Routed(h, Protocol, Clocks(s.Local()), dialClocks)
 	s.task = func(ctx context.Context, since, upto time.Time) error {
 		to, err := tasking.Now(ctx)
 		if err != nil {

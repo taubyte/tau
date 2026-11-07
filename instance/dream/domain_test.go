@@ -85,7 +85,7 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 	dns := &txtZone{m: map[string][]string{}}
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Copies:   2,
-		Services: []string{instance.Discovery, instance.Secrets, instance.CM},
+		Services: []string{instance.Stats, instance.Secrets, instance.CM},
 		Options:  []instance.Option{instance.WithResolver(dns)},
 		Configure: func(_ int, c *instance.Config) {
 			c.CloudFqdn = "tau.dream.test"

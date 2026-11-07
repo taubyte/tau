@@ -1,4 +1,4 @@
-package discovery
+package stats
 
 import (
 	"errors"
@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/require"
 	"github.com/taubyte/tau/core/service"
@@ -55,7 +54,7 @@ func TestLoopbackIsAnAnswerOnlyWhenThereIsNoOther(t *testing.T) {
 	require.Empty(t, addresses(listeningOn(t, "/ip4/0.0.0.0/tcp/4001")), "every address is no address")
 }
 
-// instance is a node's instance as discovery sees it: its peer, what runs on it, its
+// instance is a node's instance as stats sees it: its peer, what runs on it, its
 // cloud and its section.
 type instance struct {
 	peer.Node
@@ -84,7 +83,7 @@ func (sockets) Report(s *Snapshot) {
 	s.Serving = append(s.Serving, "db.example", "worker")
 }
 
-func TestDiscoveryReportsWhatItsInstanceRuns(t *testing.T) {
+func TestStatsReportsWhatItsInstanceRuns(t *testing.T) {
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
 	d := New()
@@ -113,11 +112,10 @@ func TestDiscoveryReportsWhatItsInstanceRuns(t *testing.T) {
 	}, 5*time.Second, 10*time.Millisecond)
 	require.Equal(t, []string{"db.example", Descriptor.Name, "worker"}, row.Serving, "sorted, once each")
 	require.Equal(t, []stats.Socket{{Host: "db.example", Port: 5432}}, row.Sockets)
-	require.Equal(t, []libp2ppeer.ID{p.ID()}, d.Peers("worker"))
 	require.Equal(t, p.ID().String(), d.Peer())
 }
 
-func TestDiscoveryRefusesWhatItCannotStartWith(t *testing.T) {
+func TestStatsRefusesWhatItCannotStartWith(t *testing.T) {
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
 	h := &instance{Node: p, config: func(any) error { return errors.New("no such key") }}

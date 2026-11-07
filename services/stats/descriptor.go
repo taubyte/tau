@@ -1,4 +1,4 @@
-package discovery
+package stats
 
 type descriptor struct {
 	Name string
@@ -6,4 +6,4 @@ type descriptor struct {
 
 // Descriptor is the role a node runs this as. It serves no RPC: what it knows
 // arrives over the bus.
-var Descriptor = descriptor{Name: "discovery"}
+var Descriptor = descriptor{Name: "stats"}

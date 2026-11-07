@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/mesh"
-	discoveryDream "github.com/taubyte/tau/services/discovery/dream"
+	statsDream "github.com/taubyte/tau/services/stats/dream"
 )
 
 // The service runs the same code a node runs, over a real libp2p host and gossipsub
@@ -21,7 +21,7 @@ func TestAV2ServiceRunsUnderDream(t *testing.T) {
 
 	// A peer was built, its host taken out of it, and the v2 constructor
 	// called with only that. A peer back means all of it worked.
-	node, err := discoveryDream.Start(m)
+	node, err := statsDream.Start(m)
 	require.NoError(t, err)
 	require.NotEmpty(t, node.ID().String(), "the mesh is running a v2 service")
 }

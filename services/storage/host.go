@@ -100,7 +100,7 @@ var _ Store = (*Reached)(nil)
 
 // StoreOn is the storage service as services on h reach it.
 func StoreOn(h service.Host) *Reached {
-	return &Reached{reach: service.Reach(h, Descriptor.Name, Dial)}
+	return &Reached{reach: service.Reach(h, Protocol, Dial)}
 }
 
 func (r *Reached) Put(ctx context.Context, at Address, name string, o Object, content io.Reader) (Version, error) {

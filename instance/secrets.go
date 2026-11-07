@@ -8,7 +8,7 @@ import (
 // still builds itself.
 
 // newVault is a vault over this instance's services: its own secrets service when it
-// runs one, otherwise whichever nodes discovery names.
+// runs one, otherwise whichever nodes the finder names.
 func newVault(n *Instance) *secretsService.Vault {
 	return secretsService.VaultOn(&added{node: n})
 }

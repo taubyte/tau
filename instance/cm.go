@@ -11,7 +11,7 @@ import (
 )
 
 // Wires the one client every public listener takes certificates from, over the cm
-// beside it or wherever discovery finds one (services/cm runs from the catalog).
+// beside it or wherever the finder finds one (services/cm runs from the catalog).
 // `cm.certificate.acme` makes every node a client ordering its own. DNS-01 values
 // are cache entries over their own replicated database (cm.ChallengeDatabase).
 

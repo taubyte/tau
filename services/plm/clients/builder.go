@@ -127,15 +127,19 @@ type Builders struct {
 	dialled map[peer.ID]*Builder
 }
 
-// BuildersOn is the builders the directory beside h names.
+// BuildersOn is the builders the finder beside h finds.
 func BuildersOn(h service.Host) *Builders {
 	return &Builders{h: h, dialled: map[peer.ID]*Builder{}}
 }
 
-// Peers is every builder the directory names now: none on an instance running no
-// directory.
+// Peers is every builder known now: this node's own when it runs one, and the others
+// the finder found.
 func (r *Builders) Peers() []peer.ID {
-	return Discovered(r.h, plm.Builder.Name).Known()
+	var out []peer.ID
+	if _, ok := service.Get[run.Builder](r.h); ok {
+		out = append(out, r.h.Peer().ID())
+	}
+	return append(out, service.Serving(r.h, plm.BuilderProtocol)...)
 }
 
 // At is the builder id: the one running on this instance when id is this node's,

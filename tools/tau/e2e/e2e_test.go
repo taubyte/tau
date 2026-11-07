@@ -24,6 +24,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/core/service"
+	"github.com/taubyte/tau/services/plm"
+
 	"github.com/taubyte/tau/pkg/forge/drivers"
 
 	"github.com/stretchr/testify/require"
@@ -95,23 +98,23 @@ func fleet(t *testing.T, f *fake.Served, opts ...instance.Option) (front, otherF
 			c.Forges = []drivers.Forge{{Host: f.Host(), Driver: drivers.GitHub, HostKeys: []string{f.HostKey()}, CA: f.CA()}}
 			c.Auth.Admin = auth.Admin{Name: "root"}
 			if index > 0 {
-				c.Services = []string{instance.Discovery, instance.PLM}
+				c.Services = []string{instance.Stats, instance.PLM}
 			}
 		},
 	})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
-	// A NODE THAT HAS HEARD NOBODY answers a push it cannot route with 503, so the
-	// fleet is handed over once every node's directory names all of them.
+	// A PLM NODE THAT HAS FOUND NO OTHER answers a push it cannot route with 503, so
+	// the fleet is handed over once each plm node finds the other by its protocol.
 	require.Eventually(t, func() bool {
-		for _, pid := range u.Pids() {
+		for _, pid := range u.Pids()[1:] {
 			n, found := dream.Node(pid)
-			if !found || len(n.Peers(instance.Discovery)) != len(u.Pids()) {
+			if !found || len(service.Serving(n.HostOf(instance.PLM), plm.Protocol)) != len(u.Pids())-2 {
 				return false
 			}
 		}
 		return true
-	}, time.Minute, 100*time.Millisecond, "the fleet's nodes never all heard each other")
+	}, time.Minute, 100*time.Millisecond, "the plm nodes never found each other")
 	addr := func(i int) string {
 		n, found := dream.Node(u.Pids()[i])
 		require.True(t, found)

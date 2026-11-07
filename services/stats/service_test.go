@@ -1,4 +1,4 @@
-package discovery
+package stats
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	discoveryv2 "github.com/taubyte/tau/pkg/proto/gen/tau/discovery/v2"
+	statsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/stats/v2"
 	"github.com/taubyte/tau/pkg/stats"
 )
 
@@ -168,7 +168,7 @@ func TestAnotherNodesReportIsFoldedIn(t *testing.T) {
 	s := newService(t, bus, fixedSnapshot(Snapshot{Load: 0.9, Ready: true, Serving: []string{"shop"}}), nil)
 	require.NoError(t, s.serve(context.Background()))
 
-	b, err := proto.Marshal(&discoveryv2.Report{
+	b, err := proto.Marshal(&statsv2.Report{
 		Peer: "other", Incarnation: 1, Load: 0.1, Ready: true, Serving: []string{"shop"},
 	})
 	require.NoError(t, err)
@@ -196,7 +196,7 @@ func TestAMalformedReportDoesNotDeafenTheNode(t *testing.T) {
 
 	bus.deliver([]byte("this is not a protobuf at all, not even close"))
 
-	good, err := proto.Marshal(&discoveryv2.Report{Peer: "other", Ready: true, Serving: []string{"shop"}})
+	good, err := proto.Marshal(&statsv2.Report{Peer: "other", Ready: true, Serving: []string{"shop"}})
 	require.NoError(t, err)
 	bus.deliver(good)
 
@@ -383,7 +383,7 @@ func TestAddressesReachTheWireAndComeBack(t *testing.T) {
 
 	eventually(t, "a report to be published", func() bool { return len(bus.published()) > 0 })
 
-	var decoded discoveryv2.Report
+	var decoded statsv2.Report
 	require.NoError(t, proto.Unmarshal(bus.published()[0], &decoded))
 	require.Equal(t, []string{"203.0.113.7", "2001:db8::1"}, decoded.GetAddresses())
 
@@ -411,16 +411,16 @@ func TestSocketsReachTheWireAndComeBack(t *testing.T) {
 
 	eventually(t, "a report to be published", func() bool { return len(bus.published()) > 0 })
 
-	var decoded discoveryv2.Report
+	var decoded statsv2.Report
 	require.NoError(t, proto.Unmarshal(bus.published()[0], &decoded))
 	require.Len(t, decoded.GetSockets(), 1)
 	require.Equal(t, uint32(41337), decoded.GetSockets()[0].GetPort())
 	require.Equal(t, "postgres", decoded.GetSockets()[0].GetProtocol())
 
-	theirs := &discoveryv2.Socket{Host: "db.example.com", Protocol: "postgres", Transport: "tcp", Port: 5001}
-	b, err := proto.Marshal(&discoveryv2.Report{
+	theirs := &statsv2.Socket{Host: "db.example.com", Protocol: "postgres", Transport: "tcp", Port: 5001}
+	b, err := proto.Marshal(&statsv2.Report{
 		Peer: "other", Incarnation: 1, Load: 0.1, Ready: true,
-		Serving: []string{"db.example.com"}, Sockets: []*discoveryv2.Socket{theirs},
+		Serving: []string{"db.example.com"}, Sockets: []*statsv2.Socket{theirs},
 	})
 	require.NoError(t, err)
 	bus.deliver(b)
@@ -444,9 +444,9 @@ func TestASocketWithAnImpossiblePortIsDropped(t *testing.T) {
 	s := newService(t, bus, fixedSnapshot(Snapshot{Ready: true, Serving: []string{"db.example.com"}}), nil)
 	require.NoError(t, s.serve(context.Background()))
 
-	b, err := proto.Marshal(&discoveryv2.Report{
+	b, err := proto.Marshal(&statsv2.Report{
 		Peer: "other", Incarnation: 1, Ready: true, Serving: []string{"db.example.com"},
-		Sockets: []*discoveryv2.Socket{
+		Sockets: []*statsv2.Socket{
 			{Host: "db.example.com", Protocol: "postgres", Transport: "tcp", Port: 70000},
 			{Host: "db.example.com", Protocol: "redis", Transport: "tcp", Port: 0},
 			{Host: "db.example.com", Protocol: "mysql", Transport: "tcp", Port: 3306},

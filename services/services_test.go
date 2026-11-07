@@ -9,16 +9,16 @@ import (
 
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/database"
-	"github.com/taubyte/tau/services/discovery"
 	"github.com/taubyte/tau/services/primitives"
 	"github.com/taubyte/tau/services/register"
 	"github.com/taubyte/tau/services/secrets"
+	statsService "github.com/taubyte/tau/services/stats"
 	"github.com/taubyte/tau/services/storage"
 )
 
 func TestANameIsTheServiceItRuns(t *testing.T) {
-	require.Equal(t, []string{cm.Name, discovery.Descriptor.Name, register.Descriptor.Name, secrets.Descriptor.Name, primitives.Descriptor.Name, database.Descriptor.Name, storage.Descriptor.Name, plm.Builder.Name, plm.PLM.Name}, Names(), "in start order")
-	require.Equal(t, []string{cm.Name, discovery.Descriptor.Name, register.Descriptor.Name, secrets.Descriptor.Name, primitives.Descriptor.Name, database.Descriptor.Name, storage.Descriptor.Name, plm.Builder.Name}, Default(),
+	require.Equal(t, []string{cm.Name, statsService.Descriptor.Name, register.Descriptor.Name, secrets.Descriptor.Name, primitives.Descriptor.Name, database.Descriptor.Name, storage.Descriptor.Name, plm.Builder.Name, plm.PLM.Name}, Names(), "in start order")
+	require.Equal(t, []string{cm.Name, statsService.Descriptor.Name, register.Descriptor.Name, secrets.Descriptor.Name, primitives.Descriptor.Name, database.Descriptor.Name, storage.Descriptor.Name, plm.Builder.Name}, Default(),
 		"every one but build, which may not run beside the builder")
 
 	s, ok := New(storage.Descriptor.Name)

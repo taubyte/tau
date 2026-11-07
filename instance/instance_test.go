@@ -15,16 +15,17 @@ import (
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/stats"
 	"github.com/taubyte/tau/services"
+	registerService "github.com/taubyte/tau/services/register"
 )
 
 func TestANodeRunsWhatItWasToldTo(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Discovery}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Stats}})
 
 	require.NotNil(t, n.Register())
-	require.NotNil(t, n.Discovery())
+	require.NotNil(t, n.Stats())
 	require.Nil(t, n.Worker())
 	require.Nil(t, n.Handler(), "it runs no gateway")
-	require.Equal(t, []string{Register, Discovery}, n.Services())
+	require.Equal(t, []string{Register, Stats}, n.Services())
 }
 
 func TestAnEmptyServiceListIsEveryService(t *testing.T) {
@@ -33,7 +34,7 @@ func TestAnEmptyServiceListIsEveryService(t *testing.T) {
 	require.ElementsMatch(t, append(slices.Clone(All), services.Default()...), n.Services(), "and every service tau ships but build")
 	require.NotNil(t, n.Register())
 	require.NotNil(t, n.Worker())
-	require.NotNil(t, n.Discovery())
+	require.NotNil(t, n.Stats())
 	require.NotNil(t, n.Handler())
 }
 
@@ -52,7 +53,7 @@ func TestEachServiceSaysWhatItCannotStartWithout(t *testing.T) {
 	// worker, and saying so at construction beats a 502 on the first request.
 	_, err = New(mockPeer(t), rooted(t, Config{Services: []string{Gateway}}))
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "discovery")
+	require.Contains(t, err.Error(), "stats")
 }
 
 func TestWhatWasBuiltIsClosed(t *testing.T) {
@@ -72,7 +73,7 @@ func TestWhatWasBuiltIsClosed(t *testing.T) {
 func TestAHalfBuiltNodeClosesWhatItMade(t *testing.T) {
 	factory := &memFactory{}
 
-	// No discovery: the gateway fails, after auth has opened a database.
+	// No stats: the gateway fails, after auth has opened a database.
 	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Auth, Gateway}}), withKVDB(factory))
 	require.Error(t, err)
 
@@ -90,14 +91,14 @@ func TestStartIsOnce(t *testing.T) {
 }
 
 func TestANodeReportsWhatItRuns(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
 	require.NoError(t, n.Start(t.Context()))
 
 	snapshot := reported(t, n, func(stats.Node) bool { return true })
 	require.True(t, snapshot.Ready)
 	require.NotEmpty(t, snapshot.Addresses, "a node nothing can dial is not routable")
 
-	for _, name := range []string{Register, Worker, Discovery} {
+	for _, name := range []string{Register, Worker, Stats} {
 		require.Contains(t, snapshot.Serving, name)
 	}
 	require.NotContains(t, snapshot.Serving, Gateway, "it does not run one")
@@ -124,7 +125,7 @@ func TestAWorkerAdvertisesWhatItHolds(t *testing.T) {
 }
 
 func TestALocalRegisterNeedsNoStream(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery}}, prebuilt())
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}}, prebuilt())
 	require.NoError(t, n.Start(t.Context()))
 
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
@@ -140,21 +141,21 @@ func TestALocalRegisterNeedsNoStream(t *testing.T) {
 }
 
 func TestANodeWithNoRegisterSaysSo(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Worker, Discovery}})
+	n, _, _ := makeNode(t, Config{Services: []string{Worker, Stats}})
 
 	_, err := n.Worker().Resolve(t.Context(), workerTarget())
 	require.ErrorIs(t, err, service.ErrNoneRuns)
 	require.ErrorContains(t, err, Register)
 }
 
-func TestANodeWithNoWayToFindARegister(t *testing.T) {
+func TestANodeThatFindsNoRegister(t *testing.T) {
 	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Worker}}), WithRuntimes(&tier{name: "wasm"}))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 
 	_, err = n.Worker().Resolve(t.Context(), workerTarget())
 	require.ErrorIs(t, err, service.ErrNoneRuns)
-	require.Contains(t, err.Error(), "no directory")
+	require.Contains(t, err.Error(), string(registerService.Protocol))
 }
 
 func TestTheGatewayIsServedByTheCaller(t *testing.T) {
@@ -197,7 +198,7 @@ func TestAWholeRequestPathOnOneNode(t *testing.T) {
 func TestTheClockReachesEverything(t *testing.T) {
 	at := time.Unix(1_700_000_000, 0)
 	n, _, _ := makeNode(t, Config{}, WithClock(func() time.Time { return at }))
-	require.NotNil(t, n.Discovery())
+	require.NotNil(t, n.Stats())
 	require.NoError(t, n.Start(t.Context()))
 }
 
@@ -205,7 +206,7 @@ func TestWhatTheOptionsRefuse(t *testing.T) {
 	for _, opt := range []Option{
 		WithRuntimes(nil), WithSecrets(nil), WithClock(nil),
 	} {
-		_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Discovery}}), opt)
+		_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Stats}}), opt)
 		require.Error(t, err)
 	}
 }
@@ -225,7 +226,7 @@ func TestTheAccessorsAreTheServicesItRuns(t *testing.T) {
 	require.False(t, ok, "a node with no sync backing knows no queue")
 	require.Same(t, bare.Messaging(), bare.PubSub())
 
-	full, _, _ := makeNode(t, Config{Services: []string{Register, Discovery, Secrets, Database, Gateway}, Gateway: gatewayConfig()})
+	full, _, _ := makeNode(t, Config{Services: []string{Register, Stats, Secrets, Database, Gateway}, Gateway: gatewayConfig()})
 	require.Same(t, full.secrets, full.Secrets())
 	require.Same(t, full.database, full.Database())
 	tlsConfig := full.TLSConfig()
@@ -241,7 +242,7 @@ func TestTheFleetIsReadFromTheLocalRegister(t *testing.T) {
 	_, err := with.views.ResolveFleet(ctx)
 	require.ErrorIs(t, err, pkgregister.ErrNotPublished, "nothing was published, and the register said so")
 
-	without, _, _ := makeNode(t, Config{Services: []string{Discovery}})
+	without, _, _ := makeNode(t, Config{Services: []string{Stats}})
 	require.NoError(t, without.Start(ctx))
 	s := without.views
 	_, err = s.ResolveFleet(ctx)
@@ -257,18 +258,18 @@ func TestWithTLSReachesTheGateway(t *testing.T) {
 	require.NoError(t, WithTLS()(&o))
 	require.True(t, o.terminates)
 
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Discovery, Gateway}, Gateway: gatewayConfig()}, WithTLS())
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Stats, Gateway}, Gateway: gatewayConfig()}, WithTLS())
 	require.NotNil(t, n.TLSConfig())
 }
 
-// reported is this node's own row in its discovery's view once it satisfies ok:
+// reported is this node's own row in its stats view once it satisfies ok:
 // what the rest of the fleet routes on, as it arrived.
 func reported(t *testing.T, n *Instance, ok func(stats.Node) bool) stats.Node {
 	t.Helper()
 	var row stats.Node
 	require.Eventually(t, func() bool {
 		var held bool
-		row, held = n.Discovery().Get(n.Host().ID().String())
+		row, held = n.Stats().Get(n.Host().ID().String())
 		return held && ok(row)
 	}, 20*time.Second, 20*time.Millisecond)
 	return row

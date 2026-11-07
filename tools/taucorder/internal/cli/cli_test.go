@@ -19,10 +19,10 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/taubyte/tau/p2p/sectls"
-	discoveryv2 "github.com/taubyte/tau/pkg/proto/gen/tau/discovery/v2"
 	registerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/register/v2/registerv2connect"
-	"github.com/taubyte/tau/services/discovery"
+	statsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/stats/v2"
+	statsService "github.com/taubyte/tau/services/stats"
 	"github.com/taubyte/tau/tools/taucorder/internal/bridge"
 	"github.com/taubyte/tau/tools/taucorder/internal/fixture"
 	"github.com/taubyte/tau/tools/taucorder/internal/query"
@@ -65,8 +65,8 @@ func newWorld(t *testing.T) *world {
 	fixture.Serve(t, node, cloud.Build)
 	w.boot = node.Addrs()[0].String() + "/p2p/" + node.ID().String()
 	psNode := gossip(t, node)
-	bus, _ := discovery.NewBus(psNode, "c1")
-	raw, _ := proto.Marshal(&discoveryv2.Report{Peer: node.ID().String(), Incarnation: 1, Ready: true, Serving: []string{"register", "auth"}})
+	bus, _ := statsService.NewBus(psNode, "c1")
+	raw, _ := proto.Marshal(&statsv2.Report{Peer: node.ID().String(), Incarnation: 1, Ready: true, Serving: []string{"register", "auth"}})
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	go func() {

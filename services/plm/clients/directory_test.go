@@ -1,12 +1,12 @@
 package clients
 
 import (
-	"context"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/service"
@@ -30,43 +30,43 @@ func (*instance) Cloud() string                { return "test" }
 func (*instance) Region() string               { return "" }
 func (*instance) Now() time.Time               { return time.Now() }
 
+// named is a finder that finds these nodes for every protocol.
 type named []libp2ppeer.ID
 
-func (n named) Peers(string) []libp2ppeer.ID { return n }
+func (n named) Find(protocol.ID) discovery.Resolver { return discovery.Static(n...) }
 
-func TestTheDirectoryNamesWhoRunsAServiceAndOthersLeavesThisNodeOut(t *testing.T) {
+func TestTheFinderNamesWhoServesAProtocolAndOthersLeavesThisNodeOut(t *testing.T) {
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
 	h := &instance{Node: p}
 
-	require.Nil(t, Discovered(h, "build").Known(), "no directory is nobody asked")
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	_, err := Discovered(h, "build").Any(ctx)
-	require.ErrorIs(t, err, context.Canceled, "a lookup waiting for a node ends with its context")
+	require.Nil(t, Discovered(h, plm.Protocol).Known(), "nothing to find with is nobody found")
+	_, err := Discovered(h, plm.Protocol).Any(t.Context())
+	require.ErrorIs(t, err, discovery.ErrNoPeers)
 
-	h.running = []service.Running{{Name: "discovery", Service: named{p.ID(), "far", "farther"}}}
-	require.Equal(t, []libp2ppeer.ID{p.ID(), "far", "farther"}, Discovered(h, "build").Known())
-	require.Equal(t, []libp2ppeer.ID{"far", "farther"}, Others(h, "build").Known(), "this node does not dial itself")
+	h.running = []service.Running{{Service: named{"far", "farther"}}}
+	require.Equal(t, []libp2ppeer.ID{"far", "farther"}, Discovered(h, plm.Protocol).Known())
+	h.running = []service.Running{{Service: named{p.ID(), "far", "farther"}}}
+	require.Equal(t, []libp2ppeer.ID{"far", "farther"}, Others(h, plm.Protocol).Known(), "this node does not dial itself")
 
-	first, err := Others(h, "build").Any(t.Context())
+	first, err := Others(h, plm.Protocol).Any(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, libp2ppeer.ID("far"), first)
-	two, err := Discovered(h, "build").Peers(t.Context(), 2)
+	two, err := Others(h, plm.Protocol).Peers(t.Context(), 2)
 	require.NoError(t, err)
 	require.Len(t, two, 2)
-	Discovered(h, "build").Failed("far")
+	Others(h, plm.Protocol).Failed("far")
 }
 
 func TestABuildNodeThatKnowsNoOtherIsToldSoAtOnce(t *testing.T) {
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	h := &instance{Node: p, running: []service.Running{{Name: "discovery", Service: named{p.ID()}}}}
+	h := &instance{Node: p, running: []service.Running{{Service: named{p.ID()}}}}
 
-	_, err := Others(h, "build").Peers(t.Context(), 4)
+	_, err := Others(h, plm.Protocol).Peers(t.Context(), 4)
 	require.ErrorIs(t, err, discovery.ErrNoPeers, "the only plm node it knows is itself")
 
-	pool, err := NewPool(p.Host(), Others(h, "build"), plm.Protocol, 4)
+	pool, err := NewPool(p.Host(), Others(h, plm.Protocol), plm.Protocol, 4)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	elsewhere, err := Builds(pool)

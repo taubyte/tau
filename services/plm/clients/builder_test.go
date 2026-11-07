@@ -148,18 +148,18 @@ func TestABuilderThatDoesNotAnswerIsAnError(t *testing.T) {
 // local is a builder running on the instance itself.
 type local struct{ run.Builder }
 
-func TestTheBuildersAreWhomTheDirectoryNamesAndThisNodesOwnIsInProcess(t *testing.T) {
+func TestTheBuildersAreWhomTheFinderFindsAndThisNodesOwnIsInProcess(t *testing.T) {
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
 	_, far := servedBuilder(t, &aBuilder{})
 	h := &instance{Node: p}
 	builders := BuildersOn(h)
 	t.Cleanup(func() { builders.Close() })
-	require.Empty(t, builders.Peers(), "no directory names nobody")
+	require.Empty(t, builders.Peers(), "nothing found and none here is no builder")
 
 	here := local{}
 	h.running = []service.Running{
-		{Name: "discovery", Service: named{p.ID(), far}},
+		{Service: named{far}},
 		{Name: plm.Builder.Name, Service: here},
 	}
 	require.Equal(t, []libp2ppeer.ID{p.ID(), far}, builders.Peers())

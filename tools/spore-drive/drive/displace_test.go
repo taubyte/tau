@@ -234,7 +234,7 @@ func testDisplace(t *testing.T, sd Spore, root string, secrets []string, openDel
 
 		// the host's shapes are one node, keyed by its first shape
 		assert.Equal(t, main.PrivateKey, sdrive.parser.Hosts().Host(h.Name()).Shapes().Instance("shape1").Key())
-		assert.DeepEqual(t, main.Node.Services, []string{"auth", "secrets", "discovery", "dns", "gateway", "plm", "builder"})
+		assert.DeepEqual(t, main.Node.Services, []string{"auth", "secrets", "stats", "dns", "gateway", "plm", "builder"})
 		assert.Equal(t, main.Node.Cloud, "test.com")
 		assert.Equal(t, main.Node.CloudFqdn, "gtest.com")
 		assert.Equal(t, main.HTTP, ":80")

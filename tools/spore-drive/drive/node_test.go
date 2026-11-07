@@ -28,7 +28,7 @@ func TestAHostIsOneNode(t *testing.T) {
 	assert.Equal(t, len(nodes.instances), 1)
 	assert.Equal(t, nodes.instances[0].name, "shape1", "the main node is named after the primary shape")
 	assert.DeepEqual(t, nodes.instances[0].file.Node.Services,
-		[]string{instance.Auth, instance.Secrets, instance.Discovery, instance.DNS, instance.Gateway, instance.Builder, instance.Proxy})
+		[]string{instance.Auth, instance.Secrets, instance.Stats, instance.DNS, instance.Gateway, instance.Builder, instance.Proxy})
 }
 
 func TestEveryNodeRunsDiscovery(t *testing.T) {
@@ -39,7 +39,7 @@ func TestEveryNodeRunsDiscovery(t *testing.T) {
 	nodes, err := driveFor(p).nodesFor("host1")
 	assert.NilError(t, err)
 	assert.DeepEqual(t, nodes.instances[0].file.Node.Services,
-		[]string{instance.Register, instance.Database, instance.Primitives, instance.Worker, instance.Gateway, instance.Discovery})
+		[]string{instance.Register, instance.Database, instance.Primitives, instance.Worker, instance.Gateway, instance.Stats})
 }
 
 func TestAnUnknownServiceIsRefused(t *testing.T) {

@@ -93,11 +93,11 @@ func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 		for i, addr := range addrs {
 			file := liveNode(t, ca, cfg, addr, httpPort)
 			if i < 2 {
-				file.Node.Services = []string{instance.Register, instance.Discovery, instance.Gateway, instance.DNS, instance.Secrets, instance.CM}
+				file.Node.Services = []string{instance.Register, instance.Stats, instance.Gateway, instance.DNS, instance.Secrets, instance.CM}
 				file.Node.DNSListen = "127.0.0.1:0"
 				file = initialized(t, bundle, file)
 			} else {
-				file.Node.Services = []string{instance.Register, instance.Discovery, instance.Gateway, instance.PLM}
+				file.Node.Services = []string{instance.Register, instance.Stats, instance.Gateway, instance.PLM}
 				file.Node.Sections = map[string]any{instance.PLM: ingress.Config{Listen: addr + ":8443"}}
 			}
 			if i > 0 {

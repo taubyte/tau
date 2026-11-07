@@ -71,7 +71,7 @@ func withProxy(change func(map[string]any)) []byte {
 func proxying(t *testing.T, compiled []byte) *Instance {
 	t.Helper()
 
-	cfg := Config{Services: []string{Register, Worker, Discovery, Proxy}}
+	cfg := Config{Services: []string{Register, Worker, Stats, Proxy}}
 	cfg.CloudFqdn = "tau.example.io"
 
 	// A fast sweep, since the deployment is held after Start and the sweep is what is
@@ -127,7 +127,7 @@ func TestANodeDoesNotListenForAProxyItCannotServe(t *testing.T) {
 }
 
 func TestAProxyWithoutAWorkerIsRefusedAtConstruction(t *testing.T) {
-	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Register, Discovery, Proxy}}), withKVDB(&memFactory{}))
+	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Register, Stats, Proxy}}), withKVDB(&memFactory{}))
 	require.ErrorContains(t, err, "a worker holds")
 }
 
@@ -142,6 +142,6 @@ func TestANodeWithNoWorkerHoldsNoProxy(t *testing.T) {
 
 func TestAProxyTakesTheInjectedResolver(t *testing.T) {
 	injected := secretFor(func(context.Context, string, string, string) (string, error) { return "", nil })
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Proxy}}, WithSecrets(injected))
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Proxy}}, WithSecrets(injected))
 	require.NotNil(t, n.proxy)
 }

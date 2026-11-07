@@ -66,7 +66,7 @@ func viewsOn(h service.Host, from registers, wl watcherLimits, kl keptLimits) *V
 	}
 	w := newWatcher(h.Peer().Host(), from, wl)
 	return &Views{
-		h: h, reach: service.Reach(h, Descriptor.Name, DialReader), region: region, w: w,
+		h: h, reach: service.Reach(h, Protocol, DialReader), region: region, w: w,
 		hosts: newKept[hostRead, hostAnswer](w, kl, time.Now),
 		views: newKept[viewRead, pkgregister.ViewPointer](w, kl, time.Now),
 		fleet: newKept[fleetRead, pkgregister.Pointer](w, kl, time.Now),

@@ -247,7 +247,7 @@ describe("Drive against the mock", () => {
       if (entry.isFile()) onDisk.push(await fs.readFile(path.join(entry.parentPath, entry.name), "utf8"));
     }
     await fs.rm(root, { recursive: true, force: true });
-    expect(node.node.services).toEqual(["auth", "secrets", "discovery", "dns"]);
+    expect(node.node.services).toEqual(["auth", "secrets", "stats", "dns"]);
     expect(node.node.cloud).toBe("test.com");
     expect(node.node.tenancy).toEqual(["github.com/acme"]);
     expect(node.node.added).toEqual({ example: { greeting: "hello", replicas: 2 } });

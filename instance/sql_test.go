@@ -11,7 +11,7 @@ import (
 
 func sqlWorker(t *testing.T, root string, extra ...Option) *Instance {
 	t.Helper()
-	n, err := New(mockPeer(t), Config{Services: []string{Discovery, Worker}, Root: root},
+	n, err := New(mockPeer(t), Config{Services: []string{Stats, Worker}, Root: root},
 		append([]Option{withKVDB(&memFactory{}), mockRaft()}, extra...)...)
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })

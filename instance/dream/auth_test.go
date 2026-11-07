@@ -35,7 +35,7 @@ func TestSignInAcrossAFleet(t *testing.T) {
 
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Copies:   2,
-		Services: []string{instance.Discovery, instance.Secrets, instance.Auth},
+		Services: []string{instance.Stats, instance.Secrets, instance.Auth},
 		Secrets:  []*secretsv2.InitSecret{adminSecret},
 		Configure: func(_ int, c *instance.Config) {
 			c.Forges = []drivers.Forge{{Host: f.Host(), Driver: drivers.GitHub, CA: f.CA()}}
@@ -123,7 +123,7 @@ func TestSignInAcrossAFleet(t *testing.T) {
 func TestTheAdminSignsInOnceItsPasswordIsWritten(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Copies:   2,
-		Services: []string{instance.Discovery, instance.Secrets, instance.Auth},
+		Services: []string{instance.Stats, instance.Secrets, instance.Auth},
 		Configure: func(_ int, c *instance.Config) {
 			c.Auth.Admin = auth.Admin{Name: "root"}
 		},

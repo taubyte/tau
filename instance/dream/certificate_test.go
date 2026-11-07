@@ -64,7 +64,7 @@ func TestAServiceNameIsIssuedOnceForTheFleet(t *testing.T) {
 			case 0, 1:
 				c.Services = append(append(slices.Clone(instance.All), services.Default()...), instance.CM)
 			default:
-				c.Services = []string{instance.Discovery, instance.PLM}
+				c.Services = []string{instance.Stats, instance.PLM}
 			}
 		},
 	})

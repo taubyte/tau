@@ -109,7 +109,7 @@ func depth(t *testing.T, n *Instance) (ready, claimed int) {
 func consuming(t *testing.T, answers *answering, compiled []byte) (*Instance, *dispatcher) {
 	t.Helper()
 
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Primitives}},
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Primitives}},
 		WithRuntimes(answers), prebuilt())
 	require.NoError(t, n.Start(t.Context()))
 
@@ -129,7 +129,7 @@ func consuming(t *testing.T, answers *answering, compiled []byte) (*Instance, *d
 	require.NoError(t, n.Primitives().WaitForLeader(t.Context()))
 
 	// AND A DELIVERY IS PLACED, so this node has to be in its own view before it
-	// can take its own work. Asking placement while the first discovery report is
+	// can take its own work. Asking placement while the first stats report is
 	// still in flight answers "no worker is ready to take this" — which is a
 	// property of how fast the machine is, and nothing this file is about.
 	sees(t, n, Worker)
@@ -241,7 +241,7 @@ func TestAnInvocationThatErrorsIsNotAnAcknowledgement(t *testing.T) {
 
 func TestANodeDrainsOnlyWhatItHolds(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery}},
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
 		WithRuntimes(answers), prebuilt())
 	require.NoError(t, n.Start(t.Context()))
 
@@ -298,7 +298,7 @@ func TestNoDeclaredConcurrencyIsOneAtATime(t *testing.T) {
 
 func TestTheClaimLoopStopsWhenTheNodeCloses(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery}},
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
 		WithRuntimes(answers), prebuilt())
 	require.NoError(t, n.Start(t.Context()))
 
@@ -315,7 +315,7 @@ func TestTheClaimLoopStopsWhenTheNodeCloses(t *testing.T) {
 func TestAWorkerWithNoRaftStillRunsTheClaimLoop(t *testing.T) {
 	// BUILT WITHOUT THE HARNESS, which always hands a node a raft opener: what
 	// is under test is the composition that has none.
-	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Worker, Discovery}}), withKVDB(&memFactory{}), WithRuntimes(&answering{name: "wasm", status: 200}))
+	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Worker, Stats}}), withKVDB(&memFactory{}), WithRuntimes(&answering{name: "wasm", status: 200}))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.NoError(t, n.Start(t.Context()))

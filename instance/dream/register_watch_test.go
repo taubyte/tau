@@ -23,10 +23,10 @@ import (
 func TestAGatewayElsewhereFollowsANameAsItMoves(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Copies:   3,
-		Services: []string{instance.Register, instance.Discovery, instance.Gateway, instance.Worker},
+		Services: []string{instance.Register, instance.Stats, instance.Gateway, instance.Worker},
 		Configure: func(index int, c *instance.Config) {
 			if index == 2 {
-				c.Services = []string{instance.Discovery, instance.Gateway, instance.Worker}
+				c.Services = []string{instance.Stats, instance.Gateway, instance.Worker}
 			}
 		},
 	})
@@ -54,7 +54,7 @@ func TestAGatewayElsewhereFollowsANameAsItMoves(t *testing.T) {
 	}
 	unclaimed := func() bool { return strings.Contains(ask(), "no site answers on "+name) }
 
-	// The edge finds the registers through discovery once both have reported.
+	// The edge finds the registers through its finder once both serve the register.
 	require.Eventually(t, unclaimed, time.Minute, 50*time.Millisecond, "the edge never answered for an unclaimed name: %s", ask())
 	for range 50 {
 		require.True(t, unclaimed(), "an unclaimed name is kept as absent")

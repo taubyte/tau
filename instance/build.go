@@ -10,12 +10,8 @@ import (
 
 	"connectrpc.com/connect"
 
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/protocol"
-
 	"github.com/taubyte/tau/core/service"
 	authService "github.com/taubyte/tau/services/auth"
-	"github.com/taubyte/tau/services/plm/clients"
 	"github.com/taubyte/tau/services/plm/hosted"
 	"github.com/taubyte/tau/services/plm/jobs"
 	"github.com/taubyte/tau/services/worker"
@@ -25,93 +21,12 @@ import (
 // The plm service runs from the catalog (services/plm/hosted), and the builder from
 // services/builder; what a worker runs is read from its job records, this node's replica of them.
 
-// maxAuthConnections bounds the streams one node keeps to auth. It is small
-// because every answer is cached in front of it — ingress caches hook
-// secrets (ingress/secrets.go) — and everything else is once per job.
-const maxAuthConnections = 4
-
-// pollInterval is how often a waiting lookup looks again. The discovery view is
-// gossiped and changes on its own schedule; there is nothing to subscribe to.
-const pollInterval = 250 * time.Millisecond
-
 // ErrNotBuilt is a resource the platform builds and nothing has built yet.
 //
 // IT IS NOT THE PLM SERVICE'S NotFound, deliberately: what a gateway tells a
 // caller follows the error's code, and a deployment missing its artifact is a
 // broken site (502), not a name nobody serves (404).
 var ErrNotBuilt = errors.New("node: nothing has built this resource yet")
-
-// fromDiscovery is a discovery.Resolver over the view every other locator on this
-// node reads: one answer to "who does this".
-type fromDiscovery struct {
-	node *Instance
-	name string
-}
-
-func (f *fromDiscovery) Known() []libp2ppeer.ID {
-	// A NODE WITH NO VIEW KNOWS NOTHING, and says so as a nil rather than as an
-	// empty list it built: the two read the same to a caller that counts them
-	// and not to one that asks whether it looked.
-	if f.node.discovery == nil {
-		return nil
-	}
-
-	// THE SAME ROWS JUDGED BY THE SAME TOLERANCE every reach on this node uses
-	// — see [Node.rowsFor]. What differs below is only what a row that does not
-	// decode means, which is this resolver's to say and not the view's.
-	rows := f.node.rowsFor(f.name)
-	out := make([]libp2ppeer.ID, 0, len(rows))
-	for _, row := range rows {
-		id, err := libp2ppeer.Decode(row.Peer)
-		if err != nil {
-			// A row whose peer does not decode is one nothing can dial. It is
-			// skipped rather than failing the lookup, so one bad row cannot
-			// hide the good ones beside it.
-			continue
-		}
-		out = append(out, id)
-	}
-	return out
-}
-
-func (f *fromDiscovery) Any(ctx context.Context) (libp2ppeer.ID, error) {
-	peers, err := f.Peers(ctx, 1)
-	if err != nil {
-		return "", err
-	}
-	return peers[0], nil
-}
-
-func (f *fromDiscovery) Peers(ctx context.Context, want int) ([]libp2ppeer.ID, error) {
-	for {
-		if known := f.Known(); len(known) > 0 {
-			if want > 0 && len(known) > want {
-				known = known[:want]
-			}
-			return known, nil
-		}
-
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("node: no %s is reachable: %w", f.name, ctx.Err())
-		case <-time.After(pollInterval):
-		}
-	}
-}
-
-// Failed does nothing: a failed dial is not evidence the node stopped running the
-// service, and the view already ages out rows whose node stopped reporting.
-func (f *fromDiscovery) Failed(libp2ppeer.ID) {}
-
-// dial opens a pool onto whichever node runs `service`, on `p`.
-func (n *Instance) dial(p protocol.ID, service string) (*clients.Pool, error) {
-	pool, err := clients.NewPool(n.Host(), &fromDiscovery{node: n, name: service}, p, maxAuthConnections)
-	if err != nil {
-		return nil, err
-	}
-	n.closers = append(n.closers, closerFunc(pool.Close))
-	return pool, nil
-}
 
 func (n *Instance) openAuth() error {
 	if !n.cfg.runs(Auth) {

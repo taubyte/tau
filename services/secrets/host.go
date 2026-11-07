@@ -46,8 +46,8 @@ func (srv *server) Start(ctx context.Context, h service.Host) error {
 	}
 	err = srv.assemble(h.Peer().Host(), db, append(rooted(h.Root(), cfg),
 		withMembers(func() []peerCore.ID {
-			if d, ok := service.Get[service.Directory](h); ok {
-				return d.Peers(Descriptor.Name)
+			if _, ok := service.Get[service.Finder](h); ok {
+				return append(service.Serving(h, Protocol), h.Peer().Host().ID())
 			}
 			return srv.speakers()
 		}),

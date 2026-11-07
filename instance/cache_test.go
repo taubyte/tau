@@ -25,7 +25,7 @@ func grant(handle string, settings map[string]string) invoke.Grant {
 func backing(t *testing.T) (wasmtier.Caches, *memFactory) {
 	t.Helper()
 
-	n, _, factory := makeNode(t, Config{Services: []string{Worker, Discovery}})
+	n, _, factory := makeNode(t, Config{Services: []string{Worker, Stats}})
 	c, err := cache.New(cacheStores{node: n})
 	require.NoError(t, err)
 	return c, factory
@@ -51,7 +51,7 @@ func TestEveryCacheSharesOneDatabase(t *testing.T) {
 }
 
 func TestTheCacheDatabaseIsClosedWithTheNode(t *testing.T) {
-	n, _, factory := makeNode(t, Config{Services: []string{Worker, Discovery}})
+	n, _, factory := makeNode(t, Config{Services: []string{Worker, Stats}})
 
 	c, err := cache.New(cacheStores{node: n})
 	require.NoError(t, err)
@@ -64,7 +64,7 @@ func TestTheCacheDatabaseIsClosedWithTheNode(t *testing.T) {
 }
 
 func TestOneVaultServesTheWorkerAndTheTier(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
 	require.NoError(t, n.Start(t.Context()))
 	ctx := t.Context()
 
@@ -91,7 +91,7 @@ func TestOneVaultServesTheWorkerAndTheTier(t *testing.T) {
 }
 
 func TestAnUnsetSecretIsTheTiersArm(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
 	require.NoError(t, n.Start(t.Context()))
 
 	_, err := n.vault.SecretFor(t.Context(), invoke.Grant{
@@ -101,7 +101,7 @@ func TestAnUnsetSecretIsTheTiersArm(t *testing.T) {
 }
 
 func TestAMalformedSecretHandleIsRefused(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
 	require.NoError(t, n.Start(t.Context()))
 
 	for _, handle := range []string{"", "shop", "shop/prod", "shop//QmStripe"} {

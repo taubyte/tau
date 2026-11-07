@@ -130,7 +130,7 @@ func externalSQL(t *testing.T, name string, s server, port int) {
 	s.start(t, port)
 
 	r := deployServing(t, pointedAt(t, name, port), "orders.example.com", kitchenSinkWASM(t), nil,
-		instance.Register, instance.Worker, instance.Discovery, instance.Gateway, instance.Database, instance.Primitives, instance.Secrets, storageService.Descriptor.Name)
+		instance.Register, instance.Worker, instance.Stats, instance.Gateway, instance.Database, instance.Primitives, instance.Secrets, storageService.Descriptor.Name)
 
 	// The credentials are a secret set the way a developer sets one; the first exec
 	// retries until it lands.

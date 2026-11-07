@@ -180,7 +180,7 @@ func universe(t *testing.T, f *fake.Served, configure func(*instance.Config), op
 				configure(c)
 			}
 			if index > 0 {
-				c.Services = []string{instance.Discovery, instance.PLM}
+				c.Services = []string{instance.Stats, instance.PLM}
 			}
 		},
 	})

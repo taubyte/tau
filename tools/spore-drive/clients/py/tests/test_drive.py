@@ -94,7 +94,7 @@ async def test_validate_plan_apply(mock_url, tmp_path):
     disk = await ssh.filesystem(name)
     raw = disk["/tb/config/all.yaml"]
     node = yaml.safe_load(raw)
-    assert node["node"]["services"] == ["auth", "secrets", "discovery", "dns"]
+    assert node["node"]["services"] == ["auth", "secrets", "stats", "dns"]
     assert node["node"]["cloud"] == "test.com"
     assert node["node"]["tenancy"] == ["github.com/acme"]
     assert node["node"]["added"] == {"example": {"greeting": "hello", "replicas": 2}}

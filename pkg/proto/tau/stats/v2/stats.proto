@@ -1,11 +1,12 @@
 syntax = "proto3";
 
-// discovery is the half of v1's seer that can be lied to.
+// stats is the half of v1's seer that can be lied to: usage, never where a service runs.
 //
 // v1's seer did DNS and also accumulated where things are and how loaded they
 // are. In v2 those are two services, because they have different shapes at
-// scale and different trust properties: `dns` answers queries, `discovery`
-// collects usage, and BOTH dns and gateway read discovery in order to route.
+// scale and different trust properties: `dns` answers queries, `stats`
+// collects usage, and dns and placement read it. Nothing reads it to find a
+// service: that is p2p discovery, by protocol.
 //
 // THERE IS NO SERVICE BLOCK IN THIS FILE, AND THAT IS THE DESIGN.
 //
@@ -35,7 +36,7 @@ syntax = "proto3";
 // every field below steers traffic. In a single-tenant fleet that is honest.
 // Verified reporting is an interface away, and it is not this message's job to
 // pretend otherwise.
-package tau.discovery.v2;
+package tau.stats.v2;
 
 // Report is what one node says about itself, broadcast periodically.
 //

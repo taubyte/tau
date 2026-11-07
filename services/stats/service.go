@@ -1,4 +1,4 @@
-// Package discovery collects what every node says about itself, so dns and gateway
+// Package stats collects what every node says about itself, so dns and gateway
 // can route from measurements instead of guesses.
 //
 // It is one half of v1's seer; dns is the other. The split is not tidiness: the
@@ -11,7 +11,7 @@
 // is still an answer — lives in pkg/stats, which has no host, no bus and no
 // goroutine in it. What is here is a ticker, an encoder and a subscription, so
 // that the interesting rules stay unit-testable and this file stays boring.
-package discovery
+package stats
 
 import (
 	"context"
@@ -23,17 +23,16 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/pkg/membership"
 	"github.com/taubyte/tau/pkg/placement"
-	discoveryv2 "github.com/taubyte/tau/pkg/proto/gen/tau/discovery/v2"
+	statsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/stats/v2"
 	"github.com/taubyte/tau/pkg/stats"
 )
 
-// Service is discovery as an instance runs it: this node's numbers broadcast, and a
+// Service is stats as an instance runs it: this node's numbers broadcast, and a
 // view of everyone else's.
 type Service interface {
 	service.Service
@@ -52,8 +51,6 @@ type Service interface {
 	All() []stats.Node
 	// Get is one node by peer id, however old its row.
 	Get(peer string) (stats.Node, bool)
-	// Peers is every node this view says runs service, freshest first.
-	Peers(service string) []libp2ppeer.ID
 	// Placement is the stable member set placement runs over; PlacementOf narrows it
 	// to the members serving role.
 	Placement() []placement.Member
@@ -62,10 +59,10 @@ type Service interface {
 	Pending(maxAge time.Duration) int
 }
 
-// New is the discovery service, unstarted; Start builds it from its instance.
+// New is the stats service, unstarted; Start builds it from its instance.
 func New() Service { return &server{} }
 
-// server is a node's discovery participation: it broadcasts this node's own
+// server is a node's stats participation: it broadcasts this node's own
 // numbers and keeps a view of everyone else's.
 type server struct {
 	cfg  Config
@@ -104,7 +101,7 @@ func build(h host.Host, cfg Config, opts ...option) (*server, error) {
 // this node's identity.
 func (s *server) assemble(h host.Host, cfg Config, opts ...option) error {
 	if h == nil {
-		return errors.New("discovery: a service with no host does not know who it is reporting as")
+		return errors.New("stats: a service with no host does not know who it is reporting as")
 	}
 	c, err := cfg.withDefaults()
 	if err != nil {
@@ -159,11 +156,11 @@ func (s *server) serve(ctx context.Context) error {
 	s.mu.Lock()
 	if s.stopped {
 		s.mu.Unlock()
-		return errors.New("discovery: this service has been closed")
+		return errors.New("stats: this service has been closed")
 	}
 	if s.cancel != nil {
 		s.mu.Unlock()
-		return errors.New("discovery: already started")
+		return errors.New("stats: already started")
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
@@ -175,7 +172,7 @@ func (s *server) serve(ctx context.Context) error {
 		s.mu.Lock()
 		s.cancel = nil
 		s.mu.Unlock()
-		return fmt.Errorf("discovery: subscribing: %w", err)
+		return fmt.Errorf("stats: subscribing: %w", err)
 	}
 
 	var wg sync.WaitGroup
@@ -237,7 +234,7 @@ func (s *server) listen(ctx context.Context, reports <-chan []byte) {
 // that watch the fleet without being part of it — a bridge that subscribes to
 // the topic and never publishes — so they fold reports exactly as a node does.
 func Decode(b []byte) (stats.Report, error) {
-	var r discoveryv2.Report
+	var r statsv2.Report
 	if err := proto.Unmarshal(b, &r); err != nil {
 		return stats.Report{}, err
 	}
@@ -291,7 +288,7 @@ func (s *server) report(ctx context.Context) {
 		return
 	}
 
-	b, err := proto.Marshal(&discoveryv2.Report{
+	b, err := proto.Marshal(&statsv2.Report{
 		Peer:        s.peer,
 		Incarnation: s.incarnation,
 		Load:        snap.Load,
@@ -389,7 +386,7 @@ func (s *server) Get(peer string) (stats.Node, bool) {
 // uint32 because proto3 has no uint16, so a sender that put 70000 there would
 // otherwise become port 4464 on every reader — a routable-looking answer to a
 // listener nobody has.
-func socketsOf(in []*discoveryv2.Socket) []stats.Socket {
+func socketsOf(in []*statsv2.Socket) []stats.Socket {
 	out := make([]stats.Socket, 0, len(in))
 	for _, s := range in {
 		if s.GetPort() == 0 || s.GetPort() > math.MaxUint16 {
@@ -405,10 +402,10 @@ func socketsOf(in []*discoveryv2.Socket) []stats.Socket {
 	return out
 }
 
-func wireSockets(in []stats.Socket) []*discoveryv2.Socket {
-	out := make([]*discoveryv2.Socket, 0, len(in))
+func wireSockets(in []stats.Socket) []*statsv2.Socket {
+	out := make([]*statsv2.Socket, 0, len(in))
 	for _, s := range in {
-		out = append(out, &discoveryv2.Socket{
+		out = append(out, &statsv2.Socket{
 			Host:      s.Host,
 			Protocol:  s.Protocol,
 			Transport: s.Transport,
@@ -445,20 +442,6 @@ func (s *server) Placement() []placement.Member {
 		return nil
 	}
 	return s.members.StablePlacement()
-}
-
-// Peers is every node this view says runs service, freshest first, judged by this
-// service's own freshness. A row whose peer does not decode is skipped, so one bad row
-// cannot hide the good ones beside it.
-func (s *server) Peers(service string) []libp2ppeer.ID {
-	rows := s.Routes(service)
-	out := make([]libp2ppeer.ID, 0, len(rows))
-	for _, row := range rows {
-		if id, err := libp2ppeer.Decode(row.Peer); err == nil {
-			out = append(out, id)
-		}
-	}
-	return out
 }
 
 // PlacementOf is the placement set narrowed to the members whose last report says

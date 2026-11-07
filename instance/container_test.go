@@ -31,7 +31,7 @@ func TestAnInjectedTierIsEnough(t *testing.T) {
 
 func TestNoWorkerMeansNoBackend(t *testing.T) {
 	n, err := New(mockPeer(t), rooted(t, Config{
-		Services:  []string{Register, Discovery},
+		Services:  []string{Register, Stats},
 		Container: containers.Declared{Backend: "podman"},
 	}), withKVDB(&memFactory{}))
 	require.NoError(t, err, "a node with no worker never asked for a tier")

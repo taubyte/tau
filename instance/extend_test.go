@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/taubyte/tau/pkg/containers"
 	"github.com/taubyte/tau/pkg/forge/drivers"
@@ -20,7 +19,7 @@ import (
 	echov1 "github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1"
 	"github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1/echov1connect"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/discovery"
+	statsService "github.com/taubyte/tau/services/stats"
 	"github.com/taubyte/tau/services/storage"
 )
 
@@ -87,7 +86,7 @@ func TestAnEmptyServiceListRunsAddedServicesToo(t *testing.T) {
 
 func TestAnAddedServiceTheConfigDoesNotNameDoesNotStart(t *testing.T) {
 	r := &recording{}
-	n, _, _ := makeNode(t, Config{Services: []string{Discovery}}, r.service())
+	n, _, _ := makeNode(t, Config{Services: []string{Stats}}, r.service())
 	require.NoError(t, n.Start(t.Context()))
 	require.Nil(t, r.host)
 	require.Nil(t, n.Handler(), "nothing it serves runs here")
@@ -95,7 +94,7 @@ func TestAnAddedServiceTheConfigDoesNotNameDoesNotStart(t *testing.T) {
 
 func TestAServiceIsGivenItsInstance(t *testing.T) {
 	r := &recording{}
-	n, h, _ := makeNode(t, Config{Services: []string{Discovery, addedName}}, r.service())
+	n, h, _ := makeNode(t, Config{Services: []string{Stats, addedName}}, r.service())
 	require.NoError(t, n.Start(t.Context()))
 	host := r.host
 	require.NotNil(t, host)
@@ -108,16 +107,16 @@ func TestAServiceIsGivenItsInstance(t *testing.T) {
 	reg, ok := service.Get[*pkgregister.Register](host)
 	require.False(t, ok, "no register runs here")
 	require.Nil(t, reg)
-	_, ok = service.Get[discovery.Service](host)
-	require.True(t, ok, "discovery runs here")
+	_, ok = service.Get[statsService.Service](host)
+	require.True(t, ok, "stats runs here")
 	_, ok = service.Get[started](host)
 	require.True(t, ok, "and so does the service itself, once started")
 
-	// It is reported as running, and discovery finds it.
+	// It is reported as running, and it is given the finder every service here finds
+	// a peer through.
 	require.Contains(t, n.serving(), addedName)
-	d, _ := service.Get[service.Directory](host)
-	require.Eventually(t, func() bool { return len(d.Peers(addedName)) == 1 }, 10*time.Second, 20*time.Millisecond)
-	require.Equal(t, h.ID(), d.Peers(addedName)[0])
+	_, ok = service.Get[service.Finder](host)
+	require.True(t, ok)
 
 	require.NoError(t, n.Close())
 	select {
@@ -275,7 +274,7 @@ func (s started) Close() error {
 func TestStorageRunsBesideTheServicesItReaches(t *testing.T) {
 	ctx := t.Context()
 	p := mockPeer(t)
-	n, err := New(p, rooted(t, Config{Services: []string{Register, Discovery, storage.Descriptor.Name}}))
+	n, err := New(p, rooted(t, Config{Services: []string{Register, Stats, storage.Descriptor.Name}}))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.NoError(t, n.Start(ctx))

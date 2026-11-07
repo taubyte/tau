@@ -1,4 +1,4 @@
-package discovery
+package stats
 
 import (
 	"sync"

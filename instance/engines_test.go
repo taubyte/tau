@@ -18,7 +18,7 @@ import (
 func TestAJSFunctionRunsOnEveryInstance(t *testing.T) {
 	greet := invoke.Spec{Name: "shop/prod/function/greet", Runtime: js.Name, Artifact: "bafyarchive", Revision: "r1"}
 
-	n, _, _ := makeNode(t, Config{Services: []string{Discovery, Worker}})
+	n, _, _ := makeNode(t, Config{Services: []string{Stats, Worker}})
 	require.Contains(t, tierNames(n), js.Name)
 
 	// The archive is asked of this instance's own blocks, which have nothing under
@@ -46,14 +46,14 @@ func TestTheWorkersEnginesAreTheOperators(t *testing.T) {
 	}
 
 	chosen, _, _ := makeNode(t, Config{
-		Services: []string{Discovery, Worker},
+		Services: []string{Stats, Worker},
 		Worker:   worker.Config{Engines: worker.Engines{JS: string(js.ModeBytecode), Wasm: string(wasm.ModeInterpreter)}},
 	})
 	script, component := modes(chosen)
 	require.Equal(t, js.ModeBytecode, script)
 	require.Equal(t, wasm.ModeInterpreter, component)
 
-	unset, _, _ := makeNode(t, Config{Services: []string{Discovery, Worker}})
+	unset, _, _ := makeNode(t, Config{Services: []string{Stats, Worker}})
 	script, component = modes(unset)
 	require.Equal(t, js.DefaultMode(), script)
 	require.Equal(t, wasm.ModeCompiler, component)
@@ -62,7 +62,7 @@ func TestTheWorkersEnginesAreTheOperators(t *testing.T) {
 		{JS: "turbo"}: js.ErrUnknownMode,
 		{Wasm: "jit"}: wasm.ErrUnknownMode,
 	} {
-		_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Discovery, Worker}, Worker: worker.Config{Engines: engines}}), withKVDB(&memFactory{}), withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }))
+		_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Stats, Worker}, Worker: worker.Config{Engines: engines}}), withKVDB(&memFactory{}), withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }))
 		require.ErrorIs(t, err, want)
 	}
 }

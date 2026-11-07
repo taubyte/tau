@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/taubyte/tau/services/builder"
+	"github.com/taubyte/tau/services/plm"
+	registerService "github.com/taubyte/tau/services/register"
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/pkg/containers"
@@ -30,7 +32,7 @@ import (
 )
 
 func TestANodeRunsPLMAndTheBuilderTogetherWhenItsConfigSaysSo(t *testing.T) {
-	for _, shape := range [][]string{{PLM, Builder}, {PLM, Discovery}, {Builder, Discovery}} {
+	for _, shape := range [][]string{{PLM, Builder}, {PLM, Stats}, {Builder, Stats}} {
 		_, err := Config{Services: shape}.withDefaults(services.Names()...)
 		require.NoError(t, err, "%v", shape)
 	}
@@ -53,7 +55,7 @@ func TestTheServiceNamesArePLMAndBuilder(t *testing.T) {
 }
 
 func TestANodeAdvertisesTheRolesItRuns(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Discovery, Auth, Builder}})
+	n, _, _ := makeNode(t, Config{Services: []string{Stats, Auth, Builder}})
 	require.NoError(t, n.Start(t.Context()))
 
 	serving := n.serving()
@@ -72,7 +74,7 @@ func TestBuildHoldsTheQueueAndNotAuthsStore(t *testing.T) {
 	// baked into a service is why sibling worktrees collide — so an operator names
 	// one.
 	n, _, _ := makeNode(t, Config{
-		Services: []string{Discovery, PLM},
+		Services: []string{Stats, PLM},
 		Sections: map[string]any{PLM: ingress.Config{Listen: "127.0.0.1:0"}},
 	})
 	require.NoError(t, n.Start(t.Context()))
@@ -87,73 +89,45 @@ func TestANodeRunningNoBuildHasNoBuildAddress(t *testing.T) {
 	require.Nil(t, (&Instance{Node: mockPeer(t)}).PLMAddr())
 }
 
-func TestTheResolverReadsTheSameViewAsEverythingElse(t *testing.T) {
+// A PEER IS FOUND BY WHAT IT SERVES, through p2p discovery, on a node that runs no
+// stats service at all.
+func TestTheFinderFindsAPeerByWhatItServes(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Discovery, Auth}},
-		Config{Services: []string{Discovery}},
+		Config{Services: []string{Register}},
+		Config{Services: []string{Secrets}},
 	)
 	holder, seeker := nodes[0], nodes[1]
-
-	from := &fromDiscovery{node: seeker, name: Auth}
 
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 
+	from := seeker.finder.Find(registerService.Protocol)
 	peers, err := from.Peers(ctx, 4)
 	require.NoError(t, err)
-	require.Len(t, peers, 1)
-	require.Equal(t, holder.Host().ID(), peers[0])
-
-	one, err := from.Any(ctx)
-	require.NoError(t, err)
-	require.Equal(t, peers[0], one)
-
-	require.Equal(t, peers, from.Known())
-
-	// A DIAL THAT FAILED IS NOT EVIDENCE THE NODE STOPPED RUNNING THE SERVICE.
-	// Dropping a peer here would let one bad connection remove the only node
-	// running a service from every lookup after it.
-	from.Failed(peers[0])
-	require.Equal(t, peers, from.Known(), "the view decides who runs what, not a failed dial")
+	require.Equal(t, []libp2ppeer.ID{holder.Host().ID()}, peers)
+	require.Same(t, from, seeker.finder.Find(registerService.Protocol), "one discovery per protocol")
 }
 
-func TestTheResolverGivesUp(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Discovery}})
+func TestTheFinderGivesUp(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Secrets}})
 	require.NoError(t, n.Start(t.Context()))
 
 	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
 	defer cancel()
 
-	_, err := (&fromDiscovery{node: n, name: Builder}).Any(ctx)
-	require.ErrorContains(t, err, Builder)
-	require.ErrorIs(t, err, context.DeadlineExceeded)
-}
-
-func TestTheResolverOnANodeWithNoStats(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register}})
-
-	from := &fromDiscovery{node: n, name: Auth}
-	require.Empty(t, from.Known())
-
-	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
-	defer cancel()
-	_, err := from.Any(ctx)
+	_, err := n.finder.Find(registerService.Protocol).Any(ctx)
 	require.Error(t, err)
 }
 
-func TestARowThatIsNotAPeerIsSkipped(t *testing.T) {
-	require.Equal(t, []libp2ppeer.ID(nil), (&fromDiscovery{node: &Instance{Node: mockPeer(t)}, name: Auth}).Known())
-}
-
 func TestABuilderWithNoContainerDaemon(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Discovery, Builder}})
+	n, _, _ := makeNode(t, Config{Services: []string{Stats, Builder}})
 	require.NoError(t, n.Start(t.Context()))
 	require.Contains(t, n.serving(), Builder, "it still runs, and still deploys configuration")
 }
 
 func TestABuilderWithADaemonThatIsNotOne(t *testing.T) {
 	n, _, _ := makeNode(t, Config{
-		Services:  []string{Discovery, Builder},
+		Services:  []string{Stats, Builder},
 		Container: containers.Declared{Backend: "not-a-backend"},
 	})
 	require.ErrorIs(t, n.Start(t.Context()), containers.ErrUnknownBackend, "the node's one daemon is the build's")
@@ -162,7 +136,7 @@ func TestABuilderWithADaemonThatIsNotOne(t *testing.T) {
 func TestAnAssetStoreIsEnoughToRunCode(t *testing.T) {
 	// No container backend, no injected runtime — and a worker still starts,
 	// with every tier that needs only the asset store.
-	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Discovery, Worker}}), withKVDB(&memFactory{}), withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }))
+	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Stats, Worker}}), withKVDB(&memFactory{}), withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.NotNil(t, n.worker)
@@ -175,7 +149,7 @@ func TestAnAssetStoreIsEnoughToRunCode(t *testing.T) {
 func TestTheArtifactLookupIsCachedForTheDeployBudget(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	n, _, _ := makeNode(t,
-		Config{Services: []string{Discovery}, Worker: worker.Config{PointerTTL: time.Minute}},
+		Config{Services: []string{Stats}, Worker: worker.Config{PointerTTL: time.Minute}},
 		WithClock(func() time.Time { return now }))
 
 	a := &artifacts{node: n}
@@ -193,7 +167,7 @@ func TestTheArtifactLookupIsCachedForTheDeployBudget(t *testing.T) {
 }
 
 func TestAFailedArtifactLookupIsNotRemembered(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Discovery}})
+	n, _, _ := makeNode(t, Config{Services: []string{Stats}})
 	require.NoError(t, n.Start(t.Context()))
 
 	a := &artifacts{node: n}
@@ -210,13 +184,13 @@ func TestTheDeployBudgetHasAnEffectiveValue(t *testing.T) {
 }
 
 func TestTheWorkerResolvesArtifactsThroughBuildsRecords(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Discovery, Worker}})
+	n, _, _ := makeNode(t, Config{Services: []string{Stats, Worker}})
 	require.NotNil(t, n.worker)
 
-	with, _, _ := makeNode(t, Config{Services: []string{Discovery, Worker}}, WithArtifacts(everythingBuilt{}))
+	with, _, _ := makeNode(t, Config{Services: []string{Stats, Worker}}, WithArtifacts(everythingBuilt{}))
 	require.NotNil(t, with.worker)
 
-	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Discovery, Worker}}), WithArtifacts(nil))
+	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Stats, Worker}}), WithArtifacts(nil))
 	require.Error(t, err)
 }
 
@@ -230,7 +204,7 @@ func tierNames(n *Instance) []string {
 }
 
 func TestAnInjectedTierWins(t *testing.T) {
-	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Discovery, Worker}}), withKVDB(&memFactory{}), withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }), WithRuntimes(&tier{name: "wasm"}))
+	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Stats, Worker}}), withKVDB(&memFactory{}), withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }), WithRuntimes(&tier{name: "wasm"}))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 
@@ -294,12 +268,12 @@ func TestAWorkloadsStreamsAreNamedByTheWorkload(t *testing.T) {
 
 func TestAWorkerReadsBuildsRecordsOnItsOwnNode(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Discovery, PLM}, Sections: map[string]any{PLM: ingress.Config{Listen: "127.0.0.1:0"}}},
-		Config{Services: []string{Worker, Discovery}},
+		Config{Services: []string{Register, Stats, PLM}, Sections: map[string]any{PLM: ingress.Config{Listen: "127.0.0.1:0"}}},
+		Config{Services: []string{Worker, Stats}},
 	)
 	compute := nodes[1]
 
-	sees(t, compute, PLM)
+	finds(t, compute, plm.Protocol)
 
 	a := &artifacts{node: compute}
 
@@ -331,7 +305,7 @@ func TestTheRegionANodeReadsIsTheOneItsConfigNames(t *testing.T) {
 func TestADevelopmentCloudsBuilderIsConfigured(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "uploads")
 	section := builder.Config{Uploads: dir, Mirror: "file://" + t.TempDir()}
-	cfg := Config{Services: []string{Discovery, Builder}, Sections: map[string]any{Builder: section}}
+	cfg := Config{Services: []string{Stats, Builder}, Sections: map[string]any{Builder: section}}
 	n, _, _ := makeNode(t, cfg)
 	require.NoError(t, n.Start(t.Context()))
 	require.Contains(t, n.serving(), Builder)
@@ -342,12 +316,12 @@ func TestADevelopmentCloudsBuilderIsConfigured(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "a file")
 	require.NoError(t, os.WriteFile(file, nil, 0o600))
 	section.Uploads = filepath.Join(file, "below")
-	refused, _, _ := makeNode(t, Config{Services: []string{Discovery, Builder}, Sections: map[string]any{Builder: section}})
+	refused, _, _ := makeNode(t, Config{Services: []string{Stats, Builder}, Sections: map[string]any{Builder: section}})
 	require.ErrorContains(t, refused.Start(t.Context()), "uploads")
 }
 
 func TestANodeReadsItsOwnBuild(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Discovery, PLM, Worker},
+	n, _, _ := makeNode(t, Config{Services: []string{Stats, PLM, Worker},
 		Sections: map[string]any{PLM: ingress.Config{Listen: "127.0.0.1:0"}}})
 	require.NoError(t, n.Start(t.Context()))
 	built, ok := jobsOf(n)

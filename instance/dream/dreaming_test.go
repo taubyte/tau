@@ -30,7 +30,7 @@ func TestAFleetServesARequestEndToEnd(t *testing.T) {
 
 	// Three nodes, each running one thing, so none can answer its own question.
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services: []string{instance.Register, instance.Discovery},
+		Services: []string{instance.Register, instance.Stats},
 	})
 	require.NoError(t, err)
 	defer u.Close()
@@ -75,8 +75,8 @@ func TestAGatewayNodeReachesAWorkerNode(t *testing.T) {
 
 	// Both nodes see each other before anything is routed.
 	require.Eventually(t, func() bool {
-		return len(edge.Discovery().Route(instance.Worker, time.Minute)) > 0 &&
-			len(compute.Discovery().Route(instance.Register, time.Minute)) > 0
+		return len(edge.Stats().Route(instance.Worker, time.Minute)) > 0 &&
+			len(compute.Stats().Route(instance.Register, time.Minute)) > 0
 	}, 30*time.Second, 200*time.Millisecond, "the fleet never saw itself")
 
 	// A REQUEST, THROUGH THE GATEWAY, ALL THE WAY TO A TIER.

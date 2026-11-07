@@ -10,13 +10,13 @@ import (
 	_ "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	_ "github.com/taubyte/tau/pkg/proto/gen/tau/builder/v2"
 	_ "github.com/taubyte/tau/pkg/proto/gen/tau/database/v2"
-	_ "github.com/taubyte/tau/pkg/proto/gen/tau/discovery/v2"
 	_ "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 	_ "github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v2"
 	_ "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 	_ "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
 	_ "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	_ "github.com/taubyte/tau/pkg/proto/gen/tau/sqlsync/v2"
+	_ "github.com/taubyte/tau/pkg/proto/gen/tau/stats/v2"
 	_ "github.com/taubyte/tau/pkg/proto/gen/tau/worker/v2"
 )
 

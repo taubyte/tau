@@ -22,10 +22,10 @@ Everything a node runs is decided by its config file (`instance/boot`). Its
 |------------------|----------------------|-----------------------------------------------------------|
 | `register`       | `services/register`  | holds what a project published                            |
 | `worker`         | `services/worker`    | runs a project's code                                     |
-| `discovery`      | `services/discovery` | gossips what every node runs and how loaded it is         |
-| `gateway`        | `services/gateway`   | HTTP ingress, routed from discovery                       |
+| `stats`          | `services/stats`     | collects how loaded each node is, for dns and placement   |
+| `gateway`        | `services/gateway`   | HTTP ingress, onto the worker placement picks             |
 | `proxy`          | `services/proxy`     | raw TCP ingress to a workload's socket                    |
-| `dns`            | `services/dns`       | answers queries from discovery                            |
+| `dns`            | `services/dns`       | answers queries, least loaded first, from stats           |
 | `auth`           | `services/auth`      | projects, repositories, hooks, domains, certificates      |
 | `secrets`        | `services/secrets`   | a project's secrets                                       |
 | `database`       | `services/database`  | a project's databases                                     |

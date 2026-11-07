@@ -131,18 +131,13 @@ type Locator interface {
 	Store() *Store
 }
 
-// On is cm as the instance h finds it, asked at call time: the nodes its directory
+// On is cm as the instance h finds it, asked at call time: the nodes its finder
 // names, and the store the cm beside it keeps.
 func On(h service.Host) Locator { return located{h} }
 
 type located struct{ h service.Host }
 
-func (l located) Members() []libp2ppeer.ID {
-	if dir, ok := service.Get[service.Directory](l.h); ok {
-		return dir.Peers(Name)
-	}
-	return nil
-}
+func (l located) Members() []libp2ppeer.ID { return service.Serving(l.h, Protocol) }
 
 func (l located) Store() *Store {
 	if local, ok := service.Get[Service](l.h); ok {

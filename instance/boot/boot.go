@@ -34,7 +34,6 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/sectls"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
-	"github.com/taubyte/tau/pkg/stats"
 	"github.com/taubyte/tau/services/secrets"
 )
 
@@ -140,19 +139,10 @@ func (f File) withDefaults() (File, error) {
 type Running struct {
 	*instance.Instance
 
-	// Found is what answered for the service Reach was asked for, captured when it
-	// answered and not re-asked: the view's freshness window can drop it. Start leaves
-	// it nil.
-	Found []stats.Node
-
 	server *http.Server
 
 	// secure is the TLS listener, when the file names one.
 	secure *http.Server
-
-	// temporary is a data directory this process made and owns, removed on
-	// Close. A node started from an operator's file has none.
-	temporary string
 }
 
 // Start builds the machine's resources, starts the node, and serves its gateway
@@ -346,9 +336,6 @@ func (r *Running) Close() error {
 		}
 		r.Instance.Node.Close()
 	}
-	if r.temporary != "" {
-		os.RemoveAll(r.temporary)
-	}
 	return err
 }
 
@@ -409,47 +396,6 @@ func sectionOf(cfg instance.Config, name string) map[string]any {
 		return nil
 	}
 	return map[string]any{name: section}
-}
-
-// Reach starts the smallest node that can find the fleet: discovery only, joined to
-// the swarm, waiting until it sees a node running the service. A node rather than a
-// dial, so it asks the same view as everything else.
-func Reach(ctx context.Context, f File, service string, within time.Duration) (*Running, error) {
-	f.Node = instance.Config{Services: []string{instance.Discovery}, Cloud: f.Node.Cloud, Sections: sectionOf(f.Node, instance.Discovery)}
-	f.HTTP = ""
-
-	// A CLIENT DOES NOT KEEP THE FLEET'S DATA. Its own directory, removed with
-	// it, so running one never touches what a node on this machine holds.
-	root, err := os.MkdirTemp("", "tau-reach-")
-	if err != nil {
-		return nil, fmt.Errorf("boot: %w", err)
-	}
-	f.Root = root
-
-	running, err := Start(ctx, f)
-	if err != nil {
-		os.RemoveAll(root)
-		return nil, err
-	}
-	running.temporary = root
-
-	deadline := time.After(within)
-	for {
-		if found := running.Discovery().Routes(service); len(found) > 0 {
-			running.Found = found
-			return running, nil
-		}
-
-		select {
-		case <-ctx.Done():
-			running.Close()
-			return nil, ctx.Err()
-		case <-deadline:
-			running.Close()
-			return nil, fmt.Errorf("boot: no %s answered within %s; is the fleet reachable and is this certificate from its CA", service, within)
-		case <-time.After(250 * time.Millisecond):
-		}
-	}
 }
 
 // ErrNoIdentity is an init with no privatekey: a minted identity would write

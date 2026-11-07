@@ -1,5 +1,5 @@
 // Package placement chooses which node runs a request, the one place that choice is
-// made. It routes on discovery's live measurements: the least loaded node with the
+// made. It routes on stats' live measurements: the least loaded node with the
 // project warm, then the least loaded at all (any worker can fetch the project). A
 // failure to reach a node moves to the next candidate; a node that answered is the
 // answer, since retrying a 500 would run the workload twice.
@@ -23,9 +23,9 @@ import (
 	"github.com/taubyte/tau/services/worker"
 )
 
-// Router is the slice of discovery this package needs: one read.
+// Router is the slice of stats this package needs: one read.
 //
-// *services/discovery.Service satisfies it. The interface is here so that placement
+// *services/stats.Service satisfies it. The interface is here so that placement
 // can be tested against a table of nodes rather than a swarm.
 type Router interface {
 	RoutePeers(name string, maxAge time.Duration, dst []string) []string
@@ -55,7 +55,7 @@ type Conns interface {
 
 // Routes is an Invoker that can also ask a router where a request goes.
 //
-// NOT `Router`, which in this package already means the discovery read placement
+// NOT `Router`, which in this package already means the stats read placement
 // decides FROM. Two things called Router, one choosing a node and one choosing a
 // destination, is a collision a reader has to hold in their head on every line.
 type Routes interface {
@@ -150,7 +150,7 @@ type Workers struct {
 	mu      sync.Mutex
 	closed  atomic.Bool
 
-	// self is this node's id as discovery reports it, so a request for this node
+	// self is this node's id as stats reports it, so a request for this node
 	// is recognised without decoding a peer id.
 	self string
 }
@@ -365,7 +365,7 @@ func (w *Workers) somewhere(ctx context.Context, at specs.Address, call func(Inv
 
 // candidates appends to dst the peers that could take this, warmest first.
 //
-// The two lists are concatenated rather than merged: within each, discovery has
+// The two lists are concatenated rather than merged: within each, stats has
 // already ordered by load, and a warm node at higher load is still the better
 // choice than a cold one at lower — the fetch it saves is a whole compiled
 // project over the wire.

@@ -1,4 +1,4 @@
-package discovery
+package stats
 
 import (
 	"context"
@@ -16,7 +16,7 @@ type Reports interface {
 	Report(*Snapshot)
 }
 
-// Start runs discovery on an instance: its reports gossiped on the peer, scoped to
+// Start runs stats on an instance: its reports gossiped on the peer, scoped to
 // the instance's cloud, saying what the instance runs.
 func (s *server) Start(ctx context.Context, h service.Host) error {
 	var cfg Config

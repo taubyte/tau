@@ -9,8 +9,8 @@ import (
 	"github.com/taubyte/tau/services/dns"
 )
 
-// Answers queries from this node's discovery view: the last link, without which
-// proxies' ports published through discovery are unreadable. Only the port is
+// Answers queries from this node's stats view: the last link, without which
+// proxies' ports published through stats are unreadable. Only the port is
 // configurable, since 53 is dialled by convention. The default :53 needs privilege,
 // and a failed bind is reported rather than swallowed.
 
@@ -18,18 +18,18 @@ import (
 // dials by convention.
 const DefaultDNSListen = ":53"
 
-// ErrNoDiscoveryForDNS is a dns node with nothing to answer from.
-var ErrNoDiscoveryForDNS = errors.New("node: dns answers from the discovery view, and this node runs none")
+// ErrNoStatsForDNS is a dns node with nothing to answer from.
+var ErrNoStatsForDNS = errors.New("node: dns answers from the stats view, and this node runs none")
 
 func (n *Instance) openDNS() error {
 	if !n.cfg.runs(DNS) {
 		return nil
 	}
-	if n.discovery == nil {
-		return ErrNoDiscoveryForDNS
+	if n.stats == nil {
+		return ErrNoStatsForDNS
 	}
 
-	options := []dns.Option{dns.WithRouter(n.discovery)}
+	options := []dns.Option{dns.WithRouter(n.stats)}
 
 	// AUTHORED RECORDS NEED A WORKER, because the records are in the compiled
 	// project and the worker is what holds one. A dns node without one answers

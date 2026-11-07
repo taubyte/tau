@@ -19,8 +19,8 @@ import (
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/placement"
 	"github.com/taubyte/tau/services/cm"
-	"github.com/taubyte/tau/services/discovery"
 	"github.com/taubyte/tau/services/register"
+	statsService "github.com/taubyte/tau/services/stats"
 )
 
 // Service is the database service as an instance runs it.
@@ -126,7 +126,7 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 // Report is this service's part of what its node says about itself: the fleet
 // revision it computes with, so a node with a stale floor is visible to the rest, and
 // how much repair it knows is outstanding.
-func (s *server) Report(snap *discovery.Snapshot) {
+func (s *server) Report(snap *statsService.Snapshot) {
 	if s.floor == nil {
 		return
 	}

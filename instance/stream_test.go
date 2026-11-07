@@ -12,12 +12,12 @@ import (
 // backing.
 
 func TestTheNodeExposesTheBusTopic(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Worker, Discovery}})
+	n, _, _ := makeNode(t, Config{Services: []string{Worker, Stats}})
 	require.Equal(t, stream.Topic(n.cfg.Cloud, "h"), n.BusTopic("h"))
 }
 
 func TestOneBusBackingIsSharedByBothConsumers(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Worker, Discovery, Gateway}})
+	n, _, _ := makeNode(t, Config{Services: []string{Worker, Stats, Gateway}})
 
 	first := n.busStreams()
 	require.Same(t, first, n.busStreams())

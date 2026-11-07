@@ -25,7 +25,7 @@ import (
 
 	pdisc "github.com/taubyte/tau/p2p/discovery"
 	"github.com/taubyte/tau/pkg/stats"
-	"github.com/taubyte/tau/services/discovery"
+	statsService "github.com/taubyte/tau/services/stats"
 )
 
 // PickWait bounds how long Pick waits for a first peer of a protocol nobody
@@ -33,7 +33,7 @@ import (
 var PickWait = 10 * time.Second
 
 // Fresh is the age past which a gossiped report no longer orders a pick.
-var Fresh = discovery.Config{}.Freshness()
+var Fresh = statsService.Config{}.Freshness()
 
 // Bridge is a running seat. It is safe for concurrent use.
 type Bridge struct {
@@ -52,7 +52,7 @@ type Bridge struct {
 // New starts a bridge on an existing host: it subscribes to cloud's
 // discovery topic on ps and folds every report into its view until Close.
 // routing may be nil, in which case only connected peers are candidates.
-func New(ctx context.Context, h host.Host, ps discovery.PubSub, routing libdisc.Discoverer, cloud string) (*Bridge, error) {
+func New(ctx context.Context, h host.Host, ps statsService.PubSub, routing libdisc.Discoverer, cloud string) (*Bridge, error) {
 	if h == nil {
 		return nil, errors.New("bridge: no host")
 	}
@@ -60,7 +60,7 @@ func New(ctx context.Context, h host.Host, ps discovery.PubSub, routing libdisc.
 	if err != nil {
 		return nil, err
 	}
-	bus, err := discovery.NewBus(ps, cloud)
+	bus, err := statsService.NewBus(ps, cloud)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func New(ctx context.Context, h host.Host, ps discovery.PubSub, routing libdisc.
 func (b *Bridge) watch(reports <-chan []byte) {
 	defer close(b.done)
 	for raw := range reports {
-		if r, err := discovery.Decode(raw); err == nil {
+		if r, err := statsService.Decode(raw); err == nil {
 			// A refused report is the sender's problem; keep listening.
 			b.view.Observe(r)
 		}

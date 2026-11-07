@@ -33,7 +33,7 @@ func TestBridgesADreamFleet(t *testing.T) {
 	defer cancel()
 
 	u, err := nodeDream.Start(ctx, "taucorder-e2e", nodeDream.Config{
-		Services: []string{instance.Register, instance.Discovery, instance.Worker},
+		Services: []string{instance.Register, instance.Stats, instance.Worker},
 		Copies:   2,
 	})
 	if err != nil {
@@ -157,7 +157,7 @@ func TestBridgesADreamFleet(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &svcs); err != nil {
 		t.Fatal(err, out.String())
 	}
-	for _, want := range []string{instance.Register, instance.Worker, instance.Discovery} {
+	for _, want := range []string{instance.Register, instance.Worker, instance.Stats} {
 		if !slices.ContainsFunc(svcs, func(s query.Service) bool { return s.Name == want && len(s.Nodes) == 2 }) {
 			t.Fatalf("service %s not on both nodes: %+v", want, svcs)
 		}

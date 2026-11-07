@@ -1,7 +1,7 @@
 // Package builder is the private service that builds, N of them: it holds no state and
 // runs what plm hands it. A builder serves its own protocol (builder.proto) on
-// /tau/builder/v2 over p2p and faces nothing else; plm finds builders through
-// discovery and hands each one run at a time. A run's log lives here until plm
+// /tau/builder/v2 over p2p and faces nothing else; plm finds builders by that
+// protocol through p2p discovery and hands each one run at a time. A run's log lives here until plm
 // seals it, and plm proxies a follower to it (.notes/v2/build-topology.md).
 package builder
 

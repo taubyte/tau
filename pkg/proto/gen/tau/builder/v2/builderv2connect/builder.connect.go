@@ -4,8 +4,8 @@
 
 // builder's p2p surface: what plm asks the private service that runs a
 // repository's code (.notes/v2/build-topology.md). A builder serves it on
-// /tau/builder/v2 over p2p and faces nothing else; plm finds builders through
-// discovery and hands each one run at a time.
+// /tau/builder/v2 over p2p and faces nothing else; plm finds builders by that
+// protocol through p2p discovery and hands each one run at a time.
 //
 // A RUN'S LOG LIVES ON ITS BUILDER. The builder writes it as the run goes and keeps
 // it until plm seals it, so a follower reaches it through plm, which reads

@@ -95,7 +95,7 @@ func TestTheNodeTerminatesAGeneratedNameWithTheCloudsWildcard(t *testing.T) {
 
 	f := admit(t, File{
 		Node: instance.Config{
-			Services:  []string{instance.Register, instance.Discovery, instance.Gateway},
+			Services:  []string{instance.Register, instance.Stats, instance.Gateway},
 			CloudFqdn: cloud,
 			Gateway:   gateway.Config{Wildcard: wildcard},
 		},
@@ -144,7 +144,7 @@ func TestTheHTTPSAddressIsInTheFile(t *testing.T) {
 
 func TestAnHTTPSAddressAlreadyTakenIsAnError(t *testing.T) {
 	first, err := Start(t.Context(), admit(t, File{
-		Node:   instance.Config{Services: []string{instance.Register, instance.Discovery, instance.Gateway}},
+		Node:   instance.Config{Services: []string{instance.Register, instance.Stats, instance.Gateway}},
 		Root:   t.TempDir(),
 		Listen: []string{"/ip4/127.0.0.1/tcp/0"},
 		HTTPS:  "127.0.0.1:0",
@@ -154,7 +154,7 @@ func TestAnHTTPSAddressAlreadyTakenIsAnError(t *testing.T) {
 	require.Empty(t, first.Address(), "no clear listener was asked for")
 
 	_, err = Start(t.Context(), admit(t, File{
-		Node:   instance.Config{Services: []string{instance.Register, instance.Discovery, instance.Gateway}},
+		Node:   instance.Config{Services: []string{instance.Register, instance.Stats, instance.Gateway}},
 		Root:   t.TempDir(),
 		Listen: []string{"/ip4/127.0.0.1/tcp/0"},
 		HTTPS:  first.SecureAddress(),

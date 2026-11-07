@@ -39,15 +39,12 @@ func VaultOn(h service.Host) *Vault {
 
 func (v *Vault) Close() error { return v.client.Close() }
 
-// on is the service as the instance h finds it: the nodes its directory names,
+// on is the service as the instance h finds it: the nodes its finder names,
 // and the one running beside it.
 type on struct{ h service.Host }
 
 func (o on) Members() []peerCore.ID {
-	if d, ok := service.Get[service.Directory](o.h); ok {
-		return d.Peers(Descriptor.Name)
-	}
-	return nil
+	return service.Serving(o.h, Protocol)
 }
 
 func (o on) beside() *server {

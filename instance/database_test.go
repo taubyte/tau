@@ -90,7 +90,7 @@ func TestTheRootReleasesThroughTheFactoryItWasGiven(t *testing.T) {
 }
 
 func TestAStoreThatCannotBeReleasedIsNamed(t *testing.T) {
-	n, _, factory := makeNode(t, Config{Services: []string{Register, Worker, Discovery}})
+	n, _, factory := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
 	seam := databaseStores{node: n}
 
 	require.ErrorContains(t, seam.Release(t.Context(), "databases/shop/prod/kv/QmA"),

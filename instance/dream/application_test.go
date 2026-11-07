@@ -24,7 +24,7 @@ import (
 
 func TestAnApplicationAnswersThroughTheGateway(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services:  []string{instance.Register, instance.Worker, instance.Discovery, instance.Gateway, storageService.Descriptor.Name, instance.Builder},
+		Services:  []string{instance.Register, instance.Worker, instance.Stats, instance.Gateway, storageService.Descriptor.Name, instance.Builder},
 		Container: containers.Docker,
 	})
 	require.NoError(t, err)

@@ -1,4 +1,4 @@
-package discovery
+package stats
 
 import (
 	"context"
@@ -124,7 +124,7 @@ func withReporter(r Reporter) option {
 func withClock(now func() time.Time) option {
 	return func(o *options) error {
 		if now == nil {
-			return errors.New("discovery: a nil clock")
+			return errors.New("stats: a nil clock")
 		}
 		o.now = now
 		return nil
@@ -149,8 +149,8 @@ const (
 )
 
 var (
-	ErrNoBus      = errors.New("discovery: a service with no bus can neither report nor hear")
-	ErrNoReporter = errors.New("discovery: a service with no reporter has nothing to say about itself")
+	ErrNoBus      = errors.New("stats: a service with no bus can neither report nor hear")
+	ErrNoReporter = errors.New("stats: a service with no reporter has nothing to say about itself")
 )
 
 func (c Config) withDefaults() (Config, error) {
@@ -158,7 +158,7 @@ func (c Config) withDefaults() (Config, error) {
 		c.Interval = DefaultInterval
 	}
 	if c.Interval <= 0 {
-		return Config{}, fmt.Errorf("discovery: interval %s: a node that never reports is a node nothing can route to", c.Interval)
+		return Config{}, fmt.Errorf("stats: interval %s: a node that never reports is a node nothing can route to", c.Interval)
 	}
 	if c.Fresh == 0 {
 		c.Fresh = freshIntervals * c.Interval
@@ -167,7 +167,7 @@ func (c Config) withDefaults() (Config, error) {
 		c.Forget = forgetIntervals * c.Interval
 	}
 	if c.Fresh < c.Interval {
-		return Config{}, fmt.Errorf("discovery: fresh %s is shorter than the %s interval: every row would be stale before its replacement was sent",
+		return Config{}, fmt.Errorf("stats: fresh %s is shorter than the %s interval: every row would be stale before its replacement was sent",
 			c.Fresh, c.Interval)
 	}
 	if c.Stabilize == 0 {
@@ -180,7 +180,7 @@ func (c Config) withDefaults() (Config, error) {
 	if c.Stabilize < c.Fresh {
 		// pkg/membership refuses this too; refusing it here names the field the operator
 		// wrote.
-		return Config{}, fmt.Errorf("discovery: stabilize %s is shorter than the %s freshness window: placement would move faster than acknowledgement",
+		return Config{}, fmt.Errorf("stats: stabilize %s is shorter than the %s freshness window: placement would move faster than acknowledgement",
 			c.Stabilize, c.Fresh)
 	}
 	return c, nil

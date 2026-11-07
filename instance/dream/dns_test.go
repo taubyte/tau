@@ -66,7 +66,7 @@ func asking(t *testing.T, n *instance.Instance) func(string, uint16) *dns.Msg {
 func dnsCloud(t *testing.T) func(string, uint16) *dns.Msg {
 	t.Helper()
 	r := deployServing(t, "with/dns", withDNSApex, warrenWASM(t), nil,
-		instance.Register, instance.Worker, instance.Discovery, instance.DNS, storageService.Descriptor.Name)
+		instance.Register, instance.Worker, instance.Stats, instance.DNS, storageService.Descriptor.Name)
 	return asking(t, r.node)
 }
 

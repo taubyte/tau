@@ -52,7 +52,7 @@ Before starting work, **please open an issue** to discuss your proposed change. 
    - `[node] Brief description of the bug`
    - `[build] Brief description of the new feature`
    - `[auth] Brief description of your idea`
-   - `[discovery] Brief description of your idea`
+   - `[stats] Brief description of your idea`
    - `[register] Brief description of your idea`
    - `[spore-drive] Brief description of your idea`
    - `[feature] Brief description of your idea`

@@ -13,9 +13,9 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"google.golang.org/protobuf/proto"
 
-	discoveryv2 "github.com/taubyte/tau/pkg/proto/gen/tau/discovery/v2"
+	statsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/stats/v2"
 	"github.com/taubyte/tau/pkg/stats"
-	"github.com/taubyte/tau/services/discovery"
+	statsService "github.com/taubyte/tau/services/stats"
 	"github.com/taubyte/tau/tools/taucorder/internal/fixture"
 )
 
@@ -59,13 +59,13 @@ func TestWatchAndPick(t *testing.T) {
 	fixture.Connect(t, me, b)
 	fixture.Connect(t, me, c)
 
-	bus, err := discovery.NewBus(psA, "test")
+	bus, err := statsService.NewBus(psA, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
 	// a is busy, b is idle, c is never described; and one garbage message.
 	report := func(p peer.ID, load float64) []byte {
-		raw, _ := proto.Marshal(&discoveryv2.Report{Peer: p.String(), Incarnation: 1, Load: load, Ready: true, Serving: []string{"register"}})
+		raw, _ := proto.Marshal(&statsv2.Report{Peer: p.String(), Incarnation: 1, Load: load, Ready: true, Serving: []string{"register"}})
 		return raw
 	}
 	eventually(t, "reports heard", func() bool {

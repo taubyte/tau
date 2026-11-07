@@ -33,7 +33,7 @@ import (
 	"github.com/taubyte/tau/pkg/certificate/acme"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
-	"github.com/taubyte/tau/services/discovery"
+	statsService "github.com/taubyte/tau/services/stats"
 )
 
 type tierList struct {
@@ -120,7 +120,7 @@ const (
 // minute to avoid placement thrash on restarting peers; a universe's goroutine
 // nodes never restart. A shorter window is also harder to interrupt. It took the
 // settle barrier from 65s to 20s.
-var dreamStabilize = discovery.Config{}.Freshness()
+var dreamStabilize = statsService.Config{}.Freshness()
 
 // dreamTimeouts is DefaultTimeoutConfig's shape at dream's scale: election twice
 // heartbeat, commit and lease equal to it (hashicorp rejects a lease above the
@@ -312,7 +312,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		Container: containers.Declared{Backend: cfg.Container},
 	}
 	nodeConfig.DNSListen = "127.0.0.1:0"
-	nodeConfig.Sections = map[string]any{discovery.Descriptor.Name: discovery.Config{Stabilize: dreamStabilize}}
+	nodeConfig.Sections = map[string]any{statsService.Descriptor.Name: statsService.Config{Stabilize: dreamStabilize}}
 	// A universe is one developer's cloud, so sign-up is open.
 	nodeConfig.Auth.SignUp = auth.SignUpOpen
 	// A development cloud serves declared zones unproven, takes a developer's build,

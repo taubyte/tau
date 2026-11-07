@@ -18,8 +18,8 @@ import (
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/cm"
-	"github.com/taubyte/tau/services/discovery"
 	"github.com/taubyte/tau/services/register"
+	statsService "github.com/taubyte/tau/services/stats"
 )
 
 // machine is the instance the database service runs on: a peer, a directory, a
@@ -96,7 +96,7 @@ func (m *machine) start(t *testing.T, name string, s service.Service) {
 	m.beside(name, s)
 }
 
-// fleetOf is a discovery that sees the members it is given.
+// fleetOf is a stats service that sees the members it is given.
 type fleetOf []placement.Member
 
 func (f fleetOf) Placement() []placement.Member { return f }
@@ -109,7 +109,7 @@ func TestTheDatabaseServiceRunsFromWhatItsInstanceGivesIt(t *testing.T) {
 	m.start(t, register.Descriptor.Name, reg)
 	_, err := reg.Local().Publish(ctx, pkgregister.Publication{Project: projectID, Environment: "prod", Revision: 1, Compiled: compiled()})
 	require.NoError(t, err)
-	m.beside("discovery", fleetOf{{ID: m.ID().String(), Accepts: true}})
+	m.beside("stats", fleetOf{{ID: m.ID().String(), Accepts: true}})
 
 	d := New()
 	m.start(t, Descriptor.Name, d)
@@ -135,7 +135,7 @@ func TestTheDatabaseServiceRunsFromWhatItsInstanceGivesIt(t *testing.T) {
 	require.Eventually(t, func() bool { return ledger.Put(ctx, "entry-1", []byte("one")) == nil }, 10*time.Second, 20*time.Millisecond)
 
 	// AND WHAT IT ADDS TO ITS NODE'S REPORT.
-	var snap discovery.Snapshot
+	var snap statsService.Snapshot
 	s.Report(&snap)
 	require.Equal(t, s.FleetRevision(), snap.FleetRevision)
 	require.Equal(t, s.Pending(), snap.DatabasesPending)
@@ -157,7 +157,7 @@ func TestTheDatabaseServiceRefusesWhatItCannotStartWith(t *testing.T) {
 	m.start(t, Descriptor.Name, d)
 	s := d.(*server)
 	require.Equal(t, time.Hour, s.sweep)
-	require.Empty(t, s.members(), "no discovery beside it, no fleet")
+	require.Empty(t, s.members(), "no stats beside it, no fleet")
 }
 
 func TestAStoreThisNodeReleasesIsDestroyedAndReopened(t *testing.T) {

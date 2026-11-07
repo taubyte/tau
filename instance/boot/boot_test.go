@@ -123,7 +123,7 @@ func TestTheExampleRoundTrips(t *testing.T) {
 
 func TestANodeStartsAndServes(t *testing.T) {
 	f := admit(t, File{
-		Node:   instance.Config{Services: []string{instance.Register, instance.Discovery, instance.Gateway}},
+		Node:   instance.Config{Services: []string{instance.Register, instance.Stats, instance.Gateway}},
 		Root:   t.TempDir(),
 		Listen: []string{"/ip4/127.0.0.1/tcp/0"},
 		HTTP:   "127.0.0.1:0",
@@ -134,14 +134,14 @@ func TestANodeStartsAndServes(t *testing.T) {
 	defer running.Close()
 
 	require.NotNil(t, running.Register())
-	require.NotNil(t, running.Discovery())
+	require.NotNil(t, running.Stats())
 	require.NotNil(t, running.Handler())
 
 	// It reports itself, which is what the rest of the fleet routes on.
 	var self stats.Node
 	require.Eventually(t, func() bool {
 		var ok bool
-		self, ok = running.Discovery().Get(running.Host().ID().String())
+		self, ok = running.Stats().Get(running.Host().ID().String())
 		return ok
 	}, 10*time.Second, 20*time.Millisecond)
 	require.True(t, self.Ready)
@@ -177,7 +177,7 @@ func TestAnAddressAlreadyTaken(t *testing.T) {
 	defer held.Close()
 
 	_, err = Start(t.Context(), admit(t, File{
-		Node:   instance.Config{Services: []string{instance.Discovery, instance.Gateway}},
+		Node:   instance.Config{Services: []string{instance.Stats, instance.Gateway}},
 		Root:   t.TempDir(),
 		Listen: []string{"/ip4/127.0.0.1/tcp/0"},
 		HTTP:   held.Addr().String(),
@@ -217,7 +217,7 @@ func TestANodeThatCannotBeBuiltClosesWhatWasOpened(t *testing.T) {
 
 func TestANodeWithBootstrapPeersDialsThem(t *testing.T) {
 	first, err := Start(t.Context(), admit(t, File{
-		Node:   instance.Config{Services: []string{instance.Register, instance.Discovery}},
+		Node:   instance.Config{Services: []string{instance.Register, instance.Stats}},
 		Root:   t.TempDir(),
 		Listen: []string{"/ip4/127.0.0.1/tcp/0"},
 	}))
@@ -229,7 +229,7 @@ func TestANodeWithBootstrapPeersDialsThem(t *testing.T) {
 	bootstrap := addrs[0].String() + "/p2p/" + first.Host().ID().String()
 
 	second, err := Start(t.Context(), admit(t, File{
-		Node:      instance.Config{Services: []string{instance.Register, instance.Discovery}},
+		Node:      instance.Config{Services: []string{instance.Register, instance.Stats}},
 		Root:      t.TempDir(),
 		Listen:    []string{"/ip4/127.0.0.1/tcp/0"},
 		Bootstrap: []string{bootstrap},
@@ -242,7 +242,7 @@ func TestANodeWithBootstrapPeersDialsThem(t *testing.T) {
 
 func TestAServingNodeSaysWhereItIsBound(t *testing.T) {
 	running, err := Start(t.Context(), admit(t, File{
-		Node:   instance.Config{Services: []string{instance.Register, instance.Discovery, instance.Gateway}},
+		Node:   instance.Config{Services: []string{instance.Register, instance.Stats, instance.Gateway}},
 		Root:   t.TempDir(),
 		Listen: []string{"/ip4/127.0.0.1/tcp/0"},
 		HTTP:   "127.0.0.1:0",

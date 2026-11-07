@@ -21,7 +21,7 @@ func TestAServiceIsResolvedByNameToTheNodeRunningIt(t *testing.T) {
 		Configure: func(index int, c *instance.Config) {
 			c.CloudFqdn = cloud
 			if index > 0 {
-				c.Services = []string{instance.Discovery, instance.PLM}
+				c.Services = []string{instance.Stats, instance.PLM}
 			}
 		},
 	})

@@ -13,8 +13,10 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/host"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/taubyte/tau/core/kvdb"
+	"github.com/taubyte/tau/p2p/discovery"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/rpc"
 )
@@ -70,9 +72,11 @@ type Databases interface {
 	Database(name string) (kvdb.Instance, error)
 }
 
-// Directory says which nodes run a service: what discovery answers.
-type Directory interface {
-	Peers(service string) []libp2ppeer.ID
+// Finder finds the nodes serving a protocol: libp2p identify for the peers this node
+// is connected to, then routing for the ones it has not met. It never reads the
+// stats service's usage table, which dns and placement read.
+type Finder interface {
+	Find(id protocol.ID) discovery.Resolver
 }
 
 // ErrNoneRuns is a service no node is known to run.
@@ -90,17 +94,17 @@ func Get[T any](h Host) (T, bool) {
 	return zero, false
 }
 
-// Reach is the service named as h reaches it: the T running on this instance when
-// there is one, otherwise a client dial opens to a node the directory beside it
+// Reach is the service serving id as h reaches it: the T running on this instance
+// when there is one, otherwise a client dial opens to a node the finder beside it
 // names. See p2p/rpc's Reach for why the local case is no client at all.
-func Reach[T any](h Host, name string, dial func(host.Host, libp2ppeer.ID) (T, error)) *rpc.Reacher[T] {
-	return reach(h, name, func() (T, bool) { return Get[T](h) }, dial)
+func Reach[T any](h Host, id protocol.ID, dial func(host.Host, libp2ppeer.ID) (T, error)) *rpc.Reacher[T] {
+	return reach(h, id, func() (T, bool) { return Get[T](h) }, dial)
 }
 
 // ReachAs is Reach for a service that runs as an S and is reached as the T as makes
 // of it, such as a service whose store is what its clients mirror.
-func ReachAs[S, T any](h Host, name string, as func(S) T, dial func(host.Host, libp2ppeer.ID) (T, error)) *rpc.Reacher[T] {
-	return reach(h, name, func() (T, bool) {
+func ReachAs[S, T any](h Host, id protocol.ID, as func(S) T, dial func(host.Host, libp2ppeer.ID) (T, error)) *rpc.Reacher[T] {
+	return reach(h, id, func() (T, bool) {
 		s, ok := Get[S](h)
 		if !ok {
 			var zero T
@@ -110,41 +114,64 @@ func ReachAs[S, T any](h Host, name string, as func(S) T, dial func(host.Host, l
 	}, dial)
 }
 
-func reach[T any](h Host, name string, local func() (T, bool), dial func(host.Host, libp2ppeer.ID) (T, error)) *rpc.Reacher[T] {
-	self := h.Peer().Host()
-	return rpc.Reach(self, name,
-		func() (libp2ppeer.ID, error) {
-			d, ok := Get[Directory](h)
-			if !ok {
-				return "", fmt.Errorf("%w: %s, and no directory runs here to ask", ErrNoneRuns, name)
-			}
-			for _, id := range d.Peers(name) {
-				if id != self.ID() {
-					return id, nil
-				}
-			}
-			return "", fmt.Errorf("%w: %s", ErrNoneRuns, name)
-		},
-		local,
-		func(id libp2ppeer.ID) (T, error) { return dial(self, id) })
+// Serving is every node h's finder knows serves id, h's own node left out; nil when
+// nothing on h finds peers.
+func Serving(h Host, id protocol.ID) []libp2ppeer.ID {
+	f, ok := Get[Finder](h)
+	if !ok {
+		return nil
+	}
+	self := h.Peer().Host().ID()
+	var out []libp2ppeer.ID
+	for _, p := range f.Find(id).Known() {
+		if p != self {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
-// Routed is the service named at the node the directory beside h names first, this one
-// among them, and here when it names none: for work that should leave the node
-// handing it out. See p2p/rpc's ReachRouted for why that is not Reach.
-func Routed[T any](h Host, name string, here T, dial func(host.Host, libp2ppeer.ID) (T, error)) *rpc.Reacher[T] {
+// Found is Serving, or why it is empty.
+func Found(h Host, id protocol.ID) ([]libp2ppeer.ID, error) {
+	if _, ok := Get[Finder](h); !ok {
+		return nil, fmt.Errorf("%w: %s, and nothing here finds peers", ErrNoneRuns, id)
+	}
+	out := Serving(h, id)
+	if len(out) == 0 {
+		return nil, fmt.Errorf("%w: %s", ErrNoneRuns, id)
+	}
+	return out, nil
+}
+
+func reach[T any](h Host, id protocol.ID, local func() (T, bool), dial func(host.Host, libp2ppeer.ID) (T, error)) *rpc.Reacher[T] {
 	self := h.Peer().Host()
-	return rpc.ReachRouted(self, name,
+	return rpc.Reach(self, string(id),
 		func() (libp2ppeer.ID, error) {
-			if d, ok := Get[Directory](h); ok {
-				if ids := d.Peers(name); len(ids) > 0 {
-					return ids[0], nil
-				}
+			found, err := Found(h, id)
+			if err != nil {
+				return "", err
 			}
-			return "", fmt.Errorf("%w: %s", ErrNoneRuns, name)
+			return found[0], nil
+		},
+		local,
+		func(p libp2ppeer.ID) (T, error) { return dial(self, p) })
+}
+
+// Routed is the service serving id at a node the finder beside h names, and here when
+// it names none: for work that should leave the node handing it out. See p2p/rpc's
+// ReachRouted for why that is not Reach.
+func Routed[T any](h Host, id protocol.ID, here T, dial func(host.Host, libp2ppeer.ID) (T, error)) *rpc.Reacher[T] {
+	self := h.Peer().Host()
+	return rpc.ReachRouted(self, string(id),
+		func() (libp2ppeer.ID, error) {
+			found, err := Found(h, id)
+			if err != nil {
+				return "", err
+			}
+			return found[0], nil
 		},
 		func() (T, bool) { return here, true },
-		func(id libp2ppeer.ID) (T, error) { return dial(self, id) })
+		func(p libp2ppeer.ID) (T, error) { return dial(self, p) })
 }
 
 // Lone runs services on one peer outside an instance: what a test or a dream harness

@@ -53,7 +53,7 @@ func TestAComposedIdentityIsWhatAuthAnswersWith(t *testing.T) {
 }
 
 func TestWhatWithIdentityRefuses(t *testing.T) {
-	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Discovery}}), WithIdentity(nil))
+	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Stats}}), WithIdentity(nil))
 	require.Error(t, err)
 
 	for name, build := range map[string]func(Host) (authService.Identity, error){

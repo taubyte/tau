@@ -115,7 +115,7 @@ type Domains struct {
 
 // Open is a builder's runs on an instance, configured by cfg: its clone credentials
 // in the vault, its artifacts and logs kept in the storage service, its deploys
-// published to the register and zones proven by cm, each wherever discovery finds
+// published to the register and zones proven by cm, each wherever the finder finds
 // them. The builder service serves them; a development cloud running no builder
 // calls them in place.
 func Open(h service.Host, cfg Config) (*Runs, error) {

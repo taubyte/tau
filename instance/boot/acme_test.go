@@ -138,7 +138,7 @@ func issuing(t *testing.T, ca *pebble, cloud, root string, cfg cm.CertificateCon
 	}
 	return initialized(t, accountBundle(t), admit(t, File{
 		Node: instance.Config{
-			Services:  []string{instance.Register, instance.Discovery, instance.Gateway, instance.DNS, instance.Secrets, instance.CM},
+			Services:  []string{instance.Register, instance.Stats, instance.Gateway, instance.DNS, instance.Secrets, instance.CM},
 			DNSListen: "127.0.0.1:0",
 			CloudFqdn: cloud,
 			CM:        cm.Config{Certificate: cfg},

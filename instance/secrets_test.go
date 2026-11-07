@@ -16,7 +16,7 @@ import (
 // reads.
 
 func TestTheDevelopersHalfWritesWhereTheRequestPathReads(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}})
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
 	require.NoError(t, n.Start(t.Context()))
 	require.NotNil(t, n.vault, "a node that runs a worker builds a vault")
 
@@ -46,12 +46,12 @@ func TestTheDevelopersHalfWritesWhereTheRequestPathReads(t *testing.T) {
 
 func TestTheWriteHalfGoesToWhicheverNodeHoldsTheVault(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Secrets, Discovery}},
-		Config{Services: []string{Worker, Discovery}},
+		Config{Services: []string{Register, Secrets, Stats}},
+		Config{Services: []string{Worker, Stats}},
 	)
 	holder, frontend := nodes[0], nodes[1]
 
-	sees(t, frontend, Secrets)
+	finds(t, frontend, secretsService.Protocol)
 	require.NotNil(t, frontend.vault)
 
 	require.NoError(t, frontend.vault.Set(t.Context(), "shop", "prod", secretID, []byte("sk_live")))
@@ -77,7 +77,7 @@ func TestAWriteWithNoVaultAnywhereIsRefused(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register}})
 	require.NoError(t, n.Start(t.Context()))
 
-	// This node runs neither a vault nor the discovery that would find one, so the
+	// This node runs no vault and finds no node running one, so the
 	// vault has nothing to open — which is the shape a `Services` list that
 	// forgot the secrets service produces.
 	v := newVault(n)
@@ -106,14 +106,14 @@ func TestAnInjectedResolverOutranksTheNodesOwnVault(t *testing.T) {
 		return "from the injected one", nil
 	})
 
-	with, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}}, WithSecrets(injected))
+	with, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}}, WithSecrets(injected))
 	require.NoError(t, with.Start(t.Context()))
 	got, err := with.secretResolver().Secret(t.Context(), "shop", "prod", secretID)
 	require.NoError(t, err)
 	require.Equal(t, "from the injected one", got)
 
 	// WITHOUT ONE IT IS THIS NODE'S VAULT...
-	own, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}})
+	own, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
 	require.NoError(t, own.Start(t.Context()))
 	require.Equal(t, own.vault, own.secretResolver())
 
@@ -136,7 +136,7 @@ func TestInitWritesTheCloudsSecretsTheNodeThenServes(t *testing.T) {
 
 	require.ErrorIs(t, secretsService.Init(ctx, p, "", secretsService.Config{}, bundle), secretsService.ErrNoRoot)
 	require.NoError(t, secretsService.Init(ctx, p, root, secretsService.Config{}, bundle))
-	cfg := Config{Services: []string{Register, Discovery, Secrets}}
+	cfg := Config{Services: []string{Register, Stats, Secrets}}
 
 	// THE SAME PEER, so the node opens the database init wrote into.
 	n, err := New(p, rootedIn(t, cfg, root), withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }))

@@ -58,12 +58,12 @@ func (g gossipWith) String() string {
 	return b.String()
 }
 
-// viewOf is every node a node's discovery view holds, and how stale.
+// viewOf is every node a node's stats view holds, and how stale.
 type viewOf struct{ n *Instance }
 
 func (v viewOf) String() string {
 	var b strings.Builder
-	for _, row := range v.n.Discovery().All() {
+	for _, row := range v.n.Stats().All() {
 		fmt.Fprintf(&b, "\nview: %s serving %v, %s old", row.Peer, row.Serving, row.Age.Round(time.Millisecond))
 	}
 	return b.String()

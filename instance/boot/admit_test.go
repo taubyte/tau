@@ -47,7 +47,7 @@ func admitBy(t *testing.T, ca *sectls.CA, f File, validity time.Duration) File {
 
 func bare(t *testing.T) File {
 	return File{
-		Node:   instance.Config{Services: []string{instance.Register, instance.Discovery}, Cloud: "acme"},
+		Node:   instance.Config{Services: []string{instance.Register, instance.Stats}, Cloud: "acme"},
 		Root:   t.TempDir(),
 		Listen: []string{"/ip4/127.0.0.1/tcp/0"},
 	}

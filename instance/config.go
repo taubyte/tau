@@ -32,14 +32,14 @@ import (
 // misspelled service that starts nothing is a node that looks healthy and
 // answers nothing.
 const (
-	Register  = "register"
-	Worker    = "worker"
-	Discovery = "discovery"
-	Gateway   = "gateway"
-	Auth      = "auth"
-	Secrets   = "secrets"
-	Proxy     = "proxy"
-	DNS       = "dns"
+	Register = "register"
+	Worker   = "worker"
+	Stats    = "stats"
+	Gateway  = "gateway"
+	Auth     = "auth"
+	Secrets  = "secrets"
+	Proxy    = "proxy"
+	DNS      = "dns"
 
 	// Database holds a project's databases. It is its OWN service and not the
 	// worker's job — v1 made the substrate open them, so the data plane was

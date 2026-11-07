@@ -43,13 +43,13 @@ import (
 	"github.com/taubyte/tau/services/cm"
 	cmService "github.com/taubyte/tau/services/cm"
 	databaseService "github.com/taubyte/tau/services/database"
-	"github.com/taubyte/tau/services/discovery"
 	dnsService "github.com/taubyte/tau/services/dns"
 	gateway "github.com/taubyte/tau/services/gateway"
 	primitivesService "github.com/taubyte/tau/services/primitives"
 	v2proxy "github.com/taubyte/tau/services/proxy"
 	registerService "github.com/taubyte/tau/services/register"
 	secretsService "github.com/taubyte/tau/services/secrets"
+	statsService "github.com/taubyte/tau/services/stats"
 	"github.com/taubyte/tau/services/worker"
 	"github.com/taubyte/tau/services/worker/objects"
 )
@@ -75,12 +75,12 @@ type Instance struct {
 	runningMu sync.Mutex
 	running   []service.Running
 
-	discovery discovery.Service
-	register  registerService.Service
-	worker    *worker.Service
-	gateway   *gateway.Service
-	proxy     *v2proxy.Service
-	dns       *dnsService.Service
+	stats    statsService.Service
+	register registerService.Service
+	worker   *worker.Service
+	gateway  *gateway.Service
+	proxy    *v2proxy.Service
+	dns      *dnsService.Service
 
 	secrets secretsService.Service
 
@@ -149,6 +149,9 @@ type Instance struct {
 	closersMu sync.Mutex
 	closers   []io.Closer
 
+	// finder is how a service here finds a peer: p2p discovery by protocol.
+	finder *finder
+
 	// shared is the vault Vault hands out, made on first use.
 	sharedMu sync.Mutex
 	shared   *secretsService.Vault
@@ -202,10 +205,10 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 		}
 		if s, ok := o.serviceNamed(name); ok {
 			n.services = append(n.services, named{name: name, service: s})
-			// THE BUILT-INS STILL TAKE DISCOVERY AT CONSTRUCTION, until they are
+			// THE BUILT-INS STILL TAKE STATS AT CONSTRUCTION, until they are
 			// services and reach it themselves.
-			if d, ok := s.(discovery.Service); ok {
-				n.discovery = d
+			if d, ok := s.(statsService.Service); ok {
+				n.stats = d
 			}
 			if r, ok := s.(registerService.Service); ok {
 				n.register = r
@@ -231,6 +234,10 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 	n.provide("", builtIns{n})
 	// The certificate a service's own public listener answers with.
 	n.provide("", listeners{n})
+	// How every service here finds a peer serving a protocol.
+	n.finder = &finder{n: n}
+	n.provide("", n.finder)
+	n.closers = append(n.closers, n.finder)
 	// And the workloads the clock fires through, while the worker is one of them.
 	if cfg.runs(Worker) {
 		n.provide("", workloads{n})
@@ -274,7 +281,7 @@ func (n *Instance) open() error {
 		return err
 	}
 	// AND DNS LAST OF THE EDGE SERVICES, because it publishes what the two
-	// above and every other node reported — it answers from the discovery view and
+	// above and every other node reported — it answers from the stats view and
 	// takes nothing else.
 	return n.openDNS()
 }
@@ -449,9 +456,7 @@ func (n *Instance) openWorker() error {
 	// composer injected something else. An injected one wins because it is the
 	// more specific statement: somebody who handed this node an artifact
 	// resolver meant that one.
-	if a := n.Artifacts(); a != nil {
-		options = append(options, worker.WithArtifacts(a))
-	}
+	options = append(options, worker.WithArtifacts(n.Artifacts()))
 	// A SECRET IS RESOLVED THE SAME WAY AN ARTIFACT IS, and by the same rule:
 	// an injected resolver wins, then this node's own vault or one in the
 	// fleet. Without either, a resource that names a secret is refused with
@@ -461,7 +466,7 @@ func (n *Instance) openWorker() error {
 		options = append(options, worker.WithSecrets(n.opts.secrets))
 	case n.vault != nil:
 		options = append(options, worker.WithSecrets(n.vault))
-	case n.secrets != nil || n.discovery != nil:
+	case n.secrets != nil || n.stats != nil:
 		// A worker with no wasm tier — an injected one, or a node with no
 		// asset store — never built the shared vault above.
 		options = append(options, worker.WithSecrets(n.sharedVault()))
@@ -540,7 +545,7 @@ func (w *lineWriter) Write(p []byte) (int, error) {
 // gateway and by channel dials alike. A node without stats gets none and can only
 // reach itself; the gateway refuses to start without it.
 func (n *Instance) openPlacement() error {
-	if n.discovery == nil {
+	if n.stats == nil {
 		return nil
 	}
 
@@ -549,7 +554,7 @@ func (n *Instance) openPlacement() error {
 		options = append(options, placement.WithLocal(n.worker))
 	}
 
-	workers, err := placement.New(n.Host(), n.discovery, options...)
+	workers, err := placement.New(n.Host(), n.stats, options...)
 	if err != nil {
 		return err
 	}
@@ -563,7 +568,7 @@ func (n *Instance) openGateway() error {
 		return nil
 	}
 	if n.workers == nil {
-		return errors.New("node: a gateway routes from discovery, and this node does not run one")
+		return errors.New("node: a gateway places requests from stats, and this node does not run it")
 	}
 
 	source := n.views
@@ -625,9 +630,7 @@ func (n *Instance) openGateway() error {
 
 	// A PACKAGE HANDLER'S FILES are read from the build's artifact, as a worker
 	// reads one: the same lookup, the same storage service.
-	if a := n.Artifacts(); a != nil {
-		gatewayOptions = append(gatewayOptions, gateway.WithFiles(a, n.store))
-	}
+	gatewayOptions = append(gatewayOptions, gateway.WithFiles(n.Artifacts(), n.store))
 
 	svc, err := gateway.New(n.cfg.Gateway, gatewayOptions...)
 	if err != nil {
@@ -639,16 +642,12 @@ func (n *Instance) openGateway() error {
 }
 
 // Artifacts is what this node's worker looks a built resource's artifact up in: the
-// one it was given, else plm's records on this node. Nil on a node with no
-// discovery.
+// one it was given, else plm's records on this node.
 func (n *Instance) Artifacts() worker.Artifacts {
-	switch {
-	case n.opts.artifacts != nil:
+	if n.opts.artifacts != nil {
 		return n.opts.artifacts
-	case n.discovery != nil:
-		return n.PLMArtifacts()
 	}
-	return nil
+	return n.PLMArtifacts()
 }
 
 // secretResolver is whichever resolver this node settled on, or nil.
@@ -676,12 +675,12 @@ func (n *Instance) Start(ctx context.Context) error {
 		return errors.New("node: already started")
 	}
 
-	// THE CONFIGURED SERVICES FIRST: discovery among them, and everything else
-	// routes on the view it maintains. What they reach on the built-ins beside
-	// them they reach lazily.
+	// THE CONFIGURED SERVICES FIRST, then every protocol they serve advertised. What
+	// they reach on the built-ins beside them they reach lazily.
 	if err := n.startServices(ctx); err != nil {
 		return err
 	}
+	n.advertise()
 
 	var order []starter
 	if n.worker != nil {
@@ -736,7 +735,7 @@ func (n *Instance) Start(ctx context.Context) error {
 	}
 
 	// The dispatcher runs on any node with a worker, with or without local raft: queues
-	// are the primitives service's, reached through discovery when not local.
+	// are the primitives service's, reached through the finder when not local.
 	if n.worker != nil {
 		n.dispatchDone = make(chan struct{})
 		go (&dispatcher{node: n}).loop(loopCtx, n.dispatchDone)
@@ -843,10 +842,10 @@ func (n *Instance) Close() error {
 
 // builtIns is what the services this instance still builds itself add to its
 // report: their names, the sockets the proxy accepts, and what the database knows
-// about placement. Load is zero and said to be; discovery adds the addresses.
+// about placement. Load is zero and said to be; stats adds the addresses.
 type builtIns struct{ n *Instance }
 
-func (b builtIns) Report(snap *discovery.Snapshot) {
+func (b builtIns) Report(snap *statsService.Snapshot) {
 	n := b.n
 	snap.Serving = append(snap.Serving, n.serving()...)
 	snap.Sockets = append(snap.Sockets, n.proxySockets()...)
@@ -870,7 +869,7 @@ func (n *Instance) serving() []string {
 
 // Vault is the cloud's secrets as this node reads and writes them: through
 // its own service when it runs one, otherwise through whichever nodes
-// discovery names. It is made once and closed with the node.
+// the finder names. It is made once and closed with the node.
 func (n *Instance) Vault() Vault {
 	n.sharedMu.Lock()
 	defer n.sharedMu.Unlock()
@@ -899,13 +898,13 @@ func (n *Instance) Database() databaseService.Service { return n.database }
 // Primitives is this node's primitives service, or nil if it runs none.
 func (n *Instance) Primitives() primitivesService.Service { return n.primitives }
 
-// Discovery is this node's view of the fleet, or nil.
-func (n *Instance) Discovery() discovery.Service { return n.discovery }
+// Stats is this node's view of the fleet, or nil.
+func (n *Instance) Stats() statsService.Service { return n.stats }
 
 // PubSub is the gossip this node was given, for a composer that has to attach
 // something to it — a stream subscriber, a test listening for what a workload
 // published.
-func (n *Instance) PubSub() discovery.PubSub { return n.Messaging() }
+func (n *Instance) PubSub() statsService.PubSub { return n.Messaging() }
 
 // QueueDepth is what one declared queue holds: items waiting and claimed. For
 // operators and tests; it reads local state without a barrier. `ok` is false for an

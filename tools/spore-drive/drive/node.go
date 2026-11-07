@@ -37,7 +37,7 @@ var logger = log.Logger("tau.spore-drive")
 var v1Services = map[string][]string{
 	"auth":      {instance.Auth, instance.Secrets},
 	"tns":       {instance.Register},
-	"seer":      {instance.Discovery, instance.DNS},
+	"seer":      {instance.Stats, instance.DNS},
 	"substrate": {instance.Worker, instance.Gateway},
 	"gateway":   {instance.Gateway},
 	"hoarder":   {instance.Database, instance.Primitives},
@@ -195,10 +195,10 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 		return nil, err
 	}
 
-	// EVERY NODE RUNS STATS. It is how a v2 node is seen by the fleet at all:
-	// a node that does not gossip its services is never routed to.
-	if !slices.Contains(services, instance.Discovery) {
-		services = append(services, instance.Discovery)
+	// EVERY NODE RUNS STATS: its usage is what dns answers with and placement
+	// places by. Finding a node's services is p2p discovery's, not this.
+	if !slices.Contains(services, instance.Stats) {
+		services = append(services, instance.Stats)
 	}
 
 	ca, err := p.Cloud().P2P().CA().Load()

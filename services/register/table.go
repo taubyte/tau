@@ -43,5 +43,5 @@ func DialTable(h host.Host, id libp2ppeer.ID) (Table, error) { return NewClient(
 // TableOn is the register's table as services on h reach it: the store of the register
 // beside them, else a client of one discovery names.
 func TableOn(h service.Host) *rpc.Reacher[Table] {
-	return service.ReachAs(h, Descriptor.Name, func(s Service) Table { return s.Local() }, DialTable)
+	return service.ReachAs(h, Protocol, func(s Service) Table { return s.Local() }, DialTable)
 }

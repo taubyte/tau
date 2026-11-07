@@ -3,23 +3,22 @@ package instance
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sort"
 
 	storageService "github.com/taubyte/tau/services/storage"
 
 	"github.com/ipfs/go-log/v2"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/taubyte/tau/p2p/rpc"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	pkgstats "github.com/taubyte/tau/pkg/stats"
 	registerService "github.com/taubyte/tau/services/register"
 )
 
 // How one service on this node finds another: use it directly if this node runs it,
-// otherwise dial the node discovery names. The rule is p2p/rpc's rpc.Reach; this
-// package supplies who to call (Node.routeTo).
+// otherwise dial a node the finder names (find.go). The rule is p2p/rpc's rpc.Reach;
+// this package supplies who to call (Node.routeTo).
 
 var logger = log.Logger("tau.v2.node")
 
@@ -41,7 +40,7 @@ type registerReader interface {
 }
 
 // registerSeam is the register as the reach hands it back: this node's own, or a
-// stream to the node discovery names. It is the union its callers need; each is
+// stream to a node the finder names. It is the union its callers need; each is
 // handed a narrower view, and only a deploy's carries Publish.
 type registerSeam interface {
 	registerReader
@@ -62,36 +61,16 @@ type registerSeam interface {
 	RoleOf(ctx context.Context, project, user string) (pkgregister.Role, error)
 }
 
-// routeTo is the pick half of every reach: which node runs `service`, least loaded
-// first. The tolerance is the stats config's effective one; the raw field is zero when
-// unset and would make every node look absent. What an empty route means is the
-// reach's. `blind` is for a node with no fleet view at all.
-func (n *Instance) routeTo(service string, absent error, blind string) func() (libp2ppeer.ID, error) {
+// routeTo is the pick half of every reach: a node serving id, as the finder finds
+// it. What an empty answer means is the reach's.
+func (n *Instance) routeTo(id protocol.ID, absent error) func() (libp2ppeer.ID, error) {
 	return func() (libp2ppeer.ID, error) {
-		if n.discovery == nil {
-			return "", fmt.Errorf("%w: %s", absent, blind)
-		}
-
-		nodes := n.rowsFor(service)
-		if len(nodes) == 0 {
+		known := n.finder.Find(id).Known()
+		if len(known) == 0 {
 			return "", absent
 		}
-
-		id, err := libp2ppeer.Decode(nodes[0].Peer)
-		if err != nil {
-			return "", fmt.Errorf("%w: %q is not a peer", absent, nodes[0].Peer)
-		}
-		return id, nil
+		return known[0], nil
 	}
-}
-
-// rowsFor is every node the view says runs `service`, in view order, the one place
-// the tolerance is read. What an undecodable row means is the caller's.
-func (n *Instance) rowsFor(service string) []pkgstats.Node {
-	if n.discovery == nil {
-		return nil
-	}
-	return n.discovery.Routes(service)
 }
 
 // openReach wires every locator this node has, BEFORE anything that uses one.
@@ -104,7 +83,7 @@ func (n *Instance) openReach() {
 	n.views = registerService.ViewsOn(&added{node: n})
 	n.store = storageService.StoreOn(&added{node: n})
 	n.registers = rpc.Reach(n.Host(), Register,
-		n.routeTo(Register, ErrNoRegister, "this node runs neither a register nor discovery to find one"),
+		n.routeTo(registerService.Protocol, ErrNoRegister),
 		func() (registerSeam, bool) {
 			// A LOCAL REGISTER IS NOT A CACHE, IT IS THE ABSENCE OF A HOP.
 			if n.register == nil || n.register.Local() == nil {

@@ -74,10 +74,10 @@ func holdingSync(t *testing.T, cfg Config) *Instance {
 }
 
 func TestANodeThatRunsPrimitivesOpensTheService(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Discovery, Primitives}})
+	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
 	require.NotNil(t, n.Primitives(), "the service list named it")
 
-	other, _, _ := makeNode(t, Config{Services: []string{Register, Discovery}})
+	other, _, _ := makeNode(t, Config{Services: []string{Register, Stats}})
 	require.Nil(t, other.Primitives(), "the service list did not")
 }
 
@@ -88,7 +88,7 @@ func TestTheDefaultShapeRunsPrimitives(t *testing.T) {
 }
 
 func TestASendThroughTheNodeLandsInThePrimitivesNamespace(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Discovery, Primitives}})
+	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
 	jobs := handleOf(primJobsID)
 
 	require.NoError(t, n.syncs.Send(t.Context(), jobs, "order-1", []byte("ship it")))
@@ -99,7 +99,7 @@ func TestASendThroughTheNodeLandsInThePrimitivesNamespace(t *testing.T) {
 }
 
 func TestQueueDepthAnswersFromTheService(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Discovery, Primitives}})
+	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
 	jobs := handleOf(primJobsID)
 
 	require.NoError(t, n.syncs.Send(t.Context(), jobs, "order-1", []byte("ship it")))
@@ -111,14 +111,14 @@ func TestQueueDepthAnswersFromTheService(t *testing.T) {
 }
 
 func TestASendToAQueueNobodyDeclaredIsRefused(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Discovery, Primitives}})
+	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
 
 	err := n.syncs.Send(t.Context(), handleOf("QmNothingDeclaresThis"), "1", []byte("x"))
 	require.ErrorIs(t, err, primitivesService.ErrNotDeclared)
 }
 
 func TestALogAppendedThroughTheNodeIsReadBackFromTheService(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Discovery, Primitives}})
+	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
 	audit := handleOf(primAuditID)
 
 	cursor, err := n.syncs.Append(t.Context(), audit, []byte("first"))
@@ -137,8 +137,8 @@ func TestALogAppendedThroughTheNodeIsReadBackFromTheService(t *testing.T) {
 
 func TestAWorkerReachesAPrimitivesServiceOnAnotherNode(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Discovery, Primitives}},
-		Config{Services: []string{Worker, Discovery}},
+		Config{Services: []string{Register, Stats, Primitives}},
+		Config{Services: []string{Worker, Stats}},
 	)
 	holder, compute := nodes[0], nodes[1]
 
@@ -148,7 +148,7 @@ func TestAWorkerReachesAPrimitivesServiceOnAnotherNode(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, holder.Primitives().WaitForLeader(t.Context()))
 
-	sees(t, compute, Primitives)
+	finds(t, compute, primitivesService.Protocol)
 
 	jobs := handleOf(primJobsID)
 	require.NoError(t, compute.syncs.Send(t.Context(), jobs, "order-1", []byte("ship it")))
@@ -160,11 +160,11 @@ func TestAWorkerReachesAPrimitivesServiceOnAnotherNode(t *testing.T) {
 
 func TestTheStreamToARemotePrimitivesServiceIsKept(t *testing.T) {
 	nodes := fleet(t,
-		Config{Services: []string{Register, Discovery, Primitives}},
-		Config{Services: []string{Worker, Discovery}},
+		Config{Services: []string{Register, Stats, Primitives}},
+		Config{Services: []string{Worker, Stats}},
 	)
 	compute := nodes[1]
-	sees(t, compute, Primitives)
+	finds(t, compute, primitivesService.Protocol)
 
 	first, err := compute.sends.Now(t.Context())
 	require.NoError(t, err)
@@ -174,14 +174,14 @@ func TestTheStreamToARemotePrimitivesServiceIsKept(t *testing.T) {
 }
 
 func TestASendWithNoPrimitivesAnywhereIsRefused(t *testing.T) {
-	nodes := fleet(t, Config{Services: []string{Worker, Discovery}})
+	nodes := fleet(t, Config{Services: []string{Worker, Stats}})
 
 	err := nodes[0].syncs.Send(t.Context(), handleOf(primJobsID), "1", []byte("x"))
 	require.ErrorIs(t, err, ErrNoPrimitives)
 }
 
 func TestClosingANodeClosesThePrimitivesService(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Discovery, Primitives}})
+	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
 
 	require.NoError(t, n.Close())
 	require.NoError(t, n.Close(), "closing twice is not a second teardown")
@@ -208,8 +208,8 @@ func TestAWindowHandedToAnotherNodeReachesItsPrimitivesService(t *testing.T) {
 	// THE HOLDER IS THE ONLY PRIMITIVES NODE, so it leads its group alone: a window
 	// it took would otherwise be forwarded to a leader that does run a clock.
 	nodes := fleet(t,
-		Config{Services: []string{Register, Worker, Discovery}},
-		Config{Services: []string{Discovery, Primitives}},
+		Config{Services: []string{Register, Worker, Stats}},
+		Config{Services: []string{Stats, Primitives}},
 	)
 	clock, holder := nodes[0], nodes[1]
 	require.NoError(t, holder.Primitives().WaitForLeader(t.Context()))

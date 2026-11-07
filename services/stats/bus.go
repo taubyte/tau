@@ -1,4 +1,4 @@
-package discovery
+package stats
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 // N direct dials per report per node would be N² connections carrying data no
 // receiver has to confirm.
 
-// TopicOf is the gossipsub topic discovery gossips on for one cloud.
+// TopicOf is the gossipsub topic stats gossips on for one cloud.
 //
 // IT IS SCOPED, and that is not decoration: two universes sharing a machine, or
 // two clouds bridged by a stray peer, would otherwise pool their load figures
@@ -30,7 +30,7 @@ func TopicOf(cloud string) string {
 	if cloud == "" {
 		cloud = "default"
 	}
-	return "/tau/discovery/v2/" + cloud
+	return "/tau/stats/v2/" + cloud
 }
 
 // PubSub is the slice of a libp2p pubsub this bus needs, declared here so the
@@ -46,11 +46,11 @@ type PubSub interface {
 // would churn the mesh it depends on.
 func NewBus(ps PubSub, cloud string) (Bus, error) {
 	if ps == nil {
-		return nil, errors.New("discovery: no pubsub to gossip over")
+		return nil, errors.New("stats: no pubsub to gossip over")
 	}
 	topic, err := ps.Join(TopicOf(cloud))
 	if err != nil {
-		return nil, fmt.Errorf("discovery: joining %s: %w", TopicOf(cloud), err)
+		return nil, fmt.Errorf("stats: joining %s: %w", TopicOf(cloud), err)
 	}
 	return &gossipBus{topic: topic}, nil
 }
@@ -73,7 +73,7 @@ func (b *gossipBus) Publish(ctx context.Context, data []byte) error {
 func (b *gossipBus) Subscribe(ctx context.Context) (<-chan []byte, error) {
 	sub, err := b.topic.Subscribe()
 	if err != nil {
-		return nil, fmt.Errorf("discovery: subscribing to %s: %w", b.topic.String(), err)
+		return nil, fmt.Errorf("stats: subscribing to %s: %w", b.topic.String(), err)
 	}
 
 	out := make(chan []byte, 64)

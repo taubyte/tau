@@ -27,7 +27,7 @@ func TestACodePushIsWhatTheNextRequestRuns(t *testing.T) {
 
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Services: []string{
-			instance.Register, instance.Worker, instance.Discovery, instance.Gateway, instance.Database, instance.Primitives,
+			instance.Register, instance.Worker, instance.Stats, instance.Gateway, instance.Database, instance.Primitives,
 			storageService.Descriptor.Name, instance.Builder,
 		},
 		// A node may run the previous artifact for this long after a build, so the

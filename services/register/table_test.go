@@ -31,7 +31,7 @@ func TestTheTableReachesARegisterElsewhere(t *testing.T) {
 	startRegister(t, at)
 	require.NoError(t, peer.LinkAllPeers())
 	require.NoError(t, from.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: at.ID(), Addrs: at.Host().Addrs()}))
-	from.running = []service.Running{{Name: "discovery", Service: directory{at.ID()}}}
+	from.running = []service.Running{{Service: finding{at.ID()}}}
 
 	table := TableOn(from)
 	t.Cleanup(func() { table.Close() })

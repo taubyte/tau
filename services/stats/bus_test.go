@@ -1,4 +1,4 @@
-package discovery
+package stats
 
 import (
 	"context"
@@ -182,8 +182,8 @@ func TestTwoCloudsDoNotMeet(t *testing.T) {
 // TestTheTopicIsScopedAndNeverEmpty. A cloud nobody named still has to have a
 // topic, or every unnamed deployment would share one.
 func TestTopicOf(t *testing.T) {
-	require.Equal(t, "/tau/discovery/v2/acme", TopicOf("acme"))
-	require.Equal(t, "/tau/discovery/v2/default", TopicOf(""))
+	require.Equal(t, "/tau/stats/v2/acme", TopicOf("acme"))
+	require.Equal(t, "/tau/stats/v2/default", TopicOf(""))
 	require.NotEqual(t, TopicOf("a"), TopicOf("b"))
 }
 
