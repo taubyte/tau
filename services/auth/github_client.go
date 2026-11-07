@@ -87,7 +87,7 @@ func (client *githubClient) GetByID(id string) error {
 	if err != nil {
 		return err
 	}
-	client.current_repository, _, err = client.Repositories.GetByID(client.ctx, _id)
+	client.current_repository, err = client.repoByID(_id)
 	return err
 }
 
@@ -361,7 +361,7 @@ func (client *githubClient) ShortRepositoryInfo(id string) RepositoryShortInfo {
 		}
 	}
 
-	_repoInfo, _, err := client.Repositories.GetByID(client.ctx, _id)
+	_repoInfo, err := client.repoByID(_id)
 	if err != nil {
 		return RepositoryShortInfo{
 			Error: fmt.Sprintf("Error %s", err),

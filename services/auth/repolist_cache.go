@@ -3,8 +3,11 @@ package auth
 import (
 	"crypto/sha256"
 	"maps"
+	"strconv"
 	"sync"
 	"time"
+
+	"github.com/google/go-github/v71/github"
 )
 
 // A caller's repositories are listed from GitHub, all of them, for every
@@ -65,4 +68,56 @@ func forgetRepoList(client GitHubClient) {
 	repoListsLock.Lock()
 	defer repoListsLock.Unlock()
 	delete(repoLists, repoListKey(gc.Token))
+}
+
+// A repository read by id (and the caller's permissions on it) is kept per
+// token for repoTTL: GET /projects/{id} read each of a project's two
+// repositories twice, so a console polling it spent four calls of the
+// caller's hourly GitHub limit each time. A removed collaborator keeps
+// access for at most repoTTL. Failures are not kept.
+var (
+	repoTTL = time.Minute
+	repoMax = 4096
+)
+
+type cachedRepoEntry struct {
+	repo    *github.Repository
+	expires time.Time
+}
+
+var (
+	repos     = make(map[[sha256.Size]byte]cachedRepoEntry)
+	reposLock sync.Mutex
+)
+
+func repoKey(token string, id int64) [sha256.Size]byte {
+	return sha256.Sum256([]byte("repo\x00" + token + "\x00" + strconv.FormatInt(id, 10)))
+}
+
+// repoByID is Repositories.GetByID through the cache. Callers must not modify
+// the repository returned.
+func (client *githubClient) repoByID(id int64) (*github.Repository, error) {
+	if client.Token == "" {
+		repo, _, err := client.Repositories.GetByID(client.ctx, id)
+		return repo, err
+	}
+	key := repoKey(client.Token, id)
+	reposLock.Lock()
+	e, ok := repos[key]
+	reposLock.Unlock()
+	if ok && time.Now().Before(e.expires) {
+		return e.repo, nil
+	}
+
+	repo, _, err := client.Repositories.GetByID(client.ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	reposLock.Lock()
+	defer reposLock.Unlock()
+	if len(repos) >= repoMax {
+		clear(repos)
+	}
+	repos[key] = cachedRepoEntry{repo: repo, expires: time.Now().Add(repoTTL)}
+	return repo, nil
 }
