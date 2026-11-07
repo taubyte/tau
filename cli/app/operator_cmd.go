@@ -440,6 +440,9 @@ func writeHealth(w io.Writer, h health) {
 		fmt.Fprintf(w, "\nshape %s: services %s\n", s.Shape, strings.Join(s.Services, ", "))
 		ports := make([]string, 0, len(s.Ports))
 		for p := range s.Ports {
+			if strings.HasSuffix(p, ":0") {
+				continue // port 0 in the config means not used, not down
+			}
 			ports = append(ports, p)
 		}
 		sort.Strings(ports)

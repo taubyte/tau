@@ -169,3 +169,12 @@ func TestNodeHealthLogUnreachable(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, strings.Contains(out, "log not reachable: journalctl not found"), out)
 }
+
+// A port set to 0 in the config is not used; health listed it as DOWN.
+func TestHealthSkipsUnusedPorts(t *testing.T) {
+	var b strings.Builder
+	writeHealth(&b, health{Shapes: []shapeHealth{{Shape: "all", Ports: map[string]bool{"ipfs:0": false, "main:4242": true}}}})
+	if strings.Contains(b.String(), "ipfs:0") || !strings.Contains(b.String(), "main:4242") {
+		t.Fatalf("got:\n%s", b.String())
+	}
+}
