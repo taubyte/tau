@@ -57,7 +57,7 @@ func New() (*cli.App, error) {
 			current.Command,
 			buildCmd.Command,
 			validate.Command,
-		status.Command,
+			status.Command,
 		},
 	}
 
