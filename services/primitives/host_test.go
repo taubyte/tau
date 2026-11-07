@@ -9,14 +9,12 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/register"
 )
 
@@ -60,25 +58,7 @@ func newNode(t *testing.T) *node {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	return &node{Node: p, root: t.TempDir(), sections: map[string]func(any) error{
-		cm.Name: func(into any) error {
-			raw, err := yaml.Marshal(cm.Section{Consensus: cm.ConsensusConfig{
-				Timeouts: raft.TimeoutConfig{
-					HeartbeatTimeout:   50 * time.Millisecond,
-					ElectionTimeout:    50 * time.Millisecond,
-					CommitTimeout:      25 * time.Millisecond,
-					LeaderLeaseTimeout: 25 * time.Millisecond,
-					SnapshotInterval:   time.Minute,
-					SnapshotThreshold:  1000,
-				},
-				BootstrapTimeout: 200 * time.Millisecond,
-			}})
-			if err != nil {
-				return err
-			}
-			return yaml.Unmarshal(raw, into)
-		},
-	}}
+	return &node{Node: p, root: t.TempDir(), sections: map[string]func(any) error{}}
 }
 
 func (n *node) beside(name string, s any) {
@@ -97,7 +77,7 @@ func (n *node) start(t *testing.T, name string, s service.Service) {
 func TestPrimitivesRunsFromWhatItsInstanceGivesIt(t *testing.T) {
 	ctx := t.Context()
 	n := newNode(t)
-	n.start(t, cm.Name, cm.New())
+	n.beside("", groupsOn{node: n.Node, root: n.root})
 	reg := register.New()
 	n.start(t, register.Descriptor.Name, reg)
 	_, err := reg.Local().Publish(ctx, pkgregister.Publication{Project: projectID, Environment: "prod", Revision: 1, Compiled: compiled()})
@@ -144,7 +124,7 @@ func TestPrimitivesRefusesWhatItCannotStartWith(t *testing.T) {
 	require.ErrorContains(t, New().Start(t.Context(), on{node: n, name: Descriptor.Name}), "no such key")
 
 	// A DEAD LETTER BOUND THE OPERATOR SET is the one kept.
-	n.start(t, cm.Name, cm.New())
+	n.beside("", groupsOn{node: n.Node, root: n.root})
 	n.sections[Descriptor.Name] = func(into any) error {
 		*into.(*Config) = Config{Sweep: time.Hour, DeadLetter: DeadLetterConfig{Age: time.Hour, Size: 10}}
 		return nil
@@ -163,4 +143,28 @@ func TestTheClockIsDialledAsItsTasking(t *testing.T) {
 	c, err := dialClocks(a.Host(), b.ID())
 	require.NoError(t, err)
 	c.(*Client).Close()
+}
+
+// groupsOn opens real groups on a test's peer, timed so a lone peer elects itself in
+// milliseconds: the instance's groups, as a service beside it finds them.
+type groupsOn struct {
+	node peer.Node
+	root string
+}
+
+func (g groupsOn) Group(namespace string) (raft.Cluster, error) {
+	return raft.New(g.node, namespace, quickRaft.Options(g.root)...)
+}
+
+// quickRaft is raft timed for one process.
+var quickRaft = raft.Timing{
+	Timeouts: raft.TimeoutConfig{
+		HeartbeatTimeout:   50 * time.Millisecond,
+		ElectionTimeout:    50 * time.Millisecond,
+		CommitTimeout:      25 * time.Millisecond,
+		LeaderLeaseTimeout: 25 * time.Millisecond,
+		SnapshotInterval:   time.Minute,
+		SnapshotThreshold:  1000,
+	},
+	BootstrapTimeout: 200 * time.Millisecond,
 }

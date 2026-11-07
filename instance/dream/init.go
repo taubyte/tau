@@ -340,10 +340,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	// directory, checkpointed and restored the way it is on a machine; and raft
 	// timed for nodes one process apart.
 	nodeConfig.Root = root
-	if nodeConfig.Sections == nil {
-		nodeConfig.Sections = map[string]any{}
-	}
-	nodeConfig.Sections[cm.Name] = cm.Section{Consensus: cm.ConsensusConfig{Timeouts: dreamTimeouts, BootstrapTimeout: dreamBootstrapTimeout}}
+	nodeConfig.Raft = raft.Timing{Timeouts: dreamTimeouts, BootstrapTimeout: dreamBootstrapTimeout}
 
 	// WHAT THE CLOUD BUILT WITH NO PLM SERVICE is looked up in what it kept, and
 	// anything else in plm's records on the node.

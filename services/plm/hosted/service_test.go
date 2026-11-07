@@ -17,12 +17,11 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/git/gittest"
 	"github.com/taubyte/tau/pkg/raft"
-	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/plm/ingress"
 	"github.com/taubyte/tau/services/plm/jobs"
 )
 
-// node is an instance as plm sees it: a peer, a directory, the cm beside it,
+// node is an instance as plm sees it: a peer, a directory, the groups it opens,
 // and the section an operator wrote.
 type node struct {
 	peer.Node
@@ -46,39 +45,14 @@ func (n *node) Config(into any) error {
 	return yaml.Unmarshal(raw, into)
 }
 
-// quick is the node as consensus sees it: timed for a test, so a lone peer elects
-// itself in milliseconds.
-type quick struct{ *node }
-
-func (quick) Config(into any) error {
-	raw, err := yaml.Marshal(cm.Section{Consensus: cm.ConsensusConfig{
-		Timeouts: raft.TimeoutConfig{
-			HeartbeatTimeout:   50 * time.Millisecond,
-			ElectionTimeout:    50 * time.Millisecond,
-			CommitTimeout:      25 * time.Millisecond,
-			LeaderLeaseTimeout: 25 * time.Millisecond,
-			SnapshotInterval:   time.Minute,
-			SnapshotThreshold:  1000,
-		},
-		BootstrapTimeout: 200 * time.Millisecond,
-	}})
-	if err != nil {
-		return err
-	}
-	return yaml.Unmarshal(raw, into)
-}
-
-// lone is a node running nothing beside build but the consensus its queue is a group
-// of, as a lone build process is.
+// lone is a node running nothing beside build, its instance opening the group its
+// queue is, as a lone build process is.
 func lone(t *testing.T, section map[string]any) *node {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
 	n := &node{Node: p, root: t.TempDir(), section: section}
-	agree := cm.New()
-	require.NoError(t, agree.Start(t.Context(), quick{n}))
-	t.Cleanup(func() { agree.Close() })
-	n.running = []service.Running{{Name: cm.Name, Service: agree}}
+	n.running = []service.Running{{Service: groupsOn{node: p, root: n.root}}}
 	return n
 }
 
@@ -158,11 +132,17 @@ func TestACloudThatIssuesServesBuildOverTLS(t *testing.T) {
 // ITS CERTIFICATE IS THE INSTANCE'S, from the client every listener on the node
 // takes one from: plm builds none of its own.
 func TestACloudThatIssuesNeedsTheInstancesCertificates(t *testing.T) {
-	require.ErrorIs(t, New().Start(t.Context(), lone(t, issuing)), ErrNoListenerTLS)
+	// A REFUSED START IS STILL CLOSED, as the instance closes it: its queue's group
+	// opened before the refusal.
+	refused := New()
+	t.Cleanup(func() { refused.Close() })
+	require.ErrorIs(t, refused.Start(t.Context(), lone(t, issuing)), ErrNoListenerTLS)
 
 	n := lone(t, issuing)
 	n.running = append(n.running, service.Running{Service: servedTLS{err: errors.New("no zone")}})
-	require.ErrorContains(t, New().Start(t.Context(), n), "no zone")
+	unproven := New()
+	t.Cleanup(func() { unproven.Close() })
+	require.ErrorContains(t, unproven.Start(t.Context(), n), "no zone")
 }
 
 func TestAForgeWithAnEventStreamIsFollowed(t *testing.T) {
@@ -185,4 +165,28 @@ func TestASectionGivenInGoKeepsTheDefaultsItLeavesOut(t *testing.T) {
 	var cfg config
 	require.NoError(t, yaml.Unmarshal(raw, &cfg))
 	require.Nil(t, cfg.EligibleRefs, "no refs named is the default refs, not none")
+}
+
+// groupsOn opens real groups on a test's peer, timed so a lone peer elects itself in
+// milliseconds: the instance's groups, as a service beside it finds them.
+type groupsOn struct {
+	node peer.Node
+	root string
+}
+
+func (g groupsOn) Group(namespace string) (raft.Cluster, error) {
+	return raft.New(g.node, namespace, quickRaft.Options(g.root)...)
+}
+
+// quickRaft is raft timed for one process.
+var quickRaft = raft.Timing{
+	Timeouts: raft.TimeoutConfig{
+		HeartbeatTimeout:   50 * time.Millisecond,
+		ElectionTimeout:    50 * time.Millisecond,
+		CommitTimeout:      25 * time.Millisecond,
+		LeaderLeaseTimeout: 25 * time.Millisecond,
+		SnapshotInterval:   time.Minute,
+		SnapshotThreshold:  1000,
+	},
+	BootstrapTimeout: 200 * time.Millisecond,
 }

@@ -30,14 +30,6 @@ import (
 	"github.com/taubyte/tau/pkg/raft"
 )
 
-// GroupOpener opens the raft group a namespace's entries are ordered in.
-//
-// A FUNCTION AND NOT AN INTERFACE, because it is one question and because it is
-// the shape the answer already has: raft.New takes a peer node — a host, a DHT,
-// a datastore and a lifetime — none of which a ledger has an opinion about, and
-// all of which only the composition root holds.
-type GroupOpener func(namespace string) (raft.Cluster, error)
-
 // LedgerDomain is where a ledger's group lives, apart from the queues' namespace: a system
 // of record has a different lifetime and blast radius.
 const LedgerDomain = "/tau/databases/v2"
@@ -75,7 +67,7 @@ type forming struct {
 // RaftLedgers is every group this node opened, and the store over each. Construct it
 // with New.
 type RaftLedgers struct {
-	open   GroupOpener
+	open   raft.Groups
 	budget time.Duration
 
 	mu     sync.Mutex
@@ -97,7 +89,7 @@ type RaftLedgers struct {
 //
 // budget is what one write or one barrier may cost; ZERO IS [LedgerBudget], and a
 // caller that will not wait that long says so on its context instead.
-func NewRaftLedgers(open GroupOpener, budget time.Duration) (*RaftLedgers, error) {
+func NewRaftLedgers(open raft.Groups, budget time.Duration) (*RaftLedgers, error) {
 	if open == nil {
 		return nil, errors.New("ledger: no way to open a group, so no ledger can be kept")
 	}
@@ -119,14 +111,11 @@ func (l *RaftLedgers) Store(spec database.Spec) (database.Store, error) {
 	// sooner the first write lands. It does not block: see group.
 	l.group(namespace)
 
-	return &Ledger{
-		group:  func() (raft.Cluster, error) { return l.group(namespace) },
-		budget: l.budget,
-	}, nil
+	return &Ledger{ledgers: l, namespace: namespace, budget: l.budget}, nil
 }
 
 // group answers a database's group, starting its formation if needed. It never
-// blocks: raft.New waits up to thirty seconds for peers, so the group opens in the
+// blocks: opening waits up to thirty seconds for peers, so the group opens in the
 // background and an early call is refused by name.
 func (l *RaftLedgers) group(namespace string) (raft.Cluster, error) {
 	l.mu.Lock()
@@ -144,7 +133,7 @@ func (l *RaftLedgers) group(namespace string) (raft.Cluster, error) {
 
 		go func() {
 			defer close(g.done)
-			cluster, err := l.open(namespace)
+			cluster, err := l.open.Group(namespace)
 
 			l.mu.Lock()
 			defer l.mu.Unlock()
@@ -197,8 +186,9 @@ func (l *RaftLedgers) Close() error {
 
 // Ledger is one database's entries, over one group.
 type Ledger struct {
-	group  func() (raft.Cluster, error)
-	budget time.Duration
+	ledgers   *RaftLedgers
+	namespace string
+	budget    time.Duration
 }
 
 var _ database.Store = (*Ledger)(nil)
@@ -284,7 +274,7 @@ func (s *Ledger) leading(ctx context.Context) (raft.Cluster, time.Duration, erro
 		return nil, 0, err
 	}
 
-	cluster, err := s.group()
+	cluster, err := s.ledgers.group(s.namespace)
 	if err != nil {
 		return nil, 0, err
 	}

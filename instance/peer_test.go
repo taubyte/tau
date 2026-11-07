@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	fleetdoc "github.com/taubyte/tau/pkg/fleet"
-	"github.com/taubyte/tau/services/cm"
 )
 
 func TestADatabaseIsOpenedOncePerName(t *testing.T) {
@@ -95,10 +94,10 @@ func TestANodeWithNoRegisterFollowsNoFleet(t *testing.T) {
 	require.Zero(t, n.dbs.retention)
 }
 
-func TestABuiltInsGroupIsTimedByCMsSection(t *testing.T) {
+func TestAGroupIsTimedByTheNodesRaftKeys(t *testing.T) {
 	root := t.TempDir()
-	n := &Instance{Node: mockPeer(t), cfg: Config{Root: root, Sections: map[string]any{cm.Name: cm.Section{Consensus: quickConsensus}}}}
-	c, err := n.raftGroup("built-in")
+	n := &Instance{Node: mockPeer(t), cfg: Config{Root: root, Raft: quickRaft}}
+	c, err := groups{n}.Group("built-in")
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 	// LEADER WELL INSIDE raft's 30s default bootstrap.
@@ -106,11 +105,7 @@ func TestABuiltInsGroupIsTimedByCMsSection(t *testing.T) {
 	_, err = os.Stat(filepath.Join(root, "raft", "built-in"))
 	require.NoError(t, err)
 
-	n.cfg.Sections[cm.Name] = map[string]any{"consensus": map[string]any{"timeouts": "not a table"}}
-	_, err = n.raftGroup("refused")
-	require.ErrorContains(t, err, cm.Name)
-
 	n.cfg.Root = ""
-	_, err = n.raftGroup("rootless")
+	_, err = groups{n}.Group("rootless")
 	require.ErrorIs(t, err, ErrNoRoot)
 }

@@ -18,7 +18,7 @@ import (
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/placement"
-	"github.com/taubyte/tau/services/cm"
+	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/register"
 	statsService "github.com/taubyte/tau/services/stats"
 )
@@ -42,9 +42,9 @@ type Config struct {
 	Idle        time.Duration `yaml:"idle"`
 }
 
-// ErrNoConsensus is an instance running no cm, so no ledger can be
+// ErrNoConsensus is an instance that opens no raft groups, so no ledger can be
 // ordered.
-var ErrNoConsensus = errors.New("database: no cm runs beside it, so a ledger has no group to live in")
+var ErrNoConsensus = errors.New("database: this instance opens no raft groups, so a ledger has no group to live in")
 
 // retentionPoll is how often a database rereads the cloud's retention.
 const retentionPoll = time.Minute
@@ -57,7 +57,7 @@ type placementSource interface {
 }
 
 // Start runs the database service on an instance: each database a replicated store of
-// its own on the peer, each ledger a raft group of the cm beside it, what it
+// its own on the peer, each ledger a raft group the instance opens, what it
 // holds read off the peer's disk, its declarations through the register in the
 // instance's region, and its fleet what the discovery beside it sees.
 func (s *server) Start(ctx context.Context, h service.Host) error {
@@ -65,11 +65,11 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 	if err := h.Config(&cfg); err != nil {
 		return err
 	}
-	agree, ok := service.Get[cm.Consensus](h)
+	groups, ok := service.Get[raft.Groups](h)
 	if !ok {
 		return ErrNoConsensus
 	}
-	ledgers, err := NewRaftLedgers(agree.Raft, LedgerBudget)
+	ledgers, err := NewRaftLedgers(groups, LedgerBudget)
 	if err != nil {
 		return fmt.Errorf("database: %w", err)
 	}

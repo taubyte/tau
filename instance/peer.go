@@ -12,7 +12,6 @@ import (
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/cm"
 )
 
 // A node is made from its peer. Whatever a service's backing is built from is the
@@ -135,23 +134,21 @@ func (n *Instance) kvdb(name string) (kvdb.Instance, error) {
 	return n.dbs.at(name)
 }
 
-// raftGroup opens a consensus group over this node's peer, its snapshots under the
-// node's own root: the default is a machine-wide path keyed by namespace alone, so two
-// nodes opening one group name would share a snapshot store.
-func (n *Instance) raftGroup(namespace string) (raft.Cluster, error) {
-	if n.opts.raftOpen != nil {
-		return n.opts.raftOpen(namespace)
+// groups opens the consensus groups the services on this node ask for, over its
+// peer, each group's members whichever nodes open its namespace, found by
+// discovery. Snapshots go under the node's own root: the default is a machine-wide
+// path keyed by namespace alone, so two nodes opening one group name would share a
+// snapshot store.
+type groups struct{ n *Instance }
+
+func (g groups) Group(namespace string) (raft.Cluster, error) {
+	if g.n.opts.groups != nil {
+		return g.n.opts.groups.Group(namespace)
 	}
-	if n.cfg.Root == "" {
+	if g.n.cfg.Root == "" {
 		return nil, ErrNoRoot
 	}
-	// CM'S TIMING, for the built-ins that open a group before any configured service
-	// has started.
-	var section cm.Section
-	if err := n.cfg.Section(cm.Name, &section); err != nil {
-		return nil, err
-	}
-	return raft.New(n.Node, namespace, cm.RaftOptions(n.cfg.Root, section.Consensus)...)
+	return raft.New(g.n.Node, namespace, g.n.cfg.Raft.Options(g.n.cfg.Root)...)
 }
 
 // ErrNoRoot is a node asked for what lives in a directory and given none.

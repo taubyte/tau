@@ -11,7 +11,6 @@ import (
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/raft"
-	"github.com/taubyte/tau/services/cm"
 )
 
 // testHost is an instance as jobs sees it: a peer, a directory, the services
@@ -38,39 +37,14 @@ func (h *testHost) Config(into any) error {
 	return yaml.Unmarshal(raw, into)
 }
 
-// quick is the host as consensus sees it: timed for a test, so a lone peer elects
-// itself in milliseconds rather than looking for others for the default's while.
-type quick struct{ *testHost }
-
-func (quick) Config(into any) error {
-	raw, err := yaml.Marshal(cm.Section{Consensus: cm.ConsensusConfig{
-		Timeouts: raft.TimeoutConfig{
-			HeartbeatTimeout:   50 * time.Millisecond,
-			ElectionTimeout:    50 * time.Millisecond,
-			CommitTimeout:      25 * time.Millisecond,
-			LeaderLeaseTimeout: 25 * time.Millisecond,
-			SnapshotInterval:   time.Minute,
-			SnapshotThreshold:  1000,
-		},
-		BootstrapTimeout: 200 * time.Millisecond,
-	}})
-	if err != nil {
-		return err
-	}
-	return yaml.Unmarshal(raw, into)
-}
-
-// hostWithConsensus is a host running a started cm, the one service
-// jobs cannot start without.
+// hostWithConsensus is a host whose instance opens groups, which jobs cannot start
+// without.
 func hostWithConsensus(t *testing.T, section map[string]any) *testHost {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
 	h := &testHost{Node: p, root: t.TempDir(), section: section}
-	agree := cm.New()
-	require.NoError(t, agree.Start(t.Context(), quick{h}))
-	t.Cleanup(func() { agree.Close() })
-	h.running = []service.Running{{Name: cm.Name, Service: agree}}
+	h.running = []service.Running{{Service: groupsOn{node: p, root: h.root}}}
 	return h
 }
 
@@ -101,4 +75,28 @@ func TestTheBackendRefusesASectionOfTheWrongShape(t *testing.T) {
 	b := New()
 	require.Error(t, b.Start(t.Context(), hostWithConsensus(t, map[string]any{"maxQueueDepth": "many"})))
 	require.NoError(t, b.Close())
+}
+
+// groupsOn opens real groups on a test's peer, timed so a lone peer elects itself in
+// milliseconds: the instance's groups, as a service beside it finds them.
+type groupsOn struct {
+	node peer.Node
+	root string
+}
+
+func (g groupsOn) Group(namespace string) (raft.Cluster, error) {
+	return raft.New(g.node, namespace, quickRaft.Options(g.root)...)
+}
+
+// quickRaft is raft timed for one process.
+var quickRaft = raft.Timing{
+	Timeouts: raft.TimeoutConfig{
+		HeartbeatTimeout:   50 * time.Millisecond,
+		ElectionTimeout:    50 * time.Millisecond,
+		CommitTimeout:      25 * time.Millisecond,
+		LeaderLeaseTimeout: 25 * time.Millisecond,
+		SnapshotInterval:   time.Minute,
+		SnapshotThreshold:  1000,
+	},
+	BootstrapTimeout: 200 * time.Millisecond,
 }

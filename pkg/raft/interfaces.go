@@ -9,6 +9,12 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
+// Groups opens consensus groups on a node: each namespace is one group, and its
+// members are whichever nodes open it, found by discovery.
+type Groups interface {
+	Group(namespace string) (Cluster, error)
+}
+
 type Cluster interface {
 	Close() error
 

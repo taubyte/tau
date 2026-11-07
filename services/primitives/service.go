@@ -28,10 +28,8 @@ type server struct {
 	host    host.Host
 	declare *declarations
 
-	// open is how a consensus group is opened. It is the composer's, because
-	// raft.New takes a peer node — a host, a DHT, a datastore and a lifetime —
-	// and none of that is this package's to assemble.
-	open   func(namespace string) (raft.Cluster, error)
+	// groups is how this service's consensus group is opened: the instance's.
+	groups raft.Groups
 	stores Records
 
 	records *records
@@ -83,7 +81,7 @@ type option func(*options) error
 
 type options struct {
 	source register.Registry
-	open   func(namespace string) (raft.Cluster, error)
+	groups raft.Groups
 	stores Records
 
 	now   func() time.Time
@@ -109,12 +107,12 @@ func withRegister(source register.Registry) option {
 // withConsensus is how this node opens the group its primitives run in.
 // Required: both of this kind's types are decisions about who writes next, and
 // a node that cannot hold an election can serve neither.
-func withConsensus(open func(namespace string) (raft.Cluster, error)) option {
+func withConsensus(groups raft.Groups) option {
 	return func(o *options) error {
-		if open == nil {
+		if groups == nil {
 			return ErrNoConsensus
 		}
-		o.open = open
+		o.groups = groups
 		return nil
 	}
 }
@@ -209,7 +207,7 @@ func (s *server) assemble(h host.Host, opts ...option) error {
 	switch {
 	case o.source == nil:
 		return ErrNoRegister
-	case o.open == nil:
+	case o.groups == nil:
 		return ErrNoConsensus
 	case o.stores == nil:
 		return ErrNoRecords
@@ -231,7 +229,7 @@ func (s *server) assemble(h host.Host, opts ...option) error {
 
 	s.host = h
 	s.declare = &declarations{projects: projects}
-	s.open, s.stores = o.open, o.stores
+	s.groups, s.stores = o.groups, o.stores
 	s.now, s.sweep, s.dead = now, sweep, o.dead
 	s.workloads, s.task = o.workloads, o.task
 	s.records = &records{service: s}
@@ -300,7 +298,7 @@ func (s *server) form() {
 	go func() {
 		defer close(forming)
 
-		cluster, err := s.open(namespace)
+		cluster, err := s.groups.Group(namespace)
 
 		s.formMu.Lock()
 		s.cluster, s.formErr = cluster, err

@@ -154,6 +154,16 @@ type fakeCluster struct {
 	follower bool
 }
 
+// oneGroup answers every namespace with the same group.
+type oneGroup struct{ raft.Cluster }
+
+func (g oneGroup) Group(string) (raft.Cluster, error) { return g.Cluster, nil }
+
+// freshGroups opens a new fake group for every namespace.
+type freshGroups struct{}
+
+func (freshGroups) Group(string) (raft.Cluster, error) { return newCluster(), nil }
+
 func newCluster() *fakeCluster {
 	return &fakeCluster{MockCluster: raft.NewMockCluster()}
 }
@@ -356,7 +366,7 @@ func startingOn(t *testing.T, cluster leader, opts ...option) *harness {
 
 	s, err := build(host, append([]option{
 		withRegister(&published{revision: 1, object: compiled()}),
-		withConsensus(func(string) (raft.Cluster, error) { return cluster, nil }),
+		withConsensus(oneGroup{cluster}),
 		withRecords(records.open),
 		withClock(tick.now),
 

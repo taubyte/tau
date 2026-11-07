@@ -3,7 +3,6 @@ package instance
 import (
 	"context"
 	"errors"
-	"maps"
 	"strings"
 	"sync"
 	"testing"
@@ -23,7 +22,6 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
-	"github.com/taubyte/tau/services/cm"
 )
 
 // A node is tested with real services and fake resources: a mocknet host, gossipsub
@@ -250,17 +248,27 @@ func kvdbOf(f opensDatabases) func(string) (kvdb.Instance, error) {
 	return func(name string) (kvdb.Instance, error) { return f.New(nil, name, 0) }
 }
 
-func withRaft(open func(namespace string) (raft.Cluster, error)) Option {
+func withRaft(g raft.Groups) Option {
 	return func(o *options) error {
-		o.raftOpen = open
+		o.groups = g
 		return nil
 	}
 }
 
+// mockGroups opens a fresh group of one, in memory, for every namespace.
+type mockGroups struct{}
+
+func (mockGroups) Group(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }
+
+// oneGroup answers every namespace with the same group.
+type oneGroup struct{ raft.Cluster }
+
+func (g oneGroup) Group(string) (raft.Cluster, error) { return g.Cluster, nil }
+
 // mockRaft is a raft group of one, in memory. What a composition is asked to prove is
 // the wiring; that raft replicates is pkg/raft's own test.
 func mockRaft() Option {
-	return withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil })
+	return withRaft(mockGroups{})
 }
 
 // mockPeer is a peer for one test, on the process's mocknet.
@@ -295,19 +303,14 @@ func rooted(t testing.TB, cfg Config) Config {
 	}
 	// RAFT TIMED FOR ONE PROCESS, as dream times it: by default a group of one waits
 	// out a 30s bootstrap before electing itself.
-	if _, ok := cfg.Sections[cm.Name]; !ok {
-		sections := maps.Clone(cfg.Sections)
-		if sections == nil {
-			sections = map[string]any{}
-		}
-		sections[cm.Name] = cm.Section{Consensus: quickConsensus}
-		cfg.Sections = sections
+	if cfg.Raft == (raft.Timing{}) {
+		cfg.Raft = quickRaft
 	}
 	return cfg
 }
 
-// quickConsensus is raft timed for nodes one process apart.
-var quickConsensus = cm.ConsensusConfig{
+// quickRaft is raft timed for nodes one process apart.
+var quickRaft = raft.Timing{
 	Timeouts: raft.TimeoutConfig{
 		HeartbeatTimeout:   50 * time.Millisecond,
 		ElectionTimeout:    50 * time.Millisecond,

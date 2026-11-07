@@ -3,8 +3,6 @@ package cm
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -15,10 +13,9 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	pkgcertificate "github.com/taubyte/tau/pkg/certificate"
 	kvdbmock "github.com/taubyte/tau/pkg/kvdb/mock"
-	"github.com/taubyte/tau/pkg/raft"
 )
 
-// instance is what cm starts on: a peer, a directory, its section.
+// instance is what cm starts on: a peer, a directory, its config.
 type instance struct {
 	peer.Node
 	root   string
@@ -40,101 +37,22 @@ func (i instance) Config(into any) error {
 
 var _ service.Host = instance{}
 
-func newInstance(t *testing.T, root string, cfg ConsensusConfig) instance {
+func newInstance(t *testing.T, root string) instance {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	return instance{Node: p, root: root, config: func(into any) error {
-		*into.(*hostConfig) = hostConfig{Section: Section{Consensus: cfg}}
-		return nil
-	}}
-}
-
-// quick is raft timed for one node in one process.
-var quick = ConsensusConfig{
-	Timeouts: raft.TimeoutConfig{
-		HeartbeatTimeout:   50 * time.Millisecond,
-		ElectionTimeout:    50 * time.Millisecond,
-		CommitTimeout:      25 * time.Millisecond,
-		LeaderLeaseTimeout: 25 * time.Millisecond,
-		SnapshotInterval:   time.Minute,
-		SnapshotThreshold:  1000,
-	},
-	BootstrapTimeout: 200 * time.Millisecond,
-}
-
-func TestAGroupIsOpenedOnTheInstanceWithItsTiming(t *testing.T) {
-	root := t.TempDir()
-	i := newInstance(t, root, quick)
-	s := New()
-	t.Cleanup(func() { s.Close() })
-	require.NoError(t, s.Start(t.Context(), i))
-
-	c, err := s.Raft("orders")
-	require.NoError(t, err)
-	require.Equal(t, "orders", c.Namespace())
-
-	// LEADER WELL INSIDE raft's 30s default bootstrap: the section's timing is the
-	// group's.
-	require.Eventually(t, c.IsLeader, 5*time.Second, 20*time.Millisecond)
-	require.NoError(t, c.Set("k", []byte("v"), time.Second))
-	got, ok := c.Get("k")
-	require.True(t, ok)
-	require.Equal(t, "v", string(got))
-
-	_, err = os.Stat(filepath.Join(root, "raft", "orders"))
-	require.NoError(t, err, "the group's snapshots are under the instance's directory")
-
-	_, err = s.Raft("")
-	require.ErrorContains(t, err, "cm: ")
-}
-
-func TestClosingCMClosesItsGroups(t *testing.T) {
-	s := New()
-	require.NoError(t, s.Start(t.Context(), newInstance(t, t.TempDir(), quick)))
-
-	left, err := s.Raft("left-open")
-	require.NoError(t, err)
-	closed, err := s.Raft("closed-by-its-caller")
-	require.NoError(t, err)
-	require.NoError(t, closed.Close())
-
-	require.NoError(t, s.Close(), "a group its caller closed is no failure")
-	require.ErrorIs(t, left.Close(), raft.ErrAlreadyClosed, "the service closed what was still open")
-
-	_, err = s.Raft("after")
-	require.ErrorIs(t, err, ErrClosed)
-}
-
-func TestAGroupIsRefusedByName(t *testing.T) {
-	_, err := New().Raft("early")
-	require.ErrorIs(t, err, ErrNotStarted)
-
-	s := New()
-	t.Cleanup(func() { s.Close() })
-	require.NoError(t, s.Start(t.Context(), newInstance(t, "", quick)), "an instance with no directory still runs cm")
-	_, err = s.Raft("rootless")
-	require.ErrorIs(t, err, ErrNoRoot)
-
-	i := newInstance(t, t.TempDir(), quick)
-	i.config = func(any) error { return errors.New("no such key") }
-	require.ErrorContains(t, New().Start(t.Context(), i), "no such key")
-}
-
-func TestRaftOptionsSayOnlyWhatIsSet(t *testing.T) {
-	require.Len(t, RaftOptions("/r", ConsensusConfig{}), 1, "the snapshot root alone: raft's own timing")
-	require.Len(t, RaftOptions("/r", quick), 3)
+	return instance{Node: p, root: root}
 }
 
 func TestACloudWithNoZoneKeepsNoStore(t *testing.T) {
 	s := New()
 	t.Cleanup(func() { s.Close() })
-	require.NoError(t, s.Start(t.Context(), newInstance(t, t.TempDir(), quick)))
+	require.NoError(t, s.Start(t.Context(), newInstance(t, t.TempDir())))
 	require.Nil(t, s.Store(), "nothing to keep certificates for")
 	require.Nil(t, On(instance{}).Store(), "and none beside an instance running no cm")
 	require.Nil(t, On(instance{}).Members(), "nor any node, with no directory to ask")
 
-	i := newInstance(t, t.TempDir(), quick)
+	i := newInstance(t, t.TempDir())
 	i.config = func(into any) error {
 		*into.(*hostConfig) = hostConfig{CM: Config{Certificate: CertificateConfig{ACME: pkgcertificate.ACME{Enabled: true}}}}
 		return nil
@@ -166,9 +84,9 @@ func (answering) LookupTXT(context.Context, string) ([]string, error) { return n
 
 func zoned(t *testing.T, cfg Config) instance {
 	t.Helper()
-	i := newInstance(t, t.TempDir(), quick)
+	i := newInstance(t, t.TempDir())
 	i.config = func(into any) error {
-		*into.(*hostConfig) = hostConfig{CloudFqdn: "tau.example", CM: cfg, Section: Section{Consensus: quick}}
+		*into.(*hostConfig) = hostConfig{CloudFqdn: "tau.example", CM: cfg}
 		return nil
 	}
 	return i

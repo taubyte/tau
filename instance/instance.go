@@ -224,8 +224,10 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 			}
 		}
 	}
-	// The databases every service on this node shares.
+	// The databases every service on this node shares, and the consensus groups
+	// each opens for itself.
 	n.provide("", n.dbs)
+	n.provide("", groups{n})
 	// Where cm looks a domain's proof up, when this node was handed one.
 	if o.resolver != nil {
 		n.provide("", o.resolver)

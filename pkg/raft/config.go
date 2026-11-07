@@ -1,6 +1,9 @@
 package raft
 
-import "time"
+import (
+	"path/filepath"
+	"time"
+)
 
 // TimeoutConfig allows fine-grained control over Raft timing
 type TimeoutConfig struct {
@@ -44,4 +47,23 @@ var DefaultTimeoutConfig = TimeoutConfig{
 	SnapshotInterval:   10 * time.Minute,
 	SnapshotThreshold:  32768,
 	TrailingLogs:       10240,
+}
+
+// Timing is how a node's groups time out, as its operator writes it; zero is raft's
+// defaults.
+type Timing struct {
+	Timeouts         TimeoutConfig `yaml:"timeouts"`
+	BootstrapTimeout time.Duration `yaml:"bootstrap_timeout"`
+}
+
+// Options are what a group is opened with on this timing, its snapshots under root.
+func (t Timing) Options(root string) []Option {
+	options := []Option{WithSnapshotRoot(filepath.Join(root, "raft"))}
+	if t.Timeouts != (TimeoutConfig{}) {
+		options = append(options, WithTimeouts(t.Timeouts))
+	}
+	if t.BootstrapTimeout != 0 {
+		options = append(options, WithBootstrapTimeout(t.BootstrapTimeout))
+	}
+	return options
 }

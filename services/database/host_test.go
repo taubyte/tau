@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
@@ -17,7 +16,6 @@ import (
 	"github.com/taubyte/tau/pkg/placement"
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/register"
 	statsService "github.com/taubyte/tau/services/stats"
 )
@@ -62,25 +60,7 @@ func newMachine(t *testing.T) *machine {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	return &machine{Node: p, root: t.TempDir(), sections: map[string]func(any) error{
-		cm.Name: func(into any) error {
-			raw, err := yaml.Marshal(cm.Section{Consensus: cm.ConsensusConfig{
-				Timeouts: raft.TimeoutConfig{
-					HeartbeatTimeout:   50 * time.Millisecond,
-					ElectionTimeout:    50 * time.Millisecond,
-					CommitTimeout:      25 * time.Millisecond,
-					LeaderLeaseTimeout: 25 * time.Millisecond,
-					SnapshotInterval:   time.Minute,
-					SnapshotThreshold:  1000,
-				},
-				BootstrapTimeout: 200 * time.Millisecond,
-			}})
-			if err != nil {
-				return err
-			}
-			return yaml.Unmarshal(raw, into)
-		},
-	}}
+	return &machine{Node: p, root: t.TempDir(), sections: map[string]func(any) error{}}
 }
 
 func (m *machine) beside(name string, s any) {
@@ -104,7 +84,7 @@ func (f fleetOf) Placement() []placement.Member { return f }
 func TestTheDatabaseServiceRunsFromWhatItsInstanceGivesIt(t *testing.T) {
 	ctx := t.Context()
 	m := newMachine(t)
-	m.start(t, cm.Name, cm.New())
+	m.beside("", groupsOn{node: m.Node, root: m.root})
 	reg := register.New()
 	m.start(t, register.Descriptor.Name, reg)
 	_, err := reg.Local().Publish(ctx, pkgregister.Publication{Project: projectID, Environment: "prod", Revision: 1, Compiled: compiled()})
@@ -148,7 +128,7 @@ func TestTheDatabaseServiceRefusesWhatItCannotStartWith(t *testing.T) {
 	m.sections[Descriptor.Name] = func(any) error { return errors.New("no such key") }
 	require.ErrorContains(t, New().Start(t.Context(), as{machine: m, name: Descriptor.Name}), "no such key")
 
-	m.start(t, cm.Name, cm.New())
+	m.beside("", groupsOn{node: m.Node, root: m.root})
 	m.sections[Descriptor.Name] = func(into any) error {
 		*into.(*Config) = Config{Sweep: time.Hour, MaxResident: 3, Idle: time.Minute}
 		return nil
@@ -201,4 +181,28 @@ func (nothingPublished) ResolveFleet(context.Context) (pkgregister.Pointer, erro
 
 func (nothingPublished) Object(context.Context, pkgregister.ObjectID) ([]byte, error) {
 	return nil, pkgregister.ErrNotPublished
+}
+
+// groupsOn opens real groups on a test's peer, timed so a lone peer elects itself in
+// milliseconds: the instance's groups, as a service beside it finds them.
+type groupsOn struct {
+	node peer.Node
+	root string
+}
+
+func (g groupsOn) Group(namespace string) (raft.Cluster, error) {
+	return raft.New(g.node, namespace, quickRaft.Options(g.root)...)
+}
+
+// quickRaft is raft timed for one process.
+var quickRaft = raft.Timing{
+	Timeouts: raft.TimeoutConfig{
+		HeartbeatTimeout:   50 * time.Millisecond,
+		ElectionTimeout:    50 * time.Millisecond,
+		CommitTimeout:      25 * time.Millisecond,
+		LeaderLeaseTimeout: 25 * time.Millisecond,
+		SnapshotInterval:   time.Minute,
+		SnapshotThreshold:  1000,
+	},
+	BootstrapTimeout: 200 * time.Millisecond,
 }

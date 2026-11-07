@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
-	"github.com/taubyte/tau/pkg/raft"
 	secretsService "github.com/taubyte/tau/services/secrets"
 )
 
@@ -139,7 +138,7 @@ func TestInitWritesTheCloudsSecretsTheNodeThenServes(t *testing.T) {
 	cfg := Config{Services: []string{Register, Stats, Secrets}}
 
 	// THE SAME PEER, so the node opens the database init wrote into.
-	n, err := New(p, rootedIn(t, cfg, root), withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }))
+	n, err := New(p, rootedIn(t, cfg, root), withRaft(mockGroups{}))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.NoError(t, n.Start(ctx))

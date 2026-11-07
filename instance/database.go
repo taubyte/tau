@@ -36,7 +36,7 @@ type databaseBacking struct {
 func newDatabases(n *Instance) (*databaseBacking, error) {
 	b := &databaseBacking{}
 
-	ledgers, err := databaseService.NewRaftLedgers(n.raftGroup, databaseService.LedgerBudget)
+	ledgers, err := databaseService.NewRaftLedgers(groups{n}, databaseService.LedgerBudget)
 	if err != nil {
 		return nil, fmt.Errorf("node: %s: %w", Database, err)
 	}

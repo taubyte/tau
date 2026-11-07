@@ -24,7 +24,6 @@ import (
 	"github.com/taubyte/tau/services"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/plm/ingress"
 	"github.com/taubyte/tau/services/plm/jobs"
@@ -136,7 +135,7 @@ func TestABuilderWithADaemonThatIsNotOne(t *testing.T) {
 func TestAnAssetStoreIsEnoughToRunCode(t *testing.T) {
 	// No container backend, no injected runtime — and a worker still starts,
 	// with every tier that needs only the asset store.
-	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Stats, Worker}}), withKVDB(&memFactory{}), withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }))
+	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Stats, Worker}}), withKVDB(&memFactory{}), withRaft(mockGroups{}))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.NotNil(t, n.worker)
@@ -204,7 +203,7 @@ func tierNames(n *Instance) []string {
 }
 
 func TestAnInjectedTierWins(t *testing.T) {
-	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Stats, Worker}}), withKVDB(&memFactory{}), withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }), WithRuntimes(&tier{name: "wasm"}))
+	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Stats, Worker}}), withKVDB(&memFactory{}), withRaft(mockGroups{}), WithRuntimes(&tier{name: "wasm"}))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 

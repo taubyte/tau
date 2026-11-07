@@ -77,8 +77,8 @@ type closer func()
 
 func (c closer) Close() error { c(); return nil }
 
-// Start builds the service from its instance: the queue a raft group of the
-// cm beside it and the job records a database on the peer (the control,
+// Start builds the service from its instance: the queue a raft group the
+// instance opens and the job records a database on the peer (the control,
 // services/plm/jobs), then the routes in front of them, asking that control
 // in-process and the other plm nodes over p2p when it does not lead; auth
 // reached by discovery, the projects in the register, the link credentials in the

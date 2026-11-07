@@ -133,6 +133,10 @@ type Config struct {
 	Auth auth.Config
 	DNS  dns.Config
 
+	// Raft is how this node's consensus groups time out: every group a service here
+	// opens. Zero is raft's defaults.
+	Raft raft.Timing `yaml:"raft,omitempty"`
+
 	// DNSListen is the port this node's dns server answers on, e.g. ":53" or ":5353".
 	// Default DefaultDNSListen. The operator's, since 53 is the one port a resolver dials
 	// by convention.
@@ -150,11 +154,11 @@ var ErrNoPeer = errors.New("instance: no peer to be made from")
 type Option func(*options) error
 
 type options struct {
-	// kvdbOpen and raftOpen stand in for the peer's own, for a test that has to
-	// see what was opened or make an open fail. Nothing outside this package's
-	// tests can set them.
+	// kvdbOpen and groups stand in for the peer's own, for a test that has to see
+	// what was opened or make an open fail. Nothing outside this package's tests can
+	// set them.
 	kvdbOpen func(name string) (kvdb.Instance, error)
-	raftOpen func(namespace string) (raft.Cluster, error)
+	groups   raft.Groups
 
 	engines  *database.Registry
 	runtimes []invoke.Runtime

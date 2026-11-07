@@ -12,7 +12,6 @@ import (
 
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
-	"github.com/taubyte/tau/pkg/raft"
 )
 
 // wired is the service on one host and a client on another, over mocknet.
@@ -41,7 +40,7 @@ func wiredWith(t *testing.T, opts ...option) (*Client, *harness) {
 
 	s, err := build(server, append([]option{
 		withRegister(&published{revision: 1, object: compiled()}),
-		withConsensus(func(string) (raft.Cluster, error) { return cluster, nil }),
+		withConsensus(oneGroup{cluster}),
 		withRecords(mockRecords()),
 		withClock(tick.now),
 		withSweep(time.Hour),
@@ -157,7 +156,7 @@ func TestACallBeforeTheConsensusHasFormedIsToldSoRatherThanHeld(t *testing.T) {
 
 	s, err := build(host,
 		withRegister(&published{revision: 1, object: compiled()}),
-		withConsensus(func(string) (raft.Cluster, error) { return newCluster(), nil }),
+		withConsensus(freshGroups{}),
 		withRecords(mockRecords()))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })

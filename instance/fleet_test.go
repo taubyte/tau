@@ -15,7 +15,6 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
-	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 	databaseService "github.com/taubyte/tau/services/database"
@@ -68,7 +67,7 @@ func fleet(t *testing.T, configs ...Config) []*Instance {
 
 		// Every fleet node can resolve artifacts, since these tests are about finding what a
 		// node does not run.
-		n, err := New(peers[i], rootedIn(t, cfg, t.TempDir()), withKVDB(&memFactory{}), WithRuntimes(&tier{name: "wasm"}), withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }), prebuilt())
+		n, err := New(peers[i], rootedIn(t, cfg, t.TempDir()), withKVDB(&memFactory{}), WithRuntimes(&tier{name: "wasm"}), withRaft(mockGroups{}), prebuilt())
 		require.NoError(t, err)
 		t.Cleanup(func() { n.Close() })
 

@@ -196,7 +196,7 @@ func answering(c raft.Cluster) *opens {
 	return &opens{answer: func() (raft.Cluster, error) { return c, nil }}
 }
 
-func (o *opens) Groups(string) (raft.Cluster, error) {
+func (o *opens) Group(string) (raft.Cluster, error) {
 	if o.hold != nil {
 		<-o.hold
 	}
@@ -218,7 +218,7 @@ func (o *opens) asked() int {
 // design — see Ledgers.group. It is polled through a Delete rather than a read:
 // Delete takes no barrier, so waiting for the group does not spend the count the
 // barrier tests are about.
-func formed(t *testing.T, open backing.GroupOpener, budget time.Duration) (*backing.RaftLedgers, database.Store) {
+func formed(t *testing.T, open raft.Groups, budget time.Duration) (*backing.RaftLedgers, database.Store) {
 	t.Helper()
 
 	l, err := backing.NewRaftLedgers(open, budget)
@@ -237,7 +237,7 @@ func formed(t *testing.T, open backing.GroupOpener, budget time.Duration) (*back
 // over is the ledger over one cluster, formed.
 func over(t *testing.T, c raft.Cluster) database.Store {
 	t.Helper()
-	_, store := formed(t, answering(c).Groups, time.Second)
+	_, store := formed(t, answering(c), time.Second)
 	return store
 }
 
@@ -253,7 +253,7 @@ func TestTheGroupIsNamedByWhatAddressesTheDatabase(t *testing.T) {
 
 	// AND THE TABLE REFUSES IT FOR THE SAME REASON, rather than opening a group
 	// on a name it could not build.
-	l, err := backing.NewRaftLedgers(answering(leading()).Groups, time.Second)
+	l, err := backing.NewRaftLedgers(answering(leading()), time.Second)
 	require.NoError(t, err)
 	t.Cleanup(func() { l.Close() })
 
@@ -440,7 +440,7 @@ func (expired) Err() error                  { return nil }
 
 func TestACallerWithNoDeadlinePaysTheLedgersBudget(t *testing.T) {
 	cluster := leading()
-	_, store := formed(t, answering(cluster).Groups, 0)
+	_, store := formed(t, answering(cluster), 0)
 
 	require.NoError(t, store.Put(t.Context(), "entry-1", []byte("one")))
 
@@ -454,7 +454,7 @@ func TestAGroupThatHasNotFormedIsRefusedAndNeverWaitedOn(t *testing.T) {
 	asked := answering(cluster)
 	asked.hold = make(chan struct{})
 
-	l, err := backing.NewRaftLedgers(asked.Groups, time.Second)
+	l, err := backing.NewRaftLedgers(asked, time.Second)
 	require.NoError(t, err)
 	t.Cleanup(func() { l.Close() })
 
@@ -496,7 +496,7 @@ func TestAGroupThatHasNotFormedIsRefusedAndNeverWaitedOn(t *testing.T) {
 func TestAGroupThatCouldNotBeOpenedSaysSoAndIsTriedAgain(t *testing.T) {
 	asked := &opens{answer: func() (raft.Cluster, error) { return nil, errors.New("no disk") }}
 
-	l, err := backing.NewRaftLedgers(asked.Groups, time.Second)
+	l, err := backing.NewRaftLedgers(asked, time.Second)
 	require.NoError(t, err)
 	t.Cleanup(func() { l.Close() })
 
@@ -520,7 +520,7 @@ func TestAGroupThatCouldNotBeOpenedSaysSoAndIsTriedAgain(t *testing.T) {
 func TestAGroupThatOpenedToNothingIsRefusedAsClosed(t *testing.T) {
 	asked := &opens{answer: func() (raft.Cluster, error) { return nil, nil }}
 
-	l, err := backing.NewRaftLedgers(asked.Groups, time.Second)
+	l, err := backing.NewRaftLedgers(asked, time.Second)
 	require.NoError(t, err)
 	t.Cleanup(func() { l.Close() })
 
@@ -540,7 +540,7 @@ func TestANodeOnItsWayOutOpensNoMoreGroups(t *testing.T) {
 	cluster := leading()
 	asked := answering(cluster)
 
-	l, store := formed(t, asked.Groups, time.Second)
+	l, store := formed(t, asked, time.Second)
 	require.NoError(t, l.Close())
 
 	// AND THE REFUSAL IS NOT "STILL FORMING", which is the distinction the
@@ -568,7 +568,7 @@ func TestClosingCarriesWhatAGroupSaidOnItsWayDown(t *testing.T) {
 	cluster := leading()
 	cluster.closeErr = errors.New("the log would not flush")
 
-	l, _ := formed(t, answering(cluster).Groups, time.Second)
+	l, _ := formed(t, answering(cluster), time.Second)
 	require.ErrorContains(t, l.Close(), "the log would not flush")
 }
 
@@ -577,7 +577,7 @@ func TestClosingWaitsForAGroupThatIsStillForming(t *testing.T) {
 	asked := answering(cluster)
 	asked.hold = make(chan struct{})
 
-	l, err := backing.NewRaftLedgers(asked.Groups, time.Second)
+	l, err := backing.NewRaftLedgers(asked, time.Second)
 	require.NoError(t, err)
 
 	_, err = l.Store(raftSpec())

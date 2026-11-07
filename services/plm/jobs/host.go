@@ -13,7 +13,6 @@ import (
 	"github.com/taubyte/tau/core/service"
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
-	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/plm"
 	"github.com/taubyte/tau/services/plm/clients"
 	"github.com/taubyte/tau/services/plm/linked"
@@ -42,9 +41,8 @@ func New() Service { return &hosted{} }
 // ErrNotStarted is jobs asked for what only started jobs have.
 var ErrNotStarted = errors.New("build: not started")
 
-// ErrNoConsensus is an instance running no cm, whose consensus the queue is a group
-// of.
-var ErrNoConsensus = errors.New("build: no cm runs beside it, so the queue has no group to live in")
+// ErrNoConsensus is an instance that opens no raft groups, so the queue has none.
+var ErrNoConsensus = errors.New("build: this instance opens no raft groups, so the queue has no group to live in")
 
 // retentionPoll is how often the job records reread the cloud's retention.
 const retentionPoll = time.Minute
@@ -64,7 +62,7 @@ func (b *hosted) WaitForLeader(ctx context.Context) error {
 	return b.queue.WaitForLeader(ctx)
 }
 
-// Start runs jobs on an instance: its queue a raft group of the cm beside it, its
+// Start runs jobs on an instance: its queue a raft group the instance opens, its
 // job records a replicated database on the peer, its projects in the register and
 // its runs on builders, both wherever discovery finds them.
 func (b *hosted) Start(ctx context.Context, h service.Host) error {
@@ -75,11 +73,11 @@ func (b *hosted) Start(ctx context.Context, h service.Host) error {
 	if err := h.Config(&cfg); err != nil {
 		return err
 	}
-	agree, ok := service.Get[cm.Consensus](h)
+	groups, ok := service.Get[raft.Groups](h)
 	if !ok {
 		return ErrNoConsensus
 	}
-	cluster, err := agree.Raft(plm.PLM.Name)
+	cluster, err := groups.Group(plm.PLM.Name)
 	if err != nil {
 		return err
 	}

@@ -11,7 +11,6 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/invoke/js"
 	"github.com/taubyte/tau/pkg/invoke/wasm"
-	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -62,7 +61,7 @@ func TestTheWorkersEnginesAreTheOperators(t *testing.T) {
 		{JS: "turbo"}: js.ErrUnknownMode,
 		{Wasm: "jit"}: wasm.ErrUnknownMode,
 	} {
-		_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Stats, Worker}, Worker: worker.Config{Engines: engines}}), withKVDB(&memFactory{}), withRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }))
+		_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Stats, Worker}, Worker: worker.Config{Engines: engines}}), withKVDB(&memFactory{}), withRaft(mockGroups{}))
 		require.ErrorIs(t, err, want)
 	}
 }
