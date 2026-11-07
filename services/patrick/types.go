@@ -35,7 +35,7 @@ type PatrickService struct {
 	dbFactory    kvdb.Factory
 	devMode      bool
 	// reAnnounceJobTime is captured per-service at construction (from the
-	// DefaultReAnnounceJobTime default, or 5s in dev mode). It replaces a former
+	// DefaultReAnnounceJobTime default). It replaces a former
 	// runtime mutation of the package global, which raced across concurrent
 	// service instances.
 	reAnnounceJobTime time.Duration

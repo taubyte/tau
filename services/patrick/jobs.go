@@ -9,6 +9,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/taubyte/tau/core/services/patrick"
 	ifaceTNS "github.com/taubyte/tau/core/services/tns"
+	servicesCommon "github.com/taubyte/tau/services/common"
 )
 
 // ReannounceJobs scans pending jobs and pushes forgotten or expired ones back onto the queue.
@@ -30,8 +31,8 @@ func (p *PatrickService) ReannounceJobs(ctx context.Context) error {
 		if assignData, err := p.db.Get(ctx, "/assigned/"+jid); err == nil {
 			var assignment Assignment
 			if err := cbor.Unmarshal(assignData, &assignment); err == nil {
-				// Still within the assignment window — don't re-push
-				repush = time.Now().Unix()-assignment.Timestamp > int64(p.reAnnounceJobTime.Seconds())
+				// The owning Monkey refreshes its claim; only an expired one is re-pushed
+				repush = time.Now().Unix()-assignment.Timestamp > int64(servicesCommon.DefaultLockTime.Seconds())
 			}
 		}
 

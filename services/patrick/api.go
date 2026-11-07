@@ -94,6 +94,8 @@ func (p *PatrickService) requestServiceHandler(ctx context.Context, conn streams
 		return p.dequeueHandler(ctx, conn)
 	case "isAssigned":
 		return p.isAssignedHandler(ctx, jid, conn)
+	case "refresh":
+		return p.refreshHandler(ctx, jid, conn)
 	case "cancel":
 		return cr.Response{"cancelled": jid}, p.cancelHandler(ctx, jid, cidMap)
 	case "done":
@@ -208,20 +210,45 @@ func (p *PatrickService) dequeueHandler(ctx context.Context, conn streams.Connec
 	return cr.Response{"available": true, "job": job}, nil
 }
 
-// isAssignedHandler checks whether the calling Monkey is still the assigned owner of the job.
-func (p *PatrickService) isAssignedHandler(ctx context.Context, jid string, conn streams.Connection) (cr.Response, error) {
+// callerAssignment returns the job's claim if the calling Monkey holds it, nil otherwise.
+func (p *PatrickService) callerAssignment(ctx context.Context, jid string, conn streams.Connection) *Assignment {
 	data, err := p.db.Get(ctx, "/assigned/"+jid)
 	if err != nil {
-		return cr.Response{"assigned": false}, nil
+		return nil
 	}
 
 	var assignment Assignment
-	if err := cbor.Unmarshal(data, &assignment); err != nil {
+	if err := cbor.Unmarshal(data, &assignment); err != nil || assignment.MonkeyPID != conn.RemotePeer().String() {
+		return nil
+	}
+
+	return &assignment
+}
+
+// isAssignedHandler checks whether the calling Monkey is still the assigned owner of the job.
+func (p *PatrickService) isAssignedHandler(ctx context.Context, jid string, conn streams.Connection) (cr.Response, error) {
+	return cr.Response{"assigned": p.callerAssignment(ctx, jid, conn) != nil}, nil
+}
+
+// refreshHandler renews the calling Monkey's claim on the job, so re-announce
+// does not hand it to another Monkey. Another Monkey's claim is left as is.
+func (p *PatrickService) refreshHandler(ctx context.Context, jid string, conn streams.Connection) (cr.Response, error) {
+	assignment := p.callerAssignment(ctx, jid, conn)
+	if assignment == nil {
 		return cr.Response{"assigned": false}, nil
 	}
 
-	isAssigned := assignment.MonkeyPID == conn.RemotePeer().String()
-	return cr.Response{"assigned": isAssigned}, nil
+	assignment.Timestamp = time.Now().Unix()
+	assignData, err := cbor.Marshal(assignment)
+	if err != nil {
+		return nil, fmt.Errorf("marshal assignment: %w", err)
+	}
+
+	if err := p.db.Put(ctx, "/assigned/"+jid, assignData); err != nil {
+		return nil, fmt.Errorf("refresh assignment for %s: %w", jid, err)
+	}
+
+	return cr.Response{"assigned": true}, nil
 }
 
 func (p *PatrickService) timeoutHandler(ctx context.Context, jid string, cid_log map[string]string) error {

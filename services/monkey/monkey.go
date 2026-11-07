@@ -23,7 +23,9 @@ func (m *Monkey) Run() {
 	errs := make(chan error, 1024)
 
 	stopLogs := m.streamLogs()
+	stopRefresh := m.refreshClaim()
 	m.run(errs)
+	stopRefresh()
 	close(errs)
 
 	runErr := m.appendErrors(m.logFile, errs)
@@ -38,11 +40,12 @@ func (m *Monkey) Run() {
 
 	// Zombie protection: verify we still own the job before reporting results.
 	// If assignment timed out and the job was given to another Monkey, discard.
+	// On an error, report anyway: Patrick rejects a report from a non-owner.
 	assigned, assignErr := m.Service.patrickClient.IsAssigned(m.Id)
 	if assignErr != nil {
 		logger.Errorf("IsAssigned check for job `%s` failed: %s", m.Id, assignErr.Error())
 	}
-	if !assigned {
+	if assignErr == nil && !assigned {
 		logger.Infof("Job `%s` is no longer assigned to us, discarding results", m.Id)
 		return
 	}
@@ -71,6 +74,44 @@ func (m *Monkey) Run() {
 		}
 	}
 
+}
+
+// refreshClaim renews the job's claim on Patrick every DefaultRefreshLockTime
+// while the build runs, and cancels the build once another Monkey owns the job.
+// Errors are ignored: an old Patrick has no refresh and answers with an error.
+func (m *Monkey) refreshClaim() (stop func()) {
+	ctx, cancel := context.WithCancel(m.ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(protocolCommon.DefaultRefreshLockTime)
+		defer ticker.Stop()
+		// Two "not assigned" answers in a row before giving up: Patrick also
+		// answers that way when one of its reads fails, and a single blip must
+		// not throw a build away. Two intervals still fit in the claim lifetime.
+		misses := 0
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				assigned, err := m.Service.patrickClient.Refresh(m.Id)
+				if err != nil || assigned {
+					misses = 0
+					continue
+				}
+				if misses++; misses >= 2 {
+					logger.Infof("Job `%s` is no longer assigned to us, stopping its build", m.Id)
+					m.ctxC()
+					return
+				}
+			}
+		}
+	}()
+	return func() {
+		cancel()
+		<-done
+	}
 }
 
 func (m *Monkey) run(errs chan error) {

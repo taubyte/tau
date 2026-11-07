@@ -14,9 +14,8 @@ var (
 	// From Monkey
 	MockedPatrick          = false
 	TimeoutTest            = false
-	DefaultLockTime        = 600 * time.Second
+	DefaultLockTime        = 60 * time.Second // a claim not refreshed for this long goes back on the queue
 	DefaultMaxTime         = 1 * time.Hour
-	DefaultLockMinWaitTime = 30 * time.Second
-	DefaultRefreshLockTime = 90 * time.Second
+	DefaultRefreshLockTime = 20 * time.Second // how often a building Monkey refreshes its claim
 	DefaultTestTimeOut     = 5 * time.Second
 )
