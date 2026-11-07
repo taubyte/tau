@@ -94,9 +94,11 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 	// Each repo's newest job, to skip repos whose head already built. Without
 	// Patrick nothing is skipped.
 	var jobs map[int]*patrickIface.Job
-	if !force {
-		if err := simple.Provides("patrick"); err == nil {
-			if p, err := simple.Patrick(); err == nil {
+	var patrick patrickIface.Client
+	if err := simple.Provides("patrick"); err == nil {
+		if p, err := simple.Patrick(); err == nil {
+			patrick = p
+			if !force {
 				jobs = newestJobs(p)
 			}
 		}
@@ -140,18 +142,20 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 	// are named in its compiled config: note the config's commit now, and after
 	// the first pass push those (waiting for the config job if the project has
 	// no commit yet). pushSpecific registers each one it pushes.
-	configProject, commitBefore := "", ""
+	configProject, commitBefore, configRepo := "", "", 0
 	for _, r := range repos {
 		if repoKindOrder(r.fullName) == 0 {
 			if configProject = projectId; configProject == "" {
 				configProject = repoProject(auth, tns, r.id)
 			}
 			commitBefore, _, _ = tns.Simple().Commit(configProject, branch)
+			configRepo, _ = strconv.Atoi(r.id)
 			break
 		}
 	}
 
 	pushed := make(map[string]bool)
+	startedAt, configSent := time.Now().Unix(), false
 	pushIdx := 0
 	push := func(r repo) error {
 		repoId, fullName := r.id, r.fullName
@@ -182,6 +186,7 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 				return nil
 			}
 		}
+		configSent = configSent || repoKindOrder(fullName) == 0
 		return pushSpecific(u, repoId, fullName, projectId, branch, localPath, pushedAt)
 	}
 
@@ -194,7 +199,12 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 	if configProject == "" {
 		return nil
 	}
-	if commitBefore == "" {
+	// The websites and libraries are read from the config the config job
+	// publishes: wait for that job, or a website just added to the config of an
+	// already-built project is read from the old config and never pushed.
+	if patrick != nil && configSent && configRepo != 0 {
+		waitForJob(u.Context(), patrick, configRepo, startedAt, newCommitWait)
+	} else if commitBefore == "" {
 		waitForNewCommit(u.Context(), tns.Simple(), configProject, branch, commitBefore, newCommitWait)
 	}
 	websites, _, _, _ := tns.Website().All(configProject, "", branch).List()
@@ -276,6 +286,26 @@ func waitForNewCommit(ctx context.Context, tns tnsIface.SimpleIface, project, br
 	deadline := time.Now().Add(wait)
 	for {
 		if commit, _, err := tns.Commit(project, branch); err == nil && commit != "" && commit != before {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+// waitForJob returns true once repo has a job created at or after since that
+// has finished, or false after wait (no such job: it was skipped as built).
+func waitForJob(ctx context.Context, p patrickIface.Client, repo int, since int64, wait time.Duration) bool {
+	deadline := time.Now().Add(wait)
+	for {
+		if j := newestJobs(p)[repo]; j != nil && j.Timestamp >= since &&
+			j.Status != patrickIface.JobStatusOpen && j.Status != patrickIface.JobStatusLocked {
 			return true
 		}
 		if time.Now().After(deadline) {
