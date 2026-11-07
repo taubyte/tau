@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"sync/atomic"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/mem"
@@ -44,6 +45,28 @@ func (i *instance) usedMemory() (uint32, error) {
 // instead of letting 64 slots each grow to the function's memory cap.
 const poolMemBudget = 256 << 20
 
+// nodePooledMem is the idle pooled memory of every function on this node;
+// nodePoolBudget caps it so RSS does not climb with the function count.
+var (
+	nodePooledMem  atomic.Int64
+	nodePoolBudget = nodePoolBudgetFor(totalMemory())
+)
+
+func totalMemory() uint64 {
+	if vmStat, err := mem.VirtualMemory(); err == nil {
+		return vmStat.Total
+	}
+	return 0
+}
+
+// nodePoolBudgetFor is a quarter of the node's memory (512 MiB if unknown), at least 128 MiB.
+func nodePoolBudgetFor(total uint64) int64 {
+	if total == 0 {
+		return 512 << 20
+	}
+	return max(int64(total/4), 128<<20)
+}
+
 func shouldRetire(useMem uint32, capBytes uint64) bool {
 	return uint64(useMem) > capBytes*2/3
 }
@@ -76,7 +99,8 @@ func (i *instance) Free() error {
 		return nil
 	}
 
-	if i.parent.pooledMem.Load()+int64(useMem) > poolMemBudget {
+	if i.parent.pooledMem.Load()+int64(useMem) > poolMemBudget ||
+		nodePooledMem.Load()+int64(useMem) > nodePoolBudget {
 		i.Close()
 		return nil
 	}
@@ -144,6 +168,7 @@ func unpool(inst Instance) uint32 {
 	mem := i.poolMem
 	i.poolMem = 0
 	i.parent.pooledMem.Add(-int64(mem))
+	nodePooledMem.Add(-int64(mem))
 	return mem
 }
 
@@ -174,11 +199,12 @@ func (f *Function) repool(inst Instance, mem uint32) {
 	if i, ok := inst.(*instance); ok {
 		i.poolMem = mem
 		f.pooledMem.Add(int64(mem))
+		nodePooledMem.Add(int64(mem))
 	}
 	select {
 	case f.availableInstances <- inst:
 	default:
-		f.pooledMem.Add(-int64(mem))
+		unpool(inst)
 		inst.Close()
 	}
 }

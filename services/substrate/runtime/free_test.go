@@ -195,3 +195,45 @@ func TestPoolMemBudget(t *testing.T) {
 		t.Fatalf("pooledMem = %d, want %d", got, 2*big)
 	}
 }
+
+// Two functions each under their own budget are closed once together they
+// would pass the node budget, and the node total returns to 0 when drained.
+func TestNodePoolBudget(t *testing.T) {
+	const big = 100 << 20
+	defer func(b int64) { nodePoolBudget = b }(nodePoolBudget)
+	nodePooledMem.Store(0) // other tests leave instances pooled
+	nodePoolBudget = 250 << 20
+	newF := func() *Function {
+		return &Function{
+			config:             &structureSpec.Function{Name: "someFunc"},
+			serviceable:        newMockServiceable(),
+			vmConfig:           &vm.Config{MemoryLimitPages: 4096},
+			availableInstances: make(chan Instance, InstanceMaxRequests),
+		}
+	}
+	free := func(f *Function) int {
+		rt := &fakeRuntime{size: big}
+		if err := (&instance{runtime: rt, parent: f}).Free(); err != nil {
+			t.Fatal(err)
+		}
+		return rt.closed
+	}
+	a, b := newF(), newF()
+	if free(a) != 0 || free(b) != 0 {
+		t.Fatal("instances within the node budget must pool")
+	}
+	if free(a) != 1 {
+		t.Fatal("instance over the node budget must be closed")
+	}
+	if got := nodePooledMem.Load(); got != 2*big {
+		t.Fatalf("nodePooledMem = %d, want %d", got, 2*big)
+	}
+	unpool(<-a.availableInstances)
+	unpool(<-b.availableInstances)
+	if got := nodePooledMem.Load(); got != 0 {
+		t.Fatalf("nodePooledMem = %d after drain, want 0", got)
+	}
+	if nodePoolBudgetFor(0) != 512<<20 || nodePoolBudgetFor(256<<20) != 128<<20 || nodePoolBudgetFor(4<<30) != 1<<30 {
+		t.Fatal("nodePoolBudgetFor default/floor/quarter wrong")
+	}
+}
