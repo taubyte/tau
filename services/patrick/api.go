@@ -575,7 +575,7 @@ func (srv *PatrickService) retryJob(ctx http.Context) (iface interface{}, err er
 		job.Attempt = 0
 		job_byte, err := cbor.Marshal(job)
 		if err != nil {
-			logger.Errorf("failed cbor marshall on job %s with err: %w", job.Id, err)
+			logger.Errorf("failed cbor marshall on job %s with err: %v", job.Id, err)
 			return nil, fmt.Errorf("failed marshalling job %s with err %w", job.Id, err)
 		}
 

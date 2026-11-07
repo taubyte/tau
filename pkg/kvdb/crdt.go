@@ -423,11 +423,16 @@ func NewDatastore(
 		cancel()
 		return nil, err
 	}
-	dstore.logger.Infof(
+	logCreated := dstore.logger.Debugf
+	dirty := dstore.IsDirty(ctx)
+	if dirty {
+		logCreated = dstore.logger.Warnf
+	}
+	logCreated(
 		"crdt Datastore created. Number of heads: %d. Current max-height: %d. Dirty: %t",
 		len(headList),
 		maxHeight,
-		dstore.IsDirty(ctx),
+		dirty,
 	)
 
 	// sendJobWorker + NumWorkers
@@ -758,7 +763,7 @@ func (store *Datastore) repair(ctx context.Context) {
 			return
 		case <-timer.C:
 			if !store.IsDirty(ctx) {
-				store.logger.Info("store is marked clean. No need to repair")
+				store.logger.Debug("store is marked clean. No need to repair")
 			} else {
 				store.logger.Warn("store is marked dirty. Starting DAG repair operation")
 				err := store.repairDAG(ctx)
@@ -943,7 +948,7 @@ loop:
 		delta := store.newDelta()
 		err = delta.Unmarshal(deltaOpt.delta)
 		if err != nil {
-			store.logger.Warn("error unmarshaling children's delta: %s", err)
+			store.logger.Warnf("error unmarshaling children's delta: %s", err)
 			continue
 		}
 

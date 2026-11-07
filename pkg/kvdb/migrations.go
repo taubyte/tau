@@ -59,6 +59,7 @@ func (store *Datastore) applyMigrations(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	from := v
 
 	if v == 0 {
 		if err := store.migrate0to1(ctx); err != nil {
@@ -80,7 +81,11 @@ func (store *Datastore) applyMigrations(ctx context.Context) error {
 		v = 2
 	}
 
-	store.logger.Infof("CRDT database format v%d", version)
+	if from != v {
+		store.logger.Infof("CRDT database format migrated v%d -> v%d", from, v)
+	} else {
+		store.logger.Debugf("CRDT database format v%d", version)
+	}
 	return nil
 }
 

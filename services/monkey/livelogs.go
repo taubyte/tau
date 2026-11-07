@@ -90,6 +90,10 @@ func (m *Monkey) publishLogChunk(chunk protocolCommon.LiveLogChunk) {
 	ctx, cancel := context.WithTimeout(node.Context(), 5*time.Second)
 	defer cancel()
 	if err = node.PubSubPublish(ctx, protocolCommon.LiveLogsTopic, data); err != nil {
-		logger.Debugf("Publishing log of job `%s` failed: %s", m.Id, err.Error())
+		if m.liveLogWarned.CompareAndSwap(false, true) {
+			logger.Warnf("Publishing log of job `%s` failed: %s", m.Id, err.Error())
+		} else {
+			logger.Debugf("Publishing log of job `%s` failed: %s", m.Id, err.Error())
+		}
 	}
 }

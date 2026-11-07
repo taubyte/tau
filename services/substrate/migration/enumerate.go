@@ -57,6 +57,7 @@ func namespacesOf(ctx context.Context, store ds.Batching) ([]string, error) {
 func openLegacyView(store ds.Batching, hash string) (*kvdb.Datastore, error) {
 	opts := kvdb.DefaultOptions()
 	opts.Logger = logger
+	opts.RepairInterval = 0 // a short-lived read-only view must not repair
 	return kvdb.NewDatastore(store, ds.NewKey(crdtPrefix+hash), offlineDAG(store), nil, opts)
 }
 

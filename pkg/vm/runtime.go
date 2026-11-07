@@ -46,7 +46,7 @@ func (r *runtime) Attach(plugin vm.Plugin) (vm.PluginInstance, vm.ModuleInstance
 
 	pi, err := plugin.New(r.instance)
 	if err != nil {
-		return nil, nil, fmt.Errorf("creating new plugin instance failed with: %s", err)
+		return nil, nil, fmt.Errorf("creating plugin instance: %w", err)
 	}
 
 	hm := &hostModule{
@@ -56,7 +56,7 @@ func (r *runtime) Attach(plugin vm.Plugin) (vm.PluginInstance, vm.ModuleInstance
 
 	minst, err := pi.Load(hm)
 	if err != nil {
-		return nil, nil, fmt.Errorf("loading plugin instance failed with: %s", err)
+		return nil, nil, fmt.Errorf("loading plugin instance: %w", err)
 	}
 
 	return pi, minst, nil
@@ -79,12 +79,12 @@ func (r *runtime) module(name string) (vm.ModuleInstance, error) {
 	if modInst == nil {
 		module, err := r.instance.service.Source().Module(r.instance.ctx, name)
 		if err != nil {
-			return nil, fmt.Errorf("loading module `%s` failed with: %s", name, err)
+			return nil, fmt.Errorf("module `%s`: %w", name, err)
 		}
 
 		compiled, err := r.runtime.CompileModule(r.instance.ctx.Context(), module)
 		if err != nil {
-			return nil, fmt.Errorf("getting compiled module failed with: %s", err)
+			return nil, fmt.Errorf("compiling module `%s`: %w", name, err)
 		}
 
 		deps := make(map[string]struct{})
@@ -105,13 +105,13 @@ func (r *runtime) module(name string) (vm.ModuleInstance, error) {
 		for dep := range deps {
 			_, err := r.module(dep)
 			if err != nil {
-				return nil, fmt.Errorf("loading module `%s` dependency `%s` failed with: %s", name, dep, err)
+				return nil, fmt.Errorf("module `%s` dependency: %w", name, err)
 			}
 		}
 
 		modInst, err = r.instantiate(name, compiled, hasReady)
 		if err != nil {
-			return nil, fmt.Errorf("creating an instance of module `%s` failed with: %s", name, err)
+			return nil, fmt.Errorf("module `%s`: %w", name, err)
 		}
 	}
 
@@ -143,14 +143,14 @@ func (r *runtime) instantiate(name string, compiled wazy.CompiledModule, hasRead
 	ctx := r.instance.ctx.Context()
 	m, err := r.runtime.InstantiateModule(ctx, compiled, config)
 	if err != nil {
-		return nil, fmt.Errorf("instantiating compiled module `%s` failed with: %s", name, err)
+		return nil, fmt.Errorf("instantiating: %w", err)
 	}
 
 	// reactor modules export _initialize to set up globals (e.g. os.Stdout).
 	// Must be called before any other exported function.
 	if _initialize := m.ExportedFunction("_initialize"); _initialize != nil {
 		if _, err := _initialize.Call(ctx); err != nil {
-			return nil, fmt.Errorf("calling _initialize for module `%s`: %w", name, err)
+			return nil, fmt.Errorf("calling _initialize: %w", err)
 		}
 		// TODO: this should be deleted later as we should only support reactor modules
 	} else if _start := m.ExportedFunction("_start"); _start != nil {

@@ -17,15 +17,23 @@ func (srv *Service) dequeueFromAny(peers []peer.ID) *iface.Job {
 }
 
 func firstJob(peers []peer.ID, dequeue func(peer.ID) (*iface.Job, error)) *iface.Job {
+	var lastErr error
+	failed := 0
 	for _, p := range peers {
 		job, err := dequeue(p)
 		if err != nil {
 			logger.Debugf("Dequeue from %s failed: %v", p, err)
+			lastErr = err
+			failed++
 			continue
 		}
 		if job != nil {
 			return job
 		}
+	}
+	// one peer failing is routine (a follower restarting); all of them failing means no builds run
+	if failed > 0 && failed == len(peers) {
+		logger.Warnf("Dequeue failed on all %d Patricks, last error: %v", failed, lastErr)
 	}
 	return nil
 }
