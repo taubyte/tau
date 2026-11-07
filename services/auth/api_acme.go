@@ -186,6 +186,12 @@ func (srv *AuthService) acmeServiceHandler(ctx context.Context, st streams.Conne
 			return nil, err
 		}
 		return nil, srv.setACMECertificate(ctx, fqdn, certificate)
+	case "delete":
+		fqdn, err := maps.String(body, "fqdn")
+		if err != nil {
+			return nil, err
+		}
+		return nil, srv.db.Delete(ctx, "/acme/"+base64.StdEncoding.EncodeToString([]byte(fqdn))+"/certificate/pem")
 	case "set-static":
 		fqdn, err := maps.String(body, "fqdn")
 		if err != nil {
