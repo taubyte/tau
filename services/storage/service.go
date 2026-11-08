@@ -81,6 +81,10 @@ type server struct {
 	sweep   time.Duration
 	logf    func(format string, args ...any)
 
+	// homed is the placement every root this node references was last handed to
+	// in full. Only run's loop touches it; see rehome.go.
+	homed string
+
 	serverOptions []rpc.ServerOption
 
 	// also is what Start opened for this service beside it, closed with it.
@@ -116,6 +120,10 @@ type options struct {
 	meter   Meter
 	sweep   time.Duration
 	logf    func(format string, args ...any)
+
+	// homed is the placement every root this node references was last handed to
+	// in full. Only run's loop touches it; see rehome.go.
+	homed string
 
 	serverOptions []rpc.ServerOption
 }
@@ -341,6 +349,9 @@ func (s *server) run(ctx context.Context) {
 	for {
 		if err := s.reconcile(ctx); err != nil && ctx.Err() == nil {
 			s.logf("storage: keeping shards: %v", err)
+		}
+		if err := s.rehome(ctx); err != nil && ctx.Err() == nil {
+			s.logf("storage: handing blocks to their holders: %v", err)
 		}
 		select {
 		case <-ctx.Done():
