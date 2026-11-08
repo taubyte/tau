@@ -1201,6 +1201,15 @@ func (store *Datastore) processNode(ctx context.Context, ng *crdtNodeGetter, roo
 	return children, nil
 }
 
+// The repair walk reads every block in history, cold, while the node serves
+// traffic. It idles this many times as long as each step took, so it stays a
+// background job at any DAG size; capped so a long real reprocess of a broken
+// branch does not stall the walk.
+const (
+	repairIdleFactor = 4
+	repairMaxIdle    = 100 * time.Millisecond
+)
+
 // RepairDAG is used to walk down the chain until a non-processed node is
 // found and at that moment, queues it for processing.
 func (store *Datastore) repairDAG(ctx context.Context) error {
@@ -1253,6 +1262,7 @@ func (store *Datastore) repairDAG(ctx context.Context) error {
 		}
 	}()
 
+	stepStart := time.Now()
 	for {
 		// GetDelta does not seem to respond well to context
 		// cancellations (probably this goes down to the Blockstore
@@ -1261,8 +1271,9 @@ func (store *Datastore) repairDAG(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		default:
+		case <-time.After(min(repairIdleFactor*time.Since(stepStart), repairMaxIdle)):
 		}
+		stepStart = time.Now()
 
 		if len(nodes) == 0 {
 			break
