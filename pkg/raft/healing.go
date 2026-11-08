@@ -3,11 +3,15 @@ package raft
 import (
 	"bytes"
 	"context"
+	"errors"
 	"path"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	ds "github.com/ipfs/go-datastore"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -73,8 +77,13 @@ func (h *healer) run(ctx context.Context) {
 	healLogger.Infof("[%s] healer started (check_interval=%v, detection_cycles=%d)",
 		h.cluster.ID().ShortString(), checkInterval, h.cluster.splitBrainDetectionCycles)
 
+	if h.cluster.hasArchive() {
+		go h.replayOnceLeading(ctx)
+	}
+
 	noLeaderCycles := 0
 	cycleStart := time.Now()
+	var leaderlessSince time.Time
 	// ONE TICKER FOR THE LIFE OF THE HEALER: a timer armed afresh after each event
 	// would let a steady stream of foreign messages put every check off forever.
 	checks := time.NewTicker(checkInterval)
@@ -107,16 +116,31 @@ func (h *healer) run(ctx context.Context) {
 
 		if h.cluster.IsLeader() {
 			noLeaderCycles = 0
+			leaderlessSince = time.Time{}
 			cycleStart = time.Now()
+			h.replayArchive(ctx)
 			h.probeAndMergeAsLeader(ctx)
 			continue
 		}
 
+		began := cycleStart
 		hadLeader := h.hadLeaderSince(cycleStart)
 		cycleStart = time.Now()
 		if hadLeader {
 			noLeaderCycles = 0
+			leaderlessSince = time.Time{}
 			continue
+		}
+
+		if leaderlessSince.IsZero() {
+			leaderlessSince = began
+		}
+		if after := h.cluster.quorumLossAfter; after > 0 && time.Since(leaderlessSince) >= after {
+			h.recoverFromQuorumLoss(ctx)
+			if h.superseded.Load() {
+				healLogger.Infof("[%s] healer superseded after recovering from a lost quorum — exiting", h.cluster.ID().ShortString())
+				return
+			}
 		}
 
 		noLeaderCycles++
@@ -585,6 +609,139 @@ func (h *healer) healAckMembersOf(members []peer.ID, exp export) {
 	}
 	healLogger.Infof("[%s] healing complete — sent healAck to %d members of the merged group (they will rejoin via requestVoterJoin)",
 		h.cluster.ID().ShortString(), sent)
+}
+
+// archiveKey is where a member keeps the state it carries out of a formation that
+// lost its quorum, until the group it forms with it has taken it.
+func (c *cluster) archiveKey() ds.Key {
+	return ds.NewKey(path.Join(RaftStoragePrefix, c.namespace, "archive"))
+}
+
+func (c *cluster) hasArchive() bool {
+	has, err := c.Store().Has(c.ctx, c.archiveKey())
+	return err == nil && has
+}
+
+// memberAnswer is what a member of the formation said of itself, nil when it said
+// nothing.
+type memberAnswer struct {
+	id   peer.ID
+	info *ClusterInfoResponse
+}
+
+// recoverFromQuorumLoss forms a new group out of a formation fewer than a quorum
+// of whose members answer, carrying what this member holds, when it is the lowest
+// of the members that answer: the others are taken by its group as the orphans
+// they are, receipts and all. Nothing is done while any member knows a leader, or
+// while a quorum answers, which can still elect one.
+func (h *healer) recoverFromQuorumLoss(ctx context.Context) {
+	m := h.member
+	if m.raft.Pristine() {
+		return
+	}
+	formation := m.raft.Formation()
+	members := m.raft.Members()
+	answers := make(chan memberAnswer, len(members))
+	asked := 0
+	for _, mb := range members {
+		if mb.ID == h.cluster.ID() {
+			continue
+		}
+		asked++
+		go func() {
+			info, err := m.raftClient.ClusterInfo(mb.ID)
+			if err != nil {
+				info = nil
+			}
+			answers <- memberAnswer{id: mb.ID, info: info}
+		}()
+	}
+	reachable := []peer.ID{h.cluster.ID()}
+	led := false
+	for range asked {
+		a := <-answers
+		switch {
+		case a.info == nil:
+		case a.info.LeaderID != "":
+			led = true
+		case bytes.Equal(a.info.Formation, formation):
+			reachable = append(reachable, a.id)
+		}
+	}
+	if led || len(reachable) > len(members)/2 {
+		return
+	}
+	slices.SortFunc(reachable, func(a, b peer.ID) int { return strings.Compare(a.String(), b.String()) })
+	if reachable[0] != h.cluster.ID() {
+		healLogger.Infof("[%s] quorum lost; %s, the lowest member that answers, forms the new group", h.cluster.ID().ShortString(), reachable[0].ShortString())
+		return
+	}
+
+	cut := m.raft.CommitIndex()
+	if err := m.raft.appliedTo(cut, time.After(exportDrainWait)); err != nil {
+		healLogger.Warnf("[%s] quorum lost; applying what it committed: %v", h.cluster.ID().ShortString(), err)
+		return
+	}
+	state, err := m.fsm.ExportState()
+	if err != nil {
+		healLogger.Warnf("[%s] quorum lost; exporting what it holds: %v", h.cluster.ID().ShortString(), err)
+		return
+	}
+	data, err := encodeMergeCommand(state)
+	if err != nil {
+		healLogger.Warnf("[%s] quorum lost; encoding what it holds: %v", h.cluster.ID().ShortString(), err)
+		return
+	}
+	// THE ARCHIVE IS WRITTEN BEFORE ANYTHING IS WIPED, and a member that holds
+	// nothing but an archive forms its group with it: a crash between the two
+	// loses nothing.
+	if err := h.cluster.Store().Put(ctx, h.cluster.archiveKey(), data); err != nil {
+		healLogger.Warnf("[%s] quorum lost; archiving what it holds: %v", h.cluster.ID().ShortString(), err)
+		return
+	}
+	healLogger.Warnf("[%s] %d of %d members answer and none leads — forming a new group carrying %d keys",
+		h.cluster.ID().ShortString(), len(reachable), len(members), len(state))
+	h.yieldAndRejoin(ctx, "", receipt{formation: formation, cut: cut})
+}
+
+// replayArchive merges the state this member carried out of a formation that lost
+// its quorum into the group it leads, then lets the archive go.
+func (h *healer) replayArchive(ctx context.Context) {
+	if !h.cluster.IsLeader() {
+		return
+	}
+	data, err := h.cluster.Store().Get(ctx, h.cluster.archiveKey())
+	if errors.Is(err, ds.ErrNotFound) {
+		return
+	}
+	if err != nil {
+		healLogger.Warnf("[%s] reading its archive: %v", h.cluster.ID().ShortString(), err)
+		return
+	}
+	if err := h.applyMerge(data); err != nil {
+		healLogger.Warnf("[%s] merging its archive: %v", h.cluster.ID().ShortString(), err)
+		return
+	}
+	if err := h.cluster.Store().Delete(ctx, h.cluster.archiveKey()); err != nil {
+		healLogger.Warnf("[%s] letting its archive go: %v", h.cluster.ID().ShortString(), err)
+		return
+	}
+	healLogger.Infof("[%s] the state it carried out of a formation that lost its quorum is in its group", h.cluster.ID().ShortString())
+}
+
+// replayOnceLeading replays the archive as soon as the member leads, rather than
+// at its next check.
+func (h *healer) replayOnceLeading(ctx context.Context) {
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for h.cluster.hasArchive() && !h.superseded.Load() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		h.replayArchive(ctx)
+	}
 }
 
 // yieldGuard is what lets a yield wipe what the member holds. It is asked once the

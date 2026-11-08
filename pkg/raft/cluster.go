@@ -36,6 +36,7 @@ type cluster struct {
 
 	timeoutConfig      TimeoutConfig
 	forceBootstrap     bool
+	quorumLossAfter    time.Duration
 	bootstrapTimeout   time.Duration
 	bootstrapThreshold float64
 	encryptionCipher   cipher.AEAD
@@ -189,6 +190,21 @@ func (c *cluster) handleBootstrap(m *member) error {
 				c.ID().ShortString(), settledDiscoveryInterval)
 		}
 	}()
+
+	// A MEMBER CARRYING THE STATE OF A FORMATION THAT LOST ITS QUORUM, and holding
+	// nothing else, forms its new group with it: it was forming it when it
+	// stopped.
+	if c.hasArchive() && m.raft.Pristine() {
+		clusterLogger.Infof("[%s] carrying the state of a formation that lost its quorum — forming a group with it", c.ID().ShortString())
+		err := c.bootstrapSelf(m)
+		if errors.Is(err, ErrCantBootstrap) {
+			err = nil
+		}
+		if err == nil {
+			successfullyCompleted = true
+		}
+		return err
+	}
 
 	if c.forceBootstrap {
 		clusterLogger.Infof("[%s] force bootstrap enabled — bootstrapping self", c.ID().ShortString())

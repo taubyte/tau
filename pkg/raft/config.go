@@ -1,7 +1,10 @@
 package raft
 
 import (
+	"fmt"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // TimeoutConfig allows fine-grained control over Raft timing
@@ -51,8 +54,41 @@ var DefaultTimeoutConfig = TimeoutConfig{
 // Timing is how a node's groups time out, as its operator writes it; zero is raft's
 // defaults.
 type Timing struct {
-	Timeouts         TimeoutConfig `yaml:"timeouts"`
-	BootstrapTimeout time.Duration `yaml:"bootstrap_timeout"`
+	Timeouts           TimeoutConfig      `yaml:"timeouts"`
+	BootstrapTimeout   time.Duration      `yaml:"bootstrap_timeout"`
+	QuorumLossRecovery QuorumLossRecovery `yaml:"quorum_loss_recovery,omitempty"`
+}
+
+// QuorumLossRecovery is what a group does once fewer than a quorum of its members
+// answer: Manual, the zero value, waits for them to come back; a duration has the
+// members that remain form a new group carrying what they hold once they have had
+// no leader for that long. A partition that long looks the same as members gone,
+// so the two sides then hold two histories, merged when they meet again.
+type QuorumLossRecovery time.Duration
+
+// Manual is a group that waits for its members however long they are gone.
+const Manual QuorumLossRecovery = 0
+
+// UnmarshalYAML reads "manual" or a duration.
+func (r *QuorumLossRecovery) UnmarshalYAML(value *yaml.Node) error {
+	if value.Value == "manual" {
+		*r = Manual
+		return nil
+	}
+	d, err := time.ParseDuration(value.Value)
+	if err != nil || d < 0 {
+		return fmt.Errorf("quorum_loss_recovery is manual or a duration, not %q", value.Value)
+	}
+	*r = QuorumLossRecovery(d)
+	return nil
+}
+
+// MarshalYAML writes what UnmarshalYAML reads.
+func (r QuorumLossRecovery) MarshalYAML() (any, error) {
+	if r == Manual {
+		return "manual", nil
+	}
+	return time.Duration(r).String(), nil
 }
 
 // Options are what a group is opened with on this timing.
@@ -63,6 +99,9 @@ func (t Timing) Options() []Option {
 	}
 	if t.BootstrapTimeout != 0 {
 		options = append(options, WithBootstrapTimeout(t.BootstrapTimeout))
+	}
+	if t.QuorumLossRecovery != Manual {
+		options = append(options, WithQuorumLossRecovery(time.Duration(t.QuorumLossRecovery)))
 	}
 	return options
 }

@@ -34,6 +34,19 @@ func WithBootstrapTimeout(d time.Duration) Option {
 	}
 }
 
+// WithQuorumLossRecovery has the members that remain of a group that lost its
+// quorum form a new group carrying what they hold, once they have had no leader
+// for after. Without it a group waits for its members to come back.
+func WithQuorumLossRecovery(after time.Duration) Option {
+	return func(c *cluster) error {
+		if after <= 0 {
+			return fmt.Errorf("quorum loss recovery after %v: must be above zero", after)
+		}
+		c.quorumLossAfter = after
+		return nil
+	}
+}
+
 // WithEncryptionKey seals the group's raft messages and every call with AES-256-GCM.
 // The key is 32 bytes, the same on every member.
 func WithEncryptionKey(key []byte) Option {
