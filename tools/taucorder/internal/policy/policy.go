@@ -82,7 +82,7 @@ var Table = map[string]map[string]Class{
 	},
 	"tau.raft.v2.RaftService": {
 		"Set": W, "Get": R, "Delete": W, "Keys": R, "ExchangePeers": W,
-		"JoinVoter": W, "ClusterInfo": R, "ExportFSM": S, "HealAck": W,
+		"Offer": R, "JoinVoter": W, "ClusterInfo": R, "ExportFSM": S, "HealAck": W,
 	},
 	"tau.database.v2.DatabaseService": {
 		"KVGet": S, "KVPut": W, "KVDelete": W, "KVList": S, "KVDigest": R, "Hold": W,
