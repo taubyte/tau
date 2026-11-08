@@ -11,9 +11,10 @@ import (
 
 func New(srv nodeIface.Service, cfg config.Config, options ...Option) (*Service, error) {
 	s := &Service{
-		Service: srv,
-		config:  cfg,
-		cache:   cache.New(),
+		Service:  srv,
+		config:   cfg,
+		cache:    cache.New(),
+		inflight: newAdmission(),
 	}
 
 	var err error

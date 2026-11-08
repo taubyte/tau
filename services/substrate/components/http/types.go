@@ -11,4 +11,5 @@ type Service struct {
 	config      config.Config
 	cache       *cache.Cache
 	dvPublicKey []byte
+	inflight    chan struct{} // function requests in flight; see maxInFlight
 }
