@@ -6,8 +6,8 @@ import (
 	"github.com/taubyte/tau/pkg/placement"
 )
 
-// Binds pkg/placement to storage's two questions over one member set: which resource
-// strings to name, and which membership timescale to ask.
+// Binds pkg/placement to storage's question over one member set, the storage nodes
+// discovery finds: which resource strings to name.
 
 // indexResource is the HRW resource string for a shard's index, and blocksResource
 // for one object's bytes. Two namespaces, so a bucket's index holders are unrelated
@@ -22,18 +22,16 @@ func blocksResource(rootCID string) (string, error) {
 	return "blocks/" + rootCID, nil
 }
 
-// indexHolders is which nodes hold a shard's index. Callers pass the stable
-// membership, not the live set, so a node missing a few heartbeats does not move
-// data.
-func indexHolders(shard uint16, stable []placement.Member, r int) []string {
-	return placement.Desired(indexResource(shard), stable, r)
+// indexHolders is which nodes hold a shard's index.
+func indexHolders(shard uint16, members []placement.Member, r int) []string {
+	return placement.Desired(indexResource(shard), members, r)
 }
 
 // blockHolders is which nodes hold an object's bytes.
-func blockHolders(rootCID string, stable []placement.Member, r int) ([]string, error) {
+func blockHolders(rootCID string, members []placement.Member, r int) ([]string, error) {
 	res, err := blocksResource(rootCID)
 	if err != nil {
 		return nil, err
 	}
-	return placement.Desired(res, stable, r), nil
+	return placement.Desired(res, members, r), nil
 }

@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"slices"
-	"time"
 
 	ds "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/namespace"
@@ -30,14 +28,9 @@ type closer func()
 
 func (c closer) Close() error { c(); return nil }
 
-// placementSource is discovery as this service reads placement from it.
-type placementSource interface {
-	PlacementOf(role string) []placement.Member
-}
-
 // Start runs this service on an instance: its bytes in the peer's blockstore, its
 // node-local rows under the peer's datastore, its shards and catalog as replicated
-// databases on the peer, its members from the discovery beside it, R and K from cm.
+// databases on the peer, its members whoever discovery finds serving storage, R and K from cm.
 func (s *server) Start(ctx context.Context, h service.Host) error {
 	var cfg Config
 	if err := h.Config(&cfg); err != nil {
@@ -51,22 +44,24 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 	logger := logging.Logger("tau.storage")
 
 	// A NODE DOES NOT START BEFORE IT HAS WHAT IT NEEDS: the region's settings from
-	// cm, and itself among the storage nodes discovery has settled on, so no write
-	// is ever placed on a picture of the region with only this node in it.
+	// cm, without which it would not know how many copies to place or wait for.
 	region := settings.On(h)
 	s.also = append(s.also, region)
 	if _, err := region.Wait(ctx); err != nil {
 		return fmt.Errorf("storage: the region's settings: %w", err)
 	}
 	s.region = region
+
+	// THE STORAGE NODES ARE WHO DISCOVERY FINDS SERVING STORAGE, and this one. A
+	// node that has found nobody else yet is a region of one; when discovery finds
+	// the others, placement changes and the handoff moves the copies (rehome.go).
+	self := p.ID().String()
 	members := func() []placement.Member {
-		if d, ok := service.Get[placementSource](h); ok {
-			return d.PlacementOf(Descriptor.Name)
+		out := []placement.Member{{ID: self, Accepts: true}}
+		for _, id := range service.Serving(h, Protocol) {
+			out = append(out, placement.Member{ID: id.String(), Accepts: true})
 		}
-		return nil
-	}
-	if err := settled(ctx, members, p.ID().String()); err != nil {
-		return err
+		return out
 	}
 
 	// EVERY DATABASE HERE IS UNDER THIS SERVICE'S NAME, so nothing else on the
@@ -92,26 +87,6 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 		return err
 	}
 	return s.serve(ctx)
-}
-
-// settledEvery is how often a starting node looks for itself among the storage
-// nodes discovery has settled on.
-const settledEvery = 250 * time.Millisecond
-
-// settled returns once discovery's settled set of storage nodes names self.
-func settled(ctx context.Context, members func() []placement.Member, self string) error {
-	ticker := time.NewTicker(settledEvery)
-	defer ticker.Stop()
-	for {
-		if slices.ContainsFunc(members(), func(m placement.Member) bool { return m.ID == self }) {
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("storage: discovery never settled on this node: %w", ctx.Err())
-		case <-ticker.C:
-		}
-	}
 }
 
 // Reached is the storage service as the services of an instance reach it: the one

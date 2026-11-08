@@ -52,11 +52,6 @@ var logger = logging.Logger("tau.database")
 // retentionPoll is how often a database rereads the region's retention.
 const retentionPoll = time.Minute
 
-// placementSource is discovery as this service reads the fleet from it.
-type placementSource interface {
-	Placement() []placement.Member
-}
-
 // Start runs the database service on an instance: each database a replicated store of
 // its own on the peer, each ledger a raft group the instance opens, what it
 // holds read off the peer's disk, its declarations through the register in the
@@ -107,13 +102,14 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 		withHoldings(copies),
 		withClock(h.Now),
 		withSweep(cfg.Sweep),
-		// THE FLEET AS THIS NODE SEES IT, asked each sweep: a node running no
-		// discovery sees no fleet and moves nothing.
+		// THE FLEET AS DISCOVERY FINDS IT, asked each sweep: the nodes serving
+		// databases, and this one.
 		withMembers(func() []placement.Member {
-			if d, ok := service.Get[placementSource](h); ok {
-				return d.Placement()
+			out := []placement.Member{{ID: h.Peer().ID().String(), Accepts: true}}
+			for _, id := range service.Serving(h, Protocol) {
+				out = append(out, placement.Member{ID: id.String(), Accepts: true})
 			}
-			return nil
+			return out
 		}),
 	}
 	if cfg.MaxResident != 0 {

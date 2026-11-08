@@ -1,7 +1,7 @@
 // Package stats is how loaded everything is, decided against the local clock.
 //
-// Unlike pkg/membership, whose output is placement and must not be steerable by a
-// node's own claims, routing decides from claims: dns and gateway read this, so
+// Unlike placement, which must not be steerable by a node's own claims, routing
+// decides from claims: dns and gateway read this, so
 // every number is self-reported and steers traffic. A report is a claim. A node
 // that overstates its load loses traffic; one that understates it takes traffic it
 // cannot serve, caught only by the caller's health checks.

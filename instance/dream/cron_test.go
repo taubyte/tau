@@ -70,9 +70,8 @@ func TestAScheduleFiresOnceAcrossAFleet(t *testing.T) {
 }
 
 // steppable is a test-moved clock running at real rate plus an offset. Real rate
-// matters: pkg/membership promotes a peer to stable after dreamStabilize of real
-// elapsed time, so a frozen clock would leave placement empty forever. Adding to it
-// jumps whole slots. Guarded, as both nodes read it.
+// matters: a frozen clock would stop whatever on the nodes measures time with it.
+// Adding to it jumps whole slots. Guarded, as both nodes read it.
 type steppable struct {
 	// base is where this cloud's clock reads at from, and from is the real
 	// instant that reading was taken. Neither moves again.

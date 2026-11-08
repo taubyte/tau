@@ -30,8 +30,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/taubyte/tau/core/service"
-	"github.com/taubyte/tau/pkg/membership"
-	"github.com/taubyte/tau/pkg/placement"
 	statsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/stats/v2"
 	"github.com/taubyte/tau/pkg/stats"
 )
@@ -55,10 +53,6 @@ type Service interface {
 	All() []stats.Node
 	// Get is one node by peer id, however old its row.
 	Get(peer string) (stats.Node, bool)
-	// Placement is the stable member set placement runs over; PlacementOf narrows it
-	// to the members serving role.
-	Placement() []placement.Member
-	PlacementOf(role string) []placement.Member
 	// Pending is how many databases the fleet knows to be below their floor.
 	Pending(maxAge time.Duration) int
 }
@@ -77,10 +71,6 @@ type server struct {
 	// built is set once the view exists. Before it, every read answers nothing:
 	// the instance's other services may ask before this one has started.
 	built atomic.Bool
-
-	// members is the PLACEMENT view, which runs on a longer timescale than the
-	// routing one — see beat. Nil only in a service composed without one.
-	members *membership.Set
 
 	// incarnation distinguishes this run from the last. It is chosen once, at
 	// construction, and never lowered — see the proto's field comment.
@@ -133,21 +123,8 @@ func (s *server) assemble(h host.Host, cfg Config, opts ...option) error {
 		return err
 	}
 
-	// THE PLACEMENT VIEW'S LIVENESS IS THIS SERVICE'S FRESHNESS, because both
-	// answer "has this peer reported lately" and there is only one heartbeat.
-	//
-	// STABILIZE IS READ AND NOT DERIVED HERE — withDefaults derives it, floors
-	// it and refuses one shorter than the freshness window, so the number an
-	// operator can write and the number this service runs on are one number.
-	members, err := membership.New(membership.Options{
-		Liveness: c.Fresh, Stabilize: c.Stabilize, Now: o.now,
-	})
-	if err != nil {
-		return err
-	}
-
 	s.cfg, s.opts, s.peer = c, o, h.ID().String()
-	s.view, s.members = view, members
+	s.view = view
 	s.incarnation = uint64(o.now().UnixNano())
 	s.done = make(chan struct{})
 	// AFTER EVERY FIELD ABOVE: a reader that sees it set sees them.
@@ -229,7 +206,6 @@ func (s *server) listen(ctx context.Context, reports <-chan []byte) {
 			// incarnation. Each refusal is about the sender, not about this
 			// node, so there is nothing here to do but keep listening.
 			s.view.Observe(r)
-			s.beat(r.Peer, r.Incarnation, r.Ready)
 		}
 	}
 }
@@ -323,7 +299,6 @@ func (s *server) report(ctx context.Context) {
 
 		DatabasesPending: snap.DatabasesPending,
 	})
-	s.beat(s.peer, s.incarnation, snap.Ready)
 
 	s.opts.bus.Publish(ctx, b)
 }
@@ -412,48 +387,6 @@ func wireSockets(in []stats.Socket) []*statsv2.Socket {
 			Transport: s.Transport,
 			Port:      uint32(s.Port),
 		})
-	}
-	return out
-}
-
-// beat feeds the placement view, which runs on a different timescale from the
-// routing view and deliberately so.
-//
-// ROUTING WANTS FRESH; PLACEMENT WANTS SETTLED. A node that blinks for one
-// interval should stop receiving requests immediately and must NOT move a
-// database — moving one costs a copy handed over and a copy deleted, and doing
-// that on a blip is how a fleet spends its day rebalancing. pkg/membership is
-// written for exactly this split: Live is the acknowledgement target, Stable is
-// "who owns data", and it requires continuous presence in both directions.
-func (s *server) beat(peer string, incarnation uint64, accepts bool) {
-	if s.members == nil || peer == "" {
-		return
-	}
-	// Observe refuses a stale run on its own, the same way the view does.
-	s.members.Observe(membership.Beat{Peer: peer, Incarnation: incarnation, Accepts: accepts})
-}
-
-// Placement is the member set a placement runs over.
-//
-// IT IS THE STABLE SET AND NOT THE FRESH ONE — see beat. The routing view
-// answers a different question and is the wrong input here: it would move data
-// on a blip.
-func (s *server) Placement() []placement.Member {
-	if !s.built.Load() || s.members == nil {
-		return nil
-	}
-	return s.members.StablePlacement()
-}
-
-// PlacementOf is the placement set narrowed to the members whose last report says
-// they serve role: data a role holds is placed only on nodes running it.
-func (s *server) PlacementOf(role string) []placement.Member {
-	members := s.Placement()
-	out := members[:0]
-	for _, m := range members {
-		if s.view.Serves(m.ID, role) {
-			out = append(out, m)
-		}
 	}
 	return out
 }

@@ -7,17 +7,17 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ipfs/go-cid"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/service"
+	"github.com/taubyte/tau/p2p/discovery"
 	"github.com/taubyte/tau/p2p/peer"
-	"github.com/taubyte/tau/pkg/placement"
 	"github.com/taubyte/tau/services/cm"
 	cmmock "github.com/taubyte/tau/services/cm/mock"
 	"github.com/taubyte/tau/services/cm/settings"
@@ -32,7 +32,7 @@ type storageNode struct {
 	mu      sync.Mutex
 	running []service.Running
 	started *server
-	members func() []placement.Member
+	found   []libp2ppeer.ID
 	config  func(into any) error
 	cm      *cmmock.CM
 }
@@ -42,11 +42,10 @@ func newStorageNode(t *testing.T) *storageNode {
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
 
-	// THE REGION'S SETTINGS ARE CM'S, and discovery has settled on this node alone,
-	// which is what a storage node waits for before it starts.
+	// THE REGION'S SETTINGS ARE CM'S, which a storage node waits for before it
+	// starts.
 	i := &storageNode{Node: p, t: t, cm: cmmock.New(settings.Defaults())}
 	i.running = []service.Running{{Name: cm.Name, Service: i.cm}}
-	i.members = func() []placement.Member { return []placement.Member{{ID: p.ID().String(), Accepts: true}} }
 	return i
 }
 
@@ -56,8 +55,8 @@ func (i *storageNode) Running() []service.Running {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	out := slices.Clone(i.running)
-	if i.members != nil {
-		out = append(out, service.Running{Name: "stats", Service: placed(i.members)})
+	if i.found != nil {
+		out = append(out, service.Running{Service: finding(i.found)})
 	}
 	return out
 }
@@ -76,10 +75,10 @@ func (i *storageNode) Root() string  { return i.t.TempDir() }
 
 var _ service.Host = (*storageNode)(nil)
 
-// placed is a stats service that places on the members it is given.
-type placed func() []placement.Member
+// finding is discovery naming the storage nodes it is given.
+type finding []libp2ppeer.ID
 
-func (p placed) PlacementOf(string) []placement.Member { return p() }
+func (f finding) Find(protocol.ID) discovery.Resolver { return discovery.Static(f...) }
 
 // start runs storage on this instance, as the instance would.
 func (i *storageNode) start(t *testing.T) *server {
@@ -128,20 +127,17 @@ func TestStorageRefusesWhatItCannotStartWith(t *testing.T) {
 
 	i = newStorageNode(t)
 	i.config = func(into any) error {
-		into.(*Config).Stabilize, into.(*Config).Liveness = 1, 2
+		into.(*Config).GraceGC = -time.Hour
 		return nil
 	}
 	err = New().Start(t.Context(), i)
-	require.ErrorContains(t, err, "stabilize")
+	require.ErrorContains(t, err, "must be positive")
 }
 
 func TestTwoStorageNodesHoldOneWrite(t *testing.T) {
 	ctx := t.Context()
 	a, b := newStorageNode(t), newStorageNode(t)
-	members := func() []placement.Member {
-		return []placement.Member{{ID: a.ID().String(), Accepts: true}, {ID: b.ID().String(), Accepts: true}}
-	}
-	a.members, b.members = members, members
+	a.found, b.found = []libp2ppeer.ID{b.ID()}, []libp2ppeer.ID{a.ID()}
 	require.NoError(t, peer.LinkAllPeers())
 	require.NoError(t, a.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: b.ID(), Addrs: b.Host().Addrs()}))
 
@@ -250,39 +246,11 @@ func TestTheStoreIsReachedAsTheServiceBesideIt(t *testing.T) {
 	require.ErrorIs(t, err, service.ErrNoneRuns)
 }
 
-func TestStorageDoesNotStartBeforeDiscoverySettlesOnIt(t *testing.T) {
-	i := newStorageNode(t)
-	var settled atomic.Bool
-	self := i.members
-	i.members = func() []placement.Member {
-		if settled.Load() {
-			return self()
-		}
-		return nil
-	}
-
-	started := make(chan error, 1)
-	go func() { started <- New().Start(t.Context(), i) }()
-	select {
-	case err := <-started:
-		t.Fatalf("storage started before discovery named it: %v", err)
-	case <-time.After(3 * settledEvery):
-	}
-
-	settled.Store(true)
-	select {
-	case err := <-started:
-		require.NoError(t, err)
-	case <-time.After(10 * time.Second):
-		t.Fatal("storage never started once discovery named it")
-	}
-}
-
 func TestStorageDoesNotStartWithoutTheRegionsSettings(t *testing.T) {
 	i := newStorageNode(t)
 	i.running = nil
 
-	ctx, cancel := context.WithTimeout(t.Context(), 3*settledEvery)
+	ctx, cancel := context.WithTimeout(t.Context(), 750*time.Millisecond)
 	defer cancel()
 	require.ErrorIs(t, New().Start(ctx, i), context.DeadlineExceeded, "storage started with no cm to ask")
 }

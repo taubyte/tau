@@ -381,10 +381,8 @@ func (s *server) reconcile(ctx context.Context) error {
 	return err
 }
 
-// placement is the storage nodes discovery finds. A node composed with no
-// discovery, such as a test's, is the only one; one composed with discovery that
-// finds nobody places nothing, since a node that has just started has not yet heard
-// of the others.
+// placement is the storage nodes: whoever discovery finds serving storage and this
+// node (host.go), or this node alone when composed with no members, as a test is.
 func (s *server) placement() []placement.Member {
 	if s.members == nil {
 		return []placement.Member{{ID: s.self, Accepts: true}}

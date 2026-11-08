@@ -78,14 +78,6 @@ type Config struct {
 	// Forget is how long a silent peer is remembered. Default 20x Interval,
 	// and it must exceed Fresh.
 	Forget time.Duration
-
-	// Stabilize is how long a peer must be continuously present before data
-	// may be placed on it, and continuously absent before it leaves. Default
-	// max(4x Fresh, one minute); it must be at least Fresh.
-	//
-	// The minute is fleet policy: every placement move costs a copy handed over and one
-	// deleted. instance/dream sets it lower, since a cloud's nodes do not restart.
-	Stabilize time.Duration
 }
 
 // option injects what this service is built from.
@@ -135,16 +127,6 @@ const (
 	DefaultInterval = 5 * time.Second
 	freshIntervals  = 3
 	forgetIntervals = 20
-
-	// stabilizeFreshWindows is how many freshness windows a peer must be
-	// continuously present for before data moves onto it — see Config.Stabilize
-	// for why there is a floor under the product.
-	stabilizeFreshWindows = 4
-
-	// defaultStabilize is that floor, and it is pkg/membership's own default
-	// restated rather than imported: this package decides the window and that
-	// one decides what it means.
-	defaultStabilize = time.Minute
 )
 
 var (
@@ -168,19 +150,6 @@ func (c Config) withDefaults() (Config, error) {
 	if c.Fresh < c.Interval {
 		return Config{}, fmt.Errorf("stats: fresh %s is shorter than the %s interval: every row would be stale before its replacement was sent",
 			c.Fresh, c.Interval)
-	}
-	if c.Stabilize == 0 {
-		// Four freshness windows, floored at the fleet policy.
-		c.Stabilize = stabilizeFreshWindows * c.Fresh
-		if c.Stabilize < defaultStabilize {
-			c.Stabilize = defaultStabilize
-		}
-	}
-	if c.Stabilize < c.Fresh {
-		// pkg/membership refuses this too; refusing it here names the field the operator
-		// wrote.
-		return Config{}, fmt.Errorf("stats: stabilize %s is shorter than the %s freshness window: placement would move faster than acknowledgement",
-			c.Stabilize, c.Fresh)
 	}
 	return c, nil
 }

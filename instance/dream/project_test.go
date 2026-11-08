@@ -17,6 +17,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/protocol"
+	"github.com/taubyte/tau/core/service"
+	databaseService "github.com/taubyte/tau/services/database"
 	storageService "github.com/taubyte/tau/services/storage"
 
 	"github.com/stretchr/testify/require"
@@ -882,9 +885,11 @@ func deployFleetServing(t *testing.T, copies int, services []string, wasm []byte
 					return false
 				}
 			}
-			if len(n.Stats().Placement()) != copies {
-				waiting = "the placement set"
-				return false
+			for _, at := range []protocol.ID{databaseService.Protocol, storageService.Protocol} {
+				if len(service.Serving(n.HostOf(""), at)) != copies-1 {
+					waiting = "the others serving " + string(at)
+					return false
+				}
 			}
 		}
 		return true

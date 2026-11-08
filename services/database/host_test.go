@@ -80,11 +80,6 @@ func (m *machine) start(t *testing.T, name string, s service.Service) {
 	m.beside(name, s)
 }
 
-// fleetOf is a stats service that sees the members it is given.
-type fleetOf []placement.Member
-
-func (f fleetOf) Placement() []placement.Member { return f }
-
 func TestTheDatabaseServiceRunsFromWhatItsInstanceGivesIt(t *testing.T) {
 	ctx := t.Context()
 	m := newMachine(t)
@@ -93,7 +88,6 @@ func TestTheDatabaseServiceRunsFromWhatItsInstanceGivesIt(t *testing.T) {
 	m.start(t, register.Descriptor.Name, reg)
 	_, err := reg.Local().Publish(ctx, pkgregister.Publication{Project: projectID, Environment: "prod", Revision: 1, Compiled: compiled()})
 	require.NoError(t, err)
-	m.beside("stats", fleetOf{{ID: m.ID().String(), Accepts: true}})
 
 	d := New()
 	m.start(t, Descriptor.Name, d)
@@ -140,7 +134,7 @@ func TestTheDatabaseServiceRefusesWhatItCannotStartWith(t *testing.T) {
 	m.start(t, Descriptor.Name, d)
 	s := d.(*server)
 	require.Equal(t, time.Hour, s.sweep)
-	require.Empty(t, s.members(), "no stats beside it, no fleet")
+	require.Equal(t, []placement.Member{{ID: m.ID().String(), Accepts: true}}, s.members(), "discovery found nobody else, so the fleet is this node")
 }
 
 func TestAStoreThisNodeReleasesIsDestroyedAndReopened(t *testing.T) {

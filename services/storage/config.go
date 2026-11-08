@@ -3,7 +3,6 @@ package storage
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/ipfs/go-cid"
@@ -29,11 +28,6 @@ type Config struct {
 	// blocks it releases may be swept. Default 24h. It is timed from local
 	// observation, never from the stamp — see gc.go.
 	GraceGC time.Duration `yaml:"grace_gc"`
-
-	// Liveness and Stabilize are the two membership timescales
-	// (pkg/membership). Defaults 5s and 60s.
-	Liveness  time.Duration `yaml:"liveness"`
-	Stabilize time.Duration `yaml:"stabilize"`
 }
 
 // withDefaults fills the zero fields and refuses a combination that cannot be
@@ -45,18 +39,9 @@ func (c Config) withDefaults() (Config, error) {
 	if c.GraceGC == 0 {
 		c.GraceGC = 24 * time.Hour
 	}
-	if c.Liveness == 0 {
-		c.Liveness = 5 * time.Second
-	}
-	if c.Stabilize == 0 {
-		c.Stabilize = 60 * time.Second
-	}
 
 	if c.GraceGC <= 0 || c.MaxSkew <= 0 {
 		return Config{}, errors.New("storage: grace and skew budgets must be positive")
-	}
-	if c.Stabilize < c.Liveness {
-		return Config{}, fmt.Errorf("storage: stabilize %s is shorter than liveness %s: placement would move faster than acknowledgement", c.Stabilize, c.Liveness)
 	}
 	return c, nil
 }

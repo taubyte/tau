@@ -29,9 +29,8 @@ syntax = "proto3";
 // pkg/stats — a state machine with no host, no pubsub and no goroutine in
 // it, so what this message means is a unit test.
 //
-// A REPORT IS A CLAIM. pkg/membership deliberately carries no capacity, no
-// load and no weight, because its output is placement and placement must not
-// be steerable by a node describing itself. Routing is the inverse — it is a
+// A REPORT IS A CLAIM. Placement reads none of it, since placement must not be
+// steerable by a node describing itself. Routing is the inverse — it is a
 // decision made FROM the claims — so every field below is self-reported and
 // every field below steers traffic. In a single-tenant fleet that is honest.
 // Verified reporting is an interface away, and it is not this message's job to

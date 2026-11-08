@@ -35,7 +35,6 @@ import (
 	"github.com/taubyte/tau/pkg/certificate/acme"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
-	statsService "github.com/taubyte/tau/services/stats"
 )
 
 type tierList struct {
@@ -116,13 +115,6 @@ const (
 	// RPC (pkg/raft's 1s minTransportTimeout); 2s is twice that.
 	dreamHeartbeat = 2 * time.Second
 )
-
-// dreamStabilize is how long a peer must be continuously present before data is
-// placed on it: one liveness window, pkg/membership's minimum. A cloud waits a
-// minute to avoid placement thrash on restarting peers; a cloud's goroutine
-// nodes never restart. A shorter window is also harder to interrupt. It took the
-// settle barrier from 65s to 20s.
-var dreamStabilize = statsService.Config{}.Freshness()
 
 // dreamTimeouts is DefaultTimeoutConfig's shape at dream's scale: election twice
 // heartbeat, commit and lease equal to it (hashicorp rejects a lease above the
@@ -322,7 +314,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		Region:    cfg.Region,
 	}
 	nodeConfig.DNSListen = "127.0.0.1:0"
-	nodeConfig.Sections = map[string]any{statsService.Descriptor.Name: statsService.Config{Stabilize: dreamStabilize}}
+	nodeConfig.Sections = map[string]any{}
 	// A cloud is one developer's cloud, so sign-up is open.
 	nodeConfig.Auth.SignUp = auth.SignUpOpen
 	// A development cloud serves declared zones unproven, takes a developer's build,

@@ -20,8 +20,6 @@ func TestConfigDefaults(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, DefaultMaxSkew, c.MaxSkew)
 	require.Equal(t, 24*time.Hour, c.GraceGC)
-	require.Equal(t, 5*time.Second, c.Liveness)
-	require.Equal(t, 60*time.Second, c.Stabilize)
 }
 
 func TestConfigRefusesWhatCannotBeCorrect(t *testing.T) {
@@ -34,7 +32,6 @@ func TestConfigRefusesWhatCannotBeCorrect(t *testing.T) {
 		// R and K are the region's, read from cm, never configured here.
 		{"negative grace", Config{GraceGC: -time.Hour}, "must be positive"},
 		{"negative skew", Config{MaxSkew: -time.Hour}, "must be positive"},
-		{"stabilize below liveness", Config{Liveness: 90 * time.Second, Stabilize: 60 * time.Second}, "faster than acknowledgement"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			_, err := c.cfg.withDefaults()
@@ -57,7 +54,7 @@ func TestAStaticCatalogSatisfiesTheDependency(t *testing.T) {
 }
 
 func TestRaftAppearsNowhere(t *testing.T) {
-	for _, dir := range []string{".", "../../pkg/placement", "../../pkg/membership"} {
+	for _, dir := range []string{".", "../../pkg/placement"} {
 		fset := token.NewFileSet()
 		pkgs, err := parser.ParseDir(fset, dir, nil, parser.ImportsOnly)
 		require.NoError(t, err)

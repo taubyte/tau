@@ -92,7 +92,6 @@ func TestStatsReportsWhatItsInstanceRuns(t *testing.T) {
 	require.Nil(t, d.Routes("worker"))
 	require.Nil(t, d.Fresh())
 	require.Nil(t, d.All())
-	require.Nil(t, d.Placement())
 	require.Zero(t, d.Pending(time.Minute))
 	_, ok := d.Get(p.ID().String())
 	require.False(t, ok)

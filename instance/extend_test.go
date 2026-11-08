@@ -274,11 +274,7 @@ func (s started) Close() error {
 func TestStorageRunsBesideTheServicesItReaches(t *testing.T) {
 	ctx := t.Context()
 	p := mockPeer(t)
-	// STORAGE STARTS ONCE DISCOVERY HAS SETTLED ON ITS NODE, after one liveness
-	// window here rather than a minute.
-	cfg := Config{Services: []string{Register, Stats, storage.Descriptor.Name}}
-	cfg.Sections = map[string]any{statsService.Descriptor.Name: statsService.Config{Stabilize: statsService.Config{}.Freshness()}}
-	n, err := New(p, rooted(t, cfg))
+	n, err := New(p, rooted(t, Config{Services: []string{Register, Stats, storage.Descriptor.Name}}))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.NoError(t, n.Start(ctx))
