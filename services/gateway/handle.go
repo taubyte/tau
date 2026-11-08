@@ -3,6 +3,7 @@ package gateway
 import (
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"sort"
 	"strings"
 	"time"
@@ -175,6 +176,8 @@ func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 	if len(result.websites) > len(result.functions) {
 		matches = result.websites
 	}
+	// sort.Slice keeps ties in arrival order: shuffle so equal nodes share the load.
+	rand.Shuffle(len(matches), func(i, j int) { matches[i], matches[j] = matches[j], matches[i] })
 	sort.Slice(matches, func(i, j int) bool { return matches[j].metrics.Less(matches[i].metrics) })
 
 	// Streams beyond the tries are dead weight on those nodes.
