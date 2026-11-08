@@ -17,6 +17,8 @@ import (
 )
 
 func (s *Service) Lookup(matcher *common.MatchDefinition) (iface.Serviceable, error) {
+	defer trackLookup()()
+
 	servs, err := lookup.Lookup(s, matcher)
 	if err != nil {
 		return nil, fmt.Errorf("http serviceable lookup failed with: %w", err)

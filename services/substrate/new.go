@@ -19,6 +19,7 @@ import (
 	orbit "github.com/taubyte/tau/pkg/vm-orbit/satellite/vm"
 	seer "github.com/taubyte/tau/pkg/yaseer"
 	protocolCommon "github.com/taubyte/tau/services/common"
+	httpComp "github.com/taubyte/tau/services/substrate/components/http"
 	"github.com/taubyte/tau/services/substrate/migration"
 )
 
@@ -145,6 +146,12 @@ func New(ctx context.Context, cfg tauConfig.Config) (*Service, error) {
 
 	if err = srv.startCheckCpu(); err != nil {
 		return nil, fmt.Errorf("starting cpu check failed with: %w", err)
+	}
+
+	// Dream runs many nodes in one test process: exiting there would kill them all.
+	if !srv.dev {
+		startWatchdog(ctx, srv.probeLookup)
+		startStuckWatchdog(ctx, httpComp.StuckLookups)
 	}
 
 	return srv, nil
