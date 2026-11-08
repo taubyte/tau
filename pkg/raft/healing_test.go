@@ -1266,3 +1266,51 @@ func TestHealing_ARebuildThatKeepsFailingIsTriedUntilItLands(t *testing.T) {
 	require.Never(t, func() bool { return c.current().raft.State() == Leader }, 500*time.Millisecond, 20*time.Millisecond,
 		"a closed cluster was rebuilt")
 }
+
+// soloPair is two groups of one, each on its own node and each holding a write,
+// connected but with neither tracking the other, ordered winner first.
+func soloPair(t *testing.T, namespace string) (winner, loser *cluster) {
+	t.Helper()
+	var solos []*cluster
+	for _, key := range []string{"from-a", "from-b"} {
+		cl, err := New(newMockNode(t), namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
+		require.NoError(t, err)
+		t.Cleanup(func() { cl.Close() })
+		waitLeader(t, cl, 5*time.Second)
+		require.NoError(t, cl.Set(key, []byte(key[len(key)-1:]), time.Second))
+		solos = append(solos, cl.(*cluster))
+	}
+	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, solos[0].Host().Connect(t.Context(), peer.AddrInfo{ID: solos[1].ID(), Addrs: solos[1].Host().Addrs()}))
+	winner, loser = winnerOf(solos[0], solos[1])
+	return winner, loser
+}
+
+// A LEADER THAT LOSES TO ANOTHER MAKES ITSELF KNOWN TO IT: the winner may not
+// track it, and would take it only whenever its discovery came round.
+func TestHealing_ALosingLeaderMakesItselfKnownToTheWinner(t *testing.T) {
+	probeEvery(t, 50*time.Millisecond)
+	winner, loser := soloPair(t, "loser-announces")
+	loser.current().tracker.addPeer(winner.ID())
+
+	require.Eventually(t, func() bool {
+		members, err := winner.Members()
+		return err == nil && len(members) == 2
+	}, 10*time.Second, 50*time.Millisecond, "the winner never took the leader that lost to it")
+	require.Eventually(t, func() bool { return holdsEverything(winner) && holdsEverything(loser) },
+		10*time.Second, 50*time.Millisecond, "the healed group does not hold both sides' writes")
+}
+
+// A NODE MADE TO FORM ITS GROUP ALONE JOINS THE GROUP IT YIELDED TO: it was the
+// first of its group once, and forming another would be absorbed again, forever.
+func TestHealing_AForceBootstrappedLoserJoinsTheGroupItYieldedTo(t *testing.T) {
+	winner, loser := soloPair(t, "forced-loser-joins")
+	winner.current().tracker.addPeer(loser.ID())
+
+	winner.current().healer.Load().executeMerge(t.Context(), loser.ID())
+	require.Eventually(t, func() bool {
+		members, err := winner.Members()
+		return err == nil && len(members) == 2
+	}, 10*time.Second, 50*time.Millisecond, "the loser formed a group of its own rather than join the winner's")
+	require.Eventually(t, func() bool { return holdsEverything(loser) }, 10*time.Second, 50*time.Millisecond)
+}

@@ -260,16 +260,21 @@ func (h *healer) probeAndMergeAsLeader(ctx context.Context) {
 			h.cluster.ID().ShortString(), pid.ShortString(),
 			info.LeaderID, info.MemberCount, info.LastIndex, winner)
 
+		leaderPID, err := peer.Decode(info.LeaderID)
+		if err != nil {
+			continue
+		}
 		if winner == localInfo.NodeID {
 			healLogger.Infof("[%s] detected foreign cluster led by %s — we win, initiating merge",
 				h.cluster.ID().ShortString(), info.LeaderID)
-
-			leaderPID, err := peer.Decode(info.LeaderID)
-			if err != nil {
-				continue
-			}
 			h.executeMerge(ctx, leaderPID)
+			continue
 		}
+		// THE WINNER MAY NOT KNOW THIS GROUP: an exchange with its leader puts this
+		// one in its tracker, so its next probe takes us rather than whenever its
+		// discovery would.
+		startTime, peers := h.member.tracker.getPeersMap()
+		h.member.raftClient.ExchangePeers(startTime, peers, leaderPID)
 	}
 }
 
@@ -786,6 +791,7 @@ func (h *healer) yieldAndRejoin(ctx context.Context, winnerLeader peer.ID, guard
 	if guard.allows(m) {
 		healLogger.Infof("[%s] wiping raft state (log, snapshot and applied data)", h.cluster.ID().ShortString())
 		h.wipeRaftState(ctx)
+		h.cluster.yielded = true
 	} else {
 		healLogger.Warnf("[%s] the yield no longer holds once the raft is down — rebuilding without wiping", h.cluster.ID().ShortString())
 	}

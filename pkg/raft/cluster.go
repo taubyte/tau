@@ -34,9 +34,12 @@ type cluster struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	timeoutConfig      TimeoutConfig
-	forceBootstrap     bool
-	quorumLossAfter    time.Duration
+	timeoutConfig   TimeoutConfig
+	forceBootstrap  bool
+	quorumLossAfter time.Duration
+	// yielded is set under mu once a yield wiped the member: it joins the group it
+	// yielded to, and no longer forms one of its own however it was made.
+	yielded            bool
 	bootstrapTimeout   time.Duration
 	bootstrapThreshold float64
 	encryptionCipher   cipher.AEAD
@@ -206,7 +209,7 @@ func (c *cluster) handleBootstrap(m *member) error {
 		return err
 	}
 
-	if c.forceBootstrap {
+	if c.forceBootstrap && !c.yielded {
 		clusterLogger.Infof("[%s] force bootstrap enabled — bootstrapping self", c.ID().ShortString())
 		err := c.bootstrapSelf(m)
 		// A GROUP IT FORMED BEFORE is the one it resumes, after a restart or a
