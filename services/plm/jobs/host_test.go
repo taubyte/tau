@@ -17,6 +17,7 @@ import (
 // beside it, and the section an operator wrote.
 type testHost struct {
 	peer.Node
+	*service.Served
 	root    string
 	running []service.Running
 	section map[string]any
@@ -43,7 +44,7 @@ func hostWithConsensus(t *testing.T, section map[string]any) *testHost {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	h := &testHost{Node: p, root: t.TempDir(), section: section}
+	h := &testHost{Node: p, Served: service.NewServed(p.ID(), nil), root: t.TempDir(), section: section}
 	h.running = []service.Running{{Service: groupsOn{node: p, root: h.root}}}
 	return h
 }

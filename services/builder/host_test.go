@@ -28,6 +28,7 @@ import (
 // section an operator wrote.
 type node struct {
 	peer.Node
+	*service.Served
 	running []service.Running
 	section map[string]any
 }
@@ -51,7 +52,7 @@ func lone(t *testing.T, section map[string]any) *node {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	return &node{Node: p, section: section}
+	return &node{Node: p, Served: service.NewServed(p.ID(), nil), section: section}
 }
 
 func TestABuilderRefusesWhatItCannotBuildWith(t *testing.T) {

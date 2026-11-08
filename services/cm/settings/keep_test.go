@@ -26,31 +26,36 @@ func (s *saying) set(r Region, err error) {
 	s.region, s.err = r, err
 }
 
+func (*saying) Start(context.Context, service.Host) error { return nil }
+func (*saying) Close() error                              { return nil }
+
 func (s *saying) Settings(context.Context) (Region, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.region, s.err
 }
 
-// beside is an instance running src.
+// beside is an instance serving cm's protocol with src.
 type beside struct {
 	peer.Node
-	src Source
+	*service.Served
 }
 
-func (b beside) Peer() peer.Node            { return b.Node }
-func (b beside) Running() []service.Running { return []service.Running{{Service: b.src}} }
-func (beside) Config(any) error             { return nil }
-func (beside) Root() string                 { return "" }
-func (beside) Cloud() string                { return "keep-test" }
-func (beside) Region() string               { return "" }
-func (beside) Now() time.Time               { return time.Now() }
+func (b beside) Peer() peer.Node          { return b.Node }
+func (beside) Running() []service.Running { return nil }
+func (beside) Config(any) error           { return nil }
+func (beside) Root() string               { return "" }
+func (beside) Cloud() string              { return "keep-test" }
+func (beside) Region() string             { return "" }
+func (beside) Now() time.Time             { return time.Now() }
 
-func reading(t *testing.T, src Source, now *time.Time) *Client {
+func reading(t *testing.T, src *saying, now *time.Time) *Client {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	c := On(beside{Node: p, src: src})
+	h := beside{Node: p, Served: service.NewServed(p.ID(), nil)}
+	h.Serve(Protocol, src)
+	c := On(h)
 	c.now = func() time.Time { return *now }
 	t.Cleanup(func() { c.Close() })
 	return c
@@ -90,4 +95,15 @@ func TestAFailedAskKeepsTheLastAnswer(t *testing.T) {
 	got, err := c.Settings(t.Context())
 	require.NoError(t, err, "an outage made a reader forget what it had heard")
 	require.Equal(t, 3, got.StorageReplicas)
+}
+
+func TestCmOnTheSameNodeIsReadWithNoClientDialled(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	c := reading(t, &saying{region: Region{StorageReplicas: 4}}, &now)
+
+	got, err := c.Settings(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 4, got.StorageReplicas)
+	_, held := c.reach.At()
+	require.False(t, held, "a client was dialled for the cm on this node")
 }

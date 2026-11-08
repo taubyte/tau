@@ -15,7 +15,6 @@ import (
 	"github.com/taubyte/tau/pkg/placement"
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/cm"
 	cmmock "github.com/taubyte/tau/services/cm/mock"
 	"github.com/taubyte/tau/services/cm/settings"
 	"github.com/taubyte/tau/services/register"
@@ -28,6 +27,8 @@ type machine struct {
 	peer.Node
 	root     string
 	sections map[string]func(into any) error
+
+	*service.Served
 
 	mu      sync.Mutex
 	running []service.Running
@@ -62,8 +63,8 @@ func newMachine(t *testing.T) *machine {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	m := &machine{Node: p, root: t.TempDir(), sections: map[string]func(any) error{}}
-	m.beside(cm.Name, cmmock.New(settings.Defaults()))
+	m := &machine{Node: p, Served: service.NewServed(p.ID(), nil), root: t.TempDir(), sections: map[string]func(any) error{}}
+	m.Serve(settings.Protocol, cmmock.New(settings.Defaults()))
 	return m
 }
 

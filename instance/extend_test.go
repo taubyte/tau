@@ -19,6 +19,9 @@ import (
 	echov1 "github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1"
 	"github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1/echov1connect"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/cm"
+	cmmock "github.com/taubyte/tau/services/cm/mock"
+	"github.com/taubyte/tau/services/cm/settings"
 	statsService "github.com/taubyte/tau/services/stats"
 	"github.com/taubyte/tau/services/storage"
 )
@@ -74,6 +77,29 @@ func TestWhatWithServiceRefuses(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestAServiceTheComposerServesFirstIsWhatTheNodeServes(t *testing.T) {
+	ctx := t.Context()
+	mocked := settings.Defaults()
+	mocked.Replication = 7
+	n, _, _ := makeNode(t, Config{Services: []string{cm.Name}})
+	n.Serve(settings.Protocol, cmmock.New(mocked))
+	require.NoError(t, n.Start(ctx))
+
+	got, ok := service.Local[settings.Source](n.HostOf(cm.Name), settings.Protocol)
+	require.True(t, ok, "nothing on the node answers the region's settings")
+	region, err := got.Settings(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 7, region.Replication, "the shipped cm replaced its mocked version")
+
+	shipped, _, _ := makeNode(t, Config{Services: []string{cm.Name}})
+	require.NoError(t, shipped.Start(ctx))
+	got, ok = service.Local[settings.Source](shipped.HostOf(cm.Name), settings.Protocol)
+	require.True(t, ok, "the cm a node runs does not say it serves cm's protocol")
+	region, err = got.Settings(ctx)
+	require.NoError(t, err)
+	require.Equal(t, settings.Defaults(), region)
 }
 
 func TestAnEmptyServiceListRunsAddedServicesToo(t *testing.T) {

@@ -18,7 +18,6 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
-	"github.com/taubyte/tau/services/cm"
 	cmmock "github.com/taubyte/tau/services/cm/mock"
 	"github.com/taubyte/tau/services/cm/settings"
 	"github.com/taubyte/tau/services/storage"
@@ -29,6 +28,7 @@ import (
 // version answering the region's settings, discovery finding no other storage node.
 type node struct {
 	peer.Node
+	*service.Served
 	root    string
 	mu      sync.Mutex
 	running []service.Running
@@ -99,9 +99,8 @@ func serving(t *testing.T) *served {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	n := &node{Node: p, root: t.TempDir(), running: []service.Running{
-		{Name: cm.Name, Service: cmmock.New(settings.Defaults())},
-	}}
+	n := &node{Node: p, Served: service.NewServed(p.ID(), nil), root: t.TempDir()}
+	n.Serve(settings.Protocol, cmmock.New(settings.Defaults()))
 	s := storage.New()
 	t.Cleanup(func() { s.Close() })
 	require.NoError(t, s.Start(t.Context(), n))

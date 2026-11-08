@@ -22,6 +22,7 @@ import (
 // service, and what it runs.
 type node struct {
 	peer.Node
+	*service.Served
 	root     string
 	sections map[string]func(into any) error
 
@@ -58,7 +59,7 @@ func newNode(t *testing.T) *node {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	return &node{Node: p, root: t.TempDir(), sections: map[string]func(any) error{}}
+	return &node{Node: p, Served: service.NewServed(p.ID(), nil), root: t.TempDir(), sections: map[string]func(any) error{}}
 }
 
 func (n *node) beside(name string, s any) {

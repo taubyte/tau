@@ -86,7 +86,11 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 	if err != nil {
 		return err
 	}
-	return s.serve(ctx)
+	if err := s.serve(ctx); err != nil {
+		return err
+	}
+	h.Serve(Protocol, s)
+	return nil
 }
 
 // Reached is the storage service as the services of an instance reach it: the one

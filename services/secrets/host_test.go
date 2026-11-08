@@ -20,6 +20,7 @@ import (
 // service once started.
 type vaultNode struct {
 	peer.Node
+	*service.Served
 	root   string
 	config func(any) error
 
@@ -56,7 +57,7 @@ func TestAVaultIsWrittenBeforeItServesAndReadThroughItsHost(t *testing.T) {
 	ctx := t.Context()
 	p := peer.Mock(ctx)
 	t.Cleanup(p.Close)
-	h := &vaultNode{Node: p, root: t.TempDir()}
+	h := &vaultNode{Node: p, Served: service.NewServed(p.ID(), nil), root: t.TempDir()}
 
 	ref := Ref{Scope: Cloud("auth"), Name: "pepper"}
 	sealed, err := Sealed(ref, []byte("salt"), time.Now())

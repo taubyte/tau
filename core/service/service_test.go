@@ -15,11 +15,22 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 )
 
-// fake is an instance with one peer, the handles it was told about and the nodes
-// its finder names.
+// fake is an instance with one peer, the handles it was told about, and its node's
+// discovery over a finder naming the nodes a test gives it.
 type fake struct {
 	peer.Node
+	*Served
 	running []Running
+	finding finding
+}
+
+func newFake(t *testing.T, found ...libp2ppeer.ID) *fake {
+	t.Helper()
+	p := peer.Mock(t.Context())
+	t.Cleanup(p.Close)
+	f := &fake{Node: p, finding: found}
+	f.Served = NewServed(p.ID(), &f.finding)
+	return f
 }
 
 func (f *fake) Peer() peer.Node    { return f.Node }
@@ -34,71 +45,112 @@ var _ Host = (*fake)(nil)
 
 type answer string
 
-func TestTheServiceHereIsReachedWithNoClient(t *testing.T) {
-	p := peer.Mock(t.Context())
-	t.Cleanup(p.Close)
-	h := &fake{Node: p, running: []Running{{Service: 7}, {Name: "store", Service: answer("here")}}}
+// store is a service answering what it holds.
+type store struct{ held answer }
+
+func (store) Start(context.Context, Host) error { return nil }
+func (store) Close() error                      { return nil }
+
+const storeProtocol = "/tau/store/v2"
+
+func TestTheServiceThisNodeServesIsReachedWithNoClient(t *testing.T) {
+	h := newFake(t, "far")
+	h.Serve(storeProtocol, store{held: "here"})
 
 	dialled := 0
-	r := Reach(h, "/tau/store/v2", func(host.Host, libp2ppeer.ID) (answer, error) { dialled++; return "far", nil })
+	r := Reach(h, storeProtocol, func(host.Host, libp2ppeer.ID) (store, error) { dialled++; return store{held: "far"}, nil })
 	got, err := r.Now(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, answer("here"), got)
-	require.Zero(t, dialled)
+	require.Equal(t, answer("here"), got.held)
+	require.Zero(t, dialled, "a client was dialled for a service this node serves")
+	_, held := r.At()
+	require.False(t, held)
 }
 
-// holder runs as one thing and is reached as what it holds.
-type holder struct{ held answer }
-
-func TestAServiceHereIsReachedAsWhatItHolds(t *testing.T) {
-	p := peer.Mock(t.Context())
-	t.Cleanup(p.Close)
-	h := &fake{Node: p, running: []Running{{Service: 7}, {Name: "store", Service: holder{held: "held"}}}}
+func TestAServiceThisNodeServesIsReachedAsWhatItHolds(t *testing.T) {
+	h := newFake(t, "far")
+	h.Serve(storeProtocol, store{held: "held"})
 
 	dialled := 0
-	r := ReachAs(h, "/tau/store/v2", func(s holder) answer { return s.held },
+	r := ReachAs(h, storeProtocol, func(s store) answer { return s.held },
 		func(host.Host, libp2ppeer.ID) (answer, error) { dialled++; return "far", nil })
 	got, err := r.Now(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, answer("held"), got)
 	require.Zero(t, dialled)
 
-	h.running = []Running{{Service: finding{"far"}}}
-	got, err = ReachAs(h, "/tau/store/v2", func(s holder) answer { return s.held },
+	elsewhere := newFake(t, "far")
+	got, err = ReachAs(elsewhere, storeProtocol, func(s store) answer { return s.held },
 		func(host.Host, libp2ppeer.ID) (answer, error) { dialled++; return "far", nil }).Now(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, answer("far"), got, "none here is a client of one elsewhere")
 	require.Equal(t, 1, dialled)
 }
 
-func TestAServiceElsewhereIsDialledOnANodeTheFinderNames(t *testing.T) {
-	p := peer.Mock(t.Context())
-	t.Cleanup(p.Close)
-	h := &fake{Node: p, running: []Running{{Service: finding{p.ID(), "far"}}}}
+func TestAServiceElsewhereIsDialledOnANodeDiscoveryNames(t *testing.T) {
+	h := newFake(t)
+	h.finding = finding{h.ID(), "far"}
 
 	var at libp2ppeer.ID
-	r := Reach(h, "/tau/store/v2", func(_ host.Host, id libp2ppeer.ID) (answer, error) { at = id; return "far", nil })
+	r := Reach(h, storeProtocol, func(_ host.Host, id libp2ppeer.ID) (answer, error) { at = id; return "far", nil })
 	got, err := r.Now(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, answer("far"), got)
 	require.Equal(t, libp2ppeer.ID("far"), at, "never itself")
-	require.Equal(t, []libp2ppeer.ID{"far"}, Serving(h, "/tau/store/v2"))
+	require.Equal(t, []libp2ppeer.ID{"far"}, Serving(h, storeProtocol))
 
-	// A SERVICE OF ANOTHER TYPE is not the finder.
-	h.running = []Running{{Service: 7}, {Service: finding{"far"}}}
-	_, err = r.Now(t.Context())
-	require.NoError(t, err)
-
-	h.running = []Running{{Service: finding{p.ID()}}}
-	nowhere := Reach(h, "/tau/store/v2", func(host.Host, libp2ppeer.ID) (answer, error) { return "", nil })
+	h.finding = finding{h.ID()}
+	nowhere := Reach(h, storeProtocol, func(host.Host, libp2ppeer.ID) (answer, error) { return "", nil })
 	_, err = nowhere.Now(t.Context())
 	require.ErrorIs(t, err, ErrNoneRuns)
 }
 
-func TestRoutedWorkLeavesForANodeTheFinderNames(t *testing.T) {
-	p := peer.Mock(t.Context())
-	t.Cleanup(p.Close)
-	h := &fake{Node: p, running: []Running{{Service: finding{p.ID(), "far"}}}}
+func TestAServiceOfAnotherTypeIsNotTheOneReached(t *testing.T) {
+	h := newFake(t, "far")
+	h.Serve(storeProtocol, &recorder{})
+
+	var at libp2ppeer.ID
+	got, err := Reach(h, storeProtocol, func(_ host.Host, id libp2ppeer.ID) (store, error) { at = id; return store{held: "far"}, nil }).Now(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, answer("far"), got.held)
+	require.Equal(t, libp2ppeer.ID("far"), at)
+}
+
+func TestANodeNamesItselfFirstForWhatItServes(t *testing.T) {
+	h := newFake(t, "far", "farther")
+	require.Equal(t, []libp2ppeer.ID{"far", "farther"}, h.Find(storeProtocol).Known())
+
+	h.Serve(storeProtocol, store{})
+	found := h.Find(storeProtocol)
+	require.Equal(t, []libp2ppeer.ID{h.ID(), "far", "farther"}, found.Known())
+	first, err := found.Any(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, h.ID(), first)
+	two, err := found.Peers(t.Context(), 2)
+	require.NoError(t, err)
+	require.Equal(t, []libp2ppeer.ID{h.ID(), "far"}, two)
+	one, err := found.Peers(t.Context(), 1)
+	require.NoError(t, err)
+	require.Equal(t, []libp2ppeer.ID{h.ID()}, one)
+
+	local, ok := h.Local(storeProtocol)
+	require.True(t, ok)
+	require.Equal(t, store{}, local)
+	_, ok = h.Local("/tau/other/v2")
+	require.False(t, ok)
+}
+
+func TestANodeWithNoP2PFindsOnlyItself(t *testing.T) {
+	var served Served
+	require.Empty(t, served.Find(storeProtocol).Known())
+	served.Serve(storeProtocol, store{})
+	_, ok := served.Local(storeProtocol)
+	require.True(t, ok)
+}
+
+func TestRoutedWorkLeavesForANodeDiscoveryNames(t *testing.T) {
+	h := newFake(t)
+	h.finding = finding{h.ID(), "far"}
 
 	var at libp2ppeer.ID
 	r := Routed(h, "/tau/clock/v2", answer("here"), func(_ host.Host, id libp2ppeer.ID) (answer, error) { at = id; return "far", nil })
@@ -107,21 +159,21 @@ func TestRoutedWorkLeavesForANodeTheFinderNames(t *testing.T) {
 	require.Equal(t, answer("far"), got, "another node, whenever one is found")
 	require.Equal(t, libp2ppeer.ID("far"), at)
 
-	h.running = []Running{{Service: finding{p.ID()}}}
+	h.finding = finding{h.ID()}
 	got, err = r.Now(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, answer("here"), got, "only this node found is this node, undialled")
 
-	h.running = nil
+	h.finding = nil
 	got, err = r.Now(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, answer("here"), got, "nothing to find with is nobody but this node")
+	require.Equal(t, answer("here"), got, "nobody found is nobody but this node")
 }
 
 // finding is a finder that finds these nodes for every protocol.
 type finding []libp2ppeer.ID
 
-func (f finding) Find(protocol.ID) discovery.Resolver { return found(f) }
+func (f *finding) Find(protocol.ID) discovery.Resolver { return found(*f) }
 
 // found is a resolver that knows these nodes.
 type found []libp2ppeer.ID
@@ -142,15 +194,12 @@ func (f found) Peers(context.Context, int) ([]libp2ppeer.ID, error) {
 }
 func (found) Failed(libp2ppeer.ID) {}
 
-func TestNoFinderIsNobodyToAsk(t *testing.T) {
-	p := peer.Mock(t.Context())
-	t.Cleanup(p.Close)
-	h := &fake{Node: p}
-	r := Reach(h, "/tau/store/v2", func(host.Host, libp2ppeer.ID) (answer, error) { return "", nil })
+func TestNobodyFoundIsNobodyToAsk(t *testing.T) {
+	h := newFake(t)
+	r := Reach(h, storeProtocol, func(host.Host, libp2ppeer.ID) (answer, error) { return "", nil })
 	_, err := r.Now(t.Context())
 	require.ErrorIs(t, err, ErrNoneRuns)
-	require.ErrorContains(t, err, "nothing here finds peers")
-	require.Nil(t, Serving(h, "/tau/store/v2"))
+	require.Empty(t, Serving(h, storeProtocol))
 }
 
 // recorder is a service that keeps the host it started with.
@@ -186,4 +235,46 @@ func TestALonePeerRunsServicesBesideEachOther(t *testing.T) {
 	refused := &recorder{err: errors.New("no")}
 	require.Error(t, l.Start(t.Context(), "refused", refused))
 	require.Len(t, h.Running(), 2, "a service that failed to start is not running")
+}
+
+// serving is a service that serves storeProtocol on the node it starts on.
+type serving struct{ store }
+
+func (s serving) Start(_ context.Context, h Host) error {
+	h.Serve(storeProtocol, s.store)
+	return nil
+}
+
+func TestAServiceOnALonePeerIsReachedByTheNextWithNoClient(t *testing.T) {
+	p := peer.Mock(t.Context())
+	t.Cleanup(p.Close)
+	l := On(p, "cloud")
+	require.NoError(t, l.Start(t.Context(), "store", serving{store{held: "lone"}}))
+
+	next := &recorder{}
+	require.NoError(t, l.Start(t.Context(), "next", next))
+	got, err := Reach(next.host, storeProtocol, func(host.Host, libp2ppeer.ID) (store, error) {
+		t.Fatal("a client was dialled for a service on the same peer")
+		return store{}, nil
+	}).Now(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, answer("lone"), got.held)
+	require.Equal(t, []libp2ppeer.ID{p.ID()}, next.host.Find(storeProtocol).Known())
+}
+
+func TestANilDiscoveryFindsNothingAndKeepsNothing(t *testing.T) {
+	var served *Served
+	served.Serve(storeProtocol, store{})
+	_, ok := served.Local(storeProtocol)
+	require.False(t, ok)
+	require.Empty(t, served.Find(storeProtocol).Known())
+}
+
+func TestTheFirstToServeAProtocolIsWhatTheNodeServesItWith(t *testing.T) {
+	h := newFake(t)
+	h.Serve(storeProtocol, store{held: "mocked"})
+	h.Serve(storeProtocol, store{held: "shipped"})
+	got, ok := Local[store](h, storeProtocol)
+	require.True(t, ok)
+	require.Equal(t, answer("mocked"), got.held, "a later service replaced what the composer served first")
 }

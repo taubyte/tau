@@ -125,7 +125,11 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 	// THE CONNECTIONS BEFORE THE GROUPS UNDER THEM, and the stores last: a ledger's
 	// connection is a prefix over a group.
 	s.owned = append(s.owned, ledgers, replicas, views, region)
-	return s.serve(ctx)
+	if err := s.serve(ctx); err != nil {
+		return err
+	}
+	h.Serve(Protocol, s)
+	return nil
 }
 
 // Report is this service's part of what its node says about itself: how much repair

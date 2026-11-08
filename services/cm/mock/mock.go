@@ -62,6 +62,7 @@ func (c *CM) Start(ctx context.Context, h service.Host) error {
 		return err
 	}
 	c.listener = listener
+	h.Serve(settings.Protocol, c)
 	return nil
 }
 

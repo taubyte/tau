@@ -44,8 +44,8 @@ func (srv *server) Start(ctx context.Context, h service.Host) error {
 	}
 	err = srv.assemble(h.Peer().Host(), db, append(rooted(h.Root(), cfg),
 		withMembers(func() []peerCore.ID {
-			if _, ok := service.Get[service.Finder](h); ok {
-				return append(service.Serving(h, Protocol), h.Peer().Host().ID())
+			if others := service.Serving(h, Protocol); len(others) > 0 {
+				return append(others, h.Peer().Host().ID())
 			}
 			return srv.speakers()
 		}),
@@ -56,7 +56,11 @@ func (srv *server) Start(ctx context.Context, h service.Host) error {
 		return err
 	}
 	srv.owned = append(srv.owned, closer(db.Close), region)
-	return srv.serve(ctx)
+	if err := srv.serve(ctx); err != nil {
+		return err
+	}
+	h.Serve(Protocol, srv)
+	return nil
 }
 
 // Init writes a sealed bundle into the vault of a node that is not running: the

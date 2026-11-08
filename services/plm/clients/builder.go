@@ -136,7 +136,7 @@ func BuildersOn(h service.Host) *Builders {
 // the finder found.
 func (r *Builders) Peers() []peer.ID {
 	var out []peer.ID
-	if _, ok := service.Get[run.Builder](r.h); ok {
+	if _, ok := service.Local[run.Builder](r.h, plm.BuilderProtocol); ok {
 		out = append(out, r.h.Peer().ID())
 	}
 	return append(out, service.Serving(r.h, plm.BuilderProtocol)...)
@@ -146,7 +146,7 @@ func (r *Builders) Peers() []peer.ID {
 // which a node cannot dial, else id dialled.
 func (r *Builders) At(id peer.ID) (run.Builder, error) {
 	if id == r.h.Peer().ID() {
-		if here, ok := service.Get[run.Builder](r.h); ok {
+		if here, ok := service.Local[run.Builder](r.h, plm.BuilderProtocol); ok {
 			return here, nil
 		}
 	}

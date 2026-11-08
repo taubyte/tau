@@ -18,6 +18,7 @@ import (
 // instance is what cm starts on: a peer, a directory, its config.
 type instance struct {
 	peer.Node
+	*service.Served
 	root   string
 	config func(into any) error
 }
@@ -41,7 +42,7 @@ func newInstance(t *testing.T, root string) instance {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	return instance{Node: p, root: root}
+	return instance{Node: p, Served: service.NewServed(p.ID(), nil), root: root}
 }
 
 func TestACloudWithNoZoneKeepsNoStore(t *testing.T) {

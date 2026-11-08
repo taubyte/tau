@@ -149,8 +149,10 @@ type Instance struct {
 	closersMu sync.Mutex
 	closers   []io.Closer
 
-	// finder is how a service here finds a peer: p2p discovery by protocol.
+	// finder is how a service here finds a peer: p2p discovery by protocol. served
+	// is the node's whole answer, itself first for what it runs.
 	finder *finder
+	served *service.Served
 
 	// shared is the vault Vault hands out, made on first use.
 	sharedMu sync.Mutex
@@ -238,7 +240,7 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 	n.provide("", listeners{n})
 	// How every service here finds a peer serving a protocol.
 	n.finder = &finder{n: n}
-	n.provide("", n.finder)
+	n.served = service.NewServed(p.ID(), n.finder)
 	n.closers = append(n.closers, n.finder)
 	// And the workloads the clock fires through, while the worker is one of them.
 	if cfg.runs(Worker) {

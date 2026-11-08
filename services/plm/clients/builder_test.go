@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/service"
-	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/proto/codec"
 	builderv2 "github.com/taubyte/tau/pkg/proto/gen/tau/builder/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/builder/v2/builderv2connect"
@@ -148,20 +147,20 @@ func TestABuilderThatDoesNotAnswerIsAnError(t *testing.T) {
 // local is a builder running on the instance itself.
 type local struct{ run.Builder }
 
+func (local) Start(context.Context, service.Host) error { return nil }
+func (local) Close() error                              { return nil }
+
 func TestTheBuildersAreWhomTheFinderFindsAndThisNodesOwnIsInProcess(t *testing.T) {
-	p := peer.Mock(t.Context())
-	t.Cleanup(p.Close)
 	_, far := servedBuilder(t, &aBuilder{})
-	h := &instance{Node: p}
+	h := newInstance(t)
+	p := h.Node
 	builders := BuildersOn(h)
 	t.Cleanup(func() { builders.Close() })
 	require.Empty(t, builders.Peers(), "nothing found and none here is no builder")
 
 	here := local{}
-	h.running = []service.Running{
-		{Service: named{far}},
-		{Name: plm.Builder.Name, Service: here},
-	}
+	h.finding = named{far}
+	h.Serve(plm.BuilderProtocol, here)
 	require.Equal(t, []libp2ppeer.ID{p.ID(), far}, builders.Peers())
 
 	got, err := builders.At(p.ID())
@@ -175,8 +174,10 @@ func TestTheBuildersAreWhomTheFinderFindsAndThisNodesOwnIsInProcess(t *testing.T
 	require.Same(t, first, again, "a builder is dialled once")
 	require.NoError(t, builders.Close())
 
-	h.running = h.running[:1]
-	_, err = builders.At(p.ID())
+	none := newInstance(t, far)
+	elsewhere := BuildersOn(none)
+	t.Cleanup(func() { elsewhere.Close() })
+	_, err = elsewhere.At(none.ID())
 	require.NoError(t, err, "with none beside it, this node's id is dialled like any other")
 	_, err = builders.At("")
 	require.Error(t, err)

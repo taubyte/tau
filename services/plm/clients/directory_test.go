@@ -16,37 +16,46 @@ import (
 	"github.com/taubyte/tau/services/plm"
 )
 
-// instance is a host whose directory names the peers it was told.
+// instance is a host whose discovery names the peers it was told.
 type instance struct {
 	peer.Node
-	running []service.Running
+	*service.Served
+	finding named
 }
 
-func (i *instance) Peer() peer.Node            { return i.Node }
-func (i *instance) Running() []service.Running { return i.running }
-func (*instance) Config(any) error             { return nil }
-func (*instance) Root() string                 { return "" }
-func (*instance) Cloud() string                { return "test" }
-func (*instance) Region() string               { return "" }
-func (*instance) Now() time.Time               { return time.Now() }
+func newInstance(t *testing.T, found ...libp2ppeer.ID) *instance {
+	t.Helper()
+	p := peer.Mock(t.Context())
+	t.Cleanup(p.Close)
+	i := &instance{Node: p, finding: found}
+	i.Served = service.NewServed(p.ID(), &i.finding)
+	return i
+}
+
+func (i *instance) Peer() peer.Node          { return i.Node }
+func (*instance) Running() []service.Running { return nil }
+func (*instance) Config(any) error           { return nil }
+func (*instance) Root() string               { return "" }
+func (*instance) Cloud() string              { return "test" }
+func (*instance) Region() string             { return "" }
+func (*instance) Now() time.Time             { return time.Now() }
 
 // named is a finder that finds these nodes for every protocol.
 type named []libp2ppeer.ID
 
-func (n named) Find(protocol.ID) discovery.Resolver { return discovery.Static(n...) }
+func (n *named) Find(protocol.ID) discovery.Resolver { return discovery.Static(*n...) }
 
 func TestTheFinderNamesWhoServesAProtocolAndOthersLeavesThisNodeOut(t *testing.T) {
-	p := peer.Mock(t.Context())
-	t.Cleanup(p.Close)
-	h := &instance{Node: p}
+	h := newInstance(t)
+	p := h.Node
 
-	require.Nil(t, Discovered(h, plm.Protocol).Known(), "nothing to find with is nobody found")
+	require.Empty(t, Discovered(h, plm.Protocol).Known(), "nothing to find with is nobody found")
 	_, err := Discovered(h, plm.Protocol).Any(t.Context())
 	require.ErrorIs(t, err, discovery.ErrNoPeers)
 
-	h.running = []service.Running{{Service: named{"far", "farther"}}}
+	h.finding = named{"far", "farther"}
 	require.Equal(t, []libp2ppeer.ID{"far", "farther"}, Discovered(h, plm.Protocol).Known())
-	h.running = []service.Running{{Service: named{p.ID(), "far", "farther"}}}
+	h.finding = named{p.ID(), "far", "farther"}
 	require.Equal(t, []libp2ppeer.ID{"far", "farther"}, Others(h, plm.Protocol).Known(), "this node does not dial itself")
 
 	first, err := Others(h, plm.Protocol).Any(t.Context())
@@ -59,9 +68,9 @@ func TestTheFinderNamesWhoServesAProtocolAndOthersLeavesThisNodeOut(t *testing.T
 }
 
 func TestABuildNodeThatKnowsNoOtherIsToldSoAtOnce(t *testing.T) {
-	p := peer.Mock(t.Context())
-	t.Cleanup(p.Close)
-	h := &instance{Node: p, running: []service.Running{{Service: named{p.ID()}}}}
+	h := newInstance(t)
+	p := h.Node
+	h.finding = named{p.ID()}
 
 	_, err := Others(h, plm.Protocol).Peers(t.Context(), 4)
 	require.ErrorIs(t, err, discovery.ErrNoPeers, "the only plm node it knows is itself")

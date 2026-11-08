@@ -18,30 +18,33 @@ import (
 // node is an instance in a region, running what it is given.
 type node struct {
 	peer.Node
+	*service.Served
 	region  string
-	running []service.Running
+	finding finding
 }
 
-func (n *node) Peer() peer.Node            { return n.Node }
-func (n *node) Running() []service.Running { return n.running }
-func (*node) Config(any) error             { return nil }
-func (*node) Root() string                 { return "" }
-func (*node) Cloud() string                { return "views-test" }
-func (n *node) Region() string             { return n.region }
-func (*node) Now() time.Time               { return time.Now() }
+func (n *node) Peer() peer.Node          { return n.Node }
+func (*node) Running() []service.Running { return nil }
+func (*node) Config(any) error           { return nil }
+func (*node) Root() string               { return "" }
+func (*node) Cloud() string              { return "views-test" }
+func (n *node) Region() string           { return n.region }
+func (*node) Now() time.Time             { return time.Now() }
 
 var _ service.Host = (*node)(nil)
 
 // finding is a finder that finds the nodes it was told serve the register.
 type finding []libp2ppeer.ID
 
-func (f finding) Find(protocol.ID) discovery.Resolver { return discovery.Static(f...) }
+func (f *finding) Find(protocol.ID) discovery.Resolver { return discovery.Static(*f...) }
 
 func mockNode(t testing.TB) *node {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	return &node{Node: p}
+	n := &node{Node: p}
+	n.Served = service.NewServed(p.ID(), &n.finding)
+	return n
 }
 
 // startRegister runs the register on n, holding one deployment cut in two regions and
@@ -67,7 +70,10 @@ func TestViewsReadTheRegisterBesideThemInTheirRegion(t *testing.T) {
 	n := mockNode(t)
 	s := startRegister(t, n)
 
-	in := &node{Node: n.Node, region: "region-1", running: []service.Running{{Name: Descriptor.Name, Service: s}}}
+	in := &node{Node: n.Node, Served: n.Served, region: "region-1"}
+	served, ok := in.Local(Protocol)
+	require.True(t, ok, "the register did not say its node serves it")
+	require.Same(t, s, served)
 	v := ViewsOn(in)
 	t.Cleanup(func() { v.Close() })
 
@@ -96,7 +102,7 @@ func TestViewsReachARegisterElsewhere(t *testing.T) {
 	require.NoError(t, from.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: at.ID(), Addrs: at.Host().Addrs()}))
 
 	from.region = "region-1"
-	from.running = []service.Running{{Service: finding{at.ID()}}}
+	from.finding = finding{at.ID()}
 	v := ViewsOn(from)
 
 	p, err := v.Resolve(ctx, "shop", "prod")

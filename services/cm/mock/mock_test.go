@@ -13,7 +13,10 @@ import (
 	"github.com/taubyte/tau/services/cm/settings"
 )
 
-type node struct{ peer.Node }
+type node struct {
+	peer.Node
+	*service.Served
+}
 
 func (n node) Peer() peer.Node          { return n.Node }
 func (node) Running() []service.Running { return nil }
@@ -49,7 +52,11 @@ func TestTheMockListensOnCmsProtocolUntilClosed(t *testing.T) {
 	t.Cleanup(p.Close)
 	cm := mock.New(settings.Defaults())
 	require.NoError(t, cm.Close(), "closing one never started")
-	require.NoError(t, cm.Start(t.Context(), node{p}))
+	n := node{Node: p, Served: service.NewServed(p.ID(), nil)}
+	require.NoError(t, cm.Start(t.Context(), n))
 	require.Contains(t, p.Host().Mux().Protocols(), settings.Protocol)
+	served, ok := n.Local(settings.Protocol)
+	require.True(t, ok, "the node it started on does not serve cm's protocol with it")
+	require.Same(t, cm, served)
 	require.NoError(t, cm.Close())
 }

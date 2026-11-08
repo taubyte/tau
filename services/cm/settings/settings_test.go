@@ -17,37 +17,40 @@ import (
 	"github.com/taubyte/tau/services/cm/settings"
 )
 
-// node is an instance with the services a test gives it.
+// node is an instance serving cm's protocol with the mock a test gives it, and
+// finding the peers its finding names.
 type node struct {
 	peer.Node
-	running []service.Running
+	*service.Served
+	finding finding
 }
 
-func newNode(t *testing.T, running ...any) *node {
+func newNode(t *testing.T, cm ...*cmmock.CM) *node {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
 	n := &node{Node: p}
-	for _, r := range running {
-		n.running = append(n.running, service.Running{Service: r})
+	n.Served = service.NewServed(p.ID(), &n.finding)
+	for _, c := range cm {
+		n.Serve(settings.Protocol, c)
 	}
 	return n
 }
 
-func (n *node) Peer() peer.Node            { return n.Node }
-func (n *node) Running() []service.Running { return n.running }
-func (*node) Config(any) error             { return nil }
-func (*node) Root() string                 { return "" }
-func (*node) Cloud() string                { return "settings-test" }
-func (*node) Region() string               { return "" }
-func (*node) Now() time.Time               { return time.Now() }
+func (n *node) Peer() peer.Node          { return n.Node }
+func (*node) Running() []service.Running { return nil }
+func (*node) Config(any) error           { return nil }
+func (*node) Root() string               { return "" }
+func (*node) Cloud() string              { return "settings-test" }
+func (*node) Region() string             { return "" }
+func (*node) Now() time.Time             { return time.Now() }
 
 var _ service.Host = (*node)(nil)
 
 // finding is discovery naming the peers it is given.
 type finding []libp2ppeer.ID
 
-func (f finding) Find(protocol.ID) discovery.Resolver { return discovery.Static(f...) }
+func (f *finding) Find(protocol.ID) discovery.Resolver { return discovery.Static(*f...) }
 
 func region(r, k int) settings.Region {
 	s := settings.Defaults()
@@ -82,7 +85,7 @@ func TestCmOnAnotherNodeIsReadOverItsProtocol(t *testing.T) {
 	t.Cleanup(func() { cm.Close() })
 
 	near := newNode(t)
-	near.running = []service.Running{{Service: finding{far.ID()}}}
+	near.finding = finding{far.ID()}
 	require.NoError(t, peer.LinkAllPeers())
 	require.NoError(t, near.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: far.ID(), Addrs: far.Host().Addrs()}))
 
@@ -103,7 +106,7 @@ func TestTheRetentionCrossesTheWireInWholeSeconds(t *testing.T) {
 	t.Cleanup(func() { cm.Close() })
 
 	near := newNode(t)
-	near.running = []service.Running{{Service: finding{far.ID()}}}
+	near.finding = finding{far.ID()}
 	require.NoError(t, peer.LinkAllPeers())
 	require.NoError(t, near.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: far.ID(), Addrs: far.Host().Addrs()}))
 
@@ -116,7 +119,7 @@ func TestTheRetentionCrossesTheWireInWholeSeconds(t *testing.T) {
 
 func TestNoCmInReachIsAnErrorAndNeverTheDefaults(t *testing.T) {
 	near := newNode(t)
-	near.running = []service.Running{{Service: finding{}}}
+	near.finding = finding{}
 	c := settings.On(near)
 	t.Cleanup(func() { c.Close() })
 
@@ -160,7 +163,7 @@ func TestACmThatCannotAnswerIsUnavailableOnTheWire(t *testing.T) {
 	t.Cleanup(func() { cm.Close() })
 
 	near := newNode(t)
-	near.running = []service.Running{{Service: finding{far.ID()}}}
+	near.finding = finding{far.ID()}
 	require.NoError(t, peer.LinkAllPeers())
 	require.NoError(t, near.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: far.ID(), Addrs: far.Host().Addrs()}))
 

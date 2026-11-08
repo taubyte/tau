@@ -92,7 +92,11 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 		return to.CronTask(ctx, since, upto)
 	}
 	s.owned = append(s.owned, views, region, tasking)
-	return s.serve(ctx)
+	if err := s.serve(ctx); err != nil {
+		return err
+	}
+	h.Serve(Protocol, s)
+	return nil
 }
 
 func dialClocks(h host.Host, id libp2ppeer.ID) (Clocks, error) { return NewClient(h, id) }

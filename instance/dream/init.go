@@ -164,8 +164,8 @@ type Config struct {
 	// Region is the region this dream cloud is. Empty is one unnamed region.
 	Region string
 
-	// Settings, when set, are the region's: every node runs cm's mocked version
-	// answering them, in place of cm.
+	// Settings, when set, are the region's: every node serves cm's protocol with
+	// cm's mocked version answering them, ahead of any cm it runs.
 	Settings *settings.Region
 }
 
@@ -351,9 +351,6 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	if now != nil {
 		options = append(options, instance.WithClock(now))
 	}
-	if cfg.Settings != nil {
-		options = append(options, instance.WithMock(cm.Name, cmmock.New(*cfg.Settings)))
-	}
 	options = append(options, cfg.Options...)
 
 	bundle := &secretsv2.InitBundle{Secrets: cfg.Secrets}
@@ -377,6 +374,11 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	if err != nil {
 		os.RemoveAll(root)
 		return err
+	}
+	// THE REGION'S SETTINGS, WHEN GIVEN, ARE CM'S MOCKED VERSION: the node serves cm's
+	// protocol with it before any cm it runs, so every service here reads it.
+	if cfg.Settings != nil {
+		n.Serve(settings.Protocol, cmmock.New(*cfg.Settings))
 	}
 	if err := n.Start(ctx); err != nil {
 		n.Close()

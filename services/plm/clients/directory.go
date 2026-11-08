@@ -11,14 +11,8 @@ import (
 	"github.com/taubyte/tau/p2p/discovery"
 )
 
-// Discovered is the nodes serving id as the finder beside h finds them, waited for
-// when asked. An instance with no finder finds nobody.
-func Discovered(h service.Host, id protocol.ID) discovery.Resolver {
-	if f, ok := service.Get[service.Finder](h); ok {
-		return f.Find(id)
-	}
-	return others{h: h, id: id}
-}
+// Discovered is the nodes serving id as h's node finds them, waited for when asked.
+func Discovered(h service.Host, id protocol.ID) discovery.Resolver { return h.Find(id) }
 
 // Others is the other nodes serving id, for a node that answers locally first. It
 // does not wait for one: the node asking serves id itself, and a cloud with one such

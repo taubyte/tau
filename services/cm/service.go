@@ -72,6 +72,7 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 		return err
 	}
 	s.listener = listener
+	h.Serve(Protocol, s)
 	return nil
 }
 
@@ -136,7 +137,7 @@ type located struct{ h service.Host }
 func (l located) Members() []libp2ppeer.ID { return service.Serving(l.h, Protocol) }
 
 func (l located) Store() *Store {
-	if local, ok := service.Get[Service](l.h); ok {
+	if local, ok := service.Local[Service](l.h, Protocol); ok {
 		return local.Store()
 	}
 	return nil

@@ -37,5 +37,9 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 	if err := s.assemble(h.Peer().Host(), withStore(store)); err != nil {
 		return err
 	}
-	return s.serve(ctx)
+	if err := s.serve(ctx); err != nil {
+		return err
+	}
+	h.Serve(Protocol, s)
+	return nil
 }

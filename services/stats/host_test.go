@@ -58,6 +58,7 @@ func TestLoopbackIsAnAnswerOnlyWhenThereIsNoOther(t *testing.T) {
 // cloud and its section.
 type instance struct {
 	peer.Node
+	*service.Served
 	running []service.Running
 	config  func(any) error
 }

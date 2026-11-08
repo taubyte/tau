@@ -25,6 +25,7 @@ import (
 // and the section an operator wrote.
 type node struct {
 	peer.Node
+	*service.Served
 	root    string
 	running []service.Running
 	section map[string]any
@@ -51,7 +52,7 @@ func lone(t *testing.T, section map[string]any) *node {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	n := &node{Node: p, root: t.TempDir(), section: section}
+	n := &node{Node: p, Served: service.NewServed(p.ID(), nil), root: t.TempDir(), section: section}
 	n.running = []service.Running{{Service: groupsOn{node: p, root: n.root}}}
 	return n
 }

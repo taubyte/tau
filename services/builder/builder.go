@@ -59,6 +59,7 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 		return errors.Join(err, runs.Close())
 	}
 	s.Runs, s.listen = runs, listen
+	h.Serve(plm.BuilderProtocol, s)
 	return nil
 }
 

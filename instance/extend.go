@@ -7,7 +7,9 @@ import (
 	"slices"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/taubyte/tau/core/service"
+	"github.com/taubyte/tau/p2p/discovery"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/services"
 )
@@ -51,27 +53,6 @@ func withService(name string, s service.Service) Option {
 	}
 }
 
-// WithMock runs s in place of the shipped service called name, for a test: the
-// mocked version of a service, answering the way it does, on this node.
-func WithMock(name string, s service.Service) Option {
-	return func(o *options) error {
-		switch {
-		case s == nil:
-			return errors.New("node: a nil mock")
-		case !slices.Contains(services.Names(), name):
-			return fmt.Errorf("node: %q is not a service to mock", name)
-		}
-		if _, twice := o.mocks[name]; twice {
-			return fmt.Errorf("node: %q is mocked twice", name)
-		}
-		if o.mocks == nil {
-			o.mocks = map[string]service.Service{}
-		}
-		o.mocks[name] = s
-		return nil
-	}
-}
-
 // named is one service this instance runs, under the name the config gave it.
 type named struct {
 	name    string
@@ -81,9 +62,6 @@ type named struct {
 // serviceNamed is the service the config's name stands for: one tau ships, or one
 // this package's tests added.
 func (o options) serviceNamed(name string) (service.Service, bool) {
-	if s, ok := o.mocks[name]; ok {
-		return s, true
-	}
 	if s, ok := o.extra[name]; ok {
 		return s, true
 	}
@@ -136,6 +114,14 @@ func (a *added) Now() time.Time             { return a.node.clock() }
 func (n *Instance) HostOf(name string) service.Host { return &added{node: n, name: name} }
 
 func (a *added) Config(into any) error { return a.node.cfg.Section(a.name, into) }
+
+func (a *added) Find(id protocol.ID) discovery.Resolver       { return a.node.served.Find(id) }
+func (a *added) Local(id protocol.ID) (service.Service, bool) { return a.node.served.Local(id) }
+func (a *added) Serve(id protocol.ID, s service.Service)      { a.node.served.Serve(id, s) }
+
+// Serve says this node serves id with s, ahead of any service it runs for id: how a
+// test's composer gives a node a mocked version of a service.
+func (n *Instance) Serve(id protocol.ID, s service.Service) { n.served.Serve(id, s) }
 
 // provide adds a running service, under its name, to what the others on this
 // instance can Get.

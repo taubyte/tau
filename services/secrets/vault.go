@@ -48,7 +48,7 @@ func (o on) Members() []peerCore.ID {
 }
 
 func (o on) beside() *server {
-	s, _ := service.Get[*server](o.h)
+	s, _ := service.Local[*server](o.h, Protocol)
 	return s
 }
 

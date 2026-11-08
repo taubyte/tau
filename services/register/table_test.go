@@ -6,7 +6,6 @@ import (
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 )
@@ -14,7 +13,6 @@ import (
 func TestTheTableIsTheRegisterBesideIt(t *testing.T) {
 	n := mockNode(t)
 	s := startRegister(t, n)
-	n.running = []service.Running{{Name: Descriptor.Name, Service: s}}
 
 	table := TableOn(n)
 	t.Cleanup(func() { table.Close() })
@@ -31,7 +29,7 @@ func TestTheTableReachesARegisterElsewhere(t *testing.T) {
 	startRegister(t, at)
 	require.NoError(t, peer.LinkAllPeers())
 	require.NoError(t, from.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: at.ID(), Addrs: at.Host().Addrs()}))
-	from.running = []service.Running{{Service: finding{at.ID()}}}
+	from.finding = finding{at.ID()}
 
 	table := TableOn(from)
 	t.Cleanup(func() { table.Close() })

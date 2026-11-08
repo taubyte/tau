@@ -90,7 +90,11 @@ func (b *hosted) Start(ctx context.Context, h service.Host) error {
 		return err
 	}
 	b.server, b.queue = s, cluster
-	return s.serve(ctx)
+	if err := s.serve(ctx); err != nil {
+		return err
+	}
+	h.Serve(plm.Protocol, b)
+	return nil
 }
 
 // onInstance is a server over h's records, register and storage, its queue in store,
