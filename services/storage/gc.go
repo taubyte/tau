@@ -81,8 +81,7 @@ type Gates struct {
 }
 
 // Policy is what the cloud promises, as the deleting gate sees it. Without Known,
-// gate 5 has no right-hand side; see fleet.go for why dead objects are still
-// collected.
+// gate 5 has no right-hand side, and dead objects are still collected.
 type Policy struct {
 	// Replicas is R as the cloud published it. It is meaningless unless Known.
 	Replicas int

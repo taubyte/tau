@@ -51,6 +51,27 @@ func withService(name string, s service.Service) Option {
 	}
 }
 
+// WithMock runs s in place of the shipped service called name, for a test: the
+// mocked version of a service, answering the way it does, on this node.
+func WithMock(name string, s service.Service) Option {
+	return func(o *options) error {
+		switch {
+		case s == nil:
+			return errors.New("node: a nil mock")
+		case !slices.Contains(services.Names(), name):
+			return fmt.Errorf("node: %q is not a service to mock", name)
+		}
+		if _, twice := o.mocks[name]; twice {
+			return fmt.Errorf("node: %q is mocked twice", name)
+		}
+		if o.mocks == nil {
+			o.mocks = map[string]service.Service{}
+		}
+		o.mocks[name] = s
+		return nil
+	}
+}
+
 // named is one service this instance runs, under the name the config gave it.
 type named struct {
 	name    string
@@ -60,6 +81,9 @@ type named struct {
 // serviceNamed is the service the config's name stands for: one tau ships, or one
 // this package's tests added.
 func (o options) serviceNamed(name string) (service.Service, bool) {
+	if s, ok := o.mocks[name]; ok {
+		return s, true
+	}
 	if s, ok := o.extra[name]; ok {
 		return s, true
 	}

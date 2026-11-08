@@ -83,12 +83,6 @@ type Report struct {
 	// demultiplex on. A socket's host also belongs in Serving.
 	Sockets []Socket
 
-	// FleetRevision is the revision of the cloud's own document this node last
-	// computed placement with. It is how a node that is behind becomes visible:
-	// placement's other inputs heal on their own, and this is the one every
-	// node must agree on.
-	FleetRevision uint64
-
 	// DatabasesPending is how many of this node's databases are below their
 	// floor as far as it can tell. One number, not a list — the fleet figure is
 	// the sum over fresh rows, and which ones is asked of that node directly.
@@ -122,7 +116,6 @@ type Node struct {
 	Addresses   []string
 	Sockets     []Socket
 
-	FleetRevision    uint64
 	DatabasesPending int
 
 	// Age is how long ago this process received the report. It is on every row
@@ -193,7 +186,6 @@ type row struct {
 	ready       bool
 	addresses   []string
 	sockets     []Socket
-	fleet       uint64
 	pending     int
 	received    time.Time
 }
@@ -244,7 +236,6 @@ func (v *View) Observe(r Report) error {
 		ready:       r.Ready,
 		addresses:   append([]string(nil), r.Addresses...),
 		sockets:     append([]Socket(nil), r.Sockets...),
-		fleet:       r.FleetRevision,
 		pending:     r.DatabasesPending,
 		received:    now,
 	}
@@ -470,7 +461,6 @@ func shared(peer string, r *row, now time.Time) Node {
 		Addresses:   r.addresses,
 		Sockets:     r.sockets,
 
-		FleetRevision:    r.fleet,
 		DatabasesPending: r.pending,
 
 		Age: now.Sub(r.received),

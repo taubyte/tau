@@ -69,13 +69,10 @@ func (s *server) voters(ctx context.Context, at address) []string {
 		return nil
 	}
 
-	floor, known := s.floor.read(ctx)
+	floor, known := s.floor(ctx)
 	if !known {
-		// A node that has never learned the floor uses the default rather than zero: a
-		// target of zero desires nobody, and then every node opens a group for itself.
-		floor = DefaultReplication
+		return nil
 	}
-
 	return holders(at, members, floor)
 }
 

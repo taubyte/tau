@@ -11,7 +11,8 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
-	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/cm"
+	"github.com/taubyte/tau/services/cm/settings"
 )
 
 // A node is made from its peer. Whatever a service's backing is built from is the
@@ -19,7 +20,7 @@ import (
 // This file is where the node makes them; nothing is handed in.
 
 // retentionPoll is how often a node rereads the T its databases write under from the
-// fleet document. A node that reads a change late is safe: every write carries the
+// region's settings. A node that reads a change late is safe: every write carries the
 // retention it was written under.
 const retentionPoll = time.Minute
 
@@ -48,7 +49,7 @@ func (d *databases) at(name string) (kvdb.Instance, error) {
 	db, err := pkgkvdb.Open(d.Node, name,
 		pkgkvdb.WithLogger(logger),
 		pkgkvdb.WithRebroadcast(rebroadcastSeconds*time.Second),
-		pkgkvdb.WithFleetRetention(d.retention),
+		pkgkvdb.WithRegionRetention(d.retention),
 		pkgkvdb.WithOnClose(func() { d.forget(name, db) }))
 	if err != nil {
 		return nil, err
@@ -149,14 +150,12 @@ func (g groups) Group(namespace string) (raft.Cluster, error) {
 // ErrNoRoot is a node asked for what lives in a directory and given none.
 var ErrNoRoot = errors.New("node: this needs the node's own directory, and Config.Root names none")
 
-// followRetention keeps the databases' T at what the fleet document says, read from
-// this node's register. A node running none keeps the default, as for the replication
-// floor.
+// followRetention keeps the databases' T at what the region's settings say, read
+// from cm: the one on this node when it runs one.
 func (n *Instance) followRetention(ctx context.Context) {
-	if n.register == nil {
-		return
-	}
-	n.applyRetention(ctx)
+	region := settings.On(n.HostOf(cm.Name))
+	defer region.Close()
+	n.applyRetention(ctx, region)
 	ticker := time.NewTicker(retentionPoll)
 	defer ticker.Stop()
 	for {
@@ -164,35 +163,19 @@ func (n *Instance) followRetention(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			n.applyRetention(ctx)
+			n.applyRetention(ctx, region)
 		}
 	}
 }
 
-// applyRetention reads the fleet document once and moves the databases to its T; an
-// unpublished one is the default.
-func (n *Instance) applyRetention(ctx context.Context) {
-	if err := n.readRetention(ctx); err != nil && ctx.Err() == nil {
-		logger.Errorf("the fleet's retention: %s", err)
+// applyRetention reads the region's T once and moves the databases to it. A cm not
+// reached yet changes nothing.
+func (n *Instance) applyRetention(ctx context.Context, region settings.Source) {
+	r, err := region.Settings(ctx)
+	if err == nil {
+		err = n.dbs.setRetention(r.Retention)
 	}
-}
-
-func (n *Instance) readRetention(ctx context.Context) error {
-	reg := n.register.Local()
-	p, err := reg.ResolveFleet(ctx)
-	if errors.Is(err, pkgregister.ErrNotPublished) {
-		return n.dbs.setRetention(0)
+	if err != nil && ctx.Err() == nil {
+		logger.Debugf("the region's retention: %s", err)
 	}
-	if err != nil {
-		return err
-	}
-	doc, err := reg.Object(ctx, p.Object)
-	if err != nil {
-		return err
-	}
-	t, err := pkgkvdb.RetentionOf(doc, true)
-	if err != nil {
-		return err
-	}
-	return n.dbs.setRetention(t)
 }

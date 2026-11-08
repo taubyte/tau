@@ -82,9 +82,6 @@ func TestViewsReadTheRegisterBesideThemInTheirRegion(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"shop", "prod"}, []string{project, environment})
 
-	_, err = v.ResolveFleet(ctx)
-	require.ErrorIs(t, err, pkgregister.ErrNotPublished)
-
 	in.region = ""
 	p, err = ViewsOn(in).Resolve(ctx, "shop", "prod")
 	require.NoError(t, err)
@@ -121,7 +118,5 @@ func TestViewsWithNoRegisterToReadAreRefusedByName(t *testing.T) {
 	_, err = v.Object(ctx, pkgregister.IDOf([]byte("x")))
 	require.ErrorIs(t, err, service.ErrNoneRuns)
 	_, _, err = v.ResolveHost(ctx, "shop.example.com")
-	require.ErrorIs(t, err, service.ErrNoneRuns)
-	_, err = v.ResolveFleet(ctx)
 	require.ErrorIs(t, err, service.ErrNoneRuns)
 }

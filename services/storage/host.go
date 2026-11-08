@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"time"
 
 	ds "github.com/ipfs/go-datastore"
@@ -18,14 +19,11 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/placement"
-	"github.com/taubyte/tau/services/register"
+	"github.com/taubyte/tau/services/cm/settings"
 )
 
 // Dial is a client of the storage node at id, as the store.
 func Dial(h host.Host, id libp2ppeer.ID) (Store, error) { return NewClient(h, id) }
-
-// retentionPoll is how often a database rereads the cloud's retention.
-const retentionPoll = time.Minute
 
 // closer is a close that answers nothing, as a database's does.
 type closer func()
@@ -39,8 +37,7 @@ type placementSource interface {
 
 // Start runs this service on an instance: its bytes in the peer's blockstore, its
 // node-local rows under the peer's datastore, its shards and catalog as replicated
-// databases on the peer, its members from the discovery beside it and the fleet
-// document from whichever register answers.
+// databases on the peer, its members from the discovery beside it, R and K from cm.
 func (s *server) Start(ctx context.Context, h service.Host) error {
 	var cfg Config
 	if err := h.Config(&cfg); err != nil {
@@ -52,17 +49,30 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 	}
 
 	logger := logging.Logger("tau.storage")
-	fleet := register.ViewsOn(h)
-	s.also = append(s.also, fleet)
+
+	// A NODE DOES NOT START BEFORE IT HAS WHAT IT NEEDS: the region's settings from
+	// cm, and itself among the storage nodes discovery has settled on, so no write
+	// is ever placed on a picture of the region with only this node in it.
+	region := settings.On(h)
+	s.also = append(s.also, region)
+	if _, err := region.Wait(ctx); err != nil {
+		return fmt.Errorf("storage: the region's settings: %w", err)
+	}
+	s.region = region
+	members := func() []placement.Member {
+		if d, ok := service.Get[placementSource](h); ok {
+			return d.PlacementOf(Descriptor.Name)
+		}
+		return nil
+	}
+	if err := settled(ctx, members, p.ID().String()); err != nil {
+		return err
+	}
 
 	// EVERY DATABASE HERE IS UNDER THIS SERVICE'S NAME, so nothing else on the
-	// peer opens one, and each follows the cloud's retention itself.
+	// peer opens one.
 	open := func(name string) (kvdb.Instance, error) {
-		return pkgkvdb.Open(p, Descriptor.Name+"/"+name,
-			pkgkvdb.WithLogger(logger),
-			pkgkvdb.WithRetentionFrom(func(ctx context.Context) (time.Duration, error) {
-				return register.Retention(ctx, fleet)
-			}, retentionPoll))
+		return pkgkvdb.Open(p, Descriptor.Name+"/"+name, pkgkvdb.WithLogger(logger))
 	}
 	db, err := open("catalog")
 	if err != nil {
@@ -75,21 +85,33 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 		withLocal(namespace.Wrap(p.Store(), ds.NewKey("storage/local"))),
 		withShards(newDatabaseShards(open)),
 		withCatalog(newCatalog(db)),
-		// A node running no discovery cannot tell who else holds bytes and places
-		// everything on itself, as the database service does.
-		withMembers(func() []placement.Member {
-			if d, ok := service.Get[placementSource](h); ok {
-				return d.PlacementOf(Descriptor.Name)
-			}
-			return nil
-		}),
-		withFleet(fleet),
+		withMembers(members),
 		withLogger(logger.Errorf),
 	)
 	if err != nil {
 		return err
 	}
 	return s.serve(ctx)
+}
+
+// settledEvery is how often a starting node looks for itself among the storage
+// nodes discovery has settled on.
+const settledEvery = 250 * time.Millisecond
+
+// settled returns once discovery's settled set of storage nodes names self.
+func settled(ctx context.Context, members func() []placement.Member, self string) error {
+	ticker := time.NewTicker(settledEvery)
+	defer ticker.Stop()
+	for {
+		if slices.ContainsFunc(members(), func(m placement.Member) bool { return m.ID == self }) {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("storage: discovery never settled on this node: %w", ctx.Err())
+		case <-ticker.C:
+		}
+	}
 }
 
 // Reached is the storage service as the services of an instance reach it: the one

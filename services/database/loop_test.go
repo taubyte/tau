@@ -10,6 +10,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/placement"
+	"github.com/taubyte/tau/services/cm/settings"
 )
 
 // sweeping builds a service that holds one database and can see a fleet.
@@ -27,11 +28,12 @@ func sweeping(t *testing.T, holds *says, at []placement.Member, floor int) *serv
 
 	s, err := build(server,
 		withEngines(registry),
-		withRegister(declaringFloor(t, compiled(), floor)),
+		withRegister(&published{revision: 1, object: compiled()}),
 		withHoldings(holds),
 		withMembers(func() []placement.Member { return at }),
 		withIdle(time.Hour))
 	require.NoError(t, err)
+	s.region = floorOf(floor)
 	t.Cleanup(func() { s.Close() })
 	return s
 }
@@ -99,6 +101,7 @@ func TestASweepWithoutAFleetDoesNothing(t *testing.T) {
 		withHoldings(holds),
 		withIdle(time.Hour))
 	require.NoError(t, err)
+	s.region = floorOf(settings.Defaults().Replication)
 	t.Cleanup(func() { s.Close() })
 
 	// run returns at once rather than ticking against a fleet it cannot see.
@@ -135,15 +138,6 @@ func TestASweepDoesNotReportASmallFleetAsShort(t *testing.T) {
 
 	s.reconsider(t.Context())
 	require.Zero(t, s.Pending())
-}
-
-func TestASweepReportsTheFleetRevisionItComputedWith(t *testing.T) {
-	holds := &says{held: true, onDisk: []database.Spec{sessionsSpec()}}
-	s := sweeping(t, holds, members("me"), 1)
-	s.peer = "me"
-
-	s.reconsider(t.Context())
-	require.Equal(t, uint64(1), s.FleetRevision())
 }
 
 func TestASweepLeavesWhatItCannotResolve(t *testing.T) {

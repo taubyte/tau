@@ -229,7 +229,10 @@ func (s *server) fromIndex(ctx context.Context, a Address, here bool, local func
 	if err != nil {
 		return err
 	}
-	replicas, _, _ := s.fleet.read(ctx)
+	replicas, _, err := s.promise(ctx)
+	if err != nil {
+		return err
+	}
 	var errs []error
 	for _, holder := range indexHolders(shard, s.placement(), replicas) {
 		svc, err := s.peer(holder)

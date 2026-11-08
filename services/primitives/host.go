@@ -11,6 +11,7 @@ import (
 	"github.com/taubyte/tau/core/service"
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
+	"github.com/taubyte/tau/services/cm/settings"
 	"github.com/taubyte/tau/services/register"
 )
 
@@ -57,6 +58,7 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 		return ErrNoConsensus
 	}
 	views := register.ViewsOn(h)
+	region := settings.On(h)
 	dead := DefaultDeadLetterRetention
 	if cfg.DeadLetter.Age != 0 {
 		dead.age = cfg.DeadLetter.Age
@@ -70,9 +72,7 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 		withRecords(func(name string) (kvdb.Instance, error) {
 			return pkgkvdb.Open(h.Peer(), Descriptor.Name+"/"+name,
 				pkgkvdb.WithLogger(logger),
-				pkgkvdb.WithRetentionFrom(func(ctx context.Context) (time.Duration, error) {
-					return register.Retention(ctx, views)
-				}, retentionPoll))
+				pkgkvdb.WithRetentionFrom(region.Retention, retentionPoll))
 		}),
 		withClock(h.Now),
 		withSweep(cfg.Sweep),
@@ -80,6 +80,7 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 		withWorkloads(func() (Workloads, bool) { return service.Get[Workloads](h) }))
 	if err != nil {
 		views.Close()
+		region.Close()
 		return err
 	}
 	tasking := service.Routed(h, Protocol, Clocks(s.Local()), dialClocks)
@@ -90,7 +91,7 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 		}
 		return to.CronTask(ctx, since, upto)
 	}
-	s.owned = append(s.owned, views, tasking)
+	s.owned = append(s.owned, views, region, tasking)
 	return s.serve(ctx)
 }
 

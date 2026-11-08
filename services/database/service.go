@@ -68,11 +68,11 @@ type server struct {
 	// ledgersOpen is every raft database this node has opened a group for. It
 	// is what this node IS rather than what placement wants it to be -- see
 	// forward.go's opening.
+	// region is the region's settings, its floor among them; see floor.
+	region regionSettings
+
 	ledgerMu    sync.Mutex
 	ledgersOpen map[string]address
-
-	// floor is how many nodes hold each database, read from what the cloud published.
-	floor *fleetFloor
 
 	// sweep is how often this node reconsiders what it holds.
 	sweep     time.Duration
@@ -278,7 +278,6 @@ func (s *server) assemble(h host.Host, opts ...option) error {
 	s.members = o.members
 	s.peer = h.ID().String()
 	s.consensus = consensus
-	s.floor = &fleetFloor{from: fleetFrom(o.source)}
 	s.sweep = sweep
 	s.own = newHoldings()
 	s.serverOptions = o.serverOptions
@@ -481,15 +480,4 @@ func (l *localOne) Keys(ctx context.Context, prefix string) ([]string, error) {
 		return nil, err
 	}
 	return kv.List(ctx, prefix)
-}
-
-// fleetFrom is the register's fleet half, when it has one. A source that only
-// resolves projects is a legitimate thing to build this service over — it reads
-// the default and never changes its mind.
-func fleetFrom(source register.Registry) fleetSource {
-	from, ok := source.(fleetSource)
-	if !ok {
-		return nil
-	}
-	return from
 }

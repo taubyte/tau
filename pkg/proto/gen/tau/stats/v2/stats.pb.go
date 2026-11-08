@@ -132,14 +132,6 @@ type Report struct {
 	// this run, it changes when the node restarts, and the only way a client
 	// learns it is the SRV record built out of this.
 	Sockets []*Socket `protobuf:"bytes,7,rep,name=sockets,proto3" json:"sockets,omitempty"`
-	// fleet_revision is the revision of the cloud's own document this node last
-	// computed placement with.
-	//
-	// IT IS HOW A NODE THAT IS BEHIND BECOMES VISIBLE. Placement's other inputs
-	// heal on their own; the fleet document is the one every node must agree on,
-	// and without a revision on the wire a node computing with a stale floor is
-	// indistinguishable from one that agrees.
-	FleetRevision uint64 `protobuf:"varint,9,opt,name=fleet_revision,json=fleetRevision,proto3" json:"fleet_revision,omitempty"`
 	// databases_pending is how many of this node's databases are below their
 	// floor as far as it can tell -- a co-holder that said it does not have one,
 	// or could not be reached.
@@ -230,13 +222,6 @@ func (x *Report) GetSockets() []*Socket {
 		return x.Sockets
 	}
 	return nil
-}
-
-func (x *Report) GetFleetRevision() uint64 {
-	if x != nil {
-		return x.FleetRevision
-	}
-	return 0
 }
 
 func (x *Report) GetDatabasesPending() uint32 {
@@ -332,7 +317,7 @@ var File_tau_stats_v2_stats_proto protoreflect.FileDescriptor
 
 const file_tau_stats_v2_stats_proto_rawDesc = "" +
 	"\n" +
-	"\x18tau/stats/v2/stats.proto\x12\ftau.stats.v2\"\xb2\x02\n" +
+	"\x18tau/stats/v2/stats.proto\x12\ftau.stats.v2\"\xa1\x02\n" +
 	"\x06Report\x12\x12\n" +
 	"\x04peer\x18\x01 \x01(\tR\x04peer\x12 \n" +
 	"\vincarnation\x18\x02 \x01(\x04R\vincarnation\x12\x12\n" +
@@ -340,10 +325,10 @@ const file_tau_stats_v2_stats_proto_rawDesc = "" +
 	"\aserving\x18\x04 \x03(\tR\aserving\x12\x14\n" +
 	"\x05ready\x18\x05 \x01(\bR\x05ready\x12\x1c\n" +
 	"\taddresses\x18\x06 \x03(\tR\taddresses\x12.\n" +
-	"\asockets\x18\a \x03(\v2\x14.tau.stats.v2.SocketR\asockets\x12%\n" +
-	"\x0efleet_revision\x18\t \x01(\x04R\rfleetRevision\x12+\n" +
+	"\asockets\x18\a \x03(\v2\x14.tau.stats.v2.SocketR\asockets\x12+\n" +
 	"\x11databases_pending\x18\n" +
-	" \x01(\rR\x10databasesPendingJ\x04\b\b\x10\tR\x06region\"j\n" +
+	" \x01(\rR\x10databasesPendingJ\x04\b\b\x10\tJ\x04\b\t\x10\n" +
+	"R\x06regionR\x0efleet_revision\"j\n" +
 	"\x06Socket\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12\x1a\n" +
 	"\bprotocol\x18\x02 \x01(\tR\bprotocol\x12\x1c\n" +

@@ -3,13 +3,11 @@ package register
 import (
 	"errors"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/fleet"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 )
 
@@ -191,61 +189,18 @@ func TestTheManifestCrossesTheWire(t *testing.T) {
 	require.Equal(t, localID, id)
 }
 
-func TestTheFleetDocumentCrossesTheWire(t *testing.T) {
-	h := newHarness(t, pkgregister.NewMemStore())
-	c := newClient(t, h)
-
-	_, err := c.ResolveFleet(t.Context())
-	require.ErrorIs(t, err, pkgregister.ErrNotPublished, "an unpublished fleet is the defaults, not a failure")
-
-	id, err := h.Service.Local().PublishFleet(t.Context(), 3, []byte(`{"replication":3}`))
-	require.NoError(t, err)
-
-	p, err := c.ResolveFleet(t.Context())
-	require.NoError(t, err)
-	require.Equal(t, id, p.Object)
-	require.Equal(t, uint64(3), p.Revision)
-	doc, err := c.Object(t.Context(), p.Object)
-	require.NoError(t, err)
-	require.JSONEq(t, `{"replication":3}`, string(doc))
-}
-
 func TestTheRegisterIsDialledAsItsReader(t *testing.T) {
 	h := newHarness(t, pkgregister.NewMemStore())
-	id, err := h.Service.Local().PublishFleet(t.Context(), 2, []byte(`{"replication":2}`))
+	_, err := h.Service.Local().Publish(t.Context(), pkgregister.Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("v1"),
+		Views: []pkgregister.View{{Destination: "region-1", Compiled: []byte("v1 region-1")}}})
 	require.NoError(t, err)
 
 	f, err := DialReader(h.CallerHost, h.ServerHost.ID())
 	require.NoError(t, err)
 	t.Cleanup(func() { f.(*Client).Close() })
-	p, err := f.ResolveFleet(t.Context())
+	p, err := f.ResolveView(t.Context(), "shop", "prod", "region-1")
 	require.NoError(t, err)
-	require.Equal(t, id, p.Object)
 	doc, err := f.Object(t.Context(), p.Object)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"replication":2}`, string(doc))
-}
-
-func TestTheFleetsRetentionIsTheDefaultUntilPublished(t *testing.T) {
-	h := newHarness(t, pkgregister.NewMemStore())
-	reg := h.Service.Local()
-
-	got, err := Retention(t.Context(), reg)
-	require.NoError(t, err)
-	require.Zero(t, got)
-
-	doc, err := fleet.Encode(fleet.Fleet{Retention: fleet.Duration(48 * time.Hour)})
-	require.NoError(t, err)
-	_, err = reg.PublishFleet(t.Context(), 1, doc)
-	require.NoError(t, err)
-	got, err = Retention(t.Context(), reg)
-	require.NoError(t, err)
-	require.Equal(t, 48*time.Hour, got)
-
-	// THE REGISTER STORES WHATEVER IT IS GIVEN, so a document that does not decode
-	// is the reader's to refuse.
-	_, err = reg.PublishFleet(t.Context(), 2, []byte("{not json"))
-	require.NoError(t, err)
-	_, err = Retention(t.Context(), reg)
-	require.Error(t, err, "a document that does not decode")
+	require.Equal(t, "v1 region-1", string(doc))
 }

@@ -30,6 +30,8 @@ const _ = connect.IsAtLeastVersion1_13_0
 const (
 	// CertificateServiceName is the fully-qualified name of the CertificateService service.
 	CertificateServiceName = "tau.cm.v2.CertificateService"
+	// SettingsServiceName is the fully-qualified name of the SettingsService service.
+	SettingsServiceName = "tau.cm.v2.SettingsService"
 	// DomainServiceName is the fully-qualified name of the DomainService service.
 	DomainServiceName = "tau.cm.v2.DomainService"
 )
@@ -47,6 +49,8 @@ const (
 	CertificateServiceCertificateProcedure = "/tau.cm.v2.CertificateService/Certificate"
 	// CertificateServiceKeepProcedure is the fully-qualified name of the CertificateService's Keep RPC.
 	CertificateServiceKeepProcedure = "/tau.cm.v2.CertificateService/Keep"
+	// SettingsServiceCurrentProcedure is the fully-qualified name of the SettingsService's Current RPC.
+	SettingsServiceCurrentProcedure = "/tau.cm.v2.SettingsService/Current"
 	// DomainServiceClaimProcedure is the fully-qualified name of the DomainService's Claim RPC.
 	DomainServiceClaimProcedure = "/tau.cm.v2.DomainService/Claim"
 	// DomainServiceProveProcedure is the fully-qualified name of the DomainService's Prove RPC.
@@ -151,6 +155,76 @@ func (UnimplementedCertificateServiceHandler) Certificate(context.Context, *conn
 
 func (UnimplementedCertificateServiceHandler) Keep(context.Context, *connect.Request[v2.Issued]) (*connect.Response[v2.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.cm.v2.CertificateService.Keep is not implemented"))
+}
+
+// SettingsServiceClient is a client for the tau.cm.v2.SettingsService service.
+type SettingsServiceClient interface {
+	Current(context.Context, *connect.Request[v2.Empty]) (*connect.Response[v2.Settings], error)
+}
+
+// NewSettingsServiceClient constructs a client for the tau.cm.v2.SettingsService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewSettingsServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) SettingsServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	settingsServiceMethods := v2.File_tau_cm_v2_cm_proto.Services().ByName("SettingsService").Methods()
+	return &settingsServiceClient{
+		current: connect.NewClient[v2.Empty, v2.Settings](
+			httpClient,
+			baseURL+SettingsServiceCurrentProcedure,
+			connect.WithSchema(settingsServiceMethods.ByName("Current")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// settingsServiceClient implements SettingsServiceClient.
+type settingsServiceClient struct {
+	current *connect.Client[v2.Empty, v2.Settings]
+}
+
+// Current calls tau.cm.v2.SettingsService.Current.
+func (c *settingsServiceClient) Current(ctx context.Context, req *connect.Request[v2.Empty]) (*connect.Response[v2.Settings], error) {
+	return c.current.CallUnary(ctx, req)
+}
+
+// SettingsServiceHandler is an implementation of the tau.cm.v2.SettingsService service.
+type SettingsServiceHandler interface {
+	Current(context.Context, *connect.Request[v2.Empty]) (*connect.Response[v2.Settings], error)
+}
+
+// NewSettingsServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewSettingsServiceHandler(svc SettingsServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	settingsServiceMethods := v2.File_tau_cm_v2_cm_proto.Services().ByName("SettingsService").Methods()
+	settingsServiceCurrentHandler := connect.NewUnaryHandler(
+		SettingsServiceCurrentProcedure,
+		svc.Current,
+		connect.WithSchema(settingsServiceMethods.ByName("Current")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/tau.cm.v2.SettingsService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case SettingsServiceCurrentProcedure:
+			settingsServiceCurrentHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedSettingsServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedSettingsServiceHandler struct{}
+
+func (UnimplementedSettingsServiceHandler) Current(context.Context, *connect.Request[v2.Empty]) (*connect.Response[v2.Settings], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.cm.v2.SettingsService.Current is not implemented"))
 }
 
 // DomainServiceClient is a client for the tau.cm.v2.DomainService service.

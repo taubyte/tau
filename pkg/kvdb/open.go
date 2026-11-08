@@ -29,7 +29,7 @@ type openOptions struct {
 	fallback bool
 	onClose  func()
 
-	// follow reads the cloud's T, every poll.
+	// follow reads the region's T, every poll.
 	follow func(context.Context) (time.Duration, error)
 	poll   time.Duration
 
@@ -66,16 +66,16 @@ func WithRetention(t time.Duration) OpenOption {
 	return func(o *openOptions) { o.retention, o.fallback = t, false }
 }
 
-// WithFleetRetention is the cloud's T, written under when this database can hold it
+// WithRegionRetention is the region's T, written under when this database can hold it
 // and the default otherwise: every node opening it computes the same margin, so
 // every node falls back alike.
-func WithFleetRetention(t time.Duration) OpenOption {
+func WithRegionRetention(t time.Duration) OpenOption {
 	return func(o *openOptions) { o.retention, o.fallback = t, true }
 }
 
-// WithRetentionFrom has the database follow the cloud's T, read with read every
+// WithRetentionFrom has the database follow the region's T, read with read every
 // poll: 0 is the default, a T it cannot hold leaves it where it was, and a read that
-// fails keeps the last. Every database of one cloud reads one document, so every
+// fails keeps the last. Every database of one region reads one answer, so every
 // node moves the same way.
 func WithRetentionFrom(read func(context.Context) (time.Duration, error), poll time.Duration) OpenOption {
 	return func(o *openOptions) { o.follow, o.poll = read, poll }
@@ -123,7 +123,7 @@ func open(p peer.Node, path string, options ...OpenOption) (*kvDatabase, error) 
 		case err == nil:
 			opts.Retention = o.retention
 		case o.fallback:
-			o.logger.Errorf("the fleet's retention cannot hold %s: %s; keeping %s", path, err, opts.Retention)
+			o.logger.Errorf("the region's retention cannot hold %s: %s; keeping %s", path, err, opts.Retention)
 		default:
 			d.closeCtxC()
 			return nil, err
@@ -162,7 +162,7 @@ func (d *kvDatabase) follow(read func(context.Context) (time.Duration, error), p
 	defer ticker.Stop()
 	for {
 		if err := d.retainAsRead(read); err != nil && d.closeCtx.Err() == nil {
-			logger.Errorf("%s: the cloud's retention: %s", d.path, err)
+			logger.Errorf("%s: the region's retention: %s", d.path, err)
 		}
 		select {
 		case <-d.closeCtx.Done():

@@ -135,9 +135,6 @@ const (
 	// RegisterServiceManifestProcedure is the fully-qualified name of the RegisterService's Manifest
 	// RPC.
 	RegisterServiceManifestProcedure = "/tau.register.v2.RegisterService/Manifest"
-	// RegisterServiceResolveFleetProcedure is the fully-qualified name of the RegisterService's
-	// ResolveFleet RPC.
-	RegisterServiceResolveFleetProcedure = "/tau.register.v2.RegisterService/ResolveFleet"
 	// RegisterServiceWatchProcedure is the fully-qualified name of the RegisterService's Watch RPC.
 	RegisterServiceWatchProcedure = "/tau.register.v2.RegisterService/Watch"
 	// RegisterServiceForgetProcedure is the fully-qualified name of the RegisterService's Forget RPC.
@@ -208,10 +205,6 @@ type RegisterServiceClient interface {
 	// Manifest is a deployment's current revision: its whole object and every
 	// destination it lists. A deployment nobody published is NotFound.
 	Manifest(context.Context, *connect.Request[v2.ResolveRequest]) (*connect.Response[v2.DeploymentManifest], error)
-	// ResolveFleet is the cloud's own document in force: its object and revision,
-	// the object read with Object. One nobody published is NotFound, as for a
-	// deployment, and every service then keeps its defaults.
-	ResolveFleet(context.Context, *connect.Request[v2.FleetRequest]) (*connect.Response[v2.Pointer], error)
 	// Watch is a session a reader binds the answers it caches to. A read sent with
 	// the session and an entry of the reader's choosing is bound when its answer
 	// comes back marked so: the register then names that entry on this stream,
@@ -338,12 +331,6 @@ func NewRegisterServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(registerServiceMethods.ByName("Manifest")),
 			connect.WithClientOptions(opts...),
 		),
-		resolveFleet: connect.NewClient[v2.FleetRequest, v2.Pointer](
-			httpClient,
-			baseURL+RegisterServiceResolveFleetProcedure,
-			connect.WithSchema(registerServiceMethods.ByName("ResolveFleet")),
-			connect.WithClientOptions(opts...),
-		),
 		watch: connect.NewClient[v2.WatchRequest, v2.WatchEvent](
 			httpClient,
 			baseURL+RegisterServiceWatchProcedure,
@@ -378,7 +365,6 @@ type registerServiceClient struct {
 	resolveView  *connect.Client[v2.ViewRequest, v2.ViewPointer]
 	assigned     *connect.Client[v2.DestinationRequest, v2.Assignments]
 	manifest     *connect.Client[v2.ResolveRequest, v2.DeploymentManifest]
-	resolveFleet *connect.Client[v2.FleetRequest, v2.Pointer]
 	watch        *connect.Client[v2.WatchRequest, v2.WatchEvent]
 	forget       *connect.Client[v2.ForgetRequest, v2.ForgetResponse]
 }
@@ -468,11 +454,6 @@ func (c *registerServiceClient) Manifest(ctx context.Context, req *connect.Reque
 	return c.manifest.CallUnary(ctx, req)
 }
 
-// ResolveFleet calls tau.register.v2.RegisterService.ResolveFleet.
-func (c *registerServiceClient) ResolveFleet(ctx context.Context, req *connect.Request[v2.FleetRequest]) (*connect.Response[v2.Pointer], error) {
-	return c.resolveFleet.CallUnary(ctx, req)
-}
-
 // Watch calls tau.register.v2.RegisterService.Watch.
 func (c *registerServiceClient) Watch(ctx context.Context, req *connect.Request[v2.WatchRequest]) (*connect.ServerStreamForClient[v2.WatchEvent], error) {
 	return c.watch.CallServerStream(ctx, req)
@@ -547,10 +528,6 @@ type RegisterServiceHandler interface {
 	// Manifest is a deployment's current revision: its whole object and every
 	// destination it lists. A deployment nobody published is NotFound.
 	Manifest(context.Context, *connect.Request[v2.ResolveRequest]) (*connect.Response[v2.DeploymentManifest], error)
-	// ResolveFleet is the cloud's own document in force: its object and revision,
-	// the object read with Object. One nobody published is NotFound, as for a
-	// deployment, and every service then keeps its defaults.
-	ResolveFleet(context.Context, *connect.Request[v2.FleetRequest]) (*connect.Response[v2.Pointer], error)
 	// Watch is a session a reader binds the answers it caches to. A read sent with
 	// the session and an entry of the reader's choosing is bound when its answer
 	// comes back marked so: the register then names that entry on this stream,
@@ -673,12 +650,6 @@ func NewRegisterServiceHandler(svc RegisterServiceHandler, opts ...connect.Handl
 		connect.WithSchema(registerServiceMethods.ByName("Manifest")),
 		connect.WithHandlerOptions(opts...),
 	)
-	registerServiceResolveFleetHandler := connect.NewUnaryHandler(
-		RegisterServiceResolveFleetProcedure,
-		svc.ResolveFleet,
-		connect.WithSchema(registerServiceMethods.ByName("ResolveFleet")),
-		connect.WithHandlerOptions(opts...),
-	)
 	registerServiceWatchHandler := connect.NewServerStreamHandler(
 		RegisterServiceWatchProcedure,
 		svc.Watch,
@@ -727,8 +698,6 @@ func NewRegisterServiceHandler(svc RegisterServiceHandler, opts ...connect.Handl
 			registerServiceAssignedHandler.ServeHTTP(w, r)
 		case RegisterServiceManifestProcedure:
 			registerServiceManifestHandler.ServeHTTP(w, r)
-		case RegisterServiceResolveFleetProcedure:
-			registerServiceResolveFleetHandler.ServeHTTP(w, r)
 		case RegisterServiceWatchProcedure:
 			registerServiceWatchHandler.ServeHTTP(w, r)
 		case RegisterServiceForgetProcedure:
@@ -808,10 +777,6 @@ func (UnimplementedRegisterServiceHandler) Assigned(context.Context, *connect.Re
 
 func (UnimplementedRegisterServiceHandler) Manifest(context.Context, *connect.Request[v2.ResolveRequest]) (*connect.Response[v2.DeploymentManifest], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.Manifest is not implemented"))
-}
-
-func (UnimplementedRegisterServiceHandler) ResolveFleet(context.Context, *connect.Request[v2.FleetRequest]) (*connect.Response[v2.Pointer], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.ResolveFleet is not implemented"))
 }
 
 func (UnimplementedRegisterServiceHandler) Watch(context.Context, *connect.Request[v2.WatchRequest], *connect.ServerStream[v2.WatchEvent]) error {

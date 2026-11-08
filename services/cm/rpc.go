@@ -14,9 +14,14 @@ import (
 
 func (s *Store) mount() http.Handler {
 	mux := http.NewServeMux()
+	s.handle(mux)
+	return mux
+}
+
+// handle mounts the certificate and domain services on mux.
+func (s *Store) handle(mux *http.ServeMux) {
 	mux.Handle(cmv2connect.NewCertificateServiceHandler(handler{s}, codec.Option()))
 	mux.Handle(cmv2connect.NewDomainServiceHandler(handler{s}, codec.Option()))
-	return mux
 }
 
 // handler is the generated surface. Its methods have the generated client's

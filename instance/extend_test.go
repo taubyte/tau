@@ -274,13 +274,18 @@ func (s started) Close() error {
 func TestStorageRunsBesideTheServicesItReaches(t *testing.T) {
 	ctx := t.Context()
 	p := mockPeer(t)
-	n, err := New(p, rooted(t, Config{Services: []string{Register, Stats, storage.Descriptor.Name}}))
+	// STORAGE STARTS ONCE DISCOVERY HAS SETTLED ON ITS NODE, after one liveness
+	// window here rather than a minute.
+	cfg := Config{Services: []string{Register, Stats, storage.Descriptor.Name}}
+	cfg.Sections = map[string]any{statsService.Descriptor.Name: statsService.Config{Stabilize: statsService.Config{}.Freshness()}}
+	n, err := New(p, rooted(t, cfg))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.NoError(t, n.Start(ctx))
 
-	// FROM ANOTHER PEER, the way any service reaches it. The fleet is read from the
-	// register on the instance, which is why a write can be acknowledged at all.
+	// FROM ANOTHER PEER, the way any service reaches it. The region's settings are
+	// read from the cm the instance runs beside storage, which is why a write can be
+	// acknowledged at all.
 	client, err := storage.NewClient(callerOf(t, p), p.ID())
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })

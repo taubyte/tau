@@ -13,10 +13,11 @@ import (
 
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/database"
-	"github.com/taubyte/tau/pkg/fleet"
 	databasev2 "github.com/taubyte/tau/pkg/proto/gen/tau/database/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/database/v2/databasev2connect"
 	"github.com/taubyte/tau/pkg/register"
+	cmmock "github.com/taubyte/tau/services/cm/mock"
+	"github.com/taubyte/tau/services/cm/settings"
 )
 
 // Drives the service over a real libp2p stream: what a caller can reach and what it
@@ -84,10 +85,6 @@ func compiled() []byte {
 type published struct {
 	revision uint64
 	object   []byte
-
-	// fleetDoc is what this cloud declares about itself, or nil for a cloud
-	// that has declared nothing — which every node reads as the default.
-	fleetDoc []byte
 }
 
 func (p *published) Resolve(context.Context, string, string) (register.Pointer, error) {
@@ -98,27 +95,16 @@ func (p *published) Object(_ context.Context, id register.ObjectID) ([]byte, err
 	switch id {
 	case register.IDOf(p.object):
 		return p.object, nil
-	case register.IDOf(p.fleetDoc):
-		if p.fleetDoc != nil {
-			return p.fleetDoc, nil
-		}
 	}
 	return nil, fmt.Errorf("no such object")
 }
 
-func (p *published) ResolveFleet(context.Context) (register.Pointer, error) {
-	if p.fleetDoc == nil {
-		return register.Pointer{}, fmt.Errorf("%w: the fleet", register.ErrNotPublished)
-	}
-	return register.Pointer{Object: register.IDOf(p.fleetDoc), Revision: 1}, nil
-}
-
-// declaringFloor is a cloud that has published a floor.
-func declaringFloor(t *testing.T, object []byte, replication int) *published {
-	t.Helper()
-	doc, err := fleet.Encode(fleet.Fleet{Replication: replication})
-	require.NoError(t, err)
-	return &published{revision: 1, object: object, fleetDoc: doc}
+// floorOf is cm answering a region whose databases are each held by replication
+// nodes.
+func floorOf(replication int) *cmmock.CM {
+	region := settings.Defaults()
+	region.Replication = replication
+	return cmmock.New(region)
 }
 
 // serving is the service on one host and a client on another, over mocknet.
@@ -144,6 +130,7 @@ func serving(t *testing.T) (databasev2connect.DatabaseServiceClient, *server) {
 		withRegister(&published{revision: 1, object: compiled()}),
 		withIdle(time.Hour))
 	require.NoError(t, err)
+	s.region = floorOf(settings.Defaults().Replication)
 	require.NoError(t, s.serve(t.Context()))
 	t.Cleanup(func() { s.Close() })
 

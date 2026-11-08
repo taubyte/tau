@@ -43,14 +43,13 @@ func New(f Fleet, hc connect.HTTPClient, base string) *Client {
 var _ connect.HTTPClient = (*http.Client)(nil)
 
 type Node struct {
-	Peer     string   `json:"peer"`
-	Ready    bool     `json:"ready"`
-	Load     float64  `json:"load"`
-	Age      Duration `json:"age"`
-	Serving  []string `json:"serving"`
-	Address  []string `json:"addresses"`
-	Pending  int      `json:"databases_pending"`
-	Revision uint64   `json:"fleet_revision"`
+	Peer    string   `json:"peer"`
+	Ready   bool     `json:"ready"`
+	Load    float64  `json:"load"`
+	Age     Duration `json:"age"`
+	Serving []string `json:"serving"`
+	Address []string `json:"addresses"`
+	Pending int      `json:"databases_pending"`
 }
 
 // Duration marshals as a Go duration string.
@@ -74,7 +73,7 @@ func (c *Client) Nodes() []Node {
 		out = append(out, Node{
 			Peer: n.Peer, Ready: n.Ready, Load: n.Load, Age: Duration(n.Age),
 			Serving: slices.Clone(n.Serving), Address: slices.Clone(n.Addresses),
-			Pending: n.DatabasesPending, Revision: n.FleetRevision,
+			Pending: n.DatabasesPending,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Peer < out[j].Peer })

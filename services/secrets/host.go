@@ -15,7 +15,7 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
-	"github.com/taubyte/tau/services/register"
+	"github.com/taubyte/tau/services/cm/settings"
 )
 
 // retentionPoll is how often the vault's database rereads the cloud's retention.
@@ -36,12 +36,10 @@ func (srv *server) Start(ctx context.Context, h service.Host) error {
 	if h.Root() == "" {
 		return ErrNoRoot
 	}
-	fleet := register.ViewsOn(h)
-	db, err := open(h.Peer(), func(ctx context.Context) (time.Duration, error) {
-		return register.Retention(ctx, fleet)
-	})
+	region := settings.On(h)
+	db, err := open(h.Peer(), region.Retention)
 	if err != nil {
-		fleet.Close()
+		region.Close()
 		return err
 	}
 	err = srv.assemble(h.Peer().Host(), db, append(rooted(h.Root(), cfg),
@@ -54,10 +52,10 @@ func (srv *server) Start(ctx context.Context, h service.Host) error {
 		withPubSub(h.Peer().Messaging()))...)
 	if err != nil {
 		db.Close()
-		fleet.Close()
+		region.Close()
 		return err
 	}
-	srv.owned = append(srv.owned, closer(db.Close), fleet)
+	srv.owned = append(srv.owned, closer(db.Close), region)
 	return srv.serve(ctx)
 }
 

@@ -65,6 +65,79 @@ func (*Empty) Descriptor() ([]byte, []int) {
 	return file_tau_cm_v2_cm_proto_rawDescGZIP(), []int{0}
 }
 
+type Settings struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// replication is how many nodes hold each database.
+	Replication uint32 `protobuf:"varint,1,opt,name=replication,proto3" json:"replication,omitempty"`
+	// storage_replicas is R and storage_barrier K: how many nodes hold each
+	// stored object and index shard, and how many confirm a write.
+	StorageReplicas uint32 `protobuf:"varint,2,opt,name=storage_replicas,json=storageReplicas,proto3" json:"storage_replicas,omitempty"`
+	StorageBarrier  uint32 `protobuf:"varint,3,opt,name=storage_barrier,json=storageBarrier,proto3" json:"storage_barrier,omitempty"`
+	// retention_seconds is T: how long a removal is remembered. Zero is the
+	// database's own default.
+	RetentionSeconds int64 `protobuf:"varint,4,opt,name=retention_seconds,json=retentionSeconds,proto3" json:"retention_seconds,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *Settings) Reset() {
+	*x = Settings{}
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Settings) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Settings) ProtoMessage() {}
+
+func (x *Settings) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Settings.ProtoReflect.Descriptor instead.
+func (*Settings) Descriptor() ([]byte, []int) {
+	return file_tau_cm_v2_cm_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *Settings) GetReplication() uint32 {
+	if x != nil {
+		return x.Replication
+	}
+	return 0
+}
+
+func (x *Settings) GetStorageReplicas() uint32 {
+	if x != nil {
+		return x.StorageReplicas
+	}
+	return 0
+}
+
+func (x *Settings) GetStorageBarrier() uint32 {
+	if x != nil {
+		return x.StorageBarrier
+	}
+	return 0
+}
+
+func (x *Settings) GetRetentionSeconds() int64 {
+	if x != nil {
+		return x.RetentionSeconds
+	}
+	return 0
+}
+
 type CertificateRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// name is a DNS name, or `*.` and one, lowercase and without a trailing dot.
@@ -75,7 +148,7 @@ type CertificateRequest struct {
 
 func (x *CertificateRequest) Reset() {
 	*x = CertificateRequest{}
-	mi := &file_tau_cm_v2_cm_proto_msgTypes[1]
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -87,7 +160,7 @@ func (x *CertificateRequest) String() string {
 func (*CertificateRequest) ProtoMessage() {}
 
 func (x *CertificateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_cm_v2_cm_proto_msgTypes[1]
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -100,7 +173,7 @@ func (x *CertificateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CertificateRequest.ProtoReflect.Descriptor instead.
 func (*CertificateRequest) Descriptor() ([]byte, []int) {
-	return file_tau_cm_v2_cm_proto_rawDescGZIP(), []int{1}
+	return file_tau_cm_v2_cm_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *CertificateRequest) GetName() string {
@@ -130,7 +203,7 @@ type Issued struct {
 
 func (x *Issued) Reset() {
 	*x = Issued{}
-	mi := &file_tau_cm_v2_cm_proto_msgTypes[2]
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -142,7 +215,7 @@ func (x *Issued) String() string {
 func (*Issued) ProtoMessage() {}
 
 func (x *Issued) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_cm_v2_cm_proto_msgTypes[2]
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -155,7 +228,7 @@ func (x *Issued) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Issued.ProtoReflect.Descriptor instead.
 func (*Issued) Descriptor() ([]byte, []int) {
-	return file_tau_cm_v2_cm_proto_rawDescGZIP(), []int{2}
+	return file_tau_cm_v2_cm_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Issued) GetName() string {
@@ -210,7 +283,7 @@ type SecretRef struct {
 
 func (x *SecretRef) Reset() {
 	*x = SecretRef{}
-	mi := &file_tau_cm_v2_cm_proto_msgTypes[3]
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -222,7 +295,7 @@ func (x *SecretRef) String() string {
 func (*SecretRef) ProtoMessage() {}
 
 func (x *SecretRef) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_cm_v2_cm_proto_msgTypes[3]
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -235,7 +308,7 @@ func (x *SecretRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SecretRef.ProtoReflect.Descriptor instead.
 func (*SecretRef) Descriptor() ([]byte, []int) {
-	return file_tau_cm_v2_cm_proto_rawDescGZIP(), []int{3}
+	return file_tau_cm_v2_cm_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *SecretRef) GetName() string {
@@ -255,7 +328,7 @@ type ClaimRequest struct {
 
 func (x *ClaimRequest) Reset() {
 	*x = ClaimRequest{}
-	mi := &file_tau_cm_v2_cm_proto_msgTypes[4]
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -267,7 +340,7 @@ func (x *ClaimRequest) String() string {
 func (*ClaimRequest) ProtoMessage() {}
 
 func (x *ClaimRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_cm_v2_cm_proto_msgTypes[4]
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -280,7 +353,7 @@ func (x *ClaimRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimRequest.ProtoReflect.Descriptor instead.
 func (*ClaimRequest) Descriptor() ([]byte, []int) {
-	return file_tau_cm_v2_cm_proto_rawDescGZIP(), []int{4}
+	return file_tau_cm_v2_cm_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ClaimRequest) GetFqdn() string {
@@ -311,7 +384,7 @@ type DomainClaim struct {
 
 func (x *DomainClaim) Reset() {
 	*x = DomainClaim{}
-	mi := &file_tau_cm_v2_cm_proto_msgTypes[5]
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -323,7 +396,7 @@ func (x *DomainClaim) String() string {
 func (*DomainClaim) ProtoMessage() {}
 
 func (x *DomainClaim) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_cm_v2_cm_proto_msgTypes[5]
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -336,7 +409,7 @@ func (x *DomainClaim) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DomainClaim.ProtoReflect.Descriptor instead.
 func (*DomainClaim) Descriptor() ([]byte, []int) {
-	return file_tau_cm_v2_cm_proto_rawDescGZIP(), []int{5}
+	return file_tau_cm_v2_cm_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *DomainClaim) GetEntry() string {
@@ -365,7 +438,12 @@ var File_tau_cm_v2_cm_proto protoreflect.FileDescriptor
 const file_tau_cm_v2_cm_proto_rawDesc = "" +
 	"\n" +
 	"\x12tau/cm/v2/cm.proto\x12\ttau.cm.v2\"\a\n" +
-	"\x05Empty\".\n" +
+	"\x05Empty\"\xad\x01\n" +
+	"\bSettings\x12 \n" +
+	"\vreplication\x18\x01 \x01(\rR\vreplication\x12)\n" +
+	"\x10storage_replicas\x18\x02 \x01(\rR\x0fstorageReplicas\x12'\n" +
+	"\x0fstorage_barrier\x18\x03 \x01(\rR\x0estorageBarrier\x12+\n" +
+	"\x11retention_seconds\x18\x04 \x01(\x03R\x10retentionSeconds\".\n" +
 	"\x12CertificateRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04nameJ\x04\b\x02\x10\x03\"\xa5\x01\n" +
 	"\x06Issued\x12\x12\n" +
@@ -386,7 +464,9 @@ const file_tau_cm_v2_cm_proto_rawDesc = "" +
 	"\x05token\x18\x03 \x01(\tR\x05token2\x82\x01\n" +
 	"\x12CertificateService\x12?\n" +
 	"\vCertificate\x12\x1d.tau.cm.v2.CertificateRequest\x1a\x11.tau.cm.v2.Issued\x12+\n" +
-	"\x04Keep\x12\x11.tau.cm.v2.Issued\x1a\x10.tau.cm.v2.Empty2}\n" +
+	"\x04Keep\x12\x11.tau.cm.v2.Issued\x1a\x10.tau.cm.v2.Empty2C\n" +
+	"\x0fSettingsService\x120\n" +
+	"\aCurrent\x12\x10.tau.cm.v2.Empty\x1a\x13.tau.cm.v2.Settings2}\n" +
 	"\rDomainService\x128\n" +
 	"\x05Claim\x12\x17.tau.cm.v2.ClaimRequest\x1a\x16.tau.cm.v2.DomainClaim\x122\n" +
 	"\x05Prove\x12\x17.tau.cm.v2.ClaimRequest\x1a\x10.tau.cm.v2.EmptyB\x93\x01\n" +
@@ -404,27 +484,30 @@ func file_tau_cm_v2_cm_proto_rawDescGZIP() []byte {
 	return file_tau_cm_v2_cm_proto_rawDescData
 }
 
-var file_tau_cm_v2_cm_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_tau_cm_v2_cm_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_tau_cm_v2_cm_proto_goTypes = []any{
 	(*Empty)(nil),              // 0: tau.cm.v2.Empty
-	(*CertificateRequest)(nil), // 1: tau.cm.v2.CertificateRequest
-	(*Issued)(nil),             // 2: tau.cm.v2.Issued
-	(*SecretRef)(nil),          // 3: tau.cm.v2.SecretRef
-	(*ClaimRequest)(nil),       // 4: tau.cm.v2.ClaimRequest
-	(*DomainClaim)(nil),        // 5: tau.cm.v2.DomainClaim
+	(*Settings)(nil),           // 1: tau.cm.v2.Settings
+	(*CertificateRequest)(nil), // 2: tau.cm.v2.CertificateRequest
+	(*Issued)(nil),             // 3: tau.cm.v2.Issued
+	(*SecretRef)(nil),          // 4: tau.cm.v2.SecretRef
+	(*ClaimRequest)(nil),       // 5: tau.cm.v2.ClaimRequest
+	(*DomainClaim)(nil),        // 6: tau.cm.v2.DomainClaim
 }
 var file_tau_cm_v2_cm_proto_depIdxs = []int32{
-	3, // 0: tau.cm.v2.Issued.key:type_name -> tau.cm.v2.SecretRef
-	1, // 1: tau.cm.v2.CertificateService.Certificate:input_type -> tau.cm.v2.CertificateRequest
-	2, // 2: tau.cm.v2.CertificateService.Keep:input_type -> tau.cm.v2.Issued
-	4, // 3: tau.cm.v2.DomainService.Claim:input_type -> tau.cm.v2.ClaimRequest
-	4, // 4: tau.cm.v2.DomainService.Prove:input_type -> tau.cm.v2.ClaimRequest
-	2, // 5: tau.cm.v2.CertificateService.Certificate:output_type -> tau.cm.v2.Issued
-	0, // 6: tau.cm.v2.CertificateService.Keep:output_type -> tau.cm.v2.Empty
-	5, // 7: tau.cm.v2.DomainService.Claim:output_type -> tau.cm.v2.DomainClaim
-	0, // 8: tau.cm.v2.DomainService.Prove:output_type -> tau.cm.v2.Empty
-	5, // [5:9] is the sub-list for method output_type
-	1, // [1:5] is the sub-list for method input_type
+	4, // 0: tau.cm.v2.Issued.key:type_name -> tau.cm.v2.SecretRef
+	2, // 1: tau.cm.v2.CertificateService.Certificate:input_type -> tau.cm.v2.CertificateRequest
+	3, // 2: tau.cm.v2.CertificateService.Keep:input_type -> tau.cm.v2.Issued
+	0, // 3: tau.cm.v2.SettingsService.Current:input_type -> tau.cm.v2.Empty
+	5, // 4: tau.cm.v2.DomainService.Claim:input_type -> tau.cm.v2.ClaimRequest
+	5, // 5: tau.cm.v2.DomainService.Prove:input_type -> tau.cm.v2.ClaimRequest
+	3, // 6: tau.cm.v2.CertificateService.Certificate:output_type -> tau.cm.v2.Issued
+	0, // 7: tau.cm.v2.CertificateService.Keep:output_type -> tau.cm.v2.Empty
+	1, // 8: tau.cm.v2.SettingsService.Current:output_type -> tau.cm.v2.Settings
+	6, // 9: tau.cm.v2.DomainService.Claim:output_type -> tau.cm.v2.DomainClaim
+	0, // 10: tau.cm.v2.DomainService.Prove:output_type -> tau.cm.v2.Empty
+	6, // [6:11] is the sub-list for method output_type
+	1, // [1:6] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
 	1, // [1:1] is the sub-list for extension extendee
 	0, // [0:1] is the sub-list for field type_name
@@ -441,9 +524,9 @@ func file_tau_cm_v2_cm_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_cm_v2_cm_proto_rawDesc), len(file_tau_cm_v2_cm_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   7,
 			NumExtensions: 0,
-			NumServices:   2,
+			NumServices:   3,
 		},
 		GoTypes:           file_tau_cm_v2_cm_proto_goTypes,
 		DependencyIndexes: file_tau_cm_v2_cm_proto_depIdxs,

@@ -24,6 +24,8 @@ import (
 	"github.com/taubyte/tau/instance/boot"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/services/cm"
+	cmmock "github.com/taubyte/tau/services/cm/mock"
+	"github.com/taubyte/tau/services/cm/settings"
 	"github.com/taubyte/tau/services/secrets"
 
 	"github.com/taubyte/tau/instance"
@@ -169,6 +171,10 @@ type Config struct {
 
 	// Region is the region this dream cloud is. Empty is one unnamed region.
 	Region string
+
+	// Settings, when set, are the region's: every node runs cm's mocked version
+	// answering them, in place of cm.
+	Settings *settings.Region
 }
 
 // removed is a directory a cloud deletes when it closes.
@@ -352,6 +358,9 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	}
 	if now != nil {
 		options = append(options, instance.WithClock(now))
+	}
+	if cfg.Settings != nil {
+		options = append(options, instance.WithMock(cm.Name, cmmock.New(*cfg.Settings)))
 	}
 	options = append(options, cfg.Options...)
 

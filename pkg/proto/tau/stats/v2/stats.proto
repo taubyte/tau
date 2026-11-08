@@ -121,14 +121,8 @@ message Report {
   reserved 8;
   reserved "region";
 
-  // fleet_revision is the revision of the cloud's own document this node last
-  // computed placement with.
-  //
-  // IT IS HOW A NODE THAT IS BEHIND BECOMES VISIBLE. Placement's other inputs
-  // heal on their own; the fleet document is the one every node must agree on,
-  // and without a revision on the wire a node computing with a stale floor is
-  // indistinguishable from one that agrees.
-  uint64 fleet_revision = 9;
+  reserved 9;
+  reserved "fleet_revision";
 
   // databases_pending is how many of this node's databases are below their
   // floor as far as it can tell -- a co-holder that said it does not have one,

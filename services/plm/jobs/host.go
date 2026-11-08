@@ -13,6 +13,7 @@ import (
 	"github.com/taubyte/tau/core/service"
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
+	"github.com/taubyte/tau/services/cm/settings"
 	"github.com/taubyte/tau/services/plm"
 	"github.com/taubyte/tau/services/plm/clients"
 	"github.com/taubyte/tau/services/plm/linked"
@@ -129,13 +130,11 @@ func recordsOn(h service.Host) (kvdb.Instance, []io.Closer, error) {
 		db, err := dbs.Database(Records)
 		return db, nil, err
 	}
-	fleet := register.ViewsOn(h)
-	also := []io.Closer{fleet}
+	region := settings.On(h)
+	also := []io.Closer{region}
 	db, err := pkgkvdb.Open(h.Peer(), Records,
 		pkgkvdb.WithLogger(logging.Logger("tau.plm")),
-		pkgkvdb.WithRetentionFrom(func(ctx context.Context) (time.Duration, error) {
-			return register.Retention(ctx, fleet)
-		}, retentionPoll))
+		pkgkvdb.WithRetentionFrom(region.Retention, retentionPoll))
 	if err != nil {
 		return nil, also, err
 	}

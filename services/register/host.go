@@ -2,38 +2,30 @@ package register
 
 import (
 	"context"
-	"sync/atomic"
 	"time"
 
 	logging "github.com/ipfs/go-log/v2"
 
 	"github.com/taubyte/tau/core/service"
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/cm/settings"
 )
 
-// retentionPoll is how often the register's database rereads the cloud's retention.
+// retentionPoll is how often the register's database rereads the region's retention.
 const retentionPoll = time.Minute
 
 // Start runs the register on an instance: its rows in a replicated database on the
-// peer, which follows the retention the register's own fleet document gives.
+// peer, which follows the retention the region's settings give.
 func (s *server) Start(ctx context.Context, h service.Host) error {
-	// THE REGISTER IS BUILT OVER THE DATABASE IT FOLLOWS, so the follower reads
-	// it once it exists and the default until then.
-	var built atomic.Pointer[register.Register]
+	region := settings.On(h)
+	s.region = region
 	// The watches hear every change the database commits, merged from another
 	// register node as much as written here, so a reader is told either way.
 	s.watches = newWatches(defaultWatchLimits)
 	db, err := pkgkvdb.Open(h.Peer(), Descriptor.Name,
 		pkgkvdb.WithLogger(logging.Logger("tau.register")),
 		pkgkvdb.WithObserver(s.watches),
-		pkgkvdb.WithRetentionFrom(func(ctx context.Context) (time.Duration, error) {
-			reg := built.Load()
-			if reg == nil {
-				return 0, nil
-			}
-			return Retention(ctx, reg)
-		}, retentionPoll))
+		pkgkvdb.WithRetentionFrom(region.Retention, retentionPoll))
 	if err != nil {
 		return err
 	}
@@ -45,6 +37,5 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 	if err := s.assemble(h.Peer().Host(), withStore(store)); err != nil {
 		return err
 	}
-	built.Store(s.reg)
 	return s.serve(ctx)
 }

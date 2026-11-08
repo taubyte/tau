@@ -290,7 +290,7 @@ func (m Model) open() (tea.Model, tea.Cmd) {
 				"peer", n.Peer, "ready", fmt.Sprint(n.Ready), "load", fmt.Sprintf("%.2f", n.Load),
 				"age", n.Age.String(), "serving", strings.Join(n.Serving, "\n"),
 				"addresses", strings.Join(n.Address, "\n"),
-				"fleet revision", fmt.Sprint(n.Revision), "databases pending", fmt.Sprint(n.Pending),
+				"databases pending", fmt.Sprint(n.Pending),
 			))
 		}
 	case []query.Service:

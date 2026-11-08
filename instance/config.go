@@ -168,6 +168,7 @@ type options struct {
 	secrets   worker.Secrets
 	now       func() time.Time
 	extra     map[string]service.Service
+	mocks     map[string]service.Service
 	identity  func(Host) (auth.Identity, error)
 	resolver  cm.Resolver
 

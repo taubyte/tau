@@ -19,6 +19,26 @@ service CertificateService {
 
 message Empty {}
 
+// SettingsService is the numbers every node of the region computes with alike:
+// how many nodes hold each database and each stored object, how many confirm a
+// write, and how long a removal is remembered. Each reader caps what it is
+// given by the nodes discovery finds.
+service SettingsService {
+  rpc Current(Empty) returns (Settings);
+}
+
+message Settings {
+  // replication is how many nodes hold each database.
+  uint32 replication = 1;
+  // storage_replicas is R and storage_barrier K: how many nodes hold each
+  // stored object and index shard, and how many confirm a write.
+  uint32 storage_replicas = 2;
+  uint32 storage_barrier = 3;
+  // retention_seconds is T: how long a removal is remembered. Zero is the
+  // database's own default.
+  int64 retention_seconds = 4;
+}
+
 message CertificateRequest {
   // name is a DNS name, or `*.` and one, lowercase and without a trailing dot.
   string name = 1;

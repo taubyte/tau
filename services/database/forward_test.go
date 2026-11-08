@@ -17,6 +17,7 @@ import (
 	kvengine "github.com/taubyte/tau/pkg/database/engines/kv"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/placement"
+	"github.com/taubyte/tau/services/cm/settings"
 )
 
 // Who answers for a raft database: real routing over real services, with an engine
@@ -53,6 +54,7 @@ func ledgers(t *testing.T, n int) ([]*server, []*accounting) {
 			withConsensus(database.CRDT, database.Raft),
 			withIdle(time.Hour))
 		require.NoError(t, err)
+		s.region = floorOf(settings.Defaults().Replication)
 		require.NoError(t, s.serve(t.Context()))
 		t.Cleanup(func() { s.Close() })
 

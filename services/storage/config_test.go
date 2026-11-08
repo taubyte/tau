@@ -31,8 +31,7 @@ func TestConfigRefusesWhatCannotBeCorrect(t *testing.T) {
 		says string
 	}
 	for _, c := range []testCase{
-		// R and K are the cloud's; an impossible pair is refused where it is read
-		// (pkg/fleet.Storage.Resolved).
+		// R and K are the region's, read from cm, never configured here.
 		{"negative grace", Config{GraceGC: -time.Hour}, "must be positive"},
 		{"negative skew", Config{MaxSkew: -time.Hour}, "must be positive"},
 		{"stabilize below liveness", Config{Liveness: 90 * time.Second, Stabilize: 60 * time.Second}, "faster than acknowledgement"},
@@ -175,10 +174,10 @@ func TestTheStorageBriefsSurfaceIsWhatIsExported(t *testing.T) {
 
 	require.Equal(t, []string{
 		"Accounted", "Address", "AssetsBucket", "Blocks", "Bucket", "Bytes", "Catalog", "Client",
-		"Clock", "Config", "Datastore", "DeadObject", "DefaultBarrier", "DefaultMaxSkew",
-		"DefaultReplicas", "DefaultSweep", "Descriptor", "Dial", "ErrEmptyIdentity",
+		"Clock", "Config", "Datastore", "DeadObject", "DefaultMaxSkew",
+		"DefaultSweep", "Descriptor", "Dial", "ErrEmptyIdentity",
 		"ErrEmptyObjectName", "ErrGateClosed", "ErrLocalClockSkew", "ErrLogicalOverflow",
-		"ErrNoAddress", "ErrNoBytes", "ErrNoCatalog", "ErrNoShards", "ErrNotFound",
+		"ErrNoAddress", "ErrNoBytes", "ErrNoCatalog", "ErrNoSettings", "ErrNoShards", "ErrNotFound",
 		"ErrNotThisServicesRow", "ErrRemoteClockSkew", "ErrStampRange", "ErrUnderHeld",
 		"ErrWriterMismatch", "Gates", "Local", "Marker", "Meter", "MisplacementDrop", "New",
 		"NewAddress", "NewBloomMarker", "NewBucket", "NewClient", "NewClock", "NewExactMarker",

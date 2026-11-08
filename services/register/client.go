@@ -124,16 +124,6 @@ func (c *Client) resolveViewAs(ctx context.Context, project, environment, destin
 	return viewFromWire(res.Msg), wasBound(res.Header(), nil), nil
 }
 
-func (c *Client) resolveFleetAs(ctx context.Context, b bindAs) (pkgregister.Pointer, bool, error) {
-	req := connect.NewRequest(&registerv2.FleetRequest{})
-	b.on(req.Header())
-	res, err := c.svc.ResolveFleet(ctx, req)
-	if err != nil {
-		return pkgregister.Pointer{}, wasBound(nil, err), unwire(err)
-	}
-	return pkgregister.Pointer{Object: pkgregister.ObjectID(res.Msg.GetObject()), Revision: res.Msg.GetRevision()}, wasBound(res.Header(), nil), nil
-}
-
 // watch opens a session on this register.
 func (c *Client) watch(ctx context.Context) (*connect.ServerStreamForClient[registerv2.WatchEvent], error) {
 	return c.svc.Watch(ctx, connect.NewRequest(&registerv2.WatchRequest{}))
@@ -158,12 +148,6 @@ func (c *Client) Environments(ctx context.Context, project string) ([]string, er
 func (c *Client) ResolveHost(ctx context.Context, fqdn string) (project, environment string, err error) {
 	a, _, err := c.resolveHostAs(ctx, fqdn, bindAs{})
 	return a.project, a.environment, err
-}
-
-// ResolveFleet is the cloud's own document in force.
-func (c *Client) ResolveFleet(ctx context.Context) (pkgregister.Pointer, error) {
-	p, _, err := c.resolveFleetAs(ctx, bindAs{})
-	return p, err
 }
 
 func (c *Client) Object(ctx context.Context, id pkgregister.ObjectID) ([]byte, error) {

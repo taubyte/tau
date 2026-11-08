@@ -169,13 +169,6 @@ func TestAViewIsToldWhenItsRevisionMoves(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []uint64{3}, w.changed(t))
 
-	_, err = h.Client.ResolveFleet(t.Context(), bindTo(connect.NewRequest(&registerv2.FleetRequest{}), w.id, 4))
-	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
-	require.True(t, boundOf(t, nil, err), "a fleet nobody published is kept as absent")
-	_, err = h.Service.reg.PublishFleet(t.Context(), 1, []byte("fleet"))
-	require.NoError(t, err)
-	require.Equal(t, []uint64{4}, w.changed(t))
-
 	pointer, err := h.Client.Resolve(t.Context(), bindTo(connect.NewRequest(&registerv2.ResolveRequest{Project: "shop", Environment: "prod"}), w.id, 5))
 	require.NoError(t, err)
 	require.True(t, boundOf(t, pointer.Header(), nil))

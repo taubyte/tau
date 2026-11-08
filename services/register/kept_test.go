@@ -163,15 +163,6 @@ func TestAViewAndTheFleetAreKeptUntilTheyMove(t *testing.T) {
 		p, err := v.Resolve(t.Context(), "shop", "prod")
 		return err == nil && p.Revision == 2
 	}, 10*time.Second, 10*time.Millisecond)
-
-	_, err = v.ResolveFleet(t.Context())
-	require.ErrorIs(t, err, pkgregister.ErrNotPublished)
-	_, err = services[0].Local().PublishFleet(t.Context(), 1, []byte("fleet"))
-	require.NoError(t, err)
-	require.Eventually(t, func() bool {
-		f, err := v.ResolveFleet(t.Context())
-		return err == nil && f.Revision == 1
-	}, 10*time.Second, 10*time.Millisecond)
 }
 
 func TestAnEvictedAnswerIsReleasedOnTheRegister(t *testing.T) {

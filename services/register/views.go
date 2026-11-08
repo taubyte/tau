@@ -15,7 +15,7 @@ import (
 
 // Reader is the slice of a register a node reads what it serves through.
 type Reader interface {
-	Fleet
+	Object(ctx context.Context, id pkgregister.ObjectID) ([]byte, error)
 	ResolveView(ctx context.Context, project, environment, destination string) (pkgregister.ViewPointer, error)
 	ResolveHost(ctx context.Context, fqdn string) (project, environment string, err error)
 }
@@ -32,8 +32,8 @@ func DialReader(h host.Host, id libp2ppeer.ID) (Reader, error) { return NewClien
 // them, else the register nodes discovery names, and every deployment as the view
 // placed in the instance's region, so nothing placed elsewhere reaches it.
 //
-// A REGISTER ELSEWHERE IS READ THROUGH WHAT THIS NODE KEEPS. A name, a view and the
-// fleet's document are kept until a register watching them says they changed (see
+// A REGISTER ELSEWHERE IS READ THROUGH WHAT THIS NODE KEEPS. A name and a view are
+// kept until a register watching them says they changed (see
 // kept.go and watcher.go), so a request reads none of them over the wire, a name
 // nobody claims included. A register beside them is read directly: it holds every
 // answer already.
@@ -45,12 +45,10 @@ type Views struct {
 	w     *watcher
 	hosts *kept[hostRead, hostAnswer]
 	views *kept[viewRead, pkgregister.ViewPointer]
-	fleet *kept[fleetRead, pkgregister.Pointer]
 }
 
 var (
 	_ pkgregister.Registry = (*Views)(nil)
-	_ Fleet                = (*Views)(nil)
 )
 
 // ViewsOn is the register as services on h read it. A cloud with no regions is read
@@ -69,7 +67,6 @@ func viewsOn(h service.Host, from registers, wl watcherLimits, kl keptLimits) *V
 		h: h, reach: service.Reach(h, Protocol, DialReader), region: region, w: w,
 		hosts: newKept[hostRead, hostAnswer](w, kl, time.Now),
 		views: newKept[viewRead, pkgregister.ViewPointer](w, kl, time.Now),
-		fleet: newKept[fleetRead, pkgregister.Pointer](w, kl, time.Now),
 	}
 }
 
@@ -106,14 +103,6 @@ func (v *Views) ResolveHost(ctx context.Context, fqdn string) (string, string, e
 	}
 	a, err := v.hosts.get(ctx, hostRead{fqdn: pkgregister.CanonicalHost(fqdn)})
 	return a.project, a.environment, err
-}
-
-// ResolveFleet is the cloud's own document.
-func (v *Views) ResolveFleet(ctx context.Context) (pkgregister.Pointer, error) {
-	if s, ok := v.local(); ok {
-		return s.ResolveFleet(ctx)
-	}
-	return v.fleet.get(ctx, fleetRead{})
 }
 
 // Close releases the streams to registers elsewhere, and what was kept through them.

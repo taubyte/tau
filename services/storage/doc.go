@@ -24,10 +24,6 @@
 // No raft (TestRaftAppearsNowhere): pkg/raft has no conditional write, so its only
 // correctness argument bounds a group to one writer, and a shard holds many buckets.
 //
-// R and K are the cloud's (fleet.go). A node that never read them may serve, import
-// and collect dead objects, but may not drop a misplaced block or acknowledge a
-// write; a cold node in a register outage is read-only.
-//
 // Reclamation (gc.go) enumerates only this service's own block index, never the
 // shared blockstore. Approximations err toward keeping: a false positive keeps a dead
 // block, an incomplete walk deletes nothing. A delete drops the reference before the

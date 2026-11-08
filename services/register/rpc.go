@@ -77,17 +77,6 @@ func (h *handler) Object(ctx context.Context, req *connect.Request[registerv2.Ob
 	return connect.NewResponse(&registerv2.CompiledProject{Compiled: compiled}), nil
 }
 
-// ResolveFleet is the cloud's own document in force.
-func (h *handler) ResolveFleet(ctx context.Context, req *connect.Request[registerv2.FleetRequest]) (*connect.Response[registerv2.Pointer], error) {
-	p, bound, err := boundRead(h.s, req.Header(), func(r *pkgregister.Register) (pkgregister.Pointer, error) {
-		return r.ResolveFleet(ctx)
-	})
-	if err != nil {
-		return nil, marked(wire(err), bound)
-	}
-	return markedResponse(connect.NewResponse(&registerv2.Pointer{Object: string(p.Object), Revision: p.Revision}), bound), nil
-}
-
 // ResolveHost says whose environment answers on a name — the first thing a
 // gateway does with a request.
 func (h *handler) Environments(ctx context.Context, req *connect.Request[registerv2.ProjectRequest]) (*connect.Response[registerv2.Deployments], error) {

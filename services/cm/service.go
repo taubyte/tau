@@ -5,12 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
+	"github.com/taubyte/tau/p2p/rpc"
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
+	"github.com/taubyte/tau/services/cm/settings"
 	"github.com/taubyte/tau/services/secrets"
 )
 
@@ -39,27 +42,41 @@ type hostConfig struct {
 func New() Service { return &server{} }
 
 type server struct {
-	store *Store
-	also  []io.Closer
+	store    *Store
+	listener *rpc.Server
+	also     []io.Closer
 }
 
-// Start is cm on an instance: the certificate store where the cloud names a zone,
-// its key in the secrets service, its records in the databases the instance
-// shares.
+// Start is cm on an instance: the region's settings, and where the cloud names a
+// zone the certificate store, with its key in the secrets service and its records in
+// the databases the instance shares.
 func (s *server) Start(ctx context.Context, h service.Host) error {
 	var cfg hostConfig
 	if err := h.Config(&cfg); err != nil {
 		return err
 	}
-	if cfg.CloudFqdn == "" {
-		// A cloud that issues certificates issues them for its zone, and one that
-		// names none keeps nothing here.
-		if cfg.CM.Certificate.ACME.Enabled {
-			return fmt.Errorf("%w, and this node names none (cloudfqdn)", ErrNoZone)
-		}
-		return nil
+	if cfg.CloudFqdn == "" && cfg.CM.Certificate.ACME.Enabled {
+		// A cloud that issues certificates issues them for its zone.
+		return fmt.Errorf("%w, and this node names none (cloudfqdn)", ErrNoZone)
 	}
 
+	mux := http.NewServeMux()
+	settings.Serve(mux, s)
+	if cfg.CloudFqdn != "" {
+		if err := s.keep(h, cfg, mux); err != nil {
+			return err
+		}
+	}
+	listener, err := rpc.Listen(ctx, h.Peer().Host(), Protocol, mux)
+	if err != nil {
+		return err
+	}
+	s.listener = listener
+	return nil
+}
+
+// keep opens the certificate store beside the settings.
+func (s *server) keep(h service.Host, cfg hostConfig, mux *http.ServeMux) error {
 	db, err := s.database(h, Name)
 	if err != nil {
 		return err
@@ -79,9 +96,7 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 	if err != nil {
 		return err
 	}
-	if err := store.Start(ctx); err != nil {
-		return err
-	}
+	store.handle(mux)
 	s.store = store
 	return nil
 }
@@ -101,6 +116,9 @@ func (s *server) database(h service.Host, name string) (kvdb.Instance, error) {
 }
 
 func (s *server) Store() *Store { return s.store }
+
+// Settings is the region's: the defaults, until a cloud can set them.
+func (s *server) Settings(context.Context) (settings.Region, error) { return settings.Defaults(), nil }
 
 // Locator is where a caller finds cm: the nodes running it, and the store beside
 // the caller, nil where none is.
@@ -124,9 +142,12 @@ func (l located) Store() *Store {
 	return nil
 }
 
-// Close stops the store, then what Start opened.
+// Close stops the listener and the store, then what Start opened.
 func (s *server) Close() error {
 	var errs []error
+	if s.listener != nil {
+		errs = append(errs, s.listener.Close())
+	}
 	if s.store != nil {
 		errs = append(errs, s.store.Close())
 	}

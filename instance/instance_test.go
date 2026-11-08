@@ -235,19 +235,12 @@ func TestTheAccessorsAreTheServicesItRuns(t *testing.T) {
 	require.Equal(t, uint16(tls.VersionTLS12), tlsConfig.MinVersion)
 }
 
-func TestTheFleetIsReadFromTheLocalRegister(t *testing.T) {
+func TestANodeWithNoRegisterReadsNoneOfItsAnswers(t *testing.T) {
 	ctx := t.Context()
-	with, _, _ := makeNode(t, Config{Services: []string{Register}})
-	require.NoError(t, with.Start(ctx))
-	_, err := with.views.ResolveFleet(ctx)
-	require.ErrorIs(t, err, pkgregister.ErrNotPublished, "nothing was published, and the register said so")
-
 	without, _, _ := makeNode(t, Config{Services: []string{Stats}})
 	require.NoError(t, without.Start(ctx))
 	s := without.views
-	_, err = s.ResolveFleet(ctx)
-	require.ErrorIs(t, err, service.ErrNoneRuns)
-	_, err = s.Object(ctx, pkgregister.ObjectID("x"))
+	_, err := s.Object(ctx, pkgregister.ObjectID("x"))
 	require.ErrorIs(t, err, service.ErrNoneRuns)
 	_, _, err = s.ResolveHost(ctx, "shop.example.com")
 	require.ErrorIs(t, err, service.ErrNoneRuns)

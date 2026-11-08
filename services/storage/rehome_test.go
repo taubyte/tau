@@ -17,10 +17,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/placement"
+	"github.com/taubyte/tau/services/cm/settings"
 )
 
-// view is the placement every node of a cluster sees, changed as a test goes. Empty,
-// each node sees only itself.
+// view is the placement every node of a cluster sees, changed as a test goes.
 type view struct {
 	mu      sync.Mutex
 	members []placement.Member
@@ -41,10 +41,11 @@ func (v *view) get() []placement.Member {
 	return slices.Clone(v.members)
 }
 
-// writtenAlone is a root node 0 wrote while it knew of no other node, drawn until
-// the holders placement names once all of them are known leave node 0 out.
-func writtenAlone(t *testing.T, c *cluster, at Address) (root cid.Cid, content string, holders []string) {
+// writtenAlone is a root node 0 wrote while it was the region's only storage node,
+// drawn until the holders placement names once the others join leave node 0 out.
+func writtenAlone(t *testing.T, c *cluster, v *view, at Address) (root cid.Cid, content string, holders []string) {
 	t.Helper()
+	v.set(c.ids[0])
 	all := make([]placement.Member, 0, len(c.ids))
 	for _, id := range c.ids {
 		all = append(all, placement.Member{ID: id.String(), Accepts: true})
@@ -55,7 +56,7 @@ func writtenAlone(t *testing.T, c *cluster, at Address) (root cid.Cid, content s
 		require.NoError(t, err)
 		root, err = cid.Decode(v.Record.RootCID)
 		require.NoError(t, err)
-		holders, err = blockHolders(root.String(), all, DefaultReplicas)
+		holders, err = blockHolders(root.String(), all, settings.Defaults().StorageReplicas)
 		require.NoError(t, err)
 		if !slices.Contains(holders, c.ids[0].String()) {
 			return root, content, holders
@@ -76,12 +77,12 @@ func readOn(t *testing.T, c *cluster, i int, root cid.Cid) (string, error) {
 	return string(got), err
 }
 
-func TestARootWrittenBeforeTheCloudWasKnownReachesTheHoldersPlacementNamesNow(t *testing.T) {
+func TestARootWrittenBeforeTheRegionGrewReachesTheHoldersPlacementNamesNow(t *testing.T) {
 	at := assetsOf(t, "site_code")
 	v := &view{}
 	c := newCluster(t, 4, fixedCatalog{at}, withMembers(v.get))
 
-	root, content, holders := writtenAlone(t, c, at)
+	root, content, holders := writtenAlone(t, c, v, at)
 	v.set(c.ids...)
 
 	_, err := readOn(t, c, 1, root)
@@ -109,7 +110,7 @@ func TestAHolderThatCouldNotBeAskedIsAskedAgainAndAPlacementHandedOverIsNot(t *t
 	v := &view{}
 	c := newCluster(t, 4, fixedCatalog{at}, withMembers(v.get))
 
-	root, _, holders := writtenAlone(t, c, at)
+	root, _, holders := writtenAlone(t, c, v, at)
 	v.set(c.ids...)
 
 	unreachable, err := libp2ppeer.Decode(holders[0])
@@ -147,23 +148,6 @@ func TestAPlacementIsNamedByWhoAcceptsAndHowManyCopies(t *testing.T) {
 	require.NotEqual(t, placementView(b, 3), placementView(b[:1], 3))
 }
 
-func TestANodeThatNeverLearnedHowManyCopiesHandsNothingOver(t *testing.T) {
-	at := assetsOf(t, "site_code")
-	v := &view{}
-	c := newCluster(t, 4, fixedCatalog{at}, withMembers(v.get))
-
-	root, _, holders := writtenAlone(t, c, at)
-	v.set(c.ids...)
-	c.nodes[0].fleet = &fleetPolicy{from: &fleetSaying{err: errors.New("no route to the register")}}
-
-	require.NoError(t, c.nodes[0].rehome(t.Context()))
-	for _, h := range holders {
-		id, err := libp2ppeer.Decode(h)
-		require.NoError(t, err)
-		require.False(t, c.swarm.holds(id, root), "placed with a number of copies it never read")
-	}
-}
-
 // unlistable is a local store whose rows cannot be listed.
 type unlistable struct{ *orderedMem }
 
@@ -176,7 +160,7 @@ func TestReferencesThatCannotBeListedAreAnError(t *testing.T) {
 	v := &view{}
 	c := newCluster(t, 4, fixedCatalog{at}, withMembers(v.get))
 
-	writtenAlone(t, c, at)
+	writtenAlone(t, c, v, at)
 	v.set(c.ids...)
 	local, err := NewLocal(unlistable{newOrderedMem()}, time.Now)
 	require.NoError(t, err)

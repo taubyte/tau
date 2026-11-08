@@ -19,6 +19,7 @@ import (
 	"github.com/taubyte/tau/pkg/placement"
 	"github.com/taubyte/tau/pkg/proto/codec"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/storage/v2/storagev2connect"
+	"github.com/taubyte/tau/services/cm/settings"
 )
 
 // AssetsBucket is the bucket a project's own assets are kept in, one per
@@ -74,12 +75,14 @@ type server struct {
 	shards  *shardSet
 	catalog Catalog
 	members func() []placement.Member
-	fleet   *fleetPolicy
 	clock   *Clock
 	now     func() time.Time
 	meter   Meter
 	sweep   time.Duration
 	logf    func(format string, args ...any)
+
+	// region is the region's settings, R and K among them; see promise.
+	region regionSettings
 
 	// homed is the placement every root this node references was last handed to
 	// in full; see rehome.go.
@@ -116,11 +119,13 @@ type options struct {
 	shards  ShardOpener
 	catalog Catalog
 	members func() []placement.Member
-	fleet   fleetSource
 	now     func() time.Time
 	meter   Meter
 	sweep   time.Duration
 	logf    func(format string, args ...any)
+
+	// region is the region's settings, R and K among them; see promise.
+	region regionSettings
 
 	// homed is the placement every root this node references was last handed to
 	// in full; see rehome.go.
@@ -179,14 +184,6 @@ func withCatalog(c Catalog) option {
 func withMembers(members func() []placement.Member) option {
 	return func(o *options) error {
 		o.members = members
-		return nil
-	}
-}
-
-// WithFleet is where R and K are read. Without it they are the defaults.
-func withFleet(source fleetSource) option {
-	return func(o *options) error {
-		o.fleet = source
 		return nil
 	}
 }
@@ -285,9 +282,6 @@ func (s *server) assemble(h host.Host, cfg Config, opts ...option) error {
 	s.clock, s.now, s.meter, s.sweep, s.logf = NewClock(o.now, cfg.MaxSkew), o.now, o.meter, o.sweep, o.logf
 	s.serverOptions = o.serverOptions
 	s.peers = map[libp2ppeer.ID]*storagePeer{}
-	if o.fleet != nil {
-		s.fleet = &fleetPolicy{from: o.fleet}
-	}
 	return nil
 }
 
@@ -375,7 +369,10 @@ func (s *server) reconcile(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	replicas, _, _ := s.fleet.read(ctx)
+	replicas, _, err := s.promise(ctx)
+	if err != nil {
+		return err
+	}
 	desired, err := desiredShards(append(buckets, seen...), s.placement(), replicas, s.self)
 	if err != nil {
 		return err
@@ -384,14 +381,34 @@ func (s *server) reconcile(ctx context.Context) error {
 	return err
 }
 
-// placement is the storage nodes, and this one alone when nothing says otherwise.
+// placement is the storage nodes discovery finds. A node composed with no
+// discovery, such as a test's, is the only one; one composed with discovery that
+// finds nobody places nothing, since a node that has just started has not yet heard
+// of the others.
 func (s *server) placement() []placement.Member {
-	if s.members != nil {
-		if members := s.members(); len(members) > 0 {
-			return members
-		}
+	if s.members == nil {
+		return []placement.Member{{ID: s.self, Accepts: true}}
 	}
-	return []placement.Member{{ID: s.self, Accepts: true}}
+	return s.members()
+}
+
+// regionSettings is where R and K are read: cm, through a client that keeps them.
+type regionSettings interface {
+	Settings(ctx context.Context) (settings.Region, error)
+}
+
+// promise is R and K as the region's settings say, each capped where it is used by
+// the holders placement names. A node that has not heard them refuses rather than
+// computing with numbers it guessed.
+func (s *server) promise(ctx context.Context) (replicas, barrier int, err error) {
+	if s.region == nil {
+		return 0, 0, ErrNoSettings
+	}
+	r, err := s.region.Settings(ctx)
+	if err != nil {
+		return 0, 0, fmt.Errorf("%w: %w", ErrNoSettings, err)
+	}
+	return r.StorageReplicas, r.StorageBarrier, nil
 }
 
 // indexOf is the instance's index on this node, opening its shard if placement gives
@@ -405,7 +422,10 @@ func (s *server) indexOf(ctx context.Context, a Address) (i index, release func(
 	if err != nil {
 		return index{}, nil, false, err
 	}
-	replicas, _, _ := s.fleet.read(ctx)
+	replicas, _, err := s.promise(ctx)
+	if err != nil {
+		return index{}, nil, false, err
+	}
 	if !slices.Contains(indexHolders(shard, s.placement(), replicas), s.self) {
 		return index{}, nil, false, nil
 	}

@@ -1,11 +1,13 @@
 package storage
 
 import (
+	"context"
 	"errors"
 	"io"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,8 +18,9 @@ import (
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/placement"
-	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/register"
+	"github.com/taubyte/tau/services/cm"
+	cmmock "github.com/taubyte/tau/services/cm/mock"
+	"github.com/taubyte/tau/services/cm/settings"
 )
 
 // storageNode is the instance a storage node would run on: its peer, its databases, and
@@ -31,6 +34,7 @@ type storageNode struct {
 	started *server
 	members func() []placement.Member
 	config  func(into any) error
+	cm      *cmmock.CM
 }
 
 func newStorageNode(t *testing.T) *storageNode {
@@ -38,12 +42,12 @@ func newStorageNode(t *testing.T) *storageNode {
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
 
-	// The fleet document is the register's; an unpublished one is the defaults,
-	// which a write needs to have read.
-	reg, err := pkgregister.New(pkgregister.WithStore(pkgregister.NewMemStore()))
-	require.NoError(t, err)
-
-	return &storageNode{Node: p, t: t, running: []service.Running{{Name: register.Descriptor.Name, Service: reg}}}
+	// THE REGION'S SETTINGS ARE CM'S, and discovery has settled on this node alone,
+	// which is what a storage node waits for before it starts.
+	i := &storageNode{Node: p, t: t, cm: cmmock.New(settings.Defaults())}
+	i.running = []service.Running{{Name: cm.Name, Service: i.cm}}
+	i.members = func() []placement.Member { return []placement.Member{{ID: p.ID().String(), Accepts: true}} }
+	return i
 }
 
 func (i *storageNode) Peer() peer.Node { return i.Node }
@@ -244,4 +248,41 @@ func TestTheStoreIsReachedAsTheServiceBesideIt(t *testing.T) {
 	require.ErrorIs(t, err, service.ErrNoneRuns)
 	_, err = none.Read(ctx, v.Record.RootCID)
 	require.ErrorIs(t, err, service.ErrNoneRuns)
+}
+
+func TestStorageDoesNotStartBeforeDiscoverySettlesOnIt(t *testing.T) {
+	i := newStorageNode(t)
+	var settled atomic.Bool
+	self := i.members
+	i.members = func() []placement.Member {
+		if settled.Load() {
+			return self()
+		}
+		return nil
+	}
+
+	started := make(chan error, 1)
+	go func() { started <- New().Start(t.Context(), i) }()
+	select {
+	case err := <-started:
+		t.Fatalf("storage started before discovery named it: %v", err)
+	case <-time.After(3 * settledEvery):
+	}
+
+	settled.Store(true)
+	select {
+	case err := <-started:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("storage never started once discovery named it")
+	}
+}
+
+func TestStorageDoesNotStartWithoutTheRegionsSettings(t *testing.T) {
+	i := newStorageNode(t)
+	i.running = nil
+
+	ctx, cancel := context.WithTimeout(t.Context(), 3*settledEvery)
+	defer cancel()
+	require.ErrorIs(t, New().Start(ctx, i), context.DeadlineExceeded, "storage started with no cm to ask")
 }

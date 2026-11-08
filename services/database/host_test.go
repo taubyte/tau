@@ -1,7 +1,6 @@
 package database
 
 import (
-	"context"
 	"errors"
 	"slices"
 	"sync"
@@ -16,6 +15,9 @@ import (
 	"github.com/taubyte/tau/pkg/placement"
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/cm"
+	cmmock "github.com/taubyte/tau/services/cm/mock"
+	"github.com/taubyte/tau/services/cm/settings"
 	"github.com/taubyte/tau/services/register"
 	statsService "github.com/taubyte/tau/services/stats"
 )
@@ -60,7 +62,9 @@ func newMachine(t *testing.T) *machine {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	return &machine{Node: p, root: t.TempDir(), sections: map[string]func(any) error{}}
+	m := &machine{Node: p, root: t.TempDir(), sections: map[string]func(any) error{}}
+	m.beside(cm.Name, cmmock.New(settings.Defaults()))
+	return m
 }
 
 func (m *machine) beside(name string, s any) {
@@ -117,7 +121,6 @@ func TestTheDatabaseServiceRunsFromWhatItsInstanceGivesIt(t *testing.T) {
 	// AND WHAT IT ADDS TO ITS NODE'S REPORT.
 	var snap statsService.Snapshot
 	s.Report(&snap)
-	require.Equal(t, s.FleetRevision(), snap.FleetRevision)
 	require.Equal(t, s.Pending(), snap.DatabasesPending)
 }
 
@@ -143,7 +146,7 @@ func TestTheDatabaseServiceRefusesWhatItCannotStartWith(t *testing.T) {
 func TestAStoreThisNodeReleasesIsDestroyedAndReopened(t *testing.T) {
 	ctx := t.Context()
 	m := newMachine(t)
-	r := &replicas{Node: m.Node, fleet: nothingPublished{}, open: map[string]kvdb.Instance{}}
+	r := &replicas{Node: m.Node, region: settings.On(as{machine: m, name: Descriptor.Name}), open: map[string]kvdb.Instance{}}
 	t.Cleanup(func() { r.Close() })
 
 	store, err := r.Store("databases/shop/prod/kv/QmA")
@@ -170,17 +173,6 @@ func TestAStoreThisNodeReleasesIsDestroyedAndReopened(t *testing.T) {
 	_, found, err = again.Get(ctx, "k")
 	require.NoError(t, err)
 	require.False(t, found, "a released copy is gone")
-}
-
-// nothingPublished is a register with no fleet document.
-type nothingPublished struct{}
-
-func (nothingPublished) ResolveFleet(context.Context) (pkgregister.Pointer, error) {
-	return pkgregister.Pointer{}, pkgregister.ErrNotPublished
-}
-
-func (nothingPublished) Object(context.Context, pkgregister.ObjectID) ([]byte, error) {
-	return nil, pkgregister.ErrNotPublished
 }
 
 // groupsOn opens real groups on a test's peer, timed so a lone peer elects itself in

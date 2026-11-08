@@ -67,7 +67,7 @@ func pairOf(t *testing.T, floor int) *pair {
 
 		s, err := build(h,
 			withEngines(registry),
-			withRegister(declaringFloor(t, compiled(), floor)),
+			withRegister(&published{revision: 1, object: compiled()}),
 			withHoldings(holds),
 			withMembers(func() []placement.Member { return fleet }),
 			withIdle(time.Hour),
@@ -75,6 +75,7 @@ func pairOf(t *testing.T, floor int) *pair {
 			// A ticking one would be a second actor racing the assertion.
 			withSweep(time.Hour))
 		require.NoError(t, err)
+		s.region = floorOf(floor)
 		require.NoError(t, s.serve(t.Context()))
 		t.Cleanup(func() { s.Close() })
 
@@ -132,12 +133,13 @@ func TestTheSweepRunsOnItsInterval(t *testing.T) {
 	fleet := []placement.Member{{ID: h.ID().String(), Accepts: true}}
 	s, err := build(h,
 		withEngines(registry),
-		withRegister(declaringFloor(t, compiled(), 1)),
+		withRegister(&published{revision: 1, object: compiled()}),
 		withHoldings(holds),
 		withMembers(func() []placement.Member { return fleet }),
 		withIdle(time.Hour),
 		withSweep(5*time.Millisecond))
 	require.NoError(t, err)
+	s.region = floorOf(1)
 	require.NoError(t, s.serve(t.Context()))
 	t.Cleanup(func() { s.Close() })
 
@@ -173,12 +175,13 @@ func bothDesired(t *testing.T, otherHolds bool) (*server, *says) {
 		// FLOOR TWO OVER TWO NODES, so both are desired and neither is leaving.
 		s, err := build(h,
 			withEngines(registry),
-			withRegister(declaringFloor(t, compiled(), 2)),
+			withRegister(&published{revision: 1, object: compiled()}),
 			withHoldings(holds),
 			withMembers(func() []placement.Member { return fleet }),
 			withIdle(time.Hour),
 			withSweep(time.Hour))
 		require.NoError(t, err)
+		s.region = floorOf(2)
 		require.NoError(t, s.serve(t.Context()))
 		t.Cleanup(func() { s.Close() })
 		return s

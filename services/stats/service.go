@@ -251,7 +251,6 @@ func Decode(b []byte) (stats.Report, error) {
 		Addresses:   r.GetAddresses(),
 		Sockets:     socketsOf(r.GetSockets()),
 
-		FleetRevision:    r.GetFleetRevision(),
 		DatabasesPending: int(r.GetDatabasesPending()),
 	}, nil
 }
@@ -303,7 +302,6 @@ func (s *server) report(ctx context.Context) {
 
 		// What this node's own services answer about themselves, which
 		// changes every tick.
-		FleetRevision:    snap.FleetRevision,
 		DatabasesPending: uint32(snap.DatabasesPending),
 	})
 	if err != nil {
@@ -323,7 +321,6 @@ func (s *server) report(ctx context.Context) {
 		Addresses:   snap.Addresses,
 		Sockets:     snap.Sockets,
 
-		FleetRevision:    snap.FleetRevision,
 		DatabasesPending: snap.DatabasesPending,
 	})
 	s.beat(s.peer, s.incarnation, snap.Ready)

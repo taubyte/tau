@@ -708,22 +708,14 @@ func (n *Instance) Start(ctx context.Context) error {
 
 	// THE BACKGROUND LOOPS LAST. They outlive the call that started them, so
 	// they take a context of their own that Close cancels.
-	needsLoops := n.proxy != nil || n.worker != nil || n.disks != nil || n.register != nil
-	if !needsLoops {
-		n.started = true
-		return nil
-	}
-
 	loopCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
 	n.loopsStop = stop
 
-	if n.register != nil {
-		n.retentionDone = make(chan struct{})
-		go func() {
-			defer close(n.retentionDone)
-			n.followRetention(loopCtx)
-		}()
-	}
+	n.retentionDone = make(chan struct{})
+	go func() {
+		defer close(n.retentionDone)
+		n.followRetention(loopCtx)
+	}()
 
 	// THE PROXY SWEEPS WITHOUT RAFT, unlike everything below it: every node
 	// holding a deployment serves its proxies, so there is no slot to claim and

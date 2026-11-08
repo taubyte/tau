@@ -378,11 +378,6 @@ service RegisterService {
   // destination it lists. A deployment nobody published is NotFound.
   rpc Manifest(ResolveRequest) returns (DeploymentManifest);
 
-  // ResolveFleet is the cloud's own document in force: its object and revision,
-  // the object read with Object. One nobody published is NotFound, as for a
-  // deployment, and every service then keeps its defaults.
-  rpc ResolveFleet(FleetRequest) returns (Pointer);
-
   // Watch is a session a reader binds the answers it caches to. A read sent with
   // the session and an entry of the reader's choosing is bound when its answer
   // comes back marked so: the register then names that entry on this stream,
@@ -396,8 +391,6 @@ service RegisterService {
   // already released.
   rpc Forget(ForgetRequest) returns (ForgetResponse);
 }
-
-message FleetRequest {}
 
 message WatchRequest {}
 

@@ -33,6 +33,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"sync/atomic"
 
@@ -44,11 +45,10 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 )
 
-// Service is the register as an instance runs it: the cloud's projects, what each
-// deployment runs, and the fleet's own document.
+// Service is the register as an instance runs it: the cloud's projects and what each
+// deployment runs.
 type Service interface {
 	service.Service
-	Fleet
 
 	// Local is the register this service answers from, for the services beside it.
 	Local() *register.Register
@@ -65,8 +65,10 @@ type server struct {
 
 	serverOptions []rpc.ServerOption
 
-	// db is the database Start opened for the store, closed with the service.
-	db kvdb.Instance
+	// db is the database Start opened for the store, closed with the service, and
+	// region the settings its retention follows.
+	db     kvdb.Instance
+	region io.Closer
 
 	// watches is every reader's session on this node; see watch.go.
 	watches *watches
@@ -207,6 +209,9 @@ func (s *server) Close() error {
 		if s.db != nil {
 			s.db.Close()
 		}
+		if s.region != nil {
+			s.region.Close()
+		}
 		if s.watches != nil {
 			s.watches.close()
 		}
@@ -226,11 +231,7 @@ func (s *server) Close() error {
 // nothing downstream can tell which it got.
 func (s *server) Local() *register.Register { return s.reg }
 
-// ResolveFleet and Object are the fleet's document as this register holds it.
-func (s *server) ResolveFleet(ctx context.Context) (register.Pointer, error) {
-	return s.reg.ResolveFleet(ctx)
-}
-
+// Object is a stored object as this register holds it.
 func (s *server) Object(ctx context.Context, id register.ObjectID) ([]byte, error) {
 	return s.reg.Object(ctx, id)
 }

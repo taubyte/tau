@@ -23,13 +23,13 @@ import (
 
 	"github.com/taubyte/tau/instance"
 	nodeDream "github.com/taubyte/tau/instance/dream"
-	"github.com/taubyte/tau/pkg/fleet"
 	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/pkg/invoke"
 	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/pkg/specs"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
+	"github.com/taubyte/tau/services/cm/settings"
 )
 
 // Authored projects, compiled by tcc, run in a cloud: from yaml through publish
@@ -493,7 +493,7 @@ func TestALedgerAnswersEveryNodeWithWhatItsLeaderCommitted(t *testing.T) {
 		require.Equal(t, "body", read.Body.String(), "node %d answered something else", i)
 	}
 
-	// Exactly three of the four are in the group, the published floor. A node holds a
+	// Exactly three of the four are in the group, the region's floor. A node holds a
 	// ledger's engine only as a voter, which is how the fourth is found.
 	var voters []int
 	outsider := -1
@@ -504,7 +504,7 @@ func TestALedgerAnswersEveryNodeWithWhatItsLeaderCommitted(t *testing.T) {
 		}
 		outsider = i
 	}
-	require.Len(t, voters, 3, "the ledger's group is not the floor the cloud published")
+	require.Len(t, voters, 3, "the ledger's group is not the region's floor")
 	require.NotEqual(t, -1, outsider)
 
 	// A write through the node placement did not choose. It must not open the group
@@ -801,9 +801,8 @@ func TestTwoProjectsNamingTheirLedgerTheSameThingAreTwoGroups(t *testing.T) {
 	}
 }
 
-// deployFleet is deploy over several nodes in one region, with a published
-// replication floor. Published, not configured, since two nodes disagreeing about it
-// would disagree about placement forever. Three survives losing a node.
+// deployFleet is deploy over several nodes in one region, whose settings hold each
+// ledger on three nodes: three survives losing one.
 func deployFleet(t *testing.T, copies int, name, host string, wasm []byte) []*running {
 	t.Helper()
 	return deployFleetWith(t, copies, name, host, wasm, nil)
@@ -841,9 +840,13 @@ func deployFleetServing(t *testing.T, copies int, services []string, wasm []byte
 	t.Helper()
 	require.NotEmpty(t, projects, "a cloud with nothing published in it proves nothing")
 
+	// THREE COPIES OF A LEDGER, so one can be lost and the rest still commit.
+	region := settings.Defaults()
+	region.Replication = 3
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Services: services,
 		Copies:   copies,
+		Settings: &region,
 	})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
@@ -856,11 +859,6 @@ func deployFleetServing(t *testing.T, copies int, services []string, wasm []byte
 		nodes = append(nodes, nodeOf(t, id))
 	}
 
-	document, err := fleet.Encode(fleet.Fleet{Replication: 3})
-	require.NoError(t, err)
-	_, err = nodes[0].Register().Local().PublishFleet(t.Context(), 1, document)
-	require.NoError(t, err)
-
 	// Every extra binary is keyed by the author's label.
 	held := artifacts{"": wasm}
 	for label, code := range extra {
@@ -872,10 +870,9 @@ func deployFleetServing(t *testing.T, copies int, services []string, wasm []byte
 		fleets = append(fleets, publish(t, u, pids, at, held))
 	}
 
-	// Every node must have every project, the floor and the fleet before anything is
+	// Every node must have every project and the placement set before anything is
 	// asked: a node seeing no others places over itself and opens a group nobody
-	// placed it in. The message names which of the three (two CRDTs and a presence
-	// window) it gave up on.
+	// placed it in. The message names which it gave up on.
 	var waiting string
 	require.Eventually(t, func() bool {
 		for _, n := range nodes {
@@ -884,10 +881,6 @@ func deployFleetServing(t *testing.T, copies int, services []string, wasm []byte
 					waiting = "the project " + at.name
 					return false
 				}
-			}
-			if _, err := n.Register().Local().ResolveFleet(t.Context()); err != nil {
-				waiting = "the fleet document"
-				return false
 			}
 			if len(n.Stats().Placement()) != copies {
 				waiting = "the placement set"

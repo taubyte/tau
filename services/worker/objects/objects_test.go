@@ -18,14 +18,16 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
-	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/register"
+	"github.com/taubyte/tau/pkg/placement"
+	"github.com/taubyte/tau/services/cm"
+	cmmock "github.com/taubyte/tau/services/cm/mock"
+	"github.com/taubyte/tau/services/cm/settings"
 	"github.com/taubyte/tau/services/storage"
 	"github.com/taubyte/tau/services/worker/objects"
 )
 
-// node is the instance a storage service runs on for these tests: a peer, and the
-// register beside it whose unpublished fleet document is the defaults.
+// node is the instance a storage service runs on for these tests: a peer, cm's mocked
+// version answering the region's settings, and discovery settled on this node alone.
 type node struct {
 	peer.Node
 	root    string
@@ -44,6 +46,11 @@ func (n *node) Root() string   { return n.root }
 func (*node) Cloud() string    { return "objects-test" }
 func (*node) Region() string   { return "" }
 func (*node) Now() time.Time   { return time.Now() }
+
+// alone is discovery that has settled on the members it is given.
+type alone []placement.Member
+
+func (a alone) PlacementOf(string) []placement.Member { return a }
 
 // served is a storage service on a fresh peer, with a failure each call can be made
 // to answer.
@@ -98,9 +105,11 @@ func serving(t *testing.T) *served {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	reg, err := pkgregister.New(pkgregister.WithStore(pkgregister.NewMemStore()))
-	require.NoError(t, err)
-	n := &node{Node: p, root: t.TempDir(), running: []service.Running{{Name: register.Descriptor.Name, Service: reg}}}
+	self := alone{{ID: p.ID().String(), Accepts: true}}
+	n := &node{Node: p, root: t.TempDir(), running: []service.Running{
+		{Name: cm.Name, Service: cmmock.New(settings.Defaults())},
+		{Name: "stats", Service: self},
+	}}
 	s := storage.New()
 	t.Cleanup(func() { s.Close() })
 	require.NoError(t, s.Start(t.Context(), n))

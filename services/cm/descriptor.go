@@ -3,15 +3,14 @@ package cm
 import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 
-	"github.com/taubyte/tau/p2p/rpc"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2/cmv2connect"
+	"github.com/taubyte/tau/services/cm/settings"
 )
 
 // Name is the service's name, in a node's service list and in discovery.
 const Name = "cm"
 
 // Protocol is the libp2p protocol the service answers on.
-var Protocol protocol.ID = rpc.Protocol(cmv2connect.CertificateServiceName)
+var Protocol protocol.ID = settings.Protocol
 
 type Ingress int
 

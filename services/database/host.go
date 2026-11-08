@@ -19,6 +19,7 @@ import (
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/placement"
 	"github.com/taubyte/tau/pkg/raft"
+	"github.com/taubyte/tau/services/cm/settings"
 	"github.com/taubyte/tau/services/register"
 	statsService "github.com/taubyte/tau/services/stats"
 )
@@ -46,10 +47,10 @@ type Config struct {
 // ordered.
 var ErrNoConsensus = errors.New("database: this instance opens no raft groups, so a ledger has no group to live in")
 
-// retentionPoll is how often a database rereads the cloud's retention.
-const retentionPoll = time.Minute
-
 var logger = logging.Logger("tau.database")
+
+// retentionPoll is how often a database rereads the region's retention.
+const retentionPoll = time.Minute
 
 // placementSource is discovery as this service reads the fleet from it.
 type placementSource interface {
@@ -73,8 +74,16 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 	if err != nil {
 		return fmt.Errorf("database: %w", err)
 	}
+	// THE REGION'S FLOOR IS CM'S, and a node does not start computing placement
+	// before it has heard it.
+	region := settings.On(h)
+	if _, err := region.Wait(ctx); err != nil {
+		region.Close()
+		return fmt.Errorf("database: the region's settings: %w", err)
+	}
+	s.region = region
 	views := register.ViewsOn(h)
-	replicas := &replicas{Node: h.Peer(), fleet: views, open: map[string]kvdb.Instance{}}
+	replicas := &replicas{Node: h.Peer(), region: region, open: map[string]kvdb.Instance{}}
 	copies, err := NewCopies(replicas, ledgers, replicas)
 	if err != nil {
 		views.Close()
@@ -119,26 +128,21 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 	}
 	// THE CONNECTIONS BEFORE THE GROUPS UNDER THEM, and the stores last: a ledger's
 	// connection is a prefix over a group.
-	s.owned = append(s.owned, ledgers, replicas, views)
+	s.owned = append(s.owned, ledgers, replicas, views, region)
 	return s.serve(ctx)
 }
 
-// Report is this service's part of what its node says about itself: the fleet
-// revision it computes with, so a node with a stale floor is visible to the rest, and
-// how much repair it knows is outstanding.
+// Report is this service's part of what its node says about itself: how much repair
+// it knows is outstanding.
 func (s *server) Report(snap *statsService.Snapshot) {
-	if s.floor == nil {
-		return
-	}
-	snap.FleetRevision = s.FleetRevision()
 	snap.DatabasesPending = s.Pending()
 }
 
 // replicas is every database's store on this peer, each opened once, following the
-// cloud's retention, and closed with the service.
+// region's retention, and closed with the service.
 type replicas struct {
 	peer.Node
-	fleet register.Fleet
+	region *settings.Client
 
 	mu   sync.Mutex
 	open map[string]kvdb.Instance
@@ -158,9 +162,7 @@ func (r *replicas) at(name string) (kvdb.Instance, error) {
 	var db kvdb.Instance
 	db, err := pkgkvdb.Open(r.Node, name,
 		pkgkvdb.WithLogger(logger),
-		pkgkvdb.WithRetentionFrom(func(ctx context.Context) (time.Duration, error) {
-			return register.Retention(ctx, r.fleet)
-		}, retentionPoll),
+		pkgkvdb.WithRetentionFrom(r.region.Retention, retentionPoll),
 		pkgkvdb.WithOnClose(func() { r.forget(name, db) }))
 	if err != nil {
 		return nil, fmt.Errorf("database: opening the store for %s: %w", name, err)

@@ -3,6 +3,8 @@ package database
 import (
 	"testing"
 
+	"github.com/taubyte/tau/services/cm/settings"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/placement"
@@ -23,17 +25,17 @@ func at(project, id string) address {
 func TestADatabaseLandsOnTheReplicationFloor(t *testing.T) {
 	members := members("n1", "n2", "n3", "n4", "n5")
 
-	held := holders(at("shop", "QmSessions"), members, DefaultReplication)
-	require.Len(t, held, DefaultReplication, "the default is two, because one is not replication")
+	held := holders(at("shop", "QmSessions"), members, settings.Defaults().Replication)
+	require.Len(t, held, settings.Defaults().Replication, "the default is two, because one is not replication")
 
 	// Every node agrees without asking anybody.
 	for _, id := range []string{"n1", "n2", "n3", "n4", "n5"} {
-		require.Equal(t, held, holders(at("shop", "QmSessions"), members, DefaultReplication),
+		require.Equal(t, held, holders(at("shop", "QmSessions"), members, settings.Defaults().Replication),
 			"%s computed a different set", id)
 	}
 
 	for _, id := range held {
-		require.True(t, holds(at("shop", "QmSessions"), members, DefaultReplication, id))
+		require.True(t, holds(at("shop", "QmSessions"), members, settings.Defaults().Replication, id))
 	}
 }
 

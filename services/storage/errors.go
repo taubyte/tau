@@ -62,4 +62,8 @@ var (
 	// names which one; a caller that cannot say which gate closed cannot be
 	// trusted to delete data.
 	ErrGateClosed = errors.New("storage: a deletion gate is closed")
+
+	// ErrNoSettings is a node that has not heard the region's settings from cm, so
+	// it does not know how many copies to place or wait for.
+	ErrNoSettings = errors.New("storage: the region's settings have not been heard")
 )

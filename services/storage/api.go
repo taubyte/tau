@@ -119,7 +119,10 @@ func (s *server) open(ctx context.Context, root cid.Cid, here bool) (io.ReadClos
 		return nil, fmt.Errorf("%w: %s is not held here", ErrNotFound, root)
 	}
 
-	replicas, _, _ := s.fleet.read(ctx)
+	replicas, _, err := s.promise(ctx)
+	if err != nil {
+		return nil, err
+	}
 	holders, err := blockHolders(root.String(), s.placement(), replicas)
 	if err != nil {
 		return nil, err

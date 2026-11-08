@@ -15,6 +15,7 @@ import (
 	"github.com/taubyte/tau/pkg/database"
 	databasev2 "github.com/taubyte/tau/pkg/proto/gen/tau/database/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/database/v2/databasev2connect"
+	"github.com/taubyte/tau/services/cm/settings"
 )
 
 // says is a Holdings that answers whatever a test needs, and records nothing
@@ -104,6 +105,7 @@ func asking(t *testing.T, holds *says) (databasev2connect.DatabaseServiceClient,
 		withHoldings(holds),
 		withIdle(time.Hour))
 	require.NoError(t, err)
+	s.region = floorOf(settings.Defaults().Replication)
 	require.NoError(t, s.serve(t.Context()))
 	t.Cleanup(func() { s.Close() })
 

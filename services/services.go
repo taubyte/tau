@@ -38,7 +38,7 @@ func catalog() []shipped {
 		{name: secrets.Descriptor.Name, new: func() service.Service { return secrets.New() }},
 		{name: primitives.Descriptor.Name, new: func() service.Service { return primitives.New() }, needs: []string{cm.Name}},
 		{name: database.Descriptor.Name, new: func() service.Service { return database.New() }, needs: []string{cm.Name}},
-		{name: storage.Descriptor.Name, new: func() service.Service { return storage.New() }},
+		{name: storage.Descriptor.Name, new: func() service.Service { return storage.New() }, needs: []string{cm.Name, statsService.Descriptor.Name}},
 		{name: plm.Builder.Name, new: func() service.Service { return builder.New() }},
 		// PLM is never part of the default: it binds a public listener, which has no
 		// default port. Its queue is a raft group.

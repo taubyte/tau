@@ -8,6 +8,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/placement"
+	"github.com/taubyte/tau/services/cm/settings"
 )
 
 // The sweep walks what this node holds, not what exists: O(held), no shared index,
@@ -28,9 +29,23 @@ func (s *server) pending() int {
 	return s.pendingAt
 }
 
-// FleetRevision is the revision of the cloud document this node last computed
-// with. A node behind is behind by a number every other node can see.
-func (s *server) FleetRevision() uint64 { return s.floor.revisionSeen() }
+// regionSettings is where the floor is read: cm, through a client that keeps it.
+type regionSettings interface {
+	Settings(ctx context.Context) (settings.Region, error)
+}
+
+// floor is how many nodes hold each database, as the region's settings say, and
+// whether this node has heard them: one that has not may acquire but never release.
+func (s *server) floor(ctx context.Context) (int, bool) {
+	if s.region == nil {
+		return 0, false
+	}
+	r, err := s.region.Settings(ctx)
+	if err != nil {
+		return 0, false
+	}
+	return r.Replication, true
+}
 
 // Pending is how many databases this node holds that are below their floor.
 func (s *server) Pending() int { return s.pending() }
@@ -57,7 +72,7 @@ func (s *server) run(ctx context.Context) {
 
 // reconsider walks this node's copies once.
 func (s *server) reconsider(ctx context.Context) {
-	floor, known := s.floor.read(ctx)
+	floor, known := s.floor(ctx)
 	members := s.members()
 
 	short := 0

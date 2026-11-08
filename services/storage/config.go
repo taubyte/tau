@@ -13,9 +13,8 @@ import (
 	"github.com/taubyte/tau/pkg/kvdb"
 )
 
-// An operator configures four per-node durations. R and K are the cloud's, published
-// once (pkg/fleet, fleet.go), since a cloud-wide promise configured per node cannot
-// be noticed drifting. Every interface here is declared by the consumer and narrow,
+// An operator configures four per-node durations. R and K are constants every node
+// reaches identically, each capped by the storage nodes discovery finds. Every interface here is declared by the consumer and narrow,
 // and each has an in-memory test implementation; only host.go and bytes.go see the
 // instance's peer, to build them from it.
 
@@ -62,14 +61,8 @@ func (c Config) withDefaults() (Config, error) {
 	return c, nil
 }
 
-// DefaultReplicas is R and DefaultBarrier is K when the cloud has published no fleet
-// document; every node reaches them identically. Three replicas, the figure the shard
-// arithmetic (256 shards) is sized for. A barrier of two, since one has not left the
-// node and waiting for all three makes one slow node the cloud's write latency.
-const (
-	DefaultReplicas = 3
-	DefaultBarrier  = 2
-)
+// R and K are the region's, read from cm (cm/settings), each capped by the holders
+// placement names over the storage nodes discovery finds.
 
 // Datastore is the slice of go-datastore this service's index needs. No Close (a
 // shard's lifetime is shard.go's) and no AllKeysChan (the blockstore is shared with

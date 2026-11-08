@@ -1,12 +1,14 @@
 package instance
 
 import (
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
-	fleetdoc "github.com/taubyte/tau/pkg/fleet"
+	cmmock "github.com/taubyte/tau/services/cm/mock"
+	"github.com/taubyte/tau/services/cm/settings"
 )
 
 func TestADatabaseIsOpenedOncePerName(t *testing.T) {
@@ -49,7 +51,7 @@ func TestADatabaseIsOpenedOncePerName(t *testing.T) {
 	require.Same(t, reopened, still)
 }
 
-func TestTheDatabasesMoveToTheFleetsT(t *testing.T) {
+func TestTheDatabasesMoveToTheRegionsT(t *testing.T) {
 	d := newDatabaseSet(mockPeer(t))
 	t.Cleanup(func() { d.Close() })
 	_, err := d.at("moves")
@@ -67,29 +69,26 @@ func TestTheDatabasesMoveToTheFleetsT(t *testing.T) {
 	require.Zero(t, d.retention)
 }
 
-func TestTheFleetsTIsReadFromTheNodesRegister(t *testing.T) {
+func TestTheRegionsTIsReadFromCm(t *testing.T) {
 	ctx := t.Context()
-	n, _, _ := makeNode(t, Config{Services: []string{Register}})
+	n, _, _ := makeNode(t, Config{Services: []string{Stats}})
 	require.NoError(t, n.Start(ctx))
 
-	require.NoError(t, n.readRetention(ctx), "an unpublished document is the default")
-	require.Zero(t, n.dbs.retention)
-
-	doc, err := fleetdoc.Encode(fleetdoc.Fleet{Retention: fleetdoc.Duration(72 * time.Hour)})
-	require.NoError(t, err)
-	_, err = n.Register().Local().PublishFleet(ctx, 1, doc)
-	require.NoError(t, err)
-
-	n.applyRetention(ctx)
+	set := settings.Defaults()
+	set.Retention = 72 * time.Hour
+	cm := cmmock.New(set)
+	n.applyRetention(ctx, cm)
 	require.Equal(t, 72*time.Hour, n.dbs.retention)
-}
 
-func TestANodeWithNoRegisterFollowsNoFleet(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Stats}})
-	require.NoError(t, n.Start(t.Context()))
-	// It returns rather than polling a register that is not there.
-	n.followRetention(t.Context())
-	require.Zero(t, n.dbs.retention)
+	// A cm that cannot be reached changes nothing.
+	cm.Fail(errors.New("no cm in reach"))
+	n.applyRetention(ctx, cm)
+	require.Equal(t, 72*time.Hour, n.dbs.retention)
+
+	cm.Fail(nil)
+	cm.Set(settings.Defaults())
+	n.applyRetention(ctx, cm)
+	require.Zero(t, n.dbs.retention, "back to the default")
 }
 
 func TestAGroupIsTimedByTheNodesRaftKeys(t *testing.T) {

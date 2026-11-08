@@ -20,6 +20,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/placement"
+	cmmock "github.com/taubyte/tau/services/cm/mock"
+	"github.com/taubyte/tau/services/cm/settings"
 )
 
 // swarm is every node's blockstore, so a fetch takes from the peer it names, and a
@@ -149,13 +151,15 @@ type cluster struct {
 	ids    []libp2ppeer.ID
 	// caller runs no storage: a build backend asking.
 	caller host.Host
+	// cm is the region's settings every node reads.
+	cm *cmmock.CM
 }
 
 func newCluster(t *testing.T, n int, catalog Catalog, opts ...option) *cluster {
 	t.Helper()
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
-	c := &cluster{swarm: newSwarm()}
+	c := &cluster{swarm: newSwarm(), cm: cmmock.New(settings.Defaults())}
 	for range n {
 		h, err := mn.GenPeer()
 		require.NoError(t, err)
@@ -186,6 +190,7 @@ func newCluster(t *testing.T, n int, catalog Catalog, opts ...option) *cluster {
 			withSweep(time.Hour),
 		}, opts...)...)
 		require.NoError(t, err)
+		s.region = c.cm
 		require.NoError(t, s.serve(t.Context()))
 		t.Cleanup(func() { s.Close() })
 		c.nodes = append(c.nodes, s)
@@ -236,9 +241,9 @@ func TestAPutIsHeldByItsHoldersAndReadFromAnyNode(t *testing.T) {
 
 	root, err := cid.Decode(v.Record.RootCID)
 	require.NoError(t, err)
-	holders, err := blockHolders(root.String(), c.nodes[0].placement(), DefaultReplicas)
+	holders, err := blockHolders(root.String(), c.nodes[0].placement(), settings.Defaults().StorageReplicas)
 	require.NoError(t, err)
-	require.Len(t, holders, DefaultReplicas)
+	require.Len(t, holders, settings.Defaults().StorageReplicas)
 	for _, h := range holders {
 		id, err := libp2ppeer.Decode(h)
 		require.NoError(t, err)
@@ -305,7 +310,7 @@ func TestANodeThatHoldsNoIndexAsksOneThatDoes(t *testing.T) {
 	c := newCluster(t, 5, fixedCatalog{at})
 	shard, err := shardOf(at.Bucket())
 	require.NoError(t, err)
-	holders := indexHolders(shard, c.nodes[0].placement(), DefaultReplicas)
+	holders := indexHolders(shard, c.nodes[0].placement(), settings.Defaults().StorageReplicas)
 
 	outside := -1
 	for i, n := range c.nodes {
@@ -328,7 +333,7 @@ func TestAShardIsOpenedWhereThePlacementAndTheCatalogPutIt(t *testing.T) {
 	c := newCluster(t, 4, fixedCatalog{at})
 	shard, err := shardOf(at.Bucket())
 	require.NoError(t, err)
-	holders := indexHolders(shard, c.nodes[0].placement(), DefaultReplicas)
+	holders := indexHolders(shard, c.nodes[0].placement(), settings.Defaults().StorageReplicas)
 
 	for i, n := range c.nodes {
 		require.NoError(t, n.reconcile(t.Context()))
@@ -397,4 +402,42 @@ func TestAOneNodeStoreIsItsOwnBar(t *testing.T) {
 	got, err := c.client(t, 0, 0).Current(t.Context(), at, "build-1")
 	require.NoError(t, err)
 	require.Equal(t, w.Record.RootCID, got.Record.RootCID)
+}
+
+func TestASettingChangedInCmIsReadWithNoRestart(t *testing.T) {
+	ctx := t.Context()
+	c := newCluster(t, 1, fixedCatalog{})
+
+	replicas, barrier, err := c.nodes[0].promise(ctx)
+	require.NoError(t, err)
+	require.Equal(t, settings.Defaults().StorageReplicas, replicas)
+	require.Equal(t, settings.Defaults().StorageBarrier, barrier)
+
+	// The client a node reads cm through keeps an answer for settings.Recheck (its
+	// own tests); storage keeps none, so what cm says is what the next write uses.
+	changed := settings.Defaults()
+	changed.StorageReplicas, changed.StorageBarrier = 5, 3
+	c.cm.Set(changed)
+	replicas, barrier, err = c.nodes[0].promise(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 5, replicas)
+	require.Equal(t, 3, barrier)
+}
+
+func TestANodeThatHasNotHeardTheRegionsSettingsWritesNothing(t *testing.T) {
+	at := assetsOf(t, "site_code")
+	c := newCluster(t, 1, fixedCatalog{at})
+	c.cm.Fail(errors.New("no cm in reach"))
+
+	_, err := c.client(t, 0, 0).Put(t.Context(), at, "build-1", Object{}, strings.NewReader("x"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "settings have not been heard")
+}
+
+func TestAPlacementThatNamesNobodyAcknowledgesNothing(t *testing.T) {
+	at := assetsOf(t, "site_code")
+	c := newCluster(t, 1, fixedCatalog{at}, withMembers(func() []placement.Member { return nil }))
+
+	_, err := c.client(t, 0, 0).Put(t.Context(), at, "build-1", Object{}, strings.NewReader("x"))
+	require.ErrorIs(t, err, ErrUnderHeld, "a write held by nobody was acknowledged")
 }

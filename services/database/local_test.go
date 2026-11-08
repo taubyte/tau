@@ -12,6 +12,7 @@ import (
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	"github.com/taubyte/tau/services/cm/settings"
 )
 
 // local builds a service without starting a listener, because the whole point
@@ -32,6 +33,7 @@ func local(t *testing.T, opts ...option) *server {
 		withRegister(&published{revision: 1, object: compiled()}),
 	}, opts...)...)
 	require.NoError(t, err)
+	s.region = floorOf(settings.Defaults().Replication)
 	t.Cleanup(func() { s.Close() })
 	return s
 }

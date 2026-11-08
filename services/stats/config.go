@@ -34,9 +34,8 @@ type Reporter interface {
 
 // Snapshot is one moment of a node's own view of itself.
 type Snapshot struct {
-	// FleetRevision and DatabasesPending are what this node's own services say
-	// about placement — see stats.Report for what each one is for.
-	FleetRevision    uint64
+	// DatabasesPending is what this node's own services say about placement —
+	// see stats.Report.
 	DatabasesPending int
 
 	// Load is between 0 and 1. A Reporter returning anything else is a bug in

@@ -28,9 +28,9 @@ type written struct {
 
 // put stores content as the next version of name.
 func (s *server) put(ctx context.Context, a Address, name string, o Object, content io.Reader) (written, error) {
-	replicas, barrier, known := s.fleet.read(ctx)
-	if !known {
-		return written{}, fmt.Errorf("%w: this node has never learned how many copies the cloud promises", ErrUnderHeld)
+	replicas, barrier, err := s.promise(ctx)
+	if err != nil {
+		return written{}, err
 	}
 
 	root, size, blocks, err := s.bytes.Add(ctx, content)
@@ -52,8 +52,8 @@ func (s *server) put(ctx context.Context, a Address, name string, o Object, cont
 		}
 		return s.askHold(ctx, holder, root, a, name, stamp)
 	})
-	if need := min(barrier, len(holders)); held < need {
-		return written{}, fmt.Errorf("%w: %d of %d took %s, and the cloud promises %d", ErrUnderHeld, held, len(holders), root, need)
+	if need := max(1, min(barrier, len(holders))); held < need {
+		return written{}, fmt.Errorf("%w: %d of %d took %s, and the region promises %d", ErrUnderHeld, held, len(holders), root, need)
 	}
 
 	rec := VersionRecord{
@@ -75,9 +75,9 @@ func (s *server) put(ctx context.Context, a Address, name string, o Object, cont
 
 // remove writes a tombstone, acknowledged like a put.
 func (s *server) remove(ctx context.Context, a Address, name string) (Version, error) {
-	replicas, barrier, known := s.fleet.read(ctx)
-	if !known {
-		return Version{}, fmt.Errorf("%w: this node has never learned how many copies the cloud promises", ErrUnderHeld)
+	replicas, barrier, err := s.promise(ctx)
+	if err != nil {
+		return Version{}, err
 	}
 	stamp, err := s.clock.Now()
 	if err != nil {
@@ -117,7 +117,7 @@ func (s *server) appendEverywhere(ctx context.Context, a Address, name string, s
 		}
 		return s.askAppend(ctx, holder, a, name, stamp, rec)
 	})
-	if need := min(barrier, len(holders)); appended < need {
+	if need := max(1, min(barrier, len(holders))); appended < need {
 		return fmt.Errorf("%w: %d of %d index holders wrote %s's row, and the cloud promises %d", ErrUnderHeld, appended, len(holders), a, need)
 	}
 	return nil

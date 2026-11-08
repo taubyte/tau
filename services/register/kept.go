@@ -37,12 +37,6 @@ func (r viewRead) from(ctx context.Context, c *Client, b bindAs) (pkgregister.Vi
 	return c.resolveViewAs(ctx, r.project, r.environment, r.destination, b)
 }
 
-type fleetRead struct{}
-
-func (fleetRead) from(ctx context.Context, c *Client, b bindAs) (pkgregister.Pointer, bool, error) {
-	return c.resolveFleetAs(ctx, b)
-}
-
 // keptLimits bound one kind of kept answer.
 type keptLimits struct {
 	// max is how many answers are kept.

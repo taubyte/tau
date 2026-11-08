@@ -55,11 +55,6 @@ func (m *Report) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x50
 	}
-	if m.FleetRevision != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.FleetRevision))
-		i--
-		dAtA[i] = 0x48
-	}
 	if len(m.Sockets) > 0 {
 		for iNdEx := len(m.Sockets) - 1; iNdEx >= 0; iNdEx-- {
 			size, err := m.Sockets[iNdEx].MarshalToSizedBufferVT(dAtA[:i])
@@ -216,9 +211,6 @@ func (m *Report) SizeVT() (n int) {
 			l = e.SizeVT()
 			n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 		}
-	}
-	if m.FleetRevision != 0 {
-		n += 1 + protohelpers.SizeOfVarint(uint64(m.FleetRevision))
 	}
 	if m.DatabasesPending != 0 {
 		n += 1 + protohelpers.SizeOfVarint(uint64(m.DatabasesPending))
@@ -461,25 +453,6 @@ func (m *Report) UnmarshalVT(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
-		case 9:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field FleetRevision", wireType)
-			}
-			m.FleetRevision = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return protohelpers.ErrIntOverflow
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.FleetRevision |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
 		case 10:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field DatabasesPending", wireType)

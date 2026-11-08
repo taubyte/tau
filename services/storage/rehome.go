@@ -29,9 +29,9 @@ import (
 func (s *server) rehome(ctx context.Context) error {
 	s.homeMu.Lock()
 	defer s.homeMu.Unlock()
-	replicas, _, known := s.fleet.read(ctx)
-	if !known {
-		return nil
+	replicas, _, err := s.promise(ctx)
+	if err != nil {
+		return err
 	}
 	members := s.placement()
 	view := placementView(members, replicas)

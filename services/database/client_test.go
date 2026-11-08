@@ -10,6 +10,7 @@ import (
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	"github.com/taubyte/tau/services/cm/settings"
 )
 
 // reaching is a real service on one host and this package's Client on another, the
@@ -35,6 +36,7 @@ func reaching(t *testing.T, holds *says) *Client {
 		withHoldings(holds),
 		withIdle(time.Hour))
 	require.NoError(t, err)
+	s.region = floorOf(settings.Defaults().Replication)
 	require.NoError(t, s.serve(t.Context()))
 	t.Cleanup(func() { s.Close() })
 
