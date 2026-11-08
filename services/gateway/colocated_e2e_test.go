@@ -791,23 +791,21 @@ func TestColocatedBusy(t *testing.T) {
 		assert.Equal(t, seen[a.pid()], 0, "a node with no free slot was picked: %v", seen)
 	})
 
-	t.Run("POST is sent exactly once", func(t *testing.T) {
-		// proves: a write the busy node would refuse is never replayed. Both nodes full: the POST costs one admission wait
-		// (75 ms, one node tried), the GET two (both tried), and the POST ends 503. Inferred from timing: nothing counts the
-		// executions inside the function.
+	t.Run("both nodes full: GET and POST end 503", func(t *testing.T) {
+		// proves: with no room anywhere both methods are refused (GET with Retry-After). That a POST is never sent twice is
+		// proved by counting, in TestRetryForwardsRequestOnce and TestPostClosesSecondCandidateStream.
 		h1, h2 := hold(a), hold(b)
 		defer h1.release()
 		defer h2.release()
 		assert.Assert(t, coloEventually(5*time.Second, func() bool { return isFull(a) && isFull(b) }), "nodes never both full")
-		gres, _, gd, gerr := c.do("GET", a.base(), "/ping", nil)
-		pres, pdata, pd, perr := c.do("POST", a.base(), "/upper", strings.NewReader("y"))
+		gres, _, _, gerr := c.do("GET", a.base(), "/ping", nil)
+		pres, pdata, _, perr := c.do("POST", a.base(), "/upper", strings.NewReader("y"))
 		assert.NilError(t, gerr)
 		assert.NilError(t, perr)
-		t.Logf("GET status=%d took=%v | POST status=%d took=%v body=%.80q", gres.StatusCode, gd, pres.StatusCode, pd, pdata)
+		t.Logf("GET status=%d | POST status=%d body=%.80q", gres.StatusCode, pres.StatusCode, pdata)
 		assert.Equal(t, gres.StatusCode, 503)
 		assert.Equal(t, gres.Header.Get("Retry-After"), "1")
 		assert.Equal(t, pres.StatusCode, 503)
-		assert.Assert(t, gd > pd+40*time.Millisecond, "GET %v should have tried a second node, POST %v only one", gd, pd)
 	})
 
 	t.Run("a refused GET is moved to another node", func(t *testing.T) {
