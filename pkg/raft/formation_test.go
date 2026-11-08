@@ -140,3 +140,47 @@ func TestAnOfferFromAPeerOutsideTheGroupFails(t *testing.T) {
 	_, err := cli.Offer(outside.ID())
 	require.Error(t, err)
 }
+
+// A PEER WHOSE PROBE FOUND NOTHING IS PROBED AGAIN, ever less often: what failed
+// may have been the moment and not the peer.
+func TestAPeerIsProbedAgainLessOften(t *testing.T) {
+	self, other := strangerID(t), strangerID(t)
+	pt := newPeerTracker(self)
+	require.True(t, pt.probeDue(other))
+	require.False(t, pt.probeDue(other), "probed again before its wait")
+
+	waits := []time.Duration{2 * probeFirstWait, 4 * probeFirstWait}
+	for _, want := range waits {
+		pt.mu.Lock()
+		last := pt.probed[other]
+		last.next = time.Now().Add(-time.Millisecond)
+		pt.probed[other] = last
+		pt.mu.Unlock()
+		require.True(t, pt.probeDue(other), "never probed again")
+		require.Equal(t, want, pt.probed[other].wait)
+	}
+
+	pt.mu.Lock()
+	pt.probed[other] = probeWait{next: time.Now().Add(-time.Millisecond), wait: probeMaxWait}
+	pt.mu.Unlock()
+	require.True(t, pt.probeDue(other))
+	require.Equal(t, probeMaxWait, pt.probed[other].wait, "the wait grew past its ceiling")
+}
+
+// A CANDIDATE NOBODY REACHES IS DROPPED in time, and one reached lately is kept.
+func TestACandidateNobodyReachesIsDropped(t *testing.T) {
+	self, gone, kept, heardOf := strangerID(t), strangerID(t), strangerID(t), strangerID(t)
+	pt := newPeerTracker(self)
+	pt.addPeer(gone)
+	pt.addPeer(heardOf)
+	pt.heardFrom(kept)
+
+	pt.mu.Lock()
+	pt.startTime = pt.startTime.Add(-2 * candidateTTL)
+	pt.heard[gone] = time.Now().Add(-2 * candidateTTL)
+	pt.mu.Unlock()
+	pt.prune()
+
+	require.ElementsMatch(t, []peer.ID{kept}, pt.allPeers())
+	require.Equal(t, 2, pt.lastPeerCount)
+}

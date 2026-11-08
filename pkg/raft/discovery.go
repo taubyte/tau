@@ -32,7 +32,7 @@ type peerTracker struct {
 	selfID         peer.ID
 	lastPeerCount  int
 	lastChangeTime time.Time
-	probed         map[peer.ID]struct{}
+	probed         map[peer.ID]probeWait
 
 	discoveryInterval atomic.Int64
 }
@@ -45,7 +45,7 @@ func newPeerTracker(selfID peer.ID) *peerTracker {
 		peers:          make(map[peer.ID]time.Duration),
 		heard:          make(map[peer.ID]time.Time),
 		exchanging:     make(map[peer.ID]bool),
-		probed:         make(map[peer.ID]struct{}),
+		probed:         make(map[peer.ID]probeWait),
 		lastPeerCount:  1, // self
 		lastChangeTime: now,
 	}
@@ -205,6 +205,36 @@ func (pt *peerTracker) livePeers() []peer.ID {
 	return peers
 }
 
+// candidateTTL is how long a peer nobody reaches stays a candidate. One dropped is
+// found again by discovery or a connection, should it come back.
+const candidateTTL = 10 * time.Minute
+
+// prune drops the candidates this member has not reached within candidateTTL of
+// hearing of them or of last reaching them: a namespace whose nodes come and go
+// would otherwise gather peers that will never answer, each probed and asked
+// forever.
+func (pt *peerTracker) prune() {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+	now := time.Now()
+	for pid, seenAt := range pt.peers {
+		if pid == pt.selfID {
+			continue
+		}
+		last := pt.startTime.Add(seenAt)
+		if at, ok := pt.heard[pid]; ok && at.After(last) {
+			last = at
+		}
+		if now.Sub(last) > candidateTTL {
+			delete(pt.peers, pid)
+			delete(pt.heard, pid)
+			delete(pt.probed, pid)
+			discoveryLogger.Infof("[%s] dropped %s, not reached in %v", pt.selfID.ShortString(), pid.ShortString(), candidateTTL)
+		}
+	}
+	pt.lastPeerCount = len(pt.peers)
+}
+
 // startExchange claims pid for one exchange, unless one with it is under way.
 func (pt *peerTracker) startExchange(pid peer.ID) bool {
 	pt.mu.Lock()
@@ -235,15 +265,33 @@ func (pt *peerTracker) allPeers() []peer.ID {
 	return peers
 }
 
-// firstProbe reports whether this tracker has not probed pid yet, and counts
-// it probed from now on.
-func (pt *peerTracker) firstProbe(pid peer.ID) bool {
+// probeWait is when a peer is next probed, and how long it waited for this one.
+type probeWait struct {
+	next time.Time
+	wait time.Duration
+}
+
+const (
+	probeFirstWait = time.Second
+	probeMaxWait   = 30 * time.Second
+)
+
+// probeDue reports whether pid is due a probe, and counts it probed from now on: a
+// peer whose probe found nothing is probed again, ever less often, since what
+// failed may have been the moment and not the peer.
+func (pt *peerTracker) probeDue(pid peer.ID) bool {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
-	if _, done := pt.probed[pid]; done {
+	now := time.Now()
+	last, ok := pt.probed[pid]
+	if ok && now.Before(last.next) {
 		return false
 	}
-	pt.probed[pid] = struct{}{}
+	wait := probeFirstWait
+	if ok {
+		wait = min(2*last.wait, probeMaxWait)
+	}
+	pt.probed[pid] = probeWait{next: now.Add(wait), wait: wait}
 	return true
 }
 
@@ -297,6 +345,7 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster, 
 			return
 
 		case <-time.After(pt.getDiscoveryInterval()):
+			pt.prune()
 			connectedPeers := host.Network().Peers()
 			for _, pid := range connectedPeers {
 				if pid == c.ID() {
@@ -304,7 +353,7 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster, 
 				}
 				if supportsRaftProtocol(host, pid, raftProtocol) {
 					pt.addPeer(pid)
-				} else if pt.firstProbe(pid) {
+				} else if pt.probeDue(pid) {
 					go pt.probe(ctx, host, pid, raftProtocol)
 				}
 			}

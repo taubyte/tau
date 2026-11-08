@@ -566,7 +566,7 @@ func TestHealing_AnOrphanThePeerstoreDoesNotListIsAbsorbed(t *testing.T) {
 	removed, left := removeTheLeader(t, a, b)
 	tracker := left.(*cluster).current().tracker
 	tracker.addPeer(idOf(removed))
-	tracker.firstProbe(idOf(removed))
+	tracker.probeDue(idOf(removed))
 	require.NoError(t, left.(*cluster).Host().Peerstore().RemoveProtocols(idOf(removed), protocol.ID(Protocol(namespace))))
 
 	require.Eventually(t, func() bool {
@@ -1121,4 +1121,28 @@ func TestHealing_AMergeTellsOnlyTheMergedGroupToYield(t *testing.T) {
 		_, ok := third.Get("from-third")
 		return !ok || third.(*cluster).current() != before
 	}, time.Second, 20*time.Millisecond, "a group the merge never took was told to yield")
+}
+
+// A MEMBER WHOSE REBUILD FAILS AFTER A YIELD IS REBUILT once it can be, with
+// nobody to restart it: the yield took its old raft down, and a failed rebuild
+// left it no raft and no healer.
+func TestHealing_AMemberWhoseRebuildFailsIsRebuiltOnceItCanBe(t *testing.T) {
+	const namespace = "rebuild-fails"
+	store := newFaultStore()
+	node := storeNode{Node: newMockNode(t), store: store}
+	cl, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
+	require.NoError(t, err)
+	t.Cleanup(func() { cl.Close() })
+	waitLeader(t, cl, 5*time.Second)
+	c := cl.(*cluster)
+
+	snapshot := path.Join(RaftStoragePrefix, namespace, "engine", "snapshot")
+	store.failGet(snapshot, errNoSpace)
+	c.current().healer.Load().yieldAndRejoin(t.Context(), peer.ID(""))
+	require.Equal(t, Shutdown, c.current().raft.State(), "the rebuild did not fail")
+
+	store.failGet(snapshot, nil)
+	require.Eventually(t, func() bool { return c.current().raft.State() == Leader }, 10*time.Second, 20*time.Millisecond,
+		"the member was never rebuilt")
+	require.NoError(t, cl.Set("after", []byte("v"), 5*time.Second))
 }

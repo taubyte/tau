@@ -578,13 +578,47 @@ func (h *healer) yieldAndRejoin(ctx context.Context, winnerLeader peer.ID) {
 
 	healLogger.Infof("[%s] re-initializing raft after yield", h.cluster.ID().ShortString())
 	if err := h.cluster.initialize(); err != nil {
-		healLogger.Errorf("[%s] re-initialize failed: %v", h.cluster.ID().ShortString(), err)
+		healLogger.Errorf("[%s] re-initialize failed: %v — trying again", h.cluster.ID().ShortString(), err)
+		go h.cluster.reinitialize(reinitializeFirstWait)
 	} else {
 		healLogger.Infof("[%s] re-initialize succeeded — should rejoin cluster", h.cluster.ID().ShortString())
 	}
 
-	// initialize built a new healer, so this one's run loop exits.
+	// initialize built a new healer, or reinitialize will, so this one's run loop
+	// exits.
 	h.superseded.Store(true)
+}
+
+const (
+	reinitializeFirstWait = 100 * time.Millisecond
+	reinitializeMaxWait   = 30 * time.Second
+)
+
+// reinitialize builds the member again, backing off, until it is built or the
+// cluster closes: a yield that could not build one would leave the group with no
+// member and no healer to notice. The lock is let go between tries, so Close is
+// never kept waiting on them.
+func (c *cluster) reinitialize(wait time.Duration) {
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+		c.mu.Lock()
+		if c.closed.Load() {
+			c.mu.Unlock()
+			return
+		}
+		err := c.initialize()
+		c.mu.Unlock()
+		if err == nil {
+			clusterLogger.Infof("[%s] re-initialize succeeded after a failed one", c.ID().ShortString())
+			return
+		}
+		clusterLogger.Warnf("[%s] re-initialize failed: %v — trying again", c.ID().ShortString(), err)
+		wait = min(2*wait, reinitializeMaxWait)
+	}
 }
 
 // wipeRaftState removes the member's log, snapshot and applied data. The applied
