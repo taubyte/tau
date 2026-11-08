@@ -23,11 +23,26 @@ import (
 	routing "github.com/libp2p/go-libp2p/core/routing"
 	"github.com/libp2p/go-libp2p/p2p/host/autorelay"
 	"github.com/libp2p/go-libp2p/p2p/host/observedaddrs"
+	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	connmgr "github.com/libp2p/go-libp2p/p2p/net/connmgr"
 	libp2ptls "github.com/libp2p/go-libp2p/p2p/security/tls"
 
 	tcp "github.com/libp2p/go-libp2p/p2p/transport/tcp"
 )
+
+// cloudLimits is libp2p's defaults with room for the request path. Each node
+// sends all of a database's or a lookup's traffic to one peer, and the default
+// of about 70 streams per protocol and peer reset requests under load. Only
+// the cloud's own nodes can connect to this private network. The names are
+// services/common's protocols, which this package cannot import.
+func cloudLimits() rcmgr.ScalingLimitConfig {
+	limits := rcmgr.DefaultLimits
+	libp2p.SetDefaultServiceLimits(&limits)
+	base := rcmgr.BaseLimit{StreamsInbound: 1024, StreamsOutbound: 2048, Streams: 2048, Memory: 256 << 20}
+	limits.AddProtocolPeerLimit("/tns/v1", base, rcmgr.BaseLimitIncrease{})
+	limits.AddProtocolPeerLimit("/hoarder/v1", base, rcmgr.BaseLimitIncrease{})
+	return limits
+}
 
 var (
 	DefaultConnMgrHighWater   = 400
@@ -162,7 +177,14 @@ func SetupLibp2p(
 		return idht
 	}
 
+	limits := cloudLimits()
+	resources, err := rcmgr.NewResourceManager(rcmgr.NewFixedLimiter(limits.AutoScale()))
+	if err != nil {
+		return nil, nil, err
+	}
+
 	opts = append([]libp2p.Option{
+		libp2p.ResourceManager(resources),
 		libp2p.Identity(hostKey),
 		libp2p.ListenAddrStrings(listenAddrs...),
 		libp2p.PrivateNetwork(secret),
