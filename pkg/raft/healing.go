@@ -205,9 +205,9 @@ func (h *healer) handleForeignVote(ctx context.Context, pid peer.ID) {
 		return
 	}
 
-	healLogger.Infof("[%s] vote request from non-member %s — absorbing as leader",
+	healLogger.Infof("[%s] vote request from non-member %s — meeting it as leader",
 		h.cluster.ID().ShortString(), pid.ShortString())
-	h.absorbOrphan(ctx, pid)
+	h.meetAsLeader(ctx, pid)
 }
 
 // leaderChanged and foreignVote are the engine telling the healer what it watches
@@ -226,7 +226,7 @@ func (h *healer) foreignVote(pid peer.ID) {
 }
 
 func (h *healer) probeAndMergeAsLeader(ctx context.Context) {
-	foreignPeers := h.findForeignPeers()
+	foreignPeers := h.findForeignPeers(true)
 	if len(foreignPeers) == 0 {
 		return
 	}
@@ -234,48 +234,70 @@ func (h *healer) probeAndMergeAsLeader(ctx context.Context) {
 	healLogger.Infof("[%s] probing %d foreign peers as leader", h.cluster.ID().ShortString(), len(foreignPeers))
 
 	for _, pid := range foreignPeers {
-		info, err := h.member.raftClient.ClusterInfo(pid)
-		if err != nil {
-			healLogger.Infof("[%s] clusterInfo from foreign %s failed: %v",
-				h.cluster.ID().ShortString(), pid.ShortString(), err)
-			continue
-		}
-
-		if info.LeaderID == "" {
-			// A peer in no configuration belongs to no group: it is joining
-			// one, and its join, not a healAck, is what adds it.
-			if info.MemberCount == 0 {
-				continue
-			}
-			healLogger.Infof("[%s] detected orphaned foreign node %s — absorbing",
-				h.cluster.ID().ShortString(), pid.ShortString())
-			h.absorbOrphan(ctx, pid)
-			continue
-		}
-
-		localInfo := h.localClusterInfo()
-		winner := negotiateWinner(localInfo, info)
-
-		healLogger.Infof("[%s] foreign %s: leader=%s members=%d lastIndex=%d → winner=%s",
-			h.cluster.ID().ShortString(), pid.ShortString(),
-			info.LeaderID, info.MemberCount, info.LastIndex, winner)
-
-		leaderPID, err := peer.Decode(info.LeaderID)
-		if err != nil {
-			continue
-		}
-		if winner == localInfo.NodeID {
-			healLogger.Infof("[%s] detected foreign cluster led by %s — we win, initiating merge",
-				h.cluster.ID().ShortString(), info.LeaderID)
-			h.executeMerge(ctx, leaderPID)
-			continue
-		}
-		// THE WINNER MAY NOT KNOW THIS GROUP: an exchange with its leader puts this
-		// one in its tracker, so its next probe takes us rather than whenever its
-		// discovery would.
-		startTime, peers := h.member.tracker.getPeersMap()
-		h.member.raftClient.ExchangePeers(startTime, peers, leaderPID)
+		h.meetAsLeader(ctx, pid)
 	}
+}
+
+// isOurs says pid is a member of this group: in its configuration, and bound to its
+// formation. One of the configuration bound to another, or one of the formation the
+// configuration no longer lists, is not.
+func (h *healer) isOurs(pid peer.ID, info *ClusterInfoResponse) bool {
+	if len(info.Formation) == 0 || !bytes.Equal(info.Formation, h.member.raft.Formation()) {
+		return false
+	}
+	return slices.ContainsFunc(h.member.raft.Members(), func(m Member) bool { return m.ID == pid })
+}
+
+// meetAsLeader settles, as a leader, what becomes of pid: nothing if it is of this
+// formation or joining one; its state taken if it is an orphan of another; its
+// group merged here if this formation is first; else this group made known to the
+// one that is. Every path that meets another group comes here, so two leaders
+// never each take the other.
+func (h *healer) meetAsLeader(ctx context.Context, pid peer.ID) {
+	info, err := h.member.raftClient.ClusterInfo(pid)
+	if err != nil {
+		healLogger.Infof("[%s] clusterInfo from foreign %s failed: %v",
+			h.cluster.ID().ShortString(), pid.ShortString(), err)
+		return
+	}
+	if h.isOurs(pid, info) {
+		return
+	}
+
+	if info.LeaderID == "" {
+		// A peer in no configuration belongs to no group: it is joining
+		// one, and its join, not a healAck, is what adds it.
+		if info.MemberCount == 0 {
+			return
+		}
+		healLogger.Infof("[%s] detected orphaned foreign node %s — absorbing",
+			h.cluster.ID().ShortString(), pid.ShortString())
+		h.absorbOrphan(ctx, pid)
+		return
+	}
+
+	localInfo := h.localClusterInfo()
+	winner := negotiateWinner(localInfo, info)
+
+	healLogger.Infof("[%s] foreign %s: leader=%s members=%d lastIndex=%d → winner=%s",
+		h.cluster.ID().ShortString(), pid.ShortString(),
+		info.LeaderID, info.MemberCount, info.LastIndex, winner)
+
+	leaderPID, err := peer.Decode(info.LeaderID)
+	if err != nil {
+		return
+	}
+	if winner == localInfo.NodeID {
+		healLogger.Infof("[%s] detected foreign cluster led by %s — we win, initiating merge",
+			h.cluster.ID().ShortString(), info.LeaderID)
+		h.executeMerge(ctx, leaderPID)
+		return
+	}
+	// THE WINNER MAY NOT KNOW THIS GROUP: an exchange with its leader puts this
+	// one in its tracker, so its next probe takes us rather than whenever its
+	// discovery would.
+	startTime, peers := h.member.tracker.getPeersMap()
+	h.member.raftClient.ExchangePeers(startTime, peers, leaderPID)
 }
 
 func (h *healer) detectAndHeal(ctx context.Context) {
@@ -289,7 +311,7 @@ func (h *healer) detectAndHeal(ctx context.Context) {
 	// formation it is bound to never reached it, and may never, if the member that
 	// formed it is gone. Leaving it loses nothing.
 	pristine := h.member.raft.Pristine()
-	foreignPeers := h.findForeignPeers()
+	foreignPeers := h.findForeignPeers(false)
 	if len(foreignPeers) == 0 {
 		if pristine {
 			healLogger.Warnf("[%s] leaderless and holding nothing — forming again", h.cluster.ID().ShortString())
@@ -366,21 +388,23 @@ func (h *healer) detectAndHeal(ctx context.Context) {
 	h.yieldAndRejoin(ctx, foreignLeader, holdingNothing{})
 }
 
-// findForeignPeers returns the tracked peers that serve our protocol but are
-// not raft members. One the peerstore does not list is probed: what identify
-// recorded can be stale, and a member a group removed would never be absorbed.
-func (h *healer) findForeignPeers() []peer.ID {
+// findForeignPeers returns the tracked peers that serve our protocol and are not
+// raft members, or, with members, the members too: a member of our configuration
+// can be bound to another formation, and only asking it says so. One the
+// peerstore does not list is probed: what identify recorded can be stale, and a
+// member a group removed would never be absorbed.
+func (h *healer) findForeignPeers(members bool) []peer.ID {
 	host := h.cluster.Host()
 	raftProtocol := protocol.ID(Protocol(h.cluster.namespace))
 
-	members, err := h.member.members()
+	configured, err := h.member.members()
 	if err != nil {
 		healLogger.Infof("[%s] findForeignPeers: cannot get members: %v",
 			h.cluster.ID().ShortString(), err)
 		return nil
 	}
-	memberSet := make(map[peer.ID]struct{}, len(members))
-	for _, m := range members {
+	memberSet := make(map[peer.ID]struct{}, len(configured))
+	for _, m := range configured {
 		memberSet[m.ID] = struct{}{}
 	}
 
@@ -388,7 +412,7 @@ func (h *healer) findForeignPeers() []peer.ID {
 
 	var foreign []peer.ID
 	for _, pid := range allTracked {
-		if _, inConfig := memberSet[pid]; inConfig {
+		if _, inConfig := memberSet[pid]; inConfig && !members {
 			continue
 		}
 		if supportsRaftProtocol(host, pid, raftProtocol) || h.member.tracker.probe(h.cluster.ctx, host, pid, raftProtocol) {
@@ -398,7 +422,7 @@ func (h *healer) findForeignPeers() []peer.ID {
 
 	if len(foreign) > 0 {
 		healLogger.Infof("[%s] findForeignPeers: %d foreign out of %d tracked (%d members in config)",
-			h.cluster.ID().ShortString(), len(foreign), len(allTracked), len(members))
+			h.cluster.ID().ShortString(), len(foreign), len(allTracked), len(configured))
 	}
 
 	return foreign
@@ -597,16 +621,14 @@ func (h *healer) applyMerge(data []byte) error {
 	return resp.Error
 }
 
-// healAckMembersOf tells the members of a merged group that are not this group's
-// to yield and join it.
+// healAckMembersOf tells the members of a merged group to yield and join this one.
 func (h *healer) healAckMembersOf(members []peer.ID, exp export) {
-	ours := map[peer.ID]bool{}
-	for _, m := range h.member.raft.Members() {
-		ours[m.ID] = true
-	}
+	// EVERY MEMBER OF THE MERGED GROUP is told, ours included: a peer this group
+	// lists can be bound to the merged formation, and a peer bound to ours refuses
+	// a receipt for another.
 	sent := 0
 	for _, pid := range members {
-		if ours[pid] || pid == h.cluster.ID() {
+		if pid == h.cluster.ID() {
 			continue
 		}
 		h.member.raftClient.HealAck(pid, exp.formation, exp.cut)
@@ -700,7 +722,10 @@ func (h *healer) recoverFromQuorumLoss(ctx context.Context) {
 	// THE ARCHIVE IS WRITTEN BEFORE ANYTHING IS WIPED, and a member that holds
 	// nothing but an archive forms its group with it: a crash between the two
 	// loses nothing.
-	if err := h.cluster.Store().Put(ctx, h.cluster.archiveKey(), data); err != nil {
+	h.cluster.mu.Lock()
+	err = h.cluster.Store().Put(ctx, h.cluster.archiveKey(), data)
+	h.cluster.mu.Unlock()
+	if err != nil {
 		healLogger.Warnf("[%s] quorum lost; archiving what it holds: %v", h.cluster.ID().ShortString(), err)
 		return
 	}
@@ -710,7 +735,9 @@ func (h *healer) recoverFromQuorumLoss(ctx context.Context) {
 }
 
 // replayArchive merges the state this member carried out of a formation that lost
-// its quorum into the group it leads, then lets the archive go.
+// its quorum into the group it leads, lets its writes in, then lets the archive
+// go. The group takes no outside write until then: one taken before would carry a
+// clock behind the archive's, and lose to it.
 func (h *healer) replayArchive(ctx context.Context) {
 	if !h.cluster.IsLeader() {
 		return
@@ -723,8 +750,20 @@ func (h *healer) replayArchive(ctx context.Context) {
 		healLogger.Warnf("[%s] reading its archive: %v", h.cluster.ID().ShortString(), err)
 		return
 	}
-	if err := h.applyMerge(data); err != nil {
+	resp, err := h.member.raft.submit(data, HealingMergeTimeout)
+	if err == nil {
+		err = resp.Error
+	}
+	if err != nil {
 		healLogger.Warnf("[%s] merging its archive: %v", h.cluster.ID().ShortString(), err)
+		return
+	}
+	h.member.raft.Thaw()
+	// THE ARCHIVE GOES ONLY IF IT IS STILL THE ONE MERGED: a recovery since may
+	// have written another, which this replay must not take with it.
+	h.cluster.mu.Lock()
+	defer h.cluster.mu.Unlock()
+	if now, err := h.cluster.Store().Get(ctx, h.cluster.archiveKey()); err != nil || !bytes.Equal(now, data) {
 		return
 	}
 	if err := h.cluster.Store().Delete(ctx, h.cluster.archiveKey()); err != nil {
@@ -791,7 +830,9 @@ func (h *healer) yieldAndRejoin(ctx context.Context, winnerLeader peer.ID, guard
 	if guard.allows(m) {
 		healLogger.Infof("[%s] wiping raft state (log, snapshot and applied data)", h.cluster.ID().ShortString())
 		h.wipeRaftState(ctx)
-		h.cluster.yielded = true
+		if winnerLeader != "" {
+			h.cluster.yielded = true
+		}
 	} else {
 		healLogger.Warnf("[%s] the yield no longer holds once the raft is down — rebuilding without wiping", h.cluster.ID().ShortString())
 	}

@@ -173,7 +173,7 @@ func TestClient_JoinVoter_Success_Integration(t *testing.T) {
 	require.NoError(t, err, "failed to create client")
 	defer client.Close()
 
-	err = client.JoinVoter(t.Context(), clientNode.ID(), 5*time.Second, clusterNode.ID())
+	err = client.JoinVoter(t.Context(), clientNode.ID(), 5*time.Second, formationOf(cl), clusterNode.ID())
 	require.NoError(t, err, "JoinVoter should succeed")
 }
 

@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -800,7 +801,7 @@ func facing(t *testing.T, namespace string, store ds.Batching, other raftv2conne
 	require.NoError(t, winnerNode.Host().Connect(t.Context(), peer.AddrInfo{ID: otherNode.ID(), Addrs: otherNode.Host().Addrs()}))
 	winner := w.(*cluster)
 	winner.current().tracker.addPeer(otherNode.ID())
-	require.Equal(t, []peer.ID{otherNode.ID()}, winner.current().healer.Load().findForeignPeers())
+	require.Equal(t, []peer.ID{otherNode.ID()}, winner.current().healer.Load().findForeignPeers(false))
 	return winner, otherNode.ID()
 }
 
@@ -1313,4 +1314,91 @@ func TestHealing_AForceBootstrappedLoserJoinsTheGroupItYieldedTo(t *testing.T) {
 		return err == nil && len(members) == 2
 	}, 10*time.Second, 50*time.Millisecond, "the loser formed a group of its own rather than join the winner's")
 	require.Eventually(t, func() bool { return holdsEverything(loser) }, 10*time.Second, 50*time.Millisecond)
+}
+
+// TWO LEADERS HEARING EACH OTHER AT ONCE NEVER EACH TAKE THE OTHER: both would
+// yield on the other's receipt, and wipe what each had just merged.
+func TestHealing_TwoLeadersHearingEachOtherAtOnceDoNotBothYield(t *testing.T) {
+	winner, loser := soloPair(t, "heard-at-once")
+	done := make(chan struct{}, 2)
+	for _, pair := range [][2]*cluster{{winner, loser}, {loser, winner}} {
+		go func() {
+			pair[0].current().healer.Load().handleForeignVote(t.Context(), pair[1].ID())
+			done <- struct{}{}
+		}()
+	}
+	<-done
+	<-done
+	require.Eventually(t, func() bool {
+		members, err := winner.Members()
+		return err == nil && len(members) == 2
+	}, 10*time.Second, 50*time.Millisecond, "the two leaders never became one group")
+	require.Eventually(t, func() bool { return holdsEverything(winner) && holdsEverything(loser) },
+		10*time.Second, 50*time.Millisecond, "a write was wiped by two leaders taking each other")
+}
+
+// A MEMBER LISTED IN THE WINNER'S CONFIGURATION BUT BOUND TO ANOTHER FORMATION IS
+// TAKEN with that formation: listing it does not make it ours.
+func TestHealing_AListedMemberOfAnotherFormationIsTaken(t *testing.T) {
+	const namespace = "listed-elsewhere"
+	probeEvery(t, 50*time.Millisecond)
+	ours := joinedGroup(t, namespace, sameStore, 2)
+	leader := leaderOf(t, ours...).(*cluster)
+	require.NoError(t, leader.Set("from-a", []byte("a"), time.Second))
+
+	// THE OTHER FORMATION IS ONE OURS COMES FIRST AGAINST, so ours takes it.
+	var other *cluster
+	for range 20 {
+		cl, err := New(newMockNode(t), namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
+		require.NoError(t, err)
+		t.Cleanup(func() { cl.Close() })
+		waitLeader(t, cl, 5*time.Second)
+		if bytes.Compare(leader.current().raft.Formation(), cl.(*cluster).current().raft.Formation()) < 0 {
+			other = cl.(*cluster)
+			break
+		}
+		require.NoError(t, cl.Close())
+	}
+	require.NotNil(t, other, "no formation came after ours in twenty draws")
+	require.NoError(t, other.Set("from-b", []byte("b"), time.Second))
+	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, leader.Host().Connect(t.Context(), peer.AddrInfo{ID: other.ID(), Addrs: other.Host().Addrs()}))
+	require.NoError(t, leader.AddVoter(other.ID(), 5*time.Second))
+	leader.current().tracker.addPeer(other.ID())
+
+	require.Eventually(t, func() bool {
+		return bytes.Equal(other.current().raft.Formation(), leader.current().raft.Formation())
+	}, 15*time.Second, 50*time.Millisecond, "the listed member of another formation was never taken")
+	require.Eventually(t, func() bool { return holdsEverything(leader) && holdsEverything(other) },
+		10*time.Second, 50*time.Millisecond, "the merged group does not hold both formations' writes")
+}
+
+// TWO LEADERS WITH THE SAME STATE HEARING EACH OTHER AT ONCE do not both yield: a
+// merge of what one already holds commits nothing, so each receipt would cover
+// its receiver, and both would wipe the only copies there are.
+func TestHealing_TwoLeadersWithTheSameStateDoNotBothYield(t *testing.T) {
+	const namespace = "same-state-at-once"
+	var solos []*cluster
+	for range 2 {
+		cl, err := New(newMockNode(t), namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
+		require.NoError(t, err)
+		t.Cleanup(func() { cl.Close() })
+		waitLeader(t, cl, 5*time.Second)
+		solos = append(solos, cl.(*cluster))
+	}
+	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, solos[0].Host().Connect(t.Context(), peer.AddrInfo{ID: solos[1].ID(), Addrs: solos[1].Host().Addrs()}))
+	before := []*member{solos[0].current(), solos[1].current()}
+
+	done := make(chan struct{}, 2)
+	for i := range solos {
+		go func() {
+			solos[i].current().healer.Load().handleForeignVote(t.Context(), solos[1-i].ID())
+			done <- struct{}{}
+		}()
+	}
+	<-done
+	<-done
+	require.Never(t, func() bool { return solos[0].current() != before[0] && solos[1].current() != before[1] },
+		2*time.Second, 20*time.Millisecond, "both leaders yielded to each other")
 }

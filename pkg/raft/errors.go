@@ -17,6 +17,10 @@ var (
 
 	ErrAlreadyClosed = errors.New("cluster already closed")
 
+	// ErrJoinerElsewhere is a join asked of a group by a peer bound to another
+	// formation, or of a member bound to none.
+	ErrJoinerElsewhere = errors.New("the joiner is bound to another formation")
+
 	// ErrReceiptNotOurs is a heal-ack for a formation other than the member's.
 	ErrReceiptNotOurs = errors.New("the receipt is for another formation")
 

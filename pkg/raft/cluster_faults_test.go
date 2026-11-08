@@ -138,7 +138,7 @@ func TestCluster_AMemberLeftAloneInAPairAcknowledgesNoWrite(t *testing.T) {
 		"remove server": func() error { return alone.RemoveServer(idOf(alone), 5*time.Second) },
 		"join voter": func() error {
 			_, err := alone.(*cluster).current().streamService.JoinVoter(context.Background(),
-				connect.NewRequest(&raftv2.JoinVoterRequest{Peer: joiner.String(), TimeoutMs: 5000}))
+				connect.NewRequest(&raftv2.JoinVoterRequest{Peer: joiner.String(), TimeoutMs: 5000, Formation: formationOf(alone)}))
 			return err
 		},
 	}

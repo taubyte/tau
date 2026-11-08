@@ -228,6 +228,17 @@ func (s *raftStreamService) JoinVoter(ctx context.Context, req *connect.Request[
 	streamLogger.Infof("[%s] received joinVoter request from %s (is_leader=%v)",
 		s.cluster.ID().ShortString(), peerID.ShortString(), s.cluster.IsLeader())
 
+	// A JOINER OF ANOTHER FORMATION IS REFUSED, here and by the leader a follower
+	// forwards it to: added, it would be a voter that takes none of the group's
+	// messages, and with enough of them the group would lose its quorum.
+	// A member bound to none is in no group, and has no leader to add anyone.
+	switch ours := s.cluster.current().raft.Formation(); {
+	case len(ours) == 0:
+		return nil, ErrNoLeader
+	case !bytes.Equal(m.GetFormation(), ours):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, ErrJoinerElsewhere)
+	}
+
 	budget, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	for {
@@ -254,7 +265,7 @@ func (s *raftStreamService) JoinVoter(ctx context.Context, req *connect.Request[
 	streamLogger.Infof("[%s] joinVoter: forwarding request for %s to leader",
 		s.cluster.ID().ShortString(), peerID.ShortString())
 
-	forward := &raftv2.JoinVoterRequest{Peer: peerID.String(), TimeoutMs: m.GetTimeoutMs()}
+	forward := &raftv2.JoinVoterRequest{Peer: peerID.String(), TimeoutMs: m.GetTimeoutMs(), Formation: m.GetFormation()}
 	return forwardToLeader(ctx, s, "joinVoter", func(ctx context.Context, c raftv2connect.RaftServiceClient) (*connect.Response[raftv2.JoinVoterResponse], error) {
 		return c.JoinVoter(ctx, connect.NewRequest(forward))
 	})

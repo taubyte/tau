@@ -106,6 +106,9 @@ message JoinVoterRequest {
   // itself; a follower forwarding the request names the original caller.
   string peer = 1;
   int64 timeout_ms = 2;
+  // formation is the one the peer is bound to. A group of another refuses it:
+  // added, it would be a voter that takes none of the group's messages.
+  bytes formation = 3;
 }
 
 message JoinVoterResponse {}

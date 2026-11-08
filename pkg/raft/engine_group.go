@@ -506,6 +506,12 @@ func (g *group) Propose(cmd []byte, timeout time.Duration) (FSMResponse, error) 
 	if g.frozen() {
 		return FSMResponse{}, ErrFrozen
 	}
+	return g.submit(cmd, timeout)
+}
+
+// submit proposes cmd whether or not the group is frozen: the group's own write of
+// what it is waiting on before it takes others'.
+func (g *group) submit(cmd []byte, timeout time.Duration) (FSMResponse, error) {
 	id := randomID()
 	data, err := proto.Marshal(&raftv2.Proposal{Id: id, Command: cmd})
 	if err != nil {
@@ -819,6 +825,13 @@ func (g *group) setFormation(formation []byte) error {
 func (g *group) Freeze(d time.Duration) {
 	g.mu.Lock()
 	g.frozenUntil = g.e.clock.Now().Add(d)
+	g.mu.Unlock()
+}
+
+// Thaw lets the group take writes again.
+func (g *group) Thaw() {
+	g.mu.Lock()
+	g.frozenUntil = time.Time{}
 	g.mu.Unlock()
 }
 

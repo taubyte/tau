@@ -37,8 +37,9 @@ type cluster struct {
 	timeoutConfig   TimeoutConfig
 	forceBootstrap  bool
 	quorumLossAfter time.Duration
-	// yielded is set under mu once a yield wiped the member: it joins the group it
-	// yielded to, and no longer forms one of its own however it was made.
+	// yielded is set under mu once a yield to another group's leader wiped the
+	// member: it joins that group, and no longer forms one of its own however it
+	// was made.
 	yielded            bool
 	bootstrapTimeout   time.Duration
 	bootstrapThreshold float64
@@ -194,9 +195,12 @@ func (c *cluster) handleBootstrap(m *member) error {
 		}
 	}()
 
-	// A MEMBER CARRYING THE STATE OF A FORMATION THAT LOST ITS QUORUM, and holding
-	// nothing else, forms its new group with it: it was forming it when it
-	// stopped.
+	// A MEMBER CARRYING THE STATE OF A FORMATION THAT LOST ITS QUORUM takes no
+	// outside write until that state is in its group, and, holding nothing else,
+	// forms the group with it: it was forming it when it stopped.
+	if c.hasArchive() {
+		m.raft.Freeze(archiveFreeze)
+	}
 	if c.hasArchive() && m.raft.Pristine() {
 		clusterLogger.Infof("[%s] carrying the state of a formation that lost its quorum — forming a group with it", c.ID().ShortString())
 		err := c.bootstrapSelf(m)
@@ -413,7 +417,7 @@ func (c *cluster) askToJoin(m *member, timeout time.Duration) {
 			clusterLogger.Infof("[%s] no formation to join among %d targets", c.ID().ShortString(), len(targets))
 			continue
 		}
-		if err := m.raftClient.JoinVoter(ctx, c.ID(), timeout, targets...); err != nil {
+		if err := m.raftClient.JoinVoter(ctx, c.ID(), timeout, m.raft.Formation(), targets...); err != nil {
 			clusterLogger.Infof("[%s] voter join request failed: %v", c.ID().ShortString(), err)
 			continue
 		}
@@ -459,7 +463,7 @@ func (c *cluster) tryJoinExistingCluster(ctx context.Context, m *member, peers [
 		if !c.bindVia(m, targets) {
 			return false, true
 		}
-		err := m.raftClient.JoinVoter(ctx, c.ID(), timeout, targets...)
+		err := m.raftClient.JoinVoter(ctx, c.ID(), timeout, m.raft.Formation(), targets...)
 		if err == nil {
 			m.joined.Store(true)
 			clusterLogger.Infof("[%s] successfully joined existing cluster", c.ID().ShortString())
@@ -470,6 +474,10 @@ func (c *cluster) tryJoinExistingCluster(ctx context.Context, m *member, peers [
 		}
 	}
 }
+
+// archiveFreeze is how long a group carrying an archive takes no outside write:
+// until its replay lets them in, which is the end of it in practice.
+const archiveFreeze = 365 * 24 * time.Hour
 
 // offerWait is how long a member bound to no formation waits for offers.
 const offerWait = 2 * time.Second
