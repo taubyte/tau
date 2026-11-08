@@ -114,7 +114,12 @@ func Serve(w http.ResponseWriter, r *http.Request, log Logger, h func(http.Respo
 		}
 		logf("%s %s%s failed with: %s", r.Method, r.Host, r.URL.Path, err)
 		if rec.started.Load() {
-			panic(http.ErrAbortHandler)
+			// Only net/http recovers this panic. Substrate also serves requests on libp2p
+			// stream goroutines, where it would take down the whole process.
+			if r.Context().Value(http.ServerContextKey) != nil {
+				panic(http.ErrAbortHandler)
+			}
+			return
 		}
 		Write(w, err, "")
 	}
