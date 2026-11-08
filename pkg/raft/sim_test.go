@@ -136,6 +136,8 @@ type simNode struct {
 	e      *engine
 	groups map[string]*simGroup
 	up     bool
+	// still is a node whose loop takes no ticks, as a stalled loop takes none.
+	still bool
 }
 
 // simWrite is a write asked of a leader and not yet answered.
@@ -162,13 +164,19 @@ type sim struct {
 }
 
 func newSim(t *testing.T, seed uint64, nodes int, layout map[string][]int) *sim {
+	return newSimTimed(t, seed, nodes, layout, 50*time.Millisecond)
+}
+
+// newSimTimed is a simulation whose groups take heartbeat as their heartbeat
+// timeout, of which a tick is a tenth: a round is engineResolution whatever it is.
+func newSimTimed(t *testing.T, seed uint64, nodes int, layout map[string][]int, heartbeat time.Duration) *sim {
 	cryptotest.SetGlobalRandom(t, seed)
 	s := &sim{
 		t:       t,
 		rng:     mrand.New(mrand.NewPCG(seed, seed^0x9e3779b97f4a7c15)),
 		clock:   &simClock{now: time.Unix(1_700_000_000, 0)},
 		layout:  layout,
-		timing:  TimeoutConfig{HeartbeatTimeout: 50 * time.Millisecond, SnapshotThreshold: 64, TrailingLogs: 16},
+		timing:  TimeoutConfig{HeartbeatTimeout: heartbeat, SnapshotThreshold: 64, TrailingLogs: 16},
 		acked:   map[string]map[string]bool{},
 		leaders: map[string]map[uint64]peer.ID{},
 	}
@@ -330,7 +338,7 @@ func (s *sim) step() {
 		// IN ORDER: every group's election jitter is drawn from one stream, so the
 		// order groups tick in is part of what the seed decides.
 		for _, name := range s.groupNames() {
-			if sg, ok := n.groups[name]; ok {
+			if sg, ok := n.groups[name]; ok && !n.still {
 				sg.g.tick(s.clock.now)
 			}
 		}
@@ -386,25 +394,31 @@ func (s *sim) propose(name string) {
 		if !n.up || n.groups[name].g.State() != Leader {
 			continue
 		}
-		g := n.groups[name].g
-		s.n++
-		key := fmt.Sprintf("k%d", s.n)
-		cmd, err := encodeSetCommand(key, []byte(key))
-		require.NoError(s.t, err)
-		id := randomID()
-		data, err := proto.Marshal(&raftv2.Proposal{Id: id, Command: cmd})
-		require.NoError(s.t, err)
-		ch := make(chan FSMResponse, 1)
-		require.NoError(s.t, g.await(id, ch))
-		a := proposeAsk{g: g, data: data, reply: make(chan error, 1)}
-		a.run(n.e)
-		if err := <-a.reply; err != nil {
-			g.forget(id)
-			return
-		}
-		s.writes = append(s.writes, simWrite{group: name, key: key, ch: ch, node: n})
+		s.proposeOn(n, name)
 		return
 	}
+}
+
+// proposeOn asks n for a write to name, without waiting, and says whether n took it.
+func (s *sim) proposeOn(n *simNode, name string) bool {
+	g := n.groups[name].g
+	s.n++
+	key := fmt.Sprintf("k%d", s.n)
+	cmd, err := encodeSetCommand(key, []byte(key))
+	require.NoError(s.t, err)
+	id := randomID()
+	data, err := proto.Marshal(&raftv2.Proposal{Id: id, Command: cmd})
+	require.NoError(s.t, err)
+	ch := make(chan FSMResponse, 1)
+	require.NoError(s.t, g.await(id, ch))
+	a := proposeAsk{g: g, data: data, reply: make(chan error, 1)}
+	a.run(n.e)
+	if err := <-a.reply; err != nil {
+		g.forget(id)
+		return false
+	}
+	s.writes = append(s.writes, simWrite{group: name, key: key, ch: ch, node: n})
+	return true
 }
 
 // answered collects the writes that were acknowledged.

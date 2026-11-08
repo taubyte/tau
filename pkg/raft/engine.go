@@ -288,6 +288,17 @@ func (e *engine) deliver(d delivery) {
 		return
 	}
 	g.heard(d)
+	switch d.msg.GetType() {
+	case pb.MessageType_MsgVote, pb.MessageType_MsgPreVote:
+		if e.clock.Now().Before(g.quietUntil) {
+			return
+		}
+	case pb.MessageType_MsgTransferLeader:
+		g.unlease()
+	case pb.MessageType_MsgForgetLeader:
+		// Raft never sends it; a member that forgot its leader votes at once.
+		return
+	}
 	if err := g.rn.Step(d.msg); err != nil && !errors.Is(err, etcdraft.ErrStepPeerNotFound) && !errors.Is(err, etcdraft.ErrStepLocalMsg) {
 		engineLogger.Debugf("[%s] %s: step %s from %s: %v", e.id.ShortString(), d.group, d.msg.GetType(), d.from.ShortString(), err)
 	}

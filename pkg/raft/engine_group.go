@@ -67,6 +67,14 @@ type group struct {
 	retryAt time.Time
 	backoff time.Duration
 
+	// lease, rounds, confEpoch and unleased are how a leader answers reads alone
+	// (engine_lease.go); quietUntil is when a member that opened again may vote.
+	lease      readLease
+	rounds     map[uint64]leaseRound
+	confEpoch  uint64
+	unleased   uint64
+	quietUntil time.Time
+
 	mu           sync.Mutex
 	state        State
 	lead         uint64
@@ -138,6 +146,7 @@ func (e *engine) newGroup(namespace string, cfg groupConfig) (*group, error) {
 		trailing:      cfg.timeouts.TrailingLogs,
 		pending:       map[uint64]chan FSMResponse{},
 		reads:         map[uint64]chan uint64{},
+		rounds:        map[uint64]leaseRound{},
 		state:         Follower,
 	}
 	g.nextTick = e.clock.Now().Add(g.tickEvery)
@@ -187,6 +196,9 @@ func (e *engine) newGroup(namespace string, cfg groupConfig) (*group, error) {
 	g.refreshMembers()
 	hs, _, _ := log.InitialState()
 	g.term, g.commit = hs.GetTerm(), hs.GetCommit()
+	if g.term > 0 {
+		g.quietUntil = e.clock.Now().Add(electionTicks * g.tickEvery)
+	}
 	g.last, _ = log.LastIndex()
 	g.appliedCache = applied
 	g.applier = newApplier(applied)
@@ -194,12 +206,15 @@ func (e *engine) newGroup(namespace string, cfg groupConfig) (*group, error) {
 	return g, nil
 }
 
-// tick advances raft's clock once the group's interval has passed.
+// tick advances raft's clock once the group's interval has passed. Ticks a stalled
+// loop missed are dropped, not caught up: a burst of them would let a member that
+// just heard its leader stand for election at once.
 func (g *group) tick(now time.Time) {
-	for !now.Before(g.nextTick) {
-		g.rn.Tick()
-		g.nextTick = g.nextTick.Add(g.tickEvery)
+	if now.Before(g.nextTick) {
+		return
 	}
+	g.rn.Tick()
+	g.nextTick = now.Add(g.tickEvery)
 }
 
 // heard looks at a message before raft does: a vote asked by a node the group does
@@ -244,6 +259,7 @@ func (g *group) apply(rd etcdraft.Ready) {
 		item.snap, item.machine = snap, machine
 		g.conf = proto.Clone(snap.GetMetadata().GetConfState()).(*pb.ConfState)
 		g.refreshMembers()
+		g.membershipChanged()
 	}
 
 	for _, ent := range rd.CommittedEntries {
@@ -263,6 +279,7 @@ func (g *group) apply(rd etcdraft.Ready) {
 				}
 			}
 			g.conf = g.rn.ApplyConfChange(cc)
+			g.membershipChanged()
 			item.confChanged = true
 			g.refreshMembers()
 			g.resolve(id, FSMResponse{})
@@ -277,9 +294,11 @@ func (g *group) apply(rd etcdraft.Ready) {
 	g.mu.Lock()
 	for _, rs := range rd.ReadStates {
 		if len(rs.RequestCtx) == 8 {
+			id := binary.BigEndian.Uint64(rs.RequestCtx)
+			g.confirmed(id)
 			// A read asked again can be answered twice; the first answer is the one
 			// waited for, and the loop never waits on a reader.
-			if ch, ok := g.reads[binary.BigEndian.Uint64(rs.RequestCtx)]; ok {
+			if ch, ok := g.reads[id]; ok {
 				select {
 				case ch <- rs.Index:
 				default:
@@ -652,8 +671,8 @@ func (a confAsk) run(*engine) {
 }
 
 // Barrier returns once this node has applied everything committed before it was
-// asked: raft's read index, confirmed by a quorum, then applied here. No entry is
-// written for it.
+// asked: raft's read index, confirmed by a quorum or by the leader's lease, then
+// applied here. No entry is written for it.
 func (g *group) Barrier(timeout time.Duration) error {
 	id := randomID()
 	ch := make(chan uint64, 1)
@@ -735,13 +754,6 @@ func (g *group) appliedTo(index uint64, deadline <-chan time.Time) error {
 
 // appliedLocked is the applied index as the loop last published it; mu is held.
 func (g *group) appliedLocked() uint64 { return g.appliedCache }
-
-type readAsk struct {
-	g   *group
-	ctx []byte
-}
-
-func (a readAsk) run(*engine) { a.g.rn.ReadIndex(a.ctx) }
 
 // Bootstrap starts the group's log with peers as its voters, on a node that has
 // none yet.
@@ -970,7 +982,10 @@ type transferAsk struct {
 	to uint64
 }
 
-func (a transferAsk) run(*engine) { a.g.rn.TransferLeader(a.to) }
+func (a transferAsk) run(*engine) {
+	a.g.unlease()
+	a.g.rn.TransferLeader(a.to)
+}
 
 // Observe adds o to what hears the group's leader and foreign votes.
 func (g *group) Observe(o groupObserver) {
