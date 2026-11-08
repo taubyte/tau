@@ -86,21 +86,11 @@ func (c *Client) List(depth int) ([][]string, error) {
 /****** FETCH *******/
 // Fetch a key, does not watch nor cache value
 func (c *Client) Fetch(path tns.Path) (tns.Object, error) {
-	var err error
 	object := c.cache.get(path)
 	if object == nil {
-		// Subscribe before fetching: a push landing in between invalidates
-		// this fetch instead of leaving a stale value cached.
-		sub, gen, lerr := c.cache.listen(path)
-		if lerr != nil {
-			logger.Error(lerr)
-		}
-		object, err = c.fetch(path.Slice())
-		if err != nil {
+		var err error
+		if object, err = c.fetchShared(path, c.fetch); err != nil {
 			return nil, err
-		}
-		if lerr == nil {
-			c.cache.store(sub, gen, path, object)
 		}
 	}
 
@@ -109,6 +99,28 @@ func (c *Client) Fetch(path tns.Path) (tns.Object, error) {
 		object: object,
 		tns:    c,
 	}, nil
+}
+
+// fetchShared turns concurrent misses for a key into one request: they arrive
+// together when the key expires, and one stream each exhausts the TNS node's limit.
+func (c *Client) fetchShared(path tns.Path, fetch func([]string) (interface{}, error)) (interface{}, error) {
+	object, err, _ := c.flight.Do(path.String(), func() (interface{}, error) {
+		// Subscribe before fetching: a push landing in between invalidates
+		// this fetch instead of leaving a stale value cached.
+		sub, gen, lerr := c.cache.listen(path)
+		if lerr != nil {
+			logger.Error(lerr)
+		}
+		object, err := fetch(path.Slice())
+		if err != nil {
+			return nil, err
+		}
+		if lerr == nil {
+			c.cache.store(sub, gen, path, object)
+		}
+		return object, nil
+	})
+	return object, err
 }
 
 /****** FETCH *******/

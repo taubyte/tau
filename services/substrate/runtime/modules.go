@@ -44,7 +44,7 @@ func (f *Function) ModulesChanged() error {
 	for name, was := range modules {
 		addr, err := lookup.Lookup(f.vmContext, name)
 		if err != nil {
-			return fmt.Errorf("resolving module `%s` failed with: %w", name, err)
+			continue // a failed lookup is not a moved module
 		}
 		if addr.String() != was {
 			return fmt.Errorf("module `%s` moved from `%s` to `%s`", name, was, addr.String())

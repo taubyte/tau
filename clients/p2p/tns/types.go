@@ -11,6 +11,7 @@ import (
 	client "github.com/taubyte/tau/p2p/streams/client"
 
 	peerCore "github.com/libp2p/go-libp2p/core/peer"
+	"golang.org/x/sync/singleflight"
 )
 
 type Client struct {
@@ -18,6 +19,7 @@ type Client struct {
 	client *client.Client
 	peers  []peerCore.ID
 	cache  *cache
+	flight singleflight.Group
 }
 
 type Stats Client

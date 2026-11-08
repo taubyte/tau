@@ -1084,20 +1084,19 @@ func TestValidationWithTnsError(t *testing.T) {
 		t.Fatalf("Add() failed: %v", err)
 	}
 
-	// Get with validation enabled - should remove serviceable due to TNS error
+	// A TNS error says nothing about the function: it stays and keeps serving
 	matcher := &mockMatchDefinition{cachePrefix: "test-prefix", stringVal: "test-matcher"}
 	options := components.GetOptions{
 		Validation: true,
 		Branches:   []string{"main"},
 	}
-	_, err = cache.Get(matcher, options)
-	if err == nil {
-		t.Fatal("Expected error for TNS failure")
+	got, err := cache.Get(matcher, options)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("Expected the serviceable to keep serving, got %v, %v", got, err)
 	}
 
-	// Verify serviceable was removed and closed
-	if !serviceable.IsClosed() {
-		t.Fatal("Expected serviceable to be closed after TNS error")
+	if serviceable.IsClosed() {
+		t.Fatal("A TNS error must not close the serviceable")
 	}
 }
 
@@ -1343,14 +1342,13 @@ func TestValidateWithTnsCommitError(t *testing.T) {
 		Validation: true,
 		Branches:   []string{"main"},
 	}
-	_, err = cache.Get(matcher, options)
-	if err == nil {
-		t.Fatal("Expected error for TNS commit error")
+	got, err := cache.Get(matcher, options)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("Expected the serviceable to keep serving, got %v, %v", got, err)
 	}
 
-	// Verify serviceable was removed and closed
-	if !serviceable.IsClosed() {
-		t.Fatal("Expected serviceable to be closed after TNS commit error")
+	if serviceable.IsClosed() {
+		t.Fatal("A TNS error must not close the serviceable")
 	}
 }
 
@@ -1380,17 +1378,15 @@ func TestValidateWithAssetCidError(t *testing.T) {
 		Validation: true,
 		Branches:   []string{"main"},
 	}
-	_, err = cache.Get(matcher, options)
-	if err == nil {
-		t.Fatal("Expected error for asset CID error")
+	got, err := cache.Get(matcher, options)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("Expected the serviceable to keep serving, got %v, %v", got, err)
 	}
 
-	// Verify serviceable was removed and closed
-	if !serviceable.IsClosed() {
-		t.Fatal("Expected serviceable to be closed after asset CID error")
+	if serviceable.IsClosed() {
+		t.Fatal("A TNS error must not close the serviceable")
 	}
 
-	// Restore original TNS client
 	mockService.tnsClient = originalTnsClient
 }
 
@@ -1628,13 +1624,13 @@ func TestValidateErrorMessages(t *testing.T) {
 		Validation: true,
 		Branches:   []string{"main"},
 	}
-	_, err = cache.Get(matcher, options)
-	if err == nil {
-		t.Fatal("Expected error for TNS commit error")
+	got, err := cache.Get(matcher, options)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("Expected the serviceable to keep serving, got %v, %v", got, err)
 	}
-	// The serviceable gets removed, so we get "does not exist" error
-	if !strings.Contains(err.Error(), "does not exist") {
-		t.Fatalf("Expected 'does not exist' error message, got: %v", err.Error())
+
+	if serviceable.IsClosed() {
+		t.Fatal("A TNS error must not close the serviceable")
 	}
 }
 
