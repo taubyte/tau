@@ -1,14 +1,18 @@
 package storage
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-datastore/query"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
 
@@ -141,4 +145,42 @@ func TestAPlacementIsNamedByWhoAcceptsAndHowManyCopies(t *testing.T) {
 	require.Equal(t, placementView(a, 3), placementView(b, 3), "order and a member that declines change nothing")
 	require.NotEqual(t, placementView(b, 3), placementView(b, 2))
 	require.NotEqual(t, placementView(b, 3), placementView(b[:1], 3))
+}
+
+func TestANodeThatNeverLearnedHowManyCopiesHandsNothingOver(t *testing.T) {
+	at := assetsOf(t, "site_code")
+	v := &view{}
+	c := newCluster(t, 4, fixedCatalog{at}, withMembers(v.get))
+
+	root, _, holders := writtenAlone(t, c, at)
+	v.set(c.ids...)
+	c.nodes[0].fleet = &fleetPolicy{from: &fleetSaying{err: errors.New("no route to the register")}}
+
+	require.NoError(t, c.nodes[0].rehome(t.Context()))
+	for _, h := range holders {
+		id, err := libp2ppeer.Decode(h)
+		require.NoError(t, err)
+		require.False(t, c.swarm.holds(id, root), "placed with a number of copies it never read")
+	}
+}
+
+// unlistable is a local store whose rows cannot be listed.
+type unlistable struct{ *orderedMem }
+
+func (unlistable) Query(context.Context, query.Query) (query.Results, error) {
+	return nil, errors.New("the disk is gone")
+}
+
+func TestReferencesThatCannotBeListedAreAnError(t *testing.T) {
+	at := assetsOf(t, "site_code")
+	v := &view{}
+	c := newCluster(t, 4, fixedCatalog{at}, withMembers(v.get))
+
+	writtenAlone(t, c, at)
+	v.set(c.ids...)
+	local, err := NewLocal(unlistable{newOrderedMem()}, time.Now)
+	require.NoError(t, err)
+	c.nodes[0].local = local
+
+	require.ErrorContains(t, c.nodes[0].rehome(t.Context()), "the disk is gone")
 }
