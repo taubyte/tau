@@ -388,7 +388,7 @@ func pushless(t *testing.T) taupeer.Node {
 	return node
 }
 
-func connectAllOf(t *testing.T, nodes ...taupeer.Node) {
+func connectAllOf(t testing.TB, nodes ...taupeer.Node) {
 	t.Helper()
 	require.NoError(t, taupeer.LinkAllPeers())
 	for i, a := range nodes {

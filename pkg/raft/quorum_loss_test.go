@@ -309,3 +309,35 @@ func TestHealing_AReplayLeavesAnArchiveWrittenSince(t *testing.T) {
 	_, merged := cl.Get("a")
 	require.True(t, merged, "the replay never merged the archive it read")
 }
+
+// A MEMBER THAT HEARS OF A LEADER, or that holds nothing, recovers nothing: its
+// formation has not lost its quorum, or there is nothing to carry.
+func TestHealing_NothingRecoversWhileAMemberLeadsOrNothingIsHeld(t *testing.T) {
+	group := joinedGroup(t, "quorum-still-led", sameStore, 3, WithQuorumLossRecovery(time.Hour))
+	leader := leaderOf(t, group...)
+	require.NoError(t, leader.Set("kept", []byte("v"), 5*time.Second))
+	for _, cl := range group {
+		require.Eventually(t, func() bool { _, ok := cl.Get("kept"); return ok }, 5*time.Second, 10*time.Millisecond)
+	}
+	var follower *cluster
+	for _, cl := range group {
+		if cl != leader {
+			follower = cl.(*cluster)
+		}
+	}
+	before := follower.current()
+	before.healer.Load().recoverFromQuorumLoss(t.Context())
+	require.Same(t, before, follower.current(), "a member that hears of a leader formed again")
+	require.False(t, follower.hasArchive())
+
+	empty, err := New(newMockNode(t), "quorum-nothing-held", WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second))
+	require.NoError(t, err)
+	t.Cleanup(func() { empty.Close() })
+	e := empty.(*cluster)
+	waitLeader(t, empty, 5*time.Second)
+	held := e.current()
+	require.True(t, held.holdsNothing(), "a group of one that took no write holds something")
+	held.healer.Load().recoverFromQuorumLoss(t.Context())
+	require.Same(t, held, e.current(), "a member holding nothing formed again to carry it")
+	require.False(t, e.hasArchive())
+}
