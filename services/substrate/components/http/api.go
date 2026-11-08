@@ -49,12 +49,20 @@ func (s *Service) Lookup(matcher *common.MatchDefinition) (iface.Serviceable, er
 }
 
 func (s *Service) handle(w goHttp.ResponseWriter, r *goHttp.Request) error {
+	_, err := s.ServeLocal(w, r)
+	return err
+}
+
+// ServeLocal serves r on this node. handled is false when nothing ran and
+// nothing was written, because this node has no match or is full, so a gateway
+// in this process may still send the request to another node.
+func (s *Service) ServeLocal(w goHttp.ResponseWriter, r *goHttp.Request) (handled bool, err error) {
 	startTime := time.Now()
 	matcher := common.New(helpers.ExtractHost(r.Host), r.URL.Path, r.Method)
 
 	pick, err := s.Lookup(matcher)
 	if err != nil {
-		return fmt.Errorf("looking up serviceable failed with: %w", err)
+		return false, fmt.Errorf("looking up serviceable failed with: %w", err)
 	}
 
 	run := func() error {
@@ -76,14 +84,15 @@ func (s *Service) handle(w goHttp.ResponseWriter, r *goHttp.Request) error {
 	// Websites answer from memory in microseconds, and a flood of slow
 	// functions must not turn the site away, so only functions take a slot.
 	if _, isSite := pick.(iface.Website); isSite {
-		return run()
+		return true, run()
 	}
 	err = admitted(r.Context(), s.inflight, run)
 	if platformerr.CodeOf(err) == platformerr.NodeBusy {
 		// every NodeBusy is raised before the guest is called, so a gateway may try another node
 		httptun.Refuse(w)
+		return false, err
 	}
-	return err
+	return true, err
 }
 
 var logger = log.Logger("tau.substrate.service.http")

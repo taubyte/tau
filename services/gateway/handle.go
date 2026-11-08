@@ -164,6 +164,16 @@ func noMatch(result *lookupResult) error {
 }
 
 func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
+	// The node's own substrate needs no lookup and no tunnel. Other nodes are
+	// only asked when it has no match or is full.
+	if g.local != nil {
+		w.Header().Set(ProxyHeader, g.node.ID().String())
+		if handled, err := g.local(w, r); handled {
+			return err
+		}
+		w.Header().Del(ProxyHeader)
+	}
+
 	result, err := g.lookup(r)
 	if err != nil {
 		return err

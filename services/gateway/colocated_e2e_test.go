@@ -481,20 +481,16 @@ func coloMatrix(t *testing.T, n int, direct *cluster) {
 		}
 		return b
 	}()
-	pids := map[string]bool{}
-	for _, nd := range c.nodes {
-		pids[nd.pid()] = true
-	}
 
 	t.Run("function GET on every node", func(t *testing.T) {
-		// proves: each node's gateway reaches a substrate (its own or another) and the function answers
-		for _, base := range ports {
+		// proves: each node's gateway answers from its own substrate while that one has room
+		for _, nd := range c.nodes {
 			for range 30 {
-				res, data, _, err := c.do("GET", base, "/ping", nil)
+				res, data, _, err := c.do("GET", nd.base(), "/ping", nil)
 				assert.NilError(t, err)
 				assert.Equal(t, res.StatusCode, 200)
 				assert.Equal(t, string(data), "PONG")
-				assert.Assert(t, pids[res.Header.Get(gateway.ProxyHeader)], "X-Substrate-Peer %q is not one of the nodes", res.Header.Get(gateway.ProxyHeader))
+				assert.Equal(t, res.Header.Get(gateway.ProxyHeader), nd.pid())
 			}
 		}
 	})

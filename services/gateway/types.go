@@ -6,6 +6,7 @@ import (
 	"github.com/taubyte/tau/core/services/substrate"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/streams/client"
+	tauConfig "github.com/taubyte/tau/pkg/config"
 	http "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/services/substrate/components/metrics"
 )
@@ -17,6 +18,7 @@ type Gateway struct {
 	http       http.Service
 
 	substrateClient substrate.ProxyClient
+	local           tauConfig.LocalHTTP // the substrate in this process, if any
 
 	cluster string
 	dev     bool

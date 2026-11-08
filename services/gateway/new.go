@@ -52,6 +52,8 @@ func New(ctx context.Context, cfg tauConfig.Config) (gateway iface.Service, err 
 		return nil, fmt.Errorf("new streams client failed with: %w", err)
 	}
 
+	g.local = cfg.LocalHTTP()
+
 	g.attach()
 	return g, nil
 }
