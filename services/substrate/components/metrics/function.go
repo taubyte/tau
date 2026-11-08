@@ -18,7 +18,7 @@ const (
 
 // Less says m is a worse node than comp, comparing one key at a time so sorting
 // by it is a strict ordering: a node that cannot fit the function, then free
-// capacity, then warmth, then speed, then free memory.
+// capacity, then warmth.
 func (m *Function) Less(comp Iface) bool {
 	n, ok := comp.(*Function)
 	if !ok {
@@ -27,19 +27,20 @@ func (m *Function) Less(comp Iface) bool {
 	if fits, nFits := m.Memory >= 1, n.Memory >= 1; fits != nFits {
 		return nFits
 	}
-	if free, nFree := int(m.Free*freeLevels), int(n.Free*freeLevels); free != nFree {
+	if free, nFree := freeLevel(m.Free), freeLevel(n.Free); free != nFree {
 		return free < nFree
 	}
-	if m.Cached != n.Cached {
-		return m.Cached < n.Cached
-	}
-	if m.ColdStart != n.ColdStart {
-		return m.ColdStart > n.ColdStart
-	}
-	if m.AvgRunTime != n.AvgRunTime {
-		return m.AvgRunTime > n.AvgRunTime
-	}
-	return m.Memory < n.Memory
+	// Nothing finer than warmth: exact speed or host memory differ between any
+	// two nodes, so comparing them would crown one favourite instead of
+	// spreading load. Equal nodes tie; the caller must shuffle before sorting.
+	return m.Cached < n.Cached
+}
+
+// freeLevel is the bucket of a free share. A completely free node shares the
+// top bucket with a nearly free one, so one request in flight does not lose it
+// a level while a cold idle node keeps its own.
+func freeLevel(free float32) int {
+	return max(0, min(freeLevels-1, int(free*freeLevels)))
 }
 
 func (m *Function) Encode() []byte {

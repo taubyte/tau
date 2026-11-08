@@ -3,6 +3,7 @@ package metrics
 import (
 	"bytes"
 	"encoding/binary"
+	"math/rand"
 	"testing"
 )
 
@@ -96,5 +97,48 @@ func TestTruncatedFreeIsAnError(t *testing.T) {
 	b := (&Function{Free: 0.5}).Encode()
 	if err := new(Function).Decode(b[:len(b)-1]); err == nil {
 		t.Fatal("a half-sent field is corrupt, not an old node")
+	}
+}
+
+func TestFunctionIdleColdDoesNotBeatWarmWithOneInFlight(t *testing.T) {
+	cold := &Function{Memory: 2, Cached: 0, Free: 1}
+	warm := &Function{Memory: 2, Cached: 1, Free: 1023.0 / 1024}
+	if !cold.Less(warm) || warm.Less(cold) {
+		t.Fatal("one request in flight must not outweigh a warm instance")
+	}
+}
+
+// Equal nodes must tie, whatever their speed or host memory, so the caller can spread load.
+func TestFunctionEqualNodesTie(t *testing.T) {
+	a := &Function{Memory: 2, Cached: 1, Free: 0.9, AvgRunTime: 5, ColdStart: 9}
+	b := &Function{Memory: 7, Cached: 1, Free: 0.95, AvgRunTime: 50, ColdStart: 1}
+	if a.Less(b) || b.Less(a) {
+		t.Fatal("nodes equal in capacity and warmth must tie")
+	}
+}
+
+func TestFunctionLessStrictOnRandomTriples(t *testing.T) {
+	rnd := rand.New(rand.NewSource(1))
+	pick := func() *Function {
+		frees := []float32{0, 1, 1023.0 / 1024, 0.125, 0.5, rnd.Float32(), -1, 2}
+		return &Function{
+			Memory:     []float64{0.5, 1, 2}[rnd.Intn(3)],
+			Cached:     float32(rnd.Intn(3)),
+			Free:       frees[rnd.Intn(len(frees))],
+			AvgRunTime: rnd.Int63n(3),
+		}
+	}
+	for i := 0; i < 200000; i++ {
+		a, b, c := pick(), pick(), pick()
+		if a.Less(a) || (a.Less(b) && b.Less(a)) {
+			t.Fatalf("not strict: %+v %+v", *a, *b)
+		}
+		if a.Less(b) && b.Less(c) && !a.Less(c) {
+			t.Fatalf("not transitive: %+v %+v %+v", *a, *b, *c)
+		}
+		// incomparable must also be transitive, or sorting is undefined
+		if !a.Less(b) && !b.Less(a) && !b.Less(c) && !c.Less(b) && (a.Less(c) || c.Less(a)) {
+			t.Fatalf("ties not transitive: %+v %+v %+v", *a, *b, *c)
+		}
 	}
 }
