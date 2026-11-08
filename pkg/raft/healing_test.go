@@ -1342,11 +1342,23 @@ func TestHealing_TwoLeadersHearingEachOtherAtOnceDoNotBothYield(t *testing.T) {
 func TestHealing_AListedMemberOfAnotherFormationIsTaken(t *testing.T) {
 	const namespace = "listed-elsewhere"
 	probeEvery(t, 50*time.Millisecond)
-	ours := joinedGroup(t, namespace, sameStore, 2)
-	leader := leaderOf(t, ours...).(*cluster)
+	// OURS IS A FORMATION IN THE LOWER HALF, and the other one above it, so ours
+	// takes it: drawn at random, either is redrawn until it is.
+	var leader *cluster
+	for range 10 {
+		ours := joinedGroup(t, namespace, sameStore, 2)
+		candidate := leaderOf(t, ours...).(*cluster)
+		if candidate.current().raft.Formation()[0] < 0x80 {
+			leader = candidate
+			break
+		}
+		for _, cl := range ours {
+			require.NoError(t, cl.Close())
+		}
+	}
+	require.NotNil(t, leader, "no formation fell in the lower half in ten draws")
 	require.NoError(t, leader.Set("from-a", []byte("a"), time.Second))
 
-	// THE OTHER FORMATION IS ONE OURS COMES FIRST AGAINST, so ours takes it.
 	var other *cluster
 	for range 20 {
 		cl, err := New(newMockNode(t), namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
