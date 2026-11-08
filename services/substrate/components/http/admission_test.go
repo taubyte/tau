@@ -32,7 +32,7 @@ func TestLimitsScaleWithRAM(t *testing.T) {
 		mem                   uint64
 		floor, start, ceiling int
 	}{
-		{2, 2 * GB, 16, 128, 256}, {2, 8 * GB, 16, 128, 1024}, {1, 0, 1, 1, 1},
+		{2, 2 * GB, 16, 128, 512}, {2, 8 * GB, 16, 128, 2048}, {1, 0, 1, 1, 1},
 	} {
 		if f, s, m := limits(c.cpus, c.mem); f != c.floor || s != c.start || m != c.ceiling {
 			t.Errorf("limits(%d, %d) = %d, %d, %d", c.cpus, c.mem, f, s, m)

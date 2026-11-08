@@ -45,7 +45,7 @@ func maxInFlight(cpus int, memBytes uint64) int {
 // floor keeps a node that cut itself down able to do work and measure recovery.
 func limits(cpus int, memBytes uint64) (floor, start, ceiling int) {
 	start = maxInFlight(cpus, memBytes)
-	return min(start, cpus*8), start, max(start, int(memBytes>>23))
+	return min(start, cpus*8), start, max(start, int(memBytes>>22))
 }
 
 func newAdmission() *limiter {
