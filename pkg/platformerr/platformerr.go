@@ -103,7 +103,8 @@ type Logger interface {
 
 // Serve runs h and answers its error with Write. The full error chain goes to
 // log only. If h already started the response, an error body would corrupt
-// it, so the error is only logged.
+// it, and ending it cleanly would show the client a short body as a whole one,
+// so the connection is aborted: net/http closes it without logging the panic.
 func Serve(w http.ResponseWriter, r *http.Request, log Logger, h func(http.ResponseWriter, *http.Request) error) {
 	rec := &recorder{ResponseWriter: w}
 	if err := h(rec, r); err != nil {
@@ -112,9 +113,10 @@ func Serve(w http.ResponseWriter, r *http.Request, log Logger, h func(http.Respo
 			logf = log.Debugf // every scan of a missing page lands here
 		}
 		logf("%s %s%s failed with: %s", r.Method, r.Host, r.URL.Path, err)
-		if !rec.started.Load() {
-			Write(w, err, "")
+		if rec.started.Load() {
+			panic(http.ErrAbortHandler)
 		}
+		Write(w, err, "")
 	}
 }
 

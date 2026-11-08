@@ -173,8 +173,11 @@ func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 	}
 	sort.Slice(matches, func(i, j int) bool { return matches[j].metrics.Less(matches[i].metrics) })
 
-	// Only one retry can happen: the streams of the rest are dead weight on those nodes.
+	// Streams beyond the tries are dead weight on those nodes.
 	tries := matches[:min(maxTries, len(matches))]
+	if !tunnel.Replayable(r) {
+		tries = tries[:1] // it can never be retried
+	}
 	for _, loser := range matches[len(tries):] {
 		loser.Close()
 	}

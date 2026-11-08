@@ -46,6 +46,9 @@ func (c *captureHttp) LowLevel(d *http.LowLevelDefinition) *mux.Route {
 	return nil
 }
 
+// abandoned counts tunnel streams the gateway closed without forwarding a request.
+var abandoned atomic.Int64
+
 func newTestGateway(ctx context.Context, sc substrate.ProxyClient) goHttp.HandlerFunc {
 	cap := new(captureHttp)
 	g := &Gateway{ctx: ctx, http: cap, substrateClient: sc}
@@ -97,6 +100,7 @@ func fakeSubstrates(t *testing.T, defs ...substrateDef) goHttp.HandlerFunc {
 			func(_ context.Context, rw io.ReadWriter) {
 				w, r, err := httptun.Backend(rw)
 				if err != nil {
+					abandoned.Add(1)
 					return // an abandoned attempt's stream: nothing was forwarded
 				}
 				def.serve(w, r, rw)
@@ -182,19 +186,61 @@ func TestRetryForwardsRequestOnce(t *testing.T) {
 	}
 }
 
-// A substrate that already sent 200 and a body, then a broken frame: the user
-// must get exactly what the substrate sent, with no error text appended.
-func TestFrontendFailureAfterBodyLeavesBody(t *testing.T) {
+// A substrate that already sent 200 and a body, then a broken frame: the
+// client must see a failed transfer, not a clean short 200. This test used to
+// pin the opposite (a recorder saw 200 "hello"), which hid truncated responses.
+func TestFrontendFailureAfterBodyAbortsConnection(t *testing.T) {
 	handler := fakeSubstrate(t, func(int64) {},
 		func(w goHttp.ResponseWriter, r *goHttp.Request, raw io.Writer) {
 			w.WriteHeader(goHttp.StatusOK)
 			w.Write([]byte("hello"))
 			packer.New(httptun.Magic, httptun.Version).Send(99, raw, strings.NewReader("x"), 1) // unknown op: Frontend fails
 		})
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	req, _ := goHttp.NewRequest("GET", srv.URL, nil)
+	req.Host = "a.example.com"
+	res, err := goHttp.DefaultClient.Do(req)
+	if err != nil {
+		return // aborted before the buffered header reached the wire: also a visible failure
+	}
+	defer res.Body.Close()
+	if _, err := io.ReadAll(res.Body); err == nil {
+		t.Fatal("client read a short body without error")
+	}
+}
+
+// Before any byte is sent, a tunnel failure is still the JSON error.
+func TestFrontendFailureBeforeBodyIsJSONError(t *testing.T) {
+	handler := fakeSubstrate(t, func(int64) {},
+		func(w goHttp.ResponseWriter, r *goHttp.Request, raw io.Writer) {
+			packer.New(httptun.Magic, httptun.Version).Send(99, raw, strings.NewReader("x"), 1)
+		})
 	w := httptest.NewRecorder()
 	handler(w, httptest.NewRequest("GET", "http://a.example.com/", nil))
-	if w.Code != goHttp.StatusOK || w.Body.String() != "hello" {
-		t.Fatalf("status %d body %q", w.Code, w.Body)
+	if w.Code != goHttp.StatusInternalServerError || !strings.Contains(w.Header().Get("Content-Type"), "json") {
+		t.Fatalf("status %d type %q body %q", w.Code, w.Header().Get("Content-Type"), w.Body)
+	}
+}
+
+// A POST can never go to the second candidate, so its stream is closed up
+// front, not held until the request ends.
+func TestPostClosesSecondCandidateStream(t *testing.T) {
+	patientLookups(t)
+	entered, release := make(chan struct{}, 2), make(chan struct{})
+	defer close(release)
+	hold := func(w goHttp.ResponseWriter, r *goHttp.Request, _ io.Writer) {
+		entered <- struct{}{}
+		<-release
+	}
+	h := fakeSubstrates(t, substrateDef{noLookup, free(0.9), hold}, substrateDef{noLookup, free(0.1), hold})
+	abandoned.Store(0)
+	go h(httptest.NewRecorder(), httptest.NewRequest("POST", "http://a.example.com/", strings.NewReader("x")))
+	<-entered
+	for deadline := time.Now().Add(2 * time.Second); abandoned.Load() == 0; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the second candidate's stream is still open during the request")
+		}
 	}
 }
 

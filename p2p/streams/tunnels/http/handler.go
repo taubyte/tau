@@ -42,6 +42,11 @@ func Backend(stream io.ReadWriter) (http.ResponseWriter, *http.Request, error) {
 
 }
 
+// Replayable says the request can be sent twice: a body is consumed as it is forwarded.
+func Replayable(r *http.Request) bool {
+	return (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.ContentLength == 0
+}
+
 // HTTP -> Stream
 func Frontend(w http.ResponseWriter, r *http.Request, stream io.ReadWriter) error {
 	ctx := r.Context()
@@ -55,8 +60,7 @@ func Frontend(w http.ResponseWriter, r *http.Request, stream io.ReadWriter) erro
 	defer closeStream(stream)
 	defer context.AfterFunc(ctx, func() { closeStream(stream) })()
 
-	// Only a request with no body can be sent twice: a body is consumed as it is forwarded.
-	replayable := (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.ContentLength == 0
+	replayable := Replayable(r)
 
 	// buffered: if sending the request fails, nobody reads done and the reader must not block forever
 	done := make(chan error, 1)
