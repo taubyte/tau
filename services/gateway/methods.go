@@ -34,15 +34,23 @@ func (g *Gateway) lookupPlan() (threshold int, timeouts []time.Duration) {
 	if g.clientNode == nil {
 		return 0, timeouts
 	}
-	known := 0
+	known := g.knownSubstrates()
+	if known == 0 && len(timeouts) > 1 {
+		timeouts = timeouts[:len(timeouts)-1]
+	}
+	return max(1, min(known, substrate.DefaultThreshold)), timeouts
+}
+
+// knownSubstrates counts the substrates this node is connected to.
+func (g *Gateway) knownSubstrates() (known int) {
+	if g.clientNode == nil {
+		return 0
+	}
 	ps, nw := g.clientNode.Peer().Peerstore(), g.clientNode.Peer().Network()
 	for _, pid := range nw.Peers() {
 		if protos, err := ps.GetProtocols(pid); err == nil && slices.Contains(protos, protocol.ID(protocolCommon.SubstrateProtocol)) {
 			known++
 		}
 	}
-	if known == 0 && len(timeouts) > 1 {
-		timeouts = timeouts[:len(timeouts)-1]
-	}
-	return max(1, min(known, substrate.DefaultThreshold)), timeouts
+	return known
 }

@@ -83,8 +83,7 @@ func legacyNotFound(err error) bool {
 	return strings.Contains(err.Error(), "no HTTP match found for method")
 }
 
-func (g *Gateway) lookupOnce(r *goHttp.Request, timeout time.Duration, threshold int) (*lookupResult, error) {
-	var ops []client.Option[client.Request]
+func (g *Gateway) lookupOnce(r *goHttp.Request, timeout time.Duration, threshold int, ops ...client.Option[client.Request]) (*lookupResult, error) {
 	if timeout > 0 {
 		ops = append(ops, client.Timeout(timeout))
 	}
@@ -168,10 +167,14 @@ func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 	// only asked when it has no match or is full.
 	if g.local != nil {
 		w.Header().Set(ProxyHeader, g.node.ID().String())
-		if handled, err := g.local(w, r); handled {
+		handled, err := g.local(w, r)
+		if handled {
 			return err
 		}
 		w.Header().Del(ProxyHeader)
+		if platformerr.CodeOf(err) == platformerr.NodeBusy {
+			return g.spill(w, r, err)
+		}
 	}
 
 	result, err := g.lookup(r)

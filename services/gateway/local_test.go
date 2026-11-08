@@ -20,7 +20,8 @@ import (
 func localGateway(t *testing.T, local tauConfig.LocalHTTP, defs ...substrateDef) (h goHttp.HandlerFunc, ids []string, id string, lookups *atomic.Int64) {
 	lookups = new(atomic.Int64)
 	for i := range defs {
-		defs[i].lookup = func(int64) { lookups.Add(1) }
+		slow := defs[i].lookup
+		defs[i].lookup = func(n int64) { lookups.Add(1); slow(n) }
 	}
 	ctx, gw, subs, _ := startSubstrates(t, defs...)
 	sc, err := substrateClient.New(ctx, gw)
