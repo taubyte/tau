@@ -2,9 +2,11 @@ package raft
 
 import (
 	"bytes"
+	"path"
 	"testing"
 	"time"
 
+	ds "github.com/ipfs/go-datastore"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
@@ -149,4 +151,78 @@ func TestHealing_AMemberThatStoppedWhileFormingFormsWithWhatItCarried(t *testing
 		value, found := cl.Get("carried")
 		return found && string(value) == "v" && !cl.(*cluster).hasArchive()
 	}, 5*time.Second, 20*time.Millisecond, "the state it carried never reached its group")
+}
+
+func TestManualRecoveryIsWrittenAsManual(t *testing.T) {
+	written, err := Manual.MarshalYAML()
+	require.NoError(t, err)
+	require.Equal(t, "manual", written)
+}
+
+// AN ARCHIVE THE STORE CANNOT READ, MERGE OR LET GO OF IS KEPT, and replayed once
+// it can be: what a member carried out of a lost formation is its only copy.
+func TestHealing_AnArchiveTheStoreRefusesIsReplayedOnceItCan(t *testing.T) {
+	const namespace = "archive-refused"
+	store := newFaultStore()
+	node := storeNode{Node: newMockNode(t), store: store}
+	data, err := encodeMergeCommand(map[string]CRDTEntry{
+		"carried": {Value: []byte("v"), Timestamp: 1, WallClock: time.Now().UnixNano()},
+	})
+	require.NoError(t, err)
+	c := &cluster{Node: node, namespace: namespace, ctx: t.Context()}
+	archive := c.archiveKey().String()
+	require.NoError(t, store.Put(t.Context(), c.archiveKey(), data))
+	carried := path.Join(RaftStoragePrefix, namespace, "data", "carried")
+	store.failGet(archive, errDisk)
+	store.failPut(carried, errNoSpace)
+	store.failDelete(archive, errNoSpace)
+
+	cl, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second))
+	require.NoError(t, err)
+	t.Cleanup(func() { cl.Close() })
+	waitLeader(t, cl, 5*time.Second)
+	held := func() bool { _, found := cl.Get("carried"); return found }
+
+	require.Never(t, held, 300*time.Millisecond, 20*time.Millisecond, "an archive the store could not read was merged")
+	store.failGet(archive, nil)
+	require.Never(t, held, 300*time.Millisecond, 20*time.Millisecond, "an archive the store could not merge was merged")
+	require.True(t, cl.(*cluster).hasArchive())
+
+	store.failPut(carried, nil)
+	require.Eventually(t, held, 5*time.Second, 20*time.Millisecond, "the archive was never merged once it could be")
+	require.Never(t, func() bool { return !cl.(*cluster).hasArchive() }, 300*time.Millisecond, 20*time.Millisecond,
+		"an archive the store could not let go of was let go of")
+
+	store.failDelete(archive, nil)
+	require.Eventually(t, func() bool { return !cl.(*cluster).hasArchive() }, 5*time.Second, 20*time.Millisecond,
+		"the archive was never let go of once it could be")
+}
+
+// A SURVIVOR THAT CANNOT ARCHIVE WHAT IT HOLDS WIPES NOTHING, and forms its new
+// group once it can.
+func TestHealing_ASurvivorThatCannotArchiveWipesNothing(t *testing.T) {
+	const namespace = "archive-not-written"
+	probeEvery(t, 50*time.Millisecond)
+	var stores []*faultStore
+	wrap := func(ds.Batching) ds.Batching {
+		s := newFaultStore()
+		stores = append(stores, s)
+		return s
+	}
+	group := joinedGroup(t, namespace, wrap, 3, WithQuorumLossRecovery(300*time.Millisecond))
+	require.NoError(t, leaderOf(t, group...).Set("kept", []byte("v"), 5*time.Second))
+	archive := path.Join(RaftStoragePrefix, namespace, "archive")
+	stores[0].failPut(archive, errNoSpace)
+	survivor := survivorsOf(t, group, "kept", 1)[0]
+	formed, before := survivor.current().raft.Formation(), survivor.current()
+
+	require.Never(t, func() bool { return survivor.current() != before }, 1500*time.Millisecond, 20*time.Millisecond,
+		"a survivor that could not archive what it holds wiped it")
+	_, kept := survivor.Get("kept")
+	require.True(t, kept)
+
+	stores[0].failPut(archive, nil)
+	require.Eventually(t, func() bool { return survivor.IsLeader() && !bytes.Equal(formed, survivor.current().raft.Formation()) },
+		20*time.Second, 50*time.Millisecond, "the survivor never formed its new group once it could archive")
+	require.Eventually(t, func() bool { _, ok := survivor.Get("kept"); return ok }, 5*time.Second, 20*time.Millisecond)
 }

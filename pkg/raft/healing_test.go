@@ -1237,3 +1237,32 @@ func TestHealing_AYieldThatNoLongerHoldsWipesNothing(t *testing.T) {
 		})
 	}
 }
+
+// A REBUILD THAT KEEPS FAILING is tried again, ever less often, until it lands,
+// and stops being tried once the cluster closes.
+func TestHealing_ARebuildThatKeepsFailingIsTriedUntilItLands(t *testing.T) {
+	const namespace = "rebuild-keeps-failing"
+	store := newFaultStore()
+	node := storeNode{Node: newMockNode(t), store: store}
+	cl, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
+	require.NoError(t, err)
+	t.Cleanup(func() { cl.Close() })
+	waitLeader(t, cl, 5*time.Second)
+	c := cl.(*cluster)
+
+	snapshot := path.Join(RaftStoragePrefix, namespace, "engine", "snapshot")
+	store.failGet(snapshot, errNoSpace)
+	c.current().healer.Load().yieldAndRejoin(t.Context(), "", covering(c.current()))
+	require.Never(t, func() bool { return c.current().raft.State() == Leader }, 800*time.Millisecond, 20*time.Millisecond,
+		"a rebuild the store refused landed")
+	store.failGet(snapshot, nil)
+	require.Eventually(t, func() bool { return c.current().raft.State() == Leader }, 10*time.Second, 20*time.Millisecond,
+		"the member was never rebuilt")
+
+	store.failGet(snapshot, errNoSpace)
+	c.current().healer.Load().yieldAndRejoin(t.Context(), "", covering(c.current()))
+	require.NoError(t, cl.Close())
+	store.failGet(snapshot, nil)
+	require.Never(t, func() bool { return c.current().raft.State() == Leader }, 500*time.Millisecond, 20*time.Millisecond,
+		"a closed cluster was rebuilt")
+}
