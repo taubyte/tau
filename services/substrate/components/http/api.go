@@ -75,7 +75,7 @@ func (s *Service) handle(w goHttp.ResponseWriter, r *goHttp.Request) error {
 	if _, isSite := pick.(iface.Website); isSite {
 		return run()
 	}
-	return admitted(s.inflight, run)
+	return admitted(r.Context(), s.inflight, run)
 }
 
 var logger = log.Logger("tau.substrate.service.http")
