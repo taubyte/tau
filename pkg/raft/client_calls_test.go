@@ -142,9 +142,9 @@ func TestClient_CallsToAPeerThatRunsNoMemberFail(t *testing.T) {
 	require.Error(t, err)
 	_, err = cli.ClusterInfo(target)
 	require.ErrorContains(t, err, "clusterInfo failed")
-	_, _, err = cli.ExportFSM(target)
+	_, err = cli.ExportFSM(target, 0)
 	require.ErrorContains(t, err, "exportFSM failed")
-	require.Error(t, cli.HealAck(target))
+	require.Error(t, cli.HealAck(target, nil, 0))
 }
 
 func TestClient_ExchangePeersWithNoneOfItsOwn(t *testing.T) {
@@ -180,10 +180,10 @@ func TestClient_AStateThatWillNotDecodeIsAnError(t *testing.T) {
 	require.NoError(t, err)
 	defer cliOf.Close()
 
-	state, clock, err := cliOf.ExportFSM(server.ID())
+	exp, err := cliOf.ExportFSM(server.ID(), 0)
 	require.ErrorContains(t, err, "exportFSM failed")
-	require.Nil(t, state)
-	require.Zero(t, clock)
+	require.Nil(t, exp.state)
+	require.Zero(t, exp.clock)
 }
 
 func TestStream_AWriteTheLeadersStoreRefusesComesBackRefused(t *testing.T) {
@@ -205,9 +205,9 @@ func TestStream_AnExportTheLeaderCannotReadIsRefused(t *testing.T) {
 	require.NoError(t, cl.Set("k", []byte("v"), time.Second))
 	store.failScan("/raft/stream-refused-export/data", errDisk)
 
-	state, _, err := cli.ExportFSM(idOf(cl))
+	exp, err := cli.ExportFSM(idOf(cl), 0)
 	require.ErrorContains(t, err, errDisk.Error())
-	require.Nil(t, state)
+	require.Nil(t, exp.state)
 }
 
 func TestStream_AConsistentReadFromAMemberThatCannotBarrierIsRefused(t *testing.T) {
@@ -278,8 +278,8 @@ func TestStream_ExportFSMAskedOfEitherMemberIsTheGroupsState(t *testing.T) {
 
 	for _, member := range []Cluster{a, b} {
 		require.Eventually(t, func() bool {
-			state, _, err := cliOf.ExportFSM(idOf(member))
-			return err == nil && string(state["k"].Value) == "v"
+			exp, err := cliOf.ExportFSM(idOf(member), 0)
+			return err == nil && string(exp.state["k"].Value) == "v"
 		}, leaderWait, 20*time.Millisecond, "asking %s for the group's state", idOf(member).ShortString())
 	}
 }

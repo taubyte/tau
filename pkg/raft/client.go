@@ -39,8 +39,8 @@ type internalClient interface {
 	ExchangePeers(ourStart time.Time, ourPeers map[string]int64, target peer.ID) (time.Time, map[string]int64, error)
 	ClusterInfo(target peer.ID) (*ClusterInfoResponse, error)
 	Offer(target peer.ID) (offer, error)
-	ExportFSM(target peer.ID) (map[string]CRDTEntry, uint64, error)
-	HealAck(target peer.ID) error
+	ExportFSM(target peer.ID, freeze time.Duration) (export, error)
+	HealAck(target peer.ID, formation []byte, cut uint64) error
 	Close() error
 }
 
@@ -323,28 +323,41 @@ func peerIDs(ids []string) []peer.ID {
 	return out
 }
 
-func (c *client) ExportFSM(target peer.ID) (map[string]CRDTEntry, uint64, error) {
+// export is a group's state, the last index it holds, and the formation it is of.
+type export struct {
+	state     map[string]CRDTEntry
+	clock     uint64
+	cut       uint64
+	formation []byte
+}
+
+func (c *client) ExportFSM(target peer.ID, freeze time.Duration) (export, error) {
 	clientLogger.Infof("requesting exportFSM from %s", target.ShortString())
 
-	res, err := first(c.ctx, c, []peer.ID{target}, sendToPeerTimeout, func(ctx context.Context, s raftv2connect.RaftServiceClient) (*connect.Response[raftv2.ExportFSMResponse], error) {
-		return s.ExportFSM(ctx, connect.NewRequest(&raftv2.ExportFSMRequest{}))
+	req := &raftv2.ExportFSMRequest{FreezeMs: freeze.Milliseconds()}
+	res, err := first(c.ctx, c, []peer.ID{target}, sendToPeerTimeout+freeze, func(ctx context.Context, s raftv2connect.RaftServiceClient) (*connect.Response[raftv2.ExportFSMResponse], error) {
+		return s.ExportFSM(ctx, connect.NewRequest(req))
 	})
 	if err != nil {
 		clientLogger.Infof("exportFSM from %s failed: %v", target.ShortString(), err)
-		return nil, 0, fmt.Errorf("exportFSM failed: %w", err)
+		return export{}, fmt.Errorf("exportFSM failed: %w", err)
 	}
 
-	state := entriesFrom(res.Msg.GetEntries())
-
-	clientLogger.Infof("exportFSM from %s: %d keys, clock=%d", target.ShortString(), len(state), res.Msg.GetClock())
-
-	return state, res.Msg.GetClock(), nil
+	e := export{
+		state:     entriesFrom(res.Msg.GetEntries()),
+		clock:     res.Msg.GetClock(),
+		cut:       res.Msg.GetCut(),
+		formation: res.Msg.GetFormation(),
+	}
+	clientLogger.Infof("exportFSM from %s: %d keys, clock=%d, cut=%d", target.ShortString(), len(e.state), e.clock, e.cut)
+	return e, nil
 }
 
-func (c *client) HealAck(target peer.ID) error {
+func (c *client) HealAck(target peer.ID, formation []byte, cut uint64) error {
 	clientLogger.Infof("sending healAck to %s", target.ShortString())
+	req := &raftv2.HealAckRequest{Formation: formation, Cut: cut}
 	_, err := first(c.ctx, c, []peer.ID{target}, sendToPeerTimeout, func(ctx context.Context, s raftv2connect.RaftServiceClient) (*connect.Response[raftv2.HealAckResponse], error) {
-		return s.HealAck(ctx, connect.NewRequest(&raftv2.HealAckRequest{}))
+		return s.HealAck(ctx, connect.NewRequest(req))
 	})
 	if err != nil {
 		clientLogger.Warnf("healAck to %s failed: %v", target.ShortString(), err)

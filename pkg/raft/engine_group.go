@@ -81,6 +81,7 @@ type group struct {
 	observers    []groupObserver
 	err          error
 	formation    []byte
+	frozenUntil  time.Time
 }
 
 type indexWait struct {
@@ -497,6 +498,9 @@ func randomID() uint64 {
 
 // Propose replicates cmd and answers what the machine said when it applied it.
 func (g *group) Propose(cmd []byte, timeout time.Duration) (FSMResponse, error) {
+	if g.frozen() {
+		return FSMResponse{}, ErrFrozen
+	}
 	id := randomID()
 	data, err := proto.Marshal(&raftv2.Proposal{Id: id, Command: cmd})
 	if err != nil {
@@ -791,6 +795,20 @@ func (g *group) setFormation(formation []byte) error {
 	g.formation = formation
 	g.mu.Unlock()
 	return nil
+}
+
+// Freeze has the group take no write for d: it is handing its state to another
+// group, and a write it took after the state was cut would be lost with it.
+func (g *group) Freeze(d time.Duration) {
+	g.mu.Lock()
+	g.frozenUntil = g.e.clock.Now().Add(d)
+	g.mu.Unlock()
+}
+
+func (g *group) frozen() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.e.clock.Now().Before(g.frozenUntil)
 }
 
 // Formation is the formation the group is bound to, nil while it is bound to none.

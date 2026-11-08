@@ -59,6 +59,10 @@ var (
 	// ErrGroupOpen is a namespace a node already runs a group for.
 	ErrGroupOpen = errors.New("this node already runs a group for the namespace")
 
+	// ErrFrozen is a write to a group handing its state to another, which takes
+	// none until the handover ends or its freeze runs out.
+	ErrFrozen = errors.New("the group is handing its state to another and takes no writes")
+
 	// ErrBoundElsewhere is a group asked to bind to a formation while bound to
 	// another.
 	ErrBoundElsewhere = errors.New("the group is bound to another formation")

@@ -369,7 +369,7 @@ func TestHealing_AYieldRebuildsTheMemberItsReadersRead(t *testing.T) {
 	})
 	read(func() {
 		cli.ClusterInfo(idOf(c))
-		cli.ExportFSM(idOf(c))
+		cli.ExportFSM(idOf(c), 0)
 		cli.ExchangePeers(time.Now(), nil, idOf(c))
 	})
 
@@ -1145,4 +1145,58 @@ func TestHealing_AMemberWhoseRebuildFailsIsRebuiltOnceItCanBe(t *testing.T) {
 	require.Eventually(t, func() bool { return c.current().raft.State() == Leader }, 10*time.Second, 20*time.Millisecond,
 		"the member was never rebuilt")
 	require.NoError(t, cl.Set("after", []byte("v"), 5*time.Second))
+}
+
+// winningPeer answers the group's protocol as the leader of a formation that wins
+// every comparison, and never merges anyone.
+type winningPeer struct {
+	raftv2connect.UnimplementedRaftServiceHandler
+	id peer.ID
+}
+
+func (p *winningPeer) ClusterInfo(context.Context, *connect.Request[raftv2.ClusterInfoRequest]) (*connect.Response[raftv2.ClusterInfoResponse], error) {
+	return connect.NewResponse(&raftv2.ClusterInfoResponse{
+		Leader:      p.id.String(),
+		MemberCount: 1,
+		NodeId:      p.id.String(),
+		Formation:   make([]byte, formationSize),
+		Members:     []string{p.id.String()},
+	}), nil
+}
+
+// A MEMBER HOLDING STATE THAT LOSES TO ANOTHER GROUP WAITS TO BE TAKEN: yielding
+// before the winner merged it would wipe what the winner never had.
+func TestHealing_ALoserHoldingStateWaitsToBeTaken(t *testing.T) {
+	const namespace = "loser-waits"
+	probeEvery(t, 50*time.Millisecond)
+	group := joinedGroup(t, namespace, sameStore, 3)
+	leader := leaderOf(t, group...)
+	require.NoError(t, leader.Set("kept", []byte("v"), 5*time.Second))
+	survivor := group[0].(*cluster)
+	if Cluster(survivor) == leader {
+		survivor = group[1].(*cluster)
+	}
+	require.Eventually(t, func() bool { _, ok := survivor.Get("kept"); return ok }, 5*time.Second, 10*time.Millisecond)
+	for _, cl := range group {
+		if cl != Cluster(survivor) {
+			require.NoError(t, cl.Close())
+		}
+	}
+
+	node := newMockNode(t)
+	route, handler := raftv2connect.NewRaftServiceHandler(&winningPeer{id: node.ID()})
+	mux := http.NewServeMux()
+	mux.Handle(route, handler)
+	srv, err := rpc.Listen(t.Context(), node.Host(), protocol.ID(Protocol(namespace)), mux)
+	require.NoError(t, err)
+	t.Cleanup(func() { srv.Close() })
+	require.NoError(t, taupeer.LinkAllPeers())
+	connected(t, node, survivor)
+	survivor.current().tracker.addPeer(node.ID())
+	before := survivor.current()
+
+	require.Never(t, func() bool {
+		_, ok := survivor.Get("kept")
+		return !ok || survivor.current() != before
+	}, 3*time.Second, 20*time.Millisecond, "the loser yielded before anyone took its state")
 }

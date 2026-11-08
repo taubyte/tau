@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"bytes"
 	"context"
 	"path"
 	"sync"
@@ -288,13 +289,10 @@ func (h *healer) detectAndHeal(ctx context.Context) {
 	}
 
 	localInfo := h.localClusterInfo()
-	winner := negotiateWinner(localInfo, foreignInfo)
-
-	healLogger.Infof("[%s] detectAndHeal: local(leader=%s, members=%d, lastIndex=%d) vs foreign(leader=%s, members=%d, lastIndex=%d) → winner=%s",
+	healLogger.Infof("[%s] detectAndHeal: local(leader=%s, members=%d, lastIndex=%d) vs foreign(leader=%s, members=%d, lastIndex=%d)",
 		h.cluster.ID().ShortString(),
 		localInfo.LeaderID, localInfo.MemberCount, localInfo.LastIndex,
-		foreignInfo.LeaderID, foreignInfo.MemberCount, foreignInfo.LastIndex,
-		winner)
+		foreignInfo.LeaderID, foreignInfo.MemberCount, foreignInfo.LastIndex)
 
 	if foreignLeader == "" {
 		// NOBODY WIPES WHAT IT HOLDS FOR A PEER WITH NO LEADER: that peer may hold
@@ -312,13 +310,24 @@ func (h *healer) detectAndHeal(ctx context.Context) {
 		return
 	}
 
-	if winner == localInfo.NodeID {
+	// A LEADERLESS MEMBER IS ALWAYS THE ONE TAKEN: it cannot take anyone's state,
+	// and which formation is lower settles only which of two leaders takes the
+	// other.
+	//
+	// A LOSER HOLDING STATE WAITS TO BE TAKEN: the winner's leader exports it,
+	// merges it, and only then hands it a receipt to yield on. Yielding first would
+	// wipe what the winner never had.
+	if !pristine {
+		healLogger.Infof("[%s] we lose to %s — waiting for its leader to take our state",
+			h.cluster.ID().ShortString(), foreignInfo.LeaderID)
+		// An exchange with the winner's leader puts this member in its tracker, so
+		// its next probe finds it rather than whenever discovery would.
+		startTime, peers := h.member.tracker.getPeersMap()
+		h.member.raftClient.ExchangePeers(startTime, peers, foreignLeader)
 		return
 	}
-
-	healLogger.Infof("[%s] we lose to %s — yielding",
+	healLogger.Infof("[%s] we lose to %s and hold nothing — yielding",
 		h.cluster.ID().ShortString(), foreignInfo.LeaderID)
-
 	h.yieldAndRejoin(ctx, foreignLeader)
 }
 
@@ -369,13 +378,23 @@ func (h *healer) localClusterInfo() *ClusterInfoResponse {
 	}
 	info.Term = h.member.raft.Term()
 	info.LastIndex = h.member.raft.LastIndex()
+	info.Formation = h.member.raft.Formation()
 	if members, err := h.member.members(); err == nil {
 		info.MemberCount = len(members)
 	}
 	return info
 }
 
+// negotiateWinner picks the same side from either: the lower formation when both
+// have one, a value neither side's writes or membership move, so two leaders never
+// each take the other.
 func negotiateWinner(a, b *ClusterInfoResponse) string {
+	if len(a.Formation) > 0 && len(b.Formation) > 0 && !bytes.Equal(a.Formation, b.Formation) {
+		if bytes.Compare(a.Formation, b.Formation) < 0 {
+			return a.NodeID
+		}
+		return b.NodeID
+	}
 	if a.MemberCount != b.MemberCount {
 		if a.MemberCount > b.MemberCount {
 			return a.NodeID
@@ -443,12 +462,13 @@ func (h *healer) absorbOrphan(ctx context.Context, orphan peer.ID) {
 
 	// A yield wipes the only copy of what the orphan holds, so it is told to
 	// yield only once all of that has landed here.
-	foreignState, _, err := h.member.raftClient.ExportFSM(orphan)
+	exp, err := h.member.raftClient.ExportFSM(orphan, 0)
 	if err != nil {
 		healLogger.Warnf("[%s] export FSM from orphan %s failed: %v",
 			h.cluster.ID().ShortString(), orphan.ShortString(), err)
 		return
 	}
+	foreignState := exp.state
 	if len(foreignState) > 0 {
 		ourState, err := h.member.fsm.ExportState()
 		if err != nil {
@@ -475,7 +495,7 @@ func (h *healer) absorbOrphan(ctx context.Context, orphan peer.ID) {
 
 	healLogger.Infof("[%s] sending healAck to orphan %s — it will wipe and rejoin via requestVoterJoin",
 		h.cluster.ID().ShortString(), orphan.ShortString())
-	h.member.raftClient.HealAck(orphan)
+	h.member.raftClient.HealAck(orphan, exp.formation, exp.cut)
 }
 
 func (h *healer) executeMerge(ctx context.Context, loserLeader peer.ID) {
@@ -494,11 +514,16 @@ func (h *healer) executeMerge(ctx context.Context, loserLeader peer.ID) {
 		return
 	}
 
-	foreignState, _, err := h.member.raftClient.ExportFSM(loserLeader)
+	exp, err := h.member.raftClient.ExportFSM(loserLeader, MergeFreeze)
 	if err != nil {
 		healLogger.Errorf("export FSM from %s failed: %v", loserLeader.ShortString(), err)
 		return
 	}
+	if !bytes.Equal(exp.formation, loser.Formation) {
+		healLogger.Warnf("[%s] %s's formation changed during the merge — trying again later", h.cluster.ID().ShortString(), loserLeader.ShortString())
+		return
+	}
+	foreignState := exp.state
 
 	ourState, err := h.member.fsm.ExportState()
 	if err != nil {
@@ -524,7 +549,7 @@ func (h *healer) executeMerge(ctx context.Context, loserLeader peer.ID) {
 			h.cluster.ID().ShortString(), len(delta))
 	}
 
-	h.healAckMembersOf(loser.Members)
+	h.healAckMembersOf(loser.Members, exp)
 }
 
 // applyMerge applies a merge and reports the state machine's refusal as well
@@ -539,7 +564,7 @@ func (h *healer) applyMerge(data []byte) error {
 
 // healAckMembersOf tells the members of a merged group that are not this group's
 // to yield and join it.
-func (h *healer) healAckMembersOf(members []peer.ID) {
+func (h *healer) healAckMembersOf(members []peer.ID, exp export) {
 	ours := map[peer.ID]bool{}
 	for _, m := range h.member.raft.Members() {
 		ours[m.ID] = true
@@ -549,7 +574,7 @@ func (h *healer) healAckMembersOf(members []peer.ID) {
 		if ours[pid] || pid == h.cluster.ID() {
 			continue
 		}
-		h.member.raftClient.HealAck(pid)
+		h.member.raftClient.HealAck(pid, exp.formation, exp.cut)
 		sent++
 	}
 	healLogger.Infof("[%s] healing complete — sent healAck to %d members of the merged group (they will rejoin via requestVoterJoin)",

@@ -17,6 +17,13 @@ var (
 
 	ErrAlreadyClosed = errors.New("cluster already closed")
 
+	// ErrReceiptNotOurs is a heal-ack for a formation other than the member's.
+	ErrReceiptNotOurs = errors.New("the receipt is for another formation")
+
+	// ErrReceiptShort is a heal-ack whose cut stops before what the member
+	// committed.
+	ErrReceiptShort = errors.New("the receipt does not cover what the member committed")
+
 	ErrInvalidNamespace = errors.New("invalid namespace")
 
 	ErrInvalidBarrier = errors.New("invalid barrier: must be > 0 and <= MaxGetHandlerBarrierTimeout")

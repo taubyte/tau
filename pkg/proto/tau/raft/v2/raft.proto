@@ -122,14 +122,30 @@ message ClusterInfoResponse {
   repeated string members = 7;
 }
 
-message ExportFSMRequest {}
+// ExportFSMRequest asks for the group's state. freeze_ms above 0 has a leader
+// refuse writes for that long first, so nothing its group commits after the cut
+// escapes the merge taking it.
+message ExportFSMRequest {
+  int64 freeze_ms = 1;
+}
 
 message ExportFSMResponse {
   // Every entry the FSM holds, tombstones included.
   map<string, Entry> entries = 1;
   uint64 clock = 2;
+  // cut is the last index the state holds; formation is the formation of the
+  // group it is the state of. A member of that formation whose commit is past
+  // the cut holds something the state does not.
+  uint64 cut = 3;
+  bytes formation = 4;
 }
 
-message HealAckRequest {}
+// HealAckRequest tells a member that the state of its formation up to cut is in
+// the sender's group, so it may yield and join it. A member of another formation,
+// or whose commit is past the cut, refuses.
+message HealAckRequest {
+  bytes formation = 1;
+  uint64 cut = 2;
+}
 
 message HealAckResponse {}

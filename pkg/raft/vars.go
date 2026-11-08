@@ -21,6 +21,11 @@ var (
 	// HealingMergeTimeout bounds export/merge/ack during healing.
 	HealingMergeTimeout = 60 * time.Second
 
+	// MergeFreeze is how long a loser's leader takes no writes while a merge takes
+	// its state. A merge slower than it gets receipts its members refuse, having
+	// committed past the cut, and is made again.
+	MergeFreeze = 10 * time.Second
+
 	// MaxWallClockDrift is the warn threshold for CRDT WallClock skew (sync NTP).
 	MaxWallClockDrift = 500 * time.Millisecond
 )

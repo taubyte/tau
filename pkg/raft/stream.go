@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"bytes"
 	"context"
 	"crypto/cipher"
 	"errors"
@@ -343,8 +344,9 @@ func (s *raftStreamService) ExportFSM(ctx context.Context, req *connect.Request[
 		if _, err := s.cluster.Leader(); err == nil {
 			streamLogger.Infof("[%s] exportFSM requested (from=%s) — forwarding to leader",
 				s.cluster.ID().ShortString(), from)
+			forward := &raftv2.ExportFSMRequest{FreezeMs: req.Msg.GetFreezeMs()}
 			return forwardToLeader(ctx, s, "exportFSM", func(ctx context.Context, c raftv2connect.RaftServiceClient) (*connect.Response[raftv2.ExportFSMResponse], error) {
-				return c.ExportFSM(ctx, connect.NewRequest(&raftv2.ExportFSMRequest{}))
+				return c.ExportFSM(ctx, connect.NewRequest(forward))
 			})
 		}
 	}
@@ -352,7 +354,21 @@ func (s *raftStreamService) ExportFSM(ctx context.Context, req *connect.Request[
 	streamLogger.Infof("[%s] exportFSM requested (from=%s) — serving its own state",
 		s.cluster.ID().ShortString(), from)
 
+	// THE STATE IS CUT WHERE NOTHING CAN FOLLOW IT UNSEEN: a leader asked to freeze
+	// takes no more writes and cuts at its last index, once everything up to it
+	// applied; a member with no leader can commit nothing more, and cuts at what it
+	// committed.
 	m := s.cluster.current()
+	wait := exportDrainWait
+	cut := m.raft.CommitIndex()
+	if freeze := time.Duration(req.Msg.GetFreezeMs()) * time.Millisecond; freeze > 0 && m.isLeader() {
+		m.raft.Freeze(freeze)
+		cut, wait = m.raft.LastIndex(), freeze
+	}
+	if err := m.raft.appliedTo(cut, time.After(wait)); err != nil {
+		return nil, fmt.Errorf("applying up to the cut at %d: %w", cut, err)
+	}
+
 	state, err := m.fsm.ExportState()
 	if err != nil {
 		return nil, fmt.Errorf("exporting FSM state: %w", err)
@@ -363,14 +379,32 @@ func (s *raftStreamService) ExportFSM(ctx context.Context, req *connect.Request[
 	clock := fsm.clock
 	fsm.mu.RUnlock()
 
-	streamLogger.Infof("[%s] exportFSM: %d keys, clock=%d", s.cluster.ID().ShortString(), len(state), clock)
+	streamLogger.Infof("[%s] exportFSM: %d keys, clock=%d, cut=%d", s.cluster.ID().ShortString(), len(state), clock, cut)
 
-	return connect.NewResponse(&raftv2.ExportFSMResponse{Entries: entriesProto(state), Clock: clock}), nil
+	return connect.NewResponse(&raftv2.ExportFSMResponse{
+		Entries:   entriesProto(state),
+		Clock:     clock,
+		Cut:       cut,
+		Formation: m.raft.Formation(),
+	}), nil
 }
 
-// HealAck wakes losers blocked in yieldAndRejoin after the winner merged.
+// exportDrainWait is how long a member with no freeze waits for what it committed
+// to apply before it exports.
+const exportDrainWait = 5 * time.Second
+
+// HealAck is a receipt: the sender's group holds this member's formation's state
+// up to the cut. A member of another formation, or that committed past the cut,
+// holds something the receipt does not cover, and refuses to yield on it.
 func (s *raftStreamService) HealAck(ctx context.Context, req *connect.Request[raftv2.HealAckRequest]) (*connect.Response[raftv2.HealAckResponse], error) {
 	fromPeer := remotePeer(ctx)
+	m := s.cluster.current()
+	if !bytes.Equal(req.Msg.GetFormation(), m.raft.Formation()) {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, ErrReceiptNotOurs)
+	}
+	if commit := m.raft.CommitIndex(); commit > req.Msg.GetCut() {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("%w: committed %d, past the cut at %d", ErrReceiptShort, commit, req.Msg.GetCut()))
+	}
 	streamLogger.Infof("[%s] received healAck from %s — signaling healer",
 		s.cluster.ID().ShortString(), fromPeer.ShortString())
 

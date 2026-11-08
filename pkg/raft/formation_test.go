@@ -184,3 +184,53 @@ func TestACandidateNobodyReachesIsDropped(t *testing.T) {
 	require.ElementsMatch(t, []peer.ID{kept}, pt.allPeers())
 	require.Equal(t, 2, pt.lastPeerCount)
 }
+
+// A FROZEN GROUP TAKES NO WRITE until its freeze runs out: it is handing its
+// state to another group, which took it at a cut.
+func TestAFrozenGroupTakesNoWriteUntilItsFreezeEnds(t *testing.T) {
+	node := newMockNode(t)
+	g := onEngine(t, node, "frozen", quickTimeouts)
+	require.NoError(t, g.Bootstrap([]peer.ID{node.ID()}))
+	leading(t, g)
+
+	g.Freeze(300 * time.Millisecond)
+	cmd, err := encodeSetCommand("k", []byte("v"))
+	require.NoError(t, err)
+	_, err = g.Propose(cmd, time.Second)
+	require.ErrorIs(t, err, ErrFrozen)
+	require.Eventually(t, func() bool {
+		resp, err := g.Propose(cmd, time.Second)
+		return err == nil && resp.Error == nil
+	}, 2*time.Second, 20*time.Millisecond, "the group never took writes again")
+}
+
+// AN EXPORT ASKED TO FREEZE cuts the leader's state at its last index, names its
+// formation, and has it take no write meanwhile: nothing it commits after the cut
+// escapes the merge.
+func TestAnExportThatFreezesCutsWhereNothingFollowsUnseen(t *testing.T) {
+	cl, cli := callerOf(t, "export-freezes", sameStore)
+	require.NoError(t, cl.Set("k", []byte("v"), time.Second))
+	c := cl.(*cluster)
+
+	exp, err := cli.ExportFSM(idOf(cl), time.Second)
+	require.NoError(t, err)
+	require.Equal(t, c.current().raft.Formation(), exp.formation)
+	require.Equal(t, c.current().raft.LastIndex(), exp.cut)
+	require.GreaterOrEqual(t, c.current().raft.AppliedIndex(), exp.cut)
+	require.Equal(t, "v", string(exp.state["k"].Value))
+	require.ErrorIs(t, cl.Set("after", []byte("v"), time.Second), ErrFrozen)
+}
+
+// A RECEIPT A MEMBER CANNOT YIELD ON IS REFUSED: one for another formation, or
+// one whose cut stops before what the member committed.
+func TestAMemberRefusesAReceiptThatDoesNotCoverIt(t *testing.T) {
+	cl, cli := callerOf(t, "receipt-refused", sameStore)
+	require.NoError(t, cl.Set("k", []byte("v"), time.Second))
+	m := cl.(*cluster).current()
+
+	require.ErrorContains(t, cli.HealAck(idOf(cl), newFormation(), m.raft.CommitIndex()), ErrReceiptNotOurs.Error())
+	require.ErrorContains(t, cli.HealAck(idOf(cl), m.raft.Formation(), m.raft.CommitIndex()-1), ErrReceiptShort.Error())
+	require.Same(t, m, cl.(*cluster).current(), "the member yielded on a receipt that did not cover it")
+	_, found := cl.Get("k")
+	require.True(t, found)
+}
