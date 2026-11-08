@@ -86,7 +86,7 @@ func (e *engine) release() {
 	e.refs--
 	last := e.refs == 0
 	if last {
-		delete(engines.on, e.node.ID())
+		delete(engines.on, e.id)
 	}
 	engines.Unlock()
 	if last {
@@ -95,12 +95,15 @@ func (e *engine) release() {
 }
 
 type engine struct {
-	node   taupeer.Node
+	id     peer.ID
 	self   uint64
 	ctx    context.Context
 	cancel context.CancelFunc
-	wire   *engineWire
+	wire   transport
 	book   peerBook
+
+	clock    clock
+	applying applying
 
 	inbox chan delivery
 	asks  chan ask
@@ -129,21 +132,55 @@ type ask interface {
 	run(e *engine)
 }
 
+// transport carries frames to peers; what peers send comes back through the
+// engine's received.
+type transport interface {
+	send(to peer.ID, frame *raftv2.Frame)
+	close()
+}
+
+// clock is what the engine reads the time from.
+type clock interface {
+	Now() time.Time
+}
+
+type wallClock struct{}
+
+func (wallClock) Now() time.Time { return time.Now() }
+
+// applying is how a group's committed work reaches its machine.
+type applying interface {
+	start(g *group)
+}
+
+// ownGoroutine applies each group's work on a goroutine of its own.
+type ownGoroutine struct{}
+
+func (ownGoroutine) start(g *group) { go g.runApplier() }
+
 func newEngine(node taupeer.Node) *engine {
-	ctx, cancel := context.WithCancel(node.Context())
-	e := &engine{
-		node:   node,
-		self:   raftID(node.ID()),
-		ctx:    ctx,
-		cancel: cancel,
-		inbox:  make(chan delivery, inboxDepth),
-		asks:   make(chan ask),
-		done:   make(chan struct{}),
-		groups: map[string]*group{},
-	}
-	e.book.learn(node.ID())
-	e.wire = newEngineWire(ctx, node.Host(), e)
+	e := newEngineOn(node.Context(), node.ID(), wallClock{}, ownGoroutine{})
+	e.wire = newEngineWire(e.ctx, node.Host(), e)
 	go e.loop()
+	return e
+}
+
+// newEngineOn is an engine with neither a wire nor a loop yet.
+func newEngineOn(ctx context.Context, id peer.ID, c clock, a applying) *engine {
+	ctx, cancel := context.WithCancel(ctx)
+	e := &engine{
+		id:       id,
+		self:     raftID(id),
+		ctx:      ctx,
+		cancel:   cancel,
+		clock:    c,
+		applying: a,
+		inbox:    make(chan delivery, inboxDepth),
+		asks:     make(chan ask),
+		done:     make(chan struct{}),
+		groups:   map[string]*group{},
+	}
+	e.book.learn(id)
 	return e
 }
 
@@ -216,7 +253,7 @@ func (e *engine) deliver(d delivery) {
 	if g.cipher != nil {
 		plain, err := unseal(g.cipher, raw)
 		if err != nil {
-			engineLogger.Debugf("[%s] %s: a message from %s that does not open: %v", e.node.ID().ShortString(), d.group, d.from.ShortString(), err)
+			engineLogger.Debugf("[%s] %s: a message from %s that does not open: %v", e.id.ShortString(), d.group, d.from.ShortString(), err)
 			return
 		}
 		raw = plain
@@ -227,7 +264,7 @@ func (e *engine) deliver(d delivery) {
 	}
 	g.heard(d)
 	if err := g.rn.Step(d.msg); err != nil && !errors.Is(err, etcdraft.ErrStepPeerNotFound) && !errors.Is(err, etcdraft.ErrStepLocalMsg) {
-		engineLogger.Debugf("[%s] %s: step %s from %s: %v", e.node.ID().ShortString(), d.group, d.msg.GetType(), d.from.ShortString(), err)
+		engineLogger.Debugf("[%s] %s: step %s from %s: %v", e.id.ShortString(), d.group, d.msg.GetType(), d.from.ShortString(), err)
 	}
 }
 
@@ -245,7 +282,7 @@ type readied struct {
 // could not write and stalls, sending and applying nothing, until a retry lands. A
 // disk that comes back brings the group back with it, with nobody to restart it.
 func (e *engine) cycle() {
-	now := time.Now()
+	now := e.clock.Now()
 	var out []readied
 	for _, g := range e.groups {
 		switch {
@@ -383,15 +420,19 @@ func (e *engine) sent(to peer.ID, frame *raftv2.Frame) {
 }
 
 func (e *engine) report(to peer.ID, frame *raftv2.Frame, delivered bool) {
+	select {
+	case e.asks <- reportOf(to, frame, delivered):
+	case <-e.done:
+	}
+}
+
+func reportOf(to peer.ID, frame *raftv2.Frame, delivered bool) wireReport {
 	r := wireReport{to: raftID(to), delivered: delivered}
 	for _, env := range frame.GetEnvelopes() {
 		r.groups = append(r.groups, env.GetGroup())
 		r.snapshots = append(r.snapshots, env.GetSnapshot())
 	}
-	select {
-	case e.asks <- r:
-	case <-e.done:
-	}
+	return r
 }
 
 // wireReport tells raft what became of a frame.

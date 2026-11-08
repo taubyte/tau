@@ -29,3 +29,11 @@ message Proposal {
   uint64 id = 1;
   bytes command = 2;
 }
+
+// SnapshotData is what a group's raft snapshot holds: its members by peer id, which
+// raft's configuration names only by number, so a node that installs the snapshot,
+// or reopens it after a restart, can reach every member; then the machine.
+message SnapshotData {
+  repeated bytes members = 1;
+  bytes machine = 2;
+}

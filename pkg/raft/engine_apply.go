@@ -17,8 +17,10 @@ import (
 
 // applyItem is one pass's committed work for the applier, in log order.
 type applyItem struct {
-	// snap is a snapshot raft installed: the machine is set back to it first.
-	snap *pb.Snapshot
+	// snap is a snapshot raft installed: the machine is set back to machine, what it
+	// holds, first.
+	snap    *pb.Snapshot
+	machine []byte
 	// entries are the commands to apply; last is the index the pass reached,
 	// membership changes included.
 	entries []*pb.Entry
@@ -119,8 +121,8 @@ func (g *group) runApplier() {
 func (g *group) applyItem(item applyItem) {
 	a := g.applier
 	if snap := item.snap; snap != nil {
-		if err := g.fsm.Restore(snap.GetData()); err != nil {
-			engineLogger.Errorf("[%s] %s: restoring a snapshot: %v", g.e.node.ID().ShortString(), g.namespace, err)
+		if err := g.fsm.Restore(item.machine); err != nil {
+			engineLogger.Errorf("[%s] %s: restoring a snapshot: %v", g.e.id.ShortString(), g.namespace, err)
 		}
 		a.applied = snap.GetMetadata().GetIndex()
 		a.snapIndex = a.applied
@@ -164,7 +166,7 @@ func (g *group) applyItem(item applyItem) {
 	}
 	if due && item.conf != nil {
 		if err := g.snapshotAt(item.conf); err != nil {
-			engineLogger.Errorf("[%s] %s: %v", g.e.node.ID().ShortString(), g.namespace, err)
+			engineLogger.Errorf("[%s] %s: %v", g.e.id.ShortString(), g.namespace, err)
 		}
 	}
 }

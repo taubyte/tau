@@ -191,6 +191,61 @@ func (x *Proposal) GetCommand() []byte {
 	return nil
 }
 
+// SnapshotData is what a group's raft snapshot holds: its members by peer id, which
+// raft's configuration names only by number, so a node that installs the snapshot,
+// or reopens it after a restart, can reach every member; then the machine.
+type SnapshotData struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Members       [][]byte               `protobuf:"bytes,1,rep,name=members,proto3" json:"members,omitempty"`
+	Machine       []byte                 `protobuf:"bytes,2,opt,name=machine,proto3" json:"machine,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SnapshotData) Reset() {
+	*x = SnapshotData{}
+	mi := &file_tau_raft_v2_engine_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SnapshotData) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SnapshotData) ProtoMessage() {}
+
+func (x *SnapshotData) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_raft_v2_engine_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SnapshotData.ProtoReflect.Descriptor instead.
+func (*SnapshotData) Descriptor() ([]byte, []int) {
+	return file_tau_raft_v2_engine_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *SnapshotData) GetMembers() [][]byte {
+	if x != nil {
+		return x.Members
+	}
+	return nil
+}
+
+func (x *SnapshotData) GetMachine() []byte {
+	if x != nil {
+		return x.Machine
+	}
+	return nil
+}
+
 var File_tau_raft_v2_engine_proto protoreflect.FileDescriptor
 
 const file_tau_raft_v2_engine_proto_rawDesc = "" +
@@ -204,7 +259,10 @@ const file_tau_raft_v2_engine_proto_rawDesc = "" +
 	"\bsnapshot\x18\x03 \x01(\bR\bsnapshot\"4\n" +
 	"\bProposal\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x04R\x02id\x12\x18\n" +
-	"\acommand\x18\x02 \x01(\fR\acommandB\xa5\x01\n" +
+	"\acommand\x18\x02 \x01(\fR\acommand\"B\n" +
+	"\fSnapshotData\x12\x18\n" +
+	"\amembers\x18\x01 \x03(\fR\amembers\x12\x18\n" +
+	"\amachine\x18\x02 \x01(\fR\amachineB\xa5\x01\n" +
 	"\x0fcom.tau.raft.v2B\vEngineProtoP\x01Z7github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2;raftv2\xa2\x02\x03TRX\xaa\x02\vTau.Raft.V2\xca\x02\vTau\\Raft\\V2\xe2\x02\x17Tau\\Raft\\V2\\GPBMetadata\xea\x02\rTau::Raft::V2b\x06proto3"
 
 var (
@@ -219,11 +277,12 @@ func file_tau_raft_v2_engine_proto_rawDescGZIP() []byte {
 	return file_tau_raft_v2_engine_proto_rawDescData
 }
 
-var file_tau_raft_v2_engine_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_tau_raft_v2_engine_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_tau_raft_v2_engine_proto_goTypes = []any{
-	(*Frame)(nil),    // 0: tau.raft.v2.Frame
-	(*Envelope)(nil), // 1: tau.raft.v2.Envelope
-	(*Proposal)(nil), // 2: tau.raft.v2.Proposal
+	(*Frame)(nil),        // 0: tau.raft.v2.Frame
+	(*Envelope)(nil),     // 1: tau.raft.v2.Envelope
+	(*Proposal)(nil),     // 2: tau.raft.v2.Proposal
+	(*SnapshotData)(nil), // 3: tau.raft.v2.SnapshotData
 }
 var file_tau_raft_v2_engine_proto_depIdxs = []int32{
 	1, // 0: tau.raft.v2.Frame.envelopes:type_name -> tau.raft.v2.Envelope
@@ -245,7 +304,7 @@ func file_tau_raft_v2_engine_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_raft_v2_engine_proto_rawDesc), len(file_tau_raft_v2_engine_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

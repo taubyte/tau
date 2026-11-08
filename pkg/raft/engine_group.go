@@ -3,10 +3,10 @@ package raft
 import (
 	"context"
 	"crypto/cipher"
+	"crypto/rand"
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"math/rand/v2"
 	"path"
 	"slices"
 	"sync"
@@ -137,7 +137,7 @@ func (e *engine) newGroup(namespace string, cfg groupConfig) (*group, error) {
 		reads:         map[uint64]chan uint64{},
 		state:         Follower,
 	}
-	g.nextTick = time.Now().Add(g.tickEvery)
+	g.nextTick = e.clock.Now().Add(g.tickEvery)
 
 	// WHAT THE SNAPSHOT HOLDS IS WHERE APPLYING RESUMES: the machine is set back to
 	// it, and raft hands over every committed entry after it.
@@ -148,7 +148,11 @@ func (e *engine) newGroup(namespace string, cfg groupConfig) (*group, error) {
 	g.conf = &pb.ConfState{}
 	var applied uint64
 	if !etcdraft.IsEmptySnap(snap) {
-		if err := g.fsm.Restore(snap.GetData()); err != nil {
+		machine, err := g.openSnapshot(snap)
+		if err != nil {
+			return nil, fmt.Errorf("raft: %s: reading its snapshot: %w", namespace, err)
+		}
+		if err := g.fsm.Restore(machine); err != nil {
 			return nil, fmt.Errorf("raft: %s: restoring its machine: %w", namespace, err)
 		}
 		applied = snap.GetMetadata().GetIndex()
@@ -182,7 +186,7 @@ func (e *engine) newGroup(namespace string, cfg groupConfig) (*group, error) {
 	g.last, _ = log.LastIndex()
 	g.appliedCache = applied
 	g.applier = newApplier(applied)
-	go g.runApplier()
+	e.applying.start(g)
 	return g, nil
 }
 
@@ -218,7 +222,11 @@ func (g *group) heard(d delivery) {
 func (g *group) apply(rd etcdraft.Ready) {
 	var item applyItem
 	if snap := rd.Snapshot; snap != nil && !etcdraft.IsEmptySnap(snap) {
-		item.snap = snap
+		machine, err := g.openSnapshot(snap)
+		if err != nil {
+			engineLogger.Errorf("[%s] %s: reading a snapshot: %v", g.e.id.ShortString(), g.namespace, err)
+		}
+		item.snap, item.machine = snap, machine
 		g.conf = proto.Clone(snap.GetMetadata().GetConfState()).(*pb.ConfState)
 		g.refreshMembers()
 	}
@@ -335,6 +343,35 @@ func confChangeOf(ent *pb.Entry) (pb.ConfChangeI, uint64, error) {
 	return cc, cc.GetId(), nil
 }
 
+// membersOf is every member conf names, by the peer id raft's numbers stand for.
+func (g *group) membersOf(conf *pb.ConfState) [][]byte {
+	var out [][]byte
+	for _, ids := range [][]uint64{conf.GetVoters(), conf.GetLearners(), conf.GetVotersOutgoing(), conf.GetLearnersNext()} {
+		for _, id := range ids {
+			if p, ok := g.e.book.peer(id); ok {
+				out = append(out, []byte(p))
+			}
+		}
+	}
+	return out
+}
+
+// openSnapshot is the machine a snapshot holds, its members learned first: raft's
+// configuration names them only by number, and a member nobody can name is one no
+// vote or entry reaches.
+func (g *group) openSnapshot(snap *pb.Snapshot) ([]byte, error) {
+	data := &raftv2.SnapshotData{}
+	if err := proto.Unmarshal(snap.GetData(), data); err != nil {
+		return nil, err
+	}
+	for _, m := range data.GetMembers() {
+		if p, err := peer.IDFromBytes(m); err == nil {
+			g.e.book.learn(p)
+		}
+	}
+	return data.GetMachine(), nil
+}
+
 // snapshotAt keeps the machine as the applier has applied it, naming conf, and
 // compacts the log behind it. It runs on the applier, between applies.
 func (g *group) snapshotAt(conf *pb.ConfState) error {
@@ -342,9 +379,13 @@ func (g *group) snapshotAt(conf *pb.ConfState) error {
 	if a.applied <= a.snapIndex {
 		return nil
 	}
-	data, err := g.fsm.Snapshot()
+	machine, err := g.fsm.Snapshot()
 	if err != nil {
 		return fmt.Errorf("reading its machine for a snapshot: %w", err)
+	}
+	data, err := proto.Marshal(&raftv2.SnapshotData{Members: g.membersOf(conf), Machine: machine})
+	if err != nil {
+		return err
 	}
 	if err := g.log.compact(g.e.ctx, a.applied, conf, data, g.trailing); err != nil {
 		return fmt.Errorf("compacting its log: %w", err)
@@ -380,19 +421,19 @@ const maxRetry = time.Second
 func (g *group) written(rd etcdraft.Ready, err error) {
 	if err == nil {
 		if g.stalled != nil {
-			engineLogger.Infof("[%s] %s: its state is written again", g.e.node.ID().ShortString(), g.namespace)
+			engineLogger.Infof("[%s] %s: its state is written again", g.e.id.ShortString(), g.namespace)
 		}
 		g.stalled, g.backoff = nil, 0
 		g.answerDurable(nil)
 		return
 	}
 	if g.stalled == nil {
-		engineLogger.Errorf("[%s] %s: writing its state: %v; it stalls until a write lands", g.e.node.ID().ShortString(), g.namespace, err)
+		engineLogger.Errorf("[%s] %s: writing its state: %v; it stalls until a write lands", g.e.id.ShortString(), g.namespace, err)
 		g.answerDurable(fmt.Errorf("raft: %s: writing its state: %w", g.namespace, err))
 	}
 	g.stalled = &rd
 	g.backoff = min(max(2*g.backoff, engineResolution), maxRetry)
-	g.retryAt = time.Now().Add(g.backoff)
+	g.retryAt = g.e.clock.Now().Add(g.backoff)
 }
 
 // answerDurable tells who waited for this pass to be written how it went.
@@ -432,9 +473,17 @@ func (g *group) failed() error {
 	return g.err
 }
 
+// randomID names a proposal, a change or a read: never zero, and drawn so two
+// nodes, or one node either side of a restart, never name two things alike.
+func randomID() uint64 {
+	var b [8]byte
+	rand.Read(b[:])
+	return binary.BigEndian.Uint64(b[:]) | 1
+}
+
 // Propose replicates cmd and answers what the machine said when it applied it.
 func (g *group) Propose(cmd []byte, timeout time.Duration) (FSMResponse, error) {
-	id := rand.Uint64() | 1
+	id := randomID()
 	data, err := proto.Marshal(&raftv2.Proposal{Id: id, Command: cmd})
 	if err != nil {
 		return FSMResponse{}, err
@@ -539,7 +588,7 @@ func (g *group) RemoveServer(p peer.ID, timeout time.Duration) error {
 }
 
 func (g *group) change(t pb.ConfChangeType, p peer.ID, timeout time.Duration) error {
-	id := rand.Uint64() | 1
+	id := randomID()
 	g.e.book.learn(p)
 	ch := make(chan FSMResponse, 1)
 	if err := g.await(id, ch); err != nil {
@@ -577,7 +626,7 @@ func (a confAsk) run(*engine) {
 // asked: raft's read index, confirmed by a quorum, then applied here. No entry is
 // written for it.
 func (g *group) Barrier(timeout time.Duration) error {
-	id := rand.Uint64() | 1
+	id := randomID()
 	ch := make(chan uint64, 1)
 	g.mu.Lock()
 	if g.err != nil {
@@ -688,7 +737,7 @@ func (a bootstrapAsk) run(e *engine) {
 	}
 	// A GROUP OF ONE ELECTS ITSELF at once rather than wait out a timeout nobody else
 	// will interrupt.
-	if len(a.peers) == 1 && a.peers[0] == e.node.ID() {
+	if len(a.peers) == 1 && a.peers[0] == e.id {
 		if err := a.g.rn.Campaign(); err != nil {
 			a.reply <- err
 			return
@@ -710,7 +759,7 @@ func (g *group) TransferLeadership(to peer.ID) error {
 	} else {
 		g.mu.Lock()
 		for _, m := range g.members {
-			if m.Voter && m.ID != g.e.node.ID() {
+			if m.Voter && m.ID != g.e.id {
 				target = raftID(m.ID)
 				break
 			}

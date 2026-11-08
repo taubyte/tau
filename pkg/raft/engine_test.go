@@ -13,6 +13,8 @@ import (
 	"github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
+	pb "go.etcd.io/raft/v3/raftpb"
+	"google.golang.org/protobuf/proto"
 
 	taupeer "github.com/taubyte/tau/p2p/peer"
 )
@@ -495,4 +497,23 @@ func TestAMachineThatCannotSnapshotOrRestoreSaysSo(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { again.Close() })
 	require.Equal(t, "4", held(again, "d"))
+}
+
+// A SNAPSHOT THAT DOES NOT READ refuses the group rather than start it on a machine
+// it could not restore.
+func TestAGroupWhoseSnapshotDoesNotReadIsNotOpened(t *testing.T) {
+	node := taupeer.Mock(t.Context())
+	t.Cleanup(node.Close)
+	raw, err := proto.Marshal(&pb.Snapshot{
+		Data:     []byte{0xff},
+		Metadata: &pb.SnapshotMetadata{Index: proto.Uint64(3), Term: proto.Uint64(1), ConfState: &pb.ConfState{Voters: []uint64{raftID(node.ID())}}},
+	})
+	require.NoError(t, err)
+	require.NoError(t, node.Store().Put(t.Context(), datastore.NewKey(path.Join(RaftStoragePrefix, "garbled", "engine", "snapshot")), raw))
+
+	e := engineFor(node)
+	t.Cleanup(e.release)
+	fsm := newKVFSM(t.Context(), node.Store(), path.Join(RaftStoragePrefix, "garbled"))
+	_, err = e.open("garbled", groupConfig{timeouts: quickTimeouts, machine: fsm, store: node.Store()})
+	require.ErrorContains(t, err, "reading its snapshot")
 }

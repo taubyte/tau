@@ -1,0 +1,550 @@
+package raft
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"fmt"
+	mrand "math/rand/v2"
+	"path"
+	"slices"
+	"testing"
+	"testing/cryptotest"
+	"time"
+
+	ds "github.com/ipfs/go-datastore"
+	dssync "github.com/ipfs/go-datastore/sync"
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
+
+	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
+)
+
+// The simulation runs a cloud of engines on one goroutine: the clock, the network
+// and every apply are stepped by the test, and every random choice — the network's,
+// the faults', raft's own election jitter and the proposal ids — comes from one
+// seed. A failure names its seed, and running that seed again runs the same cloud.
+
+// simClock is the time the simulation says it is.
+type simClock struct{ now time.Time }
+
+func (c *simClock) Now() time.Time { return c.now }
+
+// steppedApply leaves a group's committed work queued for the simulation to apply.
+type steppedApply struct{}
+
+func (steppedApply) start(*group) {}
+
+// applyQueued applies what a group has queued, in order, on the caller.
+func applyQueued(g *group) {
+	a := g.applier
+	for {
+		a.mu.Lock()
+		if len(a.queue) == 0 {
+			a.mu.Unlock()
+			return
+		}
+		item := a.queue[0]
+		a.queue = a.queue[1:]
+		a.mu.Unlock()
+		g.applyItem(item)
+	}
+}
+
+// simFrame is a frame in flight, and the round its sender sent it in.
+type simFrame struct {
+	from, to peer.ID
+	round    int
+	frame    *raftv2.Frame
+}
+
+type simNet struct {
+	rng      *mrand.Rand
+	inflight []simFrame
+	round    int
+	drop     float64
+	// side is which side of a partition each node is on; equal sides talk.
+	side map[peer.ID]int
+}
+
+type simWire struct {
+	net  *simNet
+	from peer.ID
+}
+
+func (w simWire) send(to peer.ID, f *raftv2.Frame) {
+	w.net.inflight = append(w.net.inflight, simFrame{from: w.from, to: to, round: w.net.round, frame: proto.Clone(f).(*raftv2.Frame)})
+}
+
+func (simWire) close() {}
+
+// settle orders what a node sent in one pass. The engine builds a pass's frames
+// from maps, whose order Go randomises on purpose; ordering them here keeps the
+// seed in charge without changing what any one group sent, or in what order.
+func (n *simNet) settle(from int) {
+	tail := n.inflight[from:]
+	for _, f := range tail {
+		slices.SortStableFunc(f.frame.Envelopes, func(a, b *raftv2.Envelope) int {
+			switch {
+			case a.GetGroup() < b.GetGroup():
+				return -1
+			case a.GetGroup() > b.GetGroup():
+				return 1
+			}
+			return 0
+		})
+	}
+	slices.SortStableFunc(tail, func(a, b simFrame) int {
+		switch {
+		case a.to < b.to:
+			return -1
+		case a.to > b.to:
+			return 1
+		}
+		return 0
+	})
+}
+
+// simGroup is one group a node runs, and what its machine applied at each index
+// across every incarnation of the node.
+type simGroup struct {
+	name    string
+	g       *group
+	applied map[uint64]string
+}
+
+type recorder struct {
+	FSM
+	t     testing.TB
+	where string
+	sg    *simGroup
+}
+
+func (r recorder) Apply(index uint64, cmd []byte) FSMResponse {
+	if prev, ok := r.sg.applied[index]; ok && prev != string(cmd) {
+		r.t.Fatalf("%s applied two commands at index %d", r.where, index)
+	}
+	r.sg.applied[index] = string(cmd)
+	return r.FSM.Apply(index, cmd)
+}
+
+type simNode struct {
+	id     peer.ID
+	store  ds.Batching
+	e      *engine
+	groups map[string]*simGroup
+	up     bool
+}
+
+// simWrite is a write asked of a leader and not yet answered.
+type simWrite struct {
+	group, key string
+	ch         chan FSMResponse
+	node       *simNode
+}
+
+type sim struct {
+	t      testing.TB
+	rng    *mrand.Rand
+	clock  *simClock
+	net    *simNet
+	nodes  []*simNode
+	layout map[string][]int
+	timing TimeoutConfig
+
+	writes  []simWrite
+	acked   map[string]map[string]bool
+	leaders map[string]map[uint64]peer.ID
+	trace   [32]byte
+	n       int
+}
+
+func newSim(t *testing.T, seed uint64, nodes int, layout map[string][]int) *sim {
+	cryptotest.SetGlobalRandom(t, seed)
+	s := &sim{
+		t:       t,
+		rng:     mrand.New(mrand.NewPCG(seed, seed^0x9e3779b97f4a7c15)),
+		clock:   &simClock{now: time.Unix(1_700_000_000, 0)},
+		layout:  layout,
+		timing:  TimeoutConfig{HeartbeatTimeout: 50 * time.Millisecond, SnapshotThreshold: 64, TrailingLogs: 16},
+		acked:   map[string]map[string]bool{},
+		leaders: map[string]map[uint64]peer.ID{},
+	}
+	s.net = &simNet{rng: s.rng, side: map[peer.ID]int{}}
+	for range nodes {
+		key, _, err := crypto.GenerateEd25519Key(rand.Reader)
+		require.NoError(t, err)
+		id, err := peer.IDFromPrivateKey(key)
+		require.NoError(t, err)
+		s.nodes = append(s.nodes, &simNode{id: id, store: dssync.MutexWrap(ds.NewMapDatastore()), groups: map[string]*simGroup{}})
+	}
+	for _, n := range s.nodes {
+		s.start(n)
+	}
+	for _, name := range s.groupNames() {
+		founder := s.nodes[layout[name][0]]
+		var members []peer.ID
+		for _, i := range layout[name] {
+			members = append(members, s.nodes[i].id)
+		}
+		a := bootstrapAsk{g: founder.groups[name].g, peers: members, reply: make(chan error, 1)}
+		a.run(founder.e)
+		s.acked[name] = map[string]bool{}
+		s.leaders[name] = map[uint64]peer.ID{}
+	}
+	return s
+}
+
+func (s *sim) groupNames() []string {
+	names := make([]string, 0, len(s.layout))
+	for name := range s.layout {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
+}
+
+// start runs n on a fresh engine over what its store kept, as a node does after a
+// crash: nothing in memory survives.
+func (s *sim) start(n *simNode) {
+	n.e = newEngineOn(context.Background(), n.id, s.clock, steppedApply{})
+	n.e.wire = simWire{net: s.net, from: n.id}
+	for _, name := range s.groupNames() {
+		if !slices.ContainsFunc(s.layout[name], func(i int) bool { return s.nodes[i] == n }) {
+			continue
+		}
+		sg, ok := n.groups[name]
+		if !ok {
+			sg = &simGroup{name: name, applied: map[uint64]string{}}
+			n.groups[name] = sg
+		}
+		machine := recorder{
+			FSM:   newKVFSM(context.Background(), n.store, path.Join(RaftStoragePrefix, name)),
+			t:     s.t,
+			where: fmt.Sprintf("%s on %s", name, n.id.ShortString()),
+			sg:    sg,
+		}
+		a := openAsk{namespace: name, cfg: groupConfig{timeouts: s.timing, machine: machine, store: n.store}, reply: make(chan openResult, 1)}
+		a.run(n.e)
+		r := <-a.reply
+		require.NoError(s.t, r.err)
+		sg.g = r.g
+	}
+	n.up = true
+}
+
+// crash stops n where it stands. afterPersist crashes it after its last pass was
+// written and before what it sent left: its frames from this round are lost.
+func (s *sim) crash(n *simNode, afterPersist bool) {
+	n.up = false
+	n.e.cancel()
+	kept := s.net.inflight[:0]
+	for _, f := range s.net.inflight {
+		if f.to == n.id || (afterPersist && f.from == n.id && f.round == s.net.round) {
+			continue
+		}
+		kept = append(kept, f)
+	}
+	s.net.inflight = kept
+	writes := s.writes[:0]
+	for _, w := range s.writes {
+		if w.node != n {
+			writes = append(writes, w)
+		}
+	}
+	s.writes = writes
+}
+
+// deliver hands over what the network lets through this round: each frame in
+// flight is delivered, dropped, or held for a later round.
+func (s *sim) deliver() {
+	held := s.net.inflight[:0]
+	var now, lost []simFrame
+	for _, f := range s.net.inflight {
+		switch {
+		case s.net.side[f.from] != s.net.side[f.to], s.rng.Float64() < s.net.drop:
+			lost = append(lost, f)
+		case s.rng.IntN(4) == 0:
+			held = append(held, f)
+		default:
+			now = append(now, f)
+		}
+	}
+	s.net.inflight = held
+	for _, f := range lost {
+		s.reported(f, false)
+	}
+	s.rng.Shuffle(len(now), func(i, j int) { now[i], now[j] = now[j], now[i] })
+	for _, f := range now {
+		if to := s.node(f.to); to != nil && to.up {
+			to.e.received(f.from, f.frame)
+			s.reported(f, true)
+		} else {
+			s.reported(f, false)
+		}
+	}
+}
+
+// reported tells the sender what became of a frame carrying a snapshot, as the
+// wire does: raft holds a follower it sent one to until it hears.
+func (s *sim) reported(f simFrame, delivered bool) {
+	if !slices.ContainsFunc(f.frame.GetEnvelopes(), (*raftv2.Envelope).GetSnapshot) {
+		return
+	}
+	if from := s.node(f.from); from != nil && from.up {
+		reportOf(f.to, f.frame, delivered).run(from.e)
+	}
+}
+
+func (s *sim) node(id peer.ID) *simNode {
+	for _, n := range s.nodes {
+		if n.id == id {
+			return n
+		}
+	}
+	return nil
+}
+
+// step is one round: the clock moves, the network delivers, and each node that is
+// up takes one pass of its loop.
+func (s *sim) step() {
+	s.net.round++
+	s.clock.now = s.clock.now.Add(engineResolution)
+	s.deliver()
+	for _, n := range s.nodes {
+		if !n.up {
+			continue
+		}
+		// IN ORDER: every group's election jitter is drawn from one stream, so the
+		// order groups tick in is part of what the seed decides.
+		for _, name := range s.groupNames() {
+			if sg, ok := n.groups[name]; ok {
+				sg.g.tick(s.clock.now)
+			}
+		}
+		n.e.drain()
+		from := len(s.net.inflight)
+		n.e.cycle()
+		s.net.settle(from)
+		for _, name := range s.groupNames() {
+			if sg, ok := n.groups[name]; ok {
+				applyQueued(sg.g)
+			}
+		}
+	}
+	s.observe()
+}
+
+// observe checks election safety and folds each group's state into the trace.
+func (s *sim) observe() {
+	h := sha256.New()
+	h.Write(s.trace[:])
+	for _, n := range s.nodes {
+		for _, name := range s.groupNames() {
+			sg, ok := n.groups[name]
+			if !ok || !n.up {
+				continue
+			}
+			state, term := sg.g.State(), sg.g.Term()
+			fmt.Fprintf(h, "%d %s %s %d %d %d|", s.net.round, n.id, name, state, term, sg.g.CommitIndex())
+			if state != Leader {
+				continue
+			}
+			if was, ok := s.leaders[name][term]; ok && was != n.id {
+				s.t.Fatalf("%s has two leaders in term %d: %s and %s", name, term, was.ShortString(), n.id.ShortString())
+			}
+			s.leaders[name][term] = n.id
+		}
+	}
+	copy(s.trace[:], h.Sum(nil))
+}
+
+// note folds an event into the trace.
+func (s *sim) note(format string, args ...any) {
+	h := sha256.New()
+	h.Write(s.trace[:])
+	fmt.Fprintf(h, format, args...)
+	copy(s.trace[:], h.Sum(nil))
+}
+
+// propose asks name's leader, if it has one up, for a write, without waiting.
+func (s *sim) propose(name string) {
+	for _, i := range s.layout[name] {
+		n := s.nodes[i]
+		if !n.up || n.groups[name].g.State() != Leader {
+			continue
+		}
+		g := n.groups[name].g
+		s.n++
+		key := fmt.Sprintf("k%d", s.n)
+		cmd, err := encodeSetCommand(key, []byte(key))
+		require.NoError(s.t, err)
+		id := randomID()
+		data, err := proto.Marshal(&raftv2.Proposal{Id: id, Command: cmd})
+		require.NoError(s.t, err)
+		ch := make(chan FSMResponse, 1)
+		require.NoError(s.t, g.await(id, ch))
+		a := proposeAsk{g: g, data: data, reply: make(chan error, 1)}
+		a.run(n.e)
+		if err := <-a.reply; err != nil {
+			g.forget(id)
+			return
+		}
+		s.writes = append(s.writes, simWrite{group: name, key: key, ch: ch, node: n})
+		return
+	}
+}
+
+// answered collects the writes that were acknowledged.
+func (s *sim) answered() {
+	waiting := s.writes[:0]
+	for _, w := range s.writes {
+		select {
+		case resp, ok := <-w.ch:
+			if ok && resp.Error == nil {
+				s.acked[w.group][w.key] = true
+			}
+		default:
+			waiting = append(waiting, w)
+		}
+	}
+	s.writes = waiting
+}
+
+// chaos runs rounds of drops, delays, partitions and crashes, writing as it goes.
+func (s *sim) chaos(rounds int) {
+	s.net.drop = 0.05
+	for range rounds {
+		switch r := s.rng.Float64(); {
+		case r < 0.004:
+			for _, n := range s.nodes {
+				s.net.side[n.id] = s.rng.IntN(2)
+			}
+		case r < 0.012:
+			clear(s.net.side)
+		case r < 0.016:
+			if n := s.nodes[s.rng.IntN(len(s.nodes))]; n.up {
+				after := s.rng.IntN(2) == 0
+				s.note("crash %s %v", n.id, after)
+				s.crash(n, after)
+			}
+		case r < 0.030:
+			if n := s.nodes[s.rng.IntN(len(s.nodes))]; !n.up {
+				s.note("start %s", n.id)
+				s.start(n)
+			}
+		}
+		if s.rng.IntN(3) == 0 {
+			names := s.groupNames()
+			s.propose(names[s.rng.IntN(len(names))])
+		}
+		s.step()
+		s.answered()
+	}
+}
+
+// heal brings every node back on a network that loses nothing, and runs until
+// every acknowledged write is on every member of its group.
+func (s *sim) heal(rounds int) {
+	s.net.drop = 0
+	clear(s.net.side)
+	for _, n := range s.nodes {
+		if !n.up {
+			s.start(n)
+		}
+	}
+	for range rounds {
+		s.step()
+		s.answered()
+		if s.converged() {
+			return
+		}
+	}
+	for _, name := range s.groupNames() {
+		for key := range s.acked[name] {
+			for _, i := range s.layout[name] {
+				if _, found := s.nodes[i].groups[name].g.fsm.Get(key); !found {
+					s.t.Fatalf("%s acknowledged %s, and %s never applied it", name, key, s.nodes[i].id.ShortString())
+				}
+			}
+		}
+	}
+}
+
+func (s *sim) converged() bool {
+	for _, name := range s.groupNames() {
+		for key := range s.acked[name] {
+			for _, i := range s.layout[name] {
+				if _, found := s.nodes[i].groups[name].g.fsm.Get(key); !found {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+// agreed checks that every member of a group applied the same command wherever two
+// applied the same index.
+func (s *sim) agreed() {
+	for _, name := range s.groupNames() {
+		at := map[uint64]string{}
+		for _, i := range s.layout[name] {
+			for index, cmd := range s.nodes[i].groups[name].applied {
+				if was, ok := at[index]; ok && was != cmd {
+					s.t.Fatalf("%s applied two commands at index %d on different members", name, index)
+				}
+				at[index] = cmd
+			}
+		}
+	}
+}
+
+// simLayout is four groups over five nodes: three of three members, overlapping,
+// and one of all five.
+var simLayout = map[string][]int{
+	"a": {0, 1, 2},
+	"b": {1, 2, 3},
+	"c": {2, 3, 4},
+	"d": {0, 1, 2, 3, 4},
+}
+
+// THE SAME SEED RUNS THE SAME CLOUD: what every node of every group was, round by
+// round, comes out the same twice.
+func TestASimulationSeedReplays(t *testing.T) {
+	run := func(t *testing.T) [32]byte {
+		s := newSim(t, 7, 5, simLayout)
+		s.chaos(1500)
+		return s.trace
+	}
+	var first, second [32]byte
+	t.Run("first", func(t *testing.T) { first = run(t) })
+	t.Run("second", func(t *testing.T) { second = run(t) })
+	require.Equal(t, first, second, "one seed ran two different clouds")
+}
+
+// UNDER DROPS, DELAYS, REORDERING, PARTITIONS AND CRASHES — between a pass's write
+// and its send among them — no group ever has two leaders in a term, no index ever
+// applies two commands, and every write a leader acknowledged is on every member
+// once the network heals.
+func TestAGroupKeepsItsPromisesUnderFaults(t *testing.T) {
+	seeds := 12
+	if testing.Short() {
+		seeds = 3
+	}
+	for seed := range uint64(seeds) {
+		t.Run(fmt.Sprintf("seed %d", seed+1), func(t *testing.T) {
+			s := newSim(t, seed+1, 5, simLayout)
+			s.chaos(4000)
+			s.heal(4000)
+			s.agreed()
+			total := 0
+			for _, keys := range s.acked {
+				total += len(keys)
+			}
+			require.NotZero(t, total, "nothing was acknowledged, so nothing was proven")
+		})
+	}
+}
