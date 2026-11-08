@@ -155,7 +155,7 @@ func (h *healer) run(ctx context.Context) {
 		healLogger.Warnf("[%s] split-brain suspected: %d consecutive leaderless cycles",
 			h.cluster.ID().ShortString(), noLeaderCycles)
 
-		h.detectAndHeal(ctx)
+		h.detectAndHeal(ctx, time.Since(leaderlessSince))
 		if h.superseded.Load() {
 			healLogger.Infof("[%s] healer superseded after detectAndHeal — exiting", h.cluster.ID().ShortString())
 			return
@@ -300,7 +300,7 @@ func (h *healer) meetAsLeader(ctx context.Context, pid peer.ID) {
 	h.member.raftClient.ExchangePeers(startTime, peers, leaderPID)
 }
 
-func (h *healer) detectAndHeal(ctx context.Context) {
+func (h *healer) detectAndHeal(ctx context.Context, leaderless time.Duration) {
 	if !h.healing.CompareAndSwap(false, true) {
 		healLogger.Infof("[%s] detectAndHeal skipped: already healing", h.cluster.ID().ShortString())
 		return
@@ -310,7 +310,7 @@ func (h *healer) detectAndHeal(ctx context.Context) {
 	// A MEMBER THAT HOLDS NOTHING FORMS AGAIN, with whoever is there or alone: the
 	// formation it is bound to never reached it, and may never, if the member that
 	// formed it is gone. Leaving it loses nothing.
-	pristine := h.member.raft.Pristine()
+	pristine := h.mayLeaveItsFormation(leaderless)
 	foreignPeers := h.findForeignPeers(false)
 	if len(foreignPeers) == 0 {
 		if pristine {
@@ -649,6 +649,24 @@ func (c *cluster) hasArchive() bool {
 	return err == nil && has
 }
 
+// mayLeaveItsFormation says the member holds nothing it would lose by forming
+// again. A log with no entry at all leaves at once; one holding only who its
+// members were, a formation that may still be forming, leaves only once it has had
+// no leader for longer than a formation takes, or it would undo every formation
+// before it finished.
+func (h *healer) mayLeaveItsFormation(leaderless time.Duration) bool {
+	if h.member.raft.Pristine() {
+		return h.member.holdsNothing()
+	}
+	return leaderless >= h.formationPatience() && h.member.holdsNothing()
+}
+
+// formationPatience is longer than a formation takes: two bootstrap timeouts for
+// its founders to find each other, and elections to settle it.
+func (h *healer) formationPatience() time.Duration {
+	return 2*h.cluster.bootstrapTimeout + 4*h.cluster.getTimeoutConfig().HeartbeatTimeout
+}
+
 // memberAnswer is what a member of the formation said of itself, nil when it said
 // nothing.
 type memberAnswer struct {
@@ -663,7 +681,7 @@ type memberAnswer struct {
 // while a quorum answers, which can still elect one.
 func (h *healer) recoverFromQuorumLoss(ctx context.Context) {
 	m := h.member
-	if m.raft.Pristine() {
+	if m.holdsNothing() {
 		return
 	}
 	formation := m.raft.Formation()
@@ -808,7 +826,7 @@ func (r receipt) allows(m *member) bool {
 // holdingNothing lets a member yield that has nothing to lose.
 type holdingNothing struct{}
 
-func (holdingNothing) allows(m *member) bool { return m.raft.Pristine() }
+func (holdingNothing) allows(m *member) bool { return m.holdsNothing() }
 
 func (h *healer) yieldAndRejoin(ctx context.Context, winnerLeader peer.ID, guard yieldGuard) {
 	healLogger.Infof("[%s] yielding to winner %s",
@@ -829,8 +847,7 @@ func (h *healer) yieldAndRejoin(ctx context.Context, winnerLeader peer.ID, guard
 
 	if guard.allows(m) {
 		healLogger.Infof("[%s] wiping raft state (log, snapshot and applied data)", h.cluster.ID().ShortString())
-		h.wipeRaftState(ctx)
-		if winnerLeader != "" {
+		if h.wipeRaftState(ctx) && winnerLeader != "" {
 			h.cluster.yielded = true
 		}
 	} else {
@@ -886,12 +903,12 @@ func (c *cluster) reinitialize(wait time.Duration) {
 // data must go: rejoining by log replication from the first index would otherwise
 // leave entries the winning group never committed in the store, which this voter
 // would serve once it led. It finishes whatever cancels ctx, as Close does.
-func (h *healer) wipeRaftState(ctx context.Context) {
+func (h *healer) wipeRaftState(ctx context.Context) bool {
 	ctx = context.WithoutCancel(ctx)
 	storagePrefix := path.Join(RaftStoragePrefix, h.cluster.namespace)
-	for _, sub := range []string{"engine", "data"} {
-		if err := wipePrefix(ctx, h.cluster.Store(), path.Join(storagePrefix, sub)); err != nil {
-			healLogger.Warnf("[%s] failed to wipe %s during a yield: %v", h.cluster.ID().ShortString(), sub, err)
-		}
+	if err := wipePrefixes(ctx, h.cluster.Store(), path.Join(storagePrefix, "engine"), path.Join(storagePrefix, "data")); err != nil {
+		healLogger.Warnf("[%s] failed to wipe during a yield, which keeps everything it held: %v", h.cluster.ID().ShortString(), err)
+		return false
 	}
+	return true
 }

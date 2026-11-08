@@ -29,6 +29,7 @@ type peerTracker struct {
 	peers          map[peer.ID]time.Duration // peer ID -> time since start when first seen
 	heard          map[peer.ID]time.Time
 	exchanging     map[peer.ID]bool
+	failedExchange map[peer.ID]probeWait
 	selfID         peer.ID
 	lastPeerCount  int
 	lastChangeTime time.Time
@@ -45,6 +46,7 @@ func newPeerTracker(selfID peer.ID) *peerTracker {
 		peers:          make(map[peer.ID]time.Duration),
 		heard:          make(map[peer.ID]time.Time),
 		exchanging:     make(map[peer.ID]bool),
+		failedExchange: make(map[peer.ID]probeWait),
 		probed:         make(map[peer.ID]probeWait),
 		lastPeerCount:  1, // self
 		lastChangeTime: now,
@@ -82,6 +84,7 @@ func (pt *peerTracker) heardFrom(pid peer.ID) {
 	pt.addPeer(pid)
 	pt.mu.Lock()
 	pt.heard[pid] = time.Now()
+	delete(pt.probed, pid)
 	pt.mu.Unlock()
 }
 
@@ -229,27 +232,61 @@ func (pt *peerTracker) prune() {
 			delete(pt.peers, pid)
 			delete(pt.heard, pid)
 			delete(pt.probed, pid)
+			delete(pt.failedExchange, pid)
 			discoveryLogger.Infof("[%s] dropped %s, not reached in %v", pt.selfID.ShortString(), pid.ShortString(), candidateTTL)
 		}
 	}
 	pt.lastPeerCount = len(pt.peers)
 }
 
-// startExchange claims pid for one exchange, unless one with it is under way.
+// maxCandidateExchanges is how many exchanges with peers that are not live a
+// tracker has under way at once: a namespace crowded with peers that do not answer
+// holds that many, not one each. Live peers are never held back by them, or their
+// liveness would lapse while dead ones time out.
+const maxCandidateExchanges = 16
+
+// startExchange claims pid for one exchange, unless one with it is under way, it
+// failed lately, or it is not live and as many such are under way as allowed.
 func (pt *peerTracker) startExchange(pid peer.ID) bool {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
-	if pt.exchanging[pid] {
+	if _, busy := pt.exchanging[pid]; busy {
 		return false
 	}
-	pt.exchanging[pid] = true
+	now := time.Now()
+	if wait, ok := pt.failedExchange[pid]; ok && now.Before(wait.next) {
+		return false
+	}
+	candidate := !pt.liveLocked(pid, now, pt.liveWindow())
+	if candidate {
+		held := 0
+		for _, c := range pt.exchanging {
+			if c {
+				held++
+			}
+		}
+		if held >= maxCandidateExchanges {
+			return false
+		}
+	}
+	pt.exchanging[pid] = candidate
 	return true
 }
 
-func (pt *peerTracker) endExchange(pid peer.ID) {
+// endExchange releases pid, and backs it off when its exchange failed.
+func (pt *peerTracker) endExchange(pid peer.ID, failed bool) {
 	pt.mu.Lock()
+	defer pt.mu.Unlock()
 	delete(pt.exchanging, pid)
-	pt.mu.Unlock()
+	if !failed {
+		delete(pt.failedExchange, pid)
+		return
+	}
+	wait := probeFirstWait
+	if last, ok := pt.failedExchange[pid]; ok {
+		wait = min(2*last.wait, probeMaxWait)
+	}
+	pt.failedExchange[pid] = probeWait{next: time.Now().Add(wait), wait: wait}
 }
 
 func (pt *peerTracker) allPeers() []peer.ID {
@@ -374,8 +411,8 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster, 
 }
 
 func (pt *peerTracker) exchange(ctx context.Context, c *cluster, client internalClient, pid peer.ID, startTime time.Time, peersMap map[string]int64) {
-	defer pt.endExchange(pid)
 	theirStart, theirPeers, err := client.ExchangePeers(startTime, peersMap, pid)
+	pt.endExchange(pid, err != nil)
 	if err != nil {
 		discoveryLogger.Infof("[%s] peer exchange with %s failed: %v",
 			pt.selfID.ShortString(), pid.ShortString(), err)

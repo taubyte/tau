@@ -73,12 +73,13 @@ func TestAMemberPrefersTheFormationThatNamesIt(t *testing.T) {
 // one every node would, and waits for no peer that does not answer.
 func TestAMemberBindsToAFormationItsPeersOffer(t *testing.T) {
 	node := newMockNode(t)
-	named, quiet, unbound, gone := strangerID(t), strangerID(t), strangerID(t), strangerID(t)
+	named, quiet, unbound, gone, orphaned := strangerID(t), strangerID(t), strangerID(t), strangerID(t), strangerID(t)
 	theirs := newFormation()
 	client := &offering{
 		offers: map[peer.ID]offer{
-			named:   {formation: theirs, members: []peer.ID{named, node.ID()}},
-			unbound: {},
+			named:    {formation: theirs, members: []peer.ID{named, node.ID()}},
+			unbound:  {},
+			orphaned: {formation: newFormation()},
 		},
 		silent:  map[peer.ID]bool{quiet: true},
 		release: make(chan struct{}),
@@ -87,6 +88,7 @@ func TestAMemberBindsToAFormationItsPeersOffer(t *testing.T) {
 	c, m := formationMember(t, node, "binds", client)
 
 	require.False(t, c.bindVia(m, []peer.ID{node.ID(), unbound, gone}), "bound with no formation offered")
+	require.False(t, c.bindVia(m, []peer.ID{orphaned}), "bound to a formation that neither names it nor has a leader")
 	require.Nil(t, m.raft.Formation())
 	require.NotContains(t, client.askedSoFar(), node.ID(), "it asked itself")
 
@@ -141,8 +143,16 @@ func TestAPeerIsExchangedWithOnceAtATime(t *testing.T) {
 	pt := newPeerTracker(self)
 	require.True(t, pt.startExchange(other))
 	require.False(t, pt.startExchange(other), "a second exchange started while one was under way")
-	pt.endExchange(other)
+	pt.endExchange(other, false)
 	require.True(t, pt.startExchange(other))
+	pt.endExchange(other, true)
+	require.False(t, pt.startExchange(other), "a peer whose exchange failed was asked again at once")
+	pt.mu.Lock()
+	pt.failedExchange[other] = probeWait{next: time.Now().Add(-time.Millisecond), wait: probeFirstWait}
+	pt.mu.Unlock()
+	require.True(t, pt.startExchange(other), "a peer whose exchange failed was never asked again")
+	pt.endExchange(other, false)
+	require.NotContains(t, pt.failedExchange, other, "a peer that answered stayed backed off")
 }
 
 func TestAnOfferFromAPeerOutsideTheGroupFails(t *testing.T) {
@@ -177,6 +187,10 @@ func TestAPeerIsProbedAgainLessOften(t *testing.T) {
 	pt.mu.Unlock()
 	require.True(t, pt.probeDue(other))
 	require.Equal(t, probeMaxWait, pt.probed[other].wait, "the wait grew past its ceiling")
+
+	pt.heardFrom(other)
+	require.True(t, pt.probeDue(other), "a peer heard from directly stayed backed off")
+	require.Equal(t, probeFirstWait, pt.probed[other].wait)
 }
 
 // A CANDIDATE NOBODY REACHES IS DROPPED in time, and one reached lately is kept.
@@ -245,4 +259,52 @@ func TestAMemberRefusesAReceiptThatDoesNotCoverIt(t *testing.T) {
 	require.Same(t, m, cl.(*cluster).current(), "the member yielded on a receipt that did not cover it")
 	_, found := cl.Get("k")
 	require.True(t, found)
+}
+
+// PEERS THAT ARE NOT LIVE HOLD SO MANY EXCHANGES AND NO MORE, and never keep a
+// live peer waiting: its liveness would lapse while dead ones time out.
+func TestCandidatesHoldSoManyExchangesAndLivePeersAreNeverHeldBack(t *testing.T) {
+	pt := newPeerTracker(strangerID(t))
+	for range maxCandidateExchanges {
+		require.True(t, pt.startExchange(strangerID(t)))
+	}
+	require.False(t, pt.startExchange(strangerID(t)), "a candidate exchange started past the cap")
+	live := strangerID(t)
+	pt.heardFrom(live)
+	require.True(t, pt.startExchange(live), "a live peer was held back by candidates")
+}
+
+// A GROUP CLOSED SINCE BINDS TO NOTHING: a join that asked for offers before the
+// group was taken down would otherwise label the group opened after it.
+func TestAGroupClosedSinceBindsToNothing(t *testing.T) {
+	node := newMockNode(t)
+	old := onEngine(t, node, "closed-since", quickTimeouts)
+	keep := onEngine(t, node, "keeps-engine", quickTimeouts)
+	require.NoError(t, old.Close())
+	again := onEngine(t, node, "closed-since", quickTimeouts)
+	ours := newFormation()
+	require.NoError(t, again.Bind(ours))
+
+	require.ErrorIs(t, old.Bind(newFormation()), ErrShutdown)
+	require.NoError(t, again.Close())
+	reopened := onEngine(t, node, "closed-since", quickTimeouts)
+	require.Equal(t, ours, reopened.Formation(), "a closed group's binding labelled the group after it")
+	require.NotNil(t, keep)
+}
+
+// A LOG OF NO FORMATION IS NOT BOUND AFTER THE FACT: whichever formation it came
+// from, binding it to another would mix the two.
+func TestALogOfNoFormationIsNotBoundAfterTheFact(t *testing.T) {
+	node := newMockNode(t)
+	g := onEngine(t, node, "unbound-history", quickTimeouts)
+	require.NoError(t, g.Bootstrap([]peer.ID{node.ID()}))
+	leading(t, g)
+	set(t, g, "k", "v")
+	require.NoError(t, g.Close())
+	require.NoError(t, node.Store().Delete(t.Context(), g.log.formationKey()))
+
+	again := onEngine(t, node, "unbound-history", quickTimeouts)
+	require.Nil(t, again.Formation())
+	require.ErrorIs(t, again.Bind(newFormation()), ErrUnboundHistory)
+	require.Nil(t, again.Formation())
 }

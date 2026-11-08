@@ -868,8 +868,16 @@ type bindAsk struct {
 	reply     chan error
 }
 
-func (a bindAsk) run(*engine) {
+func (a bindAsk) run(e *engine) {
 	switch {
+	// A GROUP CLOSED SINCE BINDS TO NOTHING: its storage is the group opened after
+	// it, which another binding may label.
+	case e.groups[a.g.namespace] != a.g:
+		a.reply <- ErrShutdown
+	// A LOG OF NO FORMATION IS NOT BOUND AFTER THE FACT: whichever formation it was
+	// taken from, binding it to another would mix the two.
+	case a.g.log.formation == nil && !a.g.log.pristine():
+		a.reply <- ErrUnboundHistory
 	case a.g.log.formation == nil:
 		a.reply <- a.g.setFormation(slices.Clone(a.formation))
 	case bytes.Equal(a.g.log.formation, a.formation):
@@ -895,6 +903,23 @@ type pristineAsk struct {
 }
 
 func (a pristineAsk) run(*engine) { a.reply <- a.g.log.pristine() }
+
+// HoldsNoData says the group's log holds no write, only membership, so leaving its
+// formation loses no data.
+func (g *group) HoldsNoData() bool {
+	a := noDataAsk{g: g, reply: make(chan bool, 1)}
+	if err := g.e.do(a); err != nil {
+		return false
+	}
+	return <-a.reply
+}
+
+type noDataAsk struct {
+	g     *group
+	reply chan bool
+}
+
+func (a noDataAsk) run(*engine) { a.reply <- a.g.log.holdsNoData() }
 
 // TransferLeadership hands leadership to to, or to whichever voter is most caught
 // up when to is empty.

@@ -1402,3 +1402,46 @@ func TestHealing_TwoLeadersWithTheSameStateDoNotBothYield(t *testing.T) {
 	require.Never(t, func() bool { return solos[0].current() != before[0] && solos[1].current() != before[1] },
 		2*time.Second, 20*time.Millisecond, "both leaders yielded to each other")
 }
+
+// A WIPE THE STORE REFUSES TAKES NOTHING: what the member held goes all at once or
+// not at all, so a log is never gone while the data it committed stays.
+func TestHealing_AWipeTheStoreRefusesTakesNothing(t *testing.T) {
+	const namespace = "wipe-refused"
+	store := newFaultStore()
+	cl, err := New(storeNode{Node: newMockNode(t), store: store}, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
+	require.NoError(t, err)
+	t.Cleanup(func() { cl.Close() })
+	waitLeader(t, cl, 5*time.Second)
+	require.NoError(t, cl.Set("kept", []byte("v"), time.Second))
+	c := cl.(*cluster)
+	formation := c.current().raft.Formation()
+
+	store.failStaging(path.Join(RaftStoragePrefix, namespace, "data", "kept"), errNoSpace)
+	c.current().healer.Load().yieldAndRejoin(t.Context(), "", covering(c.current()))
+	waitLeader(t, cl, 5*time.Second)
+	require.Equal(t, formation, c.current().raft.Formation(), "the wipe took the log and left the data")
+	value, found := cl.Get("kept")
+	require.True(t, found)
+	require.Equal(t, "v", string(value))
+}
+
+// A FOUNDER WHOSE OTHER FOUNDER NEVER CAME FORMS AGAIN, alone if need be: its log
+// holds only who it named, which leaving loses nothing of.
+func TestHealing_AFounderLeftWithOnlyItsConfigurationFormsAgain(t *testing.T) {
+	const namespace = "founder-left-alone"
+	probeEvery(t, 50*time.Millisecond)
+	node := newMockNode(t)
+	cl, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithBootstrapTimeout(time.Second))
+	require.NoError(t, err)
+	t.Cleanup(func() { cl.Close() })
+	c := cl.(*cluster)
+	waitLeader(t, cl, 5*time.Second)
+	require.NoError(t, c.current().raft.AddVoter(strangerID(t), 5*time.Second))
+	require.Eventually(t, func() bool { _, err := cl.Leader(); return err != nil }, leaderWait, 10*time.Millisecond)
+	formed := c.current().raft.Formation()
+	require.False(t, c.current().raft.Pristine(), "the founder holds no configuration")
+
+	require.Eventually(t, func() bool {
+		return c.IsLeader() && !bytes.Equal(formed, c.current().raft.Formation())
+	}, 15*time.Second, 50*time.Millisecond, "the founder left with only its configuration never formed again")
+}

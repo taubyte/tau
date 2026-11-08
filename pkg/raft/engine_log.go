@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 
 	ds "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
@@ -123,6 +124,31 @@ func (l *engineLog) pristine() bool {
 	return last == 0 && etcdraft.IsEmptySnap(snap)
 }
 
+// holdsNoData says the log holds no write: no snapshot, and no entry but
+// membership changes and the empty entries leaders open their terms with. Who was
+// a member is all such a group would lose.
+func (l *engineLog) holdsNoData() bool {
+	snap, _ := l.Snapshot()
+	if !etcdraft.IsEmptySnap(snap) {
+		return false
+	}
+	first, _ := l.FirstIndex()
+	last, _ := l.LastIndex()
+	if last < first {
+		return true
+	}
+	entries, err := l.Entries(first, last+1, math.MaxUint64)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e.GetType() == pb.EntryType_EntryNormal && len(e.GetData()) > 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // save writes what raft asked to keep from one Ready into b. Memory follows only
 // once b commits (kept), so a write the store refused can be made again.
 func (l *engineLog) save(ctx context.Context, b ds.Batch, snap *pb.Snapshot, hs *pb.HardState, entries []*pb.Entry) error {
@@ -232,23 +258,27 @@ func (l *engineLog) compact(ctx context.Context, index uint64, cs *pb.ConfState,
 // wipe deletes everything the group kept, so it starts again as a node that never
 // ran it.
 func (l *engineLog) wipe(ctx context.Context) error {
-	return wipePrefix(ctx, l.store, l.prefix)
+	return wipePrefixes(ctx, l.store, l.prefix)
 }
 
-func wipePrefix(ctx context.Context, store ds.Batching, prefix string) error {
-	results, err := store.Query(ctx, query.Query{Prefix: prefix, KeysOnly: true})
-	if err != nil {
-		return err
-	}
+// wipePrefixes deletes every key under prefixes in one batch: all of them go, or
+// none does, so a crash or a refusal never leaves part of what they held.
+func wipePrefixes(ctx context.Context, store ds.Batching, prefixes ...string) error {
 	var keys []ds.Key
-	for r := range results.Next() {
-		if r.Error != nil {
-			results.Close()
-			return r.Error
+	for _, prefix := range prefixes {
+		results, err := store.Query(ctx, query.Query{Prefix: prefix, KeysOnly: true})
+		if err != nil {
+			return err
 		}
-		keys = append(keys, ds.NewKey(r.Key))
+		for r := range results.Next() {
+			if r.Error != nil {
+				results.Close()
+				return r.Error
+			}
+			keys = append(keys, ds.NewKey(r.Key))
+		}
+		results.Close()
 	}
-	results.Close()
 	b, err := store.Batch(ctx)
 	if err != nil {
 		return err

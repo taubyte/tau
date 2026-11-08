@@ -484,8 +484,8 @@ const offerWait = 2 * time.Second
 
 // bindVia binds m's group, if it is bound to no formation yet, to one that peers
 // offer, and reports whether it is bound. Every node picks the same formation from
-// the same offers: one that names it among its voters, then one with a leader,
-// then the lowest.
+// the same offers: one that names it among its voters, then one with a leader, the
+// lowest of either; never one with neither.
 func (c *cluster) bindVia(m *member, peers []peer.ID) bool {
 	if m.raft.Formation() != nil {
 		return true
@@ -513,7 +513,7 @@ collect:
 	for range asked {
 		select {
 		case o := <-answers:
-			if len(o.formation) == formationSize && (best == nil || c.prefers(o, *best)) {
+			if len(o.formation) == formationSize && c.rank(o) > 0 && (best == nil || c.prefers(o, *best)) {
 				best = &o
 			}
 		case <-deadline:
@@ -536,17 +536,22 @@ collect:
 	}
 }
 
-func (c *cluster) prefers(a, b offer) bool {
-	rank := func(o offer) int {
-		switch {
-		case slices.Contains(o.members, c.ID()):
-			return 2
-		case o.leader != "":
-			return 1
-		}
-		return 0
+// rank is what an offer is worth: one that names this node among its voters, then
+// one with a leader to let it in. One with neither is a formation nobody can bring
+// this node into, such as a member's still bound to a founder that died, and is
+// worth nothing.
+func (c *cluster) rank(o offer) int {
+	switch {
+	case slices.Contains(o.members, c.ID()):
+		return 2
+	case o.leader != "":
+		return 1
 	}
-	if ra, rb := rank(a), rank(b); ra != rb {
+	return 0
+}
+
+func (c *cluster) prefers(a, b offer) bool {
+	if ra, rb := c.rank(a), c.rank(b); ra != rb {
 		return ra > rb
 	}
 	return bytes.Compare(a.formation, b.formation) < 0
@@ -632,6 +637,17 @@ func (m *member) takeDown() error {
 	err := m.raft.Close()
 	m.downOnce.Do(func() { close(m.down) })
 	return err
+}
+
+// holdsNothing says the member would lose nothing leaving its formation: its log
+// holds no write, nor its machine anything, tombstones included, which a wipe that
+// stopped halfway could leave behind a log it took.
+func (m *member) holdsNothing() bool {
+	if !m.raft.HoldsNoData() {
+		return false
+	}
+	state, err := m.fsm.ExportState()
+	return err == nil && len(state) == 0
 }
 
 func (m *member) isLeader() bool {

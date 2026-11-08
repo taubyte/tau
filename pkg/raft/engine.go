@@ -63,6 +63,10 @@ var (
 	// none until the handover ends or its freeze runs out.
 	ErrFrozen = errors.New("the group is handing its state to another and takes no writes")
 
+	// ErrUnboundHistory is a group that holds a log but no formation, which
+	// nothing may bind after the fact.
+	ErrUnboundHistory = errors.New("the group holds a log of no formation")
+
 	// ErrBoundElsewhere is a group asked to bind to a formation while bound to
 	// another.
 	ErrBoundElsewhere = errors.New("the group is bound to another formation")
