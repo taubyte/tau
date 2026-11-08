@@ -11,9 +11,10 @@ import (
 )
 
 type Gateway struct {
-	ctx  context.Context
-	node peer.Node
-	http http.Service
+	ctx        context.Context
+	node       peer.Node
+	clientNode peer.Node // the node substrateClient runs on
+	http       http.Service
 
 	substrateClient substrate.ProxyClient
 

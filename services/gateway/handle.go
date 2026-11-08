@@ -82,10 +82,13 @@ func legacyNotFound(err error) bool {
 	return strings.Contains(err.Error(), "no HTTP match found for method")
 }
 
-func (g *Gateway) lookupOnce(r *goHttp.Request, timeout time.Duration) (*lookupResult, error) {
+func (g *Gateway) lookupOnce(r *goHttp.Request, timeout time.Duration, threshold int) (*lookupResult, error) {
 	var ops []client.Option[client.Request]
 	if timeout > 0 {
 		ops = append(ops, client.Timeout(timeout))
+	}
+	if threshold > 0 {
+		ops = append(ops, client.Threshold(threshold))
 	}
 
 	resCh, err := g.substrateClient.ProxyHTTP(r.Host, r.URL.Path, r.Method, ops...)
@@ -129,13 +132,14 @@ func (g *Gateway) lookupOnce(r *goHttp.Request, timeout time.Duration) (*lookupR
 
 // lookup asks again with more time until there is a match or a certain answer.
 func (g *Gateway) lookup(r *goHttp.Request) (*lookupResult, error) {
+	threshold, timeouts := g.lookupPlan()
 	var result *lookupResult
-	for i, timeout := range lookupTimeouts {
+	for i, timeout := range timeouts {
 		if i > 0 {
 			result.close()
 		}
 		var err error
-		if result, err = g.lookupOnce(r, timeout); err != nil {
+		if result, err = g.lookupOnce(r, timeout, threshold); err != nil {
 			return nil, err
 		}
 		if result.matched() || result.definite() {

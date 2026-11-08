@@ -68,7 +68,8 @@ type substrateDef struct {
 	serve   func(w goHttp.ResponseWriter, r *goHttp.Request, raw io.Writer)
 }
 
-func fakeSubstrates(t *testing.T, defs ...substrateDef) goHttp.HandlerFunc {
+// startSubstrates runs the substrates and a gateway peer connected to each. stop[i] takes substrate i away.
+func startSubstrates(t *testing.T, defs ...substrateDef) (ctx context.Context, gw peer.Node, subs []peer.Node, stop []func()) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
@@ -81,7 +82,7 @@ func fakeSubstrates(t *testing.T, defs ...substrateDef) goHttp.HandlerFunc {
 		t.Cleanup(p.Close)
 		return p
 	}
-	gw := newPeer()
+	gw = newPeer()
 	for _, def := range defs {
 		sub := newPeer()
 		svc, err := streams.New(sub, protocolCommon.Substrate, protocolCommon.SubstrateProtocol)
@@ -89,6 +90,8 @@ func fakeSubstrates(t *testing.T, defs ...substrateDef) goHttp.HandlerFunc {
 			t.Fatal(err)
 		}
 		t.Cleanup(svc.Stop)
+		subs = append(subs, sub)
+		stop = append(stop, func() { svc.Stop(); sub.Close() })
 
 		var lookups atomic.Int64
 		match := cr.Response{functionSpec.PathVariable.String(): def.metrics.Encode()}
@@ -124,6 +127,11 @@ func fakeSubstrates(t *testing.T, defs ...substrateDef) goHttp.HandlerFunc {
 		}
 	}
 
+	return ctx, gw, subs, stop
+}
+
+func fakeSubstrates(t *testing.T, defs ...substrateDef) goHttp.HandlerFunc {
+	ctx, gw, _, _ := startSubstrates(t, defs...)
 	sc, err := substrateClient.New(ctx, gw, substrateClient.Threshold(len(defs)))
 	if err != nil {
 		t.Fatal(err)
