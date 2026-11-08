@@ -86,6 +86,8 @@ func (p *node) NewPubSubKeepAlive(ctx context.Context, cancel context.CancelFunc
 	)
 }
 
+// getOrCreateTopic returns the joined topic and takes a reference on it; every
+// call must be paired with releaseTopic.
 func (p *node) getOrCreateTopic(name string) (topic *pubsub.Topic, err error) {
 	if p.closed.Load() {
 		return nil, errorClosed
@@ -104,10 +106,47 @@ func (p *node) getOrCreateTopic(name string) (topic *pubsub.Topic, err error) {
 		p.topics[name] = topic
 	}
 
+	if p.topicRefs == nil {
+		p.topicRefs = make(map[string]int)
+	}
+	p.topicRefs[name]++
+
 	return topic, nil
 }
 
+// releaseTopic drops a reference and leaves the topic once nobody uses it:
+// pubsub polls discovery every second for every joined topic, forever on a
+// small cloud. Callers cancel their subscription first (Cancel returns once the
+// pubsub loop has taken it, so Close sees it gone). If Close still refuses, the
+// topic stays in the map and the next user reuses it.
+func (p *node) releaseTopic(name string) {
+	p.topicsMutex.Lock()
+	defer p.topicsMutex.Unlock()
+
+	if p.topicRefs[name]--; p.topicRefs[name] > 0 {
+		return
+	}
+	delete(p.topicRefs, name)
+
+	if topic, ok := p.topics[name]; ok && topic.Close() == nil {
+		delete(p.topics, name)
+	}
+}
+
 func (p *node) PubSubSubscribe(name string, handler PubSubConsumerHandler, err_handler PubSubConsumerErrorHandler) error {
+	return p.PubSubSubscribeContext(p.ctx, name, handler, err_handler)
+}
+
+// PubSubSubscribeToTopic subscribes to a topic the caller joined; the caller owns it.
+func (p *node) PubSubSubscribeToTopic(topic *pubsub.Topic, handler PubSubConsumerHandler, err_handler PubSubConsumerErrorHandler) error {
+	if p.closed.Load() {
+		return errorClosed
+	}
+
+	return p.consume(p.ctx, topic, func() {}, handler, err_handler)
+}
+
+func (p *node) PubSubSubscribeContext(ctx context.Context, name string, handler PubSubConsumerHandler, err_handler PubSubConsumerErrorHandler) error {
 	if p.closed.Load() {
 		return errorClosed
 	}
@@ -117,67 +156,30 @@ func (p *node) PubSubSubscribe(name string, handler PubSubConsumerHandler, err_h
 		return fmt.Errorf("getting topic %q for subscription failed: %w", name, err)
 	}
 
-	return p.PubSubSubscribeToTopic(topic, handler, err_handler)
+	return p.consume(ctx, topic, func() { p.releaseTopic(name) }, handler, err_handler)
 }
 
-func (p *node) PubSubSubscribeToTopic(topic *pubsub.Topic, handler PubSubConsumerHandler, err_handler PubSubConsumerErrorHandler) error {
-	if p.closed.Load() {
-		return errorClosed
-	}
-
+// consume runs handler for each message until ctx or the node is done, then calls release.
+func (p *node) consume(ctx context.Context, topic *pubsub.Topic, release func(), handler PubSubConsumerHandler, err_handler PubSubConsumerErrorHandler) error {
 	subs, err := topic.Subscribe()
 	if err != nil {
+		release()
 		return fmt.Errorf("subscribing to pubsub topic failed: %w", err)
 	}
 
 	go func() {
-		defer subs.Cancel()
-		for {
-			select {
-			case <-p.ctx.Done():
-				return
-			default:
-				msg, err := subs.Next(p.ctx)
-				if err != nil {
-					if p.ctx.Err() == nil {
-						err_handler(err)
-					}
-					return
-				}
-				handler(msg)
-			}
-		}
-	}()
-
-	return nil
-}
-
-// TODO: make PubSubSubscribe not recreate topics,  should cache and open.
-func (p *node) PubSubSubscribeContext(ctx context.Context, name string, handler PubSubConsumerHandler, err_handler PubSubConsumerErrorHandler) error {
-	if p.closed.Load() {
-		return errorClosed
-	}
-
-	topic, err := p.getOrCreateTopic(name)
-	if err != nil {
-		return fmt.Errorf("getting topic %q for context subscription failed: %w", name, err)
-	}
-
-	subs, err := topic.Subscribe()
-	if err != nil {
-		return fmt.Errorf("subscribing to pubsub topic %q failed: %w", name, err)
-	}
-
-	go func() {
+		defer release()
 		defer subs.Cancel()
 		for {
 			select {
 			case <-ctx.Done():
 				return
+			case <-p.ctx.Done():
+				return
 			default:
 				msg, err := subs.Next(ctx)
 				if err != nil {
-					if ctx.Err() == nil {
+					if ctx.Err() == nil && p.ctx.Err() == nil {
 						err_handler(err)
 					}
 					return
@@ -199,6 +201,7 @@ func (p *node) PubSubPublish(ctx context.Context, name string, data []byte) erro
 	if err != nil {
 		return fmt.Errorf("getting topic %q for publish failed: %w", name, err)
 	}
+	defer p.releaseTopic(name)
 
 	if err := topic.Publish(ctx, data); err != nil {
 		return fmt.Errorf("publishing to topic %q failed: %w", name, err)

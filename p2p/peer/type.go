@@ -72,6 +72,7 @@ type node struct {
 
 	topicsMutex sync.RWMutex
 	topics      map[string]*pubsub.Topic
+	topicRefs   map[string]int
 	closed      atomic.Bool
 }
 
