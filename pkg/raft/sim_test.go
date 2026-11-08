@@ -525,6 +525,147 @@ func TestASimulationSeedReplays(t *testing.T) {
 	require.Equal(t, first, second, "one seed ran two different clouds")
 }
 
+// simStall is a group of the given size whose last member joins with a store
+// that refuses its raft state, once the rest have formed under a leader: the
+// write naming that leader is the first the store refuses.
+type simStall struct {
+	*sim
+	late  *simNode
+	store *faultStore
+	first *simNode
+}
+
+const simStallVote = "/raft/a/engine/hardstate"
+
+func newSimStall(t *testing.T, size int) simStall {
+	members := make([]int, size)
+	for i := range members {
+		members[i] = i
+	}
+	s := simStall{sim: newSim(t, 1, size, map[string][]int{"a": members})}
+	s.late = s.nodes[size-1]
+	s.crash(s.late, false)
+	for range 2000 {
+		if s.first = s.leading(); s.first != nil && s.formed() {
+			break
+		}
+		s.step()
+	}
+	require.True(t, s.first != nil && s.formed(), "the group never formed")
+
+	s.store = newFaultStore()
+	s.store.failPut(simStallVote, errNoSpace)
+	s.late.store = s.store
+	s.start(s.late)
+	g := s.lateGroup()
+	for range 2000 {
+		if g.stalled != nil && g.stalled.SoftState != nil && g.stalled.SoftState.Lead != 0 {
+			break
+		}
+		s.step()
+	}
+	require.NotNil(t, g.stalled, "the late member's store never refused it")
+	heard, _ := s.late.e.book.peer(g.stalled.SoftState.Lead)
+	require.Equal(t, s.first.id, heard)
+	return s
+}
+
+func (s simStall) lateGroup() *group { return s.late.groups["a"].g }
+
+// leading is the member other than the late one that leads, if one does.
+func (s simStall) leading() *simNode {
+	for _, n := range s.nodes {
+		if n != s.late && n.up && n.groups["a"].g.State() == Leader {
+			return n
+		}
+	}
+	return nil
+}
+
+// formed says every member that is up holds the group's configuration.
+func (s simStall) formed() bool {
+	for _, n := range s.nodes {
+		if n != s.late && n.up && len(n.groups["a"].g.conf.GetVoters()) != len(s.nodes) {
+			return false
+		}
+	}
+	return true
+}
+
+// recovered steps until the late member's store has taken its state.
+func (s simStall) recovered() {
+	s.store.failPut(simStallVote, nil)
+	for range 2000 {
+		if s.lateGroup().stalled == nil {
+			return
+		}
+		s.step()
+	}
+	s.t.Fatalf("the late member never wrote its state")
+}
+
+// A MEMBER WHOSE STORE COMES BACK NAMES THE LEADER IT KNOWS NOW, not the one it
+// heard when its write was refused: a join asked of it would be forwarded to a
+// leader long gone.
+func TestAStalledMemberNamesNoLeaderItHeardBeforeTheStall(t *testing.T) {
+	s := newSimStall(t, 5)
+	g := s.lateGroup()
+
+	s.crash(s.first, false)
+	var second *simNode
+	for range 2000 {
+		if second = s.leading(); second != nil {
+			if now, _ := s.late.e.book.peer(g.rn.BasicStatus().Lead); now == second.id {
+				break
+			}
+		}
+		s.step()
+	}
+	require.NotNil(t, second, "the rest never elected another leader")
+
+	s.recovered()
+	named, _ := g.Leader()
+	require.NotEqual(t, s.first.id, named, "the late member names the leader it heard before its write was refused")
+}
+
+// A GROUP OF THREE WHOSE LEADER DIES WHILE A MEMBER'S STORE REFUSES ITS STATE
+// LEADS AGAIN ONCE THE STORE COMES BACK, with nobody to restart anything: one
+// member of three cannot elect, and the one that could not write its vote takes
+// part again the moment a write lands.
+func TestAGroupLeadsAgainOnceAStalledMembersStoreComesBack(t *testing.T) {
+	s := newSimStall(t, 3)
+	g := s.lateGroup()
+
+	s.crash(s.first, false)
+	for range 400 {
+		s.step()
+	}
+	require.Nil(t, s.leading(), "one member of three elected itself")
+
+	s.recovered()
+	var second *simNode
+	for range 4000 {
+		if second = s.leading(); second != nil {
+			if now, _ := g.Leader(); now == second.id {
+				break
+			}
+		}
+		s.step()
+	}
+	require.NotNil(t, second, "the group never led again once the store came back")
+	named, _ := g.Leader()
+	require.Equal(t, second.id, named, "the member whose store came back never followed the new leader")
+	s.propose("a")
+	for range 2000 {
+		s.step()
+		s.answered()
+		if len(s.acked["a"]) > 0 {
+			break
+		}
+	}
+	require.NotEmpty(t, s.acked["a"], "the group led again and never committed a write")
+}
+
 // UNDER DROPS, DELAYS, REORDERING, PARTITIONS AND CRASHES — between a pass's write
 // and its send among them — no group ever has two leaders in a term, no index ever
 // applies two commands, and every write a leader acknowledged is on every member

@@ -290,7 +290,12 @@ func (e *engine) cycle() {
 			if now.Before(g.retryAt) {
 				continue
 			}
-			out = append(out, readied{g, *g.stalled})
+			rd := *g.stalled
+			// What the node knew of its leader when the store refused the pass is
+			// stale by now: raft kept stepping and ticking while it waited.
+			ss := g.rn.BasicStatus().SoftState
+			rd.SoftState = &ss
+			out = append(out, readied{g, rd})
 		case g.rn.HasReady():
 			out = append(out, readied{g, g.rn.Ready()})
 		}
