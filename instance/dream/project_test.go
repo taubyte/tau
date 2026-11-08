@@ -483,7 +483,7 @@ func TestALedgerAnswersEveryNodeWithWhatItsLeaderCommitted(t *testing.T) {
 		got := cloud[0].ask(t, http.MethodPost, "/kv-put/ledger/entry-1")
 		last = fmt.Sprintf("%d %s", got.Code, got.Body.String())
 		return got.Code == 204
-	}, formingBudget, time.Second, "no node ever led the ledger's group: %s", &lastSaid{&last})
+	}, formingBudget, time.Second, "the first write never landed: %s", &lastSaid{&last})
 
 	// Every node answers with it, first try: a converging store would race here; reads
 	// reaching the leader behind a barrier cannot.
