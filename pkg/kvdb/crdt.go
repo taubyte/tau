@@ -1055,14 +1055,14 @@ func (store *Datastore) resumeUnfinished(ctx context.Context) {
 		}
 		var w unfinishedWalk
 		if err := json.Unmarshal(e.Value, &w); err != nil {
-			store.logger.Errorf("error decoding unfinished walk %s: %s", e.Key, err)
+			store.logger.Errorf("error decoding unfinished walk: %s", err)
 			store.MarkDirty(ctx)
 			continue
 		}
 		// Deleted first so an interruption can re-record it: a clean stop
 		// does so above, a crash leaves the bad-shutdown key.
 		if err := store.store.Delete(ctx, ds.NewKey(e.Key)); err != nil {
-			store.logger.Errorf("error clearing unfinished walk %s: %s", e.Key, err)
+			store.logger.Errorf("error clearing unfinished walk: %s", err)
 			store.MarkDirty(ctx)
 			continue
 		}
