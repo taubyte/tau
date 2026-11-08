@@ -81,6 +81,10 @@ func (c *cache) listen(key tns.Path) (*subscription, uint64, error) {
 		return sub, 0, fmt.Errorf("subscription to key `%s`||`%s` failed to initialize with: %s", key.String(), topic, err.Error())
 	}
 
+	// Before anything can fill the queue: a full queue with no reader hangs
+	// this request and every later one for the key.
+	sub.watch()
+
 	c.lock.Lock()
 	if c.subscriptions != nil {
 		c.subscriptions[topic] = sub
@@ -89,8 +93,6 @@ func (c *cache) listen(key tns.Path) (*subscription, uint64, error) {
 
 	gen := sub.gen.Load()
 	sub.send(key.String())
-
-	sub.watch()
 
 	return sub, gen, nil
 }
