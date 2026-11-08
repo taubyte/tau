@@ -115,11 +115,35 @@ func TestPeerTracker_GetPeersMap(t *testing.T) {
 	pt.addPeer(peer1)
 
 	startTime, peersMap := pt.getPeersMap()
-
 	assert.Equal(t, startTime, pt.startTime)
-	assert.Equal(t, len(peersMap), 2)
+	assert.Equal(t, len(peersMap), 1, "a peer the tracker never reached is vouched for")
 	assert.Equal(t, peersMap[selfID.String()], int64(0))
+
+	pt.heardFrom(peer1)
+	_, peersMap = pt.getPeersMap()
+	assert.Equal(t, len(peersMap), 2)
 	assert.Assert(t, peersMap[peer1.String()] >= 0)
+}
+
+// A PEER LAST REACHED LONGER AGO THAN THE LIVE WINDOW is no founder and nobody
+// hears of it from this tracker: a dead founder leaves every tracker.
+func TestPeerTracker_APeerNotReachedLatelyIsNotLive(t *testing.T) {
+	selfID, _ := peer.Decode("QmYyQSo1c1Ym7orWxLYvCrM2EmxFTANf8wXmmE7DWjhx5N")
+	peer1, _ := peer.Decode("QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt")
+
+	pt := newPeerTracker(selfID)
+	pt.heardFrom(peer1)
+	assert.Equal(t, len(pt.getFoundingMembers(time.Minute)), 2)
+
+	pt.mu.Lock()
+	pt.heard[peer1] = time.Now().Add(-2 * pt.liveWindow())
+	pt.mu.Unlock()
+	assert.DeepEqual(t, pt.getFoundingMembers(time.Minute), []peer.ID{selfID})
+	_, peersMap := pt.getPeersMap()
+	assert.Equal(t, len(peersMap), 1)
+	assert.Equal(t, len(pt.livePeers()), 0)
+	assert.Assert(t, !pt.isLateJoiner(0))
+	assert.DeepEqual(t, pt.allPeers(), []peer.ID{peer1})
 }
 
 func TestPeerTracker_GetFoundingMembers(t *testing.T) {
@@ -130,9 +154,11 @@ func TestPeerTracker_GetFoundingMembers(t *testing.T) {
 	pt := newPeerTracker(selfID)
 
 	pt.addPeer(peer1)
+	assert.Equal(t, len(pt.getFoundingMembers(50*time.Millisecond)), 1, "a peer the tracker never reached is a founder")
+	pt.heardFrom(peer1)
 
 	time.Sleep(100 * time.Millisecond)
-	pt.addPeer(peer2)
+	pt.heardFrom(peer2)
 
 	founders := pt.getFoundingMembers(50 * time.Millisecond)
 
@@ -150,15 +176,22 @@ func TestPeerTracker_IsLateJoiner(t *testing.T) {
 
 	t.Run("early_peer_makes_founder", func(t *testing.T) {
 		pt := newPeerTracker(selfID)
-		pt.addPeer(peer1)
+		pt.heardFrom(peer1)
 		assert.Assert(t, !pt.isLateJoiner(50*time.Millisecond))
 	})
 
 	t.Run("late_peer_makes_late_joiner", func(t *testing.T) {
 		pt := newPeerTracker(selfID)
 		time.Sleep(60 * time.Millisecond)
-		pt.addPeer(peer1)
+		pt.heardFrom(peer1)
 		assert.Assert(t, pt.isLateJoiner(50*time.Millisecond))
+	})
+
+	t.Run("a_late_peer_never_reached_makes_no_late_joiner", func(t *testing.T) {
+		pt := newPeerTracker(selfID)
+		time.Sleep(60 * time.Millisecond)
+		pt.addPeer(peer1)
+		assert.Assert(t, !pt.isLateJoiner(50*time.Millisecond))
 	})
 }
 

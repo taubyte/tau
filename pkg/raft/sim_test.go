@@ -191,10 +191,20 @@ func newSim(t *testing.T, seed uint64, nodes int, layout map[string][]int) *sim 
 		}
 		a := bootstrapAsk{g: founder.groups[name].g, peers: members, reply: make(chan error, 1)}
 		a.run(founder.e)
+		for _, i := range layout[name][1:] {
+			s.bind(s.nodes[i], name, founder.groups[name].g.Formation())
+		}
 		s.acked[name] = map[string]bool{}
 		s.leaders[name] = map[uint64]peer.ID{}
 	}
 	return s
+}
+
+// bind binds n's group to formation, as a member that asked for an offer does.
+func (s *sim) bind(n *simNode, name string, formation []byte) {
+	a := bindAsk{g: n.groups[name].g, formation: formation, reply: make(chan error, 1)}
+	a.run(n.e)
+	require.NoError(s.t, <-a.reply)
 }
 
 func (s *sim) groupNames() []string {
@@ -557,6 +567,7 @@ func newSimStall(t *testing.T, size int) simStall {
 	s.store.failPut(simStallVote, errNoSpace)
 	s.late.store = s.store
 	s.start(s.late)
+	s.bind(s.late, "a", s.first.groups["a"].g.Formation())
 	g := s.lateGroup()
 	for range 2000 {
 		if g.stalled != nil && g.stalled.SoftState != nil && g.stalled.SoftState.Lead != 0 {

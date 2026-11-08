@@ -17,6 +17,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	taupeer "github.com/taubyte/tau/p2p/peer"
+	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 )
 
 // quickTimeouts is raft timed for nodes one process apart: a tick every 5ms.
@@ -43,6 +44,17 @@ func onEngine(t *testing.T, node taupeer.Node, namespace string, timeouts Timeou
 	require.NoError(t, err)
 	t.Cleanup(func() { g.Close() })
 	return g
+}
+
+// bound binds groups to founder's formation, as members that asked it for an
+// offer do.
+func bound(t *testing.T, founder *group, groups ...*group) {
+	t.Helper()
+	for _, g := range groups {
+		if g != founder {
+			require.NoError(t, g.Bind(founder.Formation()))
+		}
+	}
 }
 
 func set(t *testing.T, g *group, key, value string) {
@@ -124,6 +136,7 @@ func TestThreeNodesReplicateAndChangeMembers(t *testing.T) {
 	// ONE FOUNDER BOOTSTRAPS, naming the others, who start empty and learn the
 	// configuration from the leader: how pkg/raft's discovery forms a group.
 	require.NoError(t, groups[0].Bootstrap(ids))
+	bound(t, groups[0], groups...)
 	leader := leading(t, groups...)
 
 	set(t, leader, "a", "1")
@@ -146,6 +159,7 @@ func TestThreeNodesReplicateAndChangeMembers(t *testing.T) {
 
 	// A FOURTH NODE joins empty, is added by the leader, and catches up.
 	fourth := onEngine(t, nodes[3], "three", quickTimeouts)
+	bound(t, leader, fourth)
 	require.NoError(t, leader.AddVoter(nodes[3].ID(), 5*time.Second))
 	require.Eventually(t, func() bool { return held(fourth, "a") == "1" }, 5*time.Second, 5*time.Millisecond)
 	require.Len(t, leader.Members(), 4)
@@ -177,6 +191,7 @@ func TestANewcomerCatchesUpFromASnapshot(t *testing.T) {
 	}, 5*time.Second, 5*time.Millisecond, "the leader compacted its log")
 
 	second := onEngine(t, nodes[1], "snap", compacting)
+	bound(t, first, second)
 	require.NoError(t, first.AddVoter(nodes[1].ID(), 5*time.Second))
 	require.Eventually(t, func() bool { return held(second, "k") == string(rune('a'+19)) }, 5*time.Second, 5*time.Millisecond,
 		"the newcomer was sent a snapshot, the log before it being gone")
@@ -207,8 +222,8 @@ func (w *voteWatch) heard() (foreign, leaders int) {
 	return len(w.foreign), len(w.leaders)
 }
 
-// A SECOND GROUP UNDER THE SAME NAME shows itself as a vote asked by a node the
-// first does not hold: what the healer watches for.
+// A SECOND GROUP UNDER THE SAME NAME shows itself as a message of another
+// formation, which raft never sees: what the healer watches for.
 func TestAVoteFromOutsideTheGroupIsHeard(t *testing.T) {
 	nodes := linked(t, 2)
 	lone := onEngine(t, nodes[1], "split", quickTimeouts)
@@ -350,6 +365,7 @@ func TestAWriteThatCannotCommitInTimeSaysWhy(t *testing.T) {
 		onEngine(t, nodes[2], "quorum", quickTimeouts),
 	}
 	require.NoError(t, groups[0].Bootstrap(ids))
+	bound(t, groups[0], groups...)
 	leader := leading(t, groups...)
 	for _, g := range groups {
 		if g != leader {
@@ -389,6 +405,7 @@ func TestAFollowerWhoseEngineRestartsHearsItsLeaderAgain(t *testing.T) {
 		}
 	})
 	require.NoError(t, groups[0].Bootstrap(ids))
+	bound(t, groups[0], groups...)
 	leader := leading(t, groups...)
 	set(t, leader, "before", "v")
 
@@ -516,4 +533,67 @@ func TestAGroupWhoseSnapshotDoesNotReadIsNotOpened(t *testing.T) {
 	fsm := newKVFSM(t.Context(), node.Store(), path.Join(RaftStoragePrefix, "garbled"))
 	_, err = e.open("garbled", groupConfig{timeouts: quickTimeouts, machine: fsm, store: node.Store()})
 	require.ErrorContains(t, err, "reading its snapshot")
+}
+
+// heartbeat is a frame holding one heartbeat at term to g's member, from a member
+// of formation.
+func heartbeat(t *testing.T, g *group, from peer.ID, term uint64, formation []byte) *raftv2.Frame {
+	t.Helper()
+	raw, err := proto.Marshal(&pb.Message{
+		Type: pb.MessageType_MsgHeartbeat.Enum(),
+		To:   proto.Uint64(g.e.self),
+		From: proto.Uint64(raftID(from)),
+		Term: proto.Uint64(term),
+	})
+	require.NoError(t, err)
+	return &raftv2.Frame{Envelopes: []*raftv2.Envelope{{Group: g.namespace, Message: raw, Formation: formation}}}
+}
+
+// RAFT NEVER SEES A MESSAGE OF ANOTHER FORMATION, nor any before its group is bound
+// to one: two formations can hold different entries at the same term and index,
+// which raft cannot tell apart. A heartbeat at a later term would otherwise move
+// the group to it.
+func TestAGroupTakesNoMessageOfAFormationItIsNotBoundTo(t *testing.T) {
+	nodes := linked(t, 2)
+	g := onEngine(t, nodes[0], "fenced", quickTimeouts)
+	watch := &voteWatch{}
+	g.Observe(watch)
+	ours, theirs := newFormation(), newFormation()
+
+	g.e.received(nodes[1].ID(), heartbeat(t, g, nodes[1].ID(), 50, ours))
+	require.Never(t, func() bool { return g.Term() >= 50 }, 200*time.Millisecond, 5*time.Millisecond,
+		"a group bound to no formation took a message")
+
+	require.NoError(t, g.Bind(ours))
+	g.e.received(nodes[1].ID(), heartbeat(t, g, nodes[1].ID(), 60, theirs))
+	require.Never(t, func() bool { return g.Term() >= 60 }, 200*time.Millisecond, 5*time.Millisecond,
+		"a group took a message of another formation")
+	require.Eventually(t, func() bool { f, _ := watch.heard(); return f > 0 }, time.Second, 5*time.Millisecond,
+		"the other formation was not reported")
+
+	g.e.received(nodes[1].ID(), heartbeat(t, g, nodes[1].ID(), 70, ours))
+	require.Eventually(t, func() bool { return g.Term() == 70 }, time.Second, 5*time.Millisecond,
+		"a group did not take a message of its own formation")
+}
+
+// A BINDING IS KEPT: a group reopened is bound where it was, refuses another
+// formation, and bootstraps none of its own.
+func TestAGroupKeepsItsFormation(t *testing.T) {
+	node := taupeer.Mock(t.Context())
+	t.Cleanup(node.Close)
+	ours := newFormation()
+
+	first := onEngine(t, node, "kept", quickTimeouts)
+	require.Nil(t, first.Formation())
+	require.True(t, first.Pristine())
+	require.Error(t, first.Bind(ours[:4]), "a formation of the wrong size was taken")
+	require.NoError(t, first.Bind(ours))
+	require.NoError(t, first.Bind(ours), "binding again where it is bound is refused")
+	require.NoError(t, first.Close())
+
+	again := onEngine(t, node, "kept", quickTimeouts)
+	require.Equal(t, ours, again.Formation())
+	require.ErrorIs(t, again.Bind(newFormation()), ErrBoundElsewhere)
+	require.ErrorIs(t, again.Bootstrap([]peer.ID{node.ID()}), ErrCantBootstrap)
+	require.True(t, again.Pristine(), "a group bound to a formation it holds nothing of is not pristine")
 }

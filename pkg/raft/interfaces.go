@@ -119,6 +119,8 @@ type ClusterInfoResponse struct {
 	LastIndex   uint64
 	MemberCount int
 	NodeID      string
+	Formation   []byte
+	Members     []peer.ID
 }
 
 type FSMResponse struct {

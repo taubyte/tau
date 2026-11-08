@@ -1,11 +1,13 @@
 package raft
 
 import (
+	"bytes"
 	"context"
 	"crypto/cipher"
 	"errors"
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -239,7 +241,7 @@ func (c *cluster) handleBootstrap(m *member) error {
 	}
 
 	founders := m.tracker.getFoundingMembers(threshold)
-	allPeers := m.tracker.allPeers()
+	allPeers := m.tracker.livePeers()
 
 	clusterLogger.Infof("[%s] bootstrap decision: %d founding members, %d total peers, threshold=%v",
 		c.ID().ShortString(), len(founders), len(allPeers), threshold)
@@ -348,12 +350,12 @@ func (c *cluster) requestVoterJoin(m *member, timeout time.Duration) {
 	go c.askToJoin(m, timeout)
 }
 
-// askToJoin asks every 500ms until the group lets m in or 10s pass. It reads
+// askToJoin asks every 500ms until the group lets m in, however long that takes:
+// a member that stopped asking would wait for a healer to notice it. It reads
 // only m and stops once m's raft is shut down: a yield builds another member,
 // which asks for itself.
 func (c *cluster) askToJoin(m *member, timeout time.Duration) {
-	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
-	defer cancel()
+	ctx := c.ctx
 
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
@@ -380,6 +382,10 @@ func (c *cluster) askToJoin(m *member, timeout time.Duration) {
 				c.ID().ShortString(), len(targets))
 		}
 		if len(targets) == 0 {
+			continue
+		}
+		if !c.bindVia(m, targets) {
+			clusterLogger.Infof("[%s] no formation to join among %d targets", c.ID().ShortString(), len(targets))
 			continue
 		}
 		if err := m.raftClient.JoinVoter(ctx, c.ID(), timeout, targets...); err != nil {
@@ -425,6 +431,9 @@ func (c *cluster) tryJoinExistingCluster(ctx context.Context, m *member, peers [
 		if len(targets) == 0 {
 			continue
 		}
+		if !c.bindVia(m, targets) {
+			return false, true
+		}
 		err := m.raftClient.JoinVoter(ctx, c.ID(), timeout, targets...)
 		if err == nil {
 			m.joined.Store(true)
@@ -435,6 +444,79 @@ func (c *cluster) tryJoinExistingCluster(ctx context.Context, m *member, peers [
 			return false, true
 		}
 	}
+}
+
+// offerWait is how long a member bound to no formation waits for offers.
+const offerWait = 2 * time.Second
+
+// bindVia binds m's group, if it is bound to no formation yet, to one that peers
+// offer, and reports whether it is bound. Every node picks the same formation from
+// the same offers: one that names it among its voters, then one with a leader,
+// then the lowest.
+func (c *cluster) bindVia(m *member, peers []peer.ID) bool {
+	if m.raft.Formation() != nil {
+		return true
+	}
+	// THE ANSWERS THAT COME IN TIME: a peer that is gone holds up its own offer, not
+	// the join, which asks again on its next round.
+	answers := make(chan offer, len(peers))
+	asked := 0
+	for _, pid := range peers {
+		if pid == c.ID() {
+			continue
+		}
+		asked++
+		go func() {
+			o, err := m.raftClient.Offer(pid)
+			if err != nil {
+				o = offer{}
+			}
+			answers <- o
+		}()
+	}
+	deadline := time.After(offerWait)
+	var best *offer
+collect:
+	for range asked {
+		select {
+		case o := <-answers:
+			if len(o.formation) == formationSize && (best == nil || c.prefers(o, *best)) {
+				best = &o
+			}
+		case <-deadline:
+			break collect
+		}
+	}
+	if best == nil {
+		return false
+	}
+	err := m.raft.Bind(best.formation)
+	switch {
+	case err == nil:
+		clusterLogger.Infof("[%s] bound to formation %x", c.ID().ShortString(), best.formation)
+		return true
+	case errors.Is(err, ErrBoundElsewhere):
+		return true
+	default:
+		clusterLogger.Warnf("[%s] binding to formation %x: %v", c.ID().ShortString(), best.formation, err)
+		return false
+	}
+}
+
+func (c *cluster) prefers(a, b offer) bool {
+	rank := func(o offer) int {
+		switch {
+		case slices.Contains(o.members, c.ID()):
+			return 2
+		case o.leader != "":
+			return 1
+		}
+		return 0
+	}
+	if ra, rb := rank(a), rank(b); ra != rb {
+		return ra > rb
+	}
+	return bytes.Compare(a.formation, b.formation) < 0
 }
 
 // Among the connected peers and, given a tracker, those it tracks.

@@ -38,6 +38,7 @@ type internalClient interface {
 	JoinVoter(ctx context.Context, peerID peer.ID, timeout time.Duration, peers ...peer.ID) error
 	ExchangePeers(ourStart time.Time, ourPeers map[string]int64, target peer.ID) (time.Time, map[string]int64, error)
 	ClusterInfo(target peer.ID) (*ClusterInfoResponse, error)
+	Offer(target peer.ID) (offer, error)
 	ExportFSM(target peer.ID) (map[string]CRDTEntry, uint64, error)
 	HealAck(target peer.ID) error
 	Close() error
@@ -279,12 +280,47 @@ func (c *client) ClusterInfo(target peer.ID) (*ClusterInfoResponse, error) {
 		LastIndex:   m.GetLastIndex(),
 		MemberCount: int(m.GetMemberCount()),
 		NodeID:      m.GetNodeId(),
+		Formation:   m.GetFormation(),
+		Members:     peerIDs(m.GetMembers()),
 	}
 
 	clientLogger.Infof("clusterInfo from %s: leader=%s term=%d lastIndex=%d members=%d",
 		target.ShortString(), info.LeaderID, info.Term, info.LastIndex, info.MemberCount)
 
 	return info, nil
+}
+
+// offer is the formation a member is bound to, the voters it holds, and the
+// leader it knows.
+type offer struct {
+	formation []byte
+	members   []peer.ID
+	leader    peer.ID
+}
+
+func (c *client) Offer(target peer.ID) (offer, error) {
+	res, err := first(c.ctx, c, []peer.ID{target}, sendToPeerTimeout, func(ctx context.Context, s raftv2connect.RaftServiceClient) (*connect.Response[raftv2.OfferResponse], error) {
+		return s.Offer(ctx, connect.NewRequest(&raftv2.OfferRequest{}))
+	})
+	if err != nil {
+		return offer{}, fmt.Errorf("offer failed: %w", err)
+	}
+	o := offer{formation: res.Msg.GetFormation(), members: peerIDs(res.Msg.GetMembers())}
+	if leader, err := peer.Decode(res.Msg.GetLeader()); err == nil {
+		o.leader = leader
+	}
+	return o, nil
+}
+
+// peerIDs decodes ids, leaving out what does not decode.
+func peerIDs(ids []string) []peer.ID {
+	out := make([]peer.ID, 0, len(ids))
+	for _, s := range ids {
+		if p, err := peer.Decode(s); err == nil {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func (c *client) ExportFSM(target peer.ID) (map[string]CRDTEntry, uint64, error) {

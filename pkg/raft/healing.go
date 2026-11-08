@@ -3,7 +3,6 @@ package raft
 import (
 	"context"
 	"path"
-	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -69,6 +68,10 @@ func (h *healer) run(ctx context.Context) {
 
 	noLeaderCycles := 0
 	cycleStart := time.Now()
+	// ONE TICKER FOR THE LIFE OF THE HEALER: a timer armed afresh after each event
+	// would let a steady stream of foreign messages put every check off forever.
+	checks := time.NewTicker(checkInterval)
+	defer checks.Stop()
 
 	for {
 		select {
@@ -86,7 +89,7 @@ func (h *healer) run(ctx context.Context) {
 			}
 			noLeaderCycles = 0
 			continue
-		case <-time.After(checkInterval):
+		case <-checks.C:
 		}
 
 		if h.cluster.closed.Load() || h.superseded.Load() {
@@ -246,8 +249,17 @@ func (h *healer) detectAndHeal(ctx context.Context) {
 	}
 	defer h.healing.Store(false)
 
+	// A MEMBER THAT HOLDS NOTHING FORMS AGAIN, with whoever is there or alone: the
+	// formation it is bound to never reached it, and may never, if the member that
+	// formed it is gone. Leaving it loses nothing.
+	pristine := h.member.raft.Pristine()
 	foreignPeers := h.findForeignPeers()
 	if len(foreignPeers) == 0 {
+		if pristine {
+			healLogger.Warnf("[%s] leaderless and holding nothing — forming again", h.cluster.ID().ShortString())
+			h.yieldAndRejoin(ctx, peer.ID(""))
+			return
+		}
 		healLogger.Infof("[%s] detectAndHeal: no foreign peers found", h.cluster.ID().ShortString())
 		return
 	}
@@ -285,10 +297,16 @@ func (h *healer) detectAndHeal(ctx context.Context) {
 		winner)
 
 	if foreignLeader == "" {
-		// Both clusters are leaderless (config mismatch prevents elections).
-		// Everyone wipes and re-initialises; handleBootstrap's founding-member
-		// logic deterministically picks the leader (lowest peer ID).
-		healLogger.Warnf("[%s] both clusters leaderless — wiping to re-bootstrap",
+		// NOBODY WIPES WHAT IT HOLDS FOR A PEER WITH NO LEADER: that peer may hold
+		// nothing at all, a newcomer, and a member of a group that lost its quorum
+		// would throw away the only copy of what the group committed. Only a member
+		// holding nothing forms again, with the rest.
+		if !pristine {
+			healLogger.Warnf("[%s] both sides leaderless — holding state, not wiping it",
+				h.cluster.ID().ShortString())
+			return
+		}
+		healLogger.Warnf("[%s] both sides leaderless and this member holds nothing — forming again",
 			h.cluster.ID().ShortString())
 		h.yieldAndRejoin(ctx, peer.ID(""))
 		return
@@ -468,6 +486,14 @@ func (h *healer) executeMerge(ctx context.Context, loserLeader peer.ID) {
 		return
 	}
 
+	// ONLY THE MEMBERS OF THE GROUP MERGED ARE TOLD TO YIELD: a peer of a third
+	// group, whose state nobody took, would wipe the only copy of it.
+	loser, err := h.member.raftClient.ClusterInfo(loserLeader)
+	if err != nil {
+		healLogger.Errorf("clusterInfo from %s failed: %v", loserLeader.ShortString(), err)
+		return
+	}
+
 	foreignState, _, err := h.member.raftClient.ExportFSM(loserLeader)
 	if err != nil {
 		healLogger.Errorf("export FSM from %s failed: %v", loserLeader.ShortString(), err)
@@ -498,7 +524,7 @@ func (h *healer) executeMerge(ctx context.Context, loserLeader peer.ID) {
 			h.cluster.ID().ShortString(), len(delta))
 	}
 
-	h.addVotersAndHealAck()
+	h.healAckMembersOf(loser.Members)
 }
 
 // applyMerge applies a merge and reports the state machine's refusal as well
@@ -511,21 +537,23 @@ func (h *healer) applyMerge(data []byte) error {
 	return resp.Error
 }
 
-func (h *healer) addVotersAndHealAck() {
-	foreignMembers := h.collectForeignMembers()
-	for _, pid := range foreignMembers {
-		h.member.raftClient.HealAck(pid)
+// healAckMembersOf tells the members of a merged group that are not this group's
+// to yield and join it.
+func (h *healer) healAckMembersOf(members []peer.ID) {
+	ours := map[peer.ID]bool{}
+	for _, m := range h.member.raft.Members() {
+		ours[m.ID] = true
 	}
-	healLogger.Infof("[%s] healing complete — sent healAck to %d foreign nodes (they will rejoin via requestVoterJoin)",
-		h.cluster.ID().ShortString(), len(foreignMembers))
-}
-
-func (h *healer) collectForeignMembers() []peer.ID {
-	foreignPeers := h.findForeignPeers()
-	sort.Slice(foreignPeers, func(i, j int) bool {
-		return foreignPeers[i].String() < foreignPeers[j].String()
-	})
-	return foreignPeers
+	sent := 0
+	for _, pid := range members {
+		if ours[pid] || pid == h.cluster.ID() {
+			continue
+		}
+		h.member.raftClient.HealAck(pid)
+		sent++
+	}
+	healLogger.Infof("[%s] healing complete — sent healAck to %d members of the merged group (they will rejoin via requestVoterJoin)",
+		h.cluster.ID().ShortString(), sent)
 }
 
 func (h *healer) yieldAndRejoin(ctx context.Context, winnerLeader peer.ID) {

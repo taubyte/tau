@@ -205,7 +205,7 @@ func (s *raftStreamService) ExchangePeers(ctx context.Context, req *connect.Requ
 	}
 
 	if from := remotePeer(ctx); from != "" {
-		tracker.addPeer(from)
+		tracker.heardFrom(from)
 	}
 
 	ourStart, ourPeers := tracker.getPeersMap()
@@ -297,10 +297,13 @@ func (s *raftStreamService) ClusterInfo(ctx context.Context, req *connect.Reques
 	term := m.raft.Term()
 	lastIdx := m.raft.LastIndex()
 
-	memberCount := 0
-	if members, err := m.members(); err == nil {
-		memberCount = len(members)
+	var members []string
+	if held, err := m.members(); err == nil {
+		for _, mb := range held {
+			members = append(members, mb.ID.String())
+		}
 	}
+	memberCount := len(members)
 
 	streamLogger.Infof("[%s] clusterInfo requested (from=%s): leader=%s term=%d lastIndex=%d members=%d",
 		s.cluster.ID().ShortString(), remotePeer(ctx).ShortString(), leaderID, term, lastIdx, memberCount)
@@ -311,7 +314,23 @@ func (s *raftStreamService) ClusterInfo(ctx context.Context, req *connect.Reques
 		LastIndex:   lastIdx,
 		MemberCount: int64(memberCount),
 		NodeId:      s.cluster.ID().String(),
+		Formation:   m.raft.Formation(),
+		Members:     members,
 	}), nil
+}
+
+// Offer says which formation this member is bound to, the voters it holds and the
+// leader it knows, so a member bound to none can bind to one that names it.
+func (s *raftStreamService) Offer(ctx context.Context, req *connect.Request[raftv2.OfferRequest]) (*connect.Response[raftv2.OfferResponse], error) {
+	m := s.cluster.current()
+	res := &raftv2.OfferResponse{Formation: m.raft.Formation()}
+	for _, mb := range m.raft.Members() {
+		res.Members = append(res.Members, mb.ID.String())
+	}
+	if leader, ok := m.raft.Leader(); ok {
+		res.Leader = leader.String()
+	}
+	return connect.NewResponse(res), nil
 }
 
 // ExportFSM serves the group's state: a follower that knows its leader

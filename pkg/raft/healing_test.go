@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"path"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -747,6 +748,13 @@ type exportingPeer struct {
 	state    map[string]CRDTEntry
 	refuse   error
 	healAcks atomic.Int32
+	// members is the configuration it says it holds, which is who a merge of it
+	// tells to yield.
+	members []string
+}
+
+func (p *exportingPeer) ClusterInfo(context.Context, *connect.Request[raftv2.ClusterInfoRequest]) (*connect.Response[raftv2.ClusterInfoResponse], error) {
+	return connect.NewResponse(&raftv2.ClusterInfoResponse{MemberCount: int64(len(p.members)), Members: p.members}), nil
 }
 
 func (p *exportingPeer) ExportFSM(context.Context, *connect.Request[raftv2.ExportFSMRequest]) (*connect.Response[raftv2.ExportFSMResponse], error) {
@@ -801,7 +809,9 @@ func TestHealing_AMergeTheStoreRefusesTellsNobodyToYield(t *testing.T) {
 	store := newFaultStore()
 	other := &exportingPeer{state: oneWriteOfTheirs(t)}
 	winner, otherID := facing(t, namespace, store, other)
-	store.failPut(path.Join(RaftStoragePrefix, namespace, "data", "theirs"), errNoSpace)
+	other.members = []string{otherID.String()}
+	theirs := path.Join(RaftStoragePrefix, namespace, "data", "theirs")
+	store.failPut(theirs, errNoSpace)
 
 	winner.current().healer.Load().executeMerge(t.Context(), otherID)
 	assert.Zero(t, other.healAcks.Load(), "the loser was told to yield a write the merge never landed")
@@ -812,6 +822,15 @@ func TestHealing_AMergeTheStoreRefusesTellsNobodyToYield(t *testing.T) {
 	_, found, err := winner.TryGet("theirs")
 	require.NoError(t, err)
 	assert.False(t, found)
+
+	// THE SAME MERGE ONCE THE STORE TAKES IT lands and tells the loser to yield:
+	// the refusals above were the store's, not a merge that never ran.
+	store.failPut(theirs, nil)
+	winner.current().healer.Load().executeMerge(t.Context(), otherID)
+	assert.Equal(t, int32(1), other.healAcks.Load(), "a merge that landed did not tell its loser to yield")
+	_, found, err = winner.TryGet("theirs")
+	require.NoError(t, err)
+	assert.True(t, found)
 }
 
 func TestHealing_AnOrphanWhoseStateIsNotTakenIsNotToldToYield(t *testing.T) {
@@ -976,4 +995,130 @@ func TestHealing_ACycleWithALeaderInItIsNotSplit(t *testing.T) {
 	require.Eventually(t, func() bool { return stranded.current().healer.Load().hadLeaderSince(cycleStart) },
 		5*time.Second, 10*time.Millisecond, "a cycle the member began with a leader counted as leaderless")
 	assert.False(t, stranded.current().healer.Load().hadLeaderSince(time.Now()), "a cycle with no leader in it did not count")
+}
+
+// A GROUP WHOSE FOUNDER DIES BEFORE ANYONE ELSE HOLDS ITS CONFIGURATION FORMS
+// AGAIN among the rest, with nobody to restart anything. The others joined empty
+// and raft lets no member campaign before it applies a configuration, so the
+// founder's bootstrap alone leaves them unable to ever elect.
+func TestHealing_AGroupWhoseFounderDiesBeforeItReplicatesFormsAgain(t *testing.T) {
+	const namespace = "founder-dies"
+	probeEvery(t, 50*time.Millisecond)
+	nodes := []taupeer.Node{newMockNode(t), newMockNode(t), newMockNode(t)}
+	slices.SortFunc(nodes, func(a, b taupeer.Node) int { return strings.Compare(a.ID().String(), b.ID().String()) })
+	connectAllOf(t, nodes...)
+
+	opened := make(chan *cluster, len(nodes))
+	failed := make(chan error, len(nodes))
+	for i, node := range nodes {
+		timeouts := testTimeoutConfig()
+		if i == 0 {
+			// It never campaigns before it is closed, so it replicates nothing.
+			timeouts.HeartbeatTimeout = time.Minute
+		}
+		go func() {
+			cl, err := New(node, namespace, WithTimeouts(timeouts), WithBootstrapTimeout(time.Second))
+			if err != nil {
+				failed <- err
+				return
+			}
+			if node == nodes[0] {
+				cl.Close()
+			}
+			opened <- cl.(*cluster)
+		}()
+	}
+	var rest []Cluster
+	for range nodes {
+		select {
+		case cl := <-opened:
+			if cl.Host().ID() == nodes[0].ID() {
+				members, err := cl.current().members()
+				require.NoError(t, err)
+				require.Len(t, members, len(nodes), "the lowest founder did not bootstrap the group")
+				continue
+			}
+			t.Cleanup(func() { cl.Close() })
+			rest = append(rest, cl)
+		case err := <-failed:
+			t.Fatal(err)
+		}
+	}
+
+	require.Eventually(t, func() bool {
+		for _, cl := range rest {
+			if members, err := cl.Members(); err != nil || len(members) != len(rest) {
+				return false
+			}
+		}
+		return true
+	}, 30*time.Second, 50*time.Millisecond, "the rest never formed a group of their own")
+	leader := leaderOf(t, rest...)
+	require.NoError(t, leader.Set("after", []byte("v"), 5*time.Second))
+}
+
+// A MEMBER HOLDING WHAT ITS GROUP COMMITTED KEEPS IT when its quorum is gone and an
+// empty newcomer appears: the newcomer has no leader either, and wiping for it
+// would throw away the only copy of what the group committed.
+func TestHealing_AMemberThatLostItsQuorumKeepsItsStateForAnEmptyNewcomer(t *testing.T) {
+	const namespace = "quorum-lost-keeps"
+	probeEvery(t, 50*time.Millisecond)
+	group := joinedGroup(t, namespace, sameStore, 3)
+	leader := leaderOf(t, group...)
+	require.NoError(t, leader.Set("kept", []byte("v"), 5*time.Second))
+
+	survivor := group[0].(*cluster)
+	if Cluster(survivor) == leader {
+		survivor = group[1].(*cluster)
+	}
+	require.Eventually(t, func() bool { _, ok := survivor.Get("kept"); return ok }, 5*time.Second, 10*time.Millisecond)
+	for _, cl := range group {
+		if cl != Cluster(survivor) {
+			require.NoError(t, cl.Close())
+		}
+	}
+	require.Eventually(t, func() bool { _, err := survivor.Leader(); return err != nil }, leaderWait, 10*time.Millisecond)
+	before := survivor.current()
+
+	node := newMockNode(t)
+	require.NoError(t, taupeer.LinkAllPeers())
+	connected(t, node, survivor)
+	newcomer, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second))
+	require.NoError(t, err)
+	t.Cleanup(func() { newcomer.Close() })
+
+	require.Never(t, func() bool {
+		_, ok := survivor.Get("kept")
+		return !ok || survivor.current() != before
+	}, 3*time.Second, 20*time.Millisecond, "the survivor wiped what its group committed for an empty newcomer")
+	require.False(t, survivor.current().raft.Pristine())
+}
+
+// A MERGE TELLS ONLY THE GROUP IT MERGED TO YIELD: a third group in sight, whose
+// state nobody took, keeps it.
+func TestHealing_AMergeTellsOnlyTheMergedGroupToYield(t *testing.T) {
+	const namespace = "heal-only-merged"
+	a, b := splitPair(t, namespace)
+	winner, loser := winnerOf(a, b)
+
+	node := newMockNode(t)
+	third, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
+	require.NoError(t, err)
+	t.Cleanup(func() { third.Close() })
+	waitLeader(t, third, 5*time.Second)
+	require.NoError(t, third.Set("from-third", []byte("c"), time.Second))
+	require.NoError(t, taupeer.LinkAllPeers())
+	connected(t, node, winner)
+	winner.current().tracker.addPeer(node.ID())
+	before := third.(*cluster).current()
+
+	winner.current().healer.Load().executeMerge(t.Context(), loser.ID())
+	require.Eventually(t, func() bool {
+		members, err := winner.Members()
+		return err == nil && len(members) == 2
+	}, 20*time.Second, 50*time.Millisecond, "the loser never joined the winner's group")
+	require.Never(t, func() bool {
+		_, ok := third.Get("from-third")
+		return !ok || third.(*cluster).current() != before
+	}, time.Second, 20*time.Millisecond, "a group the merge never took was told to yield")
 }

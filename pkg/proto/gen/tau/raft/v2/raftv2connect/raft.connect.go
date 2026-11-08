@@ -17,7 +17,9 @@
 // reflect everything committed before it.
 //
 // THE REST ARE MEMBERSHIP AND HEALING. ExchangePeers gossips who has been
-// seen, JoinVoter asks the leader to add the caller as a voter, and
+// seen, Offer tells a member that belongs to no formation yet which one the
+// asked member is bound to, JoinVoter asks the leader to add the caller as a
+// voter, and
 // ClusterInfo, ExportFSM and HealAck are the split-brain healer's: compare
 // views, take the winner's state, release the loser.
 //
@@ -66,6 +68,8 @@ const (
 	// RaftServiceExchangePeersProcedure is the fully-qualified name of the RaftService's ExchangePeers
 	// RPC.
 	RaftServiceExchangePeersProcedure = "/tau.raft.v2.RaftService/ExchangePeers"
+	// RaftServiceOfferProcedure is the fully-qualified name of the RaftService's Offer RPC.
+	RaftServiceOfferProcedure = "/tau.raft.v2.RaftService/Offer"
 	// RaftServiceJoinVoterProcedure is the fully-qualified name of the RaftService's JoinVoter RPC.
 	RaftServiceJoinVoterProcedure = "/tau.raft.v2.RaftService/JoinVoter"
 	// RaftServiceClusterInfoProcedure is the fully-qualified name of the RaftService's ClusterInfo RPC.
@@ -83,6 +87,7 @@ type RaftServiceClient interface {
 	Delete(context.Context, *connect.Request[v2.DeleteRequest]) (*connect.Response[v2.DeleteResponse], error)
 	Keys(context.Context, *connect.Request[v2.KeysRequest]) (*connect.Response[v2.KeysResponse], error)
 	ExchangePeers(context.Context, *connect.Request[v2.ExchangePeersRequest]) (*connect.Response[v2.ExchangePeersResponse], error)
+	Offer(context.Context, *connect.Request[v2.OfferRequest]) (*connect.Response[v2.OfferResponse], error)
 	JoinVoter(context.Context, *connect.Request[v2.JoinVoterRequest]) (*connect.Response[v2.JoinVoterResponse], error)
 	ClusterInfo(context.Context, *connect.Request[v2.ClusterInfoRequest]) (*connect.Response[v2.ClusterInfoResponse], error)
 	ExportFSM(context.Context, *connect.Request[v2.ExportFSMRequest]) (*connect.Response[v2.ExportFSMResponse], error)
@@ -130,6 +135,12 @@ func NewRaftServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(raftServiceMethods.ByName("ExchangePeers")),
 			connect.WithClientOptions(opts...),
 		),
+		offer: connect.NewClient[v2.OfferRequest, v2.OfferResponse](
+			httpClient,
+			baseURL+RaftServiceOfferProcedure,
+			connect.WithSchema(raftServiceMethods.ByName("Offer")),
+			connect.WithClientOptions(opts...),
+		),
 		joinVoter: connect.NewClient[v2.JoinVoterRequest, v2.JoinVoterResponse](
 			httpClient,
 			baseURL+RaftServiceJoinVoterProcedure,
@@ -164,6 +175,7 @@ type raftServiceClient struct {
 	delete        *connect.Client[v2.DeleteRequest, v2.DeleteResponse]
 	keys          *connect.Client[v2.KeysRequest, v2.KeysResponse]
 	exchangePeers *connect.Client[v2.ExchangePeersRequest, v2.ExchangePeersResponse]
+	offer         *connect.Client[v2.OfferRequest, v2.OfferResponse]
 	joinVoter     *connect.Client[v2.JoinVoterRequest, v2.JoinVoterResponse]
 	clusterInfo   *connect.Client[v2.ClusterInfoRequest, v2.ClusterInfoResponse]
 	exportFSM     *connect.Client[v2.ExportFSMRequest, v2.ExportFSMResponse]
@@ -195,6 +207,11 @@ func (c *raftServiceClient) ExchangePeers(ctx context.Context, req *connect.Requ
 	return c.exchangePeers.CallUnary(ctx, req)
 }
 
+// Offer calls tau.raft.v2.RaftService.Offer.
+func (c *raftServiceClient) Offer(ctx context.Context, req *connect.Request[v2.OfferRequest]) (*connect.Response[v2.OfferResponse], error) {
+	return c.offer.CallUnary(ctx, req)
+}
+
 // JoinVoter calls tau.raft.v2.RaftService.JoinVoter.
 func (c *raftServiceClient) JoinVoter(ctx context.Context, req *connect.Request[v2.JoinVoterRequest]) (*connect.Response[v2.JoinVoterResponse], error) {
 	return c.joinVoter.CallUnary(ctx, req)
@@ -222,6 +239,7 @@ type RaftServiceHandler interface {
 	Delete(context.Context, *connect.Request[v2.DeleteRequest]) (*connect.Response[v2.DeleteResponse], error)
 	Keys(context.Context, *connect.Request[v2.KeysRequest]) (*connect.Response[v2.KeysResponse], error)
 	ExchangePeers(context.Context, *connect.Request[v2.ExchangePeersRequest]) (*connect.Response[v2.ExchangePeersResponse], error)
+	Offer(context.Context, *connect.Request[v2.OfferRequest]) (*connect.Response[v2.OfferResponse], error)
 	JoinVoter(context.Context, *connect.Request[v2.JoinVoterRequest]) (*connect.Response[v2.JoinVoterResponse], error)
 	ClusterInfo(context.Context, *connect.Request[v2.ClusterInfoRequest]) (*connect.Response[v2.ClusterInfoResponse], error)
 	ExportFSM(context.Context, *connect.Request[v2.ExportFSMRequest]) (*connect.Response[v2.ExportFSMResponse], error)
@@ -265,6 +283,12 @@ func NewRaftServiceHandler(svc RaftServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(raftServiceMethods.ByName("ExchangePeers")),
 		connect.WithHandlerOptions(opts...),
 	)
+	raftServiceOfferHandler := connect.NewUnaryHandler(
+		RaftServiceOfferProcedure,
+		svc.Offer,
+		connect.WithSchema(raftServiceMethods.ByName("Offer")),
+		connect.WithHandlerOptions(opts...),
+	)
 	raftServiceJoinVoterHandler := connect.NewUnaryHandler(
 		RaftServiceJoinVoterProcedure,
 		svc.JoinVoter,
@@ -301,6 +325,8 @@ func NewRaftServiceHandler(svc RaftServiceHandler, opts ...connect.HandlerOption
 			raftServiceKeysHandler.ServeHTTP(w, r)
 		case RaftServiceExchangePeersProcedure:
 			raftServiceExchangePeersHandler.ServeHTTP(w, r)
+		case RaftServiceOfferProcedure:
+			raftServiceOfferHandler.ServeHTTP(w, r)
 		case RaftServiceJoinVoterProcedure:
 			raftServiceJoinVoterHandler.ServeHTTP(w, r)
 		case RaftServiceClusterInfoProcedure:
@@ -336,6 +362,10 @@ func (UnimplementedRaftServiceHandler) Keys(context.Context, *connect.Request[v2
 
 func (UnimplementedRaftServiceHandler) ExchangePeers(context.Context, *connect.Request[v2.ExchangePeersRequest]) (*connect.Response[v2.ExchangePeersResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.raft.v2.RaftService.ExchangePeers is not implemented"))
+}
+
+func (UnimplementedRaftServiceHandler) Offer(context.Context, *connect.Request[v2.OfferRequest]) (*connect.Response[v2.OfferResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.raft.v2.RaftService.Offer is not implemented"))
 }
 
 func (UnimplementedRaftServiceHandler) JoinVoter(context.Context, *connect.Request[v2.JoinVoterRequest]) (*connect.Response[v2.JoinVoterResponse], error) {

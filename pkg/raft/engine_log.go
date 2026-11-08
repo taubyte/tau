@@ -24,10 +24,15 @@ type engineLog struct {
 	// persisted is the highest index on disk, so entries raft replaced with a
 	// shorter tail do not survive a restart.
 	persisted uint64
+
+	// formation is the formation the group is bound to, nil while it is bound to
+	// none. The loop alone touches it.
+	formation []byte
 }
 
 func (l *engineLog) hardStateKey() ds.Key { return ds.NewKey(l.prefix + "/hardstate") }
 func (l *engineLog) snapshotKey() ds.Key  { return ds.NewKey(l.prefix + "/snapshot") }
+func (l *engineLog) formationKey() ds.Key { return ds.NewKey(l.prefix + "/formation") }
 
 // entryKey pads the index to 20 digits: byte order is the only order a scan has.
 func (l *engineLog) entryKey(index uint64) ds.Key {
@@ -38,6 +43,12 @@ func (l *engineLog) entryKey(index uint64) ds.Key {
 // state, and the entries after the snapshot, in index order.
 func openEngineLog(ctx context.Context, store ds.Batching, prefix string) (*engineLog, error) {
 	l := &engineLog{MemoryStorage: etcdraft.NewMemoryStorage(), store: store, prefix: prefix}
+
+	if raw, err := store.Get(ctx, l.formationKey()); err == nil {
+		l.formation = raw
+	} else if !errors.Is(err, ds.ErrNotFound) {
+		return nil, err
+	}
 
 	if raw, err := store.Get(ctx, l.snapshotKey()); err == nil {
 		snap := &pb.Snapshot{}
@@ -92,6 +103,24 @@ func openEngineLog(ctx context.Context, store ds.Batching, prefix string) (*engi
 		}
 	}
 	return l, nil
+}
+
+// bind writes formation down before the group takes part in it: a binding a crash
+// could take back would let the group take another formation's entries.
+func (l *engineLog) bind(ctx context.Context, formation []byte) error {
+	if err := l.store.Put(ctx, l.formationKey(), formation); err != nil {
+		return err
+	}
+	l.formation = formation
+	return nil
+}
+
+// pristine says the group holds nothing of any formation: no entry and no
+// snapshot. What it voted for is not something it holds.
+func (l *engineLog) pristine() bool {
+	last, _ := l.LastIndex()
+	snap, _ := l.Snapshot()
+	return last == 0 && etcdraft.IsEmptySnap(snap)
 }
 
 // save writes what raft asked to keep from one Ready into b. Memory follows only

@@ -20,10 +20,15 @@ var discoveryLogger = logging.Logger("raft-discovery")
 // every settledDiscoveryInterval once a group has it.
 const settledDiscoveryInterval = 30 * time.Second
 
+// A tracker keeps every peer it hears of as a candidate, and counts one live only
+// while it reaches it itself: a peer another member names may be long gone, and
+// a founder nobody can reach would be waited for forever.
 type peerTracker struct {
 	mu             sync.RWMutex
 	startTime      time.Time
 	peers          map[peer.ID]time.Duration // peer ID -> time since start when first seen
+	heard          map[peer.ID]time.Time
+	exchanging     map[peer.ID]bool
 	selfID         peer.ID
 	lastPeerCount  int
 	lastChangeTime time.Time
@@ -38,6 +43,8 @@ func newPeerTracker(selfID peer.ID) *peerTracker {
 		selfID:         selfID,
 		startTime:      now,
 		peers:          make(map[peer.ID]time.Duration),
+		heard:          make(map[peer.ID]time.Time),
+		exchanging:     make(map[peer.ID]bool),
 		probed:         make(map[peer.ID]struct{}),
 		lastPeerCount:  1, // self
 		lastChangeTime: now,
@@ -68,6 +75,29 @@ func (pt *peerTracker) addPeer(pid peer.ID) {
 		discoveryLogger.Infof("[%s] new peer discovered: %s (total tracked: %d)",
 			pt.selfID.ShortString(), pid.ShortString(), pt.lastPeerCount)
 	}
+}
+
+// heardFrom is pid reached directly: a call it answered, or one it made.
+func (pt *peerTracker) heardFrom(pid peer.ID) {
+	pt.addPeer(pid)
+	pt.mu.Lock()
+	pt.heard[pid] = time.Now()
+	pt.mu.Unlock()
+}
+
+// liveWindow is how long a peer counts live after it was last reached: three
+// rounds of exchange, and never under a second.
+func (pt *peerTracker) liveWindow() time.Duration {
+	return max(3*pt.getDiscoveryInterval(), time.Second)
+}
+
+// liveLocked says pid is this member, or was reached within the live window.
+func (pt *peerTracker) liveLocked(pid peer.ID, now time.Time, window time.Duration) bool {
+	if pid == pt.selfID {
+		return true
+	}
+	at, ok := pt.heard[pid]
+	return ok && now.Sub(at) <= window
 }
 
 // mergePeers returns the peers new to pt. theirPeers maps a peer id to ms after
@@ -112,21 +142,25 @@ func (pt *peerTracker) getPeersMap() (time.Time, map[string]int64) {
 	pt.mu.RLock()
 	defer pt.mu.RUnlock()
 
+	now, window := time.Now(), pt.liveWindow()
 	m := make(map[string]int64, len(pt.peers))
 	for pid, d := range pt.peers {
-		m[pid.String()] = d.Milliseconds()
+		if pt.liveLocked(pid, now, window) {
+			m[pid.String()] = d.Milliseconds()
+		}
 	}
 	return pt.startTime, m
 }
 
-// getFoundingMembers returns peers seen before the threshold
+// getFoundingMembers returns the live peers seen before the threshold.
 func (pt *peerTracker) getFoundingMembers(threshold time.Duration) []peer.ID {
 	pt.mu.RLock()
 	defer pt.mu.RUnlock()
 
+	now, window := time.Now(), pt.liveWindow()
 	var founders []peer.ID
 	for pid, seenAt := range pt.peers {
-		if seenAt <= threshold {
+		if seenAt <= threshold && pt.liveLocked(pid, now, window) {
 			founders = append(founders, pid)
 		}
 	}
@@ -137,24 +171,55 @@ func (pt *peerTracker) getFoundingMembers(threshold time.Duration) []peer.ID {
 	return founders
 }
 
-// isLateJoiner returns true if we discovered all peers after threshold
+// isLateJoiner returns true if every live peer was discovered after threshold.
 func (pt *peerTracker) isLateJoiner(threshold time.Duration) bool {
 	pt.mu.RLock()
 	defer pt.mu.RUnlock()
 
-	if len(pt.peers) <= 1 {
-		return false
-	}
-
+	now, window := time.Now(), pt.liveWindow()
+	live := 0
 	for pid, seenAt := range pt.peers {
-		if pid == pt.selfID {
+		if pid == pt.selfID || !pt.liveLocked(pid, now, window) {
 			continue
 		}
+		live++
 		if seenAt <= threshold {
 			return false
 		}
 	}
+	return live > 0
+}
+
+// livePeers returns the peers other than this member that are live.
+func (pt *peerTracker) livePeers() []peer.ID {
+	pt.mu.RLock()
+	defer pt.mu.RUnlock()
+
+	now, window := time.Now(), pt.liveWindow()
+	var peers []peer.ID
+	for pid := range pt.peers {
+		if pid != pt.selfID && pt.liveLocked(pid, now, window) {
+			peers = append(peers, pid)
+		}
+	}
+	return peers
+}
+
+// startExchange claims pid for one exchange, unless one with it is under way.
+func (pt *peerTracker) startExchange(pid peer.ID) bool {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+	if pt.exchanging[pid] {
+		return false
+	}
+	pt.exchanging[pid] = true
 	return true
+}
+
+func (pt *peerTracker) endExchange(pid peer.ID) {
+	pt.mu.Lock()
+	delete(pt.exchanging, pid)
+	pt.mu.Unlock()
 }
 
 func (pt *peerTracker) allPeers() []peer.ID {
@@ -194,7 +259,7 @@ func (pt *peerTracker) probe(ctx context.Context, h host.Host, pid peer.ID, raft
 		return false
 	}
 	s.Reset()
-	pt.addPeer(pid)
+	pt.heardFrom(pid)
 	return true
 }
 
@@ -244,24 +309,34 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster, 
 				}
 			}
 
+			// EACH PEER ON ITS OWN: one that does not answer holds up its own
+			// next exchange, never the others', whose liveness would lapse waiting.
 			if client != nil {
+				startTime, peersMap := pt.getPeersMap()
 				for _, pid := range pt.allPeers() {
-					startTime, peersMap := pt.getPeersMap()
-					theirStart, theirPeers, err := client.ExchangePeers(startTime, peersMap, pid)
-					if err != nil {
-						discoveryLogger.Infof("[%s] peer exchange with %s failed: %v",
-							pt.selfID.ShortString(), pid.ShortString(), err)
+					if !pt.startExchange(pid) {
 						continue
 					}
-					newPeers := pt.mergePeers(theirStart, theirPeers)
-					for _, newPeer := range newPeers {
-						discoveryLogger.Infof("[%s] dialing newly discovered peer %s",
-							pt.selfID.ShortString(), newPeer.ShortString())
-						c.dialPeer(ctx, newPeer)
-					}
+					go pt.exchange(ctx, c, client, pid, startTime, peersMap)
 				}
 			}
 		}
+	}
+}
+
+func (pt *peerTracker) exchange(ctx context.Context, c *cluster, client internalClient, pid peer.ID, startTime time.Time, peersMap map[string]int64) {
+	defer pt.endExchange(pid)
+	theirStart, theirPeers, err := client.ExchangePeers(startTime, peersMap, pid)
+	if err != nil {
+		discoveryLogger.Infof("[%s] peer exchange with %s failed: %v",
+			pt.selfID.ShortString(), pid.ShortString(), err)
+		return
+	}
+	pt.heardFrom(pid)
+	for _, newPeer := range pt.mergePeers(theirStart, theirPeers) {
+		discoveryLogger.Infof("[%s] dialing newly discovered peer %s",
+			pt.selfID.ShortString(), newPeer.ShortString())
+		c.dialPeer(ctx, newPeer)
 	}
 }
 

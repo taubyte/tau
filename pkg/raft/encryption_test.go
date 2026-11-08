@@ -50,6 +50,7 @@ func TestAGroupsMessagesAreSealedUnderItsKey(t *testing.T) {
 	same := sealedOn(t, nodes[1], "sealed", keyToCipher(t, key))
 	stranger := sealedOn(t, nodes[2], "sealed", keyToCipher(t, other))
 	require.NoError(t, leader.Bootstrap([]peer.ID{nodes[0].ID(), nodes[1].ID()}))
+	bound(t, leader, same, stranger)
 	leading(t, leader, same)
 	l := leader
 	if same.State() == Leader {

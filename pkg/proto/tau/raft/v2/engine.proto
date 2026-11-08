@@ -14,11 +14,15 @@ message Frame {
 
 // Envelope is one raft message and the group it belongs to. message is etcd raft's
 // own raftpb.Message, as its generated code marshals it. snapshot says it carries a
-// snapshot, whose delivery the sender reports back to raft.
+// snapshot, whose delivery the sender reports back to raft. formation is the
+// formation of the group the sender is bound to: a receiver bound to another, or
+// to none yet, never lets raft see the message, since two formations can hold
+// different entries at the same term and index.
 message Envelope {
   string group = 1;
   bytes message = 2;
   bool snapshot = 3;
+  bytes formation = 4;
 }
 
 // Proposal is the data of one log entry: the command, and a number the proposing

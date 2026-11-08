@@ -19,7 +19,9 @@
 // reflect everything committed before it.
 //
 // THE REST ARE MEMBERSHIP AND HEALING. ExchangePeers gossips who has been
-// seen, JoinVoter asks the leader to add the caller as a voter, and
+// seen, Offer tells a member that belongs to no formation yet which one the
+// asked member is bound to, JoinVoter asks the leader to add the caller as a
+// voter, and
 // ClusterInfo, ExportFSM and HealAck are the split-brain healer's: compare
 // views, take the winner's state, release the loser.
 //
@@ -530,6 +532,105 @@ func (x *ExchangePeersResponse) GetSeenAt() map[string]int64 {
 	return nil
 }
 
+type OfferRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OfferRequest) Reset() {
+	*x = OfferRequest{}
+	mi := &file_tau_raft_v2_raft_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OfferRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OfferRequest) ProtoMessage() {}
+
+func (x *OfferRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_raft_v2_raft_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OfferRequest.ProtoReflect.Descriptor instead.
+func (*OfferRequest) Descriptor() ([]byte, []int) {
+	return file_tau_raft_v2_raft_proto_rawDescGZIP(), []int{10}
+}
+
+// OfferResponse is the formation the asked member is bound to, empty when it is
+// bound to none, and the voters it holds: the configuration it applied, or the
+// one it bootstrapped. A member in none picks a formation that names it.
+type OfferResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Formation     []byte                 `protobuf:"bytes,1,opt,name=formation,proto3" json:"formation,omitempty"`
+	Members       []string               `protobuf:"bytes,2,rep,name=members,proto3" json:"members,omitempty"`
+	Leader        string                 `protobuf:"bytes,3,opt,name=leader,proto3" json:"leader,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OfferResponse) Reset() {
+	*x = OfferResponse{}
+	mi := &file_tau_raft_v2_raft_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OfferResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OfferResponse) ProtoMessage() {}
+
+func (x *OfferResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_raft_v2_raft_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OfferResponse.ProtoReflect.Descriptor instead.
+func (*OfferResponse) Descriptor() ([]byte, []int) {
+	return file_tau_raft_v2_raft_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *OfferResponse) GetFormation() []byte {
+	if x != nil {
+		return x.Formation
+	}
+	return nil
+}
+
+func (x *OfferResponse) GetMembers() []string {
+	if x != nil {
+		return x.Members
+	}
+	return nil
+}
+
+func (x *OfferResponse) GetLeader() string {
+	if x != nil {
+		return x.Leader
+	}
+	return ""
+}
+
 type JoinVoterRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The peer to add. Empty means the caller, which is what a member asks for
@@ -542,7 +643,7 @@ type JoinVoterRequest struct {
 
 func (x *JoinVoterRequest) Reset() {
 	*x = JoinVoterRequest{}
-	mi := &file_tau_raft_v2_raft_proto_msgTypes[10]
+	mi := &file_tau_raft_v2_raft_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -554,7 +655,7 @@ func (x *JoinVoterRequest) String() string {
 func (*JoinVoterRequest) ProtoMessage() {}
 
 func (x *JoinVoterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_raft_v2_raft_proto_msgTypes[10]
+	mi := &file_tau_raft_v2_raft_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -567,7 +668,7 @@ func (x *JoinVoterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JoinVoterRequest.ProtoReflect.Descriptor instead.
 func (*JoinVoterRequest) Descriptor() ([]byte, []int) {
-	return file_tau_raft_v2_raft_proto_rawDescGZIP(), []int{10}
+	return file_tau_raft_v2_raft_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *JoinVoterRequest) GetPeer() string {
@@ -592,7 +693,7 @@ type JoinVoterResponse struct {
 
 func (x *JoinVoterResponse) Reset() {
 	*x = JoinVoterResponse{}
-	mi := &file_tau_raft_v2_raft_proto_msgTypes[11]
+	mi := &file_tau_raft_v2_raft_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -604,7 +705,7 @@ func (x *JoinVoterResponse) String() string {
 func (*JoinVoterResponse) ProtoMessage() {}
 
 func (x *JoinVoterResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_raft_v2_raft_proto_msgTypes[11]
+	mi := &file_tau_raft_v2_raft_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -617,7 +718,7 @@ func (x *JoinVoterResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JoinVoterResponse.ProtoReflect.Descriptor instead.
 func (*JoinVoterResponse) Descriptor() ([]byte, []int) {
-	return file_tau_raft_v2_raft_proto_rawDescGZIP(), []int{11}
+	return file_tau_raft_v2_raft_proto_rawDescGZIP(), []int{13}
 }
 
 type ClusterInfoRequest struct {
@@ -628,7 +729,7 @@ type ClusterInfoRequest struct {
 
 func (x *ClusterInfoRequest) Reset() {
 	*x = ClusterInfoRequest{}
-	mi := &file_tau_raft_v2_raft_proto_msgTypes[12]
+	mi := &file_tau_raft_v2_raft_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -640,7 +741,7 @@ func (x *ClusterInfoRequest) String() string {
 func (*ClusterInfoRequest) ProtoMessage() {}
 
 func (x *ClusterInfoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_raft_v2_raft_proto_msgTypes[12]
+	mi := &file_tau_raft_v2_raft_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -653,7 +754,7 @@ func (x *ClusterInfoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClusterInfoRequest.ProtoReflect.Descriptor instead.
 func (*ClusterInfoRequest) Descriptor() ([]byte, []int) {
-	return file_tau_raft_v2_raft_proto_rawDescGZIP(), []int{12}
+	return file_tau_raft_v2_raft_proto_rawDescGZIP(), []int{14}
 }
 
 type ClusterInfoResponse struct {
@@ -663,13 +764,15 @@ type ClusterInfoResponse struct {
 	LastIndex     uint64                 `protobuf:"varint,3,opt,name=last_index,json=lastIndex,proto3" json:"last_index,omitempty"`
 	MemberCount   int64                  `protobuf:"varint,4,opt,name=member_count,json=memberCount,proto3" json:"member_count,omitempty"`
 	NodeId        string                 `protobuf:"bytes,5,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	Formation     []byte                 `protobuf:"bytes,6,opt,name=formation,proto3" json:"formation,omitempty"`
+	Members       []string               `protobuf:"bytes,7,rep,name=members,proto3" json:"members,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ClusterInfoResponse) Reset() {
 	*x = ClusterInfoResponse{}
-	mi := &file_tau_raft_v2_raft_proto_msgTypes[13]
+	mi := &file_tau_raft_v2_raft_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -681,7 +784,7 @@ func (x *ClusterInfoResponse) String() string {
 func (*ClusterInfoResponse) ProtoMessage() {}
 
 func (x *ClusterInfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_raft_v2_raft_proto_msgTypes[13]
+	mi := &file_tau_raft_v2_raft_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -694,7 +797,7 @@ func (x *ClusterInfoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClusterInfoResponse.ProtoReflect.Descriptor instead.
 func (*ClusterInfoResponse) Descriptor() ([]byte, []int) {
-	return file_tau_raft_v2_raft_proto_rawDescGZIP(), []int{13}
+	return file_tau_raft_v2_raft_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ClusterInfoResponse) GetLeader() string {
@@ -732,6 +835,20 @@ func (x *ClusterInfoResponse) GetNodeId() string {
 	return ""
 }
 
+func (x *ClusterInfoResponse) GetFormation() []byte {
+	if x != nil {
+		return x.Formation
+	}
+	return nil
+}
+
+func (x *ClusterInfoResponse) GetMembers() []string {
+	if x != nil {
+		return x.Members
+	}
+	return nil
+}
+
 type ExportFSMRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -740,7 +857,7 @@ type ExportFSMRequest struct {
 
 func (x *ExportFSMRequest) Reset() {
 	*x = ExportFSMRequest{}
-	mi := &file_tau_raft_v2_raft_proto_msgTypes[14]
+	mi := &file_tau_raft_v2_raft_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -752,7 +869,7 @@ func (x *ExportFSMRequest) String() string {
 func (*ExportFSMRequest) ProtoMessage() {}
 
 func (x *ExportFSMRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_raft_v2_raft_proto_msgTypes[14]
+	mi := &file_tau_raft_v2_raft_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -765,7 +882,7 @@ func (x *ExportFSMRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportFSMRequest.ProtoReflect.Descriptor instead.
 func (*ExportFSMRequest) Descriptor() ([]byte, []int) {
-	return file_tau_raft_v2_raft_proto_rawDescGZIP(), []int{14}
+	return file_tau_raft_v2_raft_proto_rawDescGZIP(), []int{16}
 }
 
 type ExportFSMResponse struct {
@@ -779,7 +896,7 @@ type ExportFSMResponse struct {
 
 func (x *ExportFSMResponse) Reset() {
 	*x = ExportFSMResponse{}
-	mi := &file_tau_raft_v2_raft_proto_msgTypes[15]
+	mi := &file_tau_raft_v2_raft_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -791,7 +908,7 @@ func (x *ExportFSMResponse) String() string {
 func (*ExportFSMResponse) ProtoMessage() {}
 
 func (x *ExportFSMResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_raft_v2_raft_proto_msgTypes[15]
+	mi := &file_tau_raft_v2_raft_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -804,7 +921,7 @@ func (x *ExportFSMResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportFSMResponse.ProtoReflect.Descriptor instead.
 func (*ExportFSMResponse) Descriptor() ([]byte, []int) {
-	return file_tau_raft_v2_raft_proto_rawDescGZIP(), []int{15}
+	return file_tau_raft_v2_raft_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ExportFSMResponse) GetEntries() map[string]*Entry {
@@ -829,7 +946,7 @@ type HealAckRequest struct {
 
 func (x *HealAckRequest) Reset() {
 	*x = HealAckRequest{}
-	mi := &file_tau_raft_v2_raft_proto_msgTypes[16]
+	mi := &file_tau_raft_v2_raft_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -841,7 +958,7 @@ func (x *HealAckRequest) String() string {
 func (*HealAckRequest) ProtoMessage() {}
 
 func (x *HealAckRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_raft_v2_raft_proto_msgTypes[16]
+	mi := &file_tau_raft_v2_raft_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -854,7 +971,7 @@ func (x *HealAckRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealAckRequest.ProtoReflect.Descriptor instead.
 func (*HealAckRequest) Descriptor() ([]byte, []int) {
-	return file_tau_raft_v2_raft_proto_rawDescGZIP(), []int{16}
+	return file_tau_raft_v2_raft_proto_rawDescGZIP(), []int{18}
 }
 
 type HealAckResponse struct {
@@ -865,7 +982,7 @@ type HealAckResponse struct {
 
 func (x *HealAckResponse) Reset() {
 	*x = HealAckResponse{}
-	mi := &file_tau_raft_v2_raft_proto_msgTypes[17]
+	mi := &file_tau_raft_v2_raft_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -877,7 +994,7 @@ func (x *HealAckResponse) String() string {
 func (*HealAckResponse) ProtoMessage() {}
 
 func (x *HealAckResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_raft_v2_raft_proto_msgTypes[17]
+	mi := &file_tau_raft_v2_raft_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -890,7 +1007,7 @@ func (x *HealAckResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealAckResponse.ProtoReflect.Descriptor instead.
 func (*HealAckResponse) Descriptor() ([]byte, []int) {
-	return file_tau_raft_v2_raft_proto_rawDescGZIP(), []int{17}
+	return file_tau_raft_v2_raft_proto_rawDescGZIP(), []int{19}
 }
 
 var File_tau_raft_v2_raft_proto protoreflect.FileDescriptor
@@ -935,20 +1052,27 @@ const file_tau_raft_v2_raft_proto_rawDesc = "" +
 	"\aseen_at\x18\x02 \x03(\v2..tau.raft.v2.ExchangePeersResponse.SeenAtEntryR\x06seenAt\x1a9\n" +
 	"\vSeenAtEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"E\n" +
+	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"\x0e\n" +
+	"\fOfferRequest\"_\n" +
+	"\rOfferResponse\x12\x1c\n" +
+	"\tformation\x18\x01 \x01(\fR\tformation\x12\x18\n" +
+	"\amembers\x18\x02 \x03(\tR\amembers\x12\x16\n" +
+	"\x06leader\x18\x03 \x01(\tR\x06leader\"E\n" +
 	"\x10JoinVoterRequest\x12\x12\n" +
 	"\x04peer\x18\x01 \x01(\tR\x04peer\x12\x1d\n" +
 	"\n" +
 	"timeout_ms\x18\x02 \x01(\x03R\ttimeoutMs\"\x13\n" +
 	"\x11JoinVoterResponse\"\x14\n" +
-	"\x12ClusterInfoRequest\"\x9c\x01\n" +
+	"\x12ClusterInfoRequest\"\xd4\x01\n" +
 	"\x13ClusterInfoResponse\x12\x16\n" +
 	"\x06leader\x18\x01 \x01(\tR\x06leader\x12\x12\n" +
 	"\x04term\x18\x02 \x01(\x04R\x04term\x12\x1d\n" +
 	"\n" +
 	"last_index\x18\x03 \x01(\x04R\tlastIndex\x12!\n" +
 	"\fmember_count\x18\x04 \x01(\x03R\vmemberCount\x12\x17\n" +
-	"\anode_id\x18\x05 \x01(\tR\x06nodeId\"\x12\n" +
+	"\anode_id\x18\x05 \x01(\tR\x06nodeId\x12\x1c\n" +
+	"\tformation\x18\x06 \x01(\fR\tformation\x12\x18\n" +
+	"\amembers\x18\a \x03(\tR\amembers\"\x12\n" +
 	"\x10ExportFSMRequest\"\xc0\x01\n" +
 	"\x11ExportFSMResponse\x12E\n" +
 	"\aentries\x18\x01 \x03(\v2+.tau.raft.v2.ExportFSMResponse.EntriesEntryR\aentries\x12\x14\n" +
@@ -957,13 +1081,14 @@ const file_tau_raft_v2_raft_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12(\n" +
 	"\x05value\x18\x02 \x01(\v2\x12.tau.raft.v2.EntryR\x05value:\x028\x01\"\x10\n" +
 	"\x0eHealAckRequest\"\x11\n" +
-	"\x0fHealAckResponse2\x89\x05\n" +
+	"\x0fHealAckResponse2\xc9\x05\n" +
 	"\vRaftService\x128\n" +
 	"\x03Set\x12\x17.tau.raft.v2.SetRequest\x1a\x18.tau.raft.v2.SetResponse\x128\n" +
 	"\x03Get\x12\x17.tau.raft.v2.GetRequest\x1a\x18.tau.raft.v2.GetResponse\x12A\n" +
 	"\x06Delete\x12\x1a.tau.raft.v2.DeleteRequest\x1a\x1b.tau.raft.v2.DeleteResponse\x12;\n" +
 	"\x04Keys\x12\x18.tau.raft.v2.KeysRequest\x1a\x19.tau.raft.v2.KeysResponse\x12V\n" +
-	"\rExchangePeers\x12!.tau.raft.v2.ExchangePeersRequest\x1a\".tau.raft.v2.ExchangePeersResponse\x12J\n" +
+	"\rExchangePeers\x12!.tau.raft.v2.ExchangePeersRequest\x1a\".tau.raft.v2.ExchangePeersResponse\x12>\n" +
+	"\x05Offer\x12\x19.tau.raft.v2.OfferRequest\x1a\x1a.tau.raft.v2.OfferResponse\x12J\n" +
 	"\tJoinVoter\x12\x1d.tau.raft.v2.JoinVoterRequest\x1a\x1e.tau.raft.v2.JoinVoterResponse\x12P\n" +
 	"\vClusterInfo\x12\x1f.tau.raft.v2.ClusterInfoRequest\x1a .tau.raft.v2.ClusterInfoResponse\x12J\n" +
 	"\tExportFSM\x12\x1d.tau.raft.v2.ExportFSMRequest\x1a\x1e.tau.raft.v2.ExportFSMResponse\x12D\n" +
@@ -982,7 +1107,7 @@ func file_tau_raft_v2_raft_proto_rawDescGZIP() []byte {
 	return file_tau_raft_v2_raft_proto_rawDescData
 }
 
-var file_tau_raft_v2_raft_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_tau_raft_v2_raft_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_tau_raft_v2_raft_proto_goTypes = []any{
 	(*SetRequest)(nil),            // 0: tau.raft.v2.SetRequest
 	(*SetResponse)(nil),           // 1: tau.raft.v2.SetResponse
@@ -994,44 +1119,48 @@ var file_tau_raft_v2_raft_proto_goTypes = []any{
 	(*KeysResponse)(nil),          // 7: tau.raft.v2.KeysResponse
 	(*ExchangePeersRequest)(nil),  // 8: tau.raft.v2.ExchangePeersRequest
 	(*ExchangePeersResponse)(nil), // 9: tau.raft.v2.ExchangePeersResponse
-	(*JoinVoterRequest)(nil),      // 10: tau.raft.v2.JoinVoterRequest
-	(*JoinVoterResponse)(nil),     // 11: tau.raft.v2.JoinVoterResponse
-	(*ClusterInfoRequest)(nil),    // 12: tau.raft.v2.ClusterInfoRequest
-	(*ClusterInfoResponse)(nil),   // 13: tau.raft.v2.ClusterInfoResponse
-	(*ExportFSMRequest)(nil),      // 14: tau.raft.v2.ExportFSMRequest
-	(*ExportFSMResponse)(nil),     // 15: tau.raft.v2.ExportFSMResponse
-	(*HealAckRequest)(nil),        // 16: tau.raft.v2.HealAckRequest
-	(*HealAckResponse)(nil),       // 17: tau.raft.v2.HealAckResponse
-	nil,                           // 18: tau.raft.v2.ExchangePeersRequest.SeenAtEntry
-	nil,                           // 19: tau.raft.v2.ExchangePeersResponse.SeenAtEntry
-	nil,                           // 20: tau.raft.v2.ExportFSMResponse.EntriesEntry
-	(*Entry)(nil),                 // 21: tau.raft.v2.Entry
+	(*OfferRequest)(nil),          // 10: tau.raft.v2.OfferRequest
+	(*OfferResponse)(nil),         // 11: tau.raft.v2.OfferResponse
+	(*JoinVoterRequest)(nil),      // 12: tau.raft.v2.JoinVoterRequest
+	(*JoinVoterResponse)(nil),     // 13: tau.raft.v2.JoinVoterResponse
+	(*ClusterInfoRequest)(nil),    // 14: tau.raft.v2.ClusterInfoRequest
+	(*ClusterInfoResponse)(nil),   // 15: tau.raft.v2.ClusterInfoResponse
+	(*ExportFSMRequest)(nil),      // 16: tau.raft.v2.ExportFSMRequest
+	(*ExportFSMResponse)(nil),     // 17: tau.raft.v2.ExportFSMResponse
+	(*HealAckRequest)(nil),        // 18: tau.raft.v2.HealAckRequest
+	(*HealAckResponse)(nil),       // 19: tau.raft.v2.HealAckResponse
+	nil,                           // 20: tau.raft.v2.ExchangePeersRequest.SeenAtEntry
+	nil,                           // 21: tau.raft.v2.ExchangePeersResponse.SeenAtEntry
+	nil,                           // 22: tau.raft.v2.ExportFSMResponse.EntriesEntry
+	(*Entry)(nil),                 // 23: tau.raft.v2.Entry
 }
 var file_tau_raft_v2_raft_proto_depIdxs = []int32{
-	18, // 0: tau.raft.v2.ExchangePeersRequest.seen_at:type_name -> tau.raft.v2.ExchangePeersRequest.SeenAtEntry
-	19, // 1: tau.raft.v2.ExchangePeersResponse.seen_at:type_name -> tau.raft.v2.ExchangePeersResponse.SeenAtEntry
-	20, // 2: tau.raft.v2.ExportFSMResponse.entries:type_name -> tau.raft.v2.ExportFSMResponse.EntriesEntry
-	21, // 3: tau.raft.v2.ExportFSMResponse.EntriesEntry.value:type_name -> tau.raft.v2.Entry
+	20, // 0: tau.raft.v2.ExchangePeersRequest.seen_at:type_name -> tau.raft.v2.ExchangePeersRequest.SeenAtEntry
+	21, // 1: tau.raft.v2.ExchangePeersResponse.seen_at:type_name -> tau.raft.v2.ExchangePeersResponse.SeenAtEntry
+	22, // 2: tau.raft.v2.ExportFSMResponse.entries:type_name -> tau.raft.v2.ExportFSMResponse.EntriesEntry
+	23, // 3: tau.raft.v2.ExportFSMResponse.EntriesEntry.value:type_name -> tau.raft.v2.Entry
 	0,  // 4: tau.raft.v2.RaftService.Set:input_type -> tau.raft.v2.SetRequest
 	2,  // 5: tau.raft.v2.RaftService.Get:input_type -> tau.raft.v2.GetRequest
 	4,  // 6: tau.raft.v2.RaftService.Delete:input_type -> tau.raft.v2.DeleteRequest
 	6,  // 7: tau.raft.v2.RaftService.Keys:input_type -> tau.raft.v2.KeysRequest
 	8,  // 8: tau.raft.v2.RaftService.ExchangePeers:input_type -> tau.raft.v2.ExchangePeersRequest
-	10, // 9: tau.raft.v2.RaftService.JoinVoter:input_type -> tau.raft.v2.JoinVoterRequest
-	12, // 10: tau.raft.v2.RaftService.ClusterInfo:input_type -> tau.raft.v2.ClusterInfoRequest
-	14, // 11: tau.raft.v2.RaftService.ExportFSM:input_type -> tau.raft.v2.ExportFSMRequest
-	16, // 12: tau.raft.v2.RaftService.HealAck:input_type -> tau.raft.v2.HealAckRequest
-	1,  // 13: tau.raft.v2.RaftService.Set:output_type -> tau.raft.v2.SetResponse
-	3,  // 14: tau.raft.v2.RaftService.Get:output_type -> tau.raft.v2.GetResponse
-	5,  // 15: tau.raft.v2.RaftService.Delete:output_type -> tau.raft.v2.DeleteResponse
-	7,  // 16: tau.raft.v2.RaftService.Keys:output_type -> tau.raft.v2.KeysResponse
-	9,  // 17: tau.raft.v2.RaftService.ExchangePeers:output_type -> tau.raft.v2.ExchangePeersResponse
-	11, // 18: tau.raft.v2.RaftService.JoinVoter:output_type -> tau.raft.v2.JoinVoterResponse
-	13, // 19: tau.raft.v2.RaftService.ClusterInfo:output_type -> tau.raft.v2.ClusterInfoResponse
-	15, // 20: tau.raft.v2.RaftService.ExportFSM:output_type -> tau.raft.v2.ExportFSMResponse
-	17, // 21: tau.raft.v2.RaftService.HealAck:output_type -> tau.raft.v2.HealAckResponse
-	13, // [13:22] is the sub-list for method output_type
-	4,  // [4:13] is the sub-list for method input_type
+	10, // 9: tau.raft.v2.RaftService.Offer:input_type -> tau.raft.v2.OfferRequest
+	12, // 10: tau.raft.v2.RaftService.JoinVoter:input_type -> tau.raft.v2.JoinVoterRequest
+	14, // 11: tau.raft.v2.RaftService.ClusterInfo:input_type -> tau.raft.v2.ClusterInfoRequest
+	16, // 12: tau.raft.v2.RaftService.ExportFSM:input_type -> tau.raft.v2.ExportFSMRequest
+	18, // 13: tau.raft.v2.RaftService.HealAck:input_type -> tau.raft.v2.HealAckRequest
+	1,  // 14: tau.raft.v2.RaftService.Set:output_type -> tau.raft.v2.SetResponse
+	3,  // 15: tau.raft.v2.RaftService.Get:output_type -> tau.raft.v2.GetResponse
+	5,  // 16: tau.raft.v2.RaftService.Delete:output_type -> tau.raft.v2.DeleteResponse
+	7,  // 17: tau.raft.v2.RaftService.Keys:output_type -> tau.raft.v2.KeysResponse
+	9,  // 18: tau.raft.v2.RaftService.ExchangePeers:output_type -> tau.raft.v2.ExchangePeersResponse
+	11, // 19: tau.raft.v2.RaftService.Offer:output_type -> tau.raft.v2.OfferResponse
+	13, // 20: tau.raft.v2.RaftService.JoinVoter:output_type -> tau.raft.v2.JoinVoterResponse
+	15, // 21: tau.raft.v2.RaftService.ClusterInfo:output_type -> tau.raft.v2.ClusterInfoResponse
+	17, // 22: tau.raft.v2.RaftService.ExportFSM:output_type -> tau.raft.v2.ExportFSMResponse
+	19, // 23: tau.raft.v2.RaftService.HealAck:output_type -> tau.raft.v2.HealAckResponse
+	14, // [14:24] is the sub-list for method output_type
+	4,  // [4:14] is the sub-list for method input_type
 	4,  // [4:4] is the sub-list for extension type_name
 	4,  // [4:4] is the sub-list for extension extendee
 	0,  // [0:4] is the sub-list for field type_name
@@ -1051,7 +1180,7 @@ func file_tau_raft_v2_raft_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_raft_v2_raft_proto_rawDesc), len(file_tau_raft_v2_raft_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   21,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

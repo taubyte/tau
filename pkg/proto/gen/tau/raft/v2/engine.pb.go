@@ -74,12 +74,16 @@ func (x *Frame) GetEnvelopes() []*Envelope {
 
 // Envelope is one raft message and the group it belongs to. message is etcd raft's
 // own raftpb.Message, as its generated code marshals it. snapshot says it carries a
-// snapshot, whose delivery the sender reports back to raft.
+// snapshot, whose delivery the sender reports back to raft. formation is the
+// formation of the group the sender is bound to: a receiver bound to another, or
+// to none yet, never lets raft see the message, since two formations can hold
+// different entries at the same term and index.
 type Envelope struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Group         string                 `protobuf:"bytes,1,opt,name=group,proto3" json:"group,omitempty"`
 	Message       []byte                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	Snapshot      bool                   `protobuf:"varint,3,opt,name=snapshot,proto3" json:"snapshot,omitempty"`
+	Formation     []byte                 `protobuf:"bytes,4,opt,name=formation,proto3" json:"formation,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -133,6 +137,13 @@ func (x *Envelope) GetSnapshot() bool {
 		return x.Snapshot
 	}
 	return false
+}
+
+func (x *Envelope) GetFormation() []byte {
+	if x != nil {
+		return x.Formation
+	}
+	return nil
 }
 
 // Proposal is the data of one log entry: the command, and a number the proposing
@@ -252,11 +263,12 @@ const file_tau_raft_v2_engine_proto_rawDesc = "" +
 	"\n" +
 	"\x18tau/raft/v2/engine.proto\x12\vtau.raft.v2\"<\n" +
 	"\x05Frame\x123\n" +
-	"\tenvelopes\x18\x01 \x03(\v2\x15.tau.raft.v2.EnvelopeR\tenvelopes\"V\n" +
+	"\tenvelopes\x18\x01 \x03(\v2\x15.tau.raft.v2.EnvelopeR\tenvelopes\"t\n" +
 	"\bEnvelope\x12\x14\n" +
 	"\x05group\x18\x01 \x01(\tR\x05group\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\fR\amessage\x12\x1a\n" +
-	"\bsnapshot\x18\x03 \x01(\bR\bsnapshot\"4\n" +
+	"\bsnapshot\x18\x03 \x01(\bR\bsnapshot\x12\x1c\n" +
+	"\tformation\x18\x04 \x01(\fR\tformation\"4\n" +
 	"\bProposal\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x04R\x02id\x12\x18\n" +
 	"\acommand\x18\x02 \x01(\fR\acommand\"B\n" +

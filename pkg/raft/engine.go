@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -57,6 +58,10 @@ var (
 
 	// ErrGroupOpen is a namespace a node already runs a group for.
 	ErrGroupOpen = errors.New("this node already runs a group for the namespace")
+
+	// ErrBoundElsewhere is a group asked to bind to a formation while bound to
+	// another.
+	ErrBoundElsewhere = errors.New("the group is bound to another formation")
 )
 
 // engines is every running engine, one per host, so a node's groups share one and
@@ -121,10 +126,11 @@ type engine struct {
 // delivery is one message a peer sent a group, as it arrived: the group opens and
 // reads it, being the one that holds the key.
 type delivery struct {
-	from  peer.ID
-	group string
-	raw   []byte
-	msg   *pb.Message
+	from      peer.ID
+	group     string
+	formation []byte
+	raw       []byte
+	msg       *pb.Message
 }
 
 // ask is work for the loop, which alone touches a group's raft.
@@ -249,6 +255,17 @@ func (e *engine) deliver(d delivery) {
 	if !ok {
 		return
 	}
+	// RAFT NEVER SEES ANOTHER FORMATION'S MESSAGE: two formations can hold
+	// different entries at the same term and index, which raft cannot tell apart.
+	// The check is made here, as the message reaches raft, and not as it arrived:
+	// the group may have been bound, or opened again, since.
+	if g.log.formation == nil {
+		return
+	}
+	if !bytes.Equal(d.formation, g.log.formation) {
+		g.foreignFormation(d.from)
+		return
+	}
 	raw := d.raw
 	if g.cipher != nil {
 		plain, err := unseal(g.cipher, raw)
@@ -308,6 +325,9 @@ func (e *engine) cycle() {
 
 	frames := map[peer.ID]*raftv2.Frame{}
 	for _, r := range written {
+		if r.g.log.formation == nil {
+			continue
+		}
 		for _, m := range r.rd.Messages {
 			to, ok := e.book.peer(m.GetTo())
 			if !ok {
@@ -329,9 +349,10 @@ func (e *engine) cycle() {
 				frames[to] = f
 			}
 			f.Envelopes = append(f.Envelopes, &raftv2.Envelope{
-				Group:    r.g.namespace,
-				Message:  raw,
-				Snapshot: m.GetType() == pb.MessageType_MsgSnap,
+				Group:     r.g.namespace,
+				Message:   raw,
+				Snapshot:  m.GetType() == pb.MessageType_MsgSnap,
+				Formation: r.g.log.formation,
 			})
 		}
 	}
@@ -401,7 +422,7 @@ func (e *engine) received(from peer.ID, frame *raftv2.Frame) {
 	e.book.learn(from)
 	for _, env := range frame.GetEnvelopes() {
 		select {
-		case e.inbox <- delivery{from: from, group: env.GetGroup(), raw: env.GetMessage()}:
+		case e.inbox <- delivery{from: from, group: env.GetGroup(), formation: env.GetFormation(), raw: env.GetMessage()}:
 		case <-e.ctx.Done():
 			return
 		}
@@ -436,22 +457,24 @@ func reportOf(to peer.ID, frame *raftv2.Frame, delivered bool) wireReport {
 	for _, env := range frame.GetEnvelopes() {
 		r.groups = append(r.groups, env.GetGroup())
 		r.snapshots = append(r.snapshots, env.GetSnapshot())
+		r.formations = append(r.formations, env.GetFormation())
 	}
 	return r
 }
 
 // wireReport tells raft what became of a frame.
 type wireReport struct {
-	to        uint64
-	delivered bool
-	groups    []string
-	snapshots []bool
+	to         uint64
+	delivered  bool
+	groups     []string
+	snapshots  []bool
+	formations [][]byte
 }
 
 func (r wireReport) run(e *engine) {
 	for i, ns := range r.groups {
 		g, ok := e.groups[ns]
-		if !ok {
+		if !ok || !bytes.Equal(r.formations[i], g.log.formation) {
 			continue
 		}
 		switch {

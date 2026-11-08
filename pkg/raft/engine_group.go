@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"bytes"
 	"context"
 	"crypto/cipher"
 	"crypto/rand"
@@ -79,6 +80,7 @@ type group struct {
 	waits        []indexWait
 	observers    []groupObserver
 	err          error
+	formation    []byte
 }
 
 type indexWait struct {
@@ -138,6 +140,7 @@ func (e *engine) newGroup(namespace string, cfg groupConfig) (*group, error) {
 		state:         Follower,
 	}
 	g.nextTick = e.clock.Now().Add(g.tickEvery)
+	g.formation = log.formation
 
 	// WHAT THE SNAPSHOT HOLDS IS WHERE APPLYING RESUMES: the machine is set back to
 	// it, and raft hands over every committed entry after it.
@@ -214,6 +217,17 @@ func (g *group) heard(d delivery) {
 	g.mu.Unlock()
 	for _, o := range observers {
 		o.foreignVote(d.from)
+	}
+}
+
+// foreignFormation is a message from a member bound to another formation of the
+// group: two groups formed under one name, which the healer reconciles.
+func (g *group) foreignFormation(from peer.ID) {
+	g.mu.Lock()
+	observers := slices.Clone(g.observers)
+	g.mu.Unlock()
+	for _, o := range observers {
+		o.foreignVote(from)
 	}
 }
 
@@ -727,6 +741,17 @@ func (a bootstrapAsk) run(e *engine) {
 		a.reply <- ErrCantBootstrap
 		return
 	}
+	// A GROUP BOUND TO A FORMATION ALREADY belongs to one somebody else formed.
+	if a.g.log.formation != nil {
+		a.reply <- fmt.Errorf("%w: it is bound to a formation", ErrCantBootstrap)
+		return
+	}
+	// THE FORMATION IS WRITTEN BEFORE ITS FIRST ENTRIES: a crash between the two
+	// leaves a group bound to a formation it holds nothing of, which it may leave.
+	if err := a.g.setFormation(newFormation()); err != nil {
+		a.reply <- err
+		return
+	}
 	peers := make([]etcdraft.Peer, 0, len(a.peers))
 	for _, p := range a.peers {
 		peers = append(peers, etcdraft.Peer{ID: e.book.learn(p), Context: []byte(p)})
@@ -746,6 +771,82 @@ func (a bootstrapAsk) run(e *engine) {
 	// ANSWERED ONCE WRITTEN: a bootstrap the store refuses is refused to its caller.
 	a.g.durable = append(a.g.durable, a.reply)
 }
+
+// formationSize is how many random bytes name a formation.
+const formationSize = 16
+
+func newFormation() []byte {
+	f := make([]byte, formationSize)
+	rand.Read(f)
+	return f
+}
+
+// setFormation binds the group to formation on disk, then in memory. The loop
+// alone calls it.
+func (g *group) setFormation(formation []byte) error {
+	if err := g.log.bind(g.e.ctx, formation); err != nil {
+		return err
+	}
+	g.mu.Lock()
+	g.formation = formation
+	g.mu.Unlock()
+	return nil
+}
+
+// Formation is the formation the group is bound to, nil while it is bound to none.
+func (g *group) Formation() []byte {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.formation
+}
+
+// Bind binds a group that is bound to no formation to formation, durably, before
+// it takes any message of it. A group bound to formation already is left alone;
+// one bound to another refuses.
+func (g *group) Bind(formation []byte) error {
+	if len(formation) != formationSize {
+		return fmt.Errorf("raft: %s: a formation is %d bytes, not %d", g.namespace, formationSize, len(formation))
+	}
+	a := bindAsk{g: g, formation: formation, reply: make(chan error, 1)}
+	if err := g.e.do(a); err != nil {
+		return err
+	}
+	return <-a.reply
+}
+
+type bindAsk struct {
+	g         *group
+	formation []byte
+	reply     chan error
+}
+
+func (a bindAsk) run(*engine) {
+	switch {
+	case a.g.log.formation == nil:
+		a.reply <- a.g.setFormation(slices.Clone(a.formation))
+	case bytes.Equal(a.g.log.formation, a.formation):
+		a.reply <- nil
+	default:
+		a.reply <- ErrBoundElsewhere
+	}
+}
+
+// Pristine says the group holds nothing of any formation, so leaving the one it is
+// bound to loses nothing: no entry, no snapshot, and nothing applied.
+func (g *group) Pristine() bool {
+	a := pristineAsk{g: g, reply: make(chan bool, 1)}
+	if err := g.e.do(a); err != nil {
+		return false
+	}
+	return <-a.reply
+}
+
+type pristineAsk struct {
+	g     *group
+	reply chan bool
+}
+
+func (a pristineAsk) run(*engine) { a.reply <- a.g.log.pristine() }
 
 // TransferLeadership hands leadership to to, or to whichever voter is most caught
 // up when to is empty.

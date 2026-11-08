@@ -15,7 +15,9 @@ syntax = "proto3";
 // reflect everything committed before it.
 //
 // THE REST ARE MEMBERSHIP AND HEALING. ExchangePeers gossips who has been
-// seen, JoinVoter asks the leader to add the caller as a voter, and
+// seen, Offer tells a member that belongs to no formation yet which one the
+// asked member is bound to, JoinVoter asks the leader to add the caller as a
+// voter, and
 // ClusterInfo, ExportFSM and HealAck are the split-brain healer's: compare
 // views, take the winner's state, release the loser.
 //
@@ -32,6 +34,7 @@ service RaftService {
   rpc Delete(DeleteRequest) returns (DeleteResponse);
   rpc Keys(KeysRequest) returns (KeysResponse);
   rpc ExchangePeers(ExchangePeersRequest) returns (ExchangePeersResponse);
+  rpc Offer(OfferRequest) returns (OfferResponse);
   rpc JoinVoter(JoinVoterRequest) returns (JoinVoterResponse);
   rpc ClusterInfo(ClusterInfoRequest) returns (ClusterInfoResponse);
   rpc ExportFSM(ExportFSMRequest) returns (ExportFSMResponse);
@@ -87,6 +90,17 @@ message ExchangePeersResponse {
   map<string, int64> seen_at = 2;
 }
 
+message OfferRequest {}
+
+// OfferResponse is the formation the asked member is bound to, empty when it is
+// bound to none, and the voters it holds: the configuration it applied, or the
+// one it bootstrapped. A member in none picks a formation that names it.
+message OfferResponse {
+  bytes formation = 1;
+  repeated string members = 2;
+  string leader = 3;
+}
+
 message JoinVoterRequest {
   // The peer to add. Empty means the caller, which is what a member asks for
   // itself; a follower forwarding the request names the original caller.
@@ -104,6 +118,8 @@ message ClusterInfoResponse {
   uint64 last_index = 3;
   int64 member_count = 4;
   string node_id = 5;
+  bytes formation = 6;
+  repeated string members = 7;
 }
 
 message ExportFSMRequest {}

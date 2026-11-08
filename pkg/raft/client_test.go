@@ -75,8 +75,9 @@ func TestClient_ExchangePeers(t *testing.T) {
 	}, idOf(cl))
 	require.NoError(t, err)
 	require.Contains(t, theirPeers, idOf(cl).String())
-	require.Contains(t, theirPeers, seen.ID().String(), "the member did not take the peer its caller had seen")
-	require.Contains(t, cl.(*cluster).current().tracker.allPeers(), seen.ID())
+	require.Contains(t, theirPeers, cli.ID().String(), "the member did not vouch for the caller, which reached it")
+	require.NotContains(t, theirPeers, seen.ID().String(), "the member vouched for a peer it never reached")
+	require.Contains(t, cl.(*cluster).current().tracker.allPeers(), seen.ID(), "the member did not take the peer its caller had seen")
 }
 
 func TestClient_WithEncryption(t *testing.T) {
