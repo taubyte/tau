@@ -597,3 +597,56 @@ func TestAGroupKeepsItsFormation(t *testing.T) {
 	require.ErrorIs(t, again.Bootstrap([]peer.ID{node.ID()}), ErrCantBootstrap)
 	require.True(t, again.Pristine(), "a group bound to a formation it holds nothing of is not pristine")
 }
+
+// losingReads is a wire that loses the first frame holding a read sent to a
+// leader, as one the link could not deliver.
+type losingReads struct {
+	transport
+	lost atomic.Bool
+}
+
+func (w *losingReads) send(to peer.ID, frame *raftv2.Frame) {
+	for _, env := range frame.GetEnvelopes() {
+		msg := &pb.Message{}
+		if proto.Unmarshal(env.GetMessage(), msg) == nil && msg.GetType() == pb.MessageType_MsgReadIndex && w.lost.CompareAndSwap(false, true) {
+			return
+		}
+	}
+	w.transport.send(to, frame)
+}
+
+// rewire has the loop send through wire, which sends through the one it had.
+type rewire struct {
+	wire *losingReads
+	done chan struct{}
+}
+
+func (a rewire) run(e *engine) {
+	a.wire.transport = e.wire
+	e.wire = a.wire
+	close(a.done)
+}
+
+// A FOLLOWER'S READ WHOSE FRAME WAS LOST IS ASKED AGAIN: raft sends it once, and a
+// barrier would otherwise wait out its time for an answer nobody will send.
+func TestAFollowersReadThatWasLostIsAskedAgain(t *testing.T) {
+	nodes := linked(t, 2)
+	ids := []peer.ID{nodes[0].ID(), nodes[1].ID()}
+	groups := []*group{onEngine(t, nodes[0], "lost-read", quickTimeouts), onEngine(t, nodes[1], "lost-read", quickTimeouts)}
+	require.NoError(t, groups[0].Bootstrap(ids))
+	bound(t, groups[0], groups...)
+	leader := leading(t, groups...)
+	set(t, leader, "k", "v")
+	follower := groups[0]
+	if follower == leader {
+		follower = groups[1]
+	}
+
+	wire := &losingReads{}
+	a := rewire{wire: wire, done: make(chan struct{})}
+	require.NoError(t, follower.e.do(a))
+	<-a.done
+
+	require.NoError(t, follower.Barrier(2*time.Second))
+	require.True(t, wire.lost.Load(), "no read was lost, so nothing was proven")
+}

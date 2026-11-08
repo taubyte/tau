@@ -2,6 +2,8 @@ package raft
 
 import (
 	"path"
+	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,12 +19,22 @@ type offering struct {
 	internalClient
 	offers  map[peer.ID]offer
 	silent  map[peer.ID]bool
-	asked   []peer.ID
 	release chan struct{}
+
+	mu    sync.Mutex
+	asked []peer.ID
+}
+
+func (o *offering) askedSoFar() []peer.ID {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return slices.Clone(o.asked)
 }
 
 func (o *offering) Offer(target peer.ID) (offer, error) {
+	o.mu.Lock()
 	o.asked = append(o.asked, target)
+	o.mu.Unlock()
 	if o.silent[target] {
 		<-o.release
 	}
@@ -76,16 +88,16 @@ func TestAMemberBindsToAFormationItsPeersOffer(t *testing.T) {
 
 	require.False(t, c.bindVia(m, []peer.ID{node.ID(), unbound, gone}), "bound with no formation offered")
 	require.Nil(t, m.raft.Formation())
-	require.NotContains(t, client.asked, node.ID(), "it asked itself")
+	require.NotContains(t, client.askedSoFar(), node.ID(), "it asked itself")
 
 	began := time.Now()
 	require.True(t, c.bindVia(m, []peer.ID{quiet, unbound, named}))
 	require.Less(t, time.Since(began), offerWait+time.Second, "it waited past its time for a peer that never answers")
 	require.Equal(t, theirs, m.raft.Formation())
 
-	asked := len(client.asked)
+	asked := len(client.askedSoFar())
 	require.True(t, c.bindVia(m, []peer.ID{named}))
-	require.Len(t, client.asked, asked, "a bound member asked for offers")
+	require.Len(t, client.askedSoFar(), asked, "a bound member asked for offers")
 }
 
 // A BINDING THE STORE REFUSES IS NO BINDING: the group stays bound to none, and a

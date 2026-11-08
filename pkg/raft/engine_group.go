@@ -277,8 +277,13 @@ func (g *group) apply(rd etcdraft.Ready) {
 	g.mu.Lock()
 	for _, rs := range rd.ReadStates {
 		if len(rs.RequestCtx) == 8 {
+			// A read asked again can be answered twice; the first answer is the one
+			// waited for, and the loop never waits on a reader.
 			if ch, ok := g.reads[binary.BigEndian.Uint64(rs.RequestCtx)]; ok {
-				ch <- rs.Index
+				select {
+				case ch <- rs.Index:
+				default:
+				}
 			}
 		}
 	}
@@ -662,28 +667,40 @@ func (g *group) Barrier(timeout time.Duration) error {
 	ctx := make([]byte, 8)
 	binary.BigEndian.PutUint64(ctx, id)
 	led := g.State() == Leader
-	if err := g.e.do(readAsk{g: g, ctx: ctx}); err != nil {
+	ask := readAsk{g: g, ctx: ctx}
+	if err := g.e.do(ask); err != nil {
 		return err
 	}
 
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
+	// THE READ IS ASKED AGAIN until it is answered: raft sends a follower's read to
+	// its leader, and the answer back, once, and a frame the wire could not
+	// deliver takes either with it.
+	again := time.NewTicker(g.tickEvery * electionTicks)
+	defer again.Stop()
 	var index uint64
-	select {
-	case i, ok := <-ch:
-		if !ok {
-			return g.failedOr(ErrShutdown)
+	for answered := false; !answered; {
+		select {
+		case i, ok := <-ch:
+			if !ok {
+				return g.failedOr(ErrShutdown)
+			}
+			index, answered = i, true
+		case <-again.C:
+			if err := g.e.do(ask); err != nil {
+				return err
+			}
+		case <-timer.C:
+			switch _, known := g.Leader(); {
+			case led && g.State() != Leader:
+				// Raft drops the read of a leader that steps down.
+				return ErrLeadershipLost
+			case !known:
+				return ErrNoLeader
+			}
+			return ErrApplyTimeout
 		}
-		index = i
-	case <-timer.C:
-		switch _, known := g.Leader(); {
-		case led && g.State() != Leader:
-			// Raft drops the read of a leader that steps down.
-			return ErrLeadershipLost
-		case !known:
-			return ErrNoLeader
-		}
-		return ErrApplyTimeout
 	}
 	return g.appliedTo(index, timer.C)
 }
