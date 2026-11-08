@@ -82,8 +82,9 @@ type server struct {
 	logf    func(format string, args ...any)
 
 	// homed is the placement every root this node references was last handed to
-	// in full. Only run's loop touches it; see rehome.go.
-	homed string
+	// in full; see rehome.go.
+	homeMu sync.Mutex
+	homed  string
 
 	serverOptions []rpc.ServerOption
 
@@ -122,8 +123,9 @@ type options struct {
 	logf    func(format string, args ...any)
 
 	// homed is the placement every root this node references was last handed to
-	// in full. Only run's loop touches it; see rehome.go.
-	homed string
+	// in full; see rehome.go.
+	homeMu sync.Mutex
+	homed  string
 
 	serverOptions []rpc.ServerOption
 }

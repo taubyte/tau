@@ -27,6 +27,8 @@ import (
 // that was done in full under this placement. A holder that could not be asked
 // leaves the placement unrecorded, so the next turn asks again.
 func (s *server) rehome(ctx context.Context) error {
+	s.homeMu.Lock()
+	defer s.homeMu.Unlock()
 	replicas, _, known := s.fleet.read(ctx)
 	if !known {
 		return nil
