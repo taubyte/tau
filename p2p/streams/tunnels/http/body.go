@@ -34,6 +34,9 @@ func (b *bodyReader) Read(p []byte) (n int, err error) {
 	}()
 
 	if b.err != nil {
+		if b.pre == nil {
+			return 0, b.err
+		}
 		n, err = b.pre.Read(p)
 		if err != nil { // only EOF is possible here
 			err = b.err
