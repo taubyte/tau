@@ -184,7 +184,7 @@ type options struct {
 	admits  Admits
 	now     func() time.Time
 	meter   Meter
-	logf    func(format string, args ...any)
+	logger  Logger
 
 	secrets    Secrets
 	issuer     Issuer
@@ -293,14 +293,19 @@ func WithAdmission(a Admits) Option {
 	}
 }
 
-// WithLogger is where this service says why a route could not be served: a stranger
-// is told only 502 or 504, and the operator the reason. The default says nothing.
-func WithLogger(logf func(format string, args ...any)) Option {
+// Logger is where this service says why a route could not be served: a stranger
+// is told only 502 or 504, and the operator the reason.
+type Logger interface {
+	Warnf(format string, args ...any)
+}
+
+// WithLogger replaces the service's own log, tau.gateway.
+func WithLogger(l Logger) Option {
 	return func(o *options) error {
-		if logf == nil {
+		if l == nil {
 			return errors.New("gateway: a nil logger")
 		}
-		o.logf = logf
+		o.logger = l
 		return nil
 	}
 }

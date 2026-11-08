@@ -512,22 +512,27 @@ func TestWithMeterRefusesNil(t *testing.T) {
 }
 
 func TestAWorkloadThatCannotServeIsLoggedWithItsReason(t *testing.T) {
-	var said []string
-	h := newHarness(t, Config{}, WithLogger(func(format string, args ...any) {
-		said = append(said, fmt.Sprintf(format, args...))
-	}))
+	log := &said{}
+	h := newHarness(t, Config{}, WithLogger(log))
 	h.Workers.fail(errors.New("the container answered nothing on 127.0.0.1:42759"))
 
 	w := h.do(t, http.MethodPost, "http://ask.example.com/", "")
 
 	require.Equal(t, http.StatusBadGateway, w.Code)
 	require.NotContains(t, w.Body.String(), "127.0.0.1", "the reason is the operator's, not the caller's")
-	require.Len(t, said, 1)
-	require.Contains(t, said[0], "the container answered nothing on 127.0.0.1:42759")
-	require.Contains(t, said[0], "shop/prod")
+	require.Len(t, log.lines, 1)
+	require.Contains(t, log.lines[0], "the container answered nothing on 127.0.0.1:42759")
+	require.Contains(t, log.lines[0], "shop/prod")
 
 	_, err := New(Config{}, WithLogger(nil))
 	require.Error(t, err)
+}
+
+// said keeps what a gateway logged.
+type said struct{ lines []string }
+
+func (s *said) Warnf(format string, args ...any) {
+	s.lines = append(s.lines, fmt.Sprintf(format, args...))
 }
 
 // undeclared is a body whose length the request does not state, as a chunked

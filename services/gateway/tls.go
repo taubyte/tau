@@ -81,7 +81,7 @@ func (s *Service) Certificate(hello *tls.ClientHelloInfo) (*tls.Certificate, err
 
 	cert, err := s.certificateOf(ctx, proj, declared(candidates), projectName, environment, name)
 	if err != nil {
-		s.logf("gateway: %s/%s: no certificate answers %s: %v", projectName, environment, name, err)
+		s.logger.Warnf("%s/%s: no certificate answers %s: %v", projectName, environment, name, err)
 		return nil, err
 	}
 	return &cert, nil

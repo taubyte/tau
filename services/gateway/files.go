@@ -201,12 +201,12 @@ func (s *Service) serveFiles(ctx context.Context, m match, proj *specs.Project, 
 	}
 	cid, err := s.artifacts.Artifact(ctx, projectName, environment, specs.KindPackage, id)
 	if err != nil {
-		s.logf("gateway: %s/%s package %s has no artifact: %v", projectName, environment, at.Name, err)
+		s.logger.Warnf("%s/%s package %s has no artifact: %v", projectName, environment, at.Name, err)
 		return nil, statusFor(err), "this package has not been built"
 	}
 	files, release, err := s.files.acquire(ctx, cid, func() (io.ReadCloser, error) { return s.assets.Read(ctx, cid) })
 	if err != nil {
-		s.logf("gateway: %s/%s package %s, artifact %s: %v", projectName, environment, at.Name, cid, err)
+		s.logger.Warnf("%s/%s package %s, artifact %s: %v", projectName, environment, at.Name, cid, err)
 		return nil, statusFor(err), "this package's files could not be read"
 	}
 	defer release()
