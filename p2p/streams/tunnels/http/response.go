@@ -15,11 +15,15 @@ type responseWriter struct {
 	stream     io.Writer
 	statusCode int32
 	sentHeader bool
+	refused    bool
 }
 
 type headersOpPayload struct {
 	Headers http.Header `cbor:"1,keyasint"`
 	Code    int32       `cbor:"2,keyasint"`
+	// Refused says the backend turned the request away before running any user
+	// code. It is out of a guest's reach, unlike a header or the status.
+	Refused bool `cbor:"3,keyasint,omitempty"`
 }
 
 var _ http.ResponseWriter = &responseWriter{}
@@ -29,6 +33,23 @@ func newResponseWriter(stream io.ReadWriter) http.ResponseWriter {
 		stream: stream,
 		pack:   packer.New(Magic, Version),
 		header: make(http.Header),
+	}
+}
+
+// Refuse marks the response on w as a refusal issued before any user code ran,
+// so a frontend may send the request elsewhere. It does nothing on a writer that
+// is not a tunnel.
+func Refuse(w http.ResponseWriter) {
+	for {
+		switch v := w.(type) {
+		case *responseWriter:
+			v.refused = true
+			return
+		case interface{ Unwrap() http.ResponseWriter }:
+			w = v.Unwrap()
+		default:
+			return
+		}
 	}
 }
 
@@ -61,6 +82,7 @@ func (w *responseWriter) WriteHeader(statusCode int) {
 	obj := headersOpPayload{
 		Headers: w.header,
 		Code:    w.statusCode,
+		Refused: w.refused,
 	}
 
 	// should never fail

@@ -56,6 +56,16 @@ func newTestGateway(ctx context.Context, sc substrate.ProxyClient) goHttp.Handle
 // fakeSubstrate is a real substrate stream service on its own peer, with the
 // lookup and the tunnel handler supplied by the test.
 func fakeSubstrate(t *testing.T, lookup func(n int64), serve func(w goHttp.ResponseWriter, r *goHttp.Request, raw io.Writer)) goHttp.HandlerFunc {
+	return fakeSubstrates(t, substrateDef{lookup, new(metrics.Function), serve})
+}
+
+type substrateDef struct {
+	lookup  func(n int64)
+	metrics *metrics.Function
+	serve   func(w goHttp.ResponseWriter, r *goHttp.Request, raw io.Writer)
+}
+
+func fakeSubstrates(t *testing.T, defs ...substrateDef) goHttp.HandlerFunc {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
@@ -68,47 +78,49 @@ func fakeSubstrate(t *testing.T, lookup func(n int64), serve func(w goHttp.Respo
 		t.Cleanup(p.Close)
 		return p
 	}
-	sub, gw := newPeer(), newPeer()
+	gw := newPeer()
+	for _, def := range defs {
+		sub := newPeer()
+		svc, err := streams.New(sub, protocolCommon.Substrate, protocolCommon.SubstrateProtocol)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(svc.Stop)
 
-	svc, err := streams.New(sub, protocolCommon.Substrate, protocolCommon.SubstrateProtocol)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(svc.Stop)
+		var lookups atomic.Int64
+		match := cr.Response{functionSpec.PathVariable.String(): def.metrics.Encode()}
+		if err := svc.DefineStream(substrateClient.CommandHTTP,
+			func(context.Context, con.Connection, command.Body) (cr.Response, error) {
+				def.lookup(lookups.Add(1))
+				return match, nil
+			},
+			func(_ context.Context, rw io.ReadWriter) {
+				w, r, err := httptun.Backend(rw)
+				if err != nil {
+					return // an abandoned attempt's stream: nothing was forwarded
+				}
+				def.serve(w, r, rw)
+			}); err != nil {
+			t.Fatal(err)
+		}
+		svc.Start()
 
-	var lookups atomic.Int64
-	match := cr.Response{functionSpec.PathVariable.String(): new(metrics.Function).Encode()}
-	if err := svc.DefineStream(substrateClient.CommandHTTP,
-		func(context.Context, con.Connection, command.Body) (cr.Response, error) {
-			lookup(lookups.Add(1))
-			return match, nil
-		},
-		func(_ context.Context, rw io.ReadWriter) {
-			w, r, err := httptun.Backend(rw)
-			if err != nil {
-				return // an abandoned attempt's stream: nothing was forwarded
+		if err := gw.Peer().Connect(ctx, peercore.AddrInfo{ID: sub.ID(), Addrs: sub.Peer().Addrs()}); err != nil {
+			t.Fatal(err)
+		}
+		// wait for identify, so the client finds the substrate without discovery
+		for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+			protos, _ := gw.Peer().Peerstore().GetProtocols(sub.ID())
+			if slices.Contains(protos, protocol.ID(protocolCommon.SubstrateProtocol)) {
+				break
 			}
-			serve(w, r, rw)
-		}); err != nil {
-		t.Fatal(err)
-	}
-	svc.Start()
-
-	if err := gw.Peer().Connect(ctx, peercore.AddrInfo{ID: sub.ID(), Addrs: sub.Peer().Addrs()}); err != nil {
-		t.Fatal(err)
-	}
-	// wait for identify, so the client finds the substrate without discovery
-	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
-		protos, _ := gw.Peer().Peerstore().GetProtocols(sub.ID())
-		if slices.Contains(protos, protocol.ID(protocolCommon.SubstrateProtocol)) {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("substrate protocol never showed up")
+			if time.Now().After(deadline) {
+				t.Fatal("substrate protocol never showed up")
+			}
 		}
 	}
 
-	sc, err := substrateClient.New(ctx, gw)
+	sc, err := substrateClient.New(ctx, gw, substrateClient.Threshold(len(defs)))
 	if err != nil {
 		t.Fatal(err)
 	}

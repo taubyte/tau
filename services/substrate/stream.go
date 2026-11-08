@@ -100,7 +100,9 @@ func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body comman
 
 	switch serviceable := pick.(type) {
 	case *function.Function:
-		response[functionSpec.PathVariable.String()] = serviceable.Metrics().Encode()
+		m := serviceable.Metrics()
+		m.Free = httpComponent.FreeCapacity()
+		response[functionSpec.PathVariable.String()] = m.Encode()
 	case *website.Website:
 		response[websiteSpec.PathVariable.String()] = serviceable.Metrics().Encode()
 	default:

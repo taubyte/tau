@@ -38,9 +38,10 @@ func (wr wrappedResponse) Decode(data interface{}) (err error) {
 
 // lookupTimeouts is how long each attempt waits for substrates to answer. The
 // first is short because an attempt waits out its timeout looking for more
-// peers, and it is enough for an idle node with a cached match. A busy node or a
+// peers, but it must let the other nodes answer: a match from the local node
+// alone ends the lookup and leaves nothing to balance across. A busy node or a
 // cold lookup after a deploy needs longer, and that must not read as "no match".
-var lookupTimeouts = []time.Duration{0, 200 * time.Millisecond, 2 * time.Second}
+var lookupTimeouts = []time.Duration{30 * time.Millisecond, 200 * time.Millisecond, 2 * time.Second}
 
 type lookupResult struct {
 	websites, functions []wrappedResponse
@@ -166,22 +167,31 @@ func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 	if !result.matched() {
 		return noMatch(result)
 	}
-	websiteMatches, funcMatches := result.websites, result.functions
+	matches := result.functions
+	if len(result.websites) > len(result.functions) {
+		matches = result.websites
+	}
+	sort.Slice(matches, func(i, j int) bool { return matches[j].metrics.Less(matches[i].metrics) })
 
-	var pick *client.Response
-	if len(websiteMatches) > len(funcMatches) {
-		sort.Slice(websiteMatches, func(i, j int) bool { return websiteMatches[j].metrics.Less(websiteMatches[i].metrics) })
-		pick = websiteMatches[0].Response
-	} else {
-		sort.Slice(funcMatches, func(i, j int) bool { return funcMatches[j].metrics.Less(funcMatches[i].metrics) })
-		pick = funcMatches[0].Response
+	// Only one retry can happen: the streams of the rest are dead weight on those nodes.
+	tries := matches[:min(maxTries, len(matches))]
+	for _, loser := range matches[len(tries):] {
+		loser.Close()
 	}
 
-	w.Header().Add(ProxyHeader, pick.PID().String())
+	for _, pick := range tries {
+		w.Header().Set(ProxyHeader, pick.PID().String())
+		if err = tunnel.Frontend(w, r, pick.Response); !errors.Is(err, tunnel.ErrRefused) {
+			break
+		}
+	}
 
-	if err := tunnel.Frontend(w, r, pick); err != nil {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, tunnel.ErrRefused):
+		return platformerr.New(platformerr.NodeBusy, err)
+	default:
 		return fmt.Errorf("tunneling Frontend failed with: %w", err)
 	}
-
-	return nil
 }

@@ -41,6 +41,7 @@ func cloudLimits() rcmgr.ScalingLimitConfig {
 	base := rcmgr.BaseLimit{StreamsInbound: 1024, StreamsOutbound: 2048, Streams: 2048, Memory: 256 << 20}
 	limits.AddProtocolPeerLimit("/tns/v1", base, rcmgr.BaseLimitIncrease{})
 	limits.AddProtocolPeerLimit("/hoarder/v1", base, rcmgr.BaseLimitIncrease{})
+	limits.AddProtocolPeerLimit("/substrate/v1", base, rcmgr.BaseLimitIncrease{})
 	return limits
 }
 

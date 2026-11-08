@@ -15,6 +15,8 @@ type Function struct {
 	ColdStart  int64
 	Memory     float64
 	AvgRunTime int64
+	// Free is the share of the node's in-flight limit still open, 0 to 1.
+	Free float32
 }
 
 type Iface interface {

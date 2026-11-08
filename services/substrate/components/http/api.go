@@ -2,14 +2,17 @@ package http
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	goHttp "net/http"
 
 	"github.com/ipfs/go-log/v2"
 	iface "github.com/taubyte/tau/core/services/substrate/components/http"
+	httptun "github.com/taubyte/tau/p2p/streams/tunnels/http"
 	http "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/pkg/platformerr"
+	protocolCommon "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/services/substrate/components/http/common"
 	"github.com/taubyte/tau/services/substrate/runtime/counter"
 	"github.com/taubyte/tau/services/substrate/runtime/helpers"
@@ -75,7 +78,12 @@ func (s *Service) handle(w goHttp.ResponseWriter, r *goHttp.Request) error {
 	if _, isSite := pick.(iface.Website); isSite {
 		return run()
 	}
-	return admitted(r.Context(), s.inflight, run)
+	err = admitted(r.Context(), s.inflight, run)
+	if platformerr.CodeOf(err) == platformerr.NodeBusy {
+		// every NodeBusy is raised before the guest is called, so a gateway may try another node
+		httptun.Refuse(w)
+	}
+	return err
 }
 
 var logger = log.Logger("tau.substrate.service.http")
@@ -85,6 +93,11 @@ func (s *Service) Handler(w goHttp.ResponseWriter, r *goHttp.Request) {
 }
 
 func (s *Service) attach() error {
+	// A gateway on this node takes the catch-all and reaches this service over the tunnel.
+	if slices.Contains(s.config.Services(), protocolCommon.Gateway) {
+		return nil
+	}
+
 	s.Http().LowLevel(&http.LowLevelDefinition{
 		PathPrefix: "/",
 		Handler:    s.Handler,

@@ -47,6 +47,9 @@ func Frontend(w http.ResponseWriter, r *http.Request, stream io.ReadWriter) erro
 	ctx, ctxC := context.WithCancel(context.Background())
 	defer ctxC()
 
+	// Only a request with no body can be sent twice: a body is consumed as it is forwarded.
+	replayable := (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.ContentLength == 0
+
 	// buffered: if sending the request fails, nobody reads done and the reader must not block forever
 	done := make(chan error, 1)
 	go func() {
@@ -83,7 +86,7 @@ func Frontend(w http.ResponseWriter, r *http.Request, stream io.ReadWriter) erro
 				var m int64
 				switch ch {
 				case HeadersOp:
-					err = headersOp(w, payload)
+					err = headersOp(w, payload, replayable)
 				case BodyOp:
 					m, err = bodyOp(w, payload)
 					if m != n {
@@ -130,12 +133,16 @@ func requestToStream(stream io.Writer, r *http.Request) (int64, int64, error) {
 	return hdrlen, bodylen, nil
 }
 
-func headersOp(w http.ResponseWriter, r io.Reader) error {
+func headersOp(w http.ResponseWriter, r io.Reader, replayable bool) error {
 	dec := cbor.NewDecoder(r)
 	var obj headersOpPayload
 	err := dec.Decode(&obj)
 	if err != nil {
 		return fmt.Errorf("decoding headers operation payload failed: %w", err)
+	}
+
+	if obj.Refused && replayable {
+		return ErrRefused
 	}
 
 	// merge: the gateway's own headers (X-Substrate-Peer, CORS Vary) stay;

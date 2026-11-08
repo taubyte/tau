@@ -2,7 +2,6 @@ package node
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -21,6 +20,24 @@ import (
 	"github.com/taubyte/tau/services/common/httpsvc"
 	slices "github.com/taubyte/tau/utils/slices/string"
 )
+
+// startOrder runs substrate after the other services, and gateway last of all:
+// routes match in registration order, and a catch-all must not shadow the
+// routes of the services before it, such as substrate's pubsub websocket.
+func startOrder(services []string) []string {
+	order := make([]string, 0, len(services))
+	for _, srv := range services {
+		if srv != commonSpecs.Substrate && srv != commonSpecs.Gateway {
+			order = append(order, srv)
+		}
+	}
+	for _, srv := range []string{commonSpecs.Substrate, commonSpecs.Gateway} {
+		if slices.Contains(services, srv) {
+			order = append(order, srv)
+		}
+	}
+	return order
+}
 
 func Start(ctx context.Context, serviceConfig config.Config) error {
 	setLogLevel()
@@ -100,14 +117,8 @@ func Start(ctx context.Context, serviceConfig config.Config) error {
 	}
 
 	// Attach any p2p/http endpoints
-	var includesNode bool
 	services := make([]services.Service, 0)
-	for _, srv := range serviceConfig.Services() {
-		if srv == "substrate" {
-			includesNode = true
-			continue
-		}
-
+	for _, srv := range startOrder(serviceConfig.Services()) {
 		srvPkg, ok := available[srv]
 		if !ok {
 			return fmt.Errorf("services `%s` does not exist ", srv)
@@ -116,21 +127,6 @@ func Start(ctx context.Context, serviceConfig config.Config) error {
 		_srv, err := srvPkg.New(ctx, serviceConfig)
 		if err != nil {
 			return fmt.Errorf("new for service `%s` failed with: %s", srv, err)
-		}
-
-		services = append(services, _srv)
-	}
-
-	// Running node last if included in list
-	if includesNode {
-		srvPkg, ok := available["substrate"]
-		if !ok {
-			return errors.New("node was not found in available packages")
-		}
-
-		_srv, err := srvPkg.New(ctx, serviceConfig)
-		if err != nil {
-			return fmt.Errorf("new for node failed with: %s", err)
 		}
 
 		services = append(services, _srv)

@@ -4,16 +4,42 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"io"
 )
 
-func (m *Function) Less(comp Iface) bool {
-	switch n := comp.(type) {
-	case *Function:
-		return (m.Memory < 1 && n.Memory >= 1) || (m.Cached < n.Cached) || (m.ColdStart < n.ColdStart) || (m.AvgRunTime > n.AvgRunTime) || (m.Memory < n.Memory)
+const (
+	// unknownFree stands in for a node too old to report its load: middling,
+	// so it is neither preferred over an idle node nor avoided next to a full one.
+	unknownFree = 0.5
+	// freeLevels groups free capacity coarsely, so a few requests of difference
+	// do not outweigh a warm instance and send work to a cold node.
+	freeLevels = 8
+)
 
-	default:
+// Less says m is a worse node than comp, comparing one key at a time so sorting
+// by it is a strict ordering: a node that cannot fit the function, then free
+// capacity, then warmth, then speed, then free memory.
+func (m *Function) Less(comp Iface) bool {
+	n, ok := comp.(*Function)
+	if !ok {
 		return false
 	}
+	if fits, nFits := m.Memory >= 1, n.Memory >= 1; fits != nFits {
+		return nFits
+	}
+	if free, nFree := int(m.Free*freeLevels), int(n.Free*freeLevels); free != nFree {
+		return free < nFree
+	}
+	if m.Cached != n.Cached {
+		return m.Cached < n.Cached
+	}
+	if m.ColdStart != n.ColdStart {
+		return m.ColdStart > n.ColdStart
+	}
+	if m.AvgRunTime != n.AvgRunTime {
+		return m.AvgRunTime > n.AvgRunTime
+	}
+	return m.Memory < n.Memory
 }
 
 func (m *Function) Encode() []byte {
@@ -23,6 +49,7 @@ func (m *Function) Encode() []byte {
 	binary.Write(&buf, binary.LittleEndian, m.ColdStart)
 	binary.Write(&buf, binary.LittleEndian, m.Memory)
 	binary.Write(&buf, binary.LittleEndian, m.AvgRunTime)
+	binary.Write(&buf, binary.LittleEndian, m.Free)
 	return buf.Bytes()
 }
 
@@ -52,6 +79,11 @@ func (m *Function) Decode(b []byte) error {
 	}
 
 	if err := binary.Read(buf, binary.LittleEndian, &m.AvgRunTime); err != nil {
+		return err
+	}
+
+	m.Free = unknownFree
+	if err := binary.Read(buf, binary.LittleEndian, &m.Free); err != nil && err != io.EOF {
 		return err
 	}
 

@@ -21,4 +21,8 @@ var (
 	BodyStreamBufferSize = 4 * 1024
 
 	ErrNotBody = errors.New("payload not an http body")
+
+	// ErrRefused is Frontend's answer when the backend refused a request that
+	// can safely go to another backend. Nothing has been written to the client.
+	ErrRefused = errors.New("backend refused the request before running it")
 )

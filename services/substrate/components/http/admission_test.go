@@ -308,3 +308,27 @@ func TestFailuresAreNotSamples(t *testing.T) {
 		t.Fatalf("failures counted: base %s, seen %d", l.base, l.seen)
 	}
 }
+
+func TestFreeCapacityFollowsSlotsAndWaiters(t *testing.T) {
+	l := newLimiter(4, 4, 4)
+	if got := l.free(); got != 1 {
+		t.Fatalf("idle: %v", got)
+	}
+	<-l.tokens
+	if got := l.free(); got != 0.75 {
+		t.Fatalf("one held: %v", got)
+	}
+	for range 3 {
+		<-l.tokens
+	}
+	if got := l.free(); got != 0 {
+		t.Fatalf("all held: %v", got)
+	}
+	l.waiting.Add(2)
+	if got := l.free(); got != 0 {
+		t.Fatalf("queueing must clamp at full: %v", got)
+	}
+	if got := (&Service{}).FreeCapacity(); got != 1 {
+		t.Fatalf("no limiter: %v", got)
+	}
+}
