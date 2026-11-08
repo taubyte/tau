@@ -19,7 +19,7 @@ type healer struct {
 	cluster *cluster
 	member  *member
 
-	healAckCh     chan peer.ID
+	healAckCh     chan healAck
 	foreignVoteCh chan peer.ID
 	healing       atomic.Bool
 	mu            sync.Mutex
@@ -33,14 +33,20 @@ func newHealer(c *cluster, m *member) *healer {
 	return &healer{
 		cluster:       c,
 		member:        m,
-		healAckCh:     make(chan peer.ID, 1),
+		healAckCh:     make(chan healAck, 1),
 		foreignVoteCh: make(chan peer.ID, 16),
 	}
 }
 
-func (h *healer) signalHealAck(from peer.ID) {
+// healAck is a receipt and the leader that sent it.
+type healAck struct {
+	from    peer.ID
+	receipt receipt
+}
+
+func (h *healer) signalHealAck(from peer.ID, r receipt) {
 	select {
-	case h.healAckCh <- from:
+	case h.healAckCh <- healAck{from: from, receipt: r}:
 	default:
 	}
 }
@@ -82,8 +88,8 @@ func (h *healer) run(ctx context.Context) {
 		case pid := <-h.foreignVoteCh:
 			h.handleForeignVote(ctx, pid)
 			continue
-		case from := <-h.healAckCh:
-			h.healAcked(ctx, from)
+		case ack := <-h.healAckCh:
+			h.healAcked(ctx, ack)
 			if h.superseded.Load() {
 				healLogger.Infof("[%s] healer superseded after yieldAndRejoin — exiting", h.cluster.ID().ShortString())
 				return
@@ -138,15 +144,15 @@ func (h *healer) run(ctx context.Context) {
 // leader is this member's own: a healAck sent while the member was still
 // joining, or before it rejoined, lands on a member of the sender's own group,
 // which has nothing to yield, and yielding would wipe it.
-func (h *healer) healAcked(ctx context.Context, from peer.ID) {
-	if leader, err := h.cluster.Leader(); err == nil && leader == from {
+func (h *healer) healAcked(ctx context.Context, ack healAck) {
+	if leader, err := h.cluster.Leader(); err == nil && leader == ack.from {
 		healLogger.Infof("[%s] healAck from %s, which leads us — nothing to yield",
-			h.cluster.ID().ShortString(), from.ShortString())
+			h.cluster.ID().ShortString(), ack.from.ShortString())
 		return
 	}
 	healLogger.Infof("[%s] received healAck from %s — yielding immediately",
-		h.cluster.ID().ShortString(), from.ShortString())
-	h.yieldAndRejoin(ctx, from)
+		h.cluster.ID().ShortString(), ack.from.ShortString())
+	h.yieldAndRejoin(ctx, ack.from, ack.receipt)
 }
 
 // hadLeaderSince reports whether this member knew a leader at any moment since
@@ -258,7 +264,7 @@ func (h *healer) detectAndHeal(ctx context.Context) {
 	if len(foreignPeers) == 0 {
 		if pristine {
 			healLogger.Warnf("[%s] leaderless and holding nothing — forming again", h.cluster.ID().ShortString())
-			h.yieldAndRejoin(ctx, peer.ID(""))
+			h.yieldAndRejoin(ctx, peer.ID(""), holdingNothing{})
 			return
 		}
 		healLogger.Infof("[%s] detectAndHeal: no foreign peers found", h.cluster.ID().ShortString())
@@ -306,7 +312,7 @@ func (h *healer) detectAndHeal(ctx context.Context) {
 		}
 		healLogger.Warnf("[%s] both sides leaderless and this member holds nothing — forming again",
 			h.cluster.ID().ShortString())
-		h.yieldAndRejoin(ctx, peer.ID(""))
+		h.yieldAndRejoin(ctx, peer.ID(""), holdingNothing{})
 		return
 	}
 
@@ -328,7 +334,7 @@ func (h *healer) detectAndHeal(ctx context.Context) {
 	}
 	healLogger.Infof("[%s] we lose to %s and hold nothing — yielding",
 		h.cluster.ID().ShortString(), foreignInfo.LeaderID)
-	h.yieldAndRejoin(ctx, foreignLeader)
+	h.yieldAndRejoin(ctx, foreignLeader, holdingNothing{})
 }
 
 // findForeignPeers returns the tracked peers that serve our protocol but are
@@ -581,7 +587,29 @@ func (h *healer) healAckMembersOf(members []peer.ID, exp export) {
 		h.cluster.ID().ShortString(), sent)
 }
 
-func (h *healer) yieldAndRejoin(ctx context.Context, winnerLeader peer.ID) {
+// yieldGuard is what lets a yield wipe what the member holds. It is asked once the
+// member's raft is down, when nothing more can commit: what held when the yield
+// was decided may not hold by the time it is made.
+type yieldGuard interface {
+	allows(m *member) bool
+}
+
+// receipt is another group's word that it holds the state of formation up to cut.
+type receipt struct {
+	formation []byte
+	cut       uint64
+}
+
+func (r receipt) allows(m *member) bool {
+	return len(r.formation) > 0 && bytes.Equal(m.raft.Formation(), r.formation) && m.raft.CommitIndex() <= r.cut
+}
+
+// holdingNothing lets a member yield that has nothing to lose.
+type holdingNothing struct{}
+
+func (holdingNothing) allows(m *member) bool { return m.raft.Pristine() }
+
+func (h *healer) yieldAndRejoin(ctx context.Context, winnerLeader peer.ID, guard yieldGuard) {
 	healLogger.Infof("[%s] yielding to winner %s",
 		h.cluster.ID().ShortString(), winnerLeader.ShortString())
 
@@ -598,8 +626,12 @@ func (h *healer) yieldAndRejoin(ctx context.Context, winnerLeader peer.ID) {
 	m := h.cluster.current()
 	m.takeDown()
 
-	healLogger.Infof("[%s] wiping raft state (log, snapshot and applied data)", h.cluster.ID().ShortString())
-	h.wipeRaftState(ctx)
+	if guard.allows(m) {
+		healLogger.Infof("[%s] wiping raft state (log, snapshot and applied data)", h.cluster.ID().ShortString())
+		h.wipeRaftState(ctx)
+	} else {
+		healLogger.Warnf("[%s] the yield no longer holds once the raft is down — rebuilding without wiping", h.cluster.ID().ShortString())
+	}
 
 	healLogger.Infof("[%s] re-initializing raft after yield", h.cluster.ID().ShortString())
 	if err := h.cluster.initialize(); err != nil {

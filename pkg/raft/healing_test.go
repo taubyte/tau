@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"path"
 	"slices"
@@ -25,6 +26,12 @@ import (
 	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2/raftv2connect"
 )
+
+// covering is a receipt for everything m's formation holds, which a test hands a
+// yield it means to see made.
+func covering(m *member) receipt {
+	return receipt{formation: m.raft.Formation(), cut: math.MaxUint64}
+}
 
 func healingTestOptions() []Option {
 	return []Option{
@@ -181,21 +188,21 @@ func TestHealing_HealAck_Signal(t *testing.T) {
 	require.NoError(t, taupeer.LinkAllPeers())
 
 	h := &healer{
-		healAckCh:     make(chan peer.ID, 1),
+		healAckCh:     make(chan healAck, 1),
 		foreignVoteCh: make(chan peer.ID, 16),
 	}
 
-	h.signalHealAck(node.ID())
+	h.signalHealAck(node.ID(), receipt{})
 
 	select {
-	case from := <-h.healAckCh:
-		assert.Equal(t, node.ID(), from)
+	case ack := <-h.healAckCh:
+		assert.Equal(t, node.ID(), ack.from)
 	case <-time.After(100 * time.Millisecond):
 		t.Fatal("healAck signal was not received")
 	}
 
-	h.signalHealAck(node.ID())
-	h.signalHealAck(node.ID())
+	h.signalHealAck(node.ID(), receipt{})
+	h.signalHealAck(node.ID(), receipt{})
 
 	select {
 	case <-h.healAckCh:
@@ -289,7 +296,7 @@ func TestHealing_AYieldWaitsForTheRaftItReplaces(t *testing.T) {
 
 	yielded := make(chan struct{})
 	go func() {
-		c.(*cluster).current().healer.Load().yieldAndRejoin(t.Context(), "")
+		c.(*cluster).current().healer.Load().yieldAndRejoin(t.Context(), "", covering(c.(*cluster).current()))
 		close(yielded)
 	}()
 	select {
@@ -320,7 +327,7 @@ func TestHealing_AJoinEndsWithTheMemberAYieldTakesDown(t *testing.T) {
 		cl.askToJoin(m, time.Second)
 		close(asked)
 	}()
-	cl.current().healer.Load().yieldAndRejoin(t.Context(), "")
+	cl.current().healer.Load().yieldAndRejoin(t.Context(), "", covering(cl.current()))
 	<-asked
 	assert.Less(t, time.Since(start), 10*time.Second, "the ask of the member taken down ran its whole course")
 }
@@ -374,7 +381,7 @@ func TestHealing_AYieldRebuildsTheMemberItsReadersRead(t *testing.T) {
 	})
 
 	for range 3 {
-		c.(*cluster).current().healer.Load().yieldAndRejoin(t.Context(), "")
+		c.(*cluster).current().healer.Load().yieldAndRejoin(t.Context(), "", covering(c.(*cluster).current()))
 		waitLeader(t, c, 5*time.Second)
 	}
 	close(stop)
@@ -418,7 +425,7 @@ func TestHealing_AnExchangeAYieldCutsShortKeepsToItsMembersClient(t *testing.T) 
 
 	// The tracker's first round exchanges with both, and the first holds it.
 	<-held.entered
-	c.(*cluster).current().healer.Load().yieldAndRejoin(t.Context(), "")
+	c.(*cluster).current().healer.Load().yieldAndRejoin(t.Context(), "", covering(c.(*cluster).current()))
 }
 
 // heldWipe holds the first delete under prefix until it is let go, so a test
@@ -476,7 +483,7 @@ func TestCluster_CloseWaitsForAYieldInProgress(t *testing.T) {
 	cl := c.(*cluster)
 	yielded := make(chan struct{})
 	go func() {
-		cl.current().healer.Load().yieldAndRejoin(t.Context(), "")
+		cl.current().healer.Load().yieldAndRejoin(t.Context(), "", covering(cl.current()))
 		close(yielded)
 	}()
 	<-wipe.entered
@@ -943,7 +950,7 @@ func TestHealing_AHealAckFromTheMembersOwnLeaderIsIgnored(t *testing.T) {
 	}, leaderWait, 10*time.Millisecond, "the member never followed its leader")
 	before, healer := member.current().raft, member.current().healer.Load()
 
-	healer.healAcked(t.Context(), idOf(leader))
+	healer.healAcked(t.Context(), healAck{from: idOf(leader)})
 	assert.False(t, healer.superseded.Load(), "the member yielded to its own leader")
 	assert.Same(t, before, member.current().raft, "the member's raft was replaced")
 	_, held := member.Get("held")
@@ -1138,7 +1145,7 @@ func TestHealing_AMemberWhoseRebuildFailsIsRebuiltOnceItCanBe(t *testing.T) {
 
 	snapshot := path.Join(RaftStoragePrefix, namespace, "engine", "snapshot")
 	store.failGet(snapshot, errNoSpace)
-	c.current().healer.Load().yieldAndRejoin(t.Context(), peer.ID(""))
+	c.current().healer.Load().yieldAndRejoin(t.Context(), "", covering(c.current()))
 	require.Equal(t, Shutdown, c.current().raft.State(), "the rebuild did not fail")
 
 	store.failGet(snapshot, nil)
@@ -1199,4 +1206,34 @@ func TestHealing_ALoserHoldingStateWaitsToBeTaken(t *testing.T) {
 		_, ok := survivor.Get("kept")
 		return !ok || survivor.current() != before
 	}, 3*time.Second, 20*time.Millisecond, "the loser yielded before anyone took its state")
+}
+
+// A YIELD THAT NO LONGER HOLDS ONCE THE RAFT IS DOWN WIPES NOTHING: a receipt that
+// stops short of what the member committed, or a member that holds something
+// after all, is rebuilt from what it kept.
+func TestHealing_AYieldThatNoLongerHoldsWipesNothing(t *testing.T) {
+	cl, err := New(newMockNode(t), "yield-guarded", WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
+	require.NoError(t, err)
+	t.Cleanup(func() { cl.Close() })
+	waitLeader(t, cl, 5*time.Second)
+	require.NoError(t, cl.Set("kept", []byte("v"), time.Second))
+	c := cl.(*cluster)
+	formation := c.current().raft.Formation()
+
+	for name, guard := range map[string]yieldGuard{
+		"a receipt that stops short":     receipt{formation: formation, cut: c.current().raft.CommitIndex() - 1},
+		"a receipt of another":           receipt{formation: newFormation(), cut: math.MaxUint64},
+		"holding nothing while it holds": holdingNothing{},
+	} {
+		t.Run(name, func(t *testing.T) {
+			before := c.current()
+			before.healer.Load().yieldAndRejoin(t.Context(), "", guard)
+			require.NotSame(t, before, c.current(), "the member was not rebuilt")
+			waitLeader(t, cl, 5*time.Second)
+			value, found := cl.Get("kept")
+			require.True(t, found, "the member wiped what it held")
+			require.Equal(t, "v", string(value))
+			require.Equal(t, formation, c.current().raft.Formation())
+		})
+	}
 }

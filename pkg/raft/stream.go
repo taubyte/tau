@@ -409,7 +409,7 @@ func (s *raftStreamService) HealAck(ctx context.Context, req *connect.Request[ra
 		s.cluster.ID().ShortString(), fromPeer.ShortString())
 
 	if h := s.cluster.current().healer.Load(); h != nil {
-		h.signalHealAck(fromPeer)
+		h.signalHealAck(fromPeer, receipt{formation: req.Msg.GetFormation(), cut: req.Msg.GetCut()})
 	}
 
 	return connect.NewResponse(&raftv2.HealAckResponse{}), nil

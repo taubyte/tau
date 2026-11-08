@@ -1593,3 +1593,23 @@ func TestCluster_AMemberLetInAsksNoMore(t *testing.T) {
 	assert.Equal(t, int32(1), group.joins.Load(), "the member asked again once let in")
 	assert.True(t, member.current().joined.Load(), "the member does not know the group let it in")
 }
+
+// A NODE THAT FORMED ITS GROUP BY ITSELF RESUMES IT after a restart, over what it
+// kept: the bootstrap it cannot make again is the one it already made.
+func TestCluster_AForceBootstrappedNodeResumesItsGroupAfterARestart(t *testing.T) {
+	const namespace = "force-resumes"
+	node := newMockNode(t)
+	first, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
+	require.NoError(t, err)
+	waitLeader(t, first, 5*time.Second)
+	require.NoError(t, first.Set("kept", []byte("v"), time.Second))
+	require.NoError(t, first.Close())
+
+	again, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
+	require.NoError(t, err)
+	t.Cleanup(func() { again.Close() })
+	waitLeader(t, again, 5*time.Second)
+	value, found := again.Get("kept")
+	require.True(t, found)
+	require.Equal(t, "v", string(value))
+}

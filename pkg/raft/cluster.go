@@ -193,6 +193,12 @@ func (c *cluster) handleBootstrap(m *member) error {
 	if c.forceBootstrap {
 		clusterLogger.Infof("[%s] force bootstrap enabled — bootstrapping self", c.ID().ShortString())
 		err := c.bootstrapSelf(m)
+		// A GROUP IT FORMED BEFORE is the one it resumes, after a restart or a
+		// rebuild that kept what it held.
+		if errors.Is(err, ErrCantBootstrap) {
+			clusterLogger.Infof("[%s] already formed — resuming its group", c.ID().ShortString())
+			err = nil
+		}
 		if err == nil {
 			successfullyCompleted = true
 		}

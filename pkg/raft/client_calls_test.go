@@ -428,7 +428,7 @@ func TestStream_AJoinAskedOfAMemberAYieldTookOutOfItsGroupIsRefusedAtOnce(t *tes
 	yielded := make(chan struct{})
 	go func() {
 		defer close(yielded)
-		b.(*cluster).current().healer.Load().yieldAndRejoin(t.Context(), "")
+		b.(*cluster).current().healer.Load().yieldAndRejoin(t.Context(), "", covering(b.(*cluster).current()))
 	}()
 	require.Eventually(t, func() bool {
 		info, err := cli.ClusterInfo(idOf(b))
