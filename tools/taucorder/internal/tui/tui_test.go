@@ -138,11 +138,11 @@ func TestDrillDown(t *testing.T) {
 
 	// A node opens its detail; esc closes it.
 	m = press(m, "enter")
-	if !strings.Contains(m.View(), "Node 12D3…aaaaaa") || !strings.Contains(m.View(), "fleet revision") {
+	if !strings.Contains(m.View(), "Node 12D3…aaaaaa") || !strings.Contains(m.View(), "databases pending") {
 		t.Fatal(m.View())
 	}
 	m = press(m, "down", "esc")
-	if strings.Contains(m.View(), "fleet revision") {
+	if strings.Contains(m.View(), "databases pending") {
 		t.Fatal("detail still open")
 	}
 

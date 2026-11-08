@@ -8,8 +8,7 @@
       "register"
     ],
     "addresses": null,
-    "databases_pending": 0,
-    "fleet_revision": 0
+    "databases_pending": 0
   },
   {
     "peer": "12D3KooWBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -23,7 +22,6 @@
     "addresses": [
       "10.0.0.2"
     ],
-    "databases_pending": 0,
-    "fleet_revision": 0
+    "databases_pending": 0
   }
 ]
