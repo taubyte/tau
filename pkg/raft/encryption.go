@@ -3,10 +3,7 @@ package raft
 import (
 	"crypto/cipher"
 	"crypto/rand"
-	"encoding/binary"
 	"fmt"
-	"io"
-	"net"
 
 	"github.com/taubyte/tau/pkg/proto/codec"
 )
@@ -15,91 +12,6 @@ const (
 	AESKeySize = 32
 	nonceSize  = 12
 )
-
-type encryptedConn struct {
-	net.Conn
-	encrypt cipher.AEAD
-	decrypt cipher.AEAD
-
-	// unread is what is left of the last frame after a read whose buffer
-	// could not hold all of it.
-	unread []byte
-}
-
-func newEncryptedConn(conn net.Conn, gcm cipher.AEAD) (net.Conn, error) {
-	if gcm == nil {
-		return conn, nil
-	}
-
-	return &encryptedConn{
-		Conn:    conn,
-		encrypt: gcm,
-		decrypt: gcm,
-	}, nil
-}
-
-// Read hands a frame out over as many reads as the caller's buffer needs.
-func (ec *encryptedConn) Read(b []byte) (int, error) {
-	if len(ec.unread) == 0 {
-		plaintext, err := ec.readFrame()
-		if err != nil {
-			return 0, err
-		}
-		ec.unread = plaintext
-	}
-	n := copy(b, ec.unread)
-	ec.unread = ec.unread[n:]
-	return n, nil
-}
-
-func (ec *encryptedConn) readFrame() ([]byte, error) {
-	lenBuf := make([]byte, 4)
-	if _, err := io.ReadFull(ec.Conn, lenBuf); err != nil {
-		return nil, err
-	}
-	payloadLen := binary.BigEndian.Uint32(lenBuf)
-
-	nonce := make([]byte, nonceSize)
-	if _, err := io.ReadFull(ec.Conn, nonce); err != nil {
-		return nil, err
-	}
-
-	ciphertext := make([]byte, payloadLen)
-	if _, err := io.ReadFull(ec.Conn, ciphertext); err != nil {
-		return nil, err
-	}
-
-	plaintext, err := ec.decrypt.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return nil, fmt.Errorf("decryption failed: %w", err)
-	}
-	return plaintext, nil
-}
-
-func (ec *encryptedConn) Write(b []byte) (int, error) {
-	nonce := make([]byte, nonceSize)
-	if _, err := rand.Read(nonce); err != nil {
-		return 0, fmt.Errorf("generating nonce: %w", err)
-	}
-
-	ciphertext := ec.encrypt.Seal(nil, nonce, b, nil)
-
-	lenBuf := make([]byte, 4)
-	binary.BigEndian.PutUint32(lenBuf, uint32(len(ciphertext)))
-	if _, err := ec.Conn.Write(lenBuf); err != nil {
-		return 0, err
-	}
-
-	if _, err := ec.Conn.Write(nonce); err != nil {
-		return 0, err
-	}
-
-	if _, err := ec.Conn.Write(ciphertext); err != nil {
-		return 0, err
-	}
-
-	return len(b), nil
-}
 
 // sealedCodec is the proto codec with every message sealed under the group's
 // key: a random nonce, then the AEAD of the proto encoding. It keeps the name
@@ -117,20 +29,34 @@ func (c sealedCodec) Marshal(m any) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	nonce := make([]byte, nonceSize, nonceSize+len(plain)+c.gcm.Overhead())
-	if _, err := rand.Read(nonce); err != nil {
-		return nil, fmt.Errorf("generating nonce: %w", err)
-	}
-	return c.gcm.Seal(nonce, nonce, plain, nil), nil
+	return seal(c.gcm, plain)
 }
 
 func (c sealedCodec) Unmarshal(data []byte, m any) error {
-	if len(data) < nonceSize {
-		return fmt.Errorf("encrypted data too short: expected at least %d bytes, got %d", nonceSize, len(data))
-	}
-	plain, err := c.gcm.Open(nil, data[:nonceSize], data[nonceSize:], nil)
+	plain, err := unseal(c.gcm, data)
 	if err != nil {
-		return fmt.Errorf("decryption failed: %w", err)
+		return err
 	}
 	return codec.Codec.Unmarshal(plain, m)
+}
+
+// seal is plain under gcm: a random nonce, then the AEAD of plain.
+func seal(gcm cipher.AEAD, plain []byte) ([]byte, error) {
+	nonce := make([]byte, nonceSize, nonceSize+len(plain)+gcm.Overhead())
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, fmt.Errorf("generating nonce: %w", err)
+	}
+	return gcm.Seal(nonce, nonce, plain, nil), nil
+}
+
+// unseal is what seal sealed, or why it cannot be read.
+func unseal(gcm cipher.AEAD, data []byte) ([]byte, error) {
+	if len(data) < nonceSize {
+		return nil, fmt.Errorf("encrypted data too short: expected at least %d bytes, got %d", nonceSize, len(data))
+	}
+	plain, err := gcm.Open(nil, data[:nonceSize], data[nonceSize:], nil)
+	if err != nil {
+		return nil, fmt.Errorf("decryption failed: %w", err)
+	}
+	return plain, nil
 }

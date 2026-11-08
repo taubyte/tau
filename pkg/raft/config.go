@@ -1,7 +1,6 @@
 package raft
 
 import (
-	"path/filepath"
 	"time"
 )
 
@@ -56,9 +55,9 @@ type Timing struct {
 	BootstrapTimeout time.Duration `yaml:"bootstrap_timeout"`
 }
 
-// Options are what a group is opened with on this timing, its snapshots under root.
-func (t Timing) Options(root string) []Option {
-	options := []Option{WithSnapshotRoot(filepath.Join(root, "raft"))}
+// Options are what a group is opened with on this timing.
+func (t Timing) Options() []Option {
+	var options []Option
 	if t.Timeouts != (TimeoutConfig{}) {
 		options = append(options, WithTimeouts(t.Timeouts))
 	}

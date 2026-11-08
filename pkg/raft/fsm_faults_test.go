@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/hashicorp/raft"
 	ds "github.com/ipfs/go-datastore"
 )
 
@@ -18,7 +17,7 @@ func applied(t *testing.T, fsm FSM, cmd Command) FSMResponse {
 	if err != nil {
 		t.Fatalf("encoding the command: %v", err)
 	}
-	resp, ok := fsm.Apply(&raft.Log{Data: data, Index: 1}).(FSMResponse)
+	resp, ok := fsm.Apply(1, data), true
 	if !ok {
 		t.Fatalf("the FSM answered something other than an FSMResponse")
 	}

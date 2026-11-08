@@ -2,12 +2,12 @@ package raft
 
 import (
 	"context"
-	"strconv"
 	"testing"
 
-	"github.com/hashicorp/raft"
 	ds "github.com/ipfs/go-datastore"
 	dssync "github.com/ipfs/go-datastore/sync"
+	pb "go.etcd.io/raft/v3/raftpb"
+	"google.golang.org/protobuf/proto"
 )
 
 func BenchmarkEncodeSetCommand(b *testing.B) {
@@ -26,49 +26,44 @@ func BenchmarkFSMApplySet(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	log := &raft.Log{Data: data}
+	var index uint64
 	b.ReportAllocs()
 	for b.Loop() {
-		log.Index++
-		if r, ok := f.Apply(log).(FSMResponse); !ok || r.Error != nil {
+		index++
+		if r := f.Apply(index, data); r.Error != nil {
 			b.Fatal(r.Error)
 		}
 	}
 }
 
-func BenchmarkStoreLogs(b *testing.B) {
-	l := newLogStore(dssync.MutexWrap(ds.NewMapDatastore()), "/raft/bench/log")
-	data := make([]byte, 300)
-	logs := make([]*raft.Log, 16)
-	for i := range logs {
-		logs[i] = &raft.Log{Type: raft.LogCommand, Term: 3, Data: data}
+// BenchmarkSaveEntries is one cycle's write of sixteen entries to a group's log.
+func BenchmarkSaveEntries(b *testing.B) {
+	ctx := context.Background()
+	store := dssync.MutexWrap(ds.NewMapDatastore())
+	l, err := openEngineLog(ctx, store, "/raft/bench/engine")
+	if err != nil {
+		b.Fatal(err)
 	}
+	data := make([]byte, 300)
 	var index uint64
 	b.ReportAllocs()
 	for b.Loop() {
-		for _, lg := range logs {
+		ents := make([]*pb.Entry, 16)
+		for i := range ents {
 			index++
-			lg.Index = index
+			ents[i] = &pb.Entry{Term: proto.Uint64(3), Index: proto.Uint64(index), Data: data}
 		}
-		if err := l.StoreLogs(logs); err != nil {
+		batch, err := store.Batch(ctx)
+		if err != nil {
 			b.Fatal(err)
 		}
-	}
-}
-
-func BenchmarkGetLog(b *testing.B) {
-	l := newLogStore(dssync.MutexWrap(ds.NewMapDatastore()), "/raft/bench/log")
-	for i := uint64(1); i <= 64; i++ {
-		if err := l.StoreLog(&raft.Log{Index: i, Term: 3, Type: raft.LogCommand, Data: []byte("payload-" + strconv.FormatUint(i, 10))}); err != nil {
+		if err := l.save(ctx, batch, nil, nil, ents); err != nil {
 			b.Fatal(err)
 		}
-	}
-	var out raft.Log
-	b.ReportAllocs()
-	i := uint64(0)
-	for b.Loop() {
-		i = i%64 + 1
-		if err := l.GetLog(i, &out); err != nil {
+		if err := batch.Commit(ctx); err != nil {
+			b.Fatal(err)
+		}
+		if err := l.kept(nil, nil, ents); err != nil {
 			b.Fatal(err)
 		}
 	}

@@ -4,10 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"testing"
 
-	"github.com/hashicorp/raft"
 	"github.com/ipfs/go-datastore"
 	dsync "github.com/ipfs/go-datastore/sync"
 	"github.com/taubyte/tau/pkg/pebbleds"
@@ -30,12 +28,8 @@ func TestKVFSM_Apply_Set(t *testing.T) {
 		t.Fatalf("failed to marshal command: %v", err)
 	}
 
-	log := &raft.Log{Data: data, Index: 1}
-	resp := fsm.Apply(log)
-	fsmResp, ok := resp.(FSMResponse)
-	if !ok {
-		t.Fatalf("expected FSMResponse, got %T", resp)
-	}
+	resp := fsm.Apply(1, data)
+	fsmResp := resp
 
 	if fsmResp.Error != nil {
 		t.Errorf("expected no error, got %v", fsmResp.Error)
@@ -59,7 +53,7 @@ func TestKVFSM_Apply_Delete(t *testing.T) {
 		Set:  &SetCommand{Key: "mykey", Value: []byte("myvalue")},
 	}
 	setData, _ := encodeCommand(setCmd)
-	fsm.Apply(&raft.Log{Data: setData, Index: 1})
+	fsm.Apply(1, setData)
 
 	val, ok := fsm.Get("mykey")
 	if !ok || !bytes.Equal(val, []byte("myvalue")) {
@@ -71,11 +65,8 @@ func TestKVFSM_Apply_Delete(t *testing.T) {
 		Delete: &DeleteCommand{Key: "mykey"},
 	}
 	delData, _ := encodeCommand(delCmd)
-	resp := fsm.Apply(&raft.Log{Data: delData, Index: 2})
-	fsmResp, ok := resp.(FSMResponse)
-	if !ok {
-		t.Fatalf("expected FSMResponse, got %T", resp)
-	}
+	resp := fsm.Apply(2, delData)
+	fsmResp := resp
 	if fsmResp.Error != nil {
 		t.Errorf("expected no error, got %v", fsmResp.Error)
 	}
@@ -90,12 +81,8 @@ func TestKVFSM_Apply_InvalidCommand(t *testing.T) {
 	store := newTestStore()
 	fsm := newKVFSM(t.Context(), store, "/raft/test")
 
-	log := &raft.Log{Data: []byte("invalid"), Index: 1}
-	resp := fsm.Apply(log)
-	fsmResp, ok := resp.(FSMResponse)
-	if !ok {
-		t.Fatalf("expected FSMResponse, got %T", resp)
-	}
+	resp := fsm.Apply(1, []byte("invalid"))
+	fsmResp := resp
 	if fsmResp.Error != ErrInvalidCommand {
 		t.Errorf("expected ErrInvalidCommand, got %v", fsmResp.Error)
 	}
@@ -109,12 +96,8 @@ func TestKVFSM_Apply_UnknownCommandType(t *testing.T) {
 		Type: CommandType(99), // Unknown type
 	}
 	data, _ := encodeCommand(cmd)
-	log := &raft.Log{Data: data, Index: 1}
-	resp := fsm.Apply(log)
-	fsmResp, ok := resp.(FSMResponse)
-	if !ok {
-		t.Fatalf("expected FSMResponse, got %T", resp)
-	}
+	resp := fsm.Apply(1, data)
+	fsmResp := resp
 	if fsmResp.Error != ErrInvalidCommand {
 		t.Errorf("expected ErrInvalidCommand, got %v", fsmResp.Error)
 	}
@@ -129,12 +112,8 @@ func TestKVFSM_Apply_SetWithNilPayload(t *testing.T) {
 		Set:  nil, // Missing payload
 	}
 	data, _ := encodeCommand(cmd)
-	log := &raft.Log{Data: data, Index: 1}
-	resp := fsm.Apply(log)
-	fsmResp, ok := resp.(FSMResponse)
-	if !ok {
-		t.Fatalf("expected FSMResponse, got %T", resp)
-	}
+	resp := fsm.Apply(1, data)
+	fsmResp := resp
 	if fsmResp.Error != ErrInvalidCommand {
 		t.Errorf("expected ErrInvalidCommand, got %v", fsmResp.Error)
 	}
@@ -164,7 +143,7 @@ func TestKVFSM_Keys(t *testing.T) {
 			Set:  &SetCommand{Key: key, Value: []byte("value")},
 		}
 		data, _ := encodeCommand(cmd)
-		fsm.Apply(&raft.Log{Data: data, Index: uint64(i + 1)})
+		fsm.Apply(uint64(i+1), data)
 	}
 
 	allKeys := fsm.Keys("")
@@ -188,7 +167,7 @@ func TestKVFSM_Snapshot_Restore(t *testing.T) {
 			Set:  &SetCommand{Key: key, Value: []byte("value" + key)},
 		}
 		data, _ := encodeCommand(cmd)
-		fsm1.Apply(&raft.Log{Data: data, Index: uint64(i + 1)})
+		fsm1.Apply(uint64(i+1), data)
 	}
 
 	snap, err := fsm1.Snapshot()
@@ -196,16 +175,10 @@ func TestKVFSM_Snapshot_Restore(t *testing.T) {
 		t.Fatalf("failed to create snapshot: %v", err)
 	}
 
-	var buf bytes.Buffer
-	sink := &testSnapshotSink{Writer: &buf}
-	if err := snap.Persist(sink); err != nil {
-		t.Fatalf("failed to persist snapshot: %v", err)
-	}
-
 	store2 := newTestStore()
 	fsm2 := newKVFSM(t.Context(), store2, "/raft/test")
 
-	if err := fsm2.Restore(io.NopCloser(&buf)); err != nil {
+	if err := fsm2.Restore(snap); err != nil {
 		t.Fatalf("failed to restore snapshot: %v", err)
 	}
 
@@ -238,11 +211,8 @@ func TestKVFSM_Apply_Batch(t *testing.T) {
 		t.Fatalf("failed to marshal batch: %v", err)
 	}
 
-	resp := fsm.Apply(&raft.Log{Data: data, Index: 1})
-	fsmResp, ok := resp.(FSMResponse)
-	if !ok {
-		t.Fatalf("expected FSMResponse, got %T", resp)
-	}
+	resp := fsm.Apply(1, data)
+	fsmResp := resp
 	if fsmResp.Error != nil {
 		t.Errorf("unexpected error: %v", fsmResp.Error)
 	}
@@ -266,7 +236,7 @@ func TestKVFSM_Apply_Batch_SetAndDelete(t *testing.T) {
 		Set:  &SetCommand{Key: "x", Value: []byte("val")},
 	}
 	setData, _ := encodeCommand(setCmd)
-	fsm.Apply(&raft.Log{Data: setData, Index: 1})
+	fsm.Apply(1, setData)
 
 	batch := Command{
 		Type: CommandBatch,
@@ -276,8 +246,8 @@ func TestKVFSM_Apply_Batch_SetAndDelete(t *testing.T) {
 		},
 	}
 	data, _ := encodeCommand(batch)
-	resp := fsm.Apply(&raft.Log{Data: data, Index: 2})
-	fsmResp := resp.(FSMResponse)
+	resp := fsm.Apply(2, data)
+	fsmResp := resp
 	if fsmResp.Error != nil {
 		t.Errorf("unexpected error: %v", fsmResp.Error)
 	}
@@ -301,8 +271,8 @@ func TestKVFSM_Apply_Batch_Empty(t *testing.T) {
 		Batch: nil,
 	}
 	data, _ := encodeCommand(cmd)
-	resp := fsm.Apply(&raft.Log{Data: data, Index: 1})
-	fsmResp := resp.(FSMResponse)
+	resp := fsm.Apply(1, data)
+	fsmResp := resp
 	if fsmResp.Error != ErrInvalidCommand {
 		t.Errorf("expected ErrInvalidCommand for empty batch, got %v", fsmResp.Error)
 	}
@@ -321,8 +291,8 @@ func TestKVFSM_Apply_Batch_NestedBatchRejected(t *testing.T) {
 		},
 	}
 	data, _ := encodeCommand(cmd)
-	resp := fsm.Apply(&raft.Log{Data: data, Index: 1})
-	fsmResp := resp.(FSMResponse)
+	resp := fsm.Apply(1, data)
+	fsmResp := resp
 	if fsmResp.Error != ErrInvalidCommand {
 		t.Errorf("expected ErrInvalidCommand for nested batch, got %v", fsmResp.Error)
 	}
@@ -404,26 +374,6 @@ func TestEncodeDeleteCommand(t *testing.T) {
 	}
 }
 
-type testSnapshotSink struct {
-	io.Writer
-	cancelled bool
-}
-
-func (s *testSnapshotSink) ID() string { return "test" }
-
-func (s *testSnapshotSink) Cancel() error {
-	s.cancelled = true
-	return nil
-}
-
-func (s *testSnapshotSink) Close() error { return nil }
-
-func TestKVSnapshot_Release(t *testing.T) {
-	snap := &kvSnapshot{data: make(map[string]CRDTEntry)}
-	snap.Release()
-	snap.Release()
-}
-
 func TestFsmAdapter_Apply(t *testing.T) {
 	store := newTestStore()
 	fsm := newKVFSM(t.Context(), store, "/raft/test")
@@ -434,11 +384,8 @@ func TestFsmAdapter_Apply(t *testing.T) {
 	}
 	data, _ := encodeCommand(cmd)
 
-	result := fsm.Apply(&raft.Log{Data: data, Index: 1})
-	resp, ok := result.(FSMResponse)
-	if !ok {
-		t.Fatalf("expected FSMResponse, got %T", result)
-	}
+	result := fsm.Apply(1, data)
+	resp := result
 	if resp.Error != nil {
 		t.Errorf("unexpected error: %v", resp.Error)
 	}
@@ -461,7 +408,7 @@ func TestFsmAdapter_Snapshot(t *testing.T) {
 		Set:  &SetCommand{Key: "snapkey", Value: []byte("snapvalue")},
 	}
 	data, _ := encodeCommand(cmd)
-	fsm.Apply(&raft.Log{Data: data, Index: 1})
+	fsm.Apply(1, data)
 
 	snap, err := fsm.Snapshot()
 	if err != nil {
@@ -487,7 +434,7 @@ func TestFsmAdapter_Restore(t *testing.T) {
 		t.Fatalf("failed to encode snapshot: %v", err)
 	}
 
-	err = fsm.Restore(io.NopCloser(bytes.NewReader(raw)))
+	err = fsm.Restore(raw)
 	if err != nil {
 		t.Fatalf("restore failed: %v", err)
 	}
@@ -510,10 +457,10 @@ func TestKVFSM_Restore_EmptyStore(t *testing.T) {
 		Set:  &SetCommand{Key: "oldkey", Value: []byte("oldvalue")},
 	}
 	data, _ := encodeCommand(cmd)
-	fsm.Apply(&raft.Log{Data: data, Index: 1})
+	fsm.Apply(1, data)
 
 	emptyData, _ := marshalPayload(snapshotPayload{Data: map[string]CRDTEntry{}})
-	if err := fsm.Restore(io.NopCloser(bytes.NewReader(emptyData))); err != nil {
+	if err := fsm.Restore(emptyData); err != nil {
 		t.Fatalf("failed to restore: %v", err)
 	}
 
@@ -572,7 +519,7 @@ func TestKVFSM_Concurrent(t *testing.T) {
 				Set:  &SetCommand{Key: "key", Value: []byte("value")},
 			}
 			data, _ := encodeCommand(cmd)
-			fsm.Apply(&raft.Log{Data: data, Index: uint64(i + 1)})
+			fsm.Apply(uint64(i+1), data)
 		}
 		done <- true
 	}()
@@ -597,39 +544,10 @@ func TestKVFSM_Apply_DeleteWithNilPayload(t *testing.T) {
 		Delete: nil, // Missing payload
 	}
 	data, _ := encodeCommand(cmd)
-	log := &raft.Log{Data: data, Index: 1}
-	resp := fsm.Apply(log)
-	fsmResp, ok := resp.(FSMResponse)
-	if !ok {
-		t.Fatalf("expected FSMResponse, got %T", resp)
-	}
+	resp := fsm.Apply(1, data)
+	fsmResp := resp
 	if fsmResp.Error != ErrInvalidCommand {
 		t.Errorf("expected ErrInvalidCommand, got %v", fsmResp.Error)
-	}
-}
-
-func TestKVSnapshot_Persist_Success(t *testing.T) {
-	data := map[string]CRDTEntry{
-		"key1": {Value: []byte("value1"), Timestamp: 1, WallClock: 100},
-		"key2": {Value: []byte("value2"), Timestamp: 2, WallClock: 200},
-	}
-	snap := &kvSnapshot{data: data, clock: 2}
-
-	var buf bytes.Buffer
-	sink := &testSnapshotSink{Writer: &buf}
-
-	err := snap.Persist(sink)
-	if err != nil {
-		t.Fatalf("persist failed: %v", err)
-	}
-
-	var restored snapshotPayload
-	if err := unmarshalPayload(buf.Bytes(), &restored); err != nil {
-		t.Fatalf("failed to unmarshal snapshot: %v", err)
-	}
-
-	if len(restored.Data) != 2 {
-		t.Errorf("expected 2 keys, got %d", len(restored.Data))
 	}
 }
 
@@ -647,29 +565,9 @@ func TestKVFSM_Restore_RefusesWhatIsNotASnapshot(t *testing.T) {
 	store := newTestStore()
 	fsm := newKVFSM(t.Context(), store, "/raft/test")
 
-	err := fsm.Restore(io.NopCloser(bytes.NewReader([]byte("not a snapshot"))))
+	err := fsm.Restore([]byte("not a snapshot"))
 	if err == nil {
 		t.Error("expected error for bytes that are not a snapshot")
-	}
-}
-
-func TestKVSnapshot_Persist_Empty(t *testing.T) {
-	snap := &kvSnapshot{data: map[string]CRDTEntry{}}
-
-	var buf bytes.Buffer
-	sink := &testSnapshotSink{Writer: &buf}
-
-	err := snap.Persist(sink)
-	if err != nil {
-		t.Fatalf("persist failed: %v", err)
-	}
-
-	var restored snapshotPayload
-	if err := unmarshalPayload(buf.Bytes(), &restored); err != nil {
-		t.Fatalf("decoding the empty snapshot: %v", err)
-	}
-	if len(restored.Data) != 0 || restored.Clock != 0 {
-		t.Errorf("an empty snapshot came back as %d entries at clock %d", len(restored.Data), restored.Clock)
 	}
 }
 
@@ -700,16 +598,6 @@ func (f *failingWriter) ID() string {
 	return "test-id"
 }
 
-func TestKVSnapshot_Persist_WriteError(t *testing.T) {
-	snap := &kvSnapshot{data: map[string]CRDTEntry{"key": {Value: []byte("value"), Timestamp: 1}}}
-	sink := &failingWriter{failOnWrite: true}
-
-	err := snap.Persist(sink)
-	if err == nil {
-		t.Error("expected error on write failure")
-	}
-}
-
 func TestKVFSM_Keys_Error(t *testing.T) {
 	store := newTestStore()
 	fsm := newKVFSM(t.Context(), store, "/raft/test")
@@ -730,7 +618,7 @@ func TestKVFSM_Multiple_Set_Delete(t *testing.T) {
 			Set:  &SetCommand{Key: fmt.Sprintf("key%d", i), Value: []byte(fmt.Sprintf("value%d", i))},
 		}
 		data, _ := encodeCommand(cmd)
-		fsm.Apply(&raft.Log{Data: data, Index: uint64(i + 1)})
+		fsm.Apply(uint64(i+1), data)
 	}
 
 	keys := fsm.Keys("")
@@ -757,7 +645,7 @@ func TestKVFSM_Multiple_Set_Delete(t *testing.T) {
 			Delete: &DeleteCommand{Key: fmt.Sprintf("key%d", i)},
 		}
 		data, _ := encodeCommand(cmd)
-		fsm.Apply(&raft.Log{Data: data, Index: uint64(i + 11)})
+		fsm.Apply(uint64(i+11), data)
 	}
 
 	keys = fsm.Keys("")
@@ -776,7 +664,7 @@ func TestKVFSM_Keys_EmptyPrefix(t *testing.T) {
 			Set:  &SetCommand{Key: fmt.Sprintf("key-%d", i), Value: []byte("value")},
 		}
 		data, _ := encodeCommand(cmd)
-		fsm.Apply(&raft.Log{Data: data, Index: uint64(i + 1)})
+		fsm.Apply(uint64(i+1), data)
 	}
 
 	keys := fsm.Keys("")
@@ -794,43 +682,12 @@ func TestKVFSM_Keys_NoMatch(t *testing.T) {
 		Set:  &SetCommand{Key: "key-1", Value: []byte("value")},
 	}
 	data, _ := encodeCommand(cmd)
-	fsm.Apply(&raft.Log{Data: data, Index: 1})
+	fsm.Apply(1, data)
 
 	keys := fsm.Keys("nonexistent")
 	if len(keys) != 0 {
 		t.Errorf("expected 0 keys for nonexistent prefix, got %d", len(keys))
 	}
-}
-
-func TestKVSnapshot_Release_WithData(t *testing.T) {
-	snap := &kvSnapshot{
-		data: map[string]CRDTEntry{
-			"key1": {Value: []byte("value1"), Timestamp: 1},
-			"key2": {Value: []byte("value2"), Timestamp: 2},
-		},
-	}
-
-	snap.Release()
-
-	if len(snap.data) != 2 {
-		t.Errorf("expected 2 keys, got %d", len(snap.data))
-	}
-}
-
-func TestKVSnapshot_Release_Empty(t *testing.T) {
-	snap := &kvSnapshot{
-		data: make(map[string]CRDTEntry),
-	}
-
-	snap.Release()
-}
-
-func TestKVSnapshot_Release_Nil(t *testing.T) {
-	snap := &kvSnapshot{
-		data: nil,
-	}
-
-	snap.Release()
 }
 
 func TestKVFSM_Restore_WithExistingData(t *testing.T) {
@@ -843,7 +700,7 @@ func TestKVFSM_Restore_WithExistingData(t *testing.T) {
 			Set:  &SetCommand{Key: key, Value: []byte("original-" + key)},
 		}
 		data, _ := encodeCommand(cmd)
-		fsm.Apply(&raft.Log{Data: data, Index: 1})
+		fsm.Apply(1, data)
 	}
 
 	val, ok := fsm.Get("key1")
@@ -863,7 +720,7 @@ func TestKVFSM_Restore_WithExistingData(t *testing.T) {
 	}
 	restoreData, _ := marshalPayload(payload)
 
-	if err := fsm.Restore(io.NopCloser(bytes.NewReader(restoreData))); err != nil {
+	if err := fsm.Restore(restoreData); err != nil {
 		t.Fatalf("failed to restore: %v", err)
 	}
 
@@ -897,24 +754,18 @@ func TestKVFSM_SnapshotAndRestore_RoundTrip(t *testing.T) {
 			Set:  &SetCommand{Key: key, Value: []byte(value)},
 		}
 		data, _ := encodeCommand(cmd)
-		fsm.Apply(&raft.Log{Data: data, Index: 1})
+		fsm.Apply(1, data)
 	}
 
-	snapshot, err := fsm.Snapshot()
+	snap, err := fsm.Snapshot()
 	if err != nil {
 		t.Fatalf("failed to snapshot: %v", err)
-	}
-
-	var buf bytes.Buffer
-	sink := &testSnapshotSink{Writer: &buf}
-	if err := snapshot.Persist(sink); err != nil {
-		t.Fatalf("failed to persist: %v", err)
 	}
 
 	store2 := newTestStore()
 	fsm2 := newKVFSM(t.Context(), store2, "/raft/test2")
 
-	if err := fsm2.Restore(io.NopCloser(bytes.NewReader(buf.Bytes()))); err != nil {
+	if err := fsm2.Restore(snap); err != nil {
 		t.Fatalf("failed to restore: %v", err)
 	}
 
@@ -946,7 +797,7 @@ func TestKVFSM_AppliesACommittedLogPastCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp := fsm.Apply(&raft.Log{Data: data, Index: 1}).(FSMResponse); resp.Error != nil {
+	if resp := fsm.Apply(1, data); resp.Error != nil {
 		t.Fatalf("a committed log failed to apply after cancellation: %v", resp.Error)
 	}
 	if v, ok := fsm.Get("k"); !ok || string(v) != "v" {

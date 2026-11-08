@@ -2,16 +2,12 @@ package raft
 
 import (
 	"context"
-	"os"
 	"path"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	hraft "github.com/hashicorp/raft"
-	ds "github.com/ipfs/go-datastore"
-	"github.com/ipfs/go-datastore/query"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -28,13 +24,9 @@ type healer struct {
 	healing       atomic.Bool
 	mu            sync.Mutex
 	superseded    atomic.Bool
-	// leaderChanged is when raft last reported this member gaining or losing
-	// a leader, in unix nanoseconds: up to then it knew one.
-	leaderChanged atomic.Int64
-	// dropped is raft's count of the observations it dropped, set before the
-	// healer is published; droppedSeen is the count noteDropped last took.
-	dropped     func() uint64
-	droppedSeen atomic.Uint64
+	// leaderChangedAt is when raft last reported this member gaining or losing a
+	// leader, in unix nanoseconds: up to then it knew one.
+	leaderChangedAt atomic.Int64
 }
 
 func newHealer(c *cluster, m *member) *healer {
@@ -161,31 +153,7 @@ func (h *healer) hadLeaderSince(t time.Time) bool {
 	if _, err := h.cluster.Leader(); err == nil {
 		return true
 	}
-	h.noteDropped()
-	return h.leaderChanged.Load() >= t.UnixNano()
-}
-
-// noteDropped counts the observations raft dropped since the count it last
-// took as a change of leader, now: a dropped one may have been one. Raft
-// counts a drop after it fails to deliver it, so the watcher can drain the
-// channel and read the count before it grows, and hear nothing after; so
-// hadLeaderSince takes the count too, and each drop counts once whoever
-// takes it first.
-func (h *healer) noteDropped() {
-	if h.dropped == nil {
-		return
-	}
-	d := h.dropped()
-	for {
-		seen := h.droppedSeen.Load()
-		if d <= seen {
-			return
-		}
-		if h.droppedSeen.CompareAndSwap(seen, d) {
-			h.leaderChanged.Store(time.Now().UnixNano())
-			return
-		}
-	}
+	return h.leaderChangedAt.Load() >= t.UnixNano()
 }
 
 // The peer is tracked so findForeignPeers finds it, and a leader absorbs it at
@@ -208,84 +176,16 @@ func (h *healer) handleForeignVote(ctx context.Context, pid peer.ID) {
 	h.absorbOrphan(ctx, pid)
 }
 
-// The observer reports votes and pre-votes from peers outside the
-// configuration, and every change of leader.
-func (h *healer) registerObserver() {
-	ch := make(chan hraft.Observation, 16)
-	observer := hraft.NewObserver(ch, false, func(o *hraft.Observation) bool {
-		switch o.Data.(type) {
-		case hraft.RequestVoteRequest, hraft.RequestPreVoteRequest, hraft.LeaderObservation:
-			return true
-		default:
-			return false
-		}
-	})
-	// The observer is deregistered from the raft it watches, its member's: a
-	// yield builds a new member, whose healer registers its own.
-	on := h.member.raft
-	h.dropped = observer.GetNumDropped
-	on.RegisterObserver(observer)
-
-	go func() {
-		h.watch(h.cluster.ctx, ch)
-		on.DeregisterObserver(observer)
-	}()
+// leaderChanged and foreignVote are the engine telling the healer what it watches
+// for, from the engine's loop: neither blocks.
+func (h *healer) leaderChanged(peer.ID) {
+	h.leaderChangedAt.Store(time.Now().UnixNano())
 }
 
-// watch processes what the observer delivers until ctx is done. Raft drops
-// an observation the channel has no room for, and one it dropped may have
-// been a change of leader: each drop counts as one (see noteDropped), so a
-// cycle is never taken for leaderless on an observation the healer did not
-// get.
-func (h *healer) watch(ctx context.Context, ch <-chan hraft.Observation) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case obs := <-ch:
-			h.processObservation(obs)
-			h.noteDropped()
-		}
-	}
-}
-
-func (h *healer) processObservation(obs hraft.Observation) {
-	var candidateID string
-	switch req := obs.Data.(type) {
-	case hraft.LeaderObservation:
-		h.leaderChanged.Store(time.Now().UnixNano())
-		return
-	case hraft.RequestPreVoteRequest:
-		candidateID = string(req.ID)
-	case hraft.RequestVoteRequest:
-		candidateID = string(req.ID)
-	default:
-		return
-	}
-
-	if candidateID == "" {
-		return
-	}
-
-	pid, err := peer.Decode(candidateID)
-	if err != nil {
-		return
-	}
-
+func (h *healer) foreignVote(pid peer.ID) {
 	if pid == h.cluster.ID() {
 		return
 	}
-
-	members, err := h.member.members()
-	if err != nil {
-		return
-	}
-	for _, m := range members {
-		if m.ID == pid {
-			return
-		}
-	}
-
 	healLogger.Infof("[%s] observed vote request from non-member %s",
 		h.cluster.ID().ShortString(), pid.ShortString())
 	h.notifyForeignVote(pid)
@@ -449,9 +349,8 @@ func (h *healer) localClusterInfo() *ClusterInfoResponse {
 	if leader, err := leaderKnownTo(h.member.raft); err == nil {
 		info.LeaderID = leader.String()
 	}
-	stats := h.member.raft.Stats()
-	info.Term = parseUint64(stats["term"])
-	info.LastIndex = parseUint64(stats["last_log_index"])
+	info.Term = h.member.raft.Term()
+	info.LastIndex = h.member.raft.LastIndex()
 	if members, err := h.member.members(); err == nil {
 		info.MemberCount = len(members)
 	}
@@ -646,11 +545,8 @@ func (h *healer) yieldAndRejoin(ctx context.Context, winnerLeader peer.ID) {
 	m := h.cluster.current()
 	m.takeDown()
 
-	healLogger.Infof("[%s] wiping raft state (logs, stable and applied data)", h.cluster.ID().ShortString())
+	healLogger.Infof("[%s] wiping raft state (log, snapshot and applied data)", h.cluster.ID().ShortString())
 	h.wipeRaftState(ctx)
-
-	healLogger.Infof("[%s] wiping snapshots", h.cluster.ID().ShortString())
-	m.snaps.wipeAll()
 
 	healLogger.Infof("[%s] re-initializing raft after yield", h.cluster.ID().ShortString())
 	if err := h.cluster.initialize(); err != nil {
@@ -663,48 +559,16 @@ func (h *healer) yieldAndRejoin(ctx context.Context, winnerLeader peer.ID) {
 	h.superseded.Store(true)
 }
 
-// wipeRaftState removes the member's logs, stable state and applied data. The
-// applied data must go: rejoining by log replication from the first index would
-// otherwise leave entries the winning group never committed in the store, which
-// this voter would serve once it led. It finishes whatever cancels ctx, as Close
-// does: a raft built over a store it half wiped finds logs it cannot read, and
-// panics.
+// wipeRaftState removes the member's log, snapshot and applied data. The applied
+// data must go: rejoining by log replication from the first index would otherwise
+// leave entries the winning group never committed in the store, which this voter
+// would serve once it led. It finishes whatever cancels ctx, as Close does.
 func (h *healer) wipeRaftState(ctx context.Context) {
 	ctx = context.WithoutCancel(ctx)
-	store := h.cluster.Store()
 	storagePrefix := path.Join(RaftStoragePrefix, h.cluster.namespace)
-
-	for _, sub := range []string{"log", "stable", "data"} {
-		prefix := path.Join(storagePrefix, sub)
-		results, err := store.Query(ctx, query.Query{
-			Prefix:   prefix,
-			KeysOnly: true,
-		})
-		if err != nil {
-			healLogger.Warnf("[%s] failed to query %s keys during wipe: %v",
-				h.cluster.ID().ShortString(), sub, err)
-			continue
+	for _, sub := range []string{"engine", "data"} {
+		if err := wipePrefix(ctx, h.cluster.Store(), path.Join(storagePrefix, sub)); err != nil {
+			healLogger.Warnf("[%s] failed to wipe %s during a yield: %v", h.cluster.ID().ShortString(), sub, err)
 		}
-		for result := range results.Next() {
-			if result.Error != nil {
-				healLogger.Warnf("[%s] error iterating %s keys during wipe: %v",
-					h.cluster.ID().ShortString(), sub, result.Error)
-				break
-			}
-			if err := store.Delete(ctx, ds.NewKey(result.Key)); err != nil {
-				healLogger.Warnf("[%s] failed to delete key %s during wipe: %v",
-					h.cluster.ID().ShortString(), result.Key, err)
-			}
-		}
-		results.Close()
-	}
-}
-
-func (f *fileSnapshotStore) wipeAll() {
-	if err := os.RemoveAll(f.dir); err != nil {
-		healLogger.Warnf("failed to remove snapshot dir %s: %v", f.dir, err)
-	}
-	if err := os.MkdirAll(f.dir, 0755); err != nil {
-		healLogger.Errorf("failed to recreate snapshot dir %s: %v", f.dir, err)
 	}
 }

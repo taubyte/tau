@@ -1,19 +1,18 @@
 package raft
 
 import (
-	"bytes"
 	"context"
+	"crypto/cipher"
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
 	"math/rand/v2"
 	"path"
 	"slices"
 	"sync"
 	"time"
 
-	hraft "github.com/hashicorp/raft"
+	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/peer"
 	etcdraft "go.etcd.io/raft/v3"
 	pb "go.etcd.io/raft/v3/raftpb"
@@ -22,13 +21,6 @@ import (
 	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 )
 
-// machine is what a group applies its log to.
-type machine interface {
-	Apply(*hraft.Log) interface{}
-	Restore(io.ReadCloser) error
-	state() ([]byte, error)
-}
-
 // groupObserver hears what the healer watches for: the leader changing, and a vote
 // asked of this node by one its group does not hold.
 type groupObserver interface {
@@ -36,10 +28,15 @@ type groupObserver interface {
 	foreignVote(from peer.ID)
 }
 
-// groupConfig is how a group runs.
+// groupConfig is how a group runs. cipher, when set, seals what the group sends:
+// a peer without the key reads none of it.
 type groupConfig struct {
 	timeouts TimeoutConfig
-	machine  machine
+	machine  FSM
+	cipher   cipher.AEAD
+	// store is where the group keeps its log: its own node's, which need not be
+	// the store of the node that started the host's engine.
+	store ds.Batching
 }
 
 // group is one raft group on a node's engine. Its raft belongs to the loop; what
@@ -49,18 +46,25 @@ type group struct {
 	namespace string
 	rn        *etcdraft.RawNode
 	log       *engineLog
-	fsm       machine
+	fsm       FSM
+	cipher    cipher.AEAD
 
 	tickEvery     time.Duration
 	nextTick      time.Time
 	snapshotEvery uint64
 	trailing      uint64
-	snapIndex     uint64
-	applied       uint64
 	conf          *pb.ConfState
+	applier       *applier
 
-	// confChanged is a membership change applied since the last snapshot.
-	confChanged bool
+	// durable is who waits for what raft took to reach disk: a bootstrap answers
+	// once its first entries are written.
+	durable []chan error
+
+	// stalled is a pass the store refused, tried again from retryAt, backing off
+	// up to maxRetry; nothing else is taken from raft meanwhile.
+	stalled *etcdraft.Ready
+	retryAt time.Time
+	backoff time.Duration
 
 	mu           sync.Mutex
 	state        State
@@ -116,7 +120,7 @@ func (a openAsk) run(e *engine) {
 }
 
 func (e *engine) newGroup(namespace string, cfg groupConfig) (*group, error) {
-	log, err := openEngineLog(e.ctx, e.node.Store(), path.Join(RaftStoragePrefix, namespace, "engine"))
+	log, err := openEngineLog(e.ctx, cfg.store, path.Join(RaftStoragePrefix, namespace, "engine"))
 	if err != nil {
 		return nil, err
 	}
@@ -125,6 +129,7 @@ func (e *engine) newGroup(namespace string, cfg groupConfig) (*group, error) {
 		namespace:     namespace,
 		log:           log,
 		fsm:           cfg.machine,
+		cipher:        cfg.cipher,
 		tickEvery:     max(time.Millisecond, cfg.timeouts.HeartbeatTimeout/electionTicks),
 		snapshotEvery: cfg.timeouts.SnapshotThreshold,
 		trailing:      cfg.timeouts.TrailingLogs,
@@ -141,12 +146,12 @@ func (e *engine) newGroup(namespace string, cfg groupConfig) (*group, error) {
 		return nil, err
 	}
 	g.conf = &pb.ConfState{}
+	var applied uint64
 	if !etcdraft.IsEmptySnap(snap) {
-		if err := g.fsm.Restore(io.NopCloser(bytes.NewReader(snap.GetData()))); err != nil {
+		if err := g.fsm.Restore(snap.GetData()); err != nil {
 			return nil, fmt.Errorf("raft: %s: restoring its machine: %w", namespace, err)
 		}
-		g.snapIndex = snap.GetMetadata().GetIndex()
-		g.applied = g.snapIndex
+		applied = snap.GetMetadata().GetIndex()
 		g.conf = proto.Clone(snap.GetMetadata().GetConfState()).(*pb.ConfState)
 	} else if _, cs, err := log.InitialState(); err == nil && cs != nil {
 		g.conf = proto.Clone(cs).(*pb.ConfState)
@@ -157,7 +162,7 @@ func (e *engine) newGroup(namespace string, cfg groupConfig) (*group, error) {
 		ElectionTick:              electionTicks,
 		HeartbeatTick:             heartbeatTicks,
 		Storage:                   log,
-		Applied:                   g.applied,
+		Applied:                   applied,
 		MaxSizePerMsg:             1 << 20,
 		MaxInflightMsgs:           256,
 		CheckQuorum:               true,
@@ -175,7 +180,9 @@ func (e *engine) newGroup(namespace string, cfg groupConfig) (*group, error) {
 	hs, _, _ := log.InitialState()
 	g.term, g.commit = hs.GetTerm(), hs.GetCommit()
 	g.last, _ = log.LastIndex()
-	g.appliedCache = g.applied
+	g.appliedCache = applied
+	g.applier = newApplier(applied)
+	go g.runApplier()
 	return g, nil
 }
 
@@ -206,15 +213,12 @@ func (g *group) heard(d delivery) {
 	}
 }
 
-// apply hands the machine what committed, answers who waits, and caches what other
-// goroutines read.
+// apply hands the applier what committed, applies membership changes itself, and
+// caches what other goroutines read.
 func (g *group) apply(rd etcdraft.Ready) {
+	var item applyItem
 	if snap := rd.Snapshot; snap != nil && !etcdraft.IsEmptySnap(snap) {
-		if err := g.fsm.Restore(io.NopCloser(bytes.NewReader(snap.GetData()))); err != nil {
-			engineLogger.Errorf("[%s] %s: restoring a snapshot: %v", g.e.node.ID().ShortString(), g.namespace, err)
-		}
-		g.snapIndex = snap.GetMetadata().GetIndex()
-		g.applied = g.snapIndex
+		item.snap = snap
 		g.conf = proto.Clone(snap.GetMetadata().GetConfState()).(*pb.ConfState)
 		g.refreshMembers()
 	}
@@ -222,39 +226,29 @@ func (g *group) apply(rd etcdraft.Ready) {
 	for _, ent := range rd.CommittedEntries {
 		switch ent.GetType() {
 		case pb.EntryType_EntryNormal:
-			if len(ent.GetData()) == 0 {
+			if len(ent.GetData()) > 0 {
+				item.entries = append(item.entries, ent)
+			}
+		case pb.EntryType_EntryConfChange, pb.EntryType_EntryConfChangeV2:
+			cc, id, err := confChangeOf(ent)
+			if err != nil {
 				break
 			}
-			p := &raftv2.Proposal{}
-			if err := proto.Unmarshal(ent.GetData(), p); err != nil {
-				break
-			}
-			resp, _ := g.fsm.Apply(&hraft.Log{Index: ent.GetIndex(), Term: ent.GetTerm(), Type: hraft.LogCommand, Data: p.GetCommand()}).(FSMResponse)
-			g.resolve(p.GetId(), resp)
-		case pb.EntryType_EntryConfChange:
-			cc := &pb.ConfChange{}
-			if err := proto.Unmarshal(ent.GetData(), cc); err != nil {
-				break
-			}
-			if len(cc.GetContext()) > 0 {
-				if p, err := peer.IDFromBytes(cc.GetContext()); err == nil {
+			if ctx := cc.AsV2().GetContext(); len(ctx) > 0 {
+				if p, err := peer.IDFromBytes(ctx); err == nil {
 					g.e.book.learn(p)
 				}
 			}
 			g.conf = g.rn.ApplyConfChange(cc)
-			g.confChanged = true
+			item.confChanged = true
 			g.refreshMembers()
-			g.resolve(cc.GetId(), FSMResponse{})
-		case pb.EntryType_EntryConfChangeV2:
-			cc := &pb.ConfChangeV2{}
-			if err := proto.Unmarshal(ent.GetData(), cc); err != nil {
-				break
-			}
-			g.conf = g.rn.ApplyConfChange(cc)
-			g.confChanged = true
-			g.refreshMembers()
+			g.resolve(id, FSMResponse{})
 		}
-		g.applied = ent.GetIndex()
+		item.last = ent.GetIndex()
+	}
+	if item.snap != nil || item.last > 0 {
+		item.conf = proto.Clone(g.conf).(*pb.ConfState)
+		g.applier.enqueue(item)
 	}
 
 	g.mu.Lock()
@@ -275,16 +269,6 @@ func (g *group) apply(rd etcdraft.Ready) {
 		g.term, g.commit = hs.GetTerm(), hs.GetCommit()
 	}
 	g.last, _ = g.log.LastIndex()
-	g.appliedCache = g.applied
-	kept := g.waits[:0]
-	for _, w := range g.waits {
-		if w.index <= g.applied {
-			close(w.done)
-		} else {
-			kept = append(kept, w)
-		}
-	}
-	g.waits = kept
 	observers := slices.Clone(g.observers)
 	lead := g.lead
 	g.mu.Unlock()
@@ -337,28 +321,86 @@ func (g *group) refreshMembers() {
 	g.mu.Unlock()
 }
 
-// compact snapshots the machine once enough has applied since the last snapshot,
-// and after a membership change once the log has been compacted: a member joining
-// has to be sent a snapshot that names it, or it refuses it.
-func (g *group) compact() {
-	due := g.snapshotEvery > 0 && g.applied >= g.snapIndex+g.snapshotEvery
-	if g.confChanged && g.snapIndex > 0 && g.applied > g.snapIndex {
-		due = true
+// confChangeOf is the membership change ent carries, and the id of the change
+// asked for, which only a change of this group's own making has.
+func confChangeOf(ent *pb.Entry) (pb.ConfChangeI, uint64, error) {
+	if ent.GetType() == pb.EntryType_EntryConfChangeV2 {
+		cc := &pb.ConfChangeV2{}
+		return cc, 0, proto.Unmarshal(ent.GetData(), cc)
 	}
-	if !due {
-		return
+	cc := &pb.ConfChange{}
+	if err := proto.Unmarshal(ent.GetData(), cc); err != nil {
+		return nil, 0, err
 	}
-	data, err := g.fsm.state()
+	return cc, cc.GetId(), nil
+}
+
+// snapshotAt keeps the machine as the applier has applied it, naming conf, and
+// compacts the log behind it. It runs on the applier, between applies.
+func (g *group) snapshotAt(conf *pb.ConfState) error {
+	a := g.applier
+	if a.applied <= a.snapIndex {
+		return nil
+	}
+	data, err := g.fsm.Snapshot()
 	if err != nil {
-		engineLogger.Errorf("[%s] %s: reading its machine for a snapshot: %v", g.e.node.ID().ShortString(), g.namespace, err)
+		return fmt.Errorf("reading its machine for a snapshot: %w", err)
+	}
+	if err := g.log.compact(g.e.ctx, a.applied, conf, data, g.trailing); err != nil {
+		return fmt.Errorf("compacting its log: %w", err)
+	}
+	a.snapIndex = a.applied
+	a.confChanged = false
+	return nil
+}
+
+// Snapshot keeps the machine as it has applied now, whatever the threshold says.
+func (g *group) Snapshot() error {
+	a := snapshotAsk{g: g, reply: make(chan error, 1)}
+	if err := g.e.do(a); err != nil {
+		return err
+	}
+	return <-a.reply
+}
+
+type snapshotAsk struct {
+	g     *group
+	reply chan error
+}
+
+func (a snapshotAsk) run(*engine) {
+	a.g.applier.enqueue(applyItem{snapshot: a.reply, conf: proto.Clone(a.g.conf).(*pb.ConfState)})
+}
+
+// maxRetry is the longest a stalled group waits between tries.
+const maxRetry = time.Second
+
+// written records how writing rd went: a refused pass stalls the group, and a
+// write that lands clears the stall and answers who waited for it.
+func (g *group) written(rd etcdraft.Ready, err error) {
+	if err == nil {
+		if g.stalled != nil {
+			engineLogger.Infof("[%s] %s: its state is written again", g.e.node.ID().ShortString(), g.namespace)
+		}
+		g.stalled, g.backoff = nil, 0
+		g.answerDurable(nil)
 		return
 	}
-	if err := g.log.compact(g.e.ctx, g.applied, g.conf, data, g.trailing); err != nil {
-		engineLogger.Errorf("[%s] %s: compacting its log: %v", g.e.node.ID().ShortString(), g.namespace, err)
-		return
+	if g.stalled == nil {
+		engineLogger.Errorf("[%s] %s: writing its state: %v; it stalls until a write lands", g.e.node.ID().ShortString(), g.namespace, err)
+		g.answerDurable(fmt.Errorf("raft: %s: writing its state: %w", g.namespace, err))
 	}
-	g.snapIndex = g.applied
-	g.confChanged = false
+	g.stalled = &rd
+	g.backoff = min(max(2*g.backoff, engineResolution), maxRetry)
+	g.retryAt = time.Now().Add(g.backoff)
+}
+
+// answerDurable tells who waited for this pass to be written how it went.
+func (g *group) answerDurable(err error) {
+	for _, ch := range g.durable {
+		ch <- err
+	}
+	g.durable = nil
 }
 
 // shut fails everything waiting on the group.
@@ -552,6 +594,7 @@ func (g *group) Barrier(timeout time.Duration) error {
 
 	ctx := make([]byte, 8)
 	binary.BigEndian.PutUint64(ctx, id)
+	led := g.State() == Leader
 	if err := g.e.do(readAsk{g: g, ctx: ctx}); err != nil {
 		return err
 	}
@@ -566,7 +609,11 @@ func (g *group) Barrier(timeout time.Duration) error {
 		}
 		index = i
 	case <-timer.C:
-		if _, ok := g.Leader(); !ok {
+		switch _, known := g.Leader(); {
+		case led && g.State() != Leader:
+			// Raft drops the read of a leader that steps down.
+			return ErrLeadershipLost
+		case !known:
 			return ErrNoLeader
 		}
 		return ErrApplyTimeout
@@ -647,7 +694,8 @@ func (a bootstrapAsk) run(e *engine) {
 			return
 		}
 	}
-	a.reply <- nil
+	// ANSWERED ONCE WRITTEN: a bootstrap the store refuses is refused to its caller.
+	a.g.durable = append(a.g.durable, a.reply)
 }
 
 // TransferLeadership hands leadership to to, or to whichever voter is most caught
@@ -708,13 +756,15 @@ func (g *group) Observe(o groupObserver) {
 	g.mu.Unlock()
 }
 
-// Close stops the group on the engine; what it kept stays on disk.
+// Close stops the group on the engine, once what it is applying has applied; what
+// it kept stays on disk.
 func (g *group) Close() error {
 	a := closeAsk{g: g, done: make(chan struct{})}
-	if err := g.e.do(a); err != nil {
-		return nil
+	if err := g.e.do(a); err == nil {
+		<-a.done
 	}
-	<-a.done
+	<-g.applier.done
+	g.shut(ErrShutdown)
 	return nil
 }
 
@@ -727,7 +777,8 @@ func (a closeAsk) run(e *engine) {
 	if e.groups[a.g.namespace] == a.g {
 		delete(e.groups, a.g.namespace)
 	}
-	a.g.shut(ErrShutdown)
+	a.g.answerDurable(ErrShutdown)
+	a.g.applier.stop()
 	close(a.done)
 }
 
@@ -743,9 +794,9 @@ func (g *group) State() State {
 // Leader is the member raft last heard lead, and whether there is one.
 func (g *group) Leader() (peer.ID, bool) {
 	g.mu.Lock()
-	lead := g.lead
+	lead, shut := g.lead, g.err != nil
 	g.mu.Unlock()
-	if lead == 0 {
+	if lead == 0 || shut {
 		return "", false
 	}
 	return g.e.book.peer(lead)
@@ -761,6 +812,13 @@ func (g *group) CommitIndex() uint64 {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.commit
+}
+
+// AppliedIndex is how far the machine has applied.
+func (g *group) AppliedIndex() uint64 {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.appliedCache
 }
 
 func (g *group) LastIndex() uint64 {

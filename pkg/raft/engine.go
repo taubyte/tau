@@ -5,10 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
+	ds "github.com/ipfs/go-datastore"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/peer"
 	etcdraft "go.etcd.io/raft/v3"
@@ -59,21 +59,22 @@ var (
 	ErrGroupOpen = errors.New("this node already runs a group for the namespace")
 )
 
-// engines is every running engine, one per node, so a node's groups share one. A
-// node is how a caller names its engine; the entry goes when its last group closes.
+// engines is every running engine, one per host, so a node's groups share one and
+// the host's engine stream has one reader. The entry goes when its last group
+// closes.
 var engines = struct {
 	sync.Mutex
-	on map[taupeer.Node]*engine
-}{on: map[taupeer.Node]*engine{}}
+	on map[peer.ID]*engine
+}{on: map[peer.ID]*engine{}}
 
 // engineFor is node's engine, started on first use, and holds it until release.
 func engineFor(node taupeer.Node) *engine {
 	engines.Lock()
 	defer engines.Unlock()
-	e, ok := engines.on[node]
+	e, ok := engines.on[node.ID()]
 	if !ok {
 		e = newEngine(node)
-		engines.on[node] = e
+		engines.on[node.ID()] = e
 	}
 	e.refs++
 	return e
@@ -85,7 +86,7 @@ func (e *engine) release() {
 	e.refs--
 	last := e.refs == 0
 	if last {
-		delete(engines.on, e.node)
+		delete(engines.on, e.node.ID())
 	}
 	engines.Unlock()
 	if last {
@@ -105,17 +106,21 @@ type engine struct {
 	asks  chan ask
 	done  chan struct{}
 
-	// groups is the loop's own.
-	groups map[string]*group
+	// groups is the loop's own; stopping is what it stopped on its way out, whose
+	// appliers stop waits for.
+	groups   map[string]*group
+	stopping []*group
 
 	// refs is under engines' lock.
 	refs int
 }
 
-// delivery is one message a peer sent a group.
+// delivery is one message a peer sent a group, as it arrived: the group opens and
+// reads it, being the one that holds the key.
 type delivery struct {
 	from  peer.ID
 	group string
+	raw   []byte
 	msg   *pb.Message
 }
 
@@ -145,6 +150,9 @@ func newEngine(node taupeer.Node) *engine {
 func (e *engine) stop() {
 	e.cancel()
 	<-e.done
+	for _, g := range e.stopping {
+		<-g.applier.done
+	}
 	e.wire.close()
 }
 
@@ -166,7 +174,10 @@ func (e *engine) loop() {
 		select {
 		case <-e.ctx.Done():
 			for _, g := range e.groups {
+				g.answerDurable(ErrShutdown)
+				g.applier.stop()
 				g.shut(ErrShutdown)
+				e.stopping = append(e.stopping, g)
 			}
 			e.groups = nil
 			return
@@ -201,6 +212,19 @@ func (e *engine) deliver(d delivery) {
 	if !ok {
 		return
 	}
+	raw := d.raw
+	if g.cipher != nil {
+		plain, err := unseal(g.cipher, raw)
+		if err != nil {
+			engineLogger.Debugf("[%s] %s: a message from %s that does not open: %v", e.node.ID().ShortString(), d.group, d.from.ShortString(), err)
+			return
+		}
+		raw = plain
+	}
+	d.msg = &pb.Message{}
+	if err := proto.Unmarshal(raw, d.msg); err != nil {
+		return
+	}
 	g.heard(d)
 	if err := g.rn.Step(d.msg); err != nil && !errors.Is(err, etcdraft.ErrStepPeerNotFound) && !errors.Is(err, etcdraft.ErrStepLocalMsg) {
 		engineLogger.Debugf("[%s] %s: step %s from %s: %v", e.node.ID().ShortString(), d.group, d.msg.GetType(), d.from.ShortString(), err)
@@ -216,10 +240,21 @@ type readied struct {
 // cycle writes, sends, applies and advances what every group has ready. Nothing is
 // sent before it is written: a vote or an acknowledgement a crash could take back
 // is a broken promise.
+//
+// A WRITE THE STORE REFUSES IS MADE AGAIN, not given up on: the group keeps what it
+// could not write and stalls, sending and applying nothing, until a retry lands. A
+// disk that comes back brings the group back with it, with nobody to restart it.
 func (e *engine) cycle() {
+	now := time.Now()
 	var out []readied
 	for _, g := range e.groups {
-		if g.rn.HasReady() {
+		switch {
+		case g.stalled != nil:
+			if now.Before(g.retryAt) {
+				continue
+			}
+			out = append(out, readied{g, *g.stalled})
+		case g.rn.HasReady():
 			out = append(out, readied{g, g.rn.Ready()})
 		}
 	}
@@ -227,19 +262,10 @@ func (e *engine) cycle() {
 		return
 	}
 
-	if err := e.persist(out); err != nil {
-		// What raft handed over cannot be handed back: a group whose state did not
-		// reach disk stops rather than run on promises it did not keep.
-		engineLogger.Errorf("[%s] writing raft state: %v", e.node.ID().ShortString(), err)
-		for _, r := range out {
-			r.g.shut(fmt.Errorf("raft: %s: writing its state: %w", r.g.namespace, err))
-			delete(e.groups, r.g.namespace)
-		}
-		return
-	}
+	written := e.persist(out)
 
 	frames := map[peer.ID]*raftv2.Frame{}
-	for _, r := range out {
+	for _, r := range written {
 		for _, m := range r.rd.Messages {
 			to, ok := e.book.peer(m.GetTo())
 			if !ok {
@@ -249,6 +275,11 @@ func (e *engine) cycle() {
 			raw, err := proto.Marshal(m)
 			if err != nil {
 				continue
+			}
+			if r.g.cipher != nil {
+				if raw, err = seal(r.g.cipher, raw); err != nil {
+					continue
+				}
 			}
 			f, ok := frames[to]
 			if !ok {
@@ -266,36 +297,69 @@ func (e *engine) cycle() {
 		e.wire.send(to, f)
 	}
 
-	for _, r := range out {
+	for _, r := range written {
 		r.g.apply(r.rd)
 		r.g.rn.Advance(r.rd)
-		r.g.compact()
 	}
 }
 
-func (e *engine) persist(out []readied) error {
-	b, err := e.node.Store().Batch(e.ctx)
-	if err != nil {
-		return err
+// persist writes every group's pass in one batch, and on a refusal each group's in
+// a batch of its own, so one group the store refuses holds up no other. It answers
+// the passes that were written; the rest stall and are tried again.
+func (e *engine) persist(out []readied) []readied {
+	if err := e.write(out); err == nil {
+		for _, r := range out {
+			r.g.written(r.rd, nil)
+		}
+		return out
 	}
+	var written []readied
 	for _, r := range out {
+		err := e.write([]readied{r})
+		r.g.written(r.rd, err)
+		if err == nil {
+			written = append(written, r)
+		}
+	}
+	return written
+}
+
+// write commits out in one batch per store: a node keeps one, so in practice one
+// batch, but a group is written where its own log lives.
+func (e *engine) write(out []readied) error {
+	batches := map[ds.Batching]ds.Batch{}
+	for _, r := range out {
+		b, ok := batches[r.g.log.store]
+		if !ok {
+			var err error
+			if b, err = r.g.log.store.Batch(e.ctx); err != nil {
+				return err
+			}
+			batches[r.g.log.store] = b
+		}
 		if err := r.g.log.save(e.ctx, b, r.rd.Snapshot, r.rd.HardState, r.rd.Entries); err != nil {
 			return err
 		}
 	}
-	return b.Commit(e.ctx)
+	for _, b := range batches {
+		if err := b.Commit(e.ctx); err != nil {
+			return err
+		}
+	}
+	for _, r := range out {
+		if err := r.g.log.kept(r.rd.Snapshot, r.rd.HardState, r.rd.Entries); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // received is the wire handing over what a peer sent.
 func (e *engine) received(from peer.ID, frame *raftv2.Frame) {
 	e.book.learn(from)
 	for _, env := range frame.GetEnvelopes() {
-		m := &pb.Message{}
-		if err := proto.Unmarshal(env.GetMessage(), m); err != nil {
-			continue
-		}
 		select {
-		case e.inbox <- delivery{from: from, group: env.GetGroup(), msg: m}:
+		case e.inbox <- delivery{from: from, group: env.GetGroup(), raw: env.GetMessage()}:
 		case <-e.ctx.Done():
 			return
 		}

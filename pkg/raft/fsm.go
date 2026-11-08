@@ -1,17 +1,14 @@
 package raft
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"io"
 	"path"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/hashicorp/raft"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
 )
@@ -86,10 +83,10 @@ func (f *kvFSM) dataKey(key string) ds.Key {
 	return ds.NewKey(f.prefix + "/data/" + key)
 }
 
-func (f *kvFSM) Apply(log *raft.Log) interface{} {
-	defer f.applied.Store(log.Index)
+func (f *kvFSM) Apply(index uint64, command []byte) FSMResponse {
+	defer f.applied.Store(index)
 
-	cmd, err := decodeCommand(log.Data)
+	cmd, err := decodeCommand(command)
 	if err != nil {
 		return FSMResponse{Error: ErrInvalidCommand}
 	}
@@ -273,27 +270,8 @@ func (f *kvFSM) getEntry(ctx context.Context, key string) (CRDTEntry, error) {
 	return decodeFSMEntry(raw)
 }
 
-func (f *kvFSM) Snapshot() (raft.FSMSnapshot, error) {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-
-	data, err := f.exportStateLocked()
-	if err != nil {
-		return nil, err
-	}
-
-	return &kvSnapshot{data: data, clock: f.clock}, nil
-}
-
-func (f *kvFSM) Restore(snapshot io.ReadCloser) error {
-	defer snapshot.Close()
-
-	raw, err := io.ReadAll(snapshot)
-	if err != nil {
-		return err
-	}
-
-	entries, clock, err := decodeSnapshot(raw)
+func (f *kvFSM) Restore(snapshot []byte) error {
+	entries, clock, err := decodeSnapshot(snapshot)
 	if err != nil {
 		return err
 	}
@@ -432,8 +410,8 @@ func (f *kvFSM) exportStateLocked() (map[string]CRDTEntry, error) {
 	return data, nil
 }
 
-// state is the whole machine as a snapshot carries it.
-func (f *kvFSM) state() ([]byte, error) {
+// Snapshot is the whole machine as a snapshot carries it.
+func (f *kvFSM) Snapshot() ([]byte, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	data, err := f.exportStateLocked()
@@ -442,28 +420,6 @@ func (f *kvFSM) state() ([]byte, error) {
 	}
 	return encodeSnapshot(data, f.clock)
 }
-
-type kvSnapshot struct {
-	data  map[string]CRDTEntry
-	clock uint64
-}
-
-func (s *kvSnapshot) Persist(sink raft.SnapshotSink) error {
-	data, err := encodeSnapshot(s.data, s.clock)
-	if err != nil {
-		sink.Cancel()
-		return err
-	}
-
-	if _, err := io.Copy(sink, bytes.NewReader(data)); err != nil {
-		sink.Cancel()
-		return err
-	}
-
-	return sink.Close()
-}
-
-func (s *kvSnapshot) Release() {}
 
 func encodeSetCommand(key string, value []byte) ([]byte, error) { return encodeSet(key, value) }
 

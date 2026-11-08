@@ -264,7 +264,7 @@ func TestDiscovery_AGroupOnlyDiscoveryFindsIsJoined(t *testing.T) {
 	require.NoError(t, taupeer.LinkAllPeers())
 
 	b, err := New(discoveryNode{Node: nodeB, discovery: meeting.pointOf(nodeB.Host())}, namespace,
-		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	t.Cleanup(func() { b.Close() })
 	waitLeader(t, b, 5*time.Second)
@@ -275,7 +275,7 @@ func TestDiscovery_AGroupOnlyDiscoveryFindsIsJoined(t *testing.T) {
 	require.NotContains(t, nodeA.Host().Network().Peers(), nodeB.ID())
 
 	a, err := New(discoveryNode{Node: nodeA, discovery: meeting.pointOf(nodeA.Host())}, namespace,
-		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second), WithSnapshotRoot(t.TempDir()))
+		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second))
 	require.NoError(t, err)
 	t.Cleanup(func() { a.Close() })
 
@@ -327,7 +327,7 @@ func TestDiscovery_ASearchSlowerThanATickFindsTheGroup(t *testing.T) {
 	require.NoError(t, taupeer.LinkAllPeers())
 
 	b, err := New(discoveryNode{Node: nodeB, discovery: meeting.pointOf(nodeB.Host())}, namespace,
-		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	t.Cleanup(func() { b.Close() })
 	waitLeader(t, b, 5*time.Second)
@@ -337,7 +337,7 @@ func TestDiscovery_ASearchSlowerThanATickFindsTheGroup(t *testing.T) {
 
 	slow := slowPoint{Discovery: meeting.pointOf(nodeA.Host()), delay: 300 * time.Millisecond}
 	a, err := New(discoveryNode{Node: nodeA, discovery: slow}, namespace,
-		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second), WithSnapshotRoot(t.TempDir()))
+		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second))
 	require.NoError(t, err)
 	t.Cleanup(func() { a.Close() })
 
@@ -371,14 +371,14 @@ func TestDiscovery_APeerConnectedBeforeItServedTheGroupIsFound(t *testing.T) {
 		leaderNode, joinerNode := pushless(t), pushless(t)
 		connectAllOf(t, leaderNode, joinerNode)
 
-		leader, err := New(leaderNode, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+		leader, err := New(leaderNode, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 		require.NoError(t, err)
 		t.Cleanup(func() { leader.Close() })
 		waitLeader(t, leader, 5*time.Second)
 		const timeout = 10 * time.Second
 		began := time.Now()
 		joiner, err := New(joinerNode, namespace,
-			WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(timeout), WithSnapshotRoot(t.TempDir()))
+			WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(timeout))
 		require.NoError(t, err)
 		t.Cleanup(func() { joiner.Close() })
 		require.Less(t, time.Since(began), timeout/2, "the joiner waited out its bootstrap timeout instead of joining")
@@ -398,10 +398,9 @@ func TestDiscovery_APeerConnectedBeforeItServedTheGroupIsFound(t *testing.T) {
 		opened := make(chan Cluster, len(nodes))
 		failed := make(chan error, len(nodes))
 		for _, node := range nodes {
-			root := t.TempDir()
 			go func() {
 				cl, err := New(node, namespace,
-					WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second), WithSnapshotRoot(root))
+					WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second))
 				if err != nil {
 					failed <- err
 					return
@@ -440,10 +439,9 @@ func TestDiscovery_AMemberTheGroupLetsInLooksForPeersAsAFounderDoes(t *testing.T
 	opened := make(chan *cluster, len(nodes))
 	failed := make(chan error, len(nodes))
 	for i, node := range nodes {
-		root := t.TempDir()
 		go func() {
 			cl, err := New(node, namespace,
-				WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(bootstrap[i]), WithSnapshotRoot(root))
+				WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(bootstrap[i]))
 			if err != nil {
 				failed <- err
 				return

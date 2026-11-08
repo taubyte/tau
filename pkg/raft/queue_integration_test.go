@@ -11,13 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hashicorp/raft"
 	"gotest.tools/v3/assert"
 )
 
 // throughLeader is a group as one client writing through whichever member
 // leads. A batch refused with ErrNotLeader is made again on the next leader;
-// one lost mid-commit (raft.ErrLeadershipLost) may still commit, so it is
+// one lost mid-commit (ErrLeadershipLost) may still commit, so it is
 // settled behind a barrier by whether its writes are all present, since a pop
 // is not safe to make twice. A read goes to the member that last applied this
 // client's batch or barrier.
@@ -94,7 +93,7 @@ func (g *throughLeader) Batch(ops []BatchOp, timeout time.Duration) error {
 		case err == nil:
 			g.readFrom(leader)
 			return nil
-		case errors.Is(err, raft.ErrLeadershipLost):
+		case errors.Is(err, ErrLeadershipLost):
 			if err := g.Barrier(timeout); err != nil {
 				return err
 			}

@@ -5,8 +5,8 @@
 // source: tau/raft/v2/raft.proto
 
 // raft is how the members of one pkg/raft group reach each other and how an
-// outside client reaches a group, beside the consensus transport itself (which
-// is hashicorp/raft's own wire over a separate stream).
+// outside client reaches a group, beside the consensus messages themselves, which
+// a node's engine streams for all its groups (engine.proto).
 //
 // ONE LISTENER PER GROUP. A host can be a member of many groups, each a
 // namespace, and each answers on the package's protocol id with its namespace

@@ -44,10 +44,6 @@ func Protocol(namespace string) string {
 	return path.Join(ProtocolRaftPrefix, namespace)
 }
 
-func TransportProtocol(namespace string) string {
-	return path.Join(ProtocolRaftPrefix, namespace, "transport")
-}
-
 // codecOption is the group's codec: tau's own, sealed under the group's key when
 // it has one.
 func codecOption(gcm cipher.AEAD) connect.Option {
@@ -298,9 +294,8 @@ func (s *raftStreamService) ClusterInfo(ctx context.Context, req *connect.Reques
 		leaderID = leader.String()
 	}
 
-	stats := m.raft.Stats()
-	term := parseUint64(stats["term"])
-	lastIdx := parseUint64(stats["last_log_index"])
+	term := m.raft.Term()
+	lastIdx := m.raft.LastIndex()
 
 	memberCount := 0
 	if members, err := m.members(); err == nil {
@@ -365,15 +360,4 @@ func (s *raftStreamService) HealAck(ctx context.Context, req *connect.Request[ra
 	}
 
 	return connect.NewResponse(&raftv2.HealAckResponse{}), nil
-}
-
-func parseUint64(s string) uint64 {
-	var n uint64
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			break
-		}
-		n = n*10 + uint64(c-'0')
-	}
-	return n
 }

@@ -4,8 +4,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"fmt"
-	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -36,33 +34,7 @@ func WithBootstrapTimeout(d time.Duration) Option {
 	}
 }
 
-// WithSnapshotDir sets the snapshot directory (default: a folder of the
-// node's own, raft/<namespace>).
-func WithSnapshotDir(dir string) Option {
-	return func(c *cluster) error {
-		if dir == "" {
-			return fmt.Errorf("snapshot dir cannot be empty")
-		}
-		c.snapshotDir = dir
-		return nil
-	}
-}
-
-// WithSnapshotRoot puts snapshots under root/<namespace>, a directory the
-// caller owns. Without it they go in a folder of the node's own, so two nodes
-// never share one. The namespace still names the subdirectory because one node
-// runs many groups.
-func WithSnapshotRoot(root string) Option {
-	return func(c *cluster) error {
-		if root == "" {
-			return fmt.Errorf("snapshot root cannot be empty")
-		}
-		c.snapshotDir = filepath.Join(root, strings.ReplaceAll(c.namespace, "/", "_"))
-		return nil
-	}
-}
-
-// WithEncryptionKey seals the raft transport and every call with AES-256-GCM.
+// WithEncryptionKey seals the group's raft messages and every call with AES-256-GCM.
 // The key is 32 bytes, the same on every member.
 func WithEncryptionKey(key []byte) Option {
 	return func(c *cluster) error {

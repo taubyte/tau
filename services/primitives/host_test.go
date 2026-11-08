@@ -153,7 +153,7 @@ type groupsOn struct {
 }
 
 func (g groupsOn) Group(namespace string) (raft.Cluster, error) {
-	return raft.New(g.node, namespace, quickRaft.Options(g.root)...)
+	return raft.New(g.node, namespace, quickRaft.Options()...)
 }
 
 // quickRaft is raft timed for one process.

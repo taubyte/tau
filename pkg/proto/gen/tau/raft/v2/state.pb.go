@@ -5,9 +5,8 @@
 // source: tau/raft/v2/state.proto
 
 // state is what one raft group writes for itself: the commands its log carries,
-// the entries its state machine holds, a snapshot of them, and the records its log
-// and snapshot stores keep. None of it is an RPC; raft.proto carries Entry for
-// ExportFSM.
+// the entries its state machine holds, and a snapshot of them. None of it is an
+// RPC; raft.proto carries Entry for ExportFSM.
 
 package raftv2
 
@@ -531,246 +530,6 @@ func (x *Snapshot) GetClock() uint64 {
 	return 0
 }
 
-// LogEntry is one hashicorp/raft log, as the log store keeps it. appended_at is
-// unix nanoseconds, 0 for none.
-type LogEntry struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Index         uint64                 `protobuf:"varint,1,opt,name=index,proto3" json:"index,omitempty"`
-	Term          uint64                 `protobuf:"varint,2,opt,name=term,proto3" json:"term,omitempty"`
-	Type          uint32                 `protobuf:"varint,3,opt,name=type,proto3" json:"type,omitempty"`
-	Data          []byte                 `protobuf:"bytes,4,opt,name=data,proto3" json:"data,omitempty"`
-	Extensions    []byte                 `protobuf:"bytes,5,opt,name=extensions,proto3" json:"extensions,omitempty"`
-	AppendedAt    int64                  `protobuf:"varint,6,opt,name=appended_at,json=appendedAt,proto3" json:"appended_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *LogEntry) Reset() {
-	*x = LogEntry{}
-	mi := &file_tau_raft_v2_state_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *LogEntry) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*LogEntry) ProtoMessage() {}
-
-func (x *LogEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_raft_v2_state_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use LogEntry.ProtoReflect.Descriptor instead.
-func (*LogEntry) Descriptor() ([]byte, []int) {
-	return file_tau_raft_v2_state_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *LogEntry) GetIndex() uint64 {
-	if x != nil {
-		return x.Index
-	}
-	return 0
-}
-
-func (x *LogEntry) GetTerm() uint64 {
-	if x != nil {
-		return x.Term
-	}
-	return 0
-}
-
-func (x *LogEntry) GetType() uint32 {
-	if x != nil {
-		return x.Type
-	}
-	return 0
-}
-
-func (x *LogEntry) GetData() []byte {
-	if x != nil {
-		return x.Data
-	}
-	return nil
-}
-
-func (x *LogEntry) GetExtensions() []byte {
-	if x != nil {
-		return x.Extensions
-	}
-	return nil
-}
-
-func (x *LogEntry) GetAppendedAt() int64 {
-	if x != nil {
-		return x.AppendedAt
-	}
-	return 0
-}
-
-// SnapshotMeta describes one snapshot on disk.
-type SnapshotMeta struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Index              uint64                 `protobuf:"varint,2,opt,name=index,proto3" json:"index,omitempty"`
-	Term               uint64                 `protobuf:"varint,3,opt,name=term,proto3" json:"term,omitempty"`
-	Servers            []*Server              `protobuf:"bytes,4,rep,name=servers,proto3" json:"servers,omitempty"`
-	ConfigurationIndex uint64                 `protobuf:"varint,5,opt,name=configuration_index,json=configurationIndex,proto3" json:"configuration_index,omitempty"`
-	Size               int64                  `protobuf:"varint,6,opt,name=size,proto3" json:"size,omitempty"`
-	Version            int32                  `protobuf:"varint,7,opt,name=version,proto3" json:"version,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
-}
-
-func (x *SnapshotMeta) Reset() {
-	*x = SnapshotMeta{}
-	mi := &file_tau_raft_v2_state_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SnapshotMeta) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SnapshotMeta) ProtoMessage() {}
-
-func (x *SnapshotMeta) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_raft_v2_state_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SnapshotMeta.ProtoReflect.Descriptor instead.
-func (*SnapshotMeta) Descriptor() ([]byte, []int) {
-	return file_tau_raft_v2_state_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *SnapshotMeta) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *SnapshotMeta) GetIndex() uint64 {
-	if x != nil {
-		return x.Index
-	}
-	return 0
-}
-
-func (x *SnapshotMeta) GetTerm() uint64 {
-	if x != nil {
-		return x.Term
-	}
-	return 0
-}
-
-func (x *SnapshotMeta) GetServers() []*Server {
-	if x != nil {
-		return x.Servers
-	}
-	return nil
-}
-
-func (x *SnapshotMeta) GetConfigurationIndex() uint64 {
-	if x != nil {
-		return x.ConfigurationIndex
-	}
-	return 0
-}
-
-func (x *SnapshotMeta) GetSize() int64 {
-	if x != nil {
-		return x.Size
-	}
-	return 0
-}
-
-func (x *SnapshotMeta) GetVersion() int32 {
-	if x != nil {
-		return x.Version
-	}
-	return 0
-}
-
-// Server is one member of the configuration a snapshot was taken under.
-type Server struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Suffrage      int32                  `protobuf:"varint,1,opt,name=suffrage,proto3" json:"suffrage,omitempty"`
-	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
-	Address       string                 `protobuf:"bytes,3,opt,name=address,proto3" json:"address,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *Server) Reset() {
-	*x = Server{}
-	mi := &file_tau_raft_v2_state_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Server) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Server) ProtoMessage() {}
-
-func (x *Server) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_raft_v2_state_proto_msgTypes[10]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Server.ProtoReflect.Descriptor instead.
-func (*Server) Descriptor() ([]byte, []int) {
-	return file_tau_raft_v2_state_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *Server) GetSuffrage() int32 {
-	if x != nil {
-		return x.Suffrage
-	}
-	return 0
-}
-
-func (x *Server) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *Server) GetAddress() string {
-	if x != nil {
-		return x.Address
-	}
-	return ""
-}
-
 var File_tau_raft_v2_state_proto protoreflect.FileDescriptor
 
 const file_tau_raft_v2_state_proto_rawDesc = "" +
@@ -810,29 +569,7 @@ const file_tau_raft_v2_state_proto_rawDesc = "" +
 	"\x05clock\x18\x02 \x01(\x04R\x05clock\x1aN\n" +
 	"\fEntriesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12(\n" +
-	"\x05value\x18\x02 \x01(\v2\x12.tau.raft.v2.EntryR\x05value:\x028\x01\"\x9d\x01\n" +
-	"\bLogEntry\x12\x14\n" +
-	"\x05index\x18\x01 \x01(\x04R\x05index\x12\x12\n" +
-	"\x04term\x18\x02 \x01(\x04R\x04term\x12\x12\n" +
-	"\x04type\x18\x03 \x01(\rR\x04type\x12\x12\n" +
-	"\x04data\x18\x04 \x01(\fR\x04data\x12\x1e\n" +
-	"\n" +
-	"extensions\x18\x05 \x01(\fR\n" +
-	"extensions\x12\x1f\n" +
-	"\vappended_at\x18\x06 \x01(\x03R\n" +
-	"appendedAt\"\xd6\x01\n" +
-	"\fSnapshotMeta\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
-	"\x05index\x18\x02 \x01(\x04R\x05index\x12\x12\n" +
-	"\x04term\x18\x03 \x01(\x04R\x04term\x12-\n" +
-	"\aservers\x18\x04 \x03(\v2\x13.tau.raft.v2.ServerR\aservers\x12/\n" +
-	"\x13configuration_index\x18\x05 \x01(\x04R\x12configurationIndex\x12\x12\n" +
-	"\x04size\x18\x06 \x01(\x03R\x04size\x12\x18\n" +
-	"\aversion\x18\a \x01(\x05R\aversion\"N\n" +
-	"\x06Server\x12\x1a\n" +
-	"\bsuffrage\x18\x01 \x01(\x05R\bsuffrage\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\x12\x18\n" +
-	"\aaddress\x18\x03 \x01(\tR\aaddressB\xa4\x01\n" +
+	"\x05value\x18\x02 \x01(\v2\x12.tau.raft.v2.EntryR\x05value:\x028\x01B\xa4\x01\n" +
 	"\x0fcom.tau.raft.v2B\n" +
 	"StateProtoP\x01Z7github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2;raftv2\xa2\x02\x03TRX\xaa\x02\vTau.Raft.V2\xca\x02\vTau\\Raft\\V2\xe2\x02\x17Tau\\Raft\\V2\\GPBMetadata\xea\x02\rTau::Raft::V2b\x06proto3"
 
@@ -848,21 +585,18 @@ func file_tau_raft_v2_state_proto_rawDescGZIP() []byte {
 	return file_tau_raft_v2_state_proto_rawDescData
 }
 
-var file_tau_raft_v2_state_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_tau_raft_v2_state_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_tau_raft_v2_state_proto_goTypes = []any{
-	(*Command)(nil),      // 0: tau.raft.v2.Command
-	(*Set)(nil),          // 1: tau.raft.v2.Set
-	(*Delete)(nil),       // 2: tau.raft.v2.Delete
-	(*Batch)(nil),        // 3: tau.raft.v2.Batch
-	(*Write)(nil),        // 4: tau.raft.v2.Write
-	(*Merge)(nil),        // 5: tau.raft.v2.Merge
-	(*Entry)(nil),        // 6: tau.raft.v2.Entry
-	(*Snapshot)(nil),     // 7: tau.raft.v2.Snapshot
-	(*LogEntry)(nil),     // 8: tau.raft.v2.LogEntry
-	(*SnapshotMeta)(nil), // 9: tau.raft.v2.SnapshotMeta
-	(*Server)(nil),       // 10: tau.raft.v2.Server
-	nil,                  // 11: tau.raft.v2.Merge.DeltaEntry
-	nil,                  // 12: tau.raft.v2.Snapshot.EntriesEntry
+	(*Command)(nil),  // 0: tau.raft.v2.Command
+	(*Set)(nil),      // 1: tau.raft.v2.Set
+	(*Delete)(nil),   // 2: tau.raft.v2.Delete
+	(*Batch)(nil),    // 3: tau.raft.v2.Batch
+	(*Write)(nil),    // 4: tau.raft.v2.Write
+	(*Merge)(nil),    // 5: tau.raft.v2.Merge
+	(*Entry)(nil),    // 6: tau.raft.v2.Entry
+	(*Snapshot)(nil), // 7: tau.raft.v2.Snapshot
+	nil,              // 8: tau.raft.v2.Merge.DeltaEntry
+	nil,              // 9: tau.raft.v2.Snapshot.EntriesEntry
 }
 var file_tau_raft_v2_state_proto_depIdxs = []int32{
 	1,  // 0: tau.raft.v2.Command.set:type_name -> tau.raft.v2.Set
@@ -872,16 +606,15 @@ var file_tau_raft_v2_state_proto_depIdxs = []int32{
 	4,  // 4: tau.raft.v2.Batch.writes:type_name -> tau.raft.v2.Write
 	1,  // 5: tau.raft.v2.Write.set:type_name -> tau.raft.v2.Set
 	2,  // 6: tau.raft.v2.Write.delete:type_name -> tau.raft.v2.Delete
-	11, // 7: tau.raft.v2.Merge.delta:type_name -> tau.raft.v2.Merge.DeltaEntry
-	12, // 8: tau.raft.v2.Snapshot.entries:type_name -> tau.raft.v2.Snapshot.EntriesEntry
-	10, // 9: tau.raft.v2.SnapshotMeta.servers:type_name -> tau.raft.v2.Server
-	6,  // 10: tau.raft.v2.Merge.DeltaEntry.value:type_name -> tau.raft.v2.Entry
-	6,  // 11: tau.raft.v2.Snapshot.EntriesEntry.value:type_name -> tau.raft.v2.Entry
-	12, // [12:12] is the sub-list for method output_type
-	12, // [12:12] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	8,  // 7: tau.raft.v2.Merge.delta:type_name -> tau.raft.v2.Merge.DeltaEntry
+	9,  // 8: tau.raft.v2.Snapshot.entries:type_name -> tau.raft.v2.Snapshot.EntriesEntry
+	6,  // 9: tau.raft.v2.Merge.DeltaEntry.value:type_name -> tau.raft.v2.Entry
+	6,  // 10: tau.raft.v2.Snapshot.EntriesEntry.value:type_name -> tau.raft.v2.Entry
+	11, // [11:11] is the sub-list for method output_type
+	11, // [11:11] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_tau_raft_v2_state_proto_init() }
@@ -905,7 +638,7 @@ func file_tau_raft_v2_state_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_raft_v2_state_proto_rawDesc), len(file_tau_raft_v2_state_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

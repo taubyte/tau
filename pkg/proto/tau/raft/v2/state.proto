@@ -1,9 +1,8 @@
 syntax = "proto3";
 
 // state is what one raft group writes for itself: the commands its log carries,
-// the entries its state machine holds, a snapshot of them, and the records its log
-// and snapshot stores keep. None of it is an RPC; raft.proto carries Entry for
-// ExportFSM.
+// the entries its state machine holds, and a snapshot of them. None of it is an
+// RPC; raft.proto carries Entry for ExportFSM.
 package tau.raft.v2;
 
 // Command is one write the log carries.
@@ -54,33 +53,4 @@ message Entry {
 message Snapshot {
   map<string, Entry> entries = 1;
   uint64 clock = 2;
-}
-
-// LogEntry is one hashicorp/raft log, as the log store keeps it. appended_at is
-// unix nanoseconds, 0 for none.
-message LogEntry {
-  uint64 index = 1;
-  uint64 term = 2;
-  uint32 type = 3;
-  bytes data = 4;
-  bytes extensions = 5;
-  int64 appended_at = 6;
-}
-
-// SnapshotMeta describes one snapshot on disk.
-message SnapshotMeta {
-  string id = 1;
-  uint64 index = 2;
-  uint64 term = 3;
-  repeated Server servers = 4;
-  uint64 configuration_index = 5;
-  int64 size = 6;
-  int32 version = 7;
-}
-
-// Server is one member of the configuration a snapshot was taken under.
-message Server {
-  int32 suffrage = 1;
-  string id = 2;
-  string address = 3;
 }

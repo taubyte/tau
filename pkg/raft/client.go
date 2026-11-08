@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/hashicorp/raft"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -146,7 +145,7 @@ func first[T any](ctx context.Context, c *client, peers []peer.ID, timeout time.
 // sentinel restores the remote errors callers branch on, so errors.Is works
 // across the wire.
 func sentinel(err error) error {
-	for _, s := range []error{ErrNoLeader, ErrInvalidBarrier, ErrNotLeader, raft.ErrLeadershipLost} {
+	for _, s := range []error{ErrNoLeader, ErrInvalidBarrier, ErrNotLeader, ErrLeadershipLost, ErrApplyTimeout} {
 		if strings.Contains(err.Error(), s.Error()) {
 			return fmt.Errorf("%w: %v", s, err)
 		}

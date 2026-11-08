@@ -94,7 +94,8 @@ func openEngineLog(ctx context.Context, store ds.Batching, prefix string) (*engi
 	return l, nil
 }
 
-// save writes what raft asked to keep from one Ready into b, and into memory.
+// save writes what raft asked to keep from one Ready into b. Memory follows only
+// once b commits (kept), so a write the store refused can be made again.
 func (l *engineLog) save(ctx context.Context, b ds.Batch, snap *pb.Snapshot, hs *pb.HardState, entries []*pb.Entry) error {
 	if snap != nil && !etcdraft.IsEmptySnap(snap) {
 		raw, err := proto.Marshal(snap)
@@ -104,11 +105,7 @@ func (l *engineLog) save(ctx context.Context, b ds.Batch, snap *pb.Snapshot, hs 
 		if err := b.Put(ctx, l.snapshotKey(), raw); err != nil {
 			return err
 		}
-		if err := l.ApplySnapshot(snap); err != nil {
-			return err
-		}
 	}
-
 	if len(entries) > 0 {
 		last := entries[len(entries)-1].GetIndex()
 		for _, e := range entries {
@@ -127,12 +124,7 @@ func (l *engineLog) save(ctx context.Context, b ds.Batch, snap *pb.Snapshot, hs 
 				return err
 			}
 		}
-		l.persisted = last
-		if err := l.Append(entries); err != nil {
-			return err
-		}
 	}
-
 	if hs != nil && !etcdraft.IsEmptyHardState(hs) {
 		raw, err := proto.Marshal(hs)
 		if err != nil {
@@ -141,6 +133,24 @@ func (l *engineLog) save(ctx context.Context, b ds.Batch, snap *pb.Snapshot, hs 
 		if err := b.Put(ctx, l.hardStateKey(), raw); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// kept brings memory to what a committed save wrote.
+func (l *engineLog) kept(snap *pb.Snapshot, hs *pb.HardState, entries []*pb.Entry) error {
+	if snap != nil && !etcdraft.IsEmptySnap(snap) {
+		if err := l.ApplySnapshot(snap); err != nil && !errors.Is(err, etcdraft.ErrSnapOutOfDate) {
+			return err
+		}
+	}
+	if len(entries) > 0 {
+		if err := l.Append(entries); err != nil {
+			return err
+		}
+		l.persisted = entries[len(entries)-1].GetIndex()
+	}
+	if hs != nil && !etcdraft.IsEmptyHardState(hs) {
 		if err := l.SetHardState(hs); err != nil {
 			return err
 		}
@@ -180,7 +190,9 @@ func (l *engineLog) compact(ctx context.Context, index uint64, cs *pb.ConfState,
 	if err != nil {
 		return err
 	}
-	for i := first; i < upto; i++ {
+	// THROUGH upto: memory keeps its term as the compacted log's base, and the disk
+	// keeps nothing at or before it, or each compaction would leave one behind.
+	for i := max(first-1, 1); i <= upto; i++ {
 		if err := b.Delete(ctx, l.entryKey(i)); err != nil {
 			return err
 		}

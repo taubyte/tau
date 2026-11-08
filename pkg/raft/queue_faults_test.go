@@ -17,7 +17,7 @@ func queueOnFaults(t *testing.T, name string) (Queue, Cluster, *faultStore, func
 	t.Helper()
 	store := newFaultStore()
 	cl, err := New(storeNode{Node: newMockNode(t), store: store}, queueFaultsNamespace,
-		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	t.Cleanup(func() { cl.Close() })
 	waitLeader(t, cl, 5*time.Second)

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/hashicorp/raft"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -36,7 +35,7 @@ func callerOf(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batching
 	require.NoError(t, taupeer.LinkAllPeers())
 
 	cl, err := New(storeNode{Node: member, store: wrap(member.Store())}, namespace,
-		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	t.Cleanup(func() { cl.Close() })
 	waitLeader(t, cl, 5*time.Second)
@@ -60,9 +59,9 @@ func TestClient_ClusterInfoIsTheMembersOwnView(t *testing.T) {
 	require.Equal(t, idOf(cl).String(), info.NodeID)
 	require.Equal(t, 1, info.MemberCount)
 
-	stats := cl.(*cluster).current().raft.Stats()
-	require.Equal(t, parseUint64(stats["term"]), info.Term)
-	require.GreaterOrEqual(t, parseUint64(stats["last_log_index"]), info.LastIndex)
+	g := cl.(*cluster).current().raft
+	require.Equal(t, g.Term(), info.Term)
+	require.GreaterOrEqual(t, g.LastIndex(), info.LastIndex)
 	require.NotZero(t, info.LastIndex, "the write above is in the log")
 }
 
@@ -352,8 +351,8 @@ func TestStream_AJoinAskedOfAFollowerBetweenLeadersWaitsForTheNext(t *testing.T)
 func TestStream_AJoinAskedOfAMemberLetInBeforeItsLogWaitsForTheLeader(t *testing.T) {
 	const (
 		namespace = "stream-join-before-log"
-		firstLog  = "/raft/" + namespace + "/log/00000000000000000001"
-		vote      = "/raft/" + namespace + "/stable/LastVoteTerm"
+		firstLog  = "/raft/" + namespace + "/engine/log/00000000000000000001"
+		vote      = "/raft/" + namespace + "/engine/hardstate"
 		budget    = 300 * time.Millisecond
 	)
 	caller := newMockNode(t)
@@ -367,7 +366,7 @@ func TestStream_AJoinAskedOfAMemberLetInBeforeItsLogWaitsForTheLeader(t *testing
 	founder := group[0].(*cluster).Host()
 	require.NoError(t, node.Host().Connect(t.Context(), peer.AddrInfo{ID: founder.ID(), Addrs: founder.Addrs()}))
 	late, err := New(storeNode{Node: node, store: store}, namespace,
-		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second), WithSnapshotRoot(t.TempDir()))
+		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second))
 	require.NoError(t, err)
 	t.Cleanup(func() { late.Close() })
 	require.Eventually(t, late.(*cluster).current().joined.Load, leaderWait, 10*time.Millisecond, "the group never let the late member in")
@@ -485,8 +484,7 @@ func TestStream_AJoinWhoseLeaderStopsLeadingIsAddedByTheNext(t *testing.T) {
 		return err == nil && len(members) == len(group)+1
 	}, leaderWait, 5*time.Millisecond, "the leader never took the voter's change")
 
-	id := idOf(next).String()
-	require.NoError(t, leader.(*cluster).current().raft.LeadershipTransferToServer(raft.ServerID(id), raft.ServerAddress(id)).Error())
+	require.NoError(t, leader.(*cluster).current().raft.TransferLeadership(idOf(next)))
 	for _, store := range stores {
 		store.failBatches(nil)
 	}

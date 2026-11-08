@@ -30,8 +30,6 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/h2non/filetype v1.1.3
 	github.com/h2non/gock v1.2.0
-	github.com/hashicorp/go-hclog v1.6.3
-	github.com/hashicorp/raft v1.7.3
 	github.com/ipfs/bbloom v0.1.0
 	github.com/ipfs/boxo v0.41.0
 	github.com/ipfs/go-cid v0.6.1

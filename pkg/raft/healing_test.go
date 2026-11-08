@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/hashicorp/raft"
 	ds "github.com/ipfs/go-datastore"
 	query "github.com/ipfs/go-datastore/query"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -220,7 +219,7 @@ func splitPair(t *testing.T, namespace string) (a, b Cluster) {
 	nodeB := newMockNode(t)
 
 	opts := func() []Option {
-		return []Option{WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second), WithSnapshotRoot(t.TempDir())}
+		return []Option{WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second)}
 	}
 	a, err := New(nodeA, namespace, opts()...)
 	require.NoError(t, err)
@@ -278,7 +277,7 @@ func TestHealing_AYieldWaitsForTheRaftItReplaces(t *testing.T) {
 	defer held.letGo()
 
 	c, err := New(storeNode{Node: node, store: held}, namespace,
-		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	defer c.Close()
 	waitLeader(t, c, 5*time.Second)
@@ -307,7 +306,7 @@ func TestHealing_AYieldWaitsForTheRaftItReplaces(t *testing.T) {
 
 func TestHealing_AJoinEndsWithTheMemberAYieldTakesDown(t *testing.T) {
 	c, err := New(newMockNode(t), "yield-ends-join",
-		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	defer c.Close()
 	waitLeader(t, c, 5*time.Second)
@@ -328,7 +327,7 @@ func TestHealing_AJoinEndsWithTheMemberAYieldTakesDown(t *testing.T) {
 func TestHealing_AYieldRebuildsTheMemberItsReadersRead(t *testing.T) {
 	const namespace = "yield-under-readers"
 	c, err := New(newMockNode(t), namespace,
-		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	defer c.Close()
 	waitLeader(t, c, 5*time.Second)
@@ -412,7 +411,7 @@ func TestHealing_AnExchangeAYieldCutsShortKeepsToItsMembersClient(t *testing.T) 
 	}
 
 	c, err := New(node, namespace,
-		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -422,7 +421,8 @@ func TestHealing_AnExchangeAYieldCutsShortKeepsToItsMembersClient(t *testing.T) 
 }
 
 // heldWipe holds the first delete under prefix until it is let go, so a test
-// can stop a yield inside its wipe.
+// can stop a yield inside its wipe. A wipe deletes in a batch, so the batch is
+// where it is held.
 type heldWipe struct {
 	ds.Batching
 	prefix  string
@@ -431,12 +431,25 @@ type heldWipe struct {
 	in, out sync.Once
 }
 
-func (s *heldWipe) Delete(ctx context.Context, key ds.Key) error {
-	if strings.HasPrefix(key.String(), s.prefix) {
-		s.in.Do(func() { close(s.entered) })
-		<-s.release
+func (s *heldWipe) Batch(ctx context.Context) (ds.Batch, error) {
+	b, err := s.Batching.Batch(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return s.Batching.Delete(ctx, key)
+	return heldBatch{Batch: b, wipe: s}, nil
+}
+
+type heldBatch struct {
+	ds.Batch
+	wipe *heldWipe
+}
+
+func (b heldBatch) Delete(ctx context.Context, key ds.Key) error {
+	if strings.HasPrefix(key.String(), b.wipe.prefix) {
+		b.wipe.in.Do(func() { close(b.wipe.entered) })
+		<-b.wipe.release
+	}
+	return b.Batch.Delete(ctx, key)
 }
 
 func (s *heldWipe) letGo() { s.out.Do(func() { close(s.release) }) }
@@ -453,7 +466,7 @@ func TestCluster_CloseWaitsForAYieldInProgress(t *testing.T) {
 	defer wipe.letGo()
 
 	c, err := New(storeNode{Node: node, store: wipe}, namespace,
-		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	defer c.Close()
 	waitLeader(t, c, 5*time.Second)
@@ -478,7 +491,7 @@ func TestCluster_CloseWaitsForAYieldInProgress(t *testing.T) {
 	wipe.letGo()
 	require.NoError(t, <-closed)
 	<-yielded
-	assert.Equal(t, raft.Shutdown, cl.current().raft.State(), "a raft the yield built is still running after Close")
+	assert.Equal(t, Shutdown, cl.current().raft.State(), "a raft the yield built is still running after Close")
 }
 
 func probeEvery(t *testing.T, interval time.Duration) {
@@ -504,7 +517,7 @@ func TestHealing_ASplitHealsByItself(t *testing.T) {
 
 func TestHealing_ASettingChangedAfterNewIsNotReadByItsHealer(t *testing.T) {
 	c, err := New(newMockNode(t), "heal-settings",
-		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	defer c.Close()
 	waitLeader(t, c, 5*time.Second)
@@ -523,7 +536,7 @@ func formedPair(t *testing.T, namespace string) (a, b Cluster) {
 	nodeB := newMockNode(t)
 
 	a, err := New(nodeA, namespace,
-		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second), WithSnapshotRoot(t.TempDir()))
+		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second))
 	require.NoError(t, err)
 	t.Cleanup(func() { a.Close() })
 	waitLeader(t, a, 5*time.Second)
@@ -531,7 +544,7 @@ func formedPair(t *testing.T, namespace string) (a, b Cluster) {
 	require.NoError(t, taupeer.LinkAllPeers())
 	require.NoError(t, nodeB.Host().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Host().Addrs()}))
 	b, err = New(nodeB, namespace,
-		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second), WithSnapshotRoot(t.TempDir()))
+		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second))
 	require.NoError(t, err)
 	t.Cleanup(func() { b.Close() })
 	require.Eventually(t, func() bool {
@@ -628,7 +641,7 @@ func nodeOfCluster(cl Cluster) taupeer.Node { return cl.(*cluster).Node }
 
 func TestHealing_AVoteFromANonMemberIsReported(t *testing.T) {
 	node := newMockNode(t)
-	c, err := New(node, "foreign-votes", WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+	c, err := New(node, "foreign-votes", WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	defer c.Close()
 	waitLeader(t, c, 5*time.Second)
@@ -636,36 +649,20 @@ func TestHealing_AVoteFromANonMemberIsReported(t *testing.T) {
 	// A healer of its own, so nothing else drains what it reports.
 	h := newHealer(c.(*cluster), c.(*cluster).current())
 	stranger := newMockNode(t).ID()
-	vote := func(from string) raft.Observation {
-		return raft.Observation{Data: raft.RequestVoteRequest{RPCHeader: raft.RPCHeader{ID: []byte(from)}}}
-	}
-	preVote := func(from string) raft.Observation {
-		return raft.Observation{Data: raft.RequestPreVoteRequest{RPCHeader: raft.RPCHeader{ID: []byte(from)}}}
-	}
 
-	for _, ignored := range []raft.Observation{
-		vote(node.ID().String()),
-		preVote(""),
-		vote("not-a-peer"),
-		{Data: raft.LeaderObservation{}},
-	} {
-		h.processObservation(ignored)
-	}
+	h.foreignVote(node.ID())
 	select {
 	case pid := <-h.foreignVoteCh:
-		t.Fatalf("reported %s, which is not a foreign voter", pid)
+		t.Fatalf("reported %s, which is this node", pid)
 	default:
 	}
 
-	h.processObservation(preVote(stranger.String()))
-	h.processObservation(vote(stranger.String()))
-	for range 2 {
-		select {
-		case pid := <-h.foreignVoteCh:
-			assert.Equal(t, stranger, pid)
-		default:
-			t.Fatal("a vote from a peer outside the configuration was not reported")
-		}
+	h.foreignVote(stranger)
+	select {
+	case pid := <-h.foreignVoteCh:
+		assert.Equal(t, stranger, pid)
+	default:
+		t.Fatal("a vote from a peer outside the configuration was not reported")
 	}
 
 	// Reporting never blocks raft: a full channel drops the report.
@@ -675,51 +672,18 @@ func TestHealing_AVoteFromANonMemberIsReported(t *testing.T) {
 	assert.Len(t, h.foreignVoteCh, cap(h.foreignVoteCh))
 }
 
-func TestHealing_AnObservationRaftDroppedCountsAsALeaderChange(t *testing.T) {
-	var dropped atomic.Uint64
-	h := &healer{dropped: dropped.Load}
-	ch := make(chan raft.Observation)
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan struct{})
-	go func() {
-		h.watch(ctx, ch)
-		close(done)
-	}()
-	defer func() {
-		cancel()
-		<-done
-	}()
-
-	// A vote observation arrives, and none was dropped: no change of leader.
-	start := time.Now()
-	ch <- raft.Observation{Data: raft.RequestVoteRequest{}}
-	ch <- raft.Observation{Data: raft.RequestVoteRequest{}}
-	assert.Zero(t, h.leaderChanged.Load(), "a vote counted as a change of leader")
-
-	// Raft dropped one, then delivers the next: the dropped one counts.
-	dropped.Add(1)
-	ch <- raft.Observation{Data: raft.RequestVoteRequest{}}
-	ch <- raft.Observation{Data: raft.RequestVoteRequest{}}
-	assert.GreaterOrEqual(t, h.leaderChanged.Load(), start.UnixNano(), "an observation raft dropped did not count as a change of leader")
-
-	// Counted once: no more dropped, no more changes.
-	counted := h.leaderChanged.Load()
-	ch <- raft.Observation{Data: raft.RequestVoteRequest{}}
-	ch <- raft.Observation{Data: raft.RequestVoteRequest{}}
-	assert.Equal(t, counted, h.leaderChanged.Load(), "a drop counted again")
-}
-
-func TestHealing_ADropCountedAfterTheWatcherLooksStillCounts(t *testing.T) {
+// A CHANGE OF LEADER the engine reports is a cycle that had one, whoever leads by
+// the time the healer looks.
+func TestHealing_ALeaderChangeCountsForTheCycleItHappenedIn(t *testing.T) {
 	c := &cluster{}
 	c.closed.Store(true) // knows no leader
-	var dropped atomic.Uint64
-	h := &healer{cluster: c, dropped: dropped.Load}
+	h := &healer{cluster: c}
 	cycleStart := time.Now()
-	assert.False(t, h.hadLeaderSince(cycleStart), "a cycle with no leader and no drop had one")
+	assert.False(t, h.hadLeaderSince(cycleStart), "a cycle with no leader had one")
 
-	dropped.Add(1)
-	assert.True(t, h.hadLeaderSince(cycleStart), "a drop no observation followed went uncounted")
-	assert.False(t, h.hadLeaderSince(time.Now().Add(time.Second)), "a drop counted again")
+	h.leaderChanged("")
+	assert.True(t, h.hadLeaderSince(cycleStart), "a change of leader went uncounted")
+	assert.False(t, h.hadLeaderSince(time.Now().Add(time.Second)), "a change counted for a later cycle")
 }
 
 func TestHealing_AForeignVoterIsTrackedAndAbsorbedByTheLeader(t *testing.T) {
@@ -804,7 +768,7 @@ func facing(t *testing.T, namespace string, store ds.Batching, other raftv2conne
 	t.Helper()
 	winnerNode := newMockNode(t)
 	w, err := New(storeNode{Node: winnerNode, store: store}, namespace,
-		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	t.Cleanup(func() { w.Close() })
 	waitLeader(t, w, 5*time.Second)
@@ -896,7 +860,7 @@ func TestHealing_AnOrphansWritesAreMergedBeforeItYields(t *testing.T) {
 	}, leaderWait, 10*time.Millisecond, "the member left alone kept naming a leader")
 
 	groupNode := newMockNode(t)
-	group, err := New(groupNode, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+	group, err := New(groupNode, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	t.Cleanup(func() { group.Close() })
 	waitLeader(t, group, 5*time.Second)

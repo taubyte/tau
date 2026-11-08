@@ -136,19 +136,14 @@ func (n *Instance) kvdb(name string) (kvdb.Instance, error) {
 
 // groups opens the consensus groups the services on this node ask for, over its
 // peer, each group's members whichever nodes open its namespace, found by
-// discovery. Snapshots go under the node's own root: the default is a machine-wide
-// path keyed by namespace alone, so two nodes opening one group name would share a
-// snapshot store.
+// discovery. What a group keeps is in the peer's datastore.
 type groups struct{ n *Instance }
 
 func (g groups) Group(namespace string) (raft.Cluster, error) {
 	if g.n.opts.groups != nil {
 		return g.n.opts.groups.Group(namespace)
 	}
-	if g.n.cfg.Root == "" {
-		return nil, ErrNoRoot
-	}
-	return raft.New(g.n.Node, namespace, g.n.cfg.Raft.Options(g.n.cfg.Root)...)
+	return raft.New(g.n.Node, namespace, g.n.cfg.Raft.Options()...)
 }
 
 // ErrNoRoot is a node asked for what lives in a directory and given none.

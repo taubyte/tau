@@ -6,12 +6,13 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"io"
-	"net"
+	"path"
 	"testing"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
+	taupeer "github.com/taubyte/tau/p2p/peer"
 	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 	"google.golang.org/protobuf/proto"
 	"gotest.tools/v3/assert"
@@ -25,170 +26,51 @@ func keyToCipher(t *testing.T, key []byte) cipher.AEAD {
 	return gcm
 }
 
-func TestNewEncryptedConn(t *testing.T) {
-	key := make([]byte, AESKeySize)
-	rand.Read(key)
-
-	conn1, conn2 := net.Pipe()
-
-	encConn, err := newEncryptedConn(conn1, keyToCipher(t, key))
+// sealedOn is namespace's group on node's engine, its messages sealed under gcm.
+func sealedOn(t *testing.T, node taupeer.Node, namespace string, gcm cipher.AEAD) *group {
+	t.Helper()
+	e := engineFor(node)
+	t.Cleanup(e.release)
+	fsm := newKVFSM(t.Context(), node.Store(), path.Join(RaftStoragePrefix, namespace))
+	g, err := e.open(namespace, groupConfig{timeouts: quickTimeouts, machine: fsm, cipher: gcm, store: node.Store()})
 	require.NoError(t, err)
-	assert.Assert(t, encConn != nil)
-	conn2.Close()
+	t.Cleanup(func() { g.Close() })
+	return g
 }
 
-func TestNewEncryptedConn_InvalidKey(t *testing.T) {
-	shortKey := make([]byte, 16)
-	conn1, _ := net.Pipe()
+// A GROUP'S MESSAGES ARE SEALED UNDER ITS KEY: members holding it replicate, and a
+// member holding another reads none of it.
+func TestAGroupsMessagesAreSealedUnderItsKey(t *testing.T) {
+	key, other := make([]byte, AESKeySize), make([]byte, AESKeySize)
+	rand.Read(key)
+	rand.Read(other)
+	nodes := linked(t, 3)
 
-	block, err := aes.NewCipher(shortKey)
-	require.NoError(t, err)
-	_, err = cipher.NewGCMWithNonceSize(block, nonceSize)
-	if err == nil {
-		encConn, err := newEncryptedConn(conn1, nil)
-		require.NoError(t, err)
-		assert.Assert(t, encConn != nil)
+	leader := sealedOn(t, nodes[0], "sealed", keyToCipher(t, key))
+	same := sealedOn(t, nodes[1], "sealed", keyToCipher(t, key))
+	stranger := sealedOn(t, nodes[2], "sealed", keyToCipher(t, other))
+	require.NoError(t, leader.Bootstrap([]peer.ID{nodes[0].ID(), nodes[1].ID()}))
+	leading(t, leader, same)
+	l := leader
+	if same.State() == Leader {
+		l = same
 	}
-}
+	set(t, l, "k", "v")
+	require.Eventually(t, func() bool { return held(leader, "k") == "v" && held(same, "k") == "v" }, 5*time.Second, 5*time.Millisecond)
 
-func TestEncryptedConn_WriteRead(t *testing.T) {
-	key := make([]byte, AESKeySize)
-	rand.Read(key)
+	// The stranger is added, which the two that hold the key commit between them,
+	// and it hears nothing it can open: it never applies.
+	require.NoError(t, l.AddVoter(nodes[2].ID(), 5*time.Second))
+	require.Never(t, func() bool { return held(stranger, "k") == "v" }, 300*time.Millisecond, 10*time.Millisecond)
 
-	conn1, conn2 := net.Pipe()
-
-	encConn1, err := newEncryptedConn(conn1, keyToCipher(t, key))
+	// A sealed message is never the clear one, and does not open under another key.
+	sealed, err := seal(keyToCipher(t, key), []byte("plain"))
 	require.NoError(t, err)
-
-	encConn2, err := newEncryptedConn(conn2, keyToCipher(t, key))
-	require.NoError(t, err)
-
-	testData := []byte("Hello, encrypted world!")
-	expectedLen := len(testData)
-
-	go func() {
-		defer encConn1.Close()
-		n, err := encConn1.Write(testData)
-		require.NoError(t, err)
-		assert.Equal(t, n, expectedLen)
-	}()
-
-	buf := make([]byte, len(testData)+100)
-	n, err := encConn2.Read(buf)
-	require.NoError(t, err)
-	assert.Equal(t, n, expectedLen)
-	assert.Equal(t, string(buf[:n]), string(testData))
-
-	encConn2.Close()
-}
-
-func TestEncryptedConn_WriteRead_LargeData(t *testing.T) {
-	key := make([]byte, AESKeySize)
-	rand.Read(key)
-
-	conn1, conn2 := net.Pipe()
-
-	encConn1, err := newEncryptedConn(conn1, keyToCipher(t, key))
-	require.NoError(t, err)
-
-	encConn2, err := newEncryptedConn(conn2, keyToCipher(t, key))
-	require.NoError(t, err)
-
-	testData := make([]byte, 10000)
-	rand.Read(testData)
-
-	go func() {
-		defer encConn1.Close()
-		_, err := encConn1.Write(testData)
-		require.NoError(t, err)
-	}()
-
-	buf := make([]byte, len(testData))
-	n, err := io.ReadFull(encConn2, buf)
-	require.NoError(t, err)
-	assert.Equal(t, n, len(testData))
-	assert.Assert(t, bytes.Equal(buf, testData))
-
-	encConn2.Close()
-}
-
-func TestEncryptedConn_Read_DecryptionFailure(t *testing.T) {
-	key := make([]byte, AESKeySize)
-	rand.Read(key)
-
-	conn1, conn2 := net.Pipe()
-
-	encConn, err := newEncryptedConn(conn1, keyToCipher(t, key))
-	require.NoError(t, err)
-
-	go func() {
-		defer conn2.Close()
-		conn2.Write([]byte{0, 0, 0, 10}) // Length
-		conn2.Write(make([]byte, 12))    // Invalid nonce
-		conn2.Write([]byte("invalid"))   // Invalid ciphertext
-	}()
-
-	buf := make([]byte, 100)
-	_, err = encConn.Read(buf)
-	require.Error(t, err)
-	// Could be "decryption failed" or "unexpected EOF" depending on timing
-	assert.Assert(t, err != nil)
-}
-
-func TestEncryptedConn_Read_ShortBuffer(t *testing.T) {
-	key := make([]byte, AESKeySize)
-	rand.Read(key)
-
-	conn1, conn2 := net.Pipe()
-
-	encConn1, err := newEncryptedConn(conn1, keyToCipher(t, key))
-	require.NoError(t, err)
-
-	encConn2, err := newEncryptedConn(conn2, keyToCipher(t, key))
-	require.NoError(t, err)
-
-	testData := []byte("This is a longer test message that exceeds the buffer size")
-	go func() {
-		defer encConn1.Close()
-		encConn1.Write(testData)
-	}()
-
-	buf := make([]byte, 10)
-	n, err := encConn2.Read(buf)
-	require.NoError(t, err)
-	assert.Equal(t, n, 10)
-	assert.Equal(t, string(buf), string(testData[:10]))
-
-	encConn2.Close()
-}
-
-func TestEncryptedConn_Write_Error(t *testing.T) {
-	key := make([]byte, AESKeySize)
-	rand.Read(key)
-
-	conn1, conn2 := net.Pipe()
-	conn2.Close()
-
-	encConn, err := newEncryptedConn(conn1, keyToCipher(t, key))
-	require.NoError(t, err)
-
-	_, err = encConn.Write([]byte("test"))
-	require.Error(t, err)
-}
-
-func TestEncryptedConn_Read_Error(t *testing.T) {
-	key := make([]byte, AESKeySize)
-	rand.Read(key)
-
-	conn1, conn2 := net.Pipe()
-	conn2.Close()
-
-	encConn, err := newEncryptedConn(conn1, keyToCipher(t, key))
-	require.NoError(t, err)
-
-	buf := make([]byte, 100)
-	_, err = encConn.Read(buf)
-	require.Error(t, err)
+	assert.Assert(t, !bytes.Contains(sealed, []byte("plain")))
+	_, err = unseal(keyToCipher(t, other), sealed)
+	assert.ErrorContains(t, err, "decryption failed")
+	_, err = unseal(keyToCipher(t, key), []byte("short"))
+	assert.ErrorContains(t, err, "too short")
 }
 
 func TestCluster_WithEncryption(t *testing.T) {

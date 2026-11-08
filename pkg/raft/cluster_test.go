@@ -4,17 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"path"
 	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
-	"testing/synctest"
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/hashicorp/raft"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -23,6 +20,7 @@ import (
 	taupeer "github.com/taubyte/tau/p2p/peer"
 	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2/raftv2connect"
+	etcdraft "go.etcd.io/raft/v3"
 )
 
 // newMockNode is a mock node closed when the test ends: a mock makes a
@@ -61,15 +59,15 @@ func TestCluster_NodesKeepTheirOwnSnapshots(t *testing.T) {
 	t.Cleanup(func() { a.Close() })
 	waitLeader(t, a, 5*time.Second)
 	require.NoError(t, a.Set("only-a-wrote", []byte("v"), time.Second))
-	require.NoError(t, a.(*cluster).current().raft.Snapshot().Error())
+	require.NoError(t, a.(*cluster).current().raft.Snapshot())
 
 	b, err := New(newMockNode(t), namespace, opts...)
 	require.NoError(t, err, "b started from a's snapshot")
 	t.Cleanup(func() { b.Close() })
 	waitLeader(t, b, 5*time.Second)
-	snaps, err := b.(*cluster).current().snaps.List()
+	snap, err := b.(*cluster).current().raft.log.Snapshot()
 	require.NoError(t, err)
-	require.Empty(t, snaps, "b's store holds a's snapshot")
+	require.True(t, etcdraft.IsEmptySnap(snap), "b's store holds a's snapshot")
 	_, found := b.Get("only-a-wrote")
 	require.False(t, found, "b holds a write only a made")
 }
@@ -89,10 +87,9 @@ func TestCluster_FoundersBootstrapWithinTheirTimeout(t *testing.T) {
 	}
 	results := make(chan opened, len(nodes))
 	for _, node := range nodes {
-		root := t.TempDir()
 		go func() {
 			began := time.Now()
-			cl, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(timeout), WithSnapshotRoot(root))
+			cl, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(timeout))
 			results <- opened{cl: cl, err: err, took: time.Since(began)}
 		}()
 	}
@@ -304,7 +301,7 @@ func joinedGroup(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batch
 	require.NoError(t, taupeer.LinkAllPeers())
 
 	first, err := New(storeNode{Node: nodes[0], store: wrap(nodes[0].Store())}, namespace,
-		append([]Option{WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir())}, opts...)...)
+		append([]Option{WithTimeouts(testTimeoutConfig()), WithForceBootstrap()}, opts...)...)
 	require.NoError(t, err)
 	t.Cleanup(func() { first.Close() })
 	waitLeader(t, first, 5*time.Second)
@@ -313,7 +310,7 @@ func joinedGroup(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batch
 	for _, node := range nodes[1:] {
 		require.NoError(t, node.Host().Connect(t.Context(), peer.AddrInfo{ID: nodes[0].ID(), Addrs: nodes[0].Host().Addrs()}))
 		joiner, err := New(storeNode{Node: node, store: wrap(node.Store())}, namespace,
-			append([]Option{WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2 * time.Second), WithSnapshotRoot(t.TempDir())}, opts...)...)
+			append([]Option{WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2 * time.Second)}, opts...)...)
 		require.NoError(t, err)
 		t.Cleanup(func() { joiner.Close() })
 		group = append(group, joiner)
@@ -348,7 +345,7 @@ func removeTheLeader(t *testing.T, a, b Cluster) (removed, left Cluster) {
 		if !removed.IsLeader() {
 			continue
 		}
-		leader.RemoveServer(raft.ServerID(idOf(removed).String()), 0, 5*time.Second)
+		leader.RemoveServer(idOf(removed), 5*time.Second)
 		for time.Now().Before(deadline) {
 			members, err := left.Members()
 			if err == nil && len(members) == 1 && left.IsLeader() && removed.State() != Leader {
@@ -364,19 +361,12 @@ func removeTheLeader(t *testing.T, a, b Cluster) (removed, left Cluster) {
 	return nil, nil
 }
 
-func inConfiguration(r *raft.Raft, id peer.ID) bool {
-	future := r.GetConfiguration()
-	if future.Error() != nil {
-		return false
-	}
-	for _, server := range future.Configuration().Servers {
-		if server.ID == raft.ServerID(id.String()) {
-			return true
-		}
-	}
-	return false
+func inConfiguration(g *group, id peer.ID) bool {
+	return slices.ContainsFunc(g.Members(), func(m Member) bool { return m.ID == id })
 }
 
+// A LEADER THAT REMOVED ITSELF while its machine was inside an apply still closes
+// only once that apply finished: nothing writes to the store after Close returns.
 func TestCluster_CloseWaitsForALeaderThatRemovedItself(t *testing.T) {
 	namespace := "close-after-self-removal"
 	key := ds.NewKey(path.Join(RaftStoragePrefix, namespace, "data", "held"))
@@ -428,45 +418,6 @@ func TestCluster_CloseWaitsForALeaderThatRemovedItself(t *testing.T) {
 	require.NoError(t, <-closed)
 	assert.True(t, heldOf(removed).finished.Load(), "Close returned before the write it was holding finished")
 	require.NoError(t, <-setDone)
-}
-
-// heldFuture is a future raft answered whose reader has not run yet: Error
-// returns once let is closed.
-type heldFuture struct {
-	index uint64
-	let   chan struct{}
-}
-
-func (f *heldFuture) Error() error {
-	<-f.let
-	return nil
-}
-
-func (f *heldFuture) Index() uint64 { return f.index }
-
-func TestMember_WaitReadsAnAnswerGivenBeforeShutdown(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		fsm := &kvFSM{}
-		fsm.applied.Store(7)
-		m := &member{fsm: fsm, down: make(chan struct{})}
-
-		given := &heldFuture{index: 7, let: make(chan struct{})}
-		answered := make(chan error, 1)
-		go func() { answered <- m.wait(given) }()
-		synctest.Wait()
-		close(m.down)
-		synctest.Wait()
-		close(given.let)
-		require.NoError(t, <-answered)
-
-		// A log the state machine was never given, and a future raft never
-		// queued, may never be answered: wait does not wait for them.
-		for _, index := range []uint64{8, 0} {
-			dropped := &heldFuture{index: index, let: make(chan struct{})}
-			require.ErrorIs(t, m.wait(dropped), ErrShutdown)
-			close(dropped.let)
-		}
-	})
 }
 
 func TestCluster_BarrierOffTheLeaderIsNotLeader(t *testing.T) {
@@ -1150,40 +1101,6 @@ func TestCluster_FSM_Nil_CustomFSM(t *testing.T) {
 	assert.Equal(t, 0, len(keys))
 }
 
-type mockCustomFSM struct{}
-
-func (m *mockCustomFSM) Apply(log *raft.Log) interface{} {
-	return FSMResponse{}
-}
-
-func (m *mockCustomFSM) Snapshot() (raft.FSMSnapshot, error) {
-	return &mockSnapshot{}, nil
-}
-
-func (m *mockCustomFSM) Restore(rc io.ReadCloser) error {
-	return nil
-}
-
-func (m *mockCustomFSM) Get(key string) ([]byte, bool) {
-	return nil, false
-}
-
-func (m *mockCustomFSM) TryGet(key string) ([]byte, bool, error) {
-	return nil, false, nil
-}
-
-func (m *mockCustomFSM) Keys(prefix string) []string {
-	return []string{}
-}
-
-type mockSnapshot struct{}
-
-func (m *mockSnapshot) Persist(sink raft.SnapshotSink) error {
-	return sink.Close()
-}
-
-func (m *mockSnapshot) Release() {}
-
 func TestCluster_Keys_WithData(t *testing.T) {
 	node := newMockNode(t)
 
@@ -1233,12 +1150,8 @@ func TestFsmAdapter_Apply_ViaCluster(t *testing.T) {
 	data, err := encodeCommand(cmd)
 	require.NoError(t, err)
 
-	log := &raft.Log{Data: data, Index: 1}
-	resp := fsm.Apply(log)
-
-	fsmResp, ok := resp.(FSMResponse)
-	assert.True(t, ok)
-	assert.Nil(t, fsmResp.Error)
+	resp := fsm.Apply(1, data)
+	assert.Nil(t, resp.Error)
 
 	val, found := fsm.Get("adapter-key")
 	assert.True(t, found)
@@ -1598,9 +1511,8 @@ func TestCluster_TwoMembersThatStartTogetherFormOneGroup(t *testing.T) {
 	}
 	results := make(chan started, len(nodes))
 	for _, node := range nodes {
-		root := t.TempDir()
 		go func() {
-			cl, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second), WithSnapshotRoot(root))
+			cl, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second))
 			results <- started{cl: cl, err: err}
 		}()
 	}
@@ -1637,15 +1549,14 @@ func TestCluster_TwoMembersThatStartTogetherFormOneGroup(t *testing.T) {
 func TestCluster_AMemberRestartedOnItsStateLeadsItsGroupAgain(t *testing.T) {
 	const namespace = "restarted-member"
 	node := newMockNode(t)
-	root := t.TempDir()
 
-	first, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(root))
+	first, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	waitLeader(t, first, 5*time.Second)
 	require.NoError(t, first.Set("k", []byte("v"), time.Second))
 	require.NoError(t, first.Close())
 
-	again, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(200*time.Millisecond), WithSnapshotRoot(root))
+	again, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(200*time.Millisecond))
 	require.NoError(t, err)
 	defer again.Close()
 	waitLeader(t, again, 5*time.Second)

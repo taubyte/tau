@@ -49,13 +49,15 @@ type engineWire struct {
 	ctx  context.Context
 	to   receiver
 
-	mu    sync.Mutex
-	links map[peer.ID]*link
-	wg    sync.WaitGroup
+	mu      sync.Mutex
+	links   map[peer.ID]*peerLink
+	inbound map[network.Stream]struct{}
+	closed  bool
+	wg      sync.WaitGroup
 }
 
 func newEngineWire(ctx context.Context, h host.Host, to receiver) *engineWire {
-	w := &engineWire{host: h, ctx: ctx, to: to, links: map[peer.ID]*link{}}
+	w := &engineWire{host: h, ctx: ctx, to: to, links: map[peer.ID]*peerLink{}, inbound: map[network.Stream]struct{}{}}
 	h.SetStreamHandler(EngineProtocol, w.read)
 	return w
 }
@@ -67,7 +69,7 @@ func (w *engineWire) send(p peer.ID, frame *raftv2.Frame) {
 	w.mu.Lock()
 	l, ok := w.links[p]
 	if !ok {
-		l = &link{wire: w, to: p, out: make(chan *raftv2.Frame, linkBacklog)}
+		l = &peerLink{wire: w, to: p, out: make(chan *raftv2.Frame, linkBacklog)}
 		w.links[p] = l
 		w.wg.Add(1)
 		go l.run()
@@ -82,19 +84,41 @@ func (w *engineWire) send(p peer.ID, frame *raftv2.Frame) {
 }
 
 // close stops reading and writing; the links finish what they hold first.
+//
+// THE STREAMS IT READS ARE RESET, not left open: a peer writing to one would hear
+// nothing wrong, never dial again, and talk to an engine that is gone while this
+// host's next engine waits for it.
 func (w *engineWire) close() {
 	w.host.RemoveStreamHandler(EngineProtocol)
 	w.mu.Lock()
+	w.closed = true
+	for s := range w.inbound {
+		s.Reset()
+	}
+	w.inbound = nil
 	for _, l := range w.links {
 		close(l.out)
 	}
-	w.links = map[peer.ID]*link{}
+	w.links = map[peer.ID]*peerLink{}
 	w.mu.Unlock()
 	w.wg.Wait()
 }
 
 func (w *engineWire) read(s network.Stream) {
-	defer s.Close()
+	w.mu.Lock()
+	if w.closed {
+		w.mu.Unlock()
+		s.Reset()
+		return
+	}
+	w.inbound[s] = struct{}{}
+	w.mu.Unlock()
+	defer func() {
+		w.mu.Lock()
+		delete(w.inbound, s)
+		w.mu.Unlock()
+		s.Close()
+	}()
 	from := s.Conn().RemotePeer()
 	r := bufio.NewReader(s)
 	opts := protodelim.UnmarshalOptions{MaxSize: maxFrame}
@@ -108,9 +132,9 @@ func (w *engineWire) read(s network.Stream) {
 	}
 }
 
-// link is the stream to one peer, opened on the first frame and again after a
+// peerLink is the stream to one peer, opened on the first frame and again after a
 // failure.
-type link struct {
+type peerLink struct {
 	wire   *engineWire
 	to     peer.ID
 	out    chan *raftv2.Frame
@@ -118,7 +142,7 @@ type link struct {
 	writer *bufio.Writer
 }
 
-func (l *link) run() {
+func (l *peerLink) run() {
 	defer l.wire.wg.Done()
 	defer l.drop()
 	for frame := range l.out {
@@ -131,7 +155,7 @@ func (l *link) run() {
 	}
 }
 
-func (l *link) write(frame *raftv2.Frame) error {
+func (l *peerLink) write(frame *raftv2.Frame) error {
 	if l.stream == nil {
 		ctx, cancel := context.WithTimeout(l.wire.ctx, dialTimeout)
 		s, err := l.wire.host.NewStream(network.WithAllowLimitedConn(ctx, string(EngineProtocol)), l.to, EngineProtocol)
@@ -147,7 +171,7 @@ func (l *link) write(frame *raftv2.Frame) error {
 	return l.writer.Flush()
 }
 
-func (l *link) drop() {
+func (l *peerLink) drop() {
 	if l.stream != nil {
 		l.stream.Reset()
 		l.stream, l.writer = nil, nil

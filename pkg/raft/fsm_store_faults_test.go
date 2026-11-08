@@ -1,13 +1,10 @@
 package raft
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"testing"
 
-	"github.com/hashicorp/raft"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/stretchr/testify/require"
 )
@@ -205,41 +202,14 @@ func TestASnapshotOfAStoreThatCannotBeReadFails(t *testing.T) {
 	}
 }
 
-type failingSink struct {
-	err               error
-	closed, cancelled bool
-}
-
-func (s *failingSink) ID() string                  { return "failing" }
-func (s *failingSink) Write(p []byte) (int, error) { return 0, s.err }
-func (s *failingSink) Close() error                { s.closed = true; return nil }
-func (s *failingSink) Cancel() error               { s.cancelled = true; return nil }
-
-// A sink closed after a failed write is a snapshot raft would keep and restore
-// from, holding part of a state.
-func TestASnapshotThatCannotBeWrittenIsCancelled(t *testing.T) {
-	fsm := newKVFSM(t.Context(), newFaultStore(), faultPrefix)
-	require.Nil(t, applied(t, fsm, Command{Type: CommandSet, Set: &SetCommand{Key: "a", Value: []byte("1")}}).Error)
-
-	snap, err := fsm.Snapshot()
-	require.NoError(t, err)
-	defer snap.Release()
-
-	sink := &failingSink{err: errNoSpace}
-	require.ErrorIs(t, snap.Persist(sink), errNoSpace)
-	require.True(t, sink.cancelled, "a failed snapshot was not cancelled")
-	require.False(t, sink.closed, "a failed snapshot was closed as if it were whole")
-}
-
-func snapshotOf(t *testing.T, data map[string]CRDTEntry, clock uint64) io.ReadCloser {
+func snapshotOf(t *testing.T, data map[string]CRDTEntry, clock uint64) []byte {
 	t.Helper()
 	raw, err := marshalPayload(snapshotPayload{Data: data, Clock: clock})
 	require.NoError(t, err)
-	return io.NopCloser(bytes.NewReader(raw))
+	return raw
 }
 
-// raft takes a failed Restore to mean the snapshot is not held, and installs it
-// again; a false success would serve whatever was left.
+// A failed Restore says so: a false success would serve whatever was left.
 func TestARestoreTheStoreRefusesSaysSo(t *testing.T) {
 	type testCase struct {
 		name  string
@@ -278,5 +248,3 @@ func TestARestoreReplacesTheState(t *testing.T) {
 	require.Nil(t, applied(t, fsm, Command{Type: CommandSet, Set: &SetCommand{Key: "after", Value: []byte("3")}}).Error)
 	require.Equal(t, uint64(5), timestampOf(t, store, "after"))
 }
-
-var _ raft.SnapshotSink = (*failingSink)(nil)

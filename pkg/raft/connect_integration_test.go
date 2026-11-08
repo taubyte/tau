@@ -103,7 +103,7 @@ func linkTo(t *testing.T, node taupeer.Node, members ...taupeer.Node) {
 }
 
 func serves(ctx context.Context, node taupeer.Node, namespace string) error {
-	group := []protocol.ID{protocol.ID(Protocol(namespace)), protocol.ID(TransportProtocol(namespace))}
+	group := []protocol.ID{protocol.ID(Protocol(namespace)), EngineProtocol}
 	deadline := time.Now().Add(connectWait)
 	for !listsAll(node.Host().Mux().Protocols(), group) {
 		if err := ctx.Err(); err != nil {

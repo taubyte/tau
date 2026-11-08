@@ -26,6 +26,7 @@ func saved(t *testing.T, l *engineLog, snap *pb.Snapshot, hs *pb.HardState, ents
 	require.NoError(t, err)
 	require.NoError(t, l.save(ctx, b, snap, hs, ents))
 	require.NoError(t, b.Commit(ctx))
+	require.NoError(t, l.kept(snap, hs, ents))
 }
 
 func TestALogReadsBackWhatItKept(t *testing.T) {

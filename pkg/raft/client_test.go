@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/hashicorp/raft"
 	"github.com/stretchr/testify/require"
 	taupeer "github.com/taubyte/tau/p2p/peer"
 )
@@ -23,7 +22,7 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestSentinel_RestoresWhatCrossedTheWireAsText(t *testing.T) {
-	for _, sent := range []error{ErrNoLeader, ErrInvalidBarrier, ErrNotLeader, raft.ErrLeadershipLost} {
+	for _, sent := range []error{ErrNoLeader, ErrInvalidBarrier, ErrNotLeader, ErrLeadershipLost} {
 		received := connect.NewError(connect.CodeUnknown, errors.New(sent.Error()))
 		require.ErrorIs(t, sentinel(received), sent)
 	}
@@ -91,7 +90,7 @@ func TestClient_WithEncryption(t *testing.T) {
 	require.NoError(t, taupeer.LinkAllPeers())
 
 	cl, err := New(member, namespace, WithEncryptionKey(key),
-		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	t.Cleanup(func() { cl.Close() })
 	waitLeader(t, cl, 5*time.Second)

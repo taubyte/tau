@@ -30,25 +30,6 @@ func TestProtocol(t *testing.T) {
 	}
 }
 
-func TestTransportProtocol(t *testing.T) {
-	type testCase struct {
-		namespace string
-		expected  string
-	}
-	tests := []testCase{
-		{"/raft/test", "/tau/raft/v2/raft/test/transport"},
-		{"/raft/my-service", "/tau/raft/v2/raft/my-service/transport"},
-		{"/raft/complex/path", "/tau/raft/v2/raft/complex/path/transport"},
-	}
-
-	for _, tt := range tests {
-		result := TransportProtocol(tt.namespace)
-		if result != tt.expected {
-			t.Errorf("TransportProtocol(%q) = %q, want %q", tt.namespace, result, tt.expected)
-		}
-	}
-}
-
 func getClusterInternal(c Cluster) *cluster {
 	return c.(*cluster)
 }

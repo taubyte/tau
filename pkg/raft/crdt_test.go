@@ -1,12 +1,9 @@
 package raft
 
 import (
-	"bytes"
-	"io"
 	"testing"
 	"time"
 
-	"github.com/hashicorp/raft"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -43,7 +40,7 @@ func TestCommandMerge_LWW(t *testing.T) {
 		Set:  &SetCommand{Key: "key1", Value: []byte("local")},
 	}
 	data, _ := encodeCommand(setCmd)
-	fsm.Apply(&raft.Log{Data: data, Index: 1})
+	fsm.Apply(1, data)
 
 	val, found := fsm.Get("key1")
 	require.True(t, found)
@@ -55,7 +52,7 @@ func TestCommandMerge_LWW(t *testing.T) {
 	}
 	mergeData, err := encodeMergeCommand(delta)
 	require.NoError(t, err)
-	fsm.Apply(&raft.Log{Data: mergeData, Index: 2})
+	fsm.Apply(2, mergeData)
 
 	val, found = fsm.Get("key1")
 	require.True(t, found)
@@ -75,14 +72,14 @@ func TestCommandMerge_LowerTimestampLoses(t *testing.T) {
 		Set:  &SetCommand{Key: "key1", Value: []byte("local")},
 	}
 	data, _ := encodeCommand(setCmd)
-	fsm.Apply(&raft.Log{Data: data, Index: 1})
+	fsm.Apply(1, data)
 
 	delta := map[string]CRDTEntry{
 		"key1": {Value: []byte("foreign"), Timestamp: 0, WallClock: 0},
 	}
 	mergeData, err := encodeMergeCommand(delta)
 	require.NoError(t, err)
-	fsm.Apply(&raft.Log{Data: mergeData, Index: 2})
+	fsm.Apply(2, mergeData)
 
 	val, found := fsm.Get("key1")
 	require.True(t, found)
@@ -98,14 +95,14 @@ func TestCommandMerge_Tombstone(t *testing.T) {
 		Set:  &SetCommand{Key: "key1", Value: []byte("alive")},
 	}
 	data, _ := encodeCommand(setCmd)
-	fsm.Apply(&raft.Log{Data: data, Index: 1})
+	fsm.Apply(1, data)
 
 	delta := map[string]CRDTEntry{
 		"key1": {Deleted: true, Timestamp: 100, WallClock: time.Now().UnixNano()},
 	}
 	mergeData, err := encodeMergeCommand(delta)
 	require.NoError(t, err)
-	fsm.Apply(&raft.Log{Data: mergeData, Index: 2})
+	fsm.Apply(2, mergeData)
 
 	_, found := fsm.Get("key1")
 	assert.False(t, found)
@@ -124,7 +121,7 @@ func TestExportState(t *testing.T) {
 			Set:  &SetCommand{Key: key, Value: []byte("val-" + key)},
 		}
 		data, _ := encodeCommand(cmd)
-		fsm.Apply(&raft.Log{Data: data, Index: uint64(i + 1)})
+		fsm.Apply(uint64(i+1), data)
 	}
 
 	state, err := fsm.ExportState()
@@ -144,11 +141,11 @@ func TestFSM_Delete_CreatesTombstone(t *testing.T) {
 
 	setCmd := Command{Type: CommandSet, Set: &SetCommand{Key: "k", Value: []byte("v")}}
 	data, _ := encodeCommand(setCmd)
-	fsm.Apply(&raft.Log{Data: data, Index: 1})
+	fsm.Apply(1, data)
 
 	delCmd := Command{Type: CommandDelete, Delete: &DeleteCommand{Key: "k"}}
 	data, _ = encodeCommand(delCmd)
-	fsm.Apply(&raft.Log{Data: data, Index: 2})
+	fsm.Apply(2, data)
 
 	_, found := fsm.Get("k")
 	assert.False(t, found)
@@ -171,7 +168,7 @@ func TestFSM_LamportClock_Increments(t *testing.T) {
 			Set:  &SetCommand{Key: "k", Value: []byte("v")},
 		}
 		data, _ := encodeCommand(cmd)
-		fsm.Apply(&raft.Log{Data: data, Index: uint64(i + 1)})
+		fsm.Apply(uint64(i+1), data)
 	}
 
 	state, err := fsm.ExportState()
@@ -190,26 +187,22 @@ func TestFSM_SnapshotRestorePreservesClock(t *testing.T) {
 			Set:  &SetCommand{Key: "k", Value: []byte("v")},
 		}
 		data, _ := encodeCommand(cmd)
-		fsm1.Apply(&raft.Log{Data: data, Index: uint64(i + 1)})
+		fsm1.Apply(uint64(i+1), data)
 	}
 
 	snap, err := fsm1.Snapshot()
 	require.NoError(t, err)
 
-	var buf bytes.Buffer
-	sink := &testSnapshotSink{Writer: &buf}
-	require.NoError(t, snap.Persist(sink))
-
 	store2 := newTestStore()
 	fsm2 := newKVFSM(t.Context(), store2, "/raft/test")
-	require.NoError(t, fsm2.Restore(io.NopCloser(bytes.NewReader(buf.Bytes()))))
+	require.NoError(t, fsm2.Restore(snap))
 
 	cmd := Command{
 		Type: CommandSet,
 		Set:  &SetCommand{Key: "new", Value: []byte("v")},
 	}
 	data, _ := encodeCommand(cmd)
-	fsm2.Apply(&raft.Log{Data: data, Index: 4})
+	fsm2.Apply(4, data)
 
 	state, err := fsm2.ExportState()
 	require.NoError(t, err)
@@ -256,8 +249,8 @@ func TestCommandMerge_Empty(t *testing.T) {
 		Merge: &MergeCommand{Delta: map[string]CRDTEntry{}},
 	}
 	data, _ := encodeCommand(mergeCmd)
-	resp := fsm.Apply(&raft.Log{Data: data, Index: 1})
-	fsmResp := resp.(FSMResponse)
+	resp := fsm.Apply(1, data)
+	fsmResp := resp
 	assert.Error(t, fsmResp.Error)
 }
 
@@ -269,11 +262,11 @@ func TestCommandMerge_AdvancesClock(t *testing.T) {
 		"k": {Value: []byte("v"), Timestamp: 42, WallClock: time.Now().UnixNano()},
 	}
 	mergeData, _ := encodeMergeCommand(delta)
-	fsm.Apply(&raft.Log{Data: mergeData, Index: 1})
+	fsm.Apply(1, mergeData)
 
 	cmd := Command{Type: CommandSet, Set: &SetCommand{Key: "k2", Value: []byte("v2")}}
 	data, _ := encodeCommand(cmd)
-	fsm.Apply(&raft.Log{Data: data, Index: 2})
+	fsm.Apply(2, data)
 
 	state, err := fsm.ExportState()
 	require.NoError(t, err)

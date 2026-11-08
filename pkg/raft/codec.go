@@ -2,9 +2,7 @@ package raft
 
 import (
 	"sync"
-	"time"
 
-	"github.com/hashicorp/raft"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/taubyte/tau/pkg/proto/codec"
@@ -32,7 +30,6 @@ func (q *pool[M, P]) put(m P) {
 
 var (
 	entries  pool[raftv2.Entry, *raftv2.Entry]
-	logs     pool[raftv2.LogEntry, *raftv2.LogEntry]
 	commands pool[raftv2.Command, *raftv2.Command]
 	sets     = sync.Pool{New: func() any { return new(setCommand) }}
 )
@@ -183,92 +180,4 @@ func decodeSnapshot(raw []byte) (map[string]CRDTEntry, uint64, error) {
 		return nil, 0, err
 	}
 	return entriesFrom(m.GetEntries()), m.GetClock(), nil
-}
-
-// logProto is a log as the transport carries it; the log store writes the same
-// message.
-func logProto(l *raft.Log) *raftv2.LogEntry {
-	var at int64
-	if !l.AppendedAt.IsZero() {
-		at = l.AppendedAt.UnixNano()
-	}
-	return &raftv2.LogEntry{Index: l.Index, Term: l.Term, Type: uint32(l.Type), Data: l.Data, Extensions: l.Extensions, AppendedAt: at}
-}
-
-func logFrom(m *raftv2.LogEntry) *raft.Log {
-	l := &raft.Log{
-		Index:      m.GetIndex(),
-		Term:       m.GetTerm(),
-		Type:       raft.LogType(m.GetType()),
-		Data:       m.GetData(),
-		Extensions: m.GetExtensions(),
-	}
-	if at := m.GetAppendedAt(); at != 0 {
-		l.AppendedAt = time.Unix(0, at)
-	}
-	return l
-}
-
-func encodeLog(l *raft.Log) ([]byte, error) {
-	var at int64
-	if !l.AppendedAt.IsZero() {
-		at = l.AppendedAt.UnixNano()
-	}
-	m := logs.get()
-	defer logs.put(m)
-	m.Index, m.Term, m.Type, m.Data, m.Extensions, m.AppendedAt = l.Index, l.Term, uint32(l.Type), l.Data, l.Extensions, at
-	return m.MarshalVT()
-}
-
-// decodeLog reads a stored log into l. Every log has an index, so empty bytes are
-// not one.
-func decodeLog(raw []byte, l *raft.Log) error {
-	m := logs.get()
-	defer logs.put(m)
-	if err := codec.DecodeNonEmpty(raw, m); err != nil {
-		return err
-	}
-	*l = *logFrom(m)
-	return nil
-}
-
-func encodeMeta(meta *snapshotMeta) ([]byte, error) {
-	servers := make([]*raftv2.Server, len(meta.Configuration.Servers))
-	for i, s := range meta.Configuration.Servers {
-		servers[i] = &raftv2.Server{Suffrage: int32(s.Suffrage), Id: string(s.ID), Address: string(s.Address)}
-	}
-	return (&raftv2.SnapshotMeta{
-		Id:                 meta.ID,
-		Index:              meta.Index,
-		Term:               meta.Term,
-		Servers:            servers,
-		ConfigurationIndex: meta.ConfigurationIndex,
-		Size:               meta.Size,
-		Version:            int32(meta.Version),
-	}).MarshalVT()
-}
-
-// decodeMeta reads a snapshot's metadata. Every snapshot has an id, so empty bytes
-// are not one.
-func decodeMeta(raw []byte) (snapshotMeta, error) {
-	var m raftv2.SnapshotMeta
-	if err := codec.DecodeNonEmpty(raw, &m); err != nil {
-		return snapshotMeta{}, err
-	}
-	var servers []raft.Server
-	if len(m.GetServers()) > 0 {
-		servers = make([]raft.Server, len(m.GetServers()))
-		for i, s := range m.GetServers() {
-			servers[i] = raft.Server{Suffrage: raft.ServerSuffrage(s.GetSuffrage()), ID: raft.ServerID(s.GetId()), Address: raft.ServerAddress(s.GetAddress())}
-		}
-	}
-	return snapshotMeta{
-		ID:                 m.GetId(),
-		Index:              m.GetIndex(),
-		Term:               m.GetTerm(),
-		Configuration:      raft.Configuration{Servers: servers},
-		ConfigurationIndex: m.GetConfigurationIndex(),
-		Size:               m.GetSize(),
-		Version:            raft.SnapshotVersion(m.GetVersion()),
-	}, nil
 }

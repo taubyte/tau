@@ -1,8 +1,6 @@
 package instance
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -102,10 +100,4 @@ func TestAGroupIsTimedByTheNodesRaftKeys(t *testing.T) {
 	t.Cleanup(func() { c.Close() })
 	// LEADER WELL INSIDE raft's 30s default bootstrap.
 	require.Eventually(t, c.IsLeader, 5*time.Second, 20*time.Millisecond)
-	_, err = os.Stat(filepath.Join(root, "raft", "built-in"))
-	require.NoError(t, err)
-
-	n.cfg.Root = ""
-	_, err = groups{n}.Group("rootless")
-	require.ErrorIs(t, err, ErrNoRoot)
 }

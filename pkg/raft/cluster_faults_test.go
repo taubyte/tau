@@ -6,15 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"path"
-	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/hashicorp/raft"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -36,8 +33,8 @@ func strangerID(t *testing.T) peer.ID {
 }
 
 // The state machine holds the first write while ten more commit behind it, and
-// the member is closed: raft drops the futures of logs it committed but had not
-// applied.
+// the member is closed: Close waits for the apply under way, and every write in
+// flight is answered, applied or not.
 func TestCluster_AWriteInFlightWhenTheRaftShutsDownIsAnswered(t *testing.T) {
 	const (
 		namespace = "write-across-shutdown"
@@ -47,7 +44,7 @@ func TestCluster_AWriteInFlightWhenTheRaftShutsDownIsAnswered(t *testing.T) {
 	held := newHeldStore(node.Store(), ds.NewKey(path.Join(RaftStoragePrefix, namespace, "data", "held")))
 	defer held.letGo()
 	c, err := New(storeNode{Node: node, store: held}, namespace,
-		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	waitLeader(t, c, 5*time.Second)
 
@@ -63,7 +60,11 @@ func TestCluster_AWriteInFlightWhenTheRaftShutsDownIsAnswered(t *testing.T) {
 
 	closed := make(chan error, 1)
 	go func() { closed <- c.Close() }()
-	require.Eventually(t, func() bool { return r.State() == raft.Shutdown }, leaderWait, time.Millisecond, "Close never shut the raft down")
+	select {
+	case <-closed:
+		t.Fatal("Close returned while its machine was inside an apply")
+	case <-time.After(100 * time.Millisecond):
+	}
 	held.letGo()
 	require.NoError(t, <-closed)
 
@@ -80,7 +81,7 @@ func TestCluster_AWriteInFlightWhenTheRaftShutsDownIsAnswered(t *testing.T) {
 func TestCluster_AWriteTheStoreRefusesIsRefused(t *testing.T) {
 	store := newFaultStore()
 	cl, err := New(storeNode{Node: newMockNode(t), store: store}, "cluster-refused-write",
-		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	defer cl.Close()
 	waitLeader(t, cl, 5*time.Second)
@@ -169,28 +170,18 @@ func TestCluster_AMemberLeftAloneInAPairAcknowledgesNoWrite(t *testing.T) {
 }
 
 func TestNew_RefusesWhatItCannotRun(t *testing.T) {
-	notADir := filepath.Join(t.TempDir(), "file")
-	require.NoError(t, os.WriteFile(notADir, []byte("x"), 0o644))
-
-	badTimeouts := testTimeoutConfig()
-	badTimeouts.LeaderLeaseTimeout = 2 * badTimeouts.HeartbeatTimeout
-
 	type testCase struct {
 		name string
 		opt  Option
 		says string
 	}
 	for _, tc := range []testCase{
-		{"an empty snapshot dir", WithSnapshotDir(""), "snapshot dir cannot be empty"},
-		{"an empty snapshot root", WithSnapshotRoot(""), "snapshot root cannot be empty"},
 		{"a key shorter than AES-256 takes", WithEncryptionKey(make([]byte, 16)), "encryption key must be"},
 		{"a key longer than AES-256 takes", WithEncryptionKey(make([]byte, 48)), "invalid key size 48"},
-		{"a snapshot dir that is a file", WithSnapshotDir(notADir), "failed to create snapshot store"},
-		{"a lease longer than the heartbeat", WithTimeouts(badTimeouts), "failed to create raft"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			node := newMockNode(t)
-			cl, err := New(node, "new-refuses", WithForceBootstrap(), WithSnapshotRoot(t.TempDir()), tc.opt)
+			cl, err := New(node, "new-refuses", WithForceBootstrap(), tc.opt)
 			require.ErrorContains(t, err, tc.says)
 			require.Nil(t, cl)
 			require.Empty(t, groupProtocols(node, "new-refuses"), "the refused New left its transport behind")
@@ -201,7 +192,7 @@ func TestNew_RefusesWhatItCannotRun(t *testing.T) {
 func groupProtocols(node taupeer.Node, namespace string) []protocol.ID {
 	var served []protocol.ID
 	for _, id := range node.Host().Mux().Protocols() {
-		if id == protocol.ID(Protocol(namespace)) || id == protocol.ID(TransportProtocol(namespace)) {
+		if id == protocol.ID(Protocol(namespace)) {
 			served = append(served, id)
 		}
 	}
@@ -244,15 +235,15 @@ func TestNew_ANamespaceTheNodeAlreadyRunsIsRefused(t *testing.T) {
 	nodeA, nodeB := newMockNode(t), newMockNode(t)
 	require.NoError(t, taupeer.LinkAllPeers())
 
-	a, err := New(nodeA, namespace, WithTimeouts(timeouts), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+	a, err := New(nodeA, namespace, WithTimeouts(timeouts), WithForceBootstrap())
 	require.NoError(t, err)
 	defer a.Close()
 	waitLeader(t, a, 10*time.Second)
 
 	store := &writesSeen{Batching: nodeA.Store()}
 	second, err := New(storeNode{Node: nodeA, store: store}, namespace,
-		WithTimeouts(timeouts), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
-	require.ErrorIs(t, err, rpc.ErrProtocolTaken)
+		WithTimeouts(timeouts), WithForceBootstrap())
+	require.ErrorIs(t, err, ErrGroupOpen)
 	require.Nil(t, second)
 	require.Zero(t, store.writes.Load(), "a second raft ran on the group's store")
 
@@ -263,7 +254,7 @@ func TestNew_ANamespaceTheNodeAlreadyRunsIsRefused(t *testing.T) {
 	require.Equal(t, []byte("v"), value)
 
 	require.NoError(t, nodeB.Host().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Host().Addrs()}))
-	b, err := New(nodeB, namespace, WithTimeouts(timeouts), WithBootstrapTimeout(5*time.Second), WithSnapshotRoot(t.TempDir()))
+	b, err := New(nodeB, namespace, WithTimeouts(timeouts), WithBootstrapTimeout(5*time.Second))
 	require.NoError(t, err)
 	defer b.Close()
 	// a commits b's joining before b has heard of it, and a b that has not is
@@ -293,14 +284,14 @@ func TestNew_AFailedNewLeavesNothingRunning(t *testing.T) {
 		other, err := rpc.Listen(t.Context(), node.Host(), protocol.ID(Protocol(namespace)), mux)
 		require.NoError(t, err)
 
-		cl, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+		cl, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 		require.ErrorIs(t, err, rpc.ErrProtocolTaken)
 		require.Nil(t, cl)
 		require.Equal(t, []protocol.ID{protocol.ID(Protocol(namespace))}, groupProtocols(node, namespace),
-			"the refused New left its transport behind")
+			"the refused New left its stream service behind")
 
 		require.NoError(t, other.Close())
-		cl, err = New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+		cl, err = New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 		require.NoError(t, err)
 		defer cl.Close()
 		waitLeader(t, cl, 5*time.Second)
@@ -309,11 +300,11 @@ func TestNew_AFailedNewLeavesNothingRunning(t *testing.T) {
 	t.Run("a bootstrap the store refuses", func(t *testing.T) {
 		const namespace = "new-bootstrap-refused"
 		store := newFaultStore()
-		store.failPut(fmt.Sprintf("%s/%020d", path.Join(RaftStoragePrefix, namespace, "log"), 1), errNoSpace)
+		store.failPut(fmt.Sprintf("%s/%020d", path.Join(RaftStoragePrefix, namespace, "engine", "log"), 1), errNoSpace)
 		node := newMockNode(t)
 
 		cl, err := New(storeNode{Node: node, store: store}, namespace,
-			WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+			WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 		require.ErrorContains(t, err, errNoSpace.Error())
 		require.Nil(t, cl)
 		require.Empty(t, groupProtocols(node, namespace), "the refused New left its stream service or transport behind")
@@ -366,11 +357,10 @@ func TestCluster_BatchAndMembershipRefuseWhatTheyCannotDo(t *testing.T) {
 	require.ErrorIs(t, removed.AddVoter(idOf(left), time.Second), ErrShutdown)
 }
 
-// A leader alone commits a second voter on its own say, then needs a voter
-// nobody can reach: the third voter's change stays uncommitted, raft holds the
-// next change back, and the leader steps down at its next lease check. A change
-// asked for meanwhile passes the check, waits in raft and is refused once the
-// member follows.
+// A leader alone commits a second voter on its own say, then needs a voter nobody
+// can reach: the third voter's change never commits, and the leader, hearing from
+// no quorum, steps down. The change it was asked for is not acknowledged, and a
+// change asked of the member once it follows is refused.
 func TestCluster_AMembershipChangeThatLosesTheLeadIsNotLeader(t *testing.T) {
 	lease := time.Second
 	cl, err := New(newMockNode(t), "membership-loses-the-lead", WithTimeouts(TimeoutConfig{
@@ -380,7 +370,7 @@ func TestCluster_AMembershipChangeThatLosesTheLeadIsNotLeader(t *testing.T) {
 		LeaderLeaseTimeout: lease,
 		SnapshotInterval:   time.Minute,
 		SnapshotThreshold:  1000,
-	}), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+	}), WithForceBootstrap())
 	require.NoError(t, err)
 	defer cl.Close()
 	waitLeader(t, cl, 10*time.Second)
@@ -389,11 +379,11 @@ func TestCluster_AMembershipChangeThatLosesTheLeadIsNotLeader(t *testing.T) {
 	require.NoError(t, cl.AddVoter(unreachable, 10*time.Second))
 	uncommitted := make(chan error, 1)
 	go func() { uncommitted <- cl.AddVoter(third, 10*time.Second) }()
-	require.Eventually(t, func() bool {
-		members, err := cl.Members()
-		return err == nil && len(members) == 3
-	}, 5*time.Second, 5*time.Millisecond, "the change adding the third voter never reached the configuration")
-	require.True(t, cl.IsLeader(), "the lead was lost before the changes were asked for")
+	require.Eventually(t, func() bool { return !cl.IsLeader() }, 10*time.Second, 5*time.Millisecond,
+		"a leader that hears from no quorum kept leading")
+	members, err := cl.Members()
+	require.NoError(t, err)
+	require.Len(t, members, 2, "the third voter's change never committed")
 
 	changes := map[string]func() error{
 		"add voter":     func() error { return cl.AddVoter(joiner, 10*time.Second) },

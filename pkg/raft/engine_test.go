@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -35,8 +36,8 @@ func onEngine(t *testing.T, node taupeer.Node, namespace string, timeouts Timeou
 	t.Helper()
 	e := engineFor(node)
 	t.Cleanup(e.release)
-	fsm := newKVFSM(t.Context(), node.Store(), path.Join(RaftStoragePrefix, namespace)).(machine)
-	g, err := e.open(namespace, groupConfig{timeouts: timeouts, machine: fsm})
+	fsm := newKVFSM(t.Context(), node.Store(), path.Join(RaftStoragePrefix, namespace))
+	g, err := e.open(namespace, groupConfig{timeouts: timeouts, machine: fsm, store: node.Store()})
 	require.NoError(t, err)
 	t.Cleanup(func() { g.Close() })
 	return g
@@ -52,7 +53,7 @@ func set(t *testing.T, g *group, key, value string) {
 }
 
 func held(g *group, key string) string {
-	v, _ := g.fsm.(FSM).Get(key)
+	v, _ := g.fsm.Get(key)
 	return string(v)
 }
 
@@ -76,8 +77,8 @@ func TestAGroupOfOneElectsItselfAppliesAndKeepsItsLog(t *testing.T) {
 	t.Cleanup(node.Close)
 
 	e := engineFor(node)
-	fsm := newKVFSM(t.Context(), node.Store(), path.Join(RaftStoragePrefix, "one")).(machine)
-	g, err := e.open("one", groupConfig{timeouts: quickTimeouts, machine: fsm})
+	fsm := newKVFSM(t.Context(), node.Store(), path.Join(RaftStoragePrefix, "one"))
+	g, err := e.open("one", groupConfig{timeouts: quickTimeouts, machine: fsm, store: node.Store()})
 	require.NoError(t, err)
 	require.NoError(t, g.Bootstrap([]peer.ID{node.ID()}))
 	require.ErrorIs(t, g.Bootstrap([]peer.ID{node.ID()}), ErrCantBootstrap, "a log is bootstrapped once")
@@ -91,7 +92,7 @@ func TestAGroupOfOneElectsItselfAppliesAndKeepsItsLog(t *testing.T) {
 	require.Equal(t, node.ID(), leader)
 	require.Equal(t, []Member{{ID: node.ID(), Voter: true}}, g.Members())
 
-	_, err = e.open("one", groupConfig{timeouts: quickTimeouts, machine: fsm})
+	_, err = e.open("one", groupConfig{timeouts: quickTimeouts, machine: fsm, store: node.Store()})
 	require.ErrorIs(t, err, ErrGroupOpen)
 
 	// A RESTART reads back the log it kept, and leads again.
@@ -168,9 +169,10 @@ func TestANewcomerCatchesUpFromASnapshot(t *testing.T) {
 	for i := range 20 {
 		set(t, first, "k", string(rune('a'+i)))
 	}
-	compacted, err := first.log.FirstIndex()
-	require.NoError(t, err)
-	require.Greater(t, compacted, uint64(2), "the leader compacted its log")
+	require.Eventually(t, func() bool {
+		compacted, err := first.log.FirstIndex()
+		return err == nil && compacted > 2
+	}, 5*time.Second, 5*time.Millisecond, "the leader compacted its log")
 
 	second := onEngine(t, nodes[1], "snap", compacting)
 	require.NoError(t, first.AddVoter(nodes[1].ID(), 5*time.Second))
@@ -288,9 +290,9 @@ func (r refusingBatches) Batch(ctx context.Context) (datastore.Batch, error) {
 	return r.Batching.Batch(ctx)
 }
 
-// A GROUP WHOSE STATE CANNOT BE WRITTEN STOPS, rather than run on what it did not
-// keep: what waits on it hears why.
-func TestAGroupThatCannotWriteStops(t *testing.T) {
+// A GROUP WHOSE STATE CANNOT BE WRITTEN STALLS, rather than run on what it did not
+// keep, and comes back once the store takes its writes again.
+func TestAGroupThatCannotWriteStallsUntilItCan(t *testing.T) {
 	mock := taupeer.Mock(t.Context())
 	t.Cleanup(mock.Close)
 	node := failingStore{Node: mock, broken: &atomic.Bool{}}
@@ -301,9 +303,13 @@ func TestAGroupThatCannotWriteStops(t *testing.T) {
 	node.broken.Store(true)
 	cmd, err := encodeSetCommand("k", []byte("v"))
 	require.NoError(t, err)
-	_, err = g.Propose(cmd, 5*time.Second)
-	require.ErrorContains(t, err, "disk gone")
-	require.Equal(t, Shutdown, g.State())
+	_, err = g.Propose(cmd, 300*time.Millisecond)
+	require.ErrorIs(t, err, ErrApplyTimeout, "nothing applies while its state cannot be written")
+
+	node.broken.Store(false)
+	require.Eventually(t, func() bool { return held(g, "k") == "v" }, 5*time.Second, 5*time.Millisecond,
+		"the write it held applied once the store came back")
+	set(t, g, "after", "v")
 }
 
 func TestEtcdsLogIsTaus(t *testing.T) {
@@ -354,4 +360,139 @@ func TestAWriteThatCannotCommitInTimeSaysWhy(t *testing.T) {
 	if err != nil && !errors.Is(err, ErrNotLeader) {
 		require.True(t, errors.Is(err, ErrApplyTimeout) || errors.Is(err, ErrLeadershipLost), "got %v", err)
 	}
+}
+
+// A FOLLOWER WHOSE ENGINE STOPPED AND STARTED AGAIN hears its leader again: the
+// streams the old engine read are reset, so the leader dials the new one rather
+// than writing on into an engine that is gone.
+func TestAFollowerWhoseEngineRestartsHearsItsLeaderAgain(t *testing.T) {
+	nodes := linked(t, 3)
+	ids := []peer.ID{nodes[0].ID(), nodes[1].ID(), nodes[2].ID()}
+	open := func(node taupeer.Node) (*engine, *group) {
+		e := engineFor(node)
+		fsm := newKVFSM(t.Context(), node.Store(), path.Join(RaftStoragePrefix, "restart"))
+		g, err := e.open("restart", groupConfig{timeouts: quickTimeouts, machine: fsm, store: node.Store()})
+		require.NoError(t, err)
+		return e, g
+	}
+	running := make([]*engine, 3)
+	groups := make([]*group, 3)
+	for i, node := range nodes {
+		running[i], groups[i] = open(node)
+	}
+	t.Cleanup(func() {
+		for i := range groups {
+			groups[i].Close()
+			running[i].release()
+		}
+	})
+	require.NoError(t, groups[0].Bootstrap(ids))
+	leader := leading(t, groups...)
+	set(t, leader, "before", "v")
+
+	f := slices.IndexFunc(groups, func(g *group) bool { return g != leader })
+	require.Eventually(t, func() bool { return held(groups[f], "before") == "v" }, 5*time.Second, 5*time.Millisecond)
+	require.NoError(t, groups[f].Close())
+	running[f].release()
+	engines.Lock()
+	_, stillRunning := engines.on[nodes[f].ID()]
+	engines.Unlock()
+	require.False(t, stillRunning, "its engine stopped with its last group")
+
+	set(t, leader, "while", "v")
+	running[f], groups[f] = open(nodes[f])
+	require.NotEqual(t, leader, groups[f])
+	require.Eventually(t, func() bool { return held(groups[f], "while") == "v" }, 10*time.Second, 5*time.Millisecond,
+		"the restarted follower never heard from its leader")
+	_, known := groups[f].Leader()
+	require.True(t, known)
+}
+
+// A GROUP KEEPS ITS LOG IN ITS OWN NODE'S STORE, even on a host whose engine another
+// node value started with a store of its own.
+func TestAGroupKeepsItsLogInItsOwnStore(t *testing.T) {
+	node := taupeer.Mock(t.Context())
+	t.Cleanup(node.Close)
+	first := onEngine(t, node, "first", quickTimeouts)
+	require.NoError(t, first.Bootstrap([]peer.ID{node.ID()}))
+	leading(t, first)
+
+	own := newFaultStore()
+	other := storeNode{Node: node, store: own}
+	second := onEngine(t, other, "second", quickTimeouts)
+	require.NoError(t, second.Bootstrap([]peer.ID{node.ID()}))
+	leading(t, second)
+	set(t, second, "k", "v")
+
+	key := datastore.NewKey(path.Join(RaftStoragePrefix, "second", "engine", "hardstate"))
+	has, err := own.Has(t.Context(), key)
+	require.NoError(t, err)
+	require.True(t, has, "the group's log is in its own node's store")
+	has, err = node.Store().Has(t.Context(), key)
+	require.NoError(t, err)
+	require.False(t, has, "and not in the store of the node that started the engine")
+}
+
+// refusingMachine is the KV machine with snapshots and restores that fail on
+// demand.
+type refusingMachine struct {
+	FSM
+	snapshots, restores atomic.Bool
+}
+
+var errMachine = errors.New("machine refused")
+
+func (m *refusingMachine) Snapshot() ([]byte, error) {
+	if m.snapshots.Load() {
+		return nil, errMachine
+	}
+	return m.FSM.Snapshot()
+}
+
+func (m *refusingMachine) Restore(data []byte) error {
+	if m.restores.Load() {
+		return errMachine
+	}
+	return m.FSM.Restore(data)
+}
+
+// A MACHINE THAT CANNOT BE SNAPSHOTTED OR RESTORED says so: a snapshot asked for is
+// refused by name, one the threshold calls for is put off with the group still
+// writing, and a group whose kept snapshot cannot be restored is not opened.
+func TestAMachineThatCannotSnapshotOrRestoreSaysSo(t *testing.T) {
+	node := taupeer.Mock(t.Context())
+	t.Cleanup(node.Close)
+	often := TimeoutConfig{HeartbeatTimeout: 50 * time.Millisecond, SnapshotThreshold: 2, TrailingLogs: 1}
+	open := func(m FSM) (*group, error) {
+		e := engineFor(node)
+		t.Cleanup(e.release)
+		return e.open("machine", groupConfig{timeouts: often, machine: m, store: node.Store()})
+	}
+
+	m := &refusingMachine{FSM: newKVFSM(t.Context(), node.Store(), path.Join(RaftStoragePrefix, "machine"))}
+	g, err := open(m)
+	require.NoError(t, err)
+	require.NoError(t, g.Bootstrap([]peer.ID{node.ID()}))
+	leading(t, g)
+	set(t, g, "a", "1")
+
+	m.snapshots.Store(true)
+	set(t, g, "b", "2")
+	set(t, g, "c", "3")
+	require.ErrorIs(t, g.Snapshot(), errMachine)
+	set(t, g, "d", "4")
+
+	m.snapshots.Store(false)
+	require.NoError(t, g.Snapshot())
+	require.NoError(t, g.Close())
+	require.ErrorIs(t, g.Snapshot(), ErrShutdown)
+
+	m.restores.Store(true)
+	_, err = open(m)
+	require.ErrorIs(t, err, errMachine)
+	m.restores.Store(false)
+	again, err := open(m)
+	require.NoError(t, err)
+	t.Cleanup(func() { again.Close() })
+	require.Equal(t, "4", held(again, "d"))
 }

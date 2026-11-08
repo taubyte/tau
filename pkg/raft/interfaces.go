@@ -2,10 +2,8 @@ package raft
 
 import (
 	"context"
-	"io"
 	"time"
 
-	"github.com/hashicorp/raft"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
@@ -100,8 +98,14 @@ func (s State) String() string {
 	return "Unknown"
 }
 
+// FSM is what a group applies its log to: every group runs the KV machine.
 type FSM interface {
-	raft.FSM
+	// Apply applies one committed command, at index.
+	Apply(index uint64, command []byte) FSMResponse
+	// Snapshot is the whole machine, as bytes Restore takes back.
+	Snapshot() ([]byte, error)
+	// Restore replaces the machine with what Snapshot gave.
+	Restore(snapshot []byte) error
 	Get(key string) ([]byte, bool)
 	TryGet(key string) ([]byte, bool, error)
 	Keys(prefix string) []string
@@ -126,28 +130,6 @@ type FSMResponse struct {
 type BatchOp struct {
 	Set    *SetCommand
 	Delete *DeleteCommand
-}
-
-type LogStore interface {
-	FirstIndex() (uint64, error)
-	LastIndex() (uint64, error)
-	GetLog(index uint64, log *raft.Log) error
-	StoreLog(log *raft.Log) error
-	StoreLogs(logs []*raft.Log) error
-	DeleteRange(min, max uint64) error
-}
-
-type StableStore interface {
-	Set(key []byte, val []byte) error
-	Get(key []byte) ([]byte, error)
-	SetUint64(key []byte, val uint64) error
-	GetUint64(key []byte) (uint64, error)
-}
-
-type SnapshotStore interface {
-	Create(version raft.SnapshotVersion, index, term uint64, configuration raft.Configuration, configurationIndex uint64, trans raft.Transport) (raft.SnapshotSink, error)
-	List() ([]*raft.SnapshotMeta, error)
-	Open(id string) (*raft.SnapshotMeta, io.ReadCloser, error)
 }
 
 // Queue is a replicated FIFO over a Cluster's KV, its keys under a prefix

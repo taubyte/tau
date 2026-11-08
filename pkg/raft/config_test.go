@@ -81,10 +81,10 @@ func TestGetTimeoutConfig_CustomOverridesDefault(t *testing.T) {
 }
 
 func TestTimingSaysOnlyWhatIsSet(t *testing.T) {
-	if got := len(Timing{}.Options("/r")); got != 1 {
-		t.Errorf("an empty timing gives the snapshot root alone, got %d options", got)
+	if got := len(Timing{}.Options()); got != 0 {
+		t.Errorf("an empty timing gives raft's own, got %d options", got)
 	}
-	if got := len(Timing{Timeouts: TimeoutConfig{HeartbeatTimeout: time.Second}, BootstrapTimeout: time.Second}.Options("/r")); got != 3 {
-		t.Errorf("timeouts and a bootstrap timeout give three options, got %d", got)
+	if got := len(Timing{Timeouts: TimeoutConfig{HeartbeatTimeout: time.Second}, BootstrapTimeout: time.Second}.Options()); got != 2 {
+		t.Errorf("timeouts and a bootstrap timeout give two options, got %d", got)
 	}
 }

@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hashicorp/raft"
 	peercore "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/p2p/keypair"
 	taupeer "github.com/taubyte/tau/p2p/peer"
@@ -276,7 +275,7 @@ func TestCluster_MultiNode_SendToNonLeader_Integration(t *testing.T) {
 	for deadline := time.Now().Add(leaderWait); !refused && time.Now().Before(deadline); {
 		follower := followerOf(t, clusters...)
 		err = follower.Set("follower-key", []byte("follower-value"), 5*time.Second)
-		if err == nil || errors.Is(err, raft.ErrLeadershipLost) {
+		if err == nil || errors.Is(err, ErrLeadershipLost) {
 			continue
 		}
 		assert.ErrorIs(t, err, ErrNotLeader, "expected ErrNotLeader when calling Set on follower")
@@ -1207,7 +1206,7 @@ func leadingNow(t *testing.T, clusters ...Cluster) (Cluster, uint64) {
 	deadline := time.Now().Add(leaderWait)
 	for {
 		leader := leaderOf(t, clusters...)
-		term := getClusterInternal(leader).current().raft.CurrentTerm()
+		term := getClusterInternal(leader).current().raft.Term()
 		if leader.IsLeader() {
 			return leader, term
 		}
@@ -1227,12 +1226,12 @@ func rejoinSettled(back Cluster, members []Cluster, crashTerm uint64, writes map
 	if leader == nil {
 		return poll.Continue("the members do not all name the one member that leads")
 	}
-	term := getClusterInternal(leader).current().raft.CurrentTerm()
+	term := getClusterInternal(leader).current().raft.Term()
 	if term <= crashTerm {
 		return poll.Continue("%s leads at term %d, not past the crash at term %d", idOf(leader), term, crashTerm)
 	}
 	for _, m := range members {
-		if got := getClusterInternal(m).current().raft.CurrentTerm(); got != term {
+		if got := getClusterInternal(m).current().raft.Term(); got != term {
 			return poll.Continue("%s is at term %d, its leader at %d", idOf(m), got, term)
 		}
 		config, err := m.Members()
@@ -1325,7 +1324,7 @@ func TestCluster_LeaderRebootAndRejoin_Integration(t *testing.T) {
 
 	newLeader := leaderOf(t, survivors...)
 	assert.Assert(t, idOf(newLeader) != idOf(crashed), "new leader must not be crashed node")
-	assert.Assert(t, getClusterInternal(newLeader).current().raft.CurrentTerm() > crashTerm,
+	assert.Assert(t, getClusterInternal(newLeader).current().raft.Term() > crashTerm,
 		"the survivors' leader must lead at a term past the crash")
 
 	err = onLeader(t, survivors, func(leader Cluster) error {
