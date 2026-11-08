@@ -2,7 +2,9 @@ package http
 
 import (
 	"errors"
+	"os"
 	"runtime"
+	"strconv"
 
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/taubyte/tau/pkg/platformerr"
@@ -22,6 +24,10 @@ func newAdmission() chan struct{} {
 	total := uint64(2 << 30) // shortcut: assume 2 GB if the OS will not say
 	if v, err := mem.VirtualMemory(); err == nil {
 		total = v.Total
+	}
+	// shortcut: env override for finding the limit under load, remove once maxInFlight is settled.
+	if n, err := strconv.Atoi(os.Getenv("TAU_MAX_INFLIGHT")); err == nil && n > 0 {
+		return make(chan struct{}, n)
 	}
 	return make(chan struct{}, maxInFlight(runtime.NumCPU(), total))
 }
