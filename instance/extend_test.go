@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/pkg/containers"
 	"github.com/taubyte/tau/pkg/forge/drivers"
 
@@ -138,11 +139,12 @@ func TestAServiceIsGivenItsInstance(t *testing.T) {
 	_, ok = service.Get[started](host)
 	require.True(t, ok, "and so does the service itself, once started")
 
-	// It is reported as running, and it is given the finder every service here finds
-	// a peer through.
+	// It is reported as running, and its node answers who serves a protocol: itself
+	// once a service here serves it.
 	require.Contains(t, n.serving(), addedName)
-	_, ok = service.Get[service.Finder](host)
-	require.True(t, ok)
+	require.Empty(t, host.Find("/tau/added/v2").Known())
+	host.Serve("/tau/added/v2", started{})
+	require.Equal(t, []libp2ppeer.ID{h.ID()}, host.Find("/tau/added/v2").Known())
 
 	require.NoError(t, n.Close())
 	select {

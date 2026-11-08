@@ -233,7 +233,11 @@ func Local[T any](h Host, id protocol.ID) (T, bool) {
 
 // Serving is every node discovery finds serving id, h's own node left out.
 func Serving(h Host, id protocol.ID) []libp2ppeer.ID {
-	return without(h.Find(id).Known(), h.Peer().Host().ID())
+	found := h.Find(id).Known()
+	if len(found) == 0 {
+		return nil
+	}
+	return without(found, h.Peer().Host().ID())
 }
 
 // Found is Serving, or why it is empty.
