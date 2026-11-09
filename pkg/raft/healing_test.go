@@ -189,8 +189,8 @@ func TestHealing_HealAck_Signal(t *testing.T) {
 	require.NoError(t, taupeer.LinkAllPeers())
 
 	h := &healer{
-		healAckCh:     make(chan healAck, 1),
-		foreignVoteCh: make(chan peer.ID, 16),
+		healAckCh: make(chan healAck, 1),
+		foreignCh: make(chan peer.ID, 16),
 	}
 
 	h.signalHealAck(node.ID(), receipt{})
@@ -524,6 +524,38 @@ func TestHealing_ASplitHealsByItself(t *testing.T) {
 	leaderOf(t, a, b)
 }
 
+// TWO GROUPS FORMED APART BECOME ONE AS SOON AS THEY ARE CONNECTED, with nothing
+// handing either tracker the other: a member that formed before its connections were
+// up hears of the other group from identify, not from its next discovery pass.
+func TestHealing_GroupsFormedApartBecomeOneOnceConnected(t *testing.T) {
+	nodeA, nodeB := newMockNode(t), newMockNode(t)
+	opts := func() []Option {
+		return []Option{WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second)}
+	}
+	a, err := New(nodeA, "formed-apart", opts()...)
+	require.NoError(t, err)
+	t.Cleanup(func() { a.Close() })
+	b, err := New(nodeB, "formed-apart", opts()...)
+	require.NoError(t, err)
+	t.Cleanup(func() { b.Close() })
+	waitLeader(t, a, 5*time.Second)
+	waitLeader(t, b, 5*time.Second)
+	require.NoError(t, a.Set("from-a", []byte("a"), time.Second))
+	require.NoError(t, b.Set("from-b", []byte("b"), time.Second))
+
+	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, nodeB.Host().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Host().Addrs()}))
+
+	require.Eventually(t, func() bool {
+		ofA, errA := a.Members()
+		ofB, errB := b.Members()
+		return errA == nil && errB == nil && len(ofA) == 2 && len(ofB) == 2
+	}, 5*time.Second, 50*time.Millisecond, "connected groups stayed apart past a settled discovery interval would")
+	require.Eventually(t, func() bool {
+		return holdsEverything(a) && holdsEverything(b)
+	}, 5*time.Second, 50*time.Millisecond, "the group they became does not hold both sides' writes")
+}
+
 func TestHealing_ASettingChangedAfterNewIsNotReadByItsHealer(t *testing.T) {
 	c, err := New(newMockNode(t), "heal-settings",
 		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
@@ -661,24 +693,24 @@ func TestHealing_AVoteFromANonMemberIsReported(t *testing.T) {
 
 	h.foreignVote(node.ID())
 	select {
-	case pid := <-h.foreignVoteCh:
+	case pid := <-h.foreignCh:
 		t.Fatalf("reported %s, which is this node", pid)
 	default:
 	}
 
 	h.foreignVote(stranger)
 	select {
-	case pid := <-h.foreignVoteCh:
+	case pid := <-h.foreignCh:
 		assert.Equal(t, stranger, pid)
 	default:
 		t.Fatal("a vote from a peer outside the configuration was not reported")
 	}
 
 	// Reporting never blocks raft: a full channel drops the report.
-	for range cap(h.foreignVoteCh) + 1 {
-		h.notifyForeignVote(stranger)
+	for range cap(h.foreignCh) + 1 {
+		h.notifyForeign(stranger)
 	}
-	assert.Len(t, h.foreignVoteCh, cap(h.foreignVoteCh))
+	assert.Len(t, h.foreignCh, cap(h.foreignCh))
 }
 
 // A CHANGE OF LEADER the engine reports is a cycle that had one, whoever leads by
@@ -705,19 +737,19 @@ func TestHealing_AForeignVoterIsTrackedAndAbsorbedByTheLeader(t *testing.T) {
 		follower = b
 	}
 
-	follower.(*cluster).current().healer.Load().handleForeignVote(t.Context(), stranger)
+	follower.(*cluster).current().healer.Load().meetForeign(t.Context(), stranger)
 	assert.Contains(t, follower.(*cluster).current().tracker.allPeers(), stranger)
 
 	// The stranger answers nothing, so the leader's absorb gives up after
 	// trying, and the leader still leads a group without it.
-	leader.(*cluster).current().healer.Load().handleForeignVote(t.Context(), stranger)
+	leader.(*cluster).current().healer.Load().meetForeign(t.Context(), stranger)
 	assert.Contains(t, leader.(*cluster).current().tracker.allPeers(), stranger)
 	members, err := leader.Members()
 	require.NoError(t, err)
 	assert.Len(t, members, 2)
 
 	require.NoError(t, a.Close())
-	a.(*cluster).current().healer.Load().handleForeignVote(t.Context(), stranger)
+	a.(*cluster).current().healer.Load().meetForeign(t.Context(), stranger)
 }
 
 func TestHealing_AMergeNeedsTheLeadAndTheOtherSide(t *testing.T) {
@@ -1323,7 +1355,7 @@ func TestHealing_TwoLeadersHearingEachOtherAtOnceDoNotBothYield(t *testing.T) {
 	done := make(chan struct{}, 2)
 	for _, pair := range [][2]*cluster{{winner, loser}, {loser, winner}} {
 		go func() {
-			pair[0].current().healer.Load().handleForeignVote(t.Context(), pair[1].ID())
+			pair[0].current().healer.Load().meetForeign(t.Context(), pair[1].ID())
 			done <- struct{}{}
 		}()
 	}
@@ -1405,7 +1437,7 @@ func TestHealing_TwoLeadersWithTheSameStateDoNotBothYield(t *testing.T) {
 	done := make(chan struct{}, 2)
 	for i := range solos {
 		go func() {
-			solos[i].current().healer.Load().handleForeignVote(t.Context(), solos[1-i].ID())
+			solos[i].current().healer.Load().meetForeign(t.Context(), solos[1-i].ID())
 			done <- struct{}{}
 		}()
 	}

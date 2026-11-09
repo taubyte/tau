@@ -2,6 +2,7 @@ package raft
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -9,6 +10,7 @@ import (
 
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/discovery"
+	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -348,6 +350,18 @@ func (pt *peerTracker) probe(ctx context.Context, h host.Host, pid peer.ID, raft
 	return true
 }
 
+// servingIn is the peer an identify event is about, and whether it now serves
+// raftProtocol.
+func servingIn(ev any, raftProtocol protocol.ID) (peer.ID, bool) {
+	switch e := ev.(type) {
+	case event.EvtPeerIdentificationCompleted:
+		return e.Peer, slices.Contains(e.Protocols, raftProtocol)
+	case event.EvtPeerProtocolsUpdated:
+		return e.Peer, slices.Contains(e.Added, raftProtocol)
+	}
+	return "", false
+}
+
 func supportsRaftProtocol(h host.Host, pid peer.ID, raftProtocol protocol.ID) bool {
 	protocols, err := h.Peerstore().GetProtocols(pid)
 	if err != nil || len(protocols) == 0 {
@@ -375,11 +389,31 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster, 
 		go pt.runLookups(ctx, c, d, raftProtocol)
 	}
 
+	// A PEER IS TRACKED THE MOMENT IT IS IDENTIFIED AS SERVING THIS NAMESPACE, not on
+	// the next pass, and the healer meets it. A member that formed alone before its
+	// connections were up, and is then connected to a member of another group, would
+	// otherwise act as a group of its own for a whole settled interval.
+	var identified <-chan any
+	if sub, err := host.EventBus().Subscribe([]any{new(event.EvtPeerIdentificationCompleted), new(event.EvtPeerProtocolsUpdated)}); err == nil {
+		defer sub.Close()
+		identified = sub.Out()
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			discoveryLogger.Infof("[%s] peer discovery stopped (context cancelled)", pt.selfID.ShortString())
 			return
+
+		case ev := <-identified:
+			pid, serves := servingIn(ev, raftProtocol)
+			if !serves || pid == c.ID() {
+				continue
+			}
+			pt.addPeer(pid)
+			if h := c.current().healer.Load(); h != nil {
+				h.serving(pid)
+			}
 
 		case <-time.After(pt.getDiscoveryInterval()):
 			pt.prune()

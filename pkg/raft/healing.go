@@ -23,11 +23,11 @@ type healer struct {
 	cluster *cluster
 	member  *member
 
-	healAckCh     chan healAck
-	foreignVoteCh chan peer.ID
-	healing       atomic.Bool
-	mu            sync.Mutex
-	superseded    atomic.Bool
+	healAckCh  chan healAck
+	foreignCh  chan peer.ID
+	healing    atomic.Bool
+	mu         sync.Mutex
+	superseded atomic.Bool
 	// leaderChangedAt is when raft last reported this member gaining or losing a
 	// leader, in unix nanoseconds: up to then it knew one.
 	leaderChangedAt atomic.Int64
@@ -35,10 +35,10 @@ type healer struct {
 
 func newHealer(c *cluster, m *member) *healer {
 	return &healer{
-		cluster:       c,
-		member:        m,
-		healAckCh:     make(chan healAck, 1),
-		foreignVoteCh: make(chan peer.ID, 16),
+		cluster:   c,
+		member:    m,
+		healAckCh: make(chan healAck, 1),
+		foreignCh: make(chan peer.ID, 16),
 	}
 }
 
@@ -56,9 +56,9 @@ func (h *healer) signalHealAck(from peer.ID, r receipt) {
 }
 
 // Never blocks raft: a full channel drops the report.
-func (h *healer) notifyForeignVote(pid peer.ID) {
+func (h *healer) notifyForeign(pid peer.ID) {
 	select {
-	case h.foreignVoteCh <- pid:
+	case h.foreignCh <- pid:
 	default:
 	}
 }
@@ -96,8 +96,8 @@ func (h *healer) run(ctx context.Context) {
 		case <-ctx.Done():
 			healLogger.Infof("[%s] healer stopped (context cancelled)", h.cluster.ID().ShortString())
 			return
-		case pid := <-h.foreignVoteCh:
-			h.handleForeignVote(ctx, pid)
+		case pid := <-h.foreignCh:
+			h.meetForeign(ctx, pid)
 			continue
 		case ack := <-h.healAckCh:
 			h.healAcked(ctx, ack)
@@ -207,9 +207,10 @@ func (h *healer) hadLeaderSince(t time.Time) bool {
 	return h.leaderChangedAt.Load() >= t.UnixNano()
 }
 
-// The peer is tracked so findForeignPeers finds it, and a leader absorbs it at
-// once.
-func (h *healer) handleForeignVote(ctx context.Context, pid peer.ID) {
+// meetForeign is a non-member in sight: one that asked for a vote, or one just
+// identified as serving this group's namespace. It is tracked so findForeignPeers
+// finds it, and a leader meets it at once.
+func (h *healer) meetForeign(ctx context.Context, pid peer.ID) {
 	if h.cluster.closed.Load() {
 		return
 	}
@@ -217,20 +218,28 @@ func (h *healer) handleForeignVote(ctx context.Context, pid peer.ID) {
 	h.member.tracker.addPeer(pid)
 
 	if !h.cluster.IsLeader() {
-		healLogger.Infof("[%s] tracked foreign voter %s (we are %s, not leader)",
+		healLogger.Infof("[%s] tracked non-member %s (we are %s, not leader)",
 			h.cluster.ID().ShortString(), pid.ShortString(), h.member.raft.State())
 		return
 	}
 
-	healLogger.Infof("[%s] vote request from non-member %s — meeting it as leader",
+	healLogger.Infof("[%s] non-member %s in sight — meeting it as leader",
 		h.cluster.ID().ShortString(), pid.ShortString())
 	h.meetAsLeader(ctx, pid)
 }
 
 // leaderChanged and foreignVote are the engine telling the healer what it watches
-// for, from the engine's loop: neither blocks.
+// for, from the engine's loop, and serving the tracker telling it a peer of this
+// namespace was identified: none blocks.
 func (h *healer) leaderChanged(peer.ID) {
 	h.leaderChangedAt.Store(time.Now().UnixNano())
+}
+
+func (h *healer) serving(pid peer.ID) {
+	if pid == h.cluster.ID() {
+		return
+	}
+	h.notifyForeign(pid)
 }
 
 func (h *healer) foreignVote(pid peer.ID) {
@@ -239,7 +248,7 @@ func (h *healer) foreignVote(pid peer.ID) {
 	}
 	healLogger.Infof("[%s] observed vote request from non-member %s",
 		h.cluster.ID().ShortString(), pid.ShortString())
-	h.notifyForeignVote(pid)
+	h.notifyForeign(pid)
 }
 
 func (h *healer) probeAndMergeAsLeader(ctx context.Context) {
