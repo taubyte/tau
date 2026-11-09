@@ -348,22 +348,27 @@ func TestAWritersCopyPlacementDoesNotNameIsDroppedOnceItsHoldersProveIt(t *testi
 }
 
 // A COPY ONE HOLDER CANNOT PROVE IS KEPT: the misplaced copy is dropped only once every
-// holder placement names proved it.
+// holder placement names proved it, and a holder given the root again proved nothing
+// in the pass that gave it.
 func TestAMisplacedCopyIsKeptWhileAHolderCannotProveIt(t *testing.T) {
 	at := assetsOf(t, "site_code")
 	c := newCluster(t, 4, fixedCatalog{at})
 	root, holders := writtenOutside(t, c, at)
 	writer := c.nodes[0]
-	lost := c.node(holders[0])
-	lost.bytes.(*nodeBytes).lose(root)
+	rotted := peerOf(t, holders[0])
 	c.swarm.mu.Lock()
-	c.swarm.down[peerOf(t, holders[0])] = true
+	c.swarm.stores[rotted][root.KeyString()] = []byte("the artifacT")
 	c.swarm.mu.Unlock()
 
-	require.Error(t, writer.repair(t.Context()))
+	require.NoError(t, writer.repair(t.Context()))
 	refs, err := writer.local.ReferencesTo(t.Context(), root)
 	require.NoError(t, err)
 	require.NotEmpty(t, refs, "a copy was dropped with a holder that could not prove it")
+
+	require.NoError(t, writer.repair(t.Context()))
+	refs, err = writer.local.ReferencesTo(t.Context(), root)
+	require.NoError(t, err)
+	require.Empty(t, refs, "every holder proved it the pass after, and the copy was kept")
 }
 
 // A NODE PLACEMENT DOES NOT NAME THAT LOST ITS COPY gives the holders its references,
