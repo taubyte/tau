@@ -254,8 +254,8 @@ func TestAMemberRefusesAReceiptThatDoesNotCoverIt(t *testing.T) {
 	require.NoError(t, cl.Set("k", []byte("v"), time.Second))
 	m := cl.(*cluster).current()
 
-	require.ErrorContains(t, cli.HealAck(idOf(cl), newFormation(), m.raft.CommitIndex()), ErrReceiptNotOurs.Error())
-	require.ErrorContains(t, cli.HealAck(idOf(cl), m.raft.Formation(), m.raft.CommitIndex()-1), ErrReceiptShort.Error())
+	require.ErrorContains(t, cli.HealAck(idOf(cl), receipt{formation: newFormation(), cut: m.raft.CommitIndex()}), ErrReceiptNotOurs.Error())
+	require.ErrorContains(t, cli.HealAck(idOf(cl), receipt{formation: m.raft.Formation(), cut: m.raft.CommitIndex() - 1}), ErrReceiptShort.Error())
 	require.Same(t, m, cl.(*cluster).current(), "the member yielded on a receipt that did not cover it")
 	_, found := cl.Get("k")
 	require.True(t, found)

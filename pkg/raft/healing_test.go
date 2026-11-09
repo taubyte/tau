@@ -1005,7 +1005,7 @@ func TestHealing_AWipeFinishesWhateverCancelsItsContext(t *testing.T) {
 	m.takeDown()
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	m.healer.Load().wipeRaftState(ctx)
+	m.healer.Load().wipeRaftState(ctx, false)
 
 	results, err := node.Store().Query(t.Context(), query.Query{Prefix: path.Join(RaftStoragePrefix, namespace), KeysOnly: true})
 	require.NoError(t, err)

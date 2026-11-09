@@ -937,14 +937,18 @@ func (x *ExportFSMRequest) GetFreezeMs() int64 {
 
 type ExportFSMResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Every entry the FSM holds, tombstones included.
+	// Every entry the FSM holds, tombstones included, and every entry of the
+	// archive the member carries out of a formation that lost its quorum.
 	Entries map[string]*Entry `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Clock   uint64            `protobuf:"varint,2,opt,name=clock,proto3" json:"clock,omitempty"`
 	// cut is the last index the state holds; formation is the formation of the
 	// group it is the state of. A member of that formation whose commit is past
 	// the cut holds something the state does not.
-	Cut           uint64 `protobuf:"varint,3,opt,name=cut,proto3" json:"cut,omitempty"`
-	Formation     []byte `protobuf:"bytes,4,opt,name=formation,proto3" json:"formation,omitempty"`
+	Cut       uint64 `protobuf:"varint,3,opt,name=cut,proto3" json:"cut,omitempty"`
+	Formation []byte `protobuf:"bytes,4,opt,name=formation,proto3" json:"formation,omitempty"`
+	// archive is the digest of the archive folded into entries, empty when the
+	// member carries none.
+	Archive       []byte `protobuf:"bytes,5,opt,name=archive,proto3" json:"archive,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1007,13 +1011,22 @@ func (x *ExportFSMResponse) GetFormation() []byte {
 	return nil
 }
 
-// HealAckRequest tells a member that the state of its formation up to cut is in
-// the sender's group, so it may yield and join it. A member of another formation,
-// or whose commit is past the cut, refuses.
+func (x *ExportFSMResponse) GetArchive() []byte {
+	if x != nil {
+		return x.Archive
+	}
+	return nil
+}
+
+// HealAckRequest tells a member that the state of its formation up to cut, and
+// the archive whose digest is archive, are in the sender's group, so it may yield
+// and join it. A member of another formation, whose commit is past the cut, or
+// that carries another archive, refuses.
 type HealAckRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Formation     []byte                 `protobuf:"bytes,1,opt,name=formation,proto3" json:"formation,omitempty"`
 	Cut           uint64                 `protobuf:"varint,2,opt,name=cut,proto3" json:"cut,omitempty"`
+	Archive       []byte                 `protobuf:"bytes,3,opt,name=archive,proto3" json:"archive,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1060,6 +1073,13 @@ func (x *HealAckRequest) GetCut() uint64 {
 		return x.Cut
 	}
 	return 0
+}
+
+func (x *HealAckRequest) GetArchive() []byte {
+	if x != nil {
+		return x.Archive
+	}
+	return nil
 }
 
 type HealAckResponse struct {
@@ -1167,18 +1187,20 @@ const file_tau_raft_v2_raft_proto_rawDesc = "" +
 	"\tformation\x18\x06 \x01(\fR\tformation\x12\x18\n" +
 	"\amembers\x18\a \x03(\tR\amembers\"/\n" +
 	"\x10ExportFSMRequest\x12\x1b\n" +
-	"\tfreeze_ms\x18\x01 \x01(\x03R\bfreezeMs\"\xf0\x01\n" +
+	"\tfreeze_ms\x18\x01 \x01(\x03R\bfreezeMs\"\x8a\x02\n" +
 	"\x11ExportFSMResponse\x12E\n" +
 	"\aentries\x18\x01 \x03(\v2+.tau.raft.v2.ExportFSMResponse.EntriesEntryR\aentries\x12\x14\n" +
 	"\x05clock\x18\x02 \x01(\x04R\x05clock\x12\x10\n" +
 	"\x03cut\x18\x03 \x01(\x04R\x03cut\x12\x1c\n" +
-	"\tformation\x18\x04 \x01(\fR\tformation\x1aN\n" +
+	"\tformation\x18\x04 \x01(\fR\tformation\x12\x18\n" +
+	"\aarchive\x18\x05 \x01(\fR\aarchive\x1aN\n" +
 	"\fEntriesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12(\n" +
-	"\x05value\x18\x02 \x01(\v2\x12.tau.raft.v2.EntryR\x05value:\x028\x01\"@\n" +
+	"\x05value\x18\x02 \x01(\v2\x12.tau.raft.v2.EntryR\x05value:\x028\x01\"Z\n" +
 	"\x0eHealAckRequest\x12\x1c\n" +
 	"\tformation\x18\x01 \x01(\fR\tformation\x12\x10\n" +
-	"\x03cut\x18\x02 \x01(\x04R\x03cut\"\x11\n" +
+	"\x03cut\x18\x02 \x01(\x04R\x03cut\x12\x18\n" +
+	"\aarchive\x18\x03 \x01(\fR\aarchive\"\x11\n" +
 	"\x0fHealAckResponse2\xc9\x05\n" +
 	"\vRaftService\x128\n" +
 	"\x03Set\x12\x17.tau.raft.v2.SetRequest\x1a\x18.tau.raft.v2.SetResponse\x128\n" +

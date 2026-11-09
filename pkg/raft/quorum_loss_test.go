@@ -3,6 +3,7 @@ package raft
 import (
 	"bytes"
 	"context"
+	"math"
 	"path"
 	"sync"
 	"testing"
@@ -198,6 +199,81 @@ func TestHealing_AnArchiveTheStoreRefusesIsReplayedOnceItCan(t *testing.T) {
 	store.failDelete(archive, nil)
 	require.Eventually(t, func() bool { return !cl.(*cluster).hasArchive() }, 5*time.Second, 20*time.Millisecond,
 		"the archive was never let go of once it could be")
+}
+
+// A MEMBER CARRYING AN ARCHIVE HANDS IT OVER WITH ITS STATE: its export takes the
+// archive in, a receipt that leaves the archive out is refused, and a yield on one
+// that names it lets it go. A group that took the member without it had it wipe,
+// form again with the archive, and be taken again, round and round.
+func TestHealing_AMemberCarryingAnArchiveHandsItOverWithItsState(t *testing.T) {
+	const namespace = "archive-handed-over"
+	data, err := encodeMergeCommand(map[string]CRDTEntry{
+		"carried": {Value: []byte("v"), Timestamp: 1, WallClock: time.Now().UnixNano()},
+	})
+	require.NoError(t, err)
+	// The member cannot land the archive in its own group, so it still carries it
+	// when it is taken, as one taken before its first election does.
+	cl, cli := callerOf(t, namespace, func(ds.Batching) ds.Batching {
+		store := newFaultStore()
+		require.NoError(t, store.Put(t.Context(), ds.NewKey(path.Join(RaftStoragePrefix, namespace, "archive")), data))
+		store.failPut(path.Join(RaftStoragePrefix, namespace, "data", "carried"), errNoSpace)
+		return store
+	})
+	c := cl.(*cluster)
+
+	exp, err := cli.ExportFSM(idOf(cl), 0)
+	require.NoError(t, err)
+	require.Contains(t, exp.state, "carried", "the export left out the archive the member carries")
+	require.Equal(t, archiveDigest(data), exp.archive)
+
+	for _, other := range [][]byte{nil, archiveDigest([]byte("other"))} {
+		require.ErrorContains(t, cli.HealAck(idOf(cl), receipt{formation: exp.formation, cut: math.MaxUint64, archive: other}), "another archive")
+	}
+	require.True(t, c.hasArchive())
+
+	before := c.current()
+	require.NoError(t, cli.HealAck(idOf(cl), receipt{formation: exp.formation, cut: math.MaxUint64, archive: exp.archive}))
+	require.Eventually(t, func() bool { return c.current() != before }, 5*time.Second, 20*time.Millisecond, "the member never yielded")
+	require.False(t, c.hasArchive(), "the member kept an archive the other group took")
+}
+
+// WHAT A MEMBER HOLDS IS ITS STATE WITH THE ARCHIVE IT CARRIES FOLDED IN, the
+// later entry of each key winning: a member that lost a quorum again before its
+// archive was in archived its state alone, over the archive it carried.
+func TestHealing_WhatAMemberHoldsFoldsInItsArchive(t *testing.T) {
+	const namespace = "holding-folds"
+	store := newFaultStore()
+	c := &cluster{Node: storeNode{Node: newMockNode(t), store: store}, namespace: namespace, ctx: t.Context()}
+	m := &member{fsm: newKVFSM(t.Context(), store, path.Join(RaftStoragePrefix, namespace))}
+	set, err := encodeSetCommand("held", []byte("new"))
+	require.NoError(t, err)
+	require.NoError(t, m.fsm.Apply(1, set).Error)
+
+	state, digest, err := c.holding(m)
+	require.NoError(t, err)
+	require.Nil(t, digest)
+	require.Len(t, state, 1)
+
+	data, err := encodeMergeCommand(map[string]CRDTEntry{
+		"held":    {Value: []byte("old"), WallClock: time.Now().UnixNano()},
+		"carried": {Value: []byte("v"), Timestamp: 1, WallClock: time.Now().UnixNano()},
+	})
+	require.NoError(t, err)
+	require.NoError(t, store.Put(t.Context(), c.archiveKey(), data))
+	state, digest, err = c.holding(m)
+	require.NoError(t, err)
+	require.Equal(t, archiveDigest(data), digest)
+	require.Equal(t, "new", string(state["held"].Value), "an earlier archived entry won over a later one")
+	require.Equal(t, "v", string(state["carried"].Value), "the archive was left out")
+
+	set, err = encodeSetCommand("k", nil)
+	require.NoError(t, err)
+	require.NoError(t, store.Put(t.Context(), c.archiveKey(), set))
+	_, _, err = c.holding(m)
+	require.ErrorIs(t, err, ErrInvalidCommand, "an archive that is no merge was taken for one")
+	store.failGet(c.archiveKey().String(), errDisk)
+	_, _, err = c.holding(m)
+	require.ErrorIs(t, err, errDisk)
 }
 
 // A SURVIVOR THAT CANNOT ARCHIVE WHAT IT HOLDS WIPES NOTHING, and forms its new

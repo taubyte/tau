@@ -141,7 +141,8 @@ message ExportFSMRequest {
 }
 
 message ExportFSMResponse {
-  // Every entry the FSM holds, tombstones included.
+  // Every entry the FSM holds, tombstones included, and every entry of the
+  // archive the member carries out of a formation that lost its quorum.
   map<string, Entry> entries = 1;
   uint64 clock = 2;
   // cut is the last index the state holds; formation is the formation of the
@@ -149,14 +150,19 @@ message ExportFSMResponse {
   // the cut holds something the state does not.
   uint64 cut = 3;
   bytes formation = 4;
+  // archive is the digest of the archive folded into entries, empty when the
+  // member carries none.
+  bytes archive = 5;
 }
 
-// HealAckRequest tells a member that the state of its formation up to cut is in
-// the sender's group, so it may yield and join it. A member of another formation,
-// or whose commit is past the cut, refuses.
+// HealAckRequest tells a member that the state of its formation up to cut, and
+// the archive whose digest is archive, are in the sender's group, so it may yield
+// and join it. A member of another formation, whose commit is past the cut, or
+// that carries another archive, refuses.
 message HealAckRequest {
   bytes formation = 1;
   uint64 cut = 2;
+  bytes archive = 3;
 }
 
 message HealAckResponse {}

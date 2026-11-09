@@ -3,7 +3,10 @@ package raft
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
+	"maps"
 	"path"
 	"slices"
 	"strings"
@@ -624,7 +627,7 @@ func (h *healer) absorbOrphan(ctx context.Context, orphan peer.ID) {
 
 	healLogger.Infof("[%s] sending healAck to orphan %s — it will wipe and rejoin via requestVoterJoin",
 		h.cluster.ID().ShortString(), orphan.ShortString())
-	h.member.raftClient.HealAck(orphan, exp.formation, exp.cut)
+	h.member.raftClient.HealAck(orphan, exp.receipt())
 }
 
 func (h *healer) executeMerge(ctx context.Context, loserLeader peer.ID) {
@@ -714,7 +717,7 @@ func (h *healer) healAckMembersOf(members []peer.ID, exp export) {
 		if pid == h.cluster.ID() {
 			continue
 		}
-		h.member.raftClient.HealAck(pid, exp.formation, exp.cut)
+		h.member.raftClient.HealAck(pid, exp.receipt())
 		sent++
 	}
 	healLogger.Infof("[%s] healing complete — sent healAck to %d members of the merged group (they will rejoin via requestVoterJoin)",
@@ -730,6 +733,48 @@ func (c *cluster) archiveKey() ds.Key {
 func (c *cluster) hasArchive() bool {
 	has, err := c.Store().Has(c.ctx, c.archiveKey())
 	return err == nil && has
+}
+
+// carried is the archive the member carries, nil when it carries none.
+func (c *cluster) carried() ([]byte, error) {
+	data, err := c.Store().Get(c.ctx, c.archiveKey())
+	if errors.Is(err, ds.ErrNotFound) {
+		return nil, nil
+	}
+	return data, err
+}
+
+// archiveDigest names an archive in a receipt: nil for none.
+func archiveDigest(data []byte) []byte {
+	if len(data) == 0 {
+		return nil
+	}
+	sum := sha256.Sum256(data)
+	return sum[:]
+}
+
+// holding is everything the member holds: its state machine's entries with the
+// archive it carries folded in, and the archive's digest, nil when it carries
+// none. A group that takes less than this and has the member yield on it loses the
+// rest.
+func (c *cluster) holding(m *member) (map[string]CRDTEntry, []byte, error) {
+	state, err := m.fsm.ExportState()
+	if err != nil {
+		return nil, nil, err
+	}
+	data, err := c.carried()
+	if err != nil || data == nil {
+		return state, nil, err
+	}
+	cmd, err := decodeCommand(data)
+	if err == nil && cmd.Merge == nil {
+		err = ErrInvalidCommand
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading its archive: %w", err)
+	}
+	maps.Copy(state, mergeCRDTDelta(state, cmd.Merge.Delta))
+	return state, archiveDigest(data), nil
 }
 
 // mayLeaveItsFormation says the member holds nothing it would lose by forming
@@ -802,7 +847,7 @@ func (h *healer) recoverFromQuorumLoss(ctx context.Context) {
 		healLogger.Warnf("[%s] quorum lost; applying what it committed: %v", h.cluster.ID().ShortString(), err)
 		return
 	}
-	state, err := m.fsm.ExportState()
+	state, _, err := h.cluster.holding(m)
 	if err != nil {
 		healLogger.Warnf("[%s] quorum lost; exporting what it holds: %v", h.cluster.ID().ShortString(), err)
 		return
@@ -814,7 +859,7 @@ func (h *healer) recoverFromQuorumLoss(ctx context.Context) {
 	}
 	// THE ARCHIVE IS WRITTEN BEFORE ANYTHING IS WIPED, and a member that holds
 	// nothing but an archive forms its group with it: a crash between the two
-	// loses nothing.
+	// loses nothing. It holds the archive it replaces.
 	h.cluster.mu.Lock()
 	err = h.cluster.Store().Put(ctx, h.cluster.archiveKey(), data)
 	h.cluster.mu.Unlock()
@@ -824,7 +869,7 @@ func (h *healer) recoverFromQuorumLoss(ctx context.Context) {
 	}
 	healLogger.Warnf("[%s] %d of %d members answer and none leads — forming a new group carrying %d keys",
 		h.cluster.ID().ShortString(), len(reachable), len(members), len(state))
-	h.yieldAndRejoin(ctx, "", receipt{formation: formation, cut: cut})
+	h.yieldAndRejoin(ctx, "", archived{receipt{formation: formation, cut: cut, archive: archiveDigest(data)}})
 }
 
 // replayArchive merges the state this member carried out of a formation that lost
@@ -883,25 +928,43 @@ func (h *healer) replayOnceLeading(ctx context.Context) {
 
 // yieldGuard is what lets a yield wipe what the member holds. It is asked once the
 // member's raft is down, when nothing more can commit: what held when the yield
-// was decided may not hold by the time it is made.
+// was decided may not hold by the time it is made. carried is the digest of the
+// archive the member carries, nil when none.
 type yieldGuard interface {
-	allows(m *member) bool
+	allows(m *member, carried []byte) bool
+	// takesArchive is whether the archive went with what the guard vouches for,
+	// and goes with the rest.
+	takesArchive() bool
 }
 
-// receipt is another group's word that it holds the state of formation up to cut.
+// receipt is another group's word that it holds the state of formation up to cut,
+// and the archive whose digest is archive, nil when it took none.
 type receipt struct {
 	formation []byte
 	cut       uint64
+	archive   []byte
 }
 
-func (r receipt) allows(m *member) bool {
-	return len(r.formation) > 0 && bytes.Equal(m.raft.Formation(), r.formation) && m.raft.CommitIndex() <= r.cut
+func (r receipt) allows(m *member, carried []byte) bool {
+	return len(r.formation) > 0 && bytes.Equal(m.raft.Formation(), r.formation) && m.raft.CommitIndex() <= r.cut &&
+		bytes.Equal(carried, r.archive)
 }
 
-// holdingNothing lets a member yield that has nothing to lose.
+func (r receipt) takesArchive() bool { return len(r.archive) > 0 }
+
+// archived is the member's own receipt for the archive it just wrote: the yield
+// wipes the rest and keeps the archive, to form its group with.
+type archived struct{ receipt }
+
+func (archived) takesArchive() bool { return false }
+
+// holdingNothing lets a member yield that has nothing to lose. An archive it
+// carries is kept.
 type holdingNothing struct{}
 
-func (holdingNothing) allows(m *member) bool { return m.holdsNothing() }
+func (holdingNothing) allows(m *member, _ []byte) bool { return m.holdsNothing() }
+
+func (holdingNothing) takesArchive() bool { return false }
 
 func (h *healer) yieldAndRejoin(ctx context.Context, winnerLeader peer.ID, guard yieldGuard) {
 	healLogger.Infof("[%s] yielding to winner %s",
@@ -920,9 +983,10 @@ func (h *healer) yieldAndRejoin(ctx context.Context, winnerLeader peer.ID, guard
 	m := h.cluster.current()
 	m.takeDown()
 
-	if guard.allows(m) {
+	carried, err := h.cluster.carried()
+	if err == nil && guard.allows(m, archiveDigest(carried)) {
 		healLogger.Infof("[%s] wiping raft state (log, snapshot and applied data)", h.cluster.ID().ShortString())
-		if h.wipeRaftState(ctx) && winnerLeader != "" {
+		if h.wipeRaftState(ctx, guard.takesArchive()) && winnerLeader != "" {
 			h.cluster.yielded = true
 		}
 	} else {
@@ -974,15 +1038,23 @@ func (c *cluster) reinitialize(wait time.Duration) {
 	}
 }
 
-// wipeRaftState removes the member's log, snapshot and applied data. The applied
-// data must go: rejoining by log replication from the first index would otherwise
-// leave entries the winning group never committed in the store, which this voter
-// would serve once it led. It finishes whatever cancels ctx, as Close does.
-func (h *healer) wipeRaftState(ctx context.Context) bool {
+// wipeRaftState removes the member's log, snapshot and applied data, and with
+// archive the archive it carries. The applied data must go: rejoining by log
+// replication from the first index would otherwise leave entries the winning
+// group never committed in the store, which this voter would serve once it led.
+// It finishes whatever cancels ctx, as Close does.
+func (h *healer) wipeRaftState(ctx context.Context, archive bool) bool {
 	ctx = context.WithoutCancel(ctx)
 	storagePrefix := path.Join(RaftStoragePrefix, h.cluster.namespace)
 	if err := wipePrefixes(ctx, h.cluster.Store(), path.Join(storagePrefix, "engine"), path.Join(storagePrefix, "data")); err != nil {
 		healLogger.Warnf("[%s] failed to wipe during a yield, which keeps everything it held: %v", h.cluster.ID().ShortString(), err)
+		return false
+	}
+	if !archive {
+		return true
+	}
+	if err := h.cluster.Store().Delete(ctx, h.cluster.archiveKey()); err != nil {
+		healLogger.Warnf("[%s] letting the archive the other group took go: %v", h.cluster.ID().ShortString(), err)
 		return false
 	}
 	return true

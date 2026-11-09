@@ -380,7 +380,7 @@ func (s *raftStreamService) ExportFSM(ctx context.Context, req *connect.Request[
 		return nil, fmt.Errorf("applying up to the cut at %d: %w", cut, err)
 	}
 
-	state, err := m.fsm.ExportState()
+	state, archive, err := s.cluster.holding(m)
 	if err != nil {
 		return nil, fmt.Errorf("exporting FSM state: %w", err)
 	}
@@ -397,6 +397,7 @@ func (s *raftStreamService) ExportFSM(ctx context.Context, req *connect.Request[
 		Clock:     clock,
 		Cut:       cut,
 		Formation: m.raft.Formation(),
+		Archive:   archive,
 	}), nil
 }
 
@@ -405,8 +406,9 @@ func (s *raftStreamService) ExportFSM(ctx context.Context, req *connect.Request[
 const exportDrainWait = 5 * time.Second
 
 // HealAck is a receipt: the sender's group holds this member's formation's state
-// up to the cut. A member of another formation, or that committed past the cut,
-// holds something the receipt does not cover, and refuses to yield on it.
+// up to the cut, and the archive it names. A member of another formation, that
+// committed past the cut, or that carries another archive, holds something the
+// receipt does not cover, and refuses to yield on it.
 func (s *raftStreamService) HealAck(ctx context.Context, req *connect.Request[raftv2.HealAckRequest]) (*connect.Response[raftv2.HealAckResponse], error) {
 	fromPeer := remotePeer(ctx)
 	m := s.cluster.current()
@@ -416,11 +418,18 @@ func (s *raftStreamService) HealAck(ctx context.Context, req *connect.Request[ra
 	if commit := m.raft.CommitIndex(); commit > req.Msg.GetCut() {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("%w: committed %d, past the cut at %d", ErrReceiptShort, commit, req.Msg.GetCut()))
 	}
+	carried, err := s.cluster.carried()
+	if err != nil {
+		return nil, fmt.Errorf("reading its archive: %w", err)
+	}
+	if !bytes.Equal(archiveDigest(carried), req.Msg.GetArchive()) {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("%w: it carries another archive", ErrReceiptShort))
+	}
 	streamLogger.Infof("[%s] received healAck from %s — signaling healer",
 		s.cluster.ID().ShortString(), fromPeer.ShortString())
 
 	if h := s.cluster.current().healer.Load(); h != nil {
-		h.signalHealAck(fromPeer, receipt{formation: req.Msg.GetFormation(), cut: req.Msg.GetCut()})
+		h.signalHealAck(fromPeer, receipt{formation: req.Msg.GetFormation(), cut: req.Msg.GetCut(), archive: req.Msg.GetArchive()})
 	}
 
 	return connect.NewResponse(&raftv2.HealAckResponse{}), nil

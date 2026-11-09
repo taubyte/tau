@@ -40,7 +40,7 @@ type internalClient interface {
 	ClusterInfo(target peer.ID) (*ClusterInfoResponse, error)
 	Offer(target peer.ID) (offer, error)
 	ExportFSM(target peer.ID, freeze time.Duration) (export, error)
-	HealAck(target peer.ID, formation []byte, cut uint64) error
+	HealAck(target peer.ID, r receipt) error
 	Close() error
 }
 
@@ -345,6 +345,12 @@ type export struct {
 	clock     uint64
 	cut       uint64
 	formation []byte
+	archive   []byte
+}
+
+// receipt is what a group that took this export gives its member to yield on.
+func (e export) receipt() receipt {
+	return receipt{formation: e.formation, cut: e.cut, archive: e.archive}
 }
 
 func (c *client) ExportFSM(target peer.ID, freeze time.Duration) (export, error) {
@@ -364,14 +370,15 @@ func (c *client) ExportFSM(target peer.ID, freeze time.Duration) (export, error)
 		clock:     res.Msg.GetClock(),
 		cut:       res.Msg.GetCut(),
 		formation: res.Msg.GetFormation(),
+		archive:   res.Msg.GetArchive(),
 	}
 	clientLogger.Infof("exportFSM from %s: %d keys, clock=%d, cut=%d", target.ShortString(), len(e.state), e.clock, e.cut)
 	return e, nil
 }
 
-func (c *client) HealAck(target peer.ID, formation []byte, cut uint64) error {
+func (c *client) HealAck(target peer.ID, r receipt) error {
 	clientLogger.Infof("sending healAck to %s", target.ShortString())
-	req := &raftv2.HealAckRequest{Formation: formation, Cut: cut}
+	req := &raftv2.HealAckRequest{Formation: r.formation, Cut: r.cut, Archive: r.archive}
 	_, err := first(c.ctx, c, []peer.ID{target}, sendToPeerTimeout, func(ctx context.Context, s raftv2connect.RaftServiceClient) (*connect.Response[raftv2.HealAckResponse], error) {
 		return s.HealAck(ctx, connect.NewRequest(req))
 	})

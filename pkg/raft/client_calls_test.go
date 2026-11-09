@@ -148,7 +148,7 @@ func TestClient_CallsToAPeerThatRunsNoMemberFail(t *testing.T) {
 	require.ErrorContains(t, err, "clusterInfo failed")
 	_, err = cli.ExportFSM(target, 0)
 	require.ErrorContains(t, err, "exportFSM failed")
-	require.Error(t, cli.HealAck(target, nil, 0))
+	require.Error(t, cli.HealAck(target, receipt{}))
 }
 
 func TestClient_ExchangePeersWithNoneOfItsOwn(t *testing.T) {
