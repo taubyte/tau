@@ -259,6 +259,10 @@ func discoverOrCreateConfigFileLoc() (string, error) {
 	root := sessionRootDir()
 	debugSession("discover: session root=%q", root)
 
+	// One shared PID can be the OS reusing it for an unrelated process, so a
+	// file needs two, unless the chain itself is a single PID.
+	minShared := min(2, len(leafPIDs))
+
 	var bestFile string
 	var bestIntersection int
 	var bestModTime time.Time
@@ -285,8 +289,8 @@ func discoverOrCreateConfigFileLoc() (string, error) {
 				}
 			}
 			inter := longestCommonRun(leafPIDs, storedPIDs)
-			if inter < 1 {
-				debugSession("discover: skip file=%q stored=%v intersection=%d (< 1)", base, storedPIDs, inter)
+			if inter < minShared {
+				debugSession("discover: skip file=%q stored=%v intersection=%d (< %d)", base, storedPIDs, inter, minShared)
 				continue
 			}
 			debugSession("discover: contender file=%q stored=%v intersection=%d", base, storedPIDs, inter)
@@ -298,7 +302,7 @@ func discoverOrCreateConfigFileLoc() (string, error) {
 		}
 	}
 
-	if bestIntersection >= 1 && bestFile != "" {
+	if bestFile != "" {
 		debugSession("discover: selected path=%q intersection=%d => reusing", bestFile, bestIntersection)
 		return bestFile, nil
 	}
