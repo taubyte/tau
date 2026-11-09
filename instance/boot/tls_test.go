@@ -161,3 +161,22 @@ func TestAnHTTPSAddressAlreadyTakenIsAnError(t *testing.T) {
 	}))
 	require.ErrorContains(t, err, "listening on")
 }
+
+func TestATerminatingNodeTellsItsGatewayAndKeepsItsSection(t *testing.T) {
+	var cfg instance.Config
+	require.NoError(t, yaml.Unmarshal([]byte("gateway:\n  maxbody: 1024\n"), &cfg))
+
+	told, err := servedOverTLS(cfg)
+	require.NoError(t, err)
+	var section gateway.Config
+	require.NoError(t, told.Section(instance.Gateway, &section))
+	require.True(t, section.TLS)
+	require.Equal(t, int64(1024), section.MaxBody, "what the operator wrote is kept")
+	require.Equal(t, map[string]any{"maxbody": 1024}, cfg.Sections[instance.Gateway], "and the file's own config is not changed")
+
+	none, err := servedOverTLS(instance.Config{})
+	require.NoError(t, err)
+	var fresh gateway.Config
+	require.NoError(t, none.Section(instance.Gateway, &fresh))
+	require.True(t, fresh.TLS, "a node whose file names no gateway section gets one")
+}

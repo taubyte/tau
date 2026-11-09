@@ -17,6 +17,7 @@ import (
 	"github.com/taubyte/tau/pkg/stats"
 	"github.com/taubyte/tau/services"
 	"github.com/taubyte/tau/services/cm"
+	"github.com/taubyte/tau/services/gateway"
 	"github.com/taubyte/tau/services/plm/jobs"
 	registerService "github.com/taubyte/tau/services/register"
 )
@@ -258,15 +259,10 @@ func TestANodeWithNoRegisterReadsNoneOfItsAnswers(t *testing.T) {
 	require.ErrorIs(t, err, service.ErrNoneRuns)
 }
 
-func TestWithTLSReachesTheGateway(t *testing.T) {
-	var o options
-	require.NoError(t, WithTLS()(&o))
-	require.True(t, o.terminates)
-
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Stats, Gateway}}, WithTLS())
+func TestAGatewayServedOverTLSSaysSoInItsSection(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Stats, Gateway}, Sections: map[string]any{Gateway: gateway.Config{TLS: true}}})
 	require.NoError(t, n.Start(t.Context()))
 	require.NotNil(t, n.TLSConfig())
-	require.True(t, terminating{n}.Terminates(), "and the gateway is told so")
 }
 
 // reported is this node's own row in its stats view once it satisfies ok:

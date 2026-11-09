@@ -172,10 +172,6 @@ type options struct {
 	extra     map[string]service.Service
 	identity  func(Host) (auth.Identity, error)
 	resolver  cm.Resolver
-
-	// terminates says whatever serves Handler serves it over TLS too, with
-	// TLSConfig. See WithTLS.
-	terminates bool
 }
 
 // WithDatabaseEngines is what a workload's `database:` access is served from: a
@@ -187,15 +183,6 @@ func WithDatabaseEngines(r *database.Registry) Option {
 			return errors.New("node: a nil database registry")
 		}
 		o.engines = r
-		return nil
-	}
-}
-
-// WithTLS says the composer serves this node's gateway over TLS as well, answering
-// with TLSConfig. The composer binds the sockets, so it says.
-func WithTLS() Option {
-	return func(o *options) error {
-		o.terminates = true
 		return nil
 	}
 }

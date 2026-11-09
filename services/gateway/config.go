@@ -151,6 +151,10 @@ type Config struct {
 	// Default DefaultCacheBudget.
 	CacheBudget int64
 
+	// TLS says whoever serves this gateway's handler serves it over TLS too, which
+	// decides what a name providing its own certificate gets over plain HTTP.
+	TLS bool
+
 	// Wildcard is the certificate for this cloud's own zone, which is what a
 	// generated name answers a handshake with.
 	//

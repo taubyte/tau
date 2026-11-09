@@ -104,11 +104,6 @@ func (c certificates) Issuer() (gateway.Issuer, error) {
 	return certs, nil
 }
 
-// terminating says whether the composer serves this node's gateway over TLS too.
-type terminating struct{ n *Instance }
-
-func (t terminating) Terminates() bool { return t.n.opts.terminates }
-
 // challengeStore is the DNS-01 database, opened once per node.
 func (n *Instance) challengeStore() (pkgcache.Store, error) {
 	n.sharedMu.Lock()

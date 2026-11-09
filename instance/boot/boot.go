@@ -18,6 +18,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -34,6 +35,7 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/sectls"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
+	"github.com/taubyte/tau/services/gateway"
 	"github.com/taubyte/tau/services/secrets"
 )
 
@@ -191,22 +193,24 @@ func Start(ctx context.Context, f File, added ...instance.Option) (*Running, err
 		return nil, err
 	}
 
-	// A NODE THAT TERMINATES SAYS SO before its gateway is built, because the
-	// gateway decides from it what a name providing its own certificate gets
-	// over plain HTTP.
-	var serving []instance.Option
-	if f.HTTPS != "" {
-		serving = append(serving, instance.WithTLS())
-	}
-
 	// The instance's directory is the file's, so its raft snapshots, volumes and
 	// secrets share live on this machine's disk.
 	cfg := f.Node
 	cfg.Root = f.Root
 
-	n, err := instance.New(p, cfg, append(append(serving,
+	// A NODE THAT TERMINATES TELLS ITS GATEWAY, in the gateway's own section, since
+	// the gateway decides from it what a name providing its own certificate gets over
+	// plain HTTP.
+	if f.HTTPS != "" {
+		if cfg, err = servedOverTLS(cfg); err != nil {
+			p.Close()
+			return nil, err
+		}
+	}
+
+	n, err := instance.New(p, cfg, append([]instance.Option{
 		instance.WithDatabaseEngines(dbEngines),
-	), added...)...)
+	}, added...)...)
 	if err != nil {
 		p.Close()
 		return nil, err
@@ -387,6 +391,23 @@ func decode(name, value string) ([]byte, error) {
 		return nil, fmt.Errorf("boot: %s is not base64: %w", name, err)
 	}
 	return out, nil
+}
+
+// servedOverTLS is cfg with its gateway's section saying it is served over TLS too,
+// beside whatever else the section says.
+func servedOverTLS(cfg instance.Config) (instance.Config, error) {
+	var section gateway.Config
+	if err := cfg.Section(instance.Gateway, &section); err != nil {
+		return cfg, err
+	}
+	section.TLS = true
+	sections := maps.Clone(cfg.Sections)
+	if sections == nil {
+		sections = map[string]any{}
+	}
+	sections[instance.Gateway] = section
+	cfg.Sections = sections
+	return cfg, nil
 }
 
 // sectionOf is cfg's section for one service alone, or none.

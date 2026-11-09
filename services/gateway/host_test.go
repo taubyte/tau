@@ -111,15 +111,12 @@ func (oneIssuer) Certificate(context.Context, string) (tls.Certificate, error) {
 }
 func (oneIssuer) Challenge(string) (string, bool) { return "", false }
 
-type terminated bool
-
-func (t terminated) Terminates() bool { return bool(t) }
-
 func TestAGatewayStartsFromItsNodeAndTakesWhatIsBesideIt(t *testing.T) {
-	n := newNode(t, routes{}, busesBeside{}, workerBeside{}, issuing{issuer: oneIssuer{}}, terminated(true))
+	n := newNode(t, routes{}, busesBeside{}, workerBeside{}, issuing{issuer: oneIssuer{}})
 	n.config = func(cfg *hostConfig) error {
 		cfg.CloudFqdn = "tau.example.io"
 		cfg.MaxBody = 1 << 10
+		cfg.TLS = true
 		return nil
 	}
 	s := New()
@@ -136,7 +133,7 @@ func TestAGatewayStartsFromItsNodeAndTakesWhatIsBesideIt(t *testing.T) {
 	require.Equal(t, workerBeside{}, s.artifacts, "and so is where a build's artifact is")
 	require.NotNil(t, s.assets, "a package's files are read through storage")
 	require.Equal(t, oneIssuer{}, s.issuer)
-	require.True(t, s.terminates)
+	require.True(t, s.terminates, "served over TLS, as its section says")
 	require.Equal(t, time.Unix(1_700_000_000, 0), s.now(), "the node's clock")
 
 	require.NoError(t, s.Close())
@@ -146,7 +143,7 @@ func TestAGatewayStartsFromItsNodeAndTakesWhatIsBesideIt(t *testing.T) {
 func TestAGatewayAloneTakesOnlyWhatItMust(t *testing.T) {
 	s := New()
 	t.Cleanup(func() { s.Close() })
-	require.NoError(t, s.Start(t.Context(), newNode(t, routes{}, issuing{}, terminated(false))))
+	require.NoError(t, s.Start(t.Context(), newNode(t, routes{}, issuing{})))
 	require.Nil(t, s.buses)
 	require.Nil(t, s.admits)
 	require.Nil(t, s.artifacts)

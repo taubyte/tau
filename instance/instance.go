@@ -149,10 +149,8 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 	// The services this node runs, in its report from the first: a node is routed to
 	// for them as soon as it says anything.
 	n.provide("", configured{n})
-	// Every service name a node of this cloud can run, and whether its gateway's
-	// handler is served over TLS.
+	// Every service name a node of this cloud can run.
 	n.provide("", catalog{n})
-	n.provide("", terminating{n})
 	// What whoever composed the node handed it for the worker: the tiers it runs on,
 	// the database engines it can reach, and where a build's artifact is.
 	n.provide("", tiers(o.runtimes))

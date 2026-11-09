@@ -19,12 +19,6 @@ type Certifying interface {
 	Issuer() (Issuer, error)
 }
 
-// Terminating says whether whoever serves this gateway's handler serves it over TLS
-// too, which decides what a name providing its own certificate gets over plain HTTP.
-type Terminating interface {
-	Terminates() bool
-}
-
 // hostConfig is what the gateway reads off its node: its own section and the
 // cloud's zone.
 type hostConfig struct {
@@ -36,8 +30,7 @@ type hostConfig struct {
 // the register's client, requests placed on workers from the stats view, provided
 // certificates and package files read through the secrets and storage clients, and
 // what the node offers beside it: the bus a browser attaches to and who may attach,
-// where a build's artifact is, the issuer for generated names and whether its
-// handler is served over TLS.
+// where a build's artifact is, and the issuer for generated names.
 func (s *Service) Start(ctx context.Context, h service.Host) error {
 	var cfg hostConfig
 	if err := h.Config(&cfg); err != nil {
@@ -78,7 +71,7 @@ func (s *Service) Start(ctx context.Context, h service.Host) error {
 			opts = append(opts, withIssuer(issuer))
 		}
 	}
-	if terminating, ok := service.Get[Terminating](h); ok && terminating.Terminates() {
+	if cfg.TLS {
 		opts = append(opts, withTLS())
 	}
 	return s.assemble(cfg.Config, opts...)
