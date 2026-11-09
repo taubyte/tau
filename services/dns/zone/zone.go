@@ -12,7 +12,6 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
-	"github.com/taubyte/tau/services/dns"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -44,11 +43,6 @@ type Zones struct {
 	projects Projects
 	guests   Guests
 }
-
-var (
-	_ dns.Zones     = (*Zones)(nil)
-	_ dns.Resolvers = (*Zones)(nil)
-)
 
 // New wires the adapter.
 //

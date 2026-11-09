@@ -25,6 +25,7 @@ import (
 	"github.com/taubyte/tau/instance/boot"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/services"
+	"github.com/taubyte/tau/services/dns"
 )
 
 // Set at release by -ldflags "-X main.version=… -X main.commit=… -X main.date=…".
@@ -185,7 +186,7 @@ func printExample(w io.Writer) error {
 			// Written out although it is the default: :53 needs root or
 			// CAP_NET_BIND_SERVICE, and the file should show the number that
 			// will fail on a laptop.
-			DNSListen: instance.DefaultDNSListen,
+			Sections: map[string]any{instance.DNS: map[string]any{"listen": dns.DefaultListen}},
 		},
 		Root:        boot.DefaultRoot,
 		Listen:      []string{boot.DefaultListen},

@@ -8,10 +8,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/instance/zone"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
+	"github.com/taubyte/tau/services/dns/zone"
 	"github.com/taubyte/tau/services/worker"
 )
 

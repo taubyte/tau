@@ -31,8 +31,8 @@ type Services struct {
 // ErrBadServices is a services zone missing its zone or its names.
 var ErrBadServices = errors.New("dns: a services zone needs a zone and the services named under it")
 
-// WithServices answers `<service>.<zone>` with the nodes running it.
-func WithServices(s Services) Option {
+// withServices answers `<service>.<zone>` with the nodes running it.
+func withServices(s Services) option {
 	return func(o *options) error {
 		s.Zone = strings.ToLower(strings.Trim(s.Zone, "."))
 		if s.Zone == "" || len(s.Names) == 0 {

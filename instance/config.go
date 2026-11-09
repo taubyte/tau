@@ -39,7 +39,10 @@ const (
 	Auth     = "auth"
 	Secrets  = "secrets"
 	Proxy    = "proxy"
-	DNS      = "dns"
+
+	// DNS answers queries from the stats view: the last link, without which a
+	// proxy's port published through stats is unreadable. See services/dns.
+	DNS = dns.Name
 
 	// Database holds a project's databases. It is its OWN service and not the
 	// worker's job — v1 made the substrate open them, so the data plane was
@@ -64,7 +67,7 @@ var (
 )
 
 // All is every service this composition knows how to start.
-var All = []string{Worker, Gateway, Proxy, DNS}
+var All = []string{Worker, Gateway, Proxy}
 
 // Everything is every service a node can be configured to run: the ones this
 // package still starts itself and the ones services.New makes. All, the default
@@ -131,7 +134,6 @@ type Config struct {
 	// Auth names the built-in admin, who may sign up, the console callbacks
 	// the forges people sign in through and the OIDC providers.
 	Auth auth.Config
-	DNS  dns.Config
 
 	// Raft is how this node's consensus groups time out: every group a service here
 	// opens. Zero is raft's defaults.
@@ -139,11 +141,6 @@ type Config struct {
 
 	// Clients is how every client on this node reaches the services it calls.
 	Clients Clients `yaml:"clients,omitempty"`
-
-	// DNSListen is the port this node's dns server answers on, e.g. ":53" or ":5353".
-	// Default DefaultDNSListen. The operator's, since 53 is the one port a resolver dials
-	// by convention.
-	DNSListen string
 
 	// Sections is each service's own configuration, under its name, at the top
 	// level of the file beside the instance's own keys. Nothing here reads it: the

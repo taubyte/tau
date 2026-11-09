@@ -3,6 +3,7 @@ package instance
 import (
 	"context"
 	"errors"
+	"maps"
 	"strings"
 	"sync"
 	"testing"
@@ -23,6 +24,7 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
+	dnsService "github.com/taubyte/tau/services/dns"
 )
 
 // A node is tested with real services and fake resources: a mocknet host, gossipsub
@@ -297,6 +299,25 @@ func mockPeer(t testing.TB) peer.Node {
 	return p
 }
 
+// loopbackDNS is cfg with its dns section, on a node that runs dns, answering on an
+// ephemeral loopback port unless the test named one: :53 is the operator's default,
+// needs privilege, and a fleet needs a different port per node.
+func loopbackDNS(cfg Config) Config {
+	if len(cfg.Services) != 0 && !cfg.runs(DNS) {
+		return cfg
+	}
+	cfg.Sections = maps.Clone(cfg.Sections)
+	if cfg.Sections == nil {
+		cfg.Sections = map[string]any{}
+	}
+	section, _ := cfg.Sections[DNS].(dnsService.Config)
+	if section.Listen == "" {
+		section.Listen = "127.0.0.1:0"
+	}
+	cfg.Sections[DNS] = section
+	return cfg
+}
+
 // rooted is cfg with a directory of the test's own and, on a DNS node, an
 // ephemeral loopback port: :53 needs privilege and would answer for the
 // developer's resolver. An empty Services list means All, so ask as
@@ -306,9 +327,7 @@ func rooted(t testing.TB, cfg Config) Config {
 	if cfg.Root == "" {
 		cfg.Root = t.TempDir()
 	}
-	if (len(cfg.Services) == 0 || cfg.runs(DNS)) && cfg.DNSListen == "" {
-		cfg.DNSListen = "127.0.0.1:0"
-	}
+	cfg = loopbackDNS(cfg)
 	// RAFT TIMED FOR ONE PROCESS, as dream times it: by default a group of one waits
 	// out a 30s bootstrap before electing itself.
 	if cfg.Raft == (raft.Timing{}) {

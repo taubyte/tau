@@ -51,9 +51,9 @@ type Zones interface {
 	Records(ctx context.Context, name string) (apex string, lines []string, err error)
 }
 
-// WithZones is where authored records come from. A server without one answers
+// withZones is where authored records come from. A server without one answers
 // only what it can route.
-func WithZones(z Zones) Option {
+func withZones(z Zones) option {
 	return func(o *options) error {
 		if z == nil {
 			return ErrNoZones
@@ -78,9 +78,9 @@ type Resolvers interface {
 	Resolve(ctx context.Context, q invoke.Question) (*invoke.Resolution, error)
 }
 
-// WithResolvers is where resolved answers come from. A server without one answers
+// withResolvers is where resolved answers come from. A server without one answers
 // only what a zone wrote down and what it can route.
-func WithResolvers(r Resolvers) Option {
+func withResolvers(r Resolvers) option {
 	return func(o *options) error {
 		if r == nil {
 			return ErrNoResolvers

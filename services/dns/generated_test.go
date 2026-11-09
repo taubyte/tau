@@ -30,7 +30,7 @@ func (h fakeHosts) ResolveHost(_ context.Context, fqdn string) (string, string, 
 
 func generatedService(t *testing.T, r Router, h Hosts) *Service {
 	t.Helper()
-	s, err := New(Config{}, WithRouter(r), WithGenerated(Generated{Zone: "Tau.Example.io.", Hosts: h, Service: "gateway"}))
+	s, err := build(Config{}, withRouter(r), withGenerated(Generated{Zone: "Tau.Example.io.", Hosts: h, Service: "gateway"}))
 	require.NoError(t, err)
 	return s
 }
@@ -114,8 +114,8 @@ func TestNamesOutsideTheCloudZoneAreUntouched(t *testing.T) {
 }
 
 func TestCAAStillAnswersUnderTheCloudZone(t *testing.T) {
-	s, err := New(Config{CAA: []CAA{{Zone: "tau.example.io", Issuer: "letsencrypt.org"}}},
-		WithRouter(gateways), WithGenerated(Generated{Zone: "tau.example.io", Hosts: fakeHosts{}, Service: "gateway"}))
+	s, err := build(Config{CAA: []CAA{{Zone: "tau.example.io", Issuer: "letsencrypt.org"}}},
+		withRouter(gateways), withGenerated(Generated{Zone: "tau.example.io", Hosts: fakeHosts{}, Service: "gateway"}))
 	require.NoError(t, err)
 	reply := s.Answer(query("typo.p1.tau.example.io", dns.TypeCAA))
 	require.Equal(t, dns.RcodeSuccess, reply.Rcode)
@@ -128,7 +128,7 @@ func TestAGeneratedZoneNeedsAllThreeParts(t *testing.T) {
 		{Zone: "tau.example.io", Service: "gateway"},
 		{Zone: "tau.example.io", Hosts: fakeHosts{}},
 	} {
-		_, err := New(Config{}, WithRouter(gateways), WithGenerated(g))
+		_, err := build(Config{}, withRouter(gateways), withGenerated(g))
 		require.ErrorIs(t, err, ErrBadGenerated)
 	}
 }

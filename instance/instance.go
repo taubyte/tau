@@ -42,7 +42,6 @@ import (
 	"github.com/taubyte/tau/services/cm"
 	cmService "github.com/taubyte/tau/services/cm"
 	databaseService "github.com/taubyte/tau/services/database"
-	dnsService "github.com/taubyte/tau/services/dns"
 	gateway "github.com/taubyte/tau/services/gateway"
 	primitivesService "github.com/taubyte/tau/services/primitives"
 	v2proxy "github.com/taubyte/tau/services/proxy"
@@ -79,7 +78,6 @@ type Instance struct {
 	worker   *worker.Service
 	gateway  *gateway.Service
 	proxy    *v2proxy.Service
-	dns      *dnsService.Service
 
 	secrets secretsService.Service
 
@@ -233,8 +231,10 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 	}
 	// What the built-ins add to this node's report.
 	n.provide("", builtIns{n})
-	// The certificate a service's own public listener answers with.
-	n.provide("", listeners{n})
+	// The certificate a service's own public listener answers with, and DNS-01's.
+	n.provide("", certificates{n})
+	// Every service name a node of this cloud can run.
+	n.provide("", catalog{n})
 	// How every service here finds a peer serving a protocol.
 	n.finder = &finder{n: n}
 	n.served = service.NewServed(p.ID(), n.finder, cfg.Clients.Retry)
@@ -248,6 +248,13 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 	if err := n.open(); err != nil {
 		n.Close()
 		return nil, err
+	}
+	// The worker beside the services that read what it holds, and its component tier.
+	if n.worker != nil {
+		n.provide(Worker, n.worker)
+	}
+	if n.decider != nil {
+		n.provide("", n.decider)
 	}
 	return n, nil
 }
@@ -275,13 +282,7 @@ func (n *Instance) open() error {
 	}
 	// AFTER PLACEMENT AND THE WORKER, which it takes as collaborators: the
 	// first is where a connection goes, the second is what this node holds.
-	if err := n.openProxy(); err != nil {
-		return err
-	}
-	// AND DNS LAST OF THE EDGE SERVICES, because it publishes what the two
-	// above and every other node reported — it answers from the stats view and
-	// takes nothing else.
-	return n.openDNS()
+	return n.openProxy()
 }
 
 // tiers is what this node's pool can run. It is here for the composition's own
@@ -689,14 +690,6 @@ func (n *Instance) Start(ctx context.Context) error {
 		if err := s.Start(ctx); err != nil {
 			return err
 		}
-	}
-
-	// THE SOCKET IS TAKEN HERE AND NOT AT CONSTRUCTION, for the reason the
-	// gateway's is not taken at all: building a service and binding a port are
-	// different failures, and a node that took :53 before it could answer
-	// would be answering with an empty view.
-	if err := n.listenDNS(); err != nil {
-		return err
 	}
 
 	// THE BACKGROUND LOOPS LAST. They outlive the call that started them, so

@@ -30,8 +30,8 @@ type challenges struct {
 	reader Challenges
 }
 
-// WithChallenges answers `_acme-challenge.<name>` TXT for names in zone.
-func WithChallenges(zone string, reader Challenges) Option {
+// withChallenges answers `_acme-challenge.<name>` TXT for names in zone.
+func withChallenges(zone string, reader Challenges) option {
 	return func(o *options) error {
 		zone = strings.ToLower(strings.Trim(zone, "."))
 		if zone == "" || reader == nil {

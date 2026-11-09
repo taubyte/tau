@@ -179,7 +179,7 @@ var readers = map[string][]string{
 	"services/proxy/tls.go":    {"proxy"},
 
 	// A zone's own server, which takes the generated Zone it serves.
-	"instance/zone/zone.go": {"zone"},
+	"services/dns/zone/zone.go": {"zone"},
 }
 
 var everyKind = []string{"*"}
@@ -189,7 +189,7 @@ var everyKind = []string{"*"}
 var exposed = map[string][]string{
 	// Project.Zones() is the one accessor in pkg/specs that hands a generated
 	// struct out, and these two are what read it.
-	"zone": {"instance/zone/zone.go", "services/plm/deploy/deploy.go"},
+	"zone": {"services/dns/zone/zone.go", "services/plm/deploy/deploy.go"},
 	// A workload runs its package, which the worker reads by its generated reader.
 	"package": {"services/worker/resolve.go", "services/worker/unserved.go", "services/plm/artifact/artifact.go"},
 }

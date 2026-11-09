@@ -33,9 +33,12 @@ type Router interface {
 }
 
 // Config is what an operator declared: values written in yaml, so it decodes,
-// marshals and round-trips. Where answers come from is injected with WithRouter,
-// since a live object cannot be decoded.
+// marshals and round-trips. Where answers come from is the node's (host.go).
 type Config struct {
+	// Listen is where this node's server answers, e.g. ":53" or "127.0.0.1:5353".
+	// Default DefaultListen: 53 is the one port a resolver dials by convention.
+	Listen string
+
 	// TTL is what this server tells resolvers about how long to cache an
 	// answer. Default 30s.
 	//
@@ -96,6 +99,7 @@ type CAA struct {
 
 // Defaults.
 const (
+	DefaultListen     = ":53"
 	DefaultTTL        = 30 * time.Second
 	DefaultMaxAge     = 30 * time.Second
 	DefaultMaxRecords = 8
@@ -109,13 +113,13 @@ var (
 	ErrNoResolvers = errors.New("dns: a nil resolver answers no question")
 
 	// ErrNoZones is a nil source of authored records, which is not the same as
-	// no source at all — see WithZones.
+	// no source at all — see withZones.
 	ErrNoZones = errors.New("dns: a nil source declares no records")
 )
 
-// Option injects what this service is built from. Operator values go in Config;
+// option injects what this service is built from. Operator values go in Config;
 // live collaborators come through here.
-type Option func(*options) error
+type option func(*options) error
 
 type options struct {
 	router    Router
@@ -127,8 +131,8 @@ type options struct {
 	challenges *challenges
 }
 
-// WithRouter is where the answers come from. Required.
-func WithRouter(r Router) Option {
+// withRouter is where the answers come from. Required.
+func withRouter(r Router) option {
 	return func(o *options) error {
 		if r == nil {
 			return ErrNoRouter
@@ -139,6 +143,9 @@ func WithRouter(r Router) Option {
 }
 
 func (c Config) withDefaults() (Config, error) {
+	if c.Listen == "" {
+		c.Listen = DefaultListen
+	}
 	if c.TTL == 0 {
 		c.TTL = DefaultTTL
 	}

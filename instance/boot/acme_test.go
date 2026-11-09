@@ -28,6 +28,7 @@ import (
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/cm"
+	dnsService "github.com/taubyte/tau/services/dns"
 	secretsService "github.com/taubyte/tau/services/secrets"
 )
 
@@ -139,9 +140,9 @@ func issuing(t *testing.T, ca *pebble, cloud, root string, cfg cm.CertificateCon
 	return initialized(t, accountBundle(t), admit(t, File{
 		Node: instance.Config{
 			Services:  []string{instance.Register, instance.Stats, instance.Gateway, instance.DNS, instance.Secrets, instance.CM},
-			DNSListen: "127.0.0.1:0",
 			CloudFqdn: cloud,
 			CM:        cm.Config{Certificate: cfg},
+			Sections:  map[string]any{instance.DNS: dnsService.Config{Listen: "127.0.0.1:0"}},
 		},
 		Root:       root,
 		PrivateKey: base64.StdEncoding.EncodeToString(minted),

@@ -16,7 +16,7 @@ func BenchmarkAnswer(b *testing.B) {
 		nodes[i] = stats.Node{Peer: fmt.Sprintf("p%d", i), Load: float64(i) / 10, Ready: true,
 			Addresses: []string{fmt.Sprintf("203.0.113.%d", i+1), fmt.Sprintf("2001:db8::%d", i+1)}}
 	}
-	s, err := New(Config{}, WithRouter(serving("shop.example.com", nodes...)))
+	s, err := build(Config{}, withRouter(serving("shop.example.com", nodes...)))
 	require.NoError(b, err)
 	type testCase struct {
 		name  string

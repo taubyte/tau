@@ -33,9 +33,9 @@ func zoning(t *testing.T, apex string, lines ...string) (*Service, *declared) {
 	t.Helper()
 
 	z := &declared{apex: apex, lines: lines}
-	s, err := New(Config{NodeZone: "nodes.example.com"},
-		WithRouter(&fakeRouter{nodes: map[string][]stats.Node{}}),
-		WithZones(z))
+	s, err := build(Config{NodeZone: "nodes.example.com"},
+		withRouter(&fakeRouter{nodes: map[string][]stats.Node{}}),
+		withZones(z))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	return s, z
@@ -86,10 +86,10 @@ func TestARelativeRecordResolvesUnderItsApex(t *testing.T) {
 func TestAnAuthoredRecordBeatsARoutedOne(t *testing.T) {
 	z := &declared{apex: "example.com", lines: []string{"shop 300 IN A 1.2.3.4"}}
 
-	s, err := New(Config{NodeZone: "nodes.example.com"},
-		WithRouter(srvService("shop.example.com",
+	s, err := build(Config{NodeZone: "nodes.example.com"},
+		withRouter(srvService("shop.example.com",
 			stats.Node{Peer: peerNamed(t, "n"), Ready: true, Addresses: []string{"203.0.113.9"}})),
-		WithZones(z))
+		withZones(z))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 
@@ -150,6 +150,6 @@ func TestAServerWithNoZoneSourceStillRoutes(t *testing.T) {
 }
 
 func TestANilZoneSourceIsRefusedAtConstruction(t *testing.T) {
-	_, err := New(Config{}, WithRouter(&fakeRouter{}), WithZones(nil))
+	_, err := build(Config{}, withRouter(&fakeRouter{}), withZones(nil))
 	require.ErrorIs(t, err, ErrNoZones)
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/taubyte/tau/services/builder"
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/database"
+	"github.com/taubyte/tau/services/dns"
 	"github.com/taubyte/tau/services/plm"
 	"github.com/taubyte/tau/services/plm/hosted"
 	"github.com/taubyte/tau/services/primitives"
@@ -42,6 +43,8 @@ func catalog() []shipped {
 		{name: database.Descriptor.Name, new: func() service.Service { return database.New() }, needs: []string{cm.Name}},
 		{name: storage.Descriptor.Name, new: func() service.Service { return storage.New() }, needs: []string{cm.Name}},
 		{name: plm.Builder.Name, new: func() service.Service { return builder.New() }},
+		// DNS answers from the stats view, so a node naming it runs stats too.
+		{name: dns.Name, new: func() service.Service { return dns.New() }, needs: []string{statsService.Descriptor.Name}},
 		// PLM is never part of the default: it binds a public listener, which has no
 		// default port. Its queue is a raft group.
 		{name: plm.PLM.Name, new: func() service.Service { return hosted.New() }, needs: []string{cm.Name}, onlyNamed: true},

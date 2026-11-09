@@ -83,10 +83,14 @@ func (n *Instance) ServiceTLS() (*tls.Config, error) {
 	return c.TLSConfig(), nil
 }
 
-// listeners is ServiceTLS as a service on this node asks for it.
-type listeners struct{ n *Instance }
+// certificates is this node's side of the cloud's certificates as a service on it
+// asks: what its own public listener answers with, and the DNS-01 values the node
+// holds while it proves one.
+type certificates struct{ n *Instance }
 
-func (l listeners) ServiceTLS() (*tls.Config, error) { return l.n.ServiceTLS() }
+func (c certificates) ServiceTLS() (*tls.Config, error) { return c.n.ServiceTLS() }
+
+func (c certificates) Challenges() (dns.Challenges, error) { return c.n.challengeReader() }
 
 // challengeStore is the DNS-01 database, opened once per node.
 func (n *Instance) challengeStore() (cacheStore, error) {

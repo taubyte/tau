@@ -48,9 +48,9 @@ type Generated struct {
 // ErrBadGenerated is a generated zone missing one of its three parts.
 var ErrBadGenerated = errors.New("dns: a generated zone needs a zone, a host index and the service answering it")
 
-// WithGenerated answers the cloud's generated names. A server without one
+// withGenerated answers the cloud's generated names. A server without one
 // answers them like any other name: by routing, which nothing reports.
-func WithGenerated(g Generated) Option {
+func withGenerated(g Generated) option {
 	return func(o *options) error {
 		g.Zone = strings.ToLower(strings.Trim(g.Zone, "."))
 		if g.Zone == "" || g.Hosts == nil || g.Service == "" {

@@ -36,9 +36,9 @@ func resolving(t *testing.T, apex string, r *asked, lines ...string) (*Service, 
 	t.Helper()
 
 	z := &declared{apex: apex, lines: lines}
-	s, err := New(Config{NodeZone: "nodes.example.com"},
-		WithRouter(&fakeRouter{nodes: map[string][]stats.Node{}}),
-		WithZones(z), WithResolvers(r))
+	s, err := build(Config{NodeZone: "nodes.example.com"},
+		withRouter(&fakeRouter{nodes: map[string][]stats.Node{}}),
+		withZones(z), withResolvers(r))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	return s, z
@@ -108,9 +108,9 @@ func TestAbsentStillLetsRoutingAnswer(t *testing.T) {
 	router := &fakeRouter{nodes: map[string][]stats.Node{
 		"shop.example.com": {{Peer: "node1", Ready: true, Addresses: []string{"203.0.113.5"}}},
 	}}
-	s, err := New(Config{NodeZone: "nodes.example.com"},
-		WithRouter(router), WithZones(z),
-		WithResolvers(&asked{answers: map[string]*invoke.Resolution{
+	s, err := build(Config{NodeZone: "nodes.example.com"},
+		withRouter(router), withZones(z),
+		withResolvers(&asked{answers: map[string]*invoke.Resolution{
 			"shop.example.com.": {Exists: false},
 		}}))
 	require.NoError(t, err)
@@ -151,7 +151,7 @@ func TestAResolvedLineForAnotherNameIsNotAnAnswer(t *testing.T) {
 }
 
 func TestANilResolverIsRefused(t *testing.T) {
-	_, err := New(Config{}, WithRouter(&fakeRouter{}), WithResolvers(nil))
+	_, err := build(Config{}, withRouter(&fakeRouter{}), withResolvers(nil))
 	require.ErrorIs(t, err, ErrNoResolvers)
 }
 
@@ -161,9 +161,9 @@ func TestAResolvedLineWithNoApexIsNotPlaced(t *testing.T) {
 	}
 
 	t.Run("no zone source at all", func(t *testing.T) {
-		s, err := New(Config{NodeZone: "nodes.example.com"},
-			WithRouter(&fakeRouter{nodes: map[string][]stats.Node{}}),
-			WithResolvers(&asked{answers: answer}))
+		s, err := build(Config{NodeZone: "nodes.example.com"},
+			withRouter(&fakeRouter{nodes: map[string][]stats.Node{}}),
+			withResolvers(&asked{answers: answer}))
 		require.NoError(t, err)
 		t.Cleanup(func() { s.Close() })
 
@@ -174,9 +174,9 @@ func TestAResolvedLineWithNoApexIsNotPlaced(t *testing.T) {
 
 	t.Run("the zone source failed", func(t *testing.T) {
 		z := &declared{apex: "example.com", err: errors.New("register unreachable")}
-		s, err := New(Config{NodeZone: "nodes.example.com"},
-			WithRouter(&fakeRouter{nodes: map[string][]stats.Node{}}),
-			WithZones(z), WithResolvers(&asked{answers: answer}))
+		s, err := build(Config{NodeZone: "nodes.example.com"},
+			withRouter(&fakeRouter{nodes: map[string][]stats.Node{}}),
+			withZones(z), withResolvers(&asked{answers: answer}))
 		require.NoError(t, err)
 		t.Cleanup(func() { s.Close() })
 

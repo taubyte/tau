@@ -26,6 +26,7 @@ import (
 	"github.com/taubyte/tau/services/cm"
 	cmmock "github.com/taubyte/tau/services/cm/mock"
 	"github.com/taubyte/tau/services/cm/settings"
+	"github.com/taubyte/tau/services/dns"
 	"github.com/taubyte/tau/services/secrets"
 
 	"github.com/taubyte/tau/instance"
@@ -313,7 +314,6 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		Container: containers.Declared{Backend: cfg.Container},
 		Region:    cfg.Region,
 	}
-	nodeConfig.DNSListen = "127.0.0.1:0"
 	nodeConfig.Sections = map[string]any{}
 	// A cloud is one developer's cloud, so sign-up is open.
 	nodeConfig.Auth.SignUp = auth.SignUpOpen
@@ -326,6 +326,10 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	}
 	if cfg.Configure != nil {
 		cfg.Configure(index, &nodeConfig)
+	}
+	if section, _ := nodeConfig.Sections[instance.DNS].(dns.Config); section.Listen == "" {
+		section.Listen = "127.0.0.1:0"
+		nodeConfig.Sections[instance.DNS] = section
 	}
 
 	engines, err := boot.DatabaseEngines(ctx)

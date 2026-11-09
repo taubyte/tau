@@ -59,11 +59,7 @@ func fleet(t *testing.T, configs ...Config) []*Instance {
 
 	out := make([]*Instance, len(configs))
 	for i, cfg := range configs {
-		// See makeNode: :53 is the operator's default and a test's to override,
-		// and a fleet needs a DIFFERENT port per node — which is what :0 gives.
-		if (len(cfg.Services) == 0 || cfg.runs(DNS)) && cfg.DNSListen == "" {
-			cfg.DNSListen = "127.0.0.1:0"
-		}
+		cfg = loopbackDNS(cfg)
 
 		// Every fleet node can resolve artifacts, since these tests are about finding what a
 		// node does not run.

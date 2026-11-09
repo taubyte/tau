@@ -13,10 +13,10 @@ var builders = serving("build",
 	stats.Node{Peer: "b1", Ready: true, Addresses: []string{"203.0.113.7", "2001:db8::7"}},
 )
 
-func servicesService(t *testing.T, r Router, opts ...Option) *Service {
+func servicesService(t *testing.T, r Router, opts ...option) *Service {
 	t.Helper()
-	opts = append([]Option{WithRouter(r), WithServices(Services{Zone: "Tau.Example.io.", Names: []string{"build", "auth"}})}, opts...)
-	s, err := New(Config{}, opts...)
+	opts = append([]option{withRouter(r), withServices(Services{Zone: "Tau.Example.io.", Names: []string{"build", "auth"}})}, opts...)
+	s, err := build(Config{}, opts...)
 	require.NoError(t, err)
 	return s
 }
@@ -54,7 +54,7 @@ func TestAnUnknownServiceIsNXDOMAIN(t *testing.T) {
 func TestAnUnknownLabelBesideGeneratedNamesIsAProjectLabel(t *testing.T) {
 	r := serving("build", builders.nodes["build"]...)
 	r.nodes["gateway"] = gateways.nodes["gateway"]
-	s := servicesService(t, r, WithGenerated(Generated{Zone: "tau.example.io", Hosts: fakeHosts{published: map[string]bool{"api.p1.tau.example.io": true}}, Service: "gateway"}))
+	s := servicesService(t, r, withGenerated(Generated{Zone: "tau.example.io", Hosts: fakeHosts{published: map[string]bool{"api.p1.tau.example.io": true}}, Service: "gateway"}))
 
 	// The service still wins its name...
 	require.Equal(t, "203.0.113.7", s.Answer(query("build.tau.example.io", dns.TypeA)).Answer[0].(*dns.A).A.String())
@@ -78,7 +78,7 @@ func TestNamesThatAreNotOneLabelUnderTheZoneAreNotServices(t *testing.T) {
 
 func TestAServicesZoneNeedsBothParts(t *testing.T) {
 	for _, svc := range []Services{{Names: []string{"auth"}}, {Zone: "tau.example.io"}} {
-		_, err := New(Config{}, WithRouter(builders), WithServices(svc))
+		_, err := build(Config{}, withRouter(builders), withServices(svc))
 		require.ErrorIs(t, err, ErrBadServices)
 	}
 }

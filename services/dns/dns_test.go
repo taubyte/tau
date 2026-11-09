@@ -69,7 +69,7 @@ func newService(t *testing.T, r Router, adjust func(*Config)) *Service {
 	if adjust != nil {
 		adjust(&cfg)
 	}
-	s, err := New(cfg, WithRouter(r))
+	s, err := build(cfg, withRouter(r))
 	require.NoError(t, err)
 	return s
 }
@@ -238,19 +238,19 @@ func TestANonInternetClassIsNotImplemented(t *testing.T) {
 }
 
 func TestConfigRefusesWhatItCannotAnswerFrom(t *testing.T) {
-	_, err := New(Config{})
+	_, err := build(Config{})
 	require.ErrorIs(t, err, ErrNoRouter, "a server with no router is refused at construction")
 
-	_, err = New(Config{}, WithRouter(nil))
+	_, err = build(Config{}, withRouter(nil))
 	require.ErrorIs(t, err, ErrNoRouter)
 
-	_, err = New(Config{MaxAge: -time.Second}, WithRouter(serving("x")))
+	_, err = build(Config{MaxAge: -time.Second}, withRouter(serving("x")))
 	require.Error(t, err)
 
-	_, err = New(Config{MaxRecords: -1}, WithRouter(serving("x")))
+	_, err = build(Config{MaxRecords: -1}, withRouter(serving("x")))
 	require.Error(t, err)
 
-	s, err := New(Config{}, WithRouter(serving("x")))
+	s, err := build(Config{}, withRouter(serving("x")))
 	require.NoError(t, err)
 	require.Equal(t, DefaultTTL, s.cfg.TTL)
 	require.Equal(t, DefaultMaxAge, s.cfg.MaxAge)

@@ -41,6 +41,7 @@ import (
 	"github.com/taubyte/tau/pkg/containers/core"
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/cm"
+	dnsService "github.com/taubyte/tau/services/dns"
 	"github.com/taubyte/tau/services/plm/ingress"
 )
 
@@ -94,7 +95,7 @@ func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 			file := liveNode(t, ca, cfg, addr, httpPort)
 			if i < 2 {
 				file.Node.Services = []string{instance.Register, instance.Stats, instance.Gateway, instance.DNS, instance.Secrets, instance.CM}
-				file.Node.DNSListen = "127.0.0.1:0"
+				file.Node.Sections = map[string]any{instance.DNS: dnsService.Config{Listen: "127.0.0.1:0"}}
 				file = initialized(t, bundle, file)
 			} else {
 				file.Node.Services = []string{instance.Register, instance.Stats, instance.Gateway, instance.PLM}

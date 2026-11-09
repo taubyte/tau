@@ -28,7 +28,7 @@ func TestTheCloudsZoneAnswersCAAAtEveryName(t *testing.T) {
 
 func TestACAARecordNeedsAZoneAndAnIssuer(t *testing.T) {
 	for _, caa := range []CAA{{Zone: "g.example.com"}, {Issuer: "letsencrypt.org"}} {
-		_, err := New(Config{CAA: []CAA{caa}}, WithRouter(&fakeRouter{}))
+		_, err := build(Config{CAA: []CAA{caa}}, withRouter(&fakeRouter{}))
 		require.ErrorContains(t, err, "caa record")
 	}
 }

@@ -23,7 +23,7 @@ func TestADNS01ChallengeIsAnsweredFromTheCertificateNodes(t *testing.T) {
 		"build.tau.example.io": {"one", "two"},
 		"tau.example.io":       {"apex"},
 	}}
-	s := servicesService(t, builders, WithChallenges("tau.example.io.", p))
+	s := servicesService(t, builders, withChallenges("tau.example.io.", p))
 
 	reply := s.Answer(query("_acme-challenge.Build.tau.example.io", dns.TypeTXT))
 	require.Equal(t, dns.RcodeSuccess, reply.Rcode)
@@ -48,11 +48,11 @@ func TestADNS01ChallengeIsAnsweredFromTheCertificateNodes(t *testing.T) {
 	require.Empty(t, reply.Answer)
 
 	// A reader that cannot answer is SERVFAIL, never "no record".
-	down := servicesService(t, builders, WithChallenges("tau.example.io", presented{err: errors.New("down")}))
+	down := servicesService(t, builders, withChallenges("tau.example.io", presented{err: errors.New("down")}))
 	require.Equal(t, dns.RcodeServerFailure, down.Answer(query("_acme-challenge.tau.example.io", dns.TypeTXT)).Rcode)
 
-	_, err := New(Config{}, WithRouter(builders), WithChallenges("", p))
+	_, err := build(Config{}, withRouter(builders), withChallenges("", p))
 	require.ErrorIs(t, err, ErrBadChallenges)
-	_, err = New(Config{}, WithRouter(builders), WithChallenges("tau.example.io", nil))
+	_, err = build(Config{}, withRouter(builders), withChallenges("tau.example.io", nil))
 	require.ErrorIs(t, err, ErrBadChallenges)
 }

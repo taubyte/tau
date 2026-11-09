@@ -60,6 +60,7 @@ import (
 	"encoding/base32"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"strings"
@@ -77,31 +78,44 @@ type Service struct {
 	cfg  Config
 	opts options
 
+	// owned is what Start opened for it, closed with it.
+	owned []io.Closer
+
 	mu      sync.Mutex
 	servers []*dns.Server
 	closed  bool
 }
 
-// New builds the service. It does not listen — Listen does.
-//
-// cfg is the operator's declared values; opts inject the collaborators. New
-// defaults and validates cfg exactly once, then applies the options, then
-// checks that everything required actually arrived.
-func New(cfg Config, opts ...Option) (*Service, error) {
+// New is dns, unstarted: Start builds it from its node.
+func New() *Service { return &Service{} }
+
+// build is dns over what it is given, not listening.
+func build(cfg Config, opts ...option) (*Service, error) {
+	s := New()
+	if err := s.assemble(cfg, opts...); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// assemble defaults and validates cfg exactly once, then applies the options, then
+// checks that everything required actually arrived. It does not listen.
+func (s *Service) assemble(cfg Config, opts ...option) error {
 	c, err := cfg.withDefaults()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	var o options
 	for _, apply := range opts {
 		if err := apply(&o); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	if o.router == nil {
-		return nil, ErrNoRouter
+		return ErrNoRouter
 	}
-	return &Service{cfg: c, opts: o}, nil
+	s.cfg, s.opts = c, o
+	return nil
 }
 
 // Answer builds the reply to one query. It is the whole of this service's
@@ -540,7 +554,7 @@ func (s *Service) Addrs() []net.Addr {
 	return out
 }
 
-// Close stops both servers. It is safe to call twice.
+// Close stops both servers and releases what Start opened. It is safe to call twice.
 func (s *Service) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -556,6 +570,11 @@ func (s *Service) Close() error {
 		}
 	}
 	s.servers = nil
+	for _, c := range s.owned {
+		if err := c.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	return errors.Join(errs...)
 }
 

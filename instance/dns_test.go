@@ -14,6 +14,7 @@ import (
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/pkg/stats"
+	dnsService "github.com/taubyte/tau/services/dns"
 	statsService "github.com/taubyte/tau/services/stats"
 )
 
@@ -26,11 +27,13 @@ func serving(t *testing.T, compiled []byte, hosts ...string) *Instance {
 
 	cfg := Config{Services: []string{Register, Worker, Stats, Proxy, DNS}}
 	cfg.CloudFqdn = "tau.example.io"
-	cfg.DNS.NodeZone = "nodes.tau.example.io"
 
 	// Both timers (proxy sweep and stats tick) are wound down rather than waited out.
 	cfg.Proxy.Sweep = 100 * time.Millisecond
-	cfg.Sections = map[string]any{Stats: statsService.Config{Interval: 200 * time.Millisecond}}
+	cfg.Sections = map[string]any{
+		Stats: statsService.Config{Interval: 200 * time.Millisecond},
+		DNS:   dnsService.Config{NodeZone: "nodes.tau.example.io"},
+	}
 
 	n, _, _ := makeNode(t, cfg)
 	require.NoError(t, n.Start(t.Context()))
@@ -132,9 +135,11 @@ func TestANameNothingServesIsServfail(t *testing.T) {
 	require.Equal(t, dns.RcodeServerFailure, ask("nothing.example.com", dns.TypeA).Rcode)
 }
 
-func TestDnsWithoutStatsIsRefusedAtConstruction(t *testing.T) {
-	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Register, DNS}}), withKVDB(&memFactory{}))
-	require.ErrorIs(t, err, ErrNoStatsForDNS)
+func TestANodeNamingDnsRunsTheStatsItAnswersFrom(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register, DNS}})
+	require.Contains(t, n.Services(), Stats)
+	require.NoError(t, n.Start(t.Context()))
+	require.Len(t, n.DNSAddrs(), 2)
 }
 
 func TestADnsNodeSaysWhereItBound(t *testing.T) {
