@@ -253,12 +253,41 @@ func (u *Cloud) projects() (projects.Projects, error) {
 }
 
 // Link names project's repositories in the cloud's project table, as `tau link`
-// would: config is the one whose pushes are deploys.
+// would: config is the one whose pushes are deploys. It returns once every node
+// running auth has the link, since the push that follows may be built, and its
+// artifact granted, on any of them.
 func (u *Cloud) Link(ctx context.Context, project, config string, code ...string) error {
 	table, err := u.projects()
 	if err != nil {
 		return err
 	}
-	_, err = table.LinkProject(ctx, projects.Link{Project: project, Config: config, Code: code, Claimant: "dream"})
-	return err
+	if _, err := table.LinkProject(ctx, projects.Link{Project: project, Config: config, Code: code, Claimant: "dream"}); err != nil {
+		return err
+	}
+	repositories := append([]string{config}, code...)
+	for _, n := range u.nodes() {
+		k, ok := service.Local[projects.Keeper](n.HostOf(instance.Auth), projects.Protocol)
+		if !ok || k.Projects() == nil {
+			continue
+		}
+		for !linkedOn(ctx, k.Projects(), project, repositories) {
+			if err := pause(ctx); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// linkedOn is whether one node's project table has project and its repositories.
+func linkedOn(ctx context.Context, table projects.Projects, project string, repositories []string) bool {
+	if _, err := table.Project(ctx, project); err != nil {
+		return false
+	}
+	for _, repository := range repositories {
+		if got, err := table.Repository(ctx, repository); err != nil || got.Project != project {
+			return false
+		}
+	}
+	return true
 }

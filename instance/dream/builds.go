@@ -15,6 +15,7 @@ import (
 	"github.com/taubyte/tau/p2p/discovery"
 	"github.com/taubyte/tau/p2p/peer"
 	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
+	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/plm"
 	"github.com/taubyte/tau/services/plm/clients"
 	"github.com/taubyte/tau/services/plm/joblog"
@@ -32,14 +33,71 @@ type builds interface {
 	io.Closer
 }
 
-// PLM is p built as this cloud builds it, returned once the push and every job
-// it made have ended.
+// Build is p built as this cloud builds it, returned once the push and every job it
+// made have ended, and what a deploy among them published is what every node's
+// register serves: plm hands a run to any builder, and the next push's run may read
+// the register on a node the publication has not reached yet.
 func (u *Cloud) Build(ctx context.Context, p Push) (Outcome, error) {
 	b, err := u.builder()
 	if err != nil {
 		return Outcome{}, err
 	}
-	return b.build(ctx, p)
+	out, err := b.build(ctx, p)
+	if err != nil {
+		return out, err
+	}
+	return out, u.deployed(ctx, p, out)
+}
+
+// deployed waits until every node running the register serves one pointer for each
+// environment a push of a configuration repository built.
+func (u *Cloud) deployed(ctx context.Context, p Push, out Outcome) error {
+	var built []string
+	for _, job := range out.Environments {
+		if job.GetStatus() == plmv2.JobStatus_JobStatusSuccess {
+			built = append(built, job.GetEnvironment())
+		}
+	}
+	if len(built) == 0 {
+		return nil
+	}
+	table, err := u.projects()
+	if err != nil {
+		return err
+	}
+	linked, err := table.Repository(ctx, p.Repository)
+	if err != nil || !linked.Configures {
+		return err
+	}
+	for _, environment := range built {
+		for !u.agree(ctx, linked.Project, environment) {
+			if err := pause(ctx); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// agree is whether every node running the register serves one pointer for a
+// project's environment.
+func (u *Cloud) agree(ctx context.Context, project, environment string) bool {
+	var first *pkgregister.Pointer
+	for _, n := range u.nodes() {
+		if n.Register() == nil || n.Register().Local() == nil {
+			continue
+		}
+		at, err := n.Register().Local().Resolve(ctx, project, environment)
+		switch {
+		case err != nil:
+			return false
+		case first == nil:
+			first = &at
+		case at != *first:
+			return false
+		}
+	}
+	return true
 }
 
 // builder is the cloud's way of building, settled the first time it is asked for
