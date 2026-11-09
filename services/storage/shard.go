@@ -190,6 +190,24 @@ func (s *shardSet) hold(ctx context.Context, b Bucket, open bool) (i index, rele
 	}, true, nil
 }
 
+// adopt opens shard if it is not open. A reconcile that read before it does not
+// close it.
+func (s *shardSet) adopt(ctx context.Context, shard uint16) (Datastore, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if store, ok := s.open[shard]; ok {
+		return store, nil
+	}
+	store, err := s.opener.Open(ctx, shard)
+	if err != nil {
+		return nil, fmt.Errorf("storage: opening shard %d: %w", shard, err)
+	}
+	s.open[shard] = store
+	s.clock++
+	s.used[shard] = s.clock
+	return store, nil
+}
+
 // storeOf is shard's store, if this node has it open.
 func (s *shardSet) storeOf(shard uint16) (Datastore, bool) {
 	s.mu.Lock()

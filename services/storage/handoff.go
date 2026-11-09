@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"connectrpc.com/connect"
@@ -67,12 +68,38 @@ func (s *server) covers(ctx context.Context, holder string, shard uint16, spans 
 	return err == nil && res.Msg.GetCovered()
 }
 
-// answerCovers says this node's copy of shard covers spans: false when it has none
-// open.
-func (s *server) answerCovers(shard uint16, spans []kvdb.Span) bool {
+// answerCovers says this node's copy of shard covers spans: false when it has none.
+//
+// A SHARD PLACEMENT PUTS HERE IS ADOPTED WHEN ITS OLD HOLDER ASKS, open or not: the
+// catalog may never name a bucket in it here, and a node every write reached before
+// placement moved the shard is the only one that knows it holds anything. Adopted, it
+// stays open while placement puts it here (reconcile), and merges what it holds.
+func (s *server) answerCovers(ctx context.Context, shard uint16, spans []kvdb.Span) bool {
 	store, open := s.shards.storeOf(shard)
+	if !open {
+		var err error
+		if store, open, err = s.adoptShard(ctx, shard); err != nil {
+			s.logf("storage: adopting shard %d: %v", shard, err)
+		}
+	}
 	r, ok := store.(replica)
 	return open && ok && r.Covers(spans)
+}
+
+// adoptShard opens shard here and records it, when placement puts it here.
+func (s *server) adoptShard(ctx context.Context, shard uint16) (Datastore, bool, error) {
+	replicas, _, err := s.promise(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	if !slices.Contains(indexHolders(shard, s.placement(), replicas), s.self) {
+		return nil, false, nil
+	}
+	if err := s.local.Adopt(ctx, shard); err != nil {
+		return nil, false, err
+	}
+	store, err := s.shards.adopt(ctx, shard)
+	return store, err == nil, err
 }
 
 func wireSpans(spans []kvdb.Span) []*storagev2.Span {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ipfs/go-cid"
+	ds "github.com/ipfs/go-datastore"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/services/cm/settings"
@@ -75,6 +76,49 @@ func TestACopyThatCannotBeReadHereIsReadFromAHolder(t *testing.T) {
 	require.NoError(t, err)
 	_, err = c.nodes[0].open(t.Context(), root, true)
 	require.Error(t, err)
+}
+
+// A COPY OF THE INDEX THAT HOLDS NOTHING OF AN INSTANCE ANSWERS NOTHING: a holder
+// placement just moved the shard to, which has merged nothing yet, sends the read on
+// rather than call every object not found.
+func TestACopyHoldingNothingOfAnInstanceAnswersNothing(t *testing.T) {
+	at := assetsOf(t, "site_code")
+	c := newCluster(t, 3, fixedCatalog{at})
+	_, err := c.client(t, 0, 0).Put(t.Context(), at, "page", Object{}, strings.NewReader("the page"))
+	require.NoError(t, err)
+	behind := shardOn(t, c, 2, at)
+	prefix, err := at.objectsPrefix()
+	require.NoError(t, err)
+	rows, err := index{store: behind}.all(t.Context(), prefix, 0)
+	require.NoError(t, err)
+	require.NotEmpty(t, rows)
+	for _, r := range rows {
+		require.NoError(t, behind.Delete(t.Context(), ds.RawKey(r.key)))
+	}
+
+	through := c.client(t, 2, 2)
+	v, err := through.Current(t.Context(), at, "page")
+	require.NoError(t, err, "a copy holding nothing called an object not found")
+	require.Equal(t, "page", v.Name)
+	listed, err := through.List(t.Context(), at, "", "", 0)
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	versions, err := through.Versions(t.Context(), at, "page", 0)
+	require.NoError(t, err)
+	require.Len(t, versions, 1)
+	_, err = c.nodes[2].current(t.Context(), at, "page", true)
+	require.ErrorIs(t, err, ErrEmptyCopy)
+
+	// An object nobody wrote is still not found, and an instance nobody wrote lists
+	// nothing.
+	_, err = through.Current(t.Context(), at, "absent")
+	require.ErrorIs(t, err, ErrNotFound)
+	nobody := assetsOf(t, "nobody_wrote")
+	_, err = through.Current(t.Context(), nobody, "page")
+	require.ErrorIs(t, err, ErrNotFound)
+	listed, err = through.List(t.Context(), nobody, "", "", 0)
+	require.NoError(t, err)
+	require.Empty(t, listed)
 }
 
 // A DELETE SUPERSEDES WHAT IT DELETES, from a node whose clock is behind the writer's

@@ -105,6 +105,9 @@ func (s *server) list(ctx context.Context, a Address, prefix, after string, limi
 		}
 		return nil
 	})
+	if errors.Is(err, ErrNotFound) {
+		return nil, nil
+	}
 	if err == nil {
 		s.observe(out...)
 	}

@@ -404,7 +404,8 @@ func (s *server) run(ctx context.Context) {
 }
 
 // reconcile opens the shards placement gives this node for every bucket the catalog
-// or a write has shown it, and closes the rest once they are handed off (handoff.go).
+// or a write has shown it, keeps those it adopted while placement gives them here, and
+// closes the rest once they are handed off (handoff.go).
 func (s *server) reconcile(ctx context.Context) error {
 	since := s.shards.mark()
 	buckets, err := s.catalog.Buckets(ctx)
@@ -424,12 +425,26 @@ func (s *server) reconcile(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	adopted, err := s.local.Adopted(ctx)
+	if err != nil {
+		return err
+	}
+	for _, shard := range adopted {
+		if slices.Contains(indexHolders(shard, members, replicas), s.self) {
+			keep[shard] = struct{}{}
+		}
+	}
 	for _, shard := range s.shards.held() {
 		if _, desired := keep[shard]; !desired && !s.handedOff(ctx, shard, members, replicas, barrier) {
 			keep[shard] = struct{}{}
 		}
 	}
-	_, _, err = s.shards.reconcile(ctx, keep, since)
+	_, closed, err := s.shards.reconcile(ctx, keep, since)
+	for _, shard := range closed {
+		if slices.Contains(adopted, shard) {
+			err = errors.Join(err, s.local.Disown(ctx, shard))
+		}
+	}
 	return err
 }
 

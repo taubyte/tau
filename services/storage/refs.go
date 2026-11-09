@@ -23,6 +23,8 @@ import (
 //	                                                    first found superseded
 //	/local/absent/<bkt>/<hexname>/<^stamp>              when no index holder was
 //	                                                    first found holding it
+//	/local/adopted/<shard>                              a shard an old holder
+//	                                                    handed this node
 //
 // The blockstore is shared with kvdb's own DAG blocks, so the sweep enumerates only
 // /local/blk, written for every imported block. A reference row is written on every
@@ -40,6 +42,7 @@ const (
 	localSuperseded = localRoot + "/superseded"
 	localAbsent     = localRoot + "/absent"
 	localSeen       = localRoot + "/seen"
+	localAdopted    = localRoot + "/adopted"
 	localClock      = localRoot + "/clock"
 )
 
@@ -230,6 +233,39 @@ func (l *Local) Saw(ctx context.Context, a Address) error {
 		return err
 	}
 	return l.store.Put(ctx, ds.RawKey(localSeen+"/"+inst), encodeMS(uint64(l.now().UnixMilli())))
+}
+
+// Adopt records that this node holds shard because a holder placement moved it off
+// asked whether it covers it.
+func (l *Local) Adopt(ctx context.Context, shard uint16) error {
+	return l.store.Put(ctx, adoptedKey(shard), encodeMS(uint64(l.now().UnixMilli())))
+}
+
+// Disown forgets an adopted shard once it is closed here.
+func (l *Local) Disown(ctx context.Context, shard uint16) error {
+	return l.store.Delete(ctx, adoptedKey(shard))
+}
+
+// Adopted is every shard this node adopted, ordered.
+func (l *Local) Adopted(ctx context.Context) ([]uint16, error) {
+	keys, err := l.list(ctx, localAdopted)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]uint16, 0, len(keys))
+	for _, k := range keys {
+		n, err := strconv.ParseUint(strings.TrimPrefix(k, localAdopted+"/"), 10, 16)
+		if err != nil || n >= Shards {
+			return nil, fmt.Errorf("%w: adopted row %q", ErrNotThisServicesRow, k)
+		}
+		out = append(out, uint16(n))
+	}
+	return out, nil
+}
+
+// adoptedKey pads the shard, so the rows list in shard order.
+func adoptedKey(shard uint16) ds.Key {
+	return ds.RawKey(fmt.Sprintf("%s/%03d", localAdopted, shard))
 }
 
 // ClockFloor is the physical millisecond this node's clock may never mint below: 0

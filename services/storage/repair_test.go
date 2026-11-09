@@ -14,6 +14,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/ipfs/go-cid"
+	ds "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
@@ -415,4 +416,70 @@ func TestAShardMovedOffANodeIsKeptUntilItsNewHoldersHaveIt(t *testing.T) {
 	opened[1].replicate(written)
 	require.NoError(t, c.nodes[0].reconcile(t.Context()))
 	require.NotContains(t, c.shards[0].held(), shard, "a shard its new holders have was kept")
+}
+
+// A SHARD WHOSE EVERY HOLDER PLACEMENT REPLACED IS ADOPTED BY ITS NEW HOLDERS, though
+// no catalog names a bucket in it: the old holders, which were written its rows, ask
+// the new ones whether they cover it, and a new one asked opens it and keeps it while
+// placement puts it there. Without that, the new holders never open it, the old ones
+// never let it go, and a read through a new holder finds nothing.
+func TestAShardEveryHolderOfWhichWasReplacedIsAdoptedByTheNewOnes(t *testing.T) {
+	at := assetsOf(t, "site_code")
+	v := &view{}
+	c := newCluster(t, 6, fixedCatalog{}, withMembers(v.get))
+	shard, err := shardOf(at.Bucket())
+	require.NoError(t, err)
+
+	v.set(c.ids[:3]...)
+	_, err = c.client(t, 0, 0).Put(t.Context(), at, "page", Object{}, strings.NewReader("the page"))
+	require.NoError(t, err)
+	written := shardOn(t, c, 0, at)
+
+	v.set(c.ids[3:]...)
+	for _, old := range c.nodes[:3] {
+		require.NoError(t, old.reconcile(t.Context()))
+	}
+	for i := 3; i < 6; i++ {
+		require.Contains(t, c.shards[i].held(), shard, "node %d was asked to cover a shard placement puts on it and did not open it", i)
+		adopted, err := c.nodes[i].local.Adopted(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, []uint16{shard}, adopted)
+		require.NoError(t, c.nodes[i].reconcile(t.Context()))
+		require.Contains(t, c.shards[i].held(), shard, "node %d closed a shard it adopted", i)
+		shardOn(t, c, i, at).replicate(written)
+	}
+
+	for i, old := range c.nodes[:3] {
+		require.NoError(t, old.reconcile(t.Context()))
+		require.NotContains(t, c.shards[i].held(), shard, "node %d kept a shard its new holders cover", i)
+	}
+	got, err := c.client(t, 3, 3).Current(t.Context(), at, "page")
+	require.NoError(t, err)
+	require.Equal(t, "page", got.Name)
+
+	// Placement moves it off again: once handed off, it is closed and forgotten.
+	v.set(c.ids[:3]...)
+	for _, n := range c.nodes[:3] {
+		require.NoError(t, n.reconcile(t.Context()))
+		shardOn(t, c, slices.Index(c.nodes, n), at).replicate(written)
+	}
+	for i := 3; i < 6; i++ {
+		require.NoError(t, c.nodes[i].reconcile(t.Context()))
+		require.NotContains(t, c.shards[i].held(), shard)
+		adopted, err := c.nodes[i].local.Adopted(t.Context())
+		require.NoError(t, err)
+		require.Empty(t, adopted, "node %d kept a record of a shard it let go", i)
+	}
+}
+
+// AN ADOPTED-SHARD ROW THIS SERVICE DID NOT WRITE IS AN ERROR, never a shard.
+func TestAnAdoptedRowItDidNotWriteIsRefused(t *testing.T) {
+	for _, key := range []string{localAdopted + "/nope", localAdopted + "/999"} {
+		store := newOrderedMem()
+		require.NoError(t, store.Put(t.Context(), ds.RawKey(key), []byte("1")))
+		l, err := NewLocal(store, nil)
+		require.NoError(t, err)
+		_, err = l.Adopted(t.Context())
+		require.ErrorIs(t, err, ErrNotThisServicesRow, key)
+	}
 }

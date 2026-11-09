@@ -63,6 +63,10 @@ var (
 	// trusted to delete data.
 	ErrGateClosed = errors.New("storage: a deletion gate is closed")
 
+	// ErrEmptyCopy is a copy of an instance's index holding no row of it: one that
+	// has not merged anything yet, which answers for nothing.
+	ErrEmptyCopy = errors.New("storage: this copy of the index holds nothing of the instance yet")
+
 	// ErrSwept is a keep refused because a block it relies on is gone: a sweep
 	// deleted it after the write found it here.
 	ErrSwept = errors.New("storage: a block the write relied on was swept")

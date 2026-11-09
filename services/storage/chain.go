@@ -242,6 +242,16 @@ func (i index) put(ctx context.Context, key string, value []byte) error {
 	return i.store.Put(ctx, ds.RawKey(key), value)
 }
 
+// holdsAny says this copy holds a row of an object of the instance.
+func (i index) holdsAny(ctx context.Context, a Address) (bool, error) {
+	prefix, err := a.objectsPrefix()
+	if err != nil {
+		return false, err
+	}
+	_, ok, err := i.first(ctx, prefix)
+	return ok, err
+}
+
 // Current resolves an object to its live version: one row from the object's own
 // namespace in key order. A tombstone resolves to ErrNotFound.
 func (i index) Current(ctx context.Context, a Address, name string) (Version, error) {

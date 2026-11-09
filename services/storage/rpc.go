@@ -145,12 +145,12 @@ func (h *handler) Probe(ctx context.Context, req *connect.Request[storagev2.Prob
 	return connect.NewResponse(&storagev2.ProbeResponse{Proof: proof}), nil
 }
 
-func (h *handler) Covers(_ context.Context, req *connect.Request[storagev2.CoversRequest]) (*connect.Response[storagev2.CoversResponse], error) {
+func (h *handler) Covers(ctx context.Context, req *connect.Request[storagev2.CoversRequest]) (*connect.Response[storagev2.CoversResponse], error) {
 	shard := req.Msg.GetShard()
 	if shard >= Shards {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("storage: shard %d of %d", shard, Shards))
 	}
-	covered := h.s.answerCovers(uint16(shard), spansOf(req.Msg.GetSpans()))
+	covered := h.s.answerCovers(ctx, uint16(shard), spansOf(req.Msg.GetSpans()))
 	return connect.NewResponse(&storagev2.CoversResponse{Covered: covered}), nil
 }
 
@@ -257,6 +257,9 @@ func (s *server) versions(ctx context.Context, a Address, name string, limit int
 		}
 		return nil
 	})
+	if errors.Is(err, ErrNotFound) {
+		return nil, nil
+	}
 	if err == nil {
 		s.observe(out...)
 	}
@@ -265,14 +268,30 @@ func (s *server) versions(ctx context.Context, a Address, name string, limit int
 
 // fromIndex answers from this node's copy when it holds the shard, and otherwise from
 // the first holder that answers. A request that says here never leaves this node.
+//
+// A COPY HOLDING NO ROW OF THE INSTANCE ANSWERS NOTHING: opened where placement just
+// moved the shard, it holds nothing yet, and would call every object not found. The
+// read goes to the next holder, and is not found only when every copy holds nothing.
 func (s *server) fromIndex(ctx context.Context, a Address, here bool, local func(index) error, remote func(storagev2Client) error) error {
 	i, release, ok, err := s.indexOf(ctx, a)
 	if err != nil {
 		return err
 	}
+	empty := 0
 	if ok {
-		defer release()
-		return local(i)
+		held, err := i.holdsAny(ctx, a)
+		if err == nil && held {
+			defer release()
+			return local(i)
+		}
+		release()
+		if err != nil {
+			return err
+		}
+		empty++
+		if here {
+			return fmt.Errorf("%w: %s", ErrEmptyCopy, a)
+		}
 	}
 	if here {
 		return fmt.Errorf("storage: this node does not hold %s's index", a)
@@ -286,15 +305,25 @@ func (s *server) fromIndex(ctx context.Context, a Address, here bool, local func
 	if err != nil {
 		return err
 	}
+	holders := indexHolders(shard, s.placement(), replicas)
 	var errs []error
-	for _, holder := range indexHolders(shard, s.placement(), replicas) {
+	for _, holder := range holders {
+		if holder == s.self {
+			continue
+		}
 		svc, err := s.peer(holder)
 		if err == nil {
-			if err = remote(svc); err == nil || errors.Is(err, ErrNotFound) {
+			if err = unwire(remote(svc)); err == nil || errors.Is(err, ErrNotFound) {
 				return err
 			}
 		}
+		if errors.Is(err, ErrEmptyCopy) {
+			empty++
+		}
 		errs = append(errs, fmt.Errorf("%s: %w", holder, err))
+	}
+	if empty > 0 && empty == len(holders) {
+		return fmt.Errorf("%w: no copy of %s's index holds anything of it", ErrNotFound, a)
 	}
 	return fmt.Errorf("storage: no holder of %s's index answered: %w", a, errors.Join(errs...))
 }
@@ -321,8 +350,12 @@ func (c *chunks) Read(p []byte) (int, error) {
 }
 
 // underHeld marks the one Unavailable that is this service's refusal rather than a
-// node that could not be reached.
-const underHeld = "storage-under-held"
+// node that could not be reached; emptyCopy the one FailedPrecondition that is a copy
+// holding nothing of the instance.
+const (
+	underHeld = "storage-under-held"
+	emptyCopy = "storage-empty-copy"
+)
 
 // wire is an error as a status the caller can tell apart.
 func wire(err error) error {
@@ -332,6 +365,10 @@ func wire(err error) error {
 	case errors.Is(err, ErrUnderHeld):
 		e := connect.NewError(connect.CodeUnavailable, err)
 		e.Meta().Set(underHeld, "1")
+		return e
+	case errors.Is(err, ErrEmptyCopy):
+		e := connect.NewError(connect.CodeFailedPrecondition, err)
+		e.Meta().Set(emptyCopy, "1")
 		return e
 	case errors.Is(err, ErrNoAddress), errors.Is(err, ErrEmptyIdentity):
 		return connect.NewError(connect.CodeInvalidArgument, err)
@@ -347,6 +384,8 @@ func unwire(err error) error {
 		return fmt.Errorf("%w: %w", ErrNotFound, err)
 	case errors.As(err, &e) && e.Meta().Get(underHeld) != "":
 		return fmt.Errorf("%w: %w", ErrUnderHeld, err)
+	case errors.As(err, &e) && e.Meta().Get(emptyCopy) != "":
+		return fmt.Errorf("%w: %w", ErrEmptyCopy, err)
 	}
 	return err
 }
