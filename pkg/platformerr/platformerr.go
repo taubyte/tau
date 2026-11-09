@@ -119,6 +119,10 @@ func Serve(w http.ResponseWriter, r *http.Request, log Logger, h func(http.Respo
 			if r.Context().Value(http.ServerContextKey) != nil {
 				panic(http.ErrAbortHandler)
 			}
+			// On a tunnel, the frontend aborts its connection in our place.
+			if a, ok := w.(interface{ Abort() }); ok {
+				a.Abort()
+			}
 			return
 		}
 		Write(w, err, "")
