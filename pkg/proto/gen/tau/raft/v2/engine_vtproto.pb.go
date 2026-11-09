@@ -202,6 +202,16 @@ func (m *SnapshotData) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if m.MembershipOnly {
+		i--
+		if m.MembershipOnly {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x18
+	}
 	if len(m.Machine) > 0 {
 		i -= len(m.Machine)
 		copy(dAtA[i:], m.Machine)
@@ -294,6 +304,9 @@ func (m *SnapshotData) SizeVT() (n int) {
 	l = len(m.Machine)
 	if l > 0 {
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	if m.MembershipOnly {
+		n += 2
 	}
 	n += len(m.unknownFields)
 	return n
@@ -754,6 +767,26 @@ func (m *SnapshotData) UnmarshalVT(dAtA []byte) error {
 				m.Machine = []byte{}
 			}
 			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MembershipOnly", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.MembershipOnly = bool(v != 0)
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])

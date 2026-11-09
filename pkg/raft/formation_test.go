@@ -309,9 +309,10 @@ func TestALogOfNoFormationIsNotBoundAfterTheFact(t *testing.T) {
 	require.Nil(t, again.Formation())
 }
 
-// A LOG HOLDS NO DATA while it holds only membership, and holds some once a write
-// or a snapshot is in it; a group on a stopped engine says it holds some.
-func TestALogHoldsNoDataUntilAWriteOrASnapshot(t *testing.T) {
+// A LOG HOLDS NO DATA while it holds only membership, a snapshot of it included,
+// and holds some once a write is in it, or a snapshot of one; a group on a stopped
+// engine says it holds some.
+func TestALogHoldsNoDataUntilAWriteIsInItOrInItsSnapshot(t *testing.T) {
 	node := newMockNode(t)
 	snapping := TimeoutConfig{HeartbeatTimeout: 50 * time.Millisecond, SnapshotThreshold: 2, TrailingLogs: 1}
 	g := onEngine(t, node, "no-data", snapping)
@@ -319,10 +320,14 @@ func TestALogHoldsNoDataUntilAWriteOrASnapshot(t *testing.T) {
 	require.NoError(t, g.Bootstrap([]peer.ID{node.ID()}))
 	leading(t, g)
 	require.True(t, g.HoldsNoData(), "a log of membership holds data")
+	// A THRESHOLD OF TWO SNAPSHOTS A LOG OF MEMBERSHIP on its own, and the explicit
+	// one makes sure there is one: a snapshot of no write is still no data.
+	require.NoError(t, g.Snapshot())
+	require.True(t, g.HoldsNoData(), "a snapshot of membership holds data")
 	set(t, g, "k", "v")
 	require.False(t, g.HoldsNoData(), "a log with a write holds no data")
 	require.NoError(t, g.Snapshot())
-	require.False(t, g.HoldsNoData(), "a log with a snapshot holds no data")
+	require.False(t, g.HoldsNoData(), "a snapshot of a write holds no data")
 
 	e := engineFor(newMockNode(t))
 	stopped, err := e.open("stopped", groupConfig{timeouts: quickTimeouts, machine: newKVFSM(t.Context(), node.Store(), "/raft/stopped"), store: node.Store()})

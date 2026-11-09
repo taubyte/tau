@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 	pb "go.etcd.io/raft/v3/raftpb"
 	"google.golang.org/protobuf/proto"
+
+	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 )
 
 func etcdEntries(term uint64, from, to uint64) []*pb.Entry {
@@ -92,4 +94,25 @@ func TestALogThatCannotBeReadIsRefusedByName(t *testing.T) {
 			require.ErrorContains(t, err, "raft: /raft/g/engine")
 		})
 	}
+}
+
+func TestASnapshotHoldsDataUnlessItSaysItHoldsOnlyMembership(t *testing.T) {
+	ctx := context.Background()
+	cs := &pb.ConfState{Voters: []uint64{1}}
+	given := func(data []byte, entries ...*pb.Entry) *engineLog {
+		l, err := openEngineLog(ctx, dssync.MutexWrap(ds.NewMapDatastore()), "/raft/g/engine")
+		require.NoError(t, err)
+		saved(t, l, &pb.Snapshot{Data: data, Metadata: &pb.SnapshotMetadata{Index: proto.Uint64(4), Term: proto.Uint64(1), ConfState: cs}}, nil, entries)
+		return l
+	}
+	only, err := proto.Marshal(&raftv2.SnapshotData{MembershipOnly: true})
+	require.NoError(t, err)
+	unsaid, err := proto.Marshal(&raftv2.SnapshotData{Machine: []byte("state")})
+	require.NoError(t, err)
+
+	require.True(t, given(only).holdsNoData(), "a snapshot of membership alone holds data")
+	require.False(t, given(only, &pb.Entry{Term: proto.Uint64(1), Index: proto.Uint64(5), Data: []byte("write")}).holdsNoData(),
+		"a write after a snapshot of membership holds none")
+	require.False(t, given(unsaid).holdsNoData(), "a snapshot that does not say it holds only membership was taken for none")
+	require.False(t, given([]byte("not a snapshot")).holdsNoData(), "a snapshot that cannot be read was taken for none")
 }

@@ -11,6 +11,8 @@ import (
 	etcdraft "go.etcd.io/raft/v3"
 	pb "go.etcd.io/raft/v3/raftpb"
 	"google.golang.org/protobuf/proto"
+
+	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 )
 
 // engineLog is one group's raft log as the engine keeps it: in memory, where raft
@@ -124,13 +126,16 @@ func (l *engineLog) pristine() bool {
 	return last == 0 && etcdraft.IsEmptySnap(snap)
 }
 
-// holdsNoData says the log holds no write: no snapshot, and no entry but
-// membership changes and the empty entries leaders open their terms with. Who was
-// a member is all such a group would lose.
+// holdsNoData says the log holds no write: no entry but membership changes and the
+// empty entries leaders open their terms with, behind no snapshot or one taken of
+// such a log. Who was a member is all such a group would lose.
 func (l *engineLog) holdsNoData() bool {
 	snap, _ := l.Snapshot()
 	if !etcdraft.IsEmptySnap(snap) {
-		return false
+		data := &raftv2.SnapshotData{}
+		if proto.Unmarshal(snap.GetData(), data) != nil || !data.GetMembershipOnly() {
+			return false
+		}
 	}
 	first, _ := l.FirstIndex()
 	last, _ := l.LastIndex()

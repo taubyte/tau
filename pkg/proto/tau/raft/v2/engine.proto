@@ -40,4 +40,9 @@ message Proposal {
 message SnapshotData {
   repeated bytes members = 1;
   bytes machine = 2;
+  // membership_only says the log this snapshot replaced held no write, only
+  // membership and the empty entries leaders open their terms with. Unset is
+  // a snapshot that may hold data, which is what one taken before the field
+  // existed says.
+  bool membership_only = 3;
 }

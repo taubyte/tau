@@ -422,7 +422,13 @@ func (g *group) snapshotAt(conf *pb.ConfState) error {
 	if err != nil {
 		return fmt.Errorf("reading its machine for a snapshot: %w", err)
 	}
-	data, err := proto.Marshal(&raftv2.SnapshotData{Members: g.membersOf(conf), Machine: machine})
+	data, err := proto.Marshal(&raftv2.SnapshotData{
+		Members: g.membersOf(conf), Machine: machine,
+		// A SNAPSHOT OF A LOG HOLDING NO WRITE says so, or compacting the log of a
+		// group that only ever elected leaders would make it look like one holding
+		// data, which a member that holds nothing may leave and one that does may not.
+		MembershipOnly: g.log.holdsNoData(),
+	})
 	if err != nil {
 		return err
 	}

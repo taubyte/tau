@@ -206,11 +206,16 @@ func (x *Proposal) GetCommand() []byte {
 // raft's configuration names only by number, so a node that installs the snapshot,
 // or reopens it after a restart, can reach every member; then the machine.
 type SnapshotData struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Members       [][]byte               `protobuf:"bytes,1,rep,name=members,proto3" json:"members,omitempty"`
-	Machine       []byte                 `protobuf:"bytes,2,opt,name=machine,proto3" json:"machine,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Members [][]byte               `protobuf:"bytes,1,rep,name=members,proto3" json:"members,omitempty"`
+	Machine []byte                 `protobuf:"bytes,2,opt,name=machine,proto3" json:"machine,omitempty"`
+	// membership_only says the log this snapshot replaced held no write, only
+	// membership and the empty entries leaders open their terms with. Unset is
+	// a snapshot that may hold data, which is what one taken before the field
+	// existed says.
+	MembershipOnly bool `protobuf:"varint,3,opt,name=membership_only,json=membershipOnly,proto3" json:"membership_only,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *SnapshotData) Reset() {
@@ -257,6 +262,13 @@ func (x *SnapshotData) GetMachine() []byte {
 	return nil
 }
 
+func (x *SnapshotData) GetMembershipOnly() bool {
+	if x != nil {
+		return x.MembershipOnly
+	}
+	return false
+}
+
 var File_tau_raft_v2_engine_proto protoreflect.FileDescriptor
 
 const file_tau_raft_v2_engine_proto_rawDesc = "" +
@@ -271,10 +283,11 @@ const file_tau_raft_v2_engine_proto_rawDesc = "" +
 	"\tformation\x18\x04 \x01(\fR\tformation\"4\n" +
 	"\bProposal\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x04R\x02id\x12\x18\n" +
-	"\acommand\x18\x02 \x01(\fR\acommand\"B\n" +
+	"\acommand\x18\x02 \x01(\fR\acommand\"k\n" +
 	"\fSnapshotData\x12\x18\n" +
 	"\amembers\x18\x01 \x03(\fR\amembers\x12\x18\n" +
-	"\amachine\x18\x02 \x01(\fR\amachineB\xa5\x01\n" +
+	"\amachine\x18\x02 \x01(\fR\amachine\x12'\n" +
+	"\x0fmembership_only\x18\x03 \x01(\bR\x0emembershipOnlyB\xa5\x01\n" +
 	"\x0fcom.tau.raft.v2B\vEngineProtoP\x01Z7github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2;raftv2\xa2\x02\x03TRX\xaa\x02\vTau.Raft.V2\xca\x02\vTau\\Raft\\V2\xe2\x02\x17Tau\\Raft\\V2\\GPBMetadata\xea\x02\rTau::Raft::V2b\x06proto3"
 
 var (
