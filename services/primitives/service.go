@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
+
 	"github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/host"
 
@@ -374,6 +376,42 @@ func (s *server) writable(cluster raft.Cluster) error {
 		return nil
 	}
 	return s.notLeading(cluster)
+}
+
+// leaderFor is the node to make a write on that this one was refused, when the refusal
+// names one: a write is the writer's, and a caller reaches a namespace through
+// whichever node holding it it found. A write that has come maxHops nodes, or one
+// naming this node, is refused where it is.
+func (s *server) leaderFor(ctx context.Context, refused error) (*Client, bool) {
+	var nl NotLeading
+	if !errors.As(refused, &nl) || nl.Leader == "" || hopsOf(ctx) >= maxHops {
+		return nil, false
+	}
+	id, err := libp2ppeer.Decode(nl.Leader)
+	if err != nil || id == s.host.ID() {
+		return nil, false
+	}
+	c, err := NewClient(s.host, id)
+	if err != nil {
+		return nil, false
+	}
+	return c, true
+}
+
+// onLeader makes a write this node was refused on the node the refusal names, once.
+// It answers false when there is nobody to try, and when the write never reached
+// them, so the caller keeps the refusal, which names who may write.
+func (s *server) onLeader(ctx context.Context, refused error, write func(*Client) error) (bool, error) {
+	c, ok := s.leaderFor(ctx, refused)
+	if !ok {
+		return false, nil
+	}
+	defer c.Close()
+	err := write(c)
+	if rpc.Unreached(err) {
+		return false, nil
+	}
+	return true, err
 }
 
 // notLeading is the refusal with whoever does lead named on it.

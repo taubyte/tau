@@ -392,17 +392,13 @@ func (c *crons) generate(ctx context.Context, cluster raft.Cluster, since, upto 
 			logger.Warnf("cron: sweeping the fires of %s: %s", schedule.Name, err)
 		}
 
-		// A SLOT IS MARKED BEFORE IT IS PUSHED, in the group every writer reads behind
-		// its barrier. The minute a leader last handed out is held only in its process,
-		// so one that leads again after another did would hand the same minute out
-		// again; the mark is what it finds. A push failing after the mark loses the
-		// slot rather than running it twice.
+		// A SLOT IS MARKED IN THE ENTRY THAT PUSHES IT, in the group every writer reads
+		// behind its barrier. The minute a leader last handed out is held only in its
+		// process, so one that leads again after another did would hand the same
+		// minute out again; the mark is what it finds, and a push that did not commit
+		// left no mark, so its window is retried.
 		if !pushedThrough(cluster, schedule, slot) {
-			err := cluster.Set(firedPrefix+schedule.Handle, []byte(strconv.FormatInt(slot.Unix(), 10)), applyTimeout)
-			if err == nil {
-				err = c.push(schedule, held, slot)
-			}
-			if err != nil {
+			if err := c.push(schedule, held, slot); err != nil {
 				refused = err
 				logger.Warnf("cron: %s owes %s and nothing took it: %s", schedule.Name, slot.Format(time.RFC3339), err)
 			} else {
@@ -439,12 +435,16 @@ func (c *crons) push(schedule Schedule, held *queue.Queue, slot time.Time) error
 	if len(items) == 0 {
 		return nil
 	}
+	mark := raft.BatchOp{Set: &raft.SetCommand{
+		Key: firedPrefix + schedule.Handle, Value: []byte(strconv.FormatInt(slot.Unix(), 10)),
+	}}
 	if overlapOf(schedule) == overlapSkip {
 		if ready, claimed := held.Depth(); ready+claimed > 0 {
-			return nil
+			// Skipped is decided too: the mark alone, so no later turn runs it.
+			return held.PushWith(nil, mark)
 		}
 	}
-	return held.PushWith(items)
+	return held.PushWith(items, mark)
 }
 
 // drain hands out this schedule's fires and does not wait: each invocation runs in a

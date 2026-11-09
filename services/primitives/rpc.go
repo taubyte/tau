@@ -29,7 +29,13 @@ type handler struct{ s *server }
 var _ primitivesv2connect.PrimitivesServiceHandler = (*handler)(nil)
 
 func (h *handler) QueueSend(ctx context.Context, req *connect.Request[primitivesv2.QueueSendRequest]) (*connect.Response[primitivesv2.Empty], error) {
-	if err := h.s.send(ctx, addressOf(req.Msg.GetRef()), req.Msg.GetId(), req.Msg.GetData()); err != nil {
+	ctx = hopsIn(ctx, req.Header())
+	at := addressOf(req.Msg.GetRef())
+	err := h.s.send(ctx, at, req.Msg.GetId(), req.Msg.GetData())
+	if sent, there := h.s.onLeader(ctx, err, func(c *Client) error { return c.Send(ctx, at.grant(), req.Msg.GetId(), req.Msg.GetData()) }); sent {
+		err = there
+	}
+	if err != nil {
 		return nil, wire(err)
 	}
 	return connect.NewResponse(&primitivesv2.Empty{}), nil
@@ -39,7 +45,13 @@ func (h *handler) QueueSend(ctx context.Context, req *connect.Request[primitives
 // queue may still hold items that are delayed, backing off, or claimed by
 // somebody else.
 func (h *handler) QueueClaim(ctx context.Context, req *connect.Request[primitivesv2.QueueClaimRequest]) (*connect.Response[primitivesv2.Deliveries], error) {
-	claimed, err := h.s.claim(ctx, addressOf(req.Msg.GetRef()), int(req.Msg.GetMax()))
+	ctx = hopsIn(ctx, req.Header())
+	at := addressOf(req.Msg.GetRef())
+	claimed, err := h.s.claim(ctx, at, int(req.Msg.GetMax()))
+	var leaders []Delivery
+	if sent, there := h.s.onLeader(ctx, err, func(c *Client) (e error) { leaders, e = c.Claim(ctx, at.grant(), int(req.Msg.GetMax())); return e }); sent {
+		claimed, err = leaders, there
+	}
 	if err != nil {
 		return nil, wire(err)
 	}
@@ -52,8 +64,15 @@ func (h *handler) QueueClaim(ctx context.Context, req *connect.Request[primitive
 }
 
 func (h *handler) QueueSettle(ctx context.Context, req *connect.Request[primitivesv2.QueueSettleRequest]) (*connect.Response[primitivesv2.Empty], error) {
+	ctx = hopsIn(ctx, req.Header())
 	at := addressOf(req.Msg.GetRef())
-	if err := h.s.settle(ctx, at, deliveryFrom(req.Msg.GetDelivery()), req.Msg.GetDone()); err != nil {
+	err := h.s.settle(ctx, at, deliveryFrom(req.Msg.GetDelivery()), req.Msg.GetDone())
+	if sent, there := h.s.onLeader(ctx, err, func(c *Client) error {
+		return c.Settle(ctx, at.grant(), deliveryFrom(req.Msg.GetDelivery()), req.Msg.GetDone())
+	}); sent {
+		err = there
+	}
+	if err != nil {
 		return nil, wire(err)
 	}
 	return connect.NewResponse(&primitivesv2.Empty{}), nil
@@ -70,7 +89,13 @@ func (h *handler) QueueDepth(ctx context.Context, req *connect.Request[primitive
 }
 
 func (h *handler) LogAppend(ctx context.Context, req *connect.Request[primitivesv2.LogAppendRequest]) (*connect.Response[primitivesv2.LogCursor], error) {
-	cursor, err := h.s.appendRecord(ctx, addressOf(req.Msg.GetRef()), req.Msg.GetData())
+	ctx = hopsIn(ctx, req.Header())
+	at := addressOf(req.Msg.GetRef())
+	cursor, err := h.s.appendRecord(ctx, at, req.Msg.GetData())
+	var leaders string
+	if sent, there := h.s.onLeader(ctx, err, func(c *Client) (e error) { leaders, e = c.Append(ctx, at.grant(), req.Msg.GetData()); return e }); sent {
+		cursor, err = leaders, there
+	}
 	if err != nil {
 		return nil, wire(err)
 	}

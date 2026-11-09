@@ -74,7 +74,11 @@ func (t *Tier) Send(ctx context.Context, grant invoke.Grant, id string, data []b
 	if err != nil {
 		return tierError(err)
 	}
-	return tierError(t.service.send(ctx, at, id, data))
+	err = t.service.send(ctx, at, id, data)
+	if sent, there := t.service.onLeader(ctx, err, func(c *Client) error { return c.Send(ctx, grant, id, data) }); sent {
+		return there
+	}
+	return tierError(err)
 }
 
 func (t *Tier) Claim(ctx context.Context, grant invoke.Grant, max int) ([]Delivery, error) {
@@ -83,6 +87,10 @@ func (t *Tier) Claim(ctx context.Context, grant invoke.Grant, max int) ([]Delive
 		return nil, tierError(err)
 	}
 	claimed, err := t.service.claim(ctx, at, max)
+	var leaders []Delivery
+	if sent, there := t.service.onLeader(ctx, err, func(c *Client) (e error) { leaders, e = c.Claim(ctx, grant, max); return e }); sent {
+		return leaders, there
+	}
 	return claimed, tierError(err)
 }
 
@@ -91,7 +99,11 @@ func (t *Tier) Settle(ctx context.Context, grant invoke.Grant, delivery Delivery
 	if err != nil {
 		return tierError(err)
 	}
-	return tierError(t.service.settle(ctx, at, delivery, done))
+	err = t.service.settle(ctx, at, delivery, done)
+	if sent, there := t.service.onLeader(ctx, err, func(c *Client) error { return c.Settle(ctx, grant, delivery, done) }); sent {
+		return there
+	}
+	return tierError(err)
 }
 
 func (t *Tier) Depth(ctx context.Context, grant invoke.Grant) (Depth, error) {
@@ -109,6 +121,10 @@ func (t *Tier) Append(ctx context.Context, grant invoke.Grant, data []byte) (str
 		return "", tierError(err)
 	}
 	cursor, err := t.service.appendRecord(ctx, at, data)
+	var leaders string
+	if sent, there := t.service.onLeader(ctx, err, func(c *Client) (e error) { leaders, e = c.Append(ctx, grant, data); return e }); sent {
+		return leaders, there
+	}
 	return cursor, tierError(err)
 }
 
@@ -149,16 +165,21 @@ var (
 	_ Clocks          = (*Client)(nil)
 )
 
-// CronTask hands one window to the node this client reaches. The hop count travels as
-// a header, read off the context so a forwarding node cannot forget it.
+// CronTask hands one window to the node this client reaches.
 func (c *Client) CronTask(ctx context.Context, since, upto time.Time) error {
-	req := connect.NewRequest(&primitivesv2.CronTaskRequest{
+	_, err := c.svc.CronTask(ctx, hopped(ctx, &primitivesv2.CronTaskRequest{
 		Since: since.Unix(), Upto: upto.Unix(),
-	})
-	req.Header().Set(hopHeader, strconv.Itoa(hopsOf(ctx)+1))
-
-	_, err := c.svc.CronTask(ctx, req)
+	}))
 	return taskError(err)
+}
+
+// hopped is a request carrying how many nodes it has come through, read off the
+// context so a forwarding node cannot forget it: a tasking, and every write, which a
+// node not holding the namespace's writer sends on once.
+func hopped[T any](ctx context.Context, msg *T) *connect.Request[T] {
+	req := connect.NewRequest(msg)
+	req.Header().Set(hopHeader, strconv.Itoa(hopsOf(ctx)+1))
+	return req
 }
 
 func (c *Client) Send(ctx context.Context, grant invoke.Grant, id string, data []byte) error {
@@ -166,7 +187,7 @@ func (c *Client) Send(ctx context.Context, grant invoke.Grant, id string, data [
 	if err != nil {
 		return err
 	}
-	_, err = c.svc.QueueSend(ctx, connect.NewRequest(&primitivesv2.QueueSendRequest{
+	_, err = c.svc.QueueSend(ctx, hopped(ctx, &primitivesv2.QueueSendRequest{
 		Ref: ref, Id: id, Data: data,
 	}))
 	return remoteError(err)
@@ -177,7 +198,7 @@ func (c *Client) Claim(ctx context.Context, grant invoke.Grant, max int) ([]Deli
 	if err != nil {
 		return nil, err
 	}
-	out, err := c.svc.QueueClaim(ctx, connect.NewRequest(&primitivesv2.QueueClaimRequest{
+	out, err := c.svc.QueueClaim(ctx, hopped(ctx, &primitivesv2.QueueClaimRequest{
 		Ref: ref, Max: uint32(max),
 	}))
 	if err != nil {
@@ -196,7 +217,7 @@ func (c *Client) Settle(ctx context.Context, grant invoke.Grant, delivery Delive
 	if err != nil {
 		return err
 	}
-	_, err = c.svc.QueueSettle(ctx, connect.NewRequest(&primitivesv2.QueueSettleRequest{
+	_, err = c.svc.QueueSettle(ctx, hopped(ctx, &primitivesv2.QueueSettleRequest{
 		Ref: ref, Delivery: deliveryTo(delivery), Done: done,
 	}))
 	return remoteError(err)
@@ -221,7 +242,7 @@ func (c *Client) Append(ctx context.Context, grant invoke.Grant, data []byte) (s
 	if err != nil {
 		return "", err
 	}
-	out, err := c.svc.LogAppend(ctx, connect.NewRequest(&primitivesv2.LogAppendRequest{
+	out, err := c.svc.LogAppend(ctx, hopped(ctx, &primitivesv2.LogAppendRequest{
 		Ref: ref, Data: data,
 	}))
 	if err != nil {

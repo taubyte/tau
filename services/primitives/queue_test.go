@@ -1,9 +1,12 @@
 package primitives
 
 import (
+	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
+	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
@@ -175,4 +178,58 @@ func TestAQueueIsBoundedBySizeAndAge(t *testing.T) {
 
 	// And the room it held is free again.
 	require.NoError(t, tier.Send(ctx, bounded, "3", []byte("12345678")))
+}
+
+// A WRITE OFF THE LEADER IS MADE ON THE NODE ITS REFUSAL NAMES, once: a guest on any
+// node holding the namespace sends, appends, claims and settles through the node it
+// found.
+func TestAWriteOffTheLeaderIsMadeOnTheNodeItNames(t *testing.T) {
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
+	writer := startingIn(t, mn, newCluster())
+	follows := newCluster()
+	follower := startingIn(t, mn, follows)
+	follows.follow(writer.host.ID())
+	require.NoError(t, mn.LinkAll())
+	require.NoError(t, mn.ConnectAllButSelf())
+	ctx := t.Context()
+	jobs, audit := grantFor(jobsID), grantFor(auditID)
+
+	require.NoError(t, follower.Local().Send(ctx, jobs, "job-1", []byte("resize")))
+	depth, err := writer.Local().Depth(ctx, jobs)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, depth.Ready, "the send landed on the writer")
+
+	claimed, err := follower.Local().Claim(ctx, jobs, 1)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+	require.NoError(t, follower.Local().Settle(ctx, jobs, claimed[0], true))
+	depth, err = writer.Local().Depth(ctx, jobs)
+	require.NoError(t, err)
+	require.EqualValues(t, 0, depth.Ready+depth.Claimed, "the claim and its settle were the writer's")
+
+	cursor, err := follower.Local().Append(ctx, audit, []byte("crosses"))
+	require.NoError(t, err)
+	require.NotEmpty(t, cursor)
+	read, err := writer.Local().Read(ctx, audit, "", 10)
+	require.NoError(t, err)
+	require.Len(t, read, 1)
+	require.Equal(t, cursor, read[0].Cursor)
+
+	// OVER THE WIRE TOO, the follower sending it on once more.
+	client, err := NewClient(writer.host, follower.host.ID())
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+	require.NoError(t, client.Send(ctx, jobs, "job-2", []byte("crop")))
+	depth, err = writer.Local().Depth(ctx, jobs)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, depth.Ready)
+
+	// AND A WRITE THAT HAS COME AS FAR AS IT MAY is refused where it lands.
+	far := hopsIn(ctx, http.Header{hopHeader: []string{strconv.Itoa(maxHops)}})
+	err = follower.Local().Send(far, jobs, "job-3", []byte("crop"))
+	require.ErrorIs(t, err, wasmtier.ErrNotWritable)
+	var named NotLeading
+	require.ErrorAs(t, err, &named)
+	require.Equal(t, writer.host.ID().String(), named.Leader)
 }

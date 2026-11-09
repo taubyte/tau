@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/taubyte/tau/pkg/invoke"
 	primitivesv2 "github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v2"
 )
 
@@ -60,6 +61,11 @@ func (a address) valid() error {
 		}
 	}
 	return nil
+}
+
+// grant is the address as a grant names it, for a write sent on to another node.
+func (a address) grant() invoke.Grant {
+	return invoke.Grant{Handle: a.project + "/" + a.environment + "/" + a.id}
 }
 
 func (a address) ref() *primitivesv2.Ref {

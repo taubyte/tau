@@ -151,6 +151,8 @@ type fakeCluster struct {
 
 	mu       sync.Mutex
 	follower bool
+	// leads is who it says may write; elsewhere when unset.
+	leads libp2ppeer.ID
 }
 
 // oneGroup answers every namespace with the same group.
@@ -220,7 +222,21 @@ func (c *fakeCluster) State() raft.State {
 var elsewhere = libp2ppeer.ID("the-other-node")
 
 // Leader names whoever may write, so a refusal can carry it.
-func (c *fakeCluster) Leader() (libp2ppeer.ID, error) { return elsewhere, nil }
+func (c *fakeCluster) Leader() (libp2ppeer.ID, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.leads != "" {
+		return c.leads, nil
+	}
+	return elsewhere, nil
+}
+
+// follow makes this a follower naming id as the node that may write.
+func (c *fakeCluster) follow(id libp2ppeer.ID) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.follower, c.leads = true, id
+}
 
 // brittle is a leader whose replicated write can fail (ErrNotLeader, or a timeout),
 // which the mock cannot do.
@@ -354,9 +370,15 @@ func starting(t *testing.T, opts ...option) *harness {
 // forms off the request path. The cluster is the test's.
 func startingOn(t *testing.T, cluster leader, opts ...option) *harness {
 	t.Helper()
-
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
+	return startingIn(t, mn, cluster, opts...)
+}
+
+// startingIn is startingOn on a swarm the test shares between nodes.
+func startingIn(t *testing.T, mn mocknet.Mocknet, cluster leader, opts ...option) *harness {
+	t.Helper()
+
 	host, err := mn.GenPeer()
 	require.NoError(t, err)
 
