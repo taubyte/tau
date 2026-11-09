@@ -411,7 +411,7 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster, 
 				continue
 			}
 			pt.addPeer(pid)
-			if h := c.current().healer.Load(); h != nil {
+			if h := c.current().healer.Load(); h != nil && !c.ignoreIdentified {
 				h.serving(pid)
 			}
 

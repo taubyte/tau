@@ -35,9 +35,12 @@ type cluster struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	timeoutConfig   TimeoutConfig
-	forceBootstrap  bool
-	quorumLossAfter time.Duration
+	timeoutConfig  TimeoutConfig
+	forceBootstrap bool
+	// ignoreIdentified leaves a peer identified as serving the namespace to the
+	// healer's own probes, for a test of what one healer call does.
+	ignoreIdentified bool
+	quorumLossAfter  time.Duration
 	// yielded is set under mu once a yield to another group's leader wiped the
 	// member: it joins that group, and no longer forms one of its own however it
 	// was made.

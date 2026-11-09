@@ -27,6 +27,15 @@ func WithForceBootstrap() Option {
 	}
 }
 
+// withoutMeetingIdentified has the healer meet foreign peers only on its probes, not
+// as they are identified: a test of one healer call counts what that call did.
+func withoutMeetingIdentified() Option {
+	return func(c *cluster) error {
+		c.ignoreIdentified = true
+		return nil
+	}
+}
+
 // WithBootstrapTimeout is how long to look for peers before bootstrapping
 // alone. Default: 30s.
 func WithBootstrapTimeout(d time.Duration) Option {

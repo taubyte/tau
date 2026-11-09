@@ -222,13 +222,13 @@ func TestHealing_HealAck_Signal(t *testing.T) {
 // they could see each other, then were connected: a split brain, each side
 // holding a write the other never saw. The bootstrap timeout leaves a yielding
 // node's discovery time to find the other side.
-func splitPair(t *testing.T, namespace string) (a, b Cluster) {
+func splitPair(t *testing.T, namespace string, extra ...Option) (a, b Cluster) {
 	t.Helper()
 	nodeA := newMockNode(t)
 	nodeB := newMockNode(t)
 
 	opts := func() []Option {
-		return []Option{WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second)}
+		return append([]Option{WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second)}, extra...)
 	}
 	a, err := New(nodeA, namespace, opts()...)
 	require.NoError(t, err)
@@ -812,11 +812,11 @@ func (p *exportingPeer) HealAck(context.Context, *connect.Request[raftv2.HealAck
 // facing is a group of one running on store, connected to and tracking a node
 // that answers the group's protocol with other, the way the other side of a
 // split does.
-func facing(t *testing.T, namespace string, store ds.Batching, other raftv2connect.RaftServiceHandler) (*cluster, peer.ID) {
+func facing(t *testing.T, namespace string, store ds.Batching, other raftv2connect.RaftServiceHandler, extra ...Option) (*cluster, peer.ID) {
 	t.Helper()
 	winnerNode := newMockNode(t)
 	w, err := New(storeNode{Node: winnerNode, store: store}, namespace,
-		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
+		append([]Option{WithTimeouts(testTimeoutConfig()), WithForceBootstrap()}, extra...)...)
 	require.NoError(t, err)
 	t.Cleanup(func() { w.Close() })
 	waitLeader(t, w, 5*time.Second)
@@ -848,7 +848,8 @@ func TestHealing_AMergeTheStoreRefusesTellsNobodyToYield(t *testing.T) {
 	const namespace = "merge-refused"
 	store := newFaultStore()
 	other := &exportingPeer{state: oneWriteOfTheirs(t)}
-	winner, otherID := facing(t, namespace, store, other)
+	// ONLY THE CALLS BELOW: a merge started by identify would be counted with theirs.
+	winner, otherID := facing(t, namespace, store, other, withoutMeetingIdentified())
 	other.members = []string{otherID.String()}
 	theirs := path.Join(RaftStoragePrefix, namespace, "data", "theirs")
 	store.failPut(theirs, errNoSpace)
@@ -1137,12 +1138,14 @@ func TestHealing_AMemberThatLostItsQuorumKeepsItsStateForAnEmptyNewcomer(t *test
 // A MERGE TELLS ONLY THE GROUP IT MERGED TO YIELD: a third group in sight, whose
 // state nobody took, keeps it.
 func TestHealing_AMergeTellsOnlyTheMergedGroupToYield(t *testing.T) {
+	// ONLY THE MERGE BELOW: the third group meeting the winner as it is identified
+	// would be a merge of its own, and correctly told to yield.
 	const namespace = "heal-only-merged"
-	a, b := splitPair(t, namespace)
+	a, b := splitPair(t, namespace, withoutMeetingIdentified())
 	winner, loser := winnerOf(a, b)
 
 	node := newMockNode(t)
-	third, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
+	third, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), withoutMeetingIdentified())
 	require.NoError(t, err)
 	t.Cleanup(func() { third.Close() })
 	waitLeader(t, third, 5*time.Second)
