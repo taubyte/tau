@@ -33,12 +33,7 @@ func MovePostfixOptions(args []string, validFlags []ParsedFlag) []string {
 			continue
 		}
 
-		if len(arg) == 0 {
-			new_args = append(new_args, arg)
-			continue
-		}
-
-		if arg[:1] == "-" {
+		if strings.HasPrefix(arg, "-") {
 			flagIsBool, ok := flagBoolMap[arg]
 			if ok {
 				if flagIsBool || strings.Contains(arg, "=") || len(args) == idx+1 {
