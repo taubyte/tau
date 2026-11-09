@@ -422,7 +422,7 @@ func (c *cluster) askToJoin(m *member, timeout time.Duration) {
 			clusterLogger.Infof("[%s] no formation to join among %d targets", c.ID().ShortString(), len(targets))
 			continue
 		}
-		if err := m.raftClient.JoinVoter(ctx, c.ID(), timeout, m.raft.Formation(), targets...); err != nil {
+		if err := m.raftClient.JoinVoter(ctx, c.ID(), timeout, m.raft.Formation(), m.raft.LastIndex(), targets...); err != nil {
 			clusterLogger.Infof("[%s] voter join request failed: %v", c.ID().ShortString(), err)
 			continue
 		}
@@ -468,7 +468,7 @@ func (c *cluster) tryJoinExistingCluster(ctx context.Context, m *member, peers [
 		if !c.bindVia(m, targets) {
 			return false, true
 		}
-		err := m.raftClient.JoinVoter(ctx, c.ID(), timeout, m.raft.Formation(), targets...)
+		err := m.raftClient.JoinVoter(ctx, c.ID(), timeout, m.raft.Formation(), m.raft.LastIndex(), targets...)
 		if err == nil {
 			m.joined.Store(true)
 			clusterLogger.Infof("[%s] successfully joined existing cluster", c.ID().ShortString())
@@ -910,6 +910,25 @@ func (c *cluster) AddVoter(id peer.ID, timeout time.Duration) error {
 	}
 	clusterLogger.Infof("[%s] voter %s added successfully", c.ID().ShortString(), id.ShortString())
 	return nil
+}
+
+// admit lets id in as a voter. One the configuration lists already is left in, but
+// a leader holding its progress past last, the end of the log id says it holds,
+// hands its lead over: id lost a log it acknowledged, and answers this leader
+// nothing more this term (staleLeader). With no voter to hand it to, id is needed
+// for the leader's quorum, which its silence ends.
+func (c *cluster) admit(id peer.ID, last uint64, timeout time.Duration) error {
+	m := c.current()
+	if !slices.ContainsFunc(m.raft.Members(), func(mb Member) bool { return mb.ID == id }) {
+		return c.AddVoter(id, timeout)
+	}
+	to, stale := m.raft.standIn(id, last)
+	if !stale || to == "" {
+		return nil
+	}
+	clusterLogger.Infof("[%s] %s lost the log this leader holds its progress for — handing the lead to %s",
+		c.ID().ShortString(), id.ShortString(), to.ShortString())
+	return m.raft.TransferLeadership(to)
 }
 
 func (c *cluster) RemoveServer(id peer.ID, timeout time.Duration) error {

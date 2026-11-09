@@ -1573,6 +1573,72 @@ func TestCluster_AMemberRestartedOnItsStateLeadsItsGroupAgain(t *testing.T) {
 	}))
 }
 
+// A MEMBER BACK WITH ITS LOG LOST, UNDER ITS OWN ID, IS CAUGHT UP by the group that
+// still lists it: a node whose disk was replaced, or whose raft state was wiped. Its
+// leader, leading on with the rest, holds the progress of the log the member lost,
+// and raft would send the member a commit past the end of the log it holds now.
+func TestCluster_AMemberBackWithItsLogLostIsCaughtUp(t *testing.T) {
+	const namespace = "log-lost"
+	group := joinedGroup(t, namespace, sameStore, 3)
+	require.NoError(t, onLeader(t, group, func(leader Cluster) error {
+		return leader.Set("kept", []byte("v"), time.Second)
+	}))
+	for _, cl := range group {
+		require.Eventually(t, func() bool { _, ok := cl.Get("kept"); return ok }, leaderWait, 20*time.Millisecond)
+	}
+
+	leader := leaderOf(t, group...)
+	lost := group[0].(*cluster)
+	if lost == leader {
+		lost = group[1].(*cluster)
+	}
+	node := lost.Node
+	require.NoError(t, lost.Close())
+	require.NoError(t, wipePrefixes(t.Context(), node.Store(), path.Join(RaftStoragePrefix, namespace)))
+
+	back, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second))
+	require.NoError(t, err)
+	t.Cleanup(func() { back.Close() })
+	require.Eventually(t, func() bool { _, ok := back.Get("kept"); return ok }, leaderWait, 20*time.Millisecond,
+		"the member back with its log lost was never caught up")
+
+	rest := []Cluster{back}
+	for _, cl := range group {
+		if cl != Cluster(lost) {
+			rest = append(rest, cl)
+		}
+	}
+	require.NoError(t, onLeader(t, rest, func(leader Cluster) error {
+		return leader.Set("after", []byte("v"), time.Second)
+	}))
+	require.Eventually(t, func() bool { _, ok := back.Get("after"); return ok }, leaderWait, 20*time.Millisecond)
+	members, err := back.Members()
+	require.NoError(t, err)
+	require.Len(t, members, 3)
+}
+
+// A LEADER OF TWO HOLDING ITS FOLLOWER'S PROGRESS PAST THE LOG THE FOLLOWER SAYS IT
+// HOLDS has no member to hand its lead to, and admits the follower as it is: the
+// follower answering it nothing ends the term (TestAMemberOfTwoBackWithItsLogLostIsCaughtUp).
+func TestCluster_ALeaderOfTwoHasNoMemberToHandItsLeadTo(t *testing.T) {
+	a, b := joinedPair(t, "lead-of-two", sameStore)
+	require.NoError(t, onLeader(t, []Cluster{a, b}, func(leader Cluster) error {
+		return leader.Set("kept", []byte("v"), time.Second)
+	}))
+	require.Eventually(t, func() bool {
+		leader := agreedLeader([]Cluster{a, b})
+		if leader == nil {
+			return false
+		}
+		follower := a
+		if leader == a {
+			follower = b
+		}
+		to, stale := leader.(*cluster).current().raft.standIn(idOf(follower), 0)
+		return stale && to == "" && leader.(*cluster).admit(idOf(follower), 0, time.Second) == nil
+	}, leaderWait, 20*time.Millisecond, "a leader of two named a member to hand its lead to")
+}
+
 // letInPeer answers every join the way a leader letting the member in does,
 // and counts the joins it is asked.
 type letInPeer struct {

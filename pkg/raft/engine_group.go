@@ -17,6 +17,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	etcdraft "go.etcd.io/raft/v3"
 	pb "go.etcd.io/raft/v3/raftpb"
+	"go.etcd.io/raft/v3/tracker"
 	"google.golang.org/protobuf/proto"
 
 	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
@@ -75,6 +76,9 @@ type group struct {
 	unleased   uint64
 	quietUntil time.Time
 
+	// stale is a leader this member does not listen to for the rest of its term.
+	stale staleLeader
+
 	mu           sync.Mutex
 	state        State
 	lead         uint64
@@ -90,6 +94,19 @@ type group struct {
 	err          error
 	formation    []byte
 	frozenUntil  time.Time
+}
+
+// staleLeader is a leader, in a term, holding the progress of a log this member
+// lost. Nothing it sends in that term catches the member up: raft never takes a
+// member's progress back within a term, so every entry it sends follows one the
+// member no longer has. Answering it nothing, a leader whose quorum needs the
+// member loses it; one whose quorum does not hands its lead over when the member
+// asks to join (admit). The next term starts the member's progress afresh.
+type staleLeader struct{ id, term uint64 }
+
+// sent says m is from the stale leader, in its term.
+func (s staleLeader) sent(m *pb.Message) bool {
+	return s.id != 0 && m.GetFrom() == s.id && m.GetTerm() == s.term
 }
 
 type indexWait struct {
@@ -991,6 +1008,63 @@ type transferAsk struct {
 func (a transferAsk) run(*engine) {
 	a.g.unlease()
 	a.g.rn.TransferLeader(a.to)
+}
+
+// standIn says whether this group leads holding joiner's progress past last, the
+// end of the log joiner says it holds, and names the voter to hand the lead to:
+// of those other than joiner, one heard from lately before one that was not, then
+// the most caught up. None in a group of two.
+func (g *group) standIn(joiner peer.ID, last uint64) (peer.ID, bool) {
+	a := standInAsk{g: g, joiner: raftID(joiner), last: last, reply: make(chan standIn, 1)}
+	if err := g.e.do(a); err != nil {
+		return "", false
+	}
+	r := <-a.reply
+	return r.to, r.stale
+}
+
+type standIn struct {
+	to    peer.ID
+	stale bool
+}
+
+type standInAsk struct {
+	g      *group
+	joiner uint64
+	last   uint64
+	reply  chan standIn
+}
+
+func (a standInAsk) run(*engine) {
+	st := a.g.rn.Status()
+	held, ok := st.Progress[a.joiner]
+	if st.RaftState != etcdraft.StateLeader || !ok || held.Match <= a.last {
+		a.reply <- standIn{}
+		return
+	}
+	var best uint64
+	for id, pr := range st.Progress {
+		if id == st.ID || id == a.joiner || pr.IsLearner {
+			continue
+		}
+		if b, ok := st.Progress[best]; !ok || ahead(id, pr, best, b) {
+			best = id
+		}
+	}
+	to, _ := a.g.e.book.peer(best)
+	a.reply <- standIn{to: to, stale: true}
+}
+
+// ahead orders the voters a lead is handed to: one heard from lately, then the most
+// caught up, then the lowest id.
+func ahead(id uint64, pr tracker.Progress, than uint64, other tracker.Progress) bool {
+	if pr.RecentActive != other.RecentActive {
+		return pr.RecentActive
+	}
+	if pr.Match != other.Match {
+		return pr.Match > other.Match
+	}
+	return id < than
 }
 
 // Observe adds o to what hears the group's leader and foreign votes.

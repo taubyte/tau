@@ -639,7 +639,10 @@ type JoinVoterRequest struct {
 	TimeoutMs int64  `protobuf:"varint,2,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
 	// formation is the one the peer is bound to. A group of another refuses it:
 	// added, it would be a voter that takes none of the group's messages.
-	Formation     []byte `protobuf:"bytes,3,opt,name=formation,proto3" json:"formation,omitempty"`
+	Formation []byte `protobuf:"bytes,3,opt,name=formation,proto3" json:"formation,omitempty"`
+	// last_index is the end of the log the peer holds. A leader that holds the
+	// peer's progress past it took acknowledgements of a log the peer has lost.
+	LastIndex     uint64 `protobuf:"varint,4,opt,name=last_index,json=lastIndex,proto3" json:"last_index,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -693,6 +696,13 @@ func (x *JoinVoterRequest) GetFormation() []byte {
 		return x.Formation
 	}
 	return nil
+}
+
+func (x *JoinVoterRequest) GetLastIndex() uint64 {
+	if x != nil {
+		return x.LastIndex
+	}
+	return 0
 }
 
 type JoinVoterResponse struct {
@@ -1116,12 +1126,14 @@ const file_tau_raft_v2_raft_proto_rawDesc = "" +
 	"\rOfferResponse\x12\x1c\n" +
 	"\tformation\x18\x01 \x01(\fR\tformation\x12\x18\n" +
 	"\amembers\x18\x02 \x03(\tR\amembers\x12\x16\n" +
-	"\x06leader\x18\x03 \x01(\tR\x06leader\"c\n" +
+	"\x06leader\x18\x03 \x01(\tR\x06leader\"\x82\x01\n" +
 	"\x10JoinVoterRequest\x12\x12\n" +
 	"\x04peer\x18\x01 \x01(\tR\x04peer\x12\x1d\n" +
 	"\n" +
 	"timeout_ms\x18\x02 \x01(\x03R\ttimeoutMs\x12\x1c\n" +
-	"\tformation\x18\x03 \x01(\fR\tformation\"\x13\n" +
+	"\tformation\x18\x03 \x01(\fR\tformation\x12\x1d\n" +
+	"\n" +
+	"last_index\x18\x04 \x01(\x04R\tlastIndex\"\x13\n" +
 	"\x11JoinVoterResponse\"\x14\n" +
 	"\x12ClusterInfoRequest\"\xd4\x01\n" +
 	"\x13ClusterInfoResponse\x12\x16\n" +

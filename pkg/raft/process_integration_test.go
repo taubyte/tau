@@ -120,6 +120,8 @@ func answer(ctx context.Context, node taupeer.Node, groups map[string]Cluster, f
 			return "none"
 		}
 		return "val " + string(v)
+	case f[0] == "leads" && len(f) == 2 && groups[f[1]] != nil:
+		return "leads " + strconv.FormatBool(groups[f[1]].IsLeader())
 	case f[0] == "members" && len(f) == 2 && groups[f[1]] != nil:
 		held, err := groups[f[1]].Members()
 		if err != nil {
@@ -303,6 +305,10 @@ func (p *process) holds(namespace, key, value string) bool {
 	return p.do("get %s %s", namespace, key) == "val "+value
 }
 
+func (p *process) leads(namespace string) bool {
+	return p.do("leads %s", namespace) == "leads true"
+}
+
 func (p *process) members(namespace string) int {
 	n, _ := strconv.Atoi(strings.TrimPrefix(p.do("members %s", namespace), "members "))
 	return n
@@ -436,6 +442,48 @@ func TestAcrossProcesses_ARestartedNodeRejoinsItsGroup(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return c.holds("reboot", "before", "1") && c.holds("reboot", "after", "2")
 	}, 10*time.Second, 100*time.Millisecond, "the restarted node does not hold what the group committed")
+}
+
+// A NODE BACK WITH ITS DISK LOST, UNDER ITS OWN KEY, IS CAUGHT UP by the group that
+// still lists it. The rest lead on, their leader holding the progress of the log the
+// node lost: raft would send it a commit past the end of the log it holds now, which
+// etcd's raft panics on.
+func TestAcrossProcesses_ANodeBackWithItsDiskLostIsCaughtUp(t *testing.T) {
+	ip := lanIP(t)
+	seen := &counts{}
+	all := []*process{spawn(t, ip), spawn(t, ip), spawn(t, ip)}
+	all[0].connect(all[1])
+	all[0].connect(all[2])
+	all[1].connect(all[2])
+	for _, p := range all {
+		p.open("disk", 2*time.Second)
+	}
+	require.Eventually(t, oneGroup(seen, "disk", 3, all...), 20*time.Second, 200*time.Millisecond, "%s", seen)
+	require.Eventually(t, written("disk", "before", "1", all...), 10*time.Second, 200*time.Millisecond)
+	for _, p := range all {
+		require.Eventually(t, func() bool { return p.holds("disk", "before", "1") }, 10*time.Second, 100*time.Millisecond)
+	}
+
+	lost := all[0]
+	if lost.leads("disk") {
+		lost = all[1]
+	}
+	lost.kill()
+	require.NoError(t, os.RemoveAll(lost.dir))
+	require.NoError(t, os.MkdirAll(lost.dir, 0o755))
+	lost.start()
+	lost.open("disk", 2*time.Second)
+	for _, p := range all {
+		if p != lost {
+			lost.connect(p)
+		}
+	}
+
+	require.Eventually(t, func() bool { return lost.holds("disk", "before", "1") }, 30*time.Second, 200*time.Millisecond,
+		"the node back with its disk lost was never caught up")
+	require.Eventually(t, oneGroup(seen, "disk", 3, all...), 20*time.Second, 200*time.Millisecond, "%s", seen)
+	require.Eventually(t, written("disk", "after", "2", all...), 10*time.Second, 200*time.Millisecond)
+	require.Eventually(t, func() bool { return lost.holds("disk", "after", "2") }, 10*time.Second, 100*time.Millisecond)
 }
 
 // WHAT A GROUP COMMITTED OUTLIVES THE PROCESS: a node that formed alone and took a

@@ -14,6 +14,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
 	pb "go.etcd.io/raft/v3/raftpb"
+	"go.etcd.io/raft/v3/tracker"
 	"google.golang.org/protobuf/proto"
 
 	taupeer "github.com/taubyte/tau/p2p/peer"
@@ -649,4 +650,16 @@ func TestAFollowersReadThatWasLostIsAskedAgain(t *testing.T) {
 
 	require.NoError(t, follower.Barrier(2*time.Second))
 	require.True(t, wire.lost.Load(), "no read was lost, so nothing was proven")
+}
+
+// A LEAD IS HANDED TO A VOTER HEARD FROM LATELY before one that was not, then to the
+// most caught up, then to the lowest id.
+func TestALeadIsHandedToTheVoterHeardFromLatelyThenTheMostCaughtUp(t *testing.T) {
+	quiet := tracker.Progress{Match: 9}
+	heard := tracker.Progress{Match: 5, RecentActive: true}
+	require.True(t, ahead(2, heard, 1, quiet))
+	require.False(t, ahead(1, quiet, 2, heard))
+	require.True(t, ahead(2, tracker.Progress{Match: 9, RecentActive: true}, 1, heard))
+	require.True(t, ahead(1, heard, 2, heard))
+	require.False(t, ahead(2, heard, 1, heard))
 }

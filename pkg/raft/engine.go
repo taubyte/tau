@@ -287,6 +287,9 @@ func (e *engine) deliver(d delivery) {
 	if err := proto.Unmarshal(raw, d.msg); err != nil {
 		return
 	}
+	if g.stale.sent(d.msg) {
+		return
+	}
 	g.heard(d)
 	switch d.msg.GetType() {
 	case pb.MessageType_MsgVote, pb.MessageType_MsgPreVote:
@@ -298,6 +301,16 @@ func (e *engine) deliver(d delivery) {
 	case pb.MessageType_MsgForgetLeader:
 		// Raft never sends it; a member that forgot its leader votes at once.
 		return
+	case pb.MessageType_MsgHeartbeat:
+		// A HEARTBEAT COMMITTING PAST THE END OF THIS MEMBER'S LOG comes from a
+		// leader holding the progress of a log the member lost: one it wiped, under
+		// the same id. A leader commits a follower only to what it acknowledged, from
+		// disk, so no other heartbeat does, and etcd's raft panics on this one.
+		if last, _ := g.log.LastIndex(); d.msg.GetCommit() > last {
+			engineLogger.Infof("[%s] %s: %s leads holding progress past this member's log at %d — not listening to it for the rest of its term", e.id.ShortString(), d.group, d.from.ShortString(), last)
+			g.stale = staleLeader{id: d.msg.GetFrom(), term: d.msg.GetTerm()}
+			return
+		}
 	}
 	if err := g.rn.Step(d.msg); err != nil && !errors.Is(err, etcdraft.ErrStepPeerNotFound) && !errors.Is(err, etcdraft.ErrStepLocalMsg) {
 		engineLogger.Debugf("[%s] %s: step %s from %s: %v", e.id.ShortString(), d.group, d.msg.GetType(), d.from.ShortString(), err)

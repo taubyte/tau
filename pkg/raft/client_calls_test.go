@@ -78,7 +78,7 @@ func TestClient_ACallWithNowhereToGoFails(t *testing.T) {
 	require.ErrorContains(t, cli.Delete("k", time.Second), "no peers to send to")
 	_, err = cli.Keys("")
 	require.ErrorContains(t, err, "no peers to send to")
-	require.ErrorContains(t, cli.JoinVoter(t.Context(), idOf(cl), time.Second, nil), "no peers to send to")
+	require.ErrorContains(t, cli.JoinVoter(t.Context(), idOf(cl), time.Second, nil, 0), "no peers to send to")
 
 	_, err = cli.Keys("", peer.ID(""))
 	require.ErrorContains(t, err, "keys failed")
@@ -141,7 +141,7 @@ func TestClient_CallsToAPeerThatRunsNoMemberFail(t *testing.T) {
 	require.ErrorContains(t, cli.Delete("k", time.Second, target), "delete failed")
 	_, err = cli.Keys("", target)
 	require.ErrorContains(t, err, "keys failed")
-	require.ErrorContains(t, cli.JoinVoter(t.Context(), caller.ID(), time.Second, nil, target), "join voter failed")
+	require.ErrorContains(t, cli.JoinVoter(t.Context(), caller.ID(), time.Second, nil, 0, target), "join voter failed")
 	_, _, err = cli.ExchangePeers(time.Now(), nil, target)
 	require.Error(t, err)
 	_, err = cli.ClusterInfo(target)
@@ -244,7 +244,7 @@ func TestStream_JoinVoterNamingNobodyJoinsTheCaller(t *testing.T) {
 	fromB, err := newInternalClient(b.(*cluster).Node, "stream-join-caller", nil, quickRetry)
 	require.NoError(t, err)
 	defer fromB.Close()
-	require.NoError(t, fromB.JoinVoter(t.Context(), peer.ID(""), 5*time.Second, formationOf(a), idOf(a)))
+	require.NoError(t, fromB.JoinVoter(t.Context(), peer.ID(""), 5*time.Second, formationOf(a), 0, idOf(a)))
 
 	members, err := a.Members()
 	require.NoError(t, err)
@@ -303,7 +303,7 @@ func TestStream_AJoinAskedOfAFollowerIsForwardedToItsLeader(t *testing.T) {
 		follower = b
 	}
 	joiner := strangerID(t)
-	require.NoError(t, cli.JoinVoter(t.Context(), joiner, 5*time.Second, formationOf(follower), idOf(follower)))
+	require.NoError(t, cli.JoinVoter(t.Context(), joiner, 5*time.Second, formationOf(follower), 0, idOf(follower)))
 	members, err := leader.Members()
 	require.NoError(t, err)
 	ids := make([]peer.ID, 0, len(members))
@@ -353,7 +353,7 @@ func TestStream_AJoinAskedOfAFollowerBetweenLeadersWaitsForTheNext(t *testing.T)
 	joiner := strangerID(t)
 	joined := make(chan error, 1)
 	go func() {
-		joined <- cli.JoinVoter(t.Context(), joiner, leaderWait, formationOf(follower), idOf(follower))
+		joined <- cli.JoinVoter(t.Context(), joiner, leaderWait, formationOf(follower), 0, idOf(follower))
 	}()
 	select {
 	case err := <-joined:
@@ -422,13 +422,13 @@ func TestStream_AJoinAskedOfAMemberLetInBeforeItsLogWaitsForTheLeader(t *testing
 	}, leaderWait, time.Millisecond, "the late member kept naming the closed leader")
 
 	began := time.Now()
-	require.ErrorIs(t, cli.JoinVoter(t.Context(), strangerID(t), budget, formationOf(late), idOf(late)), ErrNoLeader)
+	require.ErrorIs(t, cli.JoinVoter(t.Context(), strangerID(t), budget, formationOf(late), 0, idOf(late)), ErrNoLeader)
 	require.GreaterOrEqual(t, time.Since(began), budget, "a member the group let in refused a join at once")
 
 	store.failPut(firstLog, nil)
 	store.failPut(vote, nil)
 	joiner := strangerID(t)
-	require.NoError(t, cli.JoinVoter(t.Context(), joiner, leaderWait, formationOf(late), idOf(late)))
+	require.NoError(t, cli.JoinVoter(t.Context(), joiner, leaderWait, formationOf(late), 0, idOf(late)))
 	members, err = leaderOf(t, survivors...).Members()
 	require.NoError(t, err)
 	ids := make([]peer.ID, 0, len(members))
@@ -464,7 +464,7 @@ func TestStream_AJoinAskedOfAMemberAYieldTookOutOfItsGroupIsRefusedAtOnce(t *tes
 	}, leaderWait, 10*time.Millisecond, "b never came back in no group")
 
 	began := time.Now()
-	require.ErrorIs(t, cli.JoinVoter(t.Context(), strangerID(t), budget, formationOf(a), idOf(b)), ErrNoLeader)
+	require.ErrorIs(t, cli.JoinVoter(t.Context(), strangerID(t), budget, formationOf(a), 0, idOf(b)), ErrNoLeader)
 	require.Less(t, time.Since(began), budget, "a member in no group waited out a join's budget")
 	<-yielded
 }
@@ -506,7 +506,7 @@ func TestStream_AJoinWhoseLeaderStopsLeadingIsAddedByTheNext(t *testing.T) {
 
 	joiner := strangerID(t)
 	joined := make(chan error, 1)
-	go func() { joined <- cli.JoinVoter(t.Context(), joiner, leaderWait, formationOf(leader), idOf(leader)) }()
+	go func() { joined <- cli.JoinVoter(t.Context(), joiner, leaderWait, formationOf(leader), 0, idOf(leader)) }()
 	require.Eventually(t, func() bool {
 		members, err := leader.Members()
 		return err == nil && len(members) == len(group)+1
@@ -530,7 +530,7 @@ func TestStream_AJoinWhoseLeaderStopsLeadingIsAddedByTheNext(t *testing.T) {
 // that takes none of the group's messages.
 func TestStream_AJoinFromAnotherFormationIsRefused(t *testing.T) {
 	cl, cli := callerOf(t, "join-elsewhere", sameStore)
-	err := cli.JoinVoter(t.Context(), strangerID(t), time.Second, newFormation(), idOf(cl))
+	err := cli.JoinVoter(t.Context(), strangerID(t), time.Second, newFormation(), 0, idOf(cl))
 	require.ErrorContains(t, err, ErrJoinerElsewhere.Error())
 	members, err := cl.Members()
 	require.NoError(t, err)

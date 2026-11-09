@@ -109,6 +109,9 @@ message JoinVoterRequest {
   // formation is the one the peer is bound to. A group of another refuses it:
   // added, it would be a voter that takes none of the group's messages.
   bytes formation = 3;
+  // last_index is the end of the log the peer holds. A leader that holds the
+  // peer's progress past it took acknowledgements of a log the peer has lost.
+  uint64 last_index = 4;
 }
 
 message JoinVoterResponse {}

@@ -714,3 +714,137 @@ func TestAGroupKeepsItsPromisesUnderFaults(t *testing.T) {
 		})
 	}
 }
+
+// lose crashes n and starts it again on an empty store under its own id, bound to
+// each formation it was a member of, as a node whose disk was replaced binds to the
+// offer it asks for: its groups still list it, and their leaders hold the progress
+// of the log it lost.
+func (s *sim) lose(n *simNode) {
+	formations := map[string][]byte{}
+	for name, sg := range n.groups {
+		formations[name] = sg.g.Formation()
+	}
+	s.note("lose %s", n.id)
+	s.crash(n, false)
+	n.store = dssync.MutexWrap(ds.NewMapDatastore())
+	s.start(n)
+	for _, name := range s.groupNames() {
+		if f, ok := formations[name]; ok {
+			s.bind(n, name, f)
+		}
+	}
+}
+
+// leading is the member of name that is up and leads, if one does.
+func (s *sim) leading(name string) *simNode {
+	for _, i := range s.layout[name] {
+		if n := s.nodes[i]; n.up && n.groups[name].g.State() == Leader {
+			return n
+		}
+	}
+	return nil
+}
+
+// written steps until name has acknowledged writes writes, every member has
+// applied them, and a member leads, and returns that leader.
+func (s *sim) written(name string, writes int) *simNode {
+	for range 4000 {
+		if len(s.acked[name]) < writes {
+			s.propose(name)
+		}
+		s.step()
+		s.answered()
+		if len(s.acked[name]) >= writes && s.converged() {
+			if l := s.leading(name); l != nil {
+				return l
+			}
+		}
+	}
+	s.t.Fatalf("%s never applied %d writes on every member", name, writes)
+	return nil
+}
+
+// otherThan is a member of name other than n.
+func (s *sim) otherThan(name string, n *simNode) *simNode {
+	for _, i := range s.layout[name] {
+		if s.nodes[i] != n {
+			return s.nodes[i]
+		}
+	}
+	return nil
+}
+
+// A MEMBER OF TWO BACK WITH ITS LOG LOST, UNDER ITS OWN ID, IS CAUGHT UP, written to
+// or left alone. Its leader holds the progress of the log it lost, and raft would
+// send it a commit past the end of its log; it answers that leader nothing, and the
+// leader's quorum, which needs it, ends the term.
+func TestAMemberOfTwoBackWithItsLogLostIsCaughtUp(t *testing.T) {
+	for _, writing := range []bool{false, true} {
+		t.Run(fmt.Sprintf("writing %v", writing), func(t *testing.T) {
+			s := newSim(t, 3, 2, map[string][]int{"a": {0, 1}})
+			leader := s.written("a", 4)
+			lost := s.otherThan("a", leader)
+			before := len(s.acked["a"])
+			s.lose(lost)
+
+			caughtUp := false
+			for range 4000 {
+				if writing && s.rng.IntN(4) == 0 {
+					s.propose("a")
+				}
+				s.step()
+				s.answered()
+				if caughtUp = s.converged() && (!writing || len(s.acked["a"]) > before); caughtUp {
+					break
+				}
+			}
+			require.True(t, caughtUp, "the member back with its log lost was never caught up")
+			s.agreed()
+		})
+	}
+}
+
+// A MEMBER BACK WITH ITS LOG LOST, IN A GROUP WHOSE QUORUM DOES WITHOUT IT, IS CAUGHT
+// UP ONCE THE LEAD MOVES: the leader leads on with the rest, holding the progress of
+// the log the member lost, and the member answers it nothing until the leader it
+// names in its place leads.
+func TestAMemberBackWithItsLogLostIsCaughtUpOnceTheLeadMoves(t *testing.T) {
+	s := newSim(t, 5, 3, map[string][]int{"a": {0, 1, 2}})
+	leader := s.written("a", 4)
+	lost := s.otherThan("a", leader)
+	s.lose(lost)
+	for range 400 {
+		s.step()
+	}
+	require.Same(t, leader, s.leading("a"), "the leader stopped leading with the rest")
+	require.False(t, s.converged(), "the leader caught up a member it holds stale progress for")
+
+	ask := func(of *simNode, last uint64) standIn {
+		a := standInAsk{g: of.groups["a"].g, joiner: raftID(lost.id), last: last, reply: make(chan standIn, 1)}
+		a.run(of.e)
+		return <-a.reply
+	}
+	var third *simNode
+	for _, i := range s.layout["a"] {
+		if n := s.nodes[i]; n != leader && n != lost {
+			third = n
+		}
+	}
+	require.False(t, ask(third, 0).stale, "a follower names a stand-in")
+	require.False(t, ask(leader, ^uint64(0)).stale, "a joiner holding everything it acknowledged is stale")
+	in := ask(leader, lost.groups["a"].g.LastIndex())
+	require.True(t, in.stale)
+	require.Equal(t, third.id, in.to, "the lead is not handed to the member that is caught up")
+
+	transferAsk{g: leader.groups["a"].g, to: raftID(in.to)}.run(leader.e)
+	for range 4000 {
+		s.step()
+		s.answered()
+		if s.converged() {
+			break
+		}
+	}
+	require.True(t, s.converged(), "the member back with its log lost was never caught up once the lead moved")
+	require.Equal(t, in.to, s.leading("a").id)
+	s.agreed()
+}

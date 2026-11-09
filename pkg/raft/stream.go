@@ -250,11 +250,11 @@ func (s *raftStreamService) JoinVoter(ctx context.Context, req *connect.Request[
 		if !s.cluster.IsLeader() {
 			break
 		}
-		err := s.cluster.AddVoter(peerID, timeout)
+		err := s.cluster.admit(peerID, m.GetLastIndex(), timeout)
 		if err == nil {
 			return connect.NewResponse(&raftv2.JoinVoterResponse{}), nil
 		}
-		streamLogger.Warnf("[%s] joinVoter: AddVoter %s failed: %v",
+		streamLogger.Warnf("[%s] joinVoter: admitting %s failed: %v",
 			s.cluster.ID().ShortString(), peerID.ShortString(), err)
 		// A leader that lost the lead while adding is between leaders now.
 		if !leadershipMoved(err) || budget.Err() != nil {
@@ -265,7 +265,7 @@ func (s *raftStreamService) JoinVoter(ctx context.Context, req *connect.Request[
 	streamLogger.Infof("[%s] joinVoter: forwarding request for %s to leader",
 		s.cluster.ID().ShortString(), peerID.ShortString())
 
-	forward := &raftv2.JoinVoterRequest{Peer: peerID.String(), TimeoutMs: m.GetTimeoutMs(), Formation: m.GetFormation()}
+	forward := &raftv2.JoinVoterRequest{Peer: peerID.String(), TimeoutMs: m.GetTimeoutMs(), Formation: m.GetFormation(), LastIndex: m.GetLastIndex()}
 	return forwardToLeader(ctx, s, "joinVoter", func(ctx context.Context, c raftv2connect.RaftServiceClient) (*connect.Response[raftv2.JoinVoterResponse], error) {
 		return c.JoinVoter(ctx, connect.NewRequest(forward))
 	})
