@@ -233,3 +233,21 @@ func TestAWriteOffTheLeaderIsMadeOnTheNodeItNames(t *testing.T) {
 	require.ErrorAs(t, err, &named)
 	require.Equal(t, writer.host.ID().String(), named.Leader)
 }
+
+// A LEADER THAT CANNOT BE REACHED LEAVES THE REFUSAL AS IT WAS, naming who may write,
+// so the caller retries rather than reading a broken cloud.
+func TestAWriteWhoseLeaderCannotBeReachedKeepsTheRefusal(t *testing.T) {
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
+	absent, err := mocknet.New().GenPeer()
+	require.NoError(t, err)
+	follows := newCluster()
+	follower := startingIn(t, mn, follows)
+	follows.follow(absent.ID())
+
+	err = follower.Local().Send(t.Context(), grantFor(jobsID), "job-1", []byte("resize"))
+	require.ErrorIs(t, err, wasmtier.ErrNotWritable)
+	var named NotLeading
+	require.ErrorAs(t, err, &named)
+	require.Equal(t, absent.ID().String(), named.Leader)
+}
