@@ -403,6 +403,7 @@ func (c *crons) generate(ctx context.Context, cluster raft.Cluster, since, upto 
 				logger.Warnf("cron: %s owes %s and nothing took it: %s", schedule.Name, slot.Format(time.RFC3339), err)
 			} else {
 				pushed++
+				logger.Debugf("cron: %s pushed %s on %s", schedule.Name, slot.Format(time.RFC3339), c.service.host.ID().ShortString())
 			}
 		}
 		c.drain(schedule, held)
@@ -474,6 +475,7 @@ func (c *crons) drain(schedule Schedule, held *queue.Queue) {
 			}
 			return
 		}
+		logger.Debugf("cron: %s handed out %s, attempt %d, on %s", schedule.Name, item.ID, item.Attempt, c.service.host.ID().ShortString())
 		c.service.deliveries.Add(1)
 		go func() {
 			defer c.service.deliveries.Done()
