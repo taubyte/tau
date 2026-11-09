@@ -316,9 +316,10 @@ func ServeLocal(id peerCore.ID, h LocalHandler) (stop func()) {
 
 const (
 	// readYourWritesWindow is how long a handle's reads of a key it wrote stay on
-	// the sticky replica. It outlasts two CRDT rebroadcasts (5s, plus 30% jitter)
-	// so a replica that missed the gossip has been told again.
-	readYourWritesWindow = 15 * time.Second
+	// the sticky replica. Minutes, not a few rebroadcasts: a replica behind a DAG
+	// backlog can lag far longer than the gossip interval. After it, and for keys
+	// written elsewhere, a read can be stale for as long as its replica lags.
+	readYourWritesWindow = 5 * time.Minute
 	readersRefresh       = 30 * time.Second
 )
 

@@ -267,6 +267,31 @@ func TestRemoteKV_ReadAfterWrite_LaggingReplica(t *testing.T) {
 	}
 }
 
+// A replica lagging behind a backlog can trail by more than a rebroadcast, so a
+// written key stays on the sticky replica for minutes.
+func TestRemoteKV_ReadAfterWrite_LaggingReplicaOverMinutes(t *testing.T) {
+	a, b, c := testPeers(t)
+	f := newFakeHoarders()
+	for _, p := range []peerCore.ID{a, b, c} {
+		f.set(p, "k", "old")
+	}
+	r := newTestKV(f, a, b, c)
+	warm(t, r, 3)
+	ctx := context.Background()
+
+	if err := r.Put(ctx, "k", []byte("new")); err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	r.written[canonicalKey("k")] = time.Now().Add(-time.Minute)
+	r.mu.Unlock()
+	for i := 0; i < 50; i++ {
+		if got, err := r.Get(ctx, "k"); err != nil || string(got) != "new" {
+			t.Fatalf("read %d one minute after the write = %q, %v", i, got, err)
+		}
+	}
+}
+
 func TestRemoteKV_ReadAfterDelete_LaggingReplica(t *testing.T) {
 	a, b, c := testPeers(t)
 	f := newFakeHoarders()
