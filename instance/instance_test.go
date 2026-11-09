@@ -15,6 +15,7 @@ import (
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/stats"
 	"github.com/taubyte/tau/services"
+	"github.com/taubyte/tau/services/plm/jobs"
 	registerService "github.com/taubyte/tau/services/register"
 )
 
@@ -57,10 +58,10 @@ func TestEachServiceSaysWhatItCannotStartWithout(t *testing.T) {
 }
 
 func TestWhatWasBuiltIsClosed(t *testing.T) {
-	n, _, factory := makeNode(t, Config{Services: []string{Auth}})
+	n, _, factory := makeNode(t, Config{Services: []string{Worker}})
 
 	opened, closed := factory.counts()
-	require.Equal(t, []string{Auth}, opened, "one database, named after the service that wanted it")
+	require.Equal(t, []string{jobs.Records}, opened, "one database: plm's records, which the worker holds from the start")
 	require.Zero(t, closed)
 
 	require.NoError(t, n.Close())
@@ -73,12 +74,12 @@ func TestWhatWasBuiltIsClosed(t *testing.T) {
 func TestAHalfBuiltNodeClosesWhatItMade(t *testing.T) {
 	factory := &memFactory{}
 
-	// No stats: the gateway fails, after auth has opened a database.
-	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Auth, Gateway}}), withKVDB(factory))
+	// No stats: the gateway fails, after the worker has opened a database.
+	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Worker, Gateway}}), withKVDB(factory), WithRuntimes(&tier{name: "oci"}))
 	require.Error(t, err)
 
 	opened, closed := factory.counts()
-	require.Len(t, opened, 1, "auth got as far as opening one")
+	require.Len(t, opened, 1, "the worker got as far as opening one")
 	require.Equal(t, 1, closed, "and it was closed when the gateway failed")
 }
 
@@ -212,7 +213,7 @@ func TestWhatTheOptionsRefuse(t *testing.T) {
 }
 
 func TestADatabaseThatWillNotOpen(t *testing.T) {
-	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Auth}}), withKVDB(&memFactory{err: errors.New("the disk is full")}))
+	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Worker}}), withKVDB(&memFactory{err: errors.New("the disk is full")}), WithRuntimes(&tier{name: "oci"}))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "disk is full")
 }

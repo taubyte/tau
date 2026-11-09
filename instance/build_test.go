@@ -42,7 +42,7 @@ func TestANodeRunsPLMAndTheBuilderTogetherWhenItsConfigSaysSo(t *testing.T) {
 func TestTheDefaultShapeStarts(t *testing.T) {
 	require.NotContains(t, All, PLM)
 	require.Contains(t, services.Names(), Builder, "the builder is a service tau ships")
-	require.Contains(t, All, Auth)
+	require.Contains(t, services.Default(), Auth, "auth is a service tau ships, started from the catalog")
 
 	cfg, err := Config{}.withDefaults(services.Names()...)
 	require.NoError(t, err)

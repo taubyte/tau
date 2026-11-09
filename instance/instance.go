@@ -259,9 +259,6 @@ func (n *Instance) open() error {
 	// opened later are still found.
 	n.openReach()
 
-	// STATS NEXT. Everything else routes on the view it maintains, including
-	// the locators above, so a node that runs it must have it before anything
-	// asks one of them who does what.
 	if err := n.openIdentity(); err != nil {
 		return err
 	}
