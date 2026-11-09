@@ -119,7 +119,7 @@ func (r *records) append(ctx context.Context, spec Spec, data []byte) (string, e
 	}, applyTimeout); err != nil {
 		r.orphaned(ctx, db, prefix, head, digest)
 		if errors.Is(err, raft.ErrNotLeader) {
-			return "", r.service.notLeading(cluster)
+			return "", fmt.Errorf("%w: advancing the log's head", ErrUncertain)
 		}
 		return "", fmt.Errorf("primitives: advancing the log's head: %w", err)
 	}

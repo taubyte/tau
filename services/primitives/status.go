@@ -84,6 +84,7 @@ var refusals = []refusal{
 	// it, and unavailable is what tells it to come back. The sentence says why.
 	{err: ErrQueueFull, code: connect.CodeUnavailable},
 	{err: ErrForming, code: connect.CodeUnavailable},
+	{err: ErrUncertain, code: connect.CodeUnavailable},
 	{err: ErrClosed, code: connect.CodeUnavailable},
 }
 

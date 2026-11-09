@@ -407,6 +407,7 @@ func (s *server) onLeader(ctx context.Context, refused error, write func(*Client
 		return false, nil
 	}
 	defer c.Close()
+	logger.Debugf("sending on a write refused here: %v", refused)
 	err := write(c)
 	if rpc.Unreached(err) {
 		return false, nil

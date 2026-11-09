@@ -631,6 +631,7 @@ func (c *crons) invoke(ctx context.Context, schedule Schedule, fire *primitivesv
 		logger.Warnf("cron: %s firing %s/%s answered %d: %.200s", fire.GetCron(), at.Kind, at.Name, res.Status, res.Body)
 		return false
 	}
+	logger.Debugf("cron: %s fired %s/%s for %s", fire.GetCron(), at.Kind, at.Name, slot.Format(time.RFC3339))
 	return true
 }
 

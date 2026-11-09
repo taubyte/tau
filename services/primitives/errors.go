@@ -108,6 +108,11 @@ var ErrClosed = errors.New("primitives: this node has closed its consensus")
 // fact the caller can act on rather than a failure of the resource.
 var ErrNotLeading = errors.New("primitives: this node is not the one that may write")
 
+// ErrUncertain is a write whose leader lost its leadership while the entry was
+// committing: raft may still commit it, so it may have landed. It is a retry, and
+// never sent on to another node, which would make it twice.
+var ErrUncertain = errors.New("primitives: leadership was lost while the write was committing, so it may have landed")
+
 // NotLeading is that refusal with the leader's name on it. The service names the
 // leader and does not dial it: forwarding would be a second write path.
 type NotLeading struct{ Leader string }
