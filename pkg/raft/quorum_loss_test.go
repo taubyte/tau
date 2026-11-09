@@ -232,7 +232,8 @@ func TestHealing_AMemberCarryingAnArchiveHandsItOverWithItsState(t *testing.T) {
 	require.True(t, c.hasArchive())
 
 	before := c.current()
-	require.NoError(t, cli.HealAck(idOf(cl), receipt{formation: exp.formation, cut: math.MaxUint64, archive: exp.archive}))
+	// The member can yield before its answer is written: the yield is what counts.
+	cli.HealAck(idOf(cl), receipt{formation: exp.formation, cut: math.MaxUint64, archive: exp.archive})
 	require.Eventually(t, func() bool { return c.current() != before }, 5*time.Second, 20*time.Millisecond, "the member never yielded")
 	require.False(t, c.hasArchive(), "the member kept an archive the other group took")
 }
