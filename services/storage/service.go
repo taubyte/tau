@@ -40,6 +40,9 @@ type Bytes interface {
 
 	// Read is an object's bytes, from wherever they are held.
 	Read(ctx context.Context, root cid.Cid) (io.ReadSeekCloser, error)
+
+	// Sync makes every block this node stored durable.
+	Sync(ctx context.Context) error
 }
 
 // DefaultSweep is how often a node reconsiders which shards it holds.

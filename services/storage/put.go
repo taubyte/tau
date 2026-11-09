@@ -147,14 +147,22 @@ func (s *server) acks(ctx context.Context, holders []string, ask func(context.Co
 	return n
 }
 
-// keep records blocks this node holds for a version.
+// keep records blocks this node holds for a version, durably before it says so:
+// the writer counts this node toward the copies it promises, and nothing
+// replicates a node's own blocks and rows or brings back what a crash took.
 func (s *server) keep(ctx context.Context, root cid.Cid, blocks []cid.Cid, a Address, name string, stamp uint64) error {
 	for _, b := range blocks {
 		if err := s.local.Imported(ctx, b); err != nil {
 			return err
 		}
 	}
-	return s.local.Reference(ctx, root, a, name, stamp)
+	if err := s.local.Reference(ctx, root, a, name, stamp); err != nil {
+		return err
+	}
+	if err := s.bytes.Sync(ctx); err != nil {
+		return fmt.Errorf("storage: syncing %s's blocks: %w", root, err)
+	}
+	return s.local.Sync(ctx)
 }
 
 // hold fetches a root from the node that has it and keeps it.

@@ -7,6 +7,7 @@ import (
 
 	"github.com/ipfs/boxo/ipld/merkledag"
 	"github.com/ipfs/go-cid"
+	ds "github.com/ipfs/go-datastore"
 	ipld "github.com/ipfs/go-ipld-format"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
@@ -34,6 +35,10 @@ func (b peerBytes) Fetch(ctx context.Context, root cid.Cid, from libp2ppeer.ID) 
 		return nil, fmt.Errorf("reaching %s: %w", from, err)
 	}
 	return walk(ctx, b.DAG().Session(ctx), root)
+}
+
+func (b peerBytes) Sync(ctx context.Context) error {
+	return b.DAG().BlockLog().Sync(ctx, ds.NewKey("/"))
 }
 
 func (b peerBytes) Read(ctx context.Context, root cid.Cid) (io.ReadSeekCloser, error) {

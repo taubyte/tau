@@ -25,15 +25,29 @@ import (
 )
 
 // swarm is every node's blockstore, so a fetch takes from the peer it names, and a
-// node marked down answers nobody.
+// node marked down answers nobody. A block is durable once its node synced since
+// storing it; a node marked failing cannot sync.
 type swarm struct {
-	mu     sync.Mutex
-	stores map[libp2ppeer.ID]map[string][]byte
-	down   map[libp2ppeer.ID]bool
+	mu      sync.Mutex
+	stores  map[libp2ppeer.ID]map[string][]byte
+	durable map[libp2ppeer.ID]map[string]bool
+	down    map[libp2ppeer.ID]bool
+	failing map[libp2ppeer.ID]bool
 }
 
 func newSwarm() *swarm {
-	return &swarm{stores: map[libp2ppeer.ID]map[string][]byte{}, down: map[libp2ppeer.ID]bool{}}
+	return &swarm{
+		stores:  map[libp2ppeer.ID]map[string][]byte{},
+		durable: map[libp2ppeer.ID]map[string]bool{},
+		down:    map[libp2ppeer.ID]bool{},
+		failing: map[libp2ppeer.ID]bool{},
+	}
+}
+
+func (s *swarm) holdsDurably(at libp2ppeer.ID, c cid.Cid) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.durable[at][c.KeyString()]
 }
 
 func (s *swarm) holds(at libp2ppeer.ID, c cid.Cid) bool {
@@ -87,6 +101,21 @@ func (b *nodeBytes) Fetch(_ context.Context, root cid.Cid, from libp2ppeer.ID) (
 	}
 	b.put(root, data)
 	return []cid.Cid{root}, nil
+}
+
+func (b *nodeBytes) Sync(context.Context) error {
+	b.swarm.mu.Lock()
+	defer b.swarm.mu.Unlock()
+	if b.swarm.failing[b.self] {
+		return errors.New("the disk refused the sync")
+	}
+	if b.swarm.durable[b.self] == nil {
+		b.swarm.durable[b.self] = map[string]bool{}
+	}
+	for k := range b.swarm.stores[b.self] {
+		b.swarm.durable[b.self][k] = true
+	}
+	return nil
 }
 
 func (b *nodeBytes) Read(_ context.Context, root cid.Cid) (io.ReadSeekCloser, error) {
@@ -248,9 +277,11 @@ func TestAPutIsHeldByItsHoldersAndReadFromAnyNode(t *testing.T) {
 		id, err := libp2ppeer.Decode(h)
 		require.NoError(t, err)
 		require.True(t, c.swarm.holds(id, root), "%s is a holder and has no copy", h)
+		require.True(t, c.swarm.holdsDurably(id, root), "%s acknowledged a copy a crash can take", h)
 		refs, err := c.node(h).local.ReferencesTo(t.Context(), root)
 		require.NoError(t, err)
 		require.Len(t, refs, 1, "%s holds the bytes with no record of what for", h)
+		require.NotEmpty(t, c.node(h).local.store.(*orderedMem).synced, "%s acknowledged rows a crash can take", h)
 	}
 
 	for i := range c.nodes {
@@ -277,6 +308,18 @@ func TestAPutTooFewNodesTookIsNoVersion(t *testing.T) {
 	}
 	_, err = c.client(t, 1, 1).Current(t.Context(), at, "build-1")
 	require.ErrorIs(t, err, ErrNotFound, "an unacknowledged write left a version")
+}
+
+// A NODE THAT CANNOT MAKE ITS COPY DURABLE DOES NOT COUNT IT: the writer promises
+// copies, and nothing brings back one a crash takes.
+func TestACopyThatCannotBeMadeDurableIsNotHeld(t *testing.T) {
+	at := assetsOf(t, "site_code")
+	c := newCluster(t, 3, fixedCatalog{at})
+	for _, id := range c.ids[1:] {
+		c.swarm.failing[id] = true
+	}
+	_, err := c.client(t, 0, 0).Put(t.Context(), at, "build-1", Object{}, strings.NewReader("volatile"))
+	require.ErrorIs(t, err, ErrUnderHeld)
 }
 
 func TestADeleteIsATombstoneAcknowledgedLikeAPut(t *testing.T) {

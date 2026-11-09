@@ -280,6 +280,11 @@ func (l *Local) Reference(ctx context.Context, root cid.Cid, a Address, name str
 	return l.store.Put(ctx, ds.RawKey(key), encodeMS(uint64(l.now().UnixMilli())))
 }
 
+// Sync makes this node's rows durable.
+func (l *Local) Sync(ctx context.Context) error {
+	return l.store.Sync(ctx, ds.NewKey("/"))
+}
+
 // Dereference drops one reference row. It is the second half of a delete on
 // this node, and it never touches a block: blocks are freed by the sweep,
 // behind the grace window, once nothing references them.
