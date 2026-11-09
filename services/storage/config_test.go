@@ -170,17 +170,17 @@ func TestTheStorageBriefsSurfaceIsWhatIsExported(t *testing.T) {
 	sort.Strings(names)
 
 	require.Equal(t, []string{
-		"Accounted", "Address", "AssetsBucket", "Blocks", "Bucket", "Bytes", "Catalog", "Client",
-		"Clock", "Config", "Datastore", "DeadObject", "DefaultMaxSkew",
+		"Abandoned", "Accounted", "Address", "AssetsBucket", "Blocks", "BloomMarkers", "Bucket", "Bytes",
+		"Catalog", "Client", "Clock", "Config", "Datastore", "DefaultMaxSkew",
 		"DefaultSweep", "Descriptor", "Dial", "ErrEmptyIdentity",
 		"ErrEmptyObjectName", "ErrGateClosed", "ErrLocalClockSkew", "ErrLogicalOverflow",
 		"ErrNoAddress", "ErrNoBytes", "ErrNoCatalog", "ErrNoSettings", "ErrNoShards", "ErrNotFound", "ErrNotHeld",
-		"ErrNotThisServicesRow", "ErrRemoteClockSkew", "ErrStampRange", "ErrUnderHeld",
-		"ErrWriterMismatch", "Gates", "Local", "Marker", "Meter", "MisplacementDrop", "New",
+		"ErrNotThisServicesRow", "ErrRemoteClockSkew", "ErrStampRange", "ErrSwept", "ErrUnderHeld",
+		"ErrWriterMismatch", "ExactMarkers", "Gates", "Local", "Marker", "Markers", "Meter", "Misplaced", "New",
 		"NewAddress", "NewBloomMarker", "NewBucket", "NewClient", "NewClock", "NewExactMarker",
 		"NewLocal", "NewSweeper", "Newest", "Object", "Op", "OpAdd", "OpRefuse", "OpRemove",
-		"Order", "PackStamp", "ParseVersionKey", "Policy", "Protocol", "Purpose", "Reached", "Reference",
-		"Service", "ShardOpener", "Shards", "Store", "StoreOn", "SweepResult", "Sweeper", "UnpackStamp",
+		"Order", "PackStamp", "ParseVersionKey", "Protocol", "Purpose", "Reached", "Reference",
+		"Service", "ShardOpener", "Shards", "Store", "StoreOn", "Superseded", "SweepResult", "Sweeper", "UnpackStamp",
 		"Usage", "Version", "VersionKey", "VersionRecord",
 	}, dedupe(names))
 }

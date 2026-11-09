@@ -178,8 +178,8 @@ func newestRow(t *testing.T, store *orderedMem, at Address, name string) row {
 	return r
 }
 
-// abandoned is a version node 0 kept the bytes of whose row no holder has: a write
-// that failed after its bytes were held.
+// abandoned is a version every node keeps the bytes of and whose row no holder has: a
+// write that failed after its bytes were held.
 func abandoned(t *testing.T, c *cluster, at Address, content string) (cid.Cid, uint64) {
 	t.Helper()
 	n := c.nodes[0]
@@ -188,6 +188,9 @@ func abandoned(t *testing.T, c *cluster, at Address, content string) (cid.Cid, u
 	stamp, err := n.stamp(t.Context())
 	require.NoError(t, err)
 	require.NoError(t, n.keep(t.Context(), root, blocks, at, "ghost", stamp))
+	for _, other := range c.nodes[1:] {
+		require.NoError(t, other.hold(t.Context(), root, c.ids[0], at, "ghost", stamp))
+	}
 	return root, stamp
 }
 
@@ -198,18 +201,18 @@ func TestAnAbandonedWriteIsCollectedOnTwoAbsencesTheGraceApart(t *testing.T) {
 	clk := newFixedClock(1_700_000_000_000)
 	c := newCluster(t, 3, fixedCatalog{at}, withClock(clk.now))
 	root, _ := abandoned(t, c, at, "a write that failed")
-	n := c.nodes[0]
+	grace := c.nodes[0].cfg.GraceGC
 
-	require.NoError(t, n.collect(t.Context()))
-	clk.advance(n.cfg.GraceGC - time.Minute)
-	require.NoError(t, n.collect(t.Context()))
-	require.Equal(t, 1, referencedOn(t, c, root), "a write absent for less than the grace window was collected")
+	collectAll(t, c)
+	clk.advance(grace - time.Minute)
+	collectAll(t, c)
+	require.Equal(t, 3, referencedOn(t, c, root), "a write absent for less than the grace window was collected")
 
-	clk.advance(time.Minute)
-	require.NoError(t, n.collect(t.Context()))
+	// The pass that drops it asks again: absent then too.
+	clk.advance(reask)
+	collectAll(t, c)
 	require.Zero(t, referencedOn(t, c, root))
-	_, err := n.sweeper.Sweep(t.Context())
-	require.NoError(t, err)
+	sweepAll(t, c)
 	require.Zero(t, heldOn(c, root))
 }
 
@@ -229,8 +232,8 @@ func TestARowFoundAfterAnAbsenceKeepsTheVersion(t *testing.T) {
 	rec := VersionRecord{RootCID: root.String(), Writer: n.self}
 	require.NoError(t, c.nodes[2].appendHere(t.Context(), at, "ghost", stamp, rec))
 	clk.advance(n.cfg.GraceGC)
-	require.NoError(t, n.collect(t.Context()))
-	require.Equal(t, 1, referencedOn(t, c, root), "a version a holder holds was collected as abandoned")
+	collectAll(t, c)
+	require.Equal(t, 3, referencedOn(t, c, root), "a version a holder holds was collected as abandoned")
 	_, absent, err = n.local.Observed(t.Context(), at, "ghost", stamp)
 	require.NoError(t, err)
 	require.True(t, absent.IsZero(), "a row found did not forget the absence")
@@ -254,7 +257,9 @@ func TestAHolderThatDoesNotAnswerIsNoAbsence(t *testing.T) {
 	require.NoError(t, n.collect(t.Context()))
 	clk.advance(n.cfg.GraceGC + reask)
 	require.NoError(t, n.collect(t.Context()))
-	require.Equal(t, 1, referencedOn(t, c, root))
+	refs, err := n.local.ReferencesTo(t.Context(), root)
+	require.NoError(t, err)
+	require.NotEmpty(t, refs)
 	_, absent, err := n.local.Observed(t.Context(), at, "ghost", stamp)
 	require.NoError(t, err)
 	require.True(t, absent.IsZero(), "an answer that never came counted as an absence")

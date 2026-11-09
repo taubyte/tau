@@ -105,6 +105,11 @@ func (b *nodeBytes) Fetch(ctx context.Context, root cid.Cid, from libp2ppeer.ID)
 	b.swarm.mu.Lock()
 	down := b.swarm.down[b.self] || b.swarm.down[from]
 	data, ok := b.swarm.stores[from][root.KeyString()]
+	// What a node has already is read where it is, as a blockstore reads before
+	// it asks.
+	if here, have := b.swarm.stores[b.self][root.KeyString()]; have {
+		data, ok = here, true
+	}
 	b.swarm.mu.Unlock()
 	if down {
 		return nil, errors.New("unreachable")

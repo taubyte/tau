@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 
@@ -519,8 +520,8 @@ func TestTheExactMarkerIsExact(t *testing.T) {
 // its references before the keep, marks the kept root before it deletes.
 func TestAKeepDuringASweepIsMarkedBeforeItsBlocksCanGo(t *testing.T) {
 	ctx := context.Background()
-	clk := newFixedClock(1_700_000_000_000)
-	s, l, blocks := sweeper(t, clk)
+	l, _ := newLocal(t, newFixedClock(1_700_000_000_000))
+	blocks := newMemBlocks()
 	a := addr(t)
 
 	ids := dag(t, blocks, map[string][]string{
@@ -531,24 +532,18 @@ func TestAKeepDuringASweepIsMarkedBeforeItsBlocksCanGo(t *testing.T) {
 	}
 	require.NoError(t, l.Reference(ctx, ids["live"], a, "live", 1))
 
-	marking := make(chan struct{})
-	resume := make(chan struct{})
-	blocks.failLinks = func(c cid.Cid) error {
-		if c.Equals(ids["live"]) {
-			close(marking)
-			<-resume
-		}
-		return nil
-	}
+	paused := newPausing(blocks, ids["live"])
+	s, err := NewSweeper(l, paused, nil)
+	require.NoError(t, err)
 	swept := make(chan SweepResult, 1)
 	go func() {
 		res, err := s.Sweep(ctx)
 		require.NoError(t, err)
 		swept <- res
 	}()
-	<-marking
+	<-paused.reached
 	require.NoError(t, s.Keep(ctx, ids["new-root"], []cid.Cid{ids["new-root"], ids["reused"]}, a, "new", 2))
-	close(resume)
+	close(paused.resume)
 	res := <-swept
 
 	require.Equal(t, 1, res.Deleted, "only the dead block goes")
@@ -587,30 +582,61 @@ func TestAKeepRelyingOnASweptBlockIsRefused(t *testing.T) {
 // between a delete and the next would rely on what the sweep was deleting.
 func TestASweepsDeletesHoldEveryKeepOff(t *testing.T) {
 	ctx := context.Background()
-	clk := newFixedClock(1_700_000_000_000)
-	s, l, blocks := sweeper(t, clk)
+	l, _ := newLocal(t, newFixedClock(1_700_000_000_000))
+	blocks := newMemBlocks()
 	a := addr(t)
 
 	ids := dag(t, blocks, map[string][]string{"dead": {}, "other": {}})
 	require.NoError(t, l.Imported(ctx, ids["dead"]))
+	paused := newPausing(blocks, ids["dead"])
+	s, err := NewSweeper(l, paused, nil)
+	require.NoError(t, err)
 
-	deleting := make(chan struct{})
-	resume := make(chan struct{})
-	blocks.failDelete = func(cid.Cid) error {
-		close(deleting)
-		<-resume
-		return nil
-	}
+	swept := make(chan error, 1)
 	go func() {
 		_, err := s.Sweep(ctx)
-		require.NoError(t, err)
+		swept <- err
 	}()
-	<-deleting
+	<-paused.reached
 	kept := make(chan error, 1)
 	go func() { kept <- s.Keep(ctx, ids["other"], []cid.Cid{ids["other"]}, a, "other", 1) }()
 	require.Never(t, func() bool { return len(kept) > 0 }, 200*time.Millisecond, 10*time.Millisecond, "a keep ran inside a sweep's deletes")
-	close(resume)
+	close(paused.resume)
+	require.NoError(t, <-swept)
 	require.NoError(t, <-kept)
+}
+
+// pausing is blocks that hold the first read of or delete of one block until
+// resumed, outside memBlocks' own lock, so nothing else waits on it.
+type pausing struct {
+	*memBlocks
+	at      cid.Cid
+	once    sync.Once
+	reached chan struct{}
+	resume  chan struct{}
+}
+
+func newPausing(blocks *memBlocks, at cid.Cid) *pausing {
+	return &pausing{memBlocks: blocks, at: at, reached: make(chan struct{}), resume: make(chan struct{})}
+}
+
+func (p *pausing) pause(c cid.Cid) {
+	if c.Equals(p.at) {
+		p.once.Do(func() {
+			close(p.reached)
+			<-p.resume
+		})
+	}
+}
+
+func (p *pausing) Links(ctx context.Context, c cid.Cid) ([]cid.Cid, error) {
+	p.pause(c)
+	return p.memBlocks.Links(ctx, c)
+}
+
+func (p *pausing) Delete(ctx context.Context, c cid.Cid) error {
+	p.pause(c)
+	return p.memBlocks.Delete(ctx, c)
 }
 
 // alwaysMarked is the worst legal marker: every answer is a false positive.
