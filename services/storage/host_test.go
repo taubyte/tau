@@ -18,6 +18,7 @@ import (
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/discovery"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/rpc"
 	cmmock "github.com/taubyte/tau/services/cm/mock"
 	"github.com/taubyte/tau/services/cm/settings"
 )
@@ -45,7 +46,7 @@ func newStorageNode(t *testing.T) *storageNode {
 	// THE REGION'S SETTINGS ARE CM'S, which a storage node waits for before it
 	// starts.
 	i := &storageNode{Node: p, t: t, cm: cmmock.New(settings.Defaults())}
-	i.Served = service.NewServed(p.ID(), &i.finding)
+	i.Served = service.NewServed(p.ID(), &i.finding, rpc.Retry{For: 50 * time.Millisecond})
 	i.Serve(settings.Protocol, i.cm)
 	return i
 }
@@ -246,7 +247,7 @@ func TestTheStoreIsReachedAsTheServiceBesideIt(t *testing.T) {
 
 func TestStorageDoesNotStartWithoutTheRegionsSettings(t *testing.T) {
 	i := newStorageNode(t)
-	i.Served = service.NewServed(i.ID(), &i.finding)
+	i.Served = service.NewServed(i.ID(), &i.finding, rpc.Retry{For: 50 * time.Millisecond})
 
 	ctx, cancel := context.WithTimeout(t.Context(), 750*time.Millisecond)
 	defer cancel()

@@ -11,6 +11,7 @@ import (
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/discovery"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/services"
 )
 
@@ -118,6 +119,8 @@ func (a *added) Config(into any) error { return a.node.cfg.Section(a.name, into)
 func (a *added) Find(id protocol.ID) discovery.Resolver       { return a.node.served.Find(id) }
 func (a *added) Local(id protocol.ID) (service.Service, bool) { return a.node.served.Local(id) }
 func (a *added) Serve(id protocol.ID, s service.Service)      { a.node.served.Serve(id, s) }
+
+func (a *added) Retry() rpc.Retry { return a.node.served.Retry() }
 
 // Serve says this node serves id with s, ahead of any service it runs for id: how a
 // test's composer gives a node a mocked version of a service.

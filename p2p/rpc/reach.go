@@ -70,9 +70,12 @@ type Reacher[T any] struct {
 	// routed selects between the two policies. See [Reach] and [ReachRouted].
 	routed bool
 
-	pick  func() (peer.ID, error)
+	pick  func(context.Context) (peer.ID, error)
 	local func() (T, bool)
 	dial  func(peer.ID) (T, error)
+
+	// retry is how long a call waits for the service to be reachable.
+	retry Retry
 
 	// mu guards the one client this holds, opened on first use and re-opened
 	// if the peer it was opened for stops being the answer.
@@ -102,12 +105,12 @@ type Reacher[T any] struct {
 // bool is whether it runs one. `dial` opens a client onto another node, and is
 // the only one of the three that is ever handed a peer; whatever it returns is
 // closed by [Reacher.Close] if it has a Close method.
-func Reach[T any](h host.Host, service string,
-	pick func() (peer.ID, error),
+func Reach[T any](h host.Host, service string, retry Retry,
+	pick func(context.Context) (peer.ID, error),
 	local func() (T, bool),
 	dial func(peer.ID) (T, error),
 ) *Reacher[T] {
-	return newReacher(h, service, false, pick, local, dial)
+	return newReacher(h, service, false, retry, pick, local, dial)
 }
 
 // ReachRouted takes the routed answer even when that is another node: `pick` is
@@ -132,20 +135,20 @@ func Reach[T any](h host.Host, service string,
 // what an empty route means, are both part of what a caller is promising its
 // users. A bool at a call site would say neither, and the two paragraphs above
 // would have to live in one doc comment with an "if" in the middle.
-func ReachRouted[T any](h host.Host, service string,
-	pick func() (peer.ID, error),
+func ReachRouted[T any](h host.Host, service string, retry Retry,
+	pick func(context.Context) (peer.ID, error),
 	local func() (T, bool),
 	dial func(peer.ID) (T, error),
 ) *Reacher[T] {
-	return newReacher(h, service, true, pick, local, dial)
+	return newReacher(h, service, true, retry, pick, local, dial)
 }
 
-func newReacher[T any](h host.Host, service string, routed bool,
-	pick func() (peer.ID, error),
+func newReacher[T any](h host.Host, service string, routed bool, retry Retry,
+	pick func(context.Context) (peer.ID, error),
 	local func() (T, bool),
 	dial func(peer.ID) (T, error),
 ) *Reacher[T] {
-	r := &Reacher[T]{service: service, routed: routed, pick: pick, local: local, dial: dial}
+	r := &Reacher[T]{service: service, routed: routed, retry: retry, pick: pick, local: local, dial: dial}
 	if h != nil {
 		r.self = h.ID()
 	}
@@ -157,7 +160,51 @@ func newReacher[T any](h host.Host, service string, routed bool,
 // The value is valid for this call and is not held: the routing answer is
 // re-read every time, so a caller that kept one would keep whichever node
 // answered the first time, forever.
+//
+// A SERVICE NOBODY SERVES YET IS WAITED FOR, by the reacher's Retry: a node that
+// starts before the service it calls asks again until one serves it, here or
+// elsewhere, or the retry runs out, and then says why.
 func (r *Reacher[T]) Now(ctx context.Context) (T, error) {
+	return r.now(ctx, r.retry.start())
+}
+
+// Try is Now without the wait: one attempt, for a caller that already holds an
+// answer it would rather keep than wait for a newer one.
+func (r *Reacher[T]) Try(ctx context.Context) (T, error) { return r.once(ctx) }
+
+func (r *Reacher[T]) now(ctx context.Context, b *backoff) (T, error) {
+	for {
+		v, err := r.once(ctx)
+		if err == nil || ctx.Err() != nil || errors.Is(err, ErrNoLocalService) || !b.wait(ctx) {
+			return v, err
+		}
+	}
+}
+
+// Do calls fn with the service, and again on another attempt while the call never
+// reached it: a node found before it began answering, or gone since it was found.
+// A call that reached the service is never repeated, whatever it answered.
+func (r *Reacher[T]) Do(ctx context.Context, fn func(T) error) error {
+	b := r.retry.start()
+	for {
+		v, err := r.now(ctx, b)
+		if err != nil {
+			return err
+		}
+		err = fn(v)
+		if err == nil || !Unreached(err) || ctx.Err() != nil {
+			return err
+		}
+		r.mu.Lock()
+		r.release()
+		r.mu.Unlock()
+		if !b.wait(ctx) {
+			return err
+		}
+	}
+}
+
+func (r *Reacher[T]) once(ctx context.Context) (T, error) {
 	var zero T
 
 	// A CALLER THAT HAS ALREADY GONE GETS NO STREAM. Everything below may
@@ -176,7 +223,7 @@ func (r *Reacher[T]) Now(ctx context.Context) (T, error) {
 		}
 	}
 
-	at, err := r.pick()
+	at, err := r.pick(ctx)
 	if err != nil {
 		// AND AN EMPTY ROUTE IS THE OTHER HALF OF IT. ReachRouted falls back to
 		// this node because nobody visible means nobody but me; Reach does not,

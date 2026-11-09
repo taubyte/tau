@@ -11,6 +11,7 @@ import (
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
 	invokesecret "github.com/taubyte/tau/pkg/invoke/secret"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
@@ -57,7 +58,7 @@ func TestAVaultIsWrittenBeforeItServesAndReadThroughItsHost(t *testing.T) {
 	ctx := t.Context()
 	p := peer.Mock(ctx)
 	t.Cleanup(p.Close)
-	h := &vaultNode{Node: p, Served: service.NewServed(p.ID(), nil), root: t.TempDir()}
+	h := &vaultNode{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond}), root: t.TempDir()}
 
 	ref := Ref{Scope: Cloud("auth"), Name: "pepper"}
 	sealed, err := Sealed(ref, []byte("salt"), time.Now())

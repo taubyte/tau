@@ -12,6 +12,7 @@ import (
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/discovery"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/rpc"
 	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 	"github.com/taubyte/tau/services/plm"
 )
@@ -28,7 +29,7 @@ func newInstance(t *testing.T, found ...libp2ppeer.ID) *instance {
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
 	i := &instance{Node: p, finding: found}
-	i.Served = service.NewServed(p.ID(), &i.finding)
+	i.Served = service.NewServed(p.ID(), &i.finding, rpc.Retry{For: 50 * time.Millisecond})
 	return i
 }
 

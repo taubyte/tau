@@ -11,6 +11,7 @@ import (
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/discovery"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/rpc"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
@@ -43,7 +44,7 @@ func mockNode(t testing.TB) *node {
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
 	n := &node{Node: p}
-	n.Served = service.NewServed(p.ID(), &n.finding)
+	n.Served = service.NewServed(p.ID(), &n.finding, rpc.Retry{For: 50 * time.Millisecond})
 	return n
 }
 

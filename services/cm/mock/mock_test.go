@@ -9,6 +9,7 @@ import (
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/services/cm/mock"
 	"github.com/taubyte/tau/services/cm/settings"
 )
@@ -52,7 +53,7 @@ func TestTheMockListensOnCmsProtocolUntilClosed(t *testing.T) {
 	t.Cleanup(p.Close)
 	cm := mock.New(settings.Defaults())
 	require.NoError(t, cm.Close(), "closing one never started")
-	n := node{Node: p, Served: service.NewServed(p.ID(), nil)}
+	n := node{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond})}
 	require.NoError(t, cm.Start(t.Context(), n))
 	require.Contains(t, p.Host().Mux().Protocols(), settings.Protocol)
 	served, ok := n.Local(settings.Protocol)

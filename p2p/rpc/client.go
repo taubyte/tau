@@ -47,7 +47,11 @@ func NewClient(h host.Host, p peer.ID, id protocol.ID) (*Client, error) {
 		// transport passes in is ignored, and a proxy has nothing to say
 		// about it.
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return gostream.Dial(ctx, h, p, id)
+			conn, err := gostream.Dial(ctx, h, p, id)
+			if err != nil && ctx.Err() == nil {
+				return nil, unreached{err}
+			}
+			return conn, err
 		},
 		Protocols: h2(),
 	}

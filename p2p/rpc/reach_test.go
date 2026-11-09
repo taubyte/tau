@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/assert"
@@ -78,11 +79,14 @@ func refuse(t *testing.T) func(peer.ID) (*arm, error) {
 	}
 }
 
-func at(id peer.ID) func() (peer.ID, error) {
-	return func() (peer.ID, error) { return id, nil }
+func at(id peer.ID) func(context.Context) (peer.ID, error) {
+	return func(context.Context) (peer.ID, error) { return id, nil }
 }
 
-func nobody() (peer.ID, error) { return "", errNobody }
+func nobody(context.Context) (peer.ID, error) { return "", errNobody }
+
+// quick is a retry short enough for a test that expects to be refused.
+var quick = rpc.Retry{First: time.Millisecond, Max: time.Millisecond, For: 20 * time.Millisecond}
 
 func runs(a *arm) func() (*arm, bool) {
 	return func() (*arm, bool) { return a, true }
@@ -97,7 +101,7 @@ func TestARouteToThisHostConstructsNoClient(t *testing.T) {
 	h := newHost(t)
 	mine := &arm{name: "local"}
 
-	r := rpc.ReachRouted(h, "clock", at(h.ID()), runs(mine), refuse(t))
+	r := rpc.ReachRouted(h, "clock", quick, at(h.ID()), runs(mine), refuse(t))
 	defer r.Close()
 
 	got, err := r.Now(t.Context())
@@ -115,12 +119,12 @@ func TestAReachThatPrefersLocalNeverAsksWhoElse(t *testing.T) {
 	mine := &arm{name: "local"}
 
 	asked := false
-	pick := func() (peer.ID, error) {
+	pick := func(context.Context) (peer.ID, error) {
 		asked = true
 		return "", errNobody
 	}
 
-	r := rpc.Reach(h, "register", pick, runs(mine), refuse(t))
+	r := rpc.Reach(h, "register", quick, pick, runs(mine), refuse(t))
 	defer r.Close()
 
 	got, err := r.Now(t.Context())
@@ -134,7 +138,7 @@ func TestANodeThatRunsNoneDialsTheOneTheRouteNames(t *testing.T) {
 	h, other := newHost(t), newHost(t)
 	d := newDials()
 
-	r := rpc.Reach(h, "register", at(other.ID()), runsNothing, d.dial)
+	r := rpc.Reach(h, "register", quick, at(other.ID()), runsNothing, d.dial)
 	defer r.Close()
 
 	got, err := r.Now(t.Context())
@@ -153,7 +157,7 @@ func TestTheStreamIsKeptWhileTheRouteHolds(t *testing.T) {
 	h, other := newHost(t), newHost(t)
 	d := newDials()
 
-	r := rpc.Reach(h, "register", at(other.ID()), runsNothing, d.dial)
+	r := rpc.Reach(h, "register", quick, at(other.ID()), runsNothing, d.dial)
 	defer r.Close()
 
 	first, err := r.Now(t.Context())
@@ -172,9 +176,9 @@ func TestAMovedRouteReleasesWhatItDialled(t *testing.T) {
 	d := newDials()
 
 	answer := first.ID()
-	pick := func() (peer.ID, error) { return answer, nil }
+	pick := func(context.Context) (peer.ID, error) { return answer, nil }
 
-	r := rpc.Reach(h, "register", pick, runsNothing, d.dial)
+	r := rpc.Reach(h, "register", quick, pick, runsNothing, d.dial)
 	defer r.Close()
 
 	one, err := r.Now(t.Context())
@@ -199,7 +203,7 @@ func TestAMovedRouteReleasesWhatItDialled(t *testing.T) {
 func TestAnEmptyRouteIsARefusalWhenLocalIsPreferred(t *testing.T) {
 	h := newHost(t)
 
-	r := rpc.Reach(h, "register", nobody, runsNothing, refuse(t))
+	r := rpc.Reach(h, "register", quick, nobody, runsNothing, refuse(t))
 	defer r.Close()
 
 	_, err := r.Now(t.Context())
@@ -213,7 +217,7 @@ func TestAnEmptyRouteIsThisNodeWhenTheAnswerIsRouted(t *testing.T) {
 	h := newHost(t)
 	mine := &arm{name: "local"}
 
-	r := rpc.ReachRouted(h, "clock", nobody, runs(mine), refuse(t))
+	r := rpc.ReachRouted(h, "clock", quick, nobody, runs(mine), refuse(t))
 	defer r.Close()
 
 	got, err := r.Now(t.Context())
@@ -226,7 +230,7 @@ func TestAnEmptyRouteIsThisNodeWhenTheAnswerIsRouted(t *testing.T) {
 func TestARoutedReachWithNoLocalAndNoRouteIsRefused(t *testing.T) {
 	h := newHost(t)
 
-	r := rpc.ReachRouted(h, "clock", nobody, runsNothing, refuse(t))
+	r := rpc.ReachRouted(h, "clock", quick, nobody, runsNothing, refuse(t))
 	defer r.Close()
 
 	_, err := r.Now(t.Context())
@@ -240,7 +244,7 @@ func TestARoutedReachWithNoLocalAndNoRouteIsRefused(t *testing.T) {
 func TestARouteNamingThisHostWithNothingLocalIsRefused(t *testing.T) {
 	h := newHost(t)
 
-	r := rpc.Reach(h, "register", at(h.ID()), runsNothing, refuse(t))
+	r := rpc.Reach(h, "register", quick, at(h.ID()), runsNothing, refuse(t))
 	defer r.Close()
 
 	_, err := r.Now(t.Context())
@@ -257,13 +261,13 @@ func TestCloseReleasesTheStreamAndNotTheLocalService(t *testing.T) {
 	mine := &arm{name: "local"}
 
 	// One reach that dials, one that short-circuits, closed the same way.
-	remote := rpc.Reach(h, "register", at(other.ID()), runsNothing, d.dial)
+	remote := rpc.Reach(h, "register", quick, at(other.ID()), runsNothing, d.dial)
 	dialled, err := remote.Now(t.Context())
 	require.NoError(t, err)
 	require.NoError(t, remote.Close())
 	assert.Equal(t, 1, dialled.closes())
 
-	local := rpc.ReachRouted(h, "clock", at(h.ID()), runs(mine), refuse(t))
+	local := rpc.ReachRouted(h, "clock", quick, at(h.ID()), runs(mine), refuse(t))
 	_, err = local.Now(t.Context())
 	require.NoError(t, err)
 	require.NoError(t, local.Close())
@@ -276,7 +280,7 @@ func TestACallAfterCloseOpensANewStream(t *testing.T) {
 	h, other := newHost(t), newHost(t)
 	d := newDials()
 
-	r := rpc.Reach(h, "register", at(other.ID()), runsNothing, d.dial)
+	r := rpc.Reach(h, "register", quick, at(other.ID()), runsNothing, d.dial)
 	defer r.Close()
 
 	_, err := r.Now(t.Context())
@@ -292,7 +296,7 @@ func TestACallAfterCloseOpensANewStream(t *testing.T) {
 func TestACallerThatHasAlreadyGoneGetsNoStream(t *testing.T) {
 	h, other := newHost(t), newHost(t)
 
-	r := rpc.Reach(h, "register", at(other.ID()), runsNothing, refuse(t))
+	r := rpc.Reach(h, "register", quick, at(other.ID()), runsNothing, refuse(t))
 	defer r.Close()
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -308,7 +312,7 @@ func TestADialThatFailedIsNotHeld(t *testing.T) {
 	h, other := newHost(t), newHost(t)
 
 	broken := errors.New("the stream would not open")
-	r := rpc.Reach(h, "register", at(other.ID()),
+	r := rpc.Reach(h, "register", quick, at(other.ID()),
 		runsNothing,
 		func(peer.ID) (*arm, error) { return nil, broken })
 	defer r.Close()

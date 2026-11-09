@@ -12,6 +12,7 @@ import (
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
@@ -59,7 +60,7 @@ func newNode(t *testing.T) *node {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	return &node{Node: p, Served: service.NewServed(p.ID(), nil), root: t.TempDir(), sections: map[string]func(any) error{}}
+	return &node{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond}), root: t.TempDir(), sections: map[string]func(any) error{}}
 }
 
 func (n *node) beside(name string, s any) {

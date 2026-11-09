@@ -142,16 +142,25 @@ func (c *Client) Settings(ctx context.Context) (Region, error) {
 	if c.heard && c.now().Sub(c.askedAt) < Recheck {
 		return c.held, nil
 	}
-	src, err := c.reach.Now(ctx)
-	if err == nil {
-		var s Region
-		if s, err = src.Settings(ctx); err == nil {
-			c.held, c.heard, c.askedAt = s, true, c.now()
-			return s, nil
-		}
-	}
+	// AN ANSWER HELD IS KEPT RATHER THAN WAITED PAST: once cm has answered, asking
+	// again is one attempt, and the wait for cm is only before its first answer.
 	if c.heard {
+		if src, err := c.reach.Try(ctx); err == nil {
+			if s, err := src.Settings(ctx); err == nil {
+				c.held, c.askedAt = s, c.now()
+			}
+		}
 		return c.held, nil
+	}
+	var s Region
+	err := c.reach.Do(ctx, func(src Source) error {
+		var err error
+		s, err = src.Settings(ctx)
+		return err
+	})
+	if err == nil {
+		c.held, c.heard, c.askedAt = s, true, c.now()
+		return s, nil
 	}
 	return Region{}, err
 }

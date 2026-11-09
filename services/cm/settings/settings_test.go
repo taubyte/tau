@@ -13,6 +13,7 @@ import (
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/discovery"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/rpc"
 	cmmock "github.com/taubyte/tau/services/cm/mock"
 	"github.com/taubyte/tau/services/cm/settings"
 )
@@ -30,7 +31,7 @@ func newNode(t *testing.T, cm ...*cmmock.CM) *node {
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
 	n := &node{Node: p}
-	n.Served = service.NewServed(p.ID(), &n.finding)
+	n.Served = service.NewServed(p.ID(), &n.finding, rpc.Retry{For: 50 * time.Millisecond})
 	for _, c := range cm {
 		n.Serve(settings.Protocol, c)
 	}

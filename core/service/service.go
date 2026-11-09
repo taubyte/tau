@@ -75,6 +75,10 @@ type Discovery interface {
 	// serves id with, so whoever composes a node can serve a protocol before its
 	// own service does: a mocked version, for a test.
 	Serve(id protocol.ID, s Service)
+
+	// Retry is how every client on this node waits for a service it cannot reach
+	// yet, from the node's config.
+	Retry() rpc.Retry
 }
 
 // Running is one service running on an instance. A Name is empty for something the
@@ -104,13 +108,23 @@ type Finder interface {
 type Served struct {
 	self  libp2ppeer.ID
 	p2p   Finder
+	retry rpc.Retry
 	mu    sync.Mutex
 	local map[protocol.ID]Service
 }
 
-// NewServed is the discovery of the node self, finding others with p2p.
-func NewServed(self libp2ppeer.ID, p2p Finder) *Served {
-	return &Served{self: self, p2p: p2p}
+// NewServed is the discovery of the node self, finding others with p2p, its clients
+// waiting by retry.
+func NewServed(self libp2ppeer.ID, p2p Finder, retry rpc.Retry) *Served {
+	return &Served{self: self, p2p: p2p, retry: retry}
+}
+
+// Retry is how clients on this node wait; a nil Served's is the defaults.
+func (s *Served) Retry() rpc.Retry {
+	if s == nil {
+		return rpc.Retry{}
+	}
+	return s.retry
 }
 
 func (s *Served) Serve(id protocol.ID, svc Service) {
@@ -251,8 +265,8 @@ func Found(h Host, id protocol.ID) ([]libp2ppeer.ID, error) {
 
 func reach[T any](h Host, id protocol.ID, local func() (T, bool), dial func(host.Host, libp2ppeer.ID) (T, error)) *rpc.Reacher[T] {
 	self := h.Peer().Host()
-	return rpc.Reach(self, string(id),
-		func() (libp2ppeer.ID, error) {
+	return rpc.Reach(self, string(id), h.Retry(),
+		func(context.Context) (libp2ppeer.ID, error) {
 			found, err := Found(h, id)
 			if err != nil {
 				return "", err
@@ -268,8 +282,8 @@ func reach[T any](h Host, id protocol.ID, local func() (T, bool), dial func(host
 // ReachRouted for why that is not Reach.
 func Routed[T any](h Host, id protocol.ID, here T, dial func(host.Host, libp2ppeer.ID) (T, error)) *rpc.Reacher[T] {
 	self := h.Peer().Host()
-	return rpc.ReachRouted(self, string(id),
-		func() (libp2ppeer.ID, error) {
+	return rpc.ReachRouted(self, string(id), h.Retry(),
+		func(context.Context) (libp2ppeer.ID, error) {
 			found, err := Found(h, id)
 			if err != nil {
 				return "", err
@@ -294,7 +308,7 @@ type Lone struct {
 
 // On is a Lone over p, in cloud.
 func On(p peer.Node, cloud string) *Lone {
-	return &Lone{node: p, cloud: cloud, Served: NewServed(p.ID(), nil)}
+	return &Lone{node: p, cloud: cloud, Served: NewServed(p.ID(), nil, rpc.Retry{})}
 }
 
 // Start starts s under name, with no configuration and no directory of its own.
@@ -313,6 +327,7 @@ type loneHost struct{ l *Lone }
 func (h loneHost) Find(id protocol.ID) discovery.Resolver { return h.l.Find(id) }
 func (h loneHost) Local(id protocol.ID) (Service, bool)   { return h.l.Local(id) }
 func (h loneHost) Serve(id protocol.ID, svc Service)      { h.l.Serve(id, svc) }
+func (h loneHost) Retry() rpc.Retry                       { return h.l.Retry() }
 
 func (h loneHost) Peer() peer.Node { return h.l.node }
 func (h loneHost) Running() []Running {

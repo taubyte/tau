@@ -104,52 +104,52 @@ func StoreOn(h service.Host) *Reached {
 	return &Reached{reach: service.Reach(h, Protocol, Dial)}
 }
 
-func (r *Reached) Put(ctx context.Context, at Address, name string, o Object, content io.Reader) (Version, error) {
-	s, err := r.reach.Now(ctx)
-	if err != nil {
-		return Version{}, err
-	}
-	return s.Put(ctx, at, name, o, content)
+func (r *Reached) Put(ctx context.Context, at Address, name string, o Object, content io.Reader) (out Version, err error) {
+	err = r.reach.Do(ctx, func(s Store) error {
+		out, err = s.Put(ctx, at, name, o, content)
+		return err
+	})
+	return out, err
 }
 
-func (r *Reached) Current(ctx context.Context, at Address, name string) (Version, error) {
-	s, err := r.reach.Now(ctx)
-	if err != nil {
-		return Version{}, err
-	}
-	return s.Current(ctx, at, name)
+func (r *Reached) Current(ctx context.Context, at Address, name string) (out Version, err error) {
+	err = r.reach.Do(ctx, func(s Store) error {
+		out, err = s.Current(ctx, at, name)
+		return err
+	})
+	return out, err
 }
 
-func (r *Reached) Versions(ctx context.Context, at Address, name string, limit int) ([]Version, error) {
-	s, err := r.reach.Now(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return s.Versions(ctx, at, name, limit)
+func (r *Reached) Versions(ctx context.Context, at Address, name string, limit int) (out []Version, err error) {
+	err = r.reach.Do(ctx, func(s Store) error {
+		out, err = s.Versions(ctx, at, name, limit)
+		return err
+	})
+	return out, err
 }
 
-func (r *Reached) List(ctx context.Context, at Address, prefix, after string, limit int) ([]Version, error) {
-	s, err := r.reach.Now(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return s.List(ctx, at, prefix, after, limit)
+func (r *Reached) List(ctx context.Context, at Address, prefix, after string, limit int) (out []Version, err error) {
+	err = r.reach.Do(ctx, func(s Store) error {
+		out, err = s.List(ctx, at, prefix, after, limit)
+		return err
+	})
+	return out, err
 }
 
-func (r *Reached) Delete(ctx context.Context, at Address, name string) (Version, error) {
-	s, err := r.reach.Now(ctx)
-	if err != nil {
-		return Version{}, err
-	}
-	return s.Delete(ctx, at, name)
+func (r *Reached) Delete(ctx context.Context, at Address, name string) (out Version, err error) {
+	err = r.reach.Do(ctx, func(s Store) error {
+		out, err = s.Delete(ctx, at, name)
+		return err
+	})
+	return out, err
 }
 
-func (r *Reached) Read(ctx context.Context, root string) (io.ReadCloser, error) {
-	s, err := r.reach.Now(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return s.Read(ctx, root)
+func (r *Reached) Read(ctx context.Context, root string) (out io.ReadCloser, err error) {
+	err = r.reach.Do(ctx, func(s Store) error {
+		out, err = s.Read(ctx, root)
+		return err
+	})
+	return out, err
 }
 
 // Close releases the stream to a storage node elsewhere, if one was opened.

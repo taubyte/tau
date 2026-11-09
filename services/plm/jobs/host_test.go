@@ -10,6 +10,7 @@ import (
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/raft"
 )
 
@@ -44,7 +45,7 @@ func hostWithConsensus(t *testing.T, section map[string]any) *testHost {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	h := &testHost{Node: p, Served: service.NewServed(p.ID(), nil), root: t.TempDir(), section: section}
+	h := &testHost{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond}), root: t.TempDir(), section: section}
 	h.running = []service.Running{{Service: groupsOn{node: p, root: h.root}}}
 	return h
 }

@@ -35,7 +35,7 @@ func (n *Instance) openPrimitivesReach() {
 	// locate.go's sentence about the register and services/database's about an
 	// engine: a node holding the namespace that dialled itself to reach it
 	// would add a stream and a serialization to every send.
-	n.sends = rpc.Reach(n.Host(), Primitives, pick,
+	n.sends = rpc.Reach(n.Host(), Primitives, n.cfg.Clients.Retry, pick,
 		func() (primitive.Seam, bool) {
 			if n.primitives == nil {
 				return nil, false

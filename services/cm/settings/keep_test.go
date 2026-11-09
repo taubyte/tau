@@ -11,6 +11,7 @@ import (
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/rpc"
 )
 
 // saying is cm answering whatever a test sets.
@@ -53,7 +54,7 @@ func reading(t *testing.T, src *saying, now *time.Time) *Client {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	h := beside{Node: p, Served: service.NewServed(p.ID(), nil)}
+	h := beside{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond})}
 	h.Serve(Protocol, src)
 	c := On(h)
 	c.now = func() time.Time { return *now }

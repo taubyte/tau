@@ -20,6 +20,7 @@ import (
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 )
@@ -305,6 +306,11 @@ func rooted(t testing.TB, cfg Config) Config {
 	// out a 30s bootstrap before electing itself.
 	if cfg.Raft == (raft.Timing{}) {
 		cfg.Raft = quickRaft
+	}
+	// AND CLIENTS THAT GIVE UP FAST, since a test asking for a service nobody runs
+	// expects the refusal, not half a minute of waiting for one.
+	if cfg.Clients.Retry == (rpc.Retry{}) {
+		cfg.Clients.Retry = rpc.Retry{First: 5 * time.Millisecond, Max: 20 * time.Millisecond, For: 100 * time.Millisecond}
 	}
 	return cfg
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/rpc"
 	pkgcertificate "github.com/taubyte/tau/pkg/certificate"
 	kvdbmock "github.com/taubyte/tau/pkg/kvdb/mock"
 )
@@ -42,7 +43,7 @@ func newInstance(t *testing.T, root string) instance {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	return instance{Node: p, Served: service.NewServed(p.ID(), nil), root: root}
+	return instance{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond}), root: root}
 }
 
 func TestACloudWithNoZoneKeepsNoStore(t *testing.T) {

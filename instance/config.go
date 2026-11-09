@@ -6,6 +6,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/containers"
 
 	"github.com/taubyte/tau/core/kvdb"
@@ -137,6 +138,9 @@ type Config struct {
 	// opens. Zero is raft's defaults.
 	Raft raft.Timing `yaml:"raft,omitempty"`
 
+	// Clients is how every client on this node reaches the services it calls.
+	Clients Clients `yaml:"clients,omitempty"`
+
 	// DNSListen is the port this node's dns server answers on, e.g. ":53" or ":5353".
 	// Default DefaultDNSListen. The operator's, since 53 is the one port a resolver dials
 	// by convention.
@@ -147,6 +151,13 @@ type Config struct {
 	// service decodes its own with Host.Config. A section naming no service is
 	// refused, for the reason a misspelled service name is.
 	Sections map[string]any `yaml:",inline"`
+}
+
+// Clients is one set of settings for every client on the node.
+type Clients struct {
+	// Retry is how a client waits for a service it cannot reach yet: none found
+	// serving it, or one found before it began answering, as while a cloud starts.
+	Retry rpc.Retry `yaml:"retry,omitempty"`
 }
 
 var ErrNoPeer = errors.New("instance: no peer to be made from")
@@ -272,6 +283,9 @@ func (c Config) withDefaults(added ...string) (Config, error) {
 		if !slices.Contains(known, name) {
 			return Config{}, fmt.Errorf("node: %q is not a service this node can run; it runs %v", name, known)
 		}
+	}
+	if err := c.Clients.Retry.Check(); err != nil {
+		return Config{}, fmt.Errorf("node: clients: %w", err)
 	}
 	served, err := tenancy.Parse(c.Tenancy)
 	if err != nil {

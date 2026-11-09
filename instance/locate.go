@@ -63,8 +63,8 @@ type registerSeam interface {
 
 // routeTo is the pick half of every reach: a node serving id, as the finder finds
 // it. What an empty answer means is the reach's.
-func (n *Instance) routeTo(id protocol.ID, absent error) func() (libp2ppeer.ID, error) {
-	return func() (libp2ppeer.ID, error) {
+func (n *Instance) routeTo(id protocol.ID, absent error) func(context.Context) (libp2ppeer.ID, error) {
+	return func(context.Context) (libp2ppeer.ID, error) {
 		known := n.finder.Find(id).Known()
 		if len(known) == 0 {
 			return "", absent
@@ -82,7 +82,7 @@ func (n *Instance) routeTo(id protocol.ID, absent error) func() (libp2ppeer.ID, 
 func (n *Instance) openReach() {
 	n.views = registerService.ViewsOn(&added{node: n})
 	n.store = storageService.StoreOn(&added{node: n})
-	n.registers = rpc.Reach(n.Host(), Register,
+	n.registers = rpc.Reach(n.Host(), Register, n.cfg.Clients.Retry,
 		n.routeTo(registerService.Protocol, ErrNoRegister),
 		func() (registerSeam, bool) {
 			// A LOCAL REGISTER IS NOT A CACHE, IT IS THE ABSENCE OF A HOP.

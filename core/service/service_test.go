@@ -13,6 +13,7 @@ import (
 
 	"github.com/taubyte/tau/p2p/discovery"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/rpc"
 )
 
 // fake is an instance with one peer, the handles it was told about, and its node's
@@ -29,7 +30,7 @@ func newFake(t *testing.T, found ...libp2ppeer.ID) *fake {
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
 	f := &fake{Node: p, finding: found}
-	f.Served = NewServed(p.ID(), &f.finding)
+	f.Served = NewServed(p.ID(), &f.finding, rpc.Retry{For: 50 * time.Millisecond})
 	return f
 }
 

@@ -88,12 +88,12 @@ func (v *Views) Resolve(ctx context.Context, project, environment string) (pkgre
 
 // Object is never kept here: an object is immutable, and a cache of compiled
 // projects keeps what it parsed from one.
-func (v *Views) Object(ctx context.Context, id pkgregister.ObjectID) ([]byte, error) {
-	r, err := v.reach.Now(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return r.Object(ctx, id)
+func (v *Views) Object(ctx context.Context, id pkgregister.ObjectID) (out []byte, err error) {
+	err = v.reach.Do(ctx, func(r Reader) error {
+		out, err = r.Object(ctx, id)
+		return err
+	})
+	return out, err
 }
 
 // ResolveHost is the deployment a domain names.

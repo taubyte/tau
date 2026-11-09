@@ -240,7 +240,7 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 	n.provide("", listeners{n})
 	// How every service here finds a peer serving a protocol.
 	n.finder = &finder{n: n}
-	n.served = service.NewServed(p.ID(), n.finder)
+	n.served = service.NewServed(p.ID(), n.finder, cfg.Clients.Retry)
 	n.closers = append(n.closers, n.finder)
 	// And the workloads the clock fires through, while the worker is one of them.
 	if cfg.runs(Worker) {

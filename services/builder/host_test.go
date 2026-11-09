@@ -13,6 +13,7 @@ import (
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/containers"
 	"github.com/taubyte/tau/pkg/forge/drivers"
 	"github.com/taubyte/tau/pkg/git/gittest"
@@ -52,7 +53,7 @@ func lone(t *testing.T, section map[string]any) *node {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	return &node{Node: p, Served: service.NewServed(p.ID(), nil), section: section}
+	return &node{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond}), section: section}
 }
 
 func TestABuilderRefusesWhatItCannotBuildWith(t *testing.T) {

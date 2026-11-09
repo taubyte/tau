@@ -12,6 +12,7 @@ import (
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/placement"
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
@@ -63,7 +64,7 @@ func newMachine(t *testing.T) *machine {
 	t.Helper()
 	p := peer.Mock(t.Context())
 	t.Cleanup(p.Close)
-	m := &machine{Node: p, Served: service.NewServed(p.ID(), nil), root: t.TempDir(), sections: map[string]func(any) error{}}
+	m := &machine{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond}), root: t.TempDir(), sections: map[string]func(any) error{}}
 	m.Serve(settings.Protocol, cmmock.New(settings.Defaults()))
 	return m
 }
