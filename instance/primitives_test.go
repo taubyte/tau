@@ -80,6 +80,16 @@ func TestANodeThatRunsPrimitivesOpensTheService(t *testing.T) {
 	require.Nil(t, other.Primitives(), "the service list did not")
 }
 
+func TestClosingANodeClosesThePrimitivesService(t *testing.T) {
+	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
+
+	require.NoError(t, n.Close())
+	require.NoError(t, n.Close(), "closing twice is not a second teardown")
+
+	err := n.Primitives().Local().Send(t.Context(), handleOf(primJobsID), "1", []byte("x"))
+	require.ErrorIs(t, err, primitivesService.ErrClosed)
+}
+
 func TestTheDefaultShapeRunsPrimitives(t *testing.T) {
 	n, _, _ := makeNode(t, Config{})
 	require.Contains(t, n.Services(), Primitives)

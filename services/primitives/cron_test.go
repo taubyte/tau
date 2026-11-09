@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/queue"
 )
@@ -770,6 +771,9 @@ type workloadsOf struct {
 	serve func(context.Context, Target, *invoke.Request) (*invoke.Response, error)
 }
 
+func (w workloadsOf) Workloads() (Workloads, bool)             { return w, true }
+func (workloadsOf) Start(context.Context, service.Host) error  { return nil }
+func (workloadsOf) Close() error                               { return nil }
 func (w workloadsOf) Schedules(ctx context.Context) []Schedule { return w.of(ctx) }
 func (w workloadsOf) Fire(ctx context.Context, at Target, req *invoke.Request) (*invoke.Response, error) {
 	return w.serve(ctx, at, req)
@@ -777,5 +781,5 @@ func (w workloadsOf) Fire(ctx context.Context, at Target, req *invoke.Request) (
 
 // clockOf is a clock over those workloads, always beside the service.
 func clockOf(of func(context.Context) []Schedule, serve func(context.Context, Target, *invoke.Request) (*invoke.Response, error)) option {
-	return withWorkloads(func() (Workloads, bool) { return workloadsOf{of: of, serve: serve}, true })
+	return withWorkloads(workloadsOf{of: of, serve: serve})
 }

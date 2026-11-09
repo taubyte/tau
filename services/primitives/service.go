@@ -38,7 +38,7 @@ type server struct {
 	// crons is the clock. It fires through the workloads beside this service, and with
 	// none it runs no clock. See cron.go.
 	crons     *crons
-	workloads func() (Workloads, bool)
+	workloads Beside
 	task      func(context.Context, time.Time, time.Time) error
 
 	// deliveries is every fire still being invoked, so Close waits for them. The loop is
@@ -88,7 +88,7 @@ type options struct {
 	sweep time.Duration
 	dead  retention
 
-	workloads func() (Workloads, bool)
+	workloads Beside
 	task      func(context.Context, time.Time, time.Time) error
 }
 

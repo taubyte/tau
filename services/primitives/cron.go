@@ -115,9 +115,14 @@ type Workloads interface {
 	Fire(ctx context.Context, at Target, req *invoke.Request) (*invoke.Response, error)
 }
 
-// withWorkloads is where the clock finds the workloads it fires through, asked each
-// time: what runs beside this service can start after it.
-func withWorkloads(beside func() (Workloads, bool)) option {
+// Beside is where the clock finds the workloads it fires through, asked each time:
+// what runs beside this service can start after it.
+type Beside interface {
+	Workloads() (Workloads, bool)
+}
+
+// withWorkloads is where the clock finds the workloads it fires through.
+func withWorkloads(beside Beside) option {
 	return func(o *options) error {
 		if beside == nil {
 			return errors.New("primitives: nowhere to find workloads")
@@ -132,7 +137,7 @@ func (s *server) workers() (Workloads, bool) {
 	if s.workloads == nil {
 		return nil, false
 	}
-	return s.workloads()
+	return s.workloads.Workloads()
 }
 
 const (

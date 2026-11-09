@@ -292,6 +292,7 @@ type watchSession struct {
 	}
 	cancel context.CancelFunc
 	dead   atomic.Bool
+	ended  sync.Once
 	heard  atomic.Int64
 
 	mu      sync.Mutex
@@ -385,18 +386,19 @@ func (s *watchSession) told(entries []uint64) {
 	}
 }
 
-// die ends the session and everything kept through it.
+// die ends the session and everything kept through it. A second caller returns only
+// once the first has let everything go.
 func (s *watchSession) die() {
-	if s.dead.Swap(true) {
-		return
-	}
-	s.cancel()
-	s.mu.Lock()
-	held := s.entries
-	s.entries = map[uint64]keeper{}
-	s.mu.Unlock()
-	for _, k := range held {
-		k.told()
-	}
-	s.client.Close()
+	s.ended.Do(func() {
+		s.dead.Store(true)
+		s.cancel()
+		s.mu.Lock()
+		held := s.entries
+		s.entries = map[uint64]keeper{}
+		s.mu.Unlock()
+		for _, k := range held {
+			k.told()
+		}
+		s.client.Close()
+	})
 }

@@ -309,13 +309,11 @@ func TestTheClaimLoopStopsWhenTheNodeCloses(t *testing.T) {
 	}
 }
 
-func TestAWorkerWithNoRaftStillRunsTheClaimLoop(t *testing.T) {
-	// WITH NO RAFT OPENER ON ITS NODE: what is under test is the composition that has
-	// none.
-	n, _, _ := makeNode(t, Config{Services: []string{Worker, Stats}}, withRaft(nil), WithRuntimes(&answering{name: "wasm", status: 200}))
-
-	require.NotNil(t, n.dispatchDone,
-		"a compute node reaches a primitives service in the fleet, so it has queues to drain")
+func TestAWorkerOnANodeWithNoGroupsSaysSo(t *testing.T) {
+	// A node always has groups; a worker handed none keeps no ledger, and says so
+	// rather than serving a ledger database that cannot order a write.
+	_, _, err := startNode(t, Config{Services: []string{Worker, Stats}}, withRaft(nil), WithRuntimes(&answering{name: "wasm", status: 200}))
+	require.ErrorContains(t, err, "no way to open a group")
 }
 
 // errNoAnswer is a tier that could not start an instance at all — the failure a

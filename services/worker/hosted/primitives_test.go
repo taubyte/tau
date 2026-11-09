@@ -120,16 +120,6 @@ func TestALogAppendedThroughTheNodeIsReadBackFromTheService(t *testing.T) {
 	require.Equal(t, "second", string(read[1].Data))
 }
 
-func TestClosingANodeClosesThePrimitivesService(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
-
-	require.NoError(t, n.Close())
-	require.NoError(t, n.Close(), "closing twice is not a second teardown")
-
-	err := n.syncs.Send(t.Context(), handleOf(primJobsID), "1", []byte("x"))
-	require.ErrorIs(t, err, primitivesService.ErrClosed)
-}
-
 func TestTheClockFiresThroughTheWorkerBesideIt(t *testing.T) {
 	n := holdingSync(t, Config{Services: []string{Register, Worker, Primitives}})
 	w, ok := service.Local[primitivesService.Workloads](n.host.as(Primitives), worker.Protocol)

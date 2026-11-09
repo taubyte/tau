@@ -78,7 +78,7 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 		withClock(h.Now),
 		withSweep(cfg.Sweep),
 		withDeadLetterRetention(dead.age, dead.size),
-		withWorkloads(func() (Workloads, bool) { return service.Local[Workloads](h, worker.Protocol) }))
+		withWorkloads(workerOn{h}))
 	if err != nil {
 		views.Close()
 		region.Close()
@@ -101,3 +101,10 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 }
 
 func dialClocks(h host.Host, id libp2ppeer.ID) (Clocks, error) { return NewClient(h, id) }
+
+// workerOn is the worker its node's discovery names, when it runs one.
+type workerOn struct{ h service.Host }
+
+func (w workerOn) Workloads() (Workloads, bool) {
+	return service.Local[Workloads](w.h, worker.Protocol)
+}

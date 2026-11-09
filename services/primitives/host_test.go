@@ -17,6 +17,7 @@ import (
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/register"
+	"github.com/taubyte/tau/services/worker"
 )
 
 // node is the instance primitives runs on: a peer, a directory, a section per
@@ -84,7 +85,7 @@ func TestPrimitivesRunsFromWhatItsInstanceGivesIt(t *testing.T) {
 	n.start(t, register.Descriptor.Name, reg)
 	_, err := reg.Local().Publish(ctx, pkgregister.Publication{Project: projectID, Environment: "prod", Revision: 1, Compiled: compiled()})
 	require.NoError(t, err)
-	n.beside("", workloadsOf{
+	n.Serve(worker.Protocol, workloadsOf{
 		of: func(context.Context) []Schedule { return nil },
 		serve: func(context.Context, Target, *invoke.Request) (*invoke.Response, error) {
 			return &invoke.Response{Status: 200}, nil
