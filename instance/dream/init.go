@@ -21,7 +21,6 @@ import (
 
 	auth "github.com/taubyte/tau/services/auth"
 
-	"github.com/taubyte/tau/instance/boot"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/services/cm"
 	cmmock "github.com/taubyte/tau/services/cm/mock"
@@ -332,12 +331,6 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		nodeConfig.Sections[instance.DNS] = section
 	}
 
-	engines, err := boot.DatabaseEngines(ctx)
-	if err != nil {
-		os.RemoveAll(root)
-		return err
-	}
-
 	// THE CLOUD'S OWN DIRECTORY, so a volume in a dream is a volume: a real
 	// directory, checkpointed and restored the way it is on a machine; and raft
 	// timed for nodes one process apart.
@@ -348,7 +341,6 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	// anything else in plm's records on the node.
 	lookup := &artifacts{kept: kept}
 	options := []instance.Option{
-		instance.WithDatabaseEngines(engines),
 		instance.WithRuntimes(tiers...),
 		instance.WithArtifacts(lookup),
 	}

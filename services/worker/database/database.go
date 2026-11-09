@@ -4,10 +4,8 @@
 // instance/ledger's raft groups.
 //
 // Each grant's connection is opened once and kept. No driver is linked here
-// (pkg/database's decision); a composer registers what it wants:
-//
-//	import _ "github.com/jackc/pgx/v5/stdlib"
-//	node.WithDatabaseEngines(reg)  // reg holds sql.Postgres("pgx")
+// (pkg/database's decision): the worker's section names the external engines, and
+// the binary links their drivers (cmd/taud, instance/dream).
 //
 // tau's own engines are registered here, so `type: kv` needs nothing provisioned (see
 // TauBacked). A credential reference is resolved through the vault only when a
@@ -92,8 +90,9 @@ var (
 // EXPORTED SO THE VOCABULARY CAN BE HELD TO IT. schema.DatabaseEngines() offers
 // tau's own engine for EVERY model, `sql` included. sql is not here because it
 // is not the swarm's store: it is a musql file per database, and the node
-// registers that engine into the composer's registry (instance/sql.go), which is
-// where a workload's `sql` access is answered from.
+// registers that engine into the registry its section's external engines are in
+// (services/worker/hosted/sql.go), which is where a workload's `sql` access is
+// answered from.
 func TauBacked() []database.Type {
 	return []database.Type{database.KV, database.Document, database.Vector}
 }
@@ -472,8 +471,8 @@ func (d *Databases) specOf(ctx context.Context, grant invoke.Grant, want databas
 func keyedAs(id string) string { return strings.ReplaceAll(id, "/", ":") }
 
 // engines is the registry this node serves from, with tau's own engines registered
-// on first use so a declared kv needs nothing provisioned. Other engines are the
-// composer's (WithDatabaseEngines).
+// on first use so a declared kv needs nothing provisioned. Other engines are the ones
+// the worker's section names.
 func (d *Databases) engines(ctx context.Context, want database.Type) (*database.Registry, error) {
 	// Only the models tau backs (TauBacked); sql is not the swarm's store.
 	if !tauBacks(want) {

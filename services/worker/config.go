@@ -56,6 +56,25 @@ type Config struct {
 
 	// Engines is how this node's engines run the code they are handed.
 	Engines Engines
+
+	// Databases is the external engines a workload's `database:` may name, each over
+	// the database/sql driver it connects with. A driver is linked into the binary by
+	// whoever builds it (cmd/taud, dream). Empty is DefaultDatabases.
+	Databases []Database
+}
+
+// Database is one external engine, by the vocabulary's name, and the database/sql
+// driver it connects with.
+type Database struct {
+	Engine string
+	Driver string
+}
+
+// DefaultDatabases is every external engine the vocabulary names over its usual
+// driver: postgres over pgx (the name jackc/pgx/v5/stdlib registers) and mysql over
+// go-sql-driver's.
+func DefaultDatabases() []Database {
+	return []Database{{Engine: "postgres", Driver: "pgx"}, {Engine: "mysql", Driver: "mysql"}}
 }
 
 // Engines is one node's engine tuning, a property of the machine. Empty is each

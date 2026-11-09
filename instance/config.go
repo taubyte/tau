@@ -10,7 +10,6 @@ import (
 	"github.com/taubyte/tau/pkg/containers"
 
 	"github.com/taubyte/tau/core/service"
-	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/forge/drivers"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
@@ -163,7 +162,6 @@ type options struct {
 	opener opener
 	groups raft.Groups
 
-	engines  *database.Registry
 	runtimes []invoke.Runtime
 	// artifacts is what the worker looks a built resource up in, in place of build's
 	// records.
@@ -172,19 +170,6 @@ type options struct {
 	extra     map[string]service.Service
 	identity  func(Host) (auth.Identity, error)
 	resolver  cm.Resolver
-}
-
-// WithDatabaseEngines is what a workload's `database:` access is served from: a
-// registry, since a deployment imports and registers the drivers it wants and this
-// repository links none.
-func WithDatabaseEngines(r *database.Registry) Option {
-	return func(o *options) error {
-		if r == nil {
-			return errors.New("node: a nil database registry")
-		}
-		o.engines = r
-		return nil
-	}
 }
 
 // WithRuntimes are the compute tiers this node can run. Required with a worker. A tier

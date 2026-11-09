@@ -184,15 +184,6 @@ func Start(ctx context.Context, f File, added ...instance.Option) (*Running, err
 		return nil, fmt.Errorf("boot: libp2p: %w", err)
 	}
 
-	// WHAT THIS MACHINE CAN CONNECT TO, built before the node so that a build
-	// with a broken engine refuses to start rather than serving every database
-	// query with a message about a registry. See engines.go.
-	dbEngines, err := DatabaseEngines(ctx)
-	if err != nil {
-		p.Close()
-		return nil, err
-	}
-
 	// The instance's directory is the file's, so its raft snapshots, volumes and
 	// secrets share live on this machine's disk.
 	cfg := f.Node
@@ -208,9 +199,7 @@ func Start(ctx context.Context, f File, added ...instance.Option) (*Running, err
 		}
 	}
 
-	n, err := instance.New(p, cfg, append([]instance.Option{
-		instance.WithDatabaseEngines(dbEngines),
-	}, added...)...)
+	n, err := instance.New(p, cfg, added...)
 	if err != nil {
 		p.Close()
 		return nil, err

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/database/engines/sql/distributed"
 	"github.com/taubyte/tau/pkg/database/engines/sql/distributed/swarm"
 )
@@ -13,10 +12,9 @@ import (
 // database per declared database, under the node's root, its copies meeting
 // over this node's host and pubsub (pkg/database/engines/sql/distributed/swarm).
 //
-// IT JOINS THE COMPOSER'S REGISTRY rather than standing beside it, because
-// that is where a workload's `sql` access is answered from (services/worker/database's
-// engines). A composer that registered a `distributed` sql engine of its own
-// keeps it.
+// IT JOINS THE REGISTRY THE SECTION'S EXTERNAL ENGINES ARE IN, because that is
+// where a workload's `sql` access is answered from (services/worker/database's
+// engines).
 //
 // A NODE WITHOUT A ROOT, A HOST OR A PUBSUB REGISTERS NONE, and a `sql:
 // distributed` database then answers "no engine" by name: a sql database kept
@@ -26,15 +24,6 @@ func (n *Service) registerSQL() error {
 	if n.root == "" || n.host.Peer().Host() == nil || n.host.Peer().Messaging() == nil {
 		return nil
 	}
-	if n.engines == nil {
-		n.engines = database.NewRegistry()
-	}
-	for _, e := range n.engines.EnginesFor(database.SQL) {
-		if e == distributed.Name {
-			return nil
-		}
-	}
-
 	mesh, err := swarm.New(context.Background(), n.host.Peer().Host(), n.host.Peer().Messaging())
 	if err != nil {
 		return fmt.Errorf("worker: sql: %w", err)

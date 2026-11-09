@@ -21,7 +21,6 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/containers"
-	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 	primitivesService "github.com/taubyte/tau/services/primitives"
@@ -73,7 +72,6 @@ type options struct {
 	artifacts worker.Artifacts
 	factory   opensDatabases
 	groups    raft.Groups
-	engines   *database.Registry
 	now       func() time.Time
 }
 
@@ -95,11 +93,6 @@ func withKVDB(f opensDatabases) Option { return func(o *options) { o.factory = f
 
 // withRaft is the node's consensus groups.
 func withRaft(g raft.Groups) Option { return func(o *options) { o.groups = g } }
-
-// WithDatabaseEngines is the engines the node was given.
-func WithDatabaseEngines(r *database.Registry) Option {
-	return func(o *options) { o.engines = r }
-}
 
 // WithClock is the node's clock.
 func WithClock(now func() time.Time) Option { return func(o *options) { o.now = now } }
@@ -152,9 +145,6 @@ func startNode(t *testing.T, cfg Config, opts ...Option) (*node, *memFactory, er
 		h.provide("", o.groups)
 	}
 	h.provide("", given(o.runtimes))
-	if o.engines != nil {
-		h.provide("", o.engines)
-	}
 	if o.artifacts != nil {
 		h.provide("", o.artifacts)
 	}

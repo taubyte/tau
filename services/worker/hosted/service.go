@@ -151,7 +151,6 @@ func (n *Service) Start(ctx context.Context, h service.Host) error {
 		return ErrNoDatabases
 	}
 	n.groups, _ = service.Get[raft.Groups](h)
-	n.engines, _ = service.Get[*database.Registry](h)
 	if tiers, ok := service.Get[Tiers](h); ok {
 		n.given = tiers.Runtimes()
 	}
@@ -239,6 +238,9 @@ func (n *Service) open() error {
 
 	publisher, err := n.streamPublisher()
 	if err != nil {
+		return err
+	}
+	if err := n.openEngines(); err != nil {
 		return err
 	}
 	if err := n.registerSQL(); err != nil {
