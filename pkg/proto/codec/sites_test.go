@@ -39,6 +39,11 @@ func TestEveryConnectSiteTakesTheCodec(t *testing.T) {
 			case ".git", "node_modules", "gen", "testdata", ".deps", "ee", "vendor":
 				return filepath.SkipDir
 			}
+			// A directory with a .git of its own is another checkout, a worktree say,
+			// and not this tree's source.
+			if _, err := os.Lstat(filepath.Join(path, ".git")); err == nil && path != root {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
