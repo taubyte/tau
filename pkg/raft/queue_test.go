@@ -223,8 +223,8 @@ func TestQueue_ClosedOperations(t *testing.T) {
 		t.Errorf("Pop after Close: got %v, want ErrShutdown", err)
 	}
 
-	if lenOf(t, qu) != 0 {
-		t.Errorf("Len after Close = %d, want 0", lenOf(t, qu))
+	if n, err := qu.Len(); err != ErrShutdown {
+		t.Errorf("Len after Close: got %d, %v, want ErrShutdown", n, err)
 	}
 }
 

@@ -757,10 +757,9 @@ func TestCluster_Keys_Closed(t *testing.T) {
 
 	cluster.Close()
 
-	keys := keysOf(t, cluster, "")
-	if len(keys) != 0 {
-		t.Error("expected empty keys on closed cluster")
-	}
+	keys, err := cluster.Keys("")
+	require.ErrorIs(t, err, ErrShutdown, "a closed cluster listed keys")
+	require.Empty(t, keys)
 }
 
 func TestCluster_IsLeader_Closed(t *testing.T) {
