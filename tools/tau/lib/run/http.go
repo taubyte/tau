@@ -64,6 +64,7 @@ func HttpFunction(ctx context.Context, wasmPath string, fnSpec *structureSpec.Fu
 	}
 
 	ev := minPi.eventFactory.CreateHttpEvent(w, req)
+	defer minPi.eventFactory.ReleaseEvent(ev.Id) // commits the held status and body
 
 	moduleName := fnSpec.ModuleName()
 	module, err := rt.Module(moduleName)
