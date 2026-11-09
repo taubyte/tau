@@ -19798,6 +19798,19 @@
           },
           "type": "object"
         },
+        "lifecycle": {
+          "properties": {
+            "expire": {
+              "description": "Every version older than this is removed, the current one included and under versioning too, e.g. \"720h\" for thirty days. A floor, not a guarantee. Absent means a version lives until it is superseded or deleted.",
+              "pattern": "^[-+]?(([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$",
+              "title": "Expiration",
+              "type": "string",
+              "x-tau-scalar": "duration",
+              "x-tau-section": "storage"
+            }
+          },
+          "type": "object"
+        },
         "streaming": {
           "properties": {
             "ttl": {

@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"sort"
 	"testing"
+	"time"
 
 	ds "github.com/ipfs/go-datastore"
 	"github.com/stretchr/testify/require"
@@ -495,5 +496,47 @@ func TestStandingSaysWhatACopyHoldsOfAVersion(t *testing.T) {
 
 		_, err = i.Standing(ctx, a, "", 1, r1)
 		require.ErrorIs(t, err, ErrEmptyObjectName)
+	})
+}
+
+// A VERSION PAST ITS BUCKET'S EXPIRY IS GONE, the current one included: not current,
+// not listed, not among the versions, and a copy says it expired. An index that
+// resolves at no instant resolves no expiry.
+func TestAnExpiredVersionIsGone(t *testing.T) {
+	eachBackend(t, func(t *testing.T, store Datastore) {
+		ctx := t.Context()
+		a := addr(t)
+		root := testCID(t, "bytes").String()
+		expires := time.UnixMilli(1_800_000_000_000)
+		_, err := (index{store: store}).Append(ctx, a, "obj", 10, "w", VersionRecord{RootCID: root, Kept: true, ExpiresMS: uint64(expires.UnixMilli())})
+		require.NoError(t, err)
+
+		for _, at := range []time.Time{{}, expires.Add(-time.Millisecond)} {
+			i := index{store: store, at: at}
+			_, err := i.Current(ctx, a, "obj")
+			require.NoError(t, err)
+			listed, err := i.List(ctx, a, "", "", 0)
+			require.NoError(t, err)
+			require.Len(t, listed, 1)
+			versions, err := i.Versions(ctx, a, "obj", 0)
+			require.NoError(t, err)
+			require.Len(t, versions, 1)
+			st, err := i.Standing(ctx, a, "obj", 10, root)
+			require.NoError(t, err)
+			require.Equal(t, standing{held: true, kept: true}, st)
+		}
+
+		i := index{store: store, at: expires}
+		_, err = i.Current(ctx, a, "obj")
+		require.ErrorIs(t, err, ErrNotFound)
+		listed, err := i.List(ctx, a, "", "", 0)
+		require.NoError(t, err)
+		require.Empty(t, listed)
+		versions, err := i.Versions(ctx, a, "obj", 0)
+		require.NoError(t, err)
+		require.Empty(t, versions)
+		st, err := i.Standing(ctx, a, "obj", 10, root)
+		require.NoError(t, err)
+		require.Equal(t, standing{held: true, kept: true, expired: true}, st)
 	})
 }

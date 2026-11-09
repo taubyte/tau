@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/ipfs/go-cid"
@@ -42,7 +43,10 @@ func (h *handler) Put(ctx context.Context, stream *connect.ClientStream[storagev
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	o := Object{ContentType: head.GetContentType(), Metadata: head.GetMetadata(), Versioned: head.GetVersioned()}
+	o := Object{
+		ContentType: head.GetContentType(), Metadata: head.GetMetadata(), Versioned: head.GetVersioned(),
+		Expire: time.Duration(head.GetExpireMs()) * time.Millisecond,
+	}
 	w, err := h.s.put(ctx, a, string(head.GetName()), o, &chunks{stream: stream})
 	if err != nil {
 		return nil, wire(err)
@@ -167,7 +171,7 @@ func (h *handler) Superseded(ctx context.Context, req *connect.Request[storagev2
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&storagev2.SupersededResponse{Held: st.held, Superseded: st.superseded, Kept: st.kept}), nil
+	return connect.NewResponse(&storagev2.SupersededResponse{Held: st.held, Superseded: st.superseded, Kept: st.kept, Expired: st.expired}), nil
 }
 
 func (h *handler) Hold(ctx context.Context, req *connect.Request[storagev2.HoldRequest]) (*connect.Response[storagev2.HoldResponse], error) {
@@ -403,7 +407,7 @@ func wireRecord(r VersionRecord) *storagev2.VersionRecord {
 	return &storagev2.VersionRecord{
 		RootCid: r.RootCID, Size: r.Size, ContentType: r.ContentType, CreatedMs: r.CreatedMS,
 		Writer: r.Writer, Tombstone: r.Tombstone, Exclusive: r.Exclusive, Metadata: sortedMetadata(r.Metadata),
-		Kept: r.Kept,
+		Kept: r.Kept, ExpiresMs: r.ExpiresMS,
 	}
 }
 
@@ -411,7 +415,7 @@ func recordOf(m *storagev2.VersionRecord) VersionRecord {
 	return VersionRecord{
 		RootCID: m.GetRootCid(), Size: m.GetSize(), ContentType: m.GetContentType(), CreatedMS: m.GetCreatedMs(),
 		Writer: m.GetWriter(), Tombstone: m.GetTombstone(), Exclusive: m.GetExclusive(), Metadata: metadataMap(m.GetMetadata()),
-		Kept: m.GetKept(),
+		Kept: m.GetKept(), ExpiresMS: m.GetExpiresMs(),
 	}
 }
 

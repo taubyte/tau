@@ -3,6 +3,8 @@ description: one bucket per order and no ceiling on how many - a limit of zero i
 object:
     versioning: true
     size: 1GB
+lifecycle:
+    expire: 720h
 instances:
     limit: 0
     validator:

@@ -172,7 +172,7 @@ func TestTheStorageBriefsSurfaceIsWhatIsExported(t *testing.T) {
 	require.Equal(t, []string{
 		"Abandoned", "Accounted", "Address", "AssetsBucket", "Blocks", "BloomMarkers", "Bucket", "Bytes",
 		"Catalog", "Client", "Clock", "Config", "Datastore", "DefaultMaxSkew",
-		"DefaultSweep", "Descriptor", "Dial", "ErrEmptyIdentity",
+		"DefaultSweep", "Descriptor", "Dial", "ErrEmptyCopy", "ErrEmptyIdentity",
 		"ErrEmptyObjectName", "ErrGateClosed", "ErrLocalClockSkew", "ErrLogicalOverflow",
 		"ErrNoAddress", "ErrNoBytes", "ErrNoCatalog", "ErrNoSettings", "ErrNoShards", "ErrNotFound", "ErrNotHeld",
 		"ErrNotThisServicesRow", "ErrRemoteClockSkew", "ErrStampRange", "ErrSwept", "ErrUnderHeld",

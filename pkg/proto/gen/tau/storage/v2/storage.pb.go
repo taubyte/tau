@@ -48,7 +48,10 @@ type VersionRecord struct {
 	Metadata []*Metadata `protobuf:"bytes,8,rep,name=metadata,proto3" json:"metadata,omitempty"`
 	// kept is a version its bucket keeps once a later one supersedes it: one its
 	// holders never collect.
-	Kept          bool `protobuf:"varint,9,opt,name=kept,proto3" json:"kept,omitempty"`
+	Kept bool `protobuf:"varint,9,opt,name=kept,proto3" json:"kept,omitempty"`
+	// expires_ms is the wall millisecond the version is gone at, by its bucket's
+	// lifecycle.expire; zero is never.
+	ExpiresMs     uint64 `protobuf:"varint,10,opt,name=expires_ms,json=expiresMs,proto3" json:"expires_ms,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -144,6 +147,13 @@ func (x *VersionRecord) GetKept() bool {
 		return x.Kept
 	}
 	return false
+}
+
+func (x *VersionRecord) GetExpiresMs() uint64 {
+	if x != nil {
+		return x.ExpiresMs
+	}
+	return 0
 }
 
 type Metadata struct {
@@ -278,7 +288,10 @@ type PutHead struct {
 	Metadata    map[string]string `protobuf:"bytes,4,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// versioned is a bucket that keeps every version, so this one is kept once a
 	// later one supersedes it.
-	Versioned     bool `protobuf:"varint,5,opt,name=versioned,proto3" json:"versioned,omitempty"`
+	Versioned bool `protobuf:"varint,5,opt,name=versioned,proto3" json:"versioned,omitempty"`
+	// expire_ms is how long the version lives, by its bucket's lifecycle.expire;
+	// zero is until it is superseded or deleted.
+	ExpireMs      uint64 `protobuf:"varint,6,opt,name=expire_ms,json=expireMs,proto3" json:"expire_ms,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -346,6 +359,13 @@ func (x *PutHead) GetVersioned() bool {
 		return x.Versioned
 	}
 	return false
+}
+
+func (x *PutHead) GetExpireMs() uint64 {
+	if x != nil {
+		return x.ExpireMs
+	}
+	return 0
 }
 
 type PutRequest struct {
@@ -1686,12 +1706,14 @@ func (x *SupersededRequest) GetRootCid() string {
 }
 
 // SupersededResponse: held, the copy holds the version's row; superseded, it holds
-// a newer row of the name too; kept, the version's row says its bucket keeps it.
+// a newer row of the name too; kept, the version's row says its bucket keeps it;
+// expired, the version is past its bucket's lifecycle.expire.
 type SupersededResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Held          bool                   `protobuf:"varint,1,opt,name=held,proto3" json:"held,omitempty"`
 	Superseded    bool                   `protobuf:"varint,2,opt,name=superseded,proto3" json:"superseded,omitempty"`
 	Kept          bool                   `protobuf:"varint,3,opt,name=kept,proto3" json:"kept,omitempty"`
+	Expired       bool                   `protobuf:"varint,4,opt,name=expired,proto3" json:"expired,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1747,11 +1769,18 @@ func (x *SupersededResponse) GetKept() bool {
 	return false
 }
 
+func (x *SupersededResponse) GetExpired() bool {
+	if x != nil {
+		return x.Expired
+	}
+	return false
+}
+
 var File_tau_storage_v2_storage_proto protoreflect.FileDescriptor
 
 const file_tau_storage_v2_storage_proto_rawDesc = "" +
 	"\n" +
-	"\x1ctau/storage/v2/storage.proto\x12\x0etau.storage.v2\"\x9e\x02\n" +
+	"\x1ctau/storage/v2/storage.proto\x12\x0etau.storage.v2\"\xbd\x02\n" +
 	"\rVersionRecord\x12\x19\n" +
 	"\broot_cid\x18\x01 \x01(\tR\arootCid\x12\x12\n" +
 	"\x04size\x18\x02 \x01(\x04R\x04size\x12!\n" +
@@ -1762,7 +1791,10 @@ const file_tau_storage_v2_storage_proto_rawDesc = "" +
 	"\ttombstone\x18\x06 \x01(\bR\ttombstone\x12\x1c\n" +
 	"\texclusive\x18\a \x01(\bR\texclusive\x124\n" +
 	"\bmetadata\x18\b \x03(\v2\x18.tau.storage.v2.MetadataR\bmetadata\x12\x12\n" +
-	"\x04kept\x18\t \x01(\bR\x04kept\"4\n" +
+	"\x04kept\x18\t \x01(\bR\x04kept\x12\x1d\n" +
+	"\n" +
+	"expires_ms\x18\n" +
+	" \x01(\x04R\texpiresMs\"4\n" +
 	"\bMetadata\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\"y\n" +
@@ -1770,13 +1802,14 @@ const file_tau_storage_v2_storage_proto_rawDesc = "" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12 \n" +
 	"\venvironment\x18\x02 \x01(\tR\venvironment\x12\x16\n" +
 	"\x06bucket\x18\x03 \x01(\tR\x06bucket\x12\x1a\n" +
-	"\binstance\x18\x04 \x01(\tR\binstance\"\x87\x02\n" +
+	"\binstance\x18\x04 \x01(\tR\binstance\"\xa4\x02\n" +
 	"\aPutHead\x12'\n" +
 	"\x02at\x18\x01 \x01(\v2\x17.tau.storage.v2.AddressR\x02at\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\fR\x04name\x12!\n" +
 	"\fcontent_type\x18\x03 \x01(\tR\vcontentType\x12A\n" +
 	"\bmetadata\x18\x04 \x03(\v2%.tau.storage.v2.PutHead.MetadataEntryR\bmetadata\x12\x1c\n" +
-	"\tversioned\x18\x05 \x01(\bR\tversioned\x1a;\n" +
+	"\tversioned\x18\x05 \x01(\bR\tversioned\x12\x1b\n" +
+	"\texpire_ms\x18\x06 \x01(\x04R\bexpireMs\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"[\n" +
@@ -1864,13 +1897,14 @@ const file_tau_storage_v2_storage_proto_rawDesc = "" +
 	"\x02at\x18\x01 \x01(\v2\x17.tau.storage.v2.AddressR\x02at\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\fR\x04name\x12\x14\n" +
 	"\x05stamp\x18\x03 \x01(\x04R\x05stamp\x12\x19\n" +
-	"\broot_cid\x18\x04 \x01(\tR\arootCid\"\\\n" +
+	"\broot_cid\x18\x04 \x01(\tR\arootCid\"v\n" +
 	"\x12SupersededResponse\x12\x12\n" +
 	"\x04held\x18\x01 \x01(\bR\x04held\x12\x1e\n" +
 	"\n" +
 	"superseded\x18\x02 \x01(\bR\n" +
 	"superseded\x12\x12\n" +
-	"\x04kept\x18\x03 \x01(\bR\x04kept2\xae\x06\n" +
+	"\x04kept\x18\x03 \x01(\bR\x04kept\x12\x18\n" +
+	"\aexpired\x18\x04 \x01(\bR\aexpired2\xae\x06\n" +
 	"\x0eStorageService\x12@\n" +
 	"\x03Put\x12\x1a.tau.storage.v2.PutRequest\x1a\x1b.tau.storage.v2.PutResponse(\x01\x12J\n" +
 	"\aCurrent\x12\x1e.tau.storage.v2.CurrentRequest\x1a\x1f.tau.storage.v2.CurrentResponse\x12M\n" +

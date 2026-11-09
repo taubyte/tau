@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/ipfs/go-cid"
@@ -49,6 +50,9 @@ type Object struct {
 	// Versioned is a bucket that keeps every version: this one is kept once a
 	// later one supersedes it, rather than collected.
 	Versioned bool
+	// Expire is how long the version lives, its bucket's lifecycle.expire, kept
+	// or not; zero is until it is superseded or deleted.
+	Expire time.Duration
 }
 
 func (s *server) Put(ctx context.Context, at Address, name string, o Object, content io.Reader) (Version, error) {

@@ -316,6 +316,7 @@ func TestAStorageAccessEntryCarriesItsTypeAndSize(t *testing.T) {
 	require.Equal(t, "object", g.Settings[settingStorageType])
 	require.Equal(t, "1000000000", g.Settings[settingStorageSize], "the 1GB the author wrote")
 	require.Equal(t, "true", g.Settings[settingVersioning])
+	require.Equal(t, "2592000000000000", g.Settings[settingExpire], "the 720h the author wrote, in nanoseconds")
 }
 
 func TestAStreamingStorageIsRefused(t *testing.T) {

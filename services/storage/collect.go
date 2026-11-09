@@ -109,8 +109,9 @@ func (s *server) unaskedFirst(refs []Reference) []Reference {
 
 // ask has the holders of r's shard say what they hold of its version, and records
 // what that settles: superseded once as many as a write is acknowledged on hold a
-// newer row and none says the version is kept; absent while every holder answers and
-// none holds its row; present, forgetting absent, once one holds it.
+// newer row, or say it expired, and none says it is kept and live; absent while every
+// holder answers and none holds its row; present, forgetting absent, once one holds
+// it.
 func (s *server) ask(ctx context.Context, r Reference, members []placement.Member, replicas, barrier int, g Gates) (Gates, error) {
 	shard, err := shardOf(r.Address.Bucket())
 	if err != nil {
@@ -129,10 +130,12 @@ func (s *server) ask(ctx context.Context, r Reference, members []placement.Membe
 			continue
 		}
 		held = true
-		if a.kept {
+		switch {
+		case a.expired:
+			superseded++
+		case a.kept:
 			return g, s.local.Present(ctx, r.Address, r.Name, r.Stamp)
-		}
-		if a.superseded {
+		case a.superseded:
 			superseded++
 		}
 	}
@@ -186,7 +189,7 @@ func (s *server) standingOn(ctx context.Context, holder string, r Reference) (st
 	if err != nil {
 		return standing{}, err
 	}
-	return standing{held: res.Msg.GetHeld(), superseded: res.Msg.GetSuperseded(), kept: res.Msg.GetKept()}, nil
+	return standing{held: res.Msg.GetHeld(), superseded: res.Msg.GetSuperseded(), kept: res.Msg.GetKept(), expired: res.Msg.GetExpired()}, nil
 }
 
 // answerSuperseded is what this node's copy of the instance's index holds of a
@@ -201,6 +204,7 @@ func (s *server) answerSuperseded(ctx context.Context, a Address, name string, s
 		return standing{}, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("storage: this node does not hold %s's index open", a))
 	}
 	defer release()
+	i.at = s.now()
 	return i.Standing(ctx, a, name, stamp, root.String())
 }
 

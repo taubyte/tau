@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"time"
 
 	ds "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
@@ -78,6 +79,16 @@ type VersionRecord struct {
 	// Kept is a version its bucket keeps once a later one supersedes it, so its
 	// holders never collect it (collect.go).
 	Kept bool
+
+	// ExpiresMS is the wall millisecond the version is gone at, by its bucket's
+	// lifecycle.expire, current or not and kept or not; zero is never. Timed on
+	// the writer's clock, it is a floor, not a guarantee.
+	ExpiresMS uint64
+}
+
+// expired is a version gone by at; the zero time resolves none.
+func (r VersionRecord) expired(at time.Time) bool {
+	return r.ExpiresMS != 0 && !at.IsZero() && uint64(at.UnixMilli()) >= r.ExpiresMS
 }
 
 func (r VersionRecord) encode() ([]byte, error) {
@@ -152,6 +163,10 @@ type index struct {
 
 	// meter is the emission seam (meter.go). Nil is the ordinary case.
 	meter Meter
+
+	// at is the instant reads resolve expiry at: a version past its bucket's
+	// lifecycle.expire is gone. The zero time resolves none.
+	at time.Time
 }
 
 // row is one scanned key and value.
@@ -273,17 +288,20 @@ func (i index) Current(ctx context.Context, a Address, name string) (Version, er
 	if v.Tombstone() {
 		return Version{}, fmt.Errorf("%w: %s in %s is deleted", ErrNotFound, name, a)
 	}
+	if v.Record.expired(i.at) {
+		return Version{}, fmt.Errorf("%w: %s in %s expired", ErrNotFound, name, a)
+	}
 	return v, nil
 }
 
-// Versions lists an object's versions newest-first, tombstones included. A limit of
-// zero means all.
+// Versions lists an object's versions newest-first, tombstones included and expired
+// ones not. A limit of zero means all.
 func (i index) Versions(ctx context.Context, a Address, name string, limit int) ([]Version, error) {
 	prefix, err := a.objectPrefix(name)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := i.all(ctx, prefix, limit)
+	rows, err := i.all(ctx, prefix, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -293,7 +311,13 @@ func (i index) Versions(ctx context.Context, a Address, name string, limit int) 
 		if err != nil {
 			return nil, err
 		}
+		if v.Record.expired(i.at) {
+			continue
+		}
 		out = append(out, v)
+		if limit > 0 && len(out) == limit {
+			break
+		}
 	}
 	return out, nil
 }
@@ -340,7 +364,7 @@ func (i index) List(ctx context.Context, a Address, prefix, after string, limit 
 			continue
 		}
 		seen, last = true, v.Name
-		if v.Tombstone() {
+		if v.Tombstone() || v.Record.expired(i.at) {
 			continue
 		}
 		out = append(out, v)
@@ -405,11 +429,12 @@ func (i index) Append(ctx context.Context, a Address, name string, stamp uint64,
 }
 
 // standing is what one copy of an index holds of a version: its row, a newer row of
-// its name, and whether the row says its bucket keeps it.
+// its name, whether the row says its bucket keeps it, and whether it expired.
 type standing struct {
 	held       bool
 	superseded bool
 	kept       bool
+	expired    bool
 }
 
 // Standing is what this copy holds of the version of name at stamp whose bytes are
@@ -445,5 +470,8 @@ func (i index) Standing(ctx context.Context, a Address, name string, stamp uint6
 	if err != nil {
 		return standing{}, err
 	}
-	return standing{held: true, kept: at.Record.Kept, superseded: n.Stamp != at.Stamp || n.Writer != at.Writer}, nil
+	return standing{
+		held: true, kept: at.Record.Kept, expired: at.Record.expired(i.at),
+		superseded: n.Stamp != at.Stamp || n.Writer != at.Writer,
+	}, nil
 }

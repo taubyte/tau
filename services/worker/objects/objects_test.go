@@ -137,14 +137,16 @@ func opened(t *testing.T, size int64) (wasmtier.Bucket, *served) {
 	return bucket, store
 }
 
-// A BUCKET THAT DECLARES VERSIONING HAS EVERY VERSION KEPT; any other has the storage
-// service collect the versions it replaces.
-func TestAVersionedBucketsPutsAreKept(t *testing.T) {
+// A BUCKET'S VERSIONING AND EXPIRY REACH EVERY PUT: one that declares versioning has
+// every version kept, any other has the storage service collect what it replaces, and
+// lifecycle.expire is how long each version lives.
+func TestABucketsVersioningAndExpiryReachItsPuts(t *testing.T) {
 	store := serving(t)
 	b, err := objects.New(store)
 	require.NoError(t, err)
 	grant := bucketGrant("shop/prod/QmVersioned", 0)
 	grant.Settings[specs.StorageObjectKeyVersioning] = "true"
+	grant.Settings[specs.StorageLifecycleKeyExpire] = strconv.FormatInt(int64(720*time.Hour), 10)
 	versioned, err := b.OpenBucket(t.Context(), grant)
 	require.NoError(t, err)
 	plain, err := b.OpenBucket(t.Context(), bucketGrant("shop/prod/QmPlain", 0))
@@ -156,7 +158,9 @@ func TestAVersionedBucketsPutsAreKept(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, store.put, 2)
 	require.True(t, store.put[0].Versioned)
+	require.Equal(t, 720*time.Hour, store.put[0].Expire)
 	require.False(t, store.put[1].Versioned)
+	require.Zero(t, store.put[1].Expire)
 }
 
 func TestABucketNeedsAStorageService(t *testing.T) {

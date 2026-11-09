@@ -17,6 +17,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
@@ -33,11 +34,12 @@ const (
 	settingSize       = specs.StorageKeySize
 	settingType       = specs.StorageKeyType
 	settingVersioning = specs.StorageObjectKeyVersioning
+	settingExpire     = specs.StorageLifecycleKeyExpire
 )
 
 // Settings is every attribute path this adapter reads off a grant, exported so the
 // instance's settings test can hold it to the vocabulary.
-var Settings = []string{settingSize, settingType, settingVersioning}
+var Settings = []string{settingSize, settingType, settingVersioning, settingExpire}
 
 // Buckets opens a grant's bucket on the storage service.
 type Buckets struct{ store storage.Store }
@@ -59,7 +61,10 @@ func (b *Buckets) OpenBucket(_ context.Context, grant invoke.Grant) (wasmtier.Bu
 	if err != nil {
 		return nil, fmt.Errorf("objects: %s: %w", grant.Handle, err)
 	}
-	return &bucket{store: b.store, at: at, size: grant.Number(settingSize), versioned: grant.Settings[settingVersioning] == "true"}, nil
+	return &bucket{
+		store: b.store, at: at, size: grant.Number(settingSize),
+		versioned: grant.Settings[settingVersioning] == "true", expire: time.Duration(grant.Number(settingExpire)),
+	}, nil
 }
 
 // bucket is one object store.
@@ -74,6 +79,10 @@ type bucket struct {
 	// versioned is a bucket that keeps every version it replaces; any other has
 	// the storage service collect them.
 	versioned bool
+
+	// expire is how long any version lives, the current one included; zero is
+	// until it is superseded or deleted.
+	expire time.Duration
 }
 
 var _ wasmtier.Bucket = (*bucket)(nil)
@@ -135,7 +144,7 @@ func (b *bucket) Put(ctx context.Context, key string, value []byte, contentType 
 		}
 	}
 
-	o := storage.Object{ContentType: contentType, Metadata: metadataMap(metadata), Versioned: b.versioned}
+	o := storage.Object{ContentType: contentType, Metadata: metadataMap(metadata), Versioned: b.versioned, Expire: b.expire}
 	v, err := b.store.Put(ctx, b.at, key, o, bytes.NewReader(value))
 	if err != nil {
 		return "", fmt.Errorf("objects: storing %s: %w", key, err)

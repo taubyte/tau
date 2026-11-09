@@ -100,6 +100,8 @@ type server struct {
 	asked     map[string]time.Time
 	owed      atomic.Bool
 	swept     time.Time
+	// pruned is when this node last pruned its shards (prune.go).
+	pruned time.Time
 
 	// floor is the clock floor this node keeps durably; see stamp.
 	floorMu sync.Mutex
@@ -395,6 +397,9 @@ func (s *server) run(ctx context.Context) {
 		if err := s.sweepIfDue(ctx); err != nil && ctx.Err() == nil {
 			s.logf("storage: sweeping blocks: %v", err)
 		}
+		if err := s.pruneIfDue(ctx); err != nil && ctx.Err() == nil {
+			s.logf("storage: pruning rows: %v", err)
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -508,7 +513,7 @@ func (s *server) stamp(ctx context.Context) (uint64, error) {
 // it here and held open until release; ok is false when placement does not.
 func (s *server) indexOf(ctx context.Context, a Address) (i index, release func(), ok bool, err error) {
 	if i, release, ok, err := s.shards.hold(ctx, a.Bucket(), false); ok || err != nil {
-		i.meter = s.meter
+		i.meter, i.at = s.meter, s.now()
 		return i, release, ok, err
 	}
 	shard, err := shardOf(a.Bucket())
@@ -523,7 +528,7 @@ func (s *server) indexOf(ctx context.Context, a Address) (i index, release func(
 		return index{}, nil, false, nil
 	}
 	i, release, ok, err = s.shards.hold(ctx, a.Bucket(), true)
-	i.meter = s.meter
+	i.meter, i.at = s.meter, s.now()
 	return i, release, ok, err
 }
 

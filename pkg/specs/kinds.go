@@ -1365,6 +1365,7 @@ type Storage struct {
 	Description string
 	Id          string
 	Instances   Instances
+	Lifecycle   StorageLifecycle
 	Name        string
 	Object      StorageObject
 	Size        int64 // authored at {object|streaming}/size
@@ -1380,6 +1381,7 @@ func ReadStorage(r Resource) Storage {
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Instances = ReadInstances(r)
+	out.Lifecycle = ReadStorageLifecycle(r)
 	out.Name = r.String("name")
 	out.Object = ReadStorageObject(r)
 	out.Size, _ = r.Int("size")
@@ -1395,6 +1397,7 @@ const (
 	StorageKeyDescription = "description"
 	StorageKeyId          = "id"
 	StorageKeyInstances   = "instances"
+	StorageKeyLifecycle   = "lifecycle"
 	StorageKeyName        = "name"
 	StorageKeyObject      = "object"
 	StorageKeySize        = "size"
@@ -1403,6 +1406,28 @@ const (
 	StorageKeyType        = "type"
 	StorageTypeObject     = "object"
 	StorageTypeStreaming  = "streaming"
+)
+
+// StorageLifecycle is the "lifecycle" block of Storage, read from a compiled object.
+type StorageLifecycle struct {
+	Expire *time.Duration
+
+	// Declared says the author wrote this block: a field the compiler does not
+	// default is present. A block whose fields are all defaults reads false.
+	Declared bool
+}
+
+// ReadStorageLifecycle decodes one from a resource.
+func ReadStorageLifecycle(r Resource) StorageLifecycle {
+	var out StorageLifecycle
+	out.Expire = present[time.Duration](r.Duration("lifecycle", "expire"))
+	out.Declared = r.Has("lifecycle", "expire")
+	return out
+}
+
+// StorageLifecycle's keys, and the values its fields may hold.
+const (
+	StorageLifecycleKeyExpire = "lifecycle/expire"
 )
 
 // StorageObject is the "object" block of Storage, read from a compiled object.

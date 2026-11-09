@@ -615,6 +615,9 @@ func storageSettings(target specs.Resource) map[string]string {
 	if versioning := storage.Object.Versioning; versioning != nil && *versioning {
 		out[settingVersioning] = "true"
 	}
+	if expire := storage.Lifecycle.Expire; expire != nil && *expire > 0 {
+		out[settingExpire] = strconv.FormatInt(int64(*expire), 10)
+	}
 	return out
 }
 
@@ -850,11 +853,12 @@ const (
 	settingValidator = specs.InstancesKeyValidatorName
 	settingValidated = specs.InstancesKeyValidatorNamespace
 
-	// What a storage declared: which data model, how big, and whether old
-	// versions are kept.
+	// What a storage declared: which data model, how big, whether old versions
+	// are kept, and how long any version lives.
 	settingStorageType = specs.StorageKeyType
 	settingStorageSize = specs.StorageKeySize
 	settingVersioning  = specs.StorageObjectKeyVersioning
+	settingExpire      = specs.StorageLifecycleKeyExpire
 
 	// objectStorage is the one data model this cloud serves.
 	objectStorage = specs.StorageTypeObject

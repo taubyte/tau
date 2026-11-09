@@ -28,6 +28,9 @@ message VersionRecord {
   // kept is a version its bucket keeps once a later one supersedes it: one its
   // holders never collect.
   bool kept = 9;
+  // expires_ms is the wall millisecond the version is gone at, by its bucket's
+  // lifecycle.expire; zero is never.
+  uint64 expires_ms = 10;
 }
 
 message Metadata {
@@ -54,6 +57,9 @@ message PutHead {
   // versioned is a bucket that keeps every version, so this one is kept once a
   // later one supersedes it.
   bool versioned = 5;
+  // expire_ms is how long the version lives, by its bucket's lifecycle.expire;
+  // zero is until it is superseded or deleted.
+  uint64 expire_ms = 6;
 }
 
 message PutRequest {
@@ -213,11 +219,13 @@ message SupersededRequest {
 }
 
 // SupersededResponse: held, the copy holds the version's row; superseded, it holds
-// a newer row of the name too; kept, the version's row says its bucket keeps it.
+// a newer row of the name too; kept, the version's row says its bucket keeps it;
+// expired, the version is past its bucket's lifecycle.expire.
 message SupersededResponse {
   bool held = 1;
   bool superseded = 2;
   bool kept = 3;
+  bool expired = 4;
 }
 
 service StorageService {

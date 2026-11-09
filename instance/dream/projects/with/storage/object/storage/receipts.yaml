@@ -3,3 +3,5 @@ description: the bucket both guests reach - the name is a row in a replicated kv
 object:
     versioning: true
     size: 1MB
+lifecycle:
+    expire: 720h

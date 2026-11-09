@@ -130,7 +130,7 @@ var declared = map[string][]string{
 	// instances/* and deliver/* sit only on the kinds attachAccess puts them on.
 	"cache":    {settingTTL, settingSize, settingAdmission, settingLimit, settingValidator, settingValidated, settingDeliverPort, settingDeliverPath},
 	"volume":   {settingQuota, settingCheckpointEvery, settingMountPath},
-	"storage":  {settingStorageType, settingStorageSize, settingVersioning},
+	"storage":  {settingStorageType, settingStorageSize, settingVersioning, settingExpire},
 	"database": {settingType, specs.DatabaseSqlKeyCredentialsName, specs.DatabaseSqlKeyCredentialsNamespace},
 	"sync":     {settingSyncType, "queue/max_attempts", "queue/visibility_timeout", "queue/delay", "queue/dead_letter/name", "log/consensus", "log/retention/age", "log/retention/size"},
 	"channel":  {settingProtocol, settingServeKind, settingServeName, settingServeScope},

@@ -76,6 +76,9 @@ func (s *server) put(ctx context.Context, a Address, name string, o Object, cont
 		RootCID: root.String(), Size: size, ContentType: o.ContentType, Metadata: o.Metadata,
 		CreatedMS: uint64(s.now().UnixMilli()), Writer: s.self, Kept: o.Versioned,
 	}
+	if o.Expire > 0 {
+		rec.ExpiresMS = rec.CreatedMS + uint64(o.Expire.Milliseconds())
+	}
 	if err := s.appendEverywhere(ctx, a, name, stamp, rec, replicas, barrier); err != nil {
 		return written{}, err
 	}

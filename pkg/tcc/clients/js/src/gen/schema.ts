@@ -2085,6 +2085,16 @@ export class StorageConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["object", "versioning"]);
   }
 
+  async expire(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["lifecycle", "expire"])) as string | undefined;
+  }
+  setExpire(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["lifecycle", "expire"], v);
+  }
+  unsetExpire(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["lifecycle", "expire"]);
+  }
+
   async ttl(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["streaming", "ttl"])) as string | undefined;
   }
@@ -4664,6 +4674,7 @@ export interface Storage {
   instancesvalidatorname?: string;
   limit?: number;
   versioning?: boolean;
+  expire?: number;
   ttl?: number;
   size?: number;
   namespace?: string;

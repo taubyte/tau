@@ -140,6 +140,32 @@ func TestAVersionedBucketKeepsWhatItReplaced(t *testing.T) {
 	require.Equal(t, 3, heldOn(c, old))
 }
 
+// A VERSION PAST ITS BUCKET'S EXPIRY IS GONE AND COLLECTED, current and kept though it
+// is: S5, any version older than the limit goes.
+func TestAnExpiredVersionIsGoneAndCollected(t *testing.T) {
+	at := assetsOf(t, "site_code")
+	clk := newFixedClock(1_700_000_000_000)
+	c := newCluster(t, 3, fixedCatalog{at}, withClock(clk.now))
+	root := putOn(t, c, at, "page", "the page", Object{Versioned: true, Expire: time.Hour})
+	cl := c.client(t, 1, 1)
+	_, err := cl.Current(t.Context(), at, "page")
+	require.NoError(t, err)
+
+	clk.advance(time.Hour)
+	_, err = cl.Current(t.Context(), at, "page")
+	require.ErrorIs(t, err, ErrNotFound, "a version past its expiry was current")
+	listed, err := cl.List(t.Context(), at, "", "", 0)
+	require.NoError(t, err)
+	require.Empty(t, listed)
+
+	collectAll(t, c)
+	clk.advance(c.nodes[0].cfg.GraceGC)
+	collectAll(t, c)
+	sweepAll(t, c)
+	require.Zero(t, referencedOn(t, c, root), "an expired version was kept")
+	require.Zero(t, heldOn(c, root))
+}
+
 // FEWER INDEX HOLDERS THAN A WRITE IS ACKNOWLEDGED ON SAYING A NEWER ROW EXISTS SETTLE
 // NOTHING: a row on one holder may be a write that failed, and go with it.
 func TestAVersionIsSupersededOnlyOnABarrierOfHolders(t *testing.T) {

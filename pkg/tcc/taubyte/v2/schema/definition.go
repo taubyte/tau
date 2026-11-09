@@ -1091,6 +1091,7 @@ var V2Resources = []*Node{
 				String("type", Path(Either(storageTypes...)), Captures(), InSection("storage"), Doc("Type", "Storage kind: object or streaming (the key selects the type block).")),
 			}, instanceAttributes()...),
 				Bool(Key("object", "versioning"), InSection("storage"), Doc("Versioning", "Keep historical versions of objects (object storage).")),
+				Duration(Key("lifecycle", "expire"), PerEnv(), InSection("storage"), Doc("Expiration", "Every version older than this is removed, the current one included and under versioning too, e.g. \"720h\" for thirty days. A floor, not a guarantee. Absent means a version lives until it is superseded or deleted.")),
 				Duration(Key("streaming", "ttl"), Field("Ttl"), Accessor("TTL"), PerEnv(), InSection("storage"), Doc("Time-To-Live", "Lifetime for streamed entries. A floor, not a guarantee.")),
 				Bytes(Key("size"), Path(Either(storageTypes...), "size"), Required(), PerEnv(), InSection("storage"), Doc("Size", "Maximum storage size, as a human string (e.g. \"1GB\").")),
 			)...),
