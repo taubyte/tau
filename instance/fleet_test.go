@@ -123,8 +123,8 @@ func TestAWorkerFindsARegisterOnAnotherNode(t *testing.T) {
 
 	spec, err := compute.Worker().Resolve(t.Context(), workerTarget())
 	require.NoError(t, err)
-	require.Equal(t, "wasm", spec.Runtime)
-	require.Equal(t, int64(33554432), spec.Memory)
+	require.Equal(t, "oci", spec.Runtime)
+	require.Equal(t, "ghcr.io/acme/checkout:1", spec.Artifact, "the image the project's package names")
 }
 
 func TestAGatewayReachesAWorkerOnAnotherNode(t *testing.T) {

@@ -145,7 +145,7 @@ func TestALocalRegisterNeedsNoStream(t *testing.T) {
 	require.NoError(t, err)
 	// A HOST CANNOT DIAL ITSELF, so a resolve that answers was read from the register
 	// beside the worker, with no stream.
-	require.Equal(t, "wasm", spec.Runtime)
+	require.Equal(t, "oci", spec.Runtime)
 }
 
 func TestANodeWithNoRegisterSaysSo(t *testing.T) {
