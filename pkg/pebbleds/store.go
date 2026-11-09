@@ -38,7 +38,8 @@ type Store struct {
 	// volatile is a store whose writes wait for a sync: they ask for none, and go
 	// to a log.
 	volatile bool
-	// dirty is a write no sync has covered yet. The write that sets it arms flush.
+	// dirty is a write no sync has covered yet. The write that sets it arms flush,
+	// one timer for the store's life, so arming it allocates nothing.
 	dirty atomic.Bool
 	flush *time.Timer
 	// cache is the block cache Open made, released after the database
@@ -121,6 +122,10 @@ func Open(path string, opts ...Option) (*Store, error) {
 	}
 	s := &Store{db: db, write: c.write, noWAL: po.DisableWAL, volatile: !po.DisableWAL && !c.write.GetSync(), cache: cache, queries: map[*queryIter]struct{}{}, readers: map[*Reader]struct{}{}}
 	s.idle = sync.NewCond(&s.mu)
+	if s.volatile {
+		s.flush = time.AfterFunc(syncWithin, s.flushed)
+		s.flush.Stop()
+	}
 	return s, nil
 }
 
@@ -246,16 +251,11 @@ func (s *Store) Delete(ctx context.Context, key ds.Key) error {
 
 // wrote arms a sync for a write no sync covers yet. It is called once the write
 // has landed, so a sync that clears dirty before it starts covers every write that
-// found dirty set.
+// found dirty set. A write is a call in flight, so none arms after Close stops it.
 func (s *Store) wrote() {
-	if !s.volatile || !s.dirty.CompareAndSwap(false, true) {
-		return
+	if s.volatile && s.dirty.CompareAndSwap(false, true) {
+		s.flush.Reset(syncWithin)
 	}
-	s.mu.Lock()
-	if !s.closed.Load() {
-		s.flush = time.AfterFunc(syncWithin, s.flushed)
-	}
-	s.mu.Unlock()
 }
 
 // flushed is the sync a write armed, unless one since covered it.
@@ -323,10 +323,10 @@ func (s *Store) Close() error {
 		readers = append(readers, r)
 	}
 	clear(s.readers)
+	s.mu.Unlock()
 	if s.flush != nil {
 		s.flush.Stop()
 	}
-	s.mu.Unlock()
 	for _, q := range open {
 		q.end()
 	}
