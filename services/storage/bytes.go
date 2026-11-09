@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/ipfs/boxo/ipld/merkledag"
+	ufsio "github.com/ipfs/boxo/ipld/unixfs/io"
 	"github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
 	ipld "github.com/ipfs/go-ipld-format"
@@ -47,31 +48,59 @@ type sound struct {
 }
 
 func (s sound) Get(ctx context.Context, c cid.Cid) (ipld.Node, error) {
+	if err := s.dropRotted(ctx, c); err != nil {
+		return nil, err
+	}
+	return s.NodeGetter.Get(ctx, c)
+}
+
+func (s sound) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.NodeOption {
+	for _, c := range cids {
+		if err := s.dropRotted(ctx, c); err != nil {
+			out := make(chan *ipld.NodeOption, 1)
+			out <- &ipld.NodeOption{Err: err}
+			close(out)
+			return out
+		}
+	}
+	return s.NodeGetter.GetMany(ctx, cids)
+}
+
+// dropRotted deletes the copy of c here when it does not hash to c.
+func (s sound) dropRotted(ctx context.Context, c cid.Cid) error {
 	block, err := s.DAG().BlockStore().Get(ctx, c)
 	switch {
 	case ipld.IsNotFound(err):
+		return nil
 	case err != nil:
-		return nil, err
-	default:
-		sum, err := c.Prefix().Sum(block.RawData())
-		if err != nil {
-			return nil, err
-		}
-		if !sum.Equals(c) {
-			if err := s.DAG().DeleteBlocks(ctx, []cid.Cid{c}); err != nil {
-				return nil, fmt.Errorf("deleting %s, which rotted: %w", c, err)
-			}
-		}
+		return err
 	}
-	return s.NodeGetter.Get(ctx, c)
+	sum, err := c.Prefix().Sum(block.RawData())
+	if err != nil {
+		return err
+	}
+	if sum.Equals(c) {
+		return nil
+	}
+	if err := s.DAG().DeleteBlocks(ctx, []cid.Cid{c}); err != nil {
+		return fmt.Errorf("deleting %s, which rotted: %w", c, err)
+	}
+	return nil
 }
 
 func (b peerBytes) Sync(ctx context.Context) error {
 	return b.DAG().BlockLog().Sync(ctx, ds.NewKey("/"))
 }
 
+// Read reads every block through sound: what it returns hashes to root, a block that
+// rotted here is fetched again, and one not here is fetched.
 func (b peerBytes) Read(ctx context.Context, root cid.Cid) (io.ReadSeekCloser, error) {
-	return b.DAG().GetFile(ctx, root)
+	get := sound{peerBytes: b, NodeGetter: b.DAG().Session(ctx)}
+	nd, err := get.Get(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	return ufsio.NewDagReader(ctx, nd, get)
 }
 
 func (b peerBytes) Has(ctx context.Context, c cid.Cid) (bool, error) {

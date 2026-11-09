@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -88,11 +89,16 @@ func (s *server) put(ctx context.Context, a Address, name string, o Object, cont
 	return written{version: v, holders: held}, err
 }
 
-// remove writes a tombstone, acknowledged like a put.
+// remove writes a tombstone, acknowledged like a put. It reads what it deletes first,
+// so the tombstone is stamped after it: one stamped on a clock behind the version's
+// would order first and delete nothing.
 func (s *server) remove(ctx context.Context, a Address, name string) (Version, error) {
 	replicas, barrier, err := s.promise(ctx)
 	if err != nil {
 		return Version{}, err
+	}
+	if _, err := s.current(ctx, a, name, false); err != nil && !errors.Is(err, ErrNotFound) {
+		return Version{}, fmt.Errorf("storage: reading what the delete supersedes: %w", err)
 	}
 	stamp, err := s.stamp(ctx)
 	if err != nil {

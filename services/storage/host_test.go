@@ -228,6 +228,34 @@ func TestAFetchReplacesABlockThatRotted(t *testing.T) {
 	require.True(t, sum.Equals(leaf), "the fetch kept a block that rotted")
 }
 
+// A READ REPLACES A BLOCK THAT ROTTED: the bytes it returns hash to the root, the
+// rotted block fetched again from a node that has it.
+func TestAReadReplacesABlockThatRotted(t *testing.T) {
+	ctx := t.Context()
+	a, b := newStorageNode(t), newStorageNode(t)
+	require.NoError(t, peer.LinkAllPeers())
+	require.NoError(t, a.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: b.ID(), Addrs: b.Host().Addrs()}))
+	from, to := peerBytes{Node: a.Node}, peerBytes{Node: b.Node}
+
+	content := strings.Repeat("a block that will rot ", 40000)
+	root, _, _, err := from.Add(ctx, strings.NewReader(content))
+	require.NoError(t, err)
+	fetched, err := to.Fetch(ctx, root, a.ID())
+	require.NoError(t, err)
+	leaf := fetched[len(fetched)-1]
+	require.NoError(t, to.Delete(ctx, leaf))
+	rotten, err := blocks.NewBlockWithCid([]byte("rot"), leaf)
+	require.NoError(t, err)
+	require.NoError(t, b.DAG().BlockStore().Put(ctx, rotten))
+
+	r, err := to.Read(ctx, root)
+	require.NoError(t, err)
+	got, err := io.ReadAll(r)
+	require.NoError(t, r.Close())
+	require.NoError(t, err)
+	require.Equal(t, content, string(got), "a read returned a block that rotted")
+}
+
 func TestTheStoreIsReachedAsTheServiceBesideIt(t *testing.T) {
 	ctx := t.Context()
 	i := newStorageNode(t)

@@ -105,6 +105,9 @@ func (s *server) list(ctx context.Context, a Address, prefix, after string, limi
 		}
 		return nil
 	})
+	if err == nil {
+		s.observe(out...)
+	}
 	return out, err
 }
 
@@ -116,7 +119,12 @@ func (s *server) open(ctx context.Context, root cid.Cid, here bool) (io.ReadClos
 		return nil, err
 	}
 	if held {
-		return s.bytes.Read(ctx, root)
+		r, err := s.bytes.Read(ctx, root)
+		if err == nil || here {
+			return r, err
+		}
+		// A COPY HERE THAT CANNOT BE READ IS NOT THE ANSWER while a holder's can be.
+		s.logf("storage: reading %s here: %v; asking its holders", root, err)
 	}
 	if here {
 		return nil, fmt.Errorf("%w: %s is not held here", ErrNotFound, root)

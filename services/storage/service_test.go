@@ -33,17 +33,20 @@ type swarm struct {
 	durable map[libp2ppeer.ID]map[string]bool
 	down    map[libp2ppeer.ID]bool
 	failing map[libp2ppeer.ID]bool
+	// unreadable is a node whose own copies cannot be read.
+	unreadable map[libp2ppeer.ID]bool
 	// stalls holds a node's fetches until its channel closes.
 	stalls map[libp2ppeer.ID]chan struct{}
 }
 
 func newSwarm() *swarm {
 	return &swarm{
-		stores:  map[libp2ppeer.ID]map[string][]byte{},
-		durable: map[libp2ppeer.ID]map[string]bool{},
-		down:    map[libp2ppeer.ID]bool{},
-		failing: map[libp2ppeer.ID]bool{},
-		stalls:  map[libp2ppeer.ID]chan struct{}{},
+		stores:     map[libp2ppeer.ID]map[string][]byte{},
+		durable:    map[libp2ppeer.ID]map[string]bool{},
+		down:       map[libp2ppeer.ID]bool{},
+		failing:    map[libp2ppeer.ID]bool{},
+		unreadable: map[libp2ppeer.ID]bool{},
+		stalls:     map[libp2ppeer.ID]chan struct{}{},
 	}
 }
 
@@ -179,6 +182,9 @@ func (b *nodeBytes) Sync(context.Context) error {
 func (b *nodeBytes) Read(_ context.Context, root cid.Cid) (io.ReadSeekCloser, error) {
 	b.swarm.mu.Lock()
 	defer b.swarm.mu.Unlock()
+	if b.swarm.unreadable[b.self] {
+		return nil, errors.New("the disk refused the read")
+	}
 	for _, store := range b.swarm.stores {
 		if data, ok := store[root.KeyString()]; ok {
 			return nopSeekCloser{bytes.NewReader(data)}, nil

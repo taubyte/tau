@@ -219,7 +219,20 @@ func (s *server) current(ctx context.Context, a Address, name string, here bool)
 		out, err = versionFromWire(a, name, res.Msg.GetVersion())
 		return err
 	})
+	if err == nil {
+		s.observe(out)
+	}
 	return out, err
+}
+
+// observe advances this node's clock past versions it read: an overwrite or a delete
+// of what was read, stamped here next, is stamped after it.
+func (s *server) observe(vs ...Version) {
+	for _, v := range vs {
+		if err := s.clock.Observe(v.Stamp); err != nil {
+			s.logf("storage: %v", err)
+		}
+	}
 }
 
 // versions is name's versions, newest first.
@@ -244,6 +257,9 @@ func (s *server) versions(ctx context.Context, a Address, name string, limit int
 		}
 		return nil
 	})
+	if err == nil {
+		s.observe(out...)
+	}
 	return out, err
 }
 
