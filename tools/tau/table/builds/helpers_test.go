@@ -36,3 +36,15 @@ func TestJobArray_LenSwapLessString(t *testing.T) {
 	s := a.String()
 	assert.Assert(t, len(s) > 0)
 }
+
+func TestStatusMarkShowsARetry(t *testing.T) {
+	j := minimalJob("1", 1)
+	j.Status = patrick.JobStatusOpen
+	assert.Equal(t, statusMark(j), patrick.JobStatusOpen.Unicode())
+
+	j.Attempt = 1
+	assert.Equal(t, statusMark(j), "↻ retry")
+
+	j.Status = patrick.JobStatusFailed
+	assert.Equal(t, statusMark(j), patrick.JobStatusFailed.Unicode())
+}
