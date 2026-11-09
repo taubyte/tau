@@ -8,7 +8,7 @@ import (
 )
 
 func TestEveryLazyOpenerAppendsItsCloserSafely(t *testing.T) {
-	n, _, factory := makeNode(t, Config{})
+	n, _, factory := makeNode(t, Config{Services: []string{Worker, Stats}})
 
 	// Three different adapters appending at once, each holding its own mutex, so none
 	// excludes another; each is reached through its seam.
