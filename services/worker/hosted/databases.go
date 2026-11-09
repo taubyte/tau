@@ -24,8 +24,8 @@ var external = map[string]func(driver string) database.Engine{
 
 // openEngines is the registry a workload's databases are opened from: the external
 // engines the section names, each over its driver. An engine the section names over
-// a driver this binary does not link is refused here; a default one is registered
-// anyway, and opening it then says which driver is missing.
+// a driver this binary does not link is refused; a default one is left out, since
+// registering an engine opens its driver.
 func (n *Service) openEngines() error {
 	n.engines = database.NewRegistry()
 	wanted, named := n.cfg.Databases, true
@@ -38,8 +38,11 @@ func (n *Service) openEngines() error {
 		if !ok {
 			return fmt.Errorf("worker: %q is not an external database engine; the engines are postgres and mysql", db.Engine)
 		}
-		if named && !slices.Contains(linked, db.Driver) {
-			return fmt.Errorf("%w: %s for %s", ErrNoDriver, db.Driver, db.Engine)
+		if !slices.Contains(linked, db.Driver) {
+			if named {
+				return fmt.Errorf("%w: %s for %s", ErrNoDriver, db.Driver, db.Engine)
+			}
+			continue
 		}
 		if err := n.engines.Register(context.Background(), make(db.Driver)); err != nil {
 			return fmt.Errorf("worker: registering the %s engine: %w", db.Engine, err)
