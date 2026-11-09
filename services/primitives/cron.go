@@ -146,6 +146,10 @@ const (
 	// this namespace collides with it.
 	firePrefix = "cron/fire/"
 
+	// firedPrefix holds, per schedule, the last slot a leader pushed. It is under
+	// `cron/` with the fire queues and outside pkg/queue's keyspace and `opened/`.
+	firedPrefix = "cron/fired/"
+
 	// maxLateness is how far back a tasking may reach. Beyond it the gap is
 	// skipped: a cloud that was down for a month should come back and do
 	// today's work, not last month's.
@@ -278,7 +282,7 @@ func (c *crons) accept(ctx context.Context, since, upto time.Time) error {
 	if err := cluster.Barrier(applyTimeout); err != nil {
 		return err
 	}
-	return c.generate(ctx, since, upto)
+	return c.generate(ctx, cluster, since, upto)
 }
 
 // forward sends one window on to the node that may write it, once and never back, so
@@ -354,7 +358,7 @@ func hopsOf(ctx context.Context) int {
 // a run, push what they owe, hand out what is ready. Parsing every schedule is
 // arithmetic; only due schedules touch the namespace. The sweep and dead-letter bound
 // for fire queues ride here, since the lifecycle pass cannot resolve them.
-func (c *crons) generate(ctx context.Context, since, upto time.Time) error {
+func (c *crons) generate(ctx context.Context, cluster raft.Cluster, since, upto time.Time) error {
 	var pushed int
 	var refused error
 
@@ -388,11 +392,22 @@ func (c *crons) generate(ctx context.Context, since, upto time.Time) error {
 			logger.Warnf("cron: sweeping the fires of %s: %s", schedule.Name, err)
 		}
 
-		if err := c.push(schedule, held, slot); err != nil {
-			refused = err
-			logger.Warnf("cron: %s owes %s and nothing took it: %s", schedule.Name, slot.Format(time.RFC3339), err)
-		} else {
-			pushed++
+		// A SLOT IS MARKED BEFORE IT IS PUSHED, in the group every writer reads behind
+		// its barrier. The minute a leader last handed out is held only in its process,
+		// so one that leads again after another did would hand the same minute out
+		// again; the mark is what it finds. A push failing after the mark loses the
+		// slot rather than running it twice.
+		if !pushedThrough(cluster, schedule, slot) {
+			err := cluster.Set(firedPrefix+schedule.Handle, []byte(strconv.FormatInt(slot.Unix(), 10)), applyTimeout)
+			if err == nil {
+				err = c.push(schedule, held, slot)
+			}
+			if err != nil {
+				refused = err
+				logger.Warnf("cron: %s owes %s and nothing took it: %s", schedule.Name, slot.Format(time.RFC3339), err)
+			} else {
+				pushed++
+			}
 		}
 		c.drain(schedule, held)
 		c.bound(schedule, held)
@@ -404,6 +419,16 @@ func (c *crons) generate(ctx context.Context, since, upto time.Time) error {
 		return refused
 	}
 	return nil
+}
+
+// pushedThrough is whether a writer already pushed schedule's slot, or a later one.
+func pushedThrough(cluster raft.Cluster, schedule Schedule, slot time.Time) bool {
+	raw, ok := cluster.Get(firedPrefix + schedule.Handle)
+	if !ok {
+		return false
+	}
+	at, err := strconv.ParseInt(string(raw), 10, 64)
+	return err == nil && at >= slot.Unix()
 }
 
 // push is what one slot of one schedule owes, as items in its fire queue. Only `skip`
@@ -603,7 +628,7 @@ func (c *crons) invoke(ctx context.Context, schedule Schedule, fire *primitivesv
 		logger.Warnf("cron: %s firing %s/%s: %s", fire.GetCron(), at.Kind, at.Name, err)
 		return false
 	case res.Status < 200 || res.Status > 299:
-		logger.Warnf("cron: %s firing %s/%s answered %d", fire.GetCron(), at.Kind, at.Name, res.Status)
+		logger.Warnf("cron: %s firing %s/%s answered %d: %.200s", fire.GetCron(), at.Kind, at.Name, res.Status, res.Body)
 		return false
 	}
 	return true

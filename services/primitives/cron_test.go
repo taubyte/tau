@@ -195,6 +195,29 @@ func TestAFreshLeaderDoesNotRefireTheMinuteItInherited(t *testing.T) {
 		"the minute its predecessor had already handed out was handed out again")
 }
 
+func TestALeaderLeadingAgainDoesNotRefireAMinuteAnotherHandedOut(t *testing.T) {
+	s := nightly("* * * * *")
+	h, fired := primed(t, s, at(2, 59))
+
+	// Another leader hands out 03:00 while this one's process still holds 02:59, and
+	// the fire settles, so the queue no longer holds it.
+	other := &crons{service: h.server}
+	other.advance(at(2, 59))
+	h.clock.set(at(3, 0))
+	other.tick(t.Context(), at(3, 0))
+	require.Eventually(t, func() bool { return len(fired.seen()) == 1 }, 5*time.Second, 10*time.Millisecond)
+	held, err := h.crons.open(s)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { ready, claimed := held.Depth(); return ready+claimed == 0 },
+		5*time.Second, 10*time.Millisecond, "the fire never settled")
+
+	// This one leads again, its idea of the last minute a minute behind.
+	h.turn(t, at(3, 0).Add(30*time.Second))
+	require.Never(t, func() bool { return len(fired.seen()) > 1 }, time.Second, 50*time.Millisecond,
+		"a minute another leader handed out was handed out again")
+	require.Equal(t, at(3, 0), h.tasked(), "and it moves on past it")
+}
+
 func TestTheFollowingDayFiresAgain(t *testing.T) {
 	h, fired := primed(t, nightly("0 3 * * *"), at(2, 30))
 
