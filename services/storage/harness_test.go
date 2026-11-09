@@ -259,6 +259,17 @@ func (m *memBlocks) Links(_ context.Context, c cid.Cid) ([]cid.Cid, error) {
 	return links, nil
 }
 
+// Block is the block's cid standing in for its bytes: these blocks carry links, not
+// content.
+func (m *memBlocks) Block(_ context.Context, c cid.Cid) ([]byte, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.present[c.KeyString()]; !ok {
+		return nil, fmt.Errorf("%w: %s", ErrNotHeld, c)
+	}
+	return c.Bytes(), nil
+}
+
 func (m *memBlocks) Delete(_ context.Context, c cid.Cid) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -69,6 +69,17 @@ func (b peerBytes) Links(ctx context.Context, c cid.Cid) ([]cid.Cid, error) {
 	return out, nil
 }
 
+func (b peerBytes) Block(ctx context.Context, c cid.Cid) ([]byte, error) {
+	block, err := b.DAG().BlockStore().Get(ctx, c)
+	if ipld.IsNotFound(err) {
+		return nil, fmt.Errorf("%w: %s", ErrNotHeld, c)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return block.RawData(), nil
+}
+
 func (b peerBytes) Delete(ctx context.Context, c cid.Cid) error {
 	return b.DAG().DeleteBlocks(ctx, []cid.Cid{c})
 }

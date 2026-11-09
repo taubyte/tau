@@ -89,6 +89,10 @@ type Blocks interface {
 	// this node does not hold is an error, never a network fetch.
 	Links(ctx context.Context, c cid.Cid) ([]cid.Cid, error)
 
+	// Block is a block's bytes WITHOUT leaving the node: ErrNotHeld when this
+	// node does not hold it, never a network fetch.
+	Block(ctx context.Context, c cid.Cid) ([]byte, error)
+
 	// Delete removes one block. The sweep calls it once per unmarked block in
 	// this service's OWN block index — never over the whole blockstore.
 	Delete(ctx context.Context, c cid.Cid) error

@@ -495,9 +495,10 @@ func TestBlocksHasNoDoorForEnumeratingTheBlockstore(t *testing.T) {
 		methods = append(methods, tp.Method(i).Name)
 	}
 	sort.Strings(methods)
-	require.Equal(t, []string{"Delete", "Has", "Links"}, methods,
+	require.Equal(t, []string{"Block", "Delete", "Has", "Links"}, methods,
 		"Blocks may not grow AllKeysChan or any other enumeration: the node's blockstore "+
-			"holds pkg/kvdb's own Merkle-DAG blocks and every other consumer's")
+			"holds pkg/kvdb's own Merkle-DAG blocks and every other consumer's. Each method "+
+			"takes the one cid it acts on")
 }
 
 func TestPurposeNamesItself(t *testing.T) {

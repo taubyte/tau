@@ -54,7 +54,7 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 
 	// THE STORAGE NODES ARE WHO DISCOVERY FINDS SERVING STORAGE, and this one. A
 	// node that has found nobody else yet is a region of one; when discovery finds
-	// the others, placement changes and the handoff moves the copies (rehome.go).
+	// the others, placement changes and the repair loop moves the copies (repair.go).
 	self := p.ID().String()
 	members := func() []placement.Member {
 		out := []placement.Member{{ID: self, Accepts: true}}

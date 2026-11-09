@@ -133,6 +133,18 @@ func (h *handler) Read(ctx context.Context, req *connect.Request[storagev2.ReadR
 	}
 }
 
+func (h *handler) Probe(ctx context.Context, req *connect.Request[storagev2.ProbeRequest]) (*connect.Response[storagev2.ProbeResponse], error) {
+	root, err := cid.Decode(req.Msg.GetRootCid())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("storage: root: %w", err))
+	}
+	proof, err := h.s.answerProbe(ctx, root, req.Msg.GetNonce())
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&storagev2.ProbeResponse{Proof: proof}), nil
+}
+
 func (h *handler) Hold(ctx context.Context, req *connect.Request[storagev2.HoldRequest]) (*connect.Response[storagev2.HoldResponse], error) {
 	a, err := addressOf(req.Msg.GetAt())
 	if err != nil {

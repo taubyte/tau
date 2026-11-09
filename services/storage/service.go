@@ -87,10 +87,10 @@ type server struct {
 	// region is the region's settings, R and K among them; see promise.
 	region regionSettings
 
-	// homed is the placement every root this node references was last handed to
-	// in full; see rehome.go.
-	homeMu sync.Mutex
-	homed  string
+	// proofs is what the repair loop last established of each root; see
+	// repair.go.
+	repairMu sync.Mutex
+	proofs   map[string]proof
 
 	serverOptions []rpc.ServerOption
 
@@ -129,11 +129,6 @@ type options struct {
 
 	// region is the region's settings, R and K among them; see promise.
 	region regionSettings
-
-	// homed is the placement every root this node references was last handed to
-	// in full; see rehome.go.
-	homeMu sync.Mutex
-	homed  string
 
 	serverOptions []rpc.ServerOption
 }
@@ -349,8 +344,8 @@ func (s *server) run(ctx context.Context) {
 		if err := s.reconcile(ctx); err != nil && ctx.Err() == nil {
 			s.logf("storage: keeping shards: %v", err)
 		}
-		if err := s.rehome(ctx); err != nil && ctx.Err() == nil {
-			s.logf("storage: handing blocks to their holders: %v", err)
+		if err := s.repair(ctx); err != nil && ctx.Err() == nil {
+			s.logf("storage: repairing copies: %v", err)
 		}
 		select {
 		case <-ctx.Done():

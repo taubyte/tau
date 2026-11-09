@@ -174,7 +174,7 @@ func TestTheStorageBriefsSurfaceIsWhatIsExported(t *testing.T) {
 		"Clock", "Config", "Datastore", "DeadObject", "DefaultMaxSkew",
 		"DefaultSweep", "Descriptor", "Dial", "ErrEmptyIdentity",
 		"ErrEmptyObjectName", "ErrGateClosed", "ErrLocalClockSkew", "ErrLogicalOverflow",
-		"ErrNoAddress", "ErrNoBytes", "ErrNoCatalog", "ErrNoSettings", "ErrNoShards", "ErrNotFound",
+		"ErrNoAddress", "ErrNoBytes", "ErrNoCatalog", "ErrNoSettings", "ErrNoShards", "ErrNotFound", "ErrNotHeld",
 		"ErrNotThisServicesRow", "ErrRemoteClockSkew", "ErrStampRange", "ErrUnderHeld",
 		"ErrWriterMismatch", "Gates", "Local", "Marker", "Meter", "MisplacementDrop", "New",
 		"NewAddress", "NewBloomMarker", "NewBucket", "NewClient", "NewClock", "NewExactMarker",

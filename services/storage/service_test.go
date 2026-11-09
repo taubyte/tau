@@ -103,6 +103,27 @@ func (b *nodeBytes) Fetch(_ context.Context, root cid.Cid, from libp2ppeer.ID) (
 	return []cid.Cid{root}, nil
 }
 
+func (b *nodeBytes) Block(_ context.Context, c cid.Cid) ([]byte, error) {
+	b.swarm.mu.Lock()
+	defer b.swarm.mu.Unlock()
+	data, ok := b.swarm.stores[b.self][c.KeyString()]
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrNotHeld, c)
+	}
+	return data, nil
+}
+
+// lose drops c from this node, as a disk that failed does.
+func (b *nodeBytes) lose(c cid.Cid) {
+	b.swarm.mu.Lock()
+	delete(b.swarm.stores[b.self], c.KeyString())
+	delete(b.swarm.durable[b.self], c.KeyString())
+	b.swarm.mu.Unlock()
+	b.mu.Lock()
+	delete(b.present, c.KeyString())
+	b.mu.Unlock()
+}
+
 func (b *nodeBytes) Sync(context.Context) error {
 	b.swarm.mu.Lock()
 	defer b.swarm.mu.Unlock()

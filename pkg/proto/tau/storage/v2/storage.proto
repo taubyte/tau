@@ -166,6 +166,18 @@ message ReadResponse {
   bytes chunk = 1;
 }
 
+// ProbeRequest challenges a holder to prove it holds root_cid: the answer is an HMAC
+// keyed by nonce over the blocks the nonce's descents of the DAG reach, which only a
+// node that has those blocks can compute.
+message ProbeRequest {
+  string root_cid = 1;
+  bytes nonce = 2;
+}
+
+message ProbeResponse {
+  bytes proof = 1;
+}
+
 service StorageService {
   // Put stores one object: a head, then its bytes in chunks.
   rpc Put(stream PutRequest) returns (PutResponse);
@@ -177,7 +189,9 @@ service StorageService {
   // Read streams an object's bytes. A root no holder has is NotFound.
   rpc Read(ReadRequest) returns (stream ReadResponse);
 
-  // Hold and Append are one storage node asking another.
+  // Hold, Append and Probe are one storage node asking another. A holder that
+  // does not hold the root answers Probe NotFound.
   rpc Hold(HoldRequest) returns (HoldResponse);
   rpc Append(AppendRequest) returns (AppendResponse);
+  rpc Probe(ProbeRequest) returns (ProbeResponse);
 }
