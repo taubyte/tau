@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -195,6 +196,36 @@ func TestAPeersBlocksAreReadOnlyWhereTheyAre(t *testing.T) {
 
 	_, err = bytes.Fetch(ctx, root, "not-a-peer")
 	require.Error(t, err)
+}
+
+// A FETCH REPLACES A BLOCK THAT ROTTED: the blockstore hands back what it holds
+// unchecked, and a holder given a root again after a probe found its copy wrong would
+// otherwise keep the rot.
+func TestAFetchReplacesABlockThatRotted(t *testing.T) {
+	ctx := t.Context()
+	a, b := newStorageNode(t), newStorageNode(t)
+	require.NoError(t, peer.LinkAllPeers())
+	require.NoError(t, a.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: b.ID(), Addrs: b.Host().Addrs()}))
+	from, to := peerBytes{Node: a.Node}, peerBytes{Node: b.Node}
+
+	root, _, _, err := from.Add(ctx, strings.NewReader(strings.Repeat("a block that will rot ", 40000)))
+	require.NoError(t, err)
+	fetched, err := to.Fetch(ctx, root, a.ID())
+	require.NoError(t, err)
+	leaf := fetched[len(fetched)-1]
+
+	require.NoError(t, to.Delete(ctx, leaf))
+	rotten, err := blocks.NewBlockWithCid([]byte("rot"), leaf)
+	require.NoError(t, err)
+	require.NoError(t, b.DAG().BlockStore().Put(ctx, rotten))
+
+	_, err = to.Fetch(ctx, root, a.ID())
+	require.NoError(t, err)
+	raw, err := to.Block(ctx, leaf)
+	require.NoError(t, err)
+	sum, err := leaf.Prefix().Sum(raw)
+	require.NoError(t, err)
+	require.True(t, sum.Equals(leaf), "the fetch kept a block that rotted")
 }
 
 func TestTheStoreIsReachedAsTheServiceBesideIt(t *testing.T) {

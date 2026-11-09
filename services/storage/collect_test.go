@@ -393,7 +393,6 @@ func TestASweepIsOwedByADropOrResweep(t *testing.T) {
 	clk := newFixedClock(1_700_000_000_000)
 	c := newCluster(t, 3, fixedCatalog{at}, withClock(clk.now))
 	n := c.nodes[0]
-	require.Eventually(t, func() bool { return !n.owed.Load() }, 5*time.Second, 10*time.Millisecond, "the first pass did not sweep")
 
 	stray := testCID(t, "stray")
 	n.bytes.(*nodeBytes).put(stray, []byte("stray"))

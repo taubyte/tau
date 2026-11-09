@@ -81,6 +81,12 @@ func (b *nodeBytes) Add(_ context.Context, content io.Reader) (cid.Cid, uint64, 
 	return c, uint64(len(data)), []cid.Cid{c}, nil
 }
 
+// hashesTo is data hashing to c.
+func hashesTo(c cid.Cid, data []byte) bool {
+	sum, err := c.Prefix().Sum(data)
+	return err == nil && sum.Equals(c)
+}
+
 func (b *nodeBytes) put(c cid.Cid, data []byte) {
 	b.swarm.mu.Lock()
 	if b.swarm.stores[b.self] == nil {
@@ -106,8 +112,9 @@ func (b *nodeBytes) Fetch(ctx context.Context, root cid.Cid, from libp2ppeer.ID)
 	down := b.swarm.down[b.self] || b.swarm.down[from]
 	data, ok := b.swarm.stores[from][root.KeyString()]
 	// What a node has already is read where it is, as a blockstore reads before
-	// it asks.
-	if here, have := b.swarm.stores[b.self][root.KeyString()]; have {
+	// it asks, unless it rotted: a fetch replaces a block that does not hash to its
+	// cid (bytes.go).
+	if here, have := b.swarm.stores[b.self][root.KeyString()]; have && hashesTo(root, here) {
 		data, ok = here, true
 	}
 	b.swarm.mu.Unlock()
@@ -275,6 +282,11 @@ func newCluster(t *testing.T, n int, catalog Catalog, opts ...option) *cluster {
 		t.Cleanup(func() { s.Close() })
 		c.nodes = append(c.nodes, s)
 		c.shards = append(c.shards, shards)
+	}
+	// Every node's first maintenance pass is done before a test drives the cluster:
+	// the next is an hour away, so the passes a test runs are the only ones.
+	for _, s := range c.nodes {
+		require.Eventually(t, func() bool { return !s.owed.Load() }, 10*time.Second, 5*time.Millisecond, "a first pass never finished")
 	}
 	return c
 }

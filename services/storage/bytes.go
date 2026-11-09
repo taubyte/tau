@@ -34,7 +34,36 @@ func (b peerBytes) Fetch(ctx context.Context, root cid.Cid, from libp2ppeer.ID) 
 	if err := b.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: from}); err != nil {
 		return nil, fmt.Errorf("reaching %s: %w", from, err)
 	}
-	return walk(ctx, b.DAG().Session(ctx), root)
+	return walk(ctx, sound{peerBytes: b, NodeGetter: b.DAG().Session(ctx)}, root)
+}
+
+// sound reads a block through a session once the copy here, if any, hashes to its
+// cid: a block that rotted is deleted first and fetched again. A blockstore hands
+// back what it holds without checking it, and a copy that rotted would otherwise be
+// kept again by the very fetch that was to replace it.
+type sound struct {
+	peerBytes
+	ipld.NodeGetter
+}
+
+func (s sound) Get(ctx context.Context, c cid.Cid) (ipld.Node, error) {
+	block, err := s.DAG().BlockStore().Get(ctx, c)
+	switch {
+	case ipld.IsNotFound(err):
+	case err != nil:
+		return nil, err
+	default:
+		sum, err := c.Prefix().Sum(block.RawData())
+		if err != nil {
+			return nil, err
+		}
+		if !sum.Equals(c) {
+			if err := s.DAG().DeleteBlocks(ctx, []cid.Cid{c}); err != nil {
+				return nil, fmt.Errorf("deleting %s, which rotted: %w", c, err)
+			}
+		}
+	}
+	return s.NodeGetter.Get(ctx, c)
 }
 
 func (b peerBytes) Sync(ctx context.Context) error {
