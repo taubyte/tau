@@ -381,6 +381,7 @@ func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid stri
 	if job.Status != commonIface.JobStatusCancelled {
 		job.Logs = cid_log
 		job.AssetCid = assetCid
+		job.Reason = reason
 		job.Attempt++
 		if err := p.recordLogOwner(ctx, jid, cid_log); err != nil {
 			return fmt.Errorf("recording owners of job %s logs failed with %w", jid, err)
@@ -606,6 +607,7 @@ func (srv *PatrickService) retryJob(ctx http.Context) (iface interface{}, err er
 	if job.Status == commonIface.JobStatusCancelled || job.Status == commonIface.JobStatusFailed || job.Status == commonIface.JobStatusSuccess {
 		job.Status = commonIface.JobStatusOpen
 		job.Attempt = 0
+		job.Reason = ""
 		job_byte, err := cbor.Marshal(job)
 		if err != nil {
 			logger.Errorf("failed cbor marshall on job %s with err: %v", job.Id, err)

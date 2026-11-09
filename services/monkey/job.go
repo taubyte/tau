@@ -10,7 +10,7 @@ import (
 	authClient "github.com/taubyte/tau/clients/p2p/auth"
 	"github.com/taubyte/tau/core/common/repositorytype"
 	"github.com/taubyte/tau/core/services/auth"
-	"github.com/taubyte/tau/pkg/containers"
+	"github.com/taubyte/tau/pkg/builder"
 	"github.com/taubyte/tau/pkg/specs/methods"
 	"github.com/taubyte/tau/services/monkey/jobs"
 )
@@ -127,8 +127,9 @@ func (m *Monkey) RunJob() (err error) {
 // failReason is why a failed job must not run again, or "" when it may: a
 // build that ran out of memory would only do so again.
 func failReason(err error) string {
-	if errors.Is(err, containers.ErrorOutOfMemory) {
-		return err.Error()
+	var oom builder.OutOfMemoryError
+	if errors.As(err, &oom) {
+		return oom.Error()
 	}
 	return ""
 }

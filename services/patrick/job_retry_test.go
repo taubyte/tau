@@ -48,3 +48,12 @@ func TestFailedJobWithAReasonIsNotRetried(t *testing.T) {
 	_, err = srv.getJob(ctx, "/jobs/", "oom")
 	assert.Assert(t, err != nil, "still queued for another run")
 }
+
+func TestFailureReasonIsKeptOnTheJob(t *testing.T) {
+	srv, ctx := storedJob(t, "oom")
+
+	assert.NilError(t, srv.updateStatus(ctx, "", "oom", nil, patrick.JobStatusFailed, nil, "out of memory"))
+	job, err := srv.getJob(ctx, "/archive/jobs/", "oom")
+	assert.NilError(t, err)
+	assert.Equal(t, job.Reason, "out of memory")
+}

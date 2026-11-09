@@ -2,6 +2,7 @@ package build
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/taubyte/tau/core/services/patrick"
@@ -54,6 +55,10 @@ func query(ctx *cli.Context) error {
 
 	t.SetStyle(table.StyleLight)
 	t.Render()
+
+	if job.Reason != "" {
+		fmt.Println(job.Reason)
+	}
 
 	return nil
 }

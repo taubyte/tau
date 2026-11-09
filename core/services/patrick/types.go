@@ -17,6 +17,7 @@ type Job struct {
 	CidLock   sync.Mutex
 	AssetCid  map[string]string `cbor:"20,keyasint"` // Build Cid
 	Attempt   int               `cbor:"30,keyasint"`
+	Reason    string            `cbor:"31,keyasint"` // why the job failed without a retry
 	Delay     *DelayConfig      `cbor:"99,keyasint"` // Inject a delay to run a job
 }
 
