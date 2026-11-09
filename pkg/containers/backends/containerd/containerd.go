@@ -1201,6 +1201,11 @@ func (b *ContainerdBackend) Inspect(ctx context.Context, id core.ContainerID) (*
 
 	if status.Status == containerd.Stopped {
 		info.ExitCode = int(status.ExitStatus)
+		if info.ExitCode != 0 {
+			if spec, err := container.Spec(ctx); err == nil && spec.Linux != nil {
+				info.OOMKilled = cgroupOOMKilled(spec.Linux.CgroupsPath)
+			}
+		}
 	}
 
 	return info, nil

@@ -25,6 +25,8 @@ var (
 	ErrorContainerWait        = errors.New("container wait failed")
 	ErrorContainerInspect     = errors.New("inspecting container failed")
 	ErrorExitCode             = errors.New("exit-code")
+	ErrorOutOfMemory          = errors.New("out of memory")
+	ErrorKilled               = errors.New("killed")
 	ErrorContainerLogs        = errors.New("getting container logs failed")
 	ErrBackendNotAvailable    = errors.New("backend not available on this platform")
 )
@@ -69,8 +71,16 @@ func errorContainerInspect(id core.ContainerID, image string, err error) error {
 	return fmt.Errorf(errorContainerFormat, ErrorContainerInspect, id, image, err)
 }
 
-func errorContainerExitCode(id core.ContainerID, image string, code int) error {
-	return fmt.Errorf("container Id:`%s` image:`%s` failed with %w:%d", id, image, ErrorExitCode, code)
+func errorContainerExitCode(id core.ContainerID, image string, code int, oomKilled bool) error {
+	err := fmt.Errorf("container Id:`%s` image:`%s` failed with %w:%d", id, image, ErrorExitCode, code)
+	if oomKilled {
+		return fmt.Errorf("%w (%w)", err, ErrorOutOfMemory)
+	}
+	// 137 alone is any SIGKILL: a node stopping, tau restarting, or an out of memory kill the backend could not confirm
+	if code == 137 {
+		return fmt.Errorf("%w (%w)", err, ErrorKilled)
+	}
+	return err
 }
 
 func errorContainerLogs(id core.ContainerID, image string, err error) error {

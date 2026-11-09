@@ -54,7 +54,7 @@ func (c *Container) Run(ctx context.Context) (*MuxedReadCloser, error) {
 	}
 
 	if info.ExitCode != 0 {
-		return logs, errorContainerExitCode(c.id, imageName, info.ExitCode)
+		return logs, errorContainerExitCode(c.id, imageName, info.ExitCode, info.OOMKilled)
 	}
 
 	return logs, nil

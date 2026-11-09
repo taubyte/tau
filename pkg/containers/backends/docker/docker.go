@@ -615,6 +615,7 @@ func (b *DockerBackend) Inspect(ctx context.Context, id core.ContainerID) (*core
 	if info.State.ExitCode != 0 {
 		containerInfo.ExitCode = info.State.ExitCode
 	}
+	containerInfo.OOMKilled = info.State.OOMKilled
 
 	if info.State.StartedAt != "" {
 		startedAt, err := time.Parse(time.RFC3339Nano, info.State.StartedAt)

@@ -70,8 +70,8 @@ func (c *Client) Done(jid string, cid_log map[string]string, assetCid map[string
 	return nil
 }
 
-func (c *Client) Failed(jid string, cid_log map[string]string, assetCid map[string]string) error {
-	if _, err := c.Send("patrick", command.Body{"action": "failed", "jid": jid, "cid": cid_log, "assetCid": assetCid}, c.peers...); err != nil {
+func (c *Client) Failed(jid string, cid_log map[string]string, assetCid map[string]string, reason string) error {
+	if _, err := c.Send("patrick", command.Body{"action": "failed", "jid": jid, "cid": cid_log, "assetCid": assetCid, "reason": reason}, c.peers...); err != nil {
 		return fmt.Errorf("failed sending failed with error: %w", err)
 	}
 

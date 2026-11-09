@@ -43,6 +43,8 @@ type Monkey struct {
 	start time.Time
 
 	generatedDomainRegExp *regexp.Regexp
+
+	failReason string // set when another run would fail the same way
 }
 
 type Service struct {

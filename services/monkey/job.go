@@ -10,6 +10,7 @@ import (
 	authClient "github.com/taubyte/tau/clients/p2p/auth"
 	"github.com/taubyte/tau/core/common/repositorytype"
 	"github.com/taubyte/tau/core/services/auth"
+	"github.com/taubyte/tau/pkg/containers"
 	"github.com/taubyte/tau/pkg/specs/methods"
 	"github.com/taubyte/tau/services/monkey/jobs"
 )
@@ -117,10 +118,19 @@ func (m *Monkey) RunJob() (err error) {
 	}
 
 	if err = c.Run(m.ctx); err != nil {
-		return fmt.Errorf("running job for type: %d on repo: %d failed with: %s", repoType, m.Job.Meta.Repository.ID, err.Error())
+		return fmt.Errorf("running job for type: %d on repo: %d failed with: %w", repoType, m.Job.Meta.Repository.ID, err)
 	}
 
 	return nil
+}
+
+// failReason is why a failed job must not run again, or "" when it may: a
+// build that ran out of memory would only do so again.
+func failReason(err error) string {
+	if errors.Is(err, containers.ErrorOutOfMemory) {
+		return err.Error()
+	}
+	return ""
 }
 
 // waitForProjectID retries a repository's project lookup for up to
