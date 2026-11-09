@@ -63,16 +63,18 @@ func (h *healer) notifyForeignVote(pid peer.ID) {
 	}
 }
 
-func (h *healer) run(ctx context.Context) {
+// checkInterval is how often the healer looks: twice the election timeout, or the
+// probe interval when that is longer.
+func (h *healer) checkInterval() time.Duration {
 	electionTimeout := h.cluster.getTimeoutConfig().ElectionTimeout
 	if electionTimeout <= 0 {
 		electionTimeout = 10 * time.Second
 	}
+	return max(electionTimeout*2, h.cluster.healingProbeInterval)
+}
 
-	checkInterval := electionTimeout * 2
-	if checkInterval < h.cluster.healingProbeInterval {
-		checkInterval = h.cluster.healingProbeInterval
-	}
+func (h *healer) run(ctx context.Context) {
+	checkInterval := h.checkInterval()
 
 	healLogger.Infof("[%s] healer started (check_interval=%v, detection_cycles=%d)",
 		h.cluster.ID().ShortString(), checkInterval, h.cluster.splitBrainDetectionCycles)
@@ -106,6 +108,21 @@ func (h *healer) run(ctx context.Context) {
 			noLeaderCycles = 0
 			continue
 		case <-checks.C:
+			// A HEALACK WAITING IS ANSWERED BEFORE ANOTHER CHECK. A check can be a
+			// quorum-loss pass, and a select choosing between the two at random could
+			// send the member into pass after pass with the group it should join
+			// waiting in the channel.
+			select {
+			case ack := <-h.healAckCh:
+				h.healAcked(ctx, ack)
+				if h.superseded.Load() {
+					healLogger.Infof("[%s] healer superseded after yieldAndRejoin — exiting", h.cluster.ID().ShortString())
+					return
+				}
+				noLeaderCycles = 0
+				continue
+			default:
+			}
 		}
 
 		if h.cluster.closed.Load() || h.superseded.Load() {
@@ -701,10 +718,22 @@ func (h *healer) recoverFromQuorumLoss(ctx context.Context) {
 			answers <- memberAnswer{id: mb.ID, info: info}
 		}()
 	}
+	// A MEMBER THAT HAS NOT ANSWERED WITHIN ONE CHECK IS ONE THAT DOES NOT ANSWER. A
+	// closed member is only known to be gone when its call times out, and a pass
+	// waiting on that is a healer answering nothing else, the group it should join
+	// included. Two members that both counted the other out each form a group, and
+	// meeting as leaders merges them.
 	reachable := []peer.ID{h.cluster.ID()}
 	led := false
+	bound := time.After(h.checkInterval())
+answering:
 	for range asked {
-		a := <-answers
+		var a memberAnswer
+		select {
+		case a = <-answers:
+		case <-bound:
+			break answering
+		}
 		switch {
 		case a.info == nil:
 		case a.info.LeaderID != "":
