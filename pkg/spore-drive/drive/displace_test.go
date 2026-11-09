@@ -249,3 +249,23 @@ WantedBy = multi-user.target
 		}
 	}
 }
+
+func TestDisplaceWithoutTenancy(t *testing.T) {
+	_, p := fixtures.VirtConfig()
+	assert.NilError(t, p.Tenancy().SetOwner(""))
+	sd, err := New(p)
+	assert.NilError(t, err)
+	sd.(*sporedrive).hostWrapper = func(context.Context, host.Host) (remoteHost, error) {
+		t.Fatal("host contacted without tenancy")
+		return nil, nil
+	}
+	c, err := course.New(sd.Network(), course.Shapes("shape1"))
+	assert.NilError(t, err)
+	var got error
+	for pr := range sd.Displace(context.Background(), c) {
+		if pr.Error() != nil {
+			got = pr.Error()
+		}
+	}
+	assert.ErrorContains(t, got, "no tenancy configured")
+}
