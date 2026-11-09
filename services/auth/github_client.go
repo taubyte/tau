@@ -26,6 +26,7 @@ type GitHubClient interface {
 	CreateRepository(name *string, description *string, private *bool) error
 	CreateDeployKey(name *string, key *string) error
 	RemoveOtherDeployKeys(name string, keep string) error
+	RemoveDeployKey(key string) error
 	CreatePushHook(name *string, url *string, devMode bool) (int64, string, error)
 	ListMyRepos() (map[string]RepositoryBasicInfo, error)
 	EachRepoPage(fn func(ids []string) (more bool)) error
