@@ -4,9 +4,8 @@
 //
 // It keeps what was measured in dream's network: one dial per pair from a canonical
 // side with nothing else dialing (see dial and Add), and the bounded WaitForSwarm
-// after it. A peer joins before its services start, and is handed over once every
-// peer has identified what they serve. dream's 750ms settle is not here: it was only
-// ever for a simple, and a mesh has none.
+// after it. A peer's services start before it joins. dream's 750ms settle is not
+// here: it was only ever for a simple, and a mesh has none.
 package mesh
 
 import (
@@ -15,14 +14,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
 	peercore "github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/taubyte/tau/core/p2p/keypair"
 	"github.com/taubyte/tau/p2p/peer"
@@ -45,10 +42,6 @@ const (
 
 	// A cloud can run for as long as somebody leaves it up.
 	certificateValidity = 10 * 365 * 24 * time.Hour
-
-	// identifyWait is how long a peer is given to hear a push before the pair is
-	// reconnected to be identified afresh.
-	identifyWait = 500 * time.Millisecond
 
 	// drain is how long Close lets services finish before their peers go.
 	drain = 300 * time.Millisecond
@@ -138,8 +131,7 @@ func (m *Mesh) Guest() (peer.Node, error) {
 	return n, nil
 }
 
-// join makes a peer, dials it to every peer already here, starts what runs on it, and
-// waits until every peer has identified what it started.
+// join makes a peer, starts what runs on it, and dials it to every peer already here.
 func (m *Mesh) join(start func(peer.Node) error) (peer.Node, error) {
 	existing := m.Peers()
 
@@ -165,12 +157,6 @@ func (m *Mesh) join(start func(peer.Node) error) (peer.Node, error) {
 		return nil, err
 	}
 
-	// THE PEER JOINS BEFORE WHAT RUNS ON IT STARTS. A consensus group it opens waits
-	// a bootstrap window for the members already here; started before the dial, it
-	// saw none, founded a group of its own beside theirs, and healing merged the two
-	// only tens of seconds later, every group on every peer but the first.
-	m.dial(n, existing)
-
 	if start != nil {
 		if err := start(n); err != nil {
 			n.Close()
@@ -178,10 +164,7 @@ func (m *Mesh) join(start func(peer.Node) error) (peer.Node, error) {
 		}
 	}
 
-	// AND IT IS HANDED OVER ONCE EVERY PEER KNOWS WHAT IT SERVES. Its services
-	// registered their protocols after the peers first identified it, and the push
-	// correcting that is limited per subnet, which every loopback peer shares.
-	m.identified(n, existing)
+	m.dial(n, existing)
 
 	// A peer alone in the mesh times out here, which is fine: the wait is
 	// bounded and best-effort, see swarmWait.
@@ -224,50 +207,6 @@ func (m *Mesh) dial(n peer.Node, existing []peer.Node) {
 		}()
 	}
 	wg.Wait()
-}
-
-// identified waits until every existing peer has identified everything n serves, and
-// reconnects a pair still missing some after a push would have arrived: a fresh
-// connection is identified afresh.
-func (m *Mesh) identified(n peer.Node, existing []peer.Node) {
-	served := n.Host().Mux().Protocols()
-	ctx, cancel := context.WithTimeout(m.ctx, meshTimeout)
-	defer cancel()
-
-	var wg sync.WaitGroup
-	for _, other := range existing {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for !knows(other, n.ID(), served) {
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(identifyWait):
-				}
-				if knows(other, n.ID(), served) {
-					return
-				}
-				other.Host().Network().ClosePeer(n.ID())
-				m.dial(n, []peer.Node{other})
-			}
-		}()
-	}
-	wg.Wait()
-}
-
-// knows is whether other has identified id as serving every protocol in served.
-func knows(other peer.Node, id peercore.ID, served []protocol.ID) bool {
-	have, err := other.Host().Peerstore().GetProtocols(id)
-	if err != nil {
-		return false
-	}
-	for _, p := range served {
-		if !slices.Contains(have, p) {
-			return false
-		}
-	}
-	return true
 }
 
 // OnClose hands the mesh something to close before its peers go — a service

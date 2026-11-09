@@ -2,13 +2,11 @@ package mesh
 
 import (
 	"context"
-	"slices"
 	"testing"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
 	peercore "github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/keypair"
@@ -75,26 +73,4 @@ func TestAGuestIsMeshedAndIsNoneOfThePeers(t *testing.T) {
 	m.Close()
 	require.Empty(t, m.Peers())
 	require.NotEqual(t, network.Connected, guest.Host().Network().Connectedness(member.ID()), "a guest closes with the mesh")
-}
-
-func TestAPeerJoinsBeforeWhatItRunsStartsAndIsIdentifiedForIt(t *testing.T) {
-	m, err := New(t.Context(), "joins")
-	require.NoError(t, err)
-	defer m.Close()
-	first, err := m.Add(nil)
-	require.NoError(t, err)
-
-	const served = protocol.ID("/mesh-test/served/1")
-	var sawFirst bool
-	second, err := m.Add(func(n peer.Node) error {
-		sawFirst = slices.Contains(n.Host().Network().Peers(), first.ID())
-		n.Host().SetStreamHandler(served, func(network.Stream) {})
-		return nil
-	})
-	require.NoError(t, err)
-	require.True(t, sawFirst, "what it starts finds the peers already here")
-
-	have, err := first.Host().Peerstore().GetProtocols(second.ID())
-	require.NoError(t, err)
-	require.Contains(t, have, served, "and they identified what it started")
 }
