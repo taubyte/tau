@@ -34,45 +34,32 @@ func (kvd *kvDatabase) Delete(ctx context.Context, key string) error {
 	return kvd.datastore.Delete(ctx, k)
 }
 
+// List is every key under prefix. A scan that fails partway is an error, never the
+// keys read before it: a partial list read as complete undercounts every quota,
+// claim and sweep built on it.
 func (kvd *kvDatabase) List(ctx context.Context, prefix string) ([]string, error) {
 	result, err := kvd.list(ctx, prefix)
 	if err != nil {
 		return nil, err
 	}
-
-	keys := make([]string, 0)
-	for entry := range result.Next() {
-		keys = append(keys, entry.Key)
-	}
-	return keys, nil
+	return keysOf(ctx, result)
 }
 
-func (kvd *kvDatabase) ListAsync(ctx context.Context, prefix string) (chan string, error) {
-	result, err := kvd.list(ctx, prefix)
-	if err != nil {
+// keysOf reads every key result holds, and closes it. The store ends a query its
+// context ended as it ends a finished one, so an ended context is the scan's error.
+func keysOf(ctx context.Context, result query.Results) ([]string, error) {
+	defer result.Close()
+	keys := make([]string, 0)
+	for entry := range result.Next() {
+		if entry.Error != nil {
+			return nil, entry.Error
+		}
+		keys = append(keys, entry.Key)
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-
-	c := make(chan string, QueryBufferSize)
-	go func() {
-		defer close(c)
-		defer result.Close()
-		source := result.Next()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case entry, ok := <-source:
-				if !ok || entry.Error != nil {
-					return
-				}
-
-				c <- entry.Key
-			}
-		}
-	}()
-
-	return c, nil
+	return keys, nil
 }
 
 func (kvd *kvDatabase) list(ctx context.Context, prefix string) (query.Results, error) {

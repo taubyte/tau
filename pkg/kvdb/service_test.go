@@ -69,40 +69,6 @@ func TestKVDatabase_ReopenClosedDatabase(t *testing.T) {
 	reopenedDB.Close()
 }
 
-func TestKVDatabase_ListAsync(t *testing.T) {
-	logger := logging.Logger("test")
-	mockNode := mockPeer(t)
-	f := opener{mockNode}
-	db, _ := f.New(logger, "testpath", 10)
-
-	keys := []string{"async1", "async2", "async3"}
-	for _, key := range keys {
-		err := db.Put(context.Background(), key, []byte("value"))
-		if err != nil {
-			t.Fatalf("Failed to put value for key '%s': %v", key, err)
-		}
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	keyChan, err := db.ListAsync(ctx, "")
-	if err != nil {
-		t.Fatalf("Failed to list keys asynchronously: %v", err)
-	}
-
-	receivedKeys := make([]string, 0, len(keys))
-	for key := range keyChan {
-		receivedKeys = append(receivedKeys, key)
-	}
-
-	if len(receivedKeys) != len(keys) {
-		t.Fatalf("Expected %d keys, got %d", len(keys), len(receivedKeys))
-	}
-
-	db.Close()
-}
-
 func TestKVDatabase_Batch_MixedOperations(t *testing.T) {
 	logger := logging.Logger("test")
 	mockNode := mockPeer(t)

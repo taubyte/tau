@@ -3,7 +3,6 @@ package mock
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/ipfs/go-log/v2"
 	"gotest.tools/v3/assert"
@@ -114,40 +113,6 @@ func TestMockKVDB(t *testing.T) {
 		assert.Equal(t, len(noKeys), 0)
 	})
 
-	t.Run("ListAsync", func(t *testing.T) {
-		factory := New()
-		defer factory.Close()
-
-		db, err := factory.New(logger, "test", 5)
-		assert.NilError(t, err)
-		defer db.Close()
-
-		ctx := context.Background()
-
-		// Put some test data
-		testData := map[string][]byte{
-			"async1/key1": []byte("value1"),
-			"async1/key2": []byte("value2"),
-			"async2/key3": []byte("value3"),
-		}
-
-		for key, value := range testData {
-			err = db.Put(ctx, key, value)
-			assert.NilError(t, err)
-		}
-
-		// Test async listing
-		ch, err := db.ListAsync(ctx, "async1/")
-		assert.NilError(t, err)
-
-		var keys []string
-		for key := range ch {
-			keys = append(keys, key)
-		}
-
-		assert.Equal(t, len(keys), 2)
-	})
-
 	t.Run("ListRegEx", func(t *testing.T) {
 		factory := New()
 		defer factory.Close()
@@ -180,40 +145,6 @@ func TestMockKVDB(t *testing.T) {
 		keys, err = db.ListRegEx(ctx, "", "regex1/.*")
 		assert.NilError(t, err)
 		assert.Equal(t, len(keys), 3)
-	})
-
-	t.Run("ListRegExAsync", func(t *testing.T) {
-		factory := New()
-		defer factory.Close()
-
-		db, err := factory.New(logger, "test", 5)
-		assert.NilError(t, err)
-		defer db.Close()
-
-		ctx := context.Background()
-
-		// Put some test data
-		testData := map[string][]byte{
-			"regexasync1/key1": []byte("value1"),
-			"regexasync1/key2": []byte("value2"),
-			"regexasync2/key3": []byte("value3"),
-		}
-
-		for key, value := range testData {
-			err = db.Put(ctx, key, value)
-			assert.NilError(t, err)
-		}
-
-		// Test async regex listing
-		ch, err := db.ListRegExAsync(ctx, "regexasync1/", ".*key[12]$")
-		assert.NilError(t, err)
-
-		var keys []string
-		for key := range ch {
-			keys = append(keys, key)
-		}
-
-		assert.Equal(t, len(keys), 2)
 	})
 
 	t.Run("Batch", func(t *testing.T) {
@@ -323,47 +254,5 @@ func TestMockKVDB(t *testing.T) {
 		// Try to use closed database
 		_, err = db.Get(ctx, "test-key")
 		assert.Assert(t, err != nil, "Expected error from closed database")
-	})
-
-	t.Run("Context cancellation", func(t *testing.T) {
-		factory := New()
-		defer factory.Close()
-
-		db, err := factory.New(logger, "test", 5)
-		assert.NilError(t, err)
-		defer db.Close()
-
-		// Put some data
-		ctx := context.Background()
-		err = db.Put(ctx, "test-key", []byte("test-value"))
-		assert.NilError(t, err)
-
-		// Create a context with timeout
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-		defer cancel()
-
-		// Test async operations with context cancellation
-		ch, err := db.ListAsync(ctx, "")
-		assert.NilError(t, err)
-
-		// Wait for context to be cancelled
-		time.Sleep(20 * time.Millisecond)
-
-		// Channel should be closed due to context cancellation
-		// Note: The channel might still have buffered data, so we need to read it all
-		closed := false
-		for {
-			select {
-			case _, ok := <-ch:
-				if !ok {
-					closed = true
-					goto done
-				}
-			case <-time.After(50 * time.Millisecond):
-				goto done
-			}
-		}
-	done:
-		assert.Assert(t, closed, "Channel should be closed after context cancellation")
 	})
 }

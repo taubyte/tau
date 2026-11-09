@@ -142,39 +142,6 @@ func (m *Instance) List(ctx context.Context, prefix string) ([]string, error) {
 	return keys, nil
 }
 
-func (m *Instance) ListAsync(ctx context.Context, prefix string) (chan string, error) {
-	m.mutex.RLock()
-	defer m.mutex.RUnlock()
-
-	if m.closed {
-		return nil, ErrClosed
-	}
-
-	ch := make(chan string, 1024)
-
-	go func() {
-		defer close(ch)
-
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		for key := range m.data {
-			if prefix == "" || (len(key) >= len(prefix) && key[:len(prefix)] == prefix) {
-				select {
-				case ch <- key:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}
-	}()
-
-	return ch, nil
-}
-
 func (m *Instance) ListRegEx(ctx context.Context, prefix string, regexs ...string) ([]string, error) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
@@ -207,59 +174,6 @@ func (m *Instance) ListRegEx(ctx context.Context, prefix string, regexs ...strin
 	}
 
 	return keys, nil
-}
-
-func (m *Instance) ListRegExAsync(ctx context.Context, prefix string, regexs ...string) (chan string, error) {
-	m.mutex.RLock()
-	defer m.mutex.RUnlock()
-
-	if m.closed {
-		return nil, ErrClosed
-	}
-
-	ch := make(chan string, 1024)
-
-	go func() {
-		defer close(ch)
-
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		for key := range m.data {
-			if prefix != "" && (len(key) < len(prefix) || key[:len(prefix)] != prefix) {
-				continue
-			}
-
-			matches := true
-			for _, regexStr := range regexs {
-				re, err := regexp.Compile(regexStr)
-				if err != nil {
-					if m.logger != nil {
-						m.logger.Error("Failed to compile regex:", regexStr, err)
-					}
-					matches = false
-					break
-				}
-				if !re.MatchString(key) {
-					matches = false
-					break
-				}
-			}
-
-			if matches {
-				select {
-				case ch <- key:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}
-	}()
-
-	return ch, nil
 }
 
 func (m *Instance) Batch(ctx context.Context) (kvdb.Batch, error) {

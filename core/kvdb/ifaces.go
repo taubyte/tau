@@ -17,17 +17,12 @@ type Instance interface {
 	// Delete deletes the key and index data
 	Delete(ctx context.Context, key string) error
 
-	// List will list all keys with the given prefix
+	// List is every key with the given prefix. A scan that fails partway is an
+	// error, never the keys read before it.
 	List(ctx context.Context, prefix string) ([]string, error)
-
-	// ListAsync returns a channel to list to listed keys
-	ListAsync(ctx context.Context, prefix string) (chan string, error)
 
 	// ListRegex will list all keys matching the given prefix, and regexs
 	ListRegEx(ctx context.Context, prefix string, regexs ...string) ([]string, error)
-
-	// ListRegexAsync will return a channel to list all regex matched keys
-	ListRegExAsync(ctx context.Context, prefix string, regexs ...string) (chan string, error)
 
 	// Batch creates a Batch interface of the current Instance
 	Batch(ctx context.Context) (Batch, error)

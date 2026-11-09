@@ -2,9 +2,13 @@ package kvdb
 
 import (
 	"context"
+	"errors"
+	"sync/atomic"
 	"testing"
 
 	ds "github.com/ipfs/go-datastore"
+	query "github.com/ipfs/go-datastore/query"
+	dssync "github.com/ipfs/go-datastore/sync"
 	logging "github.com/ipfs/go-log/v2"
 )
 
@@ -173,4 +177,74 @@ func TestKVDatabase_List_SpecificPrefix(t *testing.T) {
 	}
 
 	db.Close()
+}
+
+// scanFailing is a store whose scans, once failing is set, read one entry and then
+// fail, as a disk that fails partway through a read does.
+type scanFailing struct {
+	ds.Batching
+	failing atomic.Bool
+}
+
+var errScanFailed = errors.New("the disk failed partway through a scan")
+
+func (s *scanFailing) Query(ctx context.Context, q query.Query) (query.Results, error) {
+	results, err := s.Batching.Query(ctx, q)
+	if err != nil || !s.failing.Load() {
+		return results, err
+	}
+	read, failed := 0, false
+	return query.ResultsFromIterator(q, query.Iterator{
+		Next: func() (query.Result, bool) {
+			if failed {
+				return query.Result{}, false
+			}
+			if read++; read > 1 {
+				failed = true
+				return query.Result{Error: errScanFailed}, true
+			}
+			return results.NextSync()
+		},
+		Close: results.Close,
+	}), nil
+}
+
+// A LIST THE STORE FAILS PARTWAY IS AN ERROR, never the keys it read before
+// failing: a partial list read as complete undercounts every quota, claim and sweep
+// built on it.
+func TestAListTheStoreFailsPartwayIsAnError(t *testing.T) {
+	store := &scanFailing{Batching: dssync.MutexWrap(ds.NewMapDatastore())}
+	db := &kvDatabase{datastore: manualReplica(t, store, newFetchThrough(), "list fails: ")}
+	ctx := t.Context()
+	for _, key := range []string{"/a", "/b", "/c"} {
+		if err := db.Put(ctx, key, []byte("v")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	keys, err := db.List(ctx, "")
+	if err != nil || len(keys) != 3 {
+		t.Fatalf("listed %v, %v; want the three keys", keys, err)
+	}
+
+	store.failing.Store(true)
+	if keys, err := db.List(ctx, ""); !errors.Is(err, errScanFailed) {
+		t.Fatalf("a scan that failed partway listed %v, %v", keys, err)
+	}
+	if keys, err := db.ListRegEx(ctx, "", ".*"); !errors.Is(err, errScanFailed) {
+		t.Fatalf("a regex scan that failed partway listed %v, %v", keys, err)
+	}
+}
+
+// A LIST WHOSE CONTEXT ENDED IS AN ERROR: the store ends a query its context ended
+// as it ends a finished one.
+func TestAListCutShortByItsContextIsAnError(t *testing.T) {
+	db := &kvDatabase{datastore: manualReplica(t, dssync.MutexWrap(ds.NewMapDatastore()), newFetchThrough(), "list cut short: ")}
+	if err := db.Put(t.Context(), "/a", []byte("v")); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if keys, err := db.List(ctx, ""); !errors.Is(err, context.Canceled) {
+		t.Fatalf("a list whose context ended listed %v, %v", keys, err)
+	}
 }

@@ -47,15 +47,10 @@ func TestAsyncRegExp(t *testing.T) {
 		}
 	}
 
-	c, err := testDB.ListRegExAsync(ctx, "", "/[ab]/?.*")
+	res, err := testDB.ListRegEx(ctx, "", "/[ab]/?.*")
 	if err != nil {
 		t.Error(err)
 		return
-	}
-
-	res := make([]string, 0)
-	for i := range c {
-		res = append(res, i)
 	}
 
 	correctRes := []string{
@@ -74,15 +69,10 @@ func TestAsyncRegExp(t *testing.T) {
 		return
 	}
 
-	c, err = testDB.ListRegExAsync(ctx, "/Z/m", "^/Z/[mn](.*)$")
+	prefix_res, err := testDB.ListRegEx(ctx, "/Z/m", "^/Z/[mn](.*)$")
 	if err != nil {
 		t.Error(err)
 		return
-	}
-
-	prefix_res := make([]string, 0)
-	for i := range c {
-		prefix_res = append(prefix_res, i)
 	}
 
 	prefix_correctRes := []string{

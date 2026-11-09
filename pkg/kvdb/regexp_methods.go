@@ -3,7 +3,6 @@ package kvdb
 import (
 	"context"
 	"regexp"
-	"time"
 
 	query "github.com/ipfs/go-datastore/query"
 )
@@ -46,48 +45,7 @@ func (kvd *kvDatabase) ListRegEx(ctx context.Context, prefix string, regexs ...s
 	if err != nil {
 		return nil, err
 	}
-
-	all_result, err := result.Rest()
-	if err != nil {
-		return nil, err
-	}
-
-	keys := make([]string, 0)
-	for _, entry := range all_result {
-		keys = append(keys, entry.Key)
-	}
-
-	return keys, nil
-}
-
-func (kvd *kvDatabase) ListRegExAsync(ctx context.Context, prefix string, regexs ...string) (chan string, error) {
-	result, err := kvd.listRegEx(ctx, prefix, regexs...)
-	if err != nil {
-		return nil, err
-	}
-
-	c := make(chan string, QueryBufferSize)
-	go func() {
-		defer close(c)
-		defer result.Close()
-		source := result.Next()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case entry, ok := <-source:
-				if !ok || entry.Error != nil {
-					return
-				}
-
-				c <- entry.Key
-			case <-time.After(ReadQueryResultTimeout):
-				return
-			}
-		}
-	}()
-
-	return c, nil
+	return keysOf(ctx, result)
 }
 
 func (kvd *kvDatabase) listRegEx(ctx context.Context, prefix string, regexs ...string) (query.Results, error) {
