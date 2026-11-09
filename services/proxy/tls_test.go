@@ -1,4 +1,4 @@
-package proxy_test
+package proxy
 
 import (
 	"context"
@@ -18,8 +18,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/taubyte/tau/services/proxy"
 )
 
 // A real handshake: a test on configuration alone would pass for a proxy answering in
@@ -75,26 +73,26 @@ func (v *vault) Secret(_ context.Context, _, _, id string) (string, error) {
 }
 
 // terminating is a proxy that answers the handshake itself.
-func terminating(t *testing.T, res map[string]any, cfg proxy.Config, sec proxy.Secrets) (*proxy.Service, *workers) {
+func terminating(t *testing.T, res map[string]any, cfg Config, sec Secrets) (*Service, *workers) {
 	t.Helper()
 
 	w := &workers{said: "pong:"}
-	opts := []proxy.Option{
-		proxy.WithProjects(projects{p: compiled(t, res)}),
-		proxy.WithWorkers(w),
+	opts := []option{
+		withProjects(projects{p: compiled(t, res)}),
+		withWorkers(w),
 	}
 	if sec != nil {
-		opts = append(opts, proxy.WithSecrets(sec))
+		opts = append(opts, withSecrets(sec))
 	}
 
-	s, err := proxy.New(cfg, opts...)
+	s, err := build(cfg, opts...)
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	return s, w
 }
 
 // speaks does a handshake and one round trip, and answers with what came back.
-func speaks(t *testing.T, sock proxy.Socket, pool *x509.CertPool, serverName string) (string, error) {
+func speaks(t *testing.T, sock Socket, pool *x509.CertPool, serverName string) (string, error) {
 	t.Helper()
 
 	c, err := tls.DialWithDialer(&net.Dialer{Timeout: 3 * time.Second},
@@ -122,11 +120,11 @@ func speaks(t *testing.T, sock proxy.Socket, pool *x509.CertPool, serverName str
 	return string(body), nil
 }
 
-func terminates(res map[string]any) { res["tls"] = map[string]any{"mode": "terminate"} }
+func terminated(res map[string]any) { res["tls"] = map[string]any{"mode": "terminate"} }
 
 func TestATlsProxyAnswersWithTheCertificateItsSecretHolds(t *testing.T) {
 	res := servable()
-	terminates(res)
+	terminated(res)
 	res["certificate"] = map[string]any{
 		"source": "provided",
 		"secret": map[string]any{"name": "pgcert"},
@@ -134,7 +132,7 @@ func TestATlsProxyAnswersWithTheCertificateItsSecretHolds(t *testing.T) {
 
 	blob, pool := selfSigned(t, "db.tau.example.io")
 	v := &vault{value: blob}
-	s, w := terminating(t, res, proxy.Config{CloudFqdn: "tau.example.io"}, v)
+	s, w := terminating(t, res, Config{CloudFqdn: "tau.example.io"}, v)
 
 	sock, err := s.Serve(t.Context(), pgwire())
 	require.NoError(t, err)
@@ -151,14 +149,14 @@ func TestATlsProxyAnswersWithTheCertificateItsSecretHolds(t *testing.T) {
 
 func TestAGeneratedNameTerminatesWithTheCloudsWildcard(t *testing.T) {
 	res := servable()
-	terminates(res)
+	terminated(res)
 
 	blob, pool := selfSigned(t, "db.tau.example.io")
 	cert, key := split(t, blob)
 
-	s, _ := terminating(t, res, proxy.Config{
+	s, _ := terminating(t, res, Config{
 		CloudFqdn: "tau.example.io",
-		Wildcard:  proxy.Certificate{Certificate: cert, Key: key},
+		Wildcard:  Certificate{Certificate: cert, Key: key},
 	}, nil)
 
 	sock, err := s.Serve(t.Context(), pgwire())
@@ -171,19 +169,19 @@ func TestAGeneratedNameTerminatesWithTheCloudsWildcard(t *testing.T) {
 
 func TestTerminatingWithNoCertificateIsRefusedAndBindsNothing(t *testing.T) {
 	res := servable()
-	terminates(res)
+	terminated(res)
 
-	s, _ := terminating(t, res, proxy.Config{CloudFqdn: "tau.example.io"}, nil)
+	s, _ := terminating(t, res, Config{CloudFqdn: "tau.example.io"}, nil)
 
 	_, err := s.Serve(t.Context(), pgwire())
-	require.ErrorIs(t, err, proxy.ErrUnservable)
+	require.ErrorIs(t, err, ErrUnservable)
 	require.ErrorContains(t, err, "holds no certificate for its own zone")
 	require.Empty(t, s.Serving(), "and nothing is published")
 }
 
 func TestTheWildcardIsNotUsedForAZoneTheProjectDeclares(t *testing.T) {
 	res := servable()
-	terminates(res)
+	terminated(res)
 	res["host"] = map[string]any{
 		"kind": "zone", "name": "db",
 		"zone": map[string]any{"in": map[string]any{"name": zoneID}},
@@ -192,28 +190,28 @@ func TestTheWildcardIsNotUsedForAZoneTheProjectDeclares(t *testing.T) {
 	blob, _ := selfSigned(t, "db.tau.example.io")
 	cert, key := split(t, blob)
 
-	s, _ := terminating(t, res, proxy.Config{
+	s, _ := terminating(t, res, Config{
 		CloudFqdn: "tau.example.io",
-		Wildcard:  proxy.Certificate{Certificate: cert, Key: key},
+		Wildcard:  Certificate{Certificate: cert, Key: key},
 	}, nil)
 
 	_, err := s.Serve(t.Context(), pgwire())
-	require.ErrorIs(t, err, proxy.ErrUnservable)
+	require.ErrorIs(t, err, ErrUnservable)
 	require.ErrorContains(t, err, "db.shop.example.com is not under")
 }
 
 func TestProvidedWithNoSecretResolverIsRefused(t *testing.T) {
 	res := servable()
-	terminates(res)
+	terminated(res)
 	res["certificate"] = map[string]any{
 		"source": "provided",
 		"secret": map[string]any{"name": "pgcert"},
 	}
 
-	s, _ := terminating(t, res, proxy.Config{CloudFqdn: "tau.example.io"}, nil)
+	s, _ := terminating(t, res, Config{CloudFqdn: "tau.example.io"}, nil)
 
 	_, err := s.Serve(t.Context(), pgwire())
-	require.ErrorIs(t, err, proxy.ErrUnservable)
+	require.ErrorIs(t, err, ErrUnservable)
 	require.ErrorContains(t, err, "resolves no secret")
 }
 
@@ -231,23 +229,23 @@ func TestASecretMissingEitherHalfIsRefusedByName(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			res := servable()
-			terminates(res)
+			terminated(res)
 			res["certificate"] = map[string]any{
 				"source": "provided",
 				"secret": map[string]any{"name": "pgcert"},
 			}
 
-			s, _ := terminating(t, res, proxy.Config{CloudFqdn: "tau.example.io"}, &vault{value: c.value})
+			s, _ := terminating(t, res, Config{CloudFqdn: "tau.example.io"}, &vault{value: c.value})
 
 			_, err := s.Serve(t.Context(), pgwire())
-			require.ErrorIs(t, err, proxy.ErrUnservable)
+			require.ErrorIs(t, err, ErrUnservable)
 			require.ErrorContains(t, err, c.says)
 		})
 	}
 }
 
 func TestAProxyThatTerminatesNothingNeedsNoCertificate(t *testing.T) {
-	s, _ := terminating(t, servable(), proxy.Config{CloudFqdn: "tau.example.io"}, nil)
+	s, _ := terminating(t, servable(), Config{CloudFqdn: "tau.example.io"}, nil)
 
 	sock, err := s.Serve(t.Context(), pgwire())
 	require.NoError(t, err)

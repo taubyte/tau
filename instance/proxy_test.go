@@ -1,7 +1,6 @@
 package instance
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -11,6 +10,7 @@ import (
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/pkg/stats"
+	"github.com/taubyte/tau/services/proxy"
 )
 
 // The wiring: a node holding a deployment finds its proxies, listens, and reports the
@@ -76,7 +76,7 @@ func proxying(t *testing.T, compiled []byte) *Instance {
 
 	// A fast sweep, since the deployment is held after Start and the sweep is what is
 	// tested; with the default the first pass would race the hold.
-	cfg.Proxy.Sweep = 20 * time.Millisecond
+	cfg.Sections = map[string]any{Proxy: proxy.Config{Sweep: 20 * time.Millisecond}}
 
 	n, _, _ := makeNode(t, cfg)
 	require.NoError(t, n.Start(t.Context()))
@@ -99,10 +99,10 @@ func proxying(t *testing.T, compiled []byte) *Instance {
 func TestANodeListensForItsHeldProxiesAndReportsThem(t *testing.T) {
 	n := proxying(t, withProxy(nil))
 
-	require.Eventually(t, func() bool { return len(n.proxy.Serving()) == 1 }, 5*time.Second, 20*time.Millisecond,
+	require.Eventually(t, func() bool { return len(proxyOf(t, n).Serving()) == 1 }, 5*time.Second, 20*time.Millisecond,
 		"the sweep did not pick up the held deployment's proxy")
 
-	sock := n.proxy.Serving()[0]
+	sock := proxyOf(t, n).Serving()[0]
 	require.Equal(t, "postgres", sock.Protocol)
 	require.Equal(t, "tcp", sock.Transport)
 	require.NotZero(t, sock.Port, "the kernel allocated one")
@@ -120,28 +120,30 @@ func TestANodeDoesNotListenForAProxyItCannotServe(t *testing.T) {
 		r["tls"] = map[string]any{"mode": "terminate"}
 	}))
 
-	require.Never(t, func() bool { return len(n.proxy.Serving()) > 0 }, time.Second, 50*time.Millisecond)
+	require.Never(t, func() bool { return len(proxyOf(t, n).Serving()) > 0 }, time.Second, 50*time.Millisecond)
 
 	snap := reported(t, n, func(stats.Node) bool { return true })
 	require.Empty(t, snap.Sockets)
 }
 
-func TestAProxyWithoutAWorkerIsRefusedAtConstruction(t *testing.T) {
-	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Register, Stats, Proxy}}), withKVDB(&memFactory{}))
-	require.ErrorContains(t, err, "a worker holds")
+func TestAProxyWithoutAWorkerDoesNotStart(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Stats, Proxy}})
+	require.ErrorIs(t, n.Start(t.Context()), proxy.ErrNoWorker)
 }
 
-func TestAProxyWithoutPlacementIsRefusedAtConstruction(t *testing.T) {
-	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Register, Worker, Proxy}}), withKVDB(&memFactory{}), WithRuntimes(&tier{name: "oci"}))
-	require.ErrorContains(t, err, "through placement")
+func TestANodeNamingAProxyRunsTheStatsItIsPlacedFrom(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Proxy}})
+	require.Contains(t, n.Services(), Stats)
 }
 
-func TestANodeWithNoWorkerHoldsNoProxy(t *testing.T) {
-	require.Nil(t, (&proxies{node: &Instance{Node: mockPeer(t)}}).Proxies(t.Context()))
-}
-
-func TestAProxyTakesTheInjectedResolver(t *testing.T) {
-	injected := secretFor(func(context.Context, string, string, string) (string, error) { return "", nil })
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Proxy}}, WithSecrets(injected))
-	require.NotNil(t, n.proxy)
+// proxyOf is the proxy n runs.
+func proxyOf(t *testing.T, n *Instance) *proxy.Service {
+	t.Helper()
+	for _, r := range n.runningNow() {
+		if p, ok := r.Service.(*proxy.Service); ok {
+			return p
+		}
+	}
+	t.Fatal("the node runs no proxy")
+	return nil
 }

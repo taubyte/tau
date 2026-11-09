@@ -38,7 +38,9 @@ const (
 	Gateway  = "gateway"
 	Auth     = "auth"
 	Secrets  = "secrets"
-	Proxy    = "proxy"
+
+	// Proxy accepts connections for a project's proxies. See services/proxy.
+	Proxy = proxy.Name
 
 	// DNS answers queries from the stats view: the last link, without which a
 	// proxy's port published through stats is unreadable. See services/dns.
@@ -67,7 +69,7 @@ var (
 )
 
 // All is every service this composition knows how to start.
-var All = []string{Worker, Gateway, Proxy}
+var All = []string{Worker, Gateway}
 
 // Everything is every service a node can be configured to run: the ones this
 // package still starts itself and the ones services.New makes. All, the default
@@ -129,8 +131,7 @@ type Config struct {
 	// certificates — the ACME CA, the challenge type and whether the zone's
 	// wildcard is issued. Every node of a cloud that issues carries it,
 	// because every node orders and serves its own certificates. See services/cm.
-	CM    cm.Config
-	Proxy proxy.Config
+	CM cm.Config
 	// Auth names the built-in admin, who may sign up, the console callbacks
 	// the forges people sign in through and the OIDC providers.
 	Auth auth.Config
@@ -289,7 +290,7 @@ func (c Config) withDefaults(added ...string) (Config, error) {
 	}
 	c.Tenancy = served.Namespaces()
 	// The services this package still builds carry the zone in their own config.
-	c.Gateway.CloudFqdn, c.Proxy.CloudFqdn = c.CloudFqdn, c.CloudFqdn
+	c.Gateway.CloudFqdn = c.CloudFqdn
 	for name := range c.Sections {
 		if !slices.Contains(added, name) {
 			return Config{}, fmt.Errorf("node: there is configuration for %q, which is not a service this node can run; it runs %v", name, added)

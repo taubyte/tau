@@ -18,6 +18,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"sort"
 	"strings"
@@ -135,7 +136,7 @@ var (
 	ErrNoProjects = errors.New("proxy: a proxy with no register cannot read a project")
 
 	// ErrNoDeployments is a nil source of what to serve, which is not the same
-	// as no source at all; see WithDeployments.
+	// as no source at all; see withDeployments.
 	ErrNoDeployments = errors.New("proxy: a nil source holds no proxies")
 
 	// ErrUnservable is a resource this cloud cannot serve as written: a
@@ -144,7 +145,7 @@ var (
 	ErrUnservable = errors.New("proxy: this cloud cannot serve that proxy as declared")
 )
 
-type Option func(*options) error
+type option func(*options) error
 
 type options struct {
 	workers     Workers
@@ -154,7 +155,7 @@ type options struct {
 	warn        func(string, ...any)
 }
 
-func WithWorkers(w Workers) Option {
+func withWorkers(w Workers) option {
 	return func(o *options) error {
 		if w == nil {
 			return ErrNoWorkers
@@ -164,7 +165,7 @@ func WithWorkers(w Workers) Option {
 	}
 }
 
-func WithProjects(p Projects) Option {
+func withProjects(p Projects) option {
 	return func(o *options) error {
 		if p == nil {
 			return ErrNoProjects
@@ -174,10 +175,10 @@ func WithProjects(p Projects) Option {
 	}
 }
 
-// WithSecrets is how a proxy reads the certificate a resource names. A service
+// withSecrets is how a proxy reads the certificate a resource names. A service
 // without one cannot serve `certificate: {source: provided}`, and says so
 // rather than serving plaintext.
-func WithSecrets(sec Secrets) Option {
+func withSecrets(sec Secrets) option {
 	return func(o *options) error {
 		if sec == nil {
 			return errors.New("proxy: a nil secret resolver reads nothing")
@@ -187,9 +188,9 @@ func WithSecrets(sec Secrets) Option {
 	}
 }
 
-// WithWarn is where a refused connection says why. A raw socket has no status
+// withWarn is where a refused connection says why. A raw socket has no status
 // line, so this is the only place a reason can go.
-func WithWarn(f func(string, ...any)) Option {
+func withWarn(f func(string, ...any)) option {
 	return func(o *options) error {
 		if f == nil {
 			return errors.New("proxy: a nil warn writes nowhere")
@@ -216,6 +217,13 @@ type Service struct {
 	// is how many may be held at once.
 	buckets *ratelimit.Buckets
 	open    *ratelimit.Gauge
+
+	// stop ends the sweep Start runs, and done is closed once it has; owned is what
+	// Start opened for it. All closed with it.
+	stop      context.CancelFunc
+	done      chan struct{}
+	owned     []io.Closer
+	closeOnce sync.Once
 }
 
 // bound is one proxy this node is currently accepting connections for.
@@ -249,18 +257,30 @@ func (s *Service) Serving() []Socket {
 	return out
 }
 
-func New(cfg Config, opts ...Option) (*Service, error) {
+// New is the proxy, unstarted: Start builds it from its node.
+func New() *Service { return &Service{} }
+
+// build is a proxy over what it is given, serving nothing until asked.
+func build(cfg Config, opts ...option) (*Service, error) {
+	s := New()
+	if err := s.assemble(cfg, opts...); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+func (s *Service) assemble(cfg Config, opts ...option) error {
 	var o options
 	for _, apply := range opts {
 		if err := apply(&o); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	if o.workers == nil {
-		return nil, ErrNoWorkers
+		return ErrNoWorkers
 	}
 	if o.projects == nil {
-		return nil, ErrNoProjects
+		return ErrNoProjects
 	}
 	if o.warn == nil {
 		o.warn = func(string, ...any) {}
@@ -268,14 +288,10 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 	if cfg.ConnectTimeout <= 0 {
 		cfg.ConnectTimeout = DefaultConnectTimeout
 	}
-	return &Service{
-		cfg:      cfg,
-		opts:     o,
-		served:   map[string]*bound{},
-		refusals: map[string]string{},
-		buckets:  ratelimit.NewBuckets(nil, cfg.maxSources()),
-		open:     ratelimit.NewGauge(),
-	}, nil
+	s.cfg, s.opts = cfg, o
+	s.served, s.refusals = map[string]*bound{}, map[string]string{}
+	s.buckets, s.open = ratelimit.NewBuckets(nil, cfg.maxSources()), ratelimit.NewGauge()
+	return nil
 }
 
 // Serve binds this proxy and carries every connection on it. It answers where it
@@ -510,14 +526,26 @@ func (s *Service) forwardedTo(r specs.Resource, b Bind, scope []string) (specs.A
 // cut live sessions to reload would be worse than one that stops taking new
 // ones.
 func (s *Service) Close() error {
+	if s.stop != nil {
+		s.stop()
+		<-s.done
+	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	s.closed = true
 	for _, b := range s.served {
 		b.listener.Close()
 	}
 	clear(s.served)
 	clear(s.refusals)
-	return nil
+	s.mu.Unlock()
+
+	var errs []error
+	s.closeOnce.Do(func() {
+		for _, c := range s.owned {
+			if err := c.Close(); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	})
+	return errors.Join(errs...)
 }

@@ -1,4 +1,4 @@
-package proxy_test
+package proxy
 
 import (
 	"context"
@@ -9,49 +9,47 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/taubyte/tau/services/proxy"
 )
 
 // deployments is what this node holds, and it changes between sweeps the way a
 // deploy makes it change.
 type deployments struct {
 	mu   sync.Mutex
-	held []proxy.Bind
+	held []Bind
 }
 
-func (d *deployments) Proxies(context.Context) []proxy.Bind {
+func (d *deployments) Proxies(context.Context) []Bind {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return append([]proxy.Bind(nil), d.held...)
+	return append([]Bind(nil), d.held...)
 }
 
-func (d *deployments) set(b ...proxy.Bind) {
+func (d *deployments) set(b ...Bind) {
 	d.mu.Lock()
 	d.held = b
 	d.mu.Unlock()
 }
 
-func sweeping(t *testing.T, res map[string]any, held ...proxy.Bind) (*proxy.Service, *deployments, *warnings) {
+func sweeping(t *testing.T, res map[string]any, held ...Bind) (*Service, *deployments, *warnings) {
 	t.Helper()
 
 	d := &deployments{}
 	d.set(held...)
 
 	said := &warnings{}
-	s, err := proxy.New(proxy.Config{CloudFqdn: "tau.example.io"},
-		proxy.WithProjects(projects{p: compiled(t, res)}),
-		proxy.WithWorkers(&workers{}),
-		proxy.WithDeployments(d),
-		proxy.WithWarn(said.add),
+	s, err := build(Config{CloudFqdn: "tau.example.io"},
+		withProjects(projects{p: compiled(t, res)}),
+		withWorkers(&workers{}),
+		withDeployments(d),
+		withWarn(said.add),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	return s, d, said
 }
 
-func pgwire() proxy.Bind {
-	return proxy.Bind{Project: "shop", Environment: "prod", Name: "pgwire"}
+func pgwire() Bind {
+	return Bind{Project: "shop", Environment: "prod", Name: "pgwire"}
 }
 
 func listening(t *testing.T, port uint16) bool {
@@ -115,10 +113,10 @@ func TestRunSweepsImmediatelyAndThenOnTheInterval(t *testing.T) {
 	d := &deployments{}
 	d.set(pgwire())
 
-	s, err := proxy.New(proxy.Config{CloudFqdn: "tau.example.io", Sweep: 10 * time.Millisecond},
-		proxy.WithProjects(projects{p: compiled(t, servable())}),
-		proxy.WithWorkers(&workers{}),
-		proxy.WithDeployments(d),
+	s, err := build(Config{CloudFqdn: "tau.example.io", Sweep: 10 * time.Millisecond},
+		withProjects(projects{p: compiled(t, servable())}),
+		withWorkers(&workers{}),
+		withDeployments(d),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
@@ -144,17 +142,17 @@ func TestRunSweepsImmediatelyAndThenOnTheInterval(t *testing.T) {
 }
 
 func TestASweepWithNoDeploymentsDoesNothing(t *testing.T) {
-	s, _ := service(t, proxy.Config{CloudFqdn: "tau.example.io"}, servable(), &workers{})
+	s, _ := served(t, Config{CloudFqdn: "tau.example.io"}, servable(), &workers{})
 	require.Equal(t, 0, s.Sweep(t.Context()))
 }
 
 func TestANilDeploymentSourceIsRefusedAtConstruction(t *testing.T) {
-	_, err := proxy.New(proxy.Config{},
-		proxy.WithProjects(projects{}),
-		proxy.WithWorkers(&workers{}),
-		proxy.WithDeployments(nil),
+	_, err := build(Config{},
+		withProjects(projects{}),
+		withWorkers(&workers{}),
+		withDeployments(nil),
 	)
-	require.ErrorIs(t, err, proxy.ErrNoDeployments)
+	require.ErrorIs(t, err, ErrNoDeployments)
 }
 
 func TestServingOneProxyTwiceIsRefused(t *testing.T) {
@@ -166,6 +164,6 @@ func TestServingOneProxyTwiceIsRefused(t *testing.T) {
 	_, err = s.Serve(t.Context(), pgwire())
 	require.ErrorContains(t, err, "already served")
 
-	require.Equal(t, []proxy.Socket{first}, s.Serving())
+	require.Equal(t, []Socket{first}, s.Serving())
 	require.True(t, listening(t, first.Port), "and the one that was there is untouched")
 }

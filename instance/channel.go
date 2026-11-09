@@ -8,11 +8,11 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/taubyte/tau/instance/placement"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/services/worker"
+	"github.com/taubyte/tau/services/worker/placement"
 )
 
 // Backs `taubyte:channel/dialer`, the `channel` kind (v1's p2p). A dial resolves the

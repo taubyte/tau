@@ -18,6 +18,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
+	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/services/worker"
@@ -153,6 +154,20 @@ type Workers struct {
 	// self is this node's id as stats reports it, so a request for this node
 	// is recognised without decoding a peer id.
 	self string
+}
+
+// On is the workers as a service on h reaches them, chosen from the stats view beside
+// it: the worker on h's node directly, any other through a stream to it.
+func On(h service.Host) (*Workers, error) {
+	router, ok := service.Get[Router](h)
+	if !ok {
+		return nil, ErrNoRouter
+	}
+	var opts []Option
+	if local, ok := service.Get[*worker.Service](h); ok {
+		opts = append(opts, WithLocal(local))
+	}
+	return New(h.Peer().Host(), router, opts...)
 }
 
 // New builds a router over a host and a view.

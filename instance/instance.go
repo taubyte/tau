@@ -38,18 +38,17 @@ import (
 	"github.com/taubyte/tau/services/worker/stream"
 	"github.com/taubyte/tau/services/worker/volume"
 
-	"github.com/taubyte/tau/instance/placement"
 	"github.com/taubyte/tau/services/cm"
 	cmService "github.com/taubyte/tau/services/cm"
 	databaseService "github.com/taubyte/tau/services/database"
 	gateway "github.com/taubyte/tau/services/gateway"
 	primitivesService "github.com/taubyte/tau/services/primitives"
-	v2proxy "github.com/taubyte/tau/services/proxy"
 	registerService "github.com/taubyte/tau/services/register"
 	secretsService "github.com/taubyte/tau/services/secrets"
 	statsService "github.com/taubyte/tau/services/stats"
 	"github.com/taubyte/tau/services/worker"
 	"github.com/taubyte/tau/services/worker/objects"
+	"github.com/taubyte/tau/services/worker/placement"
 )
 
 // Node is everything this machine runs.
@@ -77,7 +76,6 @@ type Instance struct {
 	register registerService.Service
 	worker   *worker.Service
 	gateway  *gateway.Service
-	proxy    *v2proxy.Service
 
 	secrets secretsService.Service
 
@@ -166,7 +164,6 @@ type Instance struct {
 	loopsStop      context.CancelFunc
 	dispatchDone   chan struct{}
 	subscribeDone  chan struct{}
-	proxyDone      chan struct{}
 	checkpointDone chan struct{}
 	retentionDone  chan struct{}
 
@@ -277,12 +274,7 @@ func (n *Instance) open() error {
 	if err := n.openPlacement(); err != nil {
 		return err
 	}
-	if err := n.openGateway(); err != nil {
-		return err
-	}
-	// AFTER PLACEMENT AND THE WORKER, which it takes as collaborators: the
-	// first is where a connection goes, the second is what this node holds.
-	return n.openProxy()
+	return n.openGateway()
 }
 
 // tiers is what this node's pool can run. It is here for the composition's own
@@ -703,17 +695,6 @@ func (n *Instance) Start(ctx context.Context) error {
 		n.followRetention(loopCtx)
 	}()
 
-	// THE PROXY SWEEPS WITHOUT RAFT, unlike everything below it: every node
-	// holding a deployment serves its proxies, so there is no slot to claim and
-	// no leader to be.
-	if n.proxy != nil {
-		n.proxyDone = make(chan struct{})
-		go func() {
-			defer close(n.proxyDone)
-			n.proxy.Run(loopCtx)
-		}()
-	}
-
 	// The dispatcher runs on any node with a worker, with or without local raft: queues
 	// are the primitives service's, reached through the finder when not local.
 	if n.worker != nil {
@@ -786,9 +767,6 @@ func (n *Instance) Close() error {
 		// away.
 		if n.loopsStop != nil {
 			n.loopsStop()
-			if n.proxyDone != nil {
-				<-n.proxyDone
-			}
 			if n.dispatchDone != nil {
 				<-n.dispatchDone
 			}
@@ -821,28 +799,20 @@ func (n *Instance) Close() error {
 }
 
 // builtIns is what the services this instance still builds itself add to its
-// report: their names, the sockets the proxy accepts, and what the database knows
-// about placement. Load is zero and said to be; stats adds the addresses.
+// report: their names, and what the worker serves. Load is zero and said to be;
+// stats adds the addresses.
 type builtIns struct{ n *Instance }
 
 func (b builtIns) Report(snap *statsService.Snapshot) {
-	n := b.n
-	snap.Serving = append(snap.Serving, n.serving()...)
-	snap.Sockets = append(snap.Sockets, n.proxySockets()...)
+	snap.Serving = append(snap.Serving, b.n.serving()...)
 }
 
 // serving is every name this node answers to: the services it runs, plus what
-// each of them can say about itself.
+// the worker can say about itself.
 func (n *Instance) serving() []string {
 	out := append([]string(nil), n.cfg.Services...)
 	if n.worker != nil {
 		out = append(out, n.worker.Serving()...)
-	}
-	// AND EVERY NAME A LISTENER ANSWERS ON. A client resolves the name to an
-	// address before it asks SRV for the port, so a socket reported without
-	// its name in this list is a port nobody can find the machine for.
-	for _, sock := range n.proxySockets() {
-		out = append(out, sock.Host)
 	}
 	return dedupe(out)
 }

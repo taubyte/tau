@@ -11,9 +11,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/instance/placement"
 	"github.com/taubyte/tau/pkg/invoke"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/worker/placement"
 )
 
 // Drives the claim loop synchronously; every branch here decides whether work is

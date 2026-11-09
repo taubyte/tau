@@ -12,6 +12,7 @@ import (
 	"github.com/taubyte/tau/services/plm"
 	"github.com/taubyte/tau/services/plm/hosted"
 	"github.com/taubyte/tau/services/primitives"
+	"github.com/taubyte/tau/services/proxy"
 	"github.com/taubyte/tau/services/register"
 	"github.com/taubyte/tau/services/secrets"
 	statsService "github.com/taubyte/tau/services/stats"
@@ -43,6 +44,8 @@ func catalog() []shipped {
 		{name: database.Descriptor.Name, new: func() service.Service { return database.New() }, needs: []string{cm.Name}},
 		{name: storage.Descriptor.Name, new: func() service.Service { return storage.New() }, needs: []string{cm.Name}},
 		{name: plm.Builder.Name, new: func() service.Service { return builder.New() }},
+		// A proxy reaches its workloads through placement, which routes from the stats view.
+		{name: proxy.Name, new: func() service.Service { return proxy.New() }, needs: []string{statsService.Descriptor.Name}},
 		// DNS answers from the stats view, so a node naming it runs stats too.
 		{name: dns.Name, new: func() service.Service { return dns.New() }, needs: []string{statsService.Descriptor.Name}},
 		// PLM is never part of the default: it binds a public listener, which has no

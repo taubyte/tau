@@ -1,4 +1,4 @@
-package proxy_test
+package proxy
 
 import (
 	"bytes"
@@ -14,7 +14,6 @@ import (
 
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/specs"
-	"github.com/taubyte/tau/services/proxy"
 )
 
 // Real bytes through a real chain: a call count would pass for a proxy that threw the
@@ -84,7 +83,7 @@ func lines(st *invoke.Stream) (*invoke.Shaping, error) {
 }
 
 // shaping is a proxy whose bytes pass through the named transformers.
-func shaping(t *testing.T, names []any, sv *sieving) (proxy.Socket, *workers, *warnings) {
+func shaping(t *testing.T, names []any, sv *sieving) (Socket, *workers, *warnings) {
 	t.Helper()
 
 	res := servable()
@@ -93,10 +92,10 @@ func shaping(t *testing.T, names []any, sv *sieving) (proxy.Socket, *workers, *w
 	w := &workers{said: "pong:", shape: sv.shape}
 	said := &warnings{}
 
-	s, err := proxy.New(proxy.Config{CloudFqdn: "tau.example.io"},
-		proxy.WithProjects(projects{p: compiled(t, res)}),
-		proxy.WithWorkers(w),
-		proxy.WithWarn(said.add),
+	s, err := build(Config{CloudFqdn: "tau.example.io"},
+		withProjects(projects{p: compiled(t, res)}),
+		withWorkers(w),
+		withWarn(said.add),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })

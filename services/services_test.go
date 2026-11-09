@@ -12,6 +12,7 @@ import (
 	"github.com/taubyte/tau/services/database"
 	"github.com/taubyte/tau/services/dns"
 	"github.com/taubyte/tau/services/primitives"
+	"github.com/taubyte/tau/services/proxy"
 	"github.com/taubyte/tau/services/register"
 	"github.com/taubyte/tau/services/secrets"
 	statsService "github.com/taubyte/tau/services/stats"
@@ -20,7 +21,7 @@ import (
 
 func TestANameIsTheServiceItRuns(t *testing.T) {
 	shipped := []string{cm.Name, statsService.Descriptor.Name, register.Descriptor.Name, secrets.Descriptor.Name, auth.Descriptor.Name,
-		primitives.Descriptor.Name, database.Descriptor.Name, storage.Descriptor.Name, plm.Builder.Name, dns.Name}
+		primitives.Descriptor.Name, database.Descriptor.Name, storage.Descriptor.Name, plm.Builder.Name, proxy.Name, dns.Name}
 	require.Equal(t, append(append([]string(nil), shipped...), plm.PLM.Name), Names(), "in start order")
 	require.Equal(t, shipped, Default(), "every one but plm, which listens where its config says and has no default")
 
@@ -48,6 +49,7 @@ func TestAServiceNeedsWhatItCannotStartWithout(t *testing.T) {
 	require.Equal(t, []string{cm.Name}, Needs(plm.PLM.Name), "a build queue is a raft group")
 	require.Empty(t, Needs(plm.Builder.Name), "a builder holds no state")
 	require.Equal(t, []string{statsService.Descriptor.Name}, Needs(dns.Name), "dns answers from the stats view")
+	require.Equal(t, []string{statsService.Descriptor.Name}, Needs(proxy.Name), "a proxy is placed from the stats view")
 	require.Empty(t, Needs(cm.Name))
 	require.Empty(t, Needs("nothing"))
 }

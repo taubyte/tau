@@ -24,9 +24,9 @@ type Deployments interface {
 // which bounds how late a deploy is noticed.
 const DefaultSweep = 10 * time.Second
 
-// WithDeployments is where the list of proxies to serve comes from. A service
+// withDeployments is where the list of proxies to serve comes from. A service
 // without one serves only what Serve was called with by hand.
-func WithDeployments(d Deployments) Option {
+func withDeployments(d Deployments) option {
 	return func(o *options) error {
 		if d == nil {
 			return ErrNoDeployments

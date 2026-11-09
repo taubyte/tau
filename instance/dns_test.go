@@ -15,6 +15,7 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/pkg/stats"
 	dnsService "github.com/taubyte/tau/services/dns"
+	proxyService "github.com/taubyte/tau/services/proxy"
 	statsService "github.com/taubyte/tau/services/stats"
 )
 
@@ -29,8 +30,8 @@ func serving(t *testing.T, compiled []byte, hosts ...string) *Instance {
 	cfg.CloudFqdn = "tau.example.io"
 
 	// Both timers (proxy sweep and stats tick) are wound down rather than waited out.
-	cfg.Proxy.Sweep = 100 * time.Millisecond
 	cfg.Sections = map[string]any{
+		Proxy: proxyService.Config{Sweep: 100 * time.Millisecond},
 		Stats: statsService.Config{Interval: 200 * time.Millisecond},
 		DNS:   dnsService.Config{NodeZone: "nodes.tau.example.io"},
 	}
@@ -94,8 +95,8 @@ func resolver(t *testing.T, n *Instance) func(string, uint16) *dns.Msg {
 func TestAResolverLearnsTheProxysPortOverDns(t *testing.T) {
 	n := serving(t, withProxy(nil))
 
-	require.Eventually(t, func() bool { return len(n.proxy.Serving()) == 1 }, 5*time.Second, 20*time.Millisecond)
-	sock := n.proxy.Serving()[0]
+	require.Eventually(t, func() bool { return len(proxyOf(t, n).Serving()) == 1 }, 5*time.Second, 20*time.Millisecond)
+	sock := proxyOf(t, n).Serving()[0]
 
 	ask := resolver(t, n)
 
@@ -118,8 +119,8 @@ func TestAResolverLearnsTheProxysPortOverDns(t *testing.T) {
 func TestTheProxysNameResolvesToTheNodeServingIt(t *testing.T) {
 	n := serving(t, withProxy(nil))
 
-	require.Eventually(t, func() bool { return len(n.proxy.Serving()) == 1 }, 5*time.Second, 20*time.Millisecond)
-	host := n.proxy.Serving()[0].Host
+	require.Eventually(t, func() bool { return len(proxyOf(t, n).Serving()) == 1 }, 5*time.Second, 20*time.Millisecond)
+	host := proxyOf(t, n).Serving()[0].Host
 
 	ask := resolver(t, n)
 	require.Eventually(t, func() bool {

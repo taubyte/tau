@@ -1,4 +1,4 @@
-package proxy_test
+package proxy
 
 import (
 	"net"
@@ -7,22 +7,20 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/taubyte/tau/services/proxy"
 )
 
 // Real sockets: a refused connection is closed with nothing written, which a counter
 // assertion would not notice.
 
 // limited is a proxy whose rate_limit block says what the test needs.
-func limited(t *testing.T, block map[string]any) (*proxy.Service, proxy.Socket, *workers) {
+func limited(t *testing.T, block map[string]any) (*Service, Socket, *workers) {
 	t.Helper()
 
 	res := servable()
 	res["rate_limit"] = block
 
 	w := &workers{said: "pong:"}
-	s, _ := service(t, proxy.Config{CloudFqdn: "tau.example.io"}, res, w)
+	s, _ := served(t, Config{CloudFqdn: "tau.example.io"}, res, w)
 
 	sock, err := s.Serve(t.Context(), pgwire())
 	require.NoError(t, err)
@@ -31,7 +29,7 @@ func limited(t *testing.T, block map[string]any) (*proxy.Service, proxy.Socket, 
 
 // dial opens one connection and reports whether it was carried — a refused one
 // is closed with nothing written, which is all a raw socket can say.
-func dial(t *testing.T, sock proxy.Socket) bool {
+func dial(t *testing.T, sock Socket) bool {
 	t.Helper()
 
 	c, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(int(sock.Port))), 2*time.Second)
@@ -82,7 +80,7 @@ func TestConcurrentConnectionsAreEnforcedWhereARateWouldNot(t *testing.T) {
 
 func TestAProxyWithNoRateLimitBlockRefusesNothing(t *testing.T) {
 	w := &workers{said: "pong:"}
-	s, _ := service(t, proxy.Config{CloudFqdn: "tau.example.io"}, servable(), w)
+	s, _ := served(t, Config{CloudFqdn: "tau.example.io"}, servable(), w)
 
 	sock, err := s.Serve(t.Context(), pgwire())
 	require.NoError(t, err)
@@ -102,8 +100,8 @@ func TestASweepPicksUpAnEditedLimit(t *testing.T) {
 	deployed := &redeployable{}
 	deployed.set(compiled(t, res))
 
-	s, err := proxy.New(proxy.Config{CloudFqdn: "tau.example.io"},
-		proxy.WithProjects(deployed), proxy.WithWorkers(&workers{said: "pong:"}), proxy.WithDeployments(d))
+	s, err := build(Config{CloudFqdn: "tau.example.io"},
+		withProjects(deployed), withWorkers(&workers{said: "pong:"}), withDeployments(d))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 

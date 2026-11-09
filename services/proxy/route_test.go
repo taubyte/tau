@@ -1,4 +1,4 @@
-package proxy_test
+package proxy
 
 import (
 	"bytes"
@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/invoke"
-	"github.com/taubyte/tau/services/proxy"
 )
 
 // The peek loop is the interesting part: the proxy reads what the router asked for,
@@ -55,7 +54,7 @@ func (s *steering) told() *invoke.Connection {
 }
 
 // routing is a proxy whose destination one function decides.
-func routing(t *testing.T, answer func([]byte) *invoke.Direction, cfg proxy.Config) (proxy.Socket, *steering, *workers, *warnings) {
+func routing(t *testing.T, answer func([]byte) *invoke.Direction, cfg Config) (Socket, *steering, *workers, *warnings) {
 	t.Helper()
 
 	res := servable()
@@ -68,10 +67,10 @@ func routing(t *testing.T, answer func([]byte) *invoke.Direction, cfg proxy.Conf
 	if cfg.CloudFqdn == "" {
 		cfg.CloudFqdn = "tau.example.io"
 	}
-	s, err := proxy.New(cfg,
-		proxy.WithProjects(projects{p: compiled(t, res)}),
-		proxy.WithWorkers(w),
-		proxy.WithWarn(said.add),
+	s, err := build(cfg,
+		withProjects(projects{p: compiled(t, res)}),
+		withWorkers(w),
+		withWarn(said.add),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
@@ -82,7 +81,7 @@ func routing(t *testing.T, answer func([]byte) *invoke.Direction, cfg proxy.Conf
 }
 
 // says opens a connection, writes body, half-closes, and reads the answer.
-func says(t *testing.T, sock proxy.Socket, body string) string {
+func says(t *testing.T, sock Socket, body string) string {
 	t.Helper()
 
 	c, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(int(sock.Port))))
@@ -105,7 +104,7 @@ func TestARouterPeeksAndThePeekedBytesStillArrive(t *testing.T) {
 			return &invoke.Direction{More: 6}
 		}
 		return &invoke.Direction{To: &invoke.Endpoint{Kind: "service", Name: "db", Port: "pg"}}
-	}, proxy.Config{})
+	}, Config{})
 
 	require.Equal(t, "pong:pgwire-hello", says(t, sock, "pgwire-hello"),
 		"the whole conversation reached the workload, peek included")
@@ -123,7 +122,7 @@ func TestARouterPeeksAndThePeekedBytesStillArrive(t *testing.T) {
 func TestARouterIsToldTheSourceAndTheName(t *testing.T) {
 	sock, st, _, _ := routing(t, func([]byte) *invoke.Direction {
 		return &invoke.Direction{To: &invoke.Endpoint{Kind: "service", Name: "db", Port: "pg"}}
-	}, proxy.Config{})
+	}, Config{})
 
 	says(t, sock, "hello")
 
@@ -138,7 +137,7 @@ func TestARouterIsToldTheSourceAndTheName(t *testing.T) {
 func TestARouterCanRefuseAConnection(t *testing.T) {
 	sock, _, w, said := routing(t, func([]byte) *invoke.Direction {
 		return &invoke.Direction{Refused: "not from there"}
-	}, proxy.Config{})
+	}, Config{})
 
 	require.Empty(t, says(t, sock, "hello"))
 
@@ -150,7 +149,7 @@ func TestARouterCanRefuseAConnection(t *testing.T) {
 func TestARouterCannotAskForMoreThanTheProxyAllows(t *testing.T) {
 	sock, _, w, said := routing(t, func([]byte) *invoke.Direction {
 		return &invoke.Direction{More: 1 << 20}
-	}, proxy.Config{Peek: 64})
+	}, Config{Peek: 64})
 
 	require.Empty(t, says(t, sock, "hello"))
 	at, _ := w.asked()
@@ -161,7 +160,7 @@ func TestARouterCannotAskForMoreThanTheProxyAllows(t *testing.T) {
 func TestARouterThatWantsNoMoreThanItHasIsRefused(t *testing.T) {
 	sock, _, w, said := routing(t, func(peeked []byte) *invoke.Direction {
 		return &invoke.Direction{More: uint32(len(peeked))}
-	}, proxy.Config{})
+	}, Config{})
 
 	require.Empty(t, says(t, sock, "hello"))
 	at, _ := w.asked()
@@ -172,7 +171,7 @@ func TestARouterThatWantsNoMoreThanItHasIsRefused(t *testing.T) {
 func TestAConnectionThatSaysNothingIsNotWaitedOnForever(t *testing.T) {
 	sock, _, w, _ := routing(t, func(peeked []byte) *invoke.Direction {
 		return &invoke.Direction{More: uint32(len(peeked) + 16)}
-	}, proxy.Config{Decide: 150 * time.Millisecond})
+	}, Config{Decide: 150 * time.Millisecond})
 
 	c, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(int(sock.Port))))
 	require.NoError(t, err)
@@ -194,7 +193,7 @@ func TestARouterIsAskedOnceMoreWhenTheClientIsDone(t *testing.T) {
 			return &invoke.Direction{More: 64}
 		}
 		return &invoke.Direction{To: &invoke.Endpoint{Kind: "service", Name: "db", Port: "pg"}}
-	}, proxy.Config{})
+	}, Config{})
 
 	require.Equal(t, "pong:hi", says(t, sock, "hi"))
 
@@ -208,7 +207,7 @@ func TestARouterCanNameANamespace(t *testing.T) {
 		return &invoke.Direction{To: &invoke.Endpoint{
 			Kind: "service", Namespace: "/local", Name: "db", Port: "pg",
 		}}
-	}, proxy.Config{})
+	}, Config{})
 
 	says(t, sock, "hello")
 
@@ -223,10 +222,10 @@ func TestARouterRoutedProxyThatNamesNoRouterIsRefused(t *testing.T) {
 
 	said := &warnings{}
 	w := &workers{}
-	s, err := proxy.New(proxy.Config{CloudFqdn: "tau.example.io"},
-		proxy.WithProjects(projects{p: compiled(t, res)}),
-		proxy.WithWorkers(w),
-		proxy.WithWarn(said.add),
+	s, err := build(Config{CloudFqdn: "tau.example.io"},
+		withProjects(projects{p: compiled(t, res)}),
+		withWorkers(w),
+		withWarn(said.add),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })

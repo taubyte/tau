@@ -1,4 +1,4 @@
-package proxy_test
+package proxy
 
 import (
 	"context"
@@ -18,7 +18,6 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
-	"github.com/taubyte/tau/services/proxy"
 )
 
 // Every test carries real bytes over real sockets.
@@ -193,10 +192,10 @@ func serve(t *testing.T, p *specs.Project, w *workers) (net.Listener, *warnings)
 	t.Helper()
 
 	said := &warnings{}
-	s, err := proxy.New(proxy.Config{},
-		proxy.WithProjects(projects{p: p}),
-		proxy.WithWorkers(w),
-		proxy.WithWarn(said.add),
+	s, err := build(Config{},
+		withProjects(projects{p: p}),
+		withWorkers(w),
+		withWarn(said.add),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
@@ -204,7 +203,7 @@ func serve(t *testing.T, p *specs.Project, w *workers) (net.Listener, *warnings)
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
-	require.NoError(t, s.Accept(t.Context(), l, proxy.Bind{
+	require.NoError(t, s.Accept(t.Context(), l, Bind{
 		Project: "shop", Environment: "prod", Name: "pgwire",
 	}))
 	return l, said
@@ -284,15 +283,15 @@ func TestAnUnreachableWorkloadClosesTheConnection(t *testing.T) {
 }
 
 func TestCloseStopsAcceptingNewConnections(t *testing.T) {
-	s, err := proxy.New(proxy.Config{},
-		proxy.WithProjects(projects{p: compiled(t, servable())}),
-		proxy.WithWorkers(&workers{}),
+	s, err := build(Config{},
+		withProjects(projects{p: compiled(t, servable())}),
+		withWorkers(&workers{}),
 	)
 	require.NoError(t, err)
 
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	require.NoError(t, s.Accept(t.Context(), l, proxy.Bind{Project: "shop", Environment: "prod", Name: "pgwire"}))
+	require.NoError(t, s.Accept(t.Context(), l, Bind{Project: "shop", Environment: "prod", Name: "pgwire"}))
 
 	addr := l.Addr().String()
 	require.NoError(t, s.Close())
@@ -302,24 +301,24 @@ func TestCloseStopsAcceptingNewConnections(t *testing.T) {
 }
 
 func TestAProxyWithNoWorkersIsRefusedAtConstruction(t *testing.T) {
-	_, err := proxy.New(proxy.Config{}, proxy.WithProjects(projects{}))
-	require.ErrorIs(t, err, proxy.ErrNoWorkers)
+	_, err := build(Config{}, withProjects(projects{}))
+	require.ErrorIs(t, err, ErrNoWorkers)
 }
 
 func TestAProxyWithNoRegisterIsRefusedAtConstruction(t *testing.T) {
-	_, err := proxy.New(proxy.Config{}, proxy.WithWorkers(&workers{}))
-	require.ErrorIs(t, err, proxy.ErrNoProjects)
+	_, err := build(Config{}, withWorkers(&workers{}))
+	require.ErrorIs(t, err, ErrNoProjects)
 }
 
-// service is a proxy that binds its own sockets, the way a node runs it.
-func service(t *testing.T, cfg proxy.Config, res map[string]any, w *workers) (*proxy.Service, *warnings) {
+// served is a proxy that binds its own sockets, the way a node runs it.
+func served(t *testing.T, cfg Config, res map[string]any, w *workers) (*Service, *warnings) {
 	t.Helper()
 
 	said := &warnings{}
-	s, err := proxy.New(cfg,
-		proxy.WithProjects(projects{p: compiled(t, res)}),
-		proxy.WithWorkers(w),
-		proxy.WithWarn(said.add),
+	s, err := build(cfg,
+		withProjects(projects{p: compiled(t, res)}),
+		withWorkers(w),
+		withWarn(said.add),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
@@ -327,9 +326,9 @@ func service(t *testing.T, cfg proxy.Config, res map[string]any, w *workers) (*p
 }
 
 func TestServeBindsEveryAddressOnAnAllocatedPort(t *testing.T) {
-	s, _ := service(t, proxy.Config{CloudFqdn: "tau.example.io"}, servable(), &workers{said: "pong:"})
+	s, _ := served(t, Config{CloudFqdn: "tau.example.io"}, servable(), &workers{said: "pong:"})
 
-	sock, err := s.Serve(t.Context(), proxy.Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
+	sock, err := s.Serve(t.Context(), Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
 	require.NoError(t, err)
 
 	require.NotZero(t, sock.Port, "the kernel allocated one")
@@ -339,16 +338,16 @@ func TestServeBindsEveryAddressOnAnAllocatedPort(t *testing.T) {
 		"a generated name is completed by the cloud's own zone, got %q", sock.Host)
 	require.True(t, strings.HasPrefix(sock.Host, "db."), "and keeps the label the author chose, got %q", sock.Host)
 
-	require.Equal(t, []proxy.Socket{sock}, s.Serving(), "and that is what this node reports")
+	require.Equal(t, []Socket{sock}, s.Serving(), "and that is what this node reports")
 }
 
 func TestAProxyAnswersOnV4AndV6(t *testing.T) {
 	for _, dial := range []string{"127.0.0.1", "::1"} {
 		t.Run(dial, func(t *testing.T) {
 			w := &workers{said: "pong:"}
-			s, _ := service(t, proxy.Config{CloudFqdn: "tau.example.io"}, servable(), w)
+			s, _ := served(t, Config{CloudFqdn: "tau.example.io"}, servable(), w)
 
-			sock, err := s.Serve(t.Context(), proxy.Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
+			sock, err := s.Serve(t.Context(), Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
 			require.NoError(t, err)
 
 			c, err := net.Dial("tcp", net.JoinHostPort(dial, strconv.Itoa(int(sock.Port))))
@@ -370,9 +369,9 @@ func TestAProxyAnswersOnV4AndV6(t *testing.T) {
 }
 
 func TestAGeneratedNameWithNoCloudZoneIsReportedNowhere(t *testing.T) {
-	s, said := service(t, proxy.Config{}, servable(), &workers{})
+	s, said := served(t, Config{}, servable(), &workers{})
 
-	sock, err := s.Serve(t.Context(), proxy.Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
+	sock, err := s.Serve(t.Context(), Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
 	require.NoError(t, err)
 	require.NotZero(t, sock.Port)
 	require.Empty(t, sock.Host)
@@ -386,9 +385,9 @@ func TestADeclaredZoneIsCompleteOnItsOwn(t *testing.T) {
 		"kind": "zone", "name": "db",
 		"zone": map[string]any{"in": map[string]any{"name": zoneID}},
 	}
-	s, _ := service(t, proxy.Config{}, res, &workers{})
+	s, _ := served(t, Config{}, res, &workers{})
 
-	sock, err := s.Serve(t.Context(), proxy.Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
+	sock, err := s.Serve(t.Context(), Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
 	require.NoError(t, err)
 	require.Equal(t, "db.shop.example.com", sock.Host)
 }
@@ -396,30 +395,30 @@ func TestADeclaredZoneIsCompleteOnItsOwn(t *testing.T) {
 func TestServeRefusesBeforeItBinds(t *testing.T) {
 	res := servable()
 	res["tls"] = map[string]any{"mode": "terminate"}
-	s, _ := service(t, proxy.Config{CloudFqdn: "tau.example.io"}, res, &workers{})
+	s, _ := served(t, Config{CloudFqdn: "tau.example.io"}, res, &workers{})
 
-	_, err := s.Serve(t.Context(), proxy.Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
-	require.ErrorIs(t, err, proxy.ErrUnservable)
+	_, err := s.Serve(t.Context(), Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
+	require.ErrorIs(t, err, ErrUnservable)
 	require.Empty(t, s.Serving(), "and nothing is published")
 }
 
 func TestTheSrvLabelsFallBackToTheVocabularysDefaults(t *testing.T) {
 	res := servable()
 	delete(res, "service")
-	s, _ := service(t, proxy.Config{CloudFqdn: "tau.example.io"}, res, &workers{})
+	s, _ := served(t, Config{CloudFqdn: "tau.example.io"}, res, &workers{})
 
-	sock, err := s.Serve(t.Context(), proxy.Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
+	sock, err := s.Serve(t.Context(), Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
 	require.NoError(t, err)
 	require.Equal(t, "pgwire", sock.Protocol, "the resource's own name, not the name it was looked up by")
-	require.Equal(t, proxy.Transport, sock.Transport, "which the kind states, because no resource does")
+	require.Equal(t, Transport, sock.Transport, "which the kind states, because no resource does")
 }
 
 func TestAProxyThatDeclaresNoHostPublishesNothing(t *testing.T) {
 	res := servable()
 	delete(res, "host")
-	s, said := service(t, proxy.Config{CloudFqdn: "tau.example.io"}, res, &workers{})
+	s, said := served(t, Config{CloudFqdn: "tau.example.io"}, res, &workers{})
 
-	sock, err := s.Serve(t.Context(), proxy.Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
+	sock, err := s.Serve(t.Context(), Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
 	require.NoError(t, err)
 	require.NotZero(t, sock.Port)
 	require.Empty(t, sock.Host)
@@ -428,14 +427,14 @@ func TestAProxyThatDeclaresNoHostPublishesNothing(t *testing.T) {
 }
 
 func TestServeFailsWhenTheProjectCannotBeRead(t *testing.T) {
-	s, err := proxy.New(proxy.Config{},
-		proxy.WithProjects(projects{p: compiled(t, servable())}),
-		proxy.WithWorkers(&workers{}),
+	s, err := build(Config{},
+		withProjects(projects{p: compiled(t, servable())}),
+		withWorkers(&workers{}),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 
-	_, err = s.Serve(t.Context(), proxy.Bind{Project: "shop", Environment: "prod", Name: "nosuch"})
+	_, err = s.Serve(t.Context(), Bind{Project: "shop", Environment: "prod", Name: "nosuch"})
 	require.Error(t, err)
 	require.Empty(t, s.Serving())
 }
@@ -445,10 +444,10 @@ func TestAProxyThatForwardsToNothingClosesTheConnection(t *testing.T) {
 }
 
 func TestServeAfterCloseBindsNothing(t *testing.T) {
-	s, _ := service(t, proxy.Config{CloudFqdn: "tau.example.io"}, servable(), &workers{})
+	s, _ := served(t, Config{CloudFqdn: "tau.example.io"}, servable(), &workers{})
 	require.NoError(t, s.Close())
 
-	sock, err := s.Serve(t.Context(), proxy.Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
+	sock, err := s.Serve(t.Context(), Bind{Project: "shop", Environment: "prod", Name: "pgwire"})
 	require.Error(t, err)
 
 	_, dialErr := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(int(sock.Port))), time.Second)
