@@ -158,7 +158,7 @@ func TestANodeWithNoRegisterSaysSo(t *testing.T) {
 }
 
 func TestANodeThatFindsNoRegister(t *testing.T) {
-	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Worker}}), WithRuntimes(&tier{name: "wasm"}))
+	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Worker}}))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.NoError(t, n.Start(t.Context()))
@@ -205,24 +205,8 @@ func TestAWholeRequestPathOnOneNode(t *testing.T) {
 	require.NotContains(t, w.Body.String(), "shop", "and it says nothing about the deployment")
 }
 
-func TestTheClockReachesEverything(t *testing.T) {
-	at := time.Unix(1_700_000_000, 0)
-	n, _, _ := makeNode(t, Config{}, WithClock(func() time.Time { return at }))
-	require.NotNil(t, n.Stats())
-	require.NoError(t, n.Start(t.Context()))
-}
-
-func TestWhatTheOptionsRefuse(t *testing.T) {
-	for _, opt := range []Option{
-		WithRuntimes(nil), WithClock(nil),
-	} {
-		_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Stats}}), opt)
-		require.Error(t, err)
-	}
-}
-
 func TestADatabaseThatWillNotOpen(t *testing.T) {
-	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Worker}}), withKVDB(&memFactory{err: errors.New("the disk is full")}), WithRuntimes(&tier{name: "oci"}))
+	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Worker}}), withKVDB(&memFactory{err: errors.New("the disk is full")}))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.ErrorContains(t, n.Start(t.Context()), "disk is full")

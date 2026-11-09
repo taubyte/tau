@@ -21,7 +21,6 @@ import (
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
-	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/services/cm"
 	databaseService "github.com/taubyte/tau/services/database"
 	gateway "github.com/taubyte/tau/services/gateway"
@@ -151,8 +150,6 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 	n.provide("", configured{n})
 	// Every service name a node of this cloud can run.
 	n.provide("", catalog{n})
-	// The tiers whoever composed the node handed its worker.
-	n.provide("", tiers(o.runtimes))
 	// Closed last: every service closes the databases it opened before them.
 	n.closers = append(n.closers, n.dbs)
 	// The bus, when the node gossips.
@@ -184,11 +181,6 @@ type configured struct{ n *Instance }
 func (c configured) Report(snap *statsService.Snapshot) {
 	snap.Serving = append(snap.Serving, c.n.cfg.Services...)
 }
-
-// tiers is the compute tiers whoever composed this node gave it.
-type tiers []invoke.Runtime
-
-func (t tiers) Runtimes() []invoke.Runtime { return t }
 
 // bus is the node's bus as the worker takes it.
 type bus struct{ b *stream.Bus }

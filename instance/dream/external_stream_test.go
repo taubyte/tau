@@ -12,7 +12,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	nodeDream "github.com/taubyte/tau/instance/dream"
 	"github.com/taubyte/tau/pkg/containers/backends/docker"
 	"github.com/taubyte/tau/pkg/containers/core"
 )
@@ -24,7 +23,6 @@ import (
 const redpandaImage = "redpandadata/redpanda:v24.2.4"
 
 func TestAnExternalKafkaStreamIsDeliveredByItsConsumer(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 	kafkaPort, adminPort := freePort(t), freePort(t)
 	startRedpanda(t, kafkaPort, adminPort)
 	streamOnLog(t, "with/stream/kafka", "kafkacreds", "127.0.0.1:9092", fmt.Sprintf("127.0.0.1:%d", kafkaPort))

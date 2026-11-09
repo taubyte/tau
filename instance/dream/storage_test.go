@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-
-	nodeDream "github.com/taubyte/tau/instance/dream"
 )
 
 // An object written by a guest on one node and read by a guest on another. The name
@@ -18,8 +16,6 @@ import (
 // either does not cross.
 
 func TestAnObjectCrossesTheSwarm(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	cloud := deployFleet(t, 2, "with/storage/object", "receipts.example.com", cacherWASM(t))
 	first, second := cloud[0], cloud[1]
 

@@ -427,8 +427,6 @@ func handlerWASM(t testing.TB) []byte {
 }
 
 func TestTheSmallestProjectAnswers(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	r := deploy(t, "with/function/wasm", "hello.example.com", handlerWASM(t))
 
 	got := r.ask(t, http.MethodGet, "/")
@@ -441,8 +439,6 @@ func TestTheSmallestProjectAnswers(t *testing.T) {
 }
 
 func TestAFunctionThatNamesAComponentRunsItsArtifact(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	r := deploy(t, "with/component", "shared.example.com", handlerWASM(t))
 
 	got := r.ask(t, http.MethodGet, "/")
@@ -458,8 +454,6 @@ func kitchenSinkWASM(t *testing.T) []byte {
 }
 
 func TestAProjectWithAKvDatabaseKeepsSomething(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	r := deploy(t, "with/database/distributed/kv/crdt", "keep.example.com", kitchenSinkWASM(t))
 
 	// A write is 204 and a refusal 403, so the status names the arm that answered.
@@ -478,8 +472,6 @@ func TestAProjectWithAKvDatabaseKeepsSomething(t *testing.T) {
 }
 
 func TestALedgerAnswersEveryNodeWithWhatItsLeaderCommitted(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	cloud := deployFleet(t, 4, "with/database/distributed/kv/raft", "ledger.example.com", kitchenSinkWASM(t))
 
 	// The first write is retried: raft.New waits for peers before bootstrapping, so
@@ -558,8 +550,6 @@ func keeper(project string) specs.Address {
 }
 
 func TestAKvDatabaseAnswersFromANodeThatNeverTookTheWrite(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	cloud := deployFleet(t, 3, "with/database/distributed/kv/crdt", "keep.example.com", kitchenSinkWASM(t))
 
 	// A CRDT write is 204 on the first try: no group to form.
@@ -613,8 +603,6 @@ func TestAKvDatabaseAnswersFromANodeThatNeverTookTheWrite(t *testing.T) {
 }
 
 func TestTwoProjectsNamingTheirKvTheSameThingNeverSeeEachOthersWrites(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	u := deployFleetOf(t, 3, kitchenSinkWASM(t), nil,
 		deployed{name: "with/database/distributed/kv/crdt", host: "keep.example.com"},
 		deployed{name: "with/database/distributed/kv/crdt-b", host: "keepb.example.org"})
@@ -719,8 +707,6 @@ func TestTwoProjectsNamingTheirKvTheSameThingNeverSeeEachOthersWrites(t *testing
 }
 
 func TestTwoProjectsNamingTheirLedgerTheSameThingAreTwoGroups(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	u := deployFleetOf(t, 3, kitchenSinkWASM(t), nil,
 		deployed{name: "with/database/distributed/kv/raft", host: "ledger.example.com"},
 		deployed{name: "with/database/distributed/kv/raft-b", host: "ledgerb.example.org"})

@@ -42,8 +42,6 @@ func pickerWASM(t *testing.T) []byte {
 }
 
 func TestAGatewayRoutedByAFunctionRunsRealComponents(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Services: []string{instance.Register, instance.Worker, instance.Stats, instance.Gateway, storageService.Descriptor.Name, instance.PLM, instance.Builder, instance.Auth},
 	})

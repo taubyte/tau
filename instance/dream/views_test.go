@@ -68,8 +68,6 @@ func viewHeld(t *testing.T, r *running, region string) (map[string]bool, uint64)
 }
 
 func TestEachRegionServesItsOwnView(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	r1, _ := inRegion(t, "region-1", "with/views")
 	held, _ := viewHeld(t, r1, "region-1")
 	require.Equal(t, map[string]bool{"function/hello": true, "package/hello_code": true, "gateway/regional": true, "zone/example_com": true, "cache/sessions": true}, held)

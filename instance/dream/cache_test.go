@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-
-	nodeDream "github.com/taubyte/tau/instance/dream"
 )
 
 // A real component reaching real replicated state across real nodes: the label an
@@ -36,9 +34,6 @@ const (
 )
 
 func TestARealComponentReachesARealCache(t *testing.T) {
-	// No injected tier: the nodes build their own.
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	r := deploy(t, "with/cache/crdt", "sessions.example.com", cacherWASM(t))
 
 	// The grant survived compile, publish and resolve. No retry: a crdt cache opens no
@@ -81,8 +76,6 @@ func TestARealComponentReachesARealCache(t *testing.T) {
 }
 
 func TestACacheReplicatesBetweenNodes(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	cloud := deployFleet(t, 2, "with/cache/crdt", "sessions.example.com", cacherWASM(t))
 	first, second := cloud[0], cloud[1]
 

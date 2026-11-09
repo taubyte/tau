@@ -7,8 +7,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	nodeDream "github.com/taubyte/tau/instance/dream"
 )
 
 // A channel is the one path where a workload reaches another workload: a guest's
@@ -17,10 +15,6 @@ import (
 // end. projects/with/channel is compiled.
 
 func TestAGuestDialsAChannelAndASecondGuestAnswers(t *testing.T) {
-	// NO INJECTED TIER, for the reason the cache test gives: an injected one
-	// would be this test's runtime answering this test's dialer.
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	r := deploy(t, "with/channel/function", "reserve.example.com", cacherWASM(t))
 
 	// The grant carries the resolved server, asked of the compiled project (idOf).

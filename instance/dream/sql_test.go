@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-
-	nodeDream "github.com/taubyte/tau/instance/dream"
 )
 
 // projects/with/database/distributed/sql/crdt on a fleet: tau's own engine, one file
@@ -19,8 +17,6 @@ import (
 // only a workload's statement creates the table.
 
 func TestASQLDatabaseAnswersFromANodeThatNeverTookTheWrite(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	cloud := deployFleet(t, 3, "with/database/distributed/sql/crdt", "ledger.example.com", kitchenSinkWASM(t))
 	ctx := t.Context()
 

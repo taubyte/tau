@@ -24,8 +24,6 @@ import (
 // The function served before the push has a warm instance, and the next request must
 // still be answered by the code just built.
 func TestACodePushIsWhatTheNextRequestRuns(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Services: []string{
 			instance.Register, instance.Worker, instance.Stats, instance.Gateway, instance.Database, instance.Primitives,

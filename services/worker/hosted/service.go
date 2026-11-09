@@ -51,12 +51,6 @@ var logger = logging.Logger("tau.worker")
 // Name is what a node's config runs the worker under.
 var Name = worker.Descriptor.Name
 
-// Tiers is the compute tiers whoever composed a node gave it: a tier is a live
-// object, a property of the machine, and no section can declare one.
-type Tiers interface {
-	Runtimes() []invoke.Runtime
-}
-
 // Bus is the node's one bus: a workload's publish and a browser's attach reach the
 // same topic, and a second join of it in one process would be a second mesh.
 type Bus interface {
@@ -75,9 +69,9 @@ type Service struct {
 	disk    databaseService.Disk
 	groups  raft.Groups
 	engines *database.Registry
-	given   []invoke.Runtime
-	// lookup stands in for plm's records in this package's tests, which run no build;
-	// a node always reads the records (artifacts.go).
+	// given and lookup stand in, in this package's tests, for a tier the section
+	// cannot build and for plm's records, which a node always reads (artifacts.go).
+	given  []invoke.Runtime
 	lookup worker.Artifacts
 
 	store    *storage.Reached
@@ -129,8 +123,8 @@ type hostConfig struct {
 // ErrNoDatabases is a node that shares no databases with what it runs.
 var ErrNoDatabases = errors.New("worker: its node shares no databases")
 
-// Start builds the worker's tiers from its node and starts serving: the databases and
-// consensus groups the node shares, the bus and the tiers it was given, and the
+// Start builds the worker's tiers from its section and starts serving: the databases
+// and consensus groups the node shares, its bus, and the
 // register, storage, secrets, primitives and database services reached through their
 // clients. Then it delivers what its deployments' queues and streams hold, and
 // checkpoints the volumes it mounts, until it closes.
@@ -151,9 +145,6 @@ func (n *Service) Start(ctx context.Context, h service.Host) error {
 		return ErrNoDatabases
 	}
 	n.groups, _ = service.Get[raft.Groups](h)
-	if tiers, ok := service.Get[Tiers](h); ok {
-		n.given = tiers.Runtimes()
-	}
 	if bus, ok := service.Get[Bus](h); ok {
 		n.bus = bus.Bus()
 	}
@@ -220,9 +211,8 @@ func (n *Service) open() error {
 		return err
 	}
 
-	// A DECLARED TIER IS BUILT HERE; an injected one was built by whoever composed the
-	// node. Both end up in the same pool, and a node can have both — a container
-	// backend an operator named and a wasm engine the process already holds.
+	// THE CONTAINER TIER IS THE MACHINE'S DAEMON, built when the node's container
+	// section names one.
 	if n.container.Any() {
 		disks, err := n.disksOrNil()
 		if err != nil {

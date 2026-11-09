@@ -8,8 +8,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-
-	nodeDream "github.com/taubyte/tau/instance/dream"
 )
 
 // Background work end to end, nothing faked: a guest pushes an item, the platform
@@ -23,8 +21,6 @@ type lastOf struct{ s *string }
 func (l *lastOf) String() string { return *l.s }
 
 func TestAnItemSentByAGuestIsDeliveredToOne(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	r := deploy(t, "with/sync/queue", "jobs.example.com", cacherWASM(t))
 
 	// The guest is the producer. Retried, since queue consensus forms in the background

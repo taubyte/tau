@@ -105,15 +105,7 @@ func (a *added) Root() string               { return a.node.cfg.Root }
 func (a *added) Running() []service.Running { return a.node.runningNow() }
 func (a *added) Cloud() string              { return a.node.cfg.Cloud }
 func (a *added) Region() string             { return a.node.cfg.Region }
-func (a *added) Now() time.Time             { return a.node.clock() }
-
-// clock is this node's, so a test that moves time moves everything on it.
-func (n *Instance) clock() time.Time {
-	if n.opts.now != nil {
-		return n.opts.now()
-	}
-	return time.Now()
-}
+func (a *added) Now() time.Time             { return time.Now() }
 
 // HostOf is this instance as the service named sees it: its peer, its finder, the
 // services running beside it, and that service's section.

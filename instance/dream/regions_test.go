@@ -12,7 +12,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	nodeDream "github.com/taubyte/tau/instance/dream"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
@@ -88,8 +87,6 @@ func TestNamespacesNestTopologies(t *testing.T) {
 }
 
 func TestARegionRunsWhatItsNamespacesPlaceThere(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	r, _ := inRegionAt(t, "region-3", "with/regions/topologies", "topologies.example.com")
 	held, _ := viewHeld(t, r, "region-3")
 	require.Equal(t, map[string]bool{"function/storefront": true, "package/hello_code": true, "cache/events": true}, held)
@@ -120,8 +117,6 @@ func askHeaders(t *testing.T, r *running, path string, headers ...string) *httpt
 }
 
 func TestAnEdgeKeepsWhatItsOriginAnswered(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	flat := compiledCorpus(t, "with/regions/edge")
 	_, findings, err := schema.Views(flat, schema.WithRegions(schema.Preview("region-1", "region-2")))
 	require.NoError(t, err, "%v", findings)

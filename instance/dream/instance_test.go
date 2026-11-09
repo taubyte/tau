@@ -32,7 +32,6 @@ func instancesAt(t *testing.T) *running {
 }
 
 func TestAnInstanceIsAdmittedByARealFunction(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 	r := instancesAt(t)
 
 	// ONE INSTANCE, ADMITTED AND WRITTEN TO.
@@ -81,7 +80,6 @@ func TestAnInstanceIsAdmittedByARealFunction(t *testing.T) {
 }
 
 func TestTheInstanceLimitHoldsEndToEnd(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 	r := instancesAt(t)
 
 	for _, room := range []string{"one", "two", "three"} {

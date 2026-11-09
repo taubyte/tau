@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/instance"
-	nodeDream "github.com/taubyte/tau/instance/dream"
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
@@ -27,8 +26,6 @@ import (
 // so a read of that key is what proves a message arrived.
 
 func TestAPublishedMessageReachesItsSubscriberAcrossTheSwarm(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	cloud := deployFleet(t, 2, "with/stream/distributed", "orders.example.com", cacherWASM(t))
 	publishing, reading := cloud[0], cloud[1]
 
@@ -74,7 +71,6 @@ func natsServer(t *testing.T) (*natsserver.Server, string) {
 }
 
 func TestANatsStreamIsDeliveredByItsConsumer(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 	_, address := natsServer(t)
 	streamOnLog(t, "with/stream/nats", "natscreds", "127.0.0.1:4222", address)
 }
@@ -178,7 +174,6 @@ func streamPointedAt(t *testing.T, name, declared, address string) string {
 }
 
 func TestStreamsKeepTheirSubscribersApartAcrossNamespaces(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 	server, address := natsServer(t)
 	r := servingLog(t, "with/stream/namespaces", "natscreds", "127.0.0.1:4222", address)
 
@@ -203,7 +198,6 @@ func TestStreamsKeepTheirSubscribersApartAcrossNamespaces(t *testing.T) {
 }
 
 func TestANatsStreamIsSplitBetweenTheNodesHoldingIt(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 	server, address := natsServer(t)
 	cloud := deployFleetServing(t, 2, logServices, cacherWASM(t), nil,
 		deployed{name: streamPointedAt(t, "with/stream/nats", "127.0.0.1:4222", address), host: "orders.example.com"}).fleets[0]

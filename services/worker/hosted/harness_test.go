@@ -144,7 +144,6 @@ func startNode(t *testing.T, cfg Config, opts ...Option) (*node, *memFactory, er
 	if o.groups != nil {
 		h.provide("", o.groups)
 	}
-	h.provide("", given(o.runtimes))
 	if p.Messaging() != nil {
 		b := stream.NewBus(p.Messaging(), h.Cloud())
 		t.Cleanup(func() { b.Close() })
@@ -152,6 +151,7 @@ func startNode(t *testing.T, cfg Config, opts ...Option) (*node, *memFactory, er
 	}
 
 	n := &node{Service: New(), host: h}
+	n.given = o.runtimes
 	if o.built {
 		n.lookup = everythingBuilt{}
 	}
@@ -256,11 +256,6 @@ func roundTrip(from, into any) error {
 	}
 	return yaml.Unmarshal(raw, into)
 }
-
-// given is the tiers the node was given.
-type given []invoke.Runtime
-
-func (g given) Runtimes() []invoke.Runtime { return g }
 
 // nodeBus is the node's bus.
 type nodeBus struct{ b *stream.Bus }

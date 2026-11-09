@@ -6,3 +6,6 @@ execution:
     call: handle
     timeout: 15s
     memory: 32MiB
+sync:
+    fires:
+        ops: [append, read]

@@ -1,0 +1,4 @@
+id: QmNbWUkCjY6xZGSaLo286iSdh5eQrcKofQDPBHHppr3gpL
+description: where the function writes down each fire it is handed - raft, so the order the group decides is the order a reader sees, and a slot fired twice is two records
+log:
+    consensus: raft

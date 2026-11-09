@@ -23,8 +23,6 @@ import (
 // drivers' builtin sources are untouched.
 
 func TestAWorkflowRunsEndToEnd(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Services: []string{instance.Register, instance.Worker, instance.Stats, instance.Primitives, storageService.Descriptor.Name, instance.PLM, instance.Builder, instance.Auth},
 	})

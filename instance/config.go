@@ -4,14 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"time"
 
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/containers"
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/pkg/forge/drivers"
-	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/pkg/tenancy"
 	"github.com/taubyte/tau/services"
@@ -161,37 +159,9 @@ type options struct {
 	opener opener
 	groups raft.Groups
 
-	runtimes []invoke.Runtime
-	// artifacts is what the worker looks a built resource up in, in place of build's
-	// records.
-	now      func() time.Time
 	extra    map[string]service.Service
 	identity func(Host) (auth.Identity, error)
 	resolver cm.Resolver
-}
-
-// WithRuntimes are the compute tiers this node can run. Required with a worker. A tier
-// is a live object, a property of the machine.
-func WithRuntimes(rts ...invoke.Runtime) Option {
-	return func(o *options) error {
-		for _, rt := range rts {
-			if rt == nil {
-				return errors.New("node: a nil runtime")
-			}
-		}
-		o.runtimes = append(o.runtimes, rts...)
-		return nil
-	}
-}
-
-func WithClock(now func() time.Time) Option {
-	return func(o *options) error {
-		if now == nil {
-			return errors.New("node: a nil clock")
-		}
-		o.now = now
-		return nil
-	}
 }
 
 // withDefaults fills and checks the service list. added are the names of the services

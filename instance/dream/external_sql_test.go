@@ -19,7 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/instance"
-	nodeDream "github.com/taubyte/tau/instance/dream"
 	"github.com/taubyte/tau/pkg/containers/backends/docker"
 	"github.com/taubyte/tau/pkg/containers/core"
 )
@@ -126,7 +125,6 @@ func TestAnExternalMySQLIsReachedAsDeclared(t *testing.T) {
 }
 
 func externalSQL(t *testing.T, name string, s server, port int) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 	s.start(t, port)
 
 	r := deployServing(t, pointedAt(t, name, port), "orders.example.com", kitchenSinkWASM(t), nil,

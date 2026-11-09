@@ -8,13 +8,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	nodeDream "github.com/taubyte/tau/instance/dream"
 	"github.com/taubyte/tau/services/worker"
 )
 
 func TestAScheduleCarriesTheFiringBlockItsAuthorWrote(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	r := deploy(t, "with/cron/queue", "nightly.example.com", cacherWASM(t))
 
 	// The node must serve the project first: Schedules only enumerates what a node

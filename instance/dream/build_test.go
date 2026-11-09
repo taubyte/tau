@@ -96,7 +96,6 @@ func TestAPushOfWhatTheMirrorDoesNotHoldFails(t *testing.T) {
 // door, the build records the product live, and the worker reads it from the
 // records to answer the request.
 func TestAnUploadedBuildIsWhatTheFunctionRuns(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 	ctx := t.Context()
 	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{Services: []string{
 		instance.PLM, instance.Builder, instance.Register, instance.Auth, instance.Worker, instance.Stats, instance.Gateway,

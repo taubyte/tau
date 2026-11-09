@@ -13,8 +13,6 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
-
-	nodeDream "github.com/taubyte/tau/instance/dream"
 )
 
 // A browser opens a websocket at a name and receives what a workload publishes,
@@ -26,8 +24,6 @@ import (
 const busFor = "live.example.com"
 
 func TestABrowserAttachesAndAGuestReachesIt(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	cloud := deployFleetWith(t, 2, "with/bus", busFor, cacherWASM(t),
 		map[string][]byte{"doorman": doormanWASM(t)})
 	publishing, edge := cloud[0], cloud[1]
@@ -91,8 +87,6 @@ func doormanWASM(t *testing.T) []byte {
 }
 
 func TestAGuardRefusesAnAttachmentBeforeTheUpgrade(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	r := deployWith(t, "with/bus", busFor, cacherWASM(t),
 		map[string][]byte{"doorman": doormanWASM(t)})
 
@@ -122,8 +116,6 @@ func TestAGuardRefusesAnAttachmentBeforeTheUpgrade(t *testing.T) {
 }
 
 func TestAPlainRequestToABusNameIsToldToUpgrade(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	r := deployWith(t, "with/bus", busFor, cacherWASM(t),
 		map[string][]byte{"doorman": doormanWASM(t)})
 

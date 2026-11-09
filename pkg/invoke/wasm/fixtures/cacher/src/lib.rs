@@ -270,6 +270,25 @@ impl Guest for Component {
             return reply(200, answer);
         }
 
+        // A CRON'S FIRE IS A HANDLER CALL TOO, and its path is always "/". It is
+        // appended to the log called `fires`, as the method and what the fire says
+        // it is, so a test reads back which schedule fired, how, and for which
+        // slot, from a record the guest wrote.
+        if let Some(cron) = header(&req, "x-taubyte-cron") {
+            let record = format!(
+                "{} {} {} {} {}",
+                req.method,
+                cron,
+                header(&req, "x-taubyte-cron-id").unwrap_or_default(),
+                header(&req, "x-taubyte-cron-path").unwrap_or_default(),
+                header(&req, "x-taubyte-fired-at").unwrap_or_default(),
+            );
+            return match logrecords::append("fires", record.as_bytes()) {
+                Ok(cursor) => reply(200, cursor.into_bytes()),
+                Err(e) => reply(403, why_log(&e).into_bytes()),
+            };
+        }
+
         if let Some(instance) = header(&req, "x-taubyte-instance") {
             return if instance == "denied" {
                 reply(403, b"refused".to_vec())

@@ -12,7 +12,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	nodeDream "github.com/taubyte/tau/instance/dream"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/specs"
 )
@@ -63,8 +62,6 @@ func (r *running) onLimited(ctx context.Context, at specs.Address, path string, 
 }
 
 func TestRecordsReadBackInTheOrderTheyWereAppended(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	r := deploy(t, "with/sync/log", "audit.example.com", cacherWASM(t))
 
 	// The log's clock is the log's: a record's `at` must be at or after this.
@@ -172,8 +169,6 @@ func TestRecordsReadBackInTheOrderTheyWereAppended(t *testing.T) {
 }
 
 func TestARecordAppendedOnOneNodeIsReadOnAnother(t *testing.T) {
-	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
-
 	cloud := deployFleet(t, 2, "with/sync/log", "audit.example.com", cacherWASM(t))
 
 	// A loop rather than require.Eventually, since the result (which node took the

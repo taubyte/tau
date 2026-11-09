@@ -2,7 +2,6 @@ package instance
 
 import (
 	"context"
-	"errors"
 	"maps"
 	"strings"
 	"sync"
@@ -22,7 +21,6 @@ import (
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/rpc"
-	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 	dnsService "github.com/taubyte/tau/services/dns"
 )
@@ -203,22 +201,6 @@ func (k *memKV) Close() {
 	k.factory.mu.Unlock()
 }
 
-// tier records what it was asked to start. Starting a real container needs a
-// daemon, and what a composition proves is that the pool was built and handed
-// over — not what a tier does with a spec.
-type tier struct {
-	name string
-
-	mu      sync.Mutex
-	started []invoke.Spec
-}
-
-func (t *tier) Name() string { return t.name }
-
-func (t *tier) Start(context.Context, invoke.Spec) (invoke.Instance, error) {
-	return nil, errors.New("tier: nothing is started in this test")
-}
-
 // opensDatabases is what a test's database double does.
 type opensDatabases interface {
 	New(logger log.StandardLogger, path string, rebroadcastIntervalSec int) (kvdb.Instance, error)
@@ -354,7 +336,7 @@ func makeNode(t *testing.T, cfg Config, extra ...Option) (*Instance, host.Host, 
 	t.Helper()
 	p := mockPeer(t)
 	factory := &memFactory{}
-	opts := append([]Option{withKVDB(factory), mockRaft(), WithRuntimes(&tier{name: "oci"})}, extra...)
+	opts := append([]Option{withKVDB(factory), mockRaft()}, extra...)
 	n, err := New(p, rooted(t, cfg), opts...)
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"time"
 
 	pkgcache "github.com/taubyte/tau/pkg/cache"
 	"github.com/taubyte/tau/services/cm"
@@ -47,9 +48,6 @@ func (n *Instance) certificates() (*cm.Client, error) {
 	cfg := n.cfg.CM
 	cfg.Certificate.Zone = n.cfg.CloudFqdn
 	options := []cm.ClientOption{cm.WithLogger(logger.Warnf)}
-	if n.opts.now != nil {
-		options = append(options, cm.WithClientClock(n.opts.now))
-	}
 	local, err := n.answers()
 	if err != nil {
 		return nil, err
@@ -129,7 +127,7 @@ func (n *Instance) answers() (*cm.Challenges, error) {
 	n.sharedMu.Lock()
 	defer n.sharedMu.Unlock()
 	if n.challengeAnswers == nil {
-		if n.challengeAnswers, err = cm.ChallengesIn(context.Background(), st, n.clock); err != nil {
+		if n.challengeAnswers, err = cm.ChallengesIn(context.Background(), st, time.Now); err != nil {
 			return nil, err
 		}
 	}

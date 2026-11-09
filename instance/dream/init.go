@@ -33,48 +33,8 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/sectls"
 	"github.com/taubyte/tau/pkg/certificate/acme"
-	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 )
-
-type tierList struct {
-	sync.Mutex
-	list []invoke.Runtime
-}
-
-// runtimes are the tiers nodes in this process run on, process-wide since a tier is
-// a live object every node shares.
-var runtimes tierList
-
-// Runtimes sets the tiers, and returns what it replaced so a test can put it
-// back.
-func Runtimes(rts ...invoke.Runtime) []invoke.Runtime {
-	runtimes.Lock()
-	defer runtimes.Unlock()
-	was := runtimes.list
-	runtimes.list = rts
-	return was
-}
-
-type processClock struct {
-	sync.Mutex
-	now func() time.Time
-}
-
-// clock is what nodes in this process believe the time is, process-wide like
-// runtimes; nil is the wall clock. It lets tests advance scheduled work rather than
-// wait for it.
-var clock processClock
-
-// Clock sets what nodes in this process believe the time is, and returns what it
-// replaced so a test can put it back. A nil clock is the wall clock.
-func Clock(now func() time.Time) func() time.Time {
-	clock.Lock()
-	defer clock.Unlock()
-	was := clock.now
-	clock.now = now
-	return was
-}
 
 type builtNodes struct {
 	sync.Mutex
@@ -282,19 +242,6 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	ctx := m.Context()
 	h := p.Host()
 
-	runtimes.Lock()
-	tiers := append([]invoke.Runtime(nil), runtimes.list...)
-	runtimes.Unlock()
-
-	clock.Lock()
-	now := clock.now
-	clock.Unlock()
-
-	if len(tiers) == 0 {
-		// A cloud with no compute backend still composes; the tier is where it stops.
-		tiers = []invoke.Runtime{absent{}}
-	}
-
 	// A DIRECTORY PER PEER, so two nodes in one cloud do not share a volume
 	// by accident — which would make a test of "the bytes moved" pass without
 	// anything moving.
@@ -335,12 +282,6 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	nodeConfig.Root = root
 	nodeConfig.Raft = raft.Timing{Timeouts: dreamTimeouts, BootstrapTimeout: dreamBootstrapTimeout}
 
-	options := []instance.Option{instance.WithRuntimes(tiers...)}
-	if now != nil {
-		options = append(options, instance.WithClock(now))
-	}
-	options = append(options, cfg.Options...)
-
 	bundle := &secretsv2.InitBundle{Secrets: cfg.Secrets}
 	if nodeConfig.CM.Certificate.ACME.Enabled {
 		bundle.Secrets = append(account, cfg.Secrets...)
@@ -358,7 +299,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		}
 	}
 
-	n, err := instance.New(p, nodeConfig, options...)
+	n, err := instance.New(p, nodeConfig, cfg.Options...)
 	if err != nil {
 		os.RemoveAll(root)
 		return err
@@ -399,15 +340,4 @@ func (c closer) Close() error {
 		os.RemoveAll(c.root)
 	}
 	return err
-}
-
-// absent exists only so a pool can be built at all. Its name matches no tier in
-// the vocabulary, so it is never selected and the pool answers ErrNoRuntime
-// naming the tier the config actually asked for.
-type absent struct{}
-
-func (absent) Name() string { return "none" }
-
-func (absent) Start(context.Context, invoke.Spec) (invoke.Instance, error) {
-	return nil, invoke.ErrNoRuntime
 }

@@ -60,7 +60,7 @@ func fleet(t *testing.T, configs ...Config) []*Instance {
 	for i, cfg := range configs {
 		cfg = loopbackDNS(cfg)
 
-		n, err := New(peers[i], rootedIn(t, cfg, t.TempDir()), withKVDB(&memFactory{}), WithRuntimes(&tier{name: "oci"}), withRaft(mockGroups{}))
+		n, err := New(peers[i], rootedIn(t, cfg, t.TempDir()), withKVDB(&memFactory{}), withRaft(mockGroups{}))
 		require.NoError(t, err)
 		t.Cleanup(func() { n.Close() })
 
