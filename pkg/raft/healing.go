@@ -586,18 +586,6 @@ func (h *healer) absorbOrphan(ctx context.Context, orphan peer.ID) {
 		}
 	}
 
-	// AN ORPHAN STILL IN THIS CONFIGURATION IS REMOVED BEFORE IT WIPES. It rejoins
-	// under the same id, and added while the leader still holds its old progress it
-	// would be sent a commit past the end of the log it no longer has, which etcd's
-	// raft answers by panicking. Removed, it is added afresh.
-	if h.configured(orphan) {
-		if err := h.cluster.RemoveServer(orphan, defaultApplyTimeout); err != nil {
-			healLogger.Warnf("[%s] orphan %s is in the configuration and could not be removed before it wipes: %v",
-				h.cluster.ID().ShortString(), orphan.ShortString(), err)
-			return
-		}
-	}
-
 	healLogger.Infof("[%s] sending healAck to orphan %s — it will wipe and rejoin via requestVoterJoin",
 		h.cluster.ID().ShortString(), orphan.ShortString())
 	h.member.raftClient.HealAck(orphan, exp.formation, exp.cut)

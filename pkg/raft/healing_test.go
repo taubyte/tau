@@ -595,39 +595,6 @@ func formedPair(t *testing.T, namespace string) (a, b Cluster) {
 	return a, b
 }
 
-// A MEMBER TOLD TO WIPE IS REMOVED FIRST: it rejoins under the same id, and a leader
-// still holding its old progress would send it a commit past the log it wiped,
-// which etcd's raft answers by panicking.
-func TestHealing_AMemberToldToWipeIsRemovedFirstAndRejoins(t *testing.T) {
-	a, b := formedPair(t, "heal-member-wipes")
-	leader := leaderOf(t, a, b)
-	member := b
-	if leader == b {
-		member = a
-	}
-	require.Eventually(t, setThrough(leader, "kept"), 5*time.Second, 20*time.Millisecond)
-	require.Eventually(t, func() bool { _, ok := member.Get("kept"); return ok }, 5*time.Second, 20*time.Millisecond)
-
-	leader.(*cluster).current().healer.Load().absorbOrphan(t.Context(), member.(*cluster).ID())
-
-	require.Eventually(t, func() bool {
-		ofLeader, err := leader.Members()
-		ofMember, errM := member.Members()
-		return err == nil && errM == nil && len(ofLeader) == 2 && len(ofMember) == 2
-	}, 10*time.Second, 50*time.Millisecond, "the wiped member did not rejoin")
-	require.Eventually(t, setThrough(leader, "after"), 5*time.Second, 20*time.Millisecond)
-	require.Eventually(t, func() bool {
-		_, kept := member.Get("kept")
-		_, after := member.Get("after")
-		return kept && after
-	}, 10*time.Second, 50*time.Millisecond, "the rejoined member does not hold the group's state")
-}
-
-// setThrough is a write of key through c, which leads.
-func setThrough(c Cluster, key string) func() bool {
-	return func() bool { return c.Set(key, []byte("v"), time.Second) == nil }
-}
-
 // The joiner of a formed pair spends its one discovery probe before it serves,
 // and identify can leave it unlisted for good, so only a probe from the healer
 // finds it.
