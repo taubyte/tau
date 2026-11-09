@@ -254,15 +254,20 @@ func (f *Function) processRequest(reqCh *instanceRequest) {
 		return
 	}
 
+	// Refuse now: the slot may only free up in another function, and waiting
+	// here would stall this function's whole request queue.
+	if platformerr.CodeOf(err) == platformerr.OverQuota {
+		reqCh.err = err
+		reqCh.give(nil)
+		return
+	}
+
 	logger.Errorf("creating new instance failed with: %s", err.Error())
 	// we reached some sort of limit
 	// wait for an instance to be available
 	select {
 	case <-reqCh.ctx.Done():
 		reqCh.err = fmt.Errorf("instance request context done with: %w", reqCh.ctx.Err())
-		if platformerr.CodeOf(err) == platformerr.OverQuota {
-			reqCh.err = platformerr.New(platformerr.OverQuota, reqCh.err)
-		}
 		reqCh.give(nil)
 	case pooled := <-f.availableInstances:
 		if err := hold(pooled); err != nil {
