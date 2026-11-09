@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
@@ -33,11 +34,21 @@ func (*node) Root() string                 { return "" }
 func (*node) Cloud() string                { return "gateway-test" }
 func (*node) Region() string               { return "" }
 func (*node) Now() time.Time               { return time.Unix(1_700_000_000, 0) }
+
+// Config is the gateway's section as the test sets it, decoded into whatever reads it
+// by yaml as a node decodes it: the gateway, and cm's helpers.
 func (n *node) Config(into any) error {
-	if n.config == nil {
-		return nil
+	var cfg hostConfig
+	if n.config != nil {
+		if err := n.config(&cfg); err != nil {
+			return err
+		}
 	}
-	return n.config(into.(*hostConfig))
+	raw, err := yaml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	return yaml.Unmarshal(raw, into)
 }
 
 func newNode(t *testing.T, running ...any) *node {

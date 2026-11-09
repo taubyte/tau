@@ -8,6 +8,7 @@ import (
 
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
@@ -29,13 +30,22 @@ func (*node) Root() string                 { return "" }
 func (*node) Cloud() string                { return "dns-test" }
 func (*node) Region() string               { return "" }
 func (*node) Now() time.Time               { return time.Now() }
+
+// Config is dns's section as the test sets it, decoded into whatever reads it by yaml
+// as a node decodes it: dns, and cm's helpers reading the cloud's certificates.
 func (n *node) Config(into any) error {
-	cfg := into.(*hostConfig)
+	var cfg hostConfig
 	cfg.Listen = "127.0.0.1:0"
-	if n.config == nil {
-		return nil
+	if n.config != nil {
+		if err := n.config(&cfg); err != nil {
+			return err
+		}
 	}
-	return n.config(cfg)
+	raw, err := yaml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	return yaml.Unmarshal(raw, into)
 }
 
 func newNode(t *testing.T, running ...any) *node {
