@@ -153,6 +153,9 @@ func heldBy(t *testing.T, c *cluster, at Address, content string) (cid.Cid, []st
 	holders, err := blockHolders(root.String(), c.nodes[0].placement(), settings.Defaults().StorageReplicas)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(holders), 3)
+	for _, h := range holders {
+		require.Eventually(t, func() bool { return c.swarm.holdsDurably(peerOf(t, h), root) }, 10*time.Second, 10*time.Millisecond)
+	}
 	return root, holders
 }
 

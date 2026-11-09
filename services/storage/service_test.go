@@ -33,6 +33,8 @@ type swarm struct {
 	durable map[libp2ppeer.ID]map[string]bool
 	down    map[libp2ppeer.ID]bool
 	failing map[libp2ppeer.ID]bool
+	// stalls holds a node's fetches until its channel closes.
+	stalls map[libp2ppeer.ID]chan struct{}
 }
 
 func newSwarm() *swarm {
@@ -41,6 +43,7 @@ func newSwarm() *swarm {
 		durable: map[libp2ppeer.ID]map[string]bool{},
 		down:    map[libp2ppeer.ID]bool{},
 		failing: map[libp2ppeer.ID]bool{},
+		stalls:  map[libp2ppeer.ID]chan struct{}{},
 	}
 }
 
@@ -88,7 +91,17 @@ func (b *nodeBytes) put(c cid.Cid, data []byte) {
 	b.add(c)
 }
 
-func (b *nodeBytes) Fetch(_ context.Context, root cid.Cid, from libp2ppeer.ID) ([]cid.Cid, error) {
+func (b *nodeBytes) Fetch(ctx context.Context, root cid.Cid, from libp2ppeer.ID) ([]cid.Cid, error) {
+	b.swarm.mu.Lock()
+	stall := b.swarm.stalls[b.self]
+	b.swarm.mu.Unlock()
+	if stall != nil {
+		select {
+		case <-stall:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 	b.swarm.mu.Lock()
 	down := b.swarm.down[b.self] || b.swarm.down[from]
 	data, ok := b.swarm.stores[from][root.KeyString()]
@@ -294,22 +307,29 @@ func TestAPutIsHeldByItsHoldersAndReadFromAnyNode(t *testing.T) {
 	holders, err := blockHolders(root.String(), c.nodes[0].placement(), settings.Defaults().StorageReplicas)
 	require.NoError(t, err)
 	require.Len(t, holders, settings.Defaults().StorageReplicas)
+
+	// AS MANY AS THE CLOUD PROMISES HOLD IT DURABLY WHEN THE PUT RETURNS, and the
+	// rest once their asks land.
+	durable := 0
 	for _, h := range holders {
-		id, err := libp2ppeer.Decode(h)
-		require.NoError(t, err)
-		require.True(t, c.swarm.holds(id, root), "%s is a holder and has no copy", h)
-		require.True(t, c.swarm.holdsDurably(id, root), "%s acknowledged a copy a crash can take", h)
-		refs, err := c.node(h).local.ReferencesTo(t.Context(), root)
-		require.NoError(t, err)
-		require.Len(t, refs, 1, "%s holds the bytes with no record of what for", h)
+		if c.swarm.holdsDurably(peerOf(t, h), root) {
+			durable++
+		}
+	}
+	require.GreaterOrEqual(t, durable, settings.Defaults().StorageBarrier, "the put returned before the cloud's promise was kept")
+	for _, h := range holders {
+		require.Eventually(t, func() bool {
+			refs, err := c.node(h).local.ReferencesTo(t.Context(), root)
+			return err == nil && len(refs) == 1 && c.swarm.holdsDurably(peerOf(t, h), root)
+		}, 10*time.Second, 10*time.Millisecond, "%s is a holder and has no durable copy, or no record of what for", h)
 		require.NotEmpty(t, c.node(h).local.store.(*orderedMem).synced, "%s acknowledged rows a crash can take", h)
 	}
 
 	for i := range c.nodes {
-		got, err := c.client(t, i, i).Current(t.Context(), at, "build-1")
-		require.NoError(t, err, "node %d", i)
-		require.Equal(t, v.Record.RootCID, got.Record.RootCID, "node %d", i)
-		require.Equal(t, v.Stamp, got.Stamp, "node %d", i)
+		require.Eventually(t, func() bool {
+			got, err := c.client(t, i, i).Current(t.Context(), at, "build-1")
+			return err == nil && got.Record.RootCID == v.Record.RootCID && got.Stamp == v.Stamp
+		}, 10*time.Second, 10*time.Millisecond, "node %d never read the version written", i)
 	}
 }
 
@@ -329,6 +349,49 @@ func TestAPutTooFewNodesTookIsNoVersion(t *testing.T) {
 	}
 	_, err = c.client(t, 1, 1).Current(t.Context(), at, "build-1")
 	require.ErrorIs(t, err, ErrNotFound, "an unacknowledged write left a version")
+}
+
+// A HOLDER THAT STALLS HOLDS UP NO WRITE: a put returns once as many holders as the
+// cloud promises have it, and the holder still fetching goes on and takes it.
+func TestAHolderThatStallsHoldsUpNoWrite(t *testing.T) {
+	at := assetsOf(t, "site_code")
+	c := newCluster(t, 4, fixedCatalog{at})
+	stall := make(chan struct{})
+	c.swarm.mu.Lock()
+	c.swarm.stalls[c.ids[1]] = stall
+	c.swarm.mu.Unlock()
+	released := false
+	release := func() {
+		if !released {
+			released = true
+			close(stall)
+		}
+	}
+	t.Cleanup(release)
+
+	done := make(chan error, 1)
+	var v Version
+	go func() {
+		var err error
+		v, err = c.client(t, 0, 0).Put(t.Context(), at, "build-1", Object{}, strings.NewReader("one holder stalls"))
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("a put waited on a holder that stalled")
+	}
+
+	root, err := cid.Decode(v.Record.RootCID)
+	require.NoError(t, err)
+	holders, err := blockHolders(root.String(), c.nodes[0].placement(), settings.Defaults().StorageReplicas)
+	require.NoError(t, err)
+	release()
+	if slices.Contains(holders, c.ids[1].String()) {
+		require.Eventually(t, func() bool { return c.swarm.holds(c.ids[1], root) }, 10*time.Second, 20*time.Millisecond,
+			"the holder that stalled never took the write once it could")
+	}
 }
 
 // A NODE THAT CANNOT MAKE ITS COPY DURABLE DOES NOT COUNT IT: the writer promises
@@ -418,6 +481,10 @@ func TestABucketTheCatalogHasNotHeardOfStaysOpenOnceWritten(t *testing.T) {
 	shard, err := shardOf(at.Bucket())
 	require.NoError(t, err)
 	for i, n := range c.nodes {
+		require.Eventually(t, func() bool {
+			seen, err := n.local.Seen(t.Context())
+			return err == nil && slices.Contains(seen, at)
+		}, 10*time.Second, 10*time.Millisecond, "node %d was never written its row", i)
 		require.NoError(t, n.reconcile(t.Context()))
 		require.Equal(t, []uint16{shard}, c.shards[i].held(), "node %d closed a shard it was written", i)
 	}

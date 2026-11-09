@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"sync"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/ipfs/go-cid"
@@ -37,7 +37,7 @@ func (s *server) put(ctx context.Context, a Address, name string, o Object, cont
 	if err != nil {
 		return written{}, fmt.Errorf("storage: storing the bytes here: %w", err)
 	}
-	stamp, err := s.clock.Now()
+	stamp, err := s.stamp(ctx)
 	if err != nil {
 		return written{}, err
 	}
@@ -46,13 +46,14 @@ func (s *server) put(ctx context.Context, a Address, name string, o Object, cont
 	if err != nil {
 		return written{}, err
 	}
-	held := s.acks(ctx, holders, func(ctx context.Context, holder string) error {
+	need := max(1, min(barrier, len(holders)))
+	held := s.acks(ctx, holders, need, func(ctx context.Context, holder string) error {
 		if holder == s.self {
 			return s.keep(ctx, root, blocks, a, name, stamp)
 		}
 		return s.askHold(ctx, holder, root, a, name, stamp)
 	})
-	if need := max(1, min(barrier, len(holders))); held < need {
+	if held < need {
 		return written{}, fmt.Errorf("%w: %d of %d took %s, and the region promises %d", ErrUnderHeld, held, len(holders), root, need)
 	}
 
@@ -79,7 +80,7 @@ func (s *server) remove(ctx context.Context, a Address, name string) (Version, e
 	if err != nil {
 		return Version{}, err
 	}
-	stamp, err := s.clock.Now()
+	stamp, err := s.stamp(ctx)
 	if err != nil {
 		return Version{}, err
 	}
@@ -111,39 +112,62 @@ func (s *server) appendEverywhere(ctx context.Context, a Address, name string, s
 		return err
 	}
 	holders := indexHolders(shard, s.placement(), replicas)
-	appended := s.acks(ctx, holders, func(ctx context.Context, holder string) error {
+	need := max(1, min(barrier, len(holders)))
+	appended := s.acks(ctx, holders, need, func(ctx context.Context, holder string) error {
 		if holder == s.self {
 			return s.appendHere(ctx, a, name, stamp, rec)
 		}
 		return s.askAppend(ctx, holder, a, name, stamp, rec)
 	})
-	if need := max(1, min(barrier, len(holders))); appended < need {
+	if appended < need {
 		return fmt.Errorf("%w: %d of %d index holders wrote %s's row, and the cloud promises %d", ErrUnderHeld, appended, len(holders), a, need)
 	}
 	return nil
 }
 
-// acks asks every holder at once and counts the ones that answered yes.
-func (s *server) acks(ctx context.Context, holders []string, ask func(context.Context, string) error) int {
-	var (
-		wg sync.WaitGroup
-		mu sync.Mutex
-		n  int
-	)
+// straggle is how long a write that has its barrier waits for the holders still
+// answering: long enough for a healthy one, so a read right after the write finds
+// it everywhere, and no longer, so a holder that stalls costs a write this much.
+const straggle = time.Second
+
+// acks asks every holder at once and returns how many took it, once every holder
+// has answered, or need have and the rest had straggle to: a holder that stalls
+// holds up neither the write nor the others. Each ask runs on the service's
+// lifetime rather than the caller's, within holdWait, so the holders still asking
+// when the write returns go on taking it.
+func (s *server) acks(ctx context.Context, holders []string, need int, ask func(context.Context, string) error) int {
+	life := s.life
+	if life == nil {
+		life = context.WithoutCancel(ctx)
+	}
+	answers := make(chan bool, len(holders))
 	for _, h := range holders {
-		wg.Add(1)
 		go func() {
-			defer wg.Done()
-			if err := ask(ctx, h); err != nil {
+			actx, cancel := context.WithTimeout(life, holdWait)
+			defer cancel()
+			err := ask(actx, h)
+			if err != nil {
 				s.logf("storage: %s did not take it: %v", h, err)
-				return
 			}
-			mu.Lock()
-			n++
-			mu.Unlock()
+			answers <- err == nil
 		}()
 	}
-	wg.Wait()
+	n := 0
+	var late <-chan time.Time
+	for range holders {
+		select {
+		case ok := <-answers:
+			if ok {
+				if n++; n == need {
+					late = time.After(straggle)
+				}
+			}
+		case <-late:
+			return n
+		case <-ctx.Done():
+			return n
+		}
+	}
 	return n
 }
 

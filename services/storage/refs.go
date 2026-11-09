@@ -39,6 +39,7 @@ const (
 	localTombs  = localRoot + "/tomb"
 	localDirty  = localRoot + "/dirty"
 	localSeen   = localRoot + "/seen"
+	localClock  = localRoot + "/clock"
 )
 
 // instanceSegment encodes a whole bucket instance into ONE path segment, so a
@@ -234,6 +235,28 @@ func (l *Local) Saw(ctx context.Context, a Address) error {
 		return err
 	}
 	return l.store.Put(ctx, ds.RawKey(localSeen+"/"+inst), encodeMS(uint64(l.now().UnixMilli())))
+}
+
+// ClockFloor is the physical millisecond this node's clock may never mint below: 0
+// for a node that never minted.
+func (l *Local) ClockFloor(ctx context.Context) (uint64, error) {
+	raw, err := l.store.Get(ctx, ds.RawKey(localClock))
+	if errors.Is(err, ds.ErrNotFound) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return decodeMS(raw)
+}
+
+// SetClockFloor raises the floor to ms, durably before it returns: a stamp minted
+// below a floor a crash took would be one the next start mints below again.
+func (l *Local) SetClockFloor(ctx context.Context, ms uint64) error {
+	if err := l.store.Put(ctx, ds.RawKey(localClock), encodeMS(ms)); err != nil {
+		return err
+	}
+	return l.store.Sync(ctx, ds.RawKey(localClock))
 }
 
 // Seen is every instance this node was written a row of.

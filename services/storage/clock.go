@@ -132,6 +132,18 @@ func (c *Clock) Observe(stamp uint64) error {
 	return nil
 }
 
+// Floor raises this clock to physical milliseconds, whatever its local time says:
+// the stamps this node minted before it last stopped. A wall clock further behind it
+// than the skew budget then refuses to mint (ErrLocalClockSkew) rather than mint
+// below them.
+func (c *Clock) Floor(physicalMS uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if physicalMS > c.physical {
+		c.physical, c.logical = physicalMS, 0
+	}
+}
+
 // Peek reports the clock's current state without advancing it. It exists for
 // tests and for an operator read; nothing on a write path calls it.
 func (c *Clock) Peek() (physicalMS uint64, logical uint16) {

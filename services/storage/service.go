@@ -92,6 +92,14 @@ type server struct {
 	repairMu sync.Mutex
 	proofs   map[string]proof
 
+	// floor is the clock floor this node keeps durably; see stamp.
+	floorMu sync.Mutex
+	floor   uint64
+
+	// life is the service's lifetime, from serve to Close: what it starts on its
+	// own runs on it.
+	life context.Context
+
 	serverOptions []rpc.ServerOption
 
 	// also is what Start opened for this service beside it, closed with it.
@@ -294,15 +302,25 @@ func (s *server) serve(ctx context.Context) error {
 		return errors.New("storage: already started")
 	}
 
+	// THE CLOCK STARTS WHERE THE LAST RUN LEFT IT, whatever the wall clock says.
+	floor, err := s.local.ClockFloor(ctx)
+	if err != nil {
+		return fmt.Errorf("storage: reading the clock's floor: %w", err)
+	}
+	s.clock.Floor(floor)
+	s.floor = floor
+
+	// What this service starts on its own runs on its lifetime, which Close ends.
+	// It is set before the first request can arrive.
+	life, stop := context.WithCancel(context.WithoutCancel(ctx))
+	s.life = life
 	server, err := rpc.Listen(ctx, s.host, Protocol, s.mount(), s.serverOptions...)
 	if err != nil {
+		stop()
 		return fmt.Errorf("storage: listening: %w", err)
 	}
-	s.server = server
-
-	loop, stop := context.WithCancel(context.WithoutCancel(ctx))
-	s.stop = stop
-	go s.run(loop)
+	s.server, s.stop = server, stop
+	go s.run(life)
 	return nil
 }
 
@@ -411,6 +429,34 @@ func (s *server) promise(ctx context.Context) (replicas, barrier int, err error)
 		return 0, 0, fmt.Errorf("%w: %w", ErrNoSettings, err)
 	}
 	return r.StorageReplicas, r.StorageBarrier, nil
+}
+
+// clockLease is how far ahead of the stamps it mints a node keeps its clock floor:
+// one durable write per lease of writing, and a node back from a restart starts at
+// most this far ahead of the last stamp it minted.
+const clockLease = time.Second
+
+// stamp mints the next stamp, never one below a stamp this node minted before it
+// last stopped: no stamp is returned until the floor kept durably is above it. A
+// wall clock that came back behind would otherwise mint a version below one this
+// node already wrote, which every replica then orders first.
+func (s *server) stamp(ctx context.Context) (uint64, error) {
+	st, err := s.clock.Now()
+	if err != nil {
+		return 0, err
+	}
+	physical, _ := UnpackStamp(st)
+	s.floorMu.Lock()
+	defer s.floorMu.Unlock()
+	if physical < s.floor {
+		return st, nil
+	}
+	next := physical + uint64(clockLease/time.Millisecond)
+	if err := s.local.SetClockFloor(ctx, next); err != nil {
+		return 0, fmt.Errorf("storage: keeping the clock's floor: %w", err)
+	}
+	s.floor = next
+	return st, nil
 }
 
 // indexOf is the instance's index on this node, opening its shard if placement gives

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -271,4 +272,39 @@ func TestTwoNodesInOneMillisecondMintOneStampAndStillProduceTwoRows(t *testing.T
 	kb, err := addrv.versionKey("obj", sb, "peerB")
 	require.NoError(t, err)
 	require.NotEqual(t, ka, kb, "and still write two distinct rows, because the writer is in the key")
+}
+
+// A NODE BACK FROM A RESTART NEVER MINTS BELOW WHAT IT MINTED BEFORE: its clock starts
+// at the floor it kept durably. A wall clock that came back an hour behind refuses to
+// mint rather than write a version every replica would order before one this node
+// already wrote; one a second behind, inside the skew budget, mints above it.
+func TestANodeBackFromARestartMintsNothingBelowWhatItMinted(t *testing.T) {
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
+	local := newOrderedMem()
+	start := func(behind time.Duration) *server {
+		t.Helper()
+		h, err := mn.GenPeer()
+		require.NoError(t, err)
+		s, err := build(h, Config{},
+			withBytes(&nodeBytes{memBlocks: newMemBlocks(), swarm: newSwarm(), self: h.ID()}),
+			withLocal(local), withShards(&memShards{}), withCatalog(fixedCatalog{}),
+			withClock(func() time.Time { return time.Now().Add(-behind) }))
+		require.NoError(t, err)
+		require.NoError(t, s.serve(t.Context()))
+		t.Cleanup(func() { s.Close() })
+		return s
+	}
+
+	first := start(0)
+	minted, err := first.stamp(t.Context())
+	require.NoError(t, err)
+	require.NoError(t, first.Close())
+
+	_, err = start(time.Hour).stamp(t.Context())
+	require.ErrorIs(t, err, ErrLocalClockSkew, "a node whose clock came back an hour minted anyway")
+
+	again, err := start(time.Second).stamp(t.Context())
+	require.NoError(t, err)
+	require.Greater(t, again, minted, "a node back from a restart minted below a stamp it had minted")
 }

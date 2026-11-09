@@ -3,8 +3,10 @@ package storage
 import (
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
@@ -39,11 +41,15 @@ func TestAListIsEachLiveNameOnceInNameOrder(t *testing.T) {
 	_, err = put.Delete(ctx, at, "b")
 	require.NoError(t, err)
 
-	// FROM EVERY NODE, a holder of the shard or not, and over the wire.
+	// FROM EVERY NODE, a holder of the shard or not, and over the wire, once the
+	// rows a write reached its barrier without have landed.
 	for i := range c.nodes {
-		all, err := c.client(t, i, i).List(ctx, at, "", "", 0)
-		require.NoError(t, err, "node %d", i)
-		require.Equal(t, []string{"a/1", "a/2", "ab"}, names(all), "node %d: a deleted name is not listed", i)
+		var all []Version
+		require.Eventually(t, func() bool {
+			var err error
+			all, err = c.client(t, i, i).List(ctx, at, "", "", 0)
+			return err == nil && slices.Equal([]string{"a/1", "a/2", "ab"}, names(all))
+		}, 10*time.Second, 10*time.Millisecond, "node %d: a deleted name is listed, or a live one is not", i)
 		require.Equal(t, newest.Stamp, all[0].Stamp, "a name's current version is its newest")
 		require.Equal(t, map[string]string{"k": "v"}, all[0].Record.Metadata)
 		require.NotZero(t, all[0].Record.CreatedMS)
