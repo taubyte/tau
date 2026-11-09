@@ -145,6 +145,15 @@ func (h *handler) Probe(ctx context.Context, req *connect.Request[storagev2.Prob
 	return connect.NewResponse(&storagev2.ProbeResponse{Proof: proof}), nil
 }
 
+func (h *handler) Covers(_ context.Context, req *connect.Request[storagev2.CoversRequest]) (*connect.Response[storagev2.CoversResponse], error) {
+	shard := req.Msg.GetShard()
+	if shard >= Shards {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("storage: shard %d of %d", shard, Shards))
+	}
+	covered := h.s.answerCovers(uint16(shard), spansOf(req.Msg.GetSpans()))
+	return connect.NewResponse(&storagev2.CoversResponse{Covered: covered}), nil
+}
+
 func (h *handler) Hold(ctx context.Context, req *connect.Request[storagev2.HoldRequest]) (*connect.Response[storagev2.HoldResponse], error) {
 	a, err := addressOf(req.Msg.GetAt())
 	if err != nil {

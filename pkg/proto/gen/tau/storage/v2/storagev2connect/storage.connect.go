@@ -60,6 +60,8 @@ const (
 	StorageServiceAppendProcedure = "/tau.storage.v2.StorageService/Append"
 	// StorageServiceProbeProcedure is the fully-qualified name of the StorageService's Probe RPC.
 	StorageServiceProbeProcedure = "/tau.storage.v2.StorageService/Probe"
+	// StorageServiceCoversProcedure is the fully-qualified name of the StorageService's Covers RPC.
+	StorageServiceCoversProcedure = "/tau.storage.v2.StorageService/Covers"
 )
 
 // StorageServiceClient is a client for the tau.storage.v2.StorageService service.
@@ -73,11 +75,12 @@ type StorageServiceClient interface {
 	List(context.Context, *connect.Request[v2.ListRequest]) (*connect.Response[v2.ListResponse], error)
 	// Read streams an object's bytes. A root no holder has is NotFound.
 	Read(context.Context, *connect.Request[v2.ReadRequest]) (*connect.ServerStreamForClient[v2.ReadResponse], error)
-	// Hold, Append and Probe are one storage node asking another. A holder that
-	// does not hold the root answers Probe NotFound.
+	// Hold, Append, Probe and Covers are one storage node asking another. A holder
+	// that does not hold the root answers Probe NotFound.
 	Hold(context.Context, *connect.Request[v2.HoldRequest]) (*connect.Response[v2.HoldResponse], error)
 	Append(context.Context, *connect.Request[v2.AppendRequest]) (*connect.Response[v2.AppendResponse], error)
 	Probe(context.Context, *connect.Request[v2.ProbeRequest]) (*connect.Response[v2.ProbeResponse], error)
+	Covers(context.Context, *connect.Request[v2.CoversRequest]) (*connect.Response[v2.CoversResponse], error)
 }
 
 // NewStorageServiceClient constructs a client for the tau.storage.v2.StorageService service. By
@@ -145,6 +148,12 @@ func NewStorageServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(storageServiceMethods.ByName("Probe")),
 			connect.WithClientOptions(opts...),
 		),
+		covers: connect.NewClient[v2.CoversRequest, v2.CoversResponse](
+			httpClient,
+			baseURL+StorageServiceCoversProcedure,
+			connect.WithSchema(storageServiceMethods.ByName("Covers")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -159,6 +168,7 @@ type storageServiceClient struct {
 	hold     *connect.Client[v2.HoldRequest, v2.HoldResponse]
 	append   *connect.Client[v2.AppendRequest, v2.AppendResponse]
 	probe    *connect.Client[v2.ProbeRequest, v2.ProbeResponse]
+	covers   *connect.Client[v2.CoversRequest, v2.CoversResponse]
 }
 
 // Put calls tau.storage.v2.StorageService.Put.
@@ -206,6 +216,11 @@ func (c *storageServiceClient) Probe(ctx context.Context, req *connect.Request[v
 	return c.probe.CallUnary(ctx, req)
 }
 
+// Covers calls tau.storage.v2.StorageService.Covers.
+func (c *storageServiceClient) Covers(ctx context.Context, req *connect.Request[v2.CoversRequest]) (*connect.Response[v2.CoversResponse], error) {
+	return c.covers.CallUnary(ctx, req)
+}
+
 // StorageServiceHandler is an implementation of the tau.storage.v2.StorageService service.
 type StorageServiceHandler interface {
 	// Put stores one object: a head, then its bytes in chunks.
@@ -217,11 +232,12 @@ type StorageServiceHandler interface {
 	List(context.Context, *connect.Request[v2.ListRequest]) (*connect.Response[v2.ListResponse], error)
 	// Read streams an object's bytes. A root no holder has is NotFound.
 	Read(context.Context, *connect.Request[v2.ReadRequest], *connect.ServerStream[v2.ReadResponse]) error
-	// Hold, Append and Probe are one storage node asking another. A holder that
-	// does not hold the root answers Probe NotFound.
+	// Hold, Append, Probe and Covers are one storage node asking another. A holder
+	// that does not hold the root answers Probe NotFound.
 	Hold(context.Context, *connect.Request[v2.HoldRequest]) (*connect.Response[v2.HoldResponse], error)
 	Append(context.Context, *connect.Request[v2.AppendRequest]) (*connect.Response[v2.AppendResponse], error)
 	Probe(context.Context, *connect.Request[v2.ProbeRequest]) (*connect.Response[v2.ProbeResponse], error)
+	Covers(context.Context, *connect.Request[v2.CoversRequest]) (*connect.Response[v2.CoversResponse], error)
 }
 
 // NewStorageServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -285,6 +301,12 @@ func NewStorageServiceHandler(svc StorageServiceHandler, opts ...connect.Handler
 		connect.WithSchema(storageServiceMethods.ByName("Probe")),
 		connect.WithHandlerOptions(opts...),
 	)
+	storageServiceCoversHandler := connect.NewUnaryHandler(
+		StorageServiceCoversProcedure,
+		svc.Covers,
+		connect.WithSchema(storageServiceMethods.ByName("Covers")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/tau.storage.v2.StorageService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case StorageServicePutProcedure:
@@ -305,6 +327,8 @@ func NewStorageServiceHandler(svc StorageServiceHandler, opts ...connect.Handler
 			storageServiceAppendHandler.ServeHTTP(w, r)
 		case StorageServiceProbeProcedure:
 			storageServiceProbeHandler.ServeHTTP(w, r)
+		case StorageServiceCoversProcedure:
+			storageServiceCoversHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -348,4 +372,8 @@ func (UnimplementedStorageServiceHandler) Append(context.Context, *connect.Reque
 
 func (UnimplementedStorageServiceHandler) Probe(context.Context, *connect.Request[v2.ProbeRequest]) (*connect.Response[v2.ProbeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.storage.v2.StorageService.Probe is not implemented"))
+}
+
+func (UnimplementedStorageServiceHandler) Covers(context.Context, *connect.Request[v2.CoversRequest]) (*connect.Response[v2.CoversResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.storage.v2.StorageService.Covers is not implemented"))
 }

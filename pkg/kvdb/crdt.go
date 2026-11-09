@@ -658,6 +658,24 @@ func anyUnder(ctx context.Context, store ds.Datastore, prefix ds.Key) (bool, err
 	return false, err
 }
 
+// Merged is every delta this replica has merged, as spans of counters: a replica
+// that covers all of them holds everything this one does.
+func (store *Datastore) Merged() []Span {
+	return store.ccRead.Load().spans()
+}
+
+// Covers says this replica has merged every counter of every span: what another
+// replica's Merged named, it holds too.
+func (store *Datastore) Covers(spans []Span) bool {
+	c := store.ccRead.Load()
+	for _, s := range spans {
+		if !c.coversSpan(s) {
+			return false
+		}
+	}
+	return true
+}
+
 func (store *Datastore) covered(d dot) bool {
 	return store.ccRead.Load().covers(d)
 }

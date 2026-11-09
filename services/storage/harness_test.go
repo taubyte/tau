@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"sync"
 	"testing"
@@ -45,6 +46,44 @@ type orderedMem struct {
 }
 
 func newOrderedMem() *orderedMem { return &orderedMem{rows: map[string][]byte{}} }
+
+// Merged is every row this store holds, one span each: a store whose rows another
+// holds is covered by it, as a replica that merged another's deltas is.
+func (o *orderedMem) Merged() []kvdb.Span {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	out := make([]kvdb.Span, 0, len(o.rows))
+	for k := range o.rows {
+		out = append(out, kvdb.Span{Replica: k, Lo: 0, Hi: 1})
+	}
+	return out
+}
+
+func (o *orderedMem) Covers(spans []kvdb.Span) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	for _, sp := range spans {
+		if _, ok := o.rows[sp.Replica]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// replicate copies every row of from that o lacks, as kvdb replication brings a new
+// holder what the others merged.
+func (o *orderedMem) replicate(from *orderedMem) {
+	from.mu.Lock()
+	rows := maps.Clone(from.rows)
+	from.mu.Unlock()
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	for k, v := range rows {
+		if _, ok := o.rows[k]; !ok {
+			o.rows[k] = v
+		}
+	}
+}
 
 func (o *orderedMem) Get(_ context.Context, k ds.Key) ([]byte, error) {
 	o.mu.Lock()

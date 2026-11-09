@@ -81,6 +81,37 @@ func (c *causalContext) covers(d dot) bool {
 	return k != nil && k.covers(d.counter)
 }
 
+// Span is the counters (Lo, Hi] of one incarnation that a replica has merged.
+type Span struct {
+	Replica string
+	Lo, Hi  uint64
+}
+
+// spans is every counter c covers, incarnation by incarnation in name order.
+func (c *causalContext) spans() []Span {
+	var out []Span
+	for _, replica := range slices.Sorted(maps.Keys(c.inc)) {
+		for _, s := range c.inc[replica].spans {
+			out = append(out, Span{Replica: replica, Lo: s.lo, Hi: s.hi})
+		}
+	}
+	return out
+}
+
+// coversSpan says c covers every counter of s. A context's spans neither overlap
+// nor touch, so one of them holds all of s or none does.
+func (c *causalContext) coversSpan(s Span) bool {
+	if s.Hi <= s.Lo {
+		return true
+	}
+	k := c.inc[s.Replica]
+	if k == nil {
+		return false
+	}
+	i := sort.Search(len(k.spans), func(i int) bool { return k.spans[i].hi >= s.Hi })
+	return i < len(k.spans) && k.spans[i].lo <= s.Lo
+}
+
 func (c *causalContext) knows(replica string) bool {
 	return c.inc[replica] != nil
 }

@@ -340,3 +340,65 @@ func TestReferencesThatCannotBeListedAreAnError(t *testing.T) {
 
 	require.ErrorContains(t, c.nodes[0].repair(t.Context()), "the disk is gone")
 }
+
+// A SHARD PLACEMENT MOVES OFF A NODE STAYS OPEN THERE UNTIL ITS NEW HOLDERS HAVE IT:
+// as many of them as a write is acknowledged on must have merged everything the
+// node's copy holds. A node that wrote alone before the region grew holds the only
+// copy, and closing it early leaves those rows served by nobody.
+func TestAShardMovedOffANodeIsKeptUntilItsNewHoldersHaveIt(t *testing.T) {
+	// A shard is a bucket's, so the candidates differ by bucket.
+	var cands []Address
+	for i := range 64 {
+		a, err := NewAddress(fmt.Sprintf("shop%d", i), "prod", AssetsBucket, "site_code")
+		require.NoError(t, err)
+		cands = append(cands, a)
+	}
+	v := &view{}
+	c := newCluster(t, 4, fixedCatalog(cands), withMembers(v.get))
+	all := make([]placement.Member, 0, len(c.ids))
+	for _, id := range c.ids {
+		all = append(all, placement.Member{ID: id.String(), Accepts: true})
+	}
+	var at Address
+	var shard uint16
+	var holders []string
+	for _, a := range cands {
+		s, err := shardOf(a.Bucket())
+		require.NoError(t, err)
+		if h := indexHolders(s, all, settings.Defaults().StorageReplicas); !slices.Contains(h, c.ids[0].String()) {
+			at, shard, holders = a, s, h
+			break
+		}
+	}
+	require.NotEmpty(t, holders, "every candidate's shard placed node 0 among its holders")
+
+	v.set(c.ids[0])
+	_, err := c.client(t, 0, 0).Put(t.Context(), at, "build-1", Object{}, strings.NewReader("written alone"))
+	require.NoError(t, err)
+	written := c.shards[0].open[shard]
+	require.NotNil(t, written)
+
+	v.set(c.ids...)
+	kept := func(why string) {
+		t.Helper()
+		require.NoError(t, c.nodes[0].reconcile(t.Context()))
+		require.Contains(t, c.shards[0].held(), shard, why)
+	}
+	kept("a shard no new holder had opened was closed")
+
+	var opened []*orderedMem
+	for _, h := range holders {
+		require.NoError(t, c.node(h).reconcile(t.Context()))
+		i := slices.Index(c.ids, peerOf(t, h))
+		opened = append(opened, c.shards[i].open[shard])
+		require.NotNil(t, opened[len(opened)-1], "holder %s did not open the shard", h)
+	}
+	kept("a shard its new holders had opened empty was closed")
+
+	opened[0].replicate(written)
+	kept("a shard one holder had, of the two a write is acknowledged on, was closed")
+
+	opened[1].replicate(written)
+	require.NoError(t, c.nodes[0].reconcile(t.Context()))
+	require.NotContains(t, c.shards[0].held(), shard, "a shard its new holders have was kept")
+}

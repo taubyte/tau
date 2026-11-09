@@ -190,6 +190,14 @@ func (s *shardSet) hold(ctx context.Context, b Bucket, open bool) (i index, rele
 	}, true, nil
 }
 
+// storeOf is shard's store, if this node has it open.
+func (s *shardSet) storeOf(shard uint16) (Datastore, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	store, ok := s.open[shard]
+	return store, ok
+}
+
 // held lists the open shards, ordered.
 func (s *shardSet) held() []uint16 {
 	s.mu.Lock()

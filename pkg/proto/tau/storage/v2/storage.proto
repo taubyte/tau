@@ -178,6 +178,24 @@ message ProbeResponse {
   bytes proof = 1;
 }
 
+// Span is the counters (lo, hi] of one writer incarnation a shard replica merged.
+message Span {
+  string replica = 1;
+  uint64 lo = 2;
+  uint64 hi = 3;
+}
+
+// CoversRequest asks a holder of shard whether its copy has merged every span: a
+// node placement moved the shard off keeps it open until enough holders have.
+message CoversRequest {
+  uint32 shard = 1;
+  repeated Span spans = 2;
+}
+
+message CoversResponse {
+  bool covered = 1;
+}
+
 service StorageService {
   // Put stores one object: a head, then its bytes in chunks.
   rpc Put(stream PutRequest) returns (PutResponse);
@@ -189,9 +207,10 @@ service StorageService {
   // Read streams an object's bytes. A root no holder has is NotFound.
   rpc Read(ReadRequest) returns (stream ReadResponse);
 
-  // Hold, Append and Probe are one storage node asking another. A holder that
-  // does not hold the root answers Probe NotFound.
+  // Hold, Append, Probe and Covers are one storage node asking another. A holder
+  // that does not hold the root answers Probe NotFound.
   rpc Hold(HoldRequest) returns (HoldResponse);
   rpc Append(AppendRequest) returns (AppendResponse);
   rpc Probe(ProbeRequest) returns (ProbeResponse);
+  rpc Covers(CoversRequest) returns (CoversResponse);
 }
