@@ -239,14 +239,21 @@ type opensDatabases interface {
 // something a test can see into or make fail.
 func withKVDB(f opensDatabases) Option {
 	return func(o *options) error {
-		o.kvdbOpen = kvdbOf(f)
+		o.opener = factoryOpener{f}
 		return nil
 	}
 }
 
-// kvdbOf is a test's database double as the seam an instance opens through.
-func kvdbOf(f opensDatabases) func(string) (kvdb.Instance, error) {
-	return func(name string) (kvdb.Instance, error) { return f.New(nil, name, 0) }
+// factoryOpener is a test's database double as what the instance opens through.
+type factoryOpener struct{ f opensDatabases }
+
+func (o factoryOpener) Open(name string) (kvdb.Instance, error) { return o.f.New(nil, name, 0) }
+
+// overDouble is an instance built of nothing but p and databases opened from f.
+func overDouble(t *testing.T, f opensDatabases) *Instance {
+	t.Helper()
+	p := mockPeer(t)
+	return &Instance{Node: p, dbs: newDatabaseSet(p, factoryOpener{f})}
 }
 
 func withRaft(g raft.Groups) Option {

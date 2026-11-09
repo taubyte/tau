@@ -66,7 +66,7 @@ func (r *releasable) Destroy(context.Context) error {
 
 func TestTheRootReleasesThroughTheFactoryItWasGiven(t *testing.T) {
 	factory := &releasing{}
-	n := &Instance{Node: mockPeer(t), opts: options{kvdbOpen: kvdbOf(factory)}}
+	n := overDouble(t, factory)
 	seam := databaseStores{node: n}
 	const name = "databases/shop/prod/kv/QmA"
 

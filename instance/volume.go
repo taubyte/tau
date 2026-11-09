@@ -50,7 +50,7 @@ type volumeStores struct{ node *Instance }
 var _ volume.Stores = volumeStores{}
 
 func (s volumeStores) Store() (volume.Rows, error) {
-	db, err := s.node.kvdb(volumeDatabase)
+	db, err := s.node.dbs.at(volumeDatabase)
 	if err != nil {
 		return nil, fmt.Errorf("node: opening the volumes database: %w", err)
 	}

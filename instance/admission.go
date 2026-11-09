@@ -43,7 +43,7 @@ type admissionStores struct{ node *Instance }
 var _ admit.Stores = admissionStores{}
 
 func (s admissionStores) Store() (admit.Rows, error) {
-	db, err := s.node.kvdb(admissionDatabase)
+	db, err := s.node.dbs.at(admissionDatabase)
 	if err != nil {
 		return nil, fmt.Errorf("node: opening the instances database: %w", err)
 	}

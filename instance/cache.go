@@ -26,7 +26,7 @@ type cacheStores struct{ node *Instance }
 var _ cache.Stores = cacheStores{}
 
 func (s cacheStores) Store() (pkgcache.Store, error) {
-	db, err := s.node.kvdb(cacheDatabase)
+	db, err := s.node.dbs.at(cacheDatabase)
 	if err != nil {
 		return nil, fmt.Errorf("node: opening the cache database: %w", err)
 	}

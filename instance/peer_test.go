@@ -13,7 +13,7 @@ import (
 
 func TestADatabaseIsOpenedOncePerName(t *testing.T) {
 	ctx := t.Context()
-	d := newDatabaseSet(mockPeer(t))
+	d := newDatabaseSet(mockPeer(t), nil)
 	t.Cleanup(func() { d.Close() })
 
 	a, err := d.at("orders/a")
@@ -52,7 +52,7 @@ func TestADatabaseIsOpenedOncePerName(t *testing.T) {
 }
 
 func TestTheDatabasesMoveToTheRegionsT(t *testing.T) {
-	d := newDatabaseSet(mockPeer(t))
+	d := newDatabaseSet(mockPeer(t), nil)
 	t.Cleanup(func() { d.Close() })
 	_, err := d.at("moves")
 	require.NoError(t, err)

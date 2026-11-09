@@ -9,7 +9,6 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/containers"
 
-	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/forge/drivers"
@@ -165,11 +164,11 @@ var ErrNoPeer = errors.New("instance: no peer to be made from")
 type Option func(*options) error
 
 type options struct {
-	// kvdbOpen and groups stand in for the peer's own, for a test that has to see
+	// opener and groups stand in for the peer's own, for a test that has to see
 	// what was opened or make an open fail. Nothing outside this package's tests can
 	// set them.
-	kvdbOpen func(name string) (kvdb.Instance, error)
-	groups   raft.Groups
+	opener opener
+	groups raft.Groups
 
 	engines  *database.Registry
 	runtimes []invoke.Runtime

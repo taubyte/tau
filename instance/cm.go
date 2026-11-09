@@ -95,7 +95,7 @@ func (n *Instance) challengeStore() (cacheStore, error) {
 	if n.challengeDB != nil {
 		return cacheStore{n.challengeDB}, nil
 	}
-	db, err := n.kvdb(cm.ChallengeDatabase)
+	db, err := n.dbs.at(cm.ChallengeDatabase)
 	if err != nil {
 		return cacheStore{}, err
 	}

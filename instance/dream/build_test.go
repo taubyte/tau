@@ -240,7 +240,7 @@ func TestACloudWithNothingThatBuildsSaysSo(t *testing.T) {
 }
 
 func TestACodeRepositoryNoProjectLinksIsNotUploaded(t *testing.T) {
-	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Stats, instance.Register}})
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: []string{instance.Stats, instance.Register, instance.Auth}})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
 	_, err = u.Upload("github.com/acme/code", "main", t.TempDir(), nil)

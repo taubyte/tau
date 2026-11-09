@@ -28,14 +28,20 @@ const retentionPoll = time.Minute
 // of one name on one peer would be two replicas over one store.
 type databases struct {
 	peer.Node
+	opener opener
 
 	mu        sync.Mutex
 	open      map[string]kvdb.Instance
 	retention time.Duration
 }
 
-func newDatabaseSet(p peer.Node) *databases {
-	return &databases{Node: p, open: map[string]kvdb.Instance{}}
+// opener opens a database by name in place of the peer, for a test.
+type opener interface {
+	Open(name string) (kvdb.Instance, error)
+}
+
+func newDatabaseSet(p peer.Node, o opener) *databases {
+	return &databases{Node: p, opener: o, open: map[string]kvdb.Instance{}}
 }
 
 // at is the database called name, opened on first ask.
@@ -46,11 +52,16 @@ func (d *databases) at(name string) (kvdb.Instance, error) {
 		return db, nil
 	}
 	var db kvdb.Instance
-	db, err := pkgkvdb.Open(d.Node, name,
-		pkgkvdb.WithLogger(logger),
-		pkgkvdb.WithRebroadcast(rebroadcastSeconds*time.Second),
-		pkgkvdb.WithRegionRetention(d.retention),
-		pkgkvdb.WithOnClose(func() { d.forget(name, db) }))
+	var err error
+	if d.opener != nil {
+		db, err = d.opener.Open(name)
+	} else {
+		db, err = pkgkvdb.Open(d.Node, name,
+			pkgkvdb.WithLogger(logger),
+			pkgkvdb.WithRebroadcast(rebroadcastSeconds*time.Second),
+			pkgkvdb.WithRegionRetention(d.retention),
+			pkgkvdb.WithOnClose(func() { d.forget(name, db) }))
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -125,14 +136,6 @@ func (d *databases) Holding(ctx context.Context, path string) (bool, error) {
 // Paths is what this node holds below under, cut to depth segments.
 func (d *databases) Paths(ctx context.Context, under string, depth int) ([]string, error) {
 	return pkgkvdb.Paths(ctx, d.Node, under, depth)
-}
-
-// kvdb is one of this instance's replicated databases, by name.
-func (n *Instance) kvdb(name string) (kvdb.Instance, error) {
-	if n.opts.kvdbOpen != nil {
-		return n.opts.kvdbOpen(name)
-	}
-	return n.dbs.at(name)
 }
 
 // groups opens the consensus groups the services on this node ask for, over its

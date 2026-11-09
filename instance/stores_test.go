@@ -20,11 +20,11 @@ func TestEveryBackingOpensItsDatabaseByName(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			refused := errors.New("disk full")
-			_, err := open(&Instance{Node: mockPeer(t), opts: options{kvdbOpen: kvdbOf(&memFactory{err: refused})}})
+			_, err := open(overDouble(t, &memFactory{err: refused}))
 			require.ErrorIs(t, err, refused)
 
 			factory := &memFactory{}
-			n := &Instance{Node: mockPeer(t), opts: options{kvdbOpen: kvdbOf(factory)}}
+			n := overDouble(t, factory)
 			rows, err := open(n)
 			require.NoError(t, err)
 			require.NotNil(t, rows)
@@ -88,7 +88,7 @@ func TestTheVolumeBackingIsOnePerNode(t *testing.T) {
 func TestADatabaseStoreIsOpenedAndReleasedByName(t *testing.T) {
 	ctx := t.Context()
 	refused := errors.New("disk full")
-	broken := databaseStores{node: &Instance{Node: mockPeer(t), opts: options{kvdbOpen: kvdbOf(&memFactory{err: refused})}}}
+	broken := databaseStores{node: overDouble(t, &memFactory{err: refused})}
 	_, err := broken.Store("orders")
 	require.ErrorIs(t, err, refused)
 	require.ErrorContains(t, err, "orders")
@@ -96,7 +96,7 @@ func TestADatabaseStoreIsOpenedAndReleasedByName(t *testing.T) {
 
 	// A STORE THAT CANNOT BE DESTROYED IS NOT RELEASED QUIETLY: the copy
 	// would stay on disk while the node believed it gone.
-	require.ErrorContains(t, databaseStores{node: &Instance{Node: mockPeer(t), opts: options{kvdbOpen: kvdbOf(&memFactory{})}}}.Release(ctx, "orders"),
+	require.ErrorContains(t, databaseStores{node: overDouble(t, &memFactory{})}.Release(ctx, "orders"),
 		"cannot release")
 }
 

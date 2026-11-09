@@ -99,7 +99,7 @@ type databaseStores struct{ node *Instance }
 var _ databaseService.Stores = databaseStores{}
 
 func (s databaseStores) Store(name string) (database.Store, error) {
-	db, err := s.node.kvdb(name)
+	db, err := s.node.dbs.at(name)
 	if err != nil {
 		return nil, fmt.Errorf("node: opening the store for %s: %w", name, err)
 	}
@@ -118,7 +118,7 @@ func (s databaseStores) Store(name string) (database.Store, error) {
 // there was one. Destroying closes it and drops it from the factory, so a later
 // open builds a new one from whatever the fleet still holds.
 func (s databaseStores) Release(ctx context.Context, name string) error {
-	db, err := s.node.kvdb(name)
+	db, err := s.node.dbs.at(name)
 	if err != nil {
 		return err
 	}

@@ -196,7 +196,7 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 	if p == nil {
 		return nil, ErrNoPeer
 	}
-	n := &Instance{cfg: cfg, opts: o, Node: p, dbs: newDatabaseSet(p)}
+	n := &Instance{cfg: cfg, opts: o, Node: p, dbs: newDatabaseSet(p, o.opener)}
 	// IN THE CATALOG'S ORDER, which is the order they start in, not the file's.
 	for _, name := range o.serviceNames() {
 		if !cfg.runs(name) {
