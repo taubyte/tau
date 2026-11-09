@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/auth/projects"
 )
 
 func TestGetJobAnswersTheSchemasOwnShape(t *testing.T) {
@@ -119,7 +119,7 @@ func TestAMutationIsAuthorizedBeforeItHappens(t *testing.T) {
 	for _, route := range []string{"/cancel/", "/retry/"} {
 		t.Run(route, func(t *testing.T) {
 			h := newHarness(t, Config{})
-			h.projects.role = func(string, string) (register.Role, error) { return register.RoleViewer, nil }
+			h.projects.role = func(string, string) (projects.Role, error) { return projects.RoleViewer, nil }
 
 			acted := false
 			h.jobs.cancel = func(string) error { acted = true; return nil }
@@ -167,7 +167,7 @@ func TestAnOversizedIdNeverReachesTheBackend(t *testing.T) {
 			reached := false
 			h.jobs.get = func(string) (*plmv2.Job, error) { reached = true; return nil, nil }
 			h.jobs.list = func(string, func(string) error) error { reached = true; return nil }
-			h.projects.role = func(string, string) (register.Role, error) { reached = true; return register.RoleOwner, nil }
+			h.projects.role = func(string, string) (projects.Role, error) { reached = true; return projects.RoleOwner, nil }
 
 			method := http.MethodGet
 			if strings.HasPrefix(path, "/cancel") || strings.HasPrefix(path, "/retry") {
@@ -202,9 +202,9 @@ func TestNoJobRouteSpendsTheCloudOnceForEveryRequest(t *testing.T) {
 		{"POST /cancel", http.MethodPost, "/cancel/" + testJobID, countGets},
 		{"POST /retry", http.MethodPost, "/retry/" + testJobID, countGets},
 		{"GET /jobs", http.MethodGet, "/jobs/" + testProject, func(h *harness, n *int) {
-			h.projects.role = func(string, string) (register.Role, error) {
+			h.projects.role = func(string, string) (projects.Role, error) {
 				*n++
-				return register.RoleNone, connect.NewError(connect.CodeNotFound, errors.New("no project"))
+				return projects.RoleNone, connect.NewError(connect.CodeNotFound, errors.New("no project"))
 			}
 		}},
 	} {

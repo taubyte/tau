@@ -15,7 +15,7 @@ import (
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/auth/projects"
 	"github.com/taubyte/tau/services/plm/ingress"
 )
 
@@ -28,12 +28,12 @@ type hooks struct{ hook ingress.Hook }
 
 func (h hooks) Hook(context.Context, string) (ingress.Hook, error) { return h.hook, nil }
 
-type projects struct{}
+type unlinked struct{}
 
-func (projects) Role(context.Context, string, string) (register.Role, error) {
-	return register.RoleNone, nil
+func (unlinked) Role(context.Context, string, string) (projects.Role, error) {
+	return projects.RoleNone, nil
 }
-func (projects) Project(context.Context, string) (string, error) { return "", nil }
+func (unlinked) Project(context.Context, string) (string, error) { return "", nil }
 
 type callers struct{}
 
@@ -84,7 +84,7 @@ func TestEveryForgesDeliveriesReachTheSameRoute(t *testing.T) {
 				}}),
 				ingress.WithDeliveries(forges),
 				ingress.WithCallers(callers{}),
-				ingress.WithProjects(projects{}),
+				ingress.WithProjects(unlinked{}),
 				ingress.WithJobs(queue))
 			require.NoError(t, err)
 

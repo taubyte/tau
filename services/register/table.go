@@ -11,20 +11,9 @@ import (
 	pkgregister "github.com/taubyte/tau/pkg/register"
 )
 
-// Table is the register as the build service reads and writes it: the project table a
-// link writes and a push is admitted by, and the publish a deploy makes with the
-// reads it makes around it.
+// Table is the register as the build service reads and writes it: the publish a
+// deploy makes with the reads it makes around it.
 type Table interface {
-	LinkProject(ctx context.Context, l pkgregister.Link) (pkgregister.ProjectRecord, error)
-	Project(ctx context.Context, id string) (pkgregister.ProjectRecord, error)
-	Repository(ctx context.Context, repository string) (pkgregister.RepositoryRecord, error)
-	ProjectsOf(ctx context.Context, claimant string) ([]pkgregister.ProjectRecord, error)
-	ListProjects(ctx context.Context) ([]pkgregister.ProjectRecord, error)
-	GrantRole(ctx context.Context, project, grantee string, role pkgregister.Role, by string) (pkgregister.Grant, error)
-	Revoke(ctx context.Context, project, id, by string) error
-	Grants(ctx context.Context, project string) ([]pkgregister.Grant, error)
-	RoleOf(ctx context.Context, project, user string) (pkgregister.Role, error)
-
 	Publish(ctx context.Context, p pkgregister.Publication) (pkgregister.ObjectID, error)
 	Environments(ctx context.Context, project string) ([]string, error)
 	Resolve(ctx context.Context, project, environment string) (pkgregister.Pointer, error)

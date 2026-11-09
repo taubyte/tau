@@ -29,21 +29,11 @@ syntax = "proto3";
 // every read, forever, to answer a question whose answer usually did not
 // change. See pkg/register's package doc for the same argument at length.
 //
-// IT ALSO HOLDS WHO A PROJECT IS. Link, Project, Repository and ProjectsOf
-// are the project table: which configuration repository claimed a project id
-// (the author's, from project.yaml), which code repositories it attaches, and
-// who linked it. Those rows live under their own key prefix and no publication
-// writes them; a deploy only READS them, to check the id it is about to
-// publish is claimed by the repository it was pushed to. See pkg/register's
-// projects.go for the layout and the rule two racing claims resolve by.
+// WHO A PROJECT IS IS NOT HERE: which repositories claim an id, and who may act
+// on it, is auth's project table (tau/auth/v2's ProjectService). The register
+// holds what a project compiled to, and nothing about who it belongs to.
 //
-// ListProjects is the one enumeration: every linked project, for an operator's
-// view of a cloud (taucorder). It is a scan of the project table, which grows
-// with links rather than with traffic, and like everything here it is
-// reachable by any swarm peer — the OSS trust model. ProjectsOf lists one
-// claimant's own index.
-//
-// NOTHING ELSE ENUMERATES. There is no List of projects, no List of
+// NOTHING ENUMERATES. There is no List of projects, no List of
 // environments and no history. Every call names exactly one row, which is what
 // the runtime needs; an operator's "what is deployed" question is a different
 // surface with different trust properties, and inventing it here would put a
@@ -210,129 +200,7 @@ message HostAnswer {
   string environment = 2;
 }
 
-// LinkRequest claims a project id for a configuration repository.
-message LinkRequest {
-  string project = 1;
-  string config_repository = 2;
-  repeated string code_repositories = 3;
-  // claimant is the tau user id of the caller the build frontend
-  // authenticated. It is never a node.
-  string claimant = 4;
-  // replace makes this link the project's whole set of repositories; the
-  // build frontend sets it only for the project's owner.
-  bool replace = 5;
-}
-
-// ProjectRecord is a linked project as every node resolves it.
-message ProjectRecord {
-  string id = 1;
-  string config_repository = 2;
-  repeated string code_repositories = 3;
-  string claimant = 4;
-  // created_at is when the owning claim was made, unix nanoseconds.
-  int64 created_at = 5;
-}
-
-message RepositoryRequest {
-  string repository = 1;
-}
-
-// RepositoryRecord is which project owns a repository.
-message RepositoryRecord {
-  string project = 1;
-  string repository = 2;
-  // configures is whether it is that project's configuration repository.
-  bool configures = 3;
-}
-
-message ClaimantRequest {
-  string claimant = 1;
-}
-
-message ProjectRecords {
-  repeated ProjectRecord projects = 1;
-}
-
-message ListProjectsRequest {}
-
-// GrantRequest gives grantee, a tau user id, one role on a linked project.
-// role is viewer, builder, secret-manager or owner.
-message GrantRequest {
-  string project = 1;
-  string grantee = 2;
-  string role = 3;
-  // by is the tau user id of the owner the build frontend authorized.
-  string by = 4;
-}
-
-// GrantRecord is one grant. at is unix nanoseconds.
-message GrantRecord {
-  string id = 1;
-  string project = 2;
-  string grantee = 3;
-  string role = 4;
-  string by = 5;
-  int64 at = 6;
-}
-
-message GrantRecords {
-  repeated GrantRecord grants = 1;
-}
-
-// RevokeRequest withdraws one grant for good.
-message RevokeRequest {
-  string project = 1;
-  string grant_id = 2;
-  string by = 3;
-}
-
-message RevokeResponse {}
-
-message RoleRequest {
-  string project = 1;
-  string user = 2;
-}
-
-// RoleAnswer is a user's role on a project; empty is none.
-message RoleAnswer {
-  string role = 1;
-}
-
 service RegisterService {
-  // Link claims a project id for a configuration repository and attaches
-  // code repositories. An id or repository another project owns is
-  // AlreadyExists, naming the owner.
-  rpc Link(LinkRequest) returns (ProjectRecord);
-
-  // Project is one linked project. An id nobody claimed is NotFound.
-  rpc Project(ProjectRequest) returns (ProjectRecord);
-
-  // Repository is which project owns a repository. One no project owns is
-  // NotFound.
-  rpc Repository(RepositoryRequest) returns (RepositoryRecord);
-
-  // ProjectsOf is every project one user linked and its repository still
-  // owns, or holds a live grant on.
-  rpc ProjectsOf(ClaimantRequest) returns (ProjectRecords);
-
-  // ListProjects is every linked project, sorted by id.
-  rpc ListProjects(ListProjectsRequest) returns (ProjectRecords);
-
-  // Grant gives a tau user a role on a linked project. An unknown project is
-  // NotFound; an unknown role is InvalidArgument.
-  rpc Grant(GrantRequest) returns (GrantRecord);
-
-  // Revoke withdraws a grant; a revocation always wins over its grant. An id
-  // the project never granted is NotFound.
-  rpc Revoke(RevokeRequest) returns (RevokeResponse);
-
-  // Grants is every live grant on a project, oldest first.
-  rpc Grants(ProjectRequest) returns (GrantRecords);
-
-  // Role is one user's role on a project: owner for the owning claim's
-  // claimant, else the highest live grant. An unknown project is NotFound.
-  rpc Role(RoleRequest) returns (RoleAnswer);
-
   // Publish stores a compiled project and points an environment at it.
   rpc Publish(PublishRequest) returns (PublishResponse);
 

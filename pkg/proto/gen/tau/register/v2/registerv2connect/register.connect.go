@@ -31,21 +31,11 @@
 // every read, forever, to answer a question whose answer usually did not
 // change. See pkg/register's package doc for the same argument at length.
 //
-// IT ALSO HOLDS WHO A PROJECT IS. Link, Project, Repository and ProjectsOf
-// are the project table: which configuration repository claimed a project id
-// (the author's, from project.yaml), which code repositories it attaches, and
-// who linked it. Those rows live under their own key prefix and no publication
-// writes them; a deploy only READS them, to check the id it is about to
-// publish is claimed by the repository it was pushed to. See pkg/register's
-// projects.go for the layout and the rule two racing claims resolve by.
+// WHO A PROJECT IS IS NOT HERE: which repositories claim an id, and who may act
+// on it, is auth's project table (tau/auth/v2's ProjectService). The register
+// holds what a project compiled to, and nothing about who it belongs to.
 //
-// ListProjects is the one enumeration: every linked project, for an operator's
-// view of a cloud (taucorder). It is a scan of the project table, which grows
-// with links rather than with traffic, and like everything here it is
-// reachable by any swarm peer — the OSS trust model. ProjectsOf lists one
-// claimant's own index.
-//
-// NOTHING ELSE ENUMERATES. There is no List of projects, no List of
+// NOTHING ENUMERATES. There is no List of projects, no List of
 // environments and no history. Every call names exactly one row, which is what
 // the runtime needs; an operator's "what is deployed" question is a different
 // surface with different trust properties, and inventing it here would put a
@@ -93,27 +83,6 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// RegisterServiceLinkProcedure is the fully-qualified name of the RegisterService's Link RPC.
-	RegisterServiceLinkProcedure = "/tau.register.v2.RegisterService/Link"
-	// RegisterServiceProjectProcedure is the fully-qualified name of the RegisterService's Project RPC.
-	RegisterServiceProjectProcedure = "/tau.register.v2.RegisterService/Project"
-	// RegisterServiceRepositoryProcedure is the fully-qualified name of the RegisterService's
-	// Repository RPC.
-	RegisterServiceRepositoryProcedure = "/tau.register.v2.RegisterService/Repository"
-	// RegisterServiceProjectsOfProcedure is the fully-qualified name of the RegisterService's
-	// ProjectsOf RPC.
-	RegisterServiceProjectsOfProcedure = "/tau.register.v2.RegisterService/ProjectsOf"
-	// RegisterServiceListProjectsProcedure is the fully-qualified name of the RegisterService's
-	// ListProjects RPC.
-	RegisterServiceListProjectsProcedure = "/tau.register.v2.RegisterService/ListProjects"
-	// RegisterServiceGrantProcedure is the fully-qualified name of the RegisterService's Grant RPC.
-	RegisterServiceGrantProcedure = "/tau.register.v2.RegisterService/Grant"
-	// RegisterServiceRevokeProcedure is the fully-qualified name of the RegisterService's Revoke RPC.
-	RegisterServiceRevokeProcedure = "/tau.register.v2.RegisterService/Revoke"
-	// RegisterServiceGrantsProcedure is the fully-qualified name of the RegisterService's Grants RPC.
-	RegisterServiceGrantsProcedure = "/tau.register.v2.RegisterService/Grants"
-	// RegisterServiceRoleProcedure is the fully-qualified name of the RegisterService's Role RPC.
-	RegisterServiceRoleProcedure = "/tau.register.v2.RegisterService/Role"
 	// RegisterServicePublishProcedure is the fully-qualified name of the RegisterService's Publish RPC.
 	RegisterServicePublishProcedure = "/tau.register.v2.RegisterService/Publish"
 	// RegisterServiceResolveProcedure is the fully-qualified name of the RegisterService's Resolve RPC.
@@ -143,31 +112,6 @@ const (
 
 // RegisterServiceClient is a client for the tau.register.v2.RegisterService service.
 type RegisterServiceClient interface {
-	// Link claims a project id for a configuration repository and attaches
-	// code repositories. An id or repository another project owns is
-	// AlreadyExists, naming the owner.
-	Link(context.Context, *connect.Request[v2.LinkRequest]) (*connect.Response[v2.ProjectRecord], error)
-	// Project is one linked project. An id nobody claimed is NotFound.
-	Project(context.Context, *connect.Request[v2.ProjectRequest]) (*connect.Response[v2.ProjectRecord], error)
-	// Repository is which project owns a repository. One no project owns is
-	// NotFound.
-	Repository(context.Context, *connect.Request[v2.RepositoryRequest]) (*connect.Response[v2.RepositoryRecord], error)
-	// ProjectsOf is every project one user linked and its repository still
-	// owns, or holds a live grant on.
-	ProjectsOf(context.Context, *connect.Request[v2.ClaimantRequest]) (*connect.Response[v2.ProjectRecords], error)
-	// ListProjects is every linked project, sorted by id.
-	ListProjects(context.Context, *connect.Request[v2.ListProjectsRequest]) (*connect.Response[v2.ProjectRecords], error)
-	// Grant gives a tau user a role on a linked project. An unknown project is
-	// NotFound; an unknown role is InvalidArgument.
-	Grant(context.Context, *connect.Request[v2.GrantRequest]) (*connect.Response[v2.GrantRecord], error)
-	// Revoke withdraws a grant; a revocation always wins over its grant. An id
-	// the project never granted is NotFound.
-	Revoke(context.Context, *connect.Request[v2.RevokeRequest]) (*connect.Response[v2.RevokeResponse], error)
-	// Grants is every live grant on a project, oldest first.
-	Grants(context.Context, *connect.Request[v2.ProjectRequest]) (*connect.Response[v2.GrantRecords], error)
-	// Role is one user's role on a project: owner for the owning claim's
-	// claimant, else the highest live grant. An unknown project is NotFound.
-	Role(context.Context, *connect.Request[v2.RoleRequest]) (*connect.Response[v2.RoleAnswer], error)
 	// Publish stores a compiled project and points an environment at it.
 	Publish(context.Context, *connect.Request[v2.PublishRequest]) (*connect.Response[v2.PublishResponse], error)
 	// Resolve answers which object an environment runs, and under which
@@ -229,60 +173,6 @@ func NewRegisterServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 	baseURL = strings.TrimRight(baseURL, "/")
 	registerServiceMethods := v2.File_tau_register_v2_register_proto.Services().ByName("RegisterService").Methods()
 	return &registerServiceClient{
-		link: connect.NewClient[v2.LinkRequest, v2.ProjectRecord](
-			httpClient,
-			baseURL+RegisterServiceLinkProcedure,
-			connect.WithSchema(registerServiceMethods.ByName("Link")),
-			connect.WithClientOptions(opts...),
-		),
-		project: connect.NewClient[v2.ProjectRequest, v2.ProjectRecord](
-			httpClient,
-			baseURL+RegisterServiceProjectProcedure,
-			connect.WithSchema(registerServiceMethods.ByName("Project")),
-			connect.WithClientOptions(opts...),
-		),
-		repository: connect.NewClient[v2.RepositoryRequest, v2.RepositoryRecord](
-			httpClient,
-			baseURL+RegisterServiceRepositoryProcedure,
-			connect.WithSchema(registerServiceMethods.ByName("Repository")),
-			connect.WithClientOptions(opts...),
-		),
-		projectsOf: connect.NewClient[v2.ClaimantRequest, v2.ProjectRecords](
-			httpClient,
-			baseURL+RegisterServiceProjectsOfProcedure,
-			connect.WithSchema(registerServiceMethods.ByName("ProjectsOf")),
-			connect.WithClientOptions(opts...),
-		),
-		listProjects: connect.NewClient[v2.ListProjectsRequest, v2.ProjectRecords](
-			httpClient,
-			baseURL+RegisterServiceListProjectsProcedure,
-			connect.WithSchema(registerServiceMethods.ByName("ListProjects")),
-			connect.WithClientOptions(opts...),
-		),
-		grant: connect.NewClient[v2.GrantRequest, v2.GrantRecord](
-			httpClient,
-			baseURL+RegisterServiceGrantProcedure,
-			connect.WithSchema(registerServiceMethods.ByName("Grant")),
-			connect.WithClientOptions(opts...),
-		),
-		revoke: connect.NewClient[v2.RevokeRequest, v2.RevokeResponse](
-			httpClient,
-			baseURL+RegisterServiceRevokeProcedure,
-			connect.WithSchema(registerServiceMethods.ByName("Revoke")),
-			connect.WithClientOptions(opts...),
-		),
-		grants: connect.NewClient[v2.ProjectRequest, v2.GrantRecords](
-			httpClient,
-			baseURL+RegisterServiceGrantsProcedure,
-			connect.WithSchema(registerServiceMethods.ByName("Grants")),
-			connect.WithClientOptions(opts...),
-		),
-		role: connect.NewClient[v2.RoleRequest, v2.RoleAnswer](
-			httpClient,
-			baseURL+RegisterServiceRoleProcedure,
-			connect.WithSchema(registerServiceMethods.ByName("Role")),
-			connect.WithClientOptions(opts...),
-		),
 		publish: connect.NewClient[v2.PublishRequest, v2.PublishResponse](
 			httpClient,
 			baseURL+RegisterServicePublishProcedure,
@@ -348,15 +238,6 @@ func NewRegisterServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 
 // registerServiceClient implements RegisterServiceClient.
 type registerServiceClient struct {
-	link         *connect.Client[v2.LinkRequest, v2.ProjectRecord]
-	project      *connect.Client[v2.ProjectRequest, v2.ProjectRecord]
-	repository   *connect.Client[v2.RepositoryRequest, v2.RepositoryRecord]
-	projectsOf   *connect.Client[v2.ClaimantRequest, v2.ProjectRecords]
-	listProjects *connect.Client[v2.ListProjectsRequest, v2.ProjectRecords]
-	grant        *connect.Client[v2.GrantRequest, v2.GrantRecord]
-	revoke       *connect.Client[v2.RevokeRequest, v2.RevokeResponse]
-	grants       *connect.Client[v2.ProjectRequest, v2.GrantRecords]
-	role         *connect.Client[v2.RoleRequest, v2.RoleAnswer]
 	publish      *connect.Client[v2.PublishRequest, v2.PublishResponse]
 	resolve      *connect.Client[v2.ResolveRequest, v2.Pointer]
 	object       *connect.Client[v2.ObjectRequest, v2.CompiledProject]
@@ -367,51 +248,6 @@ type registerServiceClient struct {
 	manifest     *connect.Client[v2.ResolveRequest, v2.DeploymentManifest]
 	watch        *connect.Client[v2.WatchRequest, v2.WatchEvent]
 	forget       *connect.Client[v2.ForgetRequest, v2.ForgetResponse]
-}
-
-// Link calls tau.register.v2.RegisterService.Link.
-func (c *registerServiceClient) Link(ctx context.Context, req *connect.Request[v2.LinkRequest]) (*connect.Response[v2.ProjectRecord], error) {
-	return c.link.CallUnary(ctx, req)
-}
-
-// Project calls tau.register.v2.RegisterService.Project.
-func (c *registerServiceClient) Project(ctx context.Context, req *connect.Request[v2.ProjectRequest]) (*connect.Response[v2.ProjectRecord], error) {
-	return c.project.CallUnary(ctx, req)
-}
-
-// Repository calls tau.register.v2.RegisterService.Repository.
-func (c *registerServiceClient) Repository(ctx context.Context, req *connect.Request[v2.RepositoryRequest]) (*connect.Response[v2.RepositoryRecord], error) {
-	return c.repository.CallUnary(ctx, req)
-}
-
-// ProjectsOf calls tau.register.v2.RegisterService.ProjectsOf.
-func (c *registerServiceClient) ProjectsOf(ctx context.Context, req *connect.Request[v2.ClaimantRequest]) (*connect.Response[v2.ProjectRecords], error) {
-	return c.projectsOf.CallUnary(ctx, req)
-}
-
-// ListProjects calls tau.register.v2.RegisterService.ListProjects.
-func (c *registerServiceClient) ListProjects(ctx context.Context, req *connect.Request[v2.ListProjectsRequest]) (*connect.Response[v2.ProjectRecords], error) {
-	return c.listProjects.CallUnary(ctx, req)
-}
-
-// Grant calls tau.register.v2.RegisterService.Grant.
-func (c *registerServiceClient) Grant(ctx context.Context, req *connect.Request[v2.GrantRequest]) (*connect.Response[v2.GrantRecord], error) {
-	return c.grant.CallUnary(ctx, req)
-}
-
-// Revoke calls tau.register.v2.RegisterService.Revoke.
-func (c *registerServiceClient) Revoke(ctx context.Context, req *connect.Request[v2.RevokeRequest]) (*connect.Response[v2.RevokeResponse], error) {
-	return c.revoke.CallUnary(ctx, req)
-}
-
-// Grants calls tau.register.v2.RegisterService.Grants.
-func (c *registerServiceClient) Grants(ctx context.Context, req *connect.Request[v2.ProjectRequest]) (*connect.Response[v2.GrantRecords], error) {
-	return c.grants.CallUnary(ctx, req)
-}
-
-// Role calls tau.register.v2.RegisterService.Role.
-func (c *registerServiceClient) Role(ctx context.Context, req *connect.Request[v2.RoleRequest]) (*connect.Response[v2.RoleAnswer], error) {
-	return c.role.CallUnary(ctx, req)
 }
 
 // Publish calls tau.register.v2.RegisterService.Publish.
@@ -466,31 +302,6 @@ func (c *registerServiceClient) Forget(ctx context.Context, req *connect.Request
 
 // RegisterServiceHandler is an implementation of the tau.register.v2.RegisterService service.
 type RegisterServiceHandler interface {
-	// Link claims a project id for a configuration repository and attaches
-	// code repositories. An id or repository another project owns is
-	// AlreadyExists, naming the owner.
-	Link(context.Context, *connect.Request[v2.LinkRequest]) (*connect.Response[v2.ProjectRecord], error)
-	// Project is one linked project. An id nobody claimed is NotFound.
-	Project(context.Context, *connect.Request[v2.ProjectRequest]) (*connect.Response[v2.ProjectRecord], error)
-	// Repository is which project owns a repository. One no project owns is
-	// NotFound.
-	Repository(context.Context, *connect.Request[v2.RepositoryRequest]) (*connect.Response[v2.RepositoryRecord], error)
-	// ProjectsOf is every project one user linked and its repository still
-	// owns, or holds a live grant on.
-	ProjectsOf(context.Context, *connect.Request[v2.ClaimantRequest]) (*connect.Response[v2.ProjectRecords], error)
-	// ListProjects is every linked project, sorted by id.
-	ListProjects(context.Context, *connect.Request[v2.ListProjectsRequest]) (*connect.Response[v2.ProjectRecords], error)
-	// Grant gives a tau user a role on a linked project. An unknown project is
-	// NotFound; an unknown role is InvalidArgument.
-	Grant(context.Context, *connect.Request[v2.GrantRequest]) (*connect.Response[v2.GrantRecord], error)
-	// Revoke withdraws a grant; a revocation always wins over its grant. An id
-	// the project never granted is NotFound.
-	Revoke(context.Context, *connect.Request[v2.RevokeRequest]) (*connect.Response[v2.RevokeResponse], error)
-	// Grants is every live grant on a project, oldest first.
-	Grants(context.Context, *connect.Request[v2.ProjectRequest]) (*connect.Response[v2.GrantRecords], error)
-	// Role is one user's role on a project: owner for the owning claim's
-	// claimant, else the highest live grant. An unknown project is NotFound.
-	Role(context.Context, *connect.Request[v2.RoleRequest]) (*connect.Response[v2.RoleAnswer], error)
 	// Publish stores a compiled project and points an environment at it.
 	Publish(context.Context, *connect.Request[v2.PublishRequest]) (*connect.Response[v2.PublishResponse], error)
 	// Resolve answers which object an environment runs, and under which
@@ -548,60 +359,6 @@ type RegisterServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewRegisterServiceHandler(svc RegisterServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	registerServiceMethods := v2.File_tau_register_v2_register_proto.Services().ByName("RegisterService").Methods()
-	registerServiceLinkHandler := connect.NewUnaryHandler(
-		RegisterServiceLinkProcedure,
-		svc.Link,
-		connect.WithSchema(registerServiceMethods.ByName("Link")),
-		connect.WithHandlerOptions(opts...),
-	)
-	registerServiceProjectHandler := connect.NewUnaryHandler(
-		RegisterServiceProjectProcedure,
-		svc.Project,
-		connect.WithSchema(registerServiceMethods.ByName("Project")),
-		connect.WithHandlerOptions(opts...),
-	)
-	registerServiceRepositoryHandler := connect.NewUnaryHandler(
-		RegisterServiceRepositoryProcedure,
-		svc.Repository,
-		connect.WithSchema(registerServiceMethods.ByName("Repository")),
-		connect.WithHandlerOptions(opts...),
-	)
-	registerServiceProjectsOfHandler := connect.NewUnaryHandler(
-		RegisterServiceProjectsOfProcedure,
-		svc.ProjectsOf,
-		connect.WithSchema(registerServiceMethods.ByName("ProjectsOf")),
-		connect.WithHandlerOptions(opts...),
-	)
-	registerServiceListProjectsHandler := connect.NewUnaryHandler(
-		RegisterServiceListProjectsProcedure,
-		svc.ListProjects,
-		connect.WithSchema(registerServiceMethods.ByName("ListProjects")),
-		connect.WithHandlerOptions(opts...),
-	)
-	registerServiceGrantHandler := connect.NewUnaryHandler(
-		RegisterServiceGrantProcedure,
-		svc.Grant,
-		connect.WithSchema(registerServiceMethods.ByName("Grant")),
-		connect.WithHandlerOptions(opts...),
-	)
-	registerServiceRevokeHandler := connect.NewUnaryHandler(
-		RegisterServiceRevokeProcedure,
-		svc.Revoke,
-		connect.WithSchema(registerServiceMethods.ByName("Revoke")),
-		connect.WithHandlerOptions(opts...),
-	)
-	registerServiceGrantsHandler := connect.NewUnaryHandler(
-		RegisterServiceGrantsProcedure,
-		svc.Grants,
-		connect.WithSchema(registerServiceMethods.ByName("Grants")),
-		connect.WithHandlerOptions(opts...),
-	)
-	registerServiceRoleHandler := connect.NewUnaryHandler(
-		RegisterServiceRoleProcedure,
-		svc.Role,
-		connect.WithSchema(registerServiceMethods.ByName("Role")),
-		connect.WithHandlerOptions(opts...),
-	)
 	registerServicePublishHandler := connect.NewUnaryHandler(
 		RegisterServicePublishProcedure,
 		svc.Publish,
@@ -664,24 +421,6 @@ func NewRegisterServiceHandler(svc RegisterServiceHandler, opts ...connect.Handl
 	)
 	return "/tau.register.v2.RegisterService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case RegisterServiceLinkProcedure:
-			registerServiceLinkHandler.ServeHTTP(w, r)
-		case RegisterServiceProjectProcedure:
-			registerServiceProjectHandler.ServeHTTP(w, r)
-		case RegisterServiceRepositoryProcedure:
-			registerServiceRepositoryHandler.ServeHTTP(w, r)
-		case RegisterServiceProjectsOfProcedure:
-			registerServiceProjectsOfHandler.ServeHTTP(w, r)
-		case RegisterServiceListProjectsProcedure:
-			registerServiceListProjectsHandler.ServeHTTP(w, r)
-		case RegisterServiceGrantProcedure:
-			registerServiceGrantHandler.ServeHTTP(w, r)
-		case RegisterServiceRevokeProcedure:
-			registerServiceRevokeHandler.ServeHTTP(w, r)
-		case RegisterServiceGrantsProcedure:
-			registerServiceGrantsHandler.ServeHTTP(w, r)
-		case RegisterServiceRoleProcedure:
-			registerServiceRoleHandler.ServeHTTP(w, r)
 		case RegisterServicePublishProcedure:
 			registerServicePublishHandler.ServeHTTP(w, r)
 		case RegisterServiceResolveProcedure:
@@ -710,42 +449,6 @@ func NewRegisterServiceHandler(svc RegisterServiceHandler, opts ...connect.Handl
 
 // UnimplementedRegisterServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedRegisterServiceHandler struct{}
-
-func (UnimplementedRegisterServiceHandler) Link(context.Context, *connect.Request[v2.LinkRequest]) (*connect.Response[v2.ProjectRecord], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.Link is not implemented"))
-}
-
-func (UnimplementedRegisterServiceHandler) Project(context.Context, *connect.Request[v2.ProjectRequest]) (*connect.Response[v2.ProjectRecord], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.Project is not implemented"))
-}
-
-func (UnimplementedRegisterServiceHandler) Repository(context.Context, *connect.Request[v2.RepositoryRequest]) (*connect.Response[v2.RepositoryRecord], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.Repository is not implemented"))
-}
-
-func (UnimplementedRegisterServiceHandler) ProjectsOf(context.Context, *connect.Request[v2.ClaimantRequest]) (*connect.Response[v2.ProjectRecords], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.ProjectsOf is not implemented"))
-}
-
-func (UnimplementedRegisterServiceHandler) ListProjects(context.Context, *connect.Request[v2.ListProjectsRequest]) (*connect.Response[v2.ProjectRecords], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.ListProjects is not implemented"))
-}
-
-func (UnimplementedRegisterServiceHandler) Grant(context.Context, *connect.Request[v2.GrantRequest]) (*connect.Response[v2.GrantRecord], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.Grant is not implemented"))
-}
-
-func (UnimplementedRegisterServiceHandler) Revoke(context.Context, *connect.Request[v2.RevokeRequest]) (*connect.Response[v2.RevokeResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.Revoke is not implemented"))
-}
-
-func (UnimplementedRegisterServiceHandler) Grants(context.Context, *connect.Request[v2.ProjectRequest]) (*connect.Response[v2.GrantRecords], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.Grants is not implemented"))
-}
-
-func (UnimplementedRegisterServiceHandler) Role(context.Context, *connect.Request[v2.RoleRequest]) (*connect.Response[v2.RoleAnswer], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.Role is not implemented"))
-}
 
 func (UnimplementedRegisterServiceHandler) Publish(context.Context, *connect.Request[v2.PublishRequest]) (*connect.Response[v2.PublishResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.Publish is not implemented"))

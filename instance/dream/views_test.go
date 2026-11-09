@@ -39,7 +39,7 @@ func inRegionAt(t *testing.T, region, name, host string) (*running, *nodeDream.C
 	u, err := nodeDream.Start(t.Context(), t.Name()+"-"+region, nodeDream.Config{
 		Services: []string{
 			instance.Register, instance.Worker, instance.Stats, instance.Gateway, instance.Database, instance.Primitives,
-			storageService.Descriptor.Name, instance.Builder,
+			storageService.Descriptor.Name, instance.Builder, instance.Auth,
 		},
 		Configure: func(_ int, c *instance.Config) { c.Region = region },
 	})

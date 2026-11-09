@@ -53,10 +53,8 @@ const (
 // Table maps a full service name to its methods' classes.
 var Table = map[string]map[string]Class{
 	"tau.register.v2.RegisterService": {
-		"Link": W, "Project": R, "Repository": R, "ProjectsOf": R, "ListProjects": R,
 		"Publish": W, "Resolve": R, "Object": R, "Environments": R,
 		"ResolveHost": R, "ResolveView": R, "Assigned": R, "Manifest": R,
-		"Grant": W, "Revoke": W, "Grants": R, "Role": R,
 		// A reader's session over what it caches, and its releases.
 		"Watch": R, "Forget": R,
 	},
@@ -74,6 +72,10 @@ var Table = map[string]map[string]Class{
 		"Providers": R, "Login": W, "Refresh": W, "Logout": W, "Authorize": W,
 		"Exchange": W, "DeviceStart": W, "DevicePoll": W, "Pasted": W,
 		"Whoami": S, "Renew": W,
+	},
+	"tau.auth.v2.ProjectService": {
+		"Link": W, "Project": R, "Repository": R, "ProjectsOf": R, "ListProjects": R,
+		"Grant": W, "Revoke": W, "Grants": R, "Role": R,
 	},
 	"tau.auth.v2.UserService": {
 		"ListUsers": S, "CreateUser": W, "DeleteUser": W, "SetRole": W,

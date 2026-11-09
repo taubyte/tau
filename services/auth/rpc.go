@@ -15,6 +15,7 @@ import (
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 	"github.com/taubyte/tau/services/auth/password"
+	"github.com/taubyte/tau/services/auth/projects"
 )
 
 func (s *Service) mount() http.Handler {
@@ -22,6 +23,9 @@ func (s *Service) mount() http.Handler {
 	mux.Handle(authv2connect.NewIdentityServiceHandler(&identityHandler{s}, codec.Option()))
 	mux.Handle(authv2connect.NewSessionServiceHandler(&sessionHandler{s}, codec.Option()))
 	mux.Handle(authv2connect.NewUserServiceHandler(&userHandler{s}, codec.Option()))
+	if s.projects != nil {
+		projects.Serve(mux, s.projects)
+	}
 	return mux
 }
 

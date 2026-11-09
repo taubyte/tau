@@ -67,6 +67,14 @@ func (k Key) FullName() string {
 	return k.Owner + "/" + k.Name
 }
 
+// Normalise is the spelling a key already written as `host/owner/name` is stored
+// under. Forges treat owner and name case-insensitively, so `Acme/Shop` and
+// `acme/shop` are one repository and must be one key, or every uniqueness property
+// built on it quietly fails.
+func Normalise(key string) string {
+	return strings.ToLower(strings.Trim(strings.TrimSpace(key), "/"))
+}
+
 // Namespace is the owning segment — the org, group or workspace. It is the first
 // segment of Owner rather than all of it: a subgroup belongs to its group, and it
 // is the group that a cloud is scoped to.

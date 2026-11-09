@@ -23,7 +23,7 @@ import (
 func instancesAt(t *testing.T) *running {
 	t.Helper()
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services: []string{instance.Register, instance.Worker, instance.Stats, storageService.Descriptor.Name, instance.Builder},
+		Services: []string{instance.Register, instance.Worker, instance.Stats, storageService.Descriptor.Name, instance.Builder, instance.Auth},
 	})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)

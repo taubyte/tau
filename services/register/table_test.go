@@ -38,6 +38,6 @@ func TestTheTableReachesARegisterElsewhere(t *testing.T) {
 	envs, err := got.Environments(ctx, "shop")
 	require.NoError(t, err)
 	require.Equal(t, []string{"prod"}, envs)
-	_, err = got.Project(ctx, "QmNobody")
-	require.ErrorIs(t, err, pkgregister.ErrNotLinked)
+	_, err = got.Resolve(ctx, "QmNobody", "prod")
+	require.ErrorIs(t, err, pkgregister.ErrNotPublished)
 }

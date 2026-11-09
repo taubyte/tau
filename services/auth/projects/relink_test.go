@@ -1,17 +1,18 @@
-package register
+package projects
 
 import (
-	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
+
+	kvdbmock "github.com/taubyte/tau/pkg/kvdb/mock"
 )
 
 func TestAnOwnerRelinkReplacesTheRepositories(t *testing.T) {
-	r, err := New(WithStore(NewMemStore()))
-	require.NoError(t, err)
+	r := New(newMemStore(), time.Now)
 	ctx := t.Context()
-	_, err = r.LinkProject(ctx, Link{Project: "QmPay", Config: "github.com/acme/cfg", Code: []string{"github.com/acme/pay"}, Claimant: "alice"})
+	_, err := r.LinkProject(ctx, Link{Project: "QmPay", Config: "github.com/acme/cfg", Code: []string{"github.com/acme/pay"}, Claimant: "alice"})
 	require.NoError(t, err)
 
 	rec, err := r.LinkProject(ctx, Link{Project: "QmPay", Config: "github.com/acme-renamed/cfg", Code: []string{"github.com/acme/web"}, Claimant: "carol", Replace: true})
@@ -22,7 +23,7 @@ func TestAnOwnerRelinkReplacesTheRepositories(t *testing.T) {
 }
 
 func TestARelinkKeepingTheConfigDropsOnlyWhatItLeavesOut(t *testing.T) {
-	r := linked(t, NewMemStore(), nil)
+	r := linked(t, newMemStore(), nil)
 	_, err := r.LinkProject(ctx, Link{Project: pid, Config: cfg, Code: []string{code, "github.com/acme/web"}, Claimant: alice})
 	require.NoError(t, err)
 
@@ -58,7 +59,7 @@ func TestARelinkOverAFailingStore(t *testing.T) {
 	for _, c := range []testCase{
 		{"list", codePrefix}, {"list", claimPrefix + pid}, {"put", claimPrefix}, {"put", codePrefix}, {"put", repoPrefix},
 	} {
-		store := &on{MemStore: NewMemStore()}
+		store := &on{memStore: newMemStore()}
 		r := linked(t, store, nil)
 		_, err := r.LinkProject(ctx, Link{Project: pid, Config: cfg, Code: []string{code}, Claimant: alice})
 		require.NoError(t, err)
@@ -70,20 +71,11 @@ func TestARelinkOverAFailingStore(t *testing.T) {
 	}
 }
 
-// rooted lists keys the way a datastore spells them, with a leading "/".
-type rooted struct{ *MemStore }
-
-func (r rooted) List(ctx context.Context, prefix string) ([]string, error) {
-	keys, err := r.MemStore.List(ctx, prefix)
-	for i := range keys {
-		keys[i] = "/" + keys[i]
-	}
-	return keys, err
-}
-
-func TestARelinkOverAStoreListingRootedKeys(t *testing.T) {
-	r, err := New(WithStore(rooted{NewMemStore()}))
+func TestARelinkOverADatastore(t *testing.T) {
+	db, err := kvdbmock.New().New(nil, "auth", 0)
 	require.NoError(t, err)
+	defer db.Close()
+	r := New(Over(db), time.Now)
 	ctx := t.Context()
 	_, err = r.LinkProject(ctx, Link{Project: "QmPay", Config: "github.com/acme/cfg", Claimant: "alice"})
 	require.NoError(t, err)
@@ -93,4 +85,9 @@ func TestARelinkOverAStoreListingRootedKeys(t *testing.T) {
 	rec, err = r.LinkProject(ctx, Link{Project: "QmPay", Config: "github.com/acme/other", Claimant: "alice", Replace: true})
 	require.NoError(t, err)
 	require.Equal(t, "github.com/acme/other", rec.Config)
+	repo, err := r.Repository(ctx, "github.com/acme/other")
+	require.NoError(t, err)
+	require.True(t, repo.Configures)
+	_, err = r.Repository(ctx, "github.com/acme/cfg")
+	require.ErrorIs(t, err, ErrNotLinked, "the configuration a relink left is released")
 }

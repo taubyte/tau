@@ -15,7 +15,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/auth/projects"
 	"github.com/taubyte/tau/services/plm/artifact"
 	"github.com/taubyte/tau/services/plm/uploads"
 )
@@ -25,14 +25,14 @@ func manualBuild(token, project string, body any) *http.Request {
 	return withBody(authed(http.MethodPost, "/build/"+project, token), raw)
 }
 
-func asBuilder(project, user string) (register.Role, error) {
+func asBuilder(project, user string) (projects.Role, error) {
 	if project != testProject {
-		return register.RoleNone, connect.NewError(connect.CodeNotFound, fmt.Errorf("no project %s", project))
+		return projects.RoleNone, connect.NewError(connect.CodeNotFound, fmt.Errorf("no project %s", project))
 	}
 	if user == testUser {
-		return register.RoleBuilder, nil
+		return projects.RoleBuilder, nil
 	}
-	return register.RoleViewer, nil
+	return projects.RoleViewer, nil
 }
 
 func TestABuilderQueuesABuildByHand(t *testing.T) {
@@ -53,14 +53,14 @@ func TestWhatAManualBuildRefuses(t *testing.T) {
 		token   string
 		project string
 		body    any
-		role    func(project, user string) (register.Role, error)
+		role    func(project, user string) (projects.Role, error)
 		owner   func(key string) (string, error)
 		status  int
 		says    string
 	}
 	for name, c := range map[string]testCase{
 		"a viewer": {
-			role: func(string, string) (register.Role, error) { return register.RoleViewer, nil },
+			role: func(string, string) (projects.Role, error) { return projects.RoleViewer, nil },
 			body: buildRequest{Repository: testRepoKey, Ref: "refs/heads/main", Commit: testSHA}, status: http.StatusNotFound,
 		},
 		"no credential": {
@@ -77,7 +77,7 @@ func TestWhatAManualBuildRefuses(t *testing.T) {
 			body:  buildRequest{Repository: testRepoKey, Ref: "refs/heads/main", Commit: testSHA}, status: http.StatusUnprocessableEntity, says: "not linked to this project",
 		},
 		"a repository nobody linked": {
-			owner: func(string) (string, error) { return "", register.ErrNotLinked },
+			owner: func(string) (string, error) { return "", projects.ErrNotLinked },
 			body:  buildRequest{Repository: testRepoKey, Ref: "refs/heads/main", Commit: testSHA}, status: http.StatusUnprocessableEntity, says: "not linked to this project",
 		},
 		"a register that cannot answer": {
@@ -174,7 +174,7 @@ func TestACloudTakesNoUpload(t *testing.T) {
 func TestACloudTakesAnUploadAsACommitOfTheConfiguration(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "uploads")
 	h, l := registeredWith(t, Config{Uploads: dir}, WithCloudFqdn("tau.example"))
-	_, err := l.Register.LinkProject(t.Context(), register.Link{Project: testProject, Config: testRepoKey, Claimant: testUser})
+	_, err := l.Projects.LinkProject(t.Context(), projects.Link{Project: testProject, Config: testRepoKey, Claimant: testUser})
 	require.NoError(t, err)
 
 	// A BUILDER reads the same directory.
@@ -207,7 +207,7 @@ func TestACloudTakesAnUploadAsACommitOfTheConfiguration(t *testing.T) {
 
 	// A code repository of the project is uploaded as itself; any other is
 	// refused.
-	_, err = l.Register.LinkProject(t.Context(), register.Link{Project: testProject, Config: testRepoKey, Code: []string{"github.com/acme/lib"}, Claimant: testUser})
+	_, err = l.Projects.LinkProject(t.Context(), projects.Link{Project: testProject, Config: testRepoKey, Code: []string{"github.com/acme/lib"}, Claimant: testUser})
 	require.NoError(t, err)
 	w = h.do(t, withBody(authed(http.MethodPost, "/upload/"+testProject+"?ref=refs/heads/main&repository=github.com/acme/lib", "tok-"+testUser), aBundle(t, "code")))
 	require.Equal(t, http.StatusAccepted, w.Code, w.Body.String())
@@ -233,8 +233,8 @@ func TestAnUploadForAProjectThatCannotBeRead(t *testing.T) {
 
 type unreadable struct{ Linker }
 
-func (unreadable) ProjectRecord(context.Context, string) (register.ProjectRecord, error) {
-	return register.ProjectRecord{}, register.ErrNotLinked
+func (unreadable) ProjectRecord(context.Context, string) (projects.ProjectRecord, error) {
+	return projects.ProjectRecord{}, projects.ErrNotLinked
 }
 
 func TestUploadsNeedALinkerAndADirectory(t *testing.T) {
@@ -277,7 +277,7 @@ func (p published) Compiled(_ context.Context, project, environment string) ([]b
 
 func TestAViewerReadsWhatADeploymentRuns(t *testing.T) {
 	h := newHarness(t, Config{}, WithPublished(published{testProject + "/prod": `{"object":{}}`}))
-	h.projects.role = func(project, _ string) (register.Role, error) { return asBuilder(project, "someone") }
+	h.projects.role = func(project, _ string) (projects.Role, error) { return asBuilder(project, "someone") }
 
 	w := h.do(t, authed(http.MethodGet, "/projects/"+testProject+"/deployments/prod", testToken))
 	require.Equal(t, http.StatusOK, w.Code)
@@ -303,9 +303,9 @@ func TestAViewerReadsWhatADeploymentRuns(t *testing.T) {
 
 func TestTheDeploymentsOfAProjectWithNone(t *testing.T) {
 	h := newHarness(t, Config{}, WithPublished(published{}))
-	h.projects.role = func(project, _ string) (register.Role, error) {
+	h.projects.role = func(project, _ string) (projects.Role, error) {
 		if project == "unreadable" {
-			return register.RoleViewer, nil
+			return projects.RoleViewer, nil
 		}
 		return asBuilder(project, "someone")
 	}

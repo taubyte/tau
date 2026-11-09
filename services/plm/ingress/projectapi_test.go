@@ -12,24 +12,23 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/tenancy"
+	authmock "github.com/taubyte/tau/services/auth/mock"
+	"github.com/taubyte/tau/services/auth/projects"
 )
 
-// linker is the register's own project table over a map, so a conflict or a
-// role the route answers is the register's real answer and not a fake's idea
-// of one. It is both the Linker and the Projects.
+// linker is auth's own project table in memory, so a conflict or a role the route
+// answers is the table's real answer and not a fake's idea of one. It is both the
+// Linker and the Projects.
 type linker struct {
-	*register.Register
-	links []register.Link
+	projects.Projects
+	links []projects.Link
 	fail  error
 }
 
 func newLinker(t *testing.T) *linker {
 	t.Helper()
-	r, err := register.New(register.WithStore(register.NewMemStore()))
-	require.NoError(t, err)
-	return &linker{Register: r}
+	return &linker{Projects: authmock.New().Projects()}
 }
 
 // linkedTestProject is a register in which testUser linked testProject, made
@@ -37,66 +36,66 @@ func newLinker(t *testing.T) *linker {
 func linkedTestProject(t *testing.T) *linker {
 	t.Helper()
 	l := newLinker(t)
-	_, err := l.Register.LinkProject(t.Context(), register.Link{Project: testProject, Config: testRepoKey, Claimant: testUser})
+	_, err := l.Projects.LinkProject(t.Context(), projects.Link{Project: testProject, Config: testRepoKey, Claimant: testUser})
 	require.NoError(t, err)
 	return l
 }
 
-func (l *linker) LinkProject(ctx context.Context, link register.Link) (register.ProjectRecord, error) {
+func (l *linker) LinkProject(ctx context.Context, link projects.Link) (projects.ProjectRecord, error) {
 	if l.fail != nil {
-		return register.ProjectRecord{}, l.fail
+		return projects.ProjectRecord{}, l.fail
 	}
-	rec, err := l.Register.LinkProject(ctx, link)
+	rec, err := l.Projects.LinkProject(ctx, link)
 	if err == nil {
 		l.links = append(l.links, link)
 	}
 	return rec, err
 }
 
-func (l *linker) ProjectsOf(ctx context.Context, user string) ([]register.ProjectRecord, error) {
+func (l *linker) ProjectsOf(ctx context.Context, user string) ([]projects.ProjectRecord, error) {
 	if l.fail != nil {
 		return nil, l.fail
 	}
-	return l.Register.ProjectsOf(ctx, user)
+	return l.Projects.ProjectsOf(ctx, user)
 }
 
-func (l *linker) ProjectRecord(ctx context.Context, id string) (register.ProjectRecord, error) {
+func (l *linker) ProjectRecord(ctx context.Context, id string) (projects.ProjectRecord, error) {
 	if l.fail != nil {
-		return register.ProjectRecord{}, l.fail
+		return projects.ProjectRecord{}, l.fail
 	}
-	return l.Register.Project(ctx, id)
+	return l.Projects.Project(ctx, id)
 }
 
-func (l *linker) GrantRole(ctx context.Context, project, grantee string, role register.Role, by string) (register.Grant, error) {
+func (l *linker) GrantRole(ctx context.Context, project, grantee string, role projects.Role, by string) (projects.Grant, error) {
 	if l.fail != nil {
-		return register.Grant{}, l.fail
+		return projects.Grant{}, l.fail
 	}
-	return l.Register.GrantRole(ctx, project, grantee, role, by)
+	return l.Projects.GrantRole(ctx, project, grantee, role, by)
 }
 
 func (l *linker) Revoke(ctx context.Context, project, id, by string) error {
 	if l.fail != nil {
 		return l.fail
 	}
-	return l.Register.Revoke(ctx, project, id, by)
+	return l.Projects.Revoke(ctx, project, id, by)
 }
 
-func (l *linker) Grants(ctx context.Context, project string) ([]register.Grant, error) {
+func (l *linker) Grants(ctx context.Context, project string) ([]projects.Grant, error) {
 	if l.fail != nil {
 		return nil, l.fail
 	}
-	return l.Register.Grants(ctx, project)
+	return l.Projects.Grants(ctx, project)
 }
 
-func (l *linker) Role(ctx context.Context, project, user string) (register.Role, error) {
+func (l *linker) Role(ctx context.Context, project, user string) (projects.Role, error) {
 	if l.fail != nil {
-		return register.RoleNone, l.fail
+		return projects.RoleNone, l.fail
 	}
-	return l.Register.RoleOf(ctx, project, user)
+	return l.Projects.RoleOf(ctx, project, user)
 }
 
 func (l *linker) Project(ctx context.Context, key string) (string, error) {
-	rec, err := l.Register.Repository(ctx, key)
+	rec, err := l.Projects.Repository(ctx, key)
 	return rec.Project, err
 }
 
@@ -170,7 +169,7 @@ func TestLinkingClaimsTheIdForTheCaller(t *testing.T) {
 	require.Equal(t, []string{"github.com/acme/pay"}, got.Code)
 	require.False(t, got.CreatedAt.IsZero())
 
-	require.Equal(t, []register.Link{{
+	require.Equal(t, []projects.Link{{
 		Project: "QmPay", Config: "github.com/acme/cfg", Code: []string{"github.com/acme/pay"}, Claimant: "alice",
 	}}, l.links, "the claimant is the tau user who linked, never this node")
 
@@ -230,7 +229,7 @@ func TestTheOwnerRelinkReplacesTheRepositories(t *testing.T) {
 
 	w := h.do(t, linkRequestFor("tok-alice", "QmPay", linkOf("github.com/acme-renamed/cfg", "github.com/acme/web")))
 	require.Equal(t, http.StatusCreated, w.Code, bodyOf(t, w))
-	rec, err := l.Register.Project(t.Context(), "QmPay")
+	rec, err := l.Projects.Project(t.Context(), "QmPay")
 	require.NoError(t, err)
 	require.Equal(t, "github.com/acme-renamed/cfg", rec.Config)
 	require.Equal(t, []string{"github.com/acme/web"}, rec.Code)
@@ -241,10 +240,10 @@ func TestTheOwnerRelinkReplacesTheRepositories(t *testing.T) {
 		"what the relink released is free")
 
 	// a granted owner relinks too, and the project stays the claimant's
-	_, err = l.Register.GrantRole(t.Context(), "QmPay", "carol", register.RoleOwner, "alice")
+	_, err = l.Projects.GrantRole(t.Context(), "QmPay", "carol", projects.RoleOwner, "alice")
 	require.NoError(t, err)
 	require.Equal(t, http.StatusCreated, h.do(t, linkRequestFor("tok-carol", "QmPay", linkOf("github.com/acme-renamed/cfg"))).Code)
-	rec, err = l.Register.Project(t.Context(), "QmPay")
+	rec, err = l.Projects.Project(t.Context(), "QmPay")
 	require.NoError(t, err)
 	require.Equal(t, "alice", rec.Claimant)
 	require.Empty(t, rec.Code)
@@ -286,16 +285,16 @@ func TestARegisterThatFailsIsNotAConflict(t *testing.T) {
 }
 
 func TestARegisterRefusingTheLinkItselfIsSaid(t *testing.T) {
-	h := newHarness(t, Config{}, WithLinker(&refusing{err: register.ErrNoProject}))
-	h.projects.role = func(string, string) (register.Role, error) { return register.RoleNone, register.ErrNotLinked }
+	h := newHarness(t, Config{}, WithLinker(&refusing{err: projects.ErrNoProject}))
+	h.projects.role = func(string, string) (projects.Role, error) { return projects.RoleNone, projects.ErrNotLinked }
 	require.Equal(t, http.StatusBadRequest, h.do(t, linkRequestFor(testToken, "QmPay", linkBody)).Code)
 
-	h.projects.role = func(string, string) (register.Role, error) {
-		return register.RoleNone, connect.NewError(connect.CodeInvalidArgument, errors.New("bad id"))
+	h.projects.role = func(string, string) (projects.Role, error) {
+		return projects.RoleNone, connect.NewError(connect.CodeInvalidArgument, errors.New("bad id"))
 	}
 	require.Equal(t, http.StatusBadRequest, h.do(t, linkRequestFor(testToken, "QmPay", linkBody)).Code)
 
-	h.projects.role = func(string, string) (register.Role, error) { return register.RoleNone, errors.New("down") }
+	h.projects.role = func(string, string) (projects.Role, error) { return projects.RoleNone, errors.New("down") }
 	require.Equal(t, http.StatusBadGateway, h.do(t, linkRequestFor(testToken, "QmPay", linkBody)).Code)
 }
 
@@ -304,8 +303,8 @@ type refusing struct {
 	err error
 }
 
-func (r *refusing) LinkProject(context.Context, register.Link) (register.ProjectRecord, error) {
-	return register.ProjectRecord{}, r.err
+func (r *refusing) LinkProject(context.Context, projects.Link) (projects.ProjectRecord, error) {
+	return projects.ProjectRecord{}, r.err
 }
 
 func TestTheProjectRoutesWithoutALinkerAreADenial(t *testing.T) {
@@ -319,8 +318,8 @@ func TestTheProjectRoutesWithoutALinkerAreADenial(t *testing.T) {
 
 func TestAnUnlinkedProjectIsADenial(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.projects.role = func(_, id string) (register.Role, error) {
-		return register.RoleNone, fmt.Errorf("%w: project %s", register.ErrNotLinked, id)
+	h.projects.role = func(_, id string) (projects.Role, error) {
+		return projects.RoleNone, fmt.Errorf("%w: project %s", projects.ErrNotLinked, id)
 	}
 	require.Equal(t, http.StatusNotFound, h.do(t, authed(http.MethodGet, "/jobs/QmNobody", testToken)).Code)
 }

@@ -103,3 +103,27 @@ message KeyRow {
   string node = 2;
   int64 created = 3;
 }
+
+// ProjectClaimRow is every row of the project table: a claim on a project id, a
+// code repository it attaches, a repository's claim on a project, or a
+// claimant's index entry. repo is the repository as spelled when linked, which a
+// forge compares against; the key holds the normalised form.
+message ProjectClaimRow {
+  int64 at = 1;
+  string claimant = 2;
+  string config = 3;
+  string repo = 4;
+}
+
+// GrantRow is one role given on a project, keyed by project, grantee and id.
+message GrantRow {
+  string role = 1;
+  int64 at = 2;
+  string by = 3;
+}
+
+// GrantRevokedRow withdraws one grant for good, keyed by project and grant id.
+message GrantRevokedRow {
+  int64 at = 1;
+  string by = 2;
+}

@@ -1,8 +1,9 @@
 // Package auth is v2's identity service, served to other tau nodes over p2p/rpc.
 // It keeps this cloud's users (the configured admin, local users, and people signed
 // in through a forge or OIDC provider), issues and verifies their tau tokens,
-// brokers sign-in through the cloud's own OAuth apps, and answers whether someone a
-// forge vouched for is admitted. auth.proto's package doc says what lives elsewhere.
+// brokers sign-in through the cloud's own OAuth apps, answers whether someone a
+// forge vouched for is admitted, and keeps the project table (projects). auth.proto's
+// package doc says what lives elsewhere.
 package auth
 
 import (
@@ -22,6 +23,7 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/services/auth/oidc"
+	"github.com/taubyte/tau/services/auth/projects"
 )
 
 var serviceLog = logging.Logger("tau.auth.service")
@@ -41,6 +43,9 @@ type Service struct {
 	now    func() time.Time
 	// hashing bounds concurrent Argon2 work: each is 64 MiB.
 	hashing chan struct{}
+
+	// projects is the project table, kept in the users' store.
+	projects *projects.Table
 
 	oidcMu    sync.Mutex
 	providers map[string]*oidc.Provider
@@ -141,6 +146,7 @@ func (s *Service) assemble(h host.Host, opts ...Option) error {
 	}
 	s.http = oidc.Client(s.http)
 	if s.store != nil {
+		s.projects = projects.New(projects.Over(s.store.db), s.now)
 		s.keys = newKeyring(s.vault, *s.store, h.ID().String(), func() int64 { return s.now().UnixNano() })
 		for _, f := range s.cfg.Forges {
 			if s.forges == nil {
@@ -159,6 +165,14 @@ func (s *Service) assemble(h host.Host, opts ...Option) error {
 		}
 	}
 	return nil
+}
+
+// Projects is the project table auth keeps, nil when it keeps no store.
+func (s *Service) Projects() projects.Projects {
+	if s.projects == nil {
+		return nil
+	}
+	return s.projects
 }
 
 // serve listens and serves. Calling it twice, or after Close, is an error.

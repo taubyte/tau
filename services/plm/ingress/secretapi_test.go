@@ -14,7 +14,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/auth/projects"
 )
 
 // fakeVault records what reached it, so a route that authorized wrongly is
@@ -147,7 +147,7 @@ func TestThereIsNoRouteThatReadsASecretBack(t *testing.T) {
 func TestOnlySomebodyWhoMayPushMaySetASecret(t *testing.T) {
 	v := newVault()
 	h := newHarness(t, Config{}, WithVault(v))
-	h.projects.role = func(string, string) (register.Role, error) { return register.RoleNone, nil }
+	h.projects.role = func(string, string) (projects.Role, error) { return projects.RoleNone, nil }
 
 	for _, r := range []*http.Request{
 		authed(http.MethodGet, secretPath, testToken),

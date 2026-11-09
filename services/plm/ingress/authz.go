@@ -10,11 +10,11 @@ import (
 
 	"github.com/taubyte/tau/pkg/git/repokey"
 	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/auth/projects"
 )
 
 // authz.go decides whether a caller may do a thing, on the project: the tau user
-// auth verifies the token as, and their role in the register's project table. A
+// auth verifies the token as, and their role in auth's project table. A
 // denial is a 404, so no route is an id oracle.
 
 const bearerPrefix = "Bearer "
@@ -65,7 +65,7 @@ func (s *Service) caller(ctx context.Context, token string) (string, error) {
 
 // mayTouchProject authorizes a project-scoped route for a caller holding at
 // least want, and hands back who they are.
-func (s *Service) mayTouchProject(ctx context.Context, token, projectID string, want register.Role) (string, error) {
+func (s *Service) mayTouchProject(ctx context.Context, token, projectID string, want projects.Role) (string, error) {
 	user, err := s.caller(ctx, token)
 	if err != nil {
 		return "", err
@@ -82,7 +82,7 @@ func (s *Service) mayTouchProject(ctx context.Context, token, projectID string, 
 
 // mayTouchJob authorizes a job-scoped route on the project the job's
 // repository belongs to, and hands back the job it had to read to do it.
-func (s *Service) mayTouchJob(ctx context.Context, token, jobID string, want register.Role) (*plmv2.Job, error) {
+func (s *Service) mayTouchJob(ctx context.Context, token, jobID string, want projects.Role) (*plmv2.Job, error) {
 	user, err := s.caller(ctx, token)
 	if err != nil {
 		return nil, err

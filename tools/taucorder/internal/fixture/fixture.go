@@ -18,6 +18,8 @@ import (
 
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/proto/codec"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2/plmv2connect"
 	registerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
@@ -108,6 +110,12 @@ func (c *Cloud) Register() (string, http.Handler) {
 	return registerv2connect.RegisterServiceName, h
 }
 
+// Auth serves ProjectService.
+func (c *Cloud) Auth() (string, http.Handler) {
+	_, h := authv2connect.NewProjectServiceHandler(&auth{c: c}, codec.Option())
+	return authv2connect.ProjectServiceName, h
+}
+
 // PLM serves JobService.
 func (c *Cloud) Build() (string, http.Handler) {
 	_, h := plmv2connect.NewJobServiceHandler(&jobs{c: c}, codec.Option())
@@ -128,12 +136,17 @@ func (r *register) Environments(_ context.Context, req *connect.Request[register
 	return connect.NewResponse(&registerv2.Deployments{Environments: envs}), nil
 }
 
-func (r *register) ListProjects(_ context.Context, _ *connect.Request[registerv2.ListProjectsRequest]) (*connect.Response[registerv2.ProjectRecords], error) {
-	r.c.count("RegisterService/ListProjects")
-	out := &registerv2.ProjectRecords{}
+type auth struct {
+	authv2connect.UnimplementedProjectServiceHandler
+	c *Cloud
+}
+
+func (a *auth) ListProjects(_ context.Context, _ *connect.Request[authv2.ListProjectsRequest]) (*connect.Response[authv2.ProjectRecords], error) {
+	a.c.count("ProjectService/ListProjects")
+	out := &authv2.ProjectRecords{}
 	for _, id := range []string{"p1", "p2"} {
-		if repo, ok := r.c.Projects[id]; ok {
-			out.Projects = append(out.Projects, &registerv2.ProjectRecord{Id: id, ConfigRepository: repo})
+		if repo, ok := a.c.Projects[id]; ok {
+			out.Projects = append(out.Projects, &authv2.ProjectRecord{Id: id, ConfigRepository: repo})
 		}
 	}
 	return connect.NewResponse(out), nil

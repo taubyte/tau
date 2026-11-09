@@ -149,7 +149,7 @@ func WithDomains(d Domains) Option {
 	}
 }
 
-// WithLinker records linked projects and grants in the register, after
+// WithLinker records linked projects and grants in auth's project table, after
 // authorization. Optional: without it the project routes answer 404.
 func WithLinker(l Linker) Option {
 	return func(o *options) error {

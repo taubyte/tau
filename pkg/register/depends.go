@@ -45,7 +45,7 @@ func (d Depends) Within(held Depends) bool {
 // note is what they were.
 func (r *Register) Recorded() (*Register, *Depends) {
 	d := &Depends{}
-	return &Register{store: recording{Store: r.store, d: d}, now: r.now}, d
+	return &Register{store: recording{Store: r.store, d: d}}, d
 }
 
 type recording struct {

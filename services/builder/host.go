@@ -13,6 +13,7 @@ import (
 	"github.com/taubyte/tau/pkg/forge/drivers"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
+	"github.com/taubyte/tau/services/auth/projects"
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/plm/artifact"
 	"github.com/taubyte/tau/services/plm/deploy"
@@ -124,16 +125,17 @@ func Open(h service.Host, cfg Config) (*Runs, error) {
 		return nil, err
 	}
 	table := register.TableOn(h)
+	linkedTo := projects.On(h)
 	vault := secrets.VaultOn(h)
 	assets := storage.StoreOn(h)
 	r := newRuns(nil, nil, assets, h, logs)
-	r.also = []io.Closer{table, vault, assets}
+	r.also = []io.Closer{table, linkedTo, vault, assets}
 	domains, err := provers(h, cfg)
 	if err != nil {
 		return nil, errors.Join(err, r.Close())
 	}
 	r.also = append(r.also, domains)
-	r.exec, r.confirm, err = compose(h.Region(), cfg, linked.Projects{Table: table.Now}, table.Now, vault, domains)
+	r.exec, r.confirm, err = compose(h.Region(), cfg, linked.Projects{Table: linkedTo}, table.Now, vault, domains)
 	if err != nil {
 		return nil, errors.Join(err, r.Close())
 	}

@@ -1,6 +1,5 @@
-// Package linked is what a link wrote, as build's two halves read it: the register's
-// project table, reached per call, and the credentials the link stored in the vault
-// under pkg/linkcreds' names.
+// Package linked is what a link wrote, as build's two halves read it: auth's project
+// table and the credentials the link stored in the vault under pkg/linkcreds' names.
 package linked
 
 import (
@@ -11,21 +10,19 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/taubyte/tau/pkg/linkcreds"
-	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/register"
+	"github.com/taubyte/tau/services/auth/projects"
 	"github.com/taubyte/tau/services/secrets"
 )
 
-// Projects is the register's project table. Table is how it is reached: per call,
-// since which node answers is a routing question.
+// Projects is auth's project table as build reads and writes it.
 type Projects struct {
-	Table func(ctx context.Context) (register.Table, error)
+	Table projects.Projects
 }
 
 // notLinked is ErrNotLinked as the connect NotFound every build caller already
-// reads as "this cloud has no such thing", with the register's words kept.
+// reads as "this cloud has no such thing", with the table's words kept.
 func notLinked(err error) error {
-	if errors.Is(err, pkgregister.ErrNotLinked) {
+	if errors.Is(err, projects.ErrNotLinked) {
 		return connect.NewError(connect.CodeNotFound, err)
 	}
 	return err
@@ -34,11 +31,7 @@ func notLinked(err error) error {
 // Project is the project a repository belongs to: build's admission check on
 // a push.
 func (p Projects) Project(ctx context.Context, repositoryKey string) (string, error) {
-	t, err := p.Table(ctx)
-	if err != nil {
-		return "", err
-	}
-	rec, err := t.Repository(ctx, repositoryKey)
+	rec, err := p.Table.Repository(ctx, repositoryKey)
 	if err != nil {
 		return "", notLinked(err)
 	}
@@ -48,12 +41,8 @@ func (p Projects) Project(ctx context.Context, repositoryKey string) (string, er
 // Configures says whether a repository is a project's configuration: the one whose
 // pushes are deploys.
 func (p Projects) Configures(ctx context.Context, projectID, repositoryKey string) (bool, error) {
-	t, err := p.Table(ctx)
-	if err != nil {
-		return false, err
-	}
-	rec, err := t.Repository(ctx, repositoryKey)
-	if errors.Is(err, pkgregister.ErrNotLinked) {
+	rec, err := p.Table.Repository(ctx, repositoryKey)
+	if errors.Is(err, projects.ErrNotLinked) {
 		return false, nil
 	}
 	if err != nil {
@@ -83,80 +72,48 @@ func (p Projects) Repositories(ctx context.Context, projectID string) ([]string,
 }
 
 // ProjectRecord is one project as the table holds it.
-func (p Projects) ProjectRecord(ctx context.Context, projectID string) (pkgregister.ProjectRecord, error) {
-	t, err := p.Table(ctx)
-	if err != nil {
-		return pkgregister.ProjectRecord{}, err
-	}
-	rec, err := t.Project(ctx, projectID)
+func (p Projects) ProjectRecord(ctx context.Context, projectID string) (projects.ProjectRecord, error) {
+	rec, err := p.Table.Project(ctx, projectID)
 	return rec, notLinked(err)
 }
 
 // LinkProject writes a link: ingress's, after authorizing the caller.
-func (p Projects) LinkProject(ctx context.Context, l pkgregister.Link) (pkgregister.ProjectRecord, error) {
-	t, err := p.Table(ctx)
-	if err != nil {
-		return pkgregister.ProjectRecord{}, err
-	}
-	return t.LinkProject(ctx, l)
+func (p Projects) LinkProject(ctx context.Context, l projects.Link) (projects.ProjectRecord, error) {
+	return p.Table.LinkProject(ctx, l)
 }
 
 // ProjectsOf is every project a claimant linked.
-func (p Projects) ProjectsOf(ctx context.Context, claimant string) ([]pkgregister.ProjectRecord, error) {
-	t, err := p.Table(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return t.ProjectsOf(ctx, claimant)
+func (p Projects) ProjectsOf(ctx context.Context, claimant string) ([]projects.ProjectRecord, error) {
+	return p.Table.ProjectsOf(ctx, claimant)
 }
 
 // Role is a user's role on a project.
-func (p Projects) Role(ctx context.Context, projectID, user string) (pkgregister.Role, error) {
-	t, err := p.Table(ctx)
-	if err != nil {
-		return pkgregister.RoleNone, err
-	}
-	role, err := t.RoleOf(ctx, projectID, user)
+func (p Projects) Role(ctx context.Context, projectID, user string) (projects.Role, error) {
+	role, err := p.Table.RoleOf(ctx, projectID, user)
 	return role, notLinked(err)
 }
 
-func (p Projects) GrantRole(ctx context.Context, project, grantee string, role pkgregister.Role, by string) (pkgregister.Grant, error) {
-	t, err := p.Table(ctx)
-	if err != nil {
-		return pkgregister.Grant{}, err
-	}
-	g, err := t.GrantRole(ctx, project, grantee, role, by)
+func (p Projects) GrantRole(ctx context.Context, project, grantee string, role projects.Role, by string) (projects.Grant, error) {
+	g, err := p.Table.GrantRole(ctx, project, grantee, role, by)
 	return g, notLinked(err)
 }
 
 func (p Projects) Revoke(ctx context.Context, project, id, by string) error {
-	t, err := p.Table(ctx)
-	if err != nil {
-		return err
-	}
-	err = t.Revoke(ctx, project, id, by)
-	if errors.Is(err, pkgregister.ErrNoGrant) {
+	err := p.Table.Revoke(ctx, project, id, by)
+	if errors.Is(err, projects.ErrNoGrant) {
 		return connect.NewError(connect.CodeNotFound, err)
 	}
 	return err
 }
 
-func (p Projects) Grants(ctx context.Context, project string) ([]pkgregister.Grant, error) {
-	t, err := p.Table(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return t.Grants(ctx, project)
+func (p Projects) Grants(ctx context.Context, project string) ([]projects.Grant, error) {
+	return p.Table.Grants(ctx, project)
 }
 
 // LinkedRepositories is every repository of every linked project: what a
 // reconnected forge event stream compares heads for.
 func (p Projects) LinkedRepositories(ctx context.Context) ([]string, error) {
-	t, err := p.Table(ctx)
-	if err != nil {
-		return nil, err
-	}
-	recs, err := t.ListProjects(ctx)
+	recs, err := p.Table.ListProjects(ctx)
 	if err != nil {
 		return nil, err
 	}

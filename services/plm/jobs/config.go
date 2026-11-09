@@ -220,7 +220,7 @@ var (
 	_ Store       = (*raft.MockCluster)(nil)
 )
 
-// Repositories asks the register's project table which project a pushed
+// Repositories asks auth's project table which project a pushed
 // repository belongs to; an unregistered repository is refused before anything
 // is queued.
 type Repositories interface {

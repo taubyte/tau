@@ -9,7 +9,7 @@ import (
 	"time"
 
 	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/auth/projects"
 )
 
 // Defaults, each a Config field set through New, never a shared package global.
@@ -324,10 +324,10 @@ var (
 	ErrMalformed = errors.New("build: the delivery names no usable push")
 )
 
-// Projects is the register's project table, as authorization reads it.
+// Projects is auth's project table, as authorization reads it.
 type Projects interface {
 	// Role is user's role on a project; an unknown project is NotFound.
-	Role(ctx context.Context, projectID, user string) (register.Role, error)
+	Role(ctx context.Context, projectID, user string) (projects.Role, error)
 	// Project is the project a repository belongs to; one no project owns
 	// is NotFound.
 	Project(ctx context.Context, repositoryKey string) (string, error)
@@ -348,17 +348,17 @@ type Vault interface {
 	List(ctx context.Context, project, environment string) ([]string, error)
 }
 
-// Linker is the register's project table as this role writes it: linking, the
+// Linker is auth's project table as this role writes it: linking, the
 // caller's index and grants, only after authorization.
 type Linker interface {
-	LinkProject(ctx context.Context, l register.Link) (register.ProjectRecord, error)
-	ProjectsOf(ctx context.Context, user string) ([]register.ProjectRecord, error)
+	LinkProject(ctx context.Context, l projects.Link) (projects.ProjectRecord, error)
+	ProjectsOf(ctx context.Context, user string) ([]projects.ProjectRecord, error)
 	// ProjectRecord is one linked project; an unknown id is
-	// register.ErrNotLinked.
-	ProjectRecord(ctx context.Context, projectID string) (register.ProjectRecord, error)
-	GrantRole(ctx context.Context, project, grantee string, role register.Role, by string) (register.Grant, error)
+	// projects.ErrNotLinked.
+	ProjectRecord(ctx context.Context, projectID string) (projects.ProjectRecord, error)
+	GrantRole(ctx context.Context, project, grantee string, role projects.Role, by string) (projects.Grant, error)
 	Revoke(ctx context.Context, project, id, by string) error
-	Grants(ctx context.Context, project string) ([]register.Grant, error)
+	Grants(ctx context.Context, project string) ([]projects.Grant, error)
 }
 
 // Streams is a forge's own push feed, for forges with no signed webhook (Gerrit).

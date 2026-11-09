@@ -10,7 +10,7 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/auth/projects"
 )
 
 // errors.go is this role's one code table: everything answered to the internet
@@ -90,7 +90,7 @@ func respond(w http.ResponseWriter, err error) {
 // Unavailable still becomes a 503.
 func translate(err error) (int, string) {
 	// A project the register has no record of is the same 404 a denial is.
-	if errors.Is(err, register.ErrNotLinked) {
+	if errors.Is(err, projects.ErrNotLinked) {
 		return errDenied.status, errDenied.msg
 	}
 	switch connect.CodeOf(err) {

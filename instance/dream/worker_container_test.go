@@ -23,7 +23,7 @@ import (
 
 func TestAContainerWorkerRunsToCompletionPerInvocation(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services:  []string{instance.Register, instance.Worker, instance.Stats, storageService.Descriptor.Name, instance.Builder},
+		Services:  []string{instance.Register, instance.Worker, instance.Stats, storageService.Descriptor.Name, instance.Builder, instance.Auth},
 		Container: containers.Docker,
 	})
 	require.NoError(t, err)
@@ -73,7 +73,7 @@ func TestAContainerWorkerRunsToCompletionPerInvocation(t *testing.T) {
 
 func TestAContainerWorkerReadsItsSecretThroughTheHelper(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
-		Services:  []string{instance.Register, instance.Worker, instance.Stats, instance.Secrets, storageService.Descriptor.Name, instance.Builder},
+		Services:  []string{instance.Register, instance.Worker, instance.Stats, instance.Secrets, storageService.Descriptor.Name, instance.Builder, instance.Auth},
 		Container: containers.Docker,
 	})
 	require.NoError(t, err)

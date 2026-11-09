@@ -209,15 +209,10 @@ func unwire(err error) error {
 	switch cerr.Code() {
 	case connect.CodeNotFound:
 		if sentinel := matching(cerr.Message(),
-			pkgregister.ErrNotPublished, pkgregister.ErrNoObject, pkgregister.ErrNoHost, pkgregister.ErrNoView,
-			pkgregister.ErrNotLinked, pkgregister.ErrNoGrant); sentinel != nil {
+			pkgregister.ErrNotPublished, pkgregister.ErrNoObject, pkgregister.ErrNoHost, pkgregister.ErrNoView); sentinel != nil {
 			return fmt.Errorf("%w: %s", sentinel, cerr.Message())
 		}
 	case connect.CodeAlreadyExists:
-		if sentinel := matching(cerr.Message(),
-			pkgregister.ErrProjectClaimed, pkgregister.ErrRepositoryClaimed); sentinel != nil {
-			return fmt.Errorf("%w: %s", sentinel, cerr.Message())
-		}
 		return fmt.Errorf("%w: %s", pkgregister.ErrHostClaimed, cerr.Message())
 	case connect.CodeFailedPrecondition:
 		return fmt.Errorf("%w: %s", pkgregister.ErrStaleRevision, cerr.Message())
@@ -226,9 +221,7 @@ func unwire(err error) error {
 	case connect.CodeInvalidArgument:
 		if sentinel := matching(cerr.Message(),
 			pkgregister.ErrNoProject, pkgregister.ErrNoEnvironment,
-			pkgregister.ErrEmptyObject, pkgregister.ErrSeparator, pkgregister.ErrNoDestination,
-			pkgregister.ErrNoRepository, pkgregister.ErrNoClaimant,
-			pkgregister.ErrNoRole, pkgregister.ErrNoGrantee); sentinel != nil {
+			pkgregister.ErrEmptyObject, pkgregister.ErrSeparator, pkgregister.ErrNoDestination); sentinel != nil {
 			return fmt.Errorf("%w: %s", sentinel, cerr.Message())
 		}
 	}

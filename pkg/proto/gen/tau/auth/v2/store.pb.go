@@ -870,6 +870,192 @@ func (x *KeyRow) GetCreated() int64 {
 	return 0
 }
 
+// ProjectClaimRow is every row of the project table: a claim on a project id, a
+// code repository it attaches, a repository's claim on a project, or a
+// claimant's index entry. repo is the repository as spelled when linked, which a
+// forge compares against; the key holds the normalised form.
+type ProjectClaimRow struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	At            int64                  `protobuf:"varint,1,opt,name=at,proto3" json:"at,omitempty"`
+	Claimant      string                 `protobuf:"bytes,2,opt,name=claimant,proto3" json:"claimant,omitempty"`
+	Config        string                 `protobuf:"bytes,3,opt,name=config,proto3" json:"config,omitempty"`
+	Repo          string                 `protobuf:"bytes,4,opt,name=repo,proto3" json:"repo,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProjectClaimRow) Reset() {
+	*x = ProjectClaimRow{}
+	mi := &file_tau_auth_v2_store_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectClaimRow) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectClaimRow) ProtoMessage() {}
+
+func (x *ProjectClaimRow) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_store_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectClaimRow.ProtoReflect.Descriptor instead.
+func (*ProjectClaimRow) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_store_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ProjectClaimRow) GetAt() int64 {
+	if x != nil {
+		return x.At
+	}
+	return 0
+}
+
+func (x *ProjectClaimRow) GetClaimant() string {
+	if x != nil {
+		return x.Claimant
+	}
+	return ""
+}
+
+func (x *ProjectClaimRow) GetConfig() string {
+	if x != nil {
+		return x.Config
+	}
+	return ""
+}
+
+func (x *ProjectClaimRow) GetRepo() string {
+	if x != nil {
+		return x.Repo
+	}
+	return ""
+}
+
+// GrantRow is one role given on a project, keyed by project, grantee and id.
+type GrantRow struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Role          string                 `protobuf:"bytes,1,opt,name=role,proto3" json:"role,omitempty"`
+	At            int64                  `protobuf:"varint,2,opt,name=at,proto3" json:"at,omitempty"`
+	By            string                 `protobuf:"bytes,3,opt,name=by,proto3" json:"by,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GrantRow) Reset() {
+	*x = GrantRow{}
+	mi := &file_tau_auth_v2_store_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GrantRow) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GrantRow) ProtoMessage() {}
+
+func (x *GrantRow) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_store_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GrantRow.ProtoReflect.Descriptor instead.
+func (*GrantRow) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_store_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *GrantRow) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+func (x *GrantRow) GetAt() int64 {
+	if x != nil {
+		return x.At
+	}
+	return 0
+}
+
+func (x *GrantRow) GetBy() string {
+	if x != nil {
+		return x.By
+	}
+	return ""
+}
+
+// GrantRevokedRow withdraws one grant for good, keyed by project and grant id.
+type GrantRevokedRow struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	At            int64                  `protobuf:"varint,1,opt,name=at,proto3" json:"at,omitempty"`
+	By            string                 `protobuf:"bytes,2,opt,name=by,proto3" json:"by,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GrantRevokedRow) Reset() {
+	*x = GrantRevokedRow{}
+	mi := &file_tau_auth_v2_store_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GrantRevokedRow) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GrantRevokedRow) ProtoMessage() {}
+
+func (x *GrantRevokedRow) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_store_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GrantRevokedRow.ProtoReflect.Descriptor instead.
+func (*GrantRevokedRow) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_store_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *GrantRevokedRow) GetAt() int64 {
+	if x != nil {
+		return x.At
+	}
+	return 0
+}
+
+func (x *GrantRevokedRow) GetBy() string {
+	if x != nil {
+		return x.By
+	}
+	return ""
+}
+
 var File_tau_auth_v2_store_proto protoreflect.FileDescriptor
 
 const file_tau_auth_v2_store_proto_rawDesc = "" +
@@ -943,7 +1129,19 @@ const file_tau_auth_v2_store_proto_rawDesc = "" +
 	"\x06KeyRow\x12\x16\n" +
 	"\x06public\x18\x01 \x01(\fR\x06public\x12\x12\n" +
 	"\x04node\x18\x02 \x01(\tR\x04node\x12\x18\n" +
-	"\acreated\x18\x03 \x01(\x03R\acreatedB\xa4\x01\n" +
+	"\acreated\x18\x03 \x01(\x03R\acreated\"i\n" +
+	"\x0fProjectClaimRow\x12\x0e\n" +
+	"\x02at\x18\x01 \x01(\x03R\x02at\x12\x1a\n" +
+	"\bclaimant\x18\x02 \x01(\tR\bclaimant\x12\x16\n" +
+	"\x06config\x18\x03 \x01(\tR\x06config\x12\x12\n" +
+	"\x04repo\x18\x04 \x01(\tR\x04repo\">\n" +
+	"\bGrantRow\x12\x12\n" +
+	"\x04role\x18\x01 \x01(\tR\x04role\x12\x0e\n" +
+	"\x02at\x18\x02 \x01(\x03R\x02at\x12\x0e\n" +
+	"\x02by\x18\x03 \x01(\tR\x02by\"1\n" +
+	"\x0fGrantRevokedRow\x12\x0e\n" +
+	"\x02at\x18\x01 \x01(\x03R\x02at\x12\x0e\n" +
+	"\x02by\x18\x02 \x01(\tR\x02byB\xa4\x01\n" +
 	"\x0fcom.tau.auth.v2B\n" +
 	"StoreProtoP\x01Z7github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2;authv2\xa2\x02\x03TAX\xaa\x02\vTau.Auth.V2\xca\x02\vTau\\Auth\\V2\xe2\x02\x17Tau\\Auth\\V2\\GPBMetadata\xea\x02\rTau::Auth::V2b\x06proto3"
 
@@ -959,20 +1157,23 @@ func file_tau_auth_v2_store_proto_rawDescGZIP() []byte {
 	return file_tau_auth_v2_store_proto_rawDescData
 }
 
-var file_tau_auth_v2_store_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_tau_auth_v2_store_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_tau_auth_v2_store_proto_goTypes = []any{
-	(*ClaimRow)(nil),    // 0: tau.auth.v2.ClaimRow
-	(*ProfileRow)(nil),  // 1: tau.auth.v2.ProfileRow
-	(*RoleRow)(nil),     // 2: tau.auth.v2.RoleRow
-	(*FlagRow)(nil),     // 3: tau.auth.v2.FlagRow
-	(*PasswordRow)(nil), // 4: tau.auth.v2.PasswordRow
-	(*SessionRow)(nil),  // 5: tau.auth.v2.SessionRow
-	(*ApiKeyRow)(nil),   // 6: tau.auth.v2.ApiKeyRow
-	(*RevokedRow)(nil),  // 7: tau.auth.v2.RevokedRow
-	(*InviteRow)(nil),   // 8: tau.auth.v2.InviteRow
-	(*PendingRow)(nil),  // 9: tau.auth.v2.PendingRow
-	(*DeviceRow)(nil),   // 10: tau.auth.v2.DeviceRow
-	(*KeyRow)(nil),      // 11: tau.auth.v2.KeyRow
+	(*ClaimRow)(nil),        // 0: tau.auth.v2.ClaimRow
+	(*ProfileRow)(nil),      // 1: tau.auth.v2.ProfileRow
+	(*RoleRow)(nil),         // 2: tau.auth.v2.RoleRow
+	(*FlagRow)(nil),         // 3: tau.auth.v2.FlagRow
+	(*PasswordRow)(nil),     // 4: tau.auth.v2.PasswordRow
+	(*SessionRow)(nil),      // 5: tau.auth.v2.SessionRow
+	(*ApiKeyRow)(nil),       // 6: tau.auth.v2.ApiKeyRow
+	(*RevokedRow)(nil),      // 7: tau.auth.v2.RevokedRow
+	(*InviteRow)(nil),       // 8: tau.auth.v2.InviteRow
+	(*PendingRow)(nil),      // 9: tau.auth.v2.PendingRow
+	(*DeviceRow)(nil),       // 10: tau.auth.v2.DeviceRow
+	(*KeyRow)(nil),          // 11: tau.auth.v2.KeyRow
+	(*ProjectClaimRow)(nil), // 12: tau.auth.v2.ProjectClaimRow
+	(*GrantRow)(nil),        // 13: tau.auth.v2.GrantRow
+	(*GrantRevokedRow)(nil), // 14: tau.auth.v2.GrantRevokedRow
 }
 var file_tau_auth_v2_store_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for method output_type
@@ -993,7 +1194,7 @@ func file_tau_auth_v2_store_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_auth_v2_store_proto_rawDesc), len(file_tau_auth_v2_store_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

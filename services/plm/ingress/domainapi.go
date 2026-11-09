@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/auth/projects"
 )
 
 // domainapi.go issues the TXT record a project's owner sets so the cloud believes
@@ -35,7 +35,7 @@ func (s *Service) handleClaimDomain(w http.ResponseWriter, r *http.Request, toke
 		respond(w, errDenied)
 		return
 	}
-	if _, err := s.mayTouchProject(r.Context(), token, projectID, register.RoleOwner); err != nil {
+	if _, err := s.mayTouchProject(r.Context(), token, projectID, projects.RoleOwner); err != nil {
 		respond(w, err)
 		return
 	}

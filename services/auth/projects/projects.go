@@ -1,14 +1,16 @@
-package register
+package projects
 
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/taubyte/tau/pkg/git/repokey"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 )
 
 // The project table: which project id belongs to which repositories, written when a
@@ -16,14 +18,15 @@ import (
 // table decides who may publish under it: the configuration repository that claimed
 // it first.
 //
-// Every key sits under recordsPrefix ("r/"); publications own o/, p/, h/, c/, m/ and
-// d/, so neither table can overwrite the other. A deploy reads this table to check
-// the compiled id is claimed by the repository pushed to (services/plm/deploy).
+// Every key sits under recordsPrefix ("/projects/") in auth's store, beside its
+// users. A deploy reads this table to check the compiled id is claimed by the
+// repository pushed to (services/plm/deploy). Each value is a ProjectClaimRow
+// (store.proto):
 //
-//	r/claim/<project>/<config>          {at, claimant}  one per (project, config repository)
-//	r/code/<project>/<config>/<code>    {at}            one per code repository a claim attaches
-//	r/repo/<repository>/<project>       {at, config}    one per (repository, project) that claims it
-//	r/mine/<claimant>/<project>         {at, config}    one per (claimant, project): "my projects"
+//	/projects/claim/<project>/<config>          {at, claimant}  one per (project, config repository)
+//	/projects/code/<project>/<config>/<code>    {at}            one per code repository a claim attaches
+//	/projects/repo/<repository>/<project>       {at, config}    one per (repository, project) that claims it
+//	/projects/mine/<claimant>/<project>         {at, config}    one per (claimant, project): "my projects"
 //
 // <config>, <code>, <repository> and <claimant> are base64url of the normalised
 // value, since a repository key `host/owner/name` holds separators.
@@ -34,7 +37,7 @@ import (
 // smaller repository key. The same rule decides a repository two projects attach.
 
 const (
-	recordsPrefix = "r" + sep
+	recordsPrefix = sep + "projects" + sep
 	claimPrefix   = recordsPrefix + "claim" + sep
 	codePrefix    = recordsPrefix + "code" + sep
 	repoPrefix    = recordsPrefix + "repo" + sep
@@ -44,20 +47,20 @@ const (
 var (
 	// ErrProjectClaimed is a project id another configuration repository owns.
 	// The fix is the author's: project.yaml's id is theirs to regenerate.
-	ErrProjectClaimed = errors.New("register: project id is already claimed")
+	ErrProjectClaimed = errors.New("auth: project id is already claimed")
 
 	// ErrRepositoryClaimed is a repository another project owns.
-	ErrRepositoryClaimed = errors.New("register: repository belongs to another project")
+	ErrRepositoryClaimed = errors.New("auth: repository belongs to another project")
 
 	// ErrNotLinked is a project id nobody has claimed, or a repository no
 	// project owns.
-	ErrNotLinked = errors.New("register: not linked")
+	ErrNotLinked = errors.New("auth: not linked")
 
 	// ErrNoRepository is a link naming no configuration repository.
-	ErrNoRepository = errors.New("register: a link names no configuration repository")
+	ErrNoRepository = errors.New("auth: a link names no configuration repository")
 
 	// ErrNoClaimant is a link with nobody behind it.
-	ErrNoClaimant = errors.New("register: a link names no claimant")
+	ErrNoClaimant = errors.New("auth: a link names no claimant")
 )
 
 // Link is one claim: a project id, the configuration repository claiming it,
@@ -72,7 +75,7 @@ type Link struct {
 	Replace bool
 }
 
-// ProjectRecord is what the register holds about a linked project, as every
+// ProjectRecord is what the table holds about a linked project, as every
 // node resolves it. Repositories are as they were spelled when linked.
 type ProjectRecord struct {
 	ID     string
@@ -98,27 +101,11 @@ type RepositoryRecord struct {
 	Configures bool
 }
 
-// claimRow is every record's value. Repo is the repository as spelled when linked,
-// which a forge compares against; the key holds the normalised form.
-type claimRow struct {
-	At       int64  `json:"at"`
-	Claimant string `json:"claimant,omitempty"`
-	Config   string `json:"config,omitempty"`
-	Repo     string `json:"repo,omitempty"`
-}
-
-// NormaliseRepository is the spelling a repository key is stored under.
-//
-// Forges treat owner and name case-insensitively, so `Acme/Shop` and
-// `acme/shop` are one repository and must be one key, or every uniqueness
-// property built on it quietly fails.
-func NormaliseRepository(key string) string { return strings.ToLower(spelling(key)) }
-
 func spelling(key string) string { return strings.Trim(strings.TrimSpace(key), "/") }
 
 // spelt is a row's repository as linked, or the normalised form for a row
 // written without one.
-func spelt(row claimRow, normalised string) string {
+func spelt(row *authv2.ProjectClaimRow, normalised string) string {
 	if row.Repo != "" {
 		return row.Repo
 	}
@@ -149,12 +136,12 @@ func mineKey(claimant, project string) string { return minePrefix + segment(clai
 //
 // The checks before the writes give a clear refusal in the uncontended case and
 // guarantee nothing under concurrency; the resolution rule makes that safe.
-func (r *Register) LinkProject(ctx context.Context, l Link) (ProjectRecord, error) {
+func (t *Table) LinkProject(ctx context.Context, l Link) (ProjectRecord, error) {
 	if err := checkName(l.Project, ErrNoProject); err != nil {
 		return ProjectRecord{}, err
 	}
 	configSpelt := spelling(l.Config)
-	config := NormaliseRepository(l.Config)
+	config := repokey.Normalise(l.Config)
 	if config == "" {
 		return ProjectRecord{}, ErrNoRepository
 	}
@@ -165,25 +152,25 @@ func (r *Register) LinkProject(ctx context.Context, l Link) (ProjectRecord, erro
 	var code []string
 	codeSpelt := map[string]string{}
 	for _, c := range l.Code {
-		if n := NormaliseRepository(c); n != "" && n != config && !slices.Contains(code, n) {
+		if n := repokey.Normalise(c); n != "" && n != config && !slices.Contains(code, n) {
 			code = append(code, n)
 			codeSpelt[n] = spelling(c)
 		}
 	}
 	slices.Sort(code)
 
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	t.mu.Lock()
+	defer t.mu.Unlock()
 
-	owner, found, err := r.owner(ctx, l.Project)
+	owner, found, err := t.owner(ctx, l.Project)
 	if err != nil {
 		return ProjectRecord{}, err
 	}
-	if found && !l.Replace && NormaliseRepository(owner.Config) != config {
+	if found && !l.Replace && repokey.Normalise(owner.Config) != config {
 		return ProjectRecord{}, claimedBy(l.Project, owner.Config)
 	}
 	for _, repo := range append([]string{config}, code...) {
-		rec, held, err := r.repository(ctx, repo)
+		rec, held, err := t.repository(ctx, repo)
 		if err != nil {
 			return ProjectRecord{}, err
 		}
@@ -192,54 +179,54 @@ func (r *Register) LinkProject(ctx context.Context, l Link) (ProjectRecord, erro
 		}
 	}
 
-	at := r.now().UnixNano()
+	at := t.now().UnixNano()
 	if found {
 		at = owner.CreatedAt.UnixNano()
 	}
 	if found && l.Replace {
 		claimant = owner.Claimant
-		if err := r.unlink(ctx, owner, config, code); err != nil {
+		if err := t.unlink(ctx, owner, config, code); err != nil {
 			return ProjectRecord{}, err
 		}
 	}
 
 	// The claim first, so the repository rows are valid the moment they land.
-	write := r.putOnce
+	write := t.putOnce
 	if l.Replace {
-		write = r.put
+		write = func(ctx context.Context, key string, row *authv2.ProjectClaimRow) error { return t.put(ctx, key, row) }
 	}
-	if err := write(ctx, claimKey(l.Project, config), claimRow{At: at, Claimant: claimant, Repo: configSpelt}); err != nil {
+	if err := write(ctx, claimKey(l.Project, config), &authv2.ProjectClaimRow{At: at, Claimant: claimant, Repo: configSpelt}); err != nil {
 		return ProjectRecord{}, err
 	}
-	if err := write(ctx, repoKey(config, l.Project), claimRow{At: at, Config: config, Repo: configSpelt}); err != nil {
+	if err := write(ctx, repoKey(config, l.Project), &authv2.ProjectClaimRow{At: at, Config: config, Repo: configSpelt}); err != nil {
 		return ProjectRecord{}, err
 	}
 	for _, c := range code {
-		if err := write(ctx, codeKey(l.Project, config, c), claimRow{At: at, Repo: codeSpelt[c]}); err != nil {
+		if err := write(ctx, codeKey(l.Project, config, c), &authv2.ProjectClaimRow{At: at, Repo: codeSpelt[c]}); err != nil {
 			return ProjectRecord{}, err
 		}
-		if err := write(ctx, repoKey(c, l.Project), claimRow{At: at, Config: config, Repo: codeSpelt[c]}); err != nil {
+		if err := write(ctx, repoKey(c, l.Project), &authv2.ProjectClaimRow{At: at, Config: config, Repo: codeSpelt[c]}); err != nil {
 			return ProjectRecord{}, err
 		}
 	}
-	if err := write(ctx, mineKey(claimant, l.Project), claimRow{At: at, Config: config}); err != nil {
+	if err := write(ctx, mineKey(claimant, l.Project), &authv2.ProjectClaimRow{At: at, Config: config}); err != nil {
 		return ProjectRecord{}, err
 	}
 
-	rec, err := r.project(ctx, l.Project)
+	rec, err := t.project(ctx, l.Project)
 	if err != nil {
 		return ProjectRecord{}, err
 	}
-	if NormaliseRepository(rec.Config) != config {
+	if repokey.Normalise(rec.Config) != config {
 		return ProjectRecord{}, claimedBy(l.Project, rec.Config)
 	}
 	owned := map[string]bool{}
 	for _, c := range rec.Code {
-		owned[NormaliseRepository(c)] = true
+		owned[repokey.Normalise(c)] = true
 	}
 	for _, c := range code {
 		if !owned[c] {
-			held, _, err := r.repository(ctx, c)
+			held, _, err := t.repository(ctx, c)
 			if err != nil {
 				return ProjectRecord{}, err
 			}
@@ -257,87 +244,73 @@ func claimedBy(project, config string) error {
 // unlink tombstones what a replacing link no longer holds: every other claim
 // on the id, and each repository the new set leaves out. The store has no
 // Delete, so a row is released by writing it empty, which row reads as absent.
-func (r *Register) unlink(ctx context.Context, owner ProjectRecord, config string, code []string) error {
-	held, err := r.project(ctx, owner.ID)
+func (t *Table) unlink(ctx context.Context, owner ProjectRecord, config string, code []string) error {
+	held, err := t.project(ctx, owner.ID)
 	if err != nil {
 		return err
 	}
-	keys, err := r.store.List(ctx, claimPrefix+owner.ID+sep)
+	keys, err := t.store.List(ctx, claimPrefix+owner.ID+sep)
 	if err != nil {
-		return fmt.Errorf("register: listing claims on %s: %w", owner.ID, err)
+		return fmt.Errorf("auth: listing claims on %s: %w", owner.ID, err)
 	}
 	for _, key := range keys {
-		// A store may list a key rooted ("/r/claim/…"), the way a datastore
-		// spells it; the key is the one it was written under.
-		key = strings.TrimPrefix(key, sep)
 		if key != claimKey(owner.ID, config) {
-			if err := r.tombstone(ctx, key); err != nil {
+			if err := t.tombstone(ctx, key); err != nil {
 				return err
 			}
 		}
 	}
-	old := NormaliseRepository(owner.Config)
+	old := repokey.Normalise(owner.Config)
 	keep := append([]string{config}, code...)
 	for _, c := range held.Code {
-		c = NormaliseRepository(c)
+		c = repokey.Normalise(c)
 		if old != config || !slices.Contains(code, c) {
-			if err := r.tombstone(ctx, codeKey(owner.ID, old, c)); err != nil {
+			if err := t.tombstone(ctx, codeKey(owner.ID, old, c)); err != nil {
 				return err
 			}
 		}
 		if !slices.Contains(keep, c) {
-			if err := r.tombstone(ctx, repoKey(c, owner.ID)); err != nil {
+			if err := t.tombstone(ctx, repoKey(c, owner.ID)); err != nil {
 				return err
 			}
 		}
 	}
 	if !slices.Contains(keep, old) {
-		return r.tombstone(ctx, repoKey(old, owner.ID))
+		return t.tombstone(ctx, repoKey(old, owner.ID))
 	}
 	return nil
 }
 
-func (r *Register) tombstone(ctx context.Context, key string) error {
-	if err := r.store.Put(ctx, key, nil); err != nil {
-		return fmt.Errorf("register: releasing %s: %w", key, err)
-	}
-	return nil
-}
-
-func (r *Register) put(ctx context.Context, key string, row claimRow) error {
-	b, err := json.Marshal(row)
-	if err != nil {
-		return err
-	}
-	if err := r.store.Put(ctx, key, b); err != nil {
-		return fmt.Errorf("register: writing %s: %w", key, err)
+func (t *Table) tombstone(ctx context.Context, key string) error {
+	if err := t.store.Put(ctx, key, nil); err != nil {
+		return fmt.Errorf("auth: releasing %s: %w", key, err)
 	}
 	return nil
 }
 
 // putOnce writes a row that is absent and leaves one that is present: every
 // row here is a fact about a moment, and rewriting it would move the moment.
-func (r *Register) putOnce(ctx context.Context, key string, row claimRow) error {
-	v, found, err := r.store.Get(ctx, key)
+func (t *Table) putOnce(ctx context.Context, key string, row *authv2.ProjectClaimRow) error {
+	v, found, err := t.store.Get(ctx, key)
 	if err != nil {
-		return fmt.Errorf("register: reading %s: %w", key, err)
+		return fmt.Errorf("auth: reading %s: %w", key, err)
 	}
 	if found && len(v) > 0 {
 		return nil
 	}
-	return r.put(ctx, key, row)
+	return t.put(ctx, key, row)
 }
 
 // Project is a linked project as every node resolves it.
-func (r *Register) Project(ctx context.Context, id string) (ProjectRecord, error) {
+func (t *Table) Project(ctx context.Context, id string) (ProjectRecord, error) {
 	if err := checkName(id, ErrNoProject); err != nil {
 		return ProjectRecord{}, err
 	}
-	return r.project(ctx, id)
+	return t.project(ctx, id)
 }
 
-func (r *Register) project(ctx context.Context, id string) (ProjectRecord, error) {
-	owner, found, err := r.owner(ctx, id)
+func (t *Table) project(ctx context.Context, id string) (ProjectRecord, error) {
+	owner, found, err := t.owner(ctx, id)
 	if err != nil {
 		return ProjectRecord{}, err
 	}
@@ -345,10 +318,10 @@ func (r *Register) project(ctx context.Context, id string) (ProjectRecord, error
 		return ProjectRecord{}, fmt.Errorf("%w: project %s", ErrNotLinked, id)
 	}
 
-	prefix := codePrefix + id + sep + segment(NormaliseRepository(owner.Config)) + sep
-	keys, err := r.store.List(ctx, prefix)
+	prefix := codePrefix + id + sep + segment(repokey.Normalise(owner.Config)) + sep
+	keys, err := t.store.List(ctx, prefix)
 	if err != nil {
-		return ProjectRecord{}, fmt.Errorf("register: listing %s's code: %w", id, err)
+		return ProjectRecord{}, fmt.Errorf("auth: listing %s's code: %w", id, err)
 	}
 	for _, key := range keys {
 		_, rest, ok := strings.Cut(key, prefix)
@@ -359,7 +332,7 @@ func (r *Register) project(ctx context.Context, id string) (ProjectRecord, error
 		if err != nil {
 			continue
 		}
-		row, ok, err := r.row(ctx, codeKey(id, NormaliseRepository(owner.Config), code))
+		row, ok, err := t.row(ctx, codeKey(id, repokey.Normalise(owner.Config), code))
 		if err != nil {
 			return ProjectRecord{}, err
 		}
@@ -367,7 +340,7 @@ func (r *Register) project(ctx context.Context, id string) (ProjectRecord, error
 			continue
 		}
 		// A code repository attached here and owned elsewhere is not this project's.
-		held, ok, err := r.repository(ctx, code)
+		held, ok, err := t.repository(ctx, code)
 		if err != nil {
 			return ProjectRecord{}, err
 		}
@@ -380,11 +353,11 @@ func (r *Register) project(ctx context.Context, id string) (ProjectRecord, error
 }
 
 // owner is the claim on id that wins: earliest time, then smallest repository.
-func (r *Register) owner(ctx context.Context, id string) (ProjectRecord, bool, error) {
+func (t *Table) owner(ctx context.Context, id string) (ProjectRecord, bool, error) {
 	prefix := claimPrefix + id + sep
-	keys, err := r.store.List(ctx, prefix)
+	keys, err := t.store.List(ctx, prefix)
 	if err != nil {
-		return ProjectRecord{}, false, fmt.Errorf("register: listing claims on %s: %w", id, err)
+		return ProjectRecord{}, false, fmt.Errorf("auth: listing claims on %s: %w", id, err)
 	}
 
 	var best ProjectRecord
@@ -398,7 +371,7 @@ func (r *Register) owner(ctx context.Context, id string) (ProjectRecord, bool, e
 		if err != nil {
 			continue
 		}
-		row, ok, err := r.row(ctx, claimKey(id, config))
+		row, ok, err := t.row(ctx, claimKey(id, config))
 		if err != nil {
 			return ProjectRecord{}, false, err
 		}
@@ -406,7 +379,7 @@ func (r *Register) owner(ctx context.Context, id string) (ProjectRecord, bool, e
 			continue
 		}
 		at := time.Unix(0, row.At).UTC()
-		if !found || at.Before(best.CreatedAt) || (at.Equal(best.CreatedAt) && config < NormaliseRepository(best.Config)) {
+		if !found || at.Before(best.CreatedAt) || (at.Equal(best.CreatedAt) && config < repokey.Normalise(best.Config)) {
 			best = ProjectRecord{ID: id, Config: spelt(row, config), Claimant: row.Claimant, CreatedAt: at}
 			found = true
 		}
@@ -414,31 +387,20 @@ func (r *Register) owner(ctx context.Context, id string) (ProjectRecord, bool, e
 	return best, found, nil
 }
 
-// row reads one record. A row that is present and unreadable is skipped rather
-// than fatal: it cannot be ordered, so it cannot own anything, and refusing
-// every read of the project over it would let one bad write deny the owner.
-func (r *Register) row(ctx context.Context, key string) (claimRow, bool, error) {
-	b, found, err := r.store.Get(ctx, key)
-	if err != nil {
-		return claimRow{}, false, fmt.Errorf("register: reading %s: %w", key, err)
-	}
-	if !found {
-		return claimRow{}, false, nil
-	}
-	var row claimRow
-	if json.Unmarshal(b, &row) != nil {
-		return claimRow{}, false, nil
-	}
-	return row, true, nil
+// row reads one record; see read for what reads as absent.
+func (t *Table) row(ctx context.Context, key string) (*authv2.ProjectClaimRow, bool, error) {
+	row := new(authv2.ProjectClaimRow)
+	found, err := t.read(ctx, key, row)
+	return row, found, err
 }
 
 // Repository says which project owns a repository.
-func (r *Register) Repository(ctx context.Context, repository string) (RepositoryRecord, error) {
-	repository = NormaliseRepository(repository)
+func (t *Table) Repository(ctx context.Context, repository string) (RepositoryRecord, error) {
+	repository = repokey.Normalise(repository)
 	if repository == "" {
 		return RepositoryRecord{}, ErrNoRepository
 	}
-	rec, found, err := r.repository(ctx, repository)
+	rec, found, err := t.repository(ctx, repository)
 	if err != nil {
 		return RepositoryRecord{}, err
 	}
@@ -452,16 +414,16 @@ func (r *Register) Repository(ctx context.Context, repository string) (Repositor
 // ordered by (time, project), the first whose own owning claim is the one that
 // attached it. A row written by a claim that lost its project id therefore
 // never owns a repository.
-func (r *Register) repository(ctx context.Context, repository string) (RepositoryRecord, bool, error) {
+func (t *Table) repository(ctx context.Context, repository string) (RepositoryRecord, bool, error) {
 	prefix := repoPrefix + segment(repository) + sep
-	keys, err := r.store.List(ctx, prefix)
+	keys, err := t.store.List(ctx, prefix)
 	if err != nil {
-		return RepositoryRecord{}, false, fmt.Errorf("register: listing claims on %s: %w", repository, err)
+		return RepositoryRecord{}, false, fmt.Errorf("auth: listing claims on %s: %w", repository, err)
 	}
 
 	type candidate struct {
 		project string
-		row     claimRow
+		row     *authv2.ProjectClaimRow
 	}
 	var candidates []candidate
 	for _, key := range keys {
@@ -469,7 +431,7 @@ func (r *Register) repository(ctx context.Context, repository string) (Repositor
 		if !ok || project == "" || strings.Contains(project, sep) {
 			continue
 		}
-		row, ok, err := r.row(ctx, repoKey(repository, project))
+		row, ok, err := t.row(ctx, repoKey(repository, project))
 		if err != nil {
 			return RepositoryRecord{}, false, err
 		}
@@ -488,11 +450,11 @@ func (r *Register) repository(ctx context.Context, repository string) (Repositor
 	})
 
 	for _, c := range candidates {
-		owner, found, err := r.owner(ctx, c.project)
+		owner, found, err := t.owner(ctx, c.project)
 		if err != nil {
 			return RepositoryRecord{}, false, err
 		}
-		if found && NormaliseRepository(owner.Config) == c.row.Config {
+		if found && repokey.Normalise(owner.Config) == c.row.Config {
 			return RepositoryRecord{Project: c.project, Repository: spelt(c.row, repository), Configures: repository == c.row.Config}, true, nil
 		}
 	}
@@ -501,15 +463,15 @@ func (r *Register) repository(ctx context.Context, repository string) (Repositor
 
 // ProjectsOf is every project a user linked through the repository that owns
 // it, or holds a live grant on, sorted.
-func (r *Register) ProjectsOf(ctx context.Context, claimant string) ([]ProjectRecord, error) {
+func (t *Table) ProjectsOf(ctx context.Context, claimant string) ([]ProjectRecord, error) {
 	claimant = strings.TrimSpace(claimant)
 	if claimant == "" {
 		return nil, ErrNoClaimant
 	}
 	prefix := minePrefix + segment(claimant) + sep
-	keys, err := r.store.List(ctx, prefix)
+	keys, err := t.store.List(ctx, prefix)
 	if err != nil {
-		return nil, fmt.Errorf("register: listing %s's projects: %w", claimant, err)
+		return nil, fmt.Errorf("auth: listing %s's projects: %w", claimant, err)
 	}
 	var out []ProjectRecord
 	for _, key := range keys {
@@ -517,14 +479,14 @@ func (r *Register) ProjectsOf(ctx context.Context, claimant string) ([]ProjectRe
 		if !ok || id == "" || strings.Contains(id, sep) {
 			continue
 		}
-		row, ok, err := r.row(ctx, mineKey(claimant, id))
+		row, ok, err := t.row(ctx, mineKey(claimant, id))
 		if err != nil {
 			return nil, err
 		}
 		if !ok {
 			continue
 		}
-		rec, err := r.project(ctx, id)
+		rec, err := t.project(ctx, id)
 		if errors.Is(err, ErrNotLinked) {
 			continue
 		}
@@ -533,11 +495,11 @@ func (r *Register) ProjectsOf(ctx context.Context, claimant string) ([]ProjectRe
 		}
 		// A claim this claimant made and lost is not theirs; a relink of the
 		// owning repository by a second maintainer is.
-		if NormaliseRepository(rec.Config) == row.Config {
+		if repokey.Normalise(rec.Config) == row.Config {
 			out = append(out, rec)
 		}
 	}
-	granted, err := r.granted(ctx, claimant)
+	granted, err := t.granted(ctx, claimant)
 	if err != nil {
 		return nil, err
 	}
@@ -545,7 +507,7 @@ func (r *Register) ProjectsOf(ctx context.Context, claimant string) ([]ProjectRe
 		if slices.ContainsFunc(out, func(p ProjectRecord) bool { return p.ID == id }) {
 			continue
 		}
-		rec, err := r.project(ctx, id)
+		rec, err := t.project(ctx, id)
 		if errors.Is(err, ErrNotLinked) {
 			continue
 		}
@@ -561,10 +523,10 @@ func (r *Register) ProjectsOf(ctx context.Context, claimant string) ([]ProjectRe
 // ListProjects is every linked project, sorted by id: the operator's view.
 // Each id appears once however many claims it has, resolved like any other
 // read.
-func (r *Register) ListProjects(ctx context.Context) ([]ProjectRecord, error) {
-	keys, err := r.store.List(ctx, claimPrefix)
+func (t *Table) ListProjects(ctx context.Context) ([]ProjectRecord, error) {
+	keys, err := t.store.List(ctx, claimPrefix)
 	if err != nil {
-		return nil, fmt.Errorf("register: listing claims: %w", err)
+		return nil, fmt.Errorf("auth: listing claims: %w", err)
 	}
 	seen := map[string]bool{}
 	var out []ProjectRecord
@@ -578,7 +540,7 @@ func (r *Register) ListProjects(ctx context.Context) ([]ProjectRecord, error) {
 			continue
 		}
 		seen[id] = true
-		rec, err := r.project(ctx, id)
+		rec, err := t.project(ctx, id)
 		if errors.Is(err, ErrNotLinked) {
 			continue
 		}

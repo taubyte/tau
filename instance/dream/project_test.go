@@ -397,9 +397,12 @@ func deployWith(t testing.TB, name, host string, wasm []byte, extra map[string][
 func deployServing(t testing.TB, name, host string, wasm []byte, extra map[string][]byte, services ...string) *running {
 	t.Helper()
 
-	// SOMEBODY BUILDS IT: the project is built as a push is, by a builder.
-	if !slices.Contains(services, instance.Builder) {
-		services = append(services, instance.Builder)
+	// SOMEBODY BUILDS IT: the project is built as a push is, by a builder, linked
+	// in auth's project table.
+	for _, need := range []string{instance.Builder, instance.Auth} {
+		if !slices.Contains(services, need) {
+			services = append(services, need)
+		}
 	}
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Services: services})
 	require.NoError(t, err)
@@ -829,7 +832,7 @@ type cloud struct {
 // fleetServices is what every node of a fleet runs.
 var fleetServices = []string{
 	instance.Register, instance.Worker, instance.Stats, instance.Gateway,
-	instance.Database, instance.Primitives, storageService.Descriptor.Name, instance.Builder}
+	instance.Database, instance.Primitives, storageService.Descriptor.Name, instance.Builder, instance.Auth}
 
 // deployFleetOf is deployFleet over several projects in one cloud: a publish per
 // project and a settle barrier waiting for all of them.

@@ -21,7 +21,7 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	builderv2 "github.com/taubyte/tau/pkg/proto/gen/tau/builder/v2"
 	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
-	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/auth/projects"
 	"github.com/taubyte/tau/services/builder"
 	"github.com/taubyte/tau/services/plm"
 	"github.com/taubyte/tau/services/plm/clients"
@@ -242,12 +242,12 @@ func (d *direct) Close() error { return d.also.Close() }
 func (d *direct) build(ctx context.Context, p Push) (Outcome, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	reg, err := d.u.register()
+	table, err := d.u.projects()
 	if err != nil {
 		return Outcome{}, err
 	}
-	linked, err := reg.Repository(ctx, p.Repository)
-	if errors.Is(err, pkgregister.ErrNotLinked) {
+	linked, err := table.Repository(ctx, p.Repository)
+	if errors.Is(err, projects.ErrNotLinked) {
 		// REFUSED AS PLM REFUSES IT, before anything runs.
 		return Outcome{}, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("repository %q is not registered with this cloud: %w", p.Repository, err))
 	}

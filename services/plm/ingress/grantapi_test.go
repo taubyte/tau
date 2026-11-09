@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/auth/projects"
 )
 
 func grantReq(token, project, body string) *http.Request {
@@ -78,7 +78,7 @@ func TestGrantRefusals(t *testing.T) {
 
 func TestTheRegisterFailingUnderAnOwnerIsSaid(t *testing.T) {
 	l := linkedTestProject(t)
-	broken := &linker{Register: l.Register, fail: errors.New("down")}
+	broken := &linker{Projects: l.Projects, fail: errors.New("down")}
 	h := newHarness(t, Config{}, WithLinker(broken))
 	require.Equal(t, http.StatusBadGateway, h.do(t, authed(http.MethodGet, "/projects/"+testProject+"/grants", testToken)).Code)
 	require.Equal(t, http.StatusBadGateway, h.do(t, grantReq(testToken, testProject, `{"user":"bob","role":"viewer"}`)).Code)
@@ -89,5 +89,5 @@ func TestTheRegisterFailingUnderAnOwnerIsSaid(t *testing.T) {
 		long[i] = 'a'
 	}
 	require.Equal(t, http.StatusNotFound, h.do(t, authed(http.MethodDelete, "/projects/"+testProject+"/grants/"+string(long), testToken)).Code)
-	require.True(t, register.RoleOwner.Includes(register.RoleViewer))
+	require.True(t, projects.RoleOwner.Includes(projects.RoleViewer))
 }

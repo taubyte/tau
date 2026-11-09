@@ -22,7 +22,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/auth/projects"
 	"github.com/taubyte/tau/services/plm/joblog"
 )
 
@@ -216,7 +216,7 @@ func TestFollowIsAuthorizedLikeTheRest(t *testing.T) {
 
 	// A caller without a role on the project gets a 404, not a 403: a job id carries a
 	// repository.
-	h.projects.role = func(string, string) (register.Role, error) { return register.RoleNone, nil }
+	h.projects.role = func(string, string) (projects.Role, error) { return projects.RoleNone, nil }
 	w = h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs", testToken))
 	require.Equal(t, http.StatusNotFound, w.Code)
 	require.NotContains(t, w.Body.String(), "secret build output")

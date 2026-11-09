@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/auth/projects"
 )
 
 // The fixture is fakes and an httptest recorder: no libp2p host, listener or
@@ -88,21 +88,21 @@ func (f *fakeDeliveries) Verify(hook Hook, header http.Header, body []byte) (Pus
 // fakeProjects makes testUser the owner of testProject, which testRepoKey
 // belongs to, unless a test says otherwise.
 type fakeProjects struct {
-	role    func(project, user string) (register.Role, error)
+	role    func(project, user string) (projects.Role, error)
 	project func(key string) (string, error)
 }
 
-func (f *fakeProjects) Role(_ context.Context, project, user string) (register.Role, error) {
+func (f *fakeProjects) Role(_ context.Context, project, user string) (projects.Role, error) {
 	if f.role != nil {
 		return f.role(project, user)
 	}
 	if project != testProject {
-		return register.RoleNone, connect.NewError(connect.CodeNotFound, fmt.Errorf("no project %s", project))
+		return projects.RoleNone, connect.NewError(connect.CodeNotFound, fmt.Errorf("no project %s", project))
 	}
 	if user == testUser {
-		return register.RoleOwner, nil
+		return projects.RoleOwner, nil
 	}
-	return register.RoleNone, nil
+	return projects.RoleNone, nil
 }
 
 func (f *fakeProjects) Project(_ context.Context, key string) (string, error) {

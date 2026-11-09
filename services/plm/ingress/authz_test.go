@@ -9,36 +9,36 @@ import (
 	"github.com/stretchr/testify/require"
 
 	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/auth/projects"
 )
 
 type route struct {
 	name   string
 	method string
 	path   string
-	want   register.Role
+	want   projects.Role
 }
 
 func guardedRoutes() []route {
 	return []route{
-		{"list", http.MethodGet, "/jobs/" + testProject, register.RoleViewer},
-		{"get", http.MethodGet, "/job/" + testJobID, register.RoleViewer},
-		{"cancel", http.MethodPost, "/cancel/" + testJobID, register.RoleBuilder},
-		{"retry", http.MethodPost, "/retry/" + testJobID, register.RoleBuilder},
-		{"project", http.MethodGet, "/projects/" + testProject, register.RoleViewer},
-		{"secrets", http.MethodGet, "/secrets/" + testProject + "/main", register.RoleSecretManager},
-		{"grants", http.MethodGet, "/projects/" + testProject + "/grants", register.RoleOwner},
+		{"list", http.MethodGet, "/jobs/" + testProject, projects.RoleViewer},
+		{"get", http.MethodGet, "/job/" + testJobID, projects.RoleViewer},
+		{"cancel", http.MethodPost, "/cancel/" + testJobID, projects.RoleBuilder},
+		{"retry", http.MethodPost, "/retry/" + testJobID, projects.RoleBuilder},
+		{"project", http.MethodGet, "/projects/" + testProject, projects.RoleViewer},
+		{"secrets", http.MethodGet, "/secrets/" + testProject + "/main", projects.RoleSecretManager},
+		{"grants", http.MethodGet, "/projects/" + testProject + "/grants", projects.RoleOwner},
 	}
 }
 
-var everyRole = []register.Role{register.RoleNone, register.RoleViewer, register.RoleBuilder, register.RoleSecretManager, register.RoleOwner}
+var everyRole = []projects.Role{projects.RoleNone, projects.RoleViewer, projects.RoleBuilder, projects.RoleSecretManager, projects.RoleOwner}
 
 func TestEveryRouteServesItsRoleAndAboveAndDeniesBelow(t *testing.T) {
 	for _, r := range guardedRoutes() {
 		for _, role := range everyRole {
 			t.Run(r.name+"/"+string(role), func(t *testing.T) {
 				h := newHarness(t, Config{}, WithLinker(linkedTestProject(t)), WithVault(&fakeVault{}))
-				h.projects.role = func(string, string) (register.Role, error) { return role, nil }
+				h.projects.role = func(string, string) (projects.Role, error) { return role, nil }
 				w := h.do(t, authed(r.method, r.path, testToken))
 				if role.Includes(r.want) {
 					require.Less(t, w.Code, 300, bodyOf(t, w))
@@ -51,10 +51,10 @@ func TestEveryRouteServesItsRoleAndAboveAndDeniesBelow(t *testing.T) {
 }
 
 func TestRolesIncludeTheOnesBelowThem(t *testing.T) {
-	require.True(t, register.RoleSecretManager.Includes(register.RoleBuilder))
-	require.True(t, register.RoleOwner.Includes(register.RoleSecretManager))
-	require.False(t, register.RoleBuilder.Includes(register.RoleSecretManager))
-	require.False(t, register.RoleNone.Includes(register.RoleNone))
+	require.True(t, projects.RoleSecretManager.Includes(projects.RoleBuilder))
+	require.True(t, projects.RoleOwner.Includes(projects.RoleSecretManager))
+	require.False(t, projects.RoleBuilder.Includes(projects.RoleSecretManager))
+	require.False(t, projects.RoleNone.Includes(projects.RoleNone))
 }
 
 func TestACallerWhoProvedNothingLearnsNothing(t *testing.T) {
@@ -63,7 +63,7 @@ func TestACallerWhoProvedNothingLearnsNothing(t *testing.T) {
 			h := newHarness(t, Config{}, WithLinker(linkedTestProject(t)), WithVault(&fakeVault{}))
 			reached := false
 			h.jobs.get = func(string) (*plmv2.Job, error) { reached = true; return nil, nil }
-			h.projects.role = func(string, string) (register.Role, error) { reached = true; return register.RoleOwner, nil }
+			h.projects.role = func(string, string) (projects.Role, error) { reached = true; return projects.RoleOwner, nil }
 
 			require.Equal(t, http.StatusUnauthorized, h.do(t, authed(r.method, r.path, "")).Code)
 			require.Equal(t, http.StatusUnauthorized, h.do(t, authed(r.method, r.path, "not-a-tau-token")).Code)
@@ -110,9 +110,9 @@ func TestAuthsAnswersAboutACaller(t *testing.T) {
 func TestTheRoleIsAskedForTheCallerOnTheJobsProject(t *testing.T) {
 	h := newHarness(t, Config{})
 	var asked []string
-	h.projects.role = func(project, user string) (register.Role, error) {
+	h.projects.role = func(project, user string) (projects.Role, error) {
 		asked = append(asked, project+" "+user)
-		return register.RoleViewer, nil
+		return projects.RoleViewer, nil
 	}
 	require.Equal(t, http.StatusOK, h.do(t, authed(http.MethodGet, "/job/"+testJobID, testToken)).Code)
 	require.Equal(t, []string{testProject + " " + testUser}, asked)
@@ -128,8 +128,8 @@ func TestAJobWhoseRepositoryNoProjectOwnsIsDenied(t *testing.T) {
 
 func TestARoleThatCannotBeReadIsNeverADenial(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.projects.role = func(string, string) (register.Role, error) {
-		return register.RoleNone, connect.NewError(connect.CodeUnavailable, errors.New("register down"))
+	h.projects.role = func(string, string) (projects.Role, error) {
+		return projects.RoleNone, connect.NewError(connect.CodeUnavailable, errors.New("register down"))
 	}
 	require.Equal(t, http.StatusServiceUnavailable, h.do(t, authed(http.MethodGet, "/jobs/"+testProject, testToken)).Code)
 	require.Equal(t, http.StatusServiceUnavailable, h.do(t, authed(http.MethodGet, "/job/"+testJobID, testToken)).Code)

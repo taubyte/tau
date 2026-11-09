@@ -9,7 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/auth/projects"
 )
 
 // grantapi.go is an owner sharing a project: roles given to other tau users,
@@ -34,7 +34,7 @@ func (s *Service) owner(ctx context.Context, token, projectID string) (string, e
 	if s.linker == nil {
 		return "", errDenied
 	}
-	return s.mayTouchProject(ctx, token, projectID, register.RoleOwner)
+	return s.mayTouchProject(ctx, token, projectID, projects.RoleOwner)
 }
 
 func (s *Service) handleListGrants(w http.ResponseWriter, r *http.Request, token, projectID string) {
@@ -62,7 +62,7 @@ func (s *Service) handleGrant(w http.ResponseWriter, r *http.Request, token, pro
 		respond(w, problem(http.StatusBadRequest, "body must be {user, role}"))
 		return
 	}
-	role, err := register.ParseRole(req.Role)
+	role, err := projects.ParseRole(req.Role)
 	if err != nil {
 		respond(w, problem(http.StatusBadRequest, err.Error()))
 		return
@@ -97,7 +97,7 @@ func (s *Service) handleRevoke(w http.ResponseWriter, r *http.Request, token, pr
 	}
 	err = s.linker.Revoke(ctx, projectID, id, by)
 	switch {
-	case errors.Is(err, register.ErrNoGrant), connect.CodeOf(err) == connect.CodeNotFound:
+	case errors.Is(err, projects.ErrNoGrant), connect.CodeOf(err) == connect.CodeNotFound:
 		respond(w, errDenied)
 	case err != nil:
 		respond(w, err)

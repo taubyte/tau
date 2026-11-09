@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	authmock "github.com/taubyte/tau/services/auth/mock"
+	"github.com/taubyte/tau/services/auth/projects"
 	"github.com/taubyte/tau/services/plm/linked"
 	"github.com/taubyte/tau/services/register"
 
@@ -42,10 +44,8 @@ const (
 
 func linkedTable(t *testing.T) linked.Projects {
 	t.Helper()
-	r, err := pkgregister.New(pkgregister.WithStore(pkgregister.NewMemStore()))
-	require.NoError(t, err)
-	p := linked.Projects{Table: func(context.Context) (register.Table, error) { return r, nil }}
-	_, err = p.LinkProject(t.Context(), pkgregister.Link{
+	p := linked.Projects{Table: authmock.New().Projects()}
+	_, err := p.LinkProject(t.Context(), projects.Link{
 		Project: linkedID, Config: linkedCfg, Code: []string{linkedCode}, Claimant: "github.com/1",
 	})
 	require.NoError(t, err)

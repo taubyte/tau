@@ -53,7 +53,7 @@ func (s *Service) mount() http.Handler {
 	mux.HandleFunc("POST /domain/{fqdn}/for/{projectId}", s.admitted("projectId", s.handleClaimDomain))
 
 	// Linking a project, the caller's own projects, and an owner's grants:
-	// the one public door to the register's project table (projectapi.go,
+	// the one public door to auth's project table (projectapi.go,
 	// grantapi.go).
 	mux.HandleFunc("POST /projects/{projectId}", s.admitted("projectId", s.handleLinkProject))
 	mux.HandleFunc("GET /projects/{projectId}", s.admitted("projectId", s.handleGetProject))

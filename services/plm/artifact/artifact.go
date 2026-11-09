@@ -75,7 +75,7 @@ type Register interface {
 }
 
 // Projects says which repository a bare path is in: the project's main
-// (configuration) repository, which only the register's project table knows.
+// (configuration) repository, which only auth's project table knows.
 type Projects interface {
 	MainRepository(ctx context.Context, projectID string) (string, error)
 }

@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/linkcreds"
-	pkgregister "github.com/taubyte/tau/pkg/register"
-	"github.com/taubyte/tau/services/register"
+	authmock "github.com/taubyte/tau/services/auth/mock"
+	"github.com/taubyte/tau/services/auth/projects"
 	"github.com/taubyte/tau/services/secrets"
 )
 
@@ -38,17 +38,16 @@ const (
 	linkedCode = "github.com/acme/code"
 )
 
-func table(t *testing.T) (Projects, *pkgregister.Register) {
+func table(t *testing.T) (Projects, projects.Projects) {
 	t.Helper()
-	r, err := pkgregister.New(pkgregister.WithStore(pkgregister.NewMemStore()))
-	require.NoError(t, err)
-	return Projects{Table: func(context.Context) (register.Table, error) { return r, nil }}, r
+	r := authmock.New().Projects()
+	return Projects{Table: r}, r
 }
 
 func linkedTable(t *testing.T) Projects {
 	t.Helper()
 	p, _ := table(t)
-	_, err := p.LinkProject(t.Context(), pkgregister.Link{
+	_, err := p.LinkProject(t.Context(), projects.Link{
 		Project: linkedID, Config: linkedCfg, Code: []string{linkedCode}, Claimant: "github.com/1",
 	})
 	require.NoError(t, err)
@@ -84,7 +83,7 @@ func TestTheProjectTableAnswersBothBuildRoles(t *testing.T) {
 	require.Equal(t, []string{linkedCfg, linkedCode}, repos)
 
 	_, err = p.Repositories(ctx, "QmNobody")
-	require.ErrorIs(t, err, pkgregister.ErrNotLinked)
+	require.ErrorIs(t, err, projects.ErrNotLinked)
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 
 	mine, err := p.ProjectsOf(ctx, "github.com/1")
@@ -93,7 +92,7 @@ func TestTheProjectTableAnswersBothBuildRoles(t *testing.T) {
 
 	// SEVERAL CODE REPOSITORIES, in an order that is not sorted: the bare path is
 	// still the configuration repository, never the first of them.
-	_, err = p.LinkProject(ctx, pkgregister.Link{Project: "QmManyCode", Config: "github.com/acme/many-config",
+	_, err = p.LinkProject(ctx, projects.Link{Project: "QmManyCode", Config: "github.com/acme/many-config",
 		Code: []string{"github.com/acme/zeta", "github.com/acme/alpha", "github.com/acme/mid"}, Claimant: "github.com/1"})
 	require.NoError(t, err)
 	main, err = p.MainRepository(ctx, "QmManyCode")
@@ -109,15 +108,15 @@ func TestTheProjectTableHoldsRoles(t *testing.T) {
 
 	role, err := p.Role(ctx, linkedID, "github.com/1")
 	require.NoError(t, err)
-	require.Equal(t, pkgregister.RoleOwner, role)
+	require.Equal(t, projects.RoleOwner, role)
 	_, err = p.Role(ctx, "QmNobody", "github.com/1")
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 
-	g, err := p.GrantRole(ctx, linkedID, "bob", pkgregister.RoleBuilder, "github.com/1")
+	g, err := p.GrantRole(ctx, linkedID, "bob", projects.RoleBuilder, "github.com/1")
 	require.NoError(t, err)
 	role, err = p.Role(ctx, linkedID, "bob")
 	require.NoError(t, err)
-	require.Equal(t, pkgregister.RoleBuilder, role)
+	require.Equal(t, projects.RoleBuilder, role)
 	grants, err := p.Grants(ctx, linkedID)
 	require.NoError(t, err)
 	require.Len(t, grants, 1)
@@ -126,12 +125,47 @@ func TestTheProjectTableHoldsRoles(t *testing.T) {
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(p.Revoke(ctx, linkedID, "nope", "github.com/1")))
 	role, err = p.Role(ctx, linkedID, "bob")
 	require.NoError(t, err)
-	require.Equal(t, pkgregister.RoleNone, role)
+	require.Equal(t, projects.RoleNone, role)
 }
 
-func TestWithNoRegisterTheTableSaysSo(t *testing.T) {
-	gone := errors.New("no register is reachable")
-	p := Projects{Table: func(context.Context) (register.Table, error) { return nil, gone }}
+// unreached is a table no node answers for.
+type unreached struct{ err error }
+
+func (u unreached) LinkProject(context.Context, projects.Link) (projects.ProjectRecord, error) {
+	return projects.ProjectRecord{}, u.err
+}
+
+func (u unreached) Project(context.Context, string) (projects.ProjectRecord, error) {
+	return projects.ProjectRecord{}, u.err
+}
+
+func (u unreached) Repository(context.Context, string) (projects.RepositoryRecord, error) {
+	return projects.RepositoryRecord{}, u.err
+}
+
+func (u unreached) ProjectsOf(context.Context, string) ([]projects.ProjectRecord, error) {
+	return nil, u.err
+}
+
+func (u unreached) ListProjects(context.Context) ([]projects.ProjectRecord, error) {
+	return nil, u.err
+}
+
+func (u unreached) GrantRole(context.Context, string, string, projects.Role, string) (projects.Grant, error) {
+	return projects.Grant{}, u.err
+}
+
+func (u unreached) Revoke(context.Context, string, string, string) error { return u.err }
+
+func (u unreached) Grants(context.Context, string) ([]projects.Grant, error) { return nil, u.err }
+
+func (u unreached) RoleOf(context.Context, string, string) (projects.Role, error) {
+	return projects.RoleNone, u.err
+}
+
+func TestWithNoAuthTheTableSaysSo(t *testing.T) {
+	gone := errors.New("auth is not reachable")
+	p := Projects{Table: unreached{gone}}
 	ctx := t.Context()
 
 	_, err := p.Project(ctx, linkedCode)
@@ -140,7 +174,7 @@ func TestWithNoRegisterTheTableSaysSo(t *testing.T) {
 	require.ErrorIs(t, err, gone)
 	_, err = p.Repositories(ctx, linkedID)
 	require.ErrorIs(t, err, gone)
-	_, err = p.LinkProject(ctx, pkgregister.Link{Project: linkedID, Config: linkedCfg, Claimant: "x"})
+	_, err = p.LinkProject(ctx, projects.Link{Project: linkedID, Config: linkedCfg, Claimant: "x"})
 	require.ErrorIs(t, err, gone)
 	_, err = p.ProjectsOf(ctx, "x")
 	require.ErrorIs(t, err, gone)
@@ -148,7 +182,7 @@ func TestWithNoRegisterTheTableSaysSo(t *testing.T) {
 	require.ErrorIs(t, err, gone)
 	_, err = p.Role(ctx, linkedID, "x")
 	require.ErrorIs(t, err, gone)
-	_, err = p.GrantRole(ctx, linkedID, "x", pkgregister.RoleViewer, "y")
+	_, err = p.GrantRole(ctx, linkedID, "x", projects.RoleViewer, "y")
 	require.ErrorIs(t, err, gone)
 	require.ErrorIs(t, p.Revoke(ctx, linkedID, "id", "y"), gone)
 	_, err = p.Grants(ctx, linkedID)
@@ -193,9 +227,9 @@ func TestLinkedRepositoriesIsEveryRepositoryOfEveryProject(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, repos, "an empty table links nothing")
 
-	_, err = p.LinkProject(ctx, pkgregister.Link{Project: linkedID, Config: linkedCfg, Code: []string{linkedCode}, Claimant: "github.com/1"})
+	_, err = p.LinkProject(ctx, projects.Link{Project: linkedID, Config: linkedCfg, Code: []string{linkedCode}, Claimant: "github.com/1"})
 	require.NoError(t, err)
-	_, err = p.LinkProject(ctx, pkgregister.Link{Project: "QmConfigOnly", Config: "github.com/acme/other", Claimant: "github.com/2"})
+	_, err = p.LinkProject(ctx, projects.Link{Project: "QmConfigOnly", Config: "github.com/acme/other", Claimant: "github.com/2"})
 	require.NoError(t, err)
 
 	repos, err = p.LinkedRepositories(ctx)
@@ -205,7 +239,7 @@ func TestLinkedRepositoriesIsEveryRepositoryOfEveryProject(t *testing.T) {
 	// A table the register cannot scan is an error, not an empty listing a resync
 	// would read as "nothing to compare".
 	broken := errors.New("store unreachable")
-	p.Table = func(context.Context) (register.Table, error) { return unlisting{Table: r, err: broken}, nil }
+	p.Table = unlisting{Projects: r, err: broken}
 	repos, err = p.LinkedRepositories(ctx)
 	require.ErrorIs(t, err, broken)
 	require.Nil(t, repos)
@@ -264,12 +298,12 @@ func TestACredentialCarriesWhatItReplaced(t *testing.T) {
 	require.ErrorContains(t, err, "vault unreachable")
 }
 
-// unlisting is a register whose project table cannot be scanned.
+// unlisting is a project table that cannot be scanned.
 type unlisting struct {
-	register.Table
+	projects.Projects
 	err error
 }
 
-func (u unlisting) ListProjects(context.Context) ([]pkgregister.ProjectRecord, error) {
+func (u unlisting) ListProjects(context.Context) ([]projects.ProjectRecord, error) {
 	return nil, u.err
 }

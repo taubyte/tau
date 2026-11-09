@@ -13,11 +13,11 @@ import (
 	"github.com/taubyte/tau/core/service"
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
+	"github.com/taubyte/tau/services/auth/projects"
 	"github.com/taubyte/tau/services/cm/settings"
 	"github.com/taubyte/tau/services/plm"
 	"github.com/taubyte/tau/services/plm/clients"
 	"github.com/taubyte/tau/services/plm/linked"
-	"github.com/taubyte/tau/services/register"
 )
 
 // Service is plm's jobs as an instance runs them.
@@ -64,7 +64,7 @@ func (b *hosted) WaitForLeader(ctx context.Context) error {
 }
 
 // Start runs jobs on an instance: its queue a raft group the instance opens, its
-// job records a replicated database on the peer, its projects in the register and
+// job records a replicated database on the peer, its projects in auth's table and
 // its runs on builders, both wherever discovery finds them.
 func (b *hosted) Start(ctx context.Context, h service.Host) error {
 	if b.server != nil {
@@ -105,17 +105,17 @@ func onInstance(h service.Host, cfg Config, store Store, more ...option) (*serve
 		return nil, also, fmt.Errorf("build: opening the job records: %w", err)
 	}
 
-	table := register.TableOn(h)
+	linkedTo := projects.On(h)
 	builders := clients.BuildersOn(h)
-	also = append(also, table, builders)
+	also = append(also, linkedTo, builders)
 
 	s, err := newServer(cfg, append([]option{
 		withHost(h.Peer().Host()),
 		withStore(store),
 		withRecords(records),
-		// WHO A PUSH BELONGS TO is the register's project table; a repository no
+		// WHO A PUSH BELONGS TO is auth's project table; a repository no
 		// project links is refused before anything is queued.
-		withRepositories(linked.Projects{Table: table.Now}),
+		withRepositories(linked.Projects{Table: linkedTo}),
 		withBuilders(builders),
 		withClock(h.Now),
 	}, more...)...)

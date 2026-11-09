@@ -9,7 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/auth/projects"
 )
 
 // projectapi.go links a project: a configuration repository and its code
@@ -39,7 +39,7 @@ type projectResponse struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-func projectOut(rec register.ProjectRecord) projectResponse {
+func projectOut(rec projects.ProjectRecord) projectResponse {
 	code := rec.Code
 	if code == nil {
 		code = []string{}
@@ -86,13 +86,13 @@ func (s *Service) handleLinkProject(w http.ResponseWriter, r *http.Request, toke
 	replace := false
 	role, err := s.projects.Role(ctx, projectID, user)
 	switch {
-	case err == nil && role.Includes(register.RoleOwner):
+	case err == nil && role.Includes(projects.RoleOwner):
 		replace = true
 	case err == nil:
 		respond(w, problem(http.StatusConflict, "project "+projectID+" is already claimed; generate a new id in project.yaml"))
 		return
-	case errors.Is(err, register.ErrNotLinked), connect.CodeOf(err) == connect.CodeNotFound:
-	case errors.Is(err, register.ErrSeparator), errors.Is(err, register.ErrNoProject), connect.CodeOf(err) == connect.CodeInvalidArgument:
+	case errors.Is(err, projects.ErrNotLinked), connect.CodeOf(err) == connect.CodeNotFound:
+	case errors.Is(err, projects.ErrSeparator), errors.Is(err, projects.ErrNoProject), connect.CodeOf(err) == connect.CodeInvalidArgument:
 		respond(w, problem(http.StatusBadRequest, "not a project id: "+projectID))
 		return
 	default:
@@ -101,12 +101,12 @@ func (s *Service) handleLinkProject(w http.ResponseWriter, r *http.Request, toke
 		return
 	}
 
-	rec, err := s.linker.LinkProject(ctx, register.Link{Project: projectID, Config: req.Config, Code: req.Code, Claimant: user, Replace: replace})
+	rec, err := s.linker.LinkProject(ctx, projects.Link{Project: projectID, Config: req.Config, Code: req.Code, Claimant: user, Replace: replace})
 	switch {
-	case errors.Is(err, register.ErrProjectClaimed), errors.Is(err, register.ErrRepositoryClaimed):
+	case errors.Is(err, projects.ErrProjectClaimed), errors.Is(err, projects.ErrRepositoryClaimed):
 		respond(w, problem(http.StatusConflict, err.Error()))
 		return
-	case errors.Is(err, register.ErrSeparator), errors.Is(err, register.ErrNoProject):
+	case errors.Is(err, projects.ErrSeparator), errors.Is(err, projects.ErrNoProject):
 		respond(w, problem(http.StatusBadRequest, "not a project id: "+projectID))
 		return
 	case err != nil:
@@ -156,7 +156,7 @@ func (s *Service) handleGetProject(w http.ResponseWriter, r *http.Request, token
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
-	if _, err := s.mayTouchProject(ctx, token, projectID, register.RoleViewer); err != nil {
+	if _, err := s.mayTouchProject(ctx, token, projectID, projects.RoleViewer); err != nil {
 		respond(w, err)
 		return
 	}

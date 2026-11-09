@@ -314,7 +314,7 @@ func newFakeBuild(t *testing.T) *fakeBuild {
 		id := r.PathValue("projectId")
 		if id == takenID {
 			w.WriteHeader(http.StatusConflict)
-			json.NewEncoder(w).Encode(map[string]string{"error": "register: project id is already claimed: project " + id + " is already claimed by github.com/someone/else; generate a new id in project.yaml"})
+			json.NewEncoder(w).Encode(map[string]string{"error": "auth: project id is already claimed: project " + id + " is already claimed by github.com/someone/else; generate a new id in project.yaml"})
 			return
 		}
 		f.mu.Lock()

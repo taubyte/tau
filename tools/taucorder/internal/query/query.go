@@ -14,6 +14,8 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/taubyte/tau/pkg/proto/codec"
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2/plmv2connect"
 	registerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
@@ -27,6 +29,7 @@ type Fleet interface {
 
 type Client struct {
 	fleet    Fleet
+	projects authv2connect.ProjectServiceClient
 	register registerv2connect.RegisterServiceClient
 	jobs     plmv2connect.JobServiceClient
 }
@@ -35,6 +38,7 @@ type Client struct {
 func New(f Fleet, hc connect.HTTPClient, base string) *Client {
 	return &Client{
 		fleet:    f,
+		projects: authv2connect.NewProjectServiceClient(hc, base, codec.Option()),
 		register: registerv2connect.NewRegisterServiceClient(hc, base, codec.Option()),
 		jobs:     plmv2connect.NewJobServiceClient(hc, base, codec.Option()),
 	}
@@ -119,9 +123,9 @@ type Project struct {
 	Environments []string `json:"environments"`
 }
 
-// Projects lists every project the register has linked, with its deployments.
+// Projects lists every linked project, with its deployments.
 func (c *Client) Projects(ctx context.Context) ([]Project, error) {
-	list, err := c.register.ListProjects(ctx, connect.NewRequest(&registerv2.ListProjectsRequest{}))
+	list, err := c.projects.ListProjects(ctx, connect.NewRequest(&authv2.ListProjectsRequest{}))
 	if err != nil {
 		return nil, err
 	}
@@ -239,7 +243,7 @@ func status(s plmv2.JobStatus) string {
 }
 
 func (c *Client) projectIDs(ctx context.Context) ([]string, error) {
-	list, err := c.register.ListProjects(ctx, connect.NewRequest(&registerv2.ListProjectsRequest{}))
+	list, err := c.projects.ListProjects(ctx, connect.NewRequest(&authv2.ListProjectsRequest{}))
 	if err != nil {
 		return nil, err
 	}

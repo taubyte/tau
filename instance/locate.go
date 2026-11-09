@@ -47,18 +47,6 @@ type registerSeam interface {
 	Environments(ctx context.Context, project string) ([]string, error)
 	Publish(ctx context.Context, p pkgregister.Publication) (pkgregister.ObjectID, error)
 	Manifest(ctx context.Context, project, environment string) (pkgregister.Manifest, pkgregister.ObjectID, error)
-
-	// The project table (projects.go): read by plm and the builder both, written by
-	// the frontend's link.
-	LinkProject(ctx context.Context, l pkgregister.Link) (pkgregister.ProjectRecord, error)
-	Project(ctx context.Context, id string) (pkgregister.ProjectRecord, error)
-	Repository(ctx context.Context, repository string) (pkgregister.RepositoryRecord, error)
-	ProjectsOf(ctx context.Context, claimant string) ([]pkgregister.ProjectRecord, error)
-	ListProjects(ctx context.Context) ([]pkgregister.ProjectRecord, error)
-	GrantRole(ctx context.Context, project, grantee string, role pkgregister.Role, by string) (pkgregister.Grant, error)
-	Revoke(ctx context.Context, project, id, by string) error
-	Grants(ctx context.Context, project string) ([]pkgregister.Grant, error)
-	RoleOf(ctx context.Context, project, user string) (pkgregister.Role, error)
 }
 
 // routeTo is the pick half of every reach: a node serving id, as the finder finds

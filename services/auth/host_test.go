@@ -12,6 +12,7 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/rpc"
 	kvdbmock "github.com/taubyte/tau/pkg/kvdb/mock"
+	"github.com/taubyte/tau/services/auth/projects"
 )
 
 // node is what auth starts on: a peer, the databases it shares, what runs beside
@@ -69,6 +70,30 @@ func TestAuthStartsFromItsNodeAndServesItsProtocolThere(t *testing.T) {
 	require.Equal(t, "tau:auth-test", s.cfg.Issuer, "a node naming no issuer issues as its cloud")
 	_, ok = s.identity.(*Users)
 	require.True(t, ok, "with users kept, auth decides admission from them")
+}
+
+func TestTheProjectTableIsAuthsOwnBesideIt(t *testing.T) {
+	require.Equal(t, Protocol, projects.Protocol, "the table is served on auth's listener")
+	n := newNode(t, shared{})
+	s := New()
+	t.Cleanup(func() { s.Close() })
+	require.NoError(t, s.Start(t.Context(), n))
+
+	table := projects.On(n)
+	t.Cleanup(func() { table.Close() })
+	rec, err := table.LinkProject(t.Context(), projects.Link{Project: "QmShop", Config: "github.com/acme/shop", Claimant: "alice"})
+	require.NoError(t, err)
+	held, err := s.Projects().Project(t.Context(), "QmShop")
+	require.NoError(t, err)
+	require.Equal(t, rec, held, "the link landed in auth's own table, with no client between")
+}
+
+func TestAuthWithNoStoreKeepsNoTable(t *testing.T) {
+	p := peer.Mock(t.Context())
+	t.Cleanup(p.Close)
+	s, err := build(p.Host())
+	require.NoError(t, err)
+	require.Nil(t, s.Projects())
 }
 
 func TestAuthTakesTheIdentityItsNodeGivesIt(t *testing.T) {

@@ -38,6 +38,7 @@ func start(t *testing.T, opts server.Options) env {
 	client, node := fixture.Host(t), fixture.Host(t)
 	fixture.Connect(t, client, node)
 	cloud := fixture.NewCloud()
+	fixture.Serve(t, node, cloud.Auth)
 	fixture.Serve(t, node, cloud.Register)
 	fixture.Serve(t, node, cloud.Build)
 	tr := route.New(client, all{node.ID()})

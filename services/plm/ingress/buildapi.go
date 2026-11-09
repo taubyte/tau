@@ -10,7 +10,7 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/auth/projects"
 )
 
 // buildapi.go is a build asked for by hand: `tau ci run`, and in a cloud only,
@@ -42,7 +42,7 @@ type Published interface {
 	// Environments are the deployments published for project.
 	Environments(ctx context.Context, project string) ([]string, error)
 	// Compiled is the compiled object published for project's environment;
-	// one never published is register.ErrNotLinked or a NotFound.
+	// one never published is projects.ErrNotLinked or a NotFound.
 	Compiled(ctx context.Context, project, environment string) ([]byte, error)
 }
 
@@ -57,7 +57,7 @@ func (s *Service) handleManualBuild(w http.ResponseWriter, r *http.Request, toke
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
 
-	if _, err := s.mayTouchProject(ctx, token, projectID, register.RoleBuilder); err != nil {
+	if _, err := s.mayTouchProject(ctx, token, projectID, projects.RoleBuilder); err != nil {
 		respond(w, err)
 		return
 	}
@@ -70,7 +70,7 @@ func (s *Service) handleManualBuild(w http.ResponseWriter, r *http.Request, toke
 	// project queuing builds of another's.
 	owner, err := s.projects.Project(ctx, req.Repository)
 	switch {
-	case err != nil && !errors.Is(err, register.ErrNotLinked) && connect.CodeOf(err) != connect.CodeNotFound:
+	case err != nil && !errors.Is(err, projects.ErrNotLinked) && connect.CodeOf(err) != connect.CodeNotFound:
 		respond(w, err)
 		return
 	case err != nil || owner != projectID:
@@ -128,7 +128,7 @@ func (s *Service) handleUpload(w http.ResponseWriter, r *http.Request, token, pr
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
 
-	if _, err := s.mayTouchProject(ctx, token, projectID, register.RoleBuilder); err != nil {
+	if _, err := s.mayTouchProject(ctx, token, projectID, projects.RoleBuilder); err != nil {
 		respond(w, err)
 		return
 	}
@@ -172,7 +172,7 @@ func (s *Service) handleDeployments(w http.ResponseWriter, r *http.Request, toke
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
 
-	if _, err := s.mayTouchProject(ctx, token, projectID, register.RoleViewer); err != nil {
+	if _, err := s.mayTouchProject(ctx, token, projectID, projects.RoleViewer); err != nil {
 		respond(w, err)
 		return
 	}
@@ -200,7 +200,7 @@ func (s *Service) handlePublished(w http.ResponseWriter, r *http.Request, token,
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
 
-	if _, err := s.mayTouchProject(ctx, token, projectID, register.RoleViewer); err != nil {
+	if _, err := s.mayTouchProject(ctx, token, projectID, projects.RoleViewer); err != nil {
 		respond(w, err)
 		return
 	}

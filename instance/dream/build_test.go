@@ -33,7 +33,7 @@ const placementID = "QmPigwAetxyyVvHj453JLsLhrWNGV4mW9ZG9yvjd7kUmMk"
 // dream's own process; every way it ends deployed in the register, cloned from a
 // folder that is never written.
 func TestAPushIsBuiltWhereTheCloudBuilds(t *testing.T) {
-	shared := []string{instance.Stats, instance.Register, storageService.Descriptor.Name}
+	shared := []string{instance.Stats, instance.Register, instance.Auth, storageService.Descriptor.Name}
 	for name, cfg := range map[string]nodeDream.Config{
 		"with neither build nor a builder": {Services: shared},
 		"straight to a builder":            {Services: append([]string{instance.Builder}, shared...)},
@@ -81,7 +81,7 @@ func TestAPushIsBuiltWhereTheCloudBuilds(t *testing.T) {
 
 func TestAPushOfWhatTheMirrorDoesNotHoldFails(t *testing.T) {
 	ctx := t.Context()
-	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{Services: []string{instance.Builder, instance.Stats, instance.Register, storageService.Descriptor.Name}})
+	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{Services: []string{instance.Builder, instance.Stats, instance.Register, instance.Auth, storageService.Descriptor.Name}})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
 
@@ -104,7 +104,7 @@ func TestAnUploadedBuildIsWhatTheFunctionRuns(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 	ctx := t.Context()
 	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{Services: []string{
-		instance.Builder, instance.Register, instance.Worker, instance.Stats, instance.Gateway,
+		instance.Builder, instance.Register, instance.Auth, instance.Worker, instance.Stats, instance.Gateway,
 		instance.Database, instance.Primitives, storageService.Descriptor.Name,
 	}})
 	require.NoError(t, err)
@@ -143,7 +143,7 @@ func TestAnUploadNamingAPackageTheTreeDoesNotBuildIsRefused(t *testing.T) {
 func TestACloudBuildsForAToolOverDreamService(t *testing.T) {
 	ctx := t.Context()
 	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{
-		Services:  []string{instance.Builder, instance.Stats, instance.Register, storageService.Descriptor.Name},
+		Services:  []string{instance.Builder, instance.Stats, instance.Register, instance.Auth, storageService.Descriptor.Name},
 		Configure: func(_ int, c *instance.Config) { c.Region = "region-1" },
 		Listen:    "127.0.0.1:0",
 	})
@@ -233,8 +233,8 @@ func TestACloudWithNothingThatBuildsSaysSo(t *testing.T) {
 	t.Cleanup(u.Close)
 
 	_, err = u.Build(ctx, nodeDream.Push{Repository: "github.com/acme/app", Ref: "refs/heads/main", Commit: "1111111111111111111111111111111111111111"})
-	require.ErrorContains(t, err, "no node runs the register", "the builder's runs in place, with no register to say whose the push is")
-	require.ErrorContains(t, u.Link(ctx, "QmProject", "github.com/acme/app"), "no node runs the register")
+	require.ErrorContains(t, err, "no node runs auth", "the builder's runs in place, with no project table to say whose the push is")
+	require.ErrorContains(t, u.Link(ctx, "QmProject", "github.com/acme/app"), "no node runs auth")
 	_, err = u.Upload("github.com/acme/code", "main", t.TempDir(), nil)
 	require.ErrorContains(t, err, "no node runs the register", "a code repository's recipes are what its project publishes")
 }

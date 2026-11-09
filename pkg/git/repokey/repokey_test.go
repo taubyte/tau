@@ -157,3 +157,14 @@ func TestKeyIsStableUnderReDerivation(t *testing.T) {
 		}
 	}
 }
+
+func TestAKeyIsStoredUnderOneSpelling(t *testing.T) {
+	for _, spelt := range []string{"github.com/acme/shop", " GitHub.com/Acme/Shop/ ", "/github.com/ACME/shop"} {
+		if got := repokey.Normalise(spelt); got != "github.com/acme/shop" {
+			t.Fatalf("Normalise(%q) = %q", spelt, got)
+		}
+	}
+	if got := repokey.Normalise("  /  "); got != "" {
+		t.Fatalf("a key of nothing normalises to %q", got)
+	}
+}

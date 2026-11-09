@@ -15,6 +15,7 @@ import (
 	"github.com/taubyte/tau/pkg/forge/drivers"
 	"github.com/taubyte/tau/pkg/linkcreds"
 	"github.com/taubyte/tau/pkg/tenancy"
+	"github.com/taubyte/tau/services/auth/projects"
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/plm"
 	"github.com/taubyte/tau/services/plm/clients"
@@ -81,7 +82,7 @@ func (c closer) Close() error { c(); return nil }
 // instance opens and the job records a database on the peer (the control,
 // services/plm/jobs), then the routes in front of them, asking that control
 // in-process and the other plm nodes over p2p when it does not lead; auth
-// reached by discovery, the projects in the register, the link credentials in the
+// reached by discovery, the projects in auth's table, the link credentials in the
 // vault, logs and artifacts in storage, domain claims and its certificate from cm.
 func (f *server) Start(ctx context.Context, h service.Host) error {
 	if f.control != nil {
@@ -149,8 +150,9 @@ func (f *server) wire(h service.Host, cfg config) ([]ingress.Option, error) {
 	table := register.TableOn(h)
 	vault := secrets.VaultOn(h)
 	assets := storage.StoreOn(h)
-	f.also = append(f.also, table, vault, assets)
-	projects := linked.Projects{Table: table.Now}
+	linkedTo := projects.On(h)
+	f.also = append(f.also, table, vault, assets, linkedTo)
+	links := linked.Projects{Table: linkedTo}
 
 	domains, err := cm.NewDomains(self, cm.On(h))
 	if err != nil {
@@ -160,11 +162,11 @@ func (f *server) wire(h service.Host, cfg config) ([]ingress.Option, error) {
 
 	options := []ingress.Option{
 		ingress.WithLogger(logging.Logger("tau.plm").Infof),
-		// THE PROJECT TABLE IS THE REGISTER'S: who a project's owner is and what
-		// roles it granted. This role writes it only through the link and grant
-		// routes, after authorizing the caller.
-		ingress.WithLinker(projects),
-		ingress.WithProjects(projects),
+		// THE PROJECT TABLE IS AUTH'S: who a project's owner is and what roles it
+		// granted. This role writes it only through the link and grant routes,
+		// after authorizing the caller.
+		ingress.WithLinker(links),
+		ingress.WithProjects(links),
 		// WHO A CALLER IS IS AUTH'S TO SAY, from their tau token.
 		ingress.WithCallers(identities),
 		// SIGNING IN IS AUTH'S, carried here because auth has no ingress.
@@ -178,13 +180,13 @@ func (f *server) wire(h service.Host, cfg config) ([]ingress.Option, error) {
 		// PLM never holds a vault: it is the process strangers reach. This
 		// is a stream to a node that does, used for hook secrets and a project's own.
 		ingress.WithVault(vault),
-		ingress.WithHooks(hooks{linked.Credentials{Projects: projects, Vault: vault}}),
+		ingress.WithHooks(hooks{linked.Credentials{Projects: links, Vault: vault}}),
 		ingress.WithDomains(claims{domains}),
 	}
 	// A forge with no signed webhook reports pushes on its own feed (Gerrit's
 	// stream-events), subscribed to as a second source (ingress/streams.go).
 	if len(registry.EventHosts()) > 0 {
-		options = append(options, ingress.WithStreams(forges, projects))
+		options = append(options, ingress.WithStreams(forges, links))
 	}
 	// TLS WHEN THE CLOUD ISSUES CERTIFICATES, from the instance's one client: a
 	// second client here would order on its own, without the DNS-01 store or the

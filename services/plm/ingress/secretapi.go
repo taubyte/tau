@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/auth/projects"
 )
 
 // secretapi.go writes a developer's secret values: the one write not from a git
@@ -116,6 +116,6 @@ func (s *Service) mayTouchSecrets(r *http.Request, token, projectID string) erro
 	if s.vault == nil {
 		return errDenied
 	}
-	_, err := s.mayTouchProject(r.Context(), token, projectID, register.RoleSecretManager)
+	_, err := s.mayTouchProject(r.Context(), token, projectID, projects.RoleSecretManager)
 	return err
 }

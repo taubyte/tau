@@ -19,6 +19,8 @@ import (
 	"github.com/taubyte/tau/pkg/git/gittest"
 	"github.com/taubyte/tau/pkg/linkcreds"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	authmock "github.com/taubyte/tau/services/auth/mock"
+	"github.com/taubyte/tau/services/auth/projects"
 	"github.com/taubyte/tau/services/plm/linked"
 	"github.com/taubyte/tau/services/plm/run"
 	"github.com/taubyte/tau/services/register"
@@ -113,8 +115,8 @@ func TestABuilderConfirmsAPrivateRepositoryWithTheDeployKeyALinkStored(t *testin
 	reg, err := pkgregister.New(pkgregister.WithStore(pkgregister.NewMemStore()))
 	require.NoError(t, err)
 	table := func(context.Context) (register.Table, error) { return reg, nil }
-	projects := linked.Projects{Table: table}
-	_, err = projects.LinkProject(t.Context(), pkgregister.Link{Project: "QmPrivate", Config: repository, Claimant: "github.com/1"})
+	links := linked.Projects{Table: authmock.New().Projects()}
+	_, err = links.LinkProject(t.Context(), projects.Link{Project: "QmPrivate", Config: repository, Claimant: "github.com/1"})
 	require.NoError(t, err)
 
 	vault := secretsMap{}
@@ -122,7 +124,7 @@ func TestABuilderConfirmsAPrivateRepositoryWithTheDeployKeyALinkStored(t *testin
 		Host: host.Addr, Driver: drivers.GitHub,
 		HostKeys: []string{strings.TrimSpace(string(gossh.MarshalAuthorizedKey(host.HostKey)))},
 	}}}
-	_, confirm, err := compose("", cfg, projects, table, vault, trusted{})
+	_, confirm, err := compose("", cfg, links, table, vault, trusted{})
 	require.NoError(t, err)
 
 	// Nothing stored: read with no key, and refused.

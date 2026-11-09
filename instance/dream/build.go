@@ -14,11 +14,13 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 
+	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/instance"
 	"github.com/taubyte/tau/pkg/git/repokey"
 	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
+	"github.com/taubyte/tau/services/auth/projects"
 	"github.com/taubyte/tau/services/plm/artifact"
 	"github.com/taubyte/tau/services/plm/uploads"
 )
@@ -185,8 +187,12 @@ func (u *Cloud) recipes(repository, branch, dir string) (map[string]map[string]s
 	if err != nil {
 		return nil, err
 	}
+	table, err := u.projects()
+	if err != nil {
+		return nil, err
+	}
 	ctx := context.Background()
-	linked, err := reg.Repository(ctx, repository)
+	linked, err := table.Repository(ctx, repository)
 	if err != nil {
 		return nil, fmt.Errorf("dream: %s is no project's: %w", repository, err)
 	}
@@ -236,13 +242,23 @@ func (u *Cloud) register() (*pkgregister.Register, error) {
 	return nil, errors.New("dream: no node runs the register")
 }
 
-// Link names project's repositories in the cloud's register, as `tau link`
+// projects is the cloud's project table, kept by auth on the first node running it.
+func (u *Cloud) projects() (projects.Projects, error) {
+	for _, n := range u.nodes() {
+		if k, ok := service.Local[projects.Keeper](n.HostOf(instance.Auth), projects.Protocol); ok && k.Projects() != nil {
+			return k.Projects(), nil
+		}
+	}
+	return nil, errors.New("dream: no node runs auth")
+}
+
+// Link names project's repositories in the cloud's project table, as `tau link`
 // would: config is the one whose pushes are deploys.
 func (u *Cloud) Link(ctx context.Context, project, config string, code ...string) error {
-	reg, err := u.register()
+	table, err := u.projects()
 	if err != nil {
 		return err
 	}
-	_, err = reg.LinkProject(ctx, pkgregister.Link{Project: project, Config: config, Code: code, Claimant: "dream"})
+	_, err = table.LinkProject(ctx, projects.Link{Project: project, Config: config, Code: code, Claimant: "dream"})
 	return err
 }

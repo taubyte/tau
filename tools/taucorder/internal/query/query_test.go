@@ -31,7 +31,7 @@ func client(t *testing.T) (*query.Client, *fixture.Cloud) {
 	t.Helper()
 	cloud := fixture.NewCloud()
 	mux := http.NewServeMux()
-	for _, m := range []func() (string, http.Handler){cloud.Register, cloud.Build} {
+	for _, m := range []func() (string, http.Handler){cloud.Auth, cloud.Register, cloud.Build} {
 		name, h := m()
 		mux.Handle("/"+name+"/", h)
 	}

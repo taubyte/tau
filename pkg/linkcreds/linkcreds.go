@@ -24,7 +24,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
 // Environment is the secrets scope link credentials live in.
@@ -37,6 +37,6 @@ func HookSecret(repository string) string { return named("hook-secret-", reposit
 func DeployKey(repository string) string { return named("deploy-key-", repository) }
 
 func named(prefix, repository string) string {
-	sum := sha256.Sum256([]byte(register.NormaliseRepository(repository)))
+	sum := sha256.Sum256([]byte(repokey.Normalise(repository)))
 	return prefix + hex.EncodeToString(sum[:])
 }

@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/auth/projects"
 	"github.com/taubyte/tau/services/plm/joblog"
 	"github.com/taubyte/tau/services/plm/livelog"
 )
@@ -71,7 +71,7 @@ func (s *Service) serveJobAsset(w http.ResponseWriter, r *http.Request, token, j
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
-	job, err := s.mayTouchJob(ctx, token, jobID, register.RoleViewer)
+	job, err := s.mayTouchJob(ctx, token, jobID, projects.RoleViewer)
 	if err != nil {
 		respond(w, err)
 		return

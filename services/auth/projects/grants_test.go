@@ -1,4 +1,4 @@
-package register
+package projects
 
 import (
 	"context"
@@ -6,11 +6,15 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 )
+
+var viewer = &authv2.GrantRow{Role: "viewer"}
 
 // on fails one operation on keys holding a substring.
 type on struct {
-	*MemStore
+	*memStore
 	op, sub string
 }
 
@@ -18,24 +22,24 @@ func (s *on) Get(c context.Context, k string) ([]byte, bool, error) {
 	if s.op == "get" && strings.Contains(k, s.sub) {
 		return nil, false, errFailing
 	}
-	return s.MemStore.Get(c, k)
+	return s.memStore.Get(c, k)
 }
 
 func (s *on) Put(c context.Context, k string, v []byte) error {
 	if s.op == "put" && strings.Contains(k, s.sub) {
 		return errFailing
 	}
-	return s.MemStore.Put(c, k, v)
+	return s.memStore.Put(c, k, v)
 }
 
 func (s *on) List(c context.Context, p string) ([]string, error) {
 	if s.op == "list" && strings.Contains(p, s.sub) {
 		return nil, errFailing
 	}
-	return s.MemStore.List(c, p)
+	return s.memStore.List(c, p)
 }
 
-func ownedBy(t *testing.T, store Store) *Register {
+func ownedBy(t *testing.T, store Store) *Table {
 	t.Helper()
 	r := linked(t, store, nil)
 	_, err := r.LinkProject(ctx, Link{Project: pid, Config: cfg, Code: []string{code}, Claimant: alice})
@@ -44,7 +48,7 @@ func ownedBy(t *testing.T, store Store) *Register {
 }
 
 func TestTheClaimantOwnsAndGrantsGiveTheHighestRole(t *testing.T) {
-	r := ownedBy(t, NewMemStore())
+	r := ownedBy(t, newMemStore())
 
 	role, err := r.RoleOf(ctx, pid, alice)
 	require.NoError(t, err)
@@ -76,7 +80,7 @@ func TestTheClaimantOwnsAndGrantsGiveTheHighestRole(t *testing.T) {
 }
 
 func TestARevocationWins(t *testing.T) {
-	store := NewMemStore()
+	store := newMemStore()
 	r := ownedBy(t, store)
 	g, err := r.GrantRole(ctx, pid, "bob", RoleSecretManager, alice)
 	require.NoError(t, err)
@@ -108,7 +112,7 @@ func TestARevocationWins(t *testing.T) {
 }
 
 func TestGrantRefusals(t *testing.T) {
-	r := ownedBy(t, NewMemStore())
+	r := ownedBy(t, newMemStore())
 	type testCase struct {
 		project, grantee string
 		role             Role
@@ -140,17 +144,18 @@ func TestGrantRefusals(t *testing.T) {
 }
 
 func TestUnreadableGrantRowsGrantNothing(t *testing.T) {
-	store := NewMemStore()
+	store := newMemStore()
 	r := ownedBy(t, store)
-	for key, value := range map[string]string{
-		grantKey(pid, "bob", "BAD"):                "{",
-		grantKey(pid, "bob", "ROLE"):               `{"role":"admin"}`,
-		grantPrefix + pid + sep + "!!" + sep + "X": `{"role":"owner"}`,
-		grantPrefix + pid + sep + segment("bob"):   `{"role":"owner"}`,
-		grantedPrefix + segment("bob") + sep + pid: `{"role":"owner"}`,
-		grantedKey("bob", pid, "BAD"):              "{",
+	owner := row(t, &authv2.GrantRow{Role: "owner"})
+	for key, value := range map[string][]byte{
+		grantKey(pid, "bob", "BAD"):                []byte("{"),
+		grantKey(pid, "bob", "ROLE"):               row(t, &authv2.GrantRow{Role: "admin"}),
+		grantPrefix + pid + sep + "!!" + sep + "X": owner,
+		grantPrefix + pid + sep + segment("bob"):   owner,
+		grantedPrefix + segment("bob") + sep + pid: owner,
+		grantedKey("bob", pid, "BAD"):              []byte("{"),
 	} {
-		require.NoError(t, store.Put(ctx, key, []byte(value)))
+		require.NoError(t, store.Put(ctx, key, value))
 	}
 	role, err := r.RoleOf(ctx, pid, "bob")
 	require.NoError(t, err)
@@ -166,35 +171,35 @@ func TestUnreadableGrantRowsGrantNothing(t *testing.T) {
 func TestAStoreThatFailsUnderGrants(t *testing.T) {
 	type testCase struct {
 		op, sub string
-		call    func(r *Register) error
+		call    func(r *Table) error
 	}
 	for _, c := range []testCase{
-		{"put", grantPrefix, func(r *Register) error { _, err := r.GrantRole(ctx, pid, "bob", RoleViewer, alice); return err }},
-		{"list", claimPrefix, func(r *Register) error { _, err := r.GrantRole(ctx, pid, "bob", RoleViewer, alice); return err }},
-		{"list", grantPrefix, func(r *Register) error { _, err := r.Grants(ctx, pid); return err }},
-		{"list", grantPrefix, func(r *Register) error { return r.Revoke(ctx, pid, "X", alice) }},
-		{"list", grantPrefix, func(r *Register) error { _, err := r.RoleOf(ctx, pid, "bob"); return err }},
-		{"list", claimPrefix, func(r *Register) error { _, err := r.RoleOf(ctx, pid, "bob"); return err }},
-		{"get", grantPrefix, func(r *Register) error { _, err := r.Grants(ctx, pid); return err }},
-		{"get", revokePrefix, func(r *Register) error { _, err := r.Grants(ctx, pid); return err }},
-		{"put", revokePrefix, func(r *Register) error { return r.Revoke(ctx, pid, "G", alice) }},
-		{"list", grantedPrefix, func(r *Register) error { _, err := r.ProjectsOf(ctx, "bob"); return err }},
-		{"get", grantPrefix, func(r *Register) error { _, err := r.ProjectsOf(ctx, "bob"); return err }},
+		{"put", grantPrefix, func(r *Table) error { _, err := r.GrantRole(ctx, pid, "bob", RoleViewer, alice); return err }},
+		{"list", claimPrefix, func(r *Table) error { _, err := r.GrantRole(ctx, pid, "bob", RoleViewer, alice); return err }},
+		{"list", grantPrefix, func(r *Table) error { _, err := r.Grants(ctx, pid); return err }},
+		{"list", grantPrefix, func(r *Table) error { return r.Revoke(ctx, pid, "X", alice) }},
+		{"list", grantPrefix, func(r *Table) error { _, err := r.RoleOf(ctx, pid, "bob"); return err }},
+		{"list", claimPrefix, func(r *Table) error { _, err := r.RoleOf(ctx, pid, "bob"); return err }},
+		{"get", grantPrefix, func(r *Table) error { _, err := r.Grants(ctx, pid); return err }},
+		{"get", revokePrefix, func(r *Table) error { _, err := r.Grants(ctx, pid); return err }},
+		{"put", revokePrefix, func(r *Table) error { return r.Revoke(ctx, pid, "G", alice) }},
+		{"list", grantedPrefix, func(r *Table) error { _, err := r.ProjectsOf(ctx, "bob"); return err }},
+		{"get", grantPrefix, func(r *Table) error { _, err := r.ProjectsOf(ctx, "bob"); return err }},
 	} {
-		store := &on{MemStore: NewMemStore()}
+		store := &on{memStore: newMemStore()}
 		r := ownedBy(t, store)
-		require.NoError(t, store.Put(ctx, grantKey(pid, "bob", "G"), []byte(`{"role":"viewer"}`)))
-		require.NoError(t, store.Put(ctx, grantedKey("bob", pid, "G"), []byte(`{"role":"viewer"}`)))
+		require.NoError(t, store.Put(ctx, grantKey(pid, "bob", "G"), row(t, viewer)))
+		require.NoError(t, store.Put(ctx, grantedKey("bob", pid, "G"), row(t, viewer)))
 		store.op, store.sub = c.op, c.sub
 		require.ErrorIs(t, c.call(r), errFailing, c.op+" "+c.sub)
 	}
 }
 
 func TestAGrantedProjectThatIsGoneIsNotListed(t *testing.T) {
-	store := NewMemStore()
+	store := newMemStore()
 	r := ownedBy(t, store)
-	require.NoError(t, store.Put(ctx, grantKey("QmGone", "bob", "G"), []byte(`{"role":"viewer"}`)))
-	require.NoError(t, store.Put(ctx, grantedKey("bob", "QmGone", "G"), []byte(`{"role":"viewer"}`)))
+	require.NoError(t, store.Put(ctx, grantKey("QmGone", "bob", "G"), row(t, viewer)))
+	require.NoError(t, store.Put(ctx, grantedKey("bob", "QmGone", "G"), row(t, viewer)))
 	_, err := r.GrantRole(ctx, pid, alice, RoleViewer, alice)
 	require.NoError(t, err)
 
@@ -205,10 +210,10 @@ func TestAGrantedProjectThatIsGoneIsNotListed(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, mine, 1, "owned and granted is listed once")
 
-	store2 := &on{MemStore: NewMemStore()}
+	store2 := &on{memStore: newMemStore()}
 	r2 := ownedBy(t, store2)
-	require.NoError(t, store2.Put(ctx, grantKey(pid, "bob", "G"), []byte(`{"role":"viewer"}`)))
-	require.NoError(t, store2.Put(ctx, grantedKey("bob", pid, "G"), []byte(`{"role":"viewer"}`)))
+	require.NoError(t, store2.Put(ctx, grantKey(pid, "bob", "G"), row(t, viewer)))
+	require.NoError(t, store2.Put(ctx, grantedKey("bob", pid, "G"), row(t, viewer)))
 	store2.op, store2.sub = "list", codePrefix
 	_, err = r2.ProjectsOf(ctx, "bob")
 	require.ErrorIs(t, err, errFailing)

@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/auth/projects"
 )
 
 type fakeDomains struct {
@@ -43,7 +43,7 @@ func TestTheOwnerGetsTheTXTRecordToSet(t *testing.T) {
 func TestOnlyTheOwnerMayClaimADomain(t *testing.T) {
 	d := &fakeDomains{}
 	h := newHarness(t, Config{}, WithDomains(d))
-	h.projects.role = func(string, string) (register.Role, error) { return register.RoleSecretManager, nil }
+	h.projects.role = func(string, string) (projects.Role, error) { return projects.RoleSecretManager, nil }
 	w := h.do(t, authed(http.MethodPost, domainPath, testToken))
 	require.Equal(t, http.StatusNotFound, w.Code)
 	require.Empty(t, d.asked)

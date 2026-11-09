@@ -46,7 +46,7 @@ var (
 	ErrNoCheckout = errors.New("deploy: no way to read a repository")
 	ErrNoProjects = errors.New("deploy: no way to tell a configuration repository from a code one")
 	// ErrNotClaimed is a configuration whose project.yaml names an id this repository
-	// has not claimed in the register's project table; a copied config would
+	// has not claimed in auth's project table; a copied config would
 	// otherwise move another project's pointers.
 	ErrNotClaimed = errors.New("deploy: the project id is not claimed by this repository")
 

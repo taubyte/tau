@@ -13,7 +13,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/auth/projects"
 	"github.com/taubyte/tau/services/plm/joblog"
 	"github.com/taubyte/tau/services/plm/livelog"
 )
@@ -35,7 +35,7 @@ func (s *Service) handleGetJob(w http.ResponseWriter, r *http.Request, token, jo
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
 
-	job, err := s.mayTouchJob(ctx, token, jobID, register.RoleViewer)
+	job, err := s.mayTouchJob(ctx, token, jobID, projects.RoleViewer)
 	if err != nil {
 		respond(w, err)
 		return
@@ -63,7 +63,7 @@ func (s *Service) handleGetJob(w http.ResponseWriter, r *http.Request, token, jo
 // cut response if found after the 200.
 func (s *Service) handleFollowJob(w http.ResponseWriter, r *http.Request, token, jobID string) {
 	authorize, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
-	job, err := s.mayTouchJob(authorize, token, jobID, register.RoleViewer)
+	job, err := s.mayTouchJob(authorize, token, jobID, projects.RoleViewer)
 	cancel()
 	if err != nil {
 		respond(w, err)
@@ -314,7 +314,7 @@ func (s *Service) mutate(w http.ResponseWriter, r *http.Request, token, jobID st
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
 
-	if _, err := s.mayTouchJob(ctx, token, jobID, register.RoleBuilder); err != nil {
+	if _, err := s.mayTouchJob(ctx, token, jobID, projects.RoleBuilder); err != nil {
 		respond(w, err)
 		return
 	}
@@ -332,7 +332,7 @@ func (s *Service) handleListJobs(w http.ResponseWriter, r *http.Request, token, 
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.CallTimeout)
 	defer cancel()
 
-	if _, err := s.mayTouchProject(ctx, token, projectID, register.RoleViewer); err != nil {
+	if _, err := s.mayTouchProject(ctx, token, projectID, projects.RoleViewer); err != nil {
 		respond(w, err)
 		return
 	}

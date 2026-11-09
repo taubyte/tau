@@ -61,6 +61,7 @@ func newWorld(t *testing.T) *world {
 
 	node := fixture.Host(t)
 	cloud := fixture.NewCloud()
+	fixture.Serve(t, node, cloud.Auth)
 	fixture.Serve(t, node, cloud.Register)
 	fixture.Serve(t, node, cloud.Build)
 	w.boot = node.Addrs()[0].String() + "/p2p/" + node.ID().String()
