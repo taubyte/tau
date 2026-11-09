@@ -65,7 +65,7 @@ var (
 )
 
 // All is every service this composition knows how to start.
-var All = []string{Worker, Gateway, Auth, Proxy, DNS}
+var All = []string{Worker, Gateway, Proxy, DNS}
 
 // Everything is every service a node can be configured to run: the ones this
 // package still starts itself and the ones services.New makes. All, the default
@@ -312,6 +312,7 @@ type cloudWide struct {
 	Forges    []drivers.Forge     `yaml:"forges,omitempty"`
 	Container containers.Declared `yaml:"container,omitempty"`
 	CM        cm.Config           `yaml:"cm,omitempty"`
+	Auth      auth.Config         `yaml:"auth,omitempty"`
 }
 
 // Section decodes, into into, the cloud-wide keys a service declares and then the
@@ -322,7 +323,7 @@ type cloudWide struct {
 // to; from Go it may be the service's own struct. Either way the service gets what
 // its yaml tags say, exactly as an operator wrote it.
 func (c Config) Section(name string, into any) error {
-	shared := cloudWide{CloudFqdn: c.CloudFqdn, Tenancy: c.Tenancy, Forges: c.Forges, Container: c.Container, CM: c.CM}
+	shared := cloudWide{CloudFqdn: c.CloudFqdn, Tenancy: c.Tenancy, Forges: c.Forges, Container: c.Container, CM: c.CM, Auth: c.Auth}
 	if err := roundTrip(shared, into); err != nil {
 		return fmt.Errorf("node: %s: config: %w", name, err)
 	}

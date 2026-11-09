@@ -24,13 +24,13 @@ func TestServiceNeedsOnlyAMocknetHost(t *testing.T) {
 	server, err := mn.GenPeer()
 	require.NoError(t, err)
 
-	s, err := New(server)
+	s, err := build(server)
 	require.NoError(t, err)
 	defer s.Close()
 
 	// And it serves: constructed that way, it answers a real RPC from a
 	// second peer over the real transport.
-	require.NoError(t, s.Start(t.Context()))
+	require.NoError(t, s.serve(t.Context()))
 
 	caller, err := mn.GenPeer()
 	require.NoError(t, err)
@@ -47,12 +47,12 @@ func TestServiceNeedsOnlyAMocknetHost(t *testing.T) {
 }
 
 func TestNew_NoHost(t *testing.T) {
-	_, err := New(nil)
+	_, err := build(nil)
 	assert.Error(t, err)
 }
 
 func TestNew_OptionFailure(t *testing.T) {
-	_, err := New(newHost(t, newMocknet(t)), func(*Service) error {
+	_, err := build(newHost(t, newMocknet(t)), func(*Service) error {
 		return errors.New("deliberate option failure")
 	})
 	assert.Error(t, err)
@@ -61,32 +61,32 @@ func TestNew_OptionFailure(t *testing.T) {
 func TestNew_BindsNothing(t *testing.T) {
 	host := newHost(t, newMocknet(t))
 
-	first, err := New(host)
+	first, err := build(host)
 	require.NoError(t, err)
 	defer first.Close()
 
-	second, err := New(host)
+	second, err := build(host)
 	require.NoError(t, err)
 	defer second.Close()
 
-	require.NoError(t, first.Start(t.Context()))
-	assert.Error(t, second.Start(t.Context()), "the protocol is taken; only the second Start may find that out")
+	require.NoError(t, first.serve(t.Context()))
+	assert.Error(t, second.serve(t.Context()), "the protocol is taken; only the second Start may find that out")
 }
 
 func TestStartAndClose(t *testing.T) {
 	s := newTestService(t)
 
-	require.NoError(t, s.Start(t.Context()))
+	require.NoError(t, s.serve(t.Context()))
 
 	// Starting twice is an error, not a second listener.
-	assert.Error(t, s.Start(t.Context()))
+	assert.Error(t, s.serve(t.Context()))
 
 	require.NoError(t, s.Close())
 	// Close is idempotent.
 	assert.NoError(t, s.Close())
 
 	// Start after Close is an error, not a listener nobody will ever stop.
-	assert.Error(t, s.Start(t.Context()))
+	assert.Error(t, s.serve(t.Context()))
 }
 
 func TestClose_WithoutStart(t *testing.T) {
@@ -96,17 +96,17 @@ func TestClose_WithoutStart(t *testing.T) {
 }
 
 func TestWithServerOptions(t *testing.T) {
-	s := newTestService(t, WithServerOptions(rpc.WithPrefaceTimeout(time.Second)))
+	s := newTestService(t, withServerOptions(rpc.WithPrefaceTimeout(time.Second)))
 
 	assert.Len(t, s.serverOptions, 1, "the ServerOption must reach the Service, for Start to pass to rpc.Listen")
-	require.NoError(t, s.Start(t.Context()))
+	require.NoError(t, s.serve(t.Context()))
 }
 
 func TestStart_ListenFails(t *testing.T) {
-	s := newTestService(t, WithServerOptions(rpc.WithHTTPServer(func(hs *http.Server) {
+	s := newTestService(t, withServerOptions(rpc.WithHTTPServer(func(hs *http.Server) {
 		hs.Handler = http.NewServeMux()
 	})))
-	assert.Error(t, s.Start(t.Context()))
+	assert.Error(t, s.serve(t.Context()))
 }
 
 func TestDescriptor(t *testing.T) {
@@ -119,15 +119,15 @@ func TestStart_RefusedOnceTheFirstListenerIsGone(t *testing.T) {
 	s := newTestService(t)
 
 	ctx, cancel := context.WithCancel(t.Context())
-	require.NoError(t, s.Start(ctx))
+	require.NoError(t, s.serve(ctx))
 	cancel()
 	<-s.server.Done()
 
-	assert.Error(t, s.Start(t.Context()), "a spent Service must not quietly start a second listener")
+	assert.Error(t, s.serve(t.Context()), "a spent Service must not quietly start a second listener")
 }
 
 func TestStart_RefusedAfterCloseWithoutStart(t *testing.T) {
 	s := newTestService(t)
 	require.NoError(t, s.Close())
-	assert.Error(t, s.Start(t.Context()))
+	assert.Error(t, s.serve(t.Context()))
 }

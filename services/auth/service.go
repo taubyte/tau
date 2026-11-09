@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -46,6 +47,9 @@ type Service struct {
 
 	serverOptions []rpc.ServerOption
 
+	// vaultClient is the vault Start reached, closed with the service.
+	vaultClient io.Closer
+
 	startMu   sync.Mutex
 	server    *rpc.Server
 	closeOnce sync.Once
@@ -55,18 +59,18 @@ type Service struct {
 
 type Option func(*Service) error
 
-func WithServerOptions(opts ...rpc.ServerOption) Option {
+func withServerOptions(opts ...rpc.ServerOption) Option {
 	return func(s *Service) error {
 		s.serverOptions = append(s.serverOptions, opts...)
 		return nil
 	}
 }
 
-// WithUsers gives auth its users: the store they are kept in, the vault its
+// withUsers gives auth its users: the store they are kept in, the vault its
 // keys are, and the configuration that names the admin and the sign-in
 // providers. Without it auth answers admission only, admitting whoever a forge
 // vouched for.
-func WithUsers(db kvdb.Instance, v Vault, cfg Config) Option {
+func withUsers(db kvdb.Instance, v Vault, cfg Config) Option {
 	return func(s *Service) error {
 		if db == nil || v == nil {
 			return errors.New("auth: users need a store and a vault")
@@ -79,7 +83,7 @@ func WithUsers(db kvdb.Instance, v Vault, cfg Config) Option {
 	}
 }
 
-func WithForges(r *forge.Registry) Option {
+func withForges(r *forge.Registry) Option {
 	return func(s *Service) error {
 		if r == nil {
 			return errors.New("auth: a nil forge registry")
@@ -89,9 +93,9 @@ func WithForges(r *forge.Registry) Option {
 	}
 }
 
-// WithHTTPClient is what token endpoints and OIDC discovery are reached
+// withHTTPClient is what token endpoints and OIDC discovery are reached
 // with. Redirects are never followed whatever it says.
-func WithHTTPClient(c *http.Client) Option {
+func withHTTPClient(c *http.Client) Option {
 	return func(s *Service) error {
 		if c == nil {
 			return errors.New("auth: a nil http client")
@@ -101,7 +105,7 @@ func WithHTTPClient(c *http.Client) Option {
 	}
 }
 
-func WithClock(now func() time.Time) Option {
+func withClock(now func() time.Time) Option {
 	return func(s *Service) error {
 		if now == nil {
 			return errors.New("auth: a nil clock")
@@ -111,16 +115,28 @@ func WithClock(now func() time.Time) Option {
 	}
 }
 
-// New validates and allocates. It binds nothing until Start.
-func New(h host.Host, opts ...Option) (*Service, error) {
+// New is auth, unstarted: Start builds it from its node.
+func New() *Service { return &Service{} }
+
+// build is auth over what it is given, not yet serving.
+func build(h host.Host, opts ...Option) (*Service, error) {
+	s := &Service{}
+	if err := s.assemble(h, opts...); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// assemble validates and allocates. It binds nothing until serve.
+func (s *Service) assemble(h host.Host, opts ...Option) error {
 	if h == nil {
-		return nil, errors.New("auth: no host to answer on")
+		return errors.New("auth: no host to answer on")
 	}
 
-	s := &Service{host: h, now: time.Now, providers: map[string]*oidc.Provider{}, hashing: make(chan struct{}, 2)}
+	s.host, s.now, s.providers, s.hashing = h, time.Now, map[string]*oidc.Provider{}, make(chan struct{}, 2)
 	for _, opt := range opts {
 		if err := opt(s); err != nil {
-			return nil, fmt.Errorf("auth: option: %w", err)
+			return fmt.Errorf("auth: option: %w", err)
 		}
 	}
 	s.http = oidc.Client(s.http)
@@ -128,10 +144,10 @@ func New(h host.Host, opts ...Option) (*Service, error) {
 		s.keys = newKeyring(s.vault, *s.store, h.ID().String(), func() int64 { return s.now().UnixNano() })
 		for _, f := range s.cfg.Forges {
 			if s.forges == nil {
-				return nil, errors.New("auth: forge sign-in is configured with no forge registry")
+				return errors.New("auth: forge sign-in is configured with no forge registry")
 			}
 			if _, err := s.forges.Driver(f.Host); err != nil {
-				return nil, fmt.Errorf("auth: forge app for %s: %w", f.Host, err)
+				return fmt.Errorf("auth: forge app for %s: %w", f.Host, err)
 			}
 		}
 	}
@@ -142,11 +158,11 @@ func New(h host.Host, opts ...Option) (*Service, error) {
 			s.identity = AdmitAll{}
 		}
 	}
-	return s, nil
+	return nil
 }
 
-// Start listens and serves. Calling it twice, or after Close, is an error.
-func (s *Service) Start(ctx context.Context) error {
+// serve listens and serves. Calling it twice, or after Close, is an error.
+func (s *Service) serve(ctx context.Context) error {
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
 
@@ -174,6 +190,9 @@ func (s *Service) Close() error {
 			s.closeErr = s.server.Close()
 		}
 		s.startMu.Unlock()
+		if s.vaultClient != nil {
+			s.vaultClient.Close()
+		}
 	})
 	return s.closeErr
 }

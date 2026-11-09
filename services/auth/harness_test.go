@@ -25,9 +25,9 @@ func newWireHarness(t testing.TB, opts ...Option) *wireHarness {
 	mn := newMocknet(t)
 	server := newHost(t, mn)
 	caller := newHost(t, mn)
-	s, err := New(server, opts...)
+	s, err := build(server, opts...)
 	require.NoError(t, err)
-	require.NoError(t, s.Start(t.Context()))
+	require.NoError(t, s.serve(t.Context()))
 	t.Cleanup(func() { s.Close() })
 
 	return &wireHarness{Service: s, Mocknet: mn, ServerHost: server, CallerHost: caller}

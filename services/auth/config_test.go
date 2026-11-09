@@ -58,21 +58,21 @@ func TestOptionsRefuseNil(t *testing.T) {
 	db, err := kvdbmock.New().New(nil, "a", 0)
 	require.NoError(t, err)
 	for _, o := range []Option{
-		WithUsers(nil, newVault(), Config{Issuer: "x"}),
-		WithUsers(db, newVault(), Config{}),
-		WithForges(nil),
-		WithHTTPClient(nil),
-		WithClock(nil),
-		WithIdentity(nil),
+		withUsers(nil, newVault(), Config{Issuer: "x"}),
+		withUsers(db, newVault(), Config{}),
+		withForges(nil),
+		withHTTPClient(nil),
+		withClock(nil),
+		withIdentity(nil),
 	} {
-		_, err := New(h, o)
+		_, err := build(h, o)
 		require.Error(t, err)
 	}
 	// A forge app on a host no driver serves, or with no registry at all.
-	_, err = New(h, WithUsers(db, newVault(), Config{Issuer: "x", Forges: []ForgeApp{{Host: "h", ClientID: "c"}}}))
+	_, err = build(h, withUsers(db, newVault(), Config{Issuer: "x", Forges: []ForgeApp{{Host: "h", ClientID: "c"}}}))
 	require.Error(t, err)
 	f := newFx(t)
-	_, err = New(h, WithUsers(db, newVault(), Config{Issuer: "x", Forges: []ForgeApp{{Host: "nobody.example", ClientID: "c"}}}), WithForges(f.reg))
+	_, err = build(h, withUsers(db, newVault(), Config{Issuer: "x", Forges: []ForgeApp{{Host: "nobody.example", ClientID: "c"}}}), withForges(f.reg))
 	require.Error(t, err)
 }
 
@@ -182,7 +182,7 @@ func TestStoreOutagesAreErrors(t *testing.T) {
 
 	db := &failing{Instance: f.db}
 	f.s.store.db = db
-	other := newTestService(t, WithUsers(db, f.vault, f.s.cfg), WithForges(f.reg), WithClock(func() time.Time { return f.now }))
+	other := newTestService(t, withUsers(db, f.vault, f.s.cfg), withForges(f.reg), withClock(func() time.Time { return f.now }))
 
 	calls := map[string]func() error{
 		"login": func() error {

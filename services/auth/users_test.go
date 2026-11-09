@@ -373,7 +373,7 @@ func TestRefreshAndLogout(t *testing.T) {
 func TestTokensVerifyAcrossNodes(t *testing.T) {
 	f := newFx(t)
 	tok := f.adminToken()
-	other := newTestService(t, WithUsers(f.db, f.vault, f.s.cfg), WithForges(f.reg), WithClock(func() time.Time { return f.now }))
+	other := newTestService(t, withUsers(f.db, f.vault, f.s.cfg), withForges(f.reg), withClock(func() time.Time { return f.now }))
 	who, err := (&sessionHandler{other}).Whoami(t.Context(), req(&authv2.WhoamiRequest{}, tok))
 	require.NoError(t, err)
 	require.Equal(t, AdminID, who.Msg.GetId())
@@ -392,7 +392,7 @@ func TestTokensVerifyAcrossNodes(t *testing.T) {
 	// A token from another cloud does not verify here.
 	cfg := f.s.cfg
 	cfg.Issuer = "tau:elsewhere"
-	elsewhere := newTestService(t, WithUsers(f.db, f.vault, cfg), WithForges(f.reg), WithClock(func() time.Time { return f.now }))
+	elsewhere := newTestService(t, withUsers(f.db, f.vault, cfg), withForges(f.reg), withClock(func() time.Time { return f.now }))
 	foreign, err := (&sessionHandler{elsewhere}).Login(t.Context(), req(&authv2.LoginRequest{Name: "root", Password: f.adminP}, ""))
 	require.NoError(t, err)
 	_, err = f.sessions().Whoami(t.Context(), req(&authv2.WhoamiRequest{}, foreign.Msg.GetSession().GetAccessToken()))

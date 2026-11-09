@@ -25,29 +25,22 @@ func WithIdentity(build func(h Host) (authService.Identity, error)) Option {
 }
 
 // identityOption is the auth option the composed identity becomes, or nil.
-func (n *Instance) identityOption() (authService.Option, error) {
-	if n.opts.identity == nil {
-		return nil, nil
+// openIdentity builds who decides admission, when the node was told how, and gives
+// it to the services on the node: auth reads it beside itself.
+func (n *Instance) openIdentity() error {
+	if n.opts.identity == nil || !n.cfg.runs(Auth) {
+		return nil
 	}
 	id, err := n.opts.identity(&added{node: n, name: Auth})
 	if err != nil {
-		return nil, fmt.Errorf("node: identity: %w", err)
+		return fmt.Errorf("node: identity: %w", err)
 	}
 	if id == nil {
-		return nil, errors.New("node: identity: built nothing")
+		return errors.New("node: identity: built nothing")
 	}
 	if c, ok := id.(io.Closer); ok {
 		n.addCloser(c)
 	}
-	return authService.WithIdentity(id), nil
-}
-
-// authConfig is auth's configuration as this node states it: the operator's,
-// with the issuer defaulting to the cloud's name.
-func (n *Instance) authConfig() authService.Config {
-	c := n.cfg.Auth
-	if c.Issuer == "" {
-		c.Issuer = "tau:" + n.cfg.Cloud
-	}
-	return c
+	n.provide("", id)
+	return nil
 }

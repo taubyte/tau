@@ -8,11 +8,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/tau/core/service"
+	authService "github.com/taubyte/tau/services/auth"
+
 	"github.com/taubyte/tau/services/builder"
 	"github.com/taubyte/tau/services/plm"
 	registerService "github.com/taubyte/tau/services/register"
 
-	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/pkg/containers"
 
 	"connectrpc.com/connect"
@@ -62,7 +64,8 @@ func TestANodeAdvertisesTheRolesItRuns(t *testing.T) {
 	require.Contains(t, serving, Builder)
 	require.NotContains(t, serving, PLM)
 
-	require.NotNil(t, n.auth)
+	_, ok := service.Local[*authService.Service](n.HostOf(Auth), authService.Protocol)
+	require.True(t, ok, "the node does not serve auth's protocol with the auth it runs")
 	_, built := jobsOf(n)
 	require.False(t, built, "a builder holds no queue")
 	require.Nil(t, n.PLMAddr(), "and no build listens")
@@ -78,7 +81,8 @@ func TestBuildHoldsTheQueueAndNotAuthsStore(t *testing.T) {
 	})
 	require.NoError(t, n.Start(t.Context()))
 
-	require.Nil(t, n.auth, "plm does not hold auth's store")
+	_, ok := service.Local[*authService.Service](n.HostOf(PLM), authService.Protocol)
+	require.False(t, ok, "plm does not hold auth's store")
 	_, built := jobsOf(n)
 	require.True(t, built, "it holds the queue")
 	require.NotNil(t, n.PLMAddr(), "it listens where a CLI can reach it")

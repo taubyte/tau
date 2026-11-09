@@ -39,7 +39,6 @@ import (
 	"github.com/taubyte/tau/services/worker/volume"
 
 	"github.com/taubyte/tau/instance/placement"
-	authService "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/cm"
 	cmService "github.com/taubyte/tau/services/cm"
 	databaseService "github.com/taubyte/tau/services/database"
@@ -137,8 +136,6 @@ type Instance struct {
 	// wasm tier's `send` and `append` and the dispatcher's claim. A second
 	// would be a second stream to the same peer.
 	syncs *primitive.Backing
-
-	auth *authService.Service
 
 	pool     *invoke.Pool
 	runtimes []invoke.Runtime
@@ -265,7 +262,7 @@ func (n *Instance) open() error {
 	// STATS NEXT. Everything else routes on the view it maintains, including
 	// the locators above, so a node that runs it must have it before anything
 	// asks one of them who does what.
-	if err := n.openAuth(); err != nil {
+	if err := n.openIdentity(); err != nil {
 		return err
 	}
 	if err := n.openWorker(); err != nil {
@@ -689,9 +686,6 @@ func (n *Instance) Start(ctx context.Context) error {
 	var order []starter
 	if n.worker != nil {
 		order = append(order, n.worker)
-	}
-	if n.auth != nil {
-		order = append(order, n.auth)
 	}
 
 	for _, s := range order {

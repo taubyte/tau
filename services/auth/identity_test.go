@@ -39,7 +39,7 @@ func TestAuthAdmitsWhoeverTheForgeVouchedForByDefault(t *testing.T) {
 }
 
 func TestAComposedIdentityDecidesAdmission(t *testing.T) {
-	c := identityClient(t, WithIdentity(accounts{}))
+	c := identityClient(t, withIdentity(accounts{}))
 
 	got, err := c.Admit(t.Context(), connect.NewRequest(&authv2.Caller{Forge: "github.com", Subject: "1", Login: "ada"}))
 	require.NoError(t, err)
@@ -56,13 +56,13 @@ func TestAComposedIdentityDecidesAdmission(t *testing.T) {
 }
 
 func TestAnIdentityThatCannotAnswerIsUnavailable(t *testing.T) {
-	c := identityClient(t, WithIdentity(accounts{err: errors.New("accounts unreachable")}))
+	c := identityClient(t, withIdentity(accounts{err: errors.New("accounts unreachable")}))
 	_, err := c.Admit(t.Context(), connect.NewRequest(&authv2.Caller{Forge: "github.com", Subject: "1"}))
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
 }
 
 func TestANilIdentityIsRefused(t *testing.T) {
 	mn := newMocknet(t)
-	_, err := New(newHost(t, mn), WithIdentity(nil))
+	_, err := build(newHost(t, mn), withIdentity(nil))
 	require.Error(t, err)
 }

@@ -66,10 +66,3 @@ func TestWhatWithIdentityRefuses(t *testing.T) {
 		})
 	}
 }
-
-func TestAuthConfigDefaultsTheIssuer(t *testing.T) {
-	n := &Instance{Node: mockPeer(t), cfg: Config{Cloud: "example.com"}}
-	require.Equal(t, "tau:example.com", n.authConfig().Issuer)
-	n.cfg.Auth.Issuer = "tau:set"
-	require.Equal(t, "tau:set", n.authConfig().Issuer)
-}

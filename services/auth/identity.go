@@ -66,9 +66,9 @@ func (u *Users) Admit(ctx context.Context, c Caller) (Admission, error) {
 	return Admission{Reason: "not a user of this cloud: sign in to it first"}, nil
 }
 
-// WithIdentity sets who decides admission. Without it, Users when auth keeps
+// withIdentity sets who decides admission. Without it, Users when auth keeps
 // users and AdmitAll when it does not.
-func WithIdentity(i Identity) Option {
+func withIdentity(i Identity) Option {
 	return func(s *Service) error {
 		if i == nil {
 			return errors.New("auth: a nil identity")

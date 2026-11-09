@@ -30,7 +30,7 @@ func newHost(t testing.TB, mn mocknet.Mocknet) host.Host {
 // listener is the point.
 func newTestService(t testing.TB, opts ...Option) *Service {
 	t.Helper()
-	s, err := New(newHost(t, newMocknet(t)), opts...)
+	s, err := build(newHost(t, newMocknet(t)), opts...)
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	return s

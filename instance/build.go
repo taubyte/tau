@@ -11,7 +11,6 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/taubyte/tau/core/service"
-	authService "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/plm/hosted"
 	"github.com/taubyte/tau/services/plm/jobs"
 	"github.com/taubyte/tau/services/worker"
@@ -27,44 +26,6 @@ import (
 // caller follows the error's code, and a deployment missing its artifact is a
 // broken site (502), not a name nobody serves (404).
 var ErrNotBuilt = errors.New("node: nothing has built this resource yet")
-
-func (n *Instance) openAuth() error {
-	if !n.cfg.runs(Auth) {
-		return nil
-	}
-
-	// Auth keeps users in its own database and keys and OAuth client secrets in the vault.
-	db, err := n.kvdb(Auth)
-	if err != nil {
-		return err
-	}
-	n.closers = append(n.closers, closerFunc(db.Close))
-	registry, err := n.forgeRegistry()
-	if err != nil {
-		return err
-	}
-	v := newVault(n)
-	n.closers = append(n.closers, v)
-	authOptions := []authService.Option{
-		authService.WithUsers(db, v.Cloud(authService.VaultService), n.authConfig()),
-		authService.WithForges(registry),
-	}
-	identity, err := n.identityOption()
-	if err != nil {
-		return err
-	}
-	if identity != nil {
-		authOptions = append(authOptions, identity)
-	}
-
-	svc, err := authService.New(n.Host(), authOptions...)
-	if err != nil {
-		return err
-	}
-	n.auth = svc
-	n.closers = append(n.closers, svc)
-	return nil
-}
 
 // PLMAddr is where this node's plm listens, nil when it runs
 // none or it has not started.
