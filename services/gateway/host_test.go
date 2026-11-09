@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"io"
 	"testing"
@@ -14,8 +13,10 @@ import (
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/rpc"
+	"github.com/taubyte/tau/pkg/certificate"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/specs"
+	"github.com/taubyte/tau/services/cm"
 	statsService "github.com/taubyte/tau/services/stats"
 	"github.com/taubyte/tau/services/worker"
 )
@@ -26,6 +27,8 @@ type node struct {
 	*service.Served
 	running []service.Running
 	config  func(*hostConfig) error
+	// cm is the cloud-wide `cm:` block every section on a node carries.
+	cm cm.Config
 }
 
 func (n *node) Peer() peer.Node            { return n.Node }
@@ -38,13 +41,25 @@ func (*node) Now() time.Time               { return time.Unix(1_700_000_000, 0) 
 // Config is the gateway's section as the test sets it, decoded into whatever reads it
 // by yaml as a node decodes it: the gateway, and cm's helpers.
 func (n *node) Config(into any) error {
+	if err := roundTrip(cloudWide{CM: n.cm}, into); err != nil {
+		return err
+	}
 	var cfg hostConfig
 	if n.config != nil {
 		if err := n.config(&cfg); err != nil {
 			return err
 		}
 	}
-	raw, err := yaml.Marshal(cfg)
+	return roundTrip(cfg, into)
+}
+
+// cloudWide is what a node decodes into every section before the section's own.
+type cloudWide struct {
+	CM cm.Config `yaml:"cm,omitempty"`
+}
+
+func roundTrip(from, into any) error {
+	raw, err := yaml.Marshal(from)
 	if err != nil {
 		return err
 	}
@@ -108,22 +123,12 @@ func (builtBeside) Artifact(context.Context, string, string, string, string) (st
 	return "bafy", nil
 }
 
-type issuing struct {
-	issuer Issuer
-	err    error
-}
-
-func (i issuing) Issuer() (Issuer, error) { return i.issuer, i.err }
-
-type oneIssuer struct{}
-
-func (oneIssuer) Certificate(context.Context, string) (tls.Certificate, error) {
-	return tls.Certificate{}, nil
-}
-func (oneIssuer) Challenge(string) (string, bool) { return "", false }
+// issuing is a cloud that issues certificates.
+var issuing = cm.Config{Certificate: cm.CertificateConfig{ACME: certificate.ACME{Enabled: true}}}
 
 func TestAGatewayStartsFromItsNodeAndTakesWhatIsBesideIt(t *testing.T) {
-	n := newNode(t, routes{}, busesBeside{}, workerBeside{}, issuing{issuer: oneIssuer{}})
+	n := newNode(t, routes{}, busesBeside{}, workerBeside{})
+	n.cm = issuing
 	n.config = func(cfg *hostConfig) error {
 		cfg.CloudFqdn = "tau.example.io"
 		cfg.MaxBody = 1 << 10
@@ -143,7 +148,7 @@ func TestAGatewayStartsFromItsNodeAndTakesWhatIsBesideIt(t *testing.T) {
 	require.Equal(t, workerBeside{}, s.admits, "who may attach is the worker's beside it")
 	require.Equal(t, workerBeside{}, s.artifacts, "and so is where a build's artifact is")
 	require.NotNil(t, s.assets, "a package's files are read through storage")
-	require.Equal(t, oneIssuer{}, s.issuer)
+	require.IsType(t, &cm.Client{}, s.issuer, "a generated name is ordered through its own cm client")
 	require.True(t, s.terminates, "served over TLS, as its section says")
 	require.Equal(t, time.Unix(1_700_000_000, 0), s.now(), "the node's clock")
 
@@ -154,7 +159,7 @@ func TestAGatewayStartsFromItsNodeAndTakesWhatIsBesideIt(t *testing.T) {
 func TestAGatewayAloneTakesOnlyWhatItMust(t *testing.T) {
 	s := New()
 	t.Cleanup(func() { s.Close() })
-	require.NoError(t, s.Start(t.Context(), newNode(t, routes{}, issuing{})))
+	require.NoError(t, s.Start(t.Context(), newNode(t, routes{})))
 	require.Nil(t, s.buses)
 	require.Nil(t, s.admits)
 	require.Nil(t, s.artifacts)
@@ -169,7 +174,9 @@ func TestAGatewayRefusesWhatItCannotStartWith(t *testing.T) {
 		return s.Start(t.Context(), n)
 	}
 	require.ErrorContains(t, start(newNode(t)), "places requests from stats")
-	require.ErrorContains(t, start(newNode(t, routes{}, issuing{err: errors.New("no account")})), "no account")
+	unzoned := newNode(t, routes{})
+	unzoned.cm = issuing
+	require.ErrorIs(t, start(unzoned), cm.ErrNoZone, "a cloud issuing certificates names the zone they are for")
 
 	broken := newNode(t, routes{})
 	broken.config = func(*hostConfig) error { return errors.New("no such key") }
