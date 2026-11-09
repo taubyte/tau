@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 
+	pkgcache "github.com/taubyte/tau/pkg/cache"
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/dns"
 	"github.com/taubyte/tau/services/gateway"
@@ -109,19 +110,19 @@ type terminating struct{ n *Instance }
 func (t terminating) Terminates() bool { return t.n.opts.terminates }
 
 // challengeStore is the DNS-01 database, opened once per node.
-func (n *Instance) challengeStore() (cacheStore, error) {
+func (n *Instance) challengeStore() (pkgcache.Store, error) {
 	n.sharedMu.Lock()
 	defer n.sharedMu.Unlock()
 	if n.challengeDB != nil {
-		return cacheStore{n.challengeDB}, nil
+		return pkgcache.Over(n.challengeDB), nil
 	}
 	db, err := n.dbs.at(cm.ChallengeDatabase)
 	if err != nil {
-		return cacheStore{}, err
+		return nil, err
 	}
 	n.challengeDB = db
 	n.addCloser(closerFunc(db.Close))
-	return cacheStore{db}, nil
+	return pkgcache.Over(db), nil
 }
 
 // answers is this instance's copy of the challenge store, opened once.

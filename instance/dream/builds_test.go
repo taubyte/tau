@@ -7,10 +7,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/instance"
 	builderv2 "github.com/taubyte/tau/pkg/proto/gen/tau/builder/v2"
 	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 	"github.com/taubyte/tau/services/plm/run"
+	workerHosted "github.com/taubyte/tau/services/worker/hosted"
 )
 
 // recorded is plm's records as a node reads them: what it was told was built.
@@ -19,7 +19,7 @@ type recorded map[string]string
 func (r recorded) Artifact(_ context.Context, project, environment, _, resource string) (string, error) {
 	cid, ok := r[builtKey(project, environment, resource)]
 	if !ok {
-		return "", instance.ErrNotBuilt
+		return "", workerHosted.ErrNotBuilt
 	}
 	return cid, nil
 }
@@ -29,7 +29,7 @@ func TestANodeLooksUpWhatTheCloudBuiltThenPLMsRecords(t *testing.T) {
 	lookup := &artifacts{kept: kept}
 
 	_, err := lookup.Artifact(t.Context(), "QmP", "prod", "package", "QmR")
-	require.ErrorIs(t, err, instance.ErrNotBuilt, "a node not started yet reads nothing")
+	require.ErrorIs(t, err, workerHosted.ErrNotBuilt, "a node not started yet reads nothing")
 
 	kept.keep("QmP", "prod", []*builderv2.Stored{{ResourceId: "QmR", Cid: "bafy-here"}})
 	cid, err := lookup.Artifact(t.Context(), "QmP", "prod", "package", "QmR")

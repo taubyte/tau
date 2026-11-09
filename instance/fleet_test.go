@@ -3,7 +3,6 @@ package instance
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"slices"
 	"testing"
 	"time"
@@ -14,12 +13,13 @@ import (
 
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/invoke"
-	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 	databaseService "github.com/taubyte/tau/services/database"
 	registerService "github.com/taubyte/tau/services/register"
 	"github.com/taubyte/tau/services/worker"
+	workerHosted "github.com/taubyte/tau/services/worker/hosted"
+	"github.com/taubyte/tau/services/worker/placement"
 )
 
 // Two nodes test the composition: a node finding what it does not run, over real
@@ -130,27 +130,6 @@ func TestAWorkerFindsARegisterOnAnotherNode(t *testing.T) {
 	require.Equal(t, int64(33554432), spec.Memory)
 }
 
-func TestTheStreamToARemoteRegisterIsKept(t *testing.T) {
-	nodes := fleet(t,
-		Config{Services: []string{Register, Stats}},
-		Config{Services: []string{Worker, Stats}},
-	)
-	registry, compute := nodes[0], nodes[1]
-
-	_, err := registry.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled(),
-	})
-	require.NoError(t, err)
-	finds(t, compute, registerService.Protocol)
-
-	first, err := compute.registers.Now(t.Context())
-	require.NoError(t, err)
-
-	again, err := compute.registers.Now(t.Context())
-	require.NoError(t, err)
-	require.Same(t, first, again, "a second read opened a second stream")
-}
-
 func TestAGatewayReachesAWorkerOnAnotherNode(t *testing.T) {
 	nodes := fleet(t,
 		Config{Services: []string{Register, Stats, Gateway}},
@@ -167,36 +146,16 @@ func TestAGatewayReachesAWorkerOnAnotherNode(t *testing.T) {
 	sees(t, edge, Worker)
 	finds(t, compute, registerService.Protocol)
 
-	// The gateway has no worker of its own, so this can only have gone over
-	// the swarm. It reaches the tier and stops there, which is what this
-	// test's tier does.
-	res, err := edge.workers.Invoke(t.Context(), workerTarget(), &invoke.Request{Method: "GET", Path: "/"})
+	// The gateway's node has no worker of its own, so this can only have gone over
+	// the swarm. It reaches the tier and stops there, which is what this test's tier
+	// does.
+	workers, err := placement.On(edge.HostOf(Gateway))
+	require.NoError(t, err)
+	t.Cleanup(func() { workers.Close() })
+	res, err := workers.Invoke(t.Context(), workerTarget(), &invoke.Request{Method: "GET", Path: "/"})
 	require.Error(t, err, "the tier starts nothing in this test")
 	require.Nil(t, res)
 	require.NotContains(t, err.Error(), "no worker is ready", "a worker was found and asked")
-}
-
-func TestAChannelDialCrossesToAnotherNode(t *testing.T) {
-	nodes := fleet(t,
-		Config{Services: []string{Register, Stats, Gateway}},
-		Config{Services: []string{Worker, Stats}},
-	)
-	edge, compute := nodes[0], nodes[1]
-
-	_, err := edge.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled(),
-	})
-	require.NoError(t, err)
-
-	sees(t, edge, Worker)
-	finds(t, compute, registerService.Protocol)
-	require.Nil(t, edge.worker, "the dialing node runs none")
-
-	_, err = (&channels{node: edge}).Dial(t.Context(), channelGrant(), []byte("hello"))
-	require.Error(t, err, "the tier starts nothing in this test")
-	require.False(t, errors.Is(err, wasmtier.ErrNoAnswer),
-		"a worker was found and asked; no-answer would mean none was")
-	require.NotContains(t, err.Error(), "no worker is ready")
 }
 
 func TestAWarmWorkerIsAdvertised(t *testing.T) {
@@ -228,11 +187,10 @@ func TestOneNodeRunningEverythingNeedsNoStream(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	// A HOST CANNOT DIAL ITSELF, so a resolve that answers was answered by the register
+	// beside the worker, with no stream.
 	_, err = only.Worker().Resolve(t.Context(), workerTarget())
 	require.NoError(t, err)
-
-	_, dialled := only.registers.At()
-	require.False(t, dialled, "it dialled itself")
 }
 
 func TestTheSeamsReachTheWorker(t *testing.T) {
@@ -283,7 +241,7 @@ func TestABuiltResourceNothingHasBuiltIsRefused(t *testing.T) {
 
 	select {
 	case err := <-done:
-		require.ErrorIs(t, err, ErrNotBuilt)
+		require.ErrorIs(t, err, workerHosted.ErrNotBuilt)
 	case <-time.After(10 * time.Second):
 		t.Fatal("it waited instead of refusing")
 	}

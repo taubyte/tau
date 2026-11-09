@@ -245,7 +245,7 @@ func TestANameDeepInAZoneFindsIt(t *testing.T) {
 func TestEveryServiceANodeCanRunIsAName(t *testing.T) {
 	n := &Instance{Node: mockPeer(t), opts: options{extra: map[string]service.Service{"billing": started{}}}}
 	names := n.knownServices()
-	for _, want := range append(append([]string(nil), All...), PLM, "billing") {
+	for _, want := range []string{Worker, Gateway, Proxy, DNS, PLM, "billing"} {
 		require.Contains(t, names, want)
 	}
 }

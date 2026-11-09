@@ -40,7 +40,7 @@ func withService(name string, s service.Service) Option {
 			return errors.New("node: a nil service")
 		case name == "":
 			return errors.New("node: a service needs a name")
-		case slices.Contains(builtIn(), name) || slices.Contains(services.Names(), name):
+		case slices.Contains(services.Names(), name):
 			return fmt.Errorf("node: %q is a service already", name)
 		}
 		if _, twice := o.extra[name]; twice {
@@ -81,9 +81,6 @@ func (o options) serviceNames() []string {
 	return append(out, added...)
 }
 
-// builtIn is every name this package starts itself.
-func builtIn() []string { return append([]string(nil), All...) }
-
 // startServices starts every service the config names, in its order. Each is closed
 // with the instance, a failed start included.
 func (n *Instance) startServices(ctx context.Context) error {
@@ -109,6 +106,14 @@ func (a *added) Running() []service.Running { return a.node.runningNow() }
 func (a *added) Cloud() string              { return a.node.cfg.Cloud }
 func (a *added) Region() string             { return a.node.cfg.Region }
 func (a *added) Now() time.Time             { return a.node.clock() }
+
+// clock is this node's, so a test that moves time moves everything on it.
+func (n *Instance) clock() time.Time {
+	if n.opts.now != nil {
+		return n.opts.now()
+	}
+	return time.Now()
+}
 
 // HostOf is this instance as the service named sees it: its peer, its finder, the
 // services running beside it, and that service's section.

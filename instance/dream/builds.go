@@ -28,6 +28,7 @@ import (
 	"github.com/taubyte/tau/services/plm/joblog"
 	"github.com/taubyte/tau/services/plm/run"
 	"github.com/taubyte/tau/services/worker"
+	workerHosted "github.com/taubyte/tau/services/worker/hosted"
 )
 
 // builds.go is how a cloud builds a push. PLM and builder are two services, and
@@ -412,7 +413,7 @@ func (a *artifacts) Artifact(ctx context.Context, project, environment, kind, re
 	records := a.records
 	a.mu.Unlock()
 	if records == nil {
-		return "", fmt.Errorf("%w: %s/%s's %s", instance.ErrNotBuilt, project, environment, resource)
+		return "", fmt.Errorf("%w: %s/%s's %s", workerHosted.ErrNotBuilt, project, environment, resource)
 	}
 	return records.Artifact(ctx, project, environment, kind, resource)
 }

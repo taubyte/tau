@@ -24,6 +24,7 @@ import (
 	"github.com/taubyte/tau/services/primitives"
 	proxy "github.com/taubyte/tau/services/proxy"
 	"github.com/taubyte/tau/services/worker"
+	workerHosted "github.com/taubyte/tau/services/worker/hosted"
 	"gopkg.in/yaml.v3"
 )
 
@@ -33,7 +34,6 @@ import (
 // answers nothing.
 const (
 	Register = "register"
-	Worker   = "worker"
 	Stats    = "stats"
 	Auth     = "auth"
 	Secrets  = "secrets"
@@ -57,6 +57,8 @@ const (
 var (
 	Primitives = primitives.Descriptor.Name
 	Gateway    = gateway.Descriptor.Name
+	// Worker runs a project's workloads. See services/worker/hosted.
+	Worker = workerHosted.Name
 )
 
 // PLM and Builder, named by the build packages themselves. Two processes: build
@@ -71,15 +73,9 @@ var (
 	Builder = plm.Builder.Name
 )
 
-// All is every service this composition knows how to start.
-var All = []string{Worker}
-
-// Everything is every service a node can be configured to run: the ones this
-// package still starts itself and the ones services.New makes. All, the default
-// shape, is the first half of it.
-func Everything() []string {
-	return append(append([]string(nil), All...), services.Names()...)
-}
+// Everything is every service a node can be configured to run: the ones services.New
+// makes.
+func Everything() []string { return services.Names() }
 
 // PLM is in no default shape: it binds a public listener, which has no default
 // port, so a node runs it when its config names it and where it listens.
@@ -121,13 +117,10 @@ type Config struct {
 	// Empty means drivers.Default. See pkg/forge/drivers.
 	Forges []drivers.Forge
 
-	// Container is the container tier this node runs, if any. See
-	// container.go, and in particular what its Runtime field is for.
+	// Container is the container tier this node runs, if any: what its worker builds
+	// a tier over. See pkg/containers, and in particular what its Runtime field is
+	// for.
 	Container containers.Declared
-
-	// Per-service operator configuration. Each is that service's own; nothing
-	// here reinterprets it.
-	Worker worker.Config
 
 	// CM is what the cloud keeps once for every region: today its
 	// certificates — the ACME CA, the challenge type and whether the zone's
@@ -175,7 +168,6 @@ type options struct {
 	// artifacts is what the worker looks a built resource up in, in place of build's
 	// records.
 	artifacts worker.Artifacts
-	secrets   worker.Secrets
 	now       func() time.Time
 	extra     map[string]service.Service
 	identity  func(Host) (auth.Identity, error)
@@ -235,17 +227,6 @@ func WithArtifacts(a worker.Artifacts) Option {
 	}
 }
 
-// WithSecrets resolves a secret a run-time variable refers to. Optional.
-func WithSecrets(s worker.Secrets) Option {
-	return func(o *options) error {
-		if s == nil {
-			return errors.New("node: a nil secret resolver")
-		}
-		o.secrets = s
-		return nil
-	}
-}
-
 func WithClock(now func() time.Time) Option {
 	return func(o *options) error {
 		if now == nil {
@@ -257,11 +238,10 @@ func WithClock(now func() time.Time) Option {
 }
 
 // withDefaults fills and checks the service list. added are the names of the services
-// tau ships beside the built-ins: an empty list runs those services.Default leaves in,
-// and a list may name any of them.
+// a node can run: an empty list runs those services.Default leaves in, and a list may
+// name any of them.
 func (c Config) withDefaults(added ...string) (Config, error) {
 	if len(c.Services) == 0 {
-		c.Services = append([]string(nil), All...)
 		for _, name := range added {
 			if slices.Contains(services.Default(), name) || !slices.Contains(services.Names(), name) {
 				c.Services = append(c.Services, name)
@@ -277,7 +257,7 @@ func (c Config) withDefaults(added ...string) (Config, error) {
 			}
 		}
 	}
-	known := append(builtIn(), added...)
+	known := added
 	for _, name := range c.Services {
 		if !slices.Contains(known, name) {
 			return Config{}, fmt.Errorf("node: %q is not a service this node can run; it runs %v", name, known)

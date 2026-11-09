@@ -1,7 +1,6 @@
 package instance
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -17,9 +16,7 @@ import (
 func TestTheDevelopersHalfWritesWhereTheRequestPathReads(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
 	require.NoError(t, n.Start(t.Context()))
-	require.NotNil(t, n.vault, "a node that runs a worker builds a vault")
-
-	v := n.vault
+	v := n.Vault()
 	require.NoError(t, v.Set(t.Context(), "shop", "prod", secretID, []byte("sk_live")))
 
 	names, err := v.List(t.Context(), "shop", "prod")
@@ -51,9 +48,8 @@ func TestTheWriteHalfGoesToWhicheverNodeHoldsTheVault(t *testing.T) {
 	holder, frontend := nodes[0], nodes[1]
 
 	finds(t, frontend, secretsService.Protocol)
-	require.NotNil(t, frontend.vault)
 
-	require.NoError(t, frontend.vault.Set(t.Context(), "shop", "prod", secretID, []byte("sk_live")))
+	require.NoError(t, frontend.Vault().Set(t.Context(), "shop", "prod", secretID, []byte("sk_live")))
 
 	// READ IT BACK ON THE NODE THAT HOLDS IT, not through the same stream that
 	// wrote it — that is what makes this a write to the vault rather than to a
@@ -62,11 +58,11 @@ func TestTheWriteHalfGoesToWhicheverNodeHoldsTheVault(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "sk_live", value)
 
-	names, err := frontend.vault.List(t.Context(), "shop", "prod")
+	names, err := frontend.Vault().List(t.Context(), "shop", "prod")
 	require.NoError(t, err)
 	require.Equal(t, []string{secretID}, names)
 
-	require.NoError(t, frontend.vault.Delete(t.Context(), "shop", "prod", secretID))
+	require.NoError(t, frontend.Vault().Delete(t.Context(), "shop", "prod", secretID))
 	names, err = holder.Vault().List(t.Context(), "shop", "prod")
 	require.NoError(t, err)
 	require.Empty(t, names)
@@ -79,8 +75,7 @@ func TestAWriteWithNoVaultAnywhereIsRefused(t *testing.T) {
 	// This node runs no vault and finds no node running one, so the
 	// vault has nothing to open — which is the shape a `Services` list that
 	// forgot the secrets service produces.
-	v := newVault(n)
-	t.Cleanup(func() { v.Close() })
+	v := n.Vault()
 
 	require.ErrorIs(t, v.Set(t.Context(), "shop", "prod", secretID, []byte("x")), secretsService.ErrNoSecrets)
 	require.ErrorIs(t, v.Delete(t.Context(), "shop", "prod", secretID), secretsService.ErrNoSecrets)
@@ -90,37 +85,6 @@ func TestAWriteWithNoVaultAnywhereIsRefused(t *testing.T) {
 
 	_, err = v.Secret(t.Context(), "shop", "prod", secretID)
 	require.ErrorIs(t, err, secretsService.ErrNoSecrets)
-}
-
-// secretFor is an injected resolver, which is the one thing that outranks a
-// node's own vault.
-type secretFor func(ctx context.Context, project, environment, id string) (string, error)
-
-func (f secretFor) Secret(ctx context.Context, project, environment, id string) (string, error) {
-	return f(ctx, project, environment, id)
-}
-
-func TestAnInjectedResolverOutranksTheNodesOwnVault(t *testing.T) {
-	injected := secretFor(func(context.Context, string, string, string) (string, error) {
-		return "from the injected one", nil
-	})
-
-	with, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}}, WithSecrets(injected))
-	require.NoError(t, with.Start(t.Context()))
-	got, err := with.secretResolver().Secret(t.Context(), "shop", "prod", secretID)
-	require.NoError(t, err)
-	require.Equal(t, "from the injected one", got)
-
-	// WITHOUT ONE IT IS THIS NODE'S VAULT...
-	own, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
-	require.NoError(t, own.Start(t.Context()))
-	require.Equal(t, own.vault, own.secretResolver())
-
-	// ...AND WITH NEITHER IT IS NOTHING, which is what makes a resource naming
-	// a secret refused rather than started without it.
-	bare, _, _ := makeNode(t, Config{Services: []string{Register}})
-	require.NoError(t, bare.Start(t.Context()))
-	require.Nil(t, bare.secretResolver())
 }
 
 func TestInitWritesTheCloudsSecretsTheNodeThenServes(t *testing.T) {

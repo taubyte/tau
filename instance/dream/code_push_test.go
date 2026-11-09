@@ -16,6 +16,7 @@ import (
 
 	"github.com/taubyte/tau/instance"
 	nodeDream "github.com/taubyte/tau/instance/dream"
+	"github.com/taubyte/tau/services/worker"
 )
 
 // A CODE PUSH CHANGES WHAT RUNS AND NOTHING ELSE. The build publishes a new artifact
@@ -32,7 +33,9 @@ func TestACodePushIsWhatTheNextRequestRuns(t *testing.T) {
 		},
 		// A node may run the previous artifact for this long after a build, so the
 		// push is seen within it.
-		Configure: func(_ int, c *instance.Config) { c.Worker.PointerTTL = 100 * time.Millisecond },
+		Configure: func(_ int, c *instance.Config) {
+			c.Sections[instance.Worker] = worker.Config{PointerTTL: 100 * time.Millisecond}
+		},
 	})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)

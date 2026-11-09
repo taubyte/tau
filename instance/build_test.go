@@ -25,11 +25,11 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/services"
 
-	"github.com/taubyte/tau/pkg/invoke"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/stats"
 	"github.com/taubyte/tau/services/plm/ingress"
 	"github.com/taubyte/tau/services/plm/jobs"
-	"github.com/taubyte/tau/services/worker"
+	workerHosted "github.com/taubyte/tau/services/worker/hosted"
 )
 
 func TestANodeRunsPLMAndTheBuilderTogetherWhenItsConfigSaysSo(t *testing.T) {
@@ -40,13 +40,13 @@ func TestANodeRunsPLMAndTheBuilderTogetherWhenItsConfigSaysSo(t *testing.T) {
 }
 
 func TestTheDefaultShapeStarts(t *testing.T) {
-	require.NotContains(t, All, PLM)
+	require.NotContains(t, services.Default(), PLM)
 	require.Contains(t, services.Names(), Builder, "the builder is a service tau ships")
 	require.Contains(t, services.Default(), Auth, "auth is a service tau ships, started from the catalog")
 
 	cfg, err := Config{}.withDefaults(services.Names()...)
 	require.NoError(t, err)
-	require.Equal(t, append(slices.Clone(All), services.Default()...), cfg.Services, "and every service tau ships but plm")
+	require.Equal(t, services.Default(), cfg.Services, "and every service tau ships but plm")
 	require.NotContains(t, cfg.Services, PLM, "which listens where its config says, and has no default")
 }
 
@@ -59,9 +59,8 @@ func TestANodeAdvertisesTheRolesItRuns(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Stats, Auth, Builder}})
 	require.NoError(t, n.Start(t.Context()))
 
-	serving := n.serving()
+	serving := reported(t, n, func(row stats.Node) bool { return slices.Contains(row.Serving, Builder) }).Serving
 	require.Contains(t, serving, Auth)
-	require.Contains(t, serving, Builder)
 	require.NotContains(t, serving, PLM)
 
 	_, ok := service.Local[*authService.Service](n.HostOf(Auth), authService.Protocol)
@@ -125,7 +124,7 @@ func TestTheFinderGivesUp(t *testing.T) {
 func TestABuilderWithNoContainerDaemon(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Stats, Builder}})
 	require.NoError(t, n.Start(t.Context()))
-	require.Contains(t, n.serving(), Builder, "it still runs, and still deploys configuration")
+	require.Contains(t, n.Services(), Builder, "it still runs, and still deploys configuration")
 }
 
 func TestABuilderWithADaemonThatIsNotOne(t *testing.T) {
@@ -134,139 +133,6 @@ func TestABuilderWithADaemonThatIsNotOne(t *testing.T) {
 		Container: containers.Declared{Backend: "not-a-backend"},
 	})
 	require.ErrorIs(t, n.Start(t.Context()), containers.ErrUnknownBackend, "the node's one daemon is the build's")
-}
-
-func TestAnAssetStoreIsEnoughToRunCode(t *testing.T) {
-	// No container backend, no injected runtime — and a worker still starts,
-	// with every tier that needs only the asset store.
-	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Stats, Worker}}), withKVDB(&memFactory{}), withRaft(mockGroups{}))
-	require.NoError(t, err)
-	t.Cleanup(func() { n.Close() })
-	require.NotNil(t, n.worker)
-
-	// Both: a wasm component and a js function are what the smallest possible cloud
-	// runs, and neither needs a daemon. A site's files are its gateway's to serve.
-	require.ElementsMatch(t, []string{"wasm", "warp"}, tierNames(n))
-}
-
-func TestTheArtifactLookupIsCachedForTheDeployBudget(t *testing.T) {
-	now := time.Unix(1_700_000_000, 0)
-	n, _, _ := makeNode(t,
-		Config{Services: []string{Stats}, Worker: worker.Config{PointerTTL: time.Minute}},
-		WithClock(func() time.Time { return now }))
-
-	a := &artifacts{node: n}
-	a.remember(builtKey{project: "shop", environment: "prod", resource: "res"}, "bafyone")
-
-	cid, err := a.Artifact(t.Context(), "shop", "prod", "function", "res")
-	require.NoError(t, err)
-	require.Equal(t, "bafyone", cid)
-
-	// Past the budget the records are read again, and they hold nothing for it,
-	// rather than something stale being served forever.
-	now = now.Add(2 * time.Minute)
-	_, err = a.Artifact(t.Context(), "shop", "prod", "function", "res")
-	require.ErrorIs(t, err, ErrNotBuilt)
-}
-
-func TestAFailedArtifactLookupIsNotRemembered(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Stats}})
-	require.NoError(t, n.Start(t.Context()))
-
-	a := &artifacts{node: n}
-	_, err := a.Artifact(t.Context(), "shop", "prod", "function", "res")
-	require.ErrorIs(t, err, ErrNotBuilt)
-	_, held := a.seen.Load(builtKey{project: "shop", environment: "prod", resource: "res"})
-	require.False(t, held)
-}
-
-func TestTheDeployBudgetHasAnEffectiveValue(t *testing.T) {
-	require.Equal(t, worker.DefaultPointerTTL, worker.Config{}.Pointer())
-	require.Equal(t, worker.DefaultPointerTTL, worker.Config{PointerTTL: -1}.Pointer())
-	require.Equal(t, time.Minute, worker.Config{PointerTTL: time.Minute}.Pointer())
-}
-
-func TestTheWorkerResolvesArtifactsThroughBuildsRecords(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Stats, Worker}})
-	require.NotNil(t, n.worker)
-
-	with, _, _ := makeNode(t, Config{Services: []string{Stats, Worker}}, WithArtifacts(everythingBuilt{}))
-	require.NotNil(t, with.worker)
-
-	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Stats, Worker}}), WithArtifacts(nil))
-	require.Error(t, err)
-}
-
-// tierNames is what this node's pool can run.
-func tierNames(n *Instance) []string {
-	var out []string
-	for _, rt := range n.tiers() {
-		out = append(out, rt.Name())
-	}
-	return out
-}
-
-func TestAnInjectedTierWins(t *testing.T) {
-	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Stats, Worker}}), withKVDB(&memFactory{}), withRaft(mockGroups{}), WithRuntimes(&tier{name: "wasm"}))
-	require.NoError(t, err)
-	t.Cleanup(func() { n.Close() })
-
-	// One wasm, and it is the injected one; js is still built, because nothing
-	// else answers for it.
-	require.ElementsMatch(t, []string{"wasm", "warp"}, tierNames(n))
-	require.Same(t, n.opts.runtimes[0], n.tiers()[0])
-}
-
-func TestAWorkloadsOutputIsAssembledIntoLines(t *testing.T) {
-	var lines []string
-	w := logLine(func(line string) { lines = append(lines, line) })
-
-	// One line arriving in three writes is one line.
-	for _, part := range []string{"star", "ting the ", "handler\n"} {
-		n, err := w.Write([]byte(part))
-		require.NoError(t, err)
-		require.Equal(t, len(part), n, "a writer reports what it took, not what it emitted")
-	}
-	require.Equal(t, []string{"starting the handler"}, lines)
-
-	// Two lines in one write are two.
-	lines = nil
-	_, err := w.Write([]byte("one\ntwo\n"))
-	require.NoError(t, err)
-	require.Equal(t, []string{"one", "two"}, lines)
-
-	// A carriage return is the line ending's, not the message's.
-	lines = nil
-	_, err = w.Write([]byte("windows\r\n"))
-	require.NoError(t, err)
-	require.Equal(t, []string{"windows"}, lines)
-
-	// A blank line is not a log entry, and an unterminated one waits rather
-	// than being emitted half-written.
-	lines = nil
-	_, err = w.Write([]byte("\n\nstill typ"))
-	require.NoError(t, err)
-	require.Empty(t, lines)
-
-	_, err = w.Write([]byte("ing\n"))
-	require.NoError(t, err)
-	require.Equal(t, []string{"still typing"}, lines)
-}
-
-func TestAWorkloadsStreamsAreNamedByTheWorkload(t *testing.T) {
-	stdout, stderr := workloadLog(invoke.Spec{Name: "shop/prod/function/checkout"})
-	require.NotNil(t, stdout)
-	require.NotNil(t, stderr)
-	require.NotSame(t, stdout, stderr)
-
-	// Writing to either is safe and reports what it took.
-	n, err := stdout.Write([]byte("hello\n"))
-	require.NoError(t, err)
-	require.Equal(t, 6, n)
-
-	n, err = stderr.Write([]byte("something broke\n"))
-	require.NoError(t, err)
-	require.Equal(t, 16, n)
 }
 
 func TestAWorkerReadsBuildsRecordsOnItsOwnNode(t *testing.T) {
@@ -278,17 +144,10 @@ func TestAWorkerReadsBuildsRecordsOnItsOwnNode(t *testing.T) {
 
 	finds(t, compute, plm.Protocol)
 
-	a := &artifacts{node: compute}
-
-	// NOTHING HAS BUILT THIS, read from the records this node holds, with no
-	// plm node asked.
-	_, err := a.Artifact(t.Context(), "shop", "prod", "function", "checkout")
-	require.ErrorIs(t, err, ErrNotBuilt)
-
-	// AND THE FAILURE IS NOT CACHED. "Nothing has built this yet" ends the
-	// moment a build finishes.
-	_, held := a.seen.Load(builtKey{project: "shop", environment: "prod", resource: "checkout"})
-	require.False(t, held)
+	// NOTHING HAS BUILT THIS, read from the records this node holds, with no plm node
+	// asked.
+	_, err := compute.PLMArtifacts().Artifact(t.Context(), "shop", "prod", "function", "checkout")
+	require.ErrorIs(t, err, workerHosted.ErrNotBuilt)
 }
 
 func TestTheRegionANodeReadsIsTheOneItsConfigNames(t *testing.T) {
@@ -300,7 +159,9 @@ func TestTheRegionANodeReadsIsTheOneItsConfigNames(t *testing.T) {
 	_, err := n.register.Local().Publish(ctx, pkgregister.Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("whole"),
 		Views: []pkgregister.View{{Destination: "region-1", Compiled: []byte("region-1")}, {Destination: schema.DefaultRegion, Compiled: []byte("default")}}})
 	require.NoError(t, err)
-	p, err := n.views.Resolve(ctx, "shop", "prod")
+	views := registerService.ViewsOn(n.HostOf(""))
+	t.Cleanup(func() { views.Close() })
+	p, err := views.Resolve(ctx, "shop", "prod")
 	require.NoError(t, err)
 	require.Equal(t, pkgregister.IDOf([]byte("region-1")), p.Object, "and the view it reads")
 }
@@ -311,7 +172,7 @@ func TestADevelopmentCloudsBuilderIsConfigured(t *testing.T) {
 	cfg := Config{Services: []string{Stats, Builder}, Sections: map[string]any{Builder: section}}
 	n, _, _ := makeNode(t, cfg)
 	require.NoError(t, n.Start(t.Context()))
-	require.Contains(t, n.serving(), Builder)
+	require.Contains(t, n.Services(), Builder)
 	require.DirExists(t, dir, "the uploads directory is the builder's to make")
 
 	// A DIRECTORY IT CANNOT MAKE refuses the node, rather than a door that fails
@@ -332,7 +193,7 @@ func TestANodeReadsItsOwnBuild(t *testing.T) {
 	require.NoError(t, built.WaitForLeader(t.Context()))
 
 	_, err := n.PLMArtifacts().Artifact(t.Context(), "shop", "prod", "function", "QmNothing")
-	require.ErrorIs(t, err, ErrNotBuilt)
+	require.ErrorIs(t, err, workerHosted.ErrNotBuilt)
 	require.NotEqual(t, connect.CodeNotFound, connect.CodeOf(err), "a site missing its artifact is broken, not unknown")
 	require.ErrorContains(t, err, "QmNothing")
 }

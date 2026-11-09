@@ -18,6 +18,7 @@ import (
 	"github.com/taubyte/tau/services/secrets"
 	statsService "github.com/taubyte/tau/services/stats"
 	"github.com/taubyte/tau/services/storage"
+	workerHosted "github.com/taubyte/tau/services/worker/hosted"
 )
 
 // shipped is one service tau ships: its name, its package's New, and the services it
@@ -45,6 +46,10 @@ func catalog() []shipped {
 		{name: database.Descriptor.Name, new: func() service.Service { return database.New() }, needs: []string{cm.Name}},
 		{name: storage.Descriptor.Name, new: func() service.Service { return storage.New() }, needs: []string{cm.Name}},
 		{name: plm.Builder.Name, new: func() service.Service { return builder.New() }},
+		// The worker reads its section beside what it reaches through clients, and
+		// offers the gateway, the proxy and dns, which start after it, what they need
+		// of it.
+		{name: workerHosted.Name, new: func() service.Service { return workerHosted.New() }},
 		// A gateway and a proxy reach their workloads through placement, which routes
 		// from the stats view.
 		{name: gateway.Descriptor.Name, new: func() service.Service { return gateway.New() }, needs: []string{statsService.Descriptor.Name}},

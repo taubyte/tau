@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -20,6 +21,7 @@ import (
 	echov1 "github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1"
 	"github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1/echov1connect"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/stats"
 	"github.com/taubyte/tau/services/cm"
 	cmmock "github.com/taubyte/tau/services/cm/mock"
 	"github.com/taubyte/tau/services/cm/settings"
@@ -141,7 +143,7 @@ func TestAServiceIsGivenItsInstance(t *testing.T) {
 
 	// It is reported as running, and its node answers who serves a protocol: itself
 	// once a service here serves it.
-	require.Contains(t, n.serving(), addedName)
+	require.Contains(t, reported(t, n, func(row stats.Node) bool { return slices.Contains(row.Serving, addedName) }).Serving, addedName)
 	require.Empty(t, host.Find("/tau/added/v2").Known())
 	host.Serve("/tau/added/v2", started{})
 	require.Equal(t, []libp2ppeer.ID{h.ID()}, host.Find("/tau/added/v2").Known())

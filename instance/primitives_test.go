@@ -6,14 +6,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/pkg/invoke"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	primitivesService "github.com/taubyte/tau/services/primitives"
 )
 
-// The cutover: a send and an append reach the service, locally or over the swarm,
-// and land in its namespace. That a guest's call arrives here at all is a dream test's.
+// A node runs the primitives service when its config says, and its worker reaches one
+// on another node. What the worker sends and appends is services/worker/hosted's.
 
 const (
 	primJobsID  = "QmVLDAzEjEbfBPuoyLPWnPMhKp8ceDXwGdmMKY5W3nZWfG"
@@ -87,54 +86,6 @@ func TestTheDefaultShapeRunsPrimitives(t *testing.T) {
 	require.NotNil(t, n.Primitives())
 }
 
-func TestASendThroughTheNodeLandsInThePrimitivesNamespace(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
-	jobs := handleOf(primJobsID)
-
-	require.NoError(t, n.syncs.Send(t.Context(), jobs, "order-1", []byte("ship it")))
-
-	depth, err := n.Primitives().Local().Depth(t.Context(), jobs)
-	require.NoError(t, err)
-	require.Equal(t, uint64(1), depth.Ready, "the service does not hold the item")
-}
-
-func TestQueueDepthAnswersFromTheService(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
-	jobs := handleOf(primJobsID)
-
-	require.NoError(t, n.syncs.Send(t.Context(), jobs, "order-1", []byte("ship it")))
-
-	ready, claimed, ok := n.QueueDepth(jobs.Handle)
-	require.True(t, ok)
-	require.Equal(t, 1, ready)
-	require.Zero(t, claimed)
-}
-
-func TestASendToAQueueNobodyDeclaredIsRefused(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
-
-	err := n.syncs.Send(t.Context(), handleOf("QmNothingDeclaresThis"), "1", []byte("x"))
-	require.ErrorIs(t, err, primitivesService.ErrNotDeclared)
-}
-
-func TestALogAppendedThroughTheNodeIsReadBackFromTheService(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
-	audit := handleOf(primAuditID)
-
-	cursor, err := n.syncs.Append(t.Context(), audit, []byte("first"))
-	require.NoError(t, err)
-	require.NotEmpty(t, cursor)
-
-	_, err = n.syncs.Append(t.Context(), audit, []byte("second"))
-	require.NoError(t, err)
-
-	read, err := n.Primitives().Local().Read(t.Context(), audit, "", 10)
-	require.NoError(t, err)
-	require.Len(t, read, 2)
-	require.Equal(t, "first", string(read[0].Data))
-	require.Equal(t, "second", string(read[1].Data))
-}
-
 func TestAWorkerReachesAPrimitivesServiceOnAnotherNode(t *testing.T) {
 	nodes := fleet(t,
 		Config{Services: []string{Register, Stats, Primitives}},
@@ -151,57 +102,12 @@ func TestAWorkerReachesAPrimitivesServiceOnAnotherNode(t *testing.T) {
 	finds(t, compute, primitivesService.Protocol)
 
 	jobs := handleOf(primJobsID)
-	require.NoError(t, compute.syncs.Send(t.Context(), jobs, "order-1", []byte("ship it")))
+	require.NoError(t, holder.Primitives().Local().Send(t.Context(), jobs, "order-1", []byte("ship it")))
 
-	depth, err := holder.Primitives().Local().Depth(t.Context(), jobs)
-	require.NoError(t, err)
-	require.Equal(t, uint64(1), depth.Ready, "the item never crossed")
-}
-
-func TestTheStreamToARemotePrimitivesServiceIsKept(t *testing.T) {
-	nodes := fleet(t,
-		Config{Services: []string{Register, Stats, Primitives}},
-		Config{Services: []string{Worker, Stats}},
-	)
-	compute := nodes[1]
-	finds(t, compute, primitivesService.Protocol)
-
-	first, err := compute.sends.Now(t.Context())
-	require.NoError(t, err)
-	second, err := compute.sends.Now(t.Context())
-	require.NoError(t, err)
-	require.Same(t, first, second)
-}
-
-func TestASendWithNoPrimitivesAnywhereIsRefused(t *testing.T) {
-	nodes := fleet(t, Config{Services: []string{Worker, Stats}})
-
-	err := nodes[0].syncs.Send(t.Context(), handleOf(primJobsID), "1", []byte("x"))
-	require.ErrorIs(t, err, ErrNoPrimitives)
-}
-
-func TestClosingANodeClosesThePrimitivesService(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
-
-	require.NoError(t, n.Close())
-	require.NoError(t, n.Close(), "closing twice is not a second teardown")
-
-	err := n.syncs.Send(t.Context(), handleOf(primJobsID), "1", []byte("x"))
-	require.ErrorIs(t, err, primitivesService.ErrClosed)
-}
-
-func TestTheClockFiresThroughTheWorkerBesideIt(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Primitives}})
-	w, ok := service.Get[primitivesService.Workloads](&added{node: n})
-	require.True(t, ok, "a node running a worker offers it to the clock")
-	require.Empty(t, w.Schedules(t.Context()), "nothing deployed, nothing scheduled")
-
-	without, _, _ := makeNode(t, Config{Services: []string{Register, Primitives}})
-	_, ok = service.Get[primitivesService.Workloads](&added{node: without})
-	require.False(t, ok, "a node with no worker runs no clock")
-	require.Empty(t, workloads{without}.Schedules(t.Context()))
-	_, err := workloads{without}.Fire(t.Context(), primitivesService.Target{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"}, &invoke.Request{Method: "POST", Path: "/"})
-	require.ErrorIs(t, err, ErrNoPrimitives, "and fires nothing")
+	require.Eventually(t, func() bool {
+		ready, _, ok := compute.QueueDepth(jobs.Handle)
+		return ok && ready == 1
+	}, 10*time.Second, 50*time.Millisecond, "the worker never read the queue on the other node")
 }
 
 func TestAWindowHandedToAnotherNodeReachesItsPrimitivesService(t *testing.T) {
@@ -229,32 +135,4 @@ func TestAWindowHandedToAnotherNodeReachesItsPrimitivesService(t *testing.T) {
 // at is a moment in UTC, for the window a leader hands out.
 func at(hour, minute int) time.Time {
 	return time.Date(2026, 9, 5, hour, minute, 0, 0, time.UTC)
-}
-
-func TestAFireRunsOnTheWorkerItCanReach(t *testing.T) {
-	at := primitivesService.Target{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"}
-	req := &invoke.Request{Method: "POST", Path: "/"}
-
-	none, _, _ := makeNode(t, Config{Services: []string{Register}})
-	_, err := none.fire(t.Context(), at, req)
-	require.ErrorIs(t, err, ErrNoPrimitives)
-
-	answers := &answering{name: "wasm", status: 200}
-	c := dialingNode(t, answers)
-	res, err := c.node.fire(t.Context(), at, req)
-	require.NoError(t, err)
-	require.Equal(t, 200, res.Status)
-	require.Len(t, answers.seen(), 1, "this node's own worker ran it")
-}
-
-func TestAFireIsPlacedWhereThereIsDiscovery(t *testing.T) {
-	answers := &answering{name: "wasm", status: 200}
-	n, _ := consuming(t, answers, compiled())
-	require.NotNil(t, n.workers)
-
-	res, err := n.fire(t.Context(), primitivesService.Target{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"},
-		&invoke.Request{Method: "POST", Path: "/"})
-	require.NoError(t, err)
-	require.Equal(t, 200, res.Status)
-	require.Len(t, answers.seen(), 1)
 }

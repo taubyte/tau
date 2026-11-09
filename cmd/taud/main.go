@@ -180,7 +180,7 @@ func configCommand() *cli.Command {
 func printExample(w io.Writer) error {
 	out, err := yaml.Marshal(boot.File{
 		Node: instance.Config{
-			Services:  append(append([]string(nil), instance.All...), services.Default()...),
+			Services:  services.Default(),
 			Cloud:     "acme",
 			Container: containers.Declared{Backend: containers.Containerd},
 			// Written out although it is the default: :53 needs root or

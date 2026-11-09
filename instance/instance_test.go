@@ -12,9 +12,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/service"
+	"github.com/taubyte/tau/pkg/certificate"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/stats"
 	"github.com/taubyte/tau/services"
+	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/plm/jobs"
 	registerService "github.com/taubyte/tau/services/register"
 )
@@ -32,12 +34,13 @@ func TestANodeRunsWhatItWasToldTo(t *testing.T) {
 func TestAnEmptyServiceListIsEveryService(t *testing.T) {
 	n, _, _ := makeNode(t, Config{})
 
-	require.ElementsMatch(t, append(slices.Clone(All), services.Default()...), n.Services(), "and every service tau ships but build")
+	require.ElementsMatch(t, services.Default(), n.Services(), "and every service tau ships but build")
 	require.NotNil(t, n.Register())
-	require.NotNil(t, n.Worker())
 	require.NotNil(t, n.Stats())
-	require.Nil(t, n.Handler(), "the gateway runs once the node starts")
+	require.Nil(t, n.Worker(), "the worker and the gateway run once the node starts")
+	require.Nil(t, n.Handler())
 	require.NoError(t, n.Start(t.Context()))
+	require.NotNil(t, n.Worker())
 	require.NotNil(t, n.Handler())
 }
 
@@ -59,6 +62,7 @@ func TestEachServiceSaysWhatItCannotStartWithout(t *testing.T) {
 
 func TestWhatWasBuiltIsClosed(t *testing.T) {
 	n, _, factory := makeNode(t, Config{Services: []string{Worker}})
+	require.NoError(t, n.Start(t.Context()))
 
 	opened, closed := factory.counts()
 	require.Equal(t, []string{jobs.Records}, opened, "one database: plm's records, which the worker holds from the start")
@@ -71,16 +75,18 @@ func TestWhatWasBuiltIsClosed(t *testing.T) {
 	require.NoError(t, n.Close(), "close is idempotent")
 }
 
-func TestAHalfBuiltNodeClosesWhatItMade(t *testing.T) {
-	factory := &memFactory{}
+func TestAHalfStartedNodeClosesWhatItMade(t *testing.T) {
+	// A cloud issuing certificates with no zone: the gateway fails at its start,
+	// after the worker has opened a database.
+	acme := cm.Config{Certificate: cm.CertificateConfig{ACME: certificate.ACME{Enabled: true}}}
+	n, _, factory := makeNode(t, Config{Services: []string{Worker, Gateway}, CM: acme})
+	require.ErrorIs(t, n.Start(t.Context()), ErrNoZoneForCertificates)
 
-	// No stats: the gateway fails, after the worker has opened a database.
-	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Worker, Gateway}}), withKVDB(factory), WithRuntimes(&tier{name: "oci"}))
-	require.Error(t, err)
-
-	opened, closed := factory.counts()
-	require.Len(t, opened, 1, "the worker got as far as opening one")
-	require.Equal(t, 1, closed, "and it was closed when the gateway failed")
+	opened, _ := factory.counts()
+	require.Contains(t, opened, jobs.Records, "the worker got as far as opening one")
+	require.NoError(t, n.Close())
+	_, closed := factory.counts()
+	require.Positive(t, closed, "and it was closed with the node the gateway failed")
 }
 
 func TestStartIsOnce(t *testing.T) {
@@ -136,9 +142,9 @@ func TestALocalRegisterNeedsNoStream(t *testing.T) {
 
 	spec, err := n.Worker().Resolve(t.Context(), workerTarget())
 	require.NoError(t, err)
+	// A HOST CANNOT DIAL ITSELF, so a resolve that answers was read from the register
+	// beside the worker, with no stream.
 	require.Equal(t, "wasm", spec.Runtime)
-	_, dialled := n.registers.At()
-	require.False(t, dialled, "the register here is read with no stream")
 }
 
 func TestANodeWithNoRegisterSaysSo(t *testing.T) {
@@ -205,7 +211,7 @@ func TestTheClockReachesEverything(t *testing.T) {
 
 func TestWhatTheOptionsRefuse(t *testing.T) {
 	for _, opt := range []Option{
-		WithRuntimes(nil), WithSecrets(nil), WithClock(nil),
+		WithRuntimes(nil), WithClock(nil), WithDatabaseEngines(nil), WithArtifacts(nil),
 	} {
 		_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Stats}}), opt)
 		require.Error(t, err)
@@ -213,9 +219,10 @@ func TestWhatTheOptionsRefuse(t *testing.T) {
 }
 
 func TestADatabaseThatWillNotOpen(t *testing.T) {
-	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Worker}}), withKVDB(&memFactory{err: errors.New("the disk is full")}), WithRuntimes(&tier{name: "oci"}))
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "disk is full")
+	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Worker}}), withKVDB(&memFactory{err: errors.New("the disk is full")}), WithRuntimes(&tier{name: "oci"}))
+	require.NoError(t, err)
+	t.Cleanup(func() { n.Close() })
+	require.ErrorContains(t, n.Start(t.Context()), "disk is full")
 }
 
 func TestTheAccessorsAreTheServicesItRuns(t *testing.T) {
@@ -241,7 +248,8 @@ func TestANodeWithNoRegisterReadsNoneOfItsAnswers(t *testing.T) {
 	ctx := t.Context()
 	without, _, _ := makeNode(t, Config{Services: []string{Stats}})
 	require.NoError(t, without.Start(ctx))
-	s := without.views
+	s := registerService.ViewsOn(without.HostOf(""))
+	t.Cleanup(func() { s.Close() })
 	_, err := s.Object(ctx, pkgregister.ObjectID("x"))
 	require.ErrorIs(t, err, service.ErrNoneRuns)
 	_, _, err = s.ResolveHost(ctx, "shop.example.com")

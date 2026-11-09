@@ -15,6 +15,7 @@ import (
 	"github.com/taubyte/tau/pkg/stats"
 	"github.com/taubyte/tau/services"
 	gatewayService "github.com/taubyte/tau/services/gateway"
+	workerService "github.com/taubyte/tau/services/worker"
 )
 
 func write(t *testing.T, content string) string {
@@ -49,7 +50,9 @@ http: ":8080"
 	require.Equal(t, "acme", f.Node.Cloud)
 	require.Equal(t, "io.containerd.runsc.v1", f.Node.Container.Runtime,
 		"the isolation handler reaches the node that builds the tier")
-	require.Equal(t, 8, f.Node.Worker.MaxProjects)
+	var worker workerService.Config
+	require.NoError(t, f.Node.Section(instance.Worker, &worker))
+	require.Equal(t, 8, worker.MaxProjects)
 	require.Equal(t, "tau.example.io", f.Node.CloudFqdn)
 	var gateway gatewayService.Config
 	require.NoError(t, f.Node.Section(instance.Gateway, &gateway))
@@ -106,7 +109,7 @@ func TestStartRefusesAnOpenNetworkItWasNotToldAbout(t *testing.T) {
 
 func TestTheExampleRoundTrips(t *testing.T) {
 	example := File{
-		Node:      instance.Config{Services: append(append([]string(nil), instance.All...), services.Default()...), Cloud: "acme"},
+		Node:      instance.Config{Services: services.Default(), Cloud: "acme"},
 		Root:      DefaultRoot,
 		Listen:    []string{DefaultListen},
 		Open:      true,

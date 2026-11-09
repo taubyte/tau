@@ -18,11 +18,12 @@ import (
 	"github.com/taubyte/tau/services/secrets"
 	statsService "github.com/taubyte/tau/services/stats"
 	"github.com/taubyte/tau/services/storage"
+	workerHosted "github.com/taubyte/tau/services/worker/hosted"
 )
 
 func TestANameIsTheServiceItRuns(t *testing.T) {
 	shipped := []string{cm.Name, statsService.Descriptor.Name, register.Descriptor.Name, secrets.Descriptor.Name, auth.Descriptor.Name,
-		primitives.Descriptor.Name, database.Descriptor.Name, storage.Descriptor.Name, plm.Builder.Name, gateway.Descriptor.Name, proxy.Name, dns.Name}
+		primitives.Descriptor.Name, database.Descriptor.Name, storage.Descriptor.Name, plm.Builder.Name, workerHosted.Name, gateway.Descriptor.Name, proxy.Name, dns.Name}
 	require.Equal(t, append(append([]string(nil), shipped...), plm.PLM.Name), Names(), "in start order")
 	require.Equal(t, shipped, Default(), "every one but plm, which listens where its config says and has no default")
 

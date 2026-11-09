@@ -27,8 +27,5 @@ type catalog struct{ n *Instance }
 
 func (c catalog) ServiceNames() []string { return c.n.knownServices() }
 
-// knownServices is the built-in names and every name the catalog and this package's
-// tests add.
-func (n *Instance) knownServices() []string {
-	return append(builtIn(), n.opts.serviceNames()...)
-}
+// knownServices is every name the catalog and this package's tests add.
+func (n *Instance) knownServices() []string { return n.opts.serviceNames() }

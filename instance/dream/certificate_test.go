@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -62,7 +61,7 @@ func TestAServiceNameIsIssuedOnceForTheFleet(t *testing.T) {
 			c.CM = cfg
 			switch index {
 			case 0, 1:
-				c.Services = append(append(slices.Clone(instance.All), services.Default()...), instance.CM)
+				c.Services = append(services.Default(), instance.CM)
 			default:
 				c.Services = []string{instance.Stats, instance.PLM}
 			}
