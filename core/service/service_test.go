@@ -279,3 +279,32 @@ func TestTheFirstToServeAProtocolIsWhatTheNodeServesItWith(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, answer("mocked"), got.held, "a later service replaced what the composer served first")
 }
+
+// offering is a service that offers a part of itself, found on its own.
+type offering struct {
+	recorder
+	part *recorder
+}
+
+func (o *offering) Offered() []any { return []any{o.part, "not a service"} }
+
+func TestWhatARunningServiceOffersIsFoundBesideIt(t *testing.T) {
+	p := peer.Mock(t.Context())
+	t.Cleanup(p.Close)
+	l := On(p, "cloud")
+
+	part := &recorder{}
+	worker := &offering{part: part}
+	require.NoError(t, l.Start(t.Context(), "worker", worker))
+	beside := &recorder{}
+	require.NoError(t, l.Start(t.Context(), "beside", beside))
+
+	got, ok := Get[*offering](beside.host)
+	require.True(t, ok)
+	require.Same(t, worker, got, "the service itself")
+	held, ok := Get[*recorder](beside.host)
+	require.True(t, ok)
+	require.Same(t, part, held, "and what it offers, ahead of a service that started after it")
+	_, ok = Get[*serving](beside.host)
+	require.False(t, ok, "and nothing it does not")
+}
