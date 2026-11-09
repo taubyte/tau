@@ -549,7 +549,7 @@ func (h *healer) absorbOrphan(ctx context.Context, orphan peer.ID) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if !h.cluster.IsLeader() {
+	if !h.cluster.IsLeader() || !h.leadsAQuorum() {
 		return
 	}
 
@@ -595,7 +595,7 @@ func (h *healer) executeMerge(ctx context.Context, loserLeader peer.ID) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if !h.cluster.IsLeader() {
+	if !h.cluster.IsLeader() || !h.leadsAQuorum() {
 		return
 	}
 
@@ -643,6 +643,19 @@ func (h *healer) executeMerge(ctx context.Context, loserLeader peer.ID) {
 	}
 
 	h.healAckMembersOf(loser.Members, exp)
+}
+
+// leadsAQuorum is whether a quorum confirms this member still leads, asked within two
+// election timeouts and never under a second. A leader that lost its quorum is about
+// to stop leading, and a
+// merge it began would freeze the other group, then fail to commit while its healer
+// answered nothing else, the healAck that would take it into that group included.
+func (h *healer) leadsAQuorum() bool {
+	if err := h.cluster.Barrier(max(2*h.cluster.getTimeoutConfig().ElectionTimeout, time.Second)); err != nil {
+		healLogger.Infof("[%s] no quorum confirms its lead — merging nothing: %v", h.cluster.ID().ShortString(), err)
+		return false
+	}
+	return true
 }
 
 // applyMerge applies a merge and reports the state machine's refusal as well
