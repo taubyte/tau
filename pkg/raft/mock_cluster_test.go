@@ -34,7 +34,7 @@ func TestMockCluster_HoldsWhatItIsGiven(t *testing.T) {
 
 	require.NoError(t, m.Set("a/2", []byte("two"), time.Second))
 	require.NoError(t, m.Set("b/1", []byte("three"), time.Second))
-	keys := m.Keys("a/")
+	keys := keysOf(t, m, "a/")
 	sort.Strings(keys)
 	require.Equal(t, []string{"a/1", "a/2"}, keys)
 
@@ -42,7 +42,7 @@ func TestMockCluster_HoldsWhatItIsGiven(t *testing.T) {
 	require.NoError(t, m.Delete("a/never", time.Second), "deleting what is not there succeeds")
 	_, found = m.Get("a/1")
 	require.False(t, found)
-	require.Equal(t, []string{"a/2"}, m.Keys("a/"))
+	require.Equal(t, []string{"a/2"}, keysOf(t, m, "a/"))
 
 	batched := []byte("four")
 	require.NoError(t, m.Batch([]BatchOp{

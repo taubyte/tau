@@ -208,7 +208,7 @@ func (c Config) withDefaults() (Config, error) {
 // design and forwarding, placement and admission stay with the cluster service.
 type Store interface {
 	Get(key string) ([]byte, bool)
-	Keys(prefix string) []string
+	Keys(prefix string) ([]string, error)
 	Batch(ops []raft.BatchOp, timeout time.Duration) error
 	Barrier(timeout time.Duration) error
 	IsLeader() bool

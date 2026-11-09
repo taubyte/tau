@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	ds "github.com/ipfs/go-datastore"
 	"github.com/stretchr/testify/require"
 )
 
@@ -33,6 +34,27 @@ func queueOnFaults(t *testing.T, name string) (Queue, Cluster, *faultStore, func
 
 var errDisk = errors.New("pebble error during get: input/output error")
 
+// lenOf is q's length, failing t when it cannot be read.
+func lenOf(t testing.TB, q Queue) int {
+	t.Helper()
+	n, err := q.Len()
+	require.NoError(t, err)
+	return n
+}
+
+// keyLister is what lists a group's keys: its cluster, its state machine, a mock.
+type keyLister interface {
+	Keys(prefix string) ([]string, error)
+}
+
+// keysOf is l's keys under prefix, failing t when they cannot be listed.
+func keysOf(t testing.TB, l keyLister, prefix string) []string {
+	t.Helper()
+	keys, err := l.Keys(prefix)
+	require.NoError(t, err)
+	return keys
+}
+
 func TestQueue_ACounterThatCannotBeReadAllocatesNothing(t *testing.T) {
 	q, _, store, storeKey := queueOnFaults(t, "jobs")
 	require.NoError(t, q.Push("first", []byte("1"), time.Second))
@@ -40,11 +62,11 @@ func TestQueue_ACounterThatCannotBeReadAllocatesNothing(t *testing.T) {
 	store.failGet(storeKey("_q/jobs/_counter"), errDisk)
 	require.ErrorIs(t, q.Push("second", []byte("2"), time.Second), errDisk)
 
-	id, data, ok := q.Peek()
-	require.True(t, ok)
+	id, data, err := q.Peek()
+	require.NoError(t, err)
 	require.Equal(t, "first", id, "a push allocated over the item waiting at the head")
 	require.Equal(t, []byte("1"), data)
-	require.Equal(t, 1, q.Len())
+	require.Equal(t, 1, lenOf(t, q))
 }
 
 func TestQueue_ACorruptCounterAllocatesNothing(t *testing.T) {
@@ -54,10 +76,10 @@ func TestQueue_ACorruptCounterAllocatesNothing(t *testing.T) {
 
 	require.ErrorContains(t, q.Push("second", []byte("2"), time.Second), "corrupt queue counter")
 
-	id, _, ok := q.Peek()
-	require.True(t, ok)
+	id, _, err := q.Peek()
+	require.NoError(t, err)
 	require.Equal(t, "first", id)
-	require.Equal(t, 1, q.Len())
+	require.Equal(t, 1, lenOf(t, q))
 }
 
 func TestQueue_AnIndexThatCannotBeReadPushesNothing(t *testing.T) {
@@ -66,10 +88,9 @@ func TestQueue_AnIndexThatCannotBeReadPushesNothing(t *testing.T) {
 
 	store.failGet(storeKey("_q/jobs/idx/only"), errDisk)
 	require.ErrorIs(t, q.Push("only", []byte("again"), time.Second), errDisk)
-	require.Equal(t, 1, q.Len(), "an id was queued twice")
+	require.Equal(t, 1, lenOf(t, q), "an id was queued twice")
 }
 
-// Peek has no error to give and answers that it has nothing.
 func TestQueue_AHeadThatCannotBeReadIsNotAnEmptyQueue(t *testing.T) {
 	q, _, store, storeKey := queueOnFaults(t, "jobs")
 	require.NoError(t, q.Push("first", []byte("1"), time.Second))
@@ -80,9 +101,10 @@ func TestQueue_AHeadThatCannotBeReadIsNotAnEmptyQueue(t *testing.T) {
 	require.ErrorIs(t, err, errDisk)
 	require.NotErrorIs(t, err, ErrQueueEmpty)
 
-	_, _, ok := q.Peek()
-	require.False(t, ok)
-	require.Equal(t, 1, q.Len(), "a pop that could not read its item removed it")
+	_, _, err = q.Peek()
+	require.ErrorIs(t, err, errDisk)
+	require.NotErrorIs(t, err, ErrQueueEmpty)
+	require.Equal(t, 1, lenOf(t, q), "a pop that could not read its item removed it")
 }
 
 func TestQueue_APopThatCannotRemoveItsItemReturnsNothing(t *testing.T) {
@@ -97,8 +119,8 @@ func TestQueue_APopThatCannotRemoveItsItemReturnsNothing(t *testing.T) {
 	require.Empty(t, id)
 	require.Nil(t, data)
 
-	id, _, ok := q.Peek()
-	require.True(t, ok)
+	id, _, err = q.Peek()
+	require.NoError(t, err)
 	require.Equal(t, "first", id)
 }
 
@@ -117,13 +139,14 @@ func TestQueue_ACorruptEntryIsNeitherPoppedNorPeeked(t *testing.T) {
 			q, cl, _, _ := queueOnFaults(t, "jobs")
 			require.NoError(t, cl.Set("_q/jobs/items/"+sequenceID(1), tc.raw, time.Second))
 
-			_, _, ok := q.Peek()
-			require.False(t, ok)
-
-			_, _, err := q.Pop(time.Second)
+			_, _, err := q.Peek()
 			require.ErrorContains(t, err, "corrupt queue entry")
 			require.ErrorContains(t, err, tc.says)
-			require.Equal(t, 1, q.Len())
+
+			_, _, err = q.Pop(time.Second)
+			require.ErrorContains(t, err, "corrupt queue entry")
+			require.ErrorContains(t, err, tc.says)
+			require.Equal(t, 1, lenOf(t, q))
 		})
 	}
 }
@@ -145,15 +168,39 @@ func TestQueue_NoTimeoutIsTheLongestOne(t *testing.T) {
 func TestQueue_PeekSeesNothingInAnEmptyOrClosedQueue(t *testing.T) {
 	q := NewQueue(NewMockCluster(), "peek")
 
-	id, data, ok := q.Peek()
-	require.False(t, ok)
+	id, data, err := q.Peek()
+	require.ErrorIs(t, err, ErrQueueEmpty)
 	require.Empty(t, id)
 	require.Nil(t, data)
 
 	require.NoError(t, q.Push("held", []byte("1"), time.Second))
 	require.NoError(t, q.Close())
-	id, data, ok = q.Peek()
-	require.False(t, ok, "a closed queue peeked its head")
+	id, data, err = q.Peek()
+	require.ErrorIs(t, err, ErrShutdown, "a closed queue peeked its head")
 	require.Empty(t, id)
 	require.Nil(t, data)
+}
+
+// A KEY LISTING THE STORE FAILS PARTWAY, OR ONE HOLDING AN ENTRY THAT DOES NOT
+// DECODE, IS AN ERROR: a queue would otherwise read it as empty, and a bound
+// counted from it would let everything through.
+func TestQueue_AKeyListingTheStoreFailsIsAnError(t *testing.T) {
+	q, cl, store, storeKey := queueOnFaults(t, "jobs")
+	require.NoError(t, q.Push("first", []byte("1"), time.Second))
+	require.NotEmpty(t, keysOf(t, cl, "_q/jobs/"))
+
+	store.failScan(path.Join(RaftStoragePrefix, queueFaultsNamespace, "data"), errDisk)
+	_, err := cl.Keys("")
+	require.ErrorIs(t, err, errDisk)
+	_, _, err = q.Pop(time.Second)
+	require.ErrorIs(t, err, errDisk)
+	require.NotErrorIs(t, err, ErrQueueEmpty)
+	_, err = q.Len()
+	require.ErrorIs(t, err, errDisk)
+
+	store.failScan(path.Join(RaftStoragePrefix, queueFaultsNamespace, "data"), nil)
+	require.NoError(t, store.Put(t.Context(), ds.NewKey(storeKey("_q/jobs/garbled")), []byte{0xff}))
+	_, err = cl.Keys("_q/")
+	require.ErrorContains(t, err, "garbled")
+	require.Empty(t, keysOf(t, cl, "elsewhere/"), "an entry under another prefix failed this one")
 }

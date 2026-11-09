@@ -240,7 +240,10 @@ func (s *Ledger) List(ctx context.Context, prefix string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	keys := cluster.Keys(prefix)
+	keys, err := cluster.Keys(prefix)
+	if err != nil {
+		return nil, err
+	}
 	if len(keys) == 0 {
 		if err := missed(cluster); err != nil {
 			return nil, err

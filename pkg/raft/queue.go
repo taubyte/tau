@@ -146,7 +146,10 @@ func (q *queue) Pop(timeout time.Duration) (string, []byte, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	keys := q.sortedItemKeys()
+	keys, err := q.sortedItemKeys()
+	if err != nil {
+		return "", nil, fmt.Errorf("reading the queue: %w", err)
+	}
 	if len(keys) == 0 {
 		return "", nil, ErrQueueEmpty
 	}
@@ -175,33 +178,40 @@ func (q *queue) Pop(timeout time.Duration) (string, []byte, error) {
 	return entry.id, entry.data, nil
 }
 
-func (q *queue) Peek() (string, []byte, bool) {
+func (q *queue) Peek() (string, []byte, error) {
 	if q.closed.Load() {
-		return "", nil, false
+		return "", nil, ErrShutdown
 	}
 
-	keys := q.sortedItemKeys()
+	keys, err := q.sortedItemKeys()
+	if err != nil {
+		return "", nil, fmt.Errorf("reading the queue: %w", err)
+	}
 	if len(keys) == 0 {
-		return "", nil, false
+		return "", nil, ErrQueueEmpty
 	}
 
-	raw, ok := q.cluster.Get(keys[0])
+	raw, ok, err := q.cluster.TryGet(keys[0])
+	if err != nil {
+		return "", nil, fmt.Errorf("reading the queue head: %w", err)
+	}
 	if !ok {
-		return "", nil, false
+		return "", nil, ErrQueueEmpty
 	}
 
 	entry, err := decodeEntry(raw)
 	if err != nil {
-		return "", nil, false
+		return "", nil, fmt.Errorf("corrupt queue entry: %w", err)
 	}
-	return entry.id, entry.data, true
+	return entry.id, entry.data, nil
 }
 
-func (q *queue) Len() int {
+func (q *queue) Len() (int, error) {
 	if q.closed.Load() {
-		return 0
+		return 0, ErrShutdown
 	}
-	return len(q.cluster.Keys(q.itemsPrefix))
+	keys, err := q.cluster.Keys(q.itemsPrefix)
+	return len(keys), err
 }
 
 func (q *queue) Close() error {
@@ -209,8 +219,8 @@ func (q *queue) Close() error {
 	return nil
 }
 
-func (q *queue) sortedItemKeys() []string {
-	keys := q.cluster.Keys(q.itemsPrefix)
+func (q *queue) sortedItemKeys() ([]string, error) {
+	keys, err := q.cluster.Keys(q.itemsPrefix)
 	sort.Strings(keys)
-	return keys
+	return keys, err
 }

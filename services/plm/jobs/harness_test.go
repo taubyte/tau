@@ -45,6 +45,7 @@ type fakeStore struct {
 	follower    bool
 	batchErr    error
 	barrierErr  error
+	keysErr     error
 	beforeBatch func()
 	afterKeys   func()
 	keysPrefix  string
@@ -64,8 +65,17 @@ func (s *fakeStore) haunt(keys ...string) {
 	s.phantom = append(s.phantom, keys...)
 }
 
-func (s *fakeStore) Keys(prefix string) []string {
-	keys := s.MockCluster.Keys(prefix)
+func (s *fakeStore) Keys(prefix string) ([]string, error) {
+	s.mu.Lock()
+	failed := s.keysErr
+	s.mu.Unlock()
+	if failed != nil {
+		return nil, failed
+	}
+	keys, err := s.MockCluster.Keys(prefix)
+	if err != nil {
+		return nil, err
+	}
 
 	s.mu.Lock()
 	for _, k := range s.phantom {
@@ -84,7 +94,7 @@ func (s *fakeStore) Keys(prefix string) []string {
 	if hook != nil {
 		hook()
 	}
-	return keys
+	return keys, nil
 }
 
 // onKeys runs hook after the next listing of prefix. reconcile takes its one
@@ -132,6 +142,13 @@ func (s *fakeStore) failBarrier(err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.barrierErr = err
+}
+
+// failKeys makes every later listing fail, as a scan the disk fails partway does.
+func (s *fakeStore) failKeys(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.keysErr = err
 }
 
 // onBatch runs hook before the next Batch commits, which is how a test
@@ -1112,4 +1129,21 @@ func (h *harness) plantRecord(t testing.TB, rec jobRecord) {
 	planted := h.mustRecord(t, rec.ID)
 	require.Equal(t, rec.status(), planted.status(), "the planted events fold to the record asked for")
 	require.Equal(t, rec.Attempt, planted.Attempt)
+}
+
+// depthReader is a queue, as a test reads its depth.
+type depthReader interface {
+	Depth() (ready, claimed int, err error)
+}
+
+// depthOf is q's depth. A depth it cannot read fails t and reads as -1, -1, which
+// no assertion takes for a depth; t.Errorf is safe from a condition Eventually polls.
+func depthOf(t testing.TB, q depthReader) (ready, claimed int) {
+	t.Helper()
+	ready, claimed, err := q.Depth()
+	if err != nil {
+		t.Errorf("Depth: %v", err)
+		return -1, -1
+	}
+	return ready, claimed
 }

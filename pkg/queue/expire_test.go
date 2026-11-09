@@ -19,7 +19,7 @@ func TestExpireDropsWhatIsOlderThanTheAge(t *testing.T) {
 	if dropped != 1 {
 		t.Fatalf("dropped: got %d, want 1", dropped)
 	}
-	if ready, _ := h.Depth(); ready != 1 {
+	if ready, _ := depthOf(t, h); ready != 1 {
 		t.Fatalf("depth: got %d ready, want 1", ready)
 	}
 	if d := h.mustClaim(t); d.ID != "job-2" {
@@ -38,7 +38,7 @@ func TestExpireKeepsTheNewestItemsThatFitTheSize(t *testing.T) {
 	if _, err := h.Expire(0, 20); err != nil {
 		t.Fatalf("Expire: %v", err)
 	}
-	if ready, _ := h.Depth(); ready != 2 {
+	if ready, _ := depthOf(t, h); ready != 2 {
 		t.Fatalf("depth: got %d ready, want 2", ready)
 	}
 	if d := h.mustClaim(t); d.ID != "job-2" {
@@ -53,7 +53,7 @@ func TestASizeTooSmallForOneItemStillKeepsTheNewest(t *testing.T) {
 	if _, err := h.Expire(0, 1); err != nil {
 		t.Fatalf("Expire: %v", err)
 	}
-	if ready, _ := h.Depth(); ready != 1 {
+	if ready, _ := depthOf(t, h); ready != 1 {
 		t.Fatalf("depth: got %d ready, want 1", ready)
 	}
 }
@@ -71,7 +71,7 @@ func TestExpireLeavesAClaimedItemAlone(t *testing.T) {
 	if dropped != 0 {
 		t.Fatalf("dropped: got %d, want 0", dropped)
 	}
-	if _, claimed := h.Depth(); claimed != 1 {
+	if _, claimed := depthOf(t, h); claimed != 1 {
 		t.Fatalf("depth: got %d claimed, want 1", claimed)
 	}
 }
@@ -84,7 +84,7 @@ func TestAnAbsentBudgetKeepsEverything(t *testing.T) {
 	if dropped, err := h.Expire(0, 0); err != nil || dropped != 0 {
 		t.Fatalf("Expire: got (%d, %v), want (0, nil)", dropped, err)
 	}
-	if ready, _ := h.Depth(); ready != 1 {
+	if ready, _ := depthOf(t, h); ready != 1 {
 		t.Fatalf("depth: got %d ready, want 1", ready)
 	}
 }
@@ -132,7 +132,7 @@ func TestDeadNamesTheQueueExhaustedItemsMoveTo(t *testing.T) {
 	if dead.Config().Name != h.Config().DeadLetter {
 		t.Fatalf("Dead: got %q, want %q", dead.Config().Name, h.Config().DeadLetter)
 	}
-	if ready, _ := dead.Depth(); ready != 1 {
+	if ready, _ := depthOf(t, dead); ready != 1 {
 		t.Fatalf("dead depth: got %d ready, want 1", ready)
 	}
 }
@@ -160,7 +160,11 @@ func TestAnExpirePassThatStopsEarlyReportsNothingDropped(t *testing.T) {
 	if dropped != 0 {
 		t.Fatalf("dropped: got %d, want 0 — the batch never ran", dropped)
 	}
-	if got := len(h.store.Keys(h.keys.readyPrefix())); got != 4 {
+	keys, err := h.store.Keys(h.keys.readyPrefix())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(keys); got != 4 {
 		t.Fatalf("ready keys: got %d, want 4 — the three items and the foreign key, none of them dropped", got)
 	}
 }

@@ -3,6 +3,7 @@ package raft
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path"
 	"strings"
 	"sync"
@@ -343,7 +344,9 @@ func (f *kvFSM) Get(key string) ([]byte, bool) {
 	return value, found
 }
 
-func (f *kvFSM) Keys(prefix string) []string {
+// Keys is every live key with prefix. A scan that fails partway, or an entry that
+// does not decode, is an error, never the keys read before it.
+func (f *kvFSM) Keys(prefix string) ([]string, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
@@ -352,29 +355,29 @@ func (f *kvFSM) Keys(prefix string) []string {
 		Prefix: dataPrefix,
 	})
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	defer results.Close()
 
 	trimPrefix := dataPrefix + "/"
-	var keys []string
+	keys := []string{}
 	for result := range results.Next() {
 		if result.Error != nil {
-			break
+			return nil, result.Error
+		}
+		key := strings.TrimPrefix(result.Key, trimPrefix)
+		if !strings.HasPrefix(key, prefix) {
+			continue
 		}
 		entry, err := decodeFSMEntry(result.Value)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("raft: reading %s: %w", result.Key, err)
 		}
-		if entry.Deleted {
-			continue
-		}
-		key := strings.TrimPrefix(result.Key, trimPrefix)
-		if prefix == "" || strings.HasPrefix(key, prefix) {
+		if !entry.Deleted {
 			keys = append(keys, key)
 		}
 	}
-	return keys
+	return keys, nil
 }
 
 // ExportState returns all entries (including tombstones) and is used for healing merge.

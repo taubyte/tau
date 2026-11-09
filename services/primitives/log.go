@@ -323,8 +323,11 @@ func missing(err error) bool { return errors.Is(err, ds.ErrNotFound) }
 
 // logsIn is every log this namespace holds a head for, walking the keyspace rather
 // than a maintained list, which is why Spec.Prefix parses back.
-func logsIn(cluster raft.Cluster) []Spec {
-	keys := cluster.Keys(logType + "/")
+func logsIn(cluster raft.Cluster) ([]Spec, error) {
+	keys, err := cluster.Keys(logType + "/")
+	if err != nil {
+		return nil, err
+	}
 
 	out := make([]Spec, 0, len(keys))
 	for _, key := range keys {
@@ -336,7 +339,7 @@ func logsIn(cluster raft.Cluster) []Spec {
 			out = append(out, spec)
 		}
 	}
-	return out
+	return out, nil
 }
 
 // ready opens what a log needs, once.

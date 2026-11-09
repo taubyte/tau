@@ -18,13 +18,13 @@ func TestQueue_PushPop(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if qu.Len() != 1 {
-		t.Errorf("Len() = %d, want 1", qu.Len())
+	if lenOf(t, qu) != 1 {
+		t.Errorf("Len() = %d, want 1", lenOf(t, qu))
 	}
 
-	id, data, ok := qu.Peek()
-	if !ok || id != "job-1" || !bytes.Equal(data, []byte("item1")) {
-		t.Errorf("Peek() = (%q, %q, %v); want (job-1, item1, true)", id, data, ok)
+	id, data, err := qu.Peek()
+	if err != nil || id != "job-1" || !bytes.Equal(data, []byte("item1")) {
+		t.Errorf("Peek() = (%q, %q, %v); want (job-1, item1, nil)", id, data, err)
 	}
 
 	gotID, gotData, err := qu.Pop(5 * time.Second)
@@ -35,8 +35,8 @@ func TestQueue_PushPop(t *testing.T) {
 		t.Errorf("Pop() = (%q, %q); want (job-1, item1)", gotID, gotData)
 	}
 
-	if qu.Len() != 0 {
-		t.Errorf("Len() after Pop = %d, want 0", qu.Len())
+	if lenOf(t, qu) != 0 {
+		t.Errorf("Len() after Pop = %d, want 0", lenOf(t, qu))
 	}
 }
 
@@ -62,8 +62,8 @@ func TestQueue_Dedup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if qu.Len() != 1 {
-		t.Errorf("Len() after duplicate push = %d, want 1 (dedup)", qu.Len())
+	if lenOf(t, qu) != 1 {
+		t.Errorf("Len() after duplicate push = %d, want 1 (dedup)", lenOf(t, qu))
 	}
 	id, data, err := qu.Pop(5 * time.Second)
 	if err != nil {
@@ -87,8 +87,8 @@ func TestQueue_FIFOOrder(t *testing.T) {
 		}
 	}
 
-	if qu.Len() != 3 {
-		t.Errorf("Len() = %d, want 3", qu.Len())
+	if lenOf(t, qu) != 3 {
+		t.Errorf("Len() = %d, want 3", lenOf(t, qu))
 	}
 
 	for i, expected := range payloads {
@@ -117,8 +117,8 @@ func TestQueue_ManyItems(t *testing.T) {
 		}
 	}
 
-	if qu.Len() != n {
-		t.Errorf("Len() = %d, want %d", qu.Len(), n)
+	if lenOf(t, qu) != n {
+		t.Errorf("Len() = %d, want %d", lenOf(t, qu), n)
 	}
 
 	for i := range n {
@@ -131,8 +131,8 @@ func TestQueue_ManyItems(t *testing.T) {
 		}
 	}
 
-	if qu.Len() != 0 {
-		t.Errorf("Len() after all Pop = %d, want 0", qu.Len())
+	if lenOf(t, qu) != 0 {
+		t.Errorf("Len() after all Pop = %d, want 0", lenOf(t, qu))
 	}
 }
 
@@ -223,8 +223,8 @@ func TestQueue_ClosedOperations(t *testing.T) {
 		t.Errorf("Pop after Close: got %v, want ErrShutdown", err)
 	}
 
-	if qu.Len() != 0 {
-		t.Errorf("Len after Close = %d, want 0", qu.Len())
+	if lenOf(t, qu) != 0 {
+		t.Errorf("Len after Close = %d, want 0", lenOf(t, qu))
 	}
 }
 
@@ -254,11 +254,11 @@ func TestQueue_KeyIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if q1.Len() != 1 {
-		t.Errorf("q1.Len() = %d, want 1", q1.Len())
+	if lenOf(t, q1) != 1 {
+		t.Errorf("lenOf(t, q1) = %d, want 1", lenOf(t, q1))
 	}
-	if q2.Len() != 1 {
-		t.Errorf("q2.Len() = %d, want 1", q2.Len())
+	if lenOf(t, q2) != 1 {
+		t.Errorf("lenOf(t, q2) = %d, want 1", lenOf(t, q2))
 	}
 
 	id1, data1, err := q1.Pop(5 * time.Second)
@@ -371,8 +371,8 @@ func TestQueue_SnapshotRestorePartialPop(t *testing.T) {
 	q2 := NewQueue(mc2, "test")
 	defer q2.Close()
 
-	if q2.Len() != 3 {
-		t.Fatalf("Len() = %d, want 3", q2.Len())
+	if lenOf(t, q2) != 3 {
+		t.Fatalf("Len() = %d, want 3", lenOf(t, q2))
 	}
 
 	id, data, err := q2.Pop(5 * time.Second)

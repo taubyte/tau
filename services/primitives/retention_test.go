@@ -205,7 +205,11 @@ func TestEveryPlaceTheLifecyclePassWalksResolvesBackToItsDeclaration(t *testing.
 	cluster, err := h.consensus()
 	require.NoError(t, err)
 
-	places := append(logsIn(cluster), queuesIn(cluster)...)
+	logs, err := logsIn(cluster)
+	require.NoError(t, err)
+	queues, err := queuesIn(cluster)
+	require.NoError(t, err)
+	places := append(logs, queues...)
 	require.Len(t, places, 2, "the pass must see the log and the queue it was just given")
 	for _, spec := range places {
 		_, err := h.declared(ctx, spec.at(), spec.Type)

@@ -71,7 +71,7 @@ func TestAnOverflowingBackoffDoesNotWrap(t *testing.T) {
 
 	h.clock.advance(100 * 365 * 24 * time.Hour)
 	h.mustNotClaim(t)
-	if ready, _ := h.Depth(); ready != 1 {
+	if ready, _ := depthOf(t, h); ready != 1 {
 		t.Fatalf("ready: got %d, want 1", ready)
 	}
 

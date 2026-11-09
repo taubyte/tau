@@ -22,19 +22,19 @@ func TestReconcileReQueuesARecordWhosePushWasLost(t *testing.T) {
 	d, err := h.work.Claim()
 	require.NoError(t, err)
 	require.NoError(t, h.work.Ack(d))
-	ready, _ := h.work.Depth()
+	ready, _ := depthOf(t, h.work)
 	require.Equal(t, 0, ready)
 
 	// Not yet: the age gate is what keeps this pass from issuing a barrier per
 	// open job on every run.
 	require.NoError(t, h.reconcile())
-	ready, _ = h.work.Depth()
+	ready, _ = depthOf(t, h.work)
 	require.Equal(t, 0, ready)
 
 	h.clock.advance(h.cfg.Queue.VisibilityTimeout + h.cfg.BuildTimeout + time.Second)
 	require.NoError(t, h.reconcile())
 
-	ready, _ = h.work.Depth()
+	ready, _ = depthOf(t, h.work)
 	require.Equal(t, 1, ready)
 	require.Equal(t, plmv2.JobStatus_JobStatusOpen, h.status(t, id))
 }
@@ -49,7 +49,7 @@ func TestReconcileCannotDisturbAClaimedJob(t *testing.T) {
 	h.clock.advance(h.cfg.Queue.VisibilityTimeout + h.cfg.BuildTimeout + time.Second)
 	require.NoError(t, h.reconcile())
 
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	require.Equal(t, 0, ready)
 	require.Equal(t, 1, claimed, "the claim must survive a reconcile")
 
@@ -135,7 +135,7 @@ func TestTheStartedLoopReconciles(t *testing.T) {
 
 	require.NoError(t, h.serve(t.Context()))
 	require.Eventually(t, func() bool {
-		ready, _ := h.work.Depth()
+		ready, _ := depthOf(t, h.work)
 		return ready == 1
 	}, 5*time.Second, time.Millisecond, "the reconcile ticker never re-queued job %s", id)
 }

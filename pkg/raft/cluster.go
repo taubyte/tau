@@ -821,21 +821,16 @@ func (c *cluster) Batch(ops []BatchOp, timeout time.Duration) error {
 	return resp.Error
 }
 
-func (c *cluster) Keys(prefix string) []string {
+func (c *cluster) Keys(prefix string) ([]string, error) {
 	if c.closed.Load() {
-		return []string{}
+		return nil, ErrShutdown
 	}
 
 	m := c.current()
 	if m.fsm == nil {
-		return []string{}
+		return nil, ErrNoFSM
 	}
-
-	keys := m.fsm.Keys(prefix)
-	if keys == nil {
-		return []string{}
-	}
-	return keys
+	return m.fsm.Keys(prefix)
 }
 
 func (c *cluster) Apply(cmd []byte, timeout time.Duration) (FSMResponse, error) {

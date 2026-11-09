@@ -172,14 +172,20 @@ func (w *work) depth(d declared) (Depth, error) {
 	if err != nil {
 		return Depth{}, err
 	}
-	ready, claimed := opened.Depth()
+	ready, claimed, err := opened.Depth()
+	if err != nil {
+		return Depth{}, err
+	}
 
 	out := Depth{Ready: uint64(ready), Claimed: uint64(claimed)}
 	dead, err := opened.Dead()
 	if err != nil {
 		return out, nil
 	}
-	buried, _ := dead.Depth()
+	buried, _, err := dead.Depth()
+	if err != nil {
+		return Depth{}, err
+	}
 	out.Dead = uint64(buried)
 	return out, nil
 }
@@ -244,8 +250,11 @@ func (w *work) index(spec Spec) {
 }
 
 // queuesIn is every queue this namespace has been written to.
-func queuesIn(cluster raft.Cluster) []Spec {
-	keys := cluster.Keys(indexRoot)
+func queuesIn(cluster raft.Cluster) ([]Spec, error) {
+	keys, err := cluster.Keys(indexRoot)
+	if err != nil {
+		return nil, err
+	}
 
 	out := make([]Spec, 0, len(keys))
 	for _, key := range keys {
@@ -254,7 +263,7 @@ func queuesIn(cluster raft.Cluster) []Spec {
 			out = append(out, spec)
 		}
 	}
-	return out
+	return out, nil
 }
 
 // indexRoot is where this service keeps its own note of which queues exist. It

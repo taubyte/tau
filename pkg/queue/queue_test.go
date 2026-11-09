@@ -80,7 +80,7 @@ func TestPushClaimAckRoundTrip(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.mustPush(t, "job-1", "one")
 
-	if ready, claimed := h.Depth(); ready != 1 || claimed != 0 {
+	if ready, claimed := depthOf(t, h); ready != 1 || claimed != 0 {
 		t.Fatalf("depth after push: got (%d, %d), want (1, 0)", ready, claimed)
 	}
 
@@ -97,14 +97,14 @@ func TestPushClaimAckRoundTrip(t *testing.T) {
 	if d.Token == "" {
 		t.Fatal("claim returned an empty token")
 	}
-	if ready, claimed := h.Depth(); ready != 0 || claimed != 1 {
+	if ready, claimed := depthOf(t, h); ready != 0 || claimed != 1 {
 		t.Fatalf("depth after claim: got (%d, %d), want (0, 1)", ready, claimed)
 	}
 
 	if err := h.Ack(d); err != nil {
 		t.Fatalf("Ack: %v", err)
 	}
-	if ready, claimed := h.Depth(); ready != 0 || claimed != 0 {
+	if ready, claimed := depthOf(t, h); ready != 0 || claimed != 0 {
 		t.Fatalf("depth after ack: got (%d, %d), want (0, 0)", ready, claimed)
 	}
 	h.mustNotClaim(t)
@@ -128,7 +128,7 @@ func TestPushesInTheSameInstantBothSurvive(t *testing.T) {
 	h.mustPush(t, "a", "one")
 	h.mustPush(t, "b", "two")
 
-	if ready, _ := h.Depth(); ready != 2 {
+	if ready, _ := depthOf(t, h); ready != 2 {
 		t.Fatalf("ready: got %d, want 2", ready)
 	}
 	seen := map[string]string{}
@@ -146,7 +146,7 @@ func TestPushDeduplicatesById(t *testing.T) {
 	h.mustPush(t, "job-1", "one")
 	h.mustPush(t, "job-1", "again")
 
-	if ready, _ := h.Depth(); ready != 1 {
+	if ready, _ := depthOf(t, h); ready != 1 {
 		t.Fatalf("ready: got %d, want 1", ready)
 	}
 	if d := h.mustClaim(t); string(d.Data) != "one" {
@@ -161,7 +161,7 @@ func TestPushIsANoOpWhileTheItemIsClaimed(t *testing.T) {
 	h.mustClaim(t)
 	h.mustPush(t, "job-1", "again")
 
-	if ready, claimed := h.Depth(); ready != 0 || claimed != 1 {
+	if ready, claimed := depthOf(t, h); ready != 0 || claimed != 1 {
 		t.Fatalf("depth: got (%d, %d), want (0, 1)", ready, claimed)
 	}
 }
@@ -205,7 +205,7 @@ func TestAckIsFinal(t *testing.T) {
 		t.Fatalf("Sweep: %v", err)
 	}
 	h.mustNotClaim(t)
-	if ready, claimed := h.Depth(); ready != 0 || claimed != 0 {
+	if ready, claimed := depthOf(t, h); ready != 0 || claimed != 0 {
 		t.Fatalf("depth: got (%d, %d), want (0, 0)", ready, claimed)
 	}
 	dl := h.deadLetter(t)
@@ -240,7 +240,7 @@ func TestAckWithAStaleTokenIsRefused(t *testing.T) {
 	if err := h.Ack(first); !errors.Is(err, ErrStaleDelivery) {
 		t.Fatalf("Ack(stale): got %v, want ErrStaleDelivery", err)
 	}
-	if _, claimed := h.Depth(); claimed != 1 {
+	if _, claimed := depthOf(t, h); claimed != 1 {
 		t.Fatal("the stale ack removed the live claim")
 	}
 	if err := h.Ack(second); err != nil {
@@ -273,7 +273,7 @@ func TestAckAfterARequeueIsRefused(t *testing.T) {
 	if err := h.Ack(d); !errors.Is(err, ErrStaleDelivery) {
 		t.Fatalf("Ack: got %v, want ErrStaleDelivery", err)
 	}
-	if ready, _ := h.Depth(); ready != 1 {
+	if ready, _ := depthOf(t, h); ready != 1 {
 		t.Fatal("the refused ack disturbed the requeued item")
 	}
 }
@@ -309,7 +309,7 @@ func TestAFollowerWritesNothing(t *testing.T) {
 		}
 	}
 
-	if ready, inflight := h.Depth(); ready != 1 || inflight != 1 {
+	if ready, inflight := depthOf(t, h); ready != 1 || inflight != 1 {
 		t.Fatalf("depth on a follower: got (%d, %d), want (1, 1)", ready, inflight)
 	}
 	if !errors.Is(ErrNotLeader, raft.ErrNotLeader) {
@@ -418,7 +418,7 @@ func TestClaimReportsTheStoreFailingItsWrite(t *testing.T) {
 	}
 
 	h.store.failBatches(nil)
-	if ready, claimed := h.Depth(); ready != 1 || claimed != 0 {
+	if ready, claimed := depthOf(t, h); ready != 1 || claimed != 0 {
 		t.Fatalf("depth after a refused claim: got (%d, %d), want (1, 0)", ready, claimed)
 	}
 	if d := h.mustClaim(t); d.Attempt != 1 {
@@ -468,7 +468,7 @@ func TestRemoveWithdrawsAnItemNobodyHasClaimed(t *testing.T) {
 	if err := h.Remove("job-1"); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
-	if ready, claimed := h.Depth(); ready != 1 || claimed != 0 {
+	if ready, claimed := depthOf(t, h); ready != 1 || claimed != 0 {
 		t.Fatalf("depth after remove: got (%d, %d), want (1, 0)", ready, claimed)
 	}
 	if d := h.mustClaim(t); d.ID != "job-2" {
@@ -493,7 +493,7 @@ func TestRemoveWithdrawsAnItemThatIsStillBackingOff(t *testing.T) {
 	if err := h.Remove("job-1"); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
-	if ready, claimed := h.Depth(); ready != 0 || claimed != 0 {
+	if ready, claimed := depthOf(t, h); ready != 0 || claimed != 0 {
 		t.Fatalf("depth: got (%d, %d), want (0, 0)", ready, claimed)
 	}
 }
@@ -506,13 +506,13 @@ func TestRemoveRefusesAnItemAConsumerHolds(t *testing.T) {
 	if err := h.Remove("job-1"); !errors.Is(err, ErrClaimed) {
 		t.Fatalf("Remove: got %v, want ErrClaimed", err)
 	}
-	if ready, claimed := h.Depth(); ready != 0 || claimed != 1 {
+	if ready, claimed := depthOf(t, h); ready != 0 || claimed != 1 {
 		t.Fatalf("depth: got (%d, %d), want (0, 1)", ready, claimed)
 	}
 	if err := h.Ack(d); err != nil {
 		t.Fatalf("Ack after a refused Remove: %v", err)
 	}
-	if ready, claimed := h.Depth(); ready != 0 || claimed != 0 {
+	if ready, claimed := depthOf(t, h); ready != 0 || claimed != 0 {
 		t.Fatalf("depth after ack: got (%d, %d), want (0, 0)", ready, claimed)
 	}
 }
@@ -551,7 +551,28 @@ func TestRemoveReportsAStoreThatRefusedTheWrite(t *testing.T) {
 	if err := h.Remove("job-1"); !errors.Is(err, boom) {
 		t.Fatalf("Remove: got %v, want the store's error", err)
 	}
-	if ready, _ := h.Depth(); ready != 1 {
+	if ready, _ := depthOf(t, h); ready != 1 {
 		t.Fatal("a refused withdrawal took the item anyway")
+	}
+}
+
+// A QUEUE ITS STORE CANNOT LIST IS NOT AN EMPTY ONE: a claim answers the failure
+// rather than that there is nothing, and a depth answers it rather than nothing
+// waiting, which a bound counted from it would let everything through.
+func TestAQueueItsStoreCannotListIsNotEmpty(t *testing.T) {
+	h := newHarness(t, Config{})
+	if err := h.Push("only", []byte("1")); err != nil {
+		t.Fatal(err)
+	}
+	broken := errors.New("the disk failed partway through a scan")
+	h.store.mu.Lock()
+	h.store.keysErr = broken
+	h.store.mu.Unlock()
+
+	if _, err := h.Claim(); !errors.Is(err, broken) {
+		t.Fatalf("a claim on a queue its store cannot list answered %v", err)
+	}
+	if ready, claimed, err := h.Depth(); !errors.Is(err, broken) {
+		t.Fatalf("a depth its store cannot list read %d, %d, %v", ready, claimed, err)
 	}
 }

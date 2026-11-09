@@ -65,13 +65,23 @@ func (s *server) cycle(ctx context.Context) {
 
 // retain is one lifecycle pass over everything this node's namespace declares.
 func (s *server) retain(ctx context.Context, cluster raft.Cluster) {
-	for _, spec := range logsIn(cluster) {
+	logs, err := logsIn(cluster)
+	if err != nil {
+		logger.Warnf("retention: listing the logs: %s", err)
+		return
+	}
+	queues, err := queuesIn(cluster)
+	if err != nil {
+		logger.Warnf("retention: listing the queues: %s", err)
+		return
+	}
+	for _, spec := range logs {
 		if ctx.Err() != nil {
 			return
 		}
 		s.retainLog(ctx, spec)
 	}
-	for _, spec := range queuesIn(cluster) {
+	for _, spec := range queues {
 		if ctx.Err() != nil {
 			return
 		}

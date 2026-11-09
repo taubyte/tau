@@ -39,7 +39,10 @@ func (q *Queue) Expire(age time.Duration, size int64) (int, error) {
 
 	// Newest first, so the size budget is spent on what a reader most likely wants.
 	// Ready keys sort by deliverable time, which for a buried item is its burial.
-	keys := q.sorted(q.keys.readyPrefix())
+	keys, err := q.sorted(q.keys.readyPrefix())
+	if err != nil {
+		return 0, err
+	}
 
 	var held, freed int64
 	var ops []raft.BatchOp
@@ -120,7 +123,11 @@ func (q *Queue) Retire(age time.Duration) (int, error) {
 	// Ready keys sort by deliverable time, so the scan stops at the first item still
 	// inside its age.
 	var items []buried
-	for _, key := range q.sorted(q.keys.readyPrefix()) {
+	ready, err := q.sorted(q.keys.readyPrefix())
+	if err != nil {
+		return 0, err
+	}
+	for _, key := range ready {
 		due, err := q.keys.parse(key)
 		if err != nil {
 			return 0, err

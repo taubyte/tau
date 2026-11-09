@@ -62,7 +62,7 @@ func TestAPushPastTheBoundIsRefusedWhole(t *testing.T) {
 	if !errors.Is(err, ErrFull) {
 		t.Fatalf("PushWith: got %v, want ErrFull", err)
 	}
-	if ready, _ := h.Depth(); ready != 1 {
+	if ready, _ := depthOf(t, h); ready != 1 {
 		t.Fatalf("depth: got %d ready, want 1 — a refused push adds nothing", ready)
 	}
 	mustHold(t, h.Queue, 6)
@@ -109,7 +109,7 @@ func TestRetireMovesUnclaimedWorkPastItsAgeToTheDeadLetter(t *testing.T) {
 	}
 	mustHold(t, h.Queue, 4) // the claimed "old" and the young one
 	mustHold(t, dead, 6)
-	if ready, _ := dead.Depth(); ready != 2 {
+	if ready, _ := depthOf(t, dead); ready != 2 {
 		t.Fatalf("dead letter: got %d ready, want 2", ready)
 	}
 

@@ -440,7 +440,11 @@ func (c *crons) push(schedule Schedule, held *queue.Queue, slot time.Time) error
 		Key: firedPrefix + schedule.Handle, Value: []byte(strconv.FormatInt(slot.Unix(), 10)),
 	}}
 	if overlapOf(schedule) == overlapSkip {
-		if ready, claimed := held.Depth(); ready+claimed > 0 {
+		ready, claimed, err := held.Depth()
+		if err != nil {
+			return err
+		}
+		if ready+claimed > 0 {
 			// Skipped is decided too: the mark alone, so no later turn runs it.
 			return held.PushWith(nil, mark)
 		}
@@ -453,7 +457,11 @@ func (c *crons) push(schedule Schedule, held *queue.Queue, slot time.Time) error
 // ended tasking cancels nothing. One slot at a time, or `skip` and `queue` degrade to
 // `allow`; a slot's targets are one run. Close cancels and waits.
 func (c *crons) drain(schedule Schedule, held *queue.Queue) {
-	ready, claimed := held.Depth()
+	ready, claimed, err := held.Depth()
+	if err != nil {
+		logger.Warnf("cron: reading the fires of %s: %s", schedule.Name, err)
+		return
+	}
 
 	take := len(schedule.Fires) + len(schedule.Starts)
 	if overlapOf(schedule) == overlapAllow {

@@ -177,7 +177,10 @@ func (s *server) createEnvironment(plan jobRecord, environment, prelude string) 
 // keeps, and both answer CodeResourceExhausted — which ingress can turn
 // into a 503 and a retry rather than into a failed build.
 func (s *server) admit(repositoryKey string) error {
-	ready, claimed := s.work.Depth()
+	ready, claimed, err := s.work.Depth()
+	if err != nil {
+		return err
+	}
 	if ready+claimed >= s.cfg.MaxQueueDepth {
 		return errResourceExhausted("build queue is full (%d)", s.cfg.MaxQueueDepth)
 	}

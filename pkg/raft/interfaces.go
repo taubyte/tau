@@ -39,7 +39,9 @@ type Cluster interface {
 	// lead.
 	Batch(ops []BatchOp, timeout time.Duration) error
 
-	Keys(prefix string) []string
+	// Keys is every key with prefix. A scan that fails partway is an error, never
+	// the keys read before it.
+	Keys(prefix string) ([]string, error)
 
 	// Apply replicates raw bytes for a custom FSM. timeout must be in
 	// (0, MaxApplyTimeout], else ErrInvalidTimeout; ErrNotLeader on a member that
@@ -108,7 +110,7 @@ type FSM interface {
 	Restore(snapshot []byte) error
 	Get(key string) ([]byte, bool)
 	TryGet(key string) ([]byte, bool, error)
-	Keys(prefix string) []string
+	Keys(prefix string) ([]string, error)
 	// ExportState returns full KV state (CRDT entries) for merge/heal
 	ExportState() (map[string]CRDTEntry, error)
 }
@@ -139,7 +141,8 @@ type BatchOp struct {
 type Queue interface {
 	Push(id string, data []byte, timeout time.Duration) error
 	Pop(timeout time.Duration) (id string, data []byte, err error)
-	Peek() (id string, data []byte, ok bool)
-	Len() int
+	// Peek is the head, or ErrQueueEmpty.
+	Peek() (id string, data []byte, err error)
+	Len() (int, error)
 	Close() error
 }

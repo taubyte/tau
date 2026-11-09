@@ -16,8 +16,9 @@ type Store interface {
 	// Get reads a key from local committed state.
 	Get(key string) ([]byte, bool)
 
-	// Keys lists every key with the given prefix, in no particular order.
-	Keys(prefix string) []string
+	// Keys lists every key with the given prefix, in no particular order. A scan
+	// that fails partway is an error, never the keys read before it.
+	Keys(prefix string) ([]string, error)
 
 	// Batch atomically applies the operations as a single replicated entry.
 	// It returns raft.ErrNotLeader off the leader.

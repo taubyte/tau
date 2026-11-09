@@ -50,7 +50,7 @@ func TestARetryBetweenACancelAndTheSettleOfTheRunItCancelledSurvives(t *testing.
 	require.NoError(t, <-ran)
 
 	rec := h.mustRecord(t, id)
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	open := len(h.open(t, testRepo))
 	t.Logf("status=%s reason=%q attempt=%d ready=%d claimed=%d openRows=%d",
 		rec.status(), rec.Reason, rec.Attempt, ready, claimed, open)
@@ -98,7 +98,7 @@ func TestTheDropDecisionAndItsAckAreOneSection(t *testing.T) {
 	require.NoError(t, retryErr, "the caller was told its retry was accepted")
 
 	rec := h.mustRecord(t, id)
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	open := len(h.open(t, testRepo))
 	t.Logf("sectionHeldAtTheAck=%v status=%s ready=%d claimed=%d openRows=%d",
 		!loose.Load(), rec.status(), ready, claimed, open)

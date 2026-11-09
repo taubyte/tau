@@ -158,13 +158,13 @@ func TestAFireIsAnItemInTheSchedulesOwnQueue(t *testing.T) {
 	held, err := h.crons.open(nightly("0 3 * * *"))
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
-		_, claimed := held.Depth()
+		_, claimed := depthOf(t, held)
 		return claimed == 1
 	}, 5*time.Second, 10*time.Millisecond, "the fire is not an item")
 
 	fired.release()
 	require.Eventually(t, func() bool {
-		ready, claimed := held.Depth()
+		ready, claimed := depthOf(t, held)
 		return ready == 0 && claimed == 0
 	}, 5*time.Second, 10*time.Millisecond, "a fire that answered 2xx was not acknowledged")
 }
@@ -208,7 +208,7 @@ func TestALeaderLeadingAgainDoesNotRefireAMinuteAnotherHandedOut(t *testing.T) {
 	require.Eventually(t, func() bool { return len(fired.seen()) == 1 }, 5*time.Second, 10*time.Millisecond)
 	held, err := h.crons.open(s)
 	require.NoError(t, err)
-	require.Eventually(t, func() bool { ready, claimed := held.Depth(); return ready+claimed == 0 },
+	require.Eventually(t, func() bool { ready, claimed := depthOf(t, held); return ready+claimed == 0 },
 		5*time.Second, 10*time.Millisecond, "the fire never settled")
 
 	// This one leads again, its idea of the last minute a minute behind.
@@ -488,7 +488,7 @@ func TestAFireThatFailsIsDeliveredAgain(t *testing.T) {
 	held, err := h.crons.open(nightly("* * * * *"))
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
-		ready, _ := held.Depth()
+		ready, _ := depthOf(t, held)
 		return ready == 1
 	}, 5*time.Second, 10*time.Millisecond, "a failed fire was dropped")
 
@@ -511,7 +511,7 @@ func TestASlotIsSpentOnceEvenWhenItsFireIsDeliveredTwice(t *testing.T) {
 	held, err := h.crons.open(nightly("* * * * *"))
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
-		ready, _ := held.Depth()
+		ready, _ := depthOf(t, held)
 		return ready == 1
 	}, 5*time.Second, 10*time.Millisecond, "the failed fire was not given back")
 
@@ -541,7 +541,7 @@ func TestAFireThatExhaustsItsBudgetIsDeadLettered(t *testing.T) {
 	now := at(3, 0)
 	for range queue.DefaultMaxAttempts {
 		require.Eventually(t, func() bool {
-			ready, claimed := held.Depth()
+			ready, claimed := depthOf(t, held)
 			return ready+claimed == 0 || ready == 1
 		}, 5*time.Second, 10*time.Millisecond)
 		now = now.Add(fireRetryCeiling + time.Second)
@@ -552,7 +552,7 @@ func TestAFireThatExhaustsItsBudgetIsDeadLettered(t *testing.T) {
 	dead, err := held.Dead()
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
-		buried, _ := dead.Depth()
+		buried, _ := depthOf(t, dead)
 		return buried == 1
 	}, 5*time.Second, 10*time.Millisecond, "a fire that gave up vanished instead of being buried")
 }
@@ -570,7 +570,7 @@ func TestTheSlotIsClaimedBeforeTheJitterIsWaitedOut(t *testing.T) {
 	// The item is already CLAIMED — invisible to anybody else — while the fire
 	// is still waiting out its window.
 	require.Eventually(t, func() bool {
-		_, claimed := held.Depth()
+		_, claimed := depthOf(t, held)
 		return claimed == 1
 	}, 5*time.Second, 10*time.Millisecond, "the fire was not claimed before the wait")
 
@@ -619,7 +619,7 @@ func TestACronThatStartsAWorkflowSendsFromTheDelivery(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Eventually(t, func() bool {
-		ready, _ := opened.Depth()
+		ready, _ := depthOf(t, opened)
 		return ready == 1
 	}, 5*time.Second, 10*time.Millisecond, "the run never reached the workflow's queue")
 
@@ -639,7 +639,7 @@ func TestAStartThatCouldNotBeSentIsDeliveredAgain(t *testing.T) {
 	opened, err := h.crons.open(s)
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
-		ready, claimed := opened.Depth()
+		ready, claimed := depthOf(t, opened)
 		return ready == 1 && claimed == 0
 	}, 5*time.Second, 10*time.Millisecond, "a start that was refused was acknowledged anyway")
 }
@@ -656,14 +656,14 @@ func TestAStartAndAFireOfOneSlotAreTwoItems(t *testing.T) {
 	opened, err := h.crons.open(s)
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
-		ready, claimed := opened.Depth()
+		ready, claimed := depthOf(t, opened)
 		return ready == 1 && claimed == 1
 	}, 5*time.Second, 10*time.Millisecond, "one slot owed one item for two different things")
 
 	// AND IT STAYS TWO. A single item for both would have taken the fire down
 	// with the start's failure, or acknowledged the start along with the fire.
 	require.Never(t, func() bool {
-		ready, claimed := opened.Depth()
+		ready, claimed := depthOf(t, opened)
 		return ready != 1 || claimed != 1
 	}, time.Second, 50*time.Millisecond, "the two items settled as one")
 }
@@ -675,7 +675,7 @@ func idle(t *testing.T, h *harness, s Schedule) bool {
 
 	q, err := h.crons.open(s)
 	require.NoError(t, err)
-	_, claimed := q.Depth()
+	_, claimed := depthOf(t, q)
 	return claimed == 0
 }
 
@@ -805,4 +805,21 @@ func (w workloadsOf) Fire(ctx context.Context, at Target, req *invoke.Request) (
 // clockOf is a clock over those workloads, always beside the service.
 func clockOf(of func(context.Context) []Schedule, serve func(context.Context, Target, *invoke.Request) (*invoke.Response, error)) option {
 	return withWorkloads(workloadsOf{of: of, serve: serve})
+}
+
+// depthReader is a queue, as a test reads its depth.
+type depthReader interface {
+	Depth() (ready, claimed int, err error)
+}
+
+// depthOf is q's depth. A depth it cannot read fails t and reads as -1, -1, which
+// no assertion takes for a depth; t.Errorf is safe from a condition Eventually polls.
+func depthOf(t testing.TB, q depthReader) (ready, claimed int) {
+	t.Helper()
+	ready, claimed, err := q.Depth()
+	if err != nil {
+		t.Errorf("Depth: %v", err)
+		return -1, -1
+	}
+	return ready, claimed
 }

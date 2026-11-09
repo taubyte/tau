@@ -58,5 +58,5 @@ func TestCluster_CompactsItsLogBehindItsSnapshot(t *testing.T) {
 	require.NotZero(t, snap.GetMetadata().GetIndex())
 
 	// AND WHAT A SNAPSHOT HOLDS IS WHAT IS LIVE: a deleted key is not carried.
-	require.Len(t, c.Keys("k/"), rounds*writes/2)
+	require.Len(t, keysOf(t, c, "k/"), rounds*writes/2)
 }

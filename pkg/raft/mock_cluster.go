@@ -49,16 +49,16 @@ func (m *MockCluster) Delete(key string, _ time.Duration) error {
 	return nil
 }
 
-func (m *MockCluster) Keys(prefix string) []string {
+func (m *MockCluster) Keys(prefix string) ([]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	var keys []string
+	keys := []string{}
 	for k := range m.data {
 		if strings.HasPrefix(k, prefix) {
 			keys = append(keys, k)
 		}
 	}
-	return keys
+	return keys, nil
 }
 
 func (m *MockCluster) Batch(ops []BatchOp, _ time.Duration) error {

@@ -776,7 +776,7 @@ func TestHealing_AMergeNeedsTheLeadAndTheOtherSide(t *testing.T) {
 		members, err := cl.Members()
 		require.NoError(t, err)
 		assert.Len(t, members, 2)
-		assert.Equal(t, []string{"k"}, cl.Keys(""))
+		assert.Equal(t, []string{"k"}, keysOf(t, cl, ""))
 	}
 }
 

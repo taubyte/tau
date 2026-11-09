@@ -506,7 +506,7 @@ func TestCluster_MultiNode_ClientOperations_Integration(t *testing.T) {
 	assert.Assert(t, found, "key1 should be found")
 	assert.Equal(t, string(val), "value1")
 
-	keys := cluster1.Keys("key")
+	keys := keysOf(t, cluster1, "key")
 	assert.Equal(t, len(keys), 2, "should find 2 keys with prefix 'key'")
 
 	client, err := NewClient(node2, namespace, nil)

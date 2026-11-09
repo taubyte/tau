@@ -261,7 +261,7 @@ func TestSettleKeepsNothingForARecordThatIsGone(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, found)
 
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	require.Zero(t, ready)
 	require.Zero(t, claimed, "the delivery is still acknowledged")
 	require.Zero(t, h.assets.count(), "there is no record to name a log, so the log is not kept")
@@ -407,7 +407,7 @@ func TestALogCanReachTheStoreAndNoCidReachAnyJob(t *testing.T) {
 	require.Equal(t, plmv2.JobStatus_JobStatusSuccess, rec.status())
 	require.Empty(t, rec.Logs, "and no job names it")
 
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	require.Zero(t, ready)
 	require.Zero(t, claimed, "the ack landed, so there is no delivery left either")
 }
@@ -445,7 +445,7 @@ func TestAJobReopenedWhileItsLogWasStoredKeepsThatLog(t *testing.T) {
 		rec.Logs, "and what it printed is still readable, under its own attempt")
 	require.Equal(t, 1, h.assets.objects())
 
-	ready, _ := h.work.Depth()
+	ready, _ := depthOf(t, h.work)
 	require.Equal(t, 1, ready, "the retry's item is there, and the requeue deduplicated against it")
 }
 

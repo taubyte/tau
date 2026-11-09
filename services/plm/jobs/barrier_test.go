@@ -98,7 +98,7 @@ func TestWhatTheSectionsBarriersCost(t *testing.T) {
 		h.clock.advance(h.cfg.Queue.VisibilityTimeout + h.cfg.BuildTimeout + time.Minute)
 
 		n := spent(h, func() { require.NoError(t, h.reconcile()) })
-		ready, _ := h.work.Depth()
+		ready, _ := depthOf(t, h.work)
 		t.Logf("openJobs=%d repaired=%d barriers=%d", open, ready, n)
 		require.Equal(t, open, ready)
 		require.Equal(t, int64(1+open), n, "one for the pass, and one per push it made")

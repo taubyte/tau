@@ -198,7 +198,7 @@ func TestTheQueueWritesAreRefusedInsideADifferentLiveSection(t *testing.T) {
 	})
 	t.Run("withdraw", func(t *testing.T) {
 		requireRefused(t, h, id, inADifferentSection(stale.withdraw))
-		ready, claimed := h.work.Depth()
+		ready, claimed := depthOf(t, h.work)
 		require.Equal(t, 1, ready+claimed, "the item a refused withdrawal did not remove is still there")
 	})
 	t.Run("ack", func(t *testing.T) {
@@ -206,7 +206,7 @@ func TestTheQueueWritesAreRefusedInsideADifferentLiveSection(t *testing.T) {
 		require.NoError(t, err)
 		requireRefused(t, h, id, inADifferentSection(func() error { return stale.ack(h.work, d) }))
 
-		_, claimed := h.work.Depth()
+		_, claimed := depthOf(t, h.work)
 		require.Equal(t, 1, claimed,
 			"AND THE ITEM SURVIVES. An ack is the one queue write with nothing behind it: it "+
 				"deletes the very index row a concurrent push deduplicates against, so an ack made "+
@@ -472,7 +472,7 @@ func TestAnAckOfAnotherJobsDeliveryIsRefused(t *testing.T) {
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
 	require.ErrorContains(t, err, "which is another job's")
 
-	_, claimed := h.work.Depth()
+	_, claimed := depthOf(t, h.work)
 	require.Equal(t, 2, claimed, "and the neighbour's item is still there to come back")
 }
 

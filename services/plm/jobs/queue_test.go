@@ -46,7 +46,7 @@ func TestEnqueueWritesTheCreatedEventAndBothRowsInOneDelta(t *testing.T) {
 	require.Len(t, h.records.keys(t, projectRows(rec.ProjectID)), 1)
 	require.Len(t, h.records.keys(t, openRows(testRepo)), 1)
 
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	require.Equal(t, 1, ready)
 	require.Equal(t, 0, claimed)
 }
@@ -60,7 +60,7 @@ func TestARedeliveredPushIsTheSameJob(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, first, second)
-	ready, _ := h.work.Depth()
+	ready, _ := depthOf(t, h.work)
 	require.Equal(t, 1, ready, "a redelivery must not make a second item")
 	require.Len(t, h.records.keys(t, projectRows("project-of-"+testRepo)), 1)
 }
@@ -87,7 +87,7 @@ func TestARedeliveryOfAClaimedOrFinishedJobChangesNothing(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, id, again)
 
-			ready, claimed := h.work.Depth()
+			ready, claimed := depthOf(t, h.work)
 			require.Equal(t, 0, ready)
 			require.Equal(t, 0, claimed)
 		})
@@ -103,14 +103,14 @@ func TestARedeliveryRepairsARecordWhosePushWasLost(t *testing.T) {
 	d, err := h.work.Claim()
 	require.NoError(t, err)
 	require.NoError(t, h.work.Ack(d))
-	ready, _ := h.work.Depth()
+	ready, _ := depthOf(t, h.work)
 	require.Equal(t, 0, ready)
 
 	again, err := enqueue(t, h, testRepo, testRef, testCommit)
 	require.NoError(t, err)
 	require.Equal(t, id, again)
 
-	ready, _ = h.work.Depth()
+	ready, _ = depthOf(t, h.work)
 	require.Equal(t, 1, ready, "an Open record with no item must be re-queued")
 }
 
@@ -172,7 +172,7 @@ func TestAPushForAnUnregisteredRepositoryIsRefusedBeforeAnythingIsQueued(t *test
 	_, err := enqueue(t, h, "github.com/someone/else", testRef, testCommit)
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 
-	ready, _ := h.work.Depth()
+	ready, _ := depthOf(t, h.work)
 	require.Equal(t, 0, ready)
 	require.Empty(t, h.rows(t))
 }
@@ -214,6 +214,17 @@ func TestAdmissionBoundsTheQueueAndTheRepository(t *testing.T) {
 		h.push(t, testRef, testCommit)
 		_, err := enqueue(t, h, testRepo, "refs/heads/other", testCommit)
 		require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err))
+	})
+
+	// A QUEUE IT CANNOT COUNT ADMITS NOTHING: a failed listing read as an empty
+	// queue would let every build past the bound.
+	t.Run("a queue it cannot count", func(t *testing.T) {
+		h := newHarnessCfg(t, func(c *Config) { c.MaxQueueDepth = 1 })
+
+		h.push(t, testRef, testCommit)
+		h.store.failKeys(errors.New("the disk failed partway through a scan"))
+		_, err := enqueue(t, h, testRepo, "refs/heads/other", testCommit)
+		require.ErrorContains(t, err, "the disk failed partway through a scan")
 	})
 
 	t.Run("open per repository", func(t *testing.T) {
@@ -369,7 +380,7 @@ func TestARedeliveryThatOverlapsTheFirstDeliveryDoesNotBuildTwice(t *testing.T) 
 		"a finished job must not be reopened by a delivery that read the table before it finished")
 	require.Equal(t, uint32(1), rec.Attempt, "the attempt counter must not be rewound")
 
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	require.Zero(t, ready+claimed, "the overlapping delivery must not mint a second item")
 
 	require.False(t, h.mustStep(t), "there is nothing left to claim")
@@ -412,7 +423,7 @@ func TestACreateDecidesOnWhatLandedWhileItWasAway(t *testing.T) {
 
 	require.Equal(t, plmv2.JobStatus_JobStatusSuccess, h.status(t, id),
 		"a job another node finished must not be reopened by the delivery that was away")
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	require.Zero(t, ready+claimed, "and it must not be queued here either")
 }
 
@@ -475,7 +486,7 @@ func TestASecondDeliveryCannotDecideWhileTheFirstIsWriting(t *testing.T) {
 	require.Equal(t, first, second, "both deliveries name one job")
 	require.Len(t, h.records.entriesAbout(first), 1, "two overlapping deliveries, one created event")
 
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	require.Equal(t, 1, ready, "and one item")
 	require.Zero(t, claimed)
 }
@@ -527,7 +538,7 @@ func TestWhatADeliveryFindsWhenItComesBackFromAuth(t *testing.T) {
 		close(gate.release)
 
 		require.Equal(t, connect.CodeInternal, connect.CodeOf(<-done))
-		ready, _ := h.work.Depth()
+		ready, _ := depthOf(t, h.work)
 		require.Zero(t, ready)
 	})
 }

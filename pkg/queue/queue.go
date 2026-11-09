@@ -284,7 +284,10 @@ func (q *Queue) Claim() (Delivery, error) {
 		return Delivery{}, err
 	}
 
-	keys := q.sorted(q.keys.readyPrefix())
+	keys, err := q.sorted(q.keys.readyPrefix())
+	if err != nil {
+		return Delivery{}, err
+	}
 	if len(keys) == 0 {
 		return Delivery{}, ErrNoItem
 	}
@@ -388,8 +391,13 @@ func (q *Queue) Sweep() error {
 // backoff has not elapsed — and how many are claimed. It reads local state
 // without a barrier, so on a follower it can lag; it is for observability, not
 // for decisions.
-func (q *Queue) Depth() (ready, claimed int) {
-	return len(q.group.store.Keys(q.keys.readyPrefix())), len(q.group.store.Keys(q.keys.claimedPrefix()))
+func (q *Queue) Depth() (ready, claimed int, err error) {
+	readyKeys, err := q.group.store.Keys(q.keys.readyPrefix())
+	if err != nil {
+		return 0, 0, err
+	}
+	claimedKeys, err := q.group.store.Keys(q.keys.claimedPrefix())
+	return len(readyKeys), len(claimedKeys), err
 }
 
 // prepare refuses a write on a follower, then barriers so a fresh leader does not
@@ -406,7 +414,11 @@ func (q *Queue) prepare() error {
 // deadline, so it stops at the first one still in the future and does work
 // proportional to what expired rather than to the depth of the queue.
 func (q *Queue) repair(now time.Time) error {
-	for _, key := range q.sorted(q.keys.claimedPrefix()) {
+	claimed, err := q.sorted(q.keys.claimedPrefix())
+	if err != nil {
+		return err
+	}
+	for _, key := range claimed {
 		claim, err := q.keys.parse(key)
 		if err != nil {
 			return err
@@ -527,10 +539,10 @@ func (q *Queue) load(key string) (record, error) {
 	return decodeRecord(key, raw)
 }
 
-func (q *Queue) sorted(prefix string) []string {
-	keys := q.group.store.Keys(prefix)
+func (q *Queue) sorted(prefix string) ([]string, error) {
+	keys, err := q.group.store.Keys(prefix)
 	slices.Sort(keys)
-	return keys
+	return keys, err
 }
 
 // newToken names one delivery. It only has to be unique among the deliveries of

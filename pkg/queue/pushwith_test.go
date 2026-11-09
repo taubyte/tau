@@ -34,7 +34,7 @@ func TestPushWithCommitsTheCallersOperationInTheSameEntry(t *testing.T) {
 	if value, held := h.store.Get("cron/past/nightly"); !held || string(value) != "1757041200" {
 		t.Fatalf("the caller's record: got (%q, %v), want (1757041200, true)", value, held)
 	}
-	if ready, _ := h.Depth(); ready != 1 {
+	if ready, _ := depthOf(t, h); ready != 1 {
 		t.Fatalf("ready after PushWith: got %d, want 1", ready)
 	}
 }
@@ -52,7 +52,7 @@ func TestARefusedEntryCommitsNeitherThePushNorTheRecord(t *testing.T) {
 	if _, held := h.store.Get("cron/past/nightly"); held {
 		t.Fatal("the caller's record outlived the push it was a record of")
 	}
-	if ready, _ := h.Depth(); ready != 0 {
+	if ready, _ := depthOf(t, h); ready != 0 {
 		t.Fatalf("ready after a refused entry: got %d, want 0", ready)
 	}
 }
@@ -82,7 +82,7 @@ func TestPushWithADuplicateIdStillCommitsTheRecord(t *testing.T) {
 	if _, held := h.store.Get("cron/past/nightly"); !held {
 		t.Fatal("the record was dropped with the duplicate item")
 	}
-	if ready, _ := h.Depth(); ready != 1 {
+	if ready, _ := depthOf(t, h); ready != 1 {
 		t.Fatalf("ready: got %d, want 1", ready)
 	}
 }
@@ -102,7 +102,7 @@ func TestPushWithRefusesAnOperationOnThisQueuesKeys(t *testing.T) {
 		}
 	}
 
-	if ready, _ := h.Depth(); ready != 0 {
+	if ready, _ := depthOf(t, h); ready != 0 {
 		t.Fatalf("a refused call pushed anyway: ready %d", ready)
 	}
 }

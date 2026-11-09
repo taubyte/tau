@@ -19,6 +19,7 @@ type fakeStore struct {
 	calls       []string
 	beforeBatch func()
 	batchErr    error
+	keysErr     error
 }
 
 func newStore() *fakeStore {
@@ -73,8 +74,14 @@ func (s *fakeStore) Get(key string) ([]byte, bool) {
 	return s.MockCluster.Get(key)
 }
 
-func (s *fakeStore) Keys(prefix string) []string {
+func (s *fakeStore) Keys(prefix string) ([]string, error) {
 	s.called("keys")
+	s.mu.Lock()
+	err := s.keysErr
+	s.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
 	return s.MockCluster.Keys(prefix)
 }
 
@@ -158,6 +165,23 @@ func newHarness(t *testing.T, cfg Config) *harness {
 		t.Fatalf("Open: %v", err)
 	}
 	return &harness{Queue: q, group: group, store: store, clock: clock}
+}
+
+// depthReader is a queue, as a test reads its depth.
+type depthReader interface {
+	Depth() (ready, claimed int, err error)
+}
+
+// depthOf is q's depth. A depth it cannot read fails t and reads as -1, -1, which
+// no assertion takes for a depth; t.Errorf is safe from a condition Eventually polls.
+func depthOf(t testing.TB, q depthReader) (ready, claimed int) {
+	t.Helper()
+	ready, claimed, err := q.Depth()
+	if err != nil {
+		t.Errorf("Depth: %v", err)
+		return -1, -1
+	}
+	return ready, claimed
 }
 
 // deadLetter opens the queue exhausted items move to, from the same group.

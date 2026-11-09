@@ -175,7 +175,7 @@ func TestCloseAbandonsTheRunInFlightRatherThanFailingTheJob(t *testing.T) {
 		"a shutdown must not write a terminal status for a build nothing finished")
 	require.Empty(t, rec.Reason)
 
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	require.Equal(t, 0, ready)
 	require.Equal(t, 1, claimed, "an abandoned delivery is left for its claim to expire")
 
@@ -203,7 +203,7 @@ func TestARunThatFinishedDuringAShutdownIsStillSettled(t *testing.T) {
 	require.Equal(t, plmv2.JobStatus_JobStatusSuccess, h.status(t, id))
 	require.Equal(t, testCommit, h.lastCommit(testRepo, testRef, testEnvironment))
 
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	require.Equal(t, 0, ready)
 	require.Equal(t, 0, claimed, "a finished run is acknowledged even on the way out")
 }

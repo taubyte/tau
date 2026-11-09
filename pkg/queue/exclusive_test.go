@@ -99,7 +99,7 @@ func TestConcurrentClaimersShareNothing(t *testing.T) {
 			t.Fatalf("%q delivered %d times", id, count)
 		}
 	}
-	if ready, claimed := h.Depth(); ready != 0 || claimed != 0 {
+	if ready, claimed := depthOf(t, h); ready != 0 || claimed != 0 {
 		t.Fatalf("depth: got (%d, %d), want (0, 0)", ready, claimed)
 	}
 }
@@ -126,7 +126,7 @@ func TestConcurrentPushesKeepEveryItem(t *testing.T) {
 	}
 	wg.Wait()
 
-	if ready, _ := h.Depth(); ready != producers*each {
+	if ready, _ := depthOf(t, h); ready != producers*each {
 		t.Fatalf("ready: got %d, want %d", ready, producers*each)
 	}
 }

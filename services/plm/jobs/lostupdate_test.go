@@ -281,9 +281,9 @@ func exhaust(t *testing.T, h *harness) {
 		h.clock.advance(2 * h.cfg.Queue.VisibilityTimeout)
 		require.NoError(t, h.work.Sweep())
 	}
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	require.Zero(t, ready+claimed, "the work queue must be empty")
-	dead, _ := h.deadLetter(t).Depth()
+	dead, _ := depthOf(t, h.deadLetter(t))
 	require.Equal(t, 1, dead, "the job must be in the dead letter or this test means nothing")
 }
 
@@ -313,7 +313,7 @@ func TestAReopenIsNotLostToTheReconcileThatOverlapsIt(t *testing.T) {
 	require.NoError(t, plantErr)
 	require.NoError(t, retryErr, "the caller was told its retry was accepted")
 
-	ready, _ := h.work.Depth()
+	ready, _ := depthOf(t, h.work)
 	t.Logf("raced=%s ahead=%s open=%v ready=%d",
 		h.status(t, raced), h.status(t, ahead), h.open(t, testRepo), ready)
 
@@ -355,7 +355,7 @@ func TestAWithdrawnItemIsNotPutBackByTheDeliveryThatOverlapsIt(t *testing.T) {
 	<-cancelled
 	require.NoError(t, cancelErr)
 
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	t.Logf("status=%s ready=%d claimed=%d", h.status(t, id), ready, claimed)
 
 	require.Equal(t, plmv2.JobStatus_JobStatusCancelled, h.status(t, id))
@@ -379,7 +379,7 @@ func TestANewJobIsNotLeftWithAnItemByTheCancelThatOverlapsItsCreation(t *testing
 	<-cancelled
 	require.NoError(t, cancelErr)
 
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	t.Logf("status=%s ready=%d claimed=%d", h.status(t, id), ready, claimed)
 
 	require.Equal(t, plmv2.JobStatus_JobStatusCancelled, h.status(t, id))

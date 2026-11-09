@@ -43,7 +43,7 @@ func TestOneStepClaimsRunsAcksAndFinishes(t *testing.T) {
 	require.Zero(t, rec.ClaimedUntil)
 	require.Empty(t, rec.Holder)
 
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	require.Equal(t, 0, ready)
 	require.Equal(t, 0, claimed)
 
@@ -107,7 +107,7 @@ func TestARunThatFailsIsTerminalRatherThanRetried(t *testing.T) {
 	require.Equal(t, plmv2.JobStatus_JobStatusFailed, rec.status())
 	require.Contains(t, rec.Reason, "compile error")
 
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	require.Equal(t, 0, ready)
 	require.Equal(t, 0, claimed)
 
@@ -231,7 +231,7 @@ func TestLeadershipLostMidRunPublishesNothing(t *testing.T) {
 	require.Equal(t, plmv2.JobStatus_JobStatusClaimed, h.status(t, id))
 	require.Empty(t, h.lastCommit(testRepo, testRef, testEnvironment))
 
-	_, claimed := h.work.Depth()
+	_, claimed := depthOf(t, h.work)
 	require.Equal(t, 1, claimed, "and the delivery a follower could not settle comes back")
 	require.Zero(t, h.assets.count(), "and nothing it built or printed reached the store")
 }
@@ -276,7 +276,7 @@ func TestAnExhaustedJobIsDeadLetteredAndTheDrainMarksItFailed(t *testing.T) {
 		"a buried job's record is still Open until something drains the dead letter")
 
 	dead := h.deadLetter(t)
-	ready, _ := dead.Depth()
+	ready, _ := depthOf(t, dead)
 	require.Equal(t, 1, ready)
 
 	// The next cycle drains it.
@@ -287,7 +287,7 @@ func TestAnExhaustedJobIsDeadLetteredAndTheDrainMarksItFailed(t *testing.T) {
 	require.Equal(t, "attempts exhausted", rec.Reason)
 	require.Empty(t, h.open(t, testRepo))
 
-	ready, claimed := dead.Depth()
+	ready, claimed := depthOf(t, dead)
 	require.Equal(t, 0, ready)
 	require.Equal(t, 0, claimed)
 	require.Empty(t, h.builder.seen(), "an exhausted job is never run again")
@@ -302,7 +302,7 @@ func TestDrainingADeadLetterEntryForAFinishedJobJustAcksIt(t *testing.T) {
 	require.True(t, h.mustStep(t))
 
 	require.Equal(t, plmv2.JobStatus_JobStatusCancelled, h.status(t, id))
-	ready, _ := h.dead.Depth()
+	ready, _ := depthOf(t, h.dead)
 	require.Equal(t, 0, ready)
 }
 
@@ -313,7 +313,7 @@ func TestAnItemWithNoRecordIsAckedAndDropped(t *testing.T) {
 	require.True(t, h.mustStep(t))
 	require.Empty(t, h.builder.seen())
 
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	require.Equal(t, 0, ready)
 	require.Equal(t, 0, claimed)
 }
@@ -326,7 +326,7 @@ func TestARedeliveredJobThatIsAlreadyFinishedIsDropped(t *testing.T) {
 	require.True(t, h.mustStep(t))
 	require.Empty(t, h.builder.seen())
 
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	require.Equal(t, 0, ready)
 	require.Equal(t, 0, claimed)
 }
@@ -348,7 +348,7 @@ func TestOnlyTheLeaderOfTheDomainClaims(t *testing.T) {
 	require.ErrorIs(t, err, queue.ErrNotLeader)
 
 	require.Equal(t, plmv2.JobStatus_JobStatusOpen, h.status(t, id))
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	require.Equal(t, 1, ready)
 	require.Equal(t, 0, claimed)
 }
@@ -369,7 +369,7 @@ func TestANodeWithNoBuilderKeepsTheQueueSweptAndClaimsNothing(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, worked)
 
-	ready, claimed := s.work.Depth()
+	ready, claimed := depthOf(t, s.work)
 	require.Equal(t, 1, ready, "the item is left for a node that can run it")
 	require.Equal(t, 0, claimed)
 
@@ -477,7 +477,7 @@ func TestSettleReportsARecordItCannotRead(t *testing.T) {
 	err := h.runNext(t)
 	require.ErrorContains(t, err, "does not decode")
 
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	require.Equal(t, 0, ready)
 	require.Equal(t, 1, claimed, "a record nothing could read must not cost the item that names it")
 }
@@ -506,7 +506,7 @@ func TestTheDeadLetterDrainReportsARecordItCannotWrite(t *testing.T) {
 	require.ErrorContains(t, err, "finishing job "+id)
 
 	h.records.failBatches(nil)
-	ready, claimed := h.dead.Depth()
+	ready, claimed := depthOf(t, h.dead)
 	require.Equal(t, 0, ready)
 	require.Equal(t, 1, claimed, "an entry whose record could not be written stays claimed and comes back")
 }
@@ -543,7 +543,7 @@ func TestASectionThatCannotBarrierDecidesNothing(t *testing.T) {
 		require.Equal(t, plmv2.JobStatus_JobStatusClaimed, h.status(t, id),
 			"a section that could not barrier must not decide the outcome of the run")
 		require.Empty(t, h.lastCommit(testRepo, testRef, testEnvironment))
-		_, claimed := h.work.Depth()
+		_, claimed := depthOf(t, h.work)
 		require.Equal(t, 1, claimed, "and the delivery it did not ack comes back")
 	})
 
@@ -559,7 +559,7 @@ func TestASectionThatCannotBarrierDecidesNothing(t *testing.T) {
 
 		h.store.failBarrier(nil)
 		require.Equal(t, plmv2.JobStatus_JobStatusOpen, h.status(t, id))
-		ready, claimed := h.dead.Depth()
+		ready, claimed := depthOf(t, h.dead)
 		require.Equal(t, 0, ready)
 		require.Equal(t, 1, claimed, "the entry stays claimed and comes back")
 	})
@@ -574,7 +574,7 @@ func TestTheDeadLetterDrainReportsACorruptRecord(t *testing.T) {
 	_, err := h.step(t.Context())
 	require.ErrorContains(t, err, "does not decode")
 
-	ready, claimed := h.dead.Depth()
+	ready, claimed := depthOf(t, h.dead)
 	require.Equal(t, 0, ready)
 	require.Equal(t, 1, claimed, "and the entry is not acknowledged")
 }
@@ -696,7 +696,7 @@ func TestAClaimedJobWhoseEventsNeverArriveIsFailedAfterItsReads(t *testing.T) {
 	require.Len(t, h.terminal(t, unknownJobID), 1, "a failure the retention pass can find")
 	require.Empty(t, h.builder.seen(), "and nothing was built")
 
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	require.Zero(t, ready+claimed, "the item is acked, so it is not claimed forever")
 
 	// AND IT IS RETRIED like any failed job: a retry reopens it, for when its

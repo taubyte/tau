@@ -107,7 +107,7 @@ func TestCommandMerge_Tombstone(t *testing.T) {
 	_, found := fsm.Get("key1")
 	assert.False(t, found)
 
-	keys := fsm.Keys("")
+	keys := keysOf(t, fsm, "")
 	assert.Empty(t, keys)
 }
 

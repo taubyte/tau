@@ -159,7 +159,7 @@ func TestCancelEndsTheJobAndTakesTheItemOutOfTheQueue(t *testing.T) {
 	// The open row and the queue item are the two halves of one fact, so both
 	// go: a repository told it has nothing outstanding, with a delivery still
 	// queued for it, is the disagreement this layout exists to prevent.
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	require.Equal(t, 0, ready)
 	require.Equal(t, 0, claimed)
 
@@ -176,7 +176,7 @@ func TestACancelledJobLeavesNoWorkBehindItInTheQueue(t *testing.T) {
 
 		require.NoError(t, h.cancel(cancelled))
 
-		ready, _ := h.work.Depth()
+		ready, _ := depthOf(t, h.work)
 		require.Equal(t, 1, ready, "only the job somebody still wants built is queued")
 
 		require.True(t, h.mustStep(t))
@@ -195,7 +195,7 @@ func TestACancelledJobLeavesNoWorkBehindItInTheQueue(t *testing.T) {
 		// This node never claims (withBuilders: a voter need not dispatch), so
 		// the claim path cannot be what drops the item. Nothing else would.
 		require.False(t, h.mustStep(t))
-		ready, claimed := h.work.Depth()
+		ready, claimed := depthOf(t, h.work)
 		require.Equal(t, 0, ready)
 		require.Equal(t, 0, claimed)
 	})
@@ -245,13 +245,13 @@ func TestCancelReportsAWithdrawalThatFailedAndTheNextCancelFinishesIt(t *testing
 
 	require.Equal(t, plmv2.JobStatus_JobStatusCancelled, h.status(t, id),
 		"the event is what cancels the job, and it landed")
-	ready, _ := h.work.Depth()
+	ready, _ := depthOf(t, h.work)
 	require.Equal(t, 1, ready, "the item the entry did not remove is still there")
 
 	h.store.failBatches(nil)
 	require.NoError(t, h.cancel(id))
 
-	ready, claimed := h.work.Depth()
+	ready, claimed := depthOf(t, h.work)
 	require.Equal(t, 0, ready)
 	require.Equal(t, 0, claimed)
 }
@@ -302,7 +302,7 @@ func TestRetryReopensAndReQueuesWithoutLosingHistory(t *testing.T) {
 	require.Empty(t, reopened.Reason)
 	require.Len(t, h.open(t, testRepo), 1, "reopened means open again")
 
-	ready, _ := h.work.Depth()
+	ready, _ := depthOf(t, h.work)
 	require.Equal(t, 1, ready)
 
 	job, err := h.job(id)

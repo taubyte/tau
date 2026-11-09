@@ -46,7 +46,7 @@ func TestOnlyExpiredClaimsAreTakenBack(t *testing.T) {
 	if err := h.Sweep(); err != nil {
 		t.Fatalf("Sweep: %v", err)
 	}
-	if ready, claimed := h.Depth(); ready != 1 || claimed != 1 {
+	if ready, claimed := depthOf(t, h); ready != 1 || claimed != 1 {
 		t.Fatalf("depth: got (%d, %d), want (1, 1)", ready, claimed)
 	}
 	if d := h.mustClaim(t); d.ID != "job-1" {
@@ -58,7 +58,7 @@ func TestDelayHoldsAnItemBack(t *testing.T) {
 	h := newHarness(t, Config{Delay: time.Minute})
 	h.mustPush(t, "job-1", "one")
 
-	if ready, _ := h.Depth(); ready != 1 {
+	if ready, _ := depthOf(t, h); ready != 1 {
 		t.Fatal("a delayed item should still be in the queue")
 	}
 	h.clock.advance(time.Minute - time.Nanosecond)
@@ -167,7 +167,7 @@ func TestExpiryBackoffIsMeasuredFromTheDeadline(t *testing.T) {
 	// still not due.
 	h.clock.advance(12 * time.Second)
 	h.mustNotClaim(t)
-	if ready, claimed := h.Depth(); ready != 1 || claimed != 0 {
+	if ready, claimed := depthOf(t, h); ready != 1 || claimed != 0 {
 		t.Fatalf("depth: got (%d, %d), want (1, 0)", ready, claimed)
 	}
 
@@ -206,7 +206,7 @@ func TestExhaustionThroughNack(t *testing.T) {
 
 	// Two deliveries were all it had.
 	h.mustNotClaim(t)
-	if ready, claimed := h.Depth(); ready != 0 || claimed != 0 {
+	if ready, claimed := depthOf(t, h); ready != 0 || claimed != 0 {
 		t.Fatalf("depth: got (%d, %d), want (0, 0)", ready, claimed)
 	}
 
@@ -250,12 +250,12 @@ func TestSweepAloneReachesTheDeadLetter(t *testing.T) {
 	if err := h.Sweep(); err != nil {
 		t.Fatalf("Sweep: %v", err)
 	}
-	if ready, claimed := h.Depth(); ready != 0 || claimed != 0 {
+	if ready, claimed := depthOf(t, h); ready != 0 || claimed != 0 {
 		t.Fatalf("depth: got (%d, %d), want (0, 0)", ready, claimed)
 	}
 
 	dl := h.deadLetter(t)
-	if ready, _ := dl.Depth(); ready != 1 {
+	if ready, _ := depthOf(t, dl); ready != 1 {
 		t.Fatalf("dead letter ready: got %d, want 1", ready)
 	}
 }
@@ -273,7 +273,7 @@ func TestAnExhaustedItemIsNeverRedelivered(t *testing.T) {
 		h.mustNotClaim(t)
 	}
 	dl := h.deadLetter(t)
-	if ready, _ := dl.Depth(); ready != 1 {
+	if ready, _ := depthOf(t, dl); ready != 1 {
 		t.Fatalf("dead letter ready: got %d, want 1 — it must arrive once, not once per sweep", ready)
 	}
 }
@@ -289,11 +289,11 @@ func TestTheDeadLetterQueueDeduplicates(t *testing.T) {
 		}
 	}
 
-	if ready, claimed := h.Depth(); ready != 0 || claimed != 0 {
+	if ready, claimed := depthOf(t, h); ready != 0 || claimed != 0 {
 		t.Fatalf("source depth: got (%d, %d), want (0, 0)", ready, claimed)
 	}
 	dl := h.deadLetter(t)
-	if ready, _ := dl.Depth(); ready != 1 {
+	if ready, _ := depthOf(t, dl); ready != 1 {
 		t.Fatalf("dead letter ready: got %d, want 1", ready)
 	}
 }
@@ -314,7 +314,7 @@ func TestAConfiguredDeadLetterQueue(t *testing.T) {
 	if d, err := failed.Claim(); err != nil || d.ID != "job-1" {
 		t.Fatalf("configured dead letter: got (%v, %v), want job-1", d.ID, err)
 	}
-	if ready, _ := h.deadLetter(t).Depth(); ready != 0 {
+	if ready, _ := depthOf(t, h.deadLetter(t)); ready != 0 {
 		t.Fatal("the default dead-letter name was written to as well")
 	}
 }
@@ -339,7 +339,7 @@ func TestQueuesDoNotSeeEachOther(t *testing.T) {
 	}
 
 	for i, q := range queues {
-		if ready, claimed := q.Depth(); ready != 1 || claimed != 0 {
+		if ready, claimed := depthOf(t, q); ready != 1 || claimed != 0 {
 			t.Fatalf("%q depth: got (%d, %d), want (1, 0)", names[i], ready, claimed)
 		}
 		d, err := q.Claim()
@@ -364,7 +364,7 @@ func TestAwkwardIdsSurviveTheKeyLayout(t *testing.T) {
 	for _, id := range ids {
 		h.mustPush(t, id, id)
 	}
-	if ready, _ := h.Depth(); ready != len(ids) {
+	if ready, _ := depthOf(t, h); ready != len(ids) {
 		t.Fatalf("ready: got %d, want %d", ready, len(ids))
 	}
 
@@ -462,7 +462,10 @@ func TestARequeuedRecordCarriesNoDelivery(t *testing.T) {
 		t.Fatalf("Sweep: %v", err)
 	}
 
-	keys := h.store.Keys(h.keys.readyPrefix())
+	keys, err := h.store.Keys(h.keys.readyPrefix())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(keys) != 1 {
 		t.Fatalf("ready keys: got %v, want one", keys)
 	}

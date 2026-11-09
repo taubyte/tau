@@ -166,9 +166,9 @@ func (s *raftStreamService) Delete(ctx context.Context, req *connect.Request[raf
 }
 
 func (s *raftStreamService) Keys(ctx context.Context, req *connect.Request[raftv2.KeysRequest]) (*connect.Response[raftv2.KeysResponse], error) {
-	keys := s.cluster.Keys(req.Msg.GetPrefix())
-	if keys == nil {
-		keys = []string{}
+	keys, err := s.cluster.Keys(req.Msg.GetPrefix())
+	if err != nil {
+		return nil, err
 	}
 	return connect.NewResponse(&raftv2.KeysResponse{Keys: keys}), nil
 }

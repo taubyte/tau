@@ -131,7 +131,7 @@ func (g *throughLeader) Get(key string) ([]byte, bool) { return g.reader().Get(k
 
 func (g *throughLeader) TryGet(key string) ([]byte, bool, error) { return g.reader().TryGet(key) }
 
-func (g *throughLeader) Keys(prefix string) []string { return g.reader().Keys(prefix) }
+func (g *throughLeader) Keys(prefix string) ([]string, error) { return g.reader().Keys(prefix) }
 
 func waitForLen(t *testing.T, q Queue, want int, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(t.Context(), timeout)
@@ -143,9 +143,9 @@ func waitForLen(t *testing.T, q Queue, want int, timeout time.Duration) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("Len() = %d, want %d: %w", q.Len(), want, ctx.Err())
+			return fmt.Errorf("Len() = %d, want %d: %w", lenOf(t, q), want, ctx.Err())
 		case <-ticker.C:
-			if q.Len() == want {
+			if lenOf(t, q) == want {
 				return nil
 			}
 		}
@@ -176,9 +176,9 @@ func TestQueue_Integration_SingleNode(t *testing.T) {
 	err = qu.Push("job-1", []byte("item1"), 5*time.Second)
 	assert.NilError(t, err, "Push failed")
 
-	assert.Equal(t, qu.Len(), 1, "Len() should be 1")
-	peekID, peekData, ok := qu.Peek()
-	assert.Assert(t, ok, "Peek() should succeed")
+	assert.Equal(t, lenOf(t, qu), 1, "Len() should be 1")
+	peekID, peekData, err := qu.Peek()
+	assert.NilError(t, err, "Peek() should succeed")
 	assert.Equal(t, peekID, "job-1")
 	assert.Assert(t, bytes.Equal(peekData, []byte("item1")), "Peek data mismatch")
 
@@ -187,7 +187,7 @@ func TestQueue_Integration_SingleNode(t *testing.T) {
 	assert.Equal(t, gotID, "job-1")
 	assert.Assert(t, bytes.Equal(gotData, []byte("item1")), "Pop data mismatch")
 
-	assert.Equal(t, qu.Len(), 0, "Len() after Pop should be 0")
+	assert.Equal(t, lenOf(t, qu), 0, "Len() after Pop should be 0")
 }
 
 func TestQueue_Integration_MultiNode_Replication(t *testing.T) {
@@ -233,8 +233,8 @@ func TestQueue_Integration_MultiNode_Replication(t *testing.T) {
 	assert.NilError(t, err, "Push on leader failed")
 
 	assert.NilError(t, waitForLen(t, qu2, 1, 5*time.Second), "node2 Len() should be 1 after replication")
-	_, peekData, ok := qu2.Peek()
-	assert.Assert(t, ok, "node2 Peek() should succeed")
+	_, peekData, err := qu2.Peek()
+	assert.NilError(t, err, "node2 Peek() should succeed")
 	assert.Assert(t, bytes.Equal(peekData, []byte("replicated-item")), "node2 Peek data mismatch")
 
 	gotID, gotData, err := qu.Pop(5 * time.Second)
@@ -282,7 +282,7 @@ func TestQueue_Integration_MultiNode_PopEmpty(t *testing.T) {
 
 	_, _, err = qu.Pop(5 * time.Second)
 	assert.Assert(t, errors.Is(err, ErrQueueEmpty), "Pop on empty should return ErrQueueEmpty")
-	assert.Equal(t, qu.Len(), 0, "Len() should be 0")
+	assert.Equal(t, lenOf(t, qu), 0, "Len() should be 0")
 }
 
 func TestQueue_Integration_MultiNode_Order(t *testing.T) {
@@ -327,7 +327,7 @@ func TestQueue_Integration_MultiNode_Order(t *testing.T) {
 		assert.NilError(t, err, "Push failed")
 	}
 
-	assert.Equal(t, qu.Len(), 3, "Len() should be 3")
+	assert.Equal(t, lenOf(t, qu), 3, "Len() should be 3")
 
 	for i, expected := range payloads {
 		gotID, gotData, err := qu.Pop(5 * time.Second)

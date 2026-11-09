@@ -96,9 +96,9 @@ func (f *follower) Get(key string) ([]byte, bool) {
 	return f.MockCluster.Get(key)
 }
 
-func (f *follower) Keys(prefix string) []string {
+func (f *follower) Keys(prefix string) ([]string, error) {
 	if f.gone() {
-		return nil
+		return nil, nil
 	}
 	return f.MockCluster.Keys(prefix)
 }

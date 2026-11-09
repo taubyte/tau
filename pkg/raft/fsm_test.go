@@ -146,12 +146,12 @@ func TestKVFSM_Keys(t *testing.T) {
 		fsm.Apply(uint64(i+1), data)
 	}
 
-	allKeys := fsm.Keys("")
+	allKeys := keysOf(t, fsm, "")
 	if len(allKeys) != 3 {
 		t.Errorf("expected 3 keys, got %d", len(allKeys))
 	}
 
-	configKeys := fsm.Keys("config/")
+	configKeys := keysOf(t, fsm, "config/")
 	if len(configKeys) != 2 {
 		t.Errorf("expected 2 config keys, got %d", len(configKeys))
 	}
@@ -555,7 +555,7 @@ func TestKVFSM_Keys_Empty(t *testing.T) {
 	store := newTestStore()
 	fsm := newKVFSM(t.Context(), store, "/raft/test")
 
-	keys := fsm.Keys("")
+	keys := keysOf(t, fsm, "")
 	if len(keys) != 0 {
 		t.Errorf("expected 0 keys, got %d", len(keys))
 	}
@@ -602,7 +602,7 @@ func TestKVFSM_Keys_Error(t *testing.T) {
 	store := newTestStore()
 	fsm := newKVFSM(t.Context(), store, "/raft/test")
 
-	keys := fsm.Keys("nonexistent/")
+	keys := keysOf(t, fsm, "nonexistent/")
 	if len(keys) != 0 {
 		t.Errorf("expected 0 keys, got %d", len(keys))
 	}
@@ -621,7 +621,7 @@ func TestKVFSM_Multiple_Set_Delete(t *testing.T) {
 		fsm.Apply(uint64(i+1), data)
 	}
 
-	keys := fsm.Keys("")
+	keys := keysOf(t, fsm, "")
 	if len(keys) != 10 {
 		t.Errorf("expected 10 keys, got %d", len(keys))
 	}
@@ -648,7 +648,7 @@ func TestKVFSM_Multiple_Set_Delete(t *testing.T) {
 		fsm.Apply(uint64(i+11), data)
 	}
 
-	keys = fsm.Keys("")
+	keys = keysOf(t, fsm, "")
 	if len(keys) != 5 {
 		t.Errorf("expected 5 keys after delete, got %d", len(keys))
 	}
@@ -667,7 +667,7 @@ func TestKVFSM_Keys_EmptyPrefix(t *testing.T) {
 		fsm.Apply(uint64(i+1), data)
 	}
 
-	keys := fsm.Keys("")
+	keys := keysOf(t, fsm, "")
 	if len(keys) != 3 {
 		t.Errorf("expected 3 keys with empty prefix, got %d", len(keys))
 	}
@@ -684,7 +684,7 @@ func TestKVFSM_Keys_NoMatch(t *testing.T) {
 	data, _ := encodeCommand(cmd)
 	fsm.Apply(1, data)
 
-	keys := fsm.Keys("nonexistent")
+	keys := keysOf(t, fsm, "nonexistent")
 	if len(keys) != 0 {
 		t.Errorf("expected 0 keys for nonexistent prefix, got %d", len(keys))
 	}

@@ -501,10 +501,10 @@ func TestCluster_SingleNode_Keys(t *testing.T) {
 		require.NoError(t, cluster.Set(key, []byte("value"), time.Second), "failed to set %s", key)
 	}
 
-	allKeys := cluster.Keys("")
+	allKeys := keysOf(t, cluster, "")
 	assert.Len(t, allKeys, 3, "expected 3 keys")
 
-	configKeys := cluster.Keys("config/")
+	configKeys := keysOf(t, cluster, "config/")
 	assert.Len(t, configKeys, 2, "expected 2 config keys")
 }
 
@@ -757,7 +757,7 @@ func TestCluster_Keys_Closed(t *testing.T) {
 
 	cluster.Close()
 
-	keys := cluster.Keys("")
+	keys := keysOf(t, cluster, "")
 	if len(keys) != 0 {
 		t.Error("expected empty keys on closed cluster")
 	}
@@ -1097,7 +1097,7 @@ func TestCluster_FSM_Nil_CustomFSM(t *testing.T) {
 	assert.False(t, found)
 	assert.Nil(t, val)
 
-	keys := cl.Keys("test")
+	keys := keysOf(t, cl, "test")
 	assert.Equal(t, 0, len(keys))
 }
 
@@ -1116,10 +1116,10 @@ func TestCluster_Keys_WithData(t *testing.T) {
 	require.NoError(t, cl.Set("prefix-a-2", []byte("value2"), 100*time.Millisecond))
 	require.NoError(t, cl.Set("prefix-b-1", []byte("value3"), 100*time.Millisecond))
 
-	keys := cl.Keys("prefix-a")
+	keys := keysOf(t, cl, "prefix-a")
 	assert.Equal(t, 2, len(keys))
 
-	allKeys := cl.Keys("")
+	allKeys := keysOf(t, cl, "")
 	assert.Equal(t, 3, len(allKeys))
 }
 
@@ -1420,7 +1420,7 @@ func TestCluster_SetAndVerify(t *testing.T) {
 		assert.Equal(t, expected, string(val))
 	}
 
-	keys := cl.Keys("multi-")
+	keys := keysOf(t, cl, "multi-")
 	assert.Len(t, keys, 5)
 }
 
