@@ -3,9 +3,10 @@
 // capability a workload declares is served through; and the loops that deliver a
 // queue's items, a stream's messages and a volume's checkpoints.
 //
-// It offers the services beside it on its node what they need of it: the worker,
-// its component tier, who may attach to one instance of a store and where a build's
-// artifact is (service.Offers).
+// It serves the worker's protocol, so the services beside it on its node find it
+// through their node's discovery and ask it what they need of it: the worker, its
+// component tier, who may attach to one instance of a store, the clock's workloads
+// and where a build's artifact is.
 package hosted
 
 import (
@@ -26,7 +27,11 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/js"
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/raft"
+	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/pkg/specs"
 	databaseService "github.com/taubyte/tau/services/database"
+	"github.com/taubyte/tau/services/dns/zone"
+	primitivesService "github.com/taubyte/tau/services/primitives"
 	"github.com/taubyte/tau/services/register"
 	"github.com/taubyte/tau/services/secrets"
 	statsService "github.com/taubyte/tau/services/stats"
@@ -108,7 +113,6 @@ type Service struct {
 
 var (
 	_ service.Service      = (*Service)(nil)
-	_ service.Offers       = (*Service)(nil)
 	_ statsService.Reports = (*Service)(nil)
 )
 
@@ -155,7 +159,7 @@ func (n *Service) Start(ctx context.Context, h service.Host) error {
 	if bus, ok := service.Get[Bus](h); ok {
 		n.bus = bus.Bus()
 	}
-	n.database, _ = service.Get[databaseService.Service](h)
+	n.database, _ = service.Local[databaseService.Service](h, databaseService.Protocol)
 
 	n.store = storage.StoreOn(h)
 	n.views = register.ViewsOn(h)
@@ -169,6 +173,7 @@ func (n *Service) Start(ctx context.Context, h service.Host) error {
 	if err := n.worker.Start(ctx); err != nil {
 		return err
 	}
+	h.Serve(worker.Protocol, n)
 
 	// THE LOOPS OUTLIVE THE CALL THAT STARTED THEM, so they take a context of their
 	// own that Close cancels.
@@ -347,7 +352,7 @@ func (n *Service) open() error {
 
 	// WHERE A REQUEST GOES is placement's, which takes the worker just made as this
 	// node's own. A node with no stats places only on itself.
-	if router, ok := service.Get[placement.Router](n.host); ok {
+	if router, ok := service.Local[placement.Router](n.host, statsService.Protocol); ok {
 		workers, err := placement.New(n.host.Peer().Host(), router, placement.WithLocal(svc))
 		if err != nil {
 			return err
@@ -356,20 +361,6 @@ func (n *Service) open() error {
 		n.closers = append(n.closers, workers)
 	}
 	return nil
-}
-
-// Offered is what the services beside the worker on its node need of it: the worker
-// itself, its component tier, who may attach to one instance of a store, the clock's
-// workloads and where a build's artifact is.
-func (n *Service) Offered() []any {
-	if n.worker == nil {
-		return nil
-	}
-	out := []any{n.worker, n.admit, workloads{n}, n.Artifacts()}
-	if n.decider != nil {
-		out = append(out, n.decider)
-	}
-	return out
 }
 
 // Report is what the worker adds to its node's report: every deployment it serves.
@@ -381,6 +372,52 @@ func (n *Service) Report(snap *statsService.Snapshot) {
 
 // Worker is the worker this node runs, nil before it starts.
 func (n *Service) Worker() *worker.Service { return n.worker }
+
+// At, Resolve and Proxies are what the worker holds: a deployment's compiled project,
+// what one of its resources runs, and the proxies in what it holds.
+func (n *Service) At(ctx context.Context, at pkgregister.Deployment) (*specs.Project, pkgregister.Pointer, error) {
+	return n.worker.At(ctx, at)
+}
+
+func (n *Service) Resolve(ctx context.Context, t worker.Target) (invoke.Spec, error) {
+	return n.worker.Resolve(ctx, t)
+}
+
+func (n *Service) Proxies(ctx context.Context) []worker.Proxy { return n.worker.Proxies(ctx) }
+
+// Guests is the worker's component tier, as a project's zone asks a resolver it names,
+// or nil on a worker that runs no components.
+func (n *Service) Guests() zone.Guests {
+	if n.decider == nil {
+		return nil
+	}
+	return n.decider
+}
+
+// AdmitInstance and AdmitRequest are who may attach to one instance of a store that
+// holds many, and what a route's guard lets a request do: one decision for a workload
+// and a browser alike.
+func (n *Service) AdmitInstance(ctx context.Context, handle string, settings map[string]string, instance string) error {
+	return n.admit.AdmitInstance(ctx, handle, settings, instance)
+}
+
+func (n *Service) AdmitRequest(ctx context.Context, at specs.Address, req *invoke.Request) (*invoke.Admission, error) {
+	return n.admit.AdmitRequest(ctx, at, req)
+}
+
+// Artifact is where a built resource's artifact is, as Artifacts answers it.
+func (n *Service) Artifact(ctx context.Context, project, environment, kind, resourceID string) (string, error) {
+	return n.Artifacts().Artifact(ctx, project, environment, kind, resourceID)
+}
+
+// Schedules and Fire are the worker as the primitives clock fires through it.
+func (n *Service) Schedules(ctx context.Context) []primitivesService.Schedule {
+	return workloads{n}.Schedules(ctx)
+}
+
+func (n *Service) Fire(ctx context.Context, at primitivesService.Target, req *invoke.Request) (*invoke.Response, error) {
+	return workloads{n}.Fire(ctx, at, req)
+}
 
 // Tiers is what this worker's pool can run.
 func (n *Service) Tiers() []invoke.Runtime { return n.runtimes }

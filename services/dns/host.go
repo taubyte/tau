@@ -7,6 +7,8 @@ import (
 	"github.com/taubyte/tau/services/dns/zone"
 	"github.com/taubyte/tau/services/gateway"
 	"github.com/taubyte/tau/services/register"
+	statsService "github.com/taubyte/tau/services/stats"
+	"github.com/taubyte/tau/services/worker"
 )
 
 // Name is what a node's config runs dns under.
@@ -16,6 +18,13 @@ const Name = "dns"
 // knows them: what `<service>.<zone>` may be asked for.
 type Catalog interface {
 	ServiceNames() []string
+}
+
+// workerBeside is the worker a node runs, as its discovery names it: what it holds and
+// its component tier, nil when it runs no components.
+type workerBeside interface {
+	zone.Projects
+	Guests() zone.Guests
 }
 
 // Issuing is the node's side of the cloud's certificates: the DNS-01 values it
@@ -44,7 +53,7 @@ func (s *Service) Start(ctx context.Context, h service.Host) error {
 	if err := h.Config(&cfg); err != nil {
 		return err
 	}
-	router, ok := service.Get[Router](h)
+	router, ok := service.Local[Router](h, statsService.Protocol)
 	if !ok {
 		return ErrNoRouter
 	}
@@ -58,9 +67,8 @@ func (s *Service) Start(ctx context.Context, h service.Host) error {
 	// route and nothing an author wrote. Its component tier may be absent, and a zone
 	// naming a resolver it cannot run then answers nothing rather than answering that
 	// the name is gone.
-	if projects, ok := service.Get[zone.Projects](h); ok {
-		guests, _ := service.Get[zone.Guests](h)
-		z, err := zone.New(views, projects, guests)
+	if beside, ok := service.Local[workerBeside](h, worker.Protocol); ok {
+		z, err := zone.New(views, beside, beside.Guests())
 		if err != nil {
 			return err
 		}

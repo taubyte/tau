@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/rpc"
+	statsService "github.com/taubyte/tau/services/stats"
 )
 
 // node is what dns starts on: a peer, what runs beside it, and its section.
@@ -42,10 +44,20 @@ func newNode(t *testing.T, running ...any) *node {
 	t.Cleanup(p.Close)
 	n := &node{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond})}
 	for _, r := range running {
+		if router, ok := r.(*fakeRouter); ok {
+			n.Serve(statsService.Protocol, viewOf{router})
+			continue
+		}
 		n.running = append(n.running, service.Running{Service: r})
 	}
 	return n
 }
+
+// viewOf is a stats view its node serves under stats' protocol.
+type viewOf struct{ *fakeRouter }
+
+func (viewOf) Start(context.Context, service.Host) error { return nil }
+func (viewOf) Close() error                              { return nil }
 
 // names is a node's catalog.
 type names []string

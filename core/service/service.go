@@ -202,27 +202,12 @@ func without(ids []libp2ppeer.ID, self libp2ppeer.ID) []libp2ppeer.ID {
 // ErrNoneRuns is a service no node is known to run.
 var ErrNoneRuns = errors.New("service: no node is known to run it")
 
-// Offers is a running service that offers the services beside it on its node parts
-// of what it holds, each found by Get on its own: a worker's component tier, say,
-// which cannot be the worker because both answer a Resolve.
-type Offers interface {
-	Offered() []any
-}
-
-// Get is the service running on this instance that is a T, or something a running
-// service offers that is: how one service reaches another beside it, with no hop and
-// no name.
+// Get is the service running on this instance that is a T: how one service reaches
+// another beside it, with no hop and no name.
 func Get[T any](h Host) (T, bool) {
 	for _, r := range h.Running() {
 		if t, ok := r.Service.(T); ok {
 			return t, true
-		}
-		if o, ok := r.Service.(Offers); ok {
-			for _, handle := range o.Offered() {
-				if t, ok := handle.(T); ok {
-					return t, true
-				}
-			}
 		}
 	}
 	var zero T

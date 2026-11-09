@@ -21,6 +21,7 @@ import (
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/specs"
+	statsService "github.com/taubyte/tau/services/stats"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -156,16 +157,21 @@ type Workers struct {
 	self string
 }
 
-// On is the workers as a service on h reaches them, chosen from the stats view beside
-// it: the worker on h's node directly, any other through a stream to it.
+// Beside is the worker a node runs, as its discovery names it.
+type Beside interface {
+	Worker() *worker.Service
+}
+
+// On is the workers as a service on h reaches them, chosen from the view of the stats
+// beside it: the worker on h's node directly, any other through a stream to it.
 func On(h service.Host) (*Workers, error) {
-	router, ok := service.Get[Router](h)
+	router, ok := service.Local[Router](h, statsService.Protocol)
 	if !ok {
 		return nil, ErrNoRouter
 	}
 	var opts []Option
-	if local, ok := service.Get[*worker.Service](h); ok {
-		opts = append(opts, WithLocal(local))
+	if local, ok := service.Local[Beside](h, worker.Protocol); ok {
+		opts = append(opts, WithLocal(local.Worker()))
 	}
 	return New(h.Peer().Host(), router, opts...)
 }

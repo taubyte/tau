@@ -9,6 +9,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	primitivesService "github.com/taubyte/tau/services/primitives"
+	"github.com/taubyte/tau/services/worker"
 )
 
 // A send and an append reach the primitives service and land in its namespace. That
@@ -131,12 +132,12 @@ func TestClosingANodeClosesThePrimitivesService(t *testing.T) {
 
 func TestTheClockFiresThroughTheWorkerBesideIt(t *testing.T) {
 	n := holdingSync(t, Config{Services: []string{Register, Worker, Primitives}})
-	w, ok := service.Get[primitivesService.Workloads](n.host.as(Primitives))
+	w, ok := service.Local[primitivesService.Workloads](n.host.as(Primitives), worker.Protocol)
 	require.True(t, ok, "a worker offers itself to the clock beside it")
 	require.Empty(t, w.Schedules(t.Context()), "nothing deployed, nothing scheduled")
 
 	without, _, _ := makeNode(t, Config{Services: []string{Register, Primitives}})
-	_, ok = service.Get[primitivesService.Workloads](without.host.as(Primitives))
+	_, ok = service.Local[primitivesService.Workloads](without.host.as(Primitives), worker.Protocol)
 	require.False(t, ok, "a node with no worker runs no clock")
 	require.Empty(t, workloads{without.Service}.Schedules(t.Context()))
 	_, err := workloads{without.Service}.Fire(t.Context(), primitivesService.Target{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"}, &invoke.Request{Method: "POST", Path: "/"})

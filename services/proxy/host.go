@@ -44,7 +44,7 @@ func (s *Service) Start(ctx context.Context, h service.Host) error {
 		return err
 	}
 	cfg.Config.CloudFqdn = cfg.CloudFqdn
-	held, ok := service.Get[holder](h)
+	held, ok := service.Local[holder](h, worker.Protocol)
 	if !ok {
 		return ErrNoWorker
 	}

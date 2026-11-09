@@ -8,6 +8,7 @@ import (
 	"github.com/taubyte/tau/services/register"
 	"github.com/taubyte/tau/services/secrets"
 	"github.com/taubyte/tau/services/storage"
+	"github.com/taubyte/tau/services/worker"
 	"github.com/taubyte/tau/services/worker/placement"
 )
 
@@ -59,10 +60,13 @@ func (s *Service) Start(ctx context.Context, h service.Host) error {
 	if buses, ok := service.Get[Buses](h); ok {
 		opts = append(opts, withBuses(buses))
 	}
-	if admits, ok := service.Get[Admits](h); ok {
+	// WHAT THE WORKER BESIDE IT ANSWERS: who may attach to one instance of a bus, and
+	// where a build's artifact is. A gateway on a node with no worker admits nothing
+	// and serves no package's files.
+	if admits, ok := service.Local[Admits](h, worker.Protocol); ok {
 		opts = append(opts, withAdmission(admits))
 	}
-	if artifacts, ok := service.Get[Artifacts](h); ok {
+	if artifacts, ok := service.Local[Artifacts](h, worker.Protocol); ok {
 		opts = append(opts, withFiles(artifacts, assets))
 	}
 	if certifying, ok := service.Get[Certifying](h); ok {

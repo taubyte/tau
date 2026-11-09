@@ -46,7 +46,14 @@ func newNode(t *testing.T, running ...any) *node {
 	t.Cleanup(p.Close)
 	n := &node{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond})}
 	for _, r := range running {
-		n.running = append(n.running, service.Running{Service: r})
+		switch beside := r.(type) {
+		case routes:
+			n.Serve(statsService.Protocol, beside)
+		case holding:
+			n.Serve(worker.Protocol, beside)
+		default:
+			n.running = append(n.running, service.Running{Service: r})
+		}
 	}
 	return n
 }
@@ -57,12 +64,16 @@ type holding struct {
 	held []worker.Proxy
 }
 
-func (h holding) Proxies(context.Context) []worker.Proxy { return h.held }
+func (h holding) Proxies(context.Context) []worker.Proxy  { return h.held }
+func (holding) Start(context.Context, service.Host) error { return nil }
+func (holding) Close() error                              { return nil }
 
 // routes is a stats view naming no node.
 type routes struct{}
 
 func (routes) RoutePeers(string, time.Duration, []string) []string { return nil }
+func (routes) Start(context.Context, service.Host) error           { return nil }
+func (routes) Close() error                                        { return nil }
 
 func TestAProxyStartsFromItsNodeAndServesWhatTheWorkerHolds(t *testing.T) {
 	held := holding{projects: projects{p: compiled(t, servable())}, held: []worker.Proxy{{Project: "shop", Environment: "prod", Name: "pgwire"}}}

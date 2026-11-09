@@ -13,6 +13,7 @@ import (
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/cm/settings"
 	"github.com/taubyte/tau/services/register"
+	"github.com/taubyte/tau/services/worker"
 )
 
 // Service is primitives as an instance runs it.
@@ -77,7 +78,7 @@ func (s *server) Start(ctx context.Context, h service.Host) error {
 		withClock(h.Now),
 		withSweep(cfg.Sweep),
 		withDeadLetterRetention(dead.age, dead.size),
-		withWorkloads(func() (Workloads, bool) { return service.Get[Workloads](h) }))
+		withWorkloads(func() (Workloads, bool) { return service.Local[Workloads](h, worker.Protocol) }))
 	if err != nil {
 		views.Close()
 		region.Close()

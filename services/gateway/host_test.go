@@ -15,6 +15,8 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/specs"
+	statsService "github.com/taubyte/tau/services/stats"
+	"github.com/taubyte/tau/services/worker"
 )
 
 // node is what a gateway starts on: a peer, what runs beside it, and its section.
@@ -44,15 +46,34 @@ func newNode(t *testing.T, running ...any) *node {
 	t.Cleanup(p.Close)
 	n := &node{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond})}
 	for _, r := range running {
-		n.running = append(n.running, service.Running{Service: r})
+		switch beside := r.(type) {
+		case routes:
+			n.Serve(statsService.Protocol, beside)
+		case workerBeside:
+			n.Serve(worker.Protocol, beside)
+		default:
+			n.running = append(n.running, service.Running{Service: r})
+		}
 	}
 	return n
 }
 
-// routes is a stats view naming no node.
+// routes is a stats view naming no node, served under stats' protocol.
 type routes struct{}
 
 func (routes) RoutePeers(string, time.Duration, []string) []string { return nil }
+func (routes) Start(context.Context, service.Host) error           { return nil }
+func (routes) Close() error                                        { return nil }
+
+// workerBeside is the worker a gateway's node runs: who may attach, and where a
+// build's artifact is.
+type workerBeside struct {
+	admitsBeside
+	builtBeside
+}
+
+func (workerBeside) Start(context.Context, service.Host) error { return nil }
+func (workerBeside) Close() error                              { return nil }
 
 type busesBeside struct{}
 
@@ -95,7 +116,7 @@ type terminated bool
 func (t terminated) Terminates() bool { return bool(t) }
 
 func TestAGatewayStartsFromItsNodeAndTakesWhatIsBesideIt(t *testing.T) {
-	n := newNode(t, routes{}, busesBeside{}, admitsBeside{}, builtBeside{}, issuing{issuer: oneIssuer{}}, terminated(true))
+	n := newNode(t, routes{}, busesBeside{}, workerBeside{}, issuing{issuer: oneIssuer{}}, terminated(true))
 	n.config = func(cfg *hostConfig) error {
 		cfg.CloudFqdn = "tau.example.io"
 		cfg.MaxBody = 1 << 10
@@ -111,8 +132,8 @@ func TestAGatewayStartsFromItsNodeAndTakesWhatIsBesideIt(t *testing.T) {
 	require.NotNil(t, s.workers)
 	require.NotNil(t, s.secrets)
 	require.Equal(t, busesBeside{}, s.buses)
-	require.Equal(t, admitsBeside{}, s.admits)
-	require.Equal(t, builtBeside{}, s.artifacts)
+	require.Equal(t, workerBeside{}, s.admits, "who may attach is the worker's beside it")
+	require.Equal(t, workerBeside{}, s.artifacts, "and so is where a build's artifact is")
 	require.NotNil(t, s.assets, "a package's files are read through storage")
 	require.Equal(t, oneIssuer{}, s.issuer)
 	require.True(t, s.terminates)
