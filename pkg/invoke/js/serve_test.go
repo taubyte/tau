@@ -85,15 +85,23 @@ func TestAWaitingRequestGivesUpWithItsCaller(t *testing.T) {
 	f := newFixture(t, `export default { async fetch() { await later(300); return new Response("slow"); } };`)
 	inst := f.start()
 
-	go inst.Serve(context.Background(), get("/"))
+	ahead := make(chan struct{})
+	go func() {
+		defer close(ahead)
+		inst.Serve(context.Background(), get("/"))
+	}()
 	time.Sleep(50 * time.Millisecond)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	began := time.Now()
 	_, err := inst.Serve(ctx, get("/"))
 	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.Less(t, time.Since(began), 200*time.Millisecond)
+	select {
+	case <-ahead:
+		t.Fatal("the waiting request gave up only once the one ahead of it had finished")
+	default:
+	}
+	<-ahead
 }
 
 func TestTheRequestRoundTrips(t *testing.T) {
