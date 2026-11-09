@@ -16,6 +16,7 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/services/plm"
 	"github.com/taubyte/tau/services/plm/clients"
 	"github.com/taubyte/tau/services/plm/joblog"
@@ -80,7 +81,8 @@ func (u *Cloud) deployed(ctx context.Context, p Push, out Outcome) error {
 }
 
 // agree is whether every node running the register serves one pointer for a
-// project's environment.
+// project's environment, and, when the revision publishes one for its region, the
+// view its region reads: an object of its own, which can arrive after the pointer.
 func (u *Cloud) agree(ctx context.Context, project, environment string) bool {
 	var first *pkgregister.Pointer
 	for _, n := range u.nodes() {
@@ -94,6 +96,21 @@ func (u *Cloud) agree(ctx context.Context, project, environment string) bool {
 		case first == nil:
 			first = &at
 		case at != *first:
+			return false
+		}
+		manifest, _, err := n.Register().Local().Manifest(ctx, project, environment)
+		if err != nil || manifest.Revision != at.Revision {
+			return false
+		}
+		region := n.HostOf("").Region()
+		if region == "" {
+			region = schema.DefaultRegion
+		}
+		if _, listed := manifest.Views[region]; !listed && !manifest.Whole {
+			continue
+		}
+		viewed, err := n.Register().Local().ResolveView(ctx, project, environment, region)
+		if err != nil || viewed.Revision != manifest.Revision {
 			return false
 		}
 	}
