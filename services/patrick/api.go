@@ -335,10 +335,11 @@ func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid stri
 	}
 
 	if job.Status == commonIface.JobStatusSuccess || job.Status == commonIface.JobStatusCancelled || job.Attempt >= servicesCommon.MaxJobAttempts {
-		p.deleteJob(ctx, jid, "/jobs/")
+		// archived first, so a job is always in one place or the other
 		if err = p.db.Put(ctx, "/archive/jobs/"+jid, jobData); err != nil {
 			return fmt.Errorf("updateStatus put failed with error: %w", err)
 		}
+		p.deleteJob(ctx, jid, "/jobs/")
 	} else {
 		if err = p.db.Put(ctx, "/jobs/"+jid, jobData); err != nil {
 			return fmt.Errorf("updateStatus put failed with error: %w", err)
@@ -669,7 +670,7 @@ func (srv *PatrickService) setupJobRoutes() {
 			Validator: srv.GitHubTokenHTTPAuth,
 			GC:        srv.GitHubTokenHTTPAuthCleanup,
 		},
-		Handler: srv.withProjectAccess(srv.projectAllJobHandler),
+		Handler: srv.withProjectAccess(srv.onlyReadableJobs(srv.projectAllJobHandler)),
 	})
 
 	srv.http.GET(&http.RouteDefinition{
