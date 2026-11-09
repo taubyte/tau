@@ -144,7 +144,7 @@ func (g groups) Group(namespace string) (raft.Cluster, error) {
 	if g.n.opts.groups != nil {
 		return g.n.opts.groups.Group(namespace)
 	}
-	return raft.New(g.n.Node, namespace, g.n.cfg.Raft.Options()...)
+	return raft.New(g.n.Node, namespace, append(g.n.cfg.Raft.Options(), raft.WithClientRetry(g.n.cfg.Clients.Retry))...)
 }
 
 // ErrNoRoot is a node asked for what lives in a directory and given none.

@@ -344,7 +344,7 @@ func TestHealing_AYieldRebuildsTheMemberItsReadersRead(t *testing.T) {
 	caller := newMockNode(t)
 	require.NoError(t, taupeer.LinkAllPeers())
 	connected(t, caller, c)
-	cli, err := newInternalClient(caller, namespace, nil)
+	cli, err := newInternalClient(caller, namespace, nil, quickRetry)
 	require.NoError(t, err)
 	defer cli.Close()
 

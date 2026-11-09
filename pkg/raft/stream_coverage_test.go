@@ -139,7 +139,7 @@ func TestClient_ExchangePeers_Success_Integration(t *testing.T) {
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 	linkTo(t, clientNode, clusterNode)
 
-	client, err := newInternalClient(clientNode, namespace, nil)
+	client, err := newInternalClient(clientNode, namespace, nil, quickRetry)
 	require.NoError(t, err, "failed to create client")
 	defer client.Close()
 
@@ -169,7 +169,7 @@ func TestClient_JoinVoter_Success_Integration(t *testing.T) {
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 	linkTo(t, clientNode, clusterNode)
 
-	client, err := newInternalClient(clientNode, namespace, nil)
+	client, err := newInternalClient(clientNode, namespace, nil, quickRetry)
 	require.NoError(t, err, "failed to create client")
 	defer client.Close()
 

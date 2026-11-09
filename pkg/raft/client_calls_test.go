@@ -41,7 +41,7 @@ func callerOf(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batching
 	waitLeader(t, cl, 5*time.Second)
 	connected(t, caller, cl)
 
-	cli, err := newInternalClient(caller, namespace, nil)
+	cli, err := newInternalClient(caller, namespace, nil, quickRetry)
 	require.NoError(t, err)
 	t.Cleanup(func() { cli.Close() })
 	return cl, cli.(*client)
@@ -129,7 +129,7 @@ func TestClient_CallsToAPeerThatRunsNoMemberFail(t *testing.T) {
 	require.NoError(t, taupeer.LinkAllPeers())
 	connected(t, caller, cl)
 
-	cliOf, err := newInternalClient(caller, "client-not-served", nil)
+	cliOf, err := newInternalClient(caller, "client-not-served", nil, quickRetry)
 	require.NoError(t, err)
 	defer cliOf.Close()
 	cli := cliOf.(*client)
@@ -180,7 +180,7 @@ func TestClient_AStateThatWillNotDecodeIsAnError(t *testing.T) {
 	require.NoError(t, err)
 	defer srv.Close()
 
-	cliOf, err := newInternalClient(caller, namespace, nil)
+	cliOf, err := newInternalClient(caller, namespace, nil, quickRetry)
 	require.NoError(t, err)
 	defer cliOf.Close()
 
@@ -224,7 +224,7 @@ func TestStream_AConsistentReadFromAMemberThatCannotBarrierIsRefused(t *testing.
 
 	removed, left := removeTheLeader(t, a, b)
 
-	cliOf, err := newInternalClient(caller, "stream-barrier-refused", nil)
+	cliOf, err := newInternalClient(caller, "stream-barrier-refused", nil, quickRetry)
 	require.NoError(t, err)
 	defer cliOf.Close()
 	cli := cliOf.(*client)
@@ -241,7 +241,7 @@ func TestStream_AConsistentReadFromAMemberThatCannotBarrierIsRefused(t *testing.
 func TestStream_JoinVoterNamingNobodyJoinsTheCaller(t *testing.T) {
 	a, b := joinedPair(t, "stream-join-caller", sameStore)
 
-	fromB, err := newInternalClient(b.(*cluster).Node, "stream-join-caller", nil)
+	fromB, err := newInternalClient(b.(*cluster).Node, "stream-join-caller", nil, quickRetry)
 	require.NoError(t, err)
 	defer fromB.Close()
 	require.NoError(t, fromB.JoinVoter(t.Context(), peer.ID(""), 5*time.Second, formationOf(a), idOf(a)))
@@ -276,7 +276,7 @@ func TestStream_ExportFSMAskedOfEitherMemberIsTheGroupsState(t *testing.T) {
 		return l.Set("k", []byte("v"), time.Second)
 	}))
 
-	cliOf, err := newInternalClient(caller, "stream-export-either", nil)
+	cliOf, err := newInternalClient(caller, "stream-export-either", nil, quickRetry)
 	require.NoError(t, err)
 	defer cliOf.Close()
 
@@ -293,7 +293,7 @@ func TestStream_AJoinAskedOfAFollowerIsForwardedToItsLeader(t *testing.T) {
 	caller := newMockNode(t)
 	a, b := joinedPair(t, namespace, sameStore)
 	connected(t, caller, a, b)
-	cli, err := newInternalClient(caller, namespace, nil)
+	cli, err := newInternalClient(caller, namespace, nil, quickRetry)
 	require.NoError(t, err)
 	defer cli.Close()
 
@@ -318,18 +318,27 @@ func TestStream_AJoinAskedOfAFollowerBetweenLeadersWaitsForTheNext(t *testing.T)
 	caller := newMockNode(t)
 	group := joinedGroup(t, namespace, sameStore, 4)
 	connected(t, caller, group...)
-	cli, err := newInternalClient(caller, namespace, nil)
+	cli, err := newInternalClient(caller, namespace, nil, quickRetry)
 	require.NoError(t, err)
 	defer cli.Close()
 
+	// BETWEEN LEADERS FOR AS LONG AS THE TEST NEEDS: the leader and one more close,
+	// and two of four cannot elect anyone, so the survivors stay leaderless until the
+	// second comes back. A window that lasted only one election would race the poll.
 	gone := leaderOf(t, group...)
+	var back *cluster
 	var survivors []Cluster
 	for _, cl := range group {
-		if cl != gone {
+		switch {
+		case cl == gone:
+		case back == nil:
+			back = cl.(*cluster)
+		default:
 			survivors = append(survivors, cl)
 		}
 	}
 	require.NoError(t, gone.Close())
+	require.NoError(t, back.Close())
 	var follower Cluster
 	require.Eventually(t, func() bool {
 		for _, cl := range survivors {
@@ -339,11 +348,26 @@ func TestStream_AJoinAskedOfAFollowerBetweenLeadersWaitsForTheNext(t *testing.T)
 			}
 		}
 		return false
-	}, leaderWait, time.Millisecond, "every survivor kept naming the closed leader")
+	}, leaderWait, 10*time.Millisecond, "a survivor of a group that cannot elect still named a leader")
 
 	joiner := strangerID(t)
-	require.NoError(t, cli.JoinVoter(t.Context(), joiner, leaderWait, formationOf(follower), idOf(follower)))
-	members, err := leaderOf(t, survivors...).Members()
+	joined := make(chan error, 1)
+	go func() {
+		joined <- cli.JoinVoter(t.Context(), joiner, leaderWait, formationOf(follower), idOf(follower))
+	}()
+	select {
+	case err := <-joined:
+		t.Fatalf("a join asked between leaders answered before there was one: %v", err)
+	case <-time.After(500 * time.Millisecond):
+	}
+
+	again, err := New(storeNode{Node: back.Node, store: back.Node.Store()}, namespace,
+		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second))
+	require.NoError(t, err)
+	t.Cleanup(func() { again.Close() })
+	require.NoError(t, <-joined, "the join never reached the next leader")
+
+	members, err := leaderOf(t, append(survivors, again)...).Members()
 	require.NoError(t, err)
 	ids := make([]peer.ID, 0, len(members))
 	for _, m := range members {
@@ -380,7 +404,7 @@ func TestStream_AJoinAskedOfAMemberLetInBeforeItsLogWaitsForTheLeader(t *testing
 
 	connected(t, caller, group...)
 	connected(t, caller, late)
-	cli, err := newInternalClient(caller, namespace, nil)
+	cli, err := newInternalClient(caller, namespace, nil, quickRetry)
 	require.NoError(t, err)
 	defer cli.Close()
 
@@ -425,7 +449,7 @@ func TestStream_AJoinAskedOfAMemberAYieldTookOutOfItsGroupIsRefusedAtOnce(t *tes
 	require.NoError(t, a.Close())
 
 	connected(t, caller, b)
-	cli, err := newInternalClient(caller, namespace, nil)
+	cli, err := newInternalClient(caller, namespace, nil, quickRetry)
 	require.NoError(t, err)
 	defer cli.Close()
 
@@ -464,7 +488,7 @@ func TestStream_AJoinWhoseLeaderStopsLeadingIsAddedByTheNext(t *testing.T) {
 		return store
 	}, 3, WithTimeouts(steady))
 	connected(t, caller, group...)
-	cli, err := newInternalClient(caller, namespace, nil)
+	cli, err := newInternalClient(caller, namespace, nil, quickRetry)
 	require.NoError(t, err)
 	defer cli.Close()
 
@@ -511,4 +535,38 @@ func TestStream_AJoinFromAnotherFormationIsRefused(t *testing.T) {
 	members, err := cl.Members()
 	require.NoError(t, err)
 	require.Len(t, members, 1, "a joiner of another formation was added")
+}
+
+// quickRetry is how a test's own client waits for a member not answering yet: briefly,
+// since most of these calls are meant to be refused.
+var quickRetry = rpc.Retry{First: 5 * time.Millisecond, Max: 20 * time.Millisecond, For: 100 * time.Millisecond}
+
+func TestClient_AMemberNotAnsweringYetIsAskedAgain(t *testing.T) {
+	const namespace = "client-late-member"
+	node, caller := newMockNode(t), newMockNode(t)
+	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, caller.Host().Connect(t.Context(), peer.AddrInfo{ID: node.ID(), Addrs: node.Host().Addrs()}))
+
+	cliOf, err := newInternalClient(caller, namespace, nil, rpc.Retry{First: 10 * time.Millisecond, Max: 50 * time.Millisecond, For: 10 * time.Second})
+	require.NoError(t, err)
+	defer cliOf.Close()
+
+	started := make(chan Cluster, 1)
+	time.AfterFunc(200*time.Millisecond, func() {
+		member, err := New(storeNode{Node: node, store: node.Store()}, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
+		if err == nil {
+			started <- member
+		}
+		close(started)
+	})
+	_, err = cliOf.(*client).ClusterInfo(node.ID())
+	require.NoError(t, err, "a call to a member that began answering a moment later was not asked again")
+	if member, ok := <-started; ok {
+		member.Close()
+	}
+
+	_, err = newInternalClient(caller, namespace, nil, quickRetry)
+	require.NoError(t, err)
+	require.Error(t, WithClientRetry(rpc.Retry{First: -time.Second})(&cluster{}))
+	require.NoError(t, WithClientRetry(rpc.Retry{})(&cluster{}))
 }

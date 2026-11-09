@@ -53,6 +53,9 @@ type client struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
+	// retry is how a call waits for a member not answering on the protocol yet.
+	retry rpc.Retry
+
 	mu    sync.Mutex
 	peers map[peer.ID]*peerConn
 }
@@ -62,7 +65,7 @@ type peerConn struct {
 	svc  raftv2connect.RaftServiceClient
 }
 
-func newInternalClient(node taupeer.Node, namespace string, encryptionCipher cipher.AEAD) (internalClient, error) {
+func newInternalClient(node taupeer.Node, namespace string, encryptionCipher cipher.AEAD, retry rpc.Retry) (internalClient, error) {
 	if node == nil {
 		return nil, errors.New("no node to call from")
 	}
@@ -73,12 +76,13 @@ func newInternalClient(node taupeer.Node, namespace string, encryptionCipher cip
 		codec:    codecOption(encryptionCipher),
 		ctx:      ctx,
 		cancel:   cancel,
+		retry:    retry.Defaults(),
 		peers:    make(map[peer.ID]*peerConn),
 	}, nil
 }
 
 func NewClient(node taupeer.Node, namespace string, encryptionCipher cipher.AEAD) (Client, error) {
-	cli, err := newInternalClient(node, namespace, encryptionCipher)
+	cli, err := newInternalClient(node, namespace, encryptionCipher, rpc.Retry{})
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +109,8 @@ func (c *client) to(pid peer.ID) (raftv2connect.RaftServiceClient, error) {
 
 // first calls every peer at once and returns the first success; with every
 // peer failing, the first failure, so a refusal (no leader) can be told from an
-// unreachable peer.
+// unreachable peer. A peer not answering on the protocol yet, as a member being
+// rebuilt is not, is asked again within the call's time.
 func first[T any](ctx context.Context, c *client, peers []peer.ID, timeout time.Duration,
 	call func(context.Context, raftv2connect.RaftServiceClient) (*connect.Response[T], error)) (*connect.Response[T], error) {
 	if len(peers) == 0 {
@@ -128,6 +133,14 @@ func first[T any](ctx context.Context, c *client, peers []peer.ID, timeout time.
 				return
 			}
 			res, err := call(ctx, svc)
+			until := time.Now().Add(c.retry.For)
+			for pause := c.retry.First; err != nil && rpc.Unreached(err) && ctx.Err() == nil && time.Now().Before(until); pause = min(2*pause, c.retry.Max) {
+				select {
+				case <-ctx.Done():
+				case <-time.After(pause):
+					res, err = call(ctx, svc)
+				}
+			}
 			results <- result{res: res, err: err}
 		}()
 	}

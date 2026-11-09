@@ -17,6 +17,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/rpc"
 )
 
 var clusterLogger = logging.Logger("raft-cluster")
@@ -44,6 +45,7 @@ type cluster struct {
 	bootstrapTimeout   time.Duration
 	bootstrapThreshold float64
 	encryptionCipher   cipher.AEAD
+	clientRetry        rpc.Retry
 
 	// engine is the node's, shared with every group it runs.
 	engine *engine
@@ -145,7 +147,7 @@ func (c *cluster) initialize() (err error) {
 		}
 	}()
 
-	m.raftClient, err = newInternalClient(c.Node, c.namespace, c.encryptionCipher)
+	m.raftClient, err = newInternalClient(c.Node, c.namespace, c.encryptionCipher, c.clientRetry)
 	if err != nil {
 		return fmt.Errorf("failed to create raft client: %w", err)
 	}

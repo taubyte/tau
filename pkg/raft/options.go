@@ -5,6 +5,8 @@ import (
 	"crypto/cipher"
 	"fmt"
 	"time"
+
+	"github.com/taubyte/tau/p2p/rpc"
 )
 
 type Option func(*cluster) error
@@ -43,6 +45,19 @@ func WithQuorumLossRecovery(after time.Duration) Option {
 			return fmt.Errorf("quorum loss recovery after %v: must be above zero", after)
 		}
 		c.quorumLossAfter = after
+		return nil
+	}
+}
+
+// WithClientRetry is how the member's calls to other members wait for one that is
+// not answering on the group's protocol yet, as while it is rebuilt: the node's
+// clients.retry, the same for every client on it.
+func WithClientRetry(retry rpc.Retry) Option {
+	return func(c *cluster) error {
+		if err := retry.Check(); err != nil {
+			return err
+		}
+		c.clientRetry = retry
 		return nil
 	}
 }
