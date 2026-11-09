@@ -17,6 +17,10 @@ const (
 	// maxBatchBytes bounds the keys and values a batch holds in host memory
 	// until it is committed.
 	maxBatchBytes = 32 << 20
+	// maxOpenBatches bounds the batches of an instance, so the host memory they
+	// hold: there is no abort, and an instance is pooled, so a batch left
+	// uncommitted would otherwise live until its database closes.
+	maxOpenBatches = 8
 	// maxPatternLen bounds the regex of databaseListMatch.
 	maxPatternLen = 1024
 )
@@ -44,6 +48,16 @@ func (f *Factory) databaseBatchNew(ctx context.Context, module common.Module,
 	}
 	id := f.batchIdToGrab
 	f.batchIdToGrab++
+	if len(f.batches) >= maxOpenBatches {
+		// Dropped rather than refused: abandoned batches must not stop this
+		// instance from ever opening another. Ids only grow, so the lowest is
+		// the oldest; a later use of it gets ErrorDatabaseNotFound.
+		oldest := id
+		for open := range f.batches {
+			oldest = min(oldest, open)
+		}
+		delete(f.batches, oldest)
+	}
 	f.batches[id] = &batch{db: database}
 	f.databaseLock.Unlock()
 
