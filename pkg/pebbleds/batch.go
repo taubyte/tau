@@ -89,6 +89,7 @@ func (b *Batch) Commit(ctx context.Context) error {
 		return fmt.Errorf("pebbleds: commit: %w", err)
 	}
 	b.s.written.Add(b.n)
+	b.s.wrote()
 	if b.set {
 		b.noteSets()
 	}

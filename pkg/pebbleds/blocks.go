@@ -182,6 +182,7 @@ func (b *Blockstore) Put(ctx context.Context, blk blocks.Block) error {
 		if b.s.blocks.deletes.Load() != epoch {
 			b.s.blocks.hits.drop(h)
 		}
+		b.s.wrote()
 		return nil
 	})
 }
@@ -214,6 +215,7 @@ func (b *Blockstore) DeleteBlock(ctx context.Context, c cid.Cid) error {
 		}
 		b.s.blocks.deletes.Add(1)
 		b.s.blocks.hits.drop(hashOf(c))
+		b.s.wrote()
 		return nil
 	})
 }

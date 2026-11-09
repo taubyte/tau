@@ -1,7 +1,7 @@
 // Package pebbleds is a go-datastore over pebble, with a native API that lends
 // the store's own bytes, and a block store over it. Keys are their ds.Key
 // string's bytes, so a store any such go-datastore over pebble wrote opens
-// unchanged. Writes are not synced unless Sync is called. A slice the native
+// unchanged. A write is synced within syncWithin, or at once by Sync. A slice the native
 // API lends (View, Scan, Range, Batch.Set, Batch.Remove) is valid only until
 // the callback returns.
 package pebbleds
@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 	"unsafe"
 
 	"github.com/cockroachdb/pebble/v2"
@@ -24,10 +25,22 @@ var ErrClosed = errors.New("pebbleds: closed")
 
 var logger = logging.Logger("pebble")
 
+// syncWithin bounds how long a write stays volatile. Pebble keeps a write that
+// asks for no sync in its own buffer, not the system's, until a log block fills or
+// a sync asks for it, so a process that dies takes it however long ago it was made.
+// The first write no sync covers arms one this long after it.
+const syncWithin = 100 * time.Millisecond
+
 type Store struct {
 	db    *pebble.DB
 	write *pebble.WriteOptions
 	noWAL bool
+	// volatile is a store whose writes wait for a sync: they ask for none, and go
+	// to a log.
+	volatile bool
+	// dirty is a write no sync has covered yet. The write that sets it arms flush.
+	dirty atomic.Bool
+	flush *time.Timer
 	// cache is the block cache Open made, released after the database
 	// closes; nil when the caller gave one.
 	cache *pebble.Cache
@@ -106,7 +119,7 @@ func Open(path string, opts ...Option) (*Store, error) {
 		}
 		return nil, fmt.Errorf("pebbleds: open %s: %w", path, err)
 	}
-	s := &Store{db: db, write: c.write, noWAL: po.DisableWAL, cache: cache, queries: map[*queryIter]struct{}{}, readers: map[*Reader]struct{}{}}
+	s := &Store{db: db, write: c.write, noWAL: po.DisableWAL, volatile: !po.DisableWAL && !c.write.GetSync(), cache: cache, queries: map[*queryIter]struct{}{}, readers: map[*Reader]struct{}{}}
 	s.idle = sync.NewCond(&s.mu)
 	return s, nil
 }
@@ -205,6 +218,7 @@ func (s *Store) Put(ctx context.Context, key ds.Key, value []byte) error {
 	}
 	s.noteBlockSet(keyBytes(key))
 	s.written.Add(int64(len(key.String()) + len(value)))
+	s.wrote()
 	return nil
 }
 
@@ -226,7 +240,32 @@ func (s *Store) Delete(ctx context.Context, key ds.Key) error {
 	if isBlockKey(keyBytes(key)) {
 		s.deleted()
 	}
+	s.wrote()
 	return nil
+}
+
+// wrote arms a sync for a write no sync covers yet. It is called once the write
+// has landed, so a sync that clears dirty before it starts covers every write that
+// found dirty set.
+func (s *Store) wrote() {
+	if !s.volatile || !s.dirty.CompareAndSwap(false, true) {
+		return
+	}
+	s.mu.Lock()
+	if !s.closed.Load() {
+		s.flush = time.AfterFunc(syncWithin, s.flushed)
+	}
+	s.mu.Unlock()
+}
+
+// flushed is the sync a write armed, unless one since covered it.
+func (s *Store) flushed() {
+	if !s.dirty.Load() {
+		return
+	}
+	if err := s.Sync(context.Background(), ds.Key{}); err != nil && !errors.Is(err, ErrClosed) {
+		logger.Errorf("sync: %v", err)
+	}
 }
 
 // Sync makes every earlier write durable whatever its prefix: pebble has one
@@ -243,6 +282,7 @@ func (s *Store) Sync(ctx context.Context, _ ds.Key) error {
 	if s.noWAL {
 		return nil
 	}
+	s.dirty.Store(false)
 	if err := s.db.LogData(nil, pebble.Sync); err != nil {
 		return fmt.Errorf("pebbleds: sync: %w", err)
 	}
@@ -283,6 +323,9 @@ func (s *Store) Close() error {
 		readers = append(readers, r)
 	}
 	clear(s.readers)
+	if s.flush != nil {
+		s.flush.Stop()
+	}
 	s.mu.Unlock()
 	for _, q := range open {
 		q.end()
