@@ -53,7 +53,7 @@ func bound(t *testing.T, founder *group, groups ...*group) {
 	t.Helper()
 	for _, g := range groups {
 		if g != founder {
-			require.NoError(t, g.Bind(founder.Formation()))
+			require.NoError(t, g.Bind(founder.Formation(), standing{}))
 		}
 	}
 }
@@ -565,7 +565,7 @@ func TestAGroupTakesNoMessageOfAFormationItIsNotBoundTo(t *testing.T) {
 	require.Never(t, func() bool { return g.Term() >= 50 }, 200*time.Millisecond, 5*time.Millisecond,
 		"a group bound to no formation took a message")
 
-	require.NoError(t, g.Bind(ours))
+	require.NoError(t, g.Bind(ours, standing{}))
 	g.e.received(nodes[1].ID(), heartbeat(t, g, nodes[1].ID(), 60, theirs))
 	require.Never(t, func() bool { return g.Term() >= 60 }, 200*time.Millisecond, 5*time.Millisecond,
 		"a group took a message of another formation")
@@ -587,14 +587,14 @@ func TestAGroupKeepsItsFormation(t *testing.T) {
 	first := onEngine(t, node, "kept", quickTimeouts)
 	require.Nil(t, first.Formation())
 	require.True(t, first.Pristine())
-	require.Error(t, first.Bind(ours[:4]), "a formation of the wrong size was taken")
-	require.NoError(t, first.Bind(ours))
-	require.NoError(t, first.Bind(ours), "binding again where it is bound is refused")
+	require.Error(t, first.Bind(ours[:4], standing{}), "a formation of the wrong size was taken")
+	require.NoError(t, first.Bind(ours, standing{}))
+	require.NoError(t, first.Bind(ours, standing{}), "binding again where it is bound is refused")
 	require.NoError(t, first.Close())
 
 	again := onEngine(t, node, "kept", quickTimeouts)
 	require.Equal(t, ours, again.Formation())
-	require.ErrorIs(t, again.Bind(newFormation()), ErrBoundElsewhere)
+	require.ErrorIs(t, again.Bind(newFormation(), standing{}), ErrBoundElsewhere)
 	require.ErrorIs(t, again.Bootstrap([]peer.ID{node.ID()}), ErrCantBootstrap)
 	require.True(t, again.Pristine(), "a group bound to a formation it holds nothing of is not pristine")
 }

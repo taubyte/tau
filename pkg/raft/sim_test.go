@@ -17,6 +17,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
+	pb "go.etcd.io/raft/v3/raftpb"
 	"google.golang.org/protobuf/proto"
 
 	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
@@ -156,7 +157,10 @@ type sim struct {
 	layout map[string][]int
 	timing TimeoutConfig
 
-	writes  []simWrite
+	writes []simWrite
+	// joining is a node that lost its log, binding each round to what its reachable
+	// peers offer, as a node asking to join does, until enough of them answer.
+	joining map[*simNode]bool
 	acked   map[string]map[string]bool
 	leaders map[string]map[uint64]peer.ID
 	trace   [32]byte
@@ -179,6 +183,7 @@ func newSimTimed(t *testing.T, seed uint64, nodes int, layout map[string][]int, 
 		timing:  TimeoutConfig{HeartbeatTimeout: heartbeat, SnapshotThreshold: 64, TrailingLogs: 16},
 		acked:   map[string]map[string]bool{},
 		leaders: map[string]map[uint64]peer.ID{},
+		joining: map[*simNode]bool{},
 	}
 	s.net = &simNet{rng: s.rng, side: map[peer.ID]int{}}
 	for range nodes {
@@ -331,6 +336,11 @@ func (s *sim) step() {
 	s.net.round++
 	s.clock.now = s.clock.now.Add(engineResolution)
 	s.deliver()
+	for _, n := range s.nodes {
+		if s.joining[n] && n.up && s.joinOffered(n) {
+			delete(s.joining, n)
+		}
+	}
 	for _, n := range s.nodes {
 		if !n.up {
 			continue
@@ -715,24 +725,59 @@ func TestAGroupKeepsItsPromisesUnderFaults(t *testing.T) {
 	}
 }
 
-// lose crashes n and starts it again on an empty store under its own id, bound to
-// each formation it was a member of, as a node whose disk was replaced binds to the
-// offer it asks for: its groups still list it, and their leaders hold the progress
-// of the log it lost.
+// lose crashes n and starts it again on an empty store under its own id, binding
+// from then on to what its reachable peers offer, as a node whose disk was replaced
+// does: its groups still list it, and their leaders hold the progress of the log it
+// lost.
 func (s *sim) lose(n *simNode) {
-	formations := map[string][]byte{}
-	for name, sg := range n.groups {
-		formations[name] = sg.g.Formation()
-	}
 	s.note("lose %s", n.id)
 	s.crash(n, false)
 	n.store = dssync.MutexWrap(ds.NewMapDatastore())
 	s.start(n)
-	for _, name := range s.groupNames() {
-		if f, ok := formations[name]; ok {
-			s.bind(n, name, f)
-		}
+	if !s.joinOffered(n) {
+		s.joining[n] = true
 	}
+}
+
+// joinOffered binds each of n's groups still bound to none on the standing the
+// offers of its reachable members give it, and says whether all are bound.
+func (s *sim) joinOffered(n *simNode) bool {
+	all := true
+	for _, name := range s.groupNames() {
+		sg, ok := n.groups[name]
+		if !ok || sg.g.Formation() != nil {
+			continue
+		}
+		var offers []offer
+		for _, i := range s.layout[name] {
+			m := s.nodes[i]
+			if m == n || !m.up || s.net.side[m.id] != s.net.side[n.id] {
+				continue
+			}
+			g := m.groups[name].g
+			o := offer{from: m.id, formation: g.Formation(), term: g.Term(), lastTerm: g.LastTerm()}
+			for _, mb := range g.Members() {
+				o.members = append(o.members, mb.ID)
+			}
+			if len(o.formation) == formationSize {
+				offers = append(offers, o)
+			}
+		}
+		at := slices.IndexFunc(offers, func(o offer) bool { return slices.Contains(o.members, n.id) })
+		if at < 0 {
+			all = false
+			continue
+		}
+		st, ok := standingIn(n.id, offers[at], offers)
+		if !ok {
+			all = false
+			continue
+		}
+		a := bindAsk{g: sg.g, formation: offers[at].formation, standing: st, reply: make(chan error, 1)}
+		a.run(n.e)
+		require.NoError(s.t, <-a.reply)
+	}
+	return all
 }
 
 // leading is the member of name that is up and leads, if one does.
@@ -847,4 +892,87 @@ func TestAMemberBackWithItsLogLostIsCaughtUpOnceTheLeadMoves(t *testing.T) {
 	require.True(t, s.converged(), "the member back with its log lost was never caught up once the lead moved")
 	require.Equal(t, in.to, s.leading("a").id)
 	s.agreed()
+}
+
+// A MEMBER BACK WITH ITS LOG LOST ELECTS NO MEMBER MISSING WHAT IT ACKNOWLEDGED. A
+// follower is down while the leader and another member commit writes; it comes back
+// behind, that member loses its log and binds, and the leader dies before either is
+// caught up. Voting with an empty log, the member would elect the follower, which
+// would overwrite writes acknowledged as committed once the leader came back. It
+// takes no part in elections until a leader has caught it up, so the group leads
+// again only once the leader is back.
+func TestAMemberBackWithItsLogLostElectsNoMemberMissingWhatItAcknowledged(t *testing.T) {
+	s := newSim(t, 11, 3, map[string][]int{"a": {0, 1, 2}})
+	leader := s.written("a", 2)
+	var others []*simNode
+	for _, i := range s.layout["a"] {
+		if n := s.nodes[i]; n != leader {
+			others = append(others, n)
+		}
+	}
+	behind, lost := others[0], others[1]
+
+	s.crash(behind, false)
+	committed := len(s.acked["a"]) + 4
+	for range 4000 {
+		if len(s.acked["a"]) >= committed {
+			break
+		}
+		s.propose("a")
+		s.step()
+		s.answered()
+	}
+	require.GreaterOrEqual(t, len(s.acked["a"]), committed, "the leader and the member never committed with the follower down")
+
+	s.start(behind)
+	s.lose(lost)
+	require.False(t, s.joining[lost], "a member every other member answers never bound")
+	s.crash(leader, false)
+	for range 2000 {
+		s.step()
+		require.Nil(t, s.leading("a"), "a member missing writes acknowledged as committed was elected")
+	}
+
+	s.start(leader)
+	s.heal(4000)
+	s.agreed()
+	require.False(t, lost.groups["a"].g.log.abstaining, "the member was never caught up")
+}
+
+// A MEMBER BOUND ON A STANDING NEVER VOTES TWICE IN ITS FLOOR TERM, nor follows a
+// leader of an older one: it may have voted in any term up to the floor before it
+// lost its log, and remembers none of it.
+func TestAMemberBoundOnAStandingVotesInNoTermItMayHaveVotedIn(t *testing.T) {
+	s := newSim(t, 13, 3, map[string][]int{"a": {0, 1, 2}})
+	leader := s.written("a", 1)
+	term := leader.groups["a"].g.Term()
+	var lost *simNode
+	for _, i := range s.layout["a"] {
+		if n := s.nodes[i]; n != leader {
+			lost = n
+		}
+	}
+	s.lose(lost)
+	g := lost.groups["a"].g
+	require.False(t, s.joining[lost], "a member every other member answers never bound")
+	require.Equal(t, term, g.Term(), "the floor is not the term the group is in")
+	require.True(t, g.log.abstaining)
+
+	hs, _, err := g.log.InitialState()
+	require.NoError(t, err)
+	require.Equal(t, uint64(noVote), hs.GetVote(), "the member holds a vote it could give in its floor term")
+
+	g.log.abstaining = false
+	vote := &pb.Message{Type: pb.MessageType_MsgVote.Enum(), From: proto.Uint64(raftID(leader.id)), To: proto.Uint64(raftID(lost.id)), Term: proto.Uint64(term), LogTerm: proto.Uint64(term), Index: proto.Uint64(1 << 20)}
+	require.NoError(t, g.rn.Step(vote))
+	rd := g.rn.Ready()
+	at := slices.IndexFunc(rd.Messages, func(m *pb.Message) bool { return m.GetType() == pb.MessageType_MsgVoteResp })
+	require.GreaterOrEqual(t, at, 0)
+	require.True(t, rd.Messages[at].GetReject(), "the member voted in a term it may have voted in already")
+	g.rn.Advance(rd)
+
+	old := &pb.Message{Type: pb.MessageType_MsgApp.Enum(), From: proto.Uint64(raftID(leader.id)), To: proto.Uint64(raftID(lost.id)), Term: proto.Uint64(term - 1)}
+	require.NoError(t, g.rn.Step(old))
+	require.Equal(t, term, g.rn.BasicStatus().GetTerm(), "the member followed a leader of a term older than its floor")
+	require.Zero(t, g.rn.BasicStatus().Lead)
 }

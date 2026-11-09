@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"path"
 	"slices"
 	"sync"
@@ -85,6 +86,7 @@ type group struct {
 	term         uint64
 	commit       uint64
 	last         uint64
+	lastTerm     uint64
 	appliedCache uint64
 	members      []Member
 	pending      map[uint64]chan FSMResponse
@@ -191,21 +193,7 @@ func (e *engine) newGroup(namespace string, cfg groupConfig) (*group, error) {
 		g.conf = proto.Clone(cs).(*pb.ConfState)
 	}
 
-	rn, err := etcdraft.NewRawNode(&etcdraft.Config{
-		ID:                        e.self,
-		ElectionTick:              electionTicks,
-		HeartbeatTick:             heartbeatTicks,
-		Storage:                   log,
-		Applied:                   applied,
-		MaxSizePerMsg:             1 << 20,
-		MaxInflightMsgs:           256,
-		CheckQuorum:               true,
-		PreVote:                   true,
-		ReadOnlyOption:            etcdraft.ReadOnlySafe,
-		DisableProposalForwarding: true,
-		StepDownOnRemoval:         true,
-		Logger:                    etcdLogger{},
-	})
+	rn, err := g.newRaft(applied)
 	if err != nil {
 		return nil, err
 	}
@@ -217,10 +205,30 @@ func (e *engine) newGroup(namespace string, cfg groupConfig) (*group, error) {
 		g.quietUntil = e.clock.Now().Add(electionTicks * g.tickEvery)
 	}
 	g.last, _ = log.LastIndex()
+	g.lastTerm, _ = log.Term(g.last)
 	g.appliedCache = applied
 	g.applier = newApplier(applied)
 	e.applying.start(g)
 	return g, nil
+}
+
+// newRaft is the group's raft over its log, resuming applying after applied.
+func (g *group) newRaft(applied uint64) (*etcdraft.RawNode, error) {
+	return etcdraft.NewRawNode(&etcdraft.Config{
+		ID:                        g.e.self,
+		ElectionTick:              electionTicks,
+		HeartbeatTick:             heartbeatTicks,
+		Storage:                   g.log,
+		Applied:                   applied,
+		MaxSizePerMsg:             1 << 20,
+		MaxInflightMsgs:           256,
+		CheckQuorum:               true,
+		PreVote:                   true,
+		ReadOnlyOption:            etcdraft.ReadOnlySafe,
+		DisableProposalForwarding: true,
+		StepDownOnRemoval:         true,
+		Logger:                    etcdLogger{},
+	})
 }
 
 // tick advances raft's clock once the group's interval has passed. Ticks a stalled
@@ -333,10 +341,20 @@ func (g *group) apply(rd etcdraft.Ready) {
 		g.term, g.commit = hs.GetTerm(), hs.GetCommit()
 	}
 	g.last, _ = g.log.LastIndex()
+	g.lastTerm, _ = g.log.Term(g.last)
+	// A MEMBER HOLDING AN ENTRY OF ITS LEADER'S TERM HOLDS WHAT THAT LEADER HELD
+	// before it: everything committed in an earlier term, among it whatever the
+	// member acknowledged before it lost its log. It takes part in elections again.
+	caughtUp := g.log.abstaining && g.lead != 0 && g.lastTerm == g.term
 	observers := slices.Clone(g.observers)
 	lead := g.lead
 	g.mu.Unlock()
 
+	if caughtUp {
+		if err := g.log.caughtUp(g.e.ctx); err != nil {
+			engineLogger.Warnf("[%s] %s: ending its abstention: %v", g.e.id.ShortString(), g.namespace, err)
+		}
+	}
 	if leaderMoved {
 		leader, _ := g.e.book.peer(lead)
 		for _, o := range observers {
@@ -883,14 +901,32 @@ func (g *group) Formation() []byte {
 	return g.formation
 }
 
+// standing is what a member takes on when it binds holding nothing to a formation
+// that has had a leader. It may have voted and acknowledged in it before it lost its
+// log, and remembers none of it. floor is the highest term enough of the formation
+// answered to meet every majority: the member takes it as its term, with a vote for
+// no member, so it never votes twice in a term nor follows a leader of an older one.
+// abstain has it sit elections out until a leader has caught it up: with a log
+// missing what it acknowledged, its vote could elect a member missing it too. pair
+// is the one voter it votes for meanwhile, in a group of two: the other member, who
+// holds every entry the pair ever committed.
+type standing struct {
+	floor   uint64
+	abstain bool
+	pair    peer.ID
+}
+
+// noVote is the vote a member holds for its floor term: one no member matches.
+const noVote = math.MaxUint64
+
 // Bind binds a group that is bound to no formation to formation, durably, before
-// it takes any message of it. A group bound to formation already is left alone;
-// one bound to another refuses.
-func (g *group) Bind(formation []byte) error {
+// it takes any message of it, on s when it holds nothing. A group bound to
+// formation already is left alone; one bound to another refuses.
+func (g *group) Bind(formation []byte, s standing) error {
 	if len(formation) != formationSize {
 		return fmt.Errorf("raft: %s: a formation is %d bytes, not %d", g.namespace, formationSize, len(formation))
 	}
-	a := bindAsk{g: g, formation: formation, reply: make(chan error, 1)}
+	a := bindAsk{g: g, formation: formation, standing: s, reply: make(chan error, 1)}
 	if err := g.e.do(a); err != nil {
 		return err
 	}
@@ -900,6 +936,7 @@ func (g *group) Bind(formation []byte) error {
 type bindAsk struct {
 	g         *group
 	formation []byte
+	standing  standing
 	reply     chan error
 }
 
@@ -913,13 +950,32 @@ func (a bindAsk) run(e *engine) {
 	// taken from, binding it to another would mix the two.
 	case a.g.log.formation == nil && !a.g.log.pristine():
 		a.reply <- ErrUnboundHistory
-	case a.g.log.formation == nil:
+	case a.g.log.formation == nil && a.standing == standing{}:
 		a.reply <- a.g.setFormation(slices.Clone(a.formation))
+	case a.g.log.formation == nil:
+		a.reply <- a.g.takeStanding(slices.Clone(a.formation), a.standing)
 	case bytes.Equal(a.g.log.formation, a.formation):
 		a.reply <- nil
 	default:
 		a.reply <- ErrBoundElsewhere
 	}
+}
+
+// takeStanding binds a group that holds nothing on s, and builds its raft again over
+// the floor: the one it has took no message, bound to no formation.
+func (g *group) takeStanding(formation []byte, s standing) error {
+	if err := g.log.bindStanding(g.e.ctx, formation, s); err != nil {
+		return err
+	}
+	rn, err := g.newRaft(0)
+	if err != nil {
+		return err
+	}
+	g.rn = rn
+	g.mu.Lock()
+	g.formation, g.term = formation, s.floor
+	g.mu.Unlock()
+	return nil
 }
 
 // Pristine says the group holds nothing of any formation, so leaving the one it is
@@ -1137,6 +1193,13 @@ func (g *group) AppliedIndex() uint64 {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.appliedCache
+}
+
+// LastTerm is the term of the last entry the group holds.
+func (g *group) LastTerm() uint64 {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.lastTerm
 }
 
 func (g *group) LastIndex() uint64 {

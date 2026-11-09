@@ -87,18 +87,18 @@ func TestAMemberBindsToAFormationItsPeersOffer(t *testing.T) {
 	t.Cleanup(func() { close(client.release) })
 	c, m := formationMember(t, node, "binds", client)
 
-	require.False(t, c.bindVia(m, []peer.ID{node.ID(), unbound, gone}), "bound with no formation offered")
-	require.False(t, c.bindVia(m, []peer.ID{orphaned}), "bound to a formation that neither names it nor has a leader")
+	require.False(t, wasBound(c.bindVia(m, []peer.ID{node.ID(), unbound, gone})), "bound with no formation offered")
+	require.False(t, wasBound(c.bindVia(m, []peer.ID{orphaned})), "bound to a formation that neither names it nor has a leader")
 	require.Nil(t, m.raft.Formation())
 	require.NotContains(t, client.askedSoFar(), node.ID(), "it asked itself")
 
 	began := time.Now()
-	require.True(t, c.bindVia(m, []peer.ID{quiet, unbound, named}))
+	require.True(t, wasBound(c.bindVia(m, []peer.ID{quiet, unbound, named})))
 	require.Less(t, time.Since(began), offerWait+time.Second, "it waited past its time for a peer that never answers")
 	require.Equal(t, theirs, m.raft.Formation())
 
 	asked := len(client.askedSoFar())
-	require.True(t, c.bindVia(m, []peer.ID{named}))
+	require.True(t, wasBound(c.bindVia(m, []peer.ID{named})))
 	require.Len(t, client.askedSoFar(), asked, "a bound member asked for offers")
 }
 
@@ -113,7 +113,7 @@ func TestABindingTheStoreRefusesIsNone(t *testing.T) {
 	c, m := formationMember(t, node, namespace, &offering{offers: map[peer.ID]offer{node.ID(): {}}})
 	g := m.raft
 
-	require.ErrorIs(t, g.Bind(theirs), errNoSpace)
+	require.ErrorIs(t, g.Bind(theirs, standing{}), errNoSpace)
 	require.Nil(t, g.Formation())
 	require.ErrorIs(t, g.Bootstrap([]peer.ID{node.ID()}), errNoSpace)
 	require.Nil(t, g.Formation())
@@ -121,7 +121,7 @@ func TestABindingTheStoreRefusesIsNone(t *testing.T) {
 
 	other := strangerID(t)
 	m.raftClient = &offering{offers: map[peer.ID]offer{other: {formation: theirs, members: []peer.ID{node.ID()}}}}
-	require.False(t, c.bindVia(m, []peer.ID{other}), "a refused binding counted as bound")
+	require.False(t, wasBound(c.bindVia(m, []peer.ID{other})), "a refused binding counted as bound")
 }
 
 // A GROUP WHOSE ENGINE HAS STOPPED binds to nothing and holds nothing it can say.
@@ -134,7 +134,7 @@ func TestAGroupOnAStoppedEngineBindsToNothing(t *testing.T) {
 	require.NoError(t, g.Close())
 	e.release()
 
-	require.ErrorIs(t, g.Bind(newFormation()), ErrShutdown)
+	require.ErrorIs(t, g.Bind(newFormation(), standing{}), ErrShutdown)
 	require.False(t, g.Pristine())
 }
 
@@ -283,9 +283,9 @@ func TestAGroupClosedSinceBindsToNothing(t *testing.T) {
 	require.NoError(t, old.Close())
 	again := onEngine(t, node, "closed-since", quickTimeouts)
 	ours := newFormation()
-	require.NoError(t, again.Bind(ours))
+	require.NoError(t, again.Bind(ours, standing{}))
 
-	require.ErrorIs(t, old.Bind(newFormation()), ErrShutdown)
+	require.ErrorIs(t, old.Bind(newFormation(), standing{}), ErrShutdown)
 	require.NoError(t, again.Close())
 	reopened := onEngine(t, node, "closed-since", quickTimeouts)
 	require.Equal(t, ours, reopened.Formation(), "a closed group's binding labelled the group after it")
@@ -305,7 +305,7 @@ func TestALogOfNoFormationIsNotBoundAfterTheFact(t *testing.T) {
 
 	again := onEngine(t, node, "unbound-history", quickTimeouts)
 	require.Nil(t, again.Formation())
-	require.ErrorIs(t, again.Bind(newFormation()), ErrUnboundHistory)
+	require.ErrorIs(t, again.Bind(newFormation(), standing{}), ErrUnboundHistory)
 	require.Nil(t, again.Formation())
 }
 
@@ -335,4 +335,50 @@ func TestALogHoldsNoDataUntilAWriteIsInItOrInItsSnapshot(t *testing.T) {
 	require.NoError(t, stopped.Close())
 	e.release()
 	require.False(t, stopped.HoldsNoData(), "a group on a stopped engine says it holds nothing")
+}
+
+// wasBound is whether bindVia bound.
+func wasBound(bound, _ bool) bool { return bound }
+
+// A MEMBER JOINING HOLDING NOTHING TAKES ITS STANDING FROM THE OFFERS: nothing from
+// a formation no leader wrote to, whose founders must vote, nor from one that does
+// not name it; otherwise abstention at the highest term answered, once enough of
+// the voters naming it answered to meet every majority it could have been in, with
+// a pair in a group of two.
+func TestAStandingIsTakenFromEnoughOfTheFormation(t *testing.T) {
+	self, a, b, c, d := strangerID(t), strangerID(t), strangerID(t), strangerID(t), strangerID(t)
+	ours, theirs := newFormation(), newFormation()
+	five := []peer.ID{self, a, b, c, d}
+	of := func(from peer.ID, term, last uint64, members []peer.ID) offer {
+		return offer{from: from, formation: ours, members: members, term: term, lastTerm: last}
+	}
+
+	founding := []offer{of(a, 1, 1, five)}
+	s, ok := standingIn(self, founding[0], founding)
+	require.True(t, ok)
+	require.Equal(t, standing{}, s, "a founder of a formation no leader wrote to abstains")
+
+	two := []offer{of(a, 7, 6, five), of(b, 9, 6, five)}
+	_, ok = standingIn(self, two[0], two)
+	require.False(t, ok, "two of five answering cannot meet every majority self was in")
+
+	three := append(two, of(c, 8, 7, five), offer{from: d, formation: theirs, term: 40, lastTerm: 40, members: five})
+	s, ok = standingIn(self, three[0], three)
+	require.True(t, ok)
+	require.Equal(t, standing{floor: 9, abstain: true}, s, "another formation's term counted, or the floor is not the highest")
+
+	pair := []offer{of(a, 5, 5, []peer.ID{self, a})}
+	s, ok = standingIn(self, pair[0], pair)
+	require.True(t, ok)
+	require.Equal(t, standing{floor: 5, abstain: true, pair: a}, s)
+
+	newcomer := []offer{of(a, 4, 4, []peer.ID{a, b, c})}
+	s, ok = standingIn(self, newcomer[0], newcomer)
+	require.True(t, ok, "a member the formation does not name waited for a quorum")
+	require.Equal(t, standing{}, s, "a newcomer sits out elections it never voted in")
+
+	shrunk := []offer{of(a, 6, 3, five), of(b, 6, 8, []peer.ID{self, a, b})}
+	s, ok = standingIn(self, shrunk[0], shrunk)
+	require.True(t, ok, "the voters were not read from the member holding the latest entry")
+	require.True(t, s.abstain)
 }

@@ -99,6 +99,11 @@ message OfferResponse {
   bytes formation = 1;
   repeated string members = 2;
   string leader = 3;
+  // term is the member's current term, and last_term the term of the last entry it
+  // holds: past the bootstrap's, the formation has had a leader. A member joining it
+  // holding nothing may have voted and acknowledged in it before it lost its log.
+  uint64 term = 4;
+  uint64 last_term = 5;
 }
 
 message JoinVoterRequest {

@@ -335,7 +335,7 @@ func (s *raftStreamService) ClusterInfo(ctx context.Context, req *connect.Reques
 // leader it knows, so a member bound to none can bind to one that names it.
 func (s *raftStreamService) Offer(ctx context.Context, req *connect.Request[raftv2.OfferRequest]) (*connect.Response[raftv2.OfferResponse], error) {
 	m := s.cluster.current()
-	res := &raftv2.OfferResponse{Formation: m.raft.Formation()}
+	res := &raftv2.OfferResponse{Formation: m.raft.Formation(), Term: m.raft.Term(), LastTerm: m.raft.LastTerm()}
 	for _, mb := range m.raft.Members() {
 		res.Members = append(res.Members, mb.ID.String())
 	}

@@ -418,7 +418,7 @@ func (c *cluster) askToJoin(m *member, timeout time.Duration) {
 		if len(targets) == 0 {
 			continue
 		}
-		if !c.bindVia(m, targets) {
+		if bound, _ := c.bindVia(m, targets); !bound {
 			clusterLogger.Infof("[%s] no formation to join among %d targets", c.ID().ShortString(), len(targets))
 			continue
 		}
@@ -465,8 +465,8 @@ func (c *cluster) tryJoinExistingCluster(ctx context.Context, m *member, peers [
 		if len(targets) == 0 {
 			continue
 		}
-		if !c.bindVia(m, targets) {
-			return false, true
+		if bound, offered := c.bindVia(m, targets); !bound {
+			return false, !offered
 		}
 		err := m.raftClient.JoinVoter(ctx, c.ID(), timeout, m.raft.Formation(), m.raft.LastIndex(), targets...)
 		if err == nil {
@@ -487,13 +487,17 @@ const archiveFreeze = 365 * 24 * time.Hour
 // offerWait is how long a member bound to no formation waits for offers.
 const offerWait = 2 * time.Second
 
+// bootstrapTerm is the term of the entries a formation is founded with: an entry of
+// a later term was written by a leader.
+const bootstrapTerm = 1
+
 // bindVia binds m's group, if it is bound to no formation yet, to one that peers
-// offer, and reports whether it is bound. Every node picks the same formation from
-// the same offers: one that names it among its voters, then one with a leader, the
-// lowest of either; never one with neither.
-func (c *cluster) bindVia(m *member, peers []peer.ID) bool {
+// offer, and reports whether it is bound, and whether one was worth binding to.
+// Every node picks the same formation from the same offers: one that names it among
+// its voters, then one with a leader, the lowest of either; never one with neither.
+func (c *cluster) bindVia(m *member, peers []peer.ID) (bound, offered bool) {
 	if m.raft.Formation() != nil {
-		return true
+		return true, true
 	}
 	// THE ANSWERS THAT COME IN TIME: a peer that is gone holds up its own offer, not
 	// the join, which asks again on its next round.
@@ -514,11 +518,16 @@ func (c *cluster) bindVia(m *member, peers []peer.ID) bool {
 	}
 	deadline := time.After(offerWait)
 	var best *offer
+	var got []offer
 collect:
 	for range asked {
 		select {
 		case o := <-answers:
-			if len(o.formation) == formationSize && c.rank(o) > 0 && (best == nil || c.prefers(o, *best)) {
+			if len(o.formation) != formationSize {
+				continue
+			}
+			got = append(got, o)
+			if c.rank(o) > 0 && (best == nil || c.prefers(o, *best)) {
 				best = &o
 			}
 		case <-deadline:
@@ -526,19 +535,69 @@ collect:
 		}
 	}
 	if best == nil {
-		return false
+		return false, false
 	}
-	err := m.raft.Bind(best.formation)
+	s, ok := standingIn(c.ID(), *best, got)
+	if !ok {
+		clusterLogger.Infof("[%s] too few of formation %x answered to know the terms it may have voted in", c.ID().ShortString(), best.formation)
+		return false, true
+	}
+	err := m.raft.Bind(best.formation, s)
 	switch {
 	case err == nil:
-		clusterLogger.Infof("[%s] bound to formation %x", c.ID().ShortString(), best.formation)
-		return true
+		clusterLogger.Infof("[%s] bound to formation %x (term floor %d, abstaining %v)", c.ID().ShortString(), best.formation, s.floor, s.abstain)
+		return true, true
 	case errors.Is(err, ErrBoundElsewhere):
-		return true
+		return true, true
 	default:
 		clusterLogger.Warnf("[%s] binding to formation %x: %v", c.ID().ShortString(), best.formation, err)
-		return false
+		return false, true
 	}
+}
+
+// standingIn is what self takes on binding to chosen's formation, from every offer
+// that came. A formation no leader has written to yet asks nothing: its founders
+// hold nothing anyone acknowledged, and its first election waits on their votes.
+// Nor does one that does not list self: a newcomer voted and acknowledged nothing in
+// it, and an empty voter added one at a time leaves every majority meeting the
+// last. One that lists self is one self may have voted and acknowledged in before
+// it lost its log: self abstains, at the highest term among answers from enough of
+// its other voters to meet every majority self could have been part of, half of all
+// its voters rounded up. ok is false until they have answered.
+func standingIn(self peer.ID, chosen offer, offers []offer) (standing, bool) {
+	var s standing
+	voters, newest, led := chosen.members, uint64(0), false
+	answered := map[peer.ID]bool{}
+	for _, o := range offers {
+		if !bytes.Equal(o.formation, chosen.formation) {
+			continue
+		}
+		led = led || o.lastTerm > bootstrapTerm
+		s.floor = max(s.floor, o.term)
+		// The configuration of the member that holds the latest entry.
+		if o.lastTerm > newest {
+			newest, voters = o.lastTerm, o.members
+		}
+		answered[o.from] = true
+	}
+	if !led || !slices.Contains(voters, self) {
+		return standing{}, true
+	}
+	s.abstain = true
+	others := 0
+	for _, v := range voters {
+		if v != self && answered[v] {
+			others++
+			s.pair = v
+		}
+	}
+	if others < (len(voters)+1)/2 {
+		return standing{}, false
+	}
+	if len(voters) != 2 {
+		s.pair = ""
+	}
+	return s, true
 }
 
 // rank is what an offer is worth: one that names this node among its voters, then

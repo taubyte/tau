@@ -389,7 +389,6 @@ func TestStream_AJoinAskedOfAMemberLetInBeforeItsLogWaitsForTheLeader(t *testing
 	node := newMockNode(t)
 	store := newFaultStore()
 	store.failPut(firstLog, errNoSpace)
-	store.failPut(vote, errNoSpace)
 	require.NoError(t, taupeer.LinkAllPeers())
 	founder := group[0].(*cluster).Host()
 	require.NoError(t, node.Host().Connect(t.Context(), peer.AddrInfo{ID: founder.ID(), Addrs: founder.Addrs()}))
@@ -397,6 +396,10 @@ func TestStream_AJoinAskedOfAMemberLetInBeforeItsLogWaitsForTheLeader(t *testing
 		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second))
 	require.NoError(t, err)
 	t.Cleanup(func() { late.Close() })
+	// ITS VOTE IS REFUSED ONCE IT IS BOUND: binding to a group that has had a leader
+	// writes the term it joins at to the same record.
+	require.Eventually(t, func() bool { return late.(*cluster).current().raft.Formation() != nil }, leaderWait, time.Millisecond)
+	store.failPut(vote, errNoSpace)
 	require.Eventually(t, late.(*cluster).current().joined.Load, leaderWait, 10*time.Millisecond, "the group never let the late member in")
 	members, err := late.Members()
 	require.NoError(t, err)

@@ -8,6 +8,7 @@ import (
 
 	ds "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
+	"github.com/libp2p/go-libp2p/core/peer"
 	etcdraft "go.etcd.io/raft/v3"
 	pb "go.etcd.io/raft/v3/raftpb"
 	"google.golang.org/protobuf/proto"
@@ -31,11 +32,18 @@ type engineLog struct {
 	// formation is the formation the group is bound to, nil while it is bound to
 	// none. The loop alone touches it.
 	formation []byte
+
+	// abstaining is a group that joined a formation holding nothing and sits its
+	// elections out until a leader has caught it up; pair is the one voter it votes
+	// for meanwhile, in a group of two. The loop alone touches them.
+	abstaining bool
+	pair       peer.ID
 }
 
 func (l *engineLog) hardStateKey() ds.Key { return ds.NewKey(l.prefix + "/hardstate") }
 func (l *engineLog) snapshotKey() ds.Key  { return ds.NewKey(l.prefix + "/snapshot") }
 func (l *engineLog) formationKey() ds.Key { return ds.NewKey(l.prefix + "/formation") }
+func (l *engineLog) abstainKey() ds.Key   { return ds.NewKey(l.prefix + "/abstain") }
 
 // entryKey pads the index to 20 digits: byte order is the only order a scan has.
 func (l *engineLog) entryKey(index uint64) ds.Key {
@@ -49,6 +57,12 @@ func openEngineLog(ctx context.Context, store ds.Batching, prefix string) (*engi
 
 	if raw, err := store.Get(ctx, l.formationKey()); err == nil {
 		l.formation = raw
+	} else if !errors.Is(err, ds.ErrNotFound) {
+		return nil, err
+	}
+
+	if raw, err := store.Get(ctx, l.abstainKey()); err == nil {
+		l.abstaining, l.pair = true, peer.ID(raw)
 	} else if !errors.Is(err, ds.ErrNotFound) {
 		return nil, err
 	}
@@ -116,6 +130,59 @@ func (l *engineLog) bind(ctx context.Context, formation []byte) error {
 	}
 	l.formation = formation
 	return nil
+}
+
+// bindStanding binds a group that holds nothing to formation, at the term floor
+// with a vote for no member, sitting its elections out if s says so: all of it in
+// one batch, synced before the group takes any message.
+func (l *engineLog) bindStanding(ctx context.Context, formation []byte, s standing) error {
+	hs := &pb.HardState{Term: proto.Uint64(s.floor), Vote: proto.Uint64(noVote), Commit: proto.Uint64(0)}
+	raw, err := proto.Marshal(hs)
+	if err != nil {
+		return err
+	}
+	b, err := l.store.Batch(ctx)
+	if err != nil {
+		return err
+	}
+	if err := b.Put(ctx, l.formationKey(), formation); err != nil {
+		return err
+	}
+	if err := b.Put(ctx, l.hardStateKey(), raw); err != nil {
+		return err
+	}
+	if s.abstain {
+		if err := b.Put(ctx, l.abstainKey(), []byte(s.pair)); err != nil {
+			return err
+		}
+	}
+	if err := b.Commit(ctx); err != nil {
+		return err
+	}
+	if err := l.store.Sync(ctx, ds.NewKey(l.prefix)); err != nil {
+		return err
+	}
+	if err := l.SetHardState(hs); err != nil {
+		return err
+	}
+	l.formation, l.abstaining, l.pair = formation, s.abstain, s.pair
+	return nil
+}
+
+// caughtUp ends the group's abstention. Losing the deletion to a crash only has it
+// abstain again until the next leader catches it up.
+func (l *engineLog) caughtUp(ctx context.Context) error {
+	if err := l.store.Delete(ctx, l.abstainKey()); err != nil {
+		return err
+	}
+	l.abstaining, l.pair = false, ""
+	return nil
+}
+
+// abstainsFrom says the group takes no part in an election from: it is abstaining,
+// and from is not the one voter it votes for.
+func (l *engineLog) abstainsFrom(from peer.ID) bool {
+	return l.abstaining && from != l.pair
 }
 
 // pristine says the group holds nothing of any formation: no entry and no

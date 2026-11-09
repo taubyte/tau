@@ -306,9 +306,12 @@ func (c *client) ClusterInfo(target peer.ID) (*ClusterInfoResponse, error) {
 // offer is the formation a member is bound to, the voters it holds, and the
 // leader it knows.
 type offer struct {
+	from      peer.ID
 	formation []byte
 	members   []peer.ID
 	leader    peer.ID
+	term      uint64
+	lastTerm  uint64
 }
 
 func (c *client) Offer(target peer.ID) (offer, error) {
@@ -318,7 +321,7 @@ func (c *client) Offer(target peer.ID) (offer, error) {
 	if err != nil {
 		return offer{}, fmt.Errorf("offer failed: %w", err)
 	}
-	o := offer{formation: res.Msg.GetFormation(), members: peerIDs(res.Msg.GetMembers())}
+	o := offer{from: target, formation: res.Msg.GetFormation(), members: peerIDs(res.Msg.GetMembers()), term: res.Msg.GetTerm(), lastTerm: res.Msg.GetLastTerm()}
 	if leader, err := peer.Decode(res.Msg.GetLeader()); err == nil {
 		o.leader = leader
 	}

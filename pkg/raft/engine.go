@@ -293,7 +293,11 @@ func (e *engine) deliver(d delivery) {
 	g.heard(d)
 	switch d.msg.GetType() {
 	case pb.MessageType_MsgVote, pb.MessageType_MsgPreVote:
-		if e.clock.Now().Before(g.quietUntil) {
+		if e.clock.Now().Before(g.quietUntil) || g.log.abstainsFrom(d.from) {
+			return
+		}
+	case pb.MessageType_MsgTimeoutNow:
+		if g.log.abstaining {
 			return
 		}
 	case pb.MessageType_MsgTransferLeader:
@@ -361,6 +365,12 @@ func (e *engine) cycle() {
 			continue
 		}
 		for _, m := range r.rd.Messages {
+			// AN ABSTAINING MEMBER'S CAMPAIGN NEVER LEAVES IT: raft campaigns from its
+			// own ticks, and a member missing what it acknowledged must not vote for
+			// itself either.
+			if r.g.log.abstaining && (m.GetType() == pb.MessageType_MsgPreVote || m.GetType() == pb.MessageType_MsgVote) {
+				continue
+			}
 			to, ok := e.book.peer(m.GetTo())
 			if !ok {
 				r.g.rn.ReportUnreachable(m.GetTo())
@@ -534,10 +544,14 @@ func (r wireReport) run(e *engine) {
 // hash, never zero, which raft reserves for none.
 func raftID(p peer.ID) uint64 {
 	sum := sha256.Sum256([]byte(p))
-	if id := binary.BigEndian.Uint64(sum[:8]); id != 0 {
+	switch id := binary.BigEndian.Uint64(sum[:8]); id {
+	case 0:
+		return 1
+	case noVote:
+		return noVote - 1
+	default:
 		return id
 	}
-	return 1
 }
 
 // peerBook is which peer each raft number is, learned from the peers that speak

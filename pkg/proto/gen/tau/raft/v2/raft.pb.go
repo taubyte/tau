@@ -572,10 +572,15 @@ func (*OfferRequest) Descriptor() ([]byte, []int) {
 // bound to none, and the voters it holds: the configuration it applied, or the
 // one it bootstrapped. A member in none picks a formation that names it.
 type OfferResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Formation     []byte                 `protobuf:"bytes,1,opt,name=formation,proto3" json:"formation,omitempty"`
-	Members       []string               `protobuf:"bytes,2,rep,name=members,proto3" json:"members,omitempty"`
-	Leader        string                 `protobuf:"bytes,3,opt,name=leader,proto3" json:"leader,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Formation []byte                 `protobuf:"bytes,1,opt,name=formation,proto3" json:"formation,omitempty"`
+	Members   []string               `protobuf:"bytes,2,rep,name=members,proto3" json:"members,omitempty"`
+	Leader    string                 `protobuf:"bytes,3,opt,name=leader,proto3" json:"leader,omitempty"`
+	// term is the member's current term, and last_term the term of the last entry it
+	// holds: past the bootstrap's, the formation has had a leader. A member joining it
+	// holding nothing may have voted and acknowledged in it before it lost its log.
+	Term          uint64 `protobuf:"varint,4,opt,name=term,proto3" json:"term,omitempty"`
+	LastTerm      uint64 `protobuf:"varint,5,opt,name=last_term,json=lastTerm,proto3" json:"last_term,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -629,6 +634,20 @@ func (x *OfferResponse) GetLeader() string {
 		return x.Leader
 	}
 	return ""
+}
+
+func (x *OfferResponse) GetTerm() uint64 {
+	if x != nil {
+		return x.Term
+	}
+	return 0
+}
+
+func (x *OfferResponse) GetLastTerm() uint64 {
+	if x != nil {
+		return x.LastTerm
+	}
+	return 0
 }
 
 type JoinVoterRequest struct {
@@ -1122,11 +1141,13 @@ const file_tau_raft_v2_raft_proto_rawDesc = "" +
 	"\vSeenAtEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"\x0e\n" +
-	"\fOfferRequest\"_\n" +
+	"\fOfferRequest\"\x90\x01\n" +
 	"\rOfferResponse\x12\x1c\n" +
 	"\tformation\x18\x01 \x01(\fR\tformation\x12\x18\n" +
 	"\amembers\x18\x02 \x03(\tR\amembers\x12\x16\n" +
-	"\x06leader\x18\x03 \x01(\tR\x06leader\"\x82\x01\n" +
+	"\x06leader\x18\x03 \x01(\tR\x06leader\x12\x12\n" +
+	"\x04term\x18\x04 \x01(\x04R\x04term\x12\x1b\n" +
+	"\tlast_term\x18\x05 \x01(\x04R\blastTerm\"\x82\x01\n" +
 	"\x10JoinVoterRequest\x12\x12\n" +
 	"\x04peer\x18\x01 \x01(\tR\x04peer\x12\x1d\n" +
 	"\n" +
