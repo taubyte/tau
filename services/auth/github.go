@@ -194,11 +194,6 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client Git
 		if err != nil {
 			return nil, fmt.Errorf("create deploy key failed with: %s", err)
 		}
-		// the new key works before older ones go, so the repository is never
-		// without one; a key left behind is reported, not fatal
-		if err := client.RemoveOtherDeployKeys(kname, kpub); err != nil {
-			logger.Errorf("removing old deploy keys of repository %s failed: %s", repoID, err)
-		}
 	}
 
 	_repo_id, err := strconv.ParseInt(repoID, 10, 64)
@@ -218,6 +213,14 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client Git
 	err = repo.Register(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	// only now: until the new key is stored, builds clone with an old one. A key
+	// left behind is reported, not fatal
+	if client != nil {
+		if err := client.RemoveOtherDeployKeys(kname, kpub); err != nil {
+			logger.Errorf("removing old deploy keys of repository %s failed: %s", repoID, err)
+		}
 	}
 
 	hook, err := hooks.New(srv.KV(), hooks.Data{
