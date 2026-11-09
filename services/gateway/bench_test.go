@@ -49,9 +49,9 @@ func benchGateway(b *testing.B) http.Handler {
 
 	reply := &invoke.Response{Status: http.StatusOK, Body: []byte("ok")}
 	at := time.Unix(1_700_000_000, 0)
-	s, err := New(Config{},
-		WithHosts(reg), WithSource(reg), WithWorkers(benchWorkers{reply: reply}),
-		WithClock(func() time.Time { return at }))
+	s, err := build(Config{},
+		withHosts(reg), withSource(reg), withWorkers(benchWorkers{reply: reply}),
+		withClock(func() time.Time { return at }))
 	require.NoError(b, err)
 	return s.Handler()
 }

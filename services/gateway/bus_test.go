@@ -86,7 +86,7 @@ func upgradeRequest(host string) *http.Request {
 
 func TestABrowserGetsWhatIsPublishedToTheBus(t *testing.T) {
 	buses := &fakeBuses{}
-	h := newHarness(t, Config{}, WithBuses(buses), WithAdmission(&fakeAdmits{}))
+	h := newHarness(t, Config{}, withBuses(buses), withAdmission(&fakeAdmits{}))
 	fqdn, _ := busNamed(t, "presence", "")
 
 	conn, res, err := dial(t, h.listen(t), fqdn)
@@ -106,7 +106,7 @@ func TestABrowserGetsWhatIsPublishedToTheBus(t *testing.T) {
 
 func TestABrowserPublishesToTheBus(t *testing.T) {
 	buses := &fakeBuses{}
-	h := newHarness(t, Config{}, WithBuses(buses), WithAdmission(&fakeAdmits{}))
+	h := newHarness(t, Config{}, withBuses(buses), withAdmission(&fakeAdmits{}))
 	fqdn, _ := busNamed(t, "presence", "")
 
 	conn, _, err := dial(t, h.listen(t), fqdn)
@@ -124,7 +124,7 @@ func TestABrowserPublishesToTheBus(t *testing.T) {
 
 func TestTheHandleIsTheOneAWorkloadWouldGet(t *testing.T) {
 	buses := &fakeBuses{}
-	h := newHarness(t, Config{}, WithBuses(buses), WithAdmission(&fakeAdmits{}))
+	h := newHarness(t, Config{}, withBuses(buses), withAdmission(&fakeAdmits{}))
 	fqdn, id := busNamed(t, "presence", "")
 
 	conn, _, err := dial(t, h.listen(t), fqdn)
@@ -137,7 +137,7 @@ func TestTheHandleIsTheOneAWorkloadWouldGet(t *testing.T) {
 
 func TestABusIsReachedAtItsGeneratedName(t *testing.T) {
 	buses := &fakeBuses{}
-	h := newHarness(t, Config{CloudFqdn: "tau.example.io"}, WithBuses(buses), WithAdmission(&fakeAdmits{}))
+	h := newHarness(t, Config{CloudFqdn: "tau.example.io"}, withBuses(buses), withAdmission(&fakeAdmits{}))
 	fqdn, _ := busNamed(t, "presence", "tau.example.io")
 	require.True(t, strings.HasSuffix(fqdn, ".tau.example.io"))
 
@@ -148,7 +148,7 @@ func TestABusIsReachedAtItsGeneratedName(t *testing.T) {
 }
 
 func TestAPlainRequestToABusIsToldToUpgrade(t *testing.T) {
-	h := newHarness(t, Config{}, WithBuses(&fakeBuses{}), WithAdmission(&fakeAdmits{}))
+	h := newHarness(t, Config{}, withBuses(&fakeBuses{}), withAdmission(&fakeAdmits{}))
 	fqdn, _ := busNamed(t, "presence", "")
 
 	w := recorder()
@@ -169,7 +169,7 @@ func TestAGatewayWithNoBusBackingRefuses(t *testing.T) {
 func TestAnInstanceOfABusIsAttachedToByPath(t *testing.T) {
 	buses := &fakeBuses{}
 	admit := &fakeAdmits{}
-	h := newHarness(t, Config{}, WithBuses(buses), WithAdmission(admit))
+	h := newHarness(t, Config{}, withBuses(buses), withAdmission(admit))
 	fqdn, id := busNamed(t, "chat", "")
 
 	conn, res, err := websocket.DefaultDialer.Dial(
@@ -192,7 +192,7 @@ func TestAnInstanceOfABusIsAttachedToByPath(t *testing.T) {
 func TestAnInstanceTheValidatorRefusedIsNotAttached(t *testing.T) {
 	buses := &fakeBuses{}
 	admit := &fakeAdmits{refuse: errors.New("may_open refused it")}
-	h := newHarness(t, Config{}, WithBuses(buses), WithAdmission(admit))
+	h := newHarness(t, Config{}, withBuses(buses), withAdmission(admit))
 	fqdn, _ := busNamed(t, "chat", "")
 
 	w := recorder()
@@ -210,7 +210,7 @@ func TestAnInstanceTheValidatorRefusedIsNotAttached(t *testing.T) {
 
 func TestABusIsAddressedTheWayItsBlockSaysItIs(t *testing.T) {
 	buses := &fakeBuses{}
-	h := newHarness(t, Config{}, WithBuses(buses), WithAdmission(&fakeAdmits{}))
+	h := newHarness(t, Config{}, withBuses(buses), withAdmission(&fakeAdmits{}))
 
 	many, _ := busNamed(t, "chat", "")
 	w := recorder()
@@ -231,7 +231,7 @@ func TestABusIsAddressedTheWayItsBlockSaysItIs(t *testing.T) {
 
 func TestAPathWithTwoSegmentsIsNotAnInstance(t *testing.T) {
 	buses := &fakeBuses{}
-	h := newHarness(t, Config{}, WithBuses(buses), WithAdmission(&fakeAdmits{}))
+	h := newHarness(t, Config{}, withBuses(buses), withAdmission(&fakeAdmits{}))
 	fqdn, _ := busNamed(t, "chat", "")
 
 	w := recorder()
@@ -244,7 +244,7 @@ func TestAPathWithTwoSegmentsIsNotAnInstance(t *testing.T) {
 }
 
 func TestABusWithInstancesNeedsAnAdmission(t *testing.T) {
-	h := newHarness(t, Config{}, WithBuses(&fakeBuses{}))
+	h := newHarness(t, Config{}, withBuses(&fakeBuses{}))
 	fqdn, _ := busNamed(t, "chat", "")
 
 	w := recorder()
@@ -257,7 +257,7 @@ func TestABusWithInstancesNeedsAnAdmission(t *testing.T) {
 
 func TestAnUnreachableBusIsAnswered(t *testing.T) {
 	buses := &fakeBuses{err: errors.New("no gossip")}
-	h := newHarness(t, Config{}, WithBuses(buses), WithAdmission(&fakeAdmits{}))
+	h := newHarness(t, Config{}, withBuses(buses), withAdmission(&fakeAdmits{}))
 	fqdn, _ := busNamed(t, "presence", "")
 
 	w := recorder()
@@ -268,7 +268,7 @@ func TestAnUnreachableBusIsAnswered(t *testing.T) {
 func TestAnAttachmentIsMeteredAsAnAttach(t *testing.T) {
 	buses := &fakeBuses{}
 	m := &meter{}
-	h := newHarness(t, Config{}, WithBuses(buses), WithMeter(m), WithAdmission(&fakeAdmits{}))
+	h := newHarness(t, Config{}, withBuses(buses), withMeter(m), withAdmission(&fakeAdmits{}))
 	fqdn, _ := busNamed(t, "presence", "")
 
 	conn, _, err := dial(t, h.listen(t), fqdn)
@@ -297,7 +297,7 @@ func TestAnAttachmentIsMeteredAsAnAttach(t *testing.T) {
 
 func TestAnUpgradeAtANameWithNoBusIsARequest(t *testing.T) {
 	buses := &fakeBuses{}
-	h := newHarness(t, Config{}, WithBuses(buses))
+	h := newHarness(t, Config{}, withBuses(buses))
 
 	w := recorder()
 	h.Gateway.Handler().ServeHTTP(w, upgradeRequest("ask.example.com"))

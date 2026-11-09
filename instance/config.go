@@ -35,7 +35,6 @@ const (
 	Register = "register"
 	Worker   = "worker"
 	Stats    = "stats"
-	Gateway  = "gateway"
 	Auth     = "auth"
 	Secrets  = "secrets"
 
@@ -52,9 +51,13 @@ const (
 	Database = "database"
 )
 
-// Primitives holds a project's `sync` kind (queues and logs), borrowed from the
-// service's descriptor so a rename cannot leave config naming nothing.
-var Primitives = primitives.Descriptor.Name
+// Primitives holds a project's `sync` kind (queues and logs), and Gateway answers
+// the internet for a project's names, each borrowed from its service's descriptor so
+// a rename cannot leave config naming nothing.
+var (
+	Primitives = primitives.Descriptor.Name
+	Gateway    = gateway.Descriptor.Name
+)
 
 // PLM and Builder, named by the build packages themselves. Two processes: build
 // may not import builder (services/plm/boundary_test.go), and withDefaults refuses
@@ -69,7 +72,7 @@ var (
 )
 
 // All is every service this composition knows how to start.
-var All = []string{Worker, Gateway}
+var All = []string{Worker}
 
 // Everything is every service a node can be configured to run: the ones this
 // package still starts itself and the ones services.New makes. All, the default
@@ -124,8 +127,7 @@ type Config struct {
 
 	// Per-service operator configuration. Each is that service's own; nothing
 	// here reinterprets it.
-	Worker  worker.Config
-	Gateway gateway.Config
+	Worker worker.Config
 
 	// CM is what the cloud keeps once for every region: today its
 	// certificates — the ACME CA, the challenge type and whether the zone's
@@ -290,7 +292,6 @@ func (c Config) withDefaults(added ...string) (Config, error) {
 	}
 	c.Tenancy = served.Namespaces()
 	// The services this package still builds carry the zone in their own config.
-	c.Gateway.CloudFqdn = c.CloudFqdn
 	for name := range c.Sections {
 		if !slices.Contains(added, name) {
 			return Config{}, fmt.Errorf("node: there is configuration for %q, which is not a service this node can run; it runs %v", name, added)

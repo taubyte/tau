@@ -144,7 +144,7 @@ func TestAnArtifactThatCannotBeReadIsSaidSo(t *testing.T) {
 
 func TestAGatewayGivenNoFilesRefusesAPackageRoute(t *testing.T) {
 	h := newHarness(t, Config{CloudFqdn: "tau.example.io"})
-	bare, err := New(Config{CloudFqdn: "tau.example.io"}, WithHosts(h.Reg), WithSource(h.Reg), WithWorkers(h.Workers))
+	bare, err := build(Config{CloudFqdn: "tau.example.io"}, withHosts(h.Reg), withSource(h.Reg), withWorkers(h.Workers))
 	require.NoError(t, err)
 	h.Gateway = bare
 
@@ -220,9 +220,9 @@ func TestAWaitThatEndsLeavesTheArtifactToOthers(t *testing.T) {
 
 func TestFilesNeedBothTheLookupAndTheStore(t *testing.T) {
 	h := newHarness(t, Config{})
-	_, err := New(Config{}, WithHosts(h.Reg), WithSource(h.Reg), WithWorkers(h.Workers), WithFiles(nil, h.Files))
+	_, err := build(Config{}, withHosts(h.Reg), withSource(h.Reg), withWorkers(h.Workers), withFiles(nil, h.Files))
 	require.ErrorContains(t, err, "both an artifact lookup and an asset store")
-	_, err = New(Config{}, WithHosts(h.Reg), WithSource(h.Reg), WithWorkers(h.Workers), WithFiles(h.Files, nil))
+	_, err = build(Config{}, withHosts(h.Reg), withSource(h.Reg), withWorkers(h.Workers), withFiles(h.Files, nil))
 	require.Error(t, err)
 }
 

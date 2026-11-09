@@ -50,13 +50,13 @@ func hostsOf(t testing.TB, p *specs.Project, cloud string) []string {
 	return out
 }
 
-func newHarness(t testing.TB, cfg Config, opts ...Option) *harness {
+func newHarness(t testing.TB, cfg Config, opts ...option) *harness {
 	t.Helper()
 	return newHarnessOf(t, compiled(t), cfg, opts...)
 }
 
 // newHarnessOf is a harness over a compiled project of the test's own.
-func newHarnessOf(t testing.TB, bytes []byte, cfg Config, opts ...Option) *harness {
+func newHarnessOf(t testing.TB, bytes []byte, cfg Config, opts ...option) *harness {
 	t.Helper()
 
 	reg, err := register.New(register.WithStore(register.NewMemStore()))
@@ -75,8 +75,8 @@ func newHarnessOf(t testing.TB, bytes []byte, cfg Config, opts ...Option) *harne
 	files := &builtFiles{artifacts: map[string][]byte{shopArtifact: tarball(t, shopSite)}}
 	clock := &fakeClock{at: time.Unix(1_700_000_000, 0)}
 
-	s, err := New(cfg, append([]Option{
-		WithHosts(reg), WithSource(reg), WithWorkers(workers), WithClock(clock.Now), WithFiles(files, files),
+	s, err := build(cfg, append([]option{
+		withHosts(reg), withSource(reg), withWorkers(workers), withClock(clock.Now), withFiles(files, files),
 	}, opts...)...)
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })

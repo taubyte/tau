@@ -54,7 +54,7 @@ type Service struct {
 	meter Meter
 
 	// logger is where a failure the caller is not told about is said. See
-	// WithLogger.
+	// withLogger.
 	logger Logger
 
 	// secrets reads a provided certificate, and terminates says the composer
@@ -79,6 +79,10 @@ type Service struct {
 	cands        sync.Map
 	candMu       sync.Mutex
 	candProjects map[*specs.Project]struct{}
+
+	// owned is what Start opened for it, closed with it.
+	owned     []io.Closer
+	closeOnce sync.Once
 }
 
 // candKey is a name within one compiled project.
@@ -90,28 +94,40 @@ type candKey struct {
 // maxCandidateProjects bounds cands; past it the table starts over.
 const maxCandidateProjects = 256
 
-// New validates and allocates. It binds nothing: Handler is what a composer
-// serves, and where it serves it is the composer's.
-func New(cfg Config, opts ...Option) (*Service, error) {
+// New is the gateway, unstarted: Start builds it from its node.
+func New() *Service { return &Service{} }
+
+// build is a gateway over what it is given. It binds nothing: Handler is what a
+// composer serves, and where it serves it is the composer's.
+func build(cfg Config, opts ...option) (*Service, error) {
+	s := New()
+	if err := s.assemble(cfg, opts...); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// assemble validates and allocates.
+func (s *Service) assemble(cfg Config, opts ...option) error {
 	cfg, err := cfg.withDefaults()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	o := options{logger: logging.Logger("tau.gateway")}
 	for _, apply := range opts {
 		if err := apply(&o); err != nil {
-			return nil, fmt.Errorf("gateway: option: %w", err)
+			return fmt.Errorf("gateway: option: %w", err)
 		}
 	}
 	if o.hosts == nil {
-		return nil, ErrNoHosts
+		return ErrNoHosts
 	}
 	if o.workers == nil {
-		return nil, ErrNoWorkers
+		return ErrNoWorkers
 	}
 	if o.source == nil {
-		return nil, ErrNoSource
+		return ErrNoSource
 	}
 	if o.now == nil {
 		o.now = time.Now
@@ -124,30 +140,19 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 
 	projects, err := register.NewCache(o.source, specs.Load, cacheOptions...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return &Service{
-		cfg:      cfg,
-		hosts:    o.hosts,
-		workers:  o.workers,
-		buses:    o.buses,
-		admits:   o.admits,
-		projects: projects,
-		limits:   ratelimit.NewBuckets(o.now, cfg.MaxHosts),
-		now:      o.now,
-		meter:    o.meter,
-		logger:   o.logger,
-
-		secrets:    o.secrets,
-		issuer:     o.issuer,
-		terminates: o.terminates,
-
-		artifacts: o.artifacts,
-		assets:    o.assets,
-		files:     newUnpacked(cfg.FilesBudget),
-		answers:   newAnswers(cfg.CacheBudget),
-	}, nil
+	s.cfg = cfg
+	s.hosts, s.workers, s.buses, s.admits = o.hosts, o.workers, o.buses, o.admits
+	s.projects = projects
+	s.limits = ratelimit.NewBuckets(o.now, cfg.MaxHosts)
+	s.now, s.meter, s.logger = o.now, o.meter, o.logger
+	s.secrets, s.issuer, s.terminates = o.secrets, o.issuer, o.terminates
+	s.artifacts, s.assets = o.artifacts, o.assets
+	s.files = newUnpacked(cfg.FilesBudget)
+	s.answers = newAnswers(cfg.CacheBudget)
+	return nil
 }
 
 // Handler is what a composer serves.

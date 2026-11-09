@@ -152,7 +152,7 @@ func TestAHandshakeForNothingIsRefused(t *testing.T) {
 func TestAProvidedCertificateIsTheSecret(t *testing.T) {
 	cert, key, _ := issued(t, "shop.example.com")
 
-	h := newHarnessOf(t, providing(t), Config{}, WithSecrets(vault{value: key + cert}))
+	h := newHarnessOf(t, providing(t), Config{}, withSecrets(vault{value: key + cert}))
 	got, err := h.Gateway.Certificate(hello("shop.example.com"))
 	require.NoError(t, err)
 	require.Equal(t, cert, leafOf(t, got))
@@ -161,11 +161,11 @@ func TestAProvidedCertificateIsTheSecret(t *testing.T) {
 	_, err = h.Gateway.Certificate(hello("shop.example.com"))
 	require.ErrorContains(t, err, "resolves no secret")
 
-	h = newHarnessOf(t, providing(t), Config{}, WithSecrets(vault{err: errors.New("vault sealed")}))
+	h = newHarnessOf(t, providing(t), Config{}, withSecrets(vault{err: errors.New("vault sealed")}))
 	_, err = h.Gateway.Certificate(hello("shop.example.com"))
 	require.ErrorContains(t, err, "reading the secret in /shop: vault sealed")
 
-	h = newHarnessOf(t, providing(t), Config{}, WithSecrets(vault{value: cert}))
+	h = newHarnessOf(t, providing(t), Config{}, withSecrets(vault{value: cert}))
 	_, err = h.Gateway.Certificate(hello("shop.example.com"))
 	require.ErrorIs(t, err, certificate.ErrNoKey)
 }
@@ -186,7 +186,7 @@ func TestAProvidedCertificateIsRefusedInTheClearWhereNothingTerminates(t *testin
 	require.Contains(t, w.Body.String(), "provides its own certificate")
 	require.Empty(t, h.Workers.seen(), "nothing was invoked for it")
 
-	h = newHarnessOf(t, providing(t), Config{}, WithTLS())
+	h = newHarnessOf(t, providing(t), Config{}, withTLS())
 	w = h.do(t, http.MethodPost, "http://shop.example.com/checkout", "")
 	require.Equal(t, http.StatusOK, w.Code)
 }
@@ -194,7 +194,7 @@ func TestAProvidedCertificateIsRefusedInTheClearWhereNothingTerminates(t *testin
 func TestARealHandshakeReachesTheRoute(t *testing.T) {
 	name := generatedName(t)
 	cert, key, pool := issued(t, name)
-	h := newHarness(t, Config{CloudFqdn: "tau.example.io", Wildcard: certificate.Pair{Certificate: cert, Key: key}}, WithTLS())
+	h := newHarness(t, Config{CloudFqdn: "tau.example.io", Wildcard: certificate.Pair{Certificate: cert, Key: key}}, withTLS())
 
 	srv := httptest.NewUnstartedServer(h.Gateway.Handler())
 	srv.TLS = &tls.Config{GetCertificate: h.Gateway.Certificate, MinVersion: tls.VersionTLS12}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/dns"
+	"github.com/taubyte/tau/services/gateway"
 	secretsService "github.com/taubyte/tau/services/secrets"
 )
 
@@ -91,6 +92,21 @@ type certificates struct{ n *Instance }
 func (c certificates) ServiceTLS() (*tls.Config, error) { return c.n.ServiceTLS() }
 
 func (c certificates) Challenges() (dns.Challenges, error) { return c.n.challengeReader() }
+
+// Issuer is the client a generated name the wildcard does not cover is ordered
+// through, or nil in a cloud that issues none.
+func (c certificates) Issuer() (gateway.Issuer, error) {
+	certs, err := c.n.certificates()
+	if certs == nil || err != nil {
+		return nil, err
+	}
+	return certs, nil
+}
+
+// terminating says whether the composer serves this node's gateway over TLS too.
+type terminating struct{ n *Instance }
+
+func (t terminating) Terminates() bool { return t.n.opts.terminates }
 
 // challengeStore is the DNS-01 database, opened once per node.
 func (n *Instance) challengeStore() (cacheStore, error) {

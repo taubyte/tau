@@ -14,6 +14,7 @@ import (
 	"github.com/taubyte/tau/instance"
 	"github.com/taubyte/tau/pkg/stats"
 	"github.com/taubyte/tau/services"
+	gatewayService "github.com/taubyte/tau/services/gateway"
 )
 
 func write(t *testing.T, content string) string {
@@ -50,7 +51,9 @@ http: ":8080"
 		"the isolation handler reaches the node that builds the tier")
 	require.Equal(t, 8, f.Node.Worker.MaxProjects)
 	require.Equal(t, "tau.example.io", f.Node.CloudFqdn)
-	require.Equal(t, int64(1<<20), f.Node.Gateway.MaxBody)
+	var gateway gatewayService.Config
+	require.NoError(t, f.Node.Section(instance.Gateway, &gateway))
+	require.Equal(t, int64(1<<20), gateway.MaxBody, "the gateway's own section")
 	require.Equal(t, "/var/lib/tau", f.Root)
 	require.Equal(t, ":8080", f.HTTP)
 }

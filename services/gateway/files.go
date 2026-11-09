@@ -38,9 +38,9 @@ var ErrNoFiles = errors.New("gateway: this route serves a package's files and th
 // DefaultFilesBudget bounds the unpacked artifacts a gateway holds at once.
 const DefaultFilesBudget = 1 << 30
 
-// WithFiles is where a package handler's artifact is found and read. Optional:
+// withFiles is where a package handler's artifact is found and read. Optional:
 // without it such a route is refused by name.
-func WithFiles(a Artifacts, assets Assets) Option {
+func withFiles(a Artifacts, assets Assets) option {
 	return func(o *options) error {
 		if a == nil || assets == nil {
 			return errors.New("gateway: files need both an artifact lookup and an asset store")
@@ -215,5 +215,16 @@ func (s *Service) serveFiles(ctx context.Context, m match, proj *specs.Project, 
 	return files.Serve(site.Serving{Mode: h.HandlerMode, Index: h.HandlerIndex, NotFound: h.HandlerNotFound}, req.Method, req.Path), 0, ""
 }
 
-// Close removes what this gateway unpacked.
-func (s *Service) Close() error { return s.files.close() }
+// Close removes what this gateway unpacked and releases what Start opened for it.
+func (s *Service) Close() error {
+	var errs []error
+	if s.files != nil {
+		errs = append(errs, s.files.close())
+	}
+	s.closeOnce.Do(func() {
+		for _, c := range s.owned {
+			errs = append(errs, c.Close())
+		}
+	})
+	return errors.Join(errs...)
+}

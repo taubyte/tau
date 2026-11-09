@@ -36,6 +36,8 @@ func TestAnEmptyServiceListIsEveryService(t *testing.T) {
 	require.NotNil(t, n.Register())
 	require.NotNil(t, n.Worker())
 	require.NotNil(t, n.Stats())
+	require.Nil(t, n.Handler(), "the gateway runs once the node starts")
+	require.NoError(t, n.Start(t.Context()))
 	require.NotNil(t, n.Handler())
 }
 
@@ -50,11 +52,9 @@ func TestEachServiceSaysWhatItCannotStartWithout(t *testing.T) {
 	_, err := New(nil, rooted(t, Config{}))
 	require.ErrorIs(t, err, ErrNoPeer, "an instance does not mint its own identity")
 
-	// A GATEWAY ROUTES FROM STATS. Without one it has no way to choose a
-	// worker, and saying so at construction beats a 502 on the first request.
-	_, err = New(mockPeer(t), rooted(t, Config{Services: []string{Gateway}}))
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "stats")
+	// A GATEWAY ROUTES FROM STATS, so a node naming one runs stats beside it.
+	n, _, _ := makeNode(t, Config{Services: []string{Gateway}})
+	require.Contains(t, n.Services(), Stats)
 }
 
 func TestWhatWasBuiltIsClosed(t *testing.T) {
@@ -175,7 +175,7 @@ func TestTheGatewayIsServedByTheCaller(t *testing.T) {
 }
 
 func TestAWholeRequestPathOnOneNode(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Gateway: gatewayConfig()}, prebuilt())
+	n, _, _ := makeNode(t, Config{}, prebuilt())
 	require.NoError(t, n.Start(t.Context()))
 
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
@@ -227,7 +227,8 @@ func TestTheAccessorsAreTheServicesItRuns(t *testing.T) {
 	require.False(t, ok, "a node with no sync backing knows no queue")
 	require.Same(t, bare.Messaging(), bare.PubSub())
 
-	full, _, _ := makeNode(t, Config{Services: []string{Register, Stats, Secrets, Database, Gateway}, Gateway: gatewayConfig()})
+	full, _, _ := makeNode(t, Config{Services: []string{Register, Stats, Secrets, Database, Gateway}})
+	require.NoError(t, full.Start(t.Context()))
 	require.Same(t, full.secrets, full.Secrets())
 	require.Same(t, full.database, full.Database())
 	tlsConfig := full.TLSConfig()
@@ -252,8 +253,10 @@ func TestWithTLSReachesTheGateway(t *testing.T) {
 	require.NoError(t, WithTLS()(&o))
 	require.True(t, o.terminates)
 
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Stats, Gateway}, Gateway: gatewayConfig()}, WithTLS())
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Stats, Gateway}}, WithTLS())
+	require.NoError(t, n.Start(t.Context()))
 	require.NotNil(t, n.TLSConfig())
+	require.True(t, terminating{n}.Terminates(), "and the gateway is told so")
 }
 
 // reported is this node's own row in its stats view once it satisfies ok:

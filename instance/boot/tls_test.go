@@ -97,7 +97,7 @@ func TestTheNodeTerminatesAGeneratedNameWithTheCloudsWildcard(t *testing.T) {
 		Node: instance.Config{
 			Services:  []string{instance.Register, instance.Stats, instance.Gateway},
 			CloudFqdn: cloud,
-			Gateway:   gateway.Config{Wildcard: wildcard},
+			Sections:  map[string]any{instance.Gateway: gateway.Config{Wildcard: wildcard}},
 		},
 		Root:   t.TempDir(),
 		Listen: []string{"/ip4/127.0.0.1/tcp/0"},

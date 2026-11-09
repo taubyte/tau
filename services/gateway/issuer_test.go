@@ -31,7 +31,7 @@ func TestAGeneratedNameTheWildcardDoesNotHoldIsIssued(t *testing.T) {
 	pair, err := tls.X509KeyPair([]byte(cert), []byte(key))
 	require.NoError(t, err)
 	issuer := &fakeIssuer{cert: pair}
-	h := newHarness(t, Config{CloudFqdn: "tau.example.io"}, WithIssuer(issuer))
+	h := newHarness(t, Config{CloudFqdn: "tau.example.io"}, withIssuer(issuer))
 
 	got, err := h.Gateway.Certificate(hello(name))
 	require.NoError(t, err)
@@ -53,7 +53,7 @@ func TestTheWildcardWinsOverTheIssuerWhereItCovers(t *testing.T) {
 	name := generatedName(t)
 	cert, key, _ := issued(t, name)
 	issuer := &fakeIssuer{}
-	h := newHarness(t, Config{CloudFqdn: "tau.example.io", Wildcard: certificate.Pair{Certificate: cert, Key: key}}, WithIssuer(issuer))
+	h := newHarness(t, Config{CloudFqdn: "tau.example.io", Wildcard: certificate.Pair{Certificate: cert, Key: key}}, withIssuer(issuer))
 	got, err := h.Gateway.Certificate(hello(name))
 	require.NoError(t, err)
 	require.Equal(t, cert, leafOf(t, got))
@@ -61,7 +61,7 @@ func TestTheWildcardWinsOverTheIssuerWhereItCovers(t *testing.T) {
 }
 
 func TestTheCAsChallengeIsAnsweredBeforeAnyName(t *testing.T) {
-	h := newHarness(t, Config{CloudFqdn: "tau.example.io"}, WithIssuer(&fakeIssuer{}))
+	h := newHarness(t, Config{CloudFqdn: "tau.example.io"}, withIssuer(&fakeIssuer{}))
 	w := h.do(t, http.MethodGet, "http://nobody.example.com/.well-known/acme-challenge/tok", "")
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, "tok.thumb", w.Body.String())
@@ -74,7 +74,7 @@ func TestTheCAsChallengeIsAnsweredBeforeAnyName(t *testing.T) {
 	w = plain.do(t, http.MethodGet, "http://nobody.example.com/.well-known/acme-challenge/tok", "")
 	require.NotEqual(t, "tok.thumb", w.Body.String())
 
-	require.Error(t, WithIssuer(nil)(&options{}))
+	require.Error(t, withIssuer(nil)(&options{}))
 }
 
 type projectIssuer struct {
@@ -92,7 +92,7 @@ func TestACustomNameIsIssuedForItsProjectAndZone(t *testing.T) {
 	pair, err := tls.X509KeyPair([]byte(cert), []byte(key))
 	require.NoError(t, err)
 	issuer := &projectIssuer{fakeIssuer: fakeIssuer{cert: pair}}
-	h := newHarness(t, Config{CloudFqdn: "tau.example.io"}, WithIssuer(issuer))
+	h := newHarness(t, Config{CloudFqdn: "tau.example.io"}, withIssuer(issuer))
 
 	got, err := h.Gateway.Certificate(hello("shop.example.com"))
 	require.NoError(t, err)

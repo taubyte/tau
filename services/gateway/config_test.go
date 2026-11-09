@@ -11,19 +11,19 @@ import (
 func TestNewRefusesWhatItCannotWorkWithout(t *testing.T) {
 	h := newHarness(t, Config{})
 
-	_, err := New(Config{}, WithSource(h.Reg), WithWorkers(h.Workers))
+	_, err := build(Config{}, withSource(h.Reg), withWorkers(h.Workers))
 	require.ErrorIs(t, err, ErrNoHosts)
 
-	_, err = New(Config{}, WithHosts(h.Reg), WithSource(h.Reg))
+	_, err = build(Config{}, withHosts(h.Reg), withSource(h.Reg))
 	require.ErrorIs(t, err, ErrNoWorkers)
 
-	_, err = New(Config{}, WithHosts(h.Reg), WithWorkers(h.Workers))
+	_, err = build(Config{}, withHosts(h.Reg), withWorkers(h.Workers))
 	require.ErrorIs(t, err, ErrNoSource)
 
 	// A nil handed to an option is caught by the option, so the message names
 	// the setting rather than surfacing later as a missing dependency.
-	for _, opt := range []Option{WithHosts(nil), WithWorkers(nil), WithSource(nil), WithClock(nil)} {
-		_, err := New(Config{}, WithHosts(h.Reg), WithSource(h.Reg), WithWorkers(h.Workers), opt)
+	for _, opt := range []option{withHosts(nil), withWorkers(nil), withSource(nil), withClock(nil)} {
+		_, err := build(Config{}, withHosts(h.Reg), withSource(h.Reg), withWorkers(h.Workers), opt)
 		require.Error(t, err)
 	}
 }
@@ -37,7 +37,7 @@ func TestTheConfigRefusesNumbersThatMeanNothing(t *testing.T) {
 		{MaxBody: -1},
 		{MaxProjects: -1},
 	} {
-		_, err := New(cfg, WithHosts(h.Reg), WithSource(h.Reg), WithWorkers(h.Workers))
+		_, err := build(cfg, withHosts(h.Reg), withSource(h.Reg), withWorkers(h.Workers))
 		require.Error(t, err, "%+v", cfg)
 	}
 }
@@ -45,7 +45,7 @@ func TestTheConfigRefusesNumbersThatMeanNothing(t *testing.T) {
 func TestTheDefaultsAreApplied(t *testing.T) {
 	h := newHarness(t, Config{})
 
-	s, err := New(Config{}, WithHosts(h.Reg), WithSource(h.Reg), WithWorkers(h.Workers))
+	s, err := build(Config{}, withHosts(h.Reg), withSource(h.Reg), withWorkers(h.Workers))
 	require.NoError(t, err)
 
 	require.Equal(t, DefaultMaxHosts, s.cfg.MaxHosts)
@@ -56,8 +56,8 @@ func TestTheDefaultsAreApplied(t *testing.T) {
 func TestTheCacheSettingsReachTheCache(t *testing.T) {
 	h := newHarness(t, Config{})
 
-	s, err := New(Config{MaxProjects: 3},
-		WithHosts(h.Reg), WithSource(h.Reg), WithWorkers(h.Workers), WithClock(h.clock.Now))
+	s, err := build(Config{MaxProjects: 3},
+		withHosts(h.Reg), withSource(h.Reg), withWorkers(h.Workers), withClock(h.clock.Now))
 	require.NoError(t, err)
 
 	require.Zero(t, s.Held())

@@ -9,6 +9,7 @@ import (
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/database"
 	"github.com/taubyte/tau/services/dns"
+	"github.com/taubyte/tau/services/gateway"
 	"github.com/taubyte/tau/services/plm"
 	"github.com/taubyte/tau/services/plm/hosted"
 	"github.com/taubyte/tau/services/primitives"
@@ -44,7 +45,9 @@ func catalog() []shipped {
 		{name: database.Descriptor.Name, new: func() service.Service { return database.New() }, needs: []string{cm.Name}},
 		{name: storage.Descriptor.Name, new: func() service.Service { return storage.New() }, needs: []string{cm.Name}},
 		{name: plm.Builder.Name, new: func() service.Service { return builder.New() }},
-		// A proxy reaches its workloads through placement, which routes from the stats view.
+		// A gateway and a proxy reach their workloads through placement, which routes
+		// from the stats view.
+		{name: gateway.Descriptor.Name, new: func() service.Service { return gateway.New() }, needs: []string{statsService.Descriptor.Name}},
 		{name: proxy.Name, new: func() service.Service { return proxy.New() }, needs: []string{statsService.Descriptor.Name}},
 		// DNS answers from the stats view, so a node naming it runs stats too.
 		{name: dns.Name, new: func() service.Service { return dns.New() }, needs: []string{statsService.Descriptor.Name}},

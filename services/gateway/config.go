@@ -173,8 +173,8 @@ var (
 	ErrNoSource  = errors.New("gateway: a gateway with no register cannot read a project")
 )
 
-// Option injects what this service is built from.
-type Option func(*options) error
+// option injects what this service is built from.
+type option func(*options) error
 
 type options struct {
 	hosts   Hosts
@@ -210,9 +210,9 @@ type ProjectIssuer interface {
 	ForProject(ctx context.Context, project, zone, name string) (tls.Certificate, error)
 }
 
-// WithIssuer issues certificates for generated names. Optional: without it a
+// withIssuer issues certificates for generated names. Optional: without it a
 // generated name is answered by the wildcard or not at all.
-func WithIssuer(i Issuer) Option {
+func withIssuer(i Issuer) option {
 	return func(o *options) error {
 		if i == nil {
 			return errors.New("gateway: a nil issuer")
@@ -222,8 +222,8 @@ func WithIssuer(i Issuer) Option {
 	}
 }
 
-// WithHosts is where "whose name is this" is answered. Required.
-func WithHosts(h Hosts) Option {
+// withHosts is where "whose name is this" is answered. Required.
+func withHosts(h Hosts) option {
 	return func(o *options) error {
 		if h == nil {
 			return ErrNoHosts
@@ -233,8 +233,8 @@ func WithHosts(h Hosts) Option {
 	}
 }
 
-// WithWorkers is what runs a request. Required.
-func WithWorkers(w Workers) Option {
+// withWorkers is what runs a request. Required.
+func withWorkers(w Workers) option {
 	return func(o *options) error {
 		if w == nil {
 			return ErrNoWorkers
@@ -244,8 +244,8 @@ func WithWorkers(w Workers) Option {
 	}
 }
 
-// WithSource is where compiled projects are read from. Required.
-func WithSource(s register.Registry) Option {
+// withSource is where compiled projects are read from. Required.
+func withSource(s register.Registry) option {
 	return func(o *options) error {
 		if s == nil {
 			return ErrNoSource
@@ -255,9 +255,9 @@ func WithSource(s register.Registry) Option {
 	}
 }
 
-// WithMeter is where this service says what it accounted for — the bytes that
+// withMeter is where this service says what it accounted for — the bytes that
 // crossed the edge, in both directions, served and refused. Nil emits nothing.
-func WithMeter(m Meter) Option {
+func withMeter(m Meter) option {
 	return func(o *options) error {
 		if m == nil {
 			return errors.New("gateway: a nil meter")
@@ -267,10 +267,10 @@ func WithMeter(m Meter) Option {
 	}
 }
 
-// WithBuses is what attaches a browser to a bus. Optional: a gateway without
+// withBuses is what attaches a browser to a bus. Optional: a gateway without
 // one refuses a bus's name and serves every other kind, because attaching
 // needs the swarm's gossip and a node may run a gateway without it.
-func WithBuses(b Buses) Option {
+func withBuses(b Buses) option {
 	return func(o *options) error {
 		if b == nil {
 			return errors.New("gateway: a nil bus backing")
@@ -280,10 +280,10 @@ func WithBuses(b Buses) Option {
 	}
 }
 
-// WithAdmission is what decides whether a caller may attach to one instance of
+// withAdmission is what decides whether a caller may attach to one instance of
 // a bus. A gateway without one refuses every bus that declares `instances:`,
 // which is a security control silently absent otherwise.
-func WithAdmission(a Admits) Option {
+func withAdmission(a Admits) option {
 	return func(o *options) error {
 		if a == nil {
 			return errors.New("gateway: a nil admission")
@@ -299,8 +299,8 @@ type Logger interface {
 	Warnf(format string, args ...any)
 }
 
-// WithLogger replaces the service's own log, tau.gateway.
-func WithLogger(l Logger) Option {
+// withLogger replaces the service's own log, tau.gateway.
+func withLogger(l Logger) option {
 	return func(o *options) error {
 		if l == nil {
 			return errors.New("gateway: a nil logger")
@@ -310,10 +310,10 @@ func WithLogger(l Logger) Option {
 	}
 }
 
-// WithSecrets is what reads a provided certificate. Optional: a gateway
+// withSecrets is what reads a provided certificate. Optional: a gateway
 // without one refuses the handshake for a name that provides its own, and
 // serves every generated one.
-func WithSecrets(sec Secrets) Option {
+func withSecrets(sec Secrets) option {
 	return func(o *options) error {
 		if sec == nil {
 			return errors.New("gateway: a nil secret resolver")
@@ -323,18 +323,18 @@ func WithSecrets(sec Secrets) Option {
 	}
 }
 
-// WithTLS says the composer serves this handler over TLS too, answering each
+// withTLS says the composer serves this handler over TLS too, answering each
 // handshake with Certificate. Without it a name that provides its own
 // certificate is refused over plain HTTP — see tls.go.
-func WithTLS() Option {
+func withTLS() option {
 	return func(o *options) error {
 		o.terminates = true
 		return nil
 	}
 }
 
-// WithClock injects the local clock. Tests use it; production does not.
-func WithClock(now func() time.Time) Option {
+// withClock injects the local clock. Tests use it; production does not.
+func withClock(now func() time.Time) option {
 	return func(o *options) error {
 		if now == nil {
 			return errors.New("gateway: a nil clock")

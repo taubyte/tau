@@ -75,7 +75,6 @@ type Instance struct {
 	stats    statsService.Service
 	register registerService.Service
 	worker   *worker.Service
-	gateway  *gateway.Service
 
 	secrets secretsService.Service
 
@@ -230,8 +229,10 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 	n.provide("", builtIns{n})
 	// The certificate a service's own public listener answers with, and DNS-01's.
 	n.provide("", certificates{n})
-	// Every service name a node of this cloud can run.
+	// Every service name a node of this cloud can run, and whether its gateway's
+	// handler is served over TLS.
 	n.provide("", catalog{n})
+	n.provide("", terminating{n})
 	// How every service here finds a peer serving a protocol.
 	n.finder = &finder{n: n}
 	n.served = service.NewServed(p.ID(), n.finder, cfg.Clients.Retry)
@@ -246,14 +247,38 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 		n.Close()
 		return nil, err
 	}
-	// The worker beside the services that read what it holds, and its component tier.
-	if n.worker != nil {
-		n.provide(Worker, n.worker)
+	if err := n.provideWorker(); err != nil {
+		n.Close()
+		return nil, err
 	}
+	return n, nil
+}
+
+// provideWorker offers the services on this node what the worker holds: the worker,
+// its component tier, where a build's artifact is, and the bus a browser attaches to
+// and who may attach.
+func (n *Instance) provideWorker() error {
+	n.provide("", n.Artifacts())
+	if n.Messaging() != nil {
+		buses, err := stream.NewBuses(n.busStreams())
+		if err != nil {
+			return err
+		}
+		n.provide("", buses)
+	}
+	if n.worker == nil {
+		return nil
+	}
+	n.provide(Worker, n.worker)
 	if n.decider != nil {
 		n.provide("", n.decider)
 	}
-	return n, nil
+	admits, err := n.admissions()
+	if err != nil {
+		return err
+	}
+	n.provide("", admits)
+	return nil
 }
 
 // open constructs in dependency order. Anything opened is recorded as it is
@@ -271,10 +296,7 @@ func (n *Instance) open() error {
 	}
 	// AFTER THE WORKER AND BEFORE THE GATEWAY, because it takes the first as a
 	// collaborator and the second takes it as one.
-	if err := n.openPlacement(); err != nil {
-		return err
-	}
-	return n.openGateway()
+	return n.openPlacement()
 }
 
 // tiers is what this node's pool can run. It is here for the composition's own
@@ -554,84 +576,6 @@ func (n *Instance) openPlacement() error {
 	return nil
 }
 
-func (n *Instance) openGateway() error {
-	if !n.cfg.runs(Gateway) {
-		return nil
-	}
-	if n.workers == nil {
-		return errors.New("node: a gateway places requests from stats, and this node does not run it")
-	}
-
-	source := n.views
-	gatewayOptions := []gateway.Option{
-		gateway.WithHosts(source),
-		gateway.WithSource(source),
-		gateway.WithWorkers(n.workers),
-		gateway.WithLogger(logger),
-	}
-
-	// A BUS IS ATTACHED TO OVER GOSSIP, so a node with none says so by not
-	// offering the option at all — the gateway then refuses a bus's name with
-	// "not available here" rather than accepting the connection and never
-	// delivering anything.
-	if n.Messaging() != nil {
-		buses, err := stream.NewBuses(n.busStreams())
-		if err != nil {
-			return err
-		}
-		gatewayOptions = append(gatewayOptions, gateway.WithBuses(buses))
-	}
-
-	// AND WHO MAY ATTACH TO ONE INSTANCE OF ONE, which is the same decision the
-	// tier asks about a workload — one implementation, because two answers to
-	// it would be two security policies for one config block.
-	if n.worker != nil {
-		admits, err := n.admissions()
-		if err != nil {
-			return err
-		}
-		gatewayOptions = append(gatewayOptions, gateway.WithAdmission(admits))
-	}
-	if n.opts.now != nil {
-		gatewayOptions = append(gatewayOptions, gateway.WithClock(n.opts.now))
-	}
-
-	// A PROVIDED CERTIFICATE IS A SECRET OF THE DEPLOYMENT, read through the
-	// resolver the worker and the proxy read through, and by the same rule:
-	// an injected one wins, then this node's own vault or one in the fleet.
-	switch {
-	case n.opts.secrets != nil:
-		gatewayOptions = append(gatewayOptions, gateway.WithSecrets(n.opts.secrets))
-	case n.vault != nil:
-		gatewayOptions = append(gatewayOptions, gateway.WithSecrets(n.vault))
-	}
-	if n.opts.terminates {
-		gatewayOptions = append(gatewayOptions, gateway.WithTLS())
-	}
-
-	// A GENERATED NAME THE WILDCARD DOES NOT COVER is ordered by this node
-	// and kept on the cloud's cm nodes; see cm.go.
-	certs, err := n.certificates()
-	if err != nil {
-		return fmt.Errorf("node: gateway: %w", err)
-	}
-	if certs != nil {
-		gatewayOptions = append(gatewayOptions, gateway.WithIssuer(certs))
-	}
-
-	// A PACKAGE HANDLER'S FILES are read from the build's artifact, as a worker
-	// reads one: the same lookup, the same storage service.
-	gatewayOptions = append(gatewayOptions, gateway.WithFiles(n.Artifacts(), n.store))
-
-	svc, err := gateway.New(n.cfg.Gateway, gatewayOptions...)
-	if err != nil {
-		return err
-	}
-	n.gateway = svc
-	n.closers = append(n.closers, closerFunc(func() { svc.Close() }))
-	return nil
-}
-
 // Artifacts is what this node's worker looks a built resource's artifact up in: the
 // one it was given, else plm's records on this node.
 func (n *Instance) Artifacts() worker.Artifacts {
@@ -741,20 +685,32 @@ func (n *Instance) addCloser(c io.Closer) {
 // Handler is what this node serves on the internet, or nil when it runs no
 // gateway.
 func (n *Instance) Handler() http.Handler {
-	if n.gateway == nil {
+	g := n.runningGateway()
+	if g == nil {
 		return nil
 	}
-	return n.gateway.Handler()
+	return g.Handler()
 }
 
 // TLSConfig is what a composer serving Handler over TLS answers handshakes
 // with: each name's certificate is the one its gateway declares. Nil when this
 // node runs no gateway.
 func (n *Instance) TLSConfig() *tls.Config {
-	if n.gateway == nil {
+	g := n.runningGateway()
+	if g == nil {
 		return nil
 	}
-	return &tls.Config{GetCertificate: n.gateway.Certificate, MinVersion: tls.VersionTLS12}
+	return &tls.Config{GetCertificate: g.Certificate, MinVersion: tls.VersionTLS12}
+}
+
+// runningGateway is the gateway this node runs, once started, or nil.
+func (n *Instance) runningGateway() *gateway.Service {
+	for _, r := range n.runningNow() {
+		if g, ok := r.Service.(*gateway.Service); ok {
+			return g
+		}
+	}
+	return nil
 }
 
 // Close stops everything, in the reverse of the order it was opened. It is

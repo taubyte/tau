@@ -305,7 +305,7 @@ func TestTheWorkersAnswerIsPassedThrough(t *testing.T) {
 func TestTheGatewayKeepsNoHostTableOfItsOwn(t *testing.T) {
 	h := newHarness(t, Config{})
 	counting := &countingHosts{inner: h.Reg}
-	s, err := New(Config{}, WithHosts(counting), WithSource(h.Reg), WithWorkers(h.Workers), WithClock(h.clock.Now))
+	s, err := build(Config{}, withHosts(counting), withSource(h.Reg), withWorkers(h.Workers), withClock(h.clock.Now))
 	require.NoError(t, err)
 
 	for range 3 {
@@ -320,8 +320,8 @@ func TestTheGatewayKeepsNoHostTableOfItsOwn(t *testing.T) {
 func TestAnUnreachableHostTableIsNotAMissingName(t *testing.T) {
 	h := newHarness(t, Config{})
 
-	s, err := New(Config{},
-		WithHosts(brokenHosts{}), WithSource(h.Reg), WithWorkers(h.Workers), WithClock(h.clock.Now))
+	s, err := build(Config{},
+		withHosts(brokenHosts{}), withSource(h.Reg), withWorkers(h.Workers), withClock(h.clock.Now))
 	require.NoError(t, err)
 
 	r := httptestRequest(http.MethodPost, "/", "ask.example.com")
@@ -366,8 +366,8 @@ func TestAnEnvironmentThatCannotBeRead(t *testing.T) {
 
 	// The register claims the name and holds no object for it, as on a node with a
 	// half-replicated publish.
-	s, err := New(Config{},
-		WithHosts(h.Reg), WithSource(emptySource{}), WithWorkers(h.Workers), WithClock(h.clock.Now))
+	s, err := build(Config{},
+		withHosts(h.Reg), withSource(emptySource{}), withWorkers(h.Workers), withClock(h.clock.Now))
 	require.NoError(t, err)
 
 	r := httptestRequest(http.MethodPost, "/", "ask.example.com")
@@ -442,7 +442,7 @@ func (m *meter) only(t *testing.T) Accounted {
 
 func TestAServedRequestIsAccounted(t *testing.T) {
 	m := &meter{}
-	h := newHarness(t, Config{}, WithMeter(m))
+	h := newHarness(t, Config{}, withMeter(m))
 
 	res := h.do(t, http.MethodPost, "http://ask.example.com/", "a body")
 	require.Equal(t, http.StatusOK, res.Code)
@@ -459,7 +459,7 @@ func TestAServedRequestIsAccounted(t *testing.T) {
 
 func TestAnUnknownNameIsAccountedAgainstNoProject(t *testing.T) {
 	m := &meter{}
-	h := newHarness(t, Config{}, WithMeter(m))
+	h := newHarness(t, Config{}, withMeter(m))
 
 	res := h.do(t, http.MethodGet, "http://nobody.example.com/", "")
 	require.Equal(t, http.StatusNotFound, res.Code)
@@ -473,7 +473,7 @@ func TestAnUnknownNameIsAccountedAgainstNoProject(t *testing.T) {
 
 func TestARefusedRouteIsAccounted(t *testing.T) {
 	m := &meter{}
-	h := newHarness(t, Config{}, WithMeter(m))
+	h := newHarness(t, Config{}, withMeter(m))
 
 	// The name has a POST-only route, so a GET is a 405 refusal a worker never hears
 	// about.
@@ -493,7 +493,7 @@ func TestEveryExitIsAccounted(t *testing.T) {
 		"served":       "http://ask.example.com/",
 	} {
 		m := &meter{}
-		h := newHarness(t, Config{}, WithMeter(m))
+		h := newHarness(t, Config{}, withMeter(m))
 		h.do(t, http.MethodGet, url, "")
 
 		ev := m.only(t)
@@ -508,12 +508,12 @@ func TestNoMeterIsTheOrdinaryCase(t *testing.T) {
 }
 
 func TestWithMeterRefusesNil(t *testing.T) {
-	require.Error(t, WithMeter(nil)(&options{}))
+	require.Error(t, withMeter(nil)(&options{}))
 }
 
 func TestAWorkloadThatCannotServeIsLoggedWithItsReason(t *testing.T) {
 	log := &said{}
-	h := newHarness(t, Config{}, WithLogger(log))
+	h := newHarness(t, Config{}, withLogger(log))
 	h.Workers.fail(errors.New("the container answered nothing on 127.0.0.1:42759"))
 
 	w := h.do(t, http.MethodPost, "http://ask.example.com/", "")
@@ -524,7 +524,7 @@ func TestAWorkloadThatCannotServeIsLoggedWithItsReason(t *testing.T) {
 	require.Contains(t, log.lines[0], "the container answered nothing on 127.0.0.1:42759")
 	require.Contains(t, log.lines[0], "shop/prod")
 
-	_, err := New(Config{}, WithLogger(nil))
+	_, err := build(Config{}, withLogger(nil))
 	require.Error(t, err)
 }
 

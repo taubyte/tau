@@ -2,7 +2,6 @@ package instance
 
 import (
 	"github.com/taubyte/tau/pkg/specs"
-	gateway "github.com/taubyte/tau/services/gateway"
 )
 
 // The smallest compiled project exercising the whole path, hand-written so the
@@ -67,8 +66,6 @@ func compiled() []byte {
 func workerTarget() specs.Address {
 	return specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"}
 }
-
-func gatewayConfig() gateway.Config { return gateway.Config{} }
 
 // builtByThePlatform is a project whose one function runs a package the platform
 // builds, so the only seam it needs is the plm service's.
