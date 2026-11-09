@@ -160,6 +160,10 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 	push := func(r repo) error {
 		repoId, fullName := r.id, r.fullName
 		pushed[repoId] = true
+		if hasJobButNoProject(jobs, repoId, func() string { return repoProject(auth, tns, repoId) }) {
+			fmt.Printf("Skipping %s: it already has a job and no project claims it yet\n", fullName)
+			return nil
+		}
 		pushedAt := time.Now().Unix() + int64(pushIdx)
 		pushIdx++
 		localPath := ""
@@ -239,6 +243,15 @@ func newestJobs(p patrickIface.Client) map[int]*patrickIface.Job {
 		}
 	}
 	return jobs
+}
+
+// hasJobButNoProject is true for a repository that already got a job and still
+// belongs to no project. Every push-all gives a repository a new job id, and
+// such a job can only fail, so one is enough: it is pushed again once a project
+// claims it, or with force, which leaves jobs nil.
+func hasJobButNoProject(jobs map[int]*patrickIface.Job, repoId string, project func() string) bool {
+	id, err := strconv.Atoi(repoId)
+	return err == nil && jobs[id] != nil && project() == ""
 }
 
 // built is true when repoId's newest job built commit successfully.

@@ -50,3 +50,13 @@ func TestPushAllSkipsBuiltCommits(t *testing.T) {
 	assert.Assert(t, !built(jobs, "4", "abc"), "never built")
 	assert.Assert(t, !built(nil, "1", "abc"), "no patrick: push")
 }
+
+func TestPushAllGivesAnUnclaimedRepositoryOneJob(t *testing.T) {
+	jobs := map[int]*patrickIface.Job{7: job(7, 1, "c", patrickIface.JobStatusFailed)}
+	unclaimed := func() string { return "" }
+
+	assert.Assert(t, hasJobButNoProject(jobs, "7", unclaimed), "an orphan with a job got another")
+	assert.Assert(t, !hasJobButNoProject(jobs, "8", unclaimed), "a new repository gets its first job")
+	assert.Assert(t, !hasJobButNoProject(jobs, "7", func() string { return "project" }), "a repository that reached TNS is pushed")
+	assert.Assert(t, !hasJobButNoProject(nil, "7", unclaimed), "force pushes everything")
+}
