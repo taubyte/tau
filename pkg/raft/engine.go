@@ -428,6 +428,16 @@ func (e *engine) write(out []readied) error {
 			return err
 		}
 	}
+	// A PASS IS DURABLE BEFORE RAFT IS TOLD IT IS WRITTEN. Raft casts votes and
+	// acknowledges entries on the strength of this write, and a store that keeps
+	// recent writes in its own buffers until a sync loses them with the process:
+	// a node back from a crash would have forgotten a vote it cast or an entry it
+	// acknowledged. One sync per store per pass, however many groups wrote.
+	for store := range batches {
+		if err := store.Sync(e.ctx, ds.NewKey(RaftStoragePrefix)); err != nil {
+			return err
+		}
+	}
 	for _, r := range out {
 		if err := r.g.log.kept(r.rd.Snapshot, r.rd.HardState, r.rd.Entries); err != nil {
 			return err

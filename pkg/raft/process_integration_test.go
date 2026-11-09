@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ipfs/go-datastore/query"
+	"github.com/libp2p/go-libp2p/core/crypto"
 	peercore "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
 
@@ -36,6 +38,8 @@ const (
 	processDir    = "TAU_RAFT_PROCESS_DIR"
 	processKey    = "TAU_RAFT_PROCESS_KEY"
 	processListen = "TAU_RAFT_PROCESS_LISTEN"
+	// processLogs, when set, is a directory each child's whole log is kept in.
+	processLogs = "TAU_RAFT_PROCESS_LOGS"
 )
 
 func TestMain(m *testing.M) {
@@ -122,6 +126,16 @@ func answer(ctx context.Context, node taupeer.Node, groups map[string]Cluster, f
 			return "members 0"
 		}
 		return "members " + strconv.Itoa(len(held))
+	case f[0] == "keys" && len(f) == 2:
+		results, err := node.Store().Query(ctx, query.Query{Prefix: f[1], KeysOnly: true})
+		if err != nil {
+			return "err " + err.Error()
+		}
+		entries, err := results.Rest()
+		if err != nil {
+			return "err " + err.Error()
+		}
+		return "keys " + strconv.Itoa(len(entries))
 	case f[0] == "quit":
 		return "bye"
 	}
@@ -171,7 +185,18 @@ func lanIP(t *testing.T) string {
 // spawn starts a child for a new node.
 func spawn(t *testing.T, ip string) *process {
 	t.Helper()
-	p := &process{t: t, dir: t.TempDir(), logs: filepath.Join(t.TempDir(), "child.log"), key: keypair.NewRaw(), ip: ip}
+	logs := t.TempDir()
+	if kept := os.Getenv(processLogs); kept != "" {
+		logs = filepath.Join(kept, strings.ReplaceAll(t.Name(), "/", "-"))
+		require.NoError(t, os.MkdirAll(logs, 0o755))
+	}
+	key := keypair.NewRaw()
+	p := &process{t: t, dir: t.TempDir(), key: key, ip: ip}
+	private, err := crypto.UnmarshalPrivateKey(key)
+	require.NoError(t, err)
+	id, err := peercore.IDFromPrivateKey(private)
+	require.NoError(t, err)
+	p.logs = filepath.Join(logs, id.String()+".log")
 	p.start()
 	return p
 }
@@ -411,4 +436,25 @@ func TestAcrossProcesses_ARestartedNodeRejoinsItsGroup(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return c.holds("reboot", "before", "1") && c.holds("reboot", "after", "2")
 	}, 10*time.Second, 100*time.Millisecond, "the restarted node does not hold what the group committed")
+}
+
+// WHAT A GROUP COMMITTED OUTLIVES THE PROCESS: a node that formed alone and took a
+// write is killed, and started again its group is the one it formed and holds the
+// write. A store keeping recent writes in its own buffers until a sync lost all of it.
+func TestAcrossProcesses_AKilledNodeKeepsWhatItsGroupCommitted(t *testing.T) {
+	ip := lanIP(t)
+	seen := &counts{}
+	a := spawn(t, ip)
+	a.open("kept", time.Second)
+	require.Eventually(t, oneGroup(seen, "kept", 1, a), 10*time.Second, 100*time.Millisecond, "%s", seen)
+	require.Eventually(t, written("kept", "k", "v", a), 10*time.Second, 100*time.Millisecond)
+
+	a.kill()
+	a.start()
+	require.NotEqual(t, "keys 0", a.do("keys /raft/kept"), "the group's log did not outlive the process")
+	a.open("kept", time.Second)
+	require.Eventually(t, func() bool { return a.holds("kept", "k", "v") }, 10*time.Second, 100*time.Millisecond,
+		"the group does not hold what it committed before the process died")
+	require.Eventually(t, written("kept", "after", "v", a), 10*time.Second, 100*time.Millisecond,
+		"the group it came back to takes no write")
 }
