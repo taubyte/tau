@@ -13,6 +13,7 @@ import (
 type GitRepository interface {
 	Commit(message, files string) error
 	Push() error
+	PushNew() (bool, error)
 	Pull() error
 	Checkout(branch string) error
 	ListBranches(fetch bool) (branches []string, fetchErr error, err error)

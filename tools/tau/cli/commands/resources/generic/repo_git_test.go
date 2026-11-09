@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/taubyte/tau/pkg/git"
@@ -17,11 +18,13 @@ import (
 type fakeGit struct {
 	root                 string
 	pushed, pulled       bool
+	upToDate             bool
 	committed, checkedTo string
 }
 
 func (f *fakeGit) Commit(message, files string) error { f.committed = message; return nil }
 func (f *fakeGit) Push() error                        { f.pushed = true; return nil }
+func (f *fakeGit) PushNew() (bool, error)             { f.pushed = true; return !f.upToDate, nil }
 func (f *fakeGit) Pull() error                        { f.pulled = true; return nil }
 func (f *fakeGit) Checkout(branch string) error       { f.checkedTo = branch; return nil }
 func (f *fakeGit) Root() string                       { return f.root }
@@ -83,6 +86,23 @@ func TestWebsitePushPullCheckout(t *testing.T) {
 		"--defaults", "-y", "checkout", "website", "--name", "test_website1", "--branch", "dev", "--color", "never")
 	assert.NilError(t, err)
 	assert.Equal(t, fake.checkedTo, "dev")
+}
+
+// A push the remote already has starts no build, and tau says so.
+func TestWebsitePushWithNothingNew(t *testing.T) {
+	defer testutil.ActivateAuthMock()()
+	dir, projectPath, cfg := withRepoProject(t)
+	repoDir := websiteRepoDir(projectPath)
+	fake := withFakeGit(t, repoDir)
+	fake.upToDate = true
+	assert.NilError(t, os.MkdirAll(repoDir, 0o755))
+
+	stdout, stderr, err := testutil.RunCLIWithDirAndCwdWithAuthMock(t, cli.Run, dir, projectPath, cfg,
+		"--defaults", "-y", "push", "website", "--name", "test_website1", "--message", "wip", "--color", "never")
+	assert.NilError(t, err)
+	out := stdout + stderr
+	assert.Assert(t, strings.Contains(out, "so no build starts"), out)
+	assert.Assert(t, !strings.Contains(out, "Pushed"), out)
 }
 
 // new --clone attaches an existing repo and clones it in one shot.
