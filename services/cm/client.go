@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"sync"
@@ -81,6 +82,9 @@ type Client struct {
 
 	domains Prover
 	custom  map[string]custom
+
+	// also is what ClientOn opened for the client, closed with it.
+	also []io.Closer
 }
 
 // Prover proves a custom domain is a project's. Domains is one.
@@ -155,7 +159,12 @@ func (c *Client) Close() error {
 		conn.Close()
 		delete(c.conns, id)
 	}
-	return nil
+	var errs []error
+	for _, also := range c.also {
+		errs = append(errs, also.Close())
+	}
+	c.also = nil
+	return errors.Join(errs...)
 }
 
 // targets is every cm node, this one first when it runs one.

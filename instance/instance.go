@@ -18,7 +18,6 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/services/cm"
@@ -56,13 +55,8 @@ type Instance struct {
 	database   databaseService.Service
 	primitives primitivesService.Service
 
-	// certs is the client every public listener here takes certificates from, and
-	// challengeDB is where DNS-01 values are held. All nil in a cloud that issues
-	// none.
-	certs            *cm.Client
-	domainClaims     *cm.Domains
-	challengeDB      kvdb.Instance
-	challengeAnswers *cm.Challenges
+	// certs is the cm client ServiceTLS answers with, nil in a cloud that issues none.
+	certs *cm.Client
 
 	// bus is this node's one bus, shared by a workload's publish and a browser's
 	// attach: both reach the same topic, and a second join of it would be a second
@@ -139,12 +133,6 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 	// each opens for itself.
 	n.provide("", n.dbs)
 	n.provide("", groups{n})
-	// Where cm looks a domain's proof up, when this node was handed one.
-	if o.resolver != nil {
-		n.provide("", o.resolver)
-	}
-	// The certificate a service's own public listener answers with, and DNS-01's.
-	n.provide("", certificates{n})
 	// The services this node runs, in its report from the first: a node is routed to
 	// for them as soon as it says anything.
 	n.provide("", configured{n})

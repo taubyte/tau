@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -41,6 +42,20 @@ type Challenges struct {
 
 	mu      sync.Mutex
 	present map[string]string
+
+	// also is what ChallengesOn opened for it, closed with it.
+	also []io.Closer
+}
+
+// Close closes what ChallengesOn opened for these challenges; the store a caller
+// handed ChallengesIn stays the caller's.
+func (c *Challenges) Close() error {
+	var errs []error
+	for _, also := range c.also {
+		errs = append(errs, also.Close())
+	}
+	c.also = nil
+	return errors.Join(errs...)
 }
 
 // ChallengesIn opens the challenge cache over st.

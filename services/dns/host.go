@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/taubyte/tau/core/service"
+	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/dns/zone"
 	"github.com/taubyte/tau/services/gateway"
 	"github.com/taubyte/tau/services/register"
@@ -25,12 +26,6 @@ type Catalog interface {
 type workerBeside interface {
 	zone.Projects
 	Guests() zone.Guests
-}
-
-// Issuing is the node's side of the cloud's certificates: the DNS-01 values it
-// holds while a certificate is being proved, or nil in a cloud that issues none.
-type Issuing interface {
-	Challenges() (Challenges, error)
 }
 
 var (
@@ -84,14 +79,13 @@ func (s *Service) Start(ctx context.Context, h service.Host) error {
 		}
 	}
 
-	if issuing, ok := service.Get[Issuing](h); ok {
-		challenges, err := issuing.Challenges()
-		if err != nil {
-			return err
-		}
-		if challenges != nil {
-			opts = append(opts, withChallenges(cfg.CloudFqdn, challenges))
-		}
+	challenges, err := cm.ChallengesOn(ctx, h)
+	if err != nil {
+		return err
+	}
+	if challenges != nil {
+		s.owned = append(s.owned, challenges)
+		opts = append(opts, withChallenges(cfg.CloudFqdn, challenges))
 	}
 
 	if err := s.assemble(cfg.Config, opts...); err != nil {

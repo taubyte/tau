@@ -5,19 +5,13 @@ import (
 	"fmt"
 
 	"github.com/taubyte/tau/core/service"
+	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/register"
 	"github.com/taubyte/tau/services/secrets"
 	"github.com/taubyte/tau/services/storage"
 	"github.com/taubyte/tau/services/worker"
 	"github.com/taubyte/tau/services/worker/placement"
 )
-
-// Certifying is the node's side of the cloud's certificates: the issuer a generated
-// name the wildcard does not cover is ordered through, or nil in a cloud that issues
-// none.
-type Certifying interface {
-	Issuer() (Issuer, error)
-}
 
 // hostConfig is what the gateway reads off its node: its own section and the
 // cloud's zone.
@@ -30,7 +24,8 @@ type hostConfig struct {
 // the register's client, requests placed on workers from the stats view, provided
 // certificates and package files read through the secrets and storage clients, and
 // what the node offers beside it: the bus a browser attaches to and who may attach,
-// where a build's artifact is, and the issuer for generated names.
+// and where a build's artifact is; generated names are ordered through its own cm
+// client.
 func (s *Service) Start(ctx context.Context, h service.Host) error {
 	var cfg hostConfig
 	if err := h.Config(&cfg); err != nil {
@@ -62,14 +57,13 @@ func (s *Service) Start(ctx context.Context, h service.Host) error {
 	if artifacts, ok := service.Local[Artifacts](h, worker.Protocol); ok {
 		opts = append(opts, withFiles(artifacts, assets))
 	}
-	if certifying, ok := service.Get[Certifying](h); ok {
-		issuer, err := certifying.Issuer()
-		if err != nil {
-			return fmt.Errorf("gateway: %w", err)
-		}
-		if issuer != nil {
-			opts = append(opts, withIssuer(issuer))
-		}
+	certs, err := cm.ClientOn(ctx, h)
+	if err != nil {
+		return fmt.Errorf("gateway: %w", err)
+	}
+	if certs != nil {
+		s.owned = append(s.owned, certs)
+		opts = append(opts, withIssuer(certs))
 	}
 	if cfg.TLS {
 		opts = append(opts, withTLS())

@@ -4,12 +4,10 @@ package dream_test
 
 import (
 	"context"
-	"errors"
 	"io"
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -21,6 +19,7 @@ import (
 	cmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/cm"
+	"github.com/taubyte/tau/services/cm/cmtest"
 	buildDeploy "github.com/taubyte/tau/services/plm/deploy"
 	"github.com/taubyte/tau/services/plm/run"
 )
@@ -29,27 +28,6 @@ const (
 	customDomainID = "QmQLHmWAjrRvtx1Ewo8XPUTbii48ht2jZvgBJ3Mi8B1C3o"
 	stolenDomainID = "QmRsawqvCW6LJxceX5AoFr4KcrerdAxeJNvsbYE2x9rQYr"
 )
-
-// txtZone is the internet's DNS as far as these tests are concerned.
-type txtZone struct {
-	mu sync.Mutex
-	m  map[string][]string
-}
-
-func (z *txtZone) set(name, value string) {
-	z.mu.Lock()
-	defer z.mu.Unlock()
-	z.m[name] = []string{value}
-}
-
-func (z *txtZone) LookupTXT(_ context.Context, name string) ([]string, error) {
-	z.mu.Lock()
-	defer z.mu.Unlock()
-	if v, ok := z.m[name]; ok {
-		return v, nil
-	}
-	return nil, errors.New("no such host")
-}
 
 type configures struct{}
 
@@ -82,13 +60,13 @@ func planThenRun(ctx context.Context, d *buildDeploy.Deploy, w run.Work, out run
 }
 
 func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
-	dns := &txtZone{m: map[string][]string{}}
+	zone := cmtest.Serve(t)
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Copies:   2,
 		Services: []string{instance.Stats, instance.Secrets, instance.CM},
-		Options:  []instance.Option{instance.WithResolver(dns)},
 		Configure: func(_ int, c *instance.Config) {
 			c.CloudFqdn = "tau.dream.test"
+			c.CM.Resolver = zone.Addr
 		},
 	})
 	require.NoError(t, err)
@@ -128,7 +106,7 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 		return err == nil
 	}, time.Minute, time.Second, "a cm node signs a claim once the vault answers")
 	require.Equal(t, customDomainID[:8]+".shop.test", claim.GetEntry())
-	dns.set(claim.GetEntry(), claim.GetToken())
+	zone.Set(claim.GetEntry(), claim.GetToken())
 
 	var r *pkgregister.Register
 	require.Eventually(t, func() bool {
@@ -140,7 +118,7 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 	require.Equal(t, customDomainID, project)
 	require.Equal(t, "prod", environment)
 
-	dns.set(stolenDomainID[:8]+".shop.test", claim.GetToken())
+	zone.Set(stolenDomainID[:8]+".shop.test", claim.GetToken())
 	_, err = deployed("refused/domain/stolen", stolenDomainID)
 	require.ErrorIs(t, err, buildDeploy.ErrUnproven)
 	require.ErrorContains(t, err, "tau domain claim shop.test")
@@ -155,14 +133,14 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 
 	stolen, err := domains.Claim(t.Context(), stolenDomainID, "eu.shop.test")
 	require.NoError(t, err)
-	dns.set(stolen.GetEntry(), stolen.GetToken())
+	zone.Set(stolen.GetEntry(), stolen.GetToken())
 	_, err = deployed("refused/domain/stolenchild", stolenDomainID)
 	require.ErrorIs(t, err, buildDeploy.ErrUnproven)
 	require.ErrorContains(t, err, "shop.test is proven to be another project's")
 
 	// THE PARENT'S RECORD GONE, the child's redeploy is refused: a released
 	// domain is lost at its next deploy.
-	dns.set(claim.GetEntry(), "removed")
+	zone.Set(claim.GetEntry(), "removed")
 	_, err = deployed("with/domain/child", customDomainID)
 	require.ErrorIs(t, err, buildDeploy.ErrUnproven)
 }

@@ -1,8 +1,6 @@
 package hosted
 
 import (
-	"crypto/tls"
-	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -18,6 +16,7 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/git/gittest"
 	"github.com/taubyte/tau/pkg/raft"
+	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/plm/ingress"
 	"github.com/taubyte/tau/services/plm/jobs"
 )
@@ -106,13 +105,6 @@ func TestBuildRefusesWhatItCannotServeWith(t *testing.T) {
 }
 
 // servedTLS is the instance's certificate client as a service asks for it.
-type servedTLS struct {
-	config *tls.Config
-	err    error
-}
-
-func (s servedTLS) ServiceTLS() (*tls.Config, error) { return s.config, s.err }
-
 var issuing = map[string]any{
 	"listen": "127.0.0.1:0", "cloudfqdn": "tau.example.io",
 	"cm": map[string]any{"certificate": map[string]any{"acme": map[string]any{"enabled": true}}},
@@ -120,7 +112,6 @@ var issuing = map[string]any{
 
 func TestACloudThatIssuesServesBuildOverTLS(t *testing.T) {
 	n := lone(t, issuing)
-	n.running = append(n.running, service.Running{Service: servedTLS{config: &tls.Config{}}})
 	s := New()
 	require.NoError(t, s.Start(t.Context(), n))
 	t.Cleanup(func() { s.Close() })
@@ -131,20 +122,18 @@ func TestACloudThatIssuesServesBuildOverTLS(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, res.StatusCode, "plain http to its TLS listener is refused")
 }
 
-// ITS CERTIFICATE IS THE INSTANCE'S, from the client every listener on the node
-// takes one from: plm builds none of its own.
-func TestACloudThatIssuesNeedsTheInstancesCertificates(t *testing.T) {
-	// A REFUSED START IS STILL CLOSED, as the instance closes it: its queue's group
-	// opened before the refusal.
+// ITS CERTIFICATES ARE FOR THE CLOUD'S ZONE, and a cloud that issues them without
+// naming one is refused. A refused start is still closed, as the instance closes it:
+// its queue's group opened before the refusal.
+func TestACloudThatIssuesNamesItsZone(t *testing.T) {
+	unzoned := map[string]any{}
+	for k, v := range issuing {
+		unzoned[k] = v
+	}
+	delete(unzoned, "cloudfqdn")
 	refused := New()
 	t.Cleanup(func() { refused.Close() })
-	require.ErrorIs(t, refused.Start(t.Context(), lone(t, issuing)), ErrNoListenerTLS)
-
-	n := lone(t, issuing)
-	n.running = append(n.running, service.Running{Service: servedTLS{err: errors.New("no zone")}})
-	unproven := New()
-	t.Cleanup(func() { unproven.Close() })
-	require.ErrorContains(t, unproven.Start(t.Context(), n), "no zone")
+	require.ErrorIs(t, refused.Start(t.Context(), lone(t, unzoned)), cm.ErrNoZone)
 }
 
 func TestAForgeWithAnEventStreamIsFollowed(t *testing.T) {

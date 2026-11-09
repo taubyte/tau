@@ -1,7 +1,6 @@
 package cm
 
 import (
-	"context"
 	"errors"
 	"testing"
 	"time"
@@ -80,10 +79,6 @@ func (d databases) Database(name string) (kvdb.Instance, error) {
 	return kvdbmock.New().New(nil, name, 0)
 }
 
-type answering struct{}
-
-func (answering) LookupTXT(context.Context, string) ([]string, error) { return nil, nil }
-
 func zoned(t *testing.T, cfg Config) instance {
 	t.Helper()
 	i := newInstance(t, t.TempDir())
@@ -103,10 +98,10 @@ func TestCMKeepsTheStoreWhereTheCloudNamesAZone(t *testing.T) {
 	alone.running = []service.Running{{Name: Name, Service: s}}
 	require.Same(t, s.Store(), On(alone).Store(), "the store beside the instance")
 
-	shared := hosting{instance: zoned(t, Config{}), running: []service.Running{{Service: databases{}}, {Service: answering{}}}}
+	shared := hosting{instance: zoned(t, Config{}), running: []service.Running{{Service: databases{}}}}
 	beside := New()
 	t.Cleanup(func() { beside.Close() })
-	require.NoError(t, beside.Start(t.Context(), shared), "the instance's databases, and the resolver it was handed")
+	require.NoError(t, beside.Start(t.Context(), shared), "the instance's databases")
 	require.NotNil(t, beside.Store())
 
 	broken := hosting{instance: zoned(t, Config{}), running: []service.Running{{Service: databases{err: errors.New("disk gone")}}}}

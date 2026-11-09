@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -19,12 +18,12 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/taubyte/tau/services/builder"
+	"github.com/taubyte/tau/services/cm/cmtest"
 
 	"github.com/taubyte/tau/pkg/containers"
 
@@ -156,7 +155,7 @@ func copyFile(from, to string) error {
 // service with a container daemon to plm and run in, and one running the
 // public plm service. It answers build's address and the node that
 // serves.
-func cloud(t *testing.T, f *fake.Served, configure func(*instance.Config), opts ...instance.Option) (string, *instance.Instance) {
+func cloud(t *testing.T, f *fake.Served, configure func(*instance.Config)) (string, *instance.Instance) {
 	t.Helper()
 	var err error
 	forges, err = f.Registry(forge.Policy{AllowInsecureCallback: true})
@@ -170,7 +169,6 @@ func cloud(t *testing.T, f *fake.Served, configure func(*instance.Config), opts 
 	u, err := dream.Start(t.Context(), strings.ReplaceAll(t.Name(), "/", "-"), dream.Config{
 		Copies:    2,
 		Container: containers.Docker,
-		Options:   opts,
 		Secrets:   []*secretsv2.InitSecret{adminSecret},
 		Configure: func(index int, c *instance.Config) {
 			c.CloudFqdn = e2eCloud
@@ -501,7 +499,7 @@ type underTest struct {
 }
 
 // signedIn starts a forge and a cloud and signs in to it.
-func signedIn(t *testing.T, configure func(*instance.Config), opts ...instance.Option) *underTest {
+func signedIn(t *testing.T, configure func(*instance.Config)) *underTest {
 	t.Helper()
 	t.Setenv(config.EnvConfig, filepath.Join(t.TempDir(), "config.yaml"))
 	t.Setenv(config.EnvToken, "")
@@ -511,7 +509,7 @@ func signedIn(t *testing.T, configure func(*instance.Config), opts ...instance.O
 	f, err := fake.Serve(fake.GitHubLike)
 	require.NoError(t, err)
 	t.Cleanup(func() { f.Close() })
-	cloud, serving := cloud(t, f, configure, opts...)
+	cloud, serving := cloud(t, f, configure)
 
 	until(t, "login", func() result {
 		return tauIn(f.TokenString()+"\n", "login", "--cloud", cloud, "--sso", f.Host(), "--paste")
@@ -777,35 +775,15 @@ type said struct{ at *string }
 
 func (s said) String() string { return *s.at }
 
-// txtZone is the public DNS a domain claim is proven against.
-type txtZone struct {
-	mu sync.Mutex
-	m  map[string][]string
-}
-
-func (z *txtZone) set(name, value string) {
-	z.mu.Lock()
-	defer z.mu.Unlock()
-	z.m[name] = []string{value}
-}
-
-func (z *txtZone) LookupTXT(_ context.Context, name string) ([]string, error) {
-	z.mu.Lock()
-	defer z.mu.Unlock()
-	if v, ok := z.m[name]; ok {
-		return v, nil
-	}
-	return nil, errors.New("no such host")
-}
-
 func TestTheDomainCorpusBuildsBothWays(t *testing.T) {
-	dns := &txtZone{m: map[string][]string{}}
+	dns := cmtest.Serve(t)
 	u := signedIn(t, func(c *instance.Config) {
 		built := c.Sections[instance.Builder].(builder.Config)
 		built.Domains.Trusted = false
 		c.Sections[instance.Builder] = built
 		c.Services = append(services.Default(), instance.CM)
-	}, instance.WithResolver(dns))
+		c.CM.Resolver = dns.Addr
+	})
 
 	claim := func(t *testing.T, work, fqdn string) api.DomainClaim {
 		t.Helper()
@@ -821,15 +799,15 @@ func TestTheDomainCorpusBuildsBothWays(t *testing.T) {
 	for _, c := range []corpusCase{
 		{name: "with/domain/apex", prepare: func(t *testing.T, work string) {
 			owner = claim(t, work, "shop.test")
-			dns.set(owner.Entry, owner.Token)
+			dns.Set(owner.Entry, owner.Token)
 		}, probes: []probe{{host: "www.shop.test", method: http.MethodGet, path: "/", status: 200}}},
 		{name: "refused/domain/stolen", refused: "tau domain claim shop.test", prepare: func(t *testing.T, work string) {
-			dns.set(projectYAMLIDIn(t, work)[:8]+".shop.test", owner.Token)
+			dns.Set(projectYAMLIDIn(t, work)[:8]+".shop.test", owner.Token)
 		}},
 		{name: "with/domain/child", probes: []probe{{host: "www.eu.shop.test", method: http.MethodGet, path: "/", status: 200}}},
 		{name: "refused/domain/stolenchild", refused: "shop.test is proven to be another project's", prepare: func(t *testing.T, work string) {
 			stolen := claim(t, work, "eu.shop.test")
-			dns.set(stolen.Entry, stolen.Token)
+			dns.Set(stolen.Entry, stolen.Token)
 		}},
 	} {
 		t.Run(c.name, func(t *testing.T) { u.bothWays(t, c) })

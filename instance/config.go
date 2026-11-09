@@ -161,7 +161,6 @@ type options struct {
 
 	extra    map[string]service.Service
 	identity func(Host) (auth.Identity, error)
-	resolver cm.Resolver
 }
 
 // withDefaults fills and checks the service list. added are the names of the services

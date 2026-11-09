@@ -89,11 +89,11 @@ func (s *server) keep(h service.Host, cfg hostConfig, mux *http.ServeMux) error 
 	s.also = append(s.also, vault)
 	whole := cfg.CM
 	whole.Certificate.Zone = cfg.CloudFqdn
-	options := []Option{WithVault(vault.Cloud(VaultService)), WithClock(h.Now)}
-	if r, ok := service.Get[Resolver](h); ok {
-		options = append(options, WithResolver(r))
+	resolver, err := whole.resolver()
+	if err != nil {
+		return err
 	}
-	store, err := Open(h.Peer().Host(), db, whole, options...)
+	store, err := Open(h.Peer().Host(), db, whole, WithVault(vault.Cloud(VaultService)), WithClock(h.Now), WithResolver(resolver))
 	if err != nil {
 		return err
 	}

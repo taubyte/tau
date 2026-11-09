@@ -19,14 +19,16 @@ func TestACloudIssuingCertificatesNeedsItsZoneAndAWorkableConfig(t *testing.T) {
 
 	// A GATEWAY with no zone cannot say what it issues, and cm keeps nothing for it.
 	edge, _, _ := makeNode(t, Config{Services: []string{Register, Stats, Gateway}, CM: on})
-	require.ErrorIs(t, edge.Start(t.Context()), ErrNoZoneForCertificates)
+	require.ErrorIs(t, edge.Start(t.Context()), cm.ErrNoZone)
 	keeper, _, _ := makeNode(t, Config{Services: []string{Stats, Secrets, CM}, CM: on})
 	require.ErrorIs(t, keeper.Start(t.Context()), cm.ErrNoZone)
 
 	cfg := Config{Services: []string{Register, Stats, Secrets, Gateway, DNS, CM}, CM: on, CloudFqdn: "tau.example.io"}
 	n, _, _ := makeNode(t, cfg)
 	require.NoError(t, n.Start(t.Context()))
-	require.NotNil(t, n.certs, "its gateway and dns server took the client")
+	secure, err := n.ServiceTLS()
+	require.NoError(t, err)
+	require.NotNil(t, secure, "a listener beside its services takes the cloud's certificates")
 	require.NotNil(t, cm.On(&added{node: n}).Store(), "a cm node hosts the store")
 
 	cfg.CM.Certificate.ACME.EAB.KeyID = "half"

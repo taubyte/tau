@@ -81,7 +81,7 @@ func TestAHalfStartedNodeClosesWhatItMade(t *testing.T) {
 	// after the worker has opened a database.
 	acme := cm.Config{Certificate: cm.CertificateConfig{ACME: certificate.ACME{Enabled: true}}}
 	n, _, factory := makeNode(t, Config{Services: []string{Worker, Gateway}, CM: acme})
-	require.ErrorIs(t, n.Start(t.Context()), ErrNoZoneForCertificates)
+	require.ErrorIs(t, n.Start(t.Context()), cm.ErrNoZone)
 
 	opened, _ := factory.counts()
 	require.Contains(t, opened, jobs.Records, "the worker got as far as opening one")

@@ -78,6 +78,24 @@ var (
 type Config struct {
 	// Certificate is how the cloud issues its TLS certificates.
 	Certificate CertificateConfig `yaml:"certificate"`
+
+	// Resolver is the DNS server, as host:port, a custom domain's proof is looked
+	// up at. Empty is the machine's own resolver.
+	Resolver string `yaml:"resolver,omitempty"`
+}
+
+// resolver is what a custom domain's TXT proof is looked up through.
+func (c Config) resolver() (Resolver, error) {
+	if c.Resolver == "" {
+		return net.DefaultResolver, nil
+	}
+	if _, _, err := net.SplitHostPort(c.Resolver); err != nil {
+		return nil, fmt.Errorf("cm: resolver %q is not a host:port: %w", c.Resolver, err)
+	}
+	return &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+		var d net.Dialer
+		return d.DialContext(ctx, network, c.Resolver)
+	}}, nil
 }
 
 // CertificateConfig is the ACME CA and what is issued from it.

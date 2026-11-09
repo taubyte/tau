@@ -2,7 +2,6 @@ package hosted
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -41,17 +40,6 @@ type Service interface {
 	// Addr is where it listens, nil before it starts.
 	Addr() net.Addr
 }
-
-// ListenerTLS is what the instance answers a service's public listener with: the
-// cloud's certificate for `<service>.<zone>`, from the one client every listener on
-// the node takes certificates from, or nil when the cloud issues none.
-type ListenerTLS interface {
-	ServiceTLS() (*tls.Config, error)
-}
-
-// ErrNoListenerTLS is a cloud that issues certificates on an instance that gives
-// this listener none.
-var ErrNoListenerTLS = errors.New("plm: the cloud issues certificates, and this instance gives its listener none")
 
 // config is the plm service's section, and the cloud-wide keys it reads.
 type config struct {
@@ -96,7 +84,7 @@ func (f *server) Start(ctx context.Context, h service.Host) error {
 	if err := f.control.Start(ctx, h); err != nil {
 		return err
 	}
-	options, err := f.wire(h, cfg)
+	options, err := f.wire(ctx, h, cfg)
 	if err != nil {
 		return err
 	}
@@ -108,7 +96,7 @@ func (f *server) Start(ctx context.Context, h service.Host) error {
 	return svc.Start(ctx)
 }
 
-func (f *server) wire(h service.Host, cfg config) ([]ingress.Option, error) {
+func (f *server) wire(ctx context.Context, h service.Host, cfg config) ([]ingress.Option, error) {
 	self := h.Peer().Host()
 	auth, err := clients.NewPool(self, clients.Discovered(h, clients.AuthProtocol), clients.AuthProtocol, maxConnections)
 	if err != nil {
@@ -188,21 +176,16 @@ func (f *server) wire(h service.Host, cfg config) ([]ingress.Option, error) {
 	if len(registry.EventHosts()) > 0 {
 		options = append(options, ingress.WithStreams(forges, links))
 	}
-	// TLS WHEN THE CLOUD ISSUES CERTIFICATES, from the instance's one client: a
-	// second client here would order on its own, without the DNS-01 store or the
-	// domain proofs the instance wires into its own.
-	if cfg.CM.Certificate.ACME.Enabled {
-		listener, ok := service.Get[ListenerTLS](h)
-		if !ok {
-			return nil, ErrNoListenerTLS
-		}
-		config, err := listener.ServiceTLS()
-		if err != nil {
-			return nil, err
-		}
-		if config != nil {
-			options = append(options, ingress.WithTLS(config))
-		}
+	// TLS WHEN THE CLOUD ISSUES CERTIFICATES, the cloud's certificate for
+	// `<service>.<zone>` from its own cm client, which presents its DNS-01 values in
+	// the node's copy of the challenge store as every client on the node does.
+	certs, err := cm.ClientOn(ctx, h)
+	if err != nil {
+		return nil, err
+	}
+	if certs != nil {
+		f.also = append(f.also, certs)
+		options = append(options, ingress.WithTLS(certs.TLSConfig()))
 	}
 	return options, nil
 }

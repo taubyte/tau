@@ -70,7 +70,8 @@ type Resolver interface {
 // signs no claim.
 func WithVault(v Vault) Option { return func(s *Store) { s.vault = v } }
 
-// WithResolver replaces net.DefaultResolver. Tests use it.
+// WithResolver is what a custom domain's TXT proof is looked up through; without
+// it, net.DefaultResolver.
 func WithResolver(r Resolver) Option { return func(s *Store) { s.resolver = r } }
 
 // signer holds this node's key once it is read or made.
