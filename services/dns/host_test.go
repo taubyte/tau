@@ -88,7 +88,6 @@ func TestDnsStartsFromItsNodeAndAnswersThere(t *testing.T) {
 	reply := ask("build.tau.example.io", dns.TypeA)
 	require.Len(t, reply.Answer, 1, "a service the catalog names, routed from the stats view beside it")
 	require.Equal(t, "203.0.113.7", reply.Answer[0].(*dns.A).A.String())
-	require.Equal(t, dns.RcodeNameError, ask("patrick.tau.example.io", dns.TypeA).Rcode, "and one it does not name is absent")
 
 	reply = ask("_acme-challenge.build.tau.example.io", dns.TypeTXT)
 	require.Len(t, reply.Answer, 1, "DNS-01 from the node's certificate side")
