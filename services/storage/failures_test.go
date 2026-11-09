@@ -105,9 +105,9 @@ func TestARowOutsideItsNamespaceIsRefused(t *testing.T) {
 	_, err = NewLocal(newOrderedMem(), nil)
 	require.NoError(t, err)
 
-	rogue, err := NewLocal(roguePrefix{Datastore: newOrderedMem(), key: localDirty + "/a/b"}, nil)
+	rogue, err := NewLocal(roguePrefix{Datastore: newOrderedMem(), key: localSeen + "/a/b"}, nil)
 	require.NoError(t, err)
-	_, err = rogue.DirtyInstances(ctx)
+	_, err = rogue.Seen(ctx)
 	require.ErrorIs(t, err, ErrNotThisServicesRow)
 }
 
@@ -126,21 +126,26 @@ func TestACorruptRowUnderOneRootIsAnError(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestATombstoneObservationRefusesAnUnencodableName(t *testing.T) {
+func TestAnObservationRefusesAnUnencodableName(t *testing.T) {
 	ctx := context.Background()
 	l, _ := newLocal(t, newFixedClock(0))
 	a := addr(t)
 
-	_, err := l.ObservedTombstone(ctx, a, "", 1)
+	_, err := l.Superseded(ctx, a, "", 1)
 	require.ErrorIs(t, err, ErrEmptyObjectName)
-	require.ErrorIs(t, l.ForgetTombstone(ctx, a, "", 1), ErrEmptyObjectName)
+	_, err = l.Absent(ctx, a, "", 1)
+	require.ErrorIs(t, err, ErrEmptyObjectName)
+	_, _, err = l.Observed(ctx, a, "", 1)
+	require.ErrorIs(t, err, ErrEmptyObjectName)
+	require.ErrorIs(t, l.Present(ctx, a, "", 1), ErrEmptyObjectName)
+	require.ErrorIs(t, l.Collected(ctx, a, "", 1), ErrEmptyObjectName)
 }
 
 func TestAFailedObservationWriteIsAnError(t *testing.T) {
 	ctx := context.Background()
 	store := newOrderedMem()
 	store.failPut = func(key string) error {
-		if strings.HasPrefix(key, localTombs) {
+		if strings.HasPrefix(key, localSuperseded) {
 			return errInjected
 		}
 		return nil
@@ -148,8 +153,11 @@ func TestAFailedObservationWriteIsAnError(t *testing.T) {
 	l, err := NewLocal(store, nil)
 	require.NoError(t, err)
 
-	_, err = l.ObservedTombstone(ctx, addr(t), "gone", 1)
+	_, err = l.Superseded(ctx, addr(t), "gone", 1)
 	require.ErrorIs(t, err, errInjected)
+	superseded, _, err := l.Observed(ctx, addr(t), "gone", 1)
+	require.NoError(t, err)
+	require.True(t, superseded.IsZero(), "a write that failed was recorded")
 }
 
 func TestAtRefusesAForeignRowAtTheStamp(t *testing.T) {

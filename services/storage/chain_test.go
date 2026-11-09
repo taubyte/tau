@@ -450,3 +450,50 @@ func containsStr(s []string, v string) bool {
 	}
 	return false
 }
+
+// A COPY'S STANDING FOR A VERSION is whether it holds that row, a newer one of the
+// name, and whether the row is kept — on every backend the index runs on.
+func TestStandingSaysWhatACopyHoldsOfAVersion(t *testing.T) {
+	eachBackend(t, func(t *testing.T, store Datastore) {
+		ctx := t.Context()
+		i := index{store: store}
+		a := addr(t)
+		r1, r2, r3 := testCID(t, "one").String(), testCID(t, "two").String(), testCID(t, "three").String()
+		st := func(stamp uint64, root string) standing {
+			t.Helper()
+			s, err := i.Standing(ctx, a, "obj", stamp, root)
+			require.NoError(t, err)
+			return s
+		}
+
+		require.Equal(t, standing{}, st(10, r1), "an empty copy holds nothing")
+		_, err := i.Append(ctx, a, "obj", 10, "w1", VersionRecord{RootCID: r1})
+		require.NoError(t, err)
+		require.Equal(t, standing{held: true}, st(10, r1))
+		require.Equal(t, standing{}, st(10, r2), "a row at the stamp with other bytes is not the version")
+		require.Equal(t, standing{}, st(11, r1))
+
+		_, err = i.Append(ctx, a, "obj", 20, "w1", VersionRecord{RootCID: r2, Kept: true})
+		require.NoError(t, err)
+		require.Equal(t, standing{held: true, superseded: true}, st(10, r1))
+		require.Equal(t, standing{held: true, kept: true}, st(20, r2))
+
+		_, err = i.Append(ctx, a, "obj", 30, "w1", VersionRecord{Tombstone: true})
+		require.NoError(t, err)
+		require.Equal(t, standing{held: true, superseded: true, kept: true}, st(20, r2), "a tombstone supersedes")
+
+		// Two writers at one stamp: the one byte order puts second is superseded.
+		_, err = i.Append(ctx, a, "obj", 40, "w1", VersionRecord{RootCID: r1})
+		require.NoError(t, err)
+		_, err = i.Append(ctx, a, "obj", 40, "w2", VersionRecord{RootCID: r3})
+		require.NoError(t, err)
+		vs, err := i.At(ctx, a, "obj", 40)
+		require.NoError(t, err)
+		require.Len(t, vs, 2)
+		require.Equal(t, standing{held: true}, st(40, vs[0].Record.RootCID))
+		require.Equal(t, standing{held: true, superseded: true}, st(40, vs[1].Record.RootCID))
+
+		_, err = i.Standing(ctx, a, "", 1, r1)
+		require.ErrorIs(t, err, ErrEmptyObjectName)
+	})
+}

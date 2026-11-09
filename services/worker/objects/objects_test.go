@@ -19,6 +19,7 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	"github.com/taubyte/tau/pkg/specs"
 	cmmock "github.com/taubyte/tau/services/cm/mock"
 	"github.com/taubyte/tau/services/cm/settings"
 	"github.com/taubyte/tau/services/storage"
@@ -54,6 +55,8 @@ type served struct {
 
 	mu                                sync.Mutex
 	putErr, readErr, listErr, current error
+	// put is every object a put described.
+	put []storage.Object
 }
 
 func (s *served) fail(put, read, list, current error) {
@@ -72,6 +75,9 @@ func (s *served) Put(ctx context.Context, at storage.Address, name string, o sto
 	if err, _, _, _ := s.failing(); err != nil {
 		return storage.Version{}, err
 	}
+	s.mu.Lock()
+	s.put = append(s.put, o)
+	s.mu.Unlock()
 	return s.Store.Put(ctx, at, name, o, content)
 }
 
@@ -129,6 +135,28 @@ func opened(t *testing.T, size int64) (wasmtier.Bucket, *served) {
 	bucket, err := b.OpenBucket(t.Context(), bucketGrant("shop/prod/QmBucket", size))
 	require.NoError(t, err)
 	return bucket, store
+}
+
+// A BUCKET THAT DECLARES VERSIONING HAS EVERY VERSION KEPT; any other has the storage
+// service collect the versions it replaces.
+func TestAVersionedBucketsPutsAreKept(t *testing.T) {
+	store := serving(t)
+	b, err := objects.New(store)
+	require.NoError(t, err)
+	grant := bucketGrant("shop/prod/QmVersioned", 0)
+	grant.Settings[specs.StorageObjectKeyVersioning] = "true"
+	versioned, err := b.OpenBucket(t.Context(), grant)
+	require.NoError(t, err)
+	plain, err := b.OpenBucket(t.Context(), bucketGrant("shop/prod/QmPlain", 0))
+	require.NoError(t, err)
+
+	_, err = versioned.Put(t.Context(), "k", []byte("v"), "", nil)
+	require.NoError(t, err)
+	_, err = plain.Put(t.Context(), "k", []byte("v"), "", nil)
+	require.NoError(t, err)
+	require.Len(t, store.put, 2)
+	require.True(t, store.put[0].Versioned)
+	require.False(t, store.put[1].Versioned)
 }
 
 func TestABucketNeedsAStorageService(t *testing.T) {

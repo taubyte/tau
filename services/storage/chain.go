@@ -74,6 +74,10 @@ type VersionRecord struct {
 	// Metadata is the caller's own name/value pairs, carried so head answers
 	// them without the bytes.
 	Metadata map[string]string
+
+	// Kept is a version its bucket keeps once a later one supersedes it, so its
+	// holders never collect it (collect.go).
+	Kept bool
 }
 
 func (r VersionRecord) encode() ([]byte, error) {
@@ -388,4 +392,48 @@ func (i index) Append(ctx context.Context, a Address, name string, stamp uint64,
 		return Version{}, err
 	}
 	return parseVersion(key, raw)
+}
+
+// standing is what one copy of an index holds of a version: its row, a newer row of
+// its name, and whether the row says its bucket keeps it.
+type standing struct {
+	held       bool
+	superseded bool
+	kept       bool
+}
+
+// Standing is what this copy holds of the version of name at stamp whose bytes are
+// root. A copy without that row holds nothing of it, whatever else it holds.
+func (i index) Standing(ctx context.Context, a Address, name string, stamp uint64, root string) (standing, error) {
+	prefix, err := a.objectPrefix(name)
+	if err != nil {
+		return standing{}, err
+	}
+	rows, err := i.all(ctx, prefix+"/"+stampSegment(stamp), 0)
+	if err != nil {
+		return standing{}, err
+	}
+	var at Version
+	for _, r := range rows {
+		v, err := parseVersion(r.key, r.value)
+		if err != nil {
+			return standing{}, err
+		}
+		if v.Record.RootCID == root {
+			at = v
+			break
+		}
+	}
+	if at.Record.RootCID == "" {
+		return standing{}, nil
+	}
+	newest, ok, err := i.first(ctx, prefix)
+	if err != nil || !ok {
+		return standing{}, err
+	}
+	n, err := parseVersion(newest.key, newest.value)
+	if err != nil {
+		return standing{}, err
+	}
+	return standing{held: true, kept: at.Record.Kept, superseded: n.Stamp != at.Stamp || n.Writer != at.Writer}, nil
 }

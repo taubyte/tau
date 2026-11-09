@@ -46,6 +46,7 @@ func (c *Client) Put(ctx context.Context, at Address, name string, o Object, con
 	stream := c.svc.Put(ctx)
 	head := &storagev2.PutRequest{Part: &storagev2.PutRequest_Head{Head: &storagev2.PutHead{
 		At: wireAddress(at), Name: []byte(name), ContentType: o.ContentType, Metadata: o.Metadata,
+		Versioned: o.Versioned,
 	}}}
 	if err := stream.Send(head); err != nil {
 		return Version{}, c.closed(stream, err)

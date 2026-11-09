@@ -92,6 +92,15 @@ type server struct {
 	repairMu sync.Mutex
 	proofs   map[string]proof
 
+	// sweeper frees blocks no reference reaches, and keeps go through it.
+	// asked is when collect last asked about each reference; owed is a
+	// reference dropped since swept, the last sweep. See collect.go.
+	sweeper   *Sweeper
+	collectMu sync.Mutex
+	asked     map[string]time.Time
+	owed      atomic.Bool
+	swept     time.Time
+
 	// floor is the clock floor this node keeps durably; see stamp.
 	floorMu sync.Mutex
 	floor   uint64
@@ -101,6 +110,10 @@ type server struct {
 	life context.Context
 
 	serverOptions []rpc.ServerOption
+
+	// running is the maintenance loop, which Close waits out before it closes
+	// what the loop uses.
+	running sync.WaitGroup
 
 	// also is what Start opened for this service beside it, closed with it.
 	also []io.Closer
@@ -283,6 +296,12 @@ func (s *server) assemble(h host.Host, cfg Config, opts ...option) error {
 	if err != nil {
 		return err
 	}
+	sweeper, err := NewSweeper(local, o.bytes, nil)
+	if err != nil {
+		return err
+	}
+	s.sweeper = sweeper
+	s.owed.Store(true)
 	s.host, s.self, s.cfg = h, h.ID().String(), cfg
 	s.bytes, s.local, s.shards, s.catalog, s.members = o.bytes, local, shards, o.catalog, o.members
 	s.clock, s.now, s.meter, s.sweep, s.logf = NewClock(o.now, cfg.MaxSkew), o.now, o.meter, o.sweep, o.logf
@@ -320,7 +339,11 @@ func (s *server) serve(ctx context.Context) error {
 		return fmt.Errorf("storage: listening: %w", err)
 	}
 	s.server, s.stop = server, stop
-	go s.run(life)
+	s.running.Add(1)
+	go func() {
+		defer s.running.Done()
+		s.run(life)
+	}()
 	return nil
 }
 
@@ -338,6 +361,7 @@ func (s *server) Close() error {
 		if server != nil {
 			s.closeErr = server.Close()
 		}
+		s.running.Wait()
 		if s.shards != nil {
 			s.closeErr = errors.Join(s.closeErr, s.shards.closeAll(context.Background()))
 		}
@@ -364,6 +388,12 @@ func (s *server) run(ctx context.Context) {
 		}
 		if err := s.repair(ctx); err != nil && ctx.Err() == nil {
 			s.logf("storage: repairing copies: %v", err)
+		}
+		if err := s.collect(ctx); err != nil && ctx.Err() == nil {
+			s.logf("storage: collecting versions: %v", err)
+		}
+		if err := s.sweepIfDue(ctx); err != nil && ctx.Err() == nil {
+			s.logf("storage: sweeping blocks: %v", err)
 		}
 		select {
 		case <-ctx.Done():

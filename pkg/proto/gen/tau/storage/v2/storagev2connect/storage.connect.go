@@ -62,6 +62,9 @@ const (
 	StorageServiceProbeProcedure = "/tau.storage.v2.StorageService/Probe"
 	// StorageServiceCoversProcedure is the fully-qualified name of the StorageService's Covers RPC.
 	StorageServiceCoversProcedure = "/tau.storage.v2.StorageService/Covers"
+	// StorageServiceSupersededProcedure is the fully-qualified name of the StorageService's Superseded
+	// RPC.
+	StorageServiceSupersededProcedure = "/tau.storage.v2.StorageService/Superseded"
 )
 
 // StorageServiceClient is a client for the tau.storage.v2.StorageService service.
@@ -75,12 +78,14 @@ type StorageServiceClient interface {
 	List(context.Context, *connect.Request[v2.ListRequest]) (*connect.Response[v2.ListResponse], error)
 	// Read streams an object's bytes. A root no holder has is NotFound.
 	Read(context.Context, *connect.Request[v2.ReadRequest]) (*connect.ServerStreamForClient[v2.ReadResponse], error)
-	// Hold, Append, Probe and Covers are one storage node asking another. A holder
-	// that does not hold the root answers Probe NotFound.
+	// Hold, Append, Probe, Covers and Superseded are one storage node asking
+	// another. A holder that does not hold the root answers Probe NotFound, and one
+	// that does not hold the shard open answers Superseded FailedPrecondition.
 	Hold(context.Context, *connect.Request[v2.HoldRequest]) (*connect.Response[v2.HoldResponse], error)
 	Append(context.Context, *connect.Request[v2.AppendRequest]) (*connect.Response[v2.AppendResponse], error)
 	Probe(context.Context, *connect.Request[v2.ProbeRequest]) (*connect.Response[v2.ProbeResponse], error)
 	Covers(context.Context, *connect.Request[v2.CoversRequest]) (*connect.Response[v2.CoversResponse], error)
+	Superseded(context.Context, *connect.Request[v2.SupersededRequest]) (*connect.Response[v2.SupersededResponse], error)
 }
 
 // NewStorageServiceClient constructs a client for the tau.storage.v2.StorageService service. By
@@ -154,21 +159,28 @@ func NewStorageServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(storageServiceMethods.ByName("Covers")),
 			connect.WithClientOptions(opts...),
 		),
+		superseded: connect.NewClient[v2.SupersededRequest, v2.SupersededResponse](
+			httpClient,
+			baseURL+StorageServiceSupersededProcedure,
+			connect.WithSchema(storageServiceMethods.ByName("Superseded")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // storageServiceClient implements StorageServiceClient.
 type storageServiceClient struct {
-	put      *connect.Client[v2.PutRequest, v2.PutResponse]
-	current  *connect.Client[v2.CurrentRequest, v2.CurrentResponse]
-	versions *connect.Client[v2.VersionsRequest, v2.VersionsResponse]
-	delete   *connect.Client[v2.DeleteRequest, v2.DeleteResponse]
-	list     *connect.Client[v2.ListRequest, v2.ListResponse]
-	read     *connect.Client[v2.ReadRequest, v2.ReadResponse]
-	hold     *connect.Client[v2.HoldRequest, v2.HoldResponse]
-	append   *connect.Client[v2.AppendRequest, v2.AppendResponse]
-	probe    *connect.Client[v2.ProbeRequest, v2.ProbeResponse]
-	covers   *connect.Client[v2.CoversRequest, v2.CoversResponse]
+	put        *connect.Client[v2.PutRequest, v2.PutResponse]
+	current    *connect.Client[v2.CurrentRequest, v2.CurrentResponse]
+	versions   *connect.Client[v2.VersionsRequest, v2.VersionsResponse]
+	delete     *connect.Client[v2.DeleteRequest, v2.DeleteResponse]
+	list       *connect.Client[v2.ListRequest, v2.ListResponse]
+	read       *connect.Client[v2.ReadRequest, v2.ReadResponse]
+	hold       *connect.Client[v2.HoldRequest, v2.HoldResponse]
+	append     *connect.Client[v2.AppendRequest, v2.AppendResponse]
+	probe      *connect.Client[v2.ProbeRequest, v2.ProbeResponse]
+	covers     *connect.Client[v2.CoversRequest, v2.CoversResponse]
+	superseded *connect.Client[v2.SupersededRequest, v2.SupersededResponse]
 }
 
 // Put calls tau.storage.v2.StorageService.Put.
@@ -221,6 +233,11 @@ func (c *storageServiceClient) Covers(ctx context.Context, req *connect.Request[
 	return c.covers.CallUnary(ctx, req)
 }
 
+// Superseded calls tau.storage.v2.StorageService.Superseded.
+func (c *storageServiceClient) Superseded(ctx context.Context, req *connect.Request[v2.SupersededRequest]) (*connect.Response[v2.SupersededResponse], error) {
+	return c.superseded.CallUnary(ctx, req)
+}
+
 // StorageServiceHandler is an implementation of the tau.storage.v2.StorageService service.
 type StorageServiceHandler interface {
 	// Put stores one object: a head, then its bytes in chunks.
@@ -232,12 +249,14 @@ type StorageServiceHandler interface {
 	List(context.Context, *connect.Request[v2.ListRequest]) (*connect.Response[v2.ListResponse], error)
 	// Read streams an object's bytes. A root no holder has is NotFound.
 	Read(context.Context, *connect.Request[v2.ReadRequest], *connect.ServerStream[v2.ReadResponse]) error
-	// Hold, Append, Probe and Covers are one storage node asking another. A holder
-	// that does not hold the root answers Probe NotFound.
+	// Hold, Append, Probe, Covers and Superseded are one storage node asking
+	// another. A holder that does not hold the root answers Probe NotFound, and one
+	// that does not hold the shard open answers Superseded FailedPrecondition.
 	Hold(context.Context, *connect.Request[v2.HoldRequest]) (*connect.Response[v2.HoldResponse], error)
 	Append(context.Context, *connect.Request[v2.AppendRequest]) (*connect.Response[v2.AppendResponse], error)
 	Probe(context.Context, *connect.Request[v2.ProbeRequest]) (*connect.Response[v2.ProbeResponse], error)
 	Covers(context.Context, *connect.Request[v2.CoversRequest]) (*connect.Response[v2.CoversResponse], error)
+	Superseded(context.Context, *connect.Request[v2.SupersededRequest]) (*connect.Response[v2.SupersededResponse], error)
 }
 
 // NewStorageServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -307,6 +326,12 @@ func NewStorageServiceHandler(svc StorageServiceHandler, opts ...connect.Handler
 		connect.WithSchema(storageServiceMethods.ByName("Covers")),
 		connect.WithHandlerOptions(opts...),
 	)
+	storageServiceSupersededHandler := connect.NewUnaryHandler(
+		StorageServiceSupersededProcedure,
+		svc.Superseded,
+		connect.WithSchema(storageServiceMethods.ByName("Superseded")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/tau.storage.v2.StorageService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case StorageServicePutProcedure:
@@ -329,6 +354,8 @@ func NewStorageServiceHandler(svc StorageServiceHandler, opts ...connect.Handler
 			storageServiceProbeHandler.ServeHTTP(w, r)
 		case StorageServiceCoversProcedure:
 			storageServiceCoversHandler.ServeHTTP(w, r)
+		case StorageServiceSupersededProcedure:
+			storageServiceSupersededHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -376,4 +403,8 @@ func (UnimplementedStorageServiceHandler) Probe(context.Context, *connect.Reques
 
 func (UnimplementedStorageServiceHandler) Covers(context.Context, *connect.Request[v2.CoversRequest]) (*connect.Response[v2.CoversResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.storage.v2.StorageService.Covers is not implemented"))
+}
+
+func (UnimplementedStorageServiceHandler) Superseded(context.Context, *connect.Request[v2.SupersededRequest]) (*connect.Response[v2.SupersededResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.storage.v2.StorageService.Superseded is not implemented"))
 }

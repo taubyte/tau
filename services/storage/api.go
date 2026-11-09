@@ -46,6 +46,9 @@ type Object struct {
 	ContentType string
 	// Metadata is the caller's own name/value pairs.
 	Metadata map[string]string
+	// Versioned is a bucket that keeps every version: this one is kept once a
+	// later one supersedes it, rather than collected.
+	Versioned bool
 }
 
 func (s *server) Put(ctx context.Context, at Address, name string, o Object, content io.Reader) (Version, error) {

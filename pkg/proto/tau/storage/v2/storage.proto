@@ -25,6 +25,9 @@ message VersionRecord {
   // sorted by name: every holder of a shard writes this row under one key, so its
   // bytes must not depend on map order.
   repeated Metadata metadata = 8;
+  // kept is a version its bucket keeps once a later one supersedes it: one its
+  // holders never collect.
+  bool kept = 9;
 }
 
 message Metadata {
@@ -48,6 +51,9 @@ message PutHead {
   bytes name = 2;
   string content_type = 3;
   map<string, string> metadata = 4;
+  // versioned is a bucket that keeps every version, so this one is kept once a
+  // later one supersedes it.
+  bool versioned = 5;
 }
 
 message PutRequest {
@@ -196,6 +202,24 @@ message CoversResponse {
   bool covered = 1;
 }
 
+// SupersededRequest asks a holder of an instance's shard what its copy holds of the
+// version of name at stamp whose bytes are root_cid: what a node keeping those bytes
+// collects them on.
+message SupersededRequest {
+  Address at = 1;
+  bytes name = 2;
+  uint64 stamp = 3;
+  string root_cid = 4;
+}
+
+// SupersededResponse: held, the copy holds the version's row; superseded, it holds
+// a newer row of the name too; kept, the version's row says its bucket keeps it.
+message SupersededResponse {
+  bool held = 1;
+  bool superseded = 2;
+  bool kept = 3;
+}
+
 service StorageService {
   // Put stores one object: a head, then its bytes in chunks.
   rpc Put(stream PutRequest) returns (PutResponse);
@@ -207,10 +231,12 @@ service StorageService {
   // Read streams an object's bytes. A root no holder has is NotFound.
   rpc Read(ReadRequest) returns (stream ReadResponse);
 
-  // Hold, Append, Probe and Covers are one storage node asking another. A holder
-  // that does not hold the root answers Probe NotFound.
+  // Hold, Append, Probe, Covers and Superseded are one storage node asking
+  // another. A holder that does not hold the root answers Probe NotFound, and one
+  // that does not hold the shard open answers Superseded FailedPrecondition.
   rpc Hold(HoldRequest) returns (HoldResponse);
   rpc Append(AppendRequest) returns (AppendResponse);
   rpc Probe(ProbeRequest) returns (ProbeResponse);
   rpc Covers(CoversRequest) returns (CoversResponse);
+  rpc Superseded(SupersededRequest) returns (SupersededResponse);
 }

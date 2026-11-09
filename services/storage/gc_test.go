@@ -12,72 +12,62 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func openGates(observed time.Time) Gates {
-	return Gates{
-		HoldsShard:           true,
-		DesiredUnderStable:   true,
-		CoHoldersMerged:      true,
-		ReferencesDefinitive: true,
-		TombstoneObservedAt:  observed,
-		ProvenHolders:        3,
-	}
-}
-
 func TestEveryGateClosesByName(t *testing.T) {
 	now := time.UnixMilli(1_700_000_000_000)
-	observed := now.Add(-48 * time.Hour)
+	long := now.Add(-48 * time.Hour)
 	grace := 24 * time.Hour
 
-	require.NoError(t, openGates(observed).Open(DeadObject, now, grace, Policy{Replicas: 3, Known: true}))
-	require.NoError(t, openGates(observed).Open(MisplacementDrop, now, grace, Policy{Replicas: 3, Known: true}))
+	require.NoError(t, Gates{SupersededAt: long}.Open(Superseded, now, grace, 0))
+	require.NoError(t, Gates{AbsentAt: long, AbsentNow: true}.Open(Abandoned, now, grace, 0))
+	require.NoError(t, Gates{ProvenHolders: 3, Handed: true}.Open(Misplaced, now, grace, 3))
+	require.NoError(t, Gates{Bare: true, Handed: true}.Open(Misplaced, now, grace, 3))
 
 	type testCase struct {
 		name    string
-		mutate  func(*Gates)
+		gates   Gates
 		purpose Purpose
+		holders int
 		says    string
 	}
 	for _, c := range []testCase{
-		{"no shard", func(g *Gates) { g.HoldsShard = false }, DeadObject, "does not hold the referencing shard"},
-		{"not desired", func(g *Gates) { g.DesiredUnderStable = false }, DeadObject, "not HRW-desired"},
-		{"co-holder behind", func(g *Gates) { g.CoHoldersMerged = false }, DeadObject, "has not merged"},
-		{"references unknown", func(g *Gates) { g.ReferencesDefinitive = false }, DeadObject, "unknown rather than dead"},
-		{"never observed", func(g *Gates) { g.TombstoneObservedAt = time.Time{} }, DeadObject, "never observed the tombstone"},
-		{"grace running", func(g *Gates) { g.TombstoneObservedAt = now.Add(-time.Hour) }, DeadObject, "grace is"},
-		{"no shard, drop", func(g *Gates) { g.HoldsShard = false }, MisplacementDrop, "does not hold the referencing shard"},
-		{"unproven", func(g *Gates) { g.ProvenHolders = 2 }, MisplacementDrop, "proved possession"},
+		{"never superseded", Gates{}, Superseded, 0, "no barrier of index holders"},
+		{"superseded within grace", Gates{SupersededAt: now.Add(-time.Hour)}, Superseded, 0, "grace is"},
+		{"never absent", Gates{AbsentNow: true}, Abandoned, 0, "holds its row, or did not answer"},
+		{"absent before, not now", Gates{AbsentAt: long}, Abandoned, 0, "holds its row, or did not answer"},
+		{"absent within grace", Gates{AbsentAt: now.Add(-time.Hour), AbsentNow: true}, Abandoned, 0, "grace is"},
+		{"no holders", Gates{ProvenHolders: 3, Handed: true}, Misplaced, 0, "names no holder"},
+		{"not handed", Gates{ProvenHolders: 3}, Misplaced, 3, "has not taken every reference"},
+		{"unproven", Gates{ProvenHolders: 2, Handed: true}, Misplaced, 3, "2 of 3 holders proved"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			g := openGates(observed)
-			c.mutate(&g)
-			err := g.Open(c.purpose, now, grace, Policy{Replicas: 3, Known: true})
+			err := c.gates.Open(c.purpose, now, grace, c.holders)
 			require.ErrorIs(t, err, ErrGateClosed)
 			require.Contains(t, err.Error(), c.says)
 			require.Contains(t, err.Error(), c.purpose.String())
 		})
 	}
 
-	err := openGates(observed).Open(Purpose(99), now, grace, Policy{Replicas: 3, Known: true})
+	err := Gates{}.Open(Purpose(99), now, grace, 3)
 	require.ErrorIs(t, err, ErrGateClosed)
 	require.Contains(t, err.Error(), "purpose(99)")
 }
 
-func TestTheTwoPurposesAskDifferentQuestions(t *testing.T) {
+func TestThePurposesAskDifferentQuestions(t *testing.T) {
 	now := time.UnixMilli(1_700_000_000_000)
 	grace := 24 * time.Hour
 
-	// An object nobody has ever tombstoned cannot be dead-object collected,
-	// and CAN be dropped as a misplacement once others prove they hold it.
-	g := openGates(time.Time{})
-	require.ErrorIs(t, g.Open(DeadObject, now, grace, Policy{Replicas: 3, Known: true}), ErrGateClosed)
-	require.NoError(t, g.Open(MisplacementDrop, now, grace, Policy{Replicas: 3, Known: true}))
+	// A version superseded long ago, on a node that proved nothing, is collected
+	// as superseded and not dropped as misplaced.
+	g := Gates{SupersededAt: now.Add(-48 * time.Hour)}
+	require.NoError(t, g.Open(Superseded, now, grace, 3))
+	require.ErrorIs(t, g.Open(Misplaced, now, grace, 3), ErrGateClosed)
+	require.ErrorIs(t, g.Open(Abandoned, now, grace, 3), ErrGateClosed)
 
-	// And an object every gate is open for EXCEPT possession is collectable as
-	// dead and not droppable as a misplacement.
-	g = openGates(now.Add(-48 * time.Hour))
-	g.ProvenHolders = 0
-	require.NoError(t, g.Open(DeadObject, now, grace, Policy{Replicas: 3, Known: true}))
-	require.ErrorIs(t, g.Open(MisplacementDrop, now, grace, Policy{Replicas: 3, Known: true}), ErrGateClosed)
+	// A copy every holder proved and took is dropped as misplaced, never as dead.
+	g = Gates{ProvenHolders: 3, Handed: true}
+	require.NoError(t, g.Open(Misplaced, now, grace, 3))
+	require.ErrorIs(t, g.Open(Superseded, now, grace, 3), ErrGateClosed)
+	require.ErrorIs(t, g.Open(Abandoned, now, grace, 3), ErrGateClosed)
 }
 
 func TestGraceIsMeasuredFromLocalObservation(t *testing.T) {
@@ -85,11 +75,10 @@ func TestGraceIsMeasuredFromLocalObservation(t *testing.T) {
 	grace := 24 * time.Hour
 
 	// Exactly at the window it opens; one nanosecond short it does not.
-	g := openGates(now.Add(-grace))
-	require.NoError(t, g.Open(DeadObject, now, grace, Policy{Replicas: 3, Known: true}))
-
-	g = openGates(now.Add(-grace + time.Nanosecond))
-	require.ErrorIs(t, g.Open(DeadObject, now, grace, Policy{Replicas: 3, Known: true}), ErrGateClosed)
+	require.NoError(t, Gates{SupersededAt: now.Add(-grace)}.Open(Superseded, now, grace, 0))
+	require.ErrorIs(t, Gates{SupersededAt: now.Add(-grace + time.Nanosecond)}.Open(Superseded, now, grace, 0), ErrGateClosed)
+	require.NoError(t, Gates{AbsentAt: now.Add(-grace), AbsentNow: true}.Open(Abandoned, now, grace, 0))
+	require.ErrorIs(t, Gates{AbsentAt: now.Add(-grace + time.Nanosecond), AbsentNow: true}.Open(Abandoned, now, grace, 0), ErrGateClosed)
 }
 
 // dag builds a small DAG in memBlocks and returns the roots.
@@ -128,7 +117,7 @@ func TestNewSweeperNeedsBothHalves(t *testing.T) {
 	require.Error(t, err)
 	s, err := NewSweeper(l, newMemBlocks(), nil)
 	require.NoError(t, err)
-	require.NotNil(t, s.marker)
+	require.Equal(t, ExactMarkers{}, s.markers)
 }
 
 func TestTheSweepFreesWhatNothingReferences(t *testing.T) {
@@ -344,7 +333,7 @@ func TestAFalsePositiveLeaksRatherThanDeletes(t *testing.T) {
 	clk := newFixedClock(1_700_000_000_000)
 	l, _ := newLocal(t, clk)
 	blocks := newMemBlocks()
-	s, err := NewSweeper(l, blocks, func(int) (Marker, error) { return alwaysMarked{}, nil })
+	s, err := NewSweeper(l, blocks, alwaysMarking{})
 	require.NoError(t, err)
 	a := addr(t)
 
@@ -464,7 +453,7 @@ func TestASweepPropagatesEveryFailure(t *testing.T) {
 
 	// The marker cannot be built.
 	l, _ := newLocal(t, clk)
-	s, err = NewSweeper(l, newMemBlocks(), func(int) (Marker, error) { return nil, errInjected })
+	s, err = NewSweeper(l, newMemBlocks(), failingMarking{})
 	require.NoError(t, err)
 	_, err = s.Sweep(ctx)
 	require.ErrorIs(t, err, errInjected)
@@ -502,9 +491,18 @@ func TestBlocksHasNoDoorForEnumeratingTheBlockstore(t *testing.T) {
 }
 
 func TestPurposeNamesItself(t *testing.T) {
-	require.Equal(t, "dead object", DeadObject.String())
-	require.Equal(t, "misplacement drop", MisplacementDrop.String())
+	require.Equal(t, "superseded", Superseded.String())
+	require.Equal(t, "abandoned", Abandoned.String())
+	require.Equal(t, "misplaced", Misplaced.String())
 	require.Equal(t, "purpose(7)", Purpose(7).String())
+}
+
+func TestBloomMarkersBuildABloomAtTheirRate(t *testing.T) {
+	m, err := BloomMarkers{Rate: 0.01}.New(100)
+	require.NoError(t, err)
+	require.IsType(t, &bloomMarker{}, m)
+	_, err = BloomMarkers{}.New(100)
+	require.Error(t, err, "a zero rate is refused, not read as one")
 }
 
 func TestTheExactMarkerIsExact(t *testing.T) {
@@ -516,8 +514,115 @@ func TestTheExactMarkerIsExact(t *testing.T) {
 	require.False(t, m.Marked(b))
 }
 
+// A KEEP DURING A SWEEP IS MARKED BEFORE A BLOCK IT RELIES ON CAN GO: a write that
+// found a dead block here and stored nothing of it keeps it, and the sweep, which listed
+// its references before the keep, marks the kept root before it deletes.
+func TestAKeepDuringASweepIsMarkedBeforeItsBlocksCanGo(t *testing.T) {
+	ctx := context.Background()
+	clk := newFixedClock(1_700_000_000_000)
+	s, l, blocks := sweeper(t, clk)
+	a := addr(t)
+
+	ids := dag(t, blocks, map[string][]string{
+		"live": {}, "dead": {}, "reused": {}, "new-root": {"reused"},
+	})
+	for _, label := range []string{"live", "dead", "reused"} {
+		require.NoError(t, l.Imported(ctx, ids[label]))
+	}
+	require.NoError(t, l.Reference(ctx, ids["live"], a, "live", 1))
+
+	marking := make(chan struct{})
+	resume := make(chan struct{})
+	blocks.failLinks = func(c cid.Cid) error {
+		if c.Equals(ids["live"]) {
+			close(marking)
+			<-resume
+		}
+		return nil
+	}
+	swept := make(chan SweepResult, 1)
+	go func() {
+		res, err := s.Sweep(ctx)
+		require.NoError(t, err)
+		swept <- res
+	}()
+	<-marking
+	require.NoError(t, s.Keep(ctx, ids["new-root"], []cid.Cid{ids["new-root"], ids["reused"]}, a, "new", 2))
+	close(resume)
+	res := <-swept
+
+	require.Equal(t, 1, res.Deleted, "only the dead block goes")
+	for _, label := range []string{"live", "reused", "new-root"} {
+		have, err := blocks.Has(ctx, ids[label])
+		require.NoError(t, err)
+		require.True(t, have, "%s was swept and a version relies on it", label)
+	}
+}
+
+// A KEEP AFTER A SWEEP TOOK A BLOCK IT RELIES ON IS REFUSED, so no reference names a
+// root missing a block.
+func TestAKeepRelyingOnASweptBlockIsRefused(t *testing.T) {
+	ctx := context.Background()
+	clk := newFixedClock(1_700_000_000_000)
+	s, l, blocks := sweeper(t, clk)
+	a := addr(t)
+
+	ids := dag(t, blocks, map[string][]string{"reused": {}, "new-root": {"reused"}})
+	require.NoError(t, l.Imported(ctx, ids["reused"]))
+	res, err := s.Sweep(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, res.Deleted)
+
+	err = s.Keep(ctx, ids["new-root"], []cid.Cid{ids["new-root"], ids["reused"]}, a, "new", 2)
+	require.ErrorIs(t, err, ErrSwept)
+	refs, err := l.References(ctx)
+	require.NoError(t, err)
+	require.Empty(t, refs, "a refused keep left a reference")
+
+	blocks.failHas = func(cid.Cid) error { return errInjected }
+	require.ErrorIs(t, s.Keep(ctx, ids["new-root"], []cid.Cid{ids["new-root"]}, a, "new", 2), errInjected)
+}
+
+// A SWEEP'S DELETES HOLD EVERY KEEP OFF until their chunk is done: a keep that ran
+// between a delete and the next would rely on what the sweep was deleting.
+func TestASweepsDeletesHoldEveryKeepOff(t *testing.T) {
+	ctx := context.Background()
+	clk := newFixedClock(1_700_000_000_000)
+	s, l, blocks := sweeper(t, clk)
+	a := addr(t)
+
+	ids := dag(t, blocks, map[string][]string{"dead": {}, "other": {}})
+	require.NoError(t, l.Imported(ctx, ids["dead"]))
+
+	deleting := make(chan struct{})
+	resume := make(chan struct{})
+	blocks.failDelete = func(cid.Cid) error {
+		close(deleting)
+		<-resume
+		return nil
+	}
+	go func() {
+		_, err := s.Sweep(ctx)
+		require.NoError(t, err)
+	}()
+	<-deleting
+	kept := make(chan error, 1)
+	go func() { kept <- s.Keep(ctx, ids["other"], []cid.Cid{ids["other"]}, a, "other", 1) }()
+	require.Never(t, func() bool { return len(kept) > 0 }, 200*time.Millisecond, 10*time.Millisecond, "a keep ran inside a sweep's deletes")
+	close(resume)
+	require.NoError(t, <-kept)
+}
+
 // alwaysMarked is the worst legal marker: every answer is a false positive.
 type alwaysMarked struct{}
 
 func (alwaysMarked) Mark(cid.Cid)        {}
 func (alwaysMarked) Marked(cid.Cid) bool { return true }
+
+type alwaysMarking struct{}
+
+func (alwaysMarking) New(int) (Marker, error) { return alwaysMarked{}, nil }
+
+type failingMarking struct{}
+
+func (failingMarking) New(int) (Marker, error) { return nil, errInjected }

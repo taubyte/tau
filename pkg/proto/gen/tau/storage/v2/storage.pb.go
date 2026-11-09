@@ -45,7 +45,10 @@ type VersionRecord struct {
 	// metadata is the caller's own name/value pairs, as an S3 object carries them,
 	// sorted by name: every holder of a shard writes this row under one key, so its
 	// bytes must not depend on map order.
-	Metadata      []*Metadata `protobuf:"bytes,8,rep,name=metadata,proto3" json:"metadata,omitempty"`
+	Metadata []*Metadata `protobuf:"bytes,8,rep,name=metadata,proto3" json:"metadata,omitempty"`
+	// kept is a version its bucket keeps once a later one supersedes it: one its
+	// holders never collect.
+	Kept          bool `protobuf:"varint,9,opt,name=kept,proto3" json:"kept,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -134,6 +137,13 @@ func (x *VersionRecord) GetMetadata() []*Metadata {
 		return x.Metadata
 	}
 	return nil
+}
+
+func (x *VersionRecord) GetKept() bool {
+	if x != nil {
+		return x.Kept
+	}
+	return false
 }
 
 type Metadata struct {
@@ -263,9 +273,12 @@ type PutHead struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	At    *Address               `protobuf:"bytes,1,opt,name=at,proto3" json:"at,omitempty"`
 	// name is the object's name within the instance, any bytes.
-	Name          []byte            `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	ContentType   string            `protobuf:"bytes,3,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
-	Metadata      map[string]string `protobuf:"bytes,4,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Name        []byte            `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	ContentType string            `protobuf:"bytes,3,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
+	Metadata    map[string]string `protobuf:"bytes,4,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// versioned is a bucket that keeps every version, so this one is kept once a
+	// later one supersedes it.
+	Versioned     bool `protobuf:"varint,5,opt,name=versioned,proto3" json:"versioned,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -326,6 +339,13 @@ func (x *PutHead) GetMetadata() map[string]string {
 		return x.Metadata
 	}
 	return nil
+}
+
+func (x *PutHead) GetVersioned() bool {
+	if x != nil {
+		return x.Versioned
+	}
+	return false
 }
 
 type PutRequest struct {
@@ -1594,11 +1614,144 @@ func (x *CoversResponse) GetCovered() bool {
 	return false
 }
 
+// SupersededRequest asks a holder of an instance's shard what its copy holds of the
+// version of name at stamp whose bytes are root_cid: what a node keeping those bytes
+// collects them on.
+type SupersededRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	At            *Address               `protobuf:"bytes,1,opt,name=at,proto3" json:"at,omitempty"`
+	Name          []byte                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Stamp         uint64                 `protobuf:"varint,3,opt,name=stamp,proto3" json:"stamp,omitempty"`
+	RootCid       string                 `protobuf:"bytes,4,opt,name=root_cid,json=rootCid,proto3" json:"root_cid,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SupersededRequest) Reset() {
+	*x = SupersededRequest{}
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SupersededRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SupersededRequest) ProtoMessage() {}
+
+func (x *SupersededRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SupersededRequest.ProtoReflect.Descriptor instead.
+func (*SupersededRequest) Descriptor() ([]byte, []int) {
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *SupersededRequest) GetAt() *Address {
+	if x != nil {
+		return x.At
+	}
+	return nil
+}
+
+func (x *SupersededRequest) GetName() []byte {
+	if x != nil {
+		return x.Name
+	}
+	return nil
+}
+
+func (x *SupersededRequest) GetStamp() uint64 {
+	if x != nil {
+		return x.Stamp
+	}
+	return 0
+}
+
+func (x *SupersededRequest) GetRootCid() string {
+	if x != nil {
+		return x.RootCid
+	}
+	return ""
+}
+
+// SupersededResponse: held, the copy holds the version's row; superseded, it holds
+// a newer row of the name too; kept, the version's row says its bucket keeps it.
+type SupersededResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Held          bool                   `protobuf:"varint,1,opt,name=held,proto3" json:"held,omitempty"`
+	Superseded    bool                   `protobuf:"varint,2,opt,name=superseded,proto3" json:"superseded,omitempty"`
+	Kept          bool                   `protobuf:"varint,3,opt,name=kept,proto3" json:"kept,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SupersededResponse) Reset() {
+	*x = SupersededResponse{}
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SupersededResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SupersededResponse) ProtoMessage() {}
+
+func (x *SupersededResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SupersededResponse.ProtoReflect.Descriptor instead.
+func (*SupersededResponse) Descriptor() ([]byte, []int) {
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *SupersededResponse) GetHeld() bool {
+	if x != nil {
+		return x.Held
+	}
+	return false
+}
+
+func (x *SupersededResponse) GetSuperseded() bool {
+	if x != nil {
+		return x.Superseded
+	}
+	return false
+}
+
+func (x *SupersededResponse) GetKept() bool {
+	if x != nil {
+		return x.Kept
+	}
+	return false
+}
+
 var File_tau_storage_v2_storage_proto protoreflect.FileDescriptor
 
 const file_tau_storage_v2_storage_proto_rawDesc = "" +
 	"\n" +
-	"\x1ctau/storage/v2/storage.proto\x12\x0etau.storage.v2\"\x8a\x02\n" +
+	"\x1ctau/storage/v2/storage.proto\x12\x0etau.storage.v2\"\x9e\x02\n" +
 	"\rVersionRecord\x12\x19\n" +
 	"\broot_cid\x18\x01 \x01(\tR\arootCid\x12\x12\n" +
 	"\x04size\x18\x02 \x01(\x04R\x04size\x12!\n" +
@@ -1608,7 +1761,8 @@ const file_tau_storage_v2_storage_proto_rawDesc = "" +
 	"\x06writer\x18\x05 \x01(\tR\x06writer\x12\x1c\n" +
 	"\ttombstone\x18\x06 \x01(\bR\ttombstone\x12\x1c\n" +
 	"\texclusive\x18\a \x01(\bR\texclusive\x124\n" +
-	"\bmetadata\x18\b \x03(\v2\x18.tau.storage.v2.MetadataR\bmetadata\"4\n" +
+	"\bmetadata\x18\b \x03(\v2\x18.tau.storage.v2.MetadataR\bmetadata\x12\x12\n" +
+	"\x04kept\x18\t \x01(\bR\x04kept\"4\n" +
 	"\bMetadata\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\"y\n" +
@@ -1616,12 +1770,13 @@ const file_tau_storage_v2_storage_proto_rawDesc = "" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12 \n" +
 	"\venvironment\x18\x02 \x01(\tR\venvironment\x12\x16\n" +
 	"\x06bucket\x18\x03 \x01(\tR\x06bucket\x12\x1a\n" +
-	"\binstance\x18\x04 \x01(\tR\binstance\"\xe9\x01\n" +
+	"\binstance\x18\x04 \x01(\tR\binstance\"\x87\x02\n" +
 	"\aPutHead\x12'\n" +
 	"\x02at\x18\x01 \x01(\v2\x17.tau.storage.v2.AddressR\x02at\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\fR\x04name\x12!\n" +
 	"\fcontent_type\x18\x03 \x01(\tR\vcontentType\x12A\n" +
-	"\bmetadata\x18\x04 \x03(\v2%.tau.storage.v2.PutHead.MetadataEntryR\bmetadata\x1a;\n" +
+	"\bmetadata\x18\x04 \x03(\v2%.tau.storage.v2.PutHead.MetadataEntryR\bmetadata\x12\x1c\n" +
+	"\tversioned\x18\x05 \x01(\bR\tversioned\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"[\n" +
@@ -1704,7 +1859,18 @@ const file_tau_storage_v2_storage_proto_rawDesc = "" +
 	"\x05shard\x18\x01 \x01(\rR\x05shard\x12*\n" +
 	"\x05spans\x18\x02 \x03(\v2\x14.tau.storage.v2.SpanR\x05spans\"*\n" +
 	"\x0eCoversResponse\x12\x18\n" +
-	"\acovered\x18\x01 \x01(\bR\acovered2\xd9\x05\n" +
+	"\acovered\x18\x01 \x01(\bR\acovered\"\x81\x01\n" +
+	"\x11SupersededRequest\x12'\n" +
+	"\x02at\x18\x01 \x01(\v2\x17.tau.storage.v2.AddressR\x02at\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\fR\x04name\x12\x14\n" +
+	"\x05stamp\x18\x03 \x01(\x04R\x05stamp\x12\x19\n" +
+	"\broot_cid\x18\x04 \x01(\tR\arootCid\"\\\n" +
+	"\x12SupersededResponse\x12\x12\n" +
+	"\x04held\x18\x01 \x01(\bR\x04held\x12\x1e\n" +
+	"\n" +
+	"superseded\x18\x02 \x01(\bR\n" +
+	"superseded\x12\x12\n" +
+	"\x04kept\x18\x03 \x01(\bR\x04kept2\xae\x06\n" +
 	"\x0eStorageService\x12@\n" +
 	"\x03Put\x12\x1a.tau.storage.v2.PutRequest\x1a\x1b.tau.storage.v2.PutResponse(\x01\x12J\n" +
 	"\aCurrent\x12\x1e.tau.storage.v2.CurrentRequest\x1a\x1f.tau.storage.v2.CurrentResponse\x12M\n" +
@@ -1715,7 +1881,9 @@ const file_tau_storage_v2_storage_proto_rawDesc = "" +
 	"\x04Hold\x12\x1b.tau.storage.v2.HoldRequest\x1a\x1c.tau.storage.v2.HoldResponse\x12G\n" +
 	"\x06Append\x12\x1d.tau.storage.v2.AppendRequest\x1a\x1e.tau.storage.v2.AppendResponse\x12D\n" +
 	"\x05Probe\x12\x1c.tau.storage.v2.ProbeRequest\x1a\x1d.tau.storage.v2.ProbeResponse\x12G\n" +
-	"\x06Covers\x12\x1d.tau.storage.v2.CoversRequest\x1a\x1e.tau.storage.v2.CoversResponseB\xbb\x01\n" +
+	"\x06Covers\x12\x1d.tau.storage.v2.CoversRequest\x1a\x1e.tau.storage.v2.CoversResponse\x12S\n" +
+	"\n" +
+	"Superseded\x12!.tau.storage.v2.SupersededRequest\x1a\".tau.storage.v2.SupersededResponseB\xbb\x01\n" +
 	"\x12com.tau.storage.v2B\fStorageProtoP\x01Z=github.com/taubyte/tau/pkg/proto/gen/tau/storage/v2;storagev2\xa2\x02\x03TSX\xaa\x02\x0eTau.Storage.V2\xca\x02\x0eTau\\Storage\\V2\xe2\x02\x1aTau\\Storage\\V2\\GPBMetadata\xea\x02\x10Tau::Storage::V2b\x06proto3"
 
 var (
@@ -1730,43 +1898,45 @@ func file_tau_storage_v2_storage_proto_rawDescGZIP() []byte {
 	return file_tau_storage_v2_storage_proto_rawDescData
 }
 
-var file_tau_storage_v2_storage_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
+var file_tau_storage_v2_storage_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_tau_storage_v2_storage_proto_goTypes = []any{
-	(*VersionRecord)(nil),    // 0: tau.storage.v2.VersionRecord
-	(*Metadata)(nil),         // 1: tau.storage.v2.Metadata
-	(*Address)(nil),          // 2: tau.storage.v2.Address
-	(*PutHead)(nil),          // 3: tau.storage.v2.PutHead
-	(*PutRequest)(nil),       // 4: tau.storage.v2.PutRequest
-	(*Version)(nil),          // 5: tau.storage.v2.Version
-	(*PutResponse)(nil),      // 6: tau.storage.v2.PutResponse
-	(*HoldRequest)(nil),      // 7: tau.storage.v2.HoldRequest
-	(*HoldResponse)(nil),     // 8: tau.storage.v2.HoldResponse
-	(*AppendRequest)(nil),    // 9: tau.storage.v2.AppendRequest
-	(*AppendResponse)(nil),   // 10: tau.storage.v2.AppendResponse
-	(*CurrentRequest)(nil),   // 11: tau.storage.v2.CurrentRequest
-	(*CurrentResponse)(nil),  // 12: tau.storage.v2.CurrentResponse
-	(*VersionsRequest)(nil),  // 13: tau.storage.v2.VersionsRequest
-	(*VersionsResponse)(nil), // 14: tau.storage.v2.VersionsResponse
-	(*DeleteRequest)(nil),    // 15: tau.storage.v2.DeleteRequest
-	(*DeleteResponse)(nil),   // 16: tau.storage.v2.DeleteResponse
-	(*ListRequest)(nil),      // 17: tau.storage.v2.ListRequest
-	(*ListResponse)(nil),     // 18: tau.storage.v2.ListResponse
-	(*ReadRequest)(nil),      // 19: tau.storage.v2.ReadRequest
-	(*ReadResponse)(nil),     // 20: tau.storage.v2.ReadResponse
-	(*ProbeRequest)(nil),     // 21: tau.storage.v2.ProbeRequest
-	(*ProbeResponse)(nil),    // 22: tau.storage.v2.ProbeResponse
-	(*Span)(nil),             // 23: tau.storage.v2.Span
-	(*CoversRequest)(nil),    // 24: tau.storage.v2.CoversRequest
-	(*CoversResponse)(nil),   // 25: tau.storage.v2.CoversResponse
-	nil,                      // 26: tau.storage.v2.PutHead.MetadataEntry
-	nil,                      // 27: tau.storage.v2.Version.MetadataEntry
+	(*VersionRecord)(nil),      // 0: tau.storage.v2.VersionRecord
+	(*Metadata)(nil),           // 1: tau.storage.v2.Metadata
+	(*Address)(nil),            // 2: tau.storage.v2.Address
+	(*PutHead)(nil),            // 3: tau.storage.v2.PutHead
+	(*PutRequest)(nil),         // 4: tau.storage.v2.PutRequest
+	(*Version)(nil),            // 5: tau.storage.v2.Version
+	(*PutResponse)(nil),        // 6: tau.storage.v2.PutResponse
+	(*HoldRequest)(nil),        // 7: tau.storage.v2.HoldRequest
+	(*HoldResponse)(nil),       // 8: tau.storage.v2.HoldResponse
+	(*AppendRequest)(nil),      // 9: tau.storage.v2.AppendRequest
+	(*AppendResponse)(nil),     // 10: tau.storage.v2.AppendResponse
+	(*CurrentRequest)(nil),     // 11: tau.storage.v2.CurrentRequest
+	(*CurrentResponse)(nil),    // 12: tau.storage.v2.CurrentResponse
+	(*VersionsRequest)(nil),    // 13: tau.storage.v2.VersionsRequest
+	(*VersionsResponse)(nil),   // 14: tau.storage.v2.VersionsResponse
+	(*DeleteRequest)(nil),      // 15: tau.storage.v2.DeleteRequest
+	(*DeleteResponse)(nil),     // 16: tau.storage.v2.DeleteResponse
+	(*ListRequest)(nil),        // 17: tau.storage.v2.ListRequest
+	(*ListResponse)(nil),       // 18: tau.storage.v2.ListResponse
+	(*ReadRequest)(nil),        // 19: tau.storage.v2.ReadRequest
+	(*ReadResponse)(nil),       // 20: tau.storage.v2.ReadResponse
+	(*ProbeRequest)(nil),       // 21: tau.storage.v2.ProbeRequest
+	(*ProbeResponse)(nil),      // 22: tau.storage.v2.ProbeResponse
+	(*Span)(nil),               // 23: tau.storage.v2.Span
+	(*CoversRequest)(nil),      // 24: tau.storage.v2.CoversRequest
+	(*CoversResponse)(nil),     // 25: tau.storage.v2.CoversResponse
+	(*SupersededRequest)(nil),  // 26: tau.storage.v2.SupersededRequest
+	(*SupersededResponse)(nil), // 27: tau.storage.v2.SupersededResponse
+	nil,                        // 28: tau.storage.v2.PutHead.MetadataEntry
+	nil,                        // 29: tau.storage.v2.Version.MetadataEntry
 }
 var file_tau_storage_v2_storage_proto_depIdxs = []int32{
 	1,  // 0: tau.storage.v2.VersionRecord.metadata:type_name -> tau.storage.v2.Metadata
 	2,  // 1: tau.storage.v2.PutHead.at:type_name -> tau.storage.v2.Address
-	26, // 2: tau.storage.v2.PutHead.metadata:type_name -> tau.storage.v2.PutHead.MetadataEntry
+	28, // 2: tau.storage.v2.PutHead.metadata:type_name -> tau.storage.v2.PutHead.MetadataEntry
 	3,  // 3: tau.storage.v2.PutRequest.head:type_name -> tau.storage.v2.PutHead
-	27, // 4: tau.storage.v2.Version.metadata:type_name -> tau.storage.v2.Version.MetadataEntry
+	29, // 4: tau.storage.v2.Version.metadata:type_name -> tau.storage.v2.Version.MetadataEntry
 	5,  // 5: tau.storage.v2.PutResponse.version:type_name -> tau.storage.v2.Version
 	2,  // 6: tau.storage.v2.HoldRequest.at:type_name -> tau.storage.v2.Address
 	2,  // 7: tau.storage.v2.AppendRequest.at:type_name -> tau.storage.v2.Address
@@ -1780,31 +1950,34 @@ var file_tau_storage_v2_storage_proto_depIdxs = []int32{
 	2,  // 15: tau.storage.v2.ListRequest.at:type_name -> tau.storage.v2.Address
 	5,  // 16: tau.storage.v2.ListResponse.versions:type_name -> tau.storage.v2.Version
 	23, // 17: tau.storage.v2.CoversRequest.spans:type_name -> tau.storage.v2.Span
-	4,  // 18: tau.storage.v2.StorageService.Put:input_type -> tau.storage.v2.PutRequest
-	11, // 19: tau.storage.v2.StorageService.Current:input_type -> tau.storage.v2.CurrentRequest
-	13, // 20: tau.storage.v2.StorageService.Versions:input_type -> tau.storage.v2.VersionsRequest
-	15, // 21: tau.storage.v2.StorageService.Delete:input_type -> tau.storage.v2.DeleteRequest
-	17, // 22: tau.storage.v2.StorageService.List:input_type -> tau.storage.v2.ListRequest
-	19, // 23: tau.storage.v2.StorageService.Read:input_type -> tau.storage.v2.ReadRequest
-	7,  // 24: tau.storage.v2.StorageService.Hold:input_type -> tau.storage.v2.HoldRequest
-	9,  // 25: tau.storage.v2.StorageService.Append:input_type -> tau.storage.v2.AppendRequest
-	21, // 26: tau.storage.v2.StorageService.Probe:input_type -> tau.storage.v2.ProbeRequest
-	24, // 27: tau.storage.v2.StorageService.Covers:input_type -> tau.storage.v2.CoversRequest
-	6,  // 28: tau.storage.v2.StorageService.Put:output_type -> tau.storage.v2.PutResponse
-	12, // 29: tau.storage.v2.StorageService.Current:output_type -> tau.storage.v2.CurrentResponse
-	14, // 30: tau.storage.v2.StorageService.Versions:output_type -> tau.storage.v2.VersionsResponse
-	16, // 31: tau.storage.v2.StorageService.Delete:output_type -> tau.storage.v2.DeleteResponse
-	18, // 32: tau.storage.v2.StorageService.List:output_type -> tau.storage.v2.ListResponse
-	20, // 33: tau.storage.v2.StorageService.Read:output_type -> tau.storage.v2.ReadResponse
-	8,  // 34: tau.storage.v2.StorageService.Hold:output_type -> tau.storage.v2.HoldResponse
-	10, // 35: tau.storage.v2.StorageService.Append:output_type -> tau.storage.v2.AppendResponse
-	22, // 36: tau.storage.v2.StorageService.Probe:output_type -> tau.storage.v2.ProbeResponse
-	25, // 37: tau.storage.v2.StorageService.Covers:output_type -> tau.storage.v2.CoversResponse
-	28, // [28:38] is the sub-list for method output_type
-	18, // [18:28] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	2,  // 18: tau.storage.v2.SupersededRequest.at:type_name -> tau.storage.v2.Address
+	4,  // 19: tau.storage.v2.StorageService.Put:input_type -> tau.storage.v2.PutRequest
+	11, // 20: tau.storage.v2.StorageService.Current:input_type -> tau.storage.v2.CurrentRequest
+	13, // 21: tau.storage.v2.StorageService.Versions:input_type -> tau.storage.v2.VersionsRequest
+	15, // 22: tau.storage.v2.StorageService.Delete:input_type -> tau.storage.v2.DeleteRequest
+	17, // 23: tau.storage.v2.StorageService.List:input_type -> tau.storage.v2.ListRequest
+	19, // 24: tau.storage.v2.StorageService.Read:input_type -> tau.storage.v2.ReadRequest
+	7,  // 25: tau.storage.v2.StorageService.Hold:input_type -> tau.storage.v2.HoldRequest
+	9,  // 26: tau.storage.v2.StorageService.Append:input_type -> tau.storage.v2.AppendRequest
+	21, // 27: tau.storage.v2.StorageService.Probe:input_type -> tau.storage.v2.ProbeRequest
+	24, // 28: tau.storage.v2.StorageService.Covers:input_type -> tau.storage.v2.CoversRequest
+	26, // 29: tau.storage.v2.StorageService.Superseded:input_type -> tau.storage.v2.SupersededRequest
+	6,  // 30: tau.storage.v2.StorageService.Put:output_type -> tau.storage.v2.PutResponse
+	12, // 31: tau.storage.v2.StorageService.Current:output_type -> tau.storage.v2.CurrentResponse
+	14, // 32: tau.storage.v2.StorageService.Versions:output_type -> tau.storage.v2.VersionsResponse
+	16, // 33: tau.storage.v2.StorageService.Delete:output_type -> tau.storage.v2.DeleteResponse
+	18, // 34: tau.storage.v2.StorageService.List:output_type -> tau.storage.v2.ListResponse
+	20, // 35: tau.storage.v2.StorageService.Read:output_type -> tau.storage.v2.ReadResponse
+	8,  // 36: tau.storage.v2.StorageService.Hold:output_type -> tau.storage.v2.HoldResponse
+	10, // 37: tau.storage.v2.StorageService.Append:output_type -> tau.storage.v2.AppendResponse
+	22, // 38: tau.storage.v2.StorageService.Probe:output_type -> tau.storage.v2.ProbeResponse
+	25, // 39: tau.storage.v2.StorageService.Covers:output_type -> tau.storage.v2.CoversResponse
+	27, // 40: tau.storage.v2.StorageService.Superseded:output_type -> tau.storage.v2.SupersededResponse
+	30, // [30:41] is the sub-list for method output_type
+	19, // [19:30] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_tau_storage_v2_storage_proto_init() }
@@ -1822,7 +1995,7 @@ func file_tau_storage_v2_storage_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_storage_v2_storage_proto_rawDesc), len(file_tau_storage_v2_storage_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   28,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

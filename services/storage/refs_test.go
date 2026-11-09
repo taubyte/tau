@@ -209,91 +209,65 @@ func TestReferencesListsEverythingAndReferencesToNarrows(t *testing.T) {
 	require.ErrorIs(t, l.Dereference(ctx, r1, Address{}, "x", 1), ErrNoAddress)
 }
 
-func TestATombstoneObservationIsLocalAndMonotonic(t *testing.T) {
+func TestAnObservationIsLocalAndMonotonic(t *testing.T) {
 	ctx := context.Background()
 	clk := newFixedClock(1_700_000_000_000)
 	l, _ := newLocal(t, clk)
 	a := addr(t)
 
-	first, err := l.ObservedTombstone(ctx, a, "gone.txt", 500)
-	require.NoError(t, err)
-	require.Equal(t, time.UnixMilli(1_700_000_000_000), first)
+	for _, observe := range []func(context.Context, Address, string, uint64) (time.Time, error){l.Superseded, l.Absent} {
+		clk.set(1_700_000_000_000)
+		first, err := observe(ctx, a, "gone.txt", 500)
+		require.NoError(t, err)
+		require.Equal(t, time.UnixMilli(1_700_000_000_000), first)
 
-	// Observing it again an hour later returns the FIRST observation.
-	clk.advance(time.Hour)
-	again, err := l.ObservedTombstone(ctx, a, "gone.txt", 500)
-	require.NoError(t, err)
-	require.Equal(t, first, again, "first observation wins")
+		// Finding it again an hour later returns the FIRST observation.
+		clk.advance(time.Hour)
+		again, err := observe(ctx, a, "gone.txt", 500)
+		require.NoError(t, err)
+		require.Equal(t, first, again, "first observation wins")
 
-	// Even if the clock goes backwards.
-	clk.set(1_600_000_000_000)
-	back, err := l.ObservedTombstone(ctx, a, "gone.txt", 500)
-	require.NoError(t, err)
-	require.Equal(t, first, back)
+		// Even if the clock goes backwards.
+		clk.set(1_600_000_000_000)
+		back, err := observe(ctx, a, "gone.txt", 500)
+		require.NoError(t, err)
+		require.Equal(t, first, back)
 
-	// A different version of the same object is a different observation.
-	clk.set(1_700_000_500_000)
-	other, err := l.ObservedTombstone(ctx, a, "gone.txt", 900)
-	require.NoError(t, err)
-	require.Equal(t, time.UnixMilli(1_700_000_500_000), other)
+		// A different version of the same object is a different observation.
+		clk.set(1_700_000_500_000)
+		other, err := observe(ctx, a, "gone.txt", 900)
+		require.NoError(t, err)
+		require.Equal(t, time.UnixMilli(1_700_000_500_000), other)
 
-	require.NoError(t, l.ForgetTombstone(ctx, a, "gone.txt", 500))
+		_, err = observe(ctx, Address{}, "x", 1)
+		require.ErrorIs(t, err, ErrNoAddress)
+	}
+
+	superseded, absent, err := l.Observed(ctx, a, "gone.txt", 500)
+	require.NoError(t, err)
+	require.Equal(t, time.UnixMilli(1_700_000_000_000), superseded)
+	require.Equal(t, time.UnixMilli(1_700_000_000_000), absent)
+
+	// Present forgets absence only; Collected forgets both.
+	require.NoError(t, l.Present(ctx, a, "gone.txt", 500))
+	superseded, absent, err = l.Observed(ctx, a, "gone.txt", 500)
+	require.NoError(t, err)
+	require.False(t, superseded.IsZero())
+	require.True(t, absent.IsZero())
+	require.NoError(t, l.Collected(ctx, a, "gone.txt", 500))
+	superseded, _, err = l.Observed(ctx, a, "gone.txt", 500)
+	require.NoError(t, err)
+	require.True(t, superseded.IsZero())
+
 	clk.set(1_700_009_000_000)
-	fresh, err := l.ObservedTombstone(ctx, a, "gone.txt", 500)
+	fresh, err := l.Superseded(ctx, a, "gone.txt", 500)
 	require.NoError(t, err)
 	require.Equal(t, time.UnixMilli(1_700_009_000_000), fresh)
 
-	_, err = l.ObservedTombstone(ctx, Address{}, "x", 1)
+	require.ErrorIs(t, l.Present(ctx, Address{}, "x", 1), ErrNoAddress)
+	require.ErrorIs(t, l.Collected(ctx, Address{}, "x", 1), ErrNoAddress)
+	_, _, err = l.Observed(ctx, Address{}, "x", 1)
 	require.ErrorIs(t, err, ErrNoAddress)
-	require.ErrorIs(t, l.ForgetTombstone(ctx, Address{}, "x", 1), ErrNoAddress)
-}
-
-func TestObservingATombstoneMarksTheInstanceDirty(t *testing.T) {
-	ctx := context.Background()
-	clk := newFixedClock(1_700_000_000_000)
-	l, _ := newLocal(t, clk)
-	a := addr(t)
-	b := instance(t, "other", "prod", "assets", "main")
-
-	n, err := l.Dirty(ctx, a)
-	require.NoError(t, err)
-	require.Zero(t, n, "an instance with no deletions is clean")
-
-	_, err = l.ObservedTombstone(ctx, a, "one", 1)
-	require.NoError(t, err)
-	_, err = l.ObservedTombstone(ctx, a, "two", 2)
-	require.NoError(t, err)
-
-	n, err = l.Dirty(ctx, a)
-	require.NoError(t, err)
-	require.Equal(t, uint64(2), n)
-
-	// Re-observing does not bump it: the row already existed.
-	_, err = l.ObservedTombstone(ctx, a, "one", 1)
-	require.NoError(t, err)
-	n, err = l.Dirty(ctx, a)
-	require.NoError(t, err)
-	require.Equal(t, uint64(2), n)
-
-	dirty, err := l.DirtyInstances(ctx)
-	require.NoError(t, err)
-	require.Len(t, dirty, 1)
-	require.Equal(t, a.String(), dirty[0].String())
-
-	require.NoError(t, l.MarkDirty(ctx, b))
-	dirty, err = l.DirtyInstances(ctx)
-	require.NoError(t, err)
-	require.Len(t, dirty, 2)
-
-	require.NoError(t, l.Swept(ctx, a))
-	n, err = l.Dirty(ctx, a)
-	require.NoError(t, err)
-	require.Zero(t, n)
-
-	require.ErrorIs(t, l.MarkDirty(ctx, Address{}), ErrNoAddress)
-	_, err = l.Dirty(ctx, Address{})
-	require.ErrorIs(t, err, ErrNoAddress)
-	require.ErrorIs(t, l.Swept(ctx, Address{}), ErrNoAddress)
 }
 
 func TestACorruptLocalRowIsAnErrorNotAZero(t *testing.T) {
@@ -302,21 +276,18 @@ func TestACorruptLocalRowIsAnErrorNotAZero(t *testing.T) {
 	l, store := newLocal(t, clk)
 	a := addr(t)
 
-	key, err := dirtyKey(a)
-	require.NoError(t, err)
-	require.NoError(t, store.Put(ctx, ds.RawKey(key), []byte("not a number")))
-	_, err = l.Dirty(ctx, a)
+	for _, namespace := range []string{localSuperseded, localAbsent} {
+		key, err := observationKey(namespace, a, "x", 1)
+		require.NoError(t, err)
+		require.NoError(t, store.Put(ctx, ds.RawKey(key), []byte("nope")))
+	}
+	_, err := l.Superseded(ctx, a, "x", 1)
 	require.ErrorIs(t, err, ErrNotThisServicesRow)
-
-	tk, err := tombKey(a, "x", 1)
-	require.NoError(t, err)
-	require.NoError(t, store.Put(ctx, ds.RawKey(tk), []byte("nope")))
-	_, err = l.ObservedTombstone(ctx, a, "x", 1)
+	_, _, err = l.Observed(ctx, a, "x", 1)
 	require.ErrorIs(t, err, ErrNotThisServicesRow)
-
-	require.NoError(t, store.Put(ctx, ds.RawKey(localDirty+"/not-an-instance"), []byte("1")))
-	_, err = l.DirtyInstances(ctx)
-	require.Error(t, err)
+	require.NoError(t, l.Present(ctx, a, "x", 1))
+	_, _, err = l.Observed(ctx, a, "x", 1)
+	require.ErrorIs(t, err, ErrNotThisServicesRow, "the superseded row is still corrupt")
 
 	require.NoError(t, store.Put(ctx, ds.RawKey(localBlocks+"/nope"), []byte("1")))
 	_, err = l.IndexedBlocks(ctx)
@@ -338,33 +309,17 @@ func TestALocalStoreFailurePropagates(t *testing.T) {
 	require.ErrorIs(t, l.Forget(ctx, c), errInjected)
 	require.ErrorIs(t, l.Reference(ctx, c, a, "x", 1), errInjected)
 	require.ErrorIs(t, l.Dereference(ctx, c, a, "x", 1), errInjected)
-	require.ErrorIs(t, l.MarkDirty(ctx, a), errInjected)
-	require.ErrorIs(t, l.Swept(ctx, a), errInjected)
-	require.ErrorIs(t, l.ForgetTombstone(ctx, a, "x", 1), errInjected)
-	_, err = l.Dirty(ctx, a)
+	require.ErrorIs(t, l.Present(ctx, a, "x", 1), errInjected)
+	require.ErrorIs(t, l.Collected(ctx, a, "x", 1), errInjected)
+	_, err = l.Superseded(ctx, a, "x", 1)
 	require.ErrorIs(t, err, errInjected)
-	_, err = l.ObservedTombstone(ctx, a, "x", 1)
+	_, _, err = l.Observed(ctx, a, "x", 1)
 	require.ErrorIs(t, err, errInjected)
 	_, err = l.References(ctx)
 	require.ErrorIs(t, err, errInjected)
 	_, err = l.ReferencesTo(ctx, c)
 	require.ErrorIs(t, err, errInjected)
 	_, err = l.IndexedBlocks(ctx)
-	require.ErrorIs(t, err, errInjected)
-	_, err = l.DirtyInstances(ctx)
-	require.ErrorIs(t, err, errInjected)
-
-	// And a write failure on the observation path leaves nothing half-recorded.
-	fail := newOrderedMem()
-	fail.failPut = func(key string) error {
-		if strings.HasPrefix(key, localDirty) {
-			return errInjected
-		}
-		return nil
-	}
-	l2, err := NewLocal(fail, time.Now)
-	require.NoError(t, err)
-	_, err = l2.ObservedTombstone(ctx, a, "x", 1)
 	require.ErrorIs(t, err, errInjected)
 }
 

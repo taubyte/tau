@@ -42,7 +42,7 @@ func (h *handler) Put(ctx context.Context, stream *connect.ClientStream[storagev
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	o := Object{ContentType: head.GetContentType(), Metadata: head.GetMetadata()}
+	o := Object{ContentType: head.GetContentType(), Metadata: head.GetMetadata(), Versioned: head.GetVersioned()}
 	w, err := h.s.put(ctx, a, string(head.GetName()), o, &chunks{stream: stream})
 	if err != nil {
 		return nil, wire(err)
@@ -152,6 +152,22 @@ func (h *handler) Covers(_ context.Context, req *connect.Request[storagev2.Cover
 	}
 	covered := h.s.answerCovers(uint16(shard), spansOf(req.Msg.GetSpans()))
 	return connect.NewResponse(&storagev2.CoversResponse{Covered: covered}), nil
+}
+
+func (h *handler) Superseded(ctx context.Context, req *connect.Request[storagev2.SupersededRequest]) (*connect.Response[storagev2.SupersededResponse], error) {
+	a, err := addressOf(req.Msg.GetAt())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	root, err := cid.Decode(req.Msg.GetRootCid())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("storage: root: %w", err))
+	}
+	st, err := h.s.answerSuperseded(ctx, a, string(req.Msg.GetName()), req.Msg.GetStamp(), root)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&storagev2.SupersededResponse{Held: st.held, Superseded: st.superseded, Kept: st.kept}), nil
 }
 
 func (h *handler) Hold(ctx context.Context, req *connect.Request[storagev2.HoldRequest]) (*connect.Response[storagev2.HoldResponse], error) {
@@ -332,6 +348,7 @@ func wireRecord(r VersionRecord) *storagev2.VersionRecord {
 	return &storagev2.VersionRecord{
 		RootCid: r.RootCID, Size: r.Size, ContentType: r.ContentType, CreatedMs: r.CreatedMS,
 		Writer: r.Writer, Tombstone: r.Tombstone, Exclusive: r.Exclusive, Metadata: sortedMetadata(r.Metadata),
+		Kept: r.Kept,
 	}
 }
 
@@ -339,6 +356,7 @@ func recordOf(m *storagev2.VersionRecord) VersionRecord {
 	return VersionRecord{
 		RootCID: m.GetRootCid(), Size: m.GetSize(), ContentType: m.GetContentType(), CreatedMS: m.GetCreatedMs(),
 		Writer: m.GetWriter(), Tombstone: m.GetTombstone(), Exclusive: m.GetExclusive(), Metadata: metadataMap(m.GetMetadata()),
+		Kept: m.GetKept(),
 	}
 }
 

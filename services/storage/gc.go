@@ -4,123 +4,122 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/ipfs/bbloom"
 	"github.com/ipfs/go-cid"
 )
 
-// Two deletions, separate on purpose:
+// Three collections, separate on purpose, each dropping a reference this node holds
+// and each behind its own gates:
 //
-//	A DEAD OBJECT     nobody references these bytes any more. Gates 1-4.
-//	A MISPLACEMENT    somebody does, but not here. Gates 1, 2 and 5.
+//	SUPERSEDED  a later version of the name replaced this one, and its bucket keeps
+//	            no versions it replaced.
+//	ABANDONED   a write that never became a version: no index holder has its row.
+//	MISPLACED   the bytes are wanted, but placement no longer puts them here.
 //
-//  1. Authority: this node holds the referencing shard and is HRW-desired for it
-//     under the stable membership set.
-//  2. No co-holder is behind: a replica that has not merged its peers' heads may
-//     be missing the re-create.
-//  3. The reference walk was definitive: an unreachable index holder means
-//     unknown, never dead.
-//  4. The grace window has elapsed, timed from local observation (refs.go).
-//  5. Misplacement only: R other holders passed a possession probe (an HMAC over
-//     nonce-chosen blocks), and R is the cloud's.
+// Superseded: as many index holders as a write is acknowledged on hold the version's
+// row and a newer one, and none says the version is kept (collect.go); then the grace
+// window, timed from this node's first such answer (refs.go). Rows are never removed,
+// so a version once superseded stays superseded, and a holder that is behind says
+// nothing rather than something wrong.
 //
-// The sweep marks every block reachable from a live root, then deletes unmarked
-// blocks from this service's own block index, never the shared blockstore. A false
-// positive keeps a dead block; an incomplete walk deletes nothing that cycle and
-// heals once the missing block returns. It sweeps the whole DAG, not the root.
+// Abandoned: every holder placement names answers and none holds the row, in two
+// passes at least the grace window apart. A holder that has not merged the row yet
+// answers the same, and has had the window to merge it.
+//
+// Misplaced: every holder placement names proved it holds the root (probe.go) and
+// took every reference this node has to it (repair.go), or this node holds no copy
+// to prove theirs against and its references were all it had to give.
+//
+// Then the sweep marks every block reachable from a reference left, and deletes
+// unmarked blocks from this service's own block index, never the shared blockstore.
+// A false positive keeps a dead block; an incomplete walk deletes nothing that cycle
+// and heals once the missing block returns. It sweeps the whole DAG, not the root.
 
-// Purpose is why blocks are being deleted, selecting which gates apply.
+// Purpose is why a reference is dropped, selecting which gates apply.
 type Purpose int
 
 const (
-	// DeadObject is "nobody references these bytes any more". Gates 1-4.
-	DeadObject Purpose = iota
-	// MisplacementDrop is "somebody does, but this node should not". Gates 1,
-	// 2 and 5.
-	MisplacementDrop
+	// Superseded is a version a later one replaced, in a bucket that keeps no
+	// versions it replaced.
+	Superseded Purpose = iota
+	// Abandoned is a write that never became a version.
+	Abandoned
+	// Misplaced is bytes wanted elsewhere: placement no longer puts them here.
+	Misplaced
 )
 
 func (p Purpose) String() string {
 	switch p {
-	case DeadObject:
-		return "dead object"
-	case MisplacementDrop:
-		return "misplacement drop"
+	case Superseded:
+		return "superseded"
+	case Abandoned:
+		return "abandoned"
+	case Misplaced:
+		return "misplaced"
 	default:
 		return fmt.Sprintf("purpose(%d)", int(p))
 	}
 }
 
-// Gates is the evidence a deletion rests on: all measured by this node, nothing a
-// peer said about itself.
+// Gates is the evidence a drop rests on: all measured by this node, nothing a peer
+// said about itself.
 type Gates struct {
-	// HoldsShard is gate 1a: this node has the referencing shard open.
-	HoldsShard bool
+	// SupersededAt is when this node first had as many index holders as a write
+	// is acknowledged on answer that they hold a newer row than the version's,
+	// none of them saying it is kept. The zero time is never.
+	SupersededAt time.Time
 
-	// DesiredUnderStable is gate 1b: HRW places that shard here, under the
-	// stable membership set rather than the live one.
-	DesiredUnderStable bool
+	// AbsentAt is when this node first had every holder placement names answer
+	// that it holds no row of the version. The zero time is never.
+	AbsentAt time.Time
 
-	// CoHoldersMerged is gate 2: no co-holder has advertised a head this node
-	// has not merged.
-	CoHoldersMerged bool
+	// AbsentNow is every holder placement names answering, this pass, that it
+	// holds no row of the version.
+	AbsentNow bool
 
-	// ReferencesDefinitive is gate 3: every index holder that had to be asked
-	// answered. One unreachable holder makes this false.
-	ReferencesDefinitive bool
-
-	// TombstoneObservedAt is gate 4's input: when THIS node first saw the
-	// tombstone, from refs.go's local monotonic row. The zero time means it
-	// has never been observed here, which is not an elapsed grace window.
-	TombstoneObservedAt time.Time
-
-	// ProvenHolders is gate 5: how many OTHER nodes passed a possession probe.
-	// Nothing sets it from a claim; there is no such door.
+	// ProvenHolders is how many of the holders placement names passed a
+	// possession probe. Nothing sets it from a claim; there is no such door.
 	ProvenHolders int
-}
 
-// Policy is what the cloud promises, as the deleting gate sees it. Without Known,
-// gate 5 has no right-hand side, and dead objects are still collected.
-type Policy struct {
-	// Replicas is R as the cloud published it. It is meaningless unless Known.
-	Replicas int
+	// Handed is every holder placement names having taken every reference this
+	// node has to the root.
+	Handed bool
 
-	// Known is whether this node has ever read R at all.
-	Known bool
+	// Bare is this node holding no copy of the root to prove theirs against.
+	Bare bool
 }
 
 // Open reports whether every gate for this purpose is open, naming the first that is
-// not. Policy is one argument so R and its validity come from one read.
-func (g Gates) Open(p Purpose, now time.Time, grace time.Duration, policy Policy) error {
-	if !g.HoldsShard {
-		return fmt.Errorf("%w: %s: this node does not hold the referencing shard", ErrGateClosed, p)
-	}
-	if !g.DesiredUnderStable {
-		return fmt.Errorf("%w: %s: this node is not HRW-desired for that shard under the stable membership", ErrGateClosed, p)
-	}
-	if !g.CoHoldersMerged {
-		return fmt.Errorf("%w: %s: a co-holder has advertised a head this node has not merged", ErrGateClosed, p)
-	}
-
+// not. holders is how many holders placement names for the root, which a misplaced
+// copy needs every one of.
+func (g Gates) Open(p Purpose, now time.Time, grace time.Duration, holders int) error {
 	switch p {
-	case DeadObject:
-		if !g.ReferencesDefinitive {
-			return fmt.Errorf("%w: %s: an index holder did not answer, so the references are unknown rather than dead", ErrGateClosed, p)
+	case Superseded:
+		if g.SupersededAt.IsZero() {
+			return fmt.Errorf("%w: %s: no barrier of index holders has said a newer version exists", ErrGateClosed, p)
 		}
-		if g.TombstoneObservedAt.IsZero() {
-			return fmt.Errorf("%w: %s: this node has never observed the tombstone", ErrGateClosed, p)
+		if elapsed := now.Sub(g.SupersededAt); elapsed < grace {
+			return fmt.Errorf("%w: %s: found %s ago, grace is %s", ErrGateClosed, p, elapsed, grace)
 		}
-		if elapsed := now.Sub(g.TombstoneObservedAt); elapsed < grace {
-			return fmt.Errorf("%w: %s: observed %s ago, grace is %s", ErrGateClosed, p, elapsed, grace)
+	case Abandoned:
+		if g.AbsentAt.IsZero() || !g.AbsentNow {
+			return fmt.Errorf("%w: %s: an index holder holds its row, or did not answer", ErrGateClosed, p)
 		}
-	case MisplacementDrop:
-		// R is the right-hand side of a misplacement drop; a node without one does not pick.
-		if !policy.Known {
-			return fmt.Errorf("%w: %s: this node has never read the cloud's replica target", ErrGateClosed, p)
+		if elapsed := now.Sub(g.AbsentAt); elapsed < grace {
+			return fmt.Errorf("%w: %s: first found absent %s ago, grace is %s", ErrGateClosed, p, elapsed, grace)
 		}
-		if g.ProvenHolders < policy.Replicas {
-			return fmt.Errorf("%w: %s: %d other holders proved possession, %d required", ErrGateClosed, p, g.ProvenHolders, policy.Replicas)
+	case Misplaced:
+		if holders < 1 {
+			return fmt.Errorf("%w: %s: placement names no holder to leave it to", ErrGateClosed, p)
+		}
+		if !g.Handed {
+			return fmt.Errorf("%w: %s: a holder has not taken every reference this node has", ErrGateClosed, p)
+		}
+		if !g.Bare && g.ProvenHolders < holders {
+			return fmt.Errorf("%w: %s: %d of %d holders proved possession", ErrGateClosed, p, g.ProvenHolders, holders)
 		}
 	default:
 		return fmt.Errorf("%w: unknown %s", ErrGateClosed, p)
@@ -151,6 +150,22 @@ func NewExactMarker(hint int) Marker {
 func (m *exactMarker) Mark(c cid.Cid)        { m.seen[c.KeyString()] = struct{}{} }
 func (m *exactMarker) Marked(c cid.Cid) bool { _, ok := m.seen[c.KeyString()]; return ok }
 
+// Markers builds the mark set a sweep fills, given how many blocks are expected.
+type Markers interface {
+	New(hint int) (Marker, error)
+}
+
+// ExactMarkers builds exact markers, the default.
+type ExactMarkers struct{}
+
+func (ExactMarkers) New(hint int) (Marker, error) { return NewExactMarker(hint), nil }
+
+// BloomMarkers builds Bloom filters at Rate, for a node whose reachable set does not
+// fit comfortably in memory.
+type BloomMarkers struct{ Rate float64 }
+
+func (b BloomMarkers) New(hint int) (Marker, error) { return NewBloomMarker(hint, b.Rate) }
+
 // bloomMarker is a Bloom filter sized from the reference count, for a node
 // whose reachable set does not fit comfortably in memory.
 //
@@ -179,29 +194,76 @@ func NewBloomMarker(entries int, falsePositiveRate float64) (Marker, error) {
 func (m *bloomMarker) Mark(c cid.Cid)        { m.b.Add([]byte(c.KeyString())) }
 func (m *bloomMarker) Marked(c cid.Cid) bool { return m.b.Has([]byte(c.KeyString())) }
 
-// Sweeper is the mark-and-sweep over this node's own block index.
+// Sweeper is the mark-and-sweep over this node's own block index, and what a keep
+// records through so that no sweep deletes a block the keep relies on.
+//
+// A KEEP AND A SWEEP'S DELETES EXCLUDE EACH OTHER. A write stores its bytes, finding
+// some blocks already here and storing nothing of them, then keeps them: it indexes
+// every block and references the root. A block unreferenced before that is a sweep's
+// to delete. So a keep holds keeping shared, refusing a block that is gone by then,
+// and records its root as fresh while a sweep runs; the sweep marks without holding
+// it, and deletes holding it alone, a chunk at a time, marking every fresh root first.
 type Sweeper struct {
-	local  *Local
-	blocks Blocks
+	local   *Local
+	blocks  Blocks
+	markers Markers
 
-	// marker builds the mark set, given how many blocks are expected. It is a
-	// field so a large node can hand in a Bloom without this file choosing for
-	// it, and so a test can hand in one that is deliberately terrible.
-	marker func(hint int) (Marker, error)
+	keeping sync.RWMutex
+
+	// sweepMu runs one sweep at a time: a second would reset the first's fresh.
+	sweepMu sync.Mutex
+
+	freshMu  sync.Mutex
+	sweeping bool
+	fresh    map[string]cid.Cid
 }
 
-// NewSweeper builds a sweeper. A nil marker means the exact one.
-func NewSweeper(local *Local, blocks Blocks, marker func(hint int) (Marker, error)) (*Sweeper, error) {
+// sweepChunk is how many unmarked blocks a sweep deletes per hold of keeping: a keep
+// waits at most that long.
+const sweepChunk = 256
+
+// NewSweeper builds a sweeper. Nil markers means exact ones.
+func NewSweeper(local *Local, blocks Blocks, markers Markers) (*Sweeper, error) {
 	if local == nil {
 		return nil, errors.New("storage: no local rows to sweep")
 	}
 	if blocks == nil {
 		return nil, errors.New("storage: no block plane to sweep")
 	}
-	if marker == nil {
-		marker = func(hint int) (Marker, error) { return NewExactMarker(hint), nil }
+	if markers == nil {
+		markers = ExactMarkers{}
 	}
-	return &Sweeper{local: local, blocks: blocks, marker: marker}, nil
+	return &Sweeper{local: local, blocks: blocks, markers: markers}, nil
+}
+
+// Keep records that this node holds root's blocks for a version: each block indexed,
+// then the reference. It refuses with ErrSwept when one of them is gone.
+func (s *Sweeper) Keep(ctx context.Context, root cid.Cid, blocks []cid.Cid, a Address, name string, stamp uint64) error {
+	s.keeping.RLock()
+	defer s.keeping.RUnlock()
+	for _, b := range blocks {
+		have, err := s.blocks.Has(ctx, b)
+		if err != nil {
+			return err
+		}
+		if !have {
+			return fmt.Errorf("%w: %s of %s", ErrSwept, b, root)
+		}
+	}
+	for _, b := range blocks {
+		if err := s.local.Imported(ctx, b); err != nil {
+			return err
+		}
+	}
+	if err := s.local.Reference(ctx, root, a, name, stamp); err != nil {
+		return err
+	}
+	s.freshMu.Lock()
+	if s.sweeping {
+		s.fresh[root.KeyString()] = root
+	}
+	s.freshMu.Unlock()
+	return nil
 }
 
 // SweepResult is what one cycle did, and what it refused to do.
@@ -215,8 +277,8 @@ type SweepResult struct {
 	// Deleted is how many blocks were freed.
 	Deleted int
 	// Incomplete lists live roots whose DAG could not be walked to its leaves
-	// on this node. A non-empty list means Deleted is zero: the sweep leaked
-	// rather than guessed.
+	// on this node. A non-empty list stops the deletes: the sweep leaked rather
+	// than guessed.
 	Incomplete []cid.Cid
 }
 
@@ -225,6 +287,11 @@ type SweepResult struct {
 // the other order leaks a block nothing indexes. (A delete is the opposite: the
 // reference first, so no live reference outlives its bytes.)
 func (s *Sweeper) Sweep(ctx context.Context) (SweepResult, error) {
+	s.sweepMu.Lock()
+	defer s.sweepMu.Unlock()
+	s.begin()
+	defer s.end()
+
 	refs, err := s.local.References(ctx)
 	if err != nil {
 		return SweepResult{}, err
@@ -247,40 +314,84 @@ func (s *Sweeper) Sweep(ctx context.Context) (SweepResult, error) {
 
 	result := SweepResult{Roots: len(roots), Indexed: len(indexed)}
 
-	marker, err := s.marker(len(indexed))
+	marker, err := s.markers.New(len(indexed))
 	if err != nil {
 		return SweepResult{}, err
 	}
 
 	for _, root := range roots {
-		marked, complete, werr := s.mark(ctx, root, marker)
-		if werr != nil {
-			return SweepResult{}, werr
-		}
-		result.Marked += marked
-		if !complete {
-			result.Incomplete = append(result.Incomplete, root)
+		if err := s.markRoot(ctx, root, marker, &result); err != nil {
+			return SweepResult{}, err
 		}
 	}
 
-	// An unknown set cannot be subtracted from.
+	for start := 0; start < len(indexed) && len(result.Incomplete) == 0; start += sweepChunk {
+		if err := s.deleteUnmarked(ctx, indexed[start:min(start+sweepChunk, len(indexed))], marker, &result); err != nil {
+			return result, err
+		}
+	}
+	return result, nil
+}
+
+// begin starts a sweep: every keep from here on records its root as fresh. Any keep
+// still running is waited for, so its reference is among those the sweep lists.
+func (s *Sweeper) begin() {
+	s.keeping.Lock()
+	defer s.keeping.Unlock()
+	s.freshMu.Lock()
+	defer s.freshMu.Unlock()
+	s.sweeping, s.fresh = true, map[string]cid.Cid{}
+}
+
+func (s *Sweeper) end() {
+	s.freshMu.Lock()
+	defer s.freshMu.Unlock()
+	s.sweeping, s.fresh = false, nil
+}
+
+// deleteUnmarked deletes the unmarked blocks of chunk holding keeping alone, once the
+// roots kept since the marks began are marked. An unknown set cannot be subtracted
+// from: a root that cannot be walked stops it.
+func (s *Sweeper) deleteUnmarked(ctx context.Context, chunk []cid.Cid, marker Marker, result *SweepResult) error {
+	s.keeping.Lock()
+	defer s.keeping.Unlock()
+	s.freshMu.Lock()
+	fresh := s.fresh
+	s.fresh = map[string]cid.Cid{}
+	s.freshMu.Unlock()
+	for _, root := range fresh {
+		if err := s.markRoot(ctx, root, marker, result); err != nil {
+			return err
+		}
+	}
 	if len(result.Incomplete) > 0 {
-		return result, nil
+		return nil
 	}
-
-	for _, c := range indexed {
+	for _, c := range chunk {
 		if marker.Marked(c) {
 			continue
 		}
 		if err := s.blocks.Delete(ctx, c); err != nil {
-			return result, fmt.Errorf("storage: freeing %s: %w", c, err)
+			return fmt.Errorf("storage: freeing %s: %w", c, err)
 		}
 		if err := s.local.Forget(ctx, c); err != nil {
-			return result, fmt.Errorf("storage: dropping the index row for %s: %w", c, err)
+			return fmt.Errorf("storage: dropping the index row for %s: %w", c, err)
 		}
 		result.Deleted++
 	}
-	return result, nil
+	return nil
+}
+
+func (s *Sweeper) markRoot(ctx context.Context, root cid.Cid, marker Marker, result *SweepResult) error {
+	marked, complete, err := s.mark(ctx, root, marker)
+	if err != nil {
+		return err
+	}
+	result.Marked += marked
+	if !complete {
+		result.Incomplete = append(result.Incomplete, root)
+	}
+	return nil
 }
 
 // mark walks one root's DAG and reports whether it reached the leaves, never leaving

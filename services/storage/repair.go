@@ -29,8 +29,9 @@ import (
 // at most repairBudget roots, so it ends, and every probe and hold has its own
 // deadline, so a holder that stalls costs its own call, never the pass.
 //
-// Copies left where placement no longer puts them are the sweep's to drop, behind
-// gate 5 (gc.go); this loop takes nothing off a node.
+// A copy placement no longer puts on this node is dropped once every holder it names
+// proved the root and took every reference this node has to it (gates, gc.go): the
+// references go, and the sweep frees the bytes.
 
 const (
 	// reprove is how long a root every holder proved goes before it is proven
@@ -45,15 +46,22 @@ const (
 )
 
 // proof is what the last pass established of one root: under which placement and
-// how many references, when, how many holders proved it, and whether that settles
-// it — every holder proved it, or this node, holding no copy placement asks of it,
-// has nothing to prove theirs against.
+// how many references, when, how many holders proved it, whether that settles it —
+// every holder proved it, or this node, holding no copy placement asks of it, has
+// nothing to prove theirs against — and whether every holder took every reference.
 type proof struct {
 	view    string
 	refs    int
 	at      time.Time
 	proven  int
 	settled bool
+	handed  bool
+
+	// holders is how many holders placement names other than this node; named
+	// is this node being one of them; bare is this node holding no copy.
+	holders int
+	named   bool
+	bare    bool
 }
 
 // rooted is one root and this node's references to it.
@@ -86,15 +94,36 @@ func (s *server) repair(ctx context.Context) error {
 	var errs []error
 	for _, r := range s.due(roots, view, now) {
 		last, known := s.proofs[r.root.KeyString()]
-		handed := known && last.view == view && last.refs == len(r.refs)
-		p, err := s.repairRoot(ctx, r, members, replicas, !handed)
+		handed := known && last.view == view && last.refs == len(r.refs) && last.handed
+		p, err := s.repairRoot(ctx, r, members, replicas, handed)
 		p.view, p.refs, p.at = view, len(r.refs), now
 		s.proofs[r.root.KeyString()] = p
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", r.root, err))
+			continue
+		}
+		g := Gates{ProvenHolders: p.proven, Handed: p.handed, Bare: p.bare}
+		if p.named || g.Open(Misplaced, now, 0, p.holders) != nil {
+			continue
+		}
+		if err := s.dropRoot(ctx, r); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", r.root, err))
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// dropRoot drops every reference this node has to r's root, a copy placement does
+// not name, and owes a sweep.
+func (s *server) dropRoot(ctx context.Context, r rooted) error {
+	for _, ref := range r.refs {
+		if err := s.local.Dereference(ctx, r.root, ref.Address, ref.Name, ref.Stamp); err != nil {
+			return err
+		}
+	}
+	delete(s.proofs, r.root.KeyString())
+	s.owed.Store(true)
+	return nil
 }
 
 // byRoot groups references by root, in the order the rows list them.
@@ -153,27 +182,30 @@ func (s *server) due(roots []rooted, view string, now time.Time) []rooted {
 }
 
 // repairRoot proves r on each holder placement names, giving it to one that cannot
-// prove it; with hand, every holder is given this node's references to it whether
+// prove it; unless handed, every holder is given this node's references to it whether
 // it proved the bytes or not, since a placement or reference set it has not been
 // handed may have rows it lacks. A holder that cannot be asked is an error: it
-// proves nothing and is given nothing, and the next pass asks it again.
-func (s *server) repairRoot(ctx context.Context, r rooted, members []placement.Member, replicas int, hand bool) (proof, error) {
+// proves nothing and is given nothing, and the next pass asks it again. A node that
+// holds no copy of a root placement does not name gives every holder its references,
+// all it has to give.
+func (s *server) repairRoot(ctx context.Context, r rooted, members []placement.Member, replicas int, handed bool) (proof, error) {
 	holders, err := blockHolders(r.root.String(), members, replicas)
 	if err != nil {
 		return proof{}, err
 	}
-	var p proof
+	p := proof{handed: true, holders: len(holders), named: slices.Contains(holders, s.self)}
+	if p.named {
+		p.holders--
+	}
 	var errs []error
-	others := 0
 	for _, h := range holders {
 		if h == s.self {
 			continue
 		}
-		others++
 		held, err := s.prove(ctx, h, r.root)
 		if errors.Is(err, ErrNotHeld) {
-			if !slices.Contains(holders, s.self) {
-				return proof{settled: true}, nil
+			if !p.named {
+				return s.handOver(ctx, r, holders, p)
 			}
 			if err := s.recover(ctx, r, holders); err != nil {
 				return p, err
@@ -183,18 +215,34 @@ func (s *server) repairRoot(ctx context.Context, r rooted, members []placement.M
 		switch {
 		case err != nil:
 			errs = append(errs, fmt.Errorf("proving it on %s: %w", h, err))
+			p.handed = p.handed && handed
 			continue
 		case held:
 			p.proven++
-			if !hand {
+			if handed {
 				continue
 			}
 		}
 		if err := s.give(ctx, h, r); err != nil {
 			errs = append(errs, err)
+			p.handed = false
 		}
 	}
-	p.settled = p.proven == others
+	p.settled = p.proven == p.holders
+	return p, errors.Join(errs...)
+}
+
+// handOver gives every holder this node's references to r, which it holds no copy
+// of to prove theirs against.
+func (s *server) handOver(ctx context.Context, r rooted, holders []string, p proof) (proof, error) {
+	p.settled, p.bare, p.proven = true, true, 0
+	var errs []error
+	for _, h := range holders {
+		if err := s.give(ctx, h, r); err != nil {
+			errs = append(errs, err)
+			p.handed = false
+		}
+	}
 	return p, errors.Join(errs...)
 }
 

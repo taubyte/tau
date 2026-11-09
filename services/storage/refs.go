@@ -19,27 +19,28 @@ import (
 //	/local/blk/<cid>                                    this service's own
 //	                                                    block index
 //	/local/ref/<rootcid>/<bkt>/<hexname>/<^stamp>       the reference list
-//	/local/tomb/<bkt>/<hexname>/<^stamp>                when a tombstone was
-//	                                                    first observed here
-//	/local/dirty/<bkt>                                  the dirty counter
+//	/local/superseded/<bkt>/<hexname>/<^stamp>          when the version was
+//	                                                    first found superseded
+//	/local/absent/<bkt>/<hexname>/<^stamp>              when no index holder was
+//	                                                    first found holding it
 //
 // The blockstore is shared with kvdb's own DAG blocks, so the sweep enumerates only
 // /local/blk, written for every imported block. A reference row is written on every
 // push that lands here, even when the blocks were already present, or a second
 // tenant's reference is lost and the first tenant's delete frees its bytes. Every
 // block arrives by a push that records its reference, so the local list is complete.
-// Tombstone observation is local and first-write-wins, so no clock can shorten a
-// grace window and a restart cannot reset one.
+// An observation is local and first-write-wins, so no stamp can shorten a grace
+// window and a restart cannot reset one. They are timed on this node's wall clock.
 
 const (
 	localRoot = "/local"
 
-	localBlocks = localRoot + "/blk"
-	localRefs   = localRoot + "/ref"
-	localTombs  = localRoot + "/tomb"
-	localDirty  = localRoot + "/dirty"
-	localSeen   = localRoot + "/seen"
-	localClock  = localRoot + "/clock"
+	localBlocks     = localRoot + "/blk"
+	localRefs       = localRoot + "/ref"
+	localSuperseded = localRoot + "/superseded"
+	localAbsent     = localRoot + "/absent"
+	localSeen       = localRoot + "/seen"
+	localClock      = localRoot + "/clock"
 )
 
 // instanceSegment encodes a whole bucket instance into ONE path segment, so a
@@ -154,6 +155,9 @@ type Reference struct {
 	Address Address
 	Name    string
 	Stamp   uint64
+
+	// key is the row it was parsed from.
+	key string
 }
 
 func parseRefKey(key string) (Reference, error) {
@@ -181,11 +185,12 @@ func parseRefKey(key string) (Reference, error) {
 	if err != nil {
 		return Reference{}, err
 	}
-	return Reference{Root: root, Address: addr, Name: name, Stamp: stamp}, nil
+	return Reference{Root: root, Address: addr, Name: name, Stamp: stamp, key: key}, nil
 }
 
-// tombKey records when this node first observed a tombstone.
-func tombKey(a Address, name string, stamp uint64) (string, error) {
+// observationKey records when this node first found something of a version: under
+// localSuperseded or localAbsent.
+func observationKey(namespace string, a Address, name string, stamp uint64) (string, error) {
 	inst, err := instanceSegment(a)
 	if err != nil {
 		return "", err
@@ -194,17 +199,7 @@ func tombKey(a Address, name string, stamp uint64) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return strings.Join([]string{localTombs, inst, nameSeg, stampSegment(stamp)}, "/"), nil
-}
-
-// dirtyKey is the per-instance deletion counter: an instance with no deletions
-// since the last sweep is skipped entirely.
-func dirtyKey(a Address) (string, error) {
-	inst, err := instanceSegment(a)
-	if err != nil {
-		return "", err
-	}
-	return localDirty + "/" + inst, nil
+	return strings.Join([]string{namespace, inst, nameSeg, stampSegment(stamp)}, "/"), nil
 }
 
 // Imported records that this node imported a block. It is written for every
@@ -358,111 +353,86 @@ func (l *Local) ReferencesTo(ctx context.Context, root cid.Cid) ([]Reference, er
 	return out, nil
 }
 
-// ObservedTombstone records the local instant a tombstone was first seen here,
-// and returns the instant on record. FIRST OBSERVATION WINS: re-observing
-// neither advances nor resets it.
-func (l *Local) ObservedTombstone(ctx context.Context, a Address, name string, stamp uint64) (time.Time, error) {
-	key, err := tombKey(a, name, stamp)
+// Superseded records the local instant the version was first found superseded and
+// returns the instant on record. FIRST OBSERVATION WINS: finding it again neither
+// advances nor resets it.
+func (l *Local) Superseded(ctx context.Context, a Address, name string, stamp uint64) (time.Time, error) {
+	return l.observe(ctx, localSuperseded, a, name, stamp)
+}
+
+// Absent records the local instant no index holder was first found holding the
+// version's row, first observation winning; Present forgets it.
+func (l *Local) Absent(ctx context.Context, a Address, name string, stamp uint64) (time.Time, error) {
+	return l.observe(ctx, localAbsent, a, name, stamp)
+}
+
+// Present forgets that the version's row was found absent: a holder holds it.
+func (l *Local) Present(ctx context.Context, a Address, name string, stamp uint64) error {
+	key, err := observationKey(localAbsent, a, name, stamp)
+	if err != nil {
+		return err
+	}
+	return l.store.Delete(ctx, ds.RawKey(key))
+}
+
+// Observed is what this node found of a version so far: when it was first found
+// superseded and first found absent, the zero time for never.
+func (l *Local) Observed(ctx context.Context, a Address, name string, stamp uint64) (superseded, absent time.Time, err error) {
+	if superseded, err = l.observed(ctx, localSuperseded, a, name, stamp); err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+	absent, err = l.observed(ctx, localAbsent, a, name, stamp)
+	return superseded, absent, err
+}
+
+// Collected forgets what was found of a version once its reference is dropped:
+// keeping it would leak a row per collected version.
+func (l *Local) Collected(ctx context.Context, a Address, name string, stamp uint64) error {
+	for _, namespace := range []string{localSuperseded, localAbsent} {
+		key, err := observationKey(namespace, a, name, stamp)
+		if err != nil {
+			return err
+		}
+		if err := l.store.Delete(ctx, ds.RawKey(key)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (l *Local) observe(ctx context.Context, namespace string, a Address, name string, stamp uint64) (time.Time, error) {
+	at, err := l.observed(ctx, namespace, a, name, stamp)
+	if err != nil || !at.IsZero() {
+		return at, err
+	}
+	key, err := observationKey(namespace, a, name, stamp)
 	if err != nil {
 		return time.Time{}, err
 	}
-	raw, err := l.store.Get(ctx, ds.RawKey(key))
-	switch {
-	case err == nil:
-		ms, derr := decodeMS(raw)
-		if derr != nil {
-			return time.Time{}, derr
-		}
-		return time.UnixMilli(int64(ms)), nil
-	case errors.Is(err, ds.ErrNotFound):
-	default:
-		return time.Time{}, err
-	}
-
 	now := l.now()
 	if err := l.store.Put(ctx, ds.RawKey(key), encodeMS(uint64(now.UnixMilli()))); err != nil {
-		return time.Time{}, err
-	}
-	if err := l.MarkDirty(ctx, a); err != nil {
 		return time.Time{}, err
 	}
 	return now, nil
 }
 
-// ForgetTombstone drops an observation row once the version it describes has
-// been swept. Keeping it would leak a row per deleted object forever.
-func (l *Local) ForgetTombstone(ctx context.Context, a Address, name string, stamp uint64) error {
-	key, err := tombKey(a, name, stamp)
+func (l *Local) observed(ctx context.Context, namespace string, a Address, name string, stamp uint64) (time.Time, error) {
+	key, err := observationKey(namespace, a, name, stamp)
 	if err != nil {
-		return err
+		return time.Time{}, err
 	}
-	return l.store.Delete(ctx, ds.RawKey(key))
-}
-
-// MarkDirty bumps a bucket instance's deletion counter; node-local, so it has one
-// writer.
-func (l *Local) MarkDirty(ctx context.Context, a Address) error {
-	key, err := dirtyKey(a)
-	if err != nil {
-		return err
-	}
-	n, err := l.dirty(ctx, key)
-	if err != nil {
-		return err
-	}
-	return l.store.Put(ctx, ds.RawKey(key), encodeMS(n+1))
-}
-
-// Dirty reports a bucket instance's deletion count since the last sweep. An
-// instance reading zero is skipped by the sweep entirely, which is what keeps
-// a sweep proportional to what changed rather than to what exists.
-func (l *Local) Dirty(ctx context.Context, a Address) (uint64, error) {
-	key, err := dirtyKey(a)
-	if err != nil {
-		return 0, err
-	}
-	return l.dirty(ctx, key)
-}
-
-// Swept clears a bucket instance's deletion counter.
-func (l *Local) Swept(ctx context.Context, a Address) error {
-	key, err := dirtyKey(a)
-	if err != nil {
-		return err
-	}
-	return l.store.Delete(ctx, ds.RawKey(key))
-}
-
-// DirtyInstances lists the bucket instances with deletions to sweep.
-func (l *Local) DirtyInstances(ctx context.Context) ([]Address, error) {
-	keys, err := l.list(ctx, localDirty)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]Address, 0, len(keys))
-	for _, k := range keys {
-		rest, ok := strings.CutPrefix(k, localDirty+"/")
-		if !ok || strings.Contains(rest, "/") {
-			return nil, fmt.Errorf("%w: %q is not a dirty row", ErrNotThisServicesRow, k)
-		}
-		a, err := addressFromInstanceSegment(rest)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, a)
-	}
-	return out, nil
-}
-
-func (l *Local) dirty(ctx context.Context, key string) (uint64, error) {
 	raw, err := l.store.Get(ctx, ds.RawKey(key))
 	if errors.Is(err, ds.ErrNotFound) {
-		return 0, nil
+		return time.Time{}, nil
 	}
 	if err != nil {
-		return 0, err
+		return time.Time{}, err
 	}
-	return decodeMS(raw)
+	ms, err := decodeMS(raw)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.UnixMilli(int64(ms)), nil
 }
 
 // list returns every key under a namespace, in key order.
@@ -490,7 +460,7 @@ func (l *Local) list(ctx context.Context, namespace string) ([]string, error) {
 	}
 }
 
-// encodeMS and decodeMS are the value codec for the four row kinds above: one
+// encodeMS and decodeMS are the value codec for the row kinds above: one
 // unsigned integer, in decimal, so a row read by eye during an incident says
 // what it is. None of them is ordered by its VALUE — every ordering in this
 // service is in a key — so there is no zero-padding requirement here.

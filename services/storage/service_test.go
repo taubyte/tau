@@ -137,6 +137,18 @@ func (b *nodeBytes) lose(c cid.Cid) {
 	b.mu.Unlock()
 }
 
+// Delete frees c on this node, from the swarm as from its own blocks.
+func (b *nodeBytes) Delete(ctx context.Context, c cid.Cid) error {
+	if err := b.memBlocks.Delete(ctx, c); err != nil {
+		return err
+	}
+	b.swarm.mu.Lock()
+	defer b.swarm.mu.Unlock()
+	delete(b.swarm.stores[b.self], c.KeyString())
+	delete(b.swarm.durable[b.self], c.KeyString())
+	return nil
+}
+
 func (b *nodeBytes) Sync(context.Context) error {
 	b.swarm.mu.Lock()
 	defer b.swarm.mu.Unlock()

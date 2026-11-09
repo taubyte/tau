@@ -30,13 +30,14 @@ const Instance = "objects"
 // The setting keys services/worker writes, which are the vocabulary's own attribute
 // paths.
 const (
-	settingSize = specs.StorageKeySize
-	settingType = specs.StorageKeyType
+	settingSize       = specs.StorageKeySize
+	settingType       = specs.StorageKeyType
+	settingVersioning = specs.StorageObjectKeyVersioning
 )
 
 // Settings is every attribute path this adapter reads off a grant, exported so the
 // instance's settings test can hold it to the vocabulary.
-var Settings = []string{settingSize, settingType}
+var Settings = []string{settingSize, settingType, settingVersioning}
 
 // Buckets opens a grant's bucket on the storage service.
 type Buckets struct{ store storage.Store }
@@ -58,7 +59,7 @@ func (b *Buckets) OpenBucket(_ context.Context, grant invoke.Grant) (wasmtier.Bu
 	if err != nil {
 		return nil, fmt.Errorf("objects: %s: %w", grant.Handle, err)
 	}
-	return &bucket{store: b.store, at: at, size: grant.Number(settingSize)}, nil
+	return &bucket{store: b.store, at: at, size: grant.Number(settingSize), versioned: grant.Settings[settingVersioning] == "true"}, nil
 }
 
 // bucket is one object store.
@@ -69,6 +70,10 @@ type bucket struct {
 	// size is the ceiling the author declared, in bytes. Zero is no ceiling,
 	// for the reason invoke.Grant.Number states.
 	size int64
+
+	// versioned is a bucket that keeps every version it replaces; any other has
+	// the storage service collect them.
+	versioned bool
 }
 
 var _ wasmtier.Bucket = (*bucket)(nil)
@@ -130,7 +135,8 @@ func (b *bucket) Put(ctx context.Context, key string, value []byte, contentType 
 		}
 	}
 
-	v, err := b.store.Put(ctx, b.at, key, storage.Object{ContentType: contentType, Metadata: metadataMap(metadata)}, bytes.NewReader(value))
+	o := storage.Object{ContentType: contentType, Metadata: metadataMap(metadata), Versioned: b.versioned}
+	v, err := b.store.Put(ctx, b.at, key, o, bytes.NewReader(value))
 	if err != nil {
 		return "", fmt.Errorf("objects: storing %s: %w", key, err)
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"time"
 
 	"connectrpc.com/connect"
@@ -46,6 +47,16 @@ func (s *server) put(ctx context.Context, a Address, name string, o Object, cont
 	if err != nil {
 		return written{}, err
 	}
+	// A WRITER PLACEMENT DOES NOT NAME KEEPS ITS COPY TOO, while the holders fetch
+	// it, and until the repair loop finds them all holding it (repair.go): kept,
+	// no sweep takes a block they still fetch from it, and the copy is a misplaced
+	// one the loop drops rather than bytes nothing indexes.
+	mine := make(chan error, 1)
+	if slices.Contains(holders, s.self) {
+		mine <- nil
+	} else {
+		go func() { mine <- s.keep(ctx, root, blocks, a, name, stamp) }()
+	}
 	need := max(1, min(barrier, len(holders)))
 	held := s.acks(ctx, holders, need, func(ctx context.Context, holder string) error {
 		if holder == s.self {
@@ -53,13 +64,16 @@ func (s *server) put(ctx context.Context, a Address, name string, o Object, cont
 		}
 		return s.askHold(ctx, holder, root, a, name, stamp)
 	})
+	if err := <-mine; err != nil {
+		s.logf("storage: keeping the copy of %s this node wrote: %v", root, err)
+	}
 	if held < need {
 		return written{}, fmt.Errorf("%w: %d of %d took %s, and the region promises %d", ErrUnderHeld, held, len(holders), root, need)
 	}
 
 	rec := VersionRecord{
 		RootCID: root.String(), Size: size, ContentType: o.ContentType, Metadata: o.Metadata,
-		CreatedMS: uint64(s.now().UnixMilli()), Writer: s.self,
+		CreatedMS: uint64(s.now().UnixMilli()), Writer: s.self, Kept: o.Versioned,
 	}
 	if err := s.appendEverywhere(ctx, a, name, stamp, rec, replicas, barrier); err != nil {
 		return written{}, err
@@ -173,14 +187,10 @@ func (s *server) acks(ctx context.Context, holders []string, need int, ask func(
 
 // keep records blocks this node holds for a version, durably before it says so:
 // the writer counts this node toward the copies it promises, and nothing
-// replicates a node's own blocks and rows or brings back what a crash took.
+// replicates a node's own blocks and rows or brings back what a crash took. It goes
+// through the sweeper, which refuses it when a sweep took a block meanwhile.
 func (s *server) keep(ctx context.Context, root cid.Cid, blocks []cid.Cid, a Address, name string, stamp uint64) error {
-	for _, b := range blocks {
-		if err := s.local.Imported(ctx, b); err != nil {
-			return err
-		}
-	}
-	if err := s.local.Reference(ctx, root, a, name, stamp); err != nil {
+	if err := s.sweeper.Keep(ctx, root, blocks, a, name, stamp); err != nil {
 		return err
 	}
 	if err := s.bytes.Sync(ctx); err != nil {

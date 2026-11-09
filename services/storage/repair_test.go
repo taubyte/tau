@@ -107,7 +107,7 @@ func TestARootWrittenBeforeTheRegionGrewReachesTheHoldersPlacementNamesNow(t *te
 	}
 }
 
-func TestAHolderThatCouldNotBeAskedIsAskedAgainAndARootProvenEverywhereIsNot(t *testing.T) {
+func TestAHolderThatCouldNotBeAskedIsAskedAgainAndARootProvenEverywhereIsLeftToItsHolders(t *testing.T) {
 	at := assetsOf(t, "site_code")
 	v := &view{}
 	c := newCluster(t, 4, fixedCatalog{at}, withMembers(v.get))
@@ -129,18 +129,29 @@ func TestAHolderThatCouldNotBeAskedIsAskedAgainAndARootProvenEverywhereIsNot(t *
 	require.NoError(t, c.nodes[0].repair(t.Context()))
 	require.True(t, c.swarm.holds(unreachable, root), "a holder that was down was not asked again")
 
-	// Every holder down: a root every holder proved is not proven again before
-	// reprove.
-	c.swarm.mu.Lock()
-	for _, id := range c.ids {
-		c.swarm.down[id] = true
+	// A placement that changes is proven and handed over again: with every node
+	// down, the holders cannot fetch what they are handed.
+	setDown := func(down bool) {
+		c.swarm.mu.Lock()
+		defer c.swarm.mu.Unlock()
+		for _, id := range c.ids {
+			c.swarm.down[id] = down
+		}
 	}
-	c.swarm.mu.Unlock()
-	require.NoError(t, c.nodes[0].repair(t.Context()))
-
-	// A placement that changes is proven and handed over again.
+	setDown(true)
 	v.set(c.ids[1:]...)
 	require.Error(t, c.nodes[0].repair(t.Context()))
+
+	// Every holder proved it and took every reference: node 0, which placement does
+	// not name, lets its copy go, and nothing of it is due on node 0 again.
+	setDown(false)
+	v.set(c.ids...)
+	require.NoError(t, c.nodes[0].repair(t.Context()))
+	refs, err := c.nodes[0].local.ReferencesTo(t.Context(), root)
+	require.NoError(t, err)
+	require.Empty(t, refs, "a copy every holder proved and took was kept")
+	setDown(true)
+	require.NoError(t, c.nodes[0].repair(t.Context()))
 }
 
 // heldBy is a root an object put through node 0 is stored under, and its holders.
