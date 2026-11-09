@@ -196,6 +196,13 @@ func (i *instance) unhold() {
 // mem is the instance's memory, counted against poolMemBudget while pooled.
 // It never blocks a caller (it may hold a request lock) on a full pool.
 func (f *Function) repool(inst Instance, mem uint32) {
+	f.shutdownMu.RLock()
+	defer f.shutdownMu.RUnlock()
+	if f.drained {
+		inst.Close()
+		return
+	}
+
 	if i, ok := inst.(*instance); ok {
 		i.poolMem = mem
 		f.pooledMem.Add(int64(mem))
