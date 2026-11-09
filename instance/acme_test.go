@@ -18,22 +18,20 @@ func TestACloudIssuingCertificatesNeedsItsZoneAndAWorkableConfig(t *testing.T) {
 	on := cm.Config{Certificate: cm.CertificateConfig{ACME: certificate.ACME{Enabled: true}}}
 
 	// A GATEWAY with no zone cannot say what it issues, and cm keeps nothing for it.
-	_, err := New(mockPeer(t), rootedIn(t, Config{Services: []string{Register, Stats, Gateway}, CM: on}, t.TempDir()), withKVDB(&memFactory{}))
-	require.ErrorIs(t, err, ErrNoZoneForCertificates)
-	keeper, err := New(mockPeer(t), rootedIn(t, Config{Services: []string{Stats, Secrets, CM}, CM: on}, t.TempDir()), withKVDB(&memFactory{}))
-	require.NoError(t, err)
-	t.Cleanup(func() { keeper.Close() })
+	edge, _, _ := makeNode(t, Config{Services: []string{Register, Stats, Gateway}, CM: on})
+	require.ErrorIs(t, edge.Start(t.Context()), ErrNoZoneForCertificates)
+	keeper, _, _ := makeNode(t, Config{Services: []string{Stats, Secrets, CM}, CM: on})
 	require.ErrorIs(t, keeper.Start(t.Context()), cm.ErrNoZone)
 
 	cfg := Config{Services: []string{Register, Stats, Secrets, Gateway, DNS, CM}, CM: on, CloudFqdn: "tau.example.io"}
 	n, _, _ := makeNode(t, cfg)
-	require.NotNil(t, n.certs, "its gateway and dns server take the client")
 	require.NoError(t, n.Start(t.Context()))
+	require.NotNil(t, n.certs, "its gateway and dns server took the client")
 	require.NotNil(t, cm.On(&added{node: n}).Store(), "a cm node hosts the store")
 
 	cfg.CM.Certificate.ACME.EAB.KeyID = "half"
-	_, err = New(mockPeer(t), rootedIn(t, cfg, t.TempDir()), withKVDB(&memFactory{}))
-	require.ErrorContains(t, err, "external account binding")
+	half, _, _ := makeNode(t, cfg)
+	require.ErrorContains(t, half.Start(t.Context()), "external account binding")
 }
 
 func accountKey(t *testing.T) string {

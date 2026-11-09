@@ -149,6 +149,7 @@ func TestALocalRegisterNeedsNoStream(t *testing.T) {
 
 func TestANodeWithNoRegisterSaysSo(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Worker, Stats}})
+	require.NoError(t, n.Start(t.Context()))
 
 	_, err := n.Worker().Resolve(t.Context(), workerTarget())
 	require.ErrorIs(t, err, service.ErrNoneRuns)
@@ -159,6 +160,7 @@ func TestANodeThatFindsNoRegister(t *testing.T) {
 	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Worker}}), WithRuntimes(&tier{name: "wasm"}))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
+	require.NoError(t, n.Start(t.Context()))
 
 	_, err = n.Worker().Resolve(t.Context(), workerTarget())
 	require.ErrorIs(t, err, service.ErrNoneRuns)

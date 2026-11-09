@@ -146,6 +146,9 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 	}
 	// The certificate a service's own public listener answers with, and DNS-01's.
 	n.provide("", certificates{n})
+	// The services this node runs, in its report from the first: a node is routed to
+	// for them as soon as it says anything.
+	n.provide("", configured{n})
 	// Every service name a node of this cloud can run, and whether its gateway's
 	// handler is served over TLS.
 	n.provide("", catalog{n})
@@ -182,6 +185,13 @@ func New(p peer.Node, cfg Config, opts ...Option) (*Instance, error) {
 		return nil, err
 	}
 	return n, nil
+}
+
+// configured is the services this node runs, as its report names them.
+type configured struct{ n *Instance }
+
+func (c configured) Report(snap *statsService.Snapshot) {
+	snap.Serving = append(snap.Serving, c.n.cfg.Services...)
 }
 
 // tiers is the compute tiers whoever composed this node gave it.
