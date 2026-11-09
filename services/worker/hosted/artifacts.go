@@ -25,8 +25,8 @@ var builtRecords = jobs.Records
 // broken site (502), not a name nobody serves (404).
 var ErrNotBuilt = errors.New("worker: nothing has built this resource yet")
 
-// Artifacts is where this worker looks a built resource's artifact up: what whoever
-// composed its node gave it, else plm's records on this node.
+// Artifacts is where this worker looks a built resource's artifact up: plm's records
+// on this node.
 func (n *Service) Artifacts() worker.Artifacts {
 	if n.lookup != nil {
 		return n.lookup

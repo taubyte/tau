@@ -21,22 +21,17 @@ import (
 	dreamv2 "github.com/taubyte/tau/pkg/proto/gen/tau/dream/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/dream/v2/dreamv2connect"
 	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
-	"github.com/taubyte/tau/services/builder"
 	storageService "github.com/taubyte/tau/services/storage"
 )
 
 // placementID is with/placement's own id, from its project.yaml.
 const placementID = "QmPigwAetxyyVvHj453JLsLhrWNGV4mW9ZG9yvjd7kUmMk"
 
-// A PUSH IS BUILT WHERE THE CLOUD BUILDS: through its plm node when it runs
-// one, else straight to a builder over its protocol, else by the builder's runs in
-// dream's own process; every way it ends deployed in the register, cloned from a
-// folder that is never written.
+// A PUSH IS BUILT THROUGH PLM, which hands it to a builder wherever one runs; either
+// way it ends deployed in the register, cloned from a folder that is never written.
 func TestAPushIsBuiltWhereTheCloudBuilds(t *testing.T) {
 	shared := []string{instance.Stats, instance.Register, instance.Auth, storageService.Descriptor.Name}
 	for name, cfg := range map[string]nodeDream.Config{
-		"with neither build nor a builder": {Services: shared},
-		"straight to a builder":            {Services: append([]string{instance.Builder}, shared...)},
 		// No exclusion: one node runs plm and the builder it hands runs to.
 		"plm and a builder on one node": {Services: append([]string{instance.PLM, instance.Builder}, shared...)},
 		// The register and storage on the plm node alone, so the one the builder
@@ -81,7 +76,7 @@ func TestAPushIsBuiltWhereTheCloudBuilds(t *testing.T) {
 
 func TestAPushOfWhatTheMirrorDoesNotHoldFails(t *testing.T) {
 	ctx := t.Context()
-	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{Services: []string{instance.Builder, instance.Stats, instance.Register, instance.Auth, storageService.Descriptor.Name}})
+	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{Services: []string{instance.PLM, instance.Builder, instance.Stats, instance.Register, instance.Auth, storageService.Descriptor.Name}})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
 
@@ -104,7 +99,7 @@ func TestAnUploadedBuildIsWhatTheFunctionRuns(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 	ctx := t.Context()
 	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{Services: []string{
-		instance.Builder, instance.Register, instance.Auth, instance.Worker, instance.Stats, instance.Gateway,
+		instance.PLM, instance.Builder, instance.Register, instance.Auth, instance.Worker, instance.Stats, instance.Gateway,
 		instance.Database, instance.Primitives, storageService.Descriptor.Name,
 	}})
 	require.NoError(t, err)
@@ -143,7 +138,7 @@ func TestAnUploadNamingAPackageTheTreeDoesNotBuildIsRefused(t *testing.T) {
 func TestACloudBuildsForAToolOverDreamService(t *testing.T) {
 	ctx := t.Context()
 	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{
-		Services:  []string{instance.Builder, instance.Stats, instance.Register, instance.Auth, storageService.Descriptor.Name},
+		Services:  []string{instance.PLM, instance.Builder, instance.Stats, instance.Register, instance.Auth, storageService.Descriptor.Name},
 		Configure: func(_ int, c *instance.Config) { c.Region = "region-1" },
 		Listen:    "127.0.0.1:0",
 	})
@@ -233,7 +228,7 @@ func TestACloudWithNothingThatBuildsSaysSo(t *testing.T) {
 	t.Cleanup(u.Close)
 
 	_, err = u.Build(ctx, nodeDream.Push{Repository: "github.com/acme/app", Ref: "refs/heads/main", Commit: "1111111111111111111111111111111111111111"})
-	require.ErrorContains(t, err, "no node runs auth", "the builder's runs in place, with no project table to say whose the push is")
+	require.ErrorContains(t, err, "no node runs plm", "a push is built through plm")
 	require.ErrorContains(t, u.Link(ctx, "QmProject", "github.com/acme/app"), "no node runs auth")
 	_, err = u.Upload("github.com/acme/code", "main", t.TempDir(), nil)
 	require.ErrorContains(t, err, "no node runs the register", "a code repository's recipes are what its project publishes")
@@ -279,20 +274,6 @@ func TestAMirrorRepositoryWithNoWorkingTreeTakesNoCommit(t *testing.T) {
 	require.NoError(t, err)
 	_, err = u.Commit("github.com/acme/bare", "main", projectDir("with/placement"))
 	require.ErrorIs(t, err, gogit.ErrIsBareRepository)
-}
-
-func TestACloudWhoseBuilderCannotBeMadeSaysSo(t *testing.T) {
-	ctx := t.Context()
-	u, err := nodeDream.Start(ctx, t.Name(), nodeDream.Config{
-		Services: []string{instance.Stats, instance.Register},
-		Configure: func(_ int, c *instance.Config) {
-			c.Sections[instance.Builder] = builder.Config{Mirror: "https://not.a.folder"}
-		},
-	})
-	require.NoError(t, err)
-	t.Cleanup(u.Close)
-	_, err = u.Build(ctx, nodeDream.Push{Repository: "github.com/acme/app", Ref: "refs/heads/main", Commit: "1111111111111111111111111111111111111111"})
-	require.ErrorContains(t, err, "not a file:// directory", "the builder's runs in place are made from the node's builder section")
 }
 
 func TestAClosedCloudBuildsNothing(t *testing.T) {

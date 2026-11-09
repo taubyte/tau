@@ -187,8 +187,6 @@ type Cloud struct {
 	buildsMu sync.Mutex
 	builds   builds
 	visitor  peer.Node
-	// kept is what it built with no plm service to record it.
-	kept builtHere
 
 	rpc *served
 }
@@ -235,7 +233,7 @@ func Start(ctx context.Context, name string, cfg Config) (*Cloud, error) {
 	u := &Cloud{mesh: m, mirror: mirror, uploads: held}
 	copies := max(cfg.Copies, 1)
 	for index := range copies {
-		p, err := m.Add(func(p peer.Node) error { return create(m, p, cfg, index, account, held, mirror, &u.kept) })
+		p, err := m.Add(func(p peer.Node) error { return create(m, p, cfg, index, account, held, mirror) })
 		if err != nil {
 			u.Close()
 			return nil, fmt.Errorf("dream: node %d: %w", index, err)
@@ -280,7 +278,7 @@ func (u *Cloud) Close() {
 	u.mesh.Close()
 }
 
-func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secretsv2.InitSecret, uploads, mirror string, kept *builtHere) error {
+func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secretsv2.InitSecret, uploads, mirror string) error {
 	ctx := m.Context()
 	h := p.Host()
 
@@ -337,13 +335,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	nodeConfig.Root = root
 	nodeConfig.Raft = raft.Timing{Timeouts: dreamTimeouts, BootstrapTimeout: dreamBootstrapTimeout}
 
-	// WHAT THE CLOUD BUILT WITH NO PLM SERVICE is looked up in what it kept, and
-	// anything else in plm's records on the node.
-	lookup := &artifacts{kept: kept}
-	options := []instance.Option{
-		instance.WithRuntimes(tiers...),
-		instance.WithArtifacts(lookup),
-	}
+	options := []instance.Option{instance.WithRuntimes(tiers...)}
 	if now != nil {
 		options = append(options, instance.WithClock(now))
 	}
@@ -381,7 +373,6 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		os.RemoveAll(root)
 		return err
 	}
-	lookup.on(n)
 
 	id := h.ID().String()
 	built.Lock()

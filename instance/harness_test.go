@@ -219,19 +219,6 @@ func (t *tier) Start(context.Context, invoke.Spec) (invoke.Instance, error) {
 	return nil, errors.New("tier: nothing is started in this test")
 }
 
-// prebuilt is the artifact lookup of a cloud that has built everything, explicit
-// rather than a makeNode default since several tests are about its absence. Every
-// built resource needs it: a `source.component` is a configuration id, not an
-// artifact.
-func prebuilt() Option { return WithArtifacts(everythingBuilt{}) }
-
-// everythingBuilt answers that every resource was built, to "bafy" and its id.
-type everythingBuilt struct{}
-
-func (everythingBuilt) Artifact(_ context.Context, _, _, _, resource string) (string, error) {
-	return "bafy" + resource, nil
-}
-
 // opensDatabases is what a test's database double does.
 type opensDatabases interface {
 	New(logger log.StandardLogger, path string, rebroadcastIntervalSec int) (kvdb.Instance, error)

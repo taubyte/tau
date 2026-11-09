@@ -60,7 +60,7 @@ func TestAGatewayNodeReachesAWorkerNode(t *testing.T) {
 
 	// Two nodes of one shape both run everything; the gateway on one reaches a worker
 	// wherever placement puts it.
-	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Copies: 2})
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Copies: 2, Services: instance.Everything()})
 	require.NoError(t, err)
 	defer u.Close()
 

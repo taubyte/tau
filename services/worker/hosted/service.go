@@ -76,8 +76,8 @@ type Service struct {
 	groups  raft.Groups
 	engines *database.Registry
 	given   []invoke.Runtime
-	// lookup is where a built resource's artifact is, when whoever composed the node
-	// said; otherwise it is plm's records on this node (artifacts.go).
+	// lookup stands in for plm's records in this package's tests, which run no build;
+	// a node always reads the records (artifacts.go).
 	lookup worker.Artifacts
 
 	store    *storage.Reached
@@ -154,7 +154,6 @@ func (n *Service) Start(ctx context.Context, h service.Host) error {
 	if tiers, ok := service.Get[Tiers](h); ok {
 		n.given = tiers.Runtimes()
 	}
-	n.lookup, _ = service.Get[worker.Artifacts](h)
 	if bus, ok := service.Get[Bus](h); ok {
 		n.bus = bus.Bus()
 	}

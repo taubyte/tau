@@ -1,7 +1,6 @@
 package instance
 
 import (
-	"context"
 	"encoding/json"
 	"slices"
 	"testing"
@@ -61,9 +60,7 @@ func fleet(t *testing.T, configs ...Config) []*Instance {
 	for i, cfg := range configs {
 		cfg = loopbackDNS(cfg)
 
-		// Every fleet node can resolve artifacts, since these tests are about finding what a
-		// node does not run.
-		n, err := New(peers[i], rootedIn(t, cfg, t.TempDir()), withKVDB(&memFactory{}), WithRuntimes(&tier{name: "wasm"}), withRaft(mockGroups{}), prebuilt())
+		n, err := New(peers[i], rootedIn(t, cfg, t.TempDir()), withKVDB(&memFactory{}), WithRuntimes(&tier{name: "oci"}), withRaft(mockGroups{}))
 		require.NoError(t, err)
 		t.Cleanup(func() { n.Close() })
 
@@ -191,35 +188,6 @@ func TestOneNodeRunningEverythingNeedsNoStream(t *testing.T) {
 	// beside the worker, with no stream.
 	_, err = only.Worker().Resolve(t.Context(), workerTarget())
 	require.NoError(t, err)
-}
-
-func TestTheSeamsReachTheWorker(t *testing.T) {
-	asked := askedFor(make(chan string, 4))
-	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Register, Worker}}), withKVDB(&memFactory{}), WithRuntimes(&tier{name: "wasm"}), WithArtifacts(asked))
-	require.NoError(t, err)
-	t.Cleanup(func() { n.Close() })
-	require.NoError(t, n.Start(t.Context()))
-
-	_, err = n.Register().Local().Publish(t.Context(), pkgregister.Publication{
-		Project: "shop", Environment: "prod", Revision: 1, Compiled: builtByThePlatform(),
-	})
-	require.NoError(t, err)
-
-	spec, err := n.Worker().Resolve(t.Context(), specs.Address{
-		Project: "shop", Environment: "prod", Kind: "function", Name: "built",
-	})
-	require.NoError(t, err)
-	require.Contains(t, spec.Artifact, "registry/built@sha256:"+codePackageID, "asked about the package it runs")
-
-	require.Len(t, asked, 1)
-}
-
-// askedFor is a lookup that says it was asked, and answers an image built for the id.
-type askedFor chan string
-
-func (a askedFor) Artifact(_ context.Context, _, _, _, id string) (string, error) {
-	a <- "artifact"
-	return "registry/built@sha256:" + id, nil
 }
 
 func TestABuiltResourceNothingHasBuiltIsRefused(t *testing.T) {

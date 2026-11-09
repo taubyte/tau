@@ -9,9 +9,9 @@
 // cloud's own Go method of the same name (instance/dream/build.go), so what a
 // test does in process a tool does over the wire.
 //
-// A BUILD GOES THROUGH THE CLOUD'S PLM NODE when it runs one, else straight to
-// a builder over the builder's protocol, else to the builder's runs in the cloud's
-// own process. Nothing here is a cloud's API: no cloud serves it.
+// A BUILD GOES THROUGH THE CLOUD'S PLM NODE, which records what was built where
+// every worker reads it; a cloud running none builds nothing. Nothing here is a
+// cloud's API: no cloud serves it.
 
 package dreamv2
 

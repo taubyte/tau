@@ -5,7 +5,8 @@ import (
 )
 
 // The smallest compiled project exercising the whole path, hand-written so the
-// wiring is readable in one screen.
+// wiring is readable in one screen. Its workload is a service on an image, which
+// somebody else built, so nothing has to build it for a node to resolve it.
 
 const (
 	projectID = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
@@ -23,13 +24,14 @@ func compiled() []byte {
 			"id": "` + projectID + `",
 			"name": "shop",
 			"package": {
-				"` + codePackageID + `": {"name": "code", "type": "wasm"}
+				"` + imagePackageID + `": {"name": "image", "type": "oci",
+					"source": {"kind": "image", "image": "ghcr.io/acme/checkout:1"}}
 			},
-			"function": {
+			"service": {
 				"QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY": {
 					"name": "checkout",
-					"execution": {"call": "handle", "memory": 33554432},
-					"package": {"name": "` + codePackageID + `"}
+					"package": {"name": "` + imagePackageID + `"},
+					"ports": {"http": {"number": 8080}}
 				}
 			},
 			"gateway": {
@@ -39,7 +41,7 @@ func compiled() []byte {
 					"routing": "route",
 					"route": {
 						"path": "/", "match": "prefix", "target": "handler",
-						"handler": {"kind": "function", "name": "checkout"}
+						"handler": {"kind": "service", "name": "checkout", "port": "http"}
 					}
 				}
 			},
@@ -51,10 +53,10 @@ func compiled() []byte {
 			}
 		},
 		"indexes": {
-			"projects/` + projectID + `/package/code/links": [
-				"branches/main/projects/` + projectID + `/package/` + codePackageID + `"],
-			"projects/` + projectID + `/function/checkout/links": [
-				"branches/main/projects/` + projectID + `/function/QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY"],
+			"projects/` + projectID + `/package/image/links": [
+				"branches/main/projects/` + projectID + `/package/` + imagePackageID + `"],
+			"projects/` + projectID + `/service/checkout/links": [
+				"branches/main/projects/` + projectID + `/service/QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY"],
 			"projects/` + projectID + `/gateway/shop/links": [
 				"branches/main/projects/` + projectID + `/gateway/QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zk"],
 			"projects/` + projectID + `/zone/example_com/links": [
@@ -64,7 +66,7 @@ func compiled() []byte {
 }
 
 func workerTarget() specs.Address {
-	return specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"}
+	return specs.Address{Project: "shop", Environment: "prod", Kind: "service", Name: "checkout"}
 }
 
 // builtByThePlatform is a project whose one function runs a package the platform

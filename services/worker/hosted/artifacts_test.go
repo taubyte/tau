@@ -57,14 +57,10 @@ func TestTheDeployBudgetHasAnEffectiveValue(t *testing.T) {
 	require.Equal(t, time.Minute, worker.Config{PointerTTL: time.Minute}.Pointer())
 }
 
-func TestTheWorkerResolvesArtifactsThroughWhatItIsGivenElseBuildsRecords(t *testing.T) {
+func TestTheWorkerResolvesArtifactsFromBuildsRecords(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Stats, Worker}})
 	require.Same(t, n.built, n.Artifacts(), "plm's records on its node")
 	require.Equal(t, n.built, n.PLMArtifacts())
-
-	with, _, _ := makeNode(t, Config{Services: []string{Stats, Worker}}, prebuilt())
-	require.Equal(t, everythingBuilt{}, with.Artifacts(), "the lookup it was given")
-	require.Same(t, with.built, with.PLMArtifacts(), "and the records still, to fall back on")
 }
 
 func TestAnInjectedTierWins(t *testing.T) {

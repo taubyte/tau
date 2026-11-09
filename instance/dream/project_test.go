@@ -399,7 +399,7 @@ func deployServing(t testing.TB, name, host string, wasm []byte, extra map[strin
 
 	// SOMEBODY BUILDS IT: the project is built as a push is, by a builder, linked
 	// in auth's project table.
-	for _, need := range []string{instance.Builder, instance.Auth} {
+	for _, need := range []string{instance.PLM, instance.Builder, instance.Auth} {
 		if !slices.Contains(services, need) {
 			services = append(services, need)
 		}
@@ -832,7 +832,7 @@ type cloud struct {
 // fleetServices is what every node of a fleet runs.
 var fleetServices = []string{
 	instance.Register, instance.Worker, instance.Stats, instance.Gateway,
-	instance.Database, instance.Primitives, storageService.Descriptor.Name, instance.Builder, instance.Auth}
+	instance.Database, instance.Primitives, storageService.Descriptor.Name, instance.PLM, instance.Builder, instance.Auth}
 
 // deployFleetOf is deployFleet over several projects in one cloud: a publish per
 // project and a settle barrier waiting for all of them.

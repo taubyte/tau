@@ -22,7 +22,6 @@ import (
 	"github.com/taubyte/tau/services/plm"
 	"github.com/taubyte/tau/services/primitives"
 	proxy "github.com/taubyte/tau/services/proxy"
-	"github.com/taubyte/tau/services/worker"
 	workerHosted "github.com/taubyte/tau/services/worker/hosted"
 	"gopkg.in/yaml.v3"
 )
@@ -165,11 +164,10 @@ type options struct {
 	runtimes []invoke.Runtime
 	// artifacts is what the worker looks a built resource up in, in place of build's
 	// records.
-	artifacts worker.Artifacts
-	now       func() time.Time
-	extra     map[string]service.Service
-	identity  func(Host) (auth.Identity, error)
-	resolver  cm.Resolver
+	now      func() time.Time
+	extra    map[string]service.Service
+	identity func(Host) (auth.Identity, error)
+	resolver cm.Resolver
 }
 
 // WithRuntimes are the compute tiers this node can run. Required with a worker. A tier
@@ -182,19 +180,6 @@ func WithRuntimes(rts ...invoke.Runtime) Option {
 			}
 		}
 		o.runtimes = append(o.runtimes, rts...)
-		return nil
-	}
-}
-
-// WithArtifacts is what this node's worker looks a built resource's artifact up in,
-// in place of plm's records: a development cloud's own, where it built with no
-// plm service to record it (instance/dream). Optional.
-func WithArtifacts(a worker.Artifacts) Option {
-	return func(o *options) error {
-		if a == nil {
-			return errors.New("node: a nil artifact lookup")
-		}
-		o.artifacts = a
 		return nil
 	}
 }

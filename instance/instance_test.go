@@ -116,7 +116,7 @@ func TestANodeReportsWhatItRuns(t *testing.T) {
 }
 
 func TestAWorkerAdvertisesWhatItHolds(t *testing.T) {
-	n, _, _ := makeNode(t, Config{}, prebuilt())
+	n, _, _ := makeNode(t, Config{})
 	require.NoError(t, n.Start(t.Context()))
 
 	// Publish and resolve through this node's own register, which loads the
@@ -133,7 +133,7 @@ func TestAWorkerAdvertisesWhatItHolds(t *testing.T) {
 }
 
 func TestALocalRegisterNeedsNoStream(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}}, prebuilt())
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
 	require.NoError(t, n.Start(t.Context()))
 
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
@@ -184,7 +184,7 @@ func TestTheGatewayIsServedByTheCaller(t *testing.T) {
 }
 
 func TestAWholeRequestPathOnOneNode(t *testing.T) {
-	n, _, _ := makeNode(t, Config{}, prebuilt())
+	n, _, _ := makeNode(t, Config{})
 	require.NoError(t, n.Start(t.Context()))
 
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
@@ -214,7 +214,7 @@ func TestTheClockReachesEverything(t *testing.T) {
 
 func TestWhatTheOptionsRefuse(t *testing.T) {
 	for _, opt := range []Option{
-		WithRuntimes(nil), WithClock(nil), WithArtifacts(nil),
+		WithRuntimes(nil), WithClock(nil),
 	} {
 		_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Stats}}), opt)
 		require.Error(t, err)

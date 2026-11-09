@@ -68,11 +68,11 @@ func (c Config) runs(name string) bool {
 type Option func(*options)
 
 type options struct {
-	runtimes  []invoke.Runtime
-	artifacts worker.Artifacts
-	factory   opensDatabases
-	groups    raft.Groups
-	now       func() time.Time
+	runtimes []invoke.Runtime
+	built    bool
+	factory  opensDatabases
+	groups   raft.Groups
+	now      func() time.Time
 }
 
 // WithRuntimes are the tiers the node was given.
@@ -85,7 +85,7 @@ func withoutTiers() Option { return func(o *options) { o.runtimes = nil } }
 
 // prebuilt is the artifact lookup of a cloud that has built everything.
 func prebuilt() Option {
-	return func(o *options) { o.artifacts = everythingBuilt{} }
+	return func(o *options) { o.built = true }
 }
 
 // withKVDB opens the node's databases from a double a test can see into.
@@ -145,9 +145,6 @@ func startNode(t *testing.T, cfg Config, opts ...Option) (*node, *memFactory, er
 		h.provide("", o.groups)
 	}
 	h.provide("", given(o.runtimes))
-	if o.artifacts != nil {
-		h.provide("", o.artifacts)
-	}
 	if p.Messaging() != nil {
 		b := stream.NewBus(p.Messaging(), h.Cloud())
 		t.Cleanup(func() { b.Close() })
@@ -155,6 +152,9 @@ func startNode(t *testing.T, cfg Config, opts ...Option) (*node, *memFactory, er
 	}
 
 	n := &node{Service: New(), host: h}
+	if o.built {
+		n.lookup = everythingBuilt{}
+	}
 	if cfg.runs(Stats) {
 		n.stats = statsService.New()
 	}
