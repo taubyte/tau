@@ -267,9 +267,43 @@ func (h *healer) probeAndMergeAsLeader(ctx context.Context) {
 
 	healLogger.Infof("[%s] probing %d foreign peers as leader", h.cluster.ID().ShortString(), len(foreignPeers))
 
-	for _, pid := range foreignPeers {
-		h.meetAsLeader(ctx, pid)
+	for _, a := range h.answersFrom(foreignPeers) {
+		if !h.cluster.IsLeader() {
+			return
+		}
+		h.meet(ctx, a)
 	}
+}
+
+// answersFrom asks every peer for its cluster info at once and returns what came
+// within one check. A PEER THAT HAS NOT ANSWERED BY THEN IS ONE THAT DOES NOT: a
+// member that closed is only known gone once its call gives up retrying, and a
+// healer waiting on that, one peer after another, answers nothing else meanwhile,
+// the quorum-loss recovery it should run included. A peer that answers later is
+// asked again on a later check.
+func (h *healer) answersFrom(peers []peer.ID) []memberAnswer {
+	answers := make(chan memberAnswer, len(peers))
+	for _, pid := range peers {
+		go func() {
+			info, err := h.member.raftClient.ClusterInfo(pid)
+			if err != nil {
+				healLogger.Infof("[%s] clusterInfo from %s failed: %v", h.cluster.ID().ShortString(), pid.ShortString(), err)
+				info = nil
+			}
+			answers <- memberAnswer{id: pid, info: info}
+		}()
+	}
+	bound := time.After(h.checkInterval())
+	var out []memberAnswer
+	for range peers {
+		select {
+		case a := <-answers:
+			out = append(out, a)
+		case <-bound:
+			return out
+		}
+	}
+	return out
 }
 
 // isOurs says pid is a member of this group: in its configuration, and bound to its
@@ -288,13 +322,15 @@ func (h *healer) isOurs(pid peer.ID, info *ClusterInfoResponse) bool {
 // one that is. Every path that meets another group comes here, so two leaders
 // never each take the other.
 func (h *healer) meetAsLeader(ctx context.Context, pid peer.ID) {
-	info, err := h.member.raftClient.ClusterInfo(pid)
-	if err != nil {
-		healLogger.Infof("[%s] clusterInfo from foreign %s failed: %v",
-			h.cluster.ID().ShortString(), pid.ShortString(), err)
-		return
+	for _, a := range h.answersFrom([]peer.ID{pid}) {
+		h.meet(ctx, a)
 	}
-	if h.isOurs(pid, info) {
+}
+
+// meet settles what becomes of a peer that answered, as meetAsLeader says.
+func (h *healer) meet(ctx context.Context, a memberAnswer) {
+	pid, info := a.id, a.info
+	if info == nil || h.isOurs(pid, info) {
 		return
 	}
 
@@ -733,37 +769,17 @@ func (h *healer) recoverFromQuorumLoss(ctx context.Context) {
 	}
 	formation := m.raft.Formation()
 	members := m.raft.Members()
-	answers := make(chan memberAnswer, len(members))
-	asked := 0
+	var others []peer.ID
 	for _, mb := range members {
-		if mb.ID == h.cluster.ID() {
-			continue
+		if mb.ID != h.cluster.ID() {
+			others = append(others, mb.ID)
 		}
-		asked++
-		go func() {
-			info, err := m.raftClient.ClusterInfo(mb.ID)
-			if err != nil {
-				info = nil
-			}
-			answers <- memberAnswer{id: mb.ID, info: info}
-		}()
 	}
-	// A MEMBER THAT HAS NOT ANSWERED WITHIN ONE CHECK IS ONE THAT DOES NOT ANSWER. A
-	// closed member is only known to be gone when its call times out, and a pass
-	// waiting on that is a healer answering nothing else, the group it should join
-	// included. Two members that both counted the other out each form a group, and
-	// meeting as leaders merges them.
+	// Two members that both counted the other out, each not answering within a
+	// check (answersFrom), each form a group, and meeting as leaders merges them.
 	reachable := []peer.ID{h.cluster.ID()}
 	led := false
-	bound := time.After(h.checkInterval())
-answering:
-	for range asked {
-		var a memberAnswer
-		select {
-		case a = <-answers:
-		case <-bound:
-			break answering
-		}
+	for _, a := range h.answersFrom(others) {
 		switch {
 		case a.info == nil:
 		case a.info.LeaderID != "":

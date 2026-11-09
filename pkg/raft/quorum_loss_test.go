@@ -341,3 +341,22 @@ func TestHealing_NothingRecoversWhileAMemberLeadsOrNothingIsHeld(t *testing.T) {
 	require.Same(t, held, e.current(), "a member holding nothing formed again to carry it")
 	require.False(t, e.hasArchive())
 }
+
+// A LEADER'S PROBE OF MEMBERS THAT CLOSED RETURNS WITHIN A CHECK. Asked one after
+// another, each member gone mid-pass held the healer for the client's retry window,
+// and the quorum-loss recovery the healer should have run next waited behind three of
+// them for half a minute.
+func TestHealing_AProbeOfMembersThatClosedReturnsWithinACheck(t *testing.T) {
+	probeEvery(t, 50*time.Millisecond)
+	group := joinedGroup(t, "probe-closed", sameStore, 4)
+	leader := leaderOf(t, group...).(*cluster)
+	for _, cl := range group {
+		if cl != Cluster(leader) {
+			require.NoError(t, cl.Close())
+		}
+	}
+	h := leader.current().healer.Load()
+	began := time.Now()
+	h.probeAndMergeAsLeader(t.Context())
+	require.Less(t, time.Since(began), sendToPeerTimeout, "the probe waited out a member that closed")
+}
