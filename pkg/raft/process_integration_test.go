@@ -434,12 +434,13 @@ func TestAcrossProcesses_GroupsFormedApartBecomeOneOnceConnected(t *testing.T) {
 // TWO NODES DIALING EACH OTHER AT THE SAME INSTANT BOTH CONNECT: a node of the cloud
 // dials from a port of its own, so the two dials are two connections. From the
 // listening ports they would be one, which both took for their own dial, and its TLS
-// handshake would fail on both ends.
+// handshake would fail on both ends. Five rounds stay within the connections a node
+// takes from one address before its rate limit refuses them.
 func TestAcrossProcesses_TwoNodesDialingEachOtherAtOnceBothConnect(t *testing.T) {
 	ip := lanIP(t)
 	a, b := spawn(t, ip), spawn(t, ip)
 	dialed := 0
-	for round := range 40 {
+	for round := range 5 {
 		replies := make([]string, 2)
 		var wg sync.WaitGroup
 		for i, pair := range [][2]*process{{a, b}, {b, a}} {
