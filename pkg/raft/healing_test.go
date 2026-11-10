@@ -1097,8 +1097,7 @@ func TestHealing_AGroupWhoseFounderDiesBeforeItReplicatesFormsAgain(t *testing.T
 		}
 		return true
 	}, 30*time.Second, 50*time.Millisecond, "the rest never formed a group of their own")
-	leader := leaderOf(t, rest...)
-	require.NoError(t, leader.Set("after", []byte("v"), 5*time.Second))
+	leaderTook(t, rest, func(l Cluster) error { return l.Set("after", []byte("v"), 5*time.Second) })
 }
 
 // A MEMBER HOLDING WHAT ITS GROUP COMMITTED KEEPS IT when its quorum is gone and an
@@ -1108,8 +1107,7 @@ func TestHealing_AMemberThatLostItsQuorumKeepsItsStateForAnEmptyNewcomer(t *test
 	const namespace = "quorum-lost-keeps"
 	probeEvery(t, 50*time.Millisecond)
 	group := joinedGroup(t, namespace, sameStore, 3)
-	leader := leaderOf(t, group...)
-	require.NoError(t, leader.Set("kept", []byte("v"), 5*time.Second))
+	leader := leaderTook(t, group, func(l Cluster) error { return l.Set("kept", []byte("v"), 5*time.Second) })
 
 	survivor := group[0].(*cluster)
 	if Cluster(survivor) == leader {
@@ -1215,8 +1213,7 @@ func TestHealing_ALoserHoldingStateWaitsToBeTaken(t *testing.T) {
 	const namespace = "loser-waits"
 	probeEvery(t, 50*time.Millisecond)
 	group := joinedGroup(t, namespace, sameStore, 3)
-	leader := leaderOf(t, group...)
-	require.NoError(t, leader.Set("kept", []byte("v"), 5*time.Second))
+	leader := leaderTook(t, group, func(l Cluster) error { return l.Set("kept", []byte("v"), 5*time.Second) })
 	survivor := group[0].(*cluster)
 	if Cluster(survivor) == leader {
 		survivor = group[1].(*cluster)
@@ -1399,8 +1396,9 @@ func TestHealing_AListedMemberOfAnotherFormationIsTaken(t *testing.T) {
 	// takes it: drawn at random, either is redrawn until it is. Each draw is a coin,
 	// so forty of them all miss once in 2^40; ten missed once in a thousand runs.
 	var leader *cluster
+	var ours []Cluster
 	for range 40 {
-		ours := joinedGroup(t, namespace, sameStore, 2)
+		ours = joinedGroup(t, namespace, sameStore, 2)
 		candidate := leaderOf(t, ours...).(*cluster)
 		if candidate.current().raft.Formation()[0] < 0x80 {
 			leader = candidate
@@ -1411,7 +1409,7 @@ func TestHealing_AListedMemberOfAnotherFormationIsTaken(t *testing.T) {
 		}
 	}
 	require.NotNil(t, leader, "no formation fell in the lower half in forty draws")
-	require.NoError(t, leader.Set("from-a", []byte("a"), time.Second))
+	leader = leaderTook(t, ours, func(l Cluster) error { return l.Set("from-a", []byte("a"), time.Second) }).(*cluster)
 
 	var other *cluster
 	for range 20 {
@@ -1429,7 +1427,7 @@ func TestHealing_AListedMemberOfAnotherFormationIsTaken(t *testing.T) {
 	require.NoError(t, other.Set("from-b", []byte("b"), time.Second))
 	require.NoError(t, taupeer.LinkAllPeers())
 	require.NoError(t, leader.Host().Connect(t.Context(), peer.AddrInfo{ID: other.ID(), Addrs: other.Host().Addrs()}))
-	require.NoError(t, leader.AddVoter(other.ID(), 5*time.Second))
+	leader = leaderTook(t, ours, func(l Cluster) error { return l.AddVoter(other.ID(), 5*time.Second) }).(*cluster)
 	leader.current().tracker.addPeer(other.ID())
 
 	require.Eventually(t, func() bool {

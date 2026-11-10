@@ -270,6 +270,18 @@ func idOf(cl Cluster) peer.ID { return cl.(*cluster).ID() }
 // leader while leadership moves under it. A write lost mid-commit may land
 // twice, so this is for writes that leave the same state however often they
 // are made.
+// leaderTook makes write on whichever of clusters leads, as onLeader does, and says
+// which took it: a leader read first can have stepped down by the write.
+func leaderTook(t testing.TB, clusters []Cluster, write func(Cluster) error) Cluster {
+	t.Helper()
+	var took Cluster
+	require.NoError(t, onLeader(t, clusters, func(l Cluster) error {
+		took = l
+		return write(l)
+	}))
+	return took
+}
+
 func onLeader(t testing.TB, clusters []Cluster, write func(Cluster) error) error {
 	t.Helper()
 	deadline := time.Now().Add(leaderWait)
