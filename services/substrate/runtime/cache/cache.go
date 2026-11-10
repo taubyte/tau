@@ -122,7 +122,9 @@ func (c *Cache) validate(serviceable iface.Serviceable, branches []string) error
 	projectId := serviceable.Project()
 	commit, _, err := tnsClient.Simple().Commit(projectId, branches...)
 	if err != nil {
-		return fmt.Errorf("getting serviceable `%s` commit failed with: %w", serviceable.Id(), err)
+		// A failed check says nothing about the function: closing it killed
+		// in-flight requests whenever TNS was briefly unreachable.
+		return nil
 	}
 
 	if serviceable.Commit() != commit {

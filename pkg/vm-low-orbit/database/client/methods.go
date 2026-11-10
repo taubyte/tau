@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/go-sdk/errno"
 	common "github.com/taubyte/tau/core/vm"
 )
+
+// The guest only gets an error code: without this the cause is lost.
+var logger = log.Logger("tau.substrate.database")
 
 func (d *Database) Get(ctx context.Context, key string) (data []byte, err errno.Error) {
 	var err0 error
@@ -16,6 +20,7 @@ func (d *Database) Get(ctx context.Context, key string) (data []byte, err errno.
 		if strings.Contains(err0.Error(), keyNotFound) {
 			err = errno.ErrorDatabaseKeyNotFound
 		} else {
+			logger.Errorf("get failed: %s", err0)
 			err = errno.ErrorDatabaseGetFailed
 		}
 	}
@@ -94,6 +99,7 @@ func (f *Factory) databasePut(ctx context.Context, module common.Module,
 
 	_err := database.KV().Put(ctx, _key, data)
 	if _err != nil {
+		logger.Errorf("put failed: %s", _err)
 		return uint32(errno.ErrorDatabasePutFailed)
 	}
 

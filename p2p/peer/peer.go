@@ -304,7 +304,7 @@ func new(ctx context.Context, repoPath interface{}, privateKey []byte, swarmKey 
 	p.messaging, err = pubsub.NewGossipSub(
 		p.ctx,
 		p.host,
-		pubsub.WithDiscovery(p.drouter),
+		pubsub.WithDiscovery(dialableDiscovery{Discovery: p.drouter, host: p.host}),
 		pubsub.WithFloodPublish(true),
 		pubsub.WithMessageSigning(true),
 		pubsub.WithStrictSignatureVerification(true),

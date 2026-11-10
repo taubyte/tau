@@ -6,8 +6,41 @@ import (
 	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/core/discovery"
+	"github.com/libp2p/go-libp2p/core/host"
 	peer "github.com/libp2p/go-libp2p/core/peer"
 )
+
+// dialableDiscovery drops providers with no known address. Pubsub would dial
+// each one through the routed host, which falls back to a full DHT FindPeer
+// for every topic round: such providers (client nodes: loopback-only, new key
+// each boot) cannot be reached anyway.
+type dialableDiscovery struct {
+	discovery.Discovery
+	host host.Host
+}
+
+func (d dialableDiscovery) FindPeers(ctx context.Context, ns string, opts ...discovery.Option) (<-chan peer.AddrInfo, error) {
+	in, err := d.Discovery.FindPeers(ctx, ns, opts...)
+	if err != nil {
+		return nil, err
+	}
+	out := make(chan peer.AddrInfo)
+	go func() {
+		defer close(out)
+		for pi := range in {
+			if len(pi.Addrs) == 0 && len(d.host.Peerstore().Addrs(pi.ID)) == 0 {
+				continue
+			}
+			select {
+			case out <- pi:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out, nil
+}
 
 type PubSubConsumerHandler func(msg *pubsub.Message)
 type PubSubConsumerErrorHandler func(err error)
