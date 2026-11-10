@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"regexp"
 
 	"github.com/taubyte/tau/tools/tau/cli/common"
 	patrickClient "github.com/taubyte/tau/tools/tau/clients/patrick_client"
@@ -35,6 +36,14 @@ func (link) Query() common.Command {
 		},
 	)
 }
+
+// logFileName makes a log's id a valid file name: its ids can be timestamps,
+// whose colons Windows refuses, and they come from the server.
+func logFileName(id string) string {
+	return notInFileName.ReplaceAllString(id, "_")
+}
+
+var notInFileName = regexp.MustCompile(`[<>:"/\\|?*]`)
 
 func query(ctx *cli.Context) error {
 	patrickC, err := patrickClient.Load()
@@ -79,7 +88,7 @@ func query(ctx *cli.Context) error {
 		}
 
 		if writeFile {
-			if err = os.WriteFile(path.Join(outputDir, resourceId), data, 0666); err != nil {
+			if err = os.WriteFile(path.Join(outputDir, logFileName(resourceId)), data, 0666); err != nil {
 				return err
 			}
 		} else {

@@ -112,8 +112,12 @@ func pushRepo(r *git.Repository, message string) (follow.Repo, error) {
 		return follow.Repo{}, err
 	}
 	since := time.Now().Unix()
-	if err := r.Push(); err != nil {
+	sent, err := r.PushNew()
+	if err != nil {
 		return follow.Repo{}, err
+	}
+	if !sent {
+		fmt.Fprintf(os.Stderr, "nothing new to push to %s, so no build starts\n", name)
 	}
 	out := follow.Repo{Name: name, Since: since}
 	if head, err := r.Repo().Head(); err == nil {

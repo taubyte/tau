@@ -7,22 +7,18 @@ import (
 	"github.com/taubyte/tau/tools/tau/config"
 )
 
-func (info *Info) Push(project config.Project, message, url string) (GitRepository, error) {
+// Push commits and pushes, and says whether anything reached the remote.
+func (info *Info) Push(project config.Project, message, url string) (bool, error) {
 	repo, err := info.Open(project, url)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 
 	// nothing to commit: push what is already committed
 	err = repo.Commit(message, ".")
 	if err != nil && !errors.Is(err, gogit.ErrEmptyCommit) {
-		return nil, err
+		return false, err
 	}
 
-	err = repo.Push()
-	if err != nil {
-		return nil, err
-	}
-
-	return repo, nil
+	return repo.PushNew()
 }

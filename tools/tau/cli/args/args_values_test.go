@@ -52,3 +52,15 @@ func TestFlagValueIsNotACommand(t *testing.T) {
 		}
 	}
 }
+
+// An empty value belongs to its flag; moved on its own it became the command.
+func TestEmptyFlagValueStaysWithItsFlag(t *testing.T) {
+	commands := []*cli.Command{{Name: "new", Subcommands: []*cli.Command{{
+		Name:  "function",
+		Flags: []cli.Flag{&cli.StringFlag{Name: "description", Aliases: []string{"d"}}},
+	}}}}
+	got := ParseArguments(nil, commands, "tau", "new", "function", "--description", "", "foo")
+	if want := []string{"tau", "new", "function", "--description", "", "foo"}; !slices.Equal(got, want) {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
