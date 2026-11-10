@@ -222,7 +222,7 @@ func TestHealing_HealAck_Signal(t *testing.T) {
 // they could see each other, then were connected: a split brain, each side
 // holding a write the other never saw. The bootstrap timeout leaves a yielding
 // node's discovery time to find the other side.
-func splitPair(t *testing.T, namespace string, extra ...Option) (a, b Cluster) {
+func splitPair(t *testing.T, namespace string, extra ...Option) (winner, loser *cluster) {
 	t.Helper()
 	nodeA := newMockNode(t)
 	nodeB := newMockNode(t)
@@ -233,7 +233,7 @@ func splitPair(t *testing.T, namespace string, extra ...Option) (a, b Cluster) {
 	a, err := New(nodeA, namespace, opts()...)
 	require.NoError(t, err)
 	t.Cleanup(func() { a.Close() })
-	b, err = New(nodeB, namespace, opts()...)
+	b, err := New(nodeB, namespace, opts()...)
 	require.NoError(t, err)
 	t.Cleanup(func() { b.Close() })
 
@@ -242,13 +242,17 @@ func splitPair(t *testing.T, namespace string, extra ...Option) (a, b Cluster) {
 	require.NoError(t, a.Set("from-a", []byte("a"), time.Second))
 	require.NoError(t, b.Set("from-b", []byte("b"), time.Second))
 
+	winner, loser = winnerOf(a, b)
 	require.NoError(t, taupeer.LinkAllPeers())
 	require.NoError(t, nodeB.Host().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Host().Addrs()}))
 	a.(*cluster).current().tracker.addPeer(nodeB.ID())
 	b.(*cluster).current().tracker.addPeer(nodeA.ID())
-	return a, b
+	return winner, loser
 }
 
+// winnerOf orders a pair winner first, as the healer negotiates it. It is asked
+// before the pair is connected: once connected, they meet and merge on their own,
+// and a loser rebuilding as it yields has no healer to ask.
 func winnerOf(a, b Cluster) (winner, loser *cluster) {
 	ca, cb := a.(*cluster), b.(*cluster)
 	if negotiateWinner(ca.current().healer.Load().localClusterInfo(), cb.current().healer.Load().localClusterInfo()) == ca.ID().String() {
@@ -264,8 +268,7 @@ func holdsEverything(cl Cluster) bool {
 }
 
 func TestHealing_ALoserRejoinsTheGroupItYieldedTo(t *testing.T) {
-	a, b := splitPair(t, "heal-rejoin")
-	winner, loser := winnerOf(a, b)
+	winner, loser := splitPair(t, "heal-rejoin")
 
 	winner.current().healer.Load().executeMerge(t.Context(), loser.ID())
 
@@ -274,9 +277,9 @@ func TestHealing_ALoserRejoinsTheGroupItYieldedTo(t *testing.T) {
 		return err == nil && len(members) == 2
 	}, 20*time.Second, 50*time.Millisecond, "the loser never joined the winner's group")
 	require.Eventually(t, func() bool {
-		return holdsEverything(a) && holdsEverything(b)
+		return holdsEverything(winner) && holdsEverything(loser)
 	}, 10*time.Second, 50*time.Millisecond, "the healed group does not hold both sides' writes")
-	leaderOf(t, a, b)
+	leaderOf(t, winner, loser)
 }
 
 func TestHealing_AYieldWaitsForTheRaftItReplaces(t *testing.T) {
@@ -1141,8 +1144,7 @@ func TestHealing_AMergeTellsOnlyTheMergedGroupToYield(t *testing.T) {
 	// ONLY THE MERGE BELOW: the third group meeting the winner as it is identified
 	// would be a merge of its own, and correctly told to yield.
 	const namespace = "heal-only-merged"
-	a, b := splitPair(t, namespace, withoutMeetingIdentified())
-	winner, loser := winnerOf(a, b)
+	winner, loser := splitPair(t, namespace, withoutMeetingIdentified())
 
 	node := newMockNode(t)
 	third, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), withoutMeetingIdentified())
@@ -1316,9 +1318,9 @@ func soloPair(t *testing.T, namespace string) (winner, loser *cluster) {
 		require.NoError(t, cl.Set(key, []byte(key[len(key)-1:]), time.Second))
 		solos = append(solos, cl.(*cluster))
 	}
+	winner, loser = winnerOf(solos[0], solos[1])
 	require.NoError(t, taupeer.LinkAllPeers())
 	require.NoError(t, solos[0].Host().Connect(t.Context(), peer.AddrInfo{ID: solos[1].ID(), Addrs: solos[1].Host().Addrs()}))
-	winner, loser = winnerOf(solos[0], solos[1])
 	return winner, loser
 }
 
