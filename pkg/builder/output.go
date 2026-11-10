@@ -47,6 +47,34 @@ func outputDirHasNoFiles(dir string) (bool, error) {
 	return !hasFile, nil
 }
 
+// archive is a build's compressed output. It lives in a directory of its own,
+// never under the source directory: the build controls that directory, and a
+// link it leaves there would redirect the write anywhere on the node.
+// Closing it removes the archive and the build's output directory; nothing
+// else does, and a node builds all day.
+type archive struct {
+	*os.File
+	dir    string
+	outDir string
+}
+
+func (a *archive) Close() error {
+	err := a.File.Close()
+	os.RemoveAll(a.dir)
+	if a.outDir != "" {
+		os.RemoveAll(a.outDir)
+	}
+	return err
+}
+
+// newArchivePath returns a path for the archive in a fresh private directory.
+func newArchivePath(name string) (dir, path string, err error) {
+	if dir, err = os.MkdirTemp("", "tau-build-*"); err != nil {
+		return "", "", fmt.Errorf("creating archive directory failed with: %w", err)
+	}
+	return dir, filepath.Join(dir, name), nil
+}
+
 // zipOutput archives one file the build produced.
 //
 // The output directory is written by the build, so a path under it is resolved
@@ -72,36 +100,74 @@ func (o *output) zipOutput(source, target string) (*os.File, error) {
 
 // Compress takes a CompressionMethod, and returns the compressed output of the files built by Build
 func (o *output) Compress(method builders.CompressionMethod) (io.ReadSeekCloser, error) {
-	var (
-		zippedFile *os.File
-		err        error
-	)
-
 	switch method {
 	case builders.WASM:
 		if DeprecatedWasmBuild {
 			return o.handleDeprecated()
 		}
 
-		// Try for both artifact/main.wasm
-		zippedFile, err = o.zipOutput(wasm.WasmOutput(o.outDir), o.wd.Wasm().Zip())
+		dir, target, err := newArchivePath(filepath.Base(o.wd.Wasm().Zip()))
 		if err != nil {
-			zippedFile, err = o.zipOutput(wasm.WasmDeprecatedOutput(o.outDir), o.wd.Wasm().Zip())
+			return nil, err
 		}
+
+		// Try for both artifact/main.wasm
+		zippedFile, err := o.zipOutput(wasm.WasmOutput(o.outDir), target)
+		if err != nil {
+			zippedFile, err = o.zipOutput(wasm.WasmDeprecatedOutput(o.outDir), target)
+		}
+		return o.finish(dir, zippedFile, "zipping bundle failed with: %w", err)
 	case builders.Website:
 		noFiles, err := outputDirHasNoFiles(o.outDir)
 		if err != nil {
+			o.dropOutDir()
 			return nil, fmt.Errorf("checking website output directory failed with: %w", err)
 		}
 		if noFiles {
+			o.dropOutDir()
 			return nil, fmt.Errorf("website build produced no output: output directory is empty")
 		}
-		zippedFile, err = bundle.Zip(bundle.ZipDir, o.outDir, o.wd.Website().BuildZip())
+
+		dir, target, err := newArchivePath(filepath.Base(o.wd.Website().BuildZip()))
+		if err != nil {
+			return nil, err
+		}
+
+		zippedFile, err := bundle.Zip(bundle.ZipDir, o.outDir, target)
+		return o.finish(dir, zippedFile, "zipping bundle failed with: %w", err)
 	default:
 		return nil, fmt.Errorf("compression method `%d` not supported", method)
 	}
+}
 
-	return rewindAndHandleError(zippedFile, "zipping bundle failed with: %w", err)
+// finish wraps a written archive so closing it cleans up, or removes the
+// archive directory when writing it failed.
+func (o *output) finish(dir string, file *os.File, errFormat string, err error) (io.ReadSeekCloser, error) {
+	if err != nil || file == nil {
+		if file != nil {
+			file.Close()
+		}
+		os.RemoveAll(dir)
+		o.dropOutDir()
+		if err == nil {
+			err = fmt.Errorf("nil ReadSeekCloser")
+		}
+		return nil, fmt.Errorf(errFormat, err)
+	}
+
+	a := &archive{File: file, dir: dir, outDir: o.outDir}
+	rsc, err := rewindAndHandleError(a, errFormat, nil)
+	if err != nil {
+		a.Close()
+	}
+	return rsc, err
+}
+
+// dropOutDir removes the build output once nothing can use it.
+func (o *output) dropOutDir() {
+	if o.outDir != "" {
+		os.RemoveAll(o.outDir)
+	}
 }
 
 func rewindAndHandleError(rsc io.ReadSeekCloser, errFormat string, err error) (io.ReadSeekCloser, error) {
@@ -121,10 +187,11 @@ func rewindAndHandleError(rsc io.ReadSeekCloser, errFormat string, err error) (i
 }
 
 func (o *output) handleDeprecated() (io.ReadSeekCloser, error) {
-	compressedWasm, err := bundle.Compress(wasm.WasmOutput(o.outDir), o.wd.Wasm().WasmCompressed(), wasm.BufferSize)
+	dir, target, err := newArchivePath(filepath.Base(o.wd.Wasm().WasmCompressed()))
 	if err != nil {
 		return nil, err
 	}
 
-	return rewindAndHandleError(compressedWasm, "compressing wasm failed with: %w", err)
+	compressedWasm, err := bundle.Compress(wasm.WasmOutput(o.outDir), target, wasm.BufferSize)
+	return o.finish(dir, compressedWasm, "compressing wasm failed with: %w", err)
 }

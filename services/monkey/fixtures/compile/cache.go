@@ -39,6 +39,7 @@ func (ctx resourceContext) stashCached(id, ext string, build func() (io.ReadSeek
 	}
 
 	if ctx.forceBuild {
+		defer reader.Close()
 		return ctx.stashAndPush(id, reader)
 	}
 

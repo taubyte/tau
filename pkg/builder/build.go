@@ -2,6 +2,7 @@ package builder
 
 import (
 	"encoding/json"
+	"os"
 	"time"
 
 	"github.com/taubyte/tau/core/builders"
@@ -31,6 +32,9 @@ func (b *builder) Build(ops ...ci.ContainerOption) (builders.Output, error) {
 			Timestamp: time.Now().UnixNano(),
 			Error:     err.Error(),
 		})
+		if out.outDir != "" {
+			os.RemoveAll(out.outDir)
+		}
 		return nil, err
 	}
 

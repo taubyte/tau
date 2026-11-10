@@ -6,6 +6,8 @@ import (
 	"io"
 	"testing"
 
+	goCid "github.com/ipfs/go-cid"
+
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
 	"github.com/taubyte/tau/pkg/vm/backend/dfs"
 	fixtures "github.com/taubyte/tau/pkg/vm/fixtures/wasm"
@@ -45,8 +47,9 @@ func TestLoader(t *testing.T) {
 	// Test Failures
 
 	// Delete ipfs stored file
-	err = simple.DeleteFile(cid)
+	root, err := goCid.Decode(cid)
 	assert.NilError(t, err)
+	assert.NilError(t, simple.DAG().Remove(tctx.Context(), root))
 
 	// No Reader Error: All backends have been checked, but all returned nil readers.
 	if _, err = loader.Load(tctx, moduleName); err == nil {

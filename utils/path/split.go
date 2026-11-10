@@ -2,6 +2,7 @@ package path
 
 import (
 	pathUtils "path"
+	"strings"
 )
 
 /*
@@ -15,8 +16,11 @@ Split will evaluate `/home/taubyte` as []string{"home", "taubyte"}
 */
 func Split(path string) []string {
 	names := make([]string, 0)
-	for _parent, _cur := pathUtils.Split(pathUtils.Clean(path)); _parent != "/" || _cur != ""; _parent, _cur = pathUtils.Split(pathUtils.Clean(_parent)) {
-		names = append([]string{_cur}, names...)
+	// The old loop walked up to "/" and never ended for a relative path.
+	for _, name := range strings.Split(pathUtils.Clean(path), "/") {
+		if name != "" && name != "." {
+			names = append(names, name)
+		}
 	}
 	return names
 }

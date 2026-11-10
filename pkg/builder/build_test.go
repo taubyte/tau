@@ -45,8 +45,9 @@ func TestBasicWebsite(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, rsk != nil, "expected zipped website to not be nil")
 
-	_, err = os.Stat(path.Join(repo.Dir(), "build.zip"))
+	_, err = os.Stat(rsk.(interface{ Name() string }).Name())
 	assert.NilError(t, err)
+	assert.NilError(t, rsk.Close())
 }
 
 func TestWasmBasic(t *testing.T) {
@@ -91,6 +92,7 @@ func TestWasmBasic(t *testing.T) {
 	}
 	assert.NilError(t, err)
 
-	_, err = os.Stat(builder.Wd().Wasm().Zip())
+	_, err = os.Stat(rsk.(interface{ Name() string }).Name())
 	assert.NilError(t, err)
+	assert.NilError(t, rsk.Close())
 }

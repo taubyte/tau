@@ -65,7 +65,6 @@ func TestCompressWebsite_NonEmptyOutDir(t *testing.T) {
 	assert.Assert(t, rsc != nil, "expected non-nil ReadSeekCloser")
 	defer rsc.Close()
 
-	zipPath := wd.Website().BuildZip()
-	_, err = os.Stat(zipPath)
+	_, err = os.Stat(rsc.(interface{ Name() string }).Name())
 	assert.NilError(t, err)
 }

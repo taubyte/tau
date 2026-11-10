@@ -40,7 +40,8 @@ type Source struct {
 	// Tenancy names the git namespace that owns this cloud. Unlike Accounts it
 	// is emitted to every shape, so any service can compare a repository's
 	// owner against it without a client or an API call.
-	Tenancy Tenancy `yaml:"tenancy,omitempty"`
+	Tenancy   Tenancy   `yaml:"tenancy,omitempty"`
+	Substrate Substrate `yaml:"substrate,omitempty"`
 	// Enterprise namespaces raw config for enterprise-only services under
 	// `enterprise:` in the shape config. Community builds carry it opaquely;
 	// `//go:build ee` code decodes each service's entry into its own typed
@@ -48,6 +49,16 @@ type Source struct {
 	Enterprise map[string]yaml.Node `yaml:"enterprise,omitempty"`
 	Plugins
 }
+
+// Substrate holds substrate-only settings.
+type Substrate struct {
+	// Migration runs the node-local data migration at boot (default on);
+	// `substrate: {migration: false}` turns it off.
+	Migration *bool `yaml:"migration,omitempty"`
+}
+
+// MigrationEnabled reports whether the node-local data migration runs.
+func (s Substrate) MigrationEnabled() bool { return s.Migration == nil || *s.Migration }
 
 type BundleOrigin struct {
 	Shape     string    `yaml:"shape"`

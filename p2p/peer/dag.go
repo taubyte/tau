@@ -114,9 +114,15 @@ func (d *DAGService) Close() error {
 }
 
 // AddFile chunks and stores a reader as a UnixFS DAG, returning the root node.
-// Frozen ipfs-lite defaults: CIDv1, sha2-256, balanced layout, default chunker,
-// RawLeaves=false — these determine the CID and MUST NOT change.
 func (d *DAGService) AddFile(ctx context.Context, r io.Reader, _ any) (ipld.Node, error) {
+	return buildUnixFS(d, r)
+}
+
+// buildUnixFS is the one place the UnixFS import params live, shared by
+// AddFile and CidOf. Frozen ipfs-lite defaults: CIDv1, sha2-256, balanced
+// layout, default chunker, RawLeaves=false — these determine the CID and MUST
+// NOT change.
+func buildUnixFS(ds ipld.DAGService, r io.Reader) (ipld.Node, error) {
 	prefix, err := merkledag.PrefixForCidVersion(1)
 	if err != nil {
 		return nil, fmt.Errorf("bad CID version: %w", err)
@@ -124,16 +130,26 @@ func (d *DAGService) AddFile(ctx context.Context, r io.Reader, _ any) (ipld.Node
 	prefix.MhType = multihash.SHA2_256
 	prefix.MhLength = -1
 
-	dbp := ihelpers.DagBuilderParams{
-		Dagserv:    d,
+	dbh, err := (&ihelpers.DagBuilderParams{
+		Dagserv:    ds,
 		Maxlinks:   ihelpers.DefaultLinksPerBlock,
 		CidBuilder: &prefix,
-	}
-	dbh, err := dbp.New(chunker.DefaultSplitter(r))
+	}).New(chunker.DefaultSplitter(r))
 	if err != nil {
 		return nil, err
 	}
 	return balanced.Layout(dbh)
+}
+
+// CidOf returns the CID AddFile would give r, storing nothing: the balanced
+// importer only ever Adds blocks, so a DAG service over a null datastore is enough.
+func CidOf(r io.Reader) (string, error) {
+	ds := merkledag.NewDAGService(blockservice.New(blockstore.NewBlockstore(datastore.NewNullDatastore()), nil))
+	n, err := buildUnixFS(ds, r)
+	if err != nil {
+		return "", err
+	}
+	return n.Cid().String(), nil
 }
 
 // GetFile returns a reader to a UnixFS file identified by its root CID.
@@ -174,23 +190,6 @@ type ReadSeekCloser interface {
 }
 
 var errorClosed = errors.New("node is closed")
-
-func (p *node) DeleteFile(id string) error {
-	if p.closed.Load() {
-		return errorClosed
-	}
-
-	_cid, err := cid.Decode(id)
-	if err != nil {
-		return fmt.Errorf("decoding CID %q failed: %w", id, err)
-	}
-
-	if err := p.dag.Remove(p.ctx, _cid); err != nil {
-		return fmt.Errorf("removing file with CID %q failed: %w", id, err)
-	}
-
-	return nil
-}
 
 func (p *node) AddFile(r io.Reader) (_cid string, err error) {
 	if p.closed.Load() {

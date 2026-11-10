@@ -5,11 +5,25 @@ import (
 	"fmt"
 	"strings"
 
+	gomh "github.com/multiformats/go-multihash"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	tnsIface "github.com/taubyte/tau/core/services/tns"
 	spec "github.com/taubyte/tau/pkg/specs/common"
 	mh "github.com/taubyte/tau/utils/multihash"
 )
+
+// splitForeign separates names that cannot be an instance hash (service
+// databases such as auth, patrick, tns, hoarder): they are never substrate's.
+func splitForeign(hashes []string) (ours, foreign []string) {
+	for _, h := range hashes {
+		if _, err := gomh.FromB58String(h); err != nil {
+			foreign = append(foreign, h)
+		} else {
+			ours = append(ours, h)
+		}
+	}
+	return ours, foreign
+}
 
 // resolve maps local namespace hashes to instance identities. Two sources:
 //

@@ -72,6 +72,7 @@ func WithSource(src *Source, opts SourceOptions) Option {
 		c.acmeCAARecord = defaultCAARecord
 		c.accounts = src.Accounts
 		c.tenancy = src.Tenancy
+		c.substrate = src.Substrate
 		c.enterprise = src.Enterprise
 
 		if c.swarmKey, err = loadSwarmKey(swarmPath); err != nil {

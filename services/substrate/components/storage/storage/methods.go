@@ -11,6 +11,7 @@ import (
 
 	"github.com/ipfs/go-cid"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
+	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/services/substrate/components/storage/common"
 	pathUtil "github.com/taubyte/tau/utils/path"
 
@@ -127,11 +128,13 @@ func (s *Store) AddFile(ctx context.Context, r io.ReadSeeker, name string, repla
 		return
 	}
 
-	// Compute the CID locally, stash the bytes to hoarders (owned by this
-	// storage instance), then drop the local copy — substrate holds no data.
-	cid, err := s.srv.Node().AddFile(r)
+	// Hash the bytes without storing them, then stash them to hoarders (owned
+	// by this storage instance): substrate holds no data. Writing them locally
+	// and dropping them afterwards deleted the local hoarder's own copy, which
+	// shares this node's blockstore.
+	cid, err := peer.CidOf(r)
 	if err != nil {
-		err = fmt.Errorf("adding file to peer node failed with: %w", err)
+		err = fmt.Errorf("computing file cid failed with: %w", err)
 		return
 	}
 
@@ -143,7 +146,6 @@ func (s *Store) AddFile(ctx context.Context, r io.ReadSeeker, name string, repla
 		err = fmt.Errorf("stashing file to hoarder failed with: %w", err)
 		return
 	}
-	s.srv.Node().DeleteFile(cid) //nolint:errcheck // best-effort local drop
 
 	if err = s.put(ctx, path.Join(storageSpec.FilePath.String(), name, versionString), []byte(cid)); err != nil {
 		err = fmt.Errorf("adding file cid to database failed with: %w", err)
@@ -223,20 +225,16 @@ func (s *Store) delete(ctx context.Context, name string, version string) error {
 		return errors.New("cannot delete file:" + name + ", file size not found")
 	}
 
-	cid, err := s.Get(ctx, path.Join(storageSpec.FilePath.String(), name, version))
-	if err != nil {
+	if _, err := s.Get(ctx, path.Join(storageSpec.FilePath.String(), name, version)); err != nil {
 		return errors.New("cannot delete file:" + name + ", not found")
 	}
 
-	if err = s.srv.Node().DeleteFile(string(cid)); err != nil {
-		return fmt.Errorf("failed to delete file: %s, with: %w", name, err)
-	}
-
-	if err = s.Delete(ctx, path.Join(storageSpec.FilePath.String(), name, version)); err != nil {
+	// The bytes stay with the hoarders: other projects may store the same ones.
+	if err := s.Delete(ctx, path.Join(storageSpec.FilePath.String(), name, version)); err != nil {
 		return fmt.Errorf("failed to delete cid from key value database with %w", err)
 	}
 
-	if err = s.Delete(ctx, path.Join(common.KvSize, name, version)); err != nil {
+	if err := s.Delete(ctx, path.Join(common.KvSize, name, version)); err != nil {
 		return fmt.Errorf("failed to delete file size from key value database with %w", err)
 
 	}
