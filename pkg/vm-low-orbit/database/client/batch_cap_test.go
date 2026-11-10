@@ -29,3 +29,28 @@ func TestOpenBatchesAreCappedOldestFirst(t *testing.T) {
 		t.Fatalf("got %q, errno %s", v, err)
 	}
 }
+
+// The per-instance bound multiplies with instances: the node bounds what all
+// open batches hold together, and a commit or a drop gives it back.
+func TestQueuedBatchBytesAreBoundedPerNode(t *testing.T) {
+	saved := maxQueuedBatchBytes
+	maxQueuedBatchBytes = 10
+	t.Cleanup(func() { maxQueuedBatchBytes = saved })
+	base := queuedBatchBytes.Load()
+
+	a, b := newEnv(t, nil), newEnv(t, nil)
+	ba, bb := a.batchNew(), b.batchNew()
+	a.ok(a.batchPut(ba, "k1", "vvvv")) // 6 bytes
+	b.want(errno.ErrorDatabasePutFailed, b.batchPut(bb, "k2", "vvvv"))
+
+	a.ok(a.f.databaseBatchCommit(a.ctx, a.mod, ba))
+	if got := queuedBatchBytes.Load(); got != base {
+		t.Fatalf("queued %d after commit, want %d", got, base)
+	}
+	b.ok(b.batchPut(bb, "k2", "vvvv"))
+
+	b.f.Close()
+	if got := queuedBatchBytes.Load(); got != base {
+		t.Fatalf("queued %d after close, want %d", got, base)
+	}
+}
