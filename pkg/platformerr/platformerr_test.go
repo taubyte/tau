@@ -95,3 +95,26 @@ func TestServeLeavesStartedResponse(t *testing.T) {
 		t.Fatalf("%d %q", w.Code, w.Body)
 	}
 }
+
+type countLog struct{ debug, errors int }
+
+func (l *countLog) Debugf(string, ...any) { l.debug++ }
+func (l *countLog) Errorf(string, ...any) { l.errors++ }
+
+// A refused request is normal back-pressure: under load one ERROR each is thousands of lines a minute.
+func TestServeLogsRefusalsAtDebug(t *testing.T) {
+	for _, c := range []Code{NodeBusy, OverQuota} {
+		l := &countLog{}
+		Serve(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil), l, func(http.ResponseWriter, *http.Request) error {
+			return New(c, errors.New("full"))
+		})
+		if l.errors != 0 || l.debug != 1 {
+			t.Fatalf("%s: %d errors, %d debug", c, l.errors, l.debug)
+		}
+	}
+	l := &countLog{}
+	Serve(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil), l, func(http.ResponseWriter, *http.Request) error { return errors.New("boom") })
+	if l.errors != 1 {
+		t.Fatalf("a real failure must stay at error: %d", l.errors)
+	}
+}
