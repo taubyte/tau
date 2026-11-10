@@ -155,3 +155,24 @@ func TestACallToANodeThatDoesNotServeTheProtocolNeverReachedIt(t *testing.T) {
 	require.Error(t, err)
 	require.False(t, rpc.Unreached(err), "an answer from the service was taken for an unreached call")
 }
+
+// A NODE STILL LISTED AS SERVING A PROTOCOL IT DOES NOT SERVE is handed the stream
+// before it answers, so its refusal comes after the dial: on the call, or as a conn
+// that closed before the call was sent. Which one is timing, so it is asked more
+// than once.
+func TestACallToANodeListedForAProtocolItDoesNotServeNeverReachedIt(t *testing.T) {
+	from, to := twoHosts(t)
+	require.Eventually(t, func() bool {
+		known, err := from.Peerstore().GetProtocols(to.ID())
+		return err == nil && len(known) > 0
+	}, 5*time.Second, 10*time.Millisecond, "identify never told the caller what the node serves")
+	require.NoError(t, from.Peerstore().AddProtocols(to.ID(), testProtocol))
+
+	for range 20 {
+		conn, err := rpc.NewClient(from, to.ID(), testProtocol)
+		require.NoError(t, err)
+		_, err = echov1connect.NewEchoServiceClient(conn.HTTP(), conn.URL()).Unary(t.Context(), connect.NewRequest(&echov1.EchoRequest{}))
+		conn.Close()
+		require.True(t, rpc.Unreached(err), "a refusal after the dial was taken for an answer: %v", err)
+	}
+}
