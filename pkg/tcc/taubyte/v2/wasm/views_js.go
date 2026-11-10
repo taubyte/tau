@@ -71,8 +71,8 @@ func viewsResult(flat map[string]any, environment string, r schema.Regions) map[
 //	{ canonical, destinations, named, views, notes, refused? } | { error }
 //
 // The canonical object travels with the views: an editor still needs all of it.
-func sessionViewsFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
+func (b *bridge) sessionViewsFn(_ js.Value, args []js.Value) any {
+	s, e := b.lookup(args)
 	if e != nil {
 		return e
 	}

@@ -67,8 +67,6 @@ var allowed = map[string]string{
 	"pkg/containers/backends/containerd.treeErr":  "the process's own cgroup, which preparing moves the process into: once per process",
 	"pkg/kvdb.contextGens":                        "a source of unique numbers, shared only in being unique",
 	"pkg/kvdb.replicas":                           "interns the replica ids every key parse names, the same strings whichever store asks; a table per store would be threaded through every parse on the hot path",
-	"pkg/tcc/taubyte/v2/wasm.sessions":            "the JS bridge's handles: JS calls exported functions, which have no receiver to hold them",
-	"pkg/tcc/taubyte/v2/wasm.nextHandle":          "the JS bridge's handles: JS calls exported functions, which have no receiver to hold them",
 	"pkg/forge/bitbucket.routesMu":                "routes enrol as the package's vars initialise, and are read-only once they have",
 	"pkg/forge/bitbucket.routeTable":              "routes enrol as the package's vars initialise, and are read-only once they have",
 	"pkg/forge/bitbucket.enrolled":                "routes enrol as the package's vars initialise, and are read-only once they have",

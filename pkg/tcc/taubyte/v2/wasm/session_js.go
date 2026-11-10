@@ -18,23 +18,27 @@ import (
 // An editable session (pkg/tcc/session via schema.Session) behind a handle table;
 // this file is only JS<->Go marshaling. The config stays in wasm.
 
-var (
-	sessions   = map[int]*schema.Session{}
-	nextHandle = 1
-)
+// bridge is the sessions JS has open, by handle. JS calls its methods, bound when
+// main registers them.
+type bridge struct {
+	sessions map[int]*schema.Session
+	next     int
+}
 
-func register(s *schema.Session) int {
-	h := nextHandle
-	nextHandle++
-	sessions[h] = s
+func newBridge() *bridge { return &bridge{sessions: map[int]*schema.Session{}, next: 1} }
+
+func (b *bridge) register(s *schema.Session) int {
+	h := b.next
+	b.next++
+	b.sessions[h] = s
 	return h
 }
 
-func lookup(args []js.Value) (*schema.Session, any) {
+func (b *bridge) lookup(args []js.Value) (*schema.Session, any) {
 	if len(args) < 1 {
 		return nil, errResult("missing session handle")
 	}
-	s, ok := sessions[args[0].Int()]
+	s, ok := b.sessions[args[0].Int()]
 	if !ok {
 		return nil, errResult("invalid or closed session handle")
 	}
@@ -63,7 +67,7 @@ func errFrom(err error) any {
 
 // openSession(fsPrimitives) -> handle : stage a project's YAML into a private
 // session. The caller's filesystem is read once and never written until save.
-func openSessionFn(_ js.Value, args []js.Value) any {
+func (b *bridge) openSessionFn(_ js.Value, args []js.Value) any {
 	if len(args) < 1 {
 		return errResult("openSession: expected (fsPrimitives)")
 	}
@@ -71,13 +75,13 @@ func openSessionFn(_ js.Value, args []js.Value) any {
 	if err != nil {
 		return errResult("openSession: " + err.Error())
 	}
-	return register(s)
+	return b.register(s)
 }
 
 // decompileSession(compiledObject) -> handle : render a compiled object back to
 // config on a private filesystem and open a session over it, so an object that
 // arrived from anywhere becomes editable without a repo behind it.
-func decompileSessionFn(_ js.Value, args []js.Value) any {
+func (b *bridge) decompileSessionFn(_ js.Value, args []js.Value) any {
 	if len(args) < 1 {
 		return errResult("decompileSession: expected (compiledObject)")
 	}
@@ -94,12 +98,12 @@ func decompileSessionFn(_ js.Value, args []js.Value) any {
 	if err != nil {
 		return errResult(err.Error())
 	}
-	return register(s)
+	return b.register(s)
 }
 
 // sessionGet(handle, resourcePath[], fieldPath[]) -> value | null(absent)
-func sessionGetFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
+func (b *bridge) sessionGetFn(_ js.Value, args []js.Value) any {
+	s, e := b.lookup(args)
 	if e != nil {
 		return e
 	}
@@ -120,8 +124,8 @@ func sessionGetFn(_ js.Value, args []js.Value) any {
 }
 
 // sessionSet(handle, resourcePath[], fieldPath[], value)
-func sessionSetFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
+func (b *bridge) sessionSetFn(_ js.Value, args []js.Value) any {
+	s, e := b.lookup(args)
 	if e != nil {
 		return e
 	}
@@ -140,8 +144,8 @@ func sessionSetFn(_ js.Value, args []js.Value) any {
 
 // sessionDelete(handle, resourcePath[], fieldPath[]?) : the whole resource when no
 // field is named, one field when there is.
-func sessionDeleteFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
+func (b *bridge) sessionDeleteFn(_ js.Value, args []js.Value) any {
+	s, e := b.lookup(args)
 	if e != nil {
 		return e
 	}
@@ -163,8 +167,8 @@ func sessionDeleteFn(_ js.Value, args []js.Value) any {
 }
 
 // sessionList(handle, path[]) -> string[]
-func sessionListFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
+func (b *bridge) sessionListFn(_ js.Value, args []js.Value) any {
+	s, e := b.lookup(args)
 	if e != nil {
 		return e
 	}
@@ -205,8 +209,8 @@ func compileOpts(args []js.Value, optIdx int) schema.CompileOptions {
 }
 
 // sessionCompile(handle, opts?) -> { object, indexes, validations }
-func sessionCompileFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
+func (b *bridge) sessionCompileFn(_ js.Value, args []js.Value) any {
+	s, e := b.lookup(args)
 	if e != nil {
 		return e
 	}
@@ -220,8 +224,8 @@ func sessionCompileFn(_ js.Value, args []js.Value) any {
 }
 
 // sessionValidate(handle, opts?) -> { validations } : whole-config diagnostics only.
-func sessionValidateFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
+func (b *bridge) sessionValidateFn(_ js.Value, args []js.Value) any {
+	s, e := b.lookup(args)
 	if e != nil {
 		return e
 	}
@@ -234,8 +238,8 @@ func sessionValidateFn(_ js.Value, args []js.Value) any {
 
 // sessionValidateField(handle, resourcePath[], fieldPath[], value) : one field's
 // single-value validator, no compile. null | { error }.
-func sessionValidateFieldFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
+func (b *bridge) sessionValidateFieldFn(_ js.Value, args []js.Value) any {
+	s, e := b.lookup(args)
 	if e != nil {
 		return e
 	}
@@ -255,8 +259,8 @@ func sessionValidateFieldFn(_ js.Value, args []js.Value) any {
 // sessionValidateResource(handle, resourcePath[]) -> { issues: [{field, message}] } :
 // every single-value validator of one resource, no compile, each issue attributed to
 // the field that failed. Empty means locally valid.
-func sessionValidateResourceFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
+func (b *bridge) sessionValidateResourceFn(_ js.Value, args []js.Value) any {
+	s, e := b.lookup(args)
 	if e != nil {
 		return e
 	}
@@ -277,8 +281,8 @@ func sessionValidateResourceFn(_ js.Value, args []js.Value) any {
 // sessionSerialize(handle, resourcePath[]) -> { path, yaml } : one resource's
 // document, comments preserved. The caller never names the file — where a document
 // lives is the DSL's, and a caller that named it would read a path tcc never wrote.
-func sessionSerializeFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
+func (b *bridge) sessionSerializeFn(_ js.Value, args []js.Value) any {
+	s, e := b.lookup(args)
 	if e != nil {
 		return e
 	}
@@ -298,8 +302,8 @@ func sessionSerializeFn(_ js.Value, args []js.Value) any {
 
 // sessionLocation(handle, resourcePath[]) -> string : where the document lives,
 // without reading it. serialize() when the YAML is wanted; this when the path is.
-func sessionLocationFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
+func (b *bridge) sessionLocationFn(_ js.Value, args []js.Value) any {
+	s, e := b.lookup(args)
 	if e != nil {
 		return e
 	}
@@ -319,8 +323,8 @@ func sessionLocationFn(_ js.Value, args []js.Value) any {
 
 // sessionSetResource(handle, resourcePath[], doc) : make the document equal doc, as
 // the minimal set/delete ops, so untouched YAML — comments included — survives.
-func sessionSetResourceFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
+func (b *bridge) sessionSetResourceFn(_ js.Value, args []js.Value) any {
+	s, e := b.lookup(args)
 	if e != nil {
 		return e
 	}
@@ -343,8 +347,8 @@ func sessionSetResourceFn(_ js.Value, args []js.Value) any {
 
 // sessionResourceAt(handle, repoPath) -> string[] | null : the canonical address of
 // the resource a repo-relative YAML path holds, null when it holds none.
-func sessionResourceAtFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
+func (b *bridge) sessionResourceAtFn(_ js.Value, args []js.Value) any {
+	s, e := b.lookup(args)
 	if e != nil {
 		return e
 	}
@@ -360,8 +364,8 @@ func sessionResourceAtFn(_ js.Value, args []js.Value) any {
 
 // sessionKinds(handle) -> [{name, group, container}] : the DSL's resource kinds, for
 // a consumer that routes on a kind string rather than a static accessor.
-func sessionKindsFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
+func (b *bridge) sessionKindsFn(_ js.Value, args []js.Value) any {
+	s, e := b.lookup(args)
 	if e != nil {
 		return e
 	}
@@ -374,8 +378,8 @@ func sessionKindsFn(_ js.Value, args []js.Value) any {
 
 // sessionAddress(handle, kind, name, app?) -> string[] : one resource's canonical
 // address, by kind — no group-name table or plural rule on the caller's side.
-func sessionAddressFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
+func (b *bridge) sessionAddressFn(_ js.Value, args []js.Value) any {
+	s, e := b.lookup(args)
 	if e != nil {
 		return e
 	}
@@ -394,8 +398,8 @@ func sessionAddressFn(_ js.Value, args []js.Value) any {
 }
 
 // sessionNames(handle, kind, app?) -> string[] : the instances of a kind in scope.
-func sessionNamesFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
+func (b *bridge) sessionNamesFn(_ js.Value, args []js.Value) any {
+	s, e := b.lookup(args)
 	if e != nil {
 		return e
 	}
@@ -415,8 +419,8 @@ func sessionNamesFn(_ js.Value, args []js.Value) any {
 
 // sessionExists(handle, resourcePath[]) -> bool : what tells an editor whether it is
 // creating a resource or editing one.
-func sessionExistsFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
+func (b *bridge) sessionExistsFn(_ js.Value, args []js.Value) any {
+	s, e := b.lookup(args)
 	if e != nil {
 		return e
 	}
@@ -428,8 +432,8 @@ func sessionExistsFn(_ js.Value, args []js.Value) any {
 
 // sessionGenerate(handle, resourcePath[], fieldPath[]) -> string : mint a value for
 // a DSL-generated field, so no consumer carries its own "how do I make an id".
-func sessionGenerateFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
+func (b *bridge) sessionGenerateFn(_ js.Value, args []js.Value) any {
+	s, e := b.lookup(args)
 	if e != nil {
 		return e
 	}
@@ -449,8 +453,8 @@ func sessionGenerateFn(_ js.Value, args []js.Value) any {
 
 // sessionComplete(handle, resourcePath[], fieldPath[], partial?) -> string[] :
 // candidates for a field's value, filtered by what the user has typed.
-func sessionCompleteFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
+func (b *bridge) sessionCompleteFn(_ js.Value, args []js.Value) any {
+	s, e := b.lookup(args)
 	if e != nil {
 		return e
 	}
@@ -473,8 +477,8 @@ func sessionCompleteFn(_ js.Value, args []js.Value) any {
 }
 
 // sessionSave(handle, fsPrimitives) : flush the session's YAML back out.
-func sessionSaveFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
+func (b *bridge) sessionSaveFn(_ js.Value, args []js.Value) any {
+	s, e := b.lookup(args)
 	if e != nil {
 		return e
 	}
@@ -489,8 +493,8 @@ func sessionSaveFn(_ js.Value, args []js.Value) any {
 
 // sessionFork(handle) -> forkHandle : a copy-on-write child, so an edit can be made
 // and validated in isolation before the parent ever sees it.
-func sessionForkFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
+func (b *bridge) sessionForkFn(_ js.Value, args []js.Value) any {
+	s, e := b.lookup(args)
 	if e != nil {
 		return e
 	}
@@ -498,12 +502,12 @@ func sessionForkFn(_ js.Value, args []js.Value) any {
 	if err != nil {
 		return errResult(err.Error())
 	}
-	return register(f)
+	return b.register(f)
 }
 
 // sessionMerge(forkHandle) : collapse a fork's validated changes onto its parent.
-func sessionMergeFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
+func (b *bridge) sessionMergeFn(_ js.Value, args []js.Value) any {
+	s, e := b.lookup(args)
 	if e != nil {
 		return e
 	}
@@ -513,12 +517,12 @@ func sessionMergeFn(_ js.Value, args []js.Value) any {
 	return js.Null()
 }
 
-func sessionCloseFn(_ js.Value, args []js.Value) any {
+func (b *bridge) sessionCloseFn(_ js.Value, args []js.Value) any {
 	if len(args) >= 1 {
-		if s, ok := sessions[args[0].Int()]; ok {
+		if s, ok := b.sessions[args[0].Int()]; ok {
 			s.Close()
 		}
-		delete(sessions, args[0].Int())
+		delete(b.sessions, args[0].Int())
 	}
 	return js.Null()
 }
