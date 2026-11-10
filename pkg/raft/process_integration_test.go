@@ -78,7 +78,9 @@ func runProcess(dir string) int {
 		if len(f) == 0 {
 			continue
 		}
-		fmt.Println(answer(ctx, node, groups, f))
+		// ONE LINE A REPLY: an error libp2p writes over several lines would
+		// otherwise answer the commands after it.
+		fmt.Println(strings.ReplaceAll(answer(ctx, node, groups, f), "\n", " | "))
 		if f[0] == "quit" {
 			return 0
 		}
