@@ -14,6 +14,7 @@ type responseWriter struct {
 	pack       packer.Packer
 	stream     io.Writer
 	statusCode int32
+	sentHeader bool
 }
 
 type headersOpPayload struct {
@@ -36,6 +37,10 @@ func (w *responseWriter) Header() http.Header {
 }
 
 func (w *responseWriter) Write(b []byte) (int, error) {
+	// as net/http: headers go before the first body byte, or the gateway sends 200 without them
+	if !w.sentHeader {
+		w.WriteHeader(http.StatusOK)
+	}
 	err := w.pack.Send(BodyOp, w.stream, bytes.NewBuffer(b), int64(len(b)))
 	if err != nil {
 		return 0, err
@@ -45,9 +50,11 @@ func (w *responseWriter) Write(b []byte) (int, error) {
 
 // must be called
 func (w *responseWriter) WriteHeader(statusCode int) {
-	if w.statusCode == 0 {
-		w.statusCode = int32(statusCode)
+	if w.sentHeader {
+		return
 	}
+	w.sentHeader = true
+	w.statusCode = int32(statusCode)
 
 	var buf bytes.Buffer
 	enc := cbor.NewEncoder(&buf)

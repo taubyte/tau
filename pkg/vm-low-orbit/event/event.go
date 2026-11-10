@@ -20,6 +20,9 @@ func (f *Factory) AttachEvent(e *Event) {
 func (f *Factory) ReleaseEvent(id uint32) {
 	f.eventsLock.Lock()
 	defer f.eventsLock.Unlock()
+	if e, ok := f.events[id]; ok && e.http != nil {
+		e.http.commit()
+	}
 	delete(f.events, id)
 }
 

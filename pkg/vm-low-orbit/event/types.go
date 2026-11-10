@@ -1,6 +1,7 @@
 package event
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"sync"
@@ -35,4 +36,29 @@ type httpEventAttributes struct {
 	w          http.ResponseWriter
 	queryVars  []string
 	headerVars []string
+
+	// The guest may Write before it Returns its status; net/http would send
+	// 200 on the first Write, so body and status are held until commit.
+	status    int
+	buf       bytes.Buffer
+	committed bool
+}
+
+// maxBuffered caps the held body; past it the status so far is committed and
+// the rest streams. shortcut: Return after >1 MiB of Write still loses the status.
+const maxBuffered = 1 << 20
+
+// commit sends the status (200 if unset) and the held body, once.
+func (a *httpEventAttributes) commit() {
+	if a.committed || a.w == nil {
+		return
+	}
+	a.committed = true
+	if a.status != 0 {
+		a.w.WriteHeader(a.status)
+	}
+	if a.buf.Len() > 0 {
+		a.w.Write(a.buf.Bytes())
+		a.buf = bytes.Buffer{}
+	}
 }

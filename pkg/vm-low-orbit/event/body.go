@@ -64,6 +64,16 @@ func (f *Factory) eventHttpWrite(ctx context.Context, module common.Module, even
 		return uint32(err)
 	}
 
+	e, _ := f.getEvent(eventId)
+	h := e.http
+	if !h.committed && h.buf.Len()+len(buf) > maxBuffered {
+		h.commit()
+	}
+	if !h.committed {
+		h.buf.Write(buf)
+		return uint32(f.WriteUint32Le(module, wroteN, uint32(len(buf))))
+	}
+
 	n, err0 := w.Write(buf)
 	if err0 != nil {
 		f.WriteUint32Le(module, wroteN, uint32(n))
@@ -78,6 +88,9 @@ func (f *Factory) eventHttpFlush(ctx context.Context, module common.Module, even
 	if err != 0 {
 		return uint32(err)
 	}
+
+	e, _ := f.getEvent(eventId)
+	e.http.commit()
 
 	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
