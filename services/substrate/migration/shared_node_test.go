@@ -17,9 +17,9 @@ import (
 	mh "github.com/taubyte/tau/utils/multihash"
 )
 
-// The migration runs only when substrate is alone on its node (new.go skips
-// it otherwise). These tests prove that even there it deletes only what the
-// scrubbed namespaces reach: blocks nothing names, other files' chunks and
+// Scrubbing runs only when substrate is alone on its node (see KeepLocal).
+// These tests prove that even there it deletes only what the scrubbed
+// namespaces reach: blocks nothing names, other files' chunks and
 // non-instance namespaces survive.
 
 func randomBytes(t *testing.T, n int) []byte {
