@@ -22,6 +22,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/network"
 	peercore "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/keypair"
@@ -127,6 +128,48 @@ func answer(ctx context.Context, node taupeer.Node, groups map[string]Cluster, f
 			return "err " + err.Error()
 		}
 		return meet(ctx, node, *at)
+	case f[0] == "dial" && len(f) == 2:
+		// One dial, as a stream that wants a connection makes it.
+		at, err := peercore.AddrInfoFromString(f[1])
+		if err != nil {
+			return "err " + err.Error()
+		}
+		if err := node.Host().Connect(network.WithForceDirectDial(ctx, "one dial"), *at); err != nil {
+			return "err " + err.Error()
+		}
+		return "ok"
+	case f[0] == "drop" && len(f) == 2:
+		id, err := peercore.Decode(f[1])
+		if err != nil {
+			return "err " + err.Error()
+		}
+		if err := node.Host().Network().ClosePeer(id); err != nil {
+			return "err " + err.Error()
+		}
+		return "ok"
+	case f[0] == "ports" && len(f) == 2:
+		// The port this node listens on, and the local port of each connection it
+		// dialed to the peer.
+		id, err := peercore.Decode(f[1])
+		if err != nil {
+			return "err " + err.Error()
+		}
+		listen, err := node.Host().Addrs()[0].ValueForProtocol(multiaddr.P_TCP)
+		if err != nil {
+			return "err " + err.Error()
+		}
+		out := "listen " + listen
+		for _, c := range node.Host().Network().ConnsToPeer(id) {
+			if c.Stat().Direction != network.DirOutbound {
+				continue
+			}
+			local, err := c.LocalMultiaddr().ValueForProtocol(multiaddr.P_TCP)
+			if err != nil {
+				return "err " + err.Error()
+			}
+			out += " dialed " + local
+		}
+		return out
 	case f[0] == "set" && len(f) == 4 && groups[f[1]] != nil:
 		if err := groups[f[1]].Set(f[2], []byte(f[3]), 2*time.Second); err != nil {
 			return "err " + err.Error()
@@ -309,6 +352,9 @@ func (p *process) do(format string, args ...any) string {
 	return p.line()
 }
 
+// id is the child's peer id, the last part of its address.
+func (p *process) id() string { return p.addr[strings.LastIndex(p.addr, "/")+1:] }
+
 func (p *process) open(namespace string, window time.Duration) {
 	p.t.Helper()
 	require.Equal(p.t, "ok", p.do("open %s %s", namespace, window))
@@ -383,6 +429,39 @@ func TestAcrossProcesses_GroupsFormedApartBecomeOneOnceConnected(t *testing.T) {
 		return a.holds("apart", "from-a", "a") && a.holds("apart", "from-b", "b") &&
 			b.holds("apart", "from-a", "a") && b.holds("apart", "from-b", "b")
 	}, 10*time.Second, 100*time.Millisecond, "the group they became lost a side's write")
+}
+
+// TWO NODES DIALING EACH OTHER AT THE SAME INSTANT BOTH CONNECT: a node of the cloud
+// dials from a port of its own, so the two dials are two connections. From the
+// listening ports they would be one, which both took for their own dial, and its TLS
+// handshake would fail on both ends.
+func TestAcrossProcesses_TwoNodesDialingEachOtherAtOnceBothConnect(t *testing.T) {
+	ip := lanIP(t)
+	a, b := spawn(t, ip), spawn(t, ip)
+	dialed := 0
+	for round := range 40 {
+		replies := make([]string, 2)
+		var wg sync.WaitGroup
+		for i, pair := range [][2]*process{{a, b}, {b, a}} {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				replies[i] = pair[0].do("dial %s", pair[1].addr)
+			}()
+		}
+		wg.Wait()
+		require.Equal(t, []string{"ok", "ok"}, replies, "round %d", round)
+
+		ports := strings.Fields(a.do("ports %s", b.id()))
+		require.Equal(t, "listen", ports[0], "%v", ports)
+		for i := 2; i+1 < len(ports); i += 2 {
+			require.NotEqual(t, ports[1], ports[i+1], "a dialed from its listening port")
+			dialed++
+		}
+		require.Equal(t, "ok", a.do("drop %s", b.id()))
+		require.Equal(t, "ok", b.do("drop %s", a.id()))
+	}
+	require.NotZero(t, dialed, "no round left a connection a dialed, so no port was checked")
 }
 
 // A NAMESPACE OPENED AFTER THE NODES MET reaches the others only by identify push,

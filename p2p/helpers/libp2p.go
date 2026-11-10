@@ -48,17 +48,28 @@ func init() {
 	network.DialPeerTimeout = 120 * time.Second
 }
 
+// Libp2pOptionsBase is what every node is built with; its transport is its kind's.
 var Libp2pOptionsBase = []libp2p.Option{
 	libp2p.Ping(true),
 	libp2p.NoTransports,
-	libp2p.Transport(tcp.NewTCPTransport),
 	libp2p.DefaultMuxers,
 }
+
+// TCP is the transport a node of the cloud dials and listens on. It dials from a port
+// of its own, not its listening one: two nodes dialing each other at the same instant
+// from their listening ports open one TCP connection, which both take for their own
+// dial, and its TLS handshake fails on both ends. Only hole punching needs the
+// listening port, and only a client node punches holes (PunchingTCP).
+var TCP = libp2p.Transport(tcp.NewTCPTransport, tcp.DisableReuseport())
+
+// PunchingTCP dials from the listening port, as TCP hole punching needs.
+var PunchingTCP = libp2p.Transport(tcp.NewTCPTransport)
 
 // Libp2pOptionsExtra provides some useful libp2p options
 // to create a fully featured libp2p host. It can be used with
 // SetupLibp2p.
 var Libp2pOptionsFullNode = []libp2p.Option{
+	TCP,
 	libp2p.EnableNATService(),
 	libp2p.EnableRelayService(),
 	func(cfg *p2pConfig.Config) error {
@@ -72,6 +83,7 @@ var Libp2pOptionsFullNode = []libp2p.Option{
 }
 
 var Libp2pOptionsPublicNode = []libp2p.Option{
+	TCP,
 	libp2p.EnableNATService(),
 	libp2p.EnableRelayService(),
 	func(cfg *p2pConfig.Config) error {
@@ -85,6 +97,7 @@ var Libp2pOptionsPublicNode = []libp2p.Option{
 }
 
 var Libp2pOptionsLitePublicNode = []libp2p.Option{
+	TCP,
 	func(cfg *p2pConfig.Config) error {
 		mgr, err := connmgr.NewConnManager(DefaultConnMgrLowWater, DefaultConnMgrHighWater, connmgr.WithGracePeriod(DefaultConnMgrGracePeriod))
 		if err != nil {
@@ -96,6 +109,7 @@ var Libp2pOptionsLitePublicNode = []libp2p.Option{
 }
 
 var Libp2pSimpleNodeOptions = []libp2p.Option{
+	TCP,
 	func(cfg *p2pConfig.Config) error {
 		mgr, err := connmgr.NewConnManager(DefaultConnMgrLowWater, DefaultConnMgrHighWater, connmgr.WithGracePeriod(DefaultConnMgrGracePeriod))
 		if err != nil {
@@ -107,6 +121,7 @@ var Libp2pSimpleNodeOptions = []libp2p.Option{
 }
 
 var Libp2pLitePrivateNodeOptions = []libp2p.Option{
+	PunchingTCP,
 	func(cfg *p2pConfig.Config) error {
 		mgr, err := connmgr.NewConnManager(DefaultConnMgrLowWater, DefaultConnMgrHighWater, connmgr.WithGracePeriod(DefaultConnMgrGracePeriod))
 		if err != nil {
