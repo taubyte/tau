@@ -34,6 +34,14 @@ func Dockerfile(dockerfile string) ImageOption {
 	}
 }
 
+// Rebuild builds the image from its tarball even when one by its name exists.
+func Rebuild() ImageOption {
+	return func(i *DockerImage) error {
+		i.rebuild = true
+		return nil
+	}
+}
+
 func Output(output io.Writer) ImageOption {
 	return func(i *DockerImage) error {
 		i.output = output

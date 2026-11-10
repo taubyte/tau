@@ -1,7 +1,5 @@
 //go:build linux
 
-// This file ensures containerd backend is available on Linux
-
 package containerd
 
 import (
@@ -10,12 +8,11 @@ import (
 	"github.com/taubyte/tau/pkg/containers/core"
 )
 
-func init() {
-	core.RegisterBackend(core.BackendTypeContainerd, func(config core.BackendConfig) (core.Backend, error) {
-		containerdConfig, ok := config.(core.ContainerdConfig)
-		if !ok {
-			return nil, fmt.Errorf("expected ContainerdConfig, got %T", config)
-		}
-		return New(containerdConfig)
-	})
+// Factory builds a containerd backend from a ContainerdConfig.
+func Factory(config core.BackendConfig) (core.Backend, error) {
+	containerdConfig, ok := config.(core.ContainerdConfig)
+	if !ok {
+		return nil, fmt.Errorf("expected ContainerdConfig, got %T", config)
+	}
+	return New(containerdConfig)
 }

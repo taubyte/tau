@@ -5,9 +5,6 @@ import (
 	"fmt"
 
 	"github.com/taubyte/tau/pkg/containers/core"
-
-	_ "github.com/taubyte/tau/pkg/containers/backends/containerd"
-	_ "github.com/taubyte/tau/pkg/containers/backends/docker"
 )
 
 type Option func(*Client) error
@@ -51,7 +48,7 @@ func New(options ...Option) (dockerClient *Client, err error) {
 		return dockerClient, nil
 	}
 
-	backend, err := getDefaultBackend()
+	backend, err := dockerClient.defaultBackend()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize backend: %w", err)
 	}

@@ -64,8 +64,6 @@ func init() {
 }
 
 func TestContainerBasicCommand_Integration(t *testing.T) {
-	ci.ForceRebuild = true
-
 	ctx := context.Background()
 
 	cli, err := ci.New()
@@ -82,7 +80,7 @@ func TestContainerBasicCommand_Integration(t *testing.T) {
 
 	defer file.Close()
 
-	image, err := cli.Image(ctx, testCustomImage, ci.Build(file))
+	image, err := cli.Image(ctx, testCustomImage, ci.Build(file), ci.Rebuild())
 	if err != nil {
 		t.Error(err)
 		return
@@ -118,8 +116,6 @@ func TestContainerBasicCommand_Integration(t *testing.T) {
 }
 
 func TestContainerCleanUpInterval_Integration(t *testing.T) {
-	ci.ForceRebuild = true
-
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -136,7 +132,7 @@ func TestContainerCleanUpInterval_Integration(t *testing.T) {
 	}
 	defer file.Close()
 
-	image, err := cli.Image(ctx, testGCImage, ci.Build(file))
+	image, err := cli.Image(ctx, testGCImage, ci.Build(file), ci.Rebuild())
 	if err != nil {
 		t.Error(err)
 		return
@@ -203,8 +199,6 @@ func TestContainerCleanUpInterval_Integration(t *testing.T) {
 }
 
 func TestContainerMount_Integration(t *testing.T) {
-	ci.ForceRebuild = true
-
 	ctx := context.Background()
 	cli, err := ci.New()
 	if err != nil {
@@ -219,7 +213,7 @@ func TestContainerMount_Integration(t *testing.T) {
 	}
 	defer file.Close()
 
-	image, err := cli.Image(ctx, testCustomImage, ci.Build(file))
+	image, err := cli.Image(ctx, testCustomImage, ci.Build(file), ci.Rebuild())
 	if err != nil {
 		t.Error(err)
 		return
@@ -256,8 +250,6 @@ func TestContainerMount_Integration(t *testing.T) {
 }
 
 func TestContainerBasicVariables_Integration(t *testing.T) {
-	ci.ForceRebuild = true
-
 	ctx := context.Background()
 	cli, err := ci.New()
 	if err != nil {
@@ -272,7 +264,7 @@ func TestContainerBasicVariables_Integration(t *testing.T) {
 	}
 	defer file.Close()
 
-	image, err := cli.Image(ctx, testCustomImage, ci.Build(file))
+	image, err := cli.Image(ctx, testCustomImage, ci.Build(file), ci.Rebuild())
 	if err != nil {
 		t.Error(err)
 		return

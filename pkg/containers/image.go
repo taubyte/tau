@@ -27,7 +27,7 @@ func (c *Client) Image(ctx context.Context, name string, options ...ImageOption)
 	}
 
 	imageExists := image.checkImageExists(ctx)
-	if image.buildTarball != nil && (ForceRebuild || !imageExists) {
+	if image.buildTarball != nil && (image.rebuild || !imageExists) {
 		if err := image.buildImage(ctx); err != nil {
 			return nil, errorImageBuild(name, err)
 		}
@@ -113,7 +113,7 @@ func (i *DockerImage) Instantiate(ctx context.Context, options ...ContainerOptio
 // Clean removes images older than age, optionally scoped to one reference.
 func (c *Client) Clean(ctx context.Context, age time.Duration, reference string) error {
 	if c.backend == nil {
-		backend, err := getDefaultBackend()
+		backend, err := c.defaultBackend()
 		if err != nil {
 			return fmt.Errorf("failed to initialize backend: %w", err)
 		}

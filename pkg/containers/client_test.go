@@ -163,9 +163,7 @@ func TestImageSkipsBuildingAnExistingImage(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, img.builds)
 
-	ForceRebuild = true
-	defer func() { ForceRebuild = false }()
-	_, err = c.Image(context.Background(), "built", Build(bytes.NewReader(nil)))
+	_, err = c.Image(context.Background(), "built", Build(bytes.NewReader(nil)), Rebuild())
 	require.NoError(t, err)
 	assert.Len(t, img.builds, 1)
 }
@@ -220,15 +218,11 @@ func TestClientCleanUsesTheBackend(t *testing.T) {
 	assert.Equal(t, []string{"1h0m0s ref"}, backend.cleanCalls)
 }
 
-// withFactories swaps the registered backend factories for the test and puts
-// the real ones back afterwards.
-func withFactories(t *testing.T, factories map[core.BackendType]core.BackendFactory) {
-	t.Helper()
-	for kind, factory := range factories {
-		if real, ok := core.GetBackendFactory(kind); ok {
-			t.Cleanup(func() { core.RegisterBackend(kind, real) })
-		}
-		core.RegisterBackend(kind, factory)
+// choosingFrom is a client that chooses its backend from f.
+func choosingFrom(f factories) Option {
+	return func(c *Client) error {
+		c.factories = f
+		return nil
 	}
 }
 
@@ -238,42 +232,40 @@ func factoryOf(b core.Backend, err error) core.BackendFactory {
 
 func TestSelectBackendPrefersDocker(t *testing.T) {
 	docker := &imageBackend{kind: core.BackendTypeDocker}
-	withFactories(t, map[core.BackendType]core.BackendFactory{
+	c, err := New(choosingFrom(factories{
 		core.BackendTypeDocker:     factoryOf(docker, nil),
 		core.BackendTypeContainerd: factoryOf(&imageBackend{kind: core.BackendTypeContainerd}, nil),
-	})
-
-	c, err := New()
+	}))
 	require.NoError(t, err)
 	assert.Same(t, docker, c.backend)
 }
 
 func TestSelectBackendFallsBackToContainerd(t *testing.T) {
 	containerd := &imageBackend{kind: core.BackendTypeContainerd}
-	withFactories(t, map[core.BackendType]core.BackendFactory{
+	f := factories{
 		core.BackendTypeDocker:     factoryOf(&imageBackend{healthErr: errors.New("down")}, nil),
 		core.BackendTypeContainerd: factoryOf(containerd, nil),
-	})
+	}
 
-	backend, err := selectBackend()
+	backend, err := f.choose()
 	require.NoError(t, err)
 	assert.Same(t, containerd, backend)
 
 	// Clean on a client with no backend picks the default one too.
-	require.NoError(t, (&Client{}).Clean(context.Background(), time.Minute, ""))
+	require.NoError(t, (&Client{factories: f}).Clean(context.Background(), time.Minute, ""))
 	assert.Equal(t, []string{"1m0s "}, containerd.cleanCalls)
 }
 
 func TestSelectBackendNamesEveryFailure(t *testing.T) {
-	withFactories(t, map[core.BackendType]core.BackendFactory{
+	f := factories{
 		core.BackendTypeDocker:     factoryOf(nil, errors.New("no socket")),
 		core.BackendTypeContainerd: factoryOf(&imageBackend{healthErr: errors.New("down")}, nil),
-	})
+	}
 
-	_, err := New()
+	_, err := New(choosingFrom(f))
 	assert.ErrorContains(t, err, "no available backend: docker health check failed, containerd health check failed")
 
-	err = (&Client{}).Clean(context.Background(), time.Minute, "")
+	err = (&Client{factories: f}).Clean(context.Background(), time.Minute, "")
 	assert.ErrorContains(t, err, "failed to initialize backend")
 }
 

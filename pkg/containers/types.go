@@ -6,10 +6,6 @@ import (
 	"github.com/taubyte/tau/pkg/containers/core"
 )
 
-var (
-	ForceRebuild = false
-)
-
 // MuxedReadCloser wraps the Read/Close methods for muxed logs.
 type MuxedReadCloser struct {
 	reader io.ReadCloser
@@ -20,6 +16,9 @@ type MuxedReadCloser struct {
 type Client struct {
 	backend        core.Backend // Lazily initialized when needed
 	progressOutput bool
+	// factories is what a backend is chosen from when none was given: those this
+	// build carries unless set.
+	factories factories
 }
 
 // volume defines the source and target to be volumed in the docker container.
@@ -51,6 +50,7 @@ type DockerImage struct {
 	buildTarball     io.Reader
 	output           io.Writer
 	restrictedEgress bool
+	rebuild          bool
 	// Keep client reference for backward compatibility
 	client *Client // Kept for reference, but operations use backend
 }

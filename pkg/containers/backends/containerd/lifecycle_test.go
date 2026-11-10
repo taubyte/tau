@@ -184,10 +184,7 @@ func TestBackendType(t *testing.T) {
 }
 
 func TestRegisteredFactoryRejectsAForeignConfig(t *testing.T) {
-	factory, ok := core.GetBackendFactory(core.BackendTypeContainerd)
-	require.True(t, ok)
-
-	_, err := factory(core.DockerConfig{})
+	_, err := Factory(core.DockerConfig{})
 	assert.ErrorContains(t, err, "expected ContainerdConfig")
 }
 
@@ -434,9 +431,7 @@ func TestNewFailures(t *testing.T) {
 	})
 
 	t.Run("through the registered factory", func(t *testing.T) {
-		factory, ok := core.GetBackendFactory(core.BackendTypeContainerd)
-		require.True(t, ok)
-		_, err := factory(core.ContainerdConfig{
+		_, err := Factory(core.ContainerdConfig{
 			RootlessMode: core.RootlessModeDisabled,
 			SocketPath:   filepath.Join(t.TempDir(), "containerd.sock"),
 		})

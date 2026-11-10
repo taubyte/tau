@@ -8,17 +8,12 @@ import (
 	"github.com/taubyte/tau/pkg/containers/core"
 )
 
-// Note: Backends must be imported elsewhere in the application to register themselves.
-// For example:
-//   import _ "github.com/taubyte/tau/pkg/containers/backends/docker"
-//   import _ "github.com/taubyte/tau/pkg/containers/backends/containerd"
-
-// selectBackend attempts to create and health-check backends in order of preference.
+// choose attempts to create and health-check backends in order of preference.
 // Returns the first available backend, preferring Docker over containerd.
 // Returns an error if neither backend is available.
-func selectBackend() (core.Backend, error) {
+func (f factories) choose() (core.Backend, error) {
 	ctx := context.Background()
-	availableBackends := AvailableBackends()
+	availableBackends := f.available()
 
 	dockerRegistered := false
 	for _, bt := range availableBackends {
@@ -30,7 +25,7 @@ func selectBackend() (core.Backend, error) {
 
 	if dockerRegistered {
 		dockerConfig := core.DockerConfig{}
-		dockerBackend, err := NewBackend(dockerConfig)
+		dockerBackend, err := f.build(dockerConfig)
 		if err == nil {
 			if err := dockerBackend.HealthCheck(ctx); err == nil {
 				return dockerBackend, nil
@@ -48,7 +43,7 @@ func selectBackend() (core.Backend, error) {
 
 	if containerdRegistered {
 		containerdConfig := core.ContainerdConfig{}
-		containerdBackend, err := NewBackend(containerdConfig)
+		containerdBackend, err := f.build(containerdConfig)
 		if err == nil {
 			if err := containerdBackend.HealthCheck(ctx); err == nil {
 				return containerdBackend, nil
@@ -57,7 +52,7 @@ func selectBackend() (core.Backend, error) {
 	}
 
 	if len(availableBackends) == 0 {
-		return nil, fmt.Errorf("no backends registered - import backends (e.g., _ \"github.com/taubyte/tau/pkg/containers/backends/docker\")")
+		return nil, fmt.Errorf("no backends to choose from")
 	}
 
 	var errors []string
@@ -74,8 +69,12 @@ func selectBackend() (core.Backend, error) {
 	return nil, fmt.Errorf("no available backend: %s", strings.Join(errors, ", "))
 }
 
-// getDefaultBackend returns a backend instance using default configuration.
-// It tries Docker first, then falls back to containerd if Docker is unavailable.
-func getDefaultBackend() (core.Backend, error) {
-	return selectBackend()
+// defaultBackend is the backend chosen for a client given none: docker first, then
+// containerd if docker is unavailable.
+func (c *Client) defaultBackend() (core.Backend, error) {
+	f := c.factories
+	if f == nil {
+		f = carried
+	}
+	return f.choose()
 }
