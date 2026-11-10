@@ -3,6 +3,7 @@ package drive
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -503,6 +504,11 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 				err:      err,
 			}
 			return err
+		}
+
+		// Nodes refuse to start auth without a tenancy; fail before touching the host.
+		if d.parser.Tenancy().Owner() == "" {
+			return pushError("tenancy", errors.New("no tenancy configured: set tenancy.owner (and tenancy.app for an organization) in the spore-drive config before displacing"))
 		}
 
 		r, err := d.hostWrapper(ctx, h)

@@ -28,6 +28,14 @@ export const createConfig = async (
   await config.cloud.domain.generated.set("gtest.com");
   await config.cloud.domain.validation.generate();
 
+  // Displace refuses a config without tenancy, as a real cloud has one
+  await config.tenancy.provider.set("github");
+  await config.tenancy.owner.set("taubyte");
+  await config.tenancy.app.clientId.set("Iv1.0000000000000000");
+  await config.tenancy.app.key.set(
+    "-----BEGIN RSA PRIVATE KEY-----\nfixture\n-----END RSA PRIVATE KEY-----\n"
+  );
+
   // Generate P2P Swarm keys
   await config.cloud.p2p.swarm.generate();
 

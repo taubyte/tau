@@ -2,10 +2,12 @@ package peer
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -51,4 +53,38 @@ func TestPubSubTopicClosesAfterLastSubscriber(t *testing.T) {
 	// publish alone must not leave the topic joined either
 	require.NoError(t, n.PubSubPublish(ctx, "publish-only", []byte("x")))
 	require.Equal(t, 0, joinedTopics(n))
+}
+
+// Each publish joins and leaves its topic: neither repeating that nor a
+// subscriber coming and going may make a publish fail.
+func TestPubSubPublishRepeatedAndConcurrentWithSubscribe(t *testing.T) {
+	ctx := context.Background()
+	n := Mock(ctx).(*node)
+	defer n.Close()
+
+	for i := 0; i < 100; i++ {
+		require.NoError(t, n.PubSubPublish(ctx, "churn", []byte("x")))
+	}
+
+	var wg sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 100; i++ {
+				assert.NoError(t, n.PubSubPublish(ctx, "churn", []byte("x")))
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 20; i++ {
+				subCtx, cancel := context.WithCancel(ctx)
+				assert.NoError(t, n.PubSubSubscribeContext(subCtx, "churn", func(*pubsub.Message) {}, func(error) {}))
+				cancel()
+			}
+		}()
+	}
+	wg.Wait()
+
+	require.Eventually(t, func() bool { return joinedTopics(n) == 0 }, 5*time.Second, 20*time.Millisecond)
 }

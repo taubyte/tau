@@ -2,8 +2,8 @@ package pubsub
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 )
@@ -15,17 +15,17 @@ func (s *Service) Publish(ctx context.Context, projectId, appId, resource, chann
 		Application: appId,
 	}
 
-	picks, err := s.Lookup(matcher)
+	// Only that the channel is declared matters: having no function or
+	// websocket listening on it yet is not a publish failure.
+	messaging, _, _, err := s.getMessagingsMap(matcher)
 	if err != nil {
-		return fmt.Errorf("lookup failed with: %w", err)
+		return fmt.Errorf("getting messaging for channel %q failed with: %w", channel, err)
 	}
-	if len(picks) == 0 {
-		return errors.New("lookup returned no picks")
+	if !messaging.HasAny {
+		return fmt.Errorf("no messaging matches channel %q", channel)
 	}
 
-	if matcher.Channel[0] == '/' {
-		matcher.Channel = matcher.Channel[1:]
-	}
+	matcher.Channel = strings.TrimPrefix(matcher.Channel, "/")
 
 	message, err := common.NewMessage(
 		data,
