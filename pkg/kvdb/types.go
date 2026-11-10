@@ -2,6 +2,7 @@ package kvdb
 
 import (
 	"context"
+	"sync/atomic"
 
 	"github.com/ipfs/go-cid"
 )
@@ -14,6 +15,7 @@ type kvDatabase struct {
 	datastore   *(Datastore)
 	closed      bool
 	path        string
+	onChange    atomic.Value // func(key string)
 }
 
 type stats struct {

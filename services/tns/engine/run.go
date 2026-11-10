@@ -94,22 +94,37 @@ func (e *Engine) generateOps(ctx context.Context, object *flat.Object, org map[s
 	return ops, nil
 }
 
-func (e *Engine) executeOps(ctx context.Context, ops []op) (err error) {
-	rev := make([]op, 0)
-	for _, o := range ops {
-		rev = append([]op{o}, rev...)
-		err = o.Execute(ctx)
-		if err != nil {
-			break
-		}
+// executeOps writes a merge as one batch: all of it or none of it, and one
+// change for the other nodes to replicate. Written key by key, a config push
+// (hundreds of keys) reached the other nodes over several 5 s rebroadcasts,
+// and a new website was served 30–40 s late there.
+func (e *Engine) executeOps(ctx context.Context, ops []op) error {
+	if len(ops) == 0 {
+		return nil
 	}
+
+	batch, err := e.db.Batch(ctx)
 	if err != nil {
-		for _, ro := range rev {
-			err = ro.Revert(ctx)
-			if err != nil {
-				return fmt.Errorf("op revert failed with: %s", err)
-			}
+		return fmt.Errorf("starting batch failed with: %w", err)
+	}
+
+	for _, o := range ops {
+		kv, ok := o.(*kvop)
+		if !ok {
+			return fmt.Errorf("unexpected op %T", o)
+		}
+		if kv.curData == nil {
+			err = batch.Delete(kv.key)
+		} else {
+			err = batch.Put(kv.key, kv.curData)
+		}
+		if err != nil {
+			return fmt.Errorf("batching `%s` failed with: %w", kv.key, err)
 		}
 	}
-	return
+
+	if err = batch.Commit(); err != nil {
+		return fmt.Errorf("committing %d keys failed with: %w", len(ops), err)
+	}
+	return nil
 }

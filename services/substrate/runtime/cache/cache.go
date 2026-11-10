@@ -135,5 +135,12 @@ func (c *Cache) validate(serviceable iface.Serviceable, branches []string) error
 		return fmt.Errorf("cached pick assetId `%s` is outdated, latest assetId is `%s`", serviceable.AssetId(), assetId)
 	}
 
+	// a library push changes the modules a function loaded without touching its commit or asset
+	if fn, ok := serviceable.(interface{ ModulesChanged() error }); ok {
+		if err := fn.ModulesChanged(); err != nil {
+			return fmt.Errorf("cached pick is outdated: %w", err)
+		}
+	}
+
 	return nil
 }

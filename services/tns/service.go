@@ -35,6 +35,11 @@ func New(ctx context.Context, cfg tauConfig.Config) (*Service, error) {
 	if srv.db, err = srv.dbFactory.New(logger, servicesCommon.Tns, 5); err != nil {
 		return nil, err
 	}
+	// replicated changes too: a reader on this node or connected to it may not
+	// be reached by the writer's own notice through the mesh
+	if db, ok := srv.db.(interface{ OnChange(func(string)) }); ok {
+		db.OnChange(srv.notify)
+	}
 	if srv.engine, err = engine.New(srv.db, engine.Prefix...); err != nil {
 		return nil, err
 	}

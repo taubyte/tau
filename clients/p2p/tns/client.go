@@ -89,11 +89,19 @@ func (c *Client) Fetch(path tns.Path) (tns.Object, error) {
 	var err error
 	object := c.cache.get(path)
 	if object == nil {
+		// Subscribe before fetching: a push landing in between invalidates
+		// this fetch instead of leaving a stale value cached.
+		sub, gen, lerr := c.cache.listen(path)
+		if lerr != nil {
+			logger.Error(lerr)
+		}
 		object, err = c.fetch(path.Slice())
 		if err != nil {
 			return nil, err
 		}
-		c.cache.put(path, object) // this will start a go func to watch FIX
+		if lerr == nil {
+			c.cache.store(sub, gen, path, object)
+		}
 	}
 
 	return &responseObject{
@@ -129,8 +137,10 @@ func (c *Client) Push(path []string, data interface{}) error {
 	_pushed, ok := response["pushed"]
 	pushed, pushed_type_ok := _pushed.(bool)
 	if pushed && ok && pushed_type_ok {
-		if len(path) >= 2 {
-			if err := c.node.PubSubPublish(c.client.Context(), common.GetChannelFor(path...), nil); err != nil {
+		// every cached ancestor must hear of it: a fetch of resolve/repo/github
+		// listens on another channel than a push to resolve/repo/github/<id>
+		for _, channel := range common.ChannelsForPush(path, data) {
+			if err := c.node.PubSubPublish(c.client.Context(), channel, nil); err != nil {
 				return fmt.Errorf("push failed to publish: %s", err.Error())
 			}
 		}

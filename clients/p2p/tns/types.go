@@ -3,6 +3,7 @@ package tns
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/taubyte/tau/core/services/tns"
@@ -29,6 +30,8 @@ type subscription struct {
 	key      chan string
 	keys     []string
 	deadline time.Time
+	// gen counts invalidations, so a fetch started before one is not cached.
+	gen atomic.Uint64
 }
 
 type cache struct {
