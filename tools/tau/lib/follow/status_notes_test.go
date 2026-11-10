@@ -52,3 +52,17 @@ func TestRepoLabels(t *testing.T) {
 		assert.Equal(t, repoLabel(patrick.Repository{URI: uri}), want)
 	}
 }
+
+// C3: a website in the serve table with no job yet still gets a repo row.
+func TestStatusListsWebsitesWithoutBuild(t *testing.T) {
+	_, p := newPatrick(t, job("j1", "c1", 7, patrick.JobStatusSuccess))
+	rep, err := GetStatus(p, "p", map[int]string{9: "website site1"}, []Target{{Resource: "website site2", Node: "n1", URL: "http://127.0.0.1:1"}})
+	assert.NilError(t, err)
+	got := map[string]string{}
+	for _, r := range rep.Repos {
+		got[r.Repo] = r.Status
+	}
+	assert.Equal(t, got["website site1"], "no build yet")
+	assert.Equal(t, got["website site2"], "no build yet")
+	assert.Equal(t, len(rep.Repos), 3)
+}

@@ -22,6 +22,8 @@ func TestRealCommandsParseFlagValues(t *testing.T) {
 		{[]string{"push", "project", "--code-only", "-m", "new"}, []string{"tau", "push", "project", "--code-only", "-m", "new"}},
 		{[]string{"new", "function", "--name", "query"}, []string{"tau", "new", "function", "--name", "query"}},
 		{[]string{"query", "logs", "--jid", "j", "-f"}, []string{"tau", "query", "logs", "--jid", "j", "-f"}},
+		{[]string{"logs", "j1", "-f"}, []string{"tau", "logs", "-f", "j1"}},
+		{[]string{"logs", "--last", "website", "site1"}, []string{"tau", "logs", "--last", "website", "site1"}},
 	} {
 		got := parse(c.in...)
 		if len(got) != len(c.want) {

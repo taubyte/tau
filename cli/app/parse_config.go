@@ -37,6 +37,14 @@ func parseSourceConfig(ctx *cli.Context, shape string) (string, config.Config, *
 		return "", nil, nil, fmt.Errorf("migration of `%s` failed with: %w", configPath, err)
 	}
 
+	return loadSourceConfig(root, shape, configPath, ctx.Bool("dev-mode"))
+}
+
+// loadSourceConfig reads a shape's config as `tau start` does, without
+// migrating it: operator commands only read.
+func loadSourceConfig(root, shape, configPath string, devMode bool) (string, config.Config, *config.Source, error) {
+	var err error
+
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("reading config file path `%s` failed with: %w", configPath, err)
@@ -51,7 +59,7 @@ func parseSourceConfig(ctx *cli.Context, shape string) (string, config.Config, *
 	cnf, err := config.New(config.WithSource(src, config.SourceOptions{
 		Root:    root,
 		Shape:   shape,
-		DevMode: ctx.Bool("dev-mode"),
+		DevMode: devMode,
 	}))
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("config: %w", err)

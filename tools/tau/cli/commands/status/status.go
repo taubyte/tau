@@ -3,7 +3,6 @@ package status
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"time"
 
 	patrickClient "github.com/taubyte/tau/tools/tau/clients/patrick_client"
@@ -36,20 +35,7 @@ func run(ctx *cli.Context) error {
 		return err
 	}
 	// read once: the project's config does not change while we watch
-	names := map[int]string{}
-	for _, group := range []string{"websites", "libraries"} {
-		list, _ := st.List(group)
-		for _, n := range list {
-			doc, err := st.Doc(group, n)
-			if err != nil {
-				continue
-			}
-			id, _ := tcc.Get(doc, []string{"source", "github", "id"}).(string)
-			if i, err := strconv.Atoi(id); err == nil {
-				names[i] = map[string]string{"websites": "website ", "libraries": "library "}[group] + n
-			}
-		}
-	}
+	names := follow.RepoNames(st)
 	targets, err := follow.Targets(st, true)
 	if err != nil {
 		return err

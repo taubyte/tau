@@ -60,6 +60,8 @@ func newApp() *cli.App {
 			startCommand(),
 			configCommand(),
 			exportDataCommand(),
+			certsCommand(),
+			nodeCommand(),
 		},
 	}
 
@@ -70,20 +72,9 @@ func newApp() *cli.App {
 			ver = "n/a"
 		}
 
-		com := Commit
-		if com == "unknown" || com == "" {
-			// if not provided via ldflags, try ReadBuildInfo
-			if info, ok := debugInfo(); ok {
-				for _, s := range info.Settings {
-					if s.Key == "vcs.revision" {
-						com = s.Value
-						break
-					}
-				}
-			}
-			if com == "" || com == "unknown" {
-				com = "n/a"
-			}
+		com := buildCommit()
+		if com == "unknown" {
+			com = "n/a"
 		}
 
 		dateStr := BuildDate
@@ -108,4 +99,19 @@ func Run(args ...string) error {
 	}
 
 	return nil
+}
+
+// buildCommit is Commit from ldflags, else the vcs.revision Go embedded.
+func buildCommit() string {
+	if Commit != "unknown" && Commit != "" {
+		return Commit
+	}
+	if info, ok := debugInfo(); ok {
+		for _, s := range info.Settings {
+			if s.Key == "vcs.revision" && s.Value != "" {
+				return s.Value
+			}
+		}
+	}
+	return "unknown"
 }

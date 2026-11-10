@@ -75,3 +75,38 @@ func TestWaitSecondsFromPush(t *testing.T) {
 	jobs, _ := Wait(context.Background(), p, "p", []Repo{{Name: "code", Commit: "c1", Since: time.Now().Unix() - 10}}, poll, nil)
 	assert.Assert(t, jobs[0].Seconds >= 9 && jobs[0].Seconds <= 12, "%v", jobs[0].Seconds)
 }
+
+// C1: a job Patrick keeps "open" until it ends gets a heartbeat line.
+func TestWaitHeartbeat(t *testing.T) {
+	old := heartbeat
+	heartbeat = 30 * time.Millisecond
+	t.Cleanup(func() { heartbeat = old })
+	f, p := newPatrick(t, job("j1", "c1", 1, patrick.JobStatusOpen))
+	var out syncBuf
+	go func() { // end the job once a heartbeat was printed (or after 5s)
+		for i := 0; i < 500 && !strings.Contains(out.String(), "still building"); i++ {
+			time.Sleep(10 * time.Millisecond)
+		}
+		f.set(job("j1", "c1", 1, patrick.JobStatusSuccess))
+	}()
+	_, code := Wait(context.Background(), p, "p", []Repo{{Name: "code", Commit: "c1"}}, poll, &out)
+	assert.Equal(t, code, 0)
+	assert.Assert(t, strings.Contains(out.String(), "code     still building, "), out.String())
+	assert.Assert(t, strings.Contains(out.String(), "after push  job j1"), out.String())
+}
+
+// C2: the job's one final line is Wait's, with attempt and error; push
+// printed a second one from WriteJobs.
+func TestWaitFinalLineHasError(t *testing.T) {
+	f, p := newPatrick(t)
+	j := job("j1", "c1", 1, patrick.JobStatusFailed)
+	j.Logs = map[string]string{"r": "l"}
+	f.logs["l"] = "error: boom"
+	f.set(j)
+	var out syncBuf
+	Wait(context.Background(), p, "p", []Repo{{Name: "code", Commit: "c1"}}, poll, &out)
+	s := out.String()
+	assert.Equal(t, strings.Count(s, "j1"), 1, s)
+	assert.Assert(t, strings.Contains(s, "failed   attempt 1"), s)
+	assert.Assert(t, strings.Contains(s, "error: error: boom"), s)
+}

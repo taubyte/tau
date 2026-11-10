@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"sort"
 	"testing"
 
 	"github.com/taubyte/tau/p2p/keypair"
@@ -372,4 +373,24 @@ func TestAcmeServiceHandlerDeleteCertificate(t *testing.T) {
 	assert.NilError(t, err)
 	_, err = svc.acmeServiceHandler(ctx, nil, command.Body{"action": "delete"})
 	assert.Assert(t, err != nil)
+}
+
+func TestAcmeServiceHandlerListCertificates(t *testing.T) {
+	ctx := context.Background()
+	svc, err := New(ctx, newTestConfig(t, 12392))
+	assert.NilError(t, err)
+	defer svc.Close()
+
+	for _, fqdn := range []string{"*.gen.example.com", "site.example.com"} {
+		_, err = svc.acmeServiceHandler(ctx, nil, command.Body{"action": "set", "fqdn": fqdn, "certificate": []byte("pem")})
+		assert.NilError(t, err)
+	}
+	_, err = svc.acmeServiceHandler(ctx, nil, command.Body{"action": "cache-set", "key": "acme_account+key", "data": []byte("k")})
+	assert.NilError(t, err)
+
+	resp, err := svc.acmeServiceHandler(ctx, nil, command.Body{"action": "list"})
+	assert.NilError(t, err)
+	names := resp["names"].([]string)
+	sort.Strings(names)
+	assert.DeepEqual(t, names, []string{"*.gen.example.com", "site.example.com"})
 }

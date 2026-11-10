@@ -11,8 +11,8 @@ func parseCommandArguments(commands []*cli.Command, valued map[string]bool, args
 		return args
 	}
 	// We need to also parse sub commands
-	for _, cmd := range commands {
-		if commandIndex(args, cmd.Name, valued) != -1 {
+	if cmd, _, _ := leftmost(args, commands, valued); cmd != nil {
+		{
 			// parse arguments after cmd.Name so that `login testprofile -provider github` becomes `login -provider github testprofile`
 			// and `login -provider github testprofile` becomes `login -provider github testprofile`
 			idx := commandIndex(args, cmd.Name, valued)
@@ -97,37 +97,32 @@ func MovePostFixCommands(args []string, commands []*cli.Command) []string {
 }
 
 func moveCommands(args []string, commands []*cli.Command, valued map[string]bool) []string {
-	// find which command is being called
-	cmd_args := []string{}
-
-	for _, cmd := range commands {
-		argName := cmd.Name
-		idx := commandIndex(args, argName, valued)
-		if idx == -1 {
-			for _, alias := range cmd.Aliases {
-				idx = commandIndex(args, alias, valued)
-				if idx != -1 {
-					argName = alias
-					break
-				}
-			}
-		}
-		if idx == -1 {
-			continue
-		}
-
-		// remove argName from args
-		args = append(args[:idx], args[idx+1:]...)
-
-		// add argName to cmd_args
-		cmd_args = append(cmd_args, argName)
-
-		if len(cmd.Subcommands) > 0 {
-			args = moveCommands(args, cmd.Subcommands, valued)
-		}
+	// one command is called per level: the leftmost word naming one, so in
+	// `query logs` the top-level `logs` command is not also picked
+	cmd, argName, idx := leftmost(args, commands, valued)
+	if cmd == nil {
+		return args
 	}
 
-	return append(cmd_args, args...)
+	// move argName to the front, then its subcommand
+	args = append(args[:idx:idx], args[idx+1:]...)
+	if len(cmd.Subcommands) > 0 {
+		args = moveCommands(args, cmd.Subcommands, valued)
+	}
+	return append([]string{argName}, args...)
+}
+
+// leftmost is the command (and the name or alias used) named first in args.
+func leftmost(args []string, commands []*cli.Command, valued map[string]bool) (cmd *cli.Command, argName string, idx int) {
+	idx = -1
+	for _, c := range commands {
+		for _, name := range append([]string{c.Name}, c.Aliases...) {
+			if i := commandIndex(args, name, valued); i != -1 && (idx == -1 || i < idx) {
+				cmd, argName, idx = c, name, i
+			}
+		}
+	}
+	return
 }
 
 // valueFlags returns the names of the flags that take a value wherever they

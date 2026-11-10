@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 
 	"github.com/taubyte/tau/tools/tau/clients/dream"
@@ -119,4 +120,24 @@ func dreamHTTPNodes() (map[string]string, error) {
 		return nodes, nil
 	}
 	return nil, fmt.Errorf("no gateway or substrate node in this Dream universe")
+}
+
+// RepoNames labels the project's website and library repository ids as tau
+// does ("website x", "library x"); config and code are named from the repo.
+func RepoNames(st *tcc.Store) map[int]string {
+	names := map[int]string{}
+	for _, group := range []string{"websites", "libraries"} {
+		list, _ := st.List(group)
+		for _, n := range list {
+			doc, err := st.Doc(group, n)
+			if err != nil {
+				continue
+			}
+			id, _ := tcc.Get(doc, []string{"source", "github", "id"}).(string)
+			if i, err := strconv.Atoi(id); err == nil {
+				names[i] = map[string]string{"websites": "website ", "libraries": "library "}[group] + n
+			}
+		}
+	}
+	return names
 }

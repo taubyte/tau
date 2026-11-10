@@ -6,6 +6,7 @@ import (
 	buildCmd "github.com/taubyte/tau/tools/tau/cli/commands/build"
 	"github.com/taubyte/tau/tools/tau/cli/commands/current"
 	"github.com/taubyte/tau/tools/tau/cli/commands/doctor"
+	"github.com/taubyte/tau/tools/tau/cli/commands/joblogs"
 	"github.com/taubyte/tau/tools/tau/cli/commands/login"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/builds"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/builds/build"
@@ -62,6 +63,7 @@ func New() (*cli.App, error) {
 			buildCmd.Command,
 			validate.Command,
 			status.Command,
+			joblogs.Command,
 		},
 	}
 
