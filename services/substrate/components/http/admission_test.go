@@ -32,7 +32,7 @@ func TestLimitsScaleWithRAM(t *testing.T) {
 		mem                   uint64
 		floor, start, ceiling int
 	}{
-		{2, 2 * GB, 16, 128, 512}, {2, 8 * GB, 16, 128, 2048}, {1, 0, 1, 1, 1},
+		{2, 2 * GB, 16, 128, 256}, {2, 8 * GB, 16, 128, 1792}, {1, 0, 1, 1, 1},
 	} {
 		if f, s, m := limits(c.cpus, c.mem); f != c.floor || s != c.start || m != c.ceiling {
 			t.Errorf("limits(%d, %d) = %d, %d, %d", c.cpus, c.mem, f, s, m)
@@ -135,6 +135,31 @@ func TestLimitIgnoresMixedRequestLengths(t *testing.T) {
 	}
 }
 
+// A function with no database (1 ms) beside database calls (300 ms) is no
+// congestion, however few of the 1 ms requests a window happens to hold.
+func TestLimitIsNotCutByAMixOfFunctions(t *testing.T) {
+	l := newLimiter(16, 128, 256)
+	mixed := func(fastEvery int) func(int) time.Duration {
+		return func(i int) time.Duration {
+			if i%fastEvery == 0 {
+				return l.normalize("fx", time.Millisecond)
+			}
+			return l.normalize("db", 300*time.Millisecond)
+		}
+	}
+	for range 20 {
+		feed(l, 1, mixed(5))  // enough fast requests to reach the low percentile
+		feed(l, 1, mixed(32)) // and too few
+	}
+	if got := l.limit.Load(); got != 256 {
+		t.Fatalf("limit %d under a stable mix, want the ceiling", got)
+	}
+
+	if lowest := feed(l, 30, func(int) time.Duration { return l.normalize("db", 2*time.Second) }); lowest >= 256 {
+		t.Fatalf("limit %d not cut when the database calls slowed", lowest)
+	}
+}
+
 func TestLimitCutsOnTimeouts(t *testing.T) {
 	window := func(l *limiter, timeouts int) {
 		l.mu.Lock()
@@ -165,11 +190,11 @@ func TestCutWhileSlotsAreHeldSettlesOnRelease(t *testing.T) {
 	l.mu.Lock()
 	l.setLimit(1)
 	l.mu.Unlock()
-	l.release(0, false)
+	l.release("", 0, false)
 	if len(l.tokens) != 0 {
 		t.Fatal("first release went past the lowered limit")
 	}
-	l.release(0, false)
+	l.release("", 0, false)
 	if len(l.tokens) != 1 || l.owed != 0 {
 		t.Fatalf("%d free, %d owed; want 1 free", len(l.tokens), l.owed)
 	}
@@ -208,9 +233,9 @@ func untilWaiting(t *testing.T, l *limiter, n int64) {
 func TestWaiterGetsSlotFreedDuringWait(t *testing.T) {
 	l := holdOnly(t)
 	ran := make(chan error, 1)
-	go func() { ran <- admitted(context.Background(), l, func() error { return nil }) }()
+	go func() { ran <- admitted(context.Background(), l, "f", func() error { return nil }) }()
 	untilWaiting(t, l, 1)
-	l.release(0, false)
+	l.release("", 0, false)
 	if err := <-ran; err != nil {
 		t.Fatalf("waiter refused: %v", err)
 	}
@@ -219,7 +244,7 @@ func TestWaiterGetsSlotFreedDuringWait(t *testing.T) {
 func TestRefusedAfterWait(t *testing.T) {
 	l := holdOnly(t)
 	start, called := time.Now(), false
-	err := admitted(context.Background(), l, func() error { called = true; return nil })
+	err := admitted(context.Background(), l, "f", func() error { called = true; return nil })
 	if platformerr.CodeOf(err) != platformerr.NodeBusy || called {
 		t.Fatalf("err %v, ran %v", err, called)
 	}
@@ -232,7 +257,7 @@ func TestContextCancelEndsWait(t *testing.T) {
 	l := holdOnly(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	got := make(chan error, 1)
-	go func() { got <- admitted(ctx, l, func() error { return nil }) }()
+	go func() { got <- admitted(ctx, l, "f", func() error { return nil }) }()
 	untilWaiting(t, l, 1)
 	cancel()
 	if err := <-got; !errors.Is(err, context.Canceled) {
@@ -245,13 +270,13 @@ func TestContextCancelEndsWait(t *testing.T) {
 
 func TestWaitersAreBounded(t *testing.T) {
 	l := holdOnly(t)
-	defer l.release(0, false)
+	defer l.release("", 0, false)
 	first := make(chan error, 1)
-	go func() { first <- admitted(context.Background(), l, func() error { return nil }) }()
+	go func() { first <- admitted(context.Background(), l, "f", func() error { return nil }) }()
 	untilWaiting(t, l, 1)
 
 	start := time.Now()
-	err := admitted(context.Background(), l, func() error { return nil })
+	err := admitted(context.Background(), l, "f", func() error { return nil })
 	if platformerr.CodeOf(err) != platformerr.NodeBusy {
 		t.Fatalf("err %v", err)
 	}
@@ -270,17 +295,17 @@ func TestNoSlotLeak(t *testing.T) {
 			t.Fatalf("after %s: %d free, %d owed", what, len(l.tokens), l.owed)
 		}
 	}
-	if err := admitted(ctx, l, func() error { return nil }); err != nil {
+	if err := admitted(ctx, l, "f", func() error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	check("success")
-	if err := admitted(ctx, l, func() error { return errors.New("x") }); err == nil {
+	if err := admitted(ctx, l, "f", func() error { return errors.New("x") }); err == nil {
 		t.Fatal("error lost")
 	}
 	check("error")
 	func() {
 		defer func() { recover() }()
-		admitted(ctx, l, func() error { panic("boom") })
+		admitted(ctx, l, "f", func() error { panic("boom") })
 	}()
 	check("panic")
 
@@ -290,7 +315,7 @@ func TestNoSlotLeak(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for range 500 {
-				admitted(ctx, l, func() error { return nil })
+				admitted(ctx, l, "f", func() error { return nil })
 			}
 		}()
 	}
@@ -302,7 +327,7 @@ func TestNoSlotLeak(t *testing.T) {
 func TestFailuresAreNotSamples(t *testing.T) {
 	l := newLimiter(1, 1, 1)
 	for range 2 * windowSamples {
-		admitted(context.Background(), l, func() error { return errors.New("x") })
+		admitted(context.Background(), l, "f", func() error { return errors.New("x") })
 	}
 	if l.base != 0 || l.seen != 0 {
 		t.Fatalf("failures counted: base %s, seen %d", l.base, l.seen)
