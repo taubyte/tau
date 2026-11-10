@@ -16,7 +16,7 @@ type config struct {
 	reference string
 }
 
-var (
+const (
 	DefaultInterval = 30 * time.Minute
 	DefaultMaxAge   = 24 * time.Hour
 )

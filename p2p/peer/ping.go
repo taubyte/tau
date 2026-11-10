@@ -9,7 +9,7 @@ import (
 	ping "github.com/libp2p/go-libp2p/p2p/protocol/ping"
 )
 
-var PingTimeout = time.Second * 4
+const PingTimeout = time.Second * 4
 
 func (p *node) Ping(ctx context.Context, pid string, count int) (healthy int, rtt time.Duration, err error) {
 	if p.closed.Load() {

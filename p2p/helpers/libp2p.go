@@ -27,7 +27,7 @@ import (
 	tcp "github.com/libp2p/go-libp2p/p2p/transport/tcp"
 )
 
-var (
+const (
 	DefaultConnMgrHighWater   = 400
 	DefaultConnMgrLowWater    = 100
 	DefaultConnMgrGracePeriod = 2 * time.Minute

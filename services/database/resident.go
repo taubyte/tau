@@ -19,7 +19,9 @@ import (
 var (
 	// ErrTooManyResident is a node asked to hold more engines than it may.
 	ErrTooManyResident = errors.New("database: this node holds as many databases as it may")
+)
 
+const (
 	// DefaultMaxResident bounds the table. It exists because an unbounded one is
 	// what v1 shipped, not because this number is knowable in advance.
 	DefaultMaxResident = 256

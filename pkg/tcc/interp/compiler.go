@@ -62,7 +62,7 @@ type Compiler struct {
 	from map[string]string
 }
 
-var DefaultBranch = "main"
+const DefaultBranch = "main"
 
 // New builds a Compiler bound to a schema project and its CompileRoot node,
 // supplied by the caller so this package never imports schema.

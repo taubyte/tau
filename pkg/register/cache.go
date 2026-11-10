@@ -37,7 +37,9 @@ func (d Deployment) String() string { return d.Project + "/" + d.Environment }
 var (
 	ErrNoParse    = errors.New("register: a cache with no way to read an object cannot hold one")
 	ErrNoRegistry = errors.New("project: a cache with nothing to read from has nothing to answer")
+)
 
+const (
 	// DefaultTTL is the deploy propagation budget: how long an answer nothing
 	// watches may be trusted.
 	DefaultTTL = 5 * time.Second

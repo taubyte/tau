@@ -10,7 +10,7 @@ import (
 	mh "github.com/multiformats/go-multihash"
 )
 
-var (
+const (
 	randomnessLength  = 32
 	randomnessTimeout = 1 * time.Second
 )

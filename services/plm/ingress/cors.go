@@ -10,10 +10,9 @@ import (
 // match exactly; credentials travel only as the Authorization header, never
 // cookies, so Allow-Credentials is never sent.
 
-var (
-	corsHeaders = strings.Join([]string{"Authorization", "Content-Type", "Connect-Protocol-Version", "Connect-Timeout-Ms", "Git-Protocol"}, ", ")
-	corsMethods = "GET, POST, PUT, DELETE"
-)
+var corsHeaders = strings.Join([]string{"Authorization", "Content-Type", "Connect-Protocol-Version", "Connect-Timeout-Ms", "Git-Protocol"}, ", ")
+
+const corsMethods = "GET, POST, PUT, DELETE"
 
 // corsHandler is a value, not a closure, so a Handler is comparable.
 type corsHandler struct {

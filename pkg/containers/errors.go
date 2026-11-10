@@ -7,13 +7,15 @@ import (
 	"github.com/taubyte/tau/pkg/containers/core"
 )
 
-var (
-	// The sentinel is wrapped, not just printed: callers match these with
-	// errors.Is, which only sees an error joined in with %w.
+// The sentinel is wrapped, not just printed: callers match these with
+// errors.Is, which only sees an error joined in with %w.
+const (
 	errorBasicFormat     = "%w with: %w"
 	errorImageFormat     = "%w for image `%s` with: %w"
 	errorContainerFormat = "%w for container Id:`%s` image:`%s` with: %w"
+)
 
+var (
 	ErrorImageOptions         = errors.New("image options failed")
 	ErrorImageBuild           = errors.New("building image failed")
 	ErrorImagePull            = errors.New("pulling image failed")

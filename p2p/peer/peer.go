@@ -29,8 +29,8 @@ import (
 )
 
 // DiscoveryBackoffMin/Max bound how long a failed peer-discovery lookup is
-// cached; dream lowers them so fresh clouds recover in seconds.
-var (
+// cached.
+const (
 	DiscoveryBackoffMin = 60 * time.Second
 	DiscoveryBackoffMax = time.Hour
 )

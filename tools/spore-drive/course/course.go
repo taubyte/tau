@@ -10,7 +10,7 @@ import (
 	"github.com/taubyte/tau/tools/spore-drive/randname"
 )
 
-var DefaultConcurrency = 4
+const DefaultConcurrency = 4
 
 type Host interface {
 	Tags() []string
