@@ -10,7 +10,6 @@ import (
 
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/taubyte/tau/core/vm"
-	"github.com/taubyte/tau/pkg/config"
 	"github.com/taubyte/tau/pkg/platformerr"
 	plugins "github.com/taubyte/tau/pkg/vm-low-orbit"
 	vmContext "github.com/taubyte/tau/pkg/vm/context"
@@ -254,15 +253,17 @@ func (f *Function) processRequest(reqCh *instanceRequest) {
 		return
 	}
 
-	logger.Errorf("creating new instance failed with: %s", err.Error())
-	// we reached some sort of limit
-	// wait for an instance to be available
+	// A refusal is normal back-pressure, and can come once per request.
+	logf := logger.Errorf
+	if c := platformerr.CodeOf(err); c == platformerr.NodeBusy || c == platformerr.OverQuota {
+		logf = logger.Debugf
+	}
+	logf("creating new instance failed with: %s", err.Error())
+	// Refuse unless an instance is free right now: the caller's context lasts
+	// as long as the function, and waiting would stall its whole request queue.
 	select {
 	case <-reqCh.ctx.Done():
 		reqCh.err = fmt.Errorf("instance request context done with: %w", reqCh.ctx.Err())
-		if platformerr.CodeOf(err) == platformerr.OverQuota {
-			reqCh.err = platformerr.New(platformerr.OverQuota, reqCh.err)
-		}
 		reqCh.give(nil)
 	case pooled := <-f.availableInstances:
 		if err := hold(pooled); err != nil {
@@ -274,6 +275,9 @@ func (f *Function) processRequest(reqCh *instanceRequest) {
 		reqCh.give(pooled)
 	case <-f.ctx.Done():
 		return
+	default:
+		reqCh.err = err
+		reqCh.give(nil)
 	}
 }
 
@@ -362,13 +366,9 @@ func (f *Function) instantiate() (rt vm.Runtime, sdk plugins.Instance, err error
 	return
 }
 
-// acquire reserves the project's share for one more instance; services without caps are unlimited.
+// acquire reserves the project's share for one more instance.
 func (f *Function) acquire(project string, mem uint64) error {
-	m, ok := f.serviceable.Service().(interface{ Caps(string) config.Caps })
-	if !ok {
-		return acquire(project, mem, config.Caps{})
-	}
-	return acquire(project, mem, m.Caps(project))
+	return acquire(project, mem, f.serviceable.Service().Caps(project))
 }
 
 func (f *Function) configureVM() error {

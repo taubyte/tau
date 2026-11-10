@@ -15,7 +15,7 @@ func TestMigrate_ThresholdStops(t *testing.T) {
 	MaxDeleteBlocks, MaxDeleteFraction = 1, 0
 	defer func() { MaxDeleteBlocks, MaxDeleteFraction = restoreN, restoreF }()
 
-	m, _, tns := newTestMigrator(t)
+	m, h, tns := newTestMigrator(t)
 	t.Cleanup(m.Close)
 	ctx := t.Context()
 
@@ -53,9 +53,14 @@ func TestMigrate_ThresholdStops(t *testing.T) {
 		t.Fatalf("instance marked scrubbed: %+v", rep)
 	}
 
-	// Boot stops too: no drain retrying the same refusal every interval.
-	if rep := m.Boot(); !strings.Contains(rep.Err, "threshold") {
-		t.Fatalf("boot must hit the threshold: %q", rep.Err)
+	// The replay is recorded: the next boot neither repeats it nor retries the
+	// refused deletion, and the migration is finished.
+	h.instance(hash).failPut = true
+	if rep := m.Boot(); rep.Err != "" || len(rep.Instances) != 0 {
+		t.Fatalf("boot repeated a recorded replay: %s", rep.Summary())
+	}
+	if ok, err := m.node.Store().Has(ctx, doneKey); err != nil || !ok {
+		t.Fatalf("done marker not written after the recorded replay (ok=%v err=%v)", ok, err)
 	}
 	m.drainMu.Lock()
 	on := m.drainOn
