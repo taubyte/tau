@@ -174,10 +174,13 @@ func (c *causalContext) merge(o *causalContext) {
 	}
 }
 
-// clone shares c's entries until it changes them.
+// clone shares c's entries until either of them changes one: both take a new
+// generation, so neither owns a shared entry and a write by either copies it
+// first.
 func (c *causalContext) clone() *causalContext {
 	n := &causalContext{inc: make(map[string]*known, len(c.inc)), gen: contextGens.Add(1)}
 	maps.Copy(n.inc, c.inc)
+	c.gen = contextGens.Add(1)
 	return n
 }
 
