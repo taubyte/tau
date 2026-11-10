@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"sync"
+	"time"
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/p2p/streams/command"
@@ -22,6 +23,15 @@ const (
 	maxCommitBytes = 512 << 10
 )
 
+// maxQueueWait is how long a write may wait for its commit. Its caller has given
+// up well before this, so committing it would only delay the writes behind it.
+const maxQueueWait = 20 * time.Second
+
+// copyQueueSuffix names the queue of an instance's K=2 copies. They must not wait
+// behind this node's commits: those wait for a co-owner's ack, and that co-owner's
+// commits wait for this node's copies to land, so sharing a queue deadlocks.
+const copyQueueSuffix = "/copies"
+
 // groupWrite is one batch waiting for its instance's next commit.
 type groupWrite struct {
 	body   command.Body
@@ -30,10 +40,11 @@ type groupWrite struct {
 	resp   cr.Response
 	err    error
 	done   chan struct{}
+	queued time.Time
 }
 
 func newGroupWrite(body command.Body, rawOps []interface{}) *groupWrite {
-	w := &groupWrite{body: body, rawOps: rawOps, done: make(chan struct{})}
+	w := &groupWrite{body: body, rawOps: rawOps, done: make(chan struct{}), queued: time.Now()}
 	for _, ro := range rawOps {
 		if v, err := maps.ByteArray(maps.SafeInterfaceToStringKeys(ro), hoarderSpecs.BodyValue); err == nil {
 			w.size += len(v)
@@ -61,7 +72,11 @@ func (srv *Service) commitQueueOf(hash string) *commitQueue {
 
 // enqueueWrite adds w to the instance's queue, starting its committer if idle.
 func (srv *Service) enqueueWrite(handle kvdb.KVDB, hash string, w *groupWrite) {
-	q := srv.commitQueueOf(hash)
+	key := hash
+	if nb, _ := maps.Bool(w.body, hoarderSpecs.BodyNoBarrier); nb {
+		key += copyQueueSuffix
+	}
+	q := srv.commitQueueOf(key)
 	q.lock.Lock()
 	q.pending = append(q.pending, w)
 	start := !q.running
@@ -123,6 +138,10 @@ func (srv *Service) commitGroup(ctx context.Context, handle kvdb.KVDB, hash stri
 	var pending int64
 	accepted := make([]*groupWrite, 0, len(group))
 	for _, w := range group {
+		if time.Since(w.queued) > maxQueueWait {
+			w.err = fmt.Errorf("write waited over %s for its commit", maxQueueWait)
+			continue
+		}
 		out, delta, resp, err := srv.checkBatch(ctx, handle, used, w.body, w.rawOps, pending)
 		if resp != nil || err != nil {
 			w.resp, w.err = resp, err
@@ -145,9 +164,9 @@ func (srv *Service) commitGroup(ctx context.Context, handle kvdb.KVDB, hash stri
 		return
 	}
 
-	copiedTo := srv.replicateGroup(ctx, hash, accepted)
+	copiedTo, err := srv.replicateGroup(ctx, hash, accepted)
 	for _, w := range accepted {
-		w.resp = acked(copiedTo)
+		w.resp, w.err = acked(copiedTo), err
 	}
 }
 
@@ -194,7 +213,7 @@ func lastPerKey(ops []batchOp) []batchOp {
 
 // replicateGroup pushes the accepted writes to a co-owner as one batch. Writes
 // that are themselves K=2 copies are not copied again.
-func (srv *Service) replicateGroup(ctx context.Context, hash string, accepted []*groupWrite) string {
+func (srv *Service) replicateGroup(ctx context.Context, hash string, accepted []*groupWrite) (string, error) {
 	var ops []interface{}
 	var base command.Body
 	for _, w := range accepted {
@@ -205,7 +224,7 @@ func (srv *Service) replicateGroup(ctx context.Context, hash string, accepted []
 		base = w.body
 	}
 	if base == nil {
-		return ""
+		return "", nil
 	}
 	body := make(command.Body, len(base))
 	for k, v := range base {

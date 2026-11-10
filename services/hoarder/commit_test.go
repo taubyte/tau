@@ -131,3 +131,64 @@ func TestCommitGroup_LaterWriteOfKeyWins(t *testing.T) {
 		t.Fatalf("/k = %q, %v, want the later write", v, err)
 	}
 }
+
+// A K=2 copy must land while this node's own commit waits for a co-owner: that
+// co-owner's commit is waiting for its copy to land here, so a shared queue
+// deadlocks the two.
+func TestKVBatch_CopyDoesNotWaitBehindCommit(t *testing.T) {
+	srv := newTestService(t)
+	handle, err := srv.dbFactory.New(logger, "cycle", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer handle.Close()
+
+	// The instance's committer is busy, as it is while waiting for a co-owner.
+	q := srv.commitQueueOf("cycle")
+	q.lock.Lock()
+	q.running = true
+	q.lock.Unlock()
+
+	body := batchBody("copied", "v")
+	body[hoarderSpecs.BodyNoBarrier] = true
+	done := make(chan error, 1)
+	go func() {
+		_, err := srv.kvBatch(t.Context(), handle, "cycle", body)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("copy waited behind the instance's in-flight commit")
+	}
+}
+
+// A write that outlived its caller must fail unapplied, so a backlog drains at
+// once instead of commit by commit.
+func TestCommitGroup_ExpiredWriteIsNotApplied(t *testing.T) {
+	srv := newTestService(t)
+	ctx := t.Context()
+	handle, err := srv.dbFactory.New(logger, "stale", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer handle.Close()
+
+	w := groupWriteOf(batchBody("old", "v"))
+	w.queued = time.Now().Add(-maxQueueWait - time.Second)
+	fresh := groupWriteOf(batchBody("new", "v"))
+	srv.commitGroup(ctx, handle, "stale", []*groupWrite{w, fresh})
+
+	if w.err == nil {
+		t.Fatal("expired write did not fail")
+	}
+	if fresh.err != nil {
+		t.Fatalf("fresh write failed: %v", fresh.err)
+	}
+	if v, err := handle.Get(ctx, "old"); err == nil && len(v) > 0 {
+		t.Fatal("expired write was applied")
+	}
+}

@@ -204,7 +204,8 @@ func (srv *Service) kvPut(ctx context.Context, handle kvdb.KVDB, hash string, bo
 	if err != nil {
 		return nil, fmt.Errorf("put failed with: %w", err)
 	}
-	return acked(srv.replicateWrite(ctx, hash, body)), nil
+	copiedTo, err := srv.replicateWrite(ctx, hash, body)
+	return acked(copiedTo), err
 }
 
 // kvPutNx writes the key only if it is absent, atomically against concurrent
@@ -240,7 +241,8 @@ func (srv *Service) kvPutNx(ctx context.Context, handle kvdb.KVDB, hash string, 
 	}
 	// Replicated as putnx too: the co-owner nx-checks its own state, so a value
 	// it already holds through the normal path is never clobbered there either.
-	return acked(srv.replicateWrite(ctx, hash, body)), nil
+	copiedTo, err := srv.replicateWrite(ctx, hash, body)
+	return acked(copiedTo), err
 }
 
 func (srv *Service) kvDelete(ctx context.Context, handle kvdb.KVDB, hash string, body command.Body) (cr.Response, error) {
@@ -256,7 +258,8 @@ func (srv *Service) kvDelete(ctx context.Context, handle kvdb.KVDB, hash string,
 	if err != nil {
 		return nil, fmt.Errorf("delete failed with: %w", err)
 	}
-	return acked(srv.replicateWrite(ctx, hash, body)), nil
+	copiedTo, err := srv.replicateWrite(ctx, hash, body)
+	return acked(copiedTo), err
 }
 
 // replicateWrite is the K=2 ack barrier: after the local commit, synchronously
@@ -266,12 +269,12 @@ func (srv *Service) kvDelete(ctx context.Context, handle kvdb.KVDB, hash string,
 // transient stream failures until a co-claimant acks — a co-claimant that is a
 // live member must receive the write, or an acked value could vanish if this node
 // dies. It gives up (ack local-only, reconcile re-replicates) only when there is
-// genuinely no live co-claimant (fleet=1), or a co-claimant stays undialable past
-// the barrier window (see the loop). A push already carrying no-barrier is skipped
+// genuinely no live co-claimant (fleet=1). A co-claimant that stays undialable past
+// the barrier window fails the write instead (see the loop). A push already carrying no-barrier is skipped
 // (it *is* the second copy).
-func (srv *Service) replicateWrite(ctx context.Context, hash string, body command.Body) string {
+func (srv *Service) replicateWrite(ctx context.Context, hash string, body command.Body) (string, error) {
 	if nb, _ := maps.Bool(body, hoarderSpecs.BodyNoBarrier); nb {
-		return ""
+		return "", nil
 	}
 
 	self := srv.node.ID().String()
@@ -301,13 +304,11 @@ func (srv *Service) replicateWrite(ctx context.Context, hash string, body comman
 	// dial — so "live per gossip yet undialable from here" (asymmetric partition,
 	// NAT breakage) is a sustainable state that would otherwise pin this goroutine
 	// spinning at BarrierRetryInterval forever, long after the client gave up. If a
-	// co-owner stays unreachable past the liveness window, treat it as dead FOR THIS
-	// WRITE: warn under-replicated and return — reconcile + CRDT catch-up
-	// re-replicate later. A reachable co-owner acks on the first iteration, so the
+	// co-owner stays unreachable past the liveness window, fail this write —
+	// reconcile + CRDT catch-up re-replicate what was committed. A reachable co-owner acks on the first iteration, so the
 	// bound is only ever reached under such a partition; strict durability is
 	// unweakened in the common case.
 	deadline := time.Now().Add(3 * hoarderSpecs.LivenessTimeout)
-	reason := "no live co-owner" // why the barrier fell back to a local-only ack
 	for {
 		members := srv.activeMembers()
 		target := targetReplicas(len(members))
@@ -327,7 +328,7 @@ func (srv *Service) replicateWrite(ctx context.Context, hash string, body comman
 			}
 			resp, err := srv.kvStream.Send(hoarderSpecs.KVDBCommand, repl, pid)
 			if err == nil && maps.TryString(resp, hoarderSpecs.BodyCode) == "" {
-				return c // a co-owner persisted it — K>=2 satisfied
+				return c, nil // a co-owner persisted it — K>=2 satisfied
 			}
 		}
 
@@ -348,18 +349,19 @@ func (srv *Service) replicateWrite(ctx context.Context, hash string, body comman
 		if time.Now().After(deadline) {
 			// A co-owner is live per gossip but we still cannot dial it: stop
 			// treating this write as blocked on an unreachable peer.
-			reason = "co-owner live per gossip but undialable past the liveness window"
-			break
+			// The write is committed here and CRDT sync will spread it, but it
+			// has one copy, so it must not be acked as durable.
+			return "", fmt.Errorf("write to %s: co-owner did not ack within %s", hash, 3*hoarderSpecs.LivenessTimeout)
 		}
 		select {
 		case <-ctx.Done():
-			return ""
+			return "", ctx.Err()
 		case <-time.After(hoarderSpecs.BarrierRetryInterval):
 		}
 	}
 
-	logger.Warnf("write to %s acked under-replicated: %s", hash, reason)
-	return ""
+	logger.Warnf("write to %s acked under-replicated: no live co-owner", hash)
+	return "", nil
 }
 
 // acked is the response of a write that got its K=2 copy on copiedTo.
