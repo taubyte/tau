@@ -128,7 +128,36 @@ type fixture struct {
 	tier  *js.Runtime
 	logs  *logs
 	spec  invoke.Spec
+	// hold is closed when the test lets every held() promise resolve.
+	hold    chan struct{}
+	letGoes sync.Once
 }
+
+// realm is what a fixture's realm has: later(ms), and held(), a promise resolved
+// only when the test lets go, so the test, not a clock, says when work ends.
+func (f *fixture) realm(rt *engine.Runtime) error {
+	if err := later(rt); err != nil {
+		return err
+	}
+	fn, err := rt.NewFunction("held", func(engine.FunctionCall) (engine.Value, error) {
+		p, resolve, _, err := rt.NewPromise()
+		if err != nil {
+			return engine.Value{}, err
+		}
+		go func() {
+			<-f.hold
+			rt.Post(func() { resolve(nil) })
+		}()
+		return p, nil
+	})
+	if err != nil {
+		return err
+	}
+	return rt.Set("held", fn)
+}
+
+// letGo resolves every held() promise, made already or to come.
+func (f *fixture) letGo() { f.letGoes.Do(func() { close(f.hold) }) }
 
 // tier is a js tier over one archive holding worker.js, with later() in every
 // realm.
@@ -139,9 +168,10 @@ func newFixture(t testing.TB, worker string, opts ...js.Option) *fixture {
 
 func newFixtureFiles(t testing.TB, files map[string]string, opts ...js.Option) *fixture {
 	t.Helper()
-	f := &fixture{t: t, store: &store{}, logs: &logs{}}
+	f := &fixture{t: t, store: &store{}, logs: &logs{}, hold: make(chan struct{})}
+	t.Cleanup(f.letGo)
 	f.store.put("asset", pack(t, files))
-	tier, err := js.New(f.store, append([]js.Option{f.logs.option(), js.WithRealm(later)}, opts...)...)
+	tier, err := js.New(f.store, append([]js.Option{f.logs.option(), js.WithRealm(f.realm)}, opts...)...)
 	require.NoError(t, err)
 	f.tier = tier
 	f.spec = invoke.Spec{Runtime: js.Name, Name: "shop/worker", Revision: "r1", Artifact: "asset"}

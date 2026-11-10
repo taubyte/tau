@@ -350,6 +350,10 @@ export default {
       ctx.waitUntil(later(200).then(() => { finished++; }));
       return new Response("answered");
     }
+    if (request.url.endsWith("/held")) {
+      ctx.waitUntil(held().then(() => { finished++; }));
+      return new Response("answered");
+    }
     if (request.url.endsWith("/chain")) {
       ctx.waitUntil(later(50).then(() => { ctx.waitUntil(later(50).then(() => { finished += 10; })); }));
       return new Response("answered");
@@ -386,23 +390,31 @@ func TestWaitUntilAnswersAtOnceAndHoldsTheInstance(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "0", string(resp.Body))
 
+	// THE WORK CANNOT END UNTIL THE TEST LETS IT, so an answer at all is one that
+	// did not wait for it.
+	resp, err = p.Do(t.Context(), f.spec, get("/held"))
+	require.NoError(t, err)
+	require.Equal(t, "answered", string(resp.Body), "the answer waited for the work")
+	f.letGo()
+	resp, err = p.Do(t.Context(), f.spec, get("/count"))
+	require.NoError(t, err)
+	require.Equal(t, "1", string(resp.Body))
+
 	began := time.Now()
 	resp, err = p.Do(t.Context(), f.spec, get("/later"))
 	require.NoError(t, err)
 	require.Equal(t, "answered", string(resp.Body))
-	require.Less(t, time.Since(began), 150*time.Millisecond, "the answer did not wait for the work")
-
 	resp, err = p.Do(t.Context(), f.spec, get("/count"))
 	require.NoError(t, err)
-	require.Equal(t, "1", string(resp.Body), "the next request ran after the work settled")
-	require.GreaterOrEqual(t, time.Since(began), 200*time.Millisecond)
+	require.Equal(t, "2", string(resp.Body), "the next request ran after the work settled")
+	require.GreaterOrEqual(t, time.Since(began), 200*time.Millisecond, "the instance was not held for the work")
 
 	resp, err = p.Do(t.Context(), f.spec, get("/chain"))
 	require.NoError(t, err)
 	require.Equal(t, "answered", string(resp.Body))
 	resp, err = p.Do(t.Context(), f.spec, get("/count"))
 	require.NoError(t, err)
-	require.Equal(t, "11", string(resp.Body), "work handed to waitUntil by earlier work is waited for too")
+	require.Equal(t, "12", string(resp.Body), "work handed to waitUntil by earlier work is waited for too")
 
 	resp, err = p.Do(t.Context(), f.spec, get("/done"))
 	require.NoError(t, err)
