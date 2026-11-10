@@ -122,7 +122,7 @@ func (m *Migrator) scrubAndSweep(ctx context.Context, report *Report, passHashes
 	}
 
 	if err := m.overThreshold(ctx, len(doomed)); err != nil {
-		logger.Errorf("data migration stopped, nothing deleted: %s — set substrate.migration: false or raise the limit; the next boot tries again", err)
+		logger.Errorf("data migration stopped, nothing deleted: %s — the replayed data stays on this node and later boots skip it", err)
 		report.Err = err.Error()
 		report.thresholdHit = true
 		return
