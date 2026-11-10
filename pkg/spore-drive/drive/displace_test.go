@@ -226,21 +226,23 @@ func testDisplace(t *testing.T, sd Spore) {
 			assert.NilError(t, err)
 			f.Close()
 			assert.Equal(t, string(data), `[Unit]
-Description = Taubyte Tau Service Running %i
+Description           = Taubyte Tau Service Running %i
+StartLimitIntervalSec = 0
 
 [Service]
-Type           = simple
-ExecStartPre   = -/usr/sbin/setenforce 0
-ExecStart      = /tb/bin/tau start -s %i --root /tb
-StandardOutput = journal
-User           = root
-Group          = root
-LimitAS        = infinity
-LimitRSS       = infinity
-LimitCORE      = infinity
-LimitNOFILE    = 65536
-Restart        = always
-RestartSec     = 1
+Type                     = simple
+ExecStartPre             = -/usr/sbin/setenforce 0
+ExecStart                = /tb/bin/tau start -s %i --root /tb
+StandardOutput           = journal
+User                     = root
+Group                    = root
+LimitAS                  = infinity
+LimitRSS                 = infinity
+LimitCORE                = infinity
+LimitNOFILE              = 65536
+Restart                  = always
+RestartSec               = 1
+RestartPreventExitStatus = 78
 
 [Install]
 WantedBy = multi-user.target

@@ -132,15 +132,13 @@ func TestTenancyVerifier_UnconfiguredNeedsNoCredential(t *testing.T) {
 	assert.Assert(t, v == nil)
 }
 
-// The other half of "no fallback": once an owner is set, startup fails unless
-// the credential is usable. Without this, a tenancy with no app would silently
-// degrade to an ownership-only gate.
+// Once an owner is set with an app, startup fails unless the credential is
+// usable; half a credential is a mistake, not a choice of verifier.
 func TestTenancyVerifier_ConfiguredRequiresCredential(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		app  tauConfig.TenancyApp
 	}{
-		{"no app at all", tauConfig.TenancyApp{}},
 		{"client id but no key", tauConfig.TenancyApp{ClientId: "Iv1.test"}},
 		{"key but no client id", tauConfig.TenancyApp{Key: testAppKey(t)}},
 		{"malformed key", tauConfig.TenancyApp{ClientId: "Iv1.test", Key: "not a pem"}},
@@ -221,4 +219,33 @@ func TestAuthorizeRepository_UnconfiguredRefuses(t *testing.T) {
 func TestAuthorizeRepository_DevModeBypasses(t *testing.T) {
 	srv := &AuthService{devMode: true}
 	assert.NilError(t, srv.authorizeRepository(orgRepo("anyone/widget")))
+}
+
+// A namespace without an app is one account: only that account is a member.
+func TestTenancyVerifier_AccountNamespace(t *testing.T) {
+	v, err := tenancyVerifier(tauConfig.Tenancy{Provider: "github", Owner: "octocat"})
+	assert.NilError(t, err)
+	assert.Assert(t, v != nil)
+
+	ctx := context.Background()
+	for _, tc := range []struct {
+		username string
+		want     bool
+	}{
+		{"octocat", true},
+		{"OctoCat", true}, // GitHub logins are case-insensitive
+		{"someone-else", false},
+	} {
+		member, err := v.IsActiveMember(ctx, "octocat", tc.username)
+		assert.NilError(t, err)
+		assert.Equal(t, member, tc.want, tc.username)
+	}
+
+	// an organization configured without an app admits nobody
+	member, err := v.IsActiveMember(ctx, "acme-org", "alice")
+	assert.NilError(t, err)
+	assert.Assert(t, !member)
+
+	_, err = v.IsActiveMember(ctx, "octocat", "")
+	assert.Assert(t, err != nil)
 }

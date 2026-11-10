@@ -35,7 +35,9 @@ const (
 // owning namespace configured. Refusing beats falling open: an unconfigured
 // cloud would otherwise accept a registration from anyone holding a valid
 // provider token.
-var ErrNoTenancy = errors.New("no tenancy configured: this cloud registers repositories for a configured namespace only")
+var ErrNoTenancy = errors.New("no tenancy configured: set tenancy.owner in this node's config " +
+	"to the GitHub account that owns the cloud, or to an organization together with tenancy.app " +
+	"(a GitHub App with organization Members: read, installed on it)")
 
 // MembershipVerifier answers whether a user belongs to a namespace. A
 // (false, nil) result is a definitive non-member; everything else -- missing
@@ -69,21 +71,36 @@ type tokenEntry struct {
 }
 
 // tenancyVerifier returns the verifier a tenancy requires: none when no
-// namespace is configured, and otherwise one built from the app credential.
+// namespace is configured, an account verifier when the namespace is a single
+// account (no app), and otherwise one built from the app credential.
 //
-// A configured tenancy has no ownership-only fallback. Membership is
-// unanswerable without the credential, so a missing or unusable one is an error
-// here — at startup — rather than a quietly narrower gate discovered at
-// whichever registration first needs it.
+// A partial or unusable credential is an error here, at startup, rather than a
+// quietly narrower gate discovered at whichever registration first needs it.
 func tenancyVerifier(t tauConfig.Tenancy) (MembershipVerifier, error) {
 	if !t.Configured() {
 		return nil, nil
+	}
+	if t.App == (tauConfig.TenancyApp{}) {
+		return accountVerifier{}, nil
 	}
 	v, err := newGitHubAppVerifier(t.App.ClientId, t.App.Key)
 	if err != nil {
 		return nil, fmt.Errorf("tenancy `%s` needs a usable app credential: %w", t.Owner, err)
 	}
 	return v, nil
+}
+
+// accountVerifier serves a namespace that is one account, such as a personal
+// GitHub user: its only member is the account itself, so no app is needed to
+// ask. Configured with an organization instead, it admits nobody, since no one
+// logs in as an organization; a missing app never opens the cloud.
+type accountVerifier struct{}
+
+func (accountVerifier) IsActiveMember(_ context.Context, namespace, username string) (bool, error) {
+	if namespace == "" || username == "" {
+		return false, errors.New("namespace and username are required")
+	}
+	return strings.EqualFold(namespace, username), nil
 }
 
 // newGitHubAppVerifier builds a verifier from a PEM private key. It fails on a

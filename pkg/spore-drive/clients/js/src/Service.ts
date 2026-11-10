@@ -34,7 +34,10 @@ export class Service {
     this.binaryName = os.platform() === "win32" ? "drive.exe" : "drive";
     this.binaryPath = path.join(this.binaryDir, this.binaryName);
     this.versionFilePath = path.join(this.binaryDir, "version.txt");
-    this.packageVersion = packageJson.service;
+    // SPORE_DRIVE_SERVICE_VERSION runs a service built elsewhere, such as a
+    // fork's release, without republishing this package.
+    this.packageVersion =
+      process.env.SPORE_DRIVE_SERVICE_VERSION || packageJson.service;
     this.runFilePath = path.join(this.getConfigDir(), ".spore-drive.run");
   }
 
@@ -125,10 +128,15 @@ export class Service {
   }
 
   // Which release tarball to download. Override point: the ee client pulls the
-  // ee spore-drive build instead of the community one.
+  // ee spore-drive build instead of the community one. SPORE_DRIVE_RELEASES
+  // (owner/repo) takes the tarball from another repository's releases, and
+  // SPORE_DRIVE_TAG_PREFIX names its tags there, for a repository whose own
+  // "v" tags are something else, such as a fork of tau.
   protected releaseAssetUrl(version: string, os: string, arch: string): string {
     const assetName = `spore-drive-service_${version}_${os}_${arch}.tar.gz`;
-    return `https://github.com/taubyte/spore-drive/releases/download/v${version}/${assetName}`;
+    const repo = process.env.SPORE_DRIVE_RELEASES || "taubyte/spore-drive";
+    const prefix = process.env.SPORE_DRIVE_TAG_PREFIX || "v";
+    return `https://github.com/${repo}/releases/download/${prefix}${version}/${assetName}`;
   }
 
   private async downloadAndExtractBinary(): Promise<void> {
