@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -246,6 +247,31 @@ type cluster struct {
 	caller host.Host
 	// cm is the region's settings every node reads.
 	cm *cmmock.CM
+	// clocks are the nodes' own, each the wall clock until a test moves it.
+	clocks []*movable
+}
+
+// movable is a node's clock: the wall clock until a test sets it, read as safely
+// by the node's own goroutines as by the test.
+type movable struct{ at atomic.Pointer[time.Time] }
+
+func (m *movable) now() time.Time {
+	if at := m.at.Load(); at != nil {
+		return *at
+	}
+	return time.Now()
+}
+
+func (m *movable) set(at time.Time) { m.at.Store(&at) }
+
+// clockOf is the clock of the cluster's member with this id.
+func (c *cluster) clockOf(id string) *movable {
+	for i, n := range c.nodes {
+		if n.self == id {
+			return c.clocks[i]
+		}
+	}
+	return nil
 }
 
 func newCluster(t *testing.T, n int, catalog Catalog, opts ...option) *cluster {
@@ -274,7 +300,9 @@ func newCluster(t *testing.T, n int, catalog Catalog, opts ...option) *cluster {
 	for _, id := range c.ids {
 		h := mn.Host(id)
 		shards := &memShards{}
+		clock := &movable{}
 		s, err := build(h, Config{}, append([]option{
+			withClock(clock.now),
 			withBytes(&nodeBytes{memBlocks: newMemBlocks(), swarm: c.swarm, self: h.ID()}),
 			withLocal(newOrderedMem()),
 			withShards(shards),
@@ -288,6 +316,7 @@ func newCluster(t *testing.T, n int, catalog Catalog, opts ...option) *cluster {
 		t.Cleanup(func() { s.Close() })
 		c.nodes = append(c.nodes, s)
 		c.shards = append(c.shards, shards)
+		c.clocks = append(c.clocks, clock)
 	}
 	// Every node's first maintenance pass is done before a test drives the cluster:
 	// the next is an hour away, so the passes a test runs are the only ones.

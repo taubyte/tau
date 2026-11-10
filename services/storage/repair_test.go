@@ -194,8 +194,7 @@ func TestAHolderThatLostItsCopyIsFoundAndGivenItBack(t *testing.T) {
 	require.NoError(t, prover.repair(t.Context()))
 	require.False(t, c.swarm.holds(peerOf(t, lost), root), "a root every holder proved was proven again before reprove")
 
-	later := time.Now().Add(reprove + time.Minute)
-	prover.now = func() time.Time { return later }
+	c.clockOf(holders[0]).set(time.Now().Add(reprove + time.Minute))
 	require.NoError(t, prover.repair(t.Context()))
 	require.True(t, c.swarm.holds(peerOf(t, lost), root), "a holder that lost its copy was never given it back")
 }
