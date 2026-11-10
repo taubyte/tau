@@ -220,6 +220,9 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client Git
 		return nil, fmt.Errorf("new repository failed with %s", err)
 	}
 
+	// read before Register overwrites it; on a failed read a key is left behind
+	replaced, _ := srv.KV().Get(ctx, repoKey)
+
 	err = repo.Register(ctx)
 	if err != nil {
 		return nil, err
@@ -247,6 +250,12 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client Git
 	err = hook.Register(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("hooks register failed with %s", err)
+	}
+
+	if client != nil && len(replaced) > 0 {
+		if err := removeReplacedKey(client, replaced); err != nil {
+			logger.Errorf("removing the replaced deploy key of repository %s failed: %s", repoID, err)
+		}
 	}
 
 	repoInfo := make(map[string]string, 2)

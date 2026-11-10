@@ -189,6 +189,12 @@ func (p *PatrickService) dequeueHandler(ctx context.Context, conn streams.Connec
 	}()
 
 	quotas, capsOn := p.buildCaps()
+	if capsOn {
+		// counting running builds and writing the claim must be one step, or
+		// concurrent dequeues all see the same count and overshoot the cap
+		p.claimLock.Lock()
+		defer p.claimLock.Unlock()
+	}
 	var running map[string]int
 	for len(skipped) < maxCappedSkips {
 		id, _, err := p.jobQueue.Pop(5 * time.Second)

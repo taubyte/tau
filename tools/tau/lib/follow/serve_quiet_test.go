@@ -13,8 +13,8 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// A push that changed nothing served (only a website's repo, say) ends once
-// nothing changed for serveQuiet, with a line saying so, not at the timeout.
+// Nothing changing for serveQuiet ends Serve with ExitQuiet, not 0: a rollout
+// that never propagates must not look green in CI.
 func TestServeReturnsWhenNothingChanged(t *testing.T) {
 	defer func(q, h time.Duration) { serveQuiet, heartbeat = q, h }(serveQuiet, heartbeat)
 	serveQuiet, heartbeat = 300*time.Millisecond, 50*time.Millisecond
@@ -27,9 +27,9 @@ func TestServeReturnsWhenNothingChanged(t *testing.T) {
 	defer cancel()
 	var progress bytes.Buffer
 	served, code := Serve(ctx, targets, func(t Target) string { return before[t] }, 10*time.Millisecond, time.Now(), &progress)
-	assert.Equal(t, code, 0)
+	assert.Equal(t, code, ExitQuiet)
 	assert.Equal(t, served[0].Note, "not changed by this push")
-	assert.Assert(t, strings.Contains(progress.String(), "changed nothing served"), progress.String())
+	assert.Assert(t, strings.Contains(progress.String(), "have not picked it up"), progress.String())
 	assert.Assert(t, strings.Contains(progress.String(), "still waiting for 1 of 1 nodes"), progress.String())
 }
 
