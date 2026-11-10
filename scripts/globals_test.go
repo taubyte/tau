@@ -94,6 +94,7 @@ var allowed = map[string]string{
 	"pkg/containers/backends/containerd.tree":     "the process's own cgroup, which preparing moves the process into: once per process",
 	"pkg/containers/backends/containerd.treeErr":  "the process's own cgroup, which preparing moves the process into: once per process",
 	"pkg/kvdb.contextGens":                        "a source of unique numbers, shared only in being unique",
+	"pkg/kvdb.replicas":                           "the replica ids every key parse names: moving onto the store next",
 	"pkg/forge/bitbucket.routesMu":                "routes enrol as the package's vars initialise, and are read-only once they have",
 	"pkg/forge/bitbucket.routeTable":              "routes enrol as the package's vars initialise, and are read-only once they have",
 	"pkg/forge/bitbucket.enrolled":                "routes enrol as the package's vars initialise, and are read-only once they have",
@@ -221,7 +222,7 @@ func findGlobals(root string) (found, error) {
 	topLevel := map[any]bool{}
 	key := func(dir, name string) string { return filepath.ToSlash(dir) + "." + name }
 	for _, f := range files {
-		if f.test || testSupport(f.dir, pkgName) {
+		if f.test || isTestSupport(f.dir) {
 			continue
 		}
 		for _, decl := range f.file.Decls {
@@ -318,15 +319,15 @@ func written(n ast.Node) []ast.Expr {
 	return nil
 }
 
-// testSupport is a package a test imports, never a binary: one whose name, or
-// the name of a package it sits under, ends in "test" (peertest, forgetest/...).
-func testSupport(dir string, pkgName map[string]string) bool {
-	for d := dir; d != "." && d != ""; d = filepath.Dir(d) {
-		if strings.HasSuffix(pkgName[d], "test") {
+// testSupport is the packages a test imports and no binary does, and what sits
+// under them. A name ending in "test" is not enough: latest is a word.
+var testSupport = []string{"p2p/peer/peertest", "pkg/forge/forgetest", "pkg/git/gittest", "services/cm/cmtest"}
+
+func isTestSupport(dir string) bool {
+	dir = filepath.ToSlash(dir)
+	for _, ts := range testSupport {
+		if dir == ts || strings.HasPrefix(dir, ts+"/") {
 			return true
-		}
-		if parent := filepath.Dir(d); parent == d {
-			break
 		}
 	}
 	return false

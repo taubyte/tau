@@ -30,6 +30,9 @@ type env struct {
 	ctx context.Context
 }
 
+// shapeOf is a copy of s, so the table never points into the package's own.
+func shapeOf(s fake.Shape) *fake.Shape { return &s }
+
 func (e env) client(cred forge.Credential) forge.Client {
 	c, err := e.d.Bind(cred)
 	require.NoError(e.t, err)
@@ -175,7 +178,7 @@ func TestEachFaultIsTheMistakeItNames(t *testing.T) {
 		{fault: fake.FaultFlattensDeepKey,
 			observe: func(e env) string { return o(e.c.Access(e.ctx, e.k.Deep)) },
 			right:   o(forge.AccessAdmin, nil), wrong: o(forge.AccessNone, &forge.NotFoundError{})},
-		{fault: fake.FaultANestingForgeRefusesADepth, shape: &fake.GitLabLike,
+		{fault: fake.FaultANestingForgeRefusesADepth, shape: shapeOf(fake.GitLabLike),
 			observe: func(e env) string { return kind(e.d.Addressable(e.k.Deep)) },
 			right:   "nil", wrong: "other"},
 		{fault: fake.FaultAsksBeforeRefusingADepth,
@@ -386,7 +389,7 @@ func TestEachFaultIsTheMistakeItNames(t *testing.T) {
 				return o(a.HTTPUsername, err)
 			},
 			right: "x-access-token nil", wrong: " nil"},
-		{fault: fake.FaultHTTPSAddressHasNoUsername, shape: &fake.BitbucketLike,
+		{fault: fake.FaultHTTPSAddressHasNoUsername, shape: shapeOf(fake.BitbucketLike),
 			observe: func(e env) string {
 				a, err := e.c.(forge.CloneAddresses).CloneAddress(e.k.Writable, forge.HTTPS)
 				return o(a.HTTPUsername, err)
@@ -446,7 +449,7 @@ func TestEachFaultIsTheMistakeItNames(t *testing.T) {
 		{fault: fake.FaultSignsWithAnotherScheme,
 			observe: func(e env) string { _, err := e.verified("refs/heads/main", commit); return fmt.Sprint(err == nil) },
 			right:   "true", wrong: "false"},
-		{fault: fake.FaultSignsWithAnotherScheme, shape: &fake.GitLabLike,
+		{fault: fake.FaultSignsWithAnotherScheme, shape: shapeOf(fake.GitLabLike),
 			observe: func(e env) string { _, err := e.verified("refs/heads/main", commit); return fmt.Sprint(err == nil) },
 			right:   "true", wrong: "false"},
 
