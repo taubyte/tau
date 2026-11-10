@@ -125,7 +125,7 @@ func fleet(t *testing.T, f *fake.Served, opts ...instance.Option) (front, otherF
 	// the fleet is handed over once each plm node finds the other by its protocol.
 	require.Eventually(t, func() bool {
 		for _, pid := range u.Pids()[1:] {
-			n, found := dream.Node(pid)
+			n, found := u.Node(pid)
 			if !found || len(service.Serving(n.HostOf(instance.PLM), plm.Protocol)) != len(u.Pids())-2 {
 				return false
 			}
@@ -133,7 +133,7 @@ func fleet(t *testing.T, f *fake.Served, opts ...instance.Option) (front, otherF
 		return true
 	}, time.Minute, 100*time.Millisecond, "the plm nodes never found each other")
 	addr := func(i int) string {
-		n, found := dream.Node(u.Pids()[i])
+		n, found := u.Node(u.Pids()[i])
 		require.True(t, found)
 		a := n.PLMAddr()
 		require.NotNil(t, a)

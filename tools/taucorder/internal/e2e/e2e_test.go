@@ -42,7 +42,7 @@ func TestBridgesADreamFleet(t *testing.T) {
 	defer u.Close()
 
 	pids := u.Pids()
-	n, ok := nodeDream.Node(pids[0])
+	n, ok := u.Node(pids[0])
 	if !ok || n.Register() == nil {
 		t.Fatal("first node runs no register")
 	}

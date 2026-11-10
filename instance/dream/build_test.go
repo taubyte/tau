@@ -68,7 +68,7 @@ func TestAPushIsBuiltWhereTheCloudBuilds(t *testing.T) {
 			require.Equal(t, plmv2.JobStatus_JobStatusSuccess, out.Environments[0].GetStatus(), "%s", out.Environments[0].GetReason())
 			require.Equal(t, "prod", out.Environments[0].GetEnvironment())
 
-			_, err = nodeOf(t, u.Pids()[0]).Register().Local().Resolve(ctx, placementID, "prod")
+			_, err = nodeOf(t, u, u.Pids()[0]).Register().Local().Resolve(ctx, placementID, "prod")
 			require.NoError(t, err, "what it built is what the register serves")
 		})
 	}
@@ -116,7 +116,7 @@ func TestAnUploadedBuildIsWhatTheFunctionRuns(t *testing.T) {
 	require.Len(t, out.Environments, 1)
 	require.Equal(t, plmv2.JobStatus_JobStatusSuccess, out.Environments[0].GetStatus(), "%s", out.Environments[0].GetReason())
 
-	r := &running{node: nodeOf(t, u.Pids()[0]), host: "hello.example.com"}
+	r := &running{node: nodeOf(t, u, u.Pids()[0]), host: "hello.example.com"}
 	got := r.ask(t, http.MethodGet, "/")
 	require.Equal(t, 200, got.Code, "%s", got.Body.String())
 	require.Equal(t, "/", got.Header().Get("x-path"), "the handler built, answering")

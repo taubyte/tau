@@ -28,7 +28,7 @@ func TestAServiceIsResolvedByNameToTheNodeRunningIt(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
 
-	ask := asking(t, nodeOf(t, u.Pids()[0]))
+	ask := asking(t, nodeOf(t, u, u.Pids()[0]))
 	name := instance.PLM + "." + cloud
 
 	var reply *dns.Msg

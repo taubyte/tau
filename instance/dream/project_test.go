@@ -264,7 +264,7 @@ func publish(t testing.TB, u *nodeDream.Cloud, pids []string, at deployed, compo
 
 	out := make([]*running, 0, len(pids))
 	for _, id := range pids {
-		n := nodeOf(t, id)
+		n := nodeOf(t, u, id)
 		// WHAT WAS BUILT REACHES EVERY NODE through what its worker looks it up in, so a
 		// node is handed over once it reads each package's build.
 		for pkgID, v := range packages {
@@ -848,7 +848,7 @@ func deployFleetServing(t *testing.T, copies int, services []string, wasm []byte
 
 	nodes := make([]*instance.Instance, 0, copies)
 	for _, id := range pids {
-		nodes = append(nodes, nodeOf(t, id))
+		nodes = append(nodes, nodeOf(t, u, id))
 	}
 
 	// Every extra binary is keyed by the author's label.

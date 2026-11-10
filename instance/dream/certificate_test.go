@@ -72,7 +72,7 @@ func TestAServiceNameIsIssuedOnceForTheFleet(t *testing.T) {
 
 	nodes := make([]*instance.Instance, 0, 3)
 	for _, pid := range u.Pids() {
-		nodes = append(nodes, nodeOf(t, pid))
+		nodes = append(nodes, nodeOf(t, u, pid))
 	}
 	var resolver string
 	for _, n := range nodes {

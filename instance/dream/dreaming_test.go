@@ -31,7 +31,7 @@ func TestAFleetServesARequestEndToEnd(t *testing.T) {
 	pids := u.Pids()
 	require.NotEmpty(t, pids)
 
-	registry := nodeOf(t, pids[0])
+	registry := nodeOf(t, u, pids[0])
 	require.NotNil(t, registry.Register(), "the first node runs the register")
 
 	_, err = registry.Register().Local().Publish(t.Context(), pkgregister.Publication{
@@ -57,7 +57,7 @@ func TestAGatewayNodeReachesAWorkerNode(t *testing.T) {
 	pids := u.Pids()
 	require.Len(t, pids, 2)
 
-	edge, compute := nodeOf(t, pids[0]), nodeOf(t, pids[1])
+	edge, compute := nodeOf(t, u, pids[0]), nodeOf(t, u, pids[1])
 
 	// BUILT AS A PUSH IS, by the cloud's builder.
 	publish(t, u, pids, deployed{name: "with/function/wasm", host: "hello.example.com"}, artifacts{"": handlerWASM(t)})
@@ -83,9 +83,9 @@ func TestAGatewayNodeReachesAWorkerNode(t *testing.T) {
 	require.Equal(t, "/", w.Header().Get("x-path"), "the handler built, answering")
 }
 
-func nodeOf(t testing.TB, peerID string) *instance.Instance {
+func nodeOf(t testing.TB, u *nodeDream.Cloud, peerID string) *instance.Instance {
 	t.Helper()
-	n, ok := nodeDream.Node(peerID)
+	n, ok := u.Node(peerID)
 	require.True(t, ok, "no node on %s", peerID)
 	return n
 }

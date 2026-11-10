@@ -39,7 +39,7 @@ func TestAGuardDecidesForARealGuest(t *testing.T) {
 	pids := u.Pids()
 	require.NotEmpty(t, pids)
 
-	n := nodeOf(t, pids[0])
+	n := nodeOf(t, u, pids[0])
 
 	// Two artifacts, so this cannot go through deploy: the guard is a different
 	// component in a different world. No gateway or zone; both halves are put to the

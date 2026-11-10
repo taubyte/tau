@@ -66,7 +66,7 @@ func TestADroppedRegionStopsResolving(t *testing.T) {
 			})
 			require.NoError(t, err)
 			t.Cleanup(u.Close)
-			n := nodeOf(t, u.Pids()[0])
+			n := nodeOf(t, u, u.Pids()[0])
 			reg := n.Register().Local()
 
 			deployAs(t, n, schema.Preview("region-1", "region-2"))

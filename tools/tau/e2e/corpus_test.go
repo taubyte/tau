@@ -185,9 +185,9 @@ func cloud(t *testing.T, f *fake.Served, configure func(*instance.Config)) (stri
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
 
-	serving, ok := dream.Node(u.Pids()[0])
+	serving, ok := u.Node(u.Pids()[0])
 	require.True(t, ok)
-	front, ok := dream.Node(u.Pids()[1])
+	front, ok := u.Node(u.Pids()[1])
 	require.True(t, ok)
 	addr := front.PLMAddr()
 	require.NotNil(t, addr)

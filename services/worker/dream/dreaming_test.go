@@ -30,7 +30,6 @@ import (
 
 func TestAWorkerResolvesAgainstARegisterAcrossTheSwarm(t *testing.T) {
 	recorder := &recordingTier{name: "oci"}
-	defer workerDream.Runtimes(workerDream.Runtimes(recorder)...)
 
 	m, err := mesh.New(t.Context(), t.Name())
 	require.NoError(t, err)
@@ -38,7 +37,7 @@ func TestAWorkerResolvesAgainstARegisterAcrossTheSwarm(t *testing.T) {
 
 	registerNode, err := registerDream.Start(m)
 	require.NoError(t, err)
-	workerNode, err := workerDream.Start(m, registerNode.ID())
+	workerNode, err := workerDream.Start(m, registerNode.ID(), recorder)
 	require.NoError(t, err)
 
 	registers := []string{registerNode.ID().String()}
@@ -84,8 +83,6 @@ func TestAWorkerResolvesAgainstARegisterAcrossTheSwarm(t *testing.T) {
 }
 
 func TestACloudWithNoTierSaysSo(t *testing.T) {
-	defer workerDream.Runtimes(workerDream.Runtimes()...)
-
 	m, err := mesh.New(t.Context(), t.Name())
 	require.NoError(t, err)
 	defer m.Close()

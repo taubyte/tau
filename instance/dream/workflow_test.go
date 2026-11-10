@@ -32,7 +32,7 @@ func TestAWorkflowRunsEndToEnd(t *testing.T) {
 	pids := u.Pids()
 	require.NotEmpty(t, pids)
 
-	n := nodeOf(t, pids[0])
+	n := nodeOf(t, u, pids[0])
 	r := publish(t, u, pids[:1], deployed{name: "with/workflow"}, artifacts{"": cacherWASM(t)})[0]
 
 	// The deployment must be held before anything drains: a node drains the queues of

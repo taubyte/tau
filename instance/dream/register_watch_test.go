@@ -36,7 +36,7 @@ func TestAGatewayElsewhereFollowsANameAsItMoves(t *testing.T) {
 	var registers []*instance.Instance
 	var edge *instance.Instance
 	for _, id := range u.Pids() {
-		n := nodeOf(t, id)
+		n := nodeOf(t, u, id)
 		if n.Register() == nil {
 			edge = n
 		} else {

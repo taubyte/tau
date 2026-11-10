@@ -221,12 +221,12 @@ func (u *Cloud) recipes(repository, branch, dir string) (map[string]map[string]s
 
 // nodes is the cloud's nodes, in the order they started.
 func (u *Cloud) nodes() []*instance.Instance {
-	built.Lock()
-	defer built.Unlock()
+	u.runningMu.Lock()
+	defer u.runningMu.Unlock()
 	out := make([]*instance.Instance, 0, len(u.pids))
 	for _, pid := range u.pids {
-		if r, ok := built.byPeer[pid]; ok {
-			out = append(out, r.node)
+		if n, ok := u.running[pid]; ok {
+			out = append(out, n)
 		}
 	}
 	return out

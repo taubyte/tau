@@ -8,6 +8,7 @@ package dream
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"sync"
@@ -36,25 +37,36 @@ import (
 	"github.com/taubyte/tau/pkg/raft"
 )
 
-type builtNodes struct {
-	sync.Mutex
-	byPeer map[string]running
+// Node is the cloud's node running on a peer, for a test that has its id.
+func (u *Cloud) Node(peerID string) (*instance.Instance, bool) {
+	u.runningMu.Lock()
+	defer u.runningMu.Unlock()
+	n, ok := u.running[peerID]
+	return n, ok
 }
 
-// built is every node this process is running, by peer id, so a test can reach
-// one. Nothing in production reads it.
-var built = builtNodes{byPeer: map[string]running{}}
-
-type running struct {
-	node *instance.Instance
+// ran records n as the node on peerID, until closing it forgets it.
+func (u *Cloud) ran(peerID string, n *instance.Instance) io.Closer {
+	u.runningMu.Lock()
+	defer u.runningMu.Unlock()
+	if u.running == nil {
+		u.running = map[string]*instance.Instance{}
+	}
+	u.running[peerID] = n
+	return forgotten{u: u, id: peerID}
 }
 
-// Node is the node running on a peer, for a test that has its id.
-func Node(peerID string) (*instance.Instance, bool) {
-	built.Lock()
-	defer built.Unlock()
-	r, ok := built.byPeer[peerID]
-	return r.node, ok
+// forgotten takes a closed node out of its cloud.
+type forgotten struct {
+	u  *Cloud
+	id string
+}
+
+func (f forgotten) Close() error {
+	f.u.runningMu.Lock()
+	defer f.u.runningMu.Unlock()
+	delete(f.u.running, f.id)
+	return nil
 }
 
 // Dream's raft timeouts. raft.DefaultTimeoutConfig is sized for distant nodes; in
@@ -149,6 +161,10 @@ type Cloud struct {
 	visitor  peer.Node
 
 	rpc *served
+
+	// running is the node on each peer, by peer id.
+	runningMu sync.Mutex
+	running   map[string]*instance.Instance
 }
 
 // Start runs a cloud of cfg.Copies nodes, one after another, each meshed
@@ -193,7 +209,7 @@ func Start(ctx context.Context, name string, cfg Config) (*Cloud, error) {
 	u := &Cloud{mesh: m, mirror: mirror, uploads: held}
 	copies := max(cfg.Copies, 1)
 	for index := range copies {
-		p, err := m.Add(func(p peer.Node) error { return create(m, p, cfg, index, account, held, mirror) })
+		p, err := m.Add(func(p peer.Node) error { return create(u, m, p, cfg, index, account, held, mirror) })
 		if err != nil {
 			u.Close()
 			return nil, fmt.Errorf("dream: node %d: %w", index, err)
@@ -238,7 +254,7 @@ func (u *Cloud) Close() {
 	u.mesh.Close()
 }
 
-func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secretsv2.InitSecret, uploads, mirror string) error {
+func create(u *Cloud, m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secretsv2.InitSecret, uploads, mirror string) error {
 	ctx := m.Context()
 	h := p.Host()
 
@@ -315,26 +331,18 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		return err
 	}
 
-	id := h.ID().String()
-	built.Lock()
-	built.byPeer[id] = running{node: n}
-	built.Unlock()
-
-	m.OnClose(closer{id: id, node: n, root: root})
+	m.OnClose(closer{forget: u.ran(h.ID().String(), n), node: n, root: root})
 	return nil
 }
 
 type closer struct {
-	id   string
-	node *instance.Instance
-	root string
+	forget io.Closer
+	node   *instance.Instance
+	root   string
 }
 
 func (c closer) Close() error {
-	built.Lock()
-	delete(built.byPeer, c.id)
-	built.Unlock()
-
+	c.forget.Close()
 	err := c.node.Close()
 	if c.root != "" {
 		os.RemoveAll(c.root)

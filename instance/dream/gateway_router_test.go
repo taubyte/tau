@@ -51,7 +51,7 @@ func TestAGatewayRoutedByAFunctionRunsRealComponents(t *testing.T) {
 	pids := u.Pids()
 	require.NotEmpty(t, pids)
 
-	n := nodeOf(t, pids[0])
+	n := nodeOf(t, u, pids[0])
 
 	// Three artifacts, one per world.
 	routed := publish(t, u, pids[:1], deployed{name: "with/gateway/router", host: routedHost}, artifacts{

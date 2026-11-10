@@ -1,6 +1,6 @@
 // Package dream runs the worker on a peer of an in-process mesh. It proves the
 // lookup over real streams and a real register. It cannot prove the tier without a
-// container backend: the pool is built from the runtimes set with Runtimes, and a
+// container backend: the pool is built from the runtimes Start is given, and a
 // cloud supplying none stops at the tier (proven in pkg/invoke/container).
 package dream
 
@@ -20,30 +20,12 @@ import (
 	"github.com/taubyte/tau/services/worker"
 )
 
-type tierList struct {
-	sync.Mutex
-	list []invoke.Runtime
-}
-
-// runtimes are the tiers a cloud's workers run on, package-level because a tier
-// is a live object shared by every worker a test starts.
-var runtimes tierList
-
-// Runtimes sets the tiers, and returns what it replaced so a test can put it back.
-func Runtimes(rts ...invoke.Runtime) []invoke.Runtime {
-	runtimes.Lock()
-	defer runtimes.Unlock()
-	was := runtimes.list
-	runtimes.list = rts
-	return was
-}
-
-// Start runs a worker on a new peer of m, reading projects from the register on
-// the peer named, and answers the peer. The worker is closed with the mesh,
-// before its peer.
-func Start(m *mesh.Mesh, registerAt libp2ppeer.ID) (peer.Node, error) {
+// Start runs a worker on a new peer of m, on the tiers given, reading projects
+// from the register on the peer named, and answers the peer. The worker is closed
+// with the mesh, before its peer.
+func Start(m *mesh.Mesh, registerAt libp2ppeer.ID, tiers ...invoke.Runtime) (peer.Node, error) {
 	return m.Add(func(node peer.Node) error {
-		svc, err := create(m.Context(), node.Host(), registerAt)
+		svc, err := create(m.Context(), node.Host(), registerAt, tiers)
 		if err != nil {
 			return err
 		}
@@ -52,11 +34,7 @@ func Start(m *mesh.Mesh, registerAt libp2ppeer.ID) (peer.Node, error) {
 	})
 }
 
-func create(ctx context.Context, h host.Host, at libp2ppeer.ID) (io.Closer, error) {
-	runtimes.Lock()
-	tiers := append([]invoke.Runtime(nil), runtimes.list...)
-	runtimes.Unlock()
-
+func create(ctx context.Context, h host.Host, at libp2ppeer.ID, tiers []invoke.Runtime) (io.Closer, error) {
 	// pkg/invoke refuses a pool with no tiers, so a cloud that supplied none gets a
 	// single tier that starts nothing and says so.
 	if len(tiers) == 0 {
