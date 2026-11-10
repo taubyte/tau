@@ -14,7 +14,10 @@ import (
 var (
 	DefaultUsageBeaconInterval    = 30 * time.Second
 	DefaultAnnounceBeaconInterval = 10 * time.Minute
-	ErrorUsageBeaconStopped       = errors.New("usage Stopped")
+	// AnnounceRetryInterval is the first wait after a failed announce; it
+	// doubles on each further failure, up to DefaultAnnounceBeaconInterval.
+	AnnounceRetryInterval   = 2 * time.Second
+	ErrorUsageBeaconStopped = errors.New("usage Stopped")
 )
 
 type Usage Client
@@ -104,7 +107,7 @@ func (u *UsageBeacon) Start() {
 		// Initial usage update
 		_, err := u.usage.updateUsage(u.hostname, u.nodeId, u.clientNodeId, u.signature)
 		if err != nil {
-			logger.Debugf("updateUsage failed: %v", err)
+			logger.Warnf("heartbeat to seer failed: %v", err)
 			u._status <- err
 		}
 
@@ -122,28 +125,13 @@ func (u *UsageBeacon) Start() {
 		}
 	}()
 
-	// Announce beacon goroutine (includes initial call)
-	go func() {
-		// Initial announce update
+	// Announce beacon goroutine. Seer answers DNS for a service only once it
+	// has been announced, and at startup no seer may be reachable yet, so a
+	// failed announce is retried soon rather than at the next refresh.
+	go announceLoop(u.ctx, func() error {
 		_, err := u.usage.updateAnnounce(u.nodeId, u.clientNodeId, u.signature)
-		if err != nil {
-			logger.Debugf("updateAnnounce failed: %v", err)
-			u._status <- err
-		}
-
-		// Periodic announce updates
-		for {
-			select {
-			case <-u.ctx.Done():
-				return
-			case <-time.After(DefaultAnnounceBeaconInterval):
-				_, err := u.usage.updateAnnounce(u.nodeId, u.clientNodeId, u.signature)
-				if err != nil {
-					u._status <- err
-				}
-			}
-		}
-	}()
+		return err
+	}, func(err error) { u._status <- err }, AnnounceRetryInterval, DefaultAnnounceBeaconInterval)
 
 	// Status handler goroutine
 	go func() {
@@ -166,4 +154,27 @@ func (u *UsageBeacon) Status() error {
 
 func (u *UsageBeacon) Stop() {
 	u.ctx_cancel()
+}
+
+// announceLoop announces until ctx ends: every interval after a success, and
+// after a failure first in retry, doubling up to interval. failed is told of
+// each failure.
+func announceLoop(ctx context.Context, announce func() error, failed func(error), retry, interval time.Duration) {
+	next := retry
+	for {
+		wait := interval
+		if err := announce(); err != nil {
+			logger.Warnf("announce to seer failed, retrying in %s: %v", next, err)
+			failed(err)
+			wait, next = next, min(next*2, interval)
+		} else {
+			next = retry
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+	}
 }

@@ -101,7 +101,7 @@ func (srv *Service) adoptAssets(ctx context.Context, cids []string) (adopted, sk
 			return
 		}
 		members := srv.activeMembers()
-		target := stashTarget(len(members))
+		target := stashTargetFor("", len(members))
 		if claims, err := srv.listStashClaims(ctx, cid); err == nil && len(srv.liveClaimants(claims)) >= target {
 			skipped++
 			continue
@@ -153,4 +153,15 @@ func (srv *Service) adoptAsset(ctx context.Context, cid string, target int) erro
 // clamped to the live fleet, so single-node clouds converge to 1.
 func stashTarget(liveFleet int) int {
 	return max(min(hoarderSpecs.DefaultStashReplicas, liveFleet), 1)
+}
+
+// stashTargetFor is the replica target for one stashed CID. A CID with no owner
+// is a build artifact or a build log: every node serves functions, so every
+// node should hold it, and the first request on any node reads it locally.
+// Owned bytes (app storage) keep the stash default.
+func stashTargetFor(owner string, liveFleet int) int {
+	if owner == "" {
+		return max(liveFleet, 1)
+	}
+	return stashTarget(liveFleet)
 }

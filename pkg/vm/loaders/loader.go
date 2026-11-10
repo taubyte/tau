@@ -1,6 +1,7 @@
 package loaders
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
@@ -31,13 +32,16 @@ func (l *loader) Load(ctx vm.Context, module string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("fetching module %s @ %s failed with no backend found", module, ctx.Project())
 	}
 
+	var errs []error
 	for _, backend := range l.backends {
 		reader, err := backend.Get(uri)
 		if err == nil && reader != nil {
 			return reader, nil
 		}
-
+		if err != nil {
+			errs = append(errs, err)
+		}
 	}
 
-	return nil, fmt.Errorf("fetching module %s @ %s failed ", module, ctx.Project())
+	return nil, fmt.Errorf("fetching module %s @ %s from %s failed: %w", module, ctx.Project(), uri, errors.Join(errs...))
 }

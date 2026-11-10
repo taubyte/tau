@@ -25,10 +25,10 @@ func (c Context) storeLogFile(file *os.File) (string, error) {
 		return "", fmt.Errorf("adding logs to node failed with: %w", err)
 	} else {
 
-		if err = c.pushStash(cid); err != nil {
-			logger.Error("hoarding log cid `%s` of job `%s` failed with: %s", cid, c.Job.Id, err.Error())
+		if err = c.pushStash(c.ctx, cid); err != nil {
+			logger.Errorf("hoarding log cid `%s` of job `%s` failed with: %s", cid, c.Job.Id, err.Error())
 		} else {
-			logger.Info("hoarded `%s`", cid)
+			logger.Infof("hoarded `%s`", cid)
 		}
 	}
 
