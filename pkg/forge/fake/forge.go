@@ -81,6 +81,11 @@ type core struct {
 	scheme string
 	git    gitStores
 
+	// hopper is the client the one sending fault uses. Its transport is bare, so
+	// nothing about the machine this runs on — a proxy in the environment, most of
+	// all — can change where the hop goes.
+	hopper *http.Client
+
 	mu       sync.Mutex
 	repos    map[string]*repo
 	aliases  map[string]string
@@ -142,6 +147,7 @@ func New(sh Shape) *Forge {
 		panic("fake: a shape that signs names no scheme")
 	}
 	c := &core{
+		hopper:  &http.Client{Transport: &http.Transport{}},
 		shape:   sh,
 		repos:   make(map[string]*repo),
 		aliases: make(map[string]string),
@@ -346,11 +352,6 @@ func (c *core) callAbout(method, path, token string, about repokey.Key) (bool, e
 	return true, nil
 }
 
-// hopper is the client the one sending fault uses. Its transport is bare, so
-// nothing about the machine this runs on — a proxy in the environment, most of
-// all — can change where the hop goes.
-var hopper = &http.Client{Transport: &http.Transport{}}
-
 // answerRedirect answers somewhere else, and a correct driver refuses the hop.
 // FaultFollowsRedirect really sends, credential included, the only thing here
 // that does: an arrival nobody can observe would test nothing. loc is a
@@ -378,7 +379,7 @@ func (c *core) answerRedirect(method, loc string, status int, token string) (boo
 		hdr.Set("Authorization", "Bearer "+token)
 	}
 	req.Header = hdr.Clone()
-	if resp, err := hopper.Do(req); err == nil {
+	if resp, err := c.hopper.Do(req); err == nil {
 		resp.Body.Close()
 	}
 

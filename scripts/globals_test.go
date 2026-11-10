@@ -69,6 +69,7 @@ var allowed = map[string]string{
 	"pkg/containers/backends/containerd.restrictedResolvDir":  "one resolver file per process, the same for every restricted container; a backend has no Close to remove one of its own",
 	"pkg/containers/backends/containerd.restrictedResolvErr":  "one resolver file per process, the same for every restricted container; a backend has no Close to remove one of its own",
 	"pkg/kvdb.contextGens":                                    "a source of unique numbers, shared only in being unique",
+	"pkg/kvdb.replicas":                                       "interns the replica ids every key parse names, the same strings whichever store asks; a table per store would be threaded through every parse on the hot path",
 	"pkg/tcc/taubyte/v2/wasm.sessions":                        "the JS bridge's handles: JS calls exported functions, which have no receiver to hold them",
 	"pkg/tcc/taubyte/v2/wasm.nextHandle":                      "the JS bridge's handles: JS calls exported functions, which have no receiver to hold them",
 	"pkg/forge/bitbucket.routesMu":                            "routes enrol as the package's vars initialise, and are read-only once they have",
@@ -92,7 +93,7 @@ var allowed = map[string]string{
 }
 
 // valueBuilders are constructors whose result is a value nothing changes.
-var valueBuilders = []string{"errors.New", "strings.NewReplacer", "base32.NewEncoding", "cron.NewParser", "lipgloss.NewStyle", "newRoute"}
+var valueBuilders = []string{"errors.New", "connect.NewError", "strings.NewReplacer", "base32.NewEncoding", "cron.NewParser", "lipgloss.NewStyle", "newRoute"}
 
 // syncState is what marks a var as a singleton's state.
 var syncState = []string{"sync.Mutex", "sync.RWMutex", "sync.Once", "sync.WaitGroup", "sync.Map", "sync.Cond", "atomic."}
@@ -169,13 +170,29 @@ func callee(e ast.Expr) string {
 	return ""
 }
 
+// isPointerLiteral reports &T{...}, unless T is an error type, which is how a
+// sentinel of a struct error type is spelled.
 func isPointerLiteral(e ast.Expr) bool {
 	u, ok := e.(*ast.UnaryExpr)
 	if !ok || u.Op != token.AND {
 		return false
 	}
-	_, ok = u.X.(*ast.CompositeLit)
-	return ok
+	lit, ok := u.X.(*ast.CompositeLit)
+	return ok && !strings.HasSuffix(callee(lit.Type), "Error")
+}
+
+// testSupport is a package a test imports, never a binary: peertest, gittest,
+// and what sits under forgetest.
+func testSupport(dir, name string) bool {
+	if strings.HasSuffix(name, "test") {
+		return true
+	}
+	for _, part := range strings.Split(dir, string(filepath.Separator)) {
+		if strings.HasSuffix(part, "test") {
+			return true
+		}
+	}
+	return false
 }
 
 type parsed struct {
@@ -214,16 +231,12 @@ func readGlobals(t *testing.T, root string) globals {
 		if !strings.HasSuffix(p, ".go") {
 			return nil
 		}
-		src, err := os.ReadFile(p)
+		f, err := parser.ParseFile(fset, p, nil, parser.ParseComments)
 		if err != nil {
 			return err
 		}
-		if bytes.Contains(src[:min(len(src), 512)], []byte("Code generated")) {
+		if ast.IsGenerated(f) {
 			return nil
-		}
-		f, err := parser.ParseFile(fset, p, src, 0)
-		if err != nil {
-			return err
 		}
 		files = append(files, parsed{dir: filepath.Dir(rel), rel: rel, path: p, file: f, test: strings.HasSuffix(p, "_test.go")})
 		return nil
@@ -241,8 +254,7 @@ func readGlobals(t *testing.T, root string) globals {
 			continue
 		}
 		pkgName[f.dir] = f.file.Name.Name
-		// Test support (peertest, gittest) is a test's own, never in a binary.
-		if strings.HasSuffix(f.file.Name.Name, "test") {
+		if testSupport(f.dir, f.file.Name.Name) {
 			continue
 		}
 		for _, decl := range f.file.Decls {
