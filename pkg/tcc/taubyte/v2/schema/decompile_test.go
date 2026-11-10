@@ -2,12 +2,15 @@ package schema_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/afero"
+	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/pkg/tcc/interp"
 	"github.com/taubyte/tau/pkg/tcc/interp/decompile"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
@@ -211,4 +214,22 @@ func TestAnEntrypointRoundTripsOnEitherTier(t *testing.T) {
 	assert.Equal(t, nested(namedResource(t, fns, "exports_default"), "execution", "call"), "default")
 	_, called := nestedOK(namedResource(t, fns, "module"), "execution", "call")
 	assert.Assert(t, !called, "a module's default export is its tier's to know, not written into the object")
+}
+
+// A DURATION WRITTEN IN DAYS COMPILES TO ITS NANOSECONDS AND DECOMPILES TO DAYS.
+func TestADurationInDaysRoundTrips(t *testing.T) {
+	raw, err := json.Marshal(compileFor(t, schema.WithLocal("../fixtures/basic")).Flat())
+	assert.NilError(t, err)
+	p, err := specs.Load(raw)
+	assert.NilError(t, err)
+	receipts, _, err := p.Resource(nil, "storage", "receipts")
+	assert.NilError(t, err)
+	storage := specs.ReadStorage(receipts)
+	assert.Assert(t, storage.Lifecycle.Expire != nil)
+	assert.Equal(t, *storage.Lifecycle.Expire, 30*24*time.Hour)
+
+	out := decompileTo(t, compileFor(t, schema.WithLocal("../fixtures/basic")))
+	body, err := afero.ReadFile(out, "/storage/receipts.yaml")
+	assert.NilError(t, err)
+	assert.Assert(t, strings.Contains(string(body), "expire: 30d"), "decompiled as:\n%s", body)
 }

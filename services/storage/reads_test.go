@@ -135,3 +135,22 @@ func TestADeleteFromABehindClockSupersedesWhatItDeletes(t *testing.T) {
 	_, err = c.client(t, 0, 0).Current(t.Context(), at, "page")
 	require.ErrorIs(t, err, ErrNotFound, "a delete stamped before the version it deleted")
 }
+
+// AN INSTANCE'S SIZE IS ASKED OF ANY NODE: one outside the index asks a holder, and an
+// instance nobody wrote holds nothing.
+func TestAnInstancesSizeIsAnsweredFromAnyNode(t *testing.T) {
+	at := assetsOf(t, "site_code")
+	c := newCluster(t, 4, fixedCatalog{at})
+	x := outsider(t, c, at, 0)
+	_, err := c.client(t, 0, 0).Put(t.Context(), at, "page", Object{Versioned: true}, strings.NewReader("first"))
+	require.NoError(t, err)
+	_, err = c.client(t, 0, 0).Put(t.Context(), at, "page", Object{Versioned: true}, strings.NewReader("second!"))
+	require.NoError(t, err)
+
+	n, err := c.client(t, x, x).Size(t.Context(), at)
+	require.NoError(t, err)
+	require.Equal(t, uint64(len("first")+len("second!")), n)
+	n, err = c.client(t, x, x).Size(t.Context(), assetsOf(t, "nobody_wrote"))
+	require.NoError(t, err)
+	require.Zero(t, n)
+}

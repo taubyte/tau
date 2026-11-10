@@ -208,6 +208,18 @@ message CoversResponse {
   bool covered = 1;
 }
 
+// SizeRequest asks for the bytes an instance holds: the current version of every
+// name, and every older one its bucket keeps, none expired. here answers from this
+// node's copy of the index only.
+message SizeRequest {
+  Address at = 1;
+  bool here = 2;
+}
+
+message SizeResponse {
+  uint64 bytes = 1;
+}
+
 // SupersededRequest asks a holder of an instance's shard what its copy holds of the
 // version of name at stamp whose bytes are root_cid: what a node keeping those bytes
 // collects them on.
@@ -236,6 +248,8 @@ service StorageService {
   // Delete writes a tombstone, acknowledged like a put.
   rpc Delete(DeleteRequest) returns (DeleteResponse);
   rpc List(ListRequest) returns (ListResponse);
+  // Size is the bytes an instance holds, every version its bucket keeps counted.
+  rpc Size(SizeRequest) returns (SizeResponse);
   // Read streams an object's bytes. A root no holder has is NotFound.
   rpc Read(ReadRequest) returns (stream ReadResponse);
 

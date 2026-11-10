@@ -110,6 +110,18 @@ func (h *handler) List(ctx context.Context, req *connect.Request[storagev2.ListR
 	return connect.NewResponse(out), nil
 }
 
+func (h *handler) Size(ctx context.Context, req *connect.Request[storagev2.SizeRequest]) (*connect.Response[storagev2.SizeResponse], error) {
+	a, err := addressOf(req.Msg.GetAt())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	n, err := h.s.size(ctx, a, req.Msg.GetHere())
+	if err != nil {
+		return nil, wire(err)
+	}
+	return connect.NewResponse(&storagev2.SizeResponse{Bytes: n}), nil
+}
+
 func (h *handler) Read(ctx context.Context, req *connect.Request[storagev2.ReadRequest], stream *connect.ServerStream[storagev2.ReadResponse]) error {
 	root, err := cid.Decode(req.Msg.GetRootCid())
 	if err != nil {

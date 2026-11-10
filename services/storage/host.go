@@ -144,6 +144,14 @@ func (r *Reached) Delete(ctx context.Context, at Address, name string) (out Vers
 	return out, err
 }
 
+func (r *Reached) Size(ctx context.Context, at Address) (out uint64, err error) {
+	err = r.reach.Do(ctx, func(s Store) error {
+		out, err = s.Size(ctx, at)
+		return err
+	})
+	return out, err
+}
+
 func (r *Reached) Read(ctx context.Context, root string) (out io.ReadCloser, err error) {
 	err = r.reach.Do(ctx, func(s Store) error {
 		out, err = s.Read(ctx, root)

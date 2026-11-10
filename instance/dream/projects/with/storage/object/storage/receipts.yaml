@@ -4,4 +4,4 @@ object:
     versioning: true
     size: 1MB
 lifecycle:
-    expire: 720h
+    expire: 30d

@@ -124,9 +124,6 @@ func Int[T string | AKey](name T, o ...engine.Option) *Attribute   { return engi
 func Bool[T string | AKey](name T, o ...engine.Option) *Attribute  { return engine.Bool(name, o...) }
 func Float[T string | AKey](name T, o ...engine.Option) *Attribute { return engine.Float(name, o...) }
 func Bytes[T string | AKey](name T, o ...engine.Option) *Attribute { return engine.Bytes(name, o...) }
-func Duration[T string | AKey](name T, o ...engine.Option) *Attribute {
-	return engine.Duration(name, o...)
-}
 
 // The terms that NAME another attribute take either a plain key or a multi-segment
 // Key(...), so they are generic and cannot be re-exported as values.

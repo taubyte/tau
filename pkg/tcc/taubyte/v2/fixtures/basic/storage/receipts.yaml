@@ -4,7 +4,7 @@ object:
     versioning: true
     size: 1GB
 lifecycle:
-    expire: 720h
+    expire: 30d
 instances:
     limit: 0
     validator:

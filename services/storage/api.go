@@ -33,6 +33,10 @@ type Store interface {
 	// Delete writes a tombstone over name.
 	Delete(ctx context.Context, at Address, name string) (Version, error)
 
+	// Size is the bytes the instance holds: the current version of every name, and
+	// every older one its bucket keeps, none expired.
+	Size(ctx context.Context, at Address) (uint64, error)
+
 	// Read is the bytes under root, from whichever node holds them.
 	Read(ctx context.Context, root string) (io.ReadCloser, error)
 }
@@ -74,6 +78,32 @@ func (s *server) List(ctx context.Context, at Address, prefix, after string, lim
 
 func (s *server) Delete(ctx context.Context, at Address, name string) (Version, error) {
 	return s.remove(ctx, at, name)
+}
+
+func (s *server) Size(ctx context.Context, at Address) (uint64, error) {
+	return s.size(ctx, at, false)
+}
+
+// size is the bytes an instance holds, from this node's copy of the index or a
+// holder's. An instance no copy holds anything of holds nothing.
+func (s *server) size(ctx context.Context, a Address, here bool) (uint64, error) {
+	var out uint64
+	err := s.fromIndex(ctx, a, here, func(i index) error {
+		n, err := i.Size(ctx, a)
+		out = n
+		return err
+	}, func(svc storagev2Client) error {
+		res, err := svc.Size(ctx, connect.NewRequest(&storagev2.SizeRequest{At: wireAddress(a), Here: true}))
+		if err != nil {
+			return err
+		}
+		out = res.Msg.GetBytes()
+		return nil
+	})
+	if errors.Is(err, ErrNotFound) {
+		return 0, nil
+	}
+	return out, err
 }
 
 func (s *server) Read(ctx context.Context, root string) (io.ReadCloser, error) {

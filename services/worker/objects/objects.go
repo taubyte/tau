@@ -4,8 +4,9 @@
 // version the service holds on K nodes before it answers.
 //
 // The etag is the version's root CID, so the same content is the same etag. `size`
-// is enforced by summing the bucket's live versions, since a running total would be
-// a contended counter; two racing writes can each pass it once.
+// is enforced against the bytes the storage service says the bucket holds — every
+// version it keeps, under versioning every one it replaced — since a running total
+// would be a contended counter; two racing writes can each pass it once.
 package objects
 
 import (
@@ -128,17 +129,20 @@ func (b *bucket) Put(ctx context.Context, key string, value []byte, contentType 
 		return "", err
 	}
 
-	// THE CEILING IS WHAT THE BUCKET WOULD HOLD AFTER THIS WRITE, with what this
-	// name holds now taken off: replacing 1MB with 1MB grows nothing.
+	// THE CEILING IS WHAT THE BUCKET WOULD HOLD AFTER THIS WRITE: every version it
+	// keeps counts, and in a bucket that keeps none what this name holds now is
+	// taken off, so replacing 1MB with 1MB grows nothing there.
 	if b.size > 0 {
-		held, err := b.held(ctx)
+		held, err := b.store.Size(ctx, b.at)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("objects: sizing %s: %w", b.at, err)
 		}
-		if previous, err := b.current(ctx, key); err == nil {
-			held -= int64(previous.Record.Size)
+		// A VERSIONED BUCKET COUNTS WHAT IT REPLACES: the version this write
+		// supersedes is kept, and still held. Any other drops it.
+		if previous, err := b.current(ctx, key); err == nil && !b.versioned {
+			held -= min(held, previous.Record.Size)
 		}
-		if held+int64(len(value)) > b.size {
+		if int64(held)+int64(len(value)) > b.size {
 			return "", fmt.Errorf("%w: %s holds %d of %d bytes and this write is %d",
 				wasmtier.ErrFull, key, held, b.size, len(value))
 		}
@@ -221,18 +225,6 @@ func (b *bucket) current(ctx context.Context, key string) (storage.Version, erro
 }
 
 // held is what this bucket holds now, summed over its live versions.
-func (b *bucket) held(ctx context.Context) (int64, error) {
-	versions, err := b.store.List(ctx, b.at, "", "", 0)
-	if err != nil {
-		return 0, err
-	}
-	var total int64
-	for _, v := range versions {
-		total += int64(v.Record.Size)
-	}
-	return total, nil
-}
-
 // info is one version as the tier's answer, metadata sorted so two reads of one
 // object say the same thing.
 func info(v storage.Version) wasmtier.Info {

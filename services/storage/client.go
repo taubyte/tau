@@ -119,6 +119,15 @@ func (c *Client) Delete(ctx context.Context, at Address, name string) (Version, 
 	return versionFromWire(at, name, res.Msg.GetVersion())
 }
 
+// Size is the bytes the instance holds, every version its bucket keeps counted.
+func (c *Client) Size(ctx context.Context, at Address) (uint64, error) {
+	res, err := c.svc.Size(ctx, connect.NewRequest(&storagev2.SizeRequest{At: wireAddress(at)}))
+	if err != nil {
+		return 0, unwire(err)
+	}
+	return res.Msg.GetBytes(), nil
+}
+
 // List is the current version of every live name beginning with prefix that sorts
 // after after, in name order.
 func (c *Client) List(ctx context.Context, at Address, prefix, after string, limit int) ([]Version, error) {

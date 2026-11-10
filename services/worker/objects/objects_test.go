@@ -272,6 +272,26 @@ func TestABucketRefusesToGrowPastItsSize(t *testing.T) {
 	require.NoError(t, err, "no declared size is no ceiling")
 }
 
+// A VERSIONED BUCKET COUNTS EVERY VERSION IT KEEPS against its size: replacing an
+// object there takes nothing off, since the old version is kept.
+func TestAVersionedBucketCountsWhatItKeeps(t *testing.T) {
+	ctx := t.Context()
+	store := serving(t)
+	b, err := objects.New(store)
+	require.NoError(t, err)
+	grant := bucketGrant("shop/prod/QmKept", 10)
+	grant.Settings[specs.StorageObjectKeyVersioning] = "true"
+	bucket, err := b.OpenBucket(ctx, grant)
+	require.NoError(t, err)
+
+	_, err = bucket.Put(ctx, "a", []byte("123456"), "", nil)
+	require.NoError(t, err)
+	_, err = bucket.Put(ctx, "a", []byte("123456"), "", nil)
+	require.ErrorIs(t, err, wasmtier.ErrFull, "a replaced version a bucket keeps was not counted")
+	_, err = bucket.Put(ctx, "a", []byte("1234"), "", nil)
+	require.NoError(t, err, "six kept and four more is ten")
+}
+
 func TestAListingIsS3s(t *testing.T) {
 	ctx := t.Context()
 	bucket, _ := opened(t, 0)

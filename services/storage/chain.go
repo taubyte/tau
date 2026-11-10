@@ -375,6 +375,35 @@ func (i index) List(ctx context.Context, a Address, prefix, after string, limit 
 	return out, nil
 }
 
+// Size is the bytes the instance holds: the current version of each name, and every
+// older one its bucket keeps, none a tombstone or expired. A version a later one
+// superseded in a bucket that keeps none is garbage, collected, and not counted.
+func (i index) Size(ctx context.Context, a Address) (uint64, error) {
+	namespace, err := a.objectsPrefix()
+	if err != nil {
+		return 0, err
+	}
+	rows, err := i.all(ctx, namespace, 0)
+	if err != nil {
+		return 0, err
+	}
+	var total uint64
+	var last string
+	for _, r := range rows {
+		v, err := parseVersion(r.key, r.value)
+		if err != nil {
+			return 0, err
+		}
+		current := v.Name != last
+		last = v.Name
+		if v.Tombstone() || v.Record.expired(i.at) || (!current && !v.Record.Kept) {
+			continue
+		}
+		total += v.Record.Size
+	}
+	return total, nil
+}
+
 // At resolves one exact stamp (the ABI's open(name, version)). Two nodes can mint the
 // same stamp in one millisecond, so it may find more than one and returns them all in
 // resolution order rather than picking silently.

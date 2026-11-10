@@ -540,3 +540,40 @@ func TestAnExpiredVersionIsGone(t *testing.T) {
 		require.Equal(t, standing{held: true, kept: true, expired: true}, st)
 	})
 }
+
+// AN INSTANCE'S SIZE IS EVERY VERSION IT HOLDS: the current one of each name, and
+// every older one its bucket keeps; never a tombstone, an expired version, or one a
+// bucket that keeps none replaced.
+func TestSizeCountsEveryVersionABucketKeeps(t *testing.T) {
+	eachBackend(t, func(t *testing.T, store Datastore) {
+		ctx := t.Context()
+		a := addr(t)
+		i := index{store: store, at: time.UnixMilli(1_800_000_000_000)}
+		root := testCID(t, "bytes").String()
+		put := func(name string, stamp uint64, r VersionRecord) {
+			t.Helper()
+			r.Writer = "w"
+			if !r.Tombstone {
+				r.RootCID = root
+			}
+			_, err := i.Append(ctx, a, name, stamp, "w", r)
+			require.NoError(t, err)
+		}
+		n, err := i.Size(ctx, a)
+		require.NoError(t, err)
+		require.Zero(t, n)
+
+		put("replaced", 1, VersionRecord{Size: 100})
+		put("replaced", 2, VersionRecord{Size: 1})
+		put("kept", 1, VersionRecord{Size: 10, Kept: true})
+		put("kept", 2, VersionRecord{Size: 20, Kept: true})
+		put("deleted-kept", 1, VersionRecord{Size: 300, Kept: true})
+		put("deleted-kept", 2, VersionRecord{Tombstone: true})
+		put("deleted", 1, VersionRecord{Size: 4000})
+		put("deleted", 2, VersionRecord{Tombstone: true})
+		put("expired", 1, VersionRecord{Size: 50000, Kept: true, ExpiresMS: 1})
+		n, err = i.Size(ctx, a)
+		require.NoError(t, err)
+		require.Equal(t, uint64(1+10+20+300), n)
+	})
+}

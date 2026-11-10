@@ -52,6 +52,9 @@ func (*versioned) List(context.Context, storage.Address, string, string, int) ([
 func (*versioned) Delete(context.Context, storage.Address, string) (storage.Version, error) {
 	return storage.Version{}, errors.New("unused")
 }
+func (*versioned) Size(context.Context, storage.Address) (uint64, error) {
+	return 0, errors.New("unused")
+}
 
 func TestACheckpointIsAVersionInTheVolumesOwnBucket(t *testing.T) {
 	ctx := t.Context()
