@@ -208,7 +208,7 @@ func forwardOnce[T any](ctx context.Context, s *raftStreamService, what string,
 	m.raft.Observe(watch)
 	defer m.raft.Unobserve(watch)
 
-	leader, err := s.cluster.Leader()
+	leader, err := leaderKnownTo(m.raft)
 	switch {
 	case err != nil:
 		streamLogger.Infof("[%s] cannot forward %q: no leader", s.cluster.ID().ShortString(), what)
@@ -219,15 +219,20 @@ func forwardOnce[T any](ctx context.Context, s *raftStreamService, what string,
 
 	streamLogger.Infof("[%s] forwarding %q to leader %s", s.cluster.ID().ShortString(), what, leader.ShortString())
 	res, err := first(named, cli, []peer.ID{leader}, sendToPeerTimeout, call)
-	switch {
-	case err == nil:
+	if err == nil {
 		return res, nil
-	case !errors.Is(context.Cause(named), errLeaderMoved):
-		return nil, fmt.Errorf("forwarding to leader failed: %w", err)
-	case rpc.Unreached(err):
-		return nil, errLeaderMoved
 	}
-	return nil, ErrLeadershipLost
+	// A CHANGE THE ENGINE HAS PUBLISHED BUT NOT YET TOLD ITS OBSERVERS is one too:
+	// it tells them only after its store work, which can stall.
+	cut := errors.Is(context.Cause(named), errLeaderMoved)
+	now, _ := leaderKnownTo(m.raft)
+	switch {
+	case rpc.Unreached(err) && (cut || now != leader):
+		return nil, errLeaderMoved
+	case cut:
+		return nil, ErrLeadershipLost
+	}
+	return nil, fmt.Errorf("forwarding to leader failed: %w", err)
 }
 
 // leadWatch ends a forward once its member's leader changes.
@@ -291,8 +296,8 @@ func (s *raftStreamService) JoinVoter(ctx context.Context, req *connect.Request[
 		return nil, connect.NewError(connect.CodeFailedPrecondition, ErrJoinerElsewhere)
 	}
 
-	forward := &raftv2.JoinVoterRequest{Peer: peerID.String(), TimeoutMs: m.GetTimeoutMs(), Formation: m.GetFormation(), LastIndex: m.GetLastIndex()}
-	budget, cancel := context.WithTimeout(ctx, timeout)
+	deadline := time.Now().Add(timeout)
+	budget, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	for {
 		if err := s.awaitLeader(budget); err != nil {
@@ -300,9 +305,12 @@ func (s *raftStreamService) JoinVoter(ctx context.Context, req *connect.Request[
 				s.cluster.ID().ShortString(), peerID.ShortString())
 			return nil, err
 		}
+		// Whatever each try takes comes out of the join's own time.
+		left := max(time.Millisecond, time.Until(deadline))
 		if !s.cluster.IsLeader() {
 			streamLogger.Infof("[%s] joinVoter: forwarding request for %s to leader",
 				s.cluster.ID().ShortString(), peerID.ShortString())
+			forward := &raftv2.JoinVoterRequest{Peer: peerID.String(), TimeoutMs: left.Milliseconds(), Formation: m.GetFormation(), LastIndex: m.GetLastIndex()}
 			res, err := forwardToLeader(ctx, s, "joinVoter", func(ctx context.Context, c raftv2connect.RaftServiceClient) (*connect.Response[raftv2.JoinVoterResponse], error) {
 				return c.JoinVoter(ctx, connect.NewRequest(forward))
 			})
@@ -313,7 +321,7 @@ func (s *raftStreamService) JoinVoter(ctx context.Context, req *connect.Request[
 			}
 			continue
 		}
-		err := s.cluster.admit(peerID, m.GetLastIndex(), timeout)
+		err := s.cluster.admit(peerID, m.GetLastIndex(), left)
 		if err == nil {
 			return connect.NewResponse(&raftv2.JoinVoterResponse{}), nil
 		}

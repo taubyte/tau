@@ -654,6 +654,43 @@ func TestStream_AForwardInFlightWhenTheLeaderChangesIsLeadershipLost(t *testing.
 	require.Equal(t, before, observers(), "the forward kept watching the leader")
 }
 
+// A LEADER CHANGE THE ENGINE HAS PUBLISHED BUT NOT YET TOLD ITS OBSERVERS still
+// ends a forward to the old leader: the engine tells them only after its store
+// work, which can stall.
+func TestStream_AForwardSeesALeaderChangeItsObserversAreNotToldOfYet(t *testing.T) {
+	steady := TimeoutConfig{
+		HeartbeatTimeout:   time.Second,
+		ElectionTimeout:    time.Second,
+		CommitTimeout:      50 * time.Millisecond,
+		LeaderLeaseTimeout: 500 * time.Millisecond,
+		SnapshotInterval:   time.Minute,
+		SnapshotThreshold:  1000,
+	}
+	group := joinedGroup(t, "forward-unannounced-change", sameStore, 2, WithTimeouts(steady))
+	leader := leaderOf(t, group...)
+	follower := group[0]
+	if follower == leader {
+		follower = group[1]
+	}
+	// Its host stays up, so a call to it is never reached.
+	require.NoError(t, leader.Close())
+	g := follower.(*cluster).current().raft
+
+	s := &raftStreamService{cluster: follower.(*cluster)}
+	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+	defer cancel()
+	sent := false
+	_, err := forwardToLeader(ctx, s, "set", func(ctx context.Context, c raftv2connect.RaftServiceClient) (*connect.Response[raftv2.SetResponse], error) {
+		sent = true
+		g.mu.Lock()
+		g.lead = 0
+		g.mu.Unlock()
+		return c.Set(ctx, connect.NewRequest(&raftv2.SetRequest{Key: "k", Value: []byte("v")}))
+	})
+	require.True(t, sent, "the follower stopped naming the closed leader before it forwarded")
+	require.ErrorIs(t, err, ErrNoLeader)
+}
+
 // A JOIN FROM A MEMBER OF ANOTHER FORMATION IS REFUSED: added, it would be a voter
 // that takes none of the group's messages.
 func TestStream_AJoinFromAnotherFormationIsRefused(t *testing.T) {
