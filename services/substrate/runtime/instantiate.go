@@ -10,7 +10,6 @@ import (
 
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/taubyte/tau/core/vm"
-	"github.com/taubyte/tau/pkg/config"
 	"github.com/taubyte/tau/pkg/platformerr"
 	plugins "github.com/taubyte/tau/pkg/vm-low-orbit"
 	vmContext "github.com/taubyte/tau/pkg/vm/context"
@@ -367,13 +366,9 @@ func (f *Function) instantiate() (rt vm.Runtime, sdk plugins.Instance, err error
 	return
 }
 
-// acquire reserves the project's share for one more instance; services without caps are unlimited.
+// acquire reserves the project's share for one more instance.
 func (f *Function) acquire(project string, mem uint64) error {
-	m, ok := f.serviceable.Service().(interface{ Caps(string) config.Caps })
-	if !ok {
-		return acquire(project, mem, config.Caps{})
-	}
-	return acquire(project, mem, m.Caps(project))
+	return acquire(project, mem, f.serviceable.Service().Caps(project))
 }
 
 func (f *Function) configureVM() error {
