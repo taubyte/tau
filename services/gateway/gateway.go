@@ -35,6 +35,7 @@ import (
 	"github.com/taubyte/tau/pkg/ratelimit"
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
+	"github.com/taubyte/tau/utils/regex"
 )
 
 // Service is a gateway.
@@ -47,6 +48,8 @@ type Service struct {
 
 	projects *register.Cache[*specs.Project]
 	limits   *ratelimit.Buckets
+	// patterns is every route pattern this gateway has compiled.
+	patterns regex.Cache
 	now      func() time.Time
 
 	// meter is where this service says what it accounted for. Nil is the
@@ -220,7 +223,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	m, found, methodOnly := pick(candidates, r.URL.Path, r.Method)
+	m, found, methodOnly := pick(&s.patterns, candidates, r.URL.Path, r.Method)
 	if !found {
 		// A preflight is answered from the name's policy even when the method
 		// it asks about has no route, because that is a question about what is

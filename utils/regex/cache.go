@@ -1,6 +1,6 @@
 // Package regex compiles a pattern once and keeps it, for config-supplied patterns
 // matched per request, message or item: compile-and-match costs about 20x a match
-// against a compiled pattern.
+// against a compiled pattern. Whoever matches holds the Cache.
 //
 // The working set is the distinct matchers deployed, bounded anyway: over the cap it
 // stops remembering rather than stops working. It is not for patterns built from
@@ -15,17 +15,19 @@ import (
 // max is the number of distinct patterns remembered.
 const max = 4096
 
-var (
-	mu    sync.RWMutex
-	cache = map[string]*regexp.Regexp{}
-)
+// Cache keeps compiled patterns. Its zero value is ready, and it is safe for
+// concurrent use.
+type Cache struct {
+	mu   sync.RWMutex
+	kept map[string]*regexp.Regexp
+}
 
 // Compile is regexp.Compile, memoized by pattern. The returned *regexp.Regexp is
 // shared; a caller that wants Longest must compile its own, since that mutates.
-func Compile(pattern string) (*regexp.Regexp, error) {
-	mu.RLock()
-	re, ok := cache[pattern]
-	mu.RUnlock()
+func (c *Cache) Compile(pattern string) (*regexp.Regexp, error) {
+	c.mu.RLock()
+	re, ok := c.kept[pattern]
+	c.mu.RUnlock()
 	if ok {
 		return re, nil
 	}
@@ -37,17 +39,20 @@ func Compile(pattern string) (*regexp.Regexp, error) {
 		return nil, err
 	}
 
-	mu.Lock()
-	if len(cache) < max {
-		cache[pattern] = re
+	c.mu.Lock()
+	if c.kept == nil {
+		c.kept = map[string]*regexp.Regexp{}
 	}
-	mu.Unlock()
+	if len(c.kept) < max {
+		c.kept[pattern] = re
+	}
+	c.mu.Unlock()
 	return re, nil
 }
 
 // MatchString is regexp.MatchString with the compile kept.
-func MatchString(pattern, s string) (bool, error) {
-	re, err := Compile(pattern)
+func (c *Cache) MatchString(pattern, s string) (bool, error) {
+	re, err := c.Compile(pattern)
 	if err != nil {
 		return false, err
 	}

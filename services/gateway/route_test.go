@@ -9,6 +9,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/specs"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
+	"github.com/taubyte/tau/utils/regex"
 )
 
 // Matching is tested directly: the cases are combinations no single fixture has.
@@ -39,7 +40,7 @@ func TestTheMostSpecificRouteWins(t *testing.T) {
 		{"/api/orders", "api"},
 		{"/api/v2/orders", "v2"},
 	} {
-		m, found, _ := pick(candidates, c.path, "GET")
+		m, found, _ := pick(&regex.Cache{}, candidates, c.path, "GET")
 		require.True(t, found, c.path)
 		require.Equal(t, c.want, m.handler().HandlerName, c.path)
 	}
@@ -51,12 +52,12 @@ func TestAnExactMatchBeatsEveryPrefix(t *testing.T) {
 		gw("exact", map[string]any{"path": "/api/v2/orders", "match": "exact", "handler": handler("function", "exact")}),
 	}
 
-	m, found, _ := pick(candidates, "/api/v2/orders", "GET")
+	m, found, _ := pick(&regex.Cache{}, candidates, "/api/v2/orders", "GET")
 	require.True(t, found)
 	require.Equal(t, "exact", m.handler().HandlerName)
 
 	// And an exact route claims nothing below it.
-	m, found, _ = pick(candidates, "/api/v2/orders/1", "GET")
+	m, found, _ = pick(&regex.Cache{}, candidates, "/api/v2/orders/1", "GET")
 	require.True(t, found)
 	require.Equal(t, "prefixed", m.handler().HandlerName)
 }
@@ -66,20 +67,20 @@ func TestAPrefixIsSegmentwise(t *testing.T) {
 		gw("api", map[string]any{"path": "/api", "match": "prefix", "handler": handler("function", "api")}),
 	}
 
-	_, found, _ := pick(candidates, "/apiary", "GET")
+	_, found, _ := pick(&regex.Cache{}, candidates, "/apiary", "GET")
 	require.False(t, found)
 
-	_, found, _ = pick(candidates, "/api", "GET")
+	_, found, _ = pick(&regex.Cache{}, candidates, "/api", "GET")
 	require.True(t, found)
 
-	_, found, _ = pick(candidates, "/api/", "GET")
+	_, found, _ = pick(&regex.Cache{}, candidates, "/api/", "GET")
 	require.True(t, found)
 
 	// A trailing slash on the declared path means the same route.
 	trailing := []candidate{
 		gw("api", map[string]any{"path": "/api/", "match": "prefix", "handler": handler("function", "api")}),
 	}
-	_, found, _ = pick(trailing, "/api/orders", "GET")
+	_, found, _ = pick(&regex.Cache{}, trailing, "/api/orders", "GET")
 	require.True(t, found)
 }
 
@@ -89,13 +90,13 @@ func TestARegexRouteMatchesAndABrokenOneMatchesNothing(t *testing.T) {
 		gw("broken", map[string]any{"path": `^/u/[0-9+$`, "match": "regex", "handler": handler("function", "never")}),
 	}
 
-	m, found, _ := pick(candidates, "/u/42", "GET")
+	m, found, _ := pick(&regex.Cache{}, candidates, "/u/42", "GET")
 	require.True(t, found)
 	require.Equal(t, "user", m.handler().HandlerName)
 
 	// A pattern that does not compile matches nothing rather than taking down
 	// the other routes at this name.
-	_, found, _ = pick(candidates, "/u/abc", "GET")
+	_, found, _ = pick(&regex.Cache{}, candidates, "/u/abc", "GET")
 	require.False(t, found)
 }
 
@@ -105,21 +106,21 @@ func TestAMethodMissIsNotAPathMiss(t *testing.T) {
 			"handler": handler("function", "api")}),
 	}
 
-	_, found, methodOnly := pick(candidates, "/api", "POST")
+	_, found, methodOnly := pick(&regex.Cache{}, candidates, "/api", "POST")
 	require.False(t, found)
 	require.True(t, methodOnly)
 
-	_, found, methodOnly = pick(candidates, "/nowhere", "POST")
+	_, found, methodOnly = pick(&regex.Cache{}, candidates, "/nowhere", "POST")
 	require.False(t, found)
 	require.False(t, methodOnly)
 
 	// Case does not matter, and an empty list is every method.
-	_, found, _ = pick(candidates, "/api", "get")
+	_, found, _ = pick(&regex.Cache{}, candidates, "/api", "get")
 	require.True(t, found)
 
 	any := []candidate{gw("any", map[string]any{"path": "/", "handler": handler("function", "f")})}
 	for _, method := range []string{"GET", "POST", "DELETE", "PROPFIND"} {
-		_, found, _ = pick(any, "/x", method)
+		_, found, _ = pick(&regex.Cache{}, any, "/x", method)
 		require.True(t, found, method)
 	}
 }
@@ -131,14 +132,14 @@ func TestTwoEquallySpecificRoutesAreStable(t *testing.T) {
 	}
 
 	for range 20 {
-		m, found, _ := pick(candidates, "/x", "GET")
+		m, found, _ := pick(&regex.Cache{}, candidates, "/x", "GET")
 		require.True(t, found)
 		require.Equal(t, "a", m.handler().HandlerName)
 	}
 }
 
 func TestAGatewayWithNoRouteBlockIsNotACandidate(t *testing.T) {
-	_, found, _ := pick([]candidate{{
+	_, found, _ := pick(&regex.Cache{}, []candidate{{
 		host:    specs.Host{Kind: "gateway", Name: "routed"},
 		gateway: specs.ReadGateway(specs.Resource{"name": "routed", "routing": "router"}),
 	}}, "/anything", "GET")
@@ -150,7 +151,7 @@ func TestStripPrefix(t *testing.T) {
 		gw("docs", map[string]any{"path": "/docs", "match": "prefix", "strip_prefix": true,
 			"handler": handler("package", "docs")}),
 	}
-	m, found, _ := pick(stripping, "/docs/guide", "GET")
+	m, found, _ := pick(&regex.Cache{}, stripping, "/docs/guide", "GET")
 	require.True(t, found)
 	require.Equal(t, "/guide", m.stripped("/docs/guide"))
 	require.Equal(t, "/", m.stripped("/docs"), "the mount point itself becomes the root")
@@ -158,13 +159,13 @@ func TestStripPrefix(t *testing.T) {
 	keeping := []candidate{
 		gw("docs", map[string]any{"path": "/docs", "match": "prefix", "handler": handler("service", "api")}),
 	}
-	m, _, _ = pick(keeping, "/docs/guide", "GET")
+	m, _, _ = pick(&regex.Cache{}, keeping, "/docs/guide", "GET")
 	require.Equal(t, "/docs/guide", m.stripped("/docs/guide"), "passing it through unchanged surprises nobody")
 
 	root := []candidate{
 		gw("root", map[string]any{"path": "/", "strip_prefix": true, "handler": handler("package", "shop")}),
 	}
-	m, _, _ = pick(root, "/about", "GET")
+	m, _, _ = pick(&regex.Cache{}, root, "/about", "GET")
 	require.Equal(t, "/about", m.stripped("/about"), "there is nothing to strip off the root")
 }
 
@@ -175,7 +176,7 @@ func TestTheHandlersScope(t *testing.T) {
 			"path": "/", "handler": handler("function", "notify"),
 		}}),
 	}
-	m, found, _ := pick([]candidate{inNamespace}, "/", "GET")
+	m, found, _ := pick(&regex.Cache{}, []candidate{inNamespace}, "/", "GET")
 	require.True(t, found)
 	require.Equal(t, []string{"shop"}, m.address("shop", "prod").Scope,
 		"the gateway's own scope, because the handler named none")
@@ -186,7 +187,7 @@ func TestTheHandlersScope(t *testing.T) {
 			"path": "/", "handler": map[string]any{"kind": "function", "name": "invoice", "namespace": "/billing"},
 		}}),
 	}
-	m, _, _ = pick([]candidate{elsewhere}, "/", "GET")
+	m, _, _ = pick(&regex.Cache{}, []candidate{elsewhere}, "/", "GET")
 	require.Equal(t, []string{"billing"}, m.address("shop", "prod").Scope)
 
 	require.Nil(t, splitScope(""))
@@ -203,7 +204,7 @@ func TestARouteNamesItsOwnRouter(t *testing.T) {
 		}),
 	}
 
-	m, found, _ := pick(routed, "/anything", "GET")
+	m, found, _ := pick(&regex.Cache{}, routed, "/anything", "GET")
 	require.True(t, found)
 
 	name, scope := m.router()

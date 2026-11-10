@@ -40,7 +40,7 @@ func (m match) handler() specs.GatewayRoute { return m.gateway.Route }
 //	           because saying "no such page" for a POST to a GET-only route
 //	           sends a caller looking for a bug in their URL
 //	neither    404
-func pick(candidates []candidate, path, method string) (m match, found, methodOnly bool) {
+func pick(patterns *regex.Cache, candidates []candidate, path, method string) (m match, found, methodOnly bool) {
 	best := -1
 	for _, c := range candidates {
 		// Declared alone would miss a compiler-written route: `match` is defaulted, so
@@ -54,7 +54,7 @@ func pick(candidates []candidate, path, method string) (m match, found, methodOn
 		// which matches anything at score 0, below every declared route including `/`. The
 		// function is the fallback.
 		declared := route.Path
-		score, ok := pathScore(route.Match, declared, path)
+		score, ok := pathScore(patterns, route.Match, declared, path)
 		if !ok {
 			continue
 		}
@@ -86,14 +86,14 @@ func pick(candidates []candidate, path, method string) (m match, found, methodOn
 // pathScore says whether a route matches and how specifically. An exact match beats
 // every prefix and a longer prefix beats a shorter one, so `/` is a catch-all that
 // does not swallow `/api`.
-func pathScore(kind, declared, path string) (int, bool) {
+func pathScore(patterns *regex.Cache, kind, declared, path string) (int, bool) {
 	switch kind {
 	case specs.GatewayRouteMatchExact:
 		if declared == path {
 			return 1 << 20, true
 		}
 	case specs.GatewayRouteMatchRegex:
-		re, err := regex.Compile(declared)
+		re, err := patterns.Compile(declared)
 		if err != nil {
 			// A route whose pattern does not compile matches nothing. It is
 			// not an error here: refusing the whole request would take down
