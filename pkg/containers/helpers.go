@@ -26,8 +26,9 @@ func convertToContainerConfig(imageName string, c *Container) *core.ContainerCon
 		for i, vol := range c.volumes {
 			// Old API doesn't support read-only; it uses bind mounts (not volume names)
 			config.Volumes[i] = core.VolumeMount{
-				Source:      vol.source,
-				Destination: vol.target,
+				Source:       vol.source,
+				Destination:  vol.target,
+				IsVolumeName: vol.named,
 			}
 		}
 	}

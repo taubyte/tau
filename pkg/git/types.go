@@ -43,6 +43,7 @@ type Repository struct {
 	branches            []string
 	usingSpecificBranch bool
 	embedToken          bool
+	shallow             bool
 }
 
 func (c *Repository) Repo() *git.Repository {

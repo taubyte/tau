@@ -24,6 +24,10 @@ func (c Context) HandleLibrary() (builders.Output, error) {
 }
 
 func (l library) handle() (err error) {
+	if reused, err := l.reusePrevious("library"); reused || err != nil {
+		return err
+	}
+
 	var (
 		asset           builders.Output
 		id              string

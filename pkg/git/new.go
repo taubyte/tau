@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/go-git/go-git/v5"
@@ -102,6 +103,27 @@ func (c *Repository) open_or_clone() error {
 
 func (c *Repository) clone() (err error) {
 	Info("Cloning from " + c.url + " on branch " + c.branches[0] + " into " + c.root + "\n")
+
+	if c.shallow && c.usingSpecificBranch && !c.embedToken {
+		c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
+			URL:           c.url,
+			Progress:      c.output,
+			Auth:          c.auth,
+			Depth:         1,
+			SingleBranch:  true,
+			ReferenceName: plumbing.NewBranchReferenceName(c.branches[0]),
+		})
+		if err == nil {
+			pterm.Success.Printf("Cloning %s complete\n", c.url)
+			c.i_cloned_it = true
+			return nil
+		}
+		// Anything a full clone handles differently (a missing branch, an
+		// empty repository, a public one over https) is left to it.
+		if err = os.RemoveAll(filepath.Join(c.root, ".git")); err != nil {
+			return err
+		}
+	}
 
 	if c.embedToken {
 		var cloneURL string

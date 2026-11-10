@@ -4,12 +4,20 @@ import (
 	"time"
 )
 
+// concurrentJobs is how many jobs a monkey runs at once, so a website or
+// library build does not hold up the project's code build. Each running job
+// renews its claim (Monkey.refreshClaim), so a busy monkey keeps its jobs; the
+// builds themselves share the node-wide build slots.
+const concurrentJobs = 3
+
 // pollJobs periodically asks Patrick for available jobs.
 func (srv *Service) pollJobs() {
 	interval := 5 * time.Second
+	concurrent := concurrentJobs
 	if srv.dev {
-		interval = 2 * time.Second
+		interval = 500 * time.Millisecond
 	}
+	slots := make(chan struct{}, concurrent)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -19,23 +27,47 @@ func (srv *Service) pollJobs() {
 		case <-srv.ctx.Done():
 			return
 		case <-ticker.C:
-			srv.tryDequeueJob()
+		}
+
+		// Take jobs while there are free slots, rather than one per tick.
+	take:
+		for {
+			select {
+			case slots <- struct{}{}:
+			default:
+				break take
+			}
+			monkey := srv.tryDequeueJob()
+			if monkey == nil {
+				<-slots
+				break
+			}
+			if concurrent == 1 {
+				monkey.Run()
+				<-slots
+				break
+			}
+			go func() {
+				defer func() { <-slots }()
+				monkey.Run()
+			}()
 		}
 	}
 }
 
-// tryDequeueJob attempts to dequeue a single job from Patrick and run it.
-func (srv *Service) tryDequeueJob() {
+// tryDequeueJob attempts to dequeue a single job from Patrick and returns the
+// monkey that will run it, or nil when there is nothing new to run.
+func (srv *Service) tryDequeueJob() *Monkey {
 	peers := srv.discoverPatrickPeers()
 	client := srv.patrickClient.Peers(peers...)
 
 	job, err := client.Dequeue()
 	if err != nil {
 		logger.Debugf("Dequeue failed: %v", err)
-		return
+		return nil
 	}
 	if job == nil {
-		return
+		return nil
 	}
 
 	srv.recvJobsLock.Lock()
@@ -47,7 +79,7 @@ func (srv *Service) tryDequeueJob() {
 	srv.monkeysLock.RUnlock()
 	if ok {
 		logger.Debugf("Already processing job: %s", job.Id)
-		return
+		return nil
 	}
 
 	if job.Logs == nil {
@@ -62,8 +94,8 @@ func (srv *Service) tryDequeueJob() {
 	monkey, err := srv.newMonkey(job)
 	if err != nil {
 		logger.Error("New monkey had an error:", err.Error())
-		return
+		return nil
 	}
 
-	monkey.Run()
+	return monkey
 }

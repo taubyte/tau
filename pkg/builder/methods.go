@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,8 +35,9 @@ func (b *builder) buildImage() (clientImage *ci.DockerImage, err error) {
 	image := environment.Image
 
 	// base options
-	ops := make([]ci.ImageOption, 0, 2)
+	ops := make([]ci.ImageOption, 0, 3)
 	ops = append(ops, ci.Output(b.output))
+	ops = append(ops, ci.ReusePulled(b.reusePulled()))
 
 	// if tarball is set then a new image is created
 	if b.tarball != nil {
@@ -88,14 +90,22 @@ func (b *builder) run(output *output, image *ci.DockerImage, environment specs.E
 			Timestamp: time.Now().UnixNano(),
 		})
 
-		ops = append(ops, b.wd.DefaultOptions(script, output.outDir, environment)...)
+		// Each step gets its own options: appending to ops itself carried every
+		// earlier step's mounts into the next, and a second step failed on a
+		// duplicate mount point.
+		stepOps := append(slices.Clip(ops), b.wd.DefaultOptions(script, output.outDir, environment)...)
 		if b.restrictEgress() {
 			// build.sh is untrusted repo content: confine its network to the
 			// public internet so it cannot reach node-local services or the
 			// cloud metadata endpoint.
-			ops = append(ops, ci.RestrictedEgress())
+			stepOps = append(stepOps, ci.RestrictedEgress())
 		}
-		container, err := image.Instantiate(b.context, ops...)
+		if b.dev {
+			for volume, path := range devCaches {
+				stepOps = append(stepOps, ci.NamedVolume(volume, path))
+			}
+		}
+		container, err := image.Instantiate(b.context, stepOps...)
 		if err != nil {
 			json.NewEncoder(b.output).Encode(struct {
 				Step      string `json:"step"`
