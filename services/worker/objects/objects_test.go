@@ -95,6 +95,14 @@ func (s *served) List(ctx context.Context, at storage.Address, prefix, after str
 	return s.Store.List(ctx, at, prefix, after, limit)
 }
 
+// Size fails as List does: both read every row of the bucket.
+func (s *served) Size(ctx context.Context, at storage.Address) (uint64, error) {
+	if _, _, err, _ := s.failing(); err != nil {
+		return 0, err
+	}
+	return s.Store.Size(ctx, at)
+}
+
 func (s *served) Current(ctx context.Context, at storage.Address, name string) (storage.Version, error) {
 	if _, _, _, err := s.failing(); err != nil {
 		return storage.Version{}, err
