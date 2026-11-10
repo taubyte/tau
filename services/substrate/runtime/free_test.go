@@ -161,3 +161,37 @@ func TestInstanceFree(t *testing.T) {
 		}
 	})
 }
+
+// Big instances pool until the function's pooled memory reaches
+// poolMemBudget; past it they are closed, and taking one frees budget.
+func TestPoolMemBudget(t *testing.T) {
+	const big = 100 << 20
+	f := &Function{
+		config:             &structureSpec.Function{Name: "someFunc"},
+		serviceable:        newMockServiceable(),
+		vmConfig:           &vm.Config{MemoryLimitPages: 4096}, // 256 MiB cap
+		availableInstances: make(chan Instance, InstanceMaxRequests),
+	}
+	free := func() *fakeRuntime {
+		rt := &fakeRuntime{size: big}
+		if err := (&instance{runtime: rt, parent: f}).Free(); err != nil {
+			t.Fatal(err)
+		}
+		return rt
+	}
+	for n := 0; n < 2; n++ {
+		if rt := free(); rt.closed != 0 {
+			t.Fatalf("instance %d within budget must pool", n)
+		}
+	}
+	if rt := free(); rt.closed != 1 {
+		t.Fatal("instance over budget must be closed")
+	}
+	unpool(<-f.availableInstances)
+	if rt := free(); rt.closed != 0 {
+		t.Fatal("taking a pooled instance must free its budget")
+	}
+	if got := f.pooledMem.Load(); got != 2*big {
+		t.Fatalf("pooledMem = %d, want %d", got, 2*big)
+	}
+}

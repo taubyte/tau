@@ -54,3 +54,36 @@ func settledGoroutines() int {
 	}
 	return n
 }
+
+// Substrate closes only the runtime when it retires an instance; that must
+// release the instance goroutine and /tmp/vm files too.
+func TestRuntimeClose_ReleasesInstance(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+
+	ctx, service, err := newService()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	before := settledGoroutines()
+	for i := 0; i < 50; i++ {
+		inst, err := service.New(ctx, vm.Config{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rt, err := inst.Runtime()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = rt.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if grew := settledGoroutines() - before; grew > 5 {
+		t.Fatalf("50 closed runtimes left %d goroutines", grew)
+	}
+	if left, _ := filepath.Glob(filepath.Join(tmp, "vm*")); len(left) != 0 {
+		t.Fatalf("closed runtimes left %d temp files", len(left))
+	}
+}
