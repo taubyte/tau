@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"strconv"
 	"time"
 
 	http "github.com/taubyte/tau/pkg/http"
@@ -68,6 +69,10 @@ func (srv *AuthService) newGitHubProjectHTTPHandler(ctx http.Context) (interface
 }
 
 func (srv *AuthService) importGitHubProjectHTTPHandler(ctx http.Context) (interface{}, error) {
+	if client, err := getGithubClientFromContext(ctx); err == nil {
+		defer forgetRepoList(client)
+	}
+
 	client, err := getGithubClientFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -176,11 +181,18 @@ func (srv *AuthService) getGitHubUserProjectsHTTPHandler(ctx http.Context) (inte
 	if err != nil {
 		return nil, err
 	}
+	if last, err := strconv.Atoi(ctx.Request().URL.Query().Get("last")); err == nil && last > 0 {
+		return srv.getGitHubRecentProjects(ctx.Request().Context(), client, last)
+	}
 	response, err := srv.getGitHubUserProjects(ctx.Request().Context(), client)
 	return response, err
 }
 
 func (srv *AuthService) deleteGitHubProjectHandler(ctx http.Context) (interface{}, error) {
+	if client, err := getGithubClientFromContext(ctx); err == nil {
+		defer forgetRepoList(client)
+	}
+
 	client, err := getGithubClientFromContext(ctx)
 	if err != nil {
 		return nil, err

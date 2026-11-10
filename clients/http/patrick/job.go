@@ -24,6 +24,19 @@ func (c *Client) Jobs(projectId string) (jobList []string, err error) {
 	return jobs.JobIds, nil
 }
 
+// JobsLast returns a project's last jobs, newest first. A server too old to
+// order them returns them all; callers order by timestamp themselves.
+func (c *Client) JobsLast(projectId string, last int) (jobList []string, err error) {
+	if last <= 0 {
+		return c.Jobs(projectId)
+	}
+	var jobs data
+	if err = c.http.Get(fmt.Sprintf("/jobs/%s?last=%d", projectId, last), &jobs); err != nil {
+		return nil, fmt.Errorf("failed getting jobs for project %s: %w", projectId, err)
+	}
+	return jobs.JobIds, nil
+}
+
 func (c *Client) Job(jid string) (job *patrickIface.Job, err error) {
 	receive := &struct {
 		Job patrickIface.Job

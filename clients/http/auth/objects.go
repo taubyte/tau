@@ -49,6 +49,7 @@ type Cors struct {
 // ProjectsReturn is the data that is returned from the server when listing projects
 type ProjectsReturn struct {
 	Projects []*Project `json:"projects"`
+	Newest   bool       `json:"newest,omitempty"`
 }
 
 // UserData is the data that is returned from the server when getting user data

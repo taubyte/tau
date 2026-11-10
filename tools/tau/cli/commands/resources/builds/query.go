@@ -1,6 +1,7 @@
 package builds
 
 import (
+	"sort"
 	"sync"
 	"time"
 
@@ -23,6 +24,11 @@ func (link) Query() common.Command {
 					Aliases:     []string{"t", "s"},
 					Usage:       "(optional) filters jobs by time range",
 					DefaultText: defaultTimeFilter,
+				},
+				&cli.IntFlag{
+					Name:  "last",
+					Usage: "show only the most recent jobs (0 for all)",
+					Value: defaultLast,
 				},
 			},
 			Action: query,
@@ -50,7 +56,7 @@ func query(ctx *cli.Context) error {
 		return err
 	}
 
-	jobIds, err := patrickC.Jobs(projectID)
+	jobIds, err := patrickC.JobsLast(projectID, ctx.Int("last"))
 	if err != nil {
 		// use i18n
 		return err
@@ -96,6 +102,12 @@ func query(ctx *cli.Context) error {
 		}
 	}
 
+	// newest first, cut to --last even when the server could not order them
+	sort.SliceStable(jobs, func(i, j int) bool { return jobs[i].Timestamp > jobs[j].Timestamp })
+	if last := ctx.Int("last"); last > 0 && len(jobs) > last {
+		jobs = jobs[:last]
+	}
+
 	if output.Render(jobs) {
 		return nil
 	}
@@ -111,3 +123,6 @@ func query(ctx *cli.Context) error {
 
 	return nil
 }
+
+// defaultLast is how many jobs a listing shows unless --last says otherwise.
+const defaultLast = 10

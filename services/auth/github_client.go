@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -26,7 +27,8 @@ type GitHubClient interface {
 	CreateDeployKey(name *string, key *string) error
 	RemoveOtherDeployKeys(name string, keep string) error
 	CreatePushHook(name *string, url *string, devMode bool) (int64, string, error)
-	ListMyRepos() map[string]RepositoryBasicInfo
+	ListMyRepos() (map[string]RepositoryBasicInfo, error)
+	EachRepoPage(fn func(ids []string) (more bool)) error
 	ShortRepositoryInfo(id string) RepositoryShortInfo
 }
 
@@ -85,7 +87,7 @@ func (client *githubClient) GetByID(id string) error {
 	if err != nil {
 		return err
 	}
-	client.current_repository, _, err = client.Repositories.GetByID(client.ctx, _id)
+	client.current_repository, err = client.repoByID(_id)
 	return err
 }
 
@@ -231,24 +233,129 @@ func (client *githubClient) CreatePushHook(name *string, url *string, devMode bo
 	return *(hk.ID), secret, err
 }
 
-func (client *githubClient) ListMyRepos() map[string]RepositoryBasicInfo {
-	repos := make(map[string]RepositoryBasicInfo)
-	for i := 1; ; i++ {
-		rlo := github.RepositoryListByAuthenticatedUserOptions{ListOptions: github.ListOptions{Page: i, PerPage: 100}, Sort: "created"}
-
-		_repos, _, err := client.Repositories.ListByAuthenticatedUser(client.ctx, &rlo)
-		if err == nil && len(_repos) > 0 {
-			for _, v := range _repos {
-				repos[fmt.Sprintf("%d", *(v.ID))] = RepositoryBasicInfo{
-					Name: *(v.FullName),
-					URL:  *(v.URL),
-				}
+// EachRepoPage hands the caller's repositories to fn a page at a time, newest
+// first, until fn returns false or there are no more. Pages after the first are
+// fetched a few at a time ahead of fn, so a caller with few projects still gets
+// them as fast as a full listing, and one with many stops after a page or two.
+func (client *githubClient) EachRepoPage(fn func(ids []string) (more bool)) error {
+	if cached, ok := cachedRepoList(client.Token); ok {
+		for ids := cached.newestFirst; len(ids) > 0; {
+			n := min(100, len(ids))
+			if !fn(ids[:n]) {
+				return nil
 			}
-		} else {
-			break
+			ids = ids[n:]
+		}
+		return nil
+	}
+
+	page := func(n int) ([]string, *github.Response, error) {
+		opts := github.RepositoryListByAuthenticatedUserOptions{ListOptions: github.ListOptions{Page: n, PerPage: 100}, Sort: "created", Direction: "desc"}
+		repos, resp, err := client.Repositories.ListByAuthenticatedUser(client.ctx, &opts)
+		if err != nil {
+			return nil, nil, fmt.Errorf("listing repositories failed with: %w", err)
+		}
+		ids := make([]string, 0, len(repos))
+		for _, r := range repos {
+			ids = append(ids, fmt.Sprintf("%d", r.GetID()))
+		}
+		return ids, resp, nil
+	}
+
+	ids, resp, err := page(1)
+	if err != nil {
+		return err
+	}
+	if !fn(ids) || resp == nil || resp.LastPage <= 1 {
+		return nil
+	}
+
+	for start := 2; start <= resp.LastPage; start += repoPagesAhead {
+		end := min(start+repoPagesAhead-1, resp.LastPage)
+		batch := make([][]string, end-start+1)
+		errs := make([]error, len(batch))
+		var wg sync.WaitGroup
+		for i := range batch {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				batch[i], _, errs[i] = page(start + i)
+			}()
+		}
+		wg.Wait()
+		for i := range batch {
+			if errs[i] != nil {
+				return errs[i]
+			}
+			if !fn(batch[i]) {
+				return nil
+			}
 		}
 	}
-	return repos
+	return nil
+}
+
+// repoPagesAhead is how many pages EachRepoPage fetches at once.
+var repoPagesAhead = 4
+
+// listReposConcurrency bounds the pages of repositories fetched at once.
+var listReposConcurrency = 8
+
+// ListMyRepos returns every repository the caller can reach. It read the pages
+// one after another and stopped quietly at the first error, so an account with
+// hundreds of repositories took past the CLI's deadline, and a failed page
+// looked like repositories (and the projects on them) that did not exist. The
+// first page says how many there are; the others are fetched together, and any
+// failure is an error.
+func (client *githubClient) ListMyRepos() (map[string]RepositoryBasicInfo, error) {
+	if cached, ok := cachedRepoList(client.Token); ok {
+		return maps.Clone(cached.repos), nil
+	}
+
+	page := func(n int) ([]*github.Repository, *github.Response, error) {
+		opts := github.RepositoryListByAuthenticatedUserOptions{ListOptions: github.ListOptions{Page: n, PerPage: 100}, Sort: "created", Direction: "desc"}
+		return client.Repositories.ListByAuthenticatedUser(client.ctx, &opts)
+	}
+
+	first, resp, err := page(1)
+	if err != nil {
+		return nil, fmt.Errorf("listing repositories failed with: %w", err)
+	}
+	pages := [][]*github.Repository{first}
+
+	if resp != nil && resp.LastPage > 1 {
+		rest := make([][]*github.Repository, resp.LastPage-1)
+		errs := make([]error, len(rest))
+		sem := make(chan struct{}, listReposConcurrency)
+		var wg sync.WaitGroup
+		for i := range rest {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func() {
+				defer func() { <-sem; wg.Done() }()
+				rest[i], _, errs[i] = page(i + 2)
+			}()
+		}
+		wg.Wait()
+		if err := errors.Join(errs...); err != nil {
+			return nil, fmt.Errorf("listing repositories failed with: %w", err)
+		}
+		pages = append(pages, rest...)
+	}
+
+	repos := make(map[string]RepositoryBasicInfo)
+	newestFirst := make([]string, 0, 100*len(pages))
+	for _, p := range pages {
+		for _, v := range p {
+			id := fmt.Sprintf("%d", v.GetID())
+			if _, dup := repos[id]; !dup {
+				newestFirst = append(newestFirst, id)
+			}
+			repos[id] = RepositoryBasicInfo{Name: v.GetFullName(), URL: v.GetURL()}
+		}
+	}
+	storeRepoList(client.Token, newestFirst, repos)
+	return repos, nil
 }
 
 func (client *githubClient) ShortRepositoryInfo(id string) RepositoryShortInfo {
@@ -259,7 +366,7 @@ func (client *githubClient) ShortRepositoryInfo(id string) RepositoryShortInfo {
 		}
 	}
 
-	_repoInfo, _, err := client.Repositories.GetByID(client.ctx, _id)
+	_repoInfo, err := client.repoByID(_id)
 	if err != nil {
 		return RepositoryShortInfo{
 			Error: fmt.Sprintf("Error %s", err),

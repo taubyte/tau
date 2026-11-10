@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -391,12 +393,33 @@ func (srv *PatrickService) projectAllJobHandler(ctx http.Context) (interface{}, 
 		jids[idx] = strings.TrimPrefix(jobKey, prefix)
 	}
 
+	// ?last=N: the N most recent, newest first, so a client fetches only those
+	if last, err := strconv.Atoi(ctx.Request().URL.Query().Get("last")); err == nil && last > 0 {
+		jids = srv.newestJobs(ctx.Request().Context(), jids, last)
+	}
+
 	data := project{
 		ProjectId: projectId,
 		JobIds:    jids,
 	}
 
 	return data, nil
+}
+
+// newestJobs orders jobs newest first and keeps last of them. A job that cannot
+// be read sorts as oldest.
+func (srv *PatrickService) newestJobs(ctx context.Context, jids []string, last int) []string {
+	stamps := make(map[string]int64, len(jids))
+	for _, jid := range jids {
+		if job, err := srv.anyJob(ctx, jid); err == nil {
+			stamps[jid] = job.Timestamp
+		}
+	}
+	sort.SliceStable(jids, func(i, j int) bool { return stamps[jids[i]] > stamps[jids[j]] })
+	if len(jids) > last {
+		jids = jids[:last]
+	}
+	return jids
 }
 
 func (srv *PatrickService) projectJobHandler(ctx http.Context) (iface interface{}, err error) {

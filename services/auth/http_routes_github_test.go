@@ -545,7 +545,7 @@ func TestGitHubCoreFunctionsWithFixtures(t *testing.T) {
 		// We just want to ensure the function can be called without panicking
 
 		// Test ListMyRepos
-		repos := mockGitHubClient.ListMyRepos()
+		repos, _ := mockGitHubClient.ListMyRepos()
 		// This should return a map from mock implementation
 		assert.Assert(t, repos != nil, "Expected map from mock implementation")
 

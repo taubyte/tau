@@ -369,7 +369,8 @@ func TestGitHubClientComprehensiveCoverage(t *testing.T) {
 			ctx:    ctx,
 		}
 
-		repos := client.ListMyRepos()
+		repos, err := client.ListMyRepos()
+		assert.NilError(t, err)
 		assert.Assert(t, repos != nil)
 		assert.Equal(t, len(repos), 2)
 
