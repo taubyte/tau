@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -38,6 +39,10 @@ func (b *builder) buildImage() (clientImage *ci.DockerImage, err error) {
 	ops := make([]ci.ImageOption, 0, 3)
 	ops = append(ops, ci.Output(b.output))
 	ops = append(ops, ci.ReusePulled(b.reusePulled()))
+	if b.dev {
+		// a laptop's own images, usable offline
+		ops = append(ops, ci.TrustLocal())
+	}
 
 	// if tarball is set then a new image is created
 	if b.tarball != nil {
@@ -66,13 +71,14 @@ func (b *builder) buildImage() (clientImage *ci.DockerImage, err error) {
 // run will initialize and run the container with the given image
 func (b *builder) run(output *output, image *ci.DockerImage, environment specs.Environment, ops ...ci.ContainerOption) (err error) {
 	json.NewEncoder(b.output).Encode(struct {
-		Op        string            `json:"op"`
-		Timestamp int64             `json:"timestamp"`
-		Env       map[string]string `json:"env"`
+		Op        string   `json:"op"`
+		Timestamp int64    `json:"timestamp"`
+		Env       []string `json:"env"`
 	}{
 		Op:        "run container",
 		Timestamp: time.Now().UnixNano(),
-		Env:       environment.Variables,
+		// names only: job logs are kept by CID and streamed, values may be secrets
+		Env: slices.Sorted(maps.Keys(environment.Variables)),
 	})
 
 	output.outDir, err = os.MkdirTemp("", "*")
@@ -98,7 +104,7 @@ func (b *builder) run(output *output, image *ci.DockerImage, environment specs.E
 			// build.sh is untrusted repo content: confine its network to the
 			// public internet so it cannot reach node-local services or the
 			// cloud metadata endpoint.
-			stepOps = append(stepOps, ci.RestrictedEgress())
+			stepOps = append(stepOps, ci.RestrictedEgress(), ci.Resources(buildLimits()))
 		}
 		if b.dev {
 			for volume, path := range devCaches {

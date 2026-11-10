@@ -9,21 +9,19 @@ import (
 
 func TestGenerateKey(t *testing.T) {
 	t.Run("successful key generation", func(t *testing.T) {
-		deployKeyName, publicKey, privateKey, err := generateKey()
+		publicKey, privateKey, err := generateKey()
 		assert.NilError(t, err)
-		assert.Assert(t, deployKeyName != "")
 		assert.Assert(t, publicKey != "")
 		assert.Assert(t, privateKey != "")
-		assert.Assert(t, deployKeyName == "taubyte_deploy_key" || deployKeyName == "taubyte_deploy_key_dev", "key name should be deploy key or dev variant (got %s)", deployKeyName)
 		assert.Assert(t, publicKey != "", "Public key should not be empty")
 		assert.Assert(t, privateKey != "", "Private key should not be empty")
 	})
 
 	t.Run("multiple key generations produce different keys", func(t *testing.T) {
-		_, pub1, priv1, err1 := generateKey()
+		pub1, priv1, err1 := generateKey()
 		assert.NilError(t, err1)
 
-		_, pub2, priv2, err2 := generateKey()
+		pub2, priv2, err2 := generateKey()
 		assert.NilError(t, err2)
 
 		assert.Assert(t, pub1 != pub2)

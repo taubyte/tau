@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -102,7 +103,11 @@ func (c code) buildAndStash(op Op, logs io.Writer, slots chan struct{}) (string,
 			c.StashBuildFile)
 	}
 
-	sourceHash, err := hashDir(c.opSourcePath(op))
+	sourcePath, err := c.opSourcePath(op)
+	if err != nil {
+		return "", err
+	}
+	sourceHash, err := hashDir(sourcePath)
 	if err != nil {
 		return "", err
 	}
@@ -203,8 +208,26 @@ func (c Context) buildSlots() chan struct{} {
 	return nodeBuildSlots
 }
 
-func (c Context) opSourcePath(op Op) string {
-	return path.Join(c.gitDir, op.application, op.pathVariable, op.name)
+// opSourcePath is the op's folder in the clone, resolved. The build bind-mounts
+// it read-write and Docker follows links in a mount source, so a committed link
+// must not lead out of the clone.
+func (c Context) opSourcePath(op Op) (string, error) {
+	root, err := filepath.EvalSymlinks(c.gitDir)
+	if err != nil {
+		return "", fmt.Errorf("resolving clone directory failed with: %w", err)
+	}
+
+	source := path.Join(c.gitDir, op.application, op.pathVariable, op.name)
+	resolved, err := filepath.EvalSymlinks(source)
+	if err != nil {
+		return "", fmt.Errorf("resolving `%s` failed with: %w", source, err)
+	}
+
+	if resolved != root && !strings.HasPrefix(resolved, root+string(filepath.Separator)) {
+		return "", fmt.Errorf("refusing to build %s: its folder resolves outside the repository", path.Join(op.application, op.pathVariable, op.name))
+	}
+
+	return resolved, nil
 }
 
 // hashDir hashes every path, mode and file under root, skipping .git.
@@ -258,7 +281,10 @@ func (c Context) HandleOp(op Op) (io.ReadSeekCloser, error) {
 }
 
 func (c Context) buildOp(op Op, logs io.Writer) (io.ReadSeekCloser, error) {
-	sourcePath := c.opSourcePath(op)
+	sourcePath, err := c.opSourcePath(op)
+	if err != nil {
+		return nil, err
+	}
 	builder, err := build.New(c.ctx, logs, sourcePath, build.Dev(c.Monkey.Dev()))
 	if err != nil {
 		err = fmt.Errorf("creating new wasm builder failed with: %w", err)

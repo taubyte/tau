@@ -42,7 +42,7 @@ func (s *Service) Raw(def *service.RawRouteDefinition) *mux.Route {
 	}
 
 	route.HandlerFunc(func(w http.ResponseWriter, h *http.Request) {
-		logger.Debugf("[RAW] %s", h.RequestURI)
+		logger.Debugf("[RAW] %s", h.URL.Path)
 		options := make([]context.Option, 0)
 		if def.RawResponse {
 			options = append(options, context.RawResponse())

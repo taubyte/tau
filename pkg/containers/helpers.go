@@ -7,10 +7,11 @@ import (
 // convertToContainerConfig converts old Container options to ContainerConfig
 func convertToContainerConfig(imageName string, c *Container) *core.ContainerConfig {
 	config := &core.ContainerConfig{
-		Image:   imageName,
-		Command: c.cmd,
-		Env:     c.env,
-		WorkDir: c.workDir,
+		Image:     imageName,
+		Command:   c.cmd,
+		Env:       c.env,
+		WorkDir:   c.workDir,
+		Resources: c.resources,
 	}
 
 	if c.restrictedEgress {

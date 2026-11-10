@@ -39,7 +39,7 @@ func (srv *AuthService) GitHubTokenHTTPAuth(ctx http.Context) (interface{}, erro
 	ctx.SetVariable("GithubClient", client)
 	ctx.SetVariable("GithubClientDone", rctx_cancel)
 
-	logger.Debugf("[GitHubTokenHTTPAuth] ctx=%v", ctx.Variables())
+	logger.Debugf("[GitHubTokenHTTPAuth] %s", ctx.Request().URL.Path) // never the variables: they hold the token
 
 	return nil, nil
 }

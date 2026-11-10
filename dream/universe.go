@@ -286,7 +286,7 @@ func (u *Universe) StartWithConfig(mainConfig *Config) error {
 
 	for _, service := range serviceNames {
 		config := mainConfig.Services[service]
-		logger.Infof("Service %s with config:%#v\n", service, config)
+		logger.Infof("Starting service %s", service)
 
 		// domain validation keys
 		config.PrivateKey = privKey
@@ -303,7 +303,7 @@ func (u *Universe) StartWithConfig(mainConfig *Config) error {
 	}
 
 	for name, config := range mainConfig.Simples {
-		logger.Infof("Simple %s with config:%#v\n", name, config)
+		logger.Infof("Starting simple %s", name)
 		if !config.Disabled {
 			wg.Add(1)
 			go func(name string, config SimpleConfig) {

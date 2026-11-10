@@ -78,6 +78,11 @@ func WithSource(src *Source, opts SourceOptions) Option {
 		if c.swarmKey, err = loadSwarmKey(swarmPath); err != nil {
 			return err
 		}
+		// Without a swarm key the node joins an open network, where any peer
+		// can call the services the swarm key otherwise reserves for the cloud.
+		if !opts.DevMode && len(c.swarmKey) == 0 {
+			return fmt.Errorf("swarm key cannot be empty outside dev mode")
+		}
 		if c.domainValidation, err = loadValidationKey(privatePath, publicPath); err != nil {
 			return err
 		}

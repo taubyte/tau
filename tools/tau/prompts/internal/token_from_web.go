@@ -32,7 +32,7 @@ var WebTokenCommand = &cli.Command{
 			return err
 		}
 
-		printer.Out.SuccessPrintfln("Got token `%s`", token)
+		printer.Out.SuccessPrintfln("Got token (%d characters)", len(token))
 		return nil
 	},
 }

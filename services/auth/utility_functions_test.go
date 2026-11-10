@@ -108,21 +108,13 @@ func TestExtractIdFromKey(t *testing.T) {
 	}
 }
 
-// Test constants and simple functions
-func TestDeployKeyConstants(t *testing.T) {
-	// Test the constants before any service initialization
-	assert.Assert(t, devDeployKeyName == "taubyte_deploy_key_dev")
-	assert.Assert(t, devDeployKeyName != "")
-
-	// Note: deployKeyName gets modified during service initialization
-	// so we test that it's not empty and has a valid value
-	assert.Assert(t, deployKeyName != "")
-
-	// Test that the constants are different initially
-	// (deployKeyName will be "taubyte_deploy_key" before service init)
-	if deployKeyName != devDeployKeyName {
-		assert.Assert(t, deployKeyName == "taubyte_deploy_key")
-	}
+// Each cloud titles its deploy keys apart, since registering removes the
+// repository's other keys of the same title.
+func TestDeployKeyTitle(t *testing.T) {
+	assert.Equal(t, deployKeyTitle(true, "test.example.com"), "taubyte_deploy_key_dev")
+	assert.Equal(t, deployKeyTitle(false, ""), "taubyte_deploy_key")
+	assert.Equal(t, deployKeyTitle(false, "a.example.com"), "taubyte_deploy_key_a.example.com")
+	assert.Assert(t, deployKeyTitle(false, "a.example.com") != deployKeyTitle(false, "b.example.com"))
 }
 
 // Test key generation and validation utility functions
@@ -132,9 +124,8 @@ func TestKeyGenerationAndValidation(t *testing.T) {
 	// For now, let's test the function logic directly
 
 	// Test generateKey function
-	keyName, pubKey, privKey, err := generateKey()
+	pubKey, privKey, err := generateKey()
 	assert.NilError(t, err)
-	assert.Assert(t, keyName != "")
 	assert.Assert(t, pubKey != "")
 	assert.Assert(t, privKey != "")
 
@@ -220,9 +211,8 @@ func TestGitHubKeyGenerationEdgeCases(t *testing.T) {
 	privKeys := make(map[string]bool)
 
 	for i := 0; i < 10; i++ {
-		keyName, pubKey, privKey, err := generateKey()
+		pubKey, privKey, err := generateKey()
 		assert.NilError(t, err)
-		assert.Assert(t, keyName != "")
 		assert.Assert(t, pubKey != "")
 		assert.Assert(t, privKey != "")
 
@@ -235,7 +225,5 @@ func TestGitHubKeyGenerationEdgeCases(t *testing.T) {
 
 		// Test that keys are different from each other
 		assert.Assert(t, pubKey != privKey)
-		assert.Assert(t, keyName != pubKey)
-		assert.Assert(t, keyName != privKey)
 	}
 }

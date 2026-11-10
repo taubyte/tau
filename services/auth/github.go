@@ -89,29 +89,31 @@ type UserResponse struct {
 	User UserInfo `json:"user"`
 }
 
-func generateKey() (string, string, string, error) {
+// generateKey makes a deploy key pair: the public half as an authorized_keys
+// line, the private half PEM encoded.
+func generateKey() (string, string, error) {
 	_privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return "", "", "", err
+		return "", "", err
 	}
 
 	privateKey, err := x509.MarshalECPrivateKey(_privateKey)
 	if err != nil {
-		return "", "", "", err
+		return "", "", err
 	}
 
 	privateKeyPEM := &pem.Block{Type: "EC PRIVATE KEY", Bytes: privateKey}
 	var private bytes.Buffer
 	if err := pem.Encode(&private, privateKeyPEM); err != nil {
-		return "", "", "", err
+		return "", "", err
 	}
 
 	pub, err := ssh.NewPublicKey(&_privateKey.PublicKey)
 	if err != nil {
-		return "", "", "", err
+		return "", "", err
 	}
 
-	return deployKeyName, string(ssh.MarshalAuthorizedKey(pub)), private.String(), nil
+	return string(ssh.MarshalAuthorizedKey(pub)), private.String(), nil
 }
 
 // repoAccess reports whether the caller may act on a repository. GetByID already
@@ -188,7 +190,11 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client Git
 		secret = "mock-secret"
 	}
 
-	kname, kpub, kpriv, err := generateKey()
+	kname := srv.deployKeyName
+	if kname == "" {
+		kname = deployKeyTitle(srv.devMode, "")
+	}
+	kpub, kpriv, err := generateKey()
 	if err != nil {
 		return nil, fmt.Errorf("generate key failed with %s", err)
 	}
@@ -213,6 +219,9 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client Git
 	if err != nil {
 		return nil, fmt.Errorf("new repository failed with %s", err)
 	}
+
+	// read before Register overwrites it; on a failed read a key is left behind
+	replaced, _ := srv.KV().Get(ctx, repoKey)
 
 	err = repo.Register(ctx)
 	if err != nil {
@@ -241,6 +250,12 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client Git
 	err = hook.Register(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("hooks register failed with %s", err)
+	}
+
+	if client != nil && len(replaced) > 0 {
+		if err := removeReplacedKey(client, replaced); err != nil {
+			logger.Errorf("removing the replaced deploy key of repository %s failed: %s", repoID, err)
+		}
 	}
 
 	repoInfo := make(map[string]string, 2)

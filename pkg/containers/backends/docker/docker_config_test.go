@@ -133,6 +133,17 @@ func TestCreateDockerConfig(t *testing.T) {
 		})
 	})
 
+	t.Run("RestrictEgressConfines", func(t *testing.T) {
+		backend := &DockerBackend{}
+		_, hostConfig, _, err := backend.createDockerConfig(&core.ContainerConfig{
+			Image:   "alpine:latest",
+			Network: &core.NetworkConfig{RestrictEgress: true},
+		})
+		require.NoError(t, err)
+		assert.Subset(t, hostConfig.CapDrop, []string{"NET_RAW", "NET_ADMIN", "SYS_ADMIN", "SYS_PTRACE", "MKNOD"})
+		assert.Contains(t, hostConfig.SecurityOpt, "no-new-privileges")
+	})
+
 	t.Run("Resources", func(t *testing.T) {
 		backend := &DockerBackend{}
 

@@ -102,9 +102,16 @@ func (srv *AuthService) apiGitRepositoryServiceHandler(ctx context.Context, st s
 		}
 	case "list":
 		return srv.listRepo(ctx)
-	case "register":
-		return srv.registerRepositoryStream(ctx, body)
-	case "unregister":
+	case "register", "unregister":
+		// Over p2p there is no GitHub caller to check: any peer holding the
+		// swarm key could swap a repository's deploy key and hook secret.
+		// Real clouds register through the HTTP API, which checks the caller.
+		if !srv.devMode {
+			return nil, errors.New("repository " + action + " over p2p is only allowed in dev mode")
+		}
+		if action == "register" {
+			return srv.registerRepositoryStream(ctx, body)
+		}
 		return srv.unregisterRepositoryStream(ctx, body)
 	default:
 		return nil, errors.New("Repository action `" + action + "` not reconized.")

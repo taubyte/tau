@@ -1,0 +1,9 @@
+# Reviewed false positives of TestNoSecretsInLogs.
+# One per line: path:substring-of-the-flagged-line # reason
+services/auth/api_acme.go:len(certificate) # logs the byte count, never the PEM
+services/auth/api_acme.go:acme cache for `%s` # key is the autocert cache entry name (a domain or account id), not key material
+services/auth/api_acme.go:key + " : Found empty !" # same autocert cache entry name
+pkg/kvdb/heads.go:bad head key: %s # r.Key is a datastore path, not a crypto key
+pkg/kvdb/migrations.go:for marker %s, leaving marker empty # r.Key is a datastore path, not a crypto key
+dream/fixtures/clear_repos.go:fmt.Println("Deleting", *key.Title # GitHub deploy-key title, not the key
+pkg/vm-low-orbit/tests/fixtures/go/ping.go:fmt.Println(key+": ", value) # wasm test fixture echoing its own test request headers

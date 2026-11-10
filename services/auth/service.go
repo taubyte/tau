@@ -29,9 +29,7 @@ func New(ctx context.Context, cfg tauConfig.Config) (*AuthService, error) {
 
 	var err error
 	srv.devMode = cfg.DevMode()
-	if srv.devMode {
-		deployKeyName = devDeployKeyName
-	}
+	srv.deployKeyName = deployKeyTitle(srv.devMode, cfg.NetworkFqdn())
 
 	if srv.node = cfg.Node(); srv.node == nil {
 		srv.node, err = tauConfig.NewNode(ctx, cfg, path.Join(cfg.Root(), servicesCommon.Auth))

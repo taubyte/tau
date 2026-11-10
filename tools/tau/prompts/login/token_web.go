@@ -25,13 +25,13 @@ type SessionData struct {
 func extractTokenFromSession(session string) (data SessionData, err error) {
 	sessionSplit := strings.Split(session, ".")
 	if len(sessionSplit) < 2 {
-		err = fmt.Errorf("invalid session: `%s`", session)
+		err = fmt.Errorf("invalid session (%d characters)", len(session))
 		return
 	}
 
 	base64Decoded, err := base64.RawStdEncoding.DecodeString(sessionSplit[1])
 	if err != nil {
-		err = fmt.Errorf("decoding session `%s` failed with: %s", session, err)
+		err = fmt.Errorf("decoding session failed with: %w", err)
 		return
 	}
 

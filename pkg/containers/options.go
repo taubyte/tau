@@ -5,6 +5,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/taubyte/tau/pkg/containers/core"
 	"github.com/taubyte/tau/utils/bundle"
 )
 
@@ -47,6 +48,16 @@ func Output(output io.Writer) ImageOption {
 func ReusePulled(age time.Duration) ImageOption {
 	return func(i *DockerImage) error {
 		i.reusePulled = age
+		return nil
+	}
+}
+
+// TrustLocal lets a failed pull fall back to any local image by that name, not
+// only one this process pulled. For a single-tenant node, where every local
+// image is its owner's.
+func TrustLocal() ImageOption {
+	return func(i *DockerImage) error {
+		i.trustLocal = true
 		return nil
 	}
 }
@@ -102,6 +113,14 @@ func RestrictedEgress() ContainerOption {
 func RestrictedBuildEgress() ImageOption {
 	return func(i *DockerImage) error {
 		i.restrictedEgress = true
+		return nil
+	}
+}
+
+// Resources caps the container's memory, CPU and processes.
+func Resources(limits core.ResourceLimits) ContainerOption {
+	return func(c *Container) error {
+		c.resources = &limits
 		return nil
 	}
 }

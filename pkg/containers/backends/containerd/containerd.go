@@ -550,7 +550,9 @@ func specOpts(config *core.ContainerConfig) ([]oci.SpecOpts, error) {
 		// the cgroup rule but keep AF_PACKET; giving those steps a network
 		// namespace of their own is what would close that, and it is a change to
 		// how BuildKit is run, not to this policy.
-		opts = append(opts, oci.WithDroppedCapabilities([]string{"CAP_NET_RAW"}))
+		opts = append(opts,
+			oci.WithDroppedCapabilities([]string{"CAP_NET_RAW", "CAP_SYS_ADMIN", "CAP_SYS_PTRACE", "CAP_MKNOD"}),
+			oci.WithNoNewPrivileges)
 	}
 
 	return opts, nil
@@ -824,6 +826,9 @@ func resourceSpecOpts(resources *core.ResourceLimits) []oci.SpecOpts {
 
 	if resources.Memory > 0 {
 		opts = append(opts, oci.WithMemoryLimit(uint64(resources.Memory)))
+	}
+	if resources.MemorySwap != 0 {
+		opts = append(opts, oci.WithMemorySwap(resources.MemorySwap))
 	}
 	if resources.PIDs > 0 {
 		opts = append(opts, oci.WithPidsLimit(resources.PIDs))

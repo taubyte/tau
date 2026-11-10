@@ -13,8 +13,8 @@ import (
 )
 
 // Image initializes the given image. It tries to pull from the registry first to get the latest;
-// if pull fails and the image exists locally, that image is used. If the Build() Option is provided
-// then the given DockerFile tarball is built and returned.
+// if pull fails, a local copy is used only if this process pulled it before (or TrustLocal is set).
+// If the Build() Option is provided then the given DockerFile tarball is built, once, and returned.
 func (c *Client) Image(ctx context.Context, name string, options ...ImageOption) (image *DockerImage, err error) {
 	image = &DockerImage{
 		backend: c.backend,
@@ -32,15 +32,24 @@ func (c *Client) Image(ctx context.Context, name string, options ...ImageOption)
 	defer markUsed(name)
 
 	imageExists := image.checkImageExists(ctx)
-	if image.buildTarball != nil && (ForceRebuild || !imageExists) {
-		if err := image.buildImage(ctx); err != nil {
-			return nil, errorImageBuild(name, err)
+	if image.buildTarball != nil {
+		// The name carries the hash of the Dockerfile tarball it is built from,
+		// so a local image by that name is this build's own; no registry has it.
+		if ForceRebuild || !imageExists {
+			if err := image.buildImage(ctx); err != nil {
+				return nil, errorImageBuild(name, err)
+			}
+			locallyBuilt.Store(name, struct{}{})
 		}
 	} else if imageExists && pulledWithin(name, image.reusePulled) {
 		return image, nil
 	} else {
 		if _, err := image.Pull(ctx, nil); err != nil {
-			if imageExists {
+			// A local copy outlives a registry outage only if this node pulled or
+			// built it itself: any other local image may be another tenant's build.
+			_, pulled := lastPulled.Load(name)
+			_, built := locallyBuilt.Load(name)
+			if imageExists && (pulled || built || image.trustLocal) {
 				return image, nil
 			}
 			return nil, errorImagePull(name, err)
@@ -54,7 +63,9 @@ func (c *Client) Image(ctx context.Context, name string, options ...ImageOption)
 var (
 	// lastPulled and lastUsed are keyed by image name and hold a time.Time.
 	lastPulled sync.Map
-	lastUsed   sync.Map
+	// locallyBuilt holds the names this process built from a Dockerfile.
+	locallyBuilt sync.Map
+	lastUsed     sync.Map
 )
 
 func markPulled(name string) { lastPulled.Store(name, time.Now()) }

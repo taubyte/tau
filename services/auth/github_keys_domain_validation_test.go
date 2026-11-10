@@ -25,9 +25,8 @@ func TestGitHubKeyGenerationWorkflowWithFixtures(t *testing.T) {
 	keySet := make(map[string]bool)
 
 	for i := 0; i < 20; i++ {
-		keyName, pubKey, privKey, err := generateKey()
+		pubKey, privKey, err := generateKey()
 		assert.NilError(t, err)
-		assert.Assert(t, keyName != "")
 		assert.Assert(t, pubKey != "")
 		assert.Assert(t, privKey != "")
 
@@ -42,10 +41,6 @@ func TestGitHubKeyGenerationWorkflowWithFixtures(t *testing.T) {
 		assert.Assert(t, pubKey != privKey, "Public and private keys should be different")
 		assert.Assert(t, len(pubKey) > 0, "Public key should not be empty")
 		assert.Assert(t, len(privKey) > 0, "Private key should not be empty")
-
-		// Verify key name is consistent (it's a constant)
-		// Note: deployKeyName gets modified to devDeployKeyName when DevMode is true
-		assert.Assert(t, keyName == "taubyte_deploy_key" || keyName == "taubyte_deploy_key_dev", "Key name should be one of the expected values (keyName: %s)", keyName)
 	}
 
 	// Verify we generated the expected number of unique keys
