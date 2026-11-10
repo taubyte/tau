@@ -23,6 +23,14 @@
 // with no router in the picture at all, which is what lets a service test
 // resolve a peer and then call it without a cloud underneath.
 //
+// What identify leaves in the peerstore can be older than what the peer last sent:
+// it applies two messages from one peer at once and keeps whichever lands last, and
+// the list never expires, so a peer that began to serve after its connection closed
+// is still denied by what it said before. Nothing corrects either until the peer's
+// protocols change while connected. So a peer the list leaves out, while it was a
+// member or an identify message or routing named it, is asked: a stream on the
+// protocol, which the host negotiates and records when the peer answers.
+//
 // Routing — the DHT — is the second, and it is optional because a host.Host
 // has no discovery of its own: pass WithRouting to get it. It is what finds a
 // peer this node has never met, and it is the half that needs the serving node
@@ -49,8 +57,8 @@
 // pooling is real, and it belongs in p2p/rpc, beside the constructor that
 // knows how to build and close a client.
 //
-// It does not belong here. This package resolves; it does not connect, and a
-// pool here would be keyed by peer within one protocol — so it could not share
+// It does not belong here. This package resolves, and a pool here would be
+// keyed by peer within one protocol — so it could not share
 // one connection between two protocols spoken to the same peer, and it would
 // leave a caller that already knows the peer id (the "this specific node" case,
 // which never asks discovery anything) with no pool at all. Nor does it belong
@@ -61,13 +69,14 @@
 // peer id is safe: an id comes from a key pair and names that one node for
 // good, so a peer that leaves and comes back is the same client.
 //
-// # Discovery does not dial
+// # When discovery dials
 //
-// Nothing here opens a connection. The addresses of a peer found through
-// routing are put in the peerstore, and the caller's first RPC is what dials.
-// That is deliberate: a discovery loop that dialled would compete with the
-// caller for the same connection, and simultaneous dials in both directions
-// are what put the swarm into dial backoff and starved discovery the last time
-// this loop was investigated. Discovery reports; the caller connects; a caller
-// whose connection fails says so with Failed.
+// Only to ask. The addresses of a peer found through routing are put in the
+// peerstore, and a peer routing names with nothing known against it is handed out
+// for the caller's first RPC to dial. A peer whose list denies what there is reason
+// to believe is dialled when it is not connected, because a list nobody reconnects
+// to is never corrected, and no caller connects to a peer it is never handed. Two
+// nodes dialling each other at once both connect, since a node of the cloud dials
+// from a port of its own, so the ask and a caller's dial do not cost each other the
+// connection. A caller whose connection fails says so with Failed.
 package discovery

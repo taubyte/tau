@@ -116,7 +116,8 @@ func TestAnEventDoesNotEraseWhyAPeerWasAdmitted(t *testing.T) {
 
 	// What a routing result leaves behind: an address, no protocols, and the
 	// fact that something advertised it. The address is the guard host's own
-	// because nothing here dials anything; it only has to be reachable-looking.
+	// because a peer with no list is not asked, so nothing dials it; it only has
+	// to be reachable-looking.
 	require.NotEmpty(t, h.Addrs())
 	h.Peerstore().AddAddrs(pid, h.Addrs(), time.Hour)
 	protos, err := h.Peerstore().GetProtocols(pid)
@@ -130,4 +131,16 @@ func TestAnEventDoesNotEraseWhyAPeerWasAdmitted(t *testing.T) {
 	d.reconsider(pid, false)
 	assert.Equal(t, []peer.ID{pid}, d.Known(),
 		"an event carrying no protocol news dropped a peer routing had named")
+}
+
+func TestNobodyAndOurselvesAreNeverAsked(t *testing.T) {
+	d, h := guarded(t)
+
+	d.mu.Lock()
+	d.doubtLocked("")
+	d.doubtLocked(h.ID())
+	asking := len(d.asking)
+	d.mu.Unlock()
+
+	assert.Zero(t, asking)
 }

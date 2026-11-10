@@ -16,6 +16,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/host/eventbus"
+	msmux "github.com/multiformats/go-multistream"
 )
 
 // DefaultRetryInterval is how often a waiting request makes this package look
@@ -35,6 +36,10 @@ const DefaultMaxPeers = 16
 
 // DefaultLookupLimit is how many peers one routing lookup asks for.
 const DefaultLookupLimit = 512
+
+// askTimeout bounds one ask: a dial when the peer is not connected, and the
+// negotiation. It is libp2p's own negotiation timeout.
+const askTimeout = 10 * time.Second
 
 // eventBuffer sizes the subscription. libp2p blocks an emitter whose subscriber is
 // behind, so this is slack for a burst while the loop is mid-scan.
@@ -64,7 +69,7 @@ type Resolver interface {
 	// waiting for anything.
 	Known() []peer.ID
 	// Failed reports that a peer this Resolver named did not work. Only the caller
-	// ever finds out, since nothing here connects to anything.
+	// ever finds out, since discovery makes no calls.
 	Failed(peer.ID)
 }
 
@@ -112,10 +117,12 @@ type Discovery struct {
 	done   chan struct{}
 
 	// kick asks the loop to look now. found and lookedUp carry a routing
-	// lookup's results and its end.
+	// lookup's results and its end. answered carries a peer that answered on the
+	// protocol when it was asked.
 	kick     chan struct{}
 	found    chan peer.AddrInfo
 	lookedUp chan struct{}
+	answered chan peer.ID
 	// finding is read and written only by the loop goroutine.
 	finding bool
 
@@ -123,6 +130,7 @@ type Discovery struct {
 	peers      map[peer.ID]*entry
 	quarantine map[peer.ID]time.Time
 	waiters    map[*waiter]struct{}
+	asking     map[peer.ID]bool
 }
 
 // entry is what is known about a member beyond the fact that it is one.
@@ -188,9 +196,11 @@ func New(ctx context.Context, h host.Host, id protocol.ID, opts ...Option) (*Dis
 	d.kick = make(chan struct{}, 1)
 	d.found = make(chan peer.AddrInfo)
 	d.lookedUp = make(chan struct{}, 1)
+	d.answered = make(chan peer.ID)
 	d.peers = make(map[peer.ID]*entry)
 	d.quarantine = make(map[peer.ID]time.Time)
 	d.waiters = make(map[*waiter]struct{})
+	d.asking = make(map[peer.ID]bool)
 	// The tag is per Discovery, so two of them watching the same peer do not
 	// unprotect each other's connection.
 	d.tag = fmt.Sprintf("discovery:%s:%p", id, d)
@@ -255,6 +265,9 @@ func (d *Discovery) run(sub event.Subscription) {
 
 		case <-d.lookedUp:
 			d.finding = false
+
+		case pid := <-d.answered:
+			d.reconsider(pid, false)
 		}
 	}
 }
@@ -271,15 +284,18 @@ func (d *Discovery) fill() {
 }
 
 // onEvent turns any of the three subscribed events into the same question about one
-// peer. The events' own protocol data is ignored: the peerstore holds the merged
-// answer.
+// peer. The peerstore holds the merged answer; an event's own protocol data only says
+// whether the peer is to be asked when the peerstore denies what the event named.
 func (d *Discovery) onEvent(e any) {
-	var pid peer.ID
+	var (
+		pid  peer.ID
+		said bool
+	)
 	switch v := e.(type) {
 	case event.EvtPeerIdentificationCompleted:
-		pid = v.Peer
+		pid, said = v.Peer, slices.Contains(v.Protocols, d.id)
 	case event.EvtPeerProtocolsUpdated:
-		pid = v.Peer
+		pid, said = v.Peer, slices.Contains(v.Added, d.id)
 	case event.EvtPeerConnectednessChanged:
 		pid = v.Peer
 		d.connectedness(pid, v.Connectedness)
@@ -287,6 +303,11 @@ func (d *Discovery) onEvent(e any) {
 		return
 	}
 	d.reconsider(pid, false)
+	if said {
+		d.mu.Lock()
+		d.doubtLocked(pid)
+		d.mu.Unlock()
+	}
 }
 
 // connectedness records what a connection coming or going is evidence of. A live
@@ -343,6 +364,7 @@ func (d *Discovery) reap() {
 	for pid, e := range d.peers {
 		if !d.admissible(pid, e.advertised) {
 			d.dropLocked(pid)
+			d.doubtLocked(pid)
 		}
 	}
 }
@@ -360,6 +382,72 @@ func (d *Discovery) reconsider(pid peer.ID, advertised bool) {
 		d.admitLocked(pid, advertised)
 	case known:
 		d.dropLocked(pid)
+		d.doubtLocked(pid)
+	case advertised:
+		d.doubtLocked(pid)
+	}
+}
+
+// doubtLocked asks pid itself whether it serves the protocol, when identify's list
+// leaves it out and there is reason to think it serves: it was a member, an identify
+// message named it, or routing did. identify applies two messages from one peer at
+// once and keeps whichever lands last, so the list can be older than what the peer
+// last sent; and the list never expires, so a peer that began to serve after its
+// connection closed is denied by what it said before. Nothing corrects either until
+// the peer's protocols change while connected, and no caller connects to a peer it
+// is never handed.
+//
+// Called with d.mu held.
+func (d *Discovery) doubtLocked(pid peer.ID) {
+	if pid == "" || pid == d.host.ID() || d.asking[pid] {
+		return
+	}
+	protos, err := d.host.Peerstore().GetProtocols(pid)
+	if err != nil || len(protos) == 0 || slices.Contains(protos, d.id) {
+		return
+	}
+	d.asking[pid] = true
+	go d.ask(pid)
+}
+
+// ask hands the loop pid if it answers on the protocol. It lets go of pid before
+// the answer is in, so a list overwritten again meanwhile can be asked about anew.
+func (d *Discovery) ask(pid peer.ID) {
+	yes := d.answers(pid)
+	d.mu.Lock()
+	delete(d.asking, pid)
+	d.mu.Unlock()
+	if !yes {
+		return
+	}
+	select {
+	case d.answered <- pid:
+	case <-d.ctx.Done():
+	}
+}
+
+// answers opens a stream on the protocol to pid, dialling it if need be. The
+// peerstore does not list the protocol, so the host negotiates it for real and
+// records it there when pid answers. A peer that fails to answer is asked again each
+// retry interval while it stays connected; one that refuses has said what identify
+// said, and one that cannot be reached has nothing to be asked over.
+func (d *Discovery) answers(pid peer.ID) bool {
+	for {
+		ctx, cancel := context.WithTimeout(d.ctx, askTimeout)
+		s, err := d.host.NewStream(ctx, pid, d.id)
+		cancel()
+		switch {
+		case err == nil:
+			s.Reset()
+			return true
+		case errors.Is(err, msmux.ErrNotSupported[protocol.ID]{}), d.host.Network().Connectedness(pid) != network.Connected:
+			return false
+		}
+		select {
+		case <-time.After(d.retry):
+		case <-d.ctx.Done():
+			return false
+		}
 	}
 }
 

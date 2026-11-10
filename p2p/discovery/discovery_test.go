@@ -5,11 +5,13 @@ import (
 	"errors"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	libp2p "github.com/libp2p/go-libp2p"
 	libdisc "github.com/libp2p/go-libp2p/core/discovery"
+	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -243,6 +245,215 @@ func TestAPeerThatGoesAwayLeavesTheSet(t *testing.T) {
 
 	require.Eventually(t, func() bool { return len(d.Known()) == 0 }, 5*time.Second, 10*time.Millisecond,
 		"a peer whose host is gone is still being handed out")
+}
+
+// listed is what from's peerstore says about serves.
+func listed(t *testing.T, from host.Host, about peer.ID) []protocol.ID {
+	t.Helper()
+	protos, err := from.Peerstore().GetProtocols(about)
+	require.NoError(t, err)
+	return protos
+}
+
+// serves says whether from's peerstore lists about as serving the protocol.
+func serves(from host.Host, about peer.ID) bool {
+	protos, err := from.Peerstore().GetProtocols(about)
+	return err == nil && slices.Contains(protos, testProtocol)
+}
+
+func leftOut(protos []protocol.ID, id protocol.ID) []protocol.ID {
+	return slices.DeleteFunc(slices.Clone(protos), func(p protocol.ID) bool { return p == id })
+}
+
+// identifiedOnce waits until identify has told from what about serves.
+func identifiedOnce(t *testing.T, from host.Host, about peer.ID) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		protos, err := from.Peerstore().GetProtocols(about)
+		return err == nil && len(protos) > 0
+	}, 5*time.Second, 10*time.Millisecond, "identify never told the client what the server serves")
+}
+
+// identified emits on from what identify emits for a message from about that named
+// protos: a diff, here taken against a list another message was still writing, so it
+// names nothing, and the identification, which names what the message did.
+func identified(t *testing.T, from host.Host, about peer.ID, protos []protocol.ID) {
+	t.Helper()
+	conns := from.Network().ConnsToPeer(about)
+	require.NotEmpty(t, conns)
+
+	updated, err := from.EventBus().Emitter(new(event.EvtPeerProtocolsUpdated))
+	require.NoError(t, err)
+	defer updated.Close()
+	done, err := from.EventBus().Emitter(new(event.EvtPeerIdentificationCompleted))
+	require.NoError(t, err)
+	defer done.Close()
+
+	require.NoError(t, updated.Emit(event.EvtPeerProtocolsUpdated{Peer: about}))
+	require.NoError(t, done.Emit(event.EvtPeerIdentificationCompleted{Peer: about, Conn: conns[0], Protocols: protos}))
+}
+
+// TWO IDENTIFY MESSAGES FROM ONE PEER ARE APPLIED AT ONCE and the one that lands last
+// stays, so a peer that began to serve can be left listed as it was before, by an
+// older message whose diff names nothing. Nothing corrects the list unless the
+// peer's protocols change again.
+func TestAPeerAnOlderIdentifyMessageLeavesOutIsAskedAndKept(t *testing.T) {
+	server, client := newHost(t), newHost(t)
+	connectHosts(t, client, server)
+	d := newDiscovery(t, client)
+
+	serve(t, server)
+	pid, err := d.Any(within(t, 5*time.Second))
+	require.NoError(t, err)
+	require.Equal(t, server.ID(), pid)
+
+	older := leftOut(listed(t, client, server.ID()), testProtocol)
+	require.NoError(t, client.Peerstore().SetProtocols(server.ID(), older...))
+	identified(t, client, server.ID(), older)
+
+	require.Eventually(t, func() bool {
+		return serves(client, server.ID()) && slices.Equal(d.Known(), []peer.ID{server.ID()})
+	}, 5*time.Second, 10*time.Millisecond, "a peer an older identify message left out was never asked")
+}
+
+// THE NEWER MESSAGE CAN BE APPLIED FIRST, so an identification naming the protocol
+// arrives with a list that leaves it out.
+func TestAPeerAnIdentifyMessageNamedIsAskedWhenTheListLeavesItOut(t *testing.T) {
+	server, client := newHost(t), newHost(t)
+	serve(t, server)
+	connectHosts(t, client, server)
+	require.Eventually(t, func() bool { return serves(client, server.ID()) }, 5*time.Second, 10*time.Millisecond)
+
+	newer := listed(t, client, server.ID())
+	require.NoError(t, client.Peerstore().SetProtocols(server.ID(), leftOut(newer, testProtocol)...))
+	d := newDiscovery(t, client)
+	_, err := d.Any(within(t, 200*time.Millisecond))
+	require.ErrorIs(t, err, discovery.ErrNoPeers, "the list did not leave the server out")
+
+	identified(t, client, server.ID(), newer)
+
+	pid, err := d.Any(within(t, 5*time.Second))
+	require.NoError(t, err)
+	assert.Equal(t, server.ID(), pid)
+}
+
+// A PEER THAT REFUSES WHEN ASKED has said what identify said, and is not asked again.
+func TestAPeerThatRefusesWhenAskedIsAskedOnce(t *testing.T) {
+	server, client := newHost(t), newHost(t)
+	var asked atomic.Int32
+	server.Mux().AddHandlerWithFunc("/tau/test/discovery/counts", func(p protocol.ID) bool {
+		if p == testProtocol {
+			asked.Add(1)
+		}
+		return false
+	}, nil)
+	connectHosts(t, client, server)
+	identifiedOnce(t, client, server.ID())
+	d := newDiscovery(t, client)
+
+	identified(t, client, server.ID(), append(listed(t, client, server.ID()), testProtocol))
+
+	require.Eventually(t, func() bool { return asked.Load() == 1 }, 5*time.Second, 10*time.Millisecond,
+		"the server was never asked")
+	time.Sleep(10 * tick)
+	assert.Equal(t, int32(1), asked.Load(), "a peer that refused was asked again")
+	assert.Empty(t, d.Known())
+}
+
+// flaky is a host whose first fail streams fail before they negotiate, the way a
+// stream to an overloaded peer is reset.
+type flaky struct {
+	host.Host
+	fail  atomic.Int32
+	tries atomic.Int32
+}
+
+func (f *flaky) NewStream(ctx context.Context, p peer.ID, pids ...protocol.ID) (network.Stream, error) {
+	f.tries.Add(1)
+	if f.fail.Add(-1) >= 0 {
+		return nil, errors.New("stream reset")
+	}
+	return f.Host.NewStream(ctx, p, pids...)
+}
+
+// askedAbout is a client a stale list has told the server does not serve, while the
+// server does, and a flaky host over it that fails its first fail streams.
+func askedAbout(t *testing.T, fail int32) (server host.Host, client *flaky) {
+	t.Helper()
+	server, h := newHost(t), newHost(t)
+	serve(t, server)
+	connectHosts(t, h, server)
+	require.Eventually(t, func() bool { return serves(h, server.ID()) }, 5*time.Second, 10*time.Millisecond)
+	require.NoError(t, h.Peerstore().SetProtocols(server.ID(), leftOut(listed(t, h, server.ID()), testProtocol)...))
+
+	client = &flaky{Host: h}
+	client.fail.Store(fail)
+	return server, client
+}
+
+func TestAPeerThatFailsToAnswerIsAskedAgain(t *testing.T) {
+	server, client := askedAbout(t, 2)
+	d := newDiscovery(t, client)
+
+	identified(t, client, server.ID(), append(listed(t, client, server.ID()), testProtocol))
+
+	pid, err := d.Any(within(t, 5*time.Second))
+	require.NoError(t, err)
+	assert.Equal(t, server.ID(), pid)
+	assert.Equal(t, int32(3), client.tries.Load(), "asked other than until it answered")
+}
+
+func TestClosingEndsAnAsk(t *testing.T) {
+	server, client := askedAbout(t, 1<<30)
+	d := newDiscovery(t, client)
+
+	identified(t, client, server.ID(), append(listed(t, client, server.ID()), testProtocol))
+	require.Eventually(t, func() bool { return client.tries.Load() >= 2 }, 5*time.Second, 10*time.Millisecond,
+		"the server was never asked again")
+
+	d.Close()
+	time.Sleep(2 * tick)
+	tries := client.tries.Load()
+	time.Sleep(10 * tick)
+	assert.Equal(t, tries, client.tries.Load(), "an ask outlived its Discovery")
+}
+
+// THE LIST NEVER EXPIRES, so a peer that began to serve after its connection closed
+// is still denied by what it said before, and the push that would correct it had
+// nobody to go to. It is dialled and asked: no caller connects to a peer it is never
+// handed.
+func TestAPeerRoutingNamesThatAnOldListDeniesIsDialledAndAsked(t *testing.T) {
+	server, client := newHost(t), newHost(t)
+	connectHosts(t, client, server)
+	identifiedOnce(t, client, server.ID())
+	require.NoError(t, client.Network().ClosePeer(server.ID()))
+	require.Eventually(t, func() bool { return client.Network().Connectedness(server.ID()) != network.Connected },
+		5*time.Second, 10*time.Millisecond)
+	serve(t, server)
+
+	routing := &fakeRouting{results: [][]peer.AddrInfo{{{ID: server.ID(), Addrs: server.Addrs()}}}}
+	d := newDiscovery(t, client, discovery.WithRouting(routing))
+
+	pid, err := d.Any(within(t, 5*time.Second))
+	require.NoError(t, err)
+	assert.Equal(t, server.ID(), pid)
+	assert.True(t, serves(client, server.ID()))
+}
+
+func TestAPeerRoutingNamesThatCannotBeReachedIsNotHandedOut(t *testing.T) {
+	server, client := newHost(t), newHost(t)
+	connectHosts(t, client, server)
+	identifiedOnce(t, client, server.ID())
+	addrs := server.Addrs()
+	require.NoError(t, server.Close())
+	require.Eventually(t, func() bool { return client.Network().Connectedness(server.ID()) != network.Connected },
+		5*time.Second, 10*time.Millisecond)
+
+	routing := &fakeRouting{results: [][]peer.AddrInfo{{{ID: server.ID(), Addrs: addrs}}}}
+	d := newDiscovery(t, client, discovery.WithRouting(routing))
+
+	_, err := d.Any(within(t, 500*time.Millisecond))
+	require.ErrorIs(t, err, discovery.ErrNoPeers)
 }
 
 func TestAskingForMorePeersThanExist(t *testing.T) {
