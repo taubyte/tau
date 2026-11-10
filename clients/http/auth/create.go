@@ -35,3 +35,23 @@ func (d *Device) Create(c *Client) error {
 
 	return nil
 }
+
+// Import registers the project under projectID, the id in its config, instead
+// of a new one. A project's builds are filed under its config's id, so a cloud
+// that knew the project by another id listed none of its jobs and served none
+// of its resources.
+func (p *Project) Import(c *Client, projectID, configRepoId, codeRepoId string) error {
+	p.client = c
+
+	sendData := ImportProjectData{
+		Config:    Repository{Id: configRepoId},
+		Code:      Repository{Id: codeRepoId},
+		ProjectID: projectID,
+	}
+
+	if err := p.client.http.Post("/project/import/"+p.Name, &sendData, &ProjectReturn{p}); err != nil {
+		return fmt.Errorf("importing project failed with: %s", err)
+	}
+
+	return nil
+}

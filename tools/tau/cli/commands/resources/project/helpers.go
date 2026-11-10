@@ -3,8 +3,10 @@ package project
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
-	"sync"
+	"strings"
 
 	"github.com/google/go-github/v71/github"
 	"github.com/pterm/pterm"
@@ -17,6 +19,7 @@ import (
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/oauth2"
+	"gopkg.in/yaml.v3"
 )
 
 // See if they have cloned the project, if not show help
@@ -35,63 +38,36 @@ type dualRepoHandler struct {
 	errorFormat func(string) error
 }
 
-// Run will parse for config-only || code-only
-// then Runs a go routine to commit the action on both
-// config and code repositories asynchronously or run config/code only
+// Run applies the action to the config repo, then the code repo (or only the
+// one --config-only/--code-only names). Config goes first and code is left
+// alone when config fails: a code build needs the resources config declares.
 func (h *dualRepoHandler) Run() error {
 	config, code, err := projectFlags.ParseConfigCodeFlags(h.ctx)
 	if err != nil {
 		return err
 	}
 
-	var (
-		configErr error
-		codeErr   error
-	)
-
-	var wg sync.WaitGroup
-
-	if config {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
-			var configRepo *git.Repository
-
-			configRepo, configErr = h.repository.Config()
-			if configErr != nil {
-				return
-			}
-
-			configErr = h.action(configRepo)
-			if configErr != nil {
-				pterm.Error.Printfln(projectI18n.ConfigRepo, configErr)
-			}
-		}()
+	steps := []struct {
+		on     bool
+		open   func() (*git.Repository, error)
+		format string
+	}{
+		{config, h.repository.Config, projectI18n.ConfigRepo},
+		{code, h.repository.Code, projectI18n.CodeRepo},
 	}
-
-	if code {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
-			var codeRepo *git.Repository
-
-			codeRepo, codeErr = h.repository.Code()
-			if codeErr != nil {
-				return
+	for _, s := range steps {
+		if !s.on {
+			continue
+		}
+		repo, err := s.open()
+		if err == nil {
+			if err = h.action(repo); err != nil {
+				pterm.Error.Printfln(s.format, err)
 			}
-
-			codeErr = h.action(codeRepo)
-			if codeErr != nil {
-				pterm.Error.Printfln(projectI18n.CodeRepo, codeErr)
-			}
-		}()
-	}
-
-	wg.Wait()
-	if configErr != nil || codeErr != nil {
-		return h.errorFormat(h.projectName)
+		}
+		if err != nil {
+			return errors.Join(h.errorFormat(h.projectName), err)
+		}
 	}
 
 	return nil
@@ -104,6 +80,43 @@ func newGithubClient(ctx context.Context, token string) *github.Client {
 
 	tc := oauth2.NewClient(ctx, ts)
 	return github.NewClient(tc)
+}
+
+// GetRepo looks one repository up by its full name (owner/name).
+var GetRepo = func(ctx context.Context, token, fullName string) (*github.Repository, error) {
+	owner, name, ok := strings.Cut(fullName, "/")
+	if !ok || owner == "" || name == "" {
+		return nil, fmt.Errorf("repository %q is not owner/name", fullName)
+	}
+	repo, _, err := newGithubClient(ctx, token).Repositories.Get(ctx, owner, name)
+	return repo, err
+}
+
+// ConfigProjectID reads the project id from config.yaml in a config repository
+// (owner/name) on its default branch; "" when the file holds none.
+var ConfigProjectID = func(ctx context.Context, token, fullName string) (string, error) {
+	owner, name, ok := strings.Cut(fullName, "/")
+	if !ok || owner == "" || name == "" {
+		return "", fmt.Errorf("repository %q is not owner/name", fullName)
+	}
+	file, _, _, err := newGithubClient(ctx, token).Repositories.GetContents(ctx, owner, name, "config.yaml", nil)
+	if err != nil {
+		return "", err
+	}
+	if file == nil {
+		return "", fmt.Errorf("config.yaml of %s is not a file", fullName)
+	}
+	content, err := file.GetContent()
+	if err != nil {
+		return "", err
+	}
+	var config struct {
+		Id string `yaml:"id"`
+	}
+	if err := yaml.Unmarshal([]byte(content), &config); err != nil {
+		return "", fmt.Errorf("reading config.yaml of %s failed with: %w", fullName, err)
+	}
+	return config.Id, nil
 }
 
 // Var to allow override in tests

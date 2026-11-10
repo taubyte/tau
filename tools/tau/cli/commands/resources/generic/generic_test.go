@@ -29,6 +29,7 @@ func TestResourceLifecycle(t *testing.T) {
 		"--type", "https",
 		"--method", "POST",
 		"--paths", "/gen",
+		"--domains", "test_domain1",
 		"--timeout", "10s",
 		"--memory", "16MB",
 		"--call", "ping",
@@ -101,7 +102,8 @@ func TestContainerScope(t *testing.T) {
 		read(t, filepath.Join(config, "applications", "cli_app", "config.yaml")), "description: scoped"))
 
 	// the new application is the selected scope, so this function is its own
-	assert.NilError(t, run("new", "function", "scoped_fn", "--type", "https", "--call", "ping"))
+	assert.NilError(t, run("new", "function", "scoped_fn", "--type", "https", "--call", "ping",
+		"--paths", "/s", "--domains", "test_domain1", "--timeout", "10s", "--memory", "16MB"))
 	assert.Assert(t, strings.Contains(
 		read(t, filepath.Join(config, "applications", "cli_app", "functions", "scoped_fn.yaml")), "call: ping"))
 

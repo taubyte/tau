@@ -38,8 +38,9 @@ func ListNoRender(jobs []*patrick.Job, showCommit bool) (table.Writer, error) {
 	}
 
 	timeZone, _ := time.LoadLocation("Local")
+	names := make(repoNames)
 	for _, job := range _jobs {
-		row, err := row(auth, job, timeZone, showCommit)
+		row, err := row(auth, names, job, timeZone, showCommit)
 		if err != nil {
 			return nil, err
 		}

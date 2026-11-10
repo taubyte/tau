@@ -3,6 +3,7 @@
 package git
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -23,8 +24,8 @@ func (c *Repository) Pull() error {
 		Progress: os.Stdout,
 		Auth:     c.auth,
 	})
-	if err != nil {
-		return fmt.Errorf("pulling from repo failed with %+v", err)
+	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
+		return fmt.Errorf("pulling from repo failed with %w", err)
 	}
 	return nil
 }
