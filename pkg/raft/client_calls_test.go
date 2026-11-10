@@ -288,6 +288,34 @@ func TestStream_ExportFSMAskedOfEitherMemberIsTheGroupsState(t *testing.T) {
 	}
 }
 
+// AN ORPHAN'S EXPORT IS SERVED ONLY BY A MEMBER THAT KNOWS NO LEADER, never
+// forwarded: the group taking it takes it outside the order two leaders merge by.
+func TestStream_AnOrphansExportIsServedOnlyByAMemberThatKnowsNoLeader(t *testing.T) {
+	caller := newMockNode(t)
+	a, b := joinedPair(t, "stream-export-orphan", sameStore)
+	connected(t, caller, a, b)
+	require.NoError(t, onLeader(t, []Cluster{a, b}, func(l Cluster) error {
+		return l.Set("k", []byte("v"), time.Second)
+	}))
+
+	cliOf, err := newInternalClient(caller, "stream-export-orphan", nil, quickRetry)
+	require.NoError(t, err)
+	defer cliOf.Close()
+
+	for _, member := range []Cluster{a, b} {
+		require.Eventually(t, func() bool { _, err := member.Leader(); return err == nil }, leaderWait, 20*time.Millisecond)
+		_, err := cliOf.ExportOrphan(idOf(member))
+		require.ErrorContains(t, err, ErrNotAnOrphan.Error(), "%s served an orphan's export", idOf(member).ShortString())
+	}
+
+	require.NoError(t, a.Close())
+	require.Eventually(t, func() bool { _, err := b.Leader(); return err != nil }, leaderWait, 20*time.Millisecond)
+	exp, err := cliOf.ExportOrphan(idOf(b))
+	require.NoError(t, err)
+	require.Equal(t, "v", string(exp.state["k"].Value))
+	require.Equal(t, formationOf(b), exp.formation)
+}
+
 func TestStream_AJoinAskedOfAFollowerIsForwardedToItsLeader(t *testing.T) {
 	const namespace = "stream-join-forwarded"
 	caller := newMockNode(t)

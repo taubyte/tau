@@ -892,8 +892,11 @@ func (x *ClusterInfoResponse) GetMembers() []string {
 // refuse writes for that long first, so nothing its group commits after the cut
 // escapes the merge taking it.
 type ExportFSMRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	FreezeMs      int64                  `protobuf:"varint,1,opt,name=freeze_ms,json=freezeMs,proto3" json:"freeze_ms,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	FreezeMs int64                  `protobuf:"varint,1,opt,name=freeze_ms,json=freezeMs,proto3" json:"freeze_ms,omitempty"`
+	// Served only by a member that knows no leader, itself included, and never
+	// forwarded: what a group taking an orphan merges.
+	Orphan        bool `protobuf:"varint,2,opt,name=orphan,proto3" json:"orphan,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -933,6 +936,13 @@ func (x *ExportFSMRequest) GetFreezeMs() int64 {
 		return x.FreezeMs
 	}
 	return 0
+}
+
+func (x *ExportFSMRequest) GetOrphan() bool {
+	if x != nil {
+		return x.Orphan
+	}
+	return false
 }
 
 type ExportFSMResponse struct {
@@ -1185,9 +1195,10 @@ const file_tau_raft_v2_raft_proto_rawDesc = "" +
 	"\fmember_count\x18\x04 \x01(\x03R\vmemberCount\x12\x17\n" +
 	"\anode_id\x18\x05 \x01(\tR\x06nodeId\x12\x1c\n" +
 	"\tformation\x18\x06 \x01(\fR\tformation\x12\x18\n" +
-	"\amembers\x18\a \x03(\tR\amembers\"/\n" +
+	"\amembers\x18\a \x03(\tR\amembers\"G\n" +
 	"\x10ExportFSMRequest\x12\x1b\n" +
-	"\tfreeze_ms\x18\x01 \x01(\x03R\bfreezeMs\"\x8a\x02\n" +
+	"\tfreeze_ms\x18\x01 \x01(\x03R\bfreezeMs\x12\x16\n" +
+	"\x06orphan\x18\x02 \x01(\bR\x06orphan\"\x8a\x02\n" +
 	"\x11ExportFSMResponse\x12E\n" +
 	"\aentries\x18\x01 \x03(\v2+.tau.raft.v2.ExportFSMResponse.EntriesEntryR\aentries\x12\x14\n" +
 	"\x05clock\x18\x02 \x01(\x04R\x05clock\x12\x10\n" +

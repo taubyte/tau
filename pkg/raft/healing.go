@@ -593,7 +593,12 @@ func (h *healer) absorbOrphan(ctx context.Context, orphan peer.ID) {
 
 	// A yield wipes the only copy of what the orphan holds, so it is told to
 	// yield only once all of that has landed here.
-	exp, err := h.member.raftClient.ExportFSM(orphan, 0)
+	//
+	// THE ORPHAN LEADS NOTHING when it exports, or it may have taken this group, as
+	// the winner of the two, and both would yield, each to the other, on receipts
+	// for state only the other held. One that leads after commits past the cut, and
+	// its receipt no longer covers it.
+	exp, err := h.member.raftClient.ExportOrphan(orphan)
 	if err != nil {
 		healLogger.Warnf("[%s] export FSM from orphan %s failed: %v",
 			h.cluster.ID().ShortString(), orphan.ShortString(), err)

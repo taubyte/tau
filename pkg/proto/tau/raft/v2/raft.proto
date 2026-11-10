@@ -138,6 +138,9 @@ message ClusterInfoResponse {
 // escapes the merge taking it.
 message ExportFSMRequest {
   int64 freeze_ms = 1;
+  // Served only by a member that knows no leader, itself included, and never
+  // forwarded: what a group taking an orphan merges.
+  bool orphan = 2;
 }
 
 message ExportFSMResponse {

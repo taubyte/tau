@@ -28,6 +28,9 @@ var (
 	// committed.
 	ErrReceiptShort = errors.New("the receipt does not cover what the member committed")
 
+	// ErrNotAnOrphan is an orphan's export asked of a member that knows a leader.
+	ErrNotAnOrphan = errors.New("the member knows a leader and is no orphan")
+
 	ErrInvalidNamespace = errors.New("invalid namespace")
 
 	ErrInvalidBarrier = errors.New("invalid barrier: must be > 0 and <= MaxGetHandlerBarrierTimeout")

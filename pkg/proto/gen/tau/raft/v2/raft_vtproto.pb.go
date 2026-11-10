@@ -798,6 +798,16 @@ func (m *ExportFSMRequest) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if m.Orphan {
+		i--
+		if m.Orphan {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x10
+	}
 	if m.FreezeMs != 0 {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.FreezeMs))
 		i--
@@ -1263,6 +1273,9 @@ func (m *ExportFSMRequest) SizeVT() (n int) {
 	_ = l
 	if m.FreezeMs != 0 {
 		n += 1 + protohelpers.SizeOfVarint(uint64(m.FreezeMs))
+	}
+	if m.Orphan {
+		n += 2
 	}
 	n += len(m.unknownFields)
 	return n
@@ -3197,6 +3210,26 @@ func (m *ExportFSMRequest) UnmarshalVT(dAtA []byte) error {
 					break
 				}
 			}
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Orphan", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Orphan = bool(v != 0)
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])

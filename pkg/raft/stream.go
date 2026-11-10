@@ -359,7 +359,7 @@ func (s *raftStreamService) Offer(ctx context.Context, req *connect.Request[raft
 func (s *raftStreamService) ExportFSM(ctx context.Context, req *connect.Request[raftv2.ExportFSMRequest]) (*connect.Response[raftv2.ExportFSMResponse], error) {
 	from := remotePeer(ctx).ShortString()
 
-	if !s.cluster.IsLeader() {
+	if !req.Msg.GetOrphan() && !s.cluster.IsLeader() {
 		if _, err := s.cluster.Leader(); err == nil {
 			streamLogger.Infof("[%s] exportFSM requested (from=%s) — forwarding to leader",
 				s.cluster.ID().ShortString(), from)
@@ -380,6 +380,11 @@ func (s *raftStreamService) ExportFSM(ctx context.Context, req *connect.Request[
 	m := s.cluster.current()
 	wait := exportDrainWait
 	cut := m.raft.CommitIndex()
+	// AN ORPHAN IS ASKED WHETHER IT KNOWS A LEADER ONLY ONCE ITS CUT IS READ: one
+	// that comes to lead after the question commits past the cut.
+	if _, err := leaderKnownTo(m.raft); err == nil && req.Msg.GetOrphan() {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, ErrNotAnOrphan)
+	}
 	if freeze := time.Duration(req.Msg.GetFreezeMs()) * time.Millisecond; freeze > 0 && m.isLeader() {
 		m.raft.Freeze(freeze)
 		cut, wait = m.raft.LastIndex(), freeze

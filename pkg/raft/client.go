@@ -40,6 +40,7 @@ type internalClient interface {
 	ClusterInfo(target peer.ID) (*ClusterInfoResponse, error)
 	Offer(target peer.ID) (offer, error)
 	ExportFSM(target peer.ID, freeze time.Duration) (export, error)
+	ExportOrphan(target peer.ID) (export, error)
 	HealAck(target peer.ID, r receipt) error
 	Close() error
 }
@@ -354,9 +355,19 @@ func (e export) receipt() receipt {
 }
 
 func (c *client) ExportFSM(target peer.ID, freeze time.Duration) (export, error) {
+	return c.export(target, &raftv2.ExportFSMRequest{FreezeMs: freeze.Milliseconds()}, freeze)
+}
+
+// ExportOrphan is the state of target as an orphan, refused by one that knows a
+// leader: a group takes an orphan's state outside the order two leaders merge by,
+// which only a member that leads nothing may be taken in.
+func (c *client) ExportOrphan(target peer.ID) (export, error) {
+	return c.export(target, &raftv2.ExportFSMRequest{Orphan: true}, 0)
+}
+
+func (c *client) export(target peer.ID, req *raftv2.ExportFSMRequest, freeze time.Duration) (export, error) {
 	clientLogger.Infof("requesting exportFSM from %s", target.ShortString())
 
-	req := &raftv2.ExportFSMRequest{FreezeMs: freeze.Milliseconds()}
 	res, err := first(c.ctx, c, []peer.ID{target}, sendToPeerTimeout+freeze, func(ctx context.Context, s raftv2connect.RaftServiceClient) (*connect.Response[raftv2.ExportFSMResponse], error) {
 		return s.ExportFSM(ctx, connect.NewRequest(req))
 	})

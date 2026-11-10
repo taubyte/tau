@@ -1352,6 +1352,32 @@ func TestHealing_ALosingLeaderThatMakesItselfKnownIsMetAtOnce(t *testing.T) {
 		10*time.Second, 50*time.Millisecond)
 }
 
+// A LEADER IS NEVER TAKEN AS AN ORPHAN. A group that judged it one from what it
+// answered before it led would take it outside the order two leaders merge by,
+// while it took that group as the winner of the two: each would yield on the
+// other's receipt, for state only the other held.
+func TestHealing_ALeaderIsNeverTakenAsAnOrphan(t *testing.T) {
+	probeEvery(t, time.Hour)
+	winner, loser := soloPair(t, "leader-taken-as-orphan", withoutMeetingIdentified())
+	// The loser holds everything the winner does, so taking the winner adds nothing.
+	for _, key := range []string{"from-a", "from-b"} {
+		require.NoError(t, loser.Set(key, []byte(key[len(key)-1:]), time.Second))
+	}
+
+	// Neither yields until both have taken the other.
+	winner.mu.Lock()
+	loser.mu.Lock()
+	winner.current().healer.Load().executeMerge(t.Context(), loser.ID())
+	loser.current().healer.Load().absorbOrphan(t.Context(), winner.ID())
+	winner.mu.Unlock()
+	loser.mu.Unlock()
+
+	require.Eventually(t, func() bool {
+		members, err := winner.Members()
+		return err == nil && len(members) == 2 && holdsEverything(winner) && holdsEverything(loser)
+	}, 10*time.Second, 50*time.Millisecond, "the pair lost what both held")
+}
+
 // A NODE MADE TO FORM ITS GROUP ALONE JOINS THE GROUP IT YIELDED TO: it was the
 // first of its group once, and forming another would be absorbed again, forever.
 func TestHealing_AForceBootstrappedLoserJoinsTheGroupItYieldedTo(t *testing.T) {
