@@ -1871,15 +1871,8 @@ func GenerationRoot() []*Node { return v2Root.Children }
 // remain those kinds while also carrying the same structural container role as namespace.
 func KindRoot() []*Node { return kindRootNode().Children }
 
-var (
-	kindRootOnce sync.Once
-	compiledRoot *Node
-)
-
-func kindRootNode() *Node {
-	kindRootOnce.Do(func() { compiledRoot = interp.LoweredRoot(v2Root) })
-	return compiledRoot
-}
+// kindRootNode is v2Root lowered, once.
+var kindRootNode = sync.OnceValue(func() *Node { return interp.LoweredRoot(v2Root) })
 
 // CompileRoot is the interpreter's entrypoint into the DSL: the whole project root.
 func CompileRoot() *Node { return v2Root }
