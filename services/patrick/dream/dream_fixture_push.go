@@ -2,6 +2,7 @@ package dream
 
 import (
 	"cmp"
+	"context"
 	_ "embed"
 	"errors"
 	"fmt"
@@ -10,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 
 	authIface "github.com/taubyte/tau/core/services/auth"
 	tnsIface "github.com/taubyte/tau/core/services/tns"
@@ -75,42 +78,65 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 		return err
 	}
 
-	resp, err := tns.Fetch(spec.NewTnsPath([]string{"resolve", "repo", "github"}))
-	if err != nil {
-		return fmt.Errorf("failed calling tns fetch with error: %v", err)
-	}
-
-	_map := maps.SafeInterfaceToStringKeys(resp.Interface())
-
 	auth, err := simple.Auth()
 	if err != nil {
 		return err
 	}
 
 	type repo struct{ id, fullName string }
-	var repos []repo
-	for repoId, repoInfo := range _map {
-		fullName, ok := maps.SafeInterfaceToStringKeys(repoInfo)["fullname"].(string)
-		if !ok {
-			continue
+	list := func() ([]repo, error) {
+		resp, err := tns.Fetch(spec.NewTnsPath([]string{"resolve", "repo", "github"}))
+		if err != nil {
+			return nil, fmt.Errorf("failed calling tns fetch with error: %v", err)
 		}
-		// The universe's repos are every project's: with a project id, push
-		// only that project's, rather than rebuilding every project there is.
-		if projectId != "" {
-			if owner := repoProject(auth, tns, repoId); owner != "" && owner != projectId {
+		var repos []repo
+		for repoId, repoInfo := range maps.SafeInterfaceToStringKeys(resp.Interface()) {
+			fullName, ok := maps.SafeInterfaceToStringKeys(repoInfo)["fullname"].(string)
+			if !ok {
 				continue
 			}
+			// The universe's repos are every project's: with a project id, push
+			// only that project's, rather than rebuilding every project there is.
+			if projectId != "" {
+				if owner := repoProject(auth, tns, repoId); owner != "" && owner != projectId {
+					continue
+				}
+			}
+			repos = append(repos, repo{repoId, fullName})
 		}
-		repos = append(repos, repo{repoId, fullName})
+		// Config first: the other repos' jobs read what its job publishes.
+		slices.SortStableFunc(repos, func(a, b repo) int {
+			return cmp.Compare(repoKindOrder(a.fullName), repoKindOrder(b.fullName))
+		})
+		return repos, nil
 	}
-	// Config first: the other repos' jobs read what its job publishes.
-	slices.SortStableFunc(repos, func(a, b repo) int {
-		return cmp.Compare(repoKindOrder(a.fullName), repoKindOrder(b.fullName))
-	})
 
-	pushIdx := 0
+	repos, err := list()
+	if err != nil {
+		return err
+	}
+
+	// The list above holds the repositories auth has registered; a re-imported
+	// project has only its config and code there. Its websites and libraries
+	// are named in its compiled config: note the config's commit now, and after
+	// the first pass push those (waiting for the config job if the project has
+	// no commit yet). pushSpecific registers each one it pushes.
+	configProject, commitBefore := "", ""
 	for _, r := range repos {
+		if repoKindOrder(r.fullName) == 0 {
+			if configProject = projectId; configProject == "" {
+				configProject = repoProject(auth, tns, r.id)
+			}
+			commitBefore, _, _ = tns.Simple().Commit(configProject, branch)
+			break
+		}
+	}
+
+	pushed := make(map[string]bool)
+	pushIdx := 0
+	push := func(r repo) error {
 		repoId, fullName := r.id, r.fullName
+		pushed[repoId] = true
 		var err error
 		pushedAt := time.Now().Unix() + int64(pushIdx)
 		pushIdx++
@@ -136,12 +162,80 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 		} else {
 			err = pushSpecific(u, repoId, fullName, projectId, branch, "", pushedAt)
 		}
-		if err != nil {
+		return err
+	}
+
+	for _, r := range repos {
+		if err := push(r); err != nil {
+			return err
+		}
+	}
+
+	if configProject == "" {
+		return nil
+	}
+	if commitBefore == "" {
+		waitForNewCommit(u.Context(), tns.Simple(), configProject, branch, commitBefore, newCommitWait)
+	}
+	websites, _, _, _ := tns.Website().All(configProject, "", branch).List()
+	libraries, _, _, _ := tns.Library().All(configProject, "", branch).List()
+	for _, r := range configuredRepos(websites, libraries) {
+		if pushed[r.id] {
+			continue
+		}
+		if err := push(repo(r)); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+type configuredRepo struct{ id, fullName string }
+
+// configuredRepos lists the repositories a project's config names for its
+// websites and libraries: libraries first, as their jobs come before.
+func configuredRepos(websites map[string]*structureSpec.Website, libraries map[string]*structureSpec.Library) []configuredRepo {
+	var repos []configuredRepo
+	seen := make(map[string]bool)
+	add := func(id, name string) {
+		if id != "" && name != "" && !seen[id] {
+			seen[id] = true
+			repos = append(repos, configuredRepo{id, name})
+		}
+	}
+	for _, l := range libraries {
+		add(l.RepoID, l.RepoName)
+	}
+	for _, w := range websites {
+		add(w.RepoID, w.RepoName)
+	}
+	slices.SortStableFunc(repos, func(a, b configuredRepo) int {
+		return cmp.Or(cmp.Compare(repoKindOrder(a.fullName), repoKindOrder(b.fullName)), cmp.Compare(a.id, b.id))
+	})
+	return repos
+}
+
+// newCommitWait is how long push-all waits for the config job to publish.
+var newCommitWait = 2 * time.Minute
+
+// waitForNewCommit returns once project's commit on branch differs from
+// before (the config job published), or after wait.
+func waitForNewCommit(ctx context.Context, tns tnsIface.SimpleIface, project, branch, before string, wait time.Duration) bool {
+	deadline := time.Now().Add(wait)
+	for {
+		if commit, _, err := tns.Commit(project, branch); err == nil && commit != "" && commit != before {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(time.Second):
+		}
+	}
 }
 
 // repoProject is the project a repository belongs to, or "" when neither auth

@@ -43,7 +43,7 @@ func (srv *Service) apiHandlerFixture(ctx httpIface.Context) (interface{}, error
 
 	universe, err = srv.Universe(_name)
 	if err != nil {
-		return nil, fmt.Errorf("universe %s does not exist", _name)
+		return nil, err
 	}
 
 	params, ok := ctx.Variables()["params"].([]interface{})

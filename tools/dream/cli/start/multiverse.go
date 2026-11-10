@@ -1,7 +1,9 @@
 package start
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/pterm/pterm"
@@ -32,6 +34,12 @@ func runMultiverse() cli.ActionFunc {
 
 		name := c.Args().First()
 
+		if c.Bool("fresh") {
+			if err := resetAll(name); err != nil {
+				return err
+			}
+		}
+
 		multiverse, err := dream.New(c.Context, dream.LoadPersistent(), dream.Name(name))
 		if err != nil {
 			return err
@@ -57,6 +65,12 @@ func runMultiverse() cli.ActionFunc {
 			return err
 		}
 
+		for _, name := range c.StringSlice("universes") {
+			if err := startUniverse(multiverse, name); err != nil {
+				return err
+			}
+		}
+
 		pterm.Success.Printf("Dream started with Multiverse `%s`\n", multiverse.Name())
 
 		<-c.Done()
@@ -71,4 +85,46 @@ func runMultiverse() cli.ActionFunc {
 
 		return nil
 	}
+}
+
+// startUniverse starts a kept universe with every service, unless it is
+// already there: a kept universe comes back by itself on start.
+func startUniverse(m *dream.Multiverse, name string) error {
+	if _, err := m.Universe(name); err == nil {
+		return nil
+	}
+	u, err := m.New(dream.UniverseConfig{Name: name, KeepRoot: true})
+	if err != nil {
+		return err
+	}
+	if err := u.StartAll(); err != nil {
+		return fmt.Errorf("starting universe `%s` failed with: %w", name, err)
+	}
+	pterm.Info.Printf("Universe `%s` started\n", name)
+	return nil
+}
+
+// resetAll deletes every kept universe of the multiverse.
+func resetAll(multiverse string) error {
+	if multiverse == "" {
+		multiverse = dream.DefaultMultiverseName
+	}
+
+	cacheFolder, err := dream.GetCacheFolder(multiverse)
+	if err != nil {
+		return err
+	}
+
+	roots, err := filepath.Glob(filepath.Join(cacheFolder, "universe-*"))
+	if err != nil {
+		return err
+	}
+
+	for _, root := range roots {
+		if err := os.RemoveAll(root); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

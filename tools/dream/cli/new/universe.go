@@ -15,6 +15,10 @@ func universe(multiverse *client.Client) *cli.Command {
 				Name:  "empty",
 				Usage: "Create an empty universe (Overrides the below)",
 			},
+			&cli.BoolFlag{
+				Name:  "fresh",
+				Usage: "Delete the universe data and start it empty (still kept across restarts)",
+			},
 			&cli.StringSliceFlag{
 				Name:  "enable",
 				Usage: "List services separated by comma ( Conflicts with disable )",
@@ -69,7 +73,11 @@ func runUniverse(multiverse *client.Client) cli.ActionFunc {
 			return err
 		}
 
-		err = multiverse.StartUniverseWithConfig(c.String("name"), config)
+		if c.Bool("fresh") {
+			err = multiverse.StartFreshUniverseWithConfig(c.String("name"), config)
+		} else {
+			err = multiverse.StartUniverseWithConfig(c.String("name"), config)
+		}
 		if err != nil {
 			return err
 		}

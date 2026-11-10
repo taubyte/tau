@@ -3,8 +3,11 @@ package dream
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"net"
 	"os"
 	"path"
 	"path/filepath"
@@ -332,7 +335,103 @@ func (u *Universe) StartWithConfig(mainConfig *Config) error {
 		return errors.New(errString)
 	}
 
+	if u.keepRoot {
+		if err := u.persist(mainConfig); err != nil {
+			logger.Errorf("saving universe `%s` for restart failed with: %s", u.name, err)
+		}
+	}
+
 	return nil
+}
+
+// persistedUniverse is what universeFile holds: enough to start the same universe again.
+type persistedUniverse struct {
+	Name   string
+	Id     string
+	Config *Config
+}
+
+const universeFile = "universe.json"
+
+// persist writes config, with the ports the nodes actually got, to the universe root.
+// shortcut: nodes added after start (inject service/simple) are not saved; save on those paths if users need it.
+func (u *Universe) persist(config *Config) error {
+	saved := &Config{
+		Services: make(map[string]commonIface.ServiceConfig, len(config.Services)),
+		Simples:  make(map[string]SimpleConfig, len(config.Simples)),
+	}
+
+	u.lock.RLock()
+	ports := make(map[string]map[string]int, len(u.lookups))
+	for _, ni := range u.lookups {
+		ports[ni.Name] = maps.Clone(ni.Ports)
+	}
+	u.lock.RUnlock()
+
+	for name, c := range config.Services {
+		s := commonIface.ServiceConfig{CommonConfig: c.CommonConfig, Cluster: c.Cluster, Location: c.Location, Hosts: c.Hosts, Others: maps.Clone(c.Others)}
+		if p, ok := ports[name]; ok {
+			if s.Others == nil {
+				s.Others = make(map[string]int)
+			}
+			maps.Copy(s.Others, p)
+			s.Port = s.Others["p2p"]
+		}
+		saved.Services[name] = s
+	}
+
+	for name, c := range config.Simples {
+		if p, ok := ports[name]; ok {
+			c.Port = p["p2p"]
+		}
+		saved.Simples[name] = c
+	}
+
+	data, err := json.Marshal(persistedUniverse{Name: u.name, Id: u.id, Config: saved})
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path.Join(u.root, universeFile), data, 0640)
+}
+
+// freeSavedPorts zeroes saved ports something else took since, so new ones are picked.
+func freeSavedPorts(config *Config) {
+	for name, s := range config.Services {
+		for k, p := range s.Others {
+			if slices.Contains(otherPortKeys, k) && p != 0 && !portFree(p) {
+				s.Others[k] = 0
+			}
+		}
+		s.Port = s.Others["p2p"]
+		config.Services[name] = s
+	}
+
+	for name, s := range config.Simples {
+		if s.Port != 0 && !portFree(s.Port) {
+			s.Port = 0
+		}
+		config.Simples[name] = s
+	}
+}
+
+func portFree(port int) bool {
+	l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", DefaultHost, port))
+	if err != nil {
+		return false
+	}
+	l.Close()
+	return true
+}
+
+// Reset deletes a persisted universe's root, so it starts empty next time.
+func Reset(multiverse, universe string) error {
+	cacheFolder, err := GetCacheFolder(multiverse)
+	if err != nil {
+		return err
+	}
+
+	return os.RemoveAll(path.Join(cacheFolder, "universe-"+strings.ToLower(universe)))
 }
 
 // compatibility
@@ -349,22 +448,24 @@ func (u *Universe) Stop() {
 
 	u.Cleanup()
 
+	// if not persistent, we delete the universe from the multiverse; its lock is
+	// taken before the universe lock, the order Status and Close use
+	if !u.keepRoot {
+		u.multiverse.universesLock.Lock()
+		defer u.multiverse.universesLock.Unlock()
+		delete(u.multiverse.universes, u.name)
+	}
+
 	u.lock.Lock()
 	defer u.lock.Unlock()
 
 	// Transition to stopped state
 	u.state = UniverseStateStopped
 
-	// if not persistent, we delete the universe from the multiverse
-	if !u.keepRoot {
-		u.multiverse.universesLock.Lock()
-		defer u.multiverse.universesLock.Unlock()
-		delete(u.multiverse.universes, u.name)
-		return
-	}
-
 	// reset universe if persistent
-	u.init()
+	if u.keepRoot {
+		u.init()
+	}
 }
 
 func (u *Universe) Cleanup() {
