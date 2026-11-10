@@ -14,6 +14,8 @@ import (
 
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 
+	"github.com/fxamacker/cbor/v2"
+	"github.com/taubyte/tau/core/kvdb"
 	authIface "github.com/taubyte/tau/core/services/auth"
 	patrickIface "github.com/taubyte/tau/core/services/patrick"
 	tnsIface "github.com/taubyte/tau/core/services/tns"
@@ -34,7 +36,7 @@ func init() {
 	dream.RegisterFixture("pushCode", pushCode)
 	dream.RegisterFixture("pushWebsite", pushWebsite)
 	dream.RegisterFixture("pushLibrary", pushLibrary)
-	dream.RegisterFixture("pushSpecific", pushSpecific)
+	dream.RegisterFixture("pushSpecific", pushSpecificOnce)
 	dream.RegisterFixture("pushAll", pushAll)
 }
 
@@ -95,13 +97,22 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 	// Patrick nothing is skipped.
 	var jobs map[int]*patrickIface.Job
 	var patrick patrickIface.Client
+	kv := u.Patrick().KV()
 	if err := simple.Provides("patrick"); err == nil {
 		if p, err := simple.Patrick(); err == nil {
 			patrick = p
+			if projectId != "" {
+				patrick = projectJobs{Client: p, ctx: u.Context(), kv: kv, prefix: "/by/project/" + projectId + "/"}
+			}
 			if !force {
-				jobs = newestJobs(p)
+				jobs = withUnclaimed(newestJobs(patrick), unclaimedMarks(u.Context(), kv))
 			}
 		}
+	}
+
+	own := projectRepoIDs(u.Context(), auth, tns, projectId, branch)
+	if projectId != "" && own == nil {
+		return fmt.Errorf("auth does not know project %s: nothing was pushed", projectId)
 	}
 
 	type repo struct{ id, fullName string }
@@ -118,10 +129,8 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 			}
 			// The universe's repos are every project's: with a project id, push
 			// only that project's, rather than rebuilding every project there is.
-			if projectId != "" {
-				if owner := repoProject(auth, tns, repoId); owner != "" && owner != projectId {
-					continue
-				}
+			if !inProject(own, projectId, repoId) {
+				continue
 			}
 			repos = append(repos, repo{repoId, fullName})
 		}
@@ -159,9 +168,13 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 	pushIdx := 0
 	push := func(r repo) error {
 		repoId, fullName := r.id, r.fullName
-		if !markPushed(pushed, jobs, repoId, func() string { return repoProject(auth, tns, repoId) }) {
+		owner := claimedBy(own, projectId, repoId, func() string { return repoProject(auth, tns, repoId) })
+		if !markPushed(pushed, jobs, repoId, owner) {
 			fmt.Printf("Skipping %s: it already has a job and no project claims it yet\n", fullName)
 			return nil
+		}
+		if jobs != nil {
+			noteUnclaimed(u.Context(), kv, repoId, owner)
 		}
 		pushedAt := time.Now().Unix() + int64(pushIdx)
 		pushIdx++
@@ -205,23 +218,205 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 	// The websites and libraries are read from the config the config job
 	// publishes: wait for that job, or a website just added to the config of an
 	// already-built project is read from the old config and never pushed.
-	if patrick != nil && configSent && configRepo != 0 {
-		waitForJob(u.Context(), patrick, configRepo, startedAt, newCommitWait)
-	} else if commitBefore == "" {
-		waitForNewCommit(u.Context(), tns.Simple(), configProject, branch, commitBefore, newCommitWait)
-	}
-	websites, _, _, _ := tns.Website().All(configProject, "", branch).List()
-	libraries, _, _, _ := tns.Library().All(configProject, "", branch).List()
-	for _, r := range configuredRepos(websites, libraries) {
-		if pushed[r.id] {
-			continue
+	// That wait is up to newCommitWait, as long as tau waits for this whole call,
+	// so it happens after the caller has its answer: the jobs are already queued.
+	go func() {
+		if patrick != nil && configSent && configRepo != 0 {
+			waitForJob(u.Context(), patrick, configRepo, startedAt, newCommitWait)
+		} else if commitBefore == "" {
+			waitForNewCommit(u.Context(), tns.Simple(), configProject, branch, commitBefore, newCommitWait)
 		}
-		if err := push(repo(r)); err != nil {
-			return err
+		websites, _, _, _ := tns.Website().All(configProject, "", branch).List()
+		libraries, _, _, _ := tns.Library().All(configProject, "", branch).List()
+		for _, r := range configuredRepos(websites, libraries) {
+			if pushed[r.id] {
+				continue
+			}
+			if own != nil {
+				own[r.id] = true // its published config names it
+			}
+			if err := push(repo(r)); err != nil {
+				fmt.Printf("Pushing %s failed: %s\n", r.fullName, err)
+			}
 		}
-	}
+	}()
 
 	return nil
+}
+
+// projectJobs answers List and Get from one project's jobs in Patrick's store.
+type projectJobs struct {
+	patrickIface.Client
+	ctx    context.Context
+	kv     kvdb.KVDB
+	prefix string
+}
+
+func (p projectJobs) List() ([]string, error) {
+	keys, err := p.kv.List(p.ctx, p.prefix)
+	if err != nil {
+		return nil, err
+	}
+	for i, key := range keys {
+		keys[i] = strings.TrimPrefix(key, p.prefix)
+	}
+	return keys, nil
+}
+
+func (p projectJobs) Get(id string) (*patrickIface.Job, error) {
+	data, err := p.kv.Get(p.ctx, "/archive/jobs/"+id)
+	if err != nil {
+		if data, err = p.kv.Get(p.ctx, "/jobs/"+id); err != nil {
+			return nil, err
+		}
+	}
+	job := new(patrickIface.Job)
+	if err := cbor.Unmarshal(data, job); err != nil {
+		return nil, err
+	}
+	return job, nil
+}
+
+// authProjectWait is how long push-all waits for Auth to answer for a project:
+// just after Dream starts, Auth does not answer yet.
+var authProjectWait = 30 * time.Second
+
+// waitForAuthProject asks get until it has the project, for up to wait.
+func waitForAuthProject(ctx context.Context, get func() *authIface.Project, wait time.Duration) *authIface.Project {
+	deadline := time.Now().Add(wait)
+	for {
+		if p := get(); p != nil || time.Now().After(deadline) {
+			return p
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+// projectRepoIDs is what a project owns, by Auth and its published config. It
+// is nil without a project id, or when Auth does not know the project.
+func projectRepoIDs(ctx context.Context, auth authIface.Client, tns tnsIface.Client, projectId, branch string) map[string]bool {
+	if projectId == "" {
+		return nil
+	}
+	p := waitForAuthProject(ctx, func() *authIface.Project { return auth.Projects().Get(projectId) }, authProjectWait)
+	if p == nil {
+		return nil
+	}
+	own := map[string]bool{strconv.Itoa(p.Git.Config.Id()): true, strconv.Itoa(p.Git.Code.Id()): true}
+	websites, _, _, _ := tns.Website().All(projectId, "", branch).List()
+	libraries, _, _, _ := tns.Library().All(projectId, "", branch).List()
+	for _, r := range configuredRepos(websites, libraries) {
+		own[r.id] = true
+	}
+	return own
+}
+
+// inProject says whether a push-all for projectId takes repoId. A repository no
+// project claims is nobody's to build: taking it into every project's push-all
+// is what re-created its failing job for hours.
+func inProject(own map[string]bool, projectId, repoId string) bool {
+	return projectId == "" || own[repoId]
+}
+
+// claimedBy is who claims repoId. A repository its project owns is claimed even
+// when a lookup has nothing yet, or a new project's repositories never get a job.
+func claimedBy(own map[string]bool, projectId, repoId string, lookup func() string) func() string {
+	return func() string {
+		if own[repoId] {
+			return projectId
+		}
+		return lookup()
+	}
+}
+
+const unclaimedPrefix = "/dream/unclaimed/"
+
+// noteUnclaimed records that repoId got a job while no project claims it. Such
+// a job is indexed under no project, so the job list cannot show it.
+func noteUnclaimed(ctx context.Context, kv kvdb.KVDB, repoId string, project func() string) {
+	if project() == "" {
+		if err := kv.Put(ctx, unclaimedPrefix+repoId, []byte{}); err != nil {
+			fmt.Printf("Recording unclaimed repository %s failed: %s\n", repoId, err)
+		}
+	}
+}
+
+func alreadyPushedUnclaimed(ctx context.Context, kv kvdb.KVDB, repoId string, project func() string) bool {
+	if _, err := kv.Get(ctx, unclaimedPrefix+repoId); err != nil {
+		return false
+	}
+	return project() == ""
+}
+
+// unclaimedMarks lists the repositories noteUnclaimed recorded.
+func unclaimedMarks(ctx context.Context, kv kvdb.KVDB) []string {
+	keys, _ := kv.List(ctx, unclaimedPrefix)
+	for i, key := range keys {
+		keys[i] = strings.TrimPrefix(key, unclaimedPrefix)
+	}
+	return keys
+}
+
+// withUnclaimed adds a stand-in job for each marked repository without one.
+func withUnclaimed(jobs map[int]*patrickIface.Job, marked []string) map[int]*patrickIface.Job {
+	for _, repoId := range marked {
+		id, err := strconv.Atoi(repoId)
+		if err != nil {
+			continue
+		}
+		if jobs == nil {
+			jobs = make(map[int]*patrickIface.Job)
+		}
+		if jobs[id] == nil {
+			jobs[id] = &patrickIface.Job{}
+		}
+	}
+	return jobs
+}
+
+// pushSpecificOnce is the push-specific fixture: pushSpecific, capped at one job
+// for a repository no project claims, as push-all is.
+func pushSpecificOnce(u *dream.Universe, params ...interface{}) error {
+	repoId, ok := "", false
+	if len(params) > 0 {
+		repoId, ok = params[0].(string)
+	}
+	// A malformed call is refused by pushSpecific, even for a repository already pushed.
+	if !ok || len(params) < 2 {
+		return pushSpecific(u, params...)
+	}
+	if err := u.Provides("auth", "patrick", "tns"); err != nil {
+		return err
+	}
+	simple, err := u.Simple("client")
+	if err != nil {
+		return fmt.Errorf("failed getting client with: %v", err)
+	}
+	if err = simple.Provides("auth", "tns"); err != nil {
+		return err
+	}
+	auth, err := simple.Auth()
+	if err != nil {
+		return err
+	}
+	tns, err := simple.TNS()
+	if err != nil {
+		return err
+	}
+	owner := func() string { return repoProject(auth, tns, repoId) }
+	kv := u.Patrick().KV()
+	if alreadyPushedUnclaimed(u.Context(), kv, repoId, owner) {
+		fmt.Printf("Skipping repository %s: it already has a job and no project claims it yet\n", repoId)
+		return nil
+	}
+	if err = pushSpecific(u, params...); err == nil {
+		noteUnclaimed(u.Context(), kv, repoId, owner)
+	}
+	return err
 }
 
 // newestJobs is each repository's newest job in Patrick.
@@ -464,17 +659,11 @@ func pushSpecific(u *dream.Universe, params ...interface{}) error {
 		projectId = _repo.Project()
 	}
 
-	if len(projectId) != 0 {
-		tempId := commonTest.ProjectID
-		commonTest.ProjectID = projectId
-
-		// Reset the projectId after the push
-		defer func() {
-			commonTest.ProjectID = tempId
-		}()
+	if len(projectId) == 0 {
+		projectId = commonTest.ProjectID
 	}
 
-	return pushWrapper(u, newPayload, commonTest.Repository{ID: intRepoId})
+	return pushWrapperFor(u, newPayload, commonTest.Repository{ID: intRepoId, Name: strings.Split(fullname, "/")[1]}, projectId)
 }
 
 func pushConfig(u *dream.Universe, params ...interface{}) error {
@@ -586,6 +775,10 @@ func pushLibrary(u *dream.Universe, params ...interface{}) error {
 }
 
 func pushWrapper(u *dream.Universe, gitPayload []byte, repo commonTest.Repository) error {
+	return pushWrapperFor(u, gitPayload, repo, commonTest.ProjectID)
+}
+
+func pushWrapperFor(u *dream.Universe, gitPayload []byte, repo commonTest.Repository, projectID string) error {
 	if err := u.Provides("auth", "patrick", "tns"); err != nil {
 		return fmt.Errorf("unable to provide: %w", err)
 	}
@@ -596,9 +789,9 @@ func pushWrapper(u *dream.Universe, gitPayload []byte, repo commonTest.Repositor
 	}
 
 	servicesCommon.FakeSecret = true
-	fmt.Printf("Pushing job to from repo %s. ProjectID: %s\n", repo.Name, commonTest.ProjectID)
+	fmt.Printf("Pushing job to from repo %s. ProjectID: %s\n", repo.Name, projectID)
 
-	if err := commonTest.PushJob(gitPayload, mockPatrickURL, repo); err != nil {
+	if err := commonTest.PushJobFor(projectID, gitPayload, mockPatrickURL, repo); err != nil {
 		return fmt.Errorf("unable to push job: %w", err)
 	}
 

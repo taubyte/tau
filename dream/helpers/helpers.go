@@ -99,8 +99,13 @@ func createStruct(payload []byte) (patrick.Meta, error) {
 }
 
 func PushJob(gitPayload []byte, patrickURL string, repo Repository) error {
+	return PushJobFor(ProjectID, gitPayload, patrickURL, repo)
+}
+
+// PushJobFor is PushJob for a project other than the shared ProjectID.
+func PushJobFor(projectID string, gitPayload []byte, patrickURL string, repo Repository) error {
 	client := CreateHttpClient()
-	url := fmt.Sprintf("%s/github/%s", patrickURL, ProjectID)
+	url := fmt.Sprintf("%s/github/%s", patrickURL, projectID)
 	req, err := http.NewRequest("POST", url, bytes.NewReader(gitPayload))
 	if err != nil {
 		return fmt.Errorf("failed new request with error: %w", err)
