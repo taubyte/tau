@@ -61,6 +61,10 @@ type instance struct {
 	// repooling.
 	failed bool
 
+	// held: the instance is checked out for a request and counts against its
+	// project's caps until it goes back to the pool or is closed.
+	held atomic.Bool
+
 	// pooled marks an instance that made it into the pool at least once,
 	// distinguishing normal growth-retirement from a config that never pools.
 	pooled bool
@@ -77,6 +81,37 @@ type instanceRequest struct {
 	ctx context.Context
 	ch  chan Instance
 	err error
+
+	// gone is set once the caller stopped waiting; an instance for it goes back to the pool.
+	mu   sync.Mutex
+	gone bool
+}
+
+// give hands inst to the caller, or back to the pool when the caller has left.
+func (r *instanceRequest) give(inst Instance) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.gone {
+		if inst != nil {
+			inst.Free()
+		}
+		return
+	}
+	r.ch <- inst
+}
+
+// leave marks the caller gone and returns an instance already handed over to the pool.
+func (r *instanceRequest) leave() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.gone = true
+	select {
+	case inst := <-r.ch:
+		if inst != nil {
+			inst.Free()
+		}
+	default:
+	}
 }
 
 type Instance interface {

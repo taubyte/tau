@@ -34,6 +34,7 @@ var codes = map[platformerr.Code][2]string{
 	platformerr.ModuleUnavailable: {"The code for that address could not be loaded.", "check the last build with `tau query builds`"},
 	platformerr.FunctionError:     {"The function failed while running.", "see its logs with `tau query logs`"},
 	platformerr.FunctionTimeout:   {"The function took too long.", "raise its timeout with `tau edit function <name> --timeout`, or make it faster"},
+	platformerr.OverQuota:         {"The project is over a limit the cloud operator set.", "reduce the resource named in the error, or ask the operator to raise the limit"},
 	platformerr.Rejected:          {"The cloud rejected the request.", "check your login with `tau doctor`"},
 	platformerr.Internal:          {"The cloud had an internal error.", "try again; if it repeats, check the node logs"},
 }

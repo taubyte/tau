@@ -42,12 +42,49 @@ type Source struct {
 	// owner against it without a client or an API call.
 	Tenancy   Tenancy   `yaml:"tenancy,omitempty"`
 	Substrate Substrate `yaml:"substrate,omitempty"`
+	Quotas    Quotas    `yaml:"quotas,omitempty"`
 	// Enterprise namespaces raw config for enterprise-only services under
 	// `enterprise:` in the shape config. Community builds carry it opaquely;
 	// `//go:build ee` code decodes each service's entry into its own typed
 	// config (via EnterpriseConfig).
 	Enterprise map[string]yaml.Node `yaml:"enterprise,omitempty"`
 	Plugins
+}
+
+// Caps are per-project limits an operator sets; 0 means unlimited.
+type Caps struct {
+	StorageBytes   uint64 `yaml:"storage-bytes,omitempty"` // total size of a project's databases and storages
+	Resources      uint64 `yaml:"resources,omitempty"`     // number of databases and storages
+	FunctionMemory uint64 `yaml:"function-memory,omitempty"`
+	Instances      int    `yaml:"instances,omitempty"`
+	Builds         int    `yaml:"builds,omitempty"`
+}
+
+// Quotas holds the default caps and per-project overrides.
+type Quotas struct {
+	Default  Caps            `yaml:"default,omitempty"`
+	Projects map[string]Caps `yaml:"projects,omitempty"`
+}
+
+// For returns a project's caps: each non-zero override field wins over the default.
+func (q Quotas) For(projectID string) Caps {
+	c, o := q.Default, q.Projects[projectID]
+	if o.StorageBytes != 0 {
+		c.StorageBytes = o.StorageBytes
+	}
+	if o.Resources != 0 {
+		c.Resources = o.Resources
+	}
+	if o.FunctionMemory != 0 {
+		c.FunctionMemory = o.FunctionMemory
+	}
+	if o.Instances != 0 {
+		c.Instances = o.Instances
+	}
+	if o.Builds != 0 {
+		c.Builds = o.Builds
+	}
+	return c
 }
 
 // Substrate holds substrate-only settings.

@@ -13,7 +13,7 @@ import (
 func TestStatus(t *testing.T) {
 	for c, want := range map[Code]int{
 		NotFound: 404, NodeBusy: 503, ModuleUnavailable: 502,
-		FunctionError: 500, FunctionTimeout: 504, Internal: 500, "": 500, "made_up": 500,
+		FunctionError: 500, FunctionTimeout: 504, Internal: 500, OverQuota: 429, "": 500, "made_up": 500,
 	} {
 		if got := Status(c); got != want {
 			t.Errorf("%q: got %d want %d", c, got, want)

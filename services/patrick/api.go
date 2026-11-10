@@ -168,17 +168,6 @@ func (p *PatrickService) infoHandler(ctx context.Context, jid string) (cr.Respon
 
 // dequeueHandler pops the next job from the queue, records the assignment, and returns the job.
 func (p *PatrickService) dequeueHandler(ctx context.Context, conn streams.Connection) (cr.Response, error) {
-	id, _, err := p.jobQueue.Pop(5 * time.Second)
-	if err != nil {
-		// A follower cannot pop, and removes nothing trying: it has no job to
-		// give, which is an answer, not a failure. The monkey asks the next
-		// Patrick, and the leader hands the job out.
-		if errors.Is(err, raft.ErrQueueEmpty) || errors.Is(err, raft.ErrNotLeader) {
-			return cr.Response{"available": false}, nil
-		}
-		return nil, fmt.Errorf("queue pop: %w", err)
-	}
-
 	// The job is already popped from the raft queue, so it must be fully
 	// assigned or it is stranded (popped-but-unassigned) until ReAnnounce
 	// re-homes it — a slow, avoidable round-trip. The pop is destructive, so
@@ -188,26 +177,68 @@ func (p *PatrickService) dequeueHandler(ctx context.Context, conn streams.Connec
 	opCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 	defer cancel()
 
-	job, err := p.getJob(opCtx, "/jobs/", id)
-	if err != nil {
-		return nil, fmt.Errorf("get job %s after pop: %w", id, err)
-	}
+	// Jobs of a project at its build cap are skipped and go back on the queue.
+	var skipped []string
+	defer func() {
+		for _, id := range skipped {
+			if err := p.enqueue(id); err != nil {
+				logger.Errorf("requeue %s over its project's build cap: %s", id, err)
+			}
+		}
+	}()
 
-	monkeyPID := conn.RemotePeer()
-	assignment := Assignment{
-		MonkeyPID: monkeyPID.String(),
-		Timestamp: time.Now().Unix(),
+	quotas, capsOn := p.buildCaps()
+	if capsOn {
+		// counting running builds and writing the claim must be one step, or
+		// concurrent dequeues all see the same count and overshoot the cap
+		p.claimLock.Lock()
+		defer p.claimLock.Unlock()
 	}
-	assignData, err := cbor.Marshal(assignment)
-	if err != nil {
-		return nil, fmt.Errorf("marshal assignment: %w", err)
-	}
+	var running map[string]int
+	for len(skipped) < maxCappedSkips {
+		id, _, err := p.jobQueue.Pop(5 * time.Second)
+		if err != nil {
+			// A follower cannot pop, and removes nothing trying: it has no job to
+			// give, which is an answer, not a failure. The monkey asks the next
+			// Patrick, and the leader hands the job out.
+			if errors.Is(err, raft.ErrQueueEmpty) || errors.Is(err, raft.ErrNotLeader) {
+				return cr.Response{"available": false}, nil
+			}
+			return nil, fmt.Errorf("queue pop: %w", err)
+		}
 
-	if err := p.db.Put(opCtx, "/assigned/"+id, assignData); err != nil {
-		return nil, fmt.Errorf("record assignment for %s: %w", id, err)
-	}
+		job, err := p.getJob(opCtx, "/jobs/", id)
+		if err != nil {
+			return nil, fmt.Errorf("get job %s after pop: %w", id, err)
+		}
 
-	return cr.Response{"available": true, "job": job}, nil
+		var project string
+		if capsOn {
+			project = p.projectOf(job)
+			if running == nil {
+				running = p.runningBuilds(opCtx, id)
+			}
+			if c := quotas.For(project).Builds; project != "" && c > 0 && running[project] >= c {
+				skipped = append(skipped, id)
+				continue
+			}
+		}
+
+		assignData, err := cbor.Marshal(Assignment{
+			MonkeyPID: conn.RemotePeer().String(),
+			Timestamp: time.Now().Unix(),
+			Project:   project,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("marshal assignment: %w", err)
+		}
+		if err := p.db.Put(opCtx, "/assigned/"+id, assignData); err != nil {
+			return nil, fmt.Errorf("record assignment for %s: %w", id, err)
+		}
+		p.projects.Delete(id)
+		return cr.Response{"available": true, "job": job}, nil
+	}
+	return cr.Response{"available": false}, nil
 }
 
 // callerAssignment returns the job's claim if the calling Monkey holds it, nil otherwise.
@@ -724,6 +755,19 @@ func (srv *PatrickService) setupJobRoutes() {
 			GC:        srv.GitHubTokenHTTPAuthCleanup,
 		},
 		Handler: srv.withProjectAccess(srv.onlyReadableJobs(srv.projectAllJobHandler)),
+	})
+
+	srv.http.GET(&http.RouteDefinition{
+		Hosts: hosts,
+		Path:  "/usage/{projectId}",
+		Vars: http.Variables{
+			Required: []string{"projectId"},
+		},
+		Auth: http.RouteAuthHandler{
+			Validator: srv.GitHubTokenHTTPAuth,
+			GC:        srv.GitHubTokenHTTPAuthCleanup,
+		},
+		Handler: srv.withProjectAccess(srv.usageHandler),
 	})
 
 	srv.http.GET(&http.RouteDefinition{

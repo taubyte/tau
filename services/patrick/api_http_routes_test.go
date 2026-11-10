@@ -92,6 +92,7 @@ func TestSetupJobRoutes(t *testing.T) {
 	mockHTTP := &mockHTTPService{}
 
 	mockHTTP.On("GET", "/jobs/{projectId}").Return()
+	mockHTTP.On("GET", "/usage/{projectId}").Return()
 	mockHTTP.On("GET", "/job/{jid}").Return()
 	mockHTTP.On("GET", "/download/{jobId}/{resourceId}").Return()
 	mockHTTP.On("GET", "/logs/{cid}").Return()
@@ -112,6 +113,7 @@ func TestSetupJobRoutesInProduction(t *testing.T) {
 	mockHTTP := &mockHTTPService{}
 
 	mockHTTP.On("GET", "/jobs/{projectId}").Return()
+	mockHTTP.On("GET", "/usage/{projectId}").Return()
 	mockHTTP.On("GET", "/job/{jid}").Return()
 	mockHTTP.On("GET", "/download/{jobId}/{resourceId}").Return()
 	mockHTTP.On("GET", "/logs/{cid}").Return()
