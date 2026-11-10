@@ -86,7 +86,7 @@ func (s *Service) ServeLocal(w goHttp.ResponseWriter, r *goHttp.Request) (handle
 	if _, isSite := pick.(iface.Website); isSite {
 		return true, run()
 	}
-	err = admitted(r.Context(), s.inflight, run)
+	err = admitted(r.Context(), s.inflight, pick.Id(), run)
 	if platformerr.CodeOf(err) == platformerr.NodeBusy {
 		// every NodeBusy is raised before the guest is called, so a gateway may try another node
 		httptun.Refuse(w)

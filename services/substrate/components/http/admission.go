@@ -27,6 +27,12 @@ const (
 	// reach the floor, and show the true baseline again, before the baseline
 	// has climbed to the inflated latency and made it look normal.
 	baselineDrift = 64
+
+	// normalLatency is what a request at its function's own baseline counts as
+	// in the window, and fnBaselineDrift is per request what baselineDrift is per
+	// window.
+	normalLatency   = 10 * time.Millisecond
+	fnBaselineDrift = 4096
 )
 
 var errNodeBusy = platformerr.New(platformerr.NodeBusy, errors.New("node in-flight request limit reached"))
@@ -45,7 +51,8 @@ func maxInFlight(cpus int, memBytes uint64) int {
 // floor keeps a node that cut itself down able to do work and measure recovery.
 func limits(cpus int, memBytes uint64) (floor, start, ceiling int) {
 	start = maxInFlight(cpus, memBytes)
-	return min(start, cpus*8), start, max(start, int(memBytes>>22))
+	// tau itself holds about 1 GiB under load, and 4 MiB per request on top.
+	return min(start, cpus*8), start, max(start, int((memBytes-min(memBytes, 1<<30))>>22))
 }
 
 func newAdmission() *limiter {
@@ -65,11 +72,10 @@ func newAdmission() *limiter {
 // minimum of past windows: near the minimum the limit grows, well above it the
 // limit is cut.
 //
-// A low percentile because requests differ wildly in length: a percentile near
-// the middle would move with the mix of 1 ms lookups and slow database calls,
-// while the fast end moves only when the node itself queues, which delays every
-// request alike. It holds while 10% of requests are fast; a mix that loses its
-// fast requests reads as congestion until the baseline drifts up to it.
+// Requests differ wildly in length, so each counts relative to its own
+// function's fastest recent time: a mix of 1 ms lookups and database calls of
+// hundreds of ms then reads as congestion only when functions get slower than
+// they normally are. The low percentile ignores slow outliers such as cold starts.
 //
 // Free slots are tokens in a channel, so a slot freed goes straight to the
 // longest-waiting request and changing the limit needs no wake-up logic.
@@ -80,7 +86,8 @@ type limiter struct {
 	waiting        atomic.Int64
 
 	mu       sync.Mutex
-	owed     int64 // slots to drop on release: a cut cannot recall those in use
+	fnBase   map[string]time.Duration // fastest recent time of each function
+	owed     int64                    // slots to drop on release: a cut cannot recall those in use
 	win      [windowSamples]time.Duration
 	n        int
 	seen     int64
@@ -90,7 +97,7 @@ type limiter struct {
 }
 
 func newLimiter(floor, start, ceiling int) *limiter {
-	l := &limiter{tokens: make(chan struct{}, ceiling), floor: int64(floor), ceiling: int64(ceiling)}
+	l := &limiter{tokens: make(chan struct{}, ceiling), floor: int64(floor), ceiling: int64(ceiling), fnBase: make(map[string]time.Duration)}
 	l.limit.Store(int64(start))
 	for range start {
 		l.tokens <- struct{}{}
@@ -123,11 +130,27 @@ func (l *limiter) acquire(ctx context.Context) error {
 	}
 }
 
+// normalize expresses took relative to fn's own baseline, in units where a
+// request at the baseline reads normalLatency. mu must be held.
+func (l *limiter) normalize(fn string, took time.Duration) time.Duration {
+	base, seen := l.fnBase[fn]
+	if !seen || took < base {
+		base = took
+	} else {
+		base += (took - base) / fnBaselineDrift
+	}
+	l.fnBase[fn] = base
+	return max(took-latencySlack, base) * normalLatency / base
+}
+
 // release frees a slot and records how the request went. took is zero when the
 // request says nothing about load.
-func (l *limiter) release(took time.Duration, timedOut bool) {
+func (l *limiter) release(fn string, took time.Duration, timedOut bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if took > 0 {
+		took = l.normalize(fn, took)
+	}
 	busy := l.limit.Load() + l.owed - int64(len(l.tokens))
 	if l.owed > 0 {
 		l.owed--
@@ -230,7 +253,7 @@ func (s *Service) FreeCapacity() float32 {
 // the limit, and includes the wait for a function instance, which is queueing
 // too. Cold starts are slow outliers the low percentile ignores. Failures are
 // not samples: a request that fails in a microsecond would poison the minimum.
-func admitted(ctx context.Context, l *limiter, run func() error) error {
+func admitted(ctx context.Context, l *limiter, fn string, run func() error) error {
 	if l == nil {
 		return run()
 	}
@@ -239,7 +262,7 @@ func admitted(ctx context.Context, l *limiter, run func() error) error {
 	}
 	var took time.Duration
 	var timedOut bool
-	defer func() { l.release(took, timedOut) }()
+	defer func() { l.release(fn, took, timedOut) }()
 
 	start := time.Now()
 	err := run()
