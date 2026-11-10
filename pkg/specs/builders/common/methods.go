@@ -80,7 +80,13 @@ func (d *dir) SetEnvironmentVariables() ci.ContainerOption {
 }
 
 func (d *dir) SetBuildCommand(script string) ci.ContainerOption {
-	return ci.Command([]string{"/bin/sh", "/" + builders.Source + "/" + d.taubyteDir + "/" + script + ScriptExtension})
+	return ci.Command(buildCommand("/" + builders.Source + "/" + d.taubyteDir + "/" + script + ScriptExtension))
+}
+
+// buildCommand runs the script with /bin/sh (no executable bit needed) and,
+// when it was saved with CRLF endings (a Windows checkout), runs a CR-free copy.
+func buildCommand(script string) []string {
+	return []string{"/bin/sh", "-c", `f="$1"; if grep -q "$(printf '\r')" "$f"; then tr -d '\r' < "$f" > /tmp/taubyte-build.sh && f=/tmp/taubyte-build.sh; fi; exec /bin/sh "$f"`, "sh", script}
 }
 
 func (d *dir) DefaultOptions(script, outDir string, environment builders.Environment) []ci.ContainerOption {

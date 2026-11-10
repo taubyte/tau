@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/taubyte/tau/tools/tau/flags"
+
 	"github.com/alecthomas/units"
 
 	cliPrompts "github.com/taubyte/tau/pkg/cli/prompts"
@@ -122,7 +124,7 @@ func (l link) runAction(ctx *cli.Context) error {
 		method = http.MethodGet
 	}
 
-	path := ctx.String(RunPath.Name)
+	path := flags.URLPath(ctx.String(RunPath.Name))
 	if path == "" && len(fnSpec.Paths) > 0 {
 		path = fnSpec.Paths[0]
 	}

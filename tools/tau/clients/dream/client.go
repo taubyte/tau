@@ -7,6 +7,7 @@ import (
 	"time"
 
 	dream "github.com/taubyte/tau/clients/http/dream"
+	"github.com/taubyte/tau/clients/http/dream/inject"
 	dreamLib "github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/dream/api"
 	"github.com/taubyte/tau/tools/tau/session"
@@ -32,6 +33,16 @@ func Status(ctx context.Context) (echart api.Echart, err error) {
 	universe := dreamClient.Universe(cloudValue)
 	echart, err = universe.Chart()
 	return
+}
+
+// PushAll asks Dream to build the project's repos at branch, as `dream inject
+// push-all` does: Dream gets no GitHub webhook.
+func PushAll(ctx context.Context, url, universe, projectID, branch string) error {
+	c, err := dream.New(ctx, dream.URL(url), dream.Timeout(2*time.Minute))
+	if err != nil {
+		return err
+	}
+	return c.Universe(universe).Inject(inject.Fixture("pushAll", []any{projectID, branch}))
 }
 
 func HTTPPort(ctx context.Context, name string) (int, error) {

@@ -5,6 +5,7 @@ import (
 	"github.com/taubyte/tau/tools/tau/cli/commands/autocomplete"
 	buildCmd "github.com/taubyte/tau/tools/tau/cli/commands/build"
 	"github.com/taubyte/tau/tools/tau/cli/commands/current"
+	"github.com/taubyte/tau/tools/tau/cli/commands/doctor"
 	"github.com/taubyte/tau/tools/tau/cli/commands/login"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/builds"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/builds/build"
@@ -17,6 +18,7 @@ import (
 	"github.com/taubyte/tau/tools/tau/cli/commands/version"
 	"github.com/taubyte/tau/tools/tau/cli/common"
 	"github.com/taubyte/tau/tools/tau/flags"
+	"github.com/taubyte/tau/tools/tau/friendly"
 	"github.com/taubyte/tau/tools/tau/output"
 	"github.com/taubyte/tau/tools/tau/prompts"
 	"github.com/taubyte/tau/tools/tau/tcc"
@@ -30,6 +32,7 @@ func New() (*cli.App, error) {
 		flags.Yes,
 		flags.Json,
 		flags.Toon,
+		flags.Debug,
 	}
 
 	app := &cli.App{
@@ -37,6 +40,7 @@ func New() (*cli.App, error) {
 		Flags:                  globalFlags,
 		EnableBashCompletion:   true,
 		Before: func(ctx *cli.Context) error {
+			friendly.Debug = friendly.Debug || ctx.Bool(flags.Debug.Name)
 			prompts.UseDefaults = ctx.Bool(flags.Defaults.Name)
 			output.SetFormat(ctx.Bool(flags.Json.Name), ctx.Bool(flags.Toon.Name))
 
@@ -79,6 +83,7 @@ func New() (*cli.App, error) {
 	app.Commands = append(app.Commands, []*cli.Command{
 		autocomplete.Command,
 		version.Command,
+		doctor.Command,
 	}...)
 	app.Commands = append(app.Commands, extraCommands...)
 
