@@ -392,6 +392,11 @@ func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid stri
 		}
 	}
 
+	// not the job's last try: it runs again, so it is open, as after a timeout
+	if job.Status == commonIface.JobStatusFailed && job.Attempt < servicesCommon.MaxJobAttempts {
+		job.Status = commonIface.JobStatusOpen
+	}
+
 	jobData, err := cbor.Marshal(job)
 	if err != nil {
 		return fmt.Errorf("marshal in updateStatus error: %w", err)

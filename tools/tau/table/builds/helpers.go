@@ -58,18 +58,27 @@ func row(authClient *authHttp.Client, names repoNames, job *patrick.Job, timeZon
 
 	if showCommit {
 		return table.Row{
-			job.Status.Unicode(),
+			statusMark(job),
 			date + "\n" + time,
 			repoType,
 			job.Meta.HeadCommit.ID,
 		}, nil
 	}
 	return table.Row{
-		job.Status.Unicode(),
+		statusMark(job),
 		date + "\n" + time,
 		repoType,
 		job.Id,
 	}, nil
+}
+
+// statusMark is the job's status; an open job with an attempt used failed and
+// is being run again.
+func statusMark(job *patrick.Job) string {
+	if job.Status == patrick.JobStatusOpen && job.Attempt > 0 {
+		return "↻ retry"
+	}
+	return job.Status.Unicode()
 }
 
 type jobArray []*patrick.Job
