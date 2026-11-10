@@ -8,16 +8,18 @@ import (
 
 	ds "github.com/ipfs/go-datastore"
 	"github.com/stretchr/testify/require"
+	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 )
 
 const queueFaultsNamespace = "queue-faults"
 
 // queueOnFaults is a queue on a group of one whose store fails where the test
 // says, with the store key of each of the queue's own keys.
-func queueOnFaults(t *testing.T, name string) (Queue, Cluster, *faultStore, func(key string) string) {
+func queueOnFaults(t *testing.T, mn *taupeer.Mocknet, name string) (Queue, Cluster, *faultStore, func(key string) string) {
 	t.Helper()
 	store := newFaultStore()
-	cl, err := New(storeNode{Node: newMockNode(t), store: store}, queueFaultsNamespace,
+	cl, err := New(storeNode{Node: newMockNode(t, mn), store: store}, queueFaultsNamespace,
 		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	t.Cleanup(func() { cl.Close() })
@@ -56,7 +58,8 @@ func keysOf(t testing.TB, l keyLister, prefix string) []string {
 }
 
 func TestQueue_ACounterThatCannotBeReadAllocatesNothing(t *testing.T) {
-	q, _, store, storeKey := queueOnFaults(t, "jobs")
+	mn := peertest.Net(t)
+	q, _, store, storeKey := queueOnFaults(t, mn, "jobs")
 	require.NoError(t, q.Push("first", []byte("1"), time.Second))
 
 	store.failGet(storeKey("_q/jobs/_counter"), errDisk)
@@ -70,7 +73,8 @@ func TestQueue_ACounterThatCannotBeReadAllocatesNothing(t *testing.T) {
 }
 
 func TestQueue_ACorruptCounterAllocatesNothing(t *testing.T) {
-	q, cl, _, _ := queueOnFaults(t, "jobs")
+	mn := peertest.Net(t)
+	q, cl, _, _ := queueOnFaults(t, mn, "jobs")
 	require.NoError(t, q.Push("first", []byte("1"), time.Second))
 	require.NoError(t, cl.Set("_q/jobs/_counter", []byte{0, 1}, time.Second))
 
@@ -83,7 +87,8 @@ func TestQueue_ACorruptCounterAllocatesNothing(t *testing.T) {
 }
 
 func TestQueue_AnIndexThatCannotBeReadPushesNothing(t *testing.T) {
-	q, _, store, storeKey := queueOnFaults(t, "jobs")
+	mn := peertest.Net(t)
+	q, _, store, storeKey := queueOnFaults(t, mn, "jobs")
 	require.NoError(t, q.Push("only", []byte("1"), time.Second))
 
 	store.failGet(storeKey("_q/jobs/idx/only"), errDisk)
@@ -92,7 +97,8 @@ func TestQueue_AnIndexThatCannotBeReadPushesNothing(t *testing.T) {
 }
 
 func TestQueue_AHeadThatCannotBeReadIsNotAnEmptyQueue(t *testing.T) {
-	q, _, store, storeKey := queueOnFaults(t, "jobs")
+	mn := peertest.Net(t)
+	q, _, store, storeKey := queueOnFaults(t, mn, "jobs")
 	require.NoError(t, q.Push("first", []byte("1"), time.Second))
 
 	store.failGet(storeKey("_q/jobs/items/"+sequenceID(1)), errDisk)
@@ -108,7 +114,8 @@ func TestQueue_AHeadThatCannotBeReadIsNotAnEmptyQueue(t *testing.T) {
 }
 
 func TestQueue_APopThatCannotRemoveItsItemReturnsNothing(t *testing.T) {
-	q, _, store, storeKey := queueOnFaults(t, "jobs")
+	mn := peertest.Net(t)
+	q, _, store, storeKey := queueOnFaults(t, mn, "jobs")
 	require.NoError(t, q.Push("first", []byte("1"), time.Second))
 
 	full := errors.New("pebble error during commit: no space left on device")
@@ -136,7 +143,8 @@ func TestQueue_ACorruptEntryIsNeitherPoppedNorPeeked(t *testing.T) {
 		{"shorter than its id", []byte{0, 0, 0, 9, 'a', 'b'}, "entry truncated"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			q, cl, _, _ := queueOnFaults(t, "jobs")
+			mn := peertest.Net(t)
+			q, cl, _, _ := queueOnFaults(t, mn, "jobs")
 			require.NoError(t, cl.Set("_q/jobs/items/"+sequenceID(1), tc.raw, time.Second))
 
 			_, _, err := q.Peek()
@@ -152,7 +160,8 @@ func TestQueue_ACorruptEntryIsNeitherPoppedNorPeeked(t *testing.T) {
 }
 
 func TestQueue_NoTimeoutIsTheLongestOne(t *testing.T) {
-	q, _, _, _ := queueOnFaults(t, "jobs")
+	mn := peertest.Net(t)
+	q, _, _, _ := queueOnFaults(t, mn, "jobs")
 
 	require.NoError(t, q.Push("zero", []byte("0"), 0))
 	require.NoError(t, q.Push("negative", []byte("-"), -time.Second))
@@ -185,7 +194,8 @@ func TestQueue_PeekSeesNothingInAnEmptyOrClosedQueue(t *testing.T) {
 // DECODE, IS AN ERROR: a queue would otherwise read it as empty, and a bound
 // counted from it would let everything through.
 func TestQueue_AKeyListingTheStoreFailsIsAnError(t *testing.T) {
-	q, cl, store, storeKey := queueOnFaults(t, "jobs")
+	mn := peertest.Net(t)
+	q, cl, store, storeKey := queueOnFaults(t, mn, "jobs")
 	require.NoError(t, q.Push("first", []byte("1"), time.Second))
 	require.NotEmpty(t, keysOf(t, cl, "_q/jobs/"))
 

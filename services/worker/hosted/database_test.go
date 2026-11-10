@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/kvdb"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 )
 
 // What the root owes services/worker/database: stores opened through the operator's factory and
@@ -90,7 +91,8 @@ func TestTheRootReleasesThroughTheFactoryItWasGiven(t *testing.T) {
 }
 
 func TestAStoreThatCannotBeReleasedIsNamed(t *testing.T) {
-	n, _, factory := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	mn := peertest.Net(t)
+	n, _, factory := makeNode(t, mn, Config{Services: []string{Register, Worker, Stats}})
 	seam := databaseStores{node: n.Service}
 
 	require.ErrorContains(t, seam.Release(t.Context(), "databases/shop/prod/kv/QmA"),

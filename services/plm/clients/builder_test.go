@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/service"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/pkg/proto/codec"
 	builderv2 "github.com/taubyte/tau/pkg/proto/gen/tau/builder/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/builder/v2/builderv2connect"
@@ -151,8 +152,9 @@ func (local) Start(context.Context, service.Host) error { return nil }
 func (local) Close() error                              { return nil }
 
 func TestTheBuildersAreWhomTheFinderFindsAndThisNodesOwnIsInProcess(t *testing.T) {
+	mn := peertest.Net(t)
 	_, far := servedBuilder(t, &aBuilder{})
-	h := newInstance(t)
+	h := newInstance(t, mn)
 	p := h.Node
 	builders := BuildersOn(h)
 	t.Cleanup(func() { builders.Close() })
@@ -174,7 +176,7 @@ func TestTheBuildersAreWhomTheFinderFindsAndThisNodesOwnIsInProcess(t *testing.T
 	require.Same(t, first, again, "a builder is dialled once")
 	require.NoError(t, builders.Close())
 
-	none := newInstance(t, far)
+	none := newInstance(t, mn, far)
 	elsewhere := BuildersOn(none)
 	t.Cleanup(func() { elsewhere.Close() })
 	_, err = elsewhere.At(none.ID())

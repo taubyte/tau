@@ -41,9 +41,9 @@ func (n *node) Config(into any) error {
 	return n.config(cfg)
 }
 
-func newNode(t *testing.T, running ...any) *node {
+func newNode(t *testing.T, mn *peer.Mocknet, running ...any) *node {
 	t.Helper()
-	p := peertest.Mock(t, t.Context())
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	n := &node{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond})}
 	for _, r := range running {
@@ -77,10 +77,11 @@ func (routes) Start(context.Context, service.Host) error           { return nil 
 func (routes) Close() error                                        { return nil }
 
 func TestAProxyStartsFromItsNodeAndServesWhatTheWorkerHolds(t *testing.T) {
+	mn := peertest.Net(t)
 	held := holding{projects: projects{p: compiled(t, servable())}, held: []worker.Proxy{{Project: "shop", Environment: "prod", Name: "pgwire"}}}
 	s := New()
 	t.Cleanup(func() { s.Close() })
-	require.NoError(t, s.Start(t.Context(), newNode(t, held, routes{})))
+	require.NoError(t, s.Start(t.Context(), newNode(t, mn, held, routes{})))
 
 	require.Eventually(t, func() bool { return len(s.Serving()) == 1 }, 5*time.Second, 10*time.Millisecond, "the sweep Start runs binds what the worker holds")
 	sock := s.Serving()[0]
@@ -98,16 +99,17 @@ func TestAProxyStartsFromItsNodeAndServesWhatTheWorkerHolds(t *testing.T) {
 }
 
 func TestAProxyRefusesWhatItCannotStartWith(t *testing.T) {
+	mn := peertest.Net(t)
 	held := holding{projects: projects{p: compiled(t, servable())}}
 	start := func(n *node) error {
 		s := New()
 		t.Cleanup(func() { s.Close() })
 		return s.Start(t.Context(), n)
 	}
-	require.ErrorIs(t, start(newNode(t, routes{})), ErrNoWorker)
-	require.ErrorContains(t, start(newNode(t, held)), "through placement", "no stats beside it")
+	require.ErrorIs(t, start(newNode(t, mn, routes{})), ErrNoWorker)
+	require.ErrorContains(t, start(newNode(t, mn, held)), "through placement", "no stats beside it")
 
-	broken := newNode(t, held, routes{})
+	broken := newNode(t, mn, held, routes{})
 	broken.config = func(*hostConfig) error { return errors.New("no such key") }
 	require.ErrorContains(t, start(broken), "no such key")
 }

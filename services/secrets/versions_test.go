@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/pkg/kvdb"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/pkg/secrets/tdh"
@@ -38,17 +40,18 @@ func versionsOn(t *testing.T, ctx context.Context, srv *server, ref Ref) int {
 }
 
 func TestARewriteAfterRotationIsReadEverywhere(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 3)
+	c := newCluster(t, mn, ctx, 3)
 	c.bootstrap(t, ctx, 0, 1, 2)
 	first := c.awaitKey(t, ctx)
 
 	consumer := c.client(t)
 	require.NoError(t, consumer.Set(ctx, ref("rewritten"), []byte("v1")))
 
-	c.grow(t, ctx)
+	c.grow(t, mn, ctx)
 	require.Eventually(t, func() bool {
 		c.reconcileAll(ctx)
 		active, err := c.services[0].ActiveKey(ctx)
@@ -96,10 +99,11 @@ func skewed(offsets ...time.Duration) option {
 }
 
 func TestASequentialRewriteWinsWhateverTheClocks(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 2, skewed(time.Hour, -time.Hour))
+	c := newCluster(t, mn, ctx, 2, skewed(time.Hour, -time.Hour))
 	c.bootstrap(t, ctx, 0, 1)
 	c.awaitKey(t, ctx)
 
@@ -128,14 +132,15 @@ func TestASequentialRewriteWinsWhateverTheClocks(t *testing.T) {
 }
 
 func TestANewRosterRotatesOnceOnItsOwn(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 2, withBootstrapDelay(100*time.Millisecond))
+	c := newCluster(t, mn, ctx, 2, withBootstrapDelay(100*time.Millisecond))
 	first := c.awaitKey(t, ctx)
 	require.Len(t, first.Members, 2)
 
-	c.grow(t, ctx)
+	c.grow(t, mn, ctx)
 
 	require.Eventually(t, func() bool {
 		for _, srv := range c.services {
@@ -163,7 +168,8 @@ func TestANewRosterRotatesOnceOnItsOwn(t *testing.T) {
 }
 
 func TestAProjectNamedCloudCannotReachTheCloudScope(t *testing.T) {
-	_, client, _ := single(t)
+	mn := peertest.Net(t)
+	_, client, _ := single(t, mn)
 	ctx := t.Context()
 
 	cloud := Ref{Scope: Cloud("auth"), Name: "signing"}
@@ -191,7 +197,8 @@ func TestAProjectNamedCloudCannotReachTheCloudScope(t *testing.T) {
 }
 
 func TestANewerVersionThisNodeCannotOpenIsKept(t *testing.T) {
-	srv, client, _ := single(t)
+	mn := peertest.Net(t)
+	srv, client, _ := single(t, mn)
 	ctx := t.Context()
 
 	r := Ref{Scope: Project("p", "e"), Name: "n"}
@@ -219,12 +226,13 @@ func TestANewerVersionThisNodeCannotOpenIsKept(t *testing.T) {
 }
 
 func TestAnUnreadableSecretDoesNotStopRetirement(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	const age = time.Hour
 	clock := newFakeClock()
-	c := newCluster(t, ctx, 2, withRotationAge(age), withClock(clock.now))
+	c := newCluster(t, mn, ctx, 2, withRotationAge(age), withClock(clock.now))
 	c.bootstrap(t, ctx, 0)
 	first := c.awaitKey(t, ctx)
 
@@ -270,10 +278,11 @@ func bundleOf(t *testing.T, values map[Ref]string) *secretsv2.InitBundle {
 }
 
 func TestInitOnEveryNodeSurvivesOneLostBeforeStart(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newMesh(t, ctx, 3)
+	c := newMesh(t, mn, ctx, 3)
 	for _, node := range c.nodes {
 		db, err := kvdb.Open(node, c.db, kvdb.WithLogger(logging.Logger("secrets-test")), kvdb.WithRebroadcast(time.Second))
 		require.NoError(t, err)
@@ -342,10 +351,11 @@ func TestInitOnEveryNodeSurvivesOneLostBeforeStart(t *testing.T) {
 }
 
 func TestInitOnANodeHoldingAKeyWritesUnderIt(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 2)
+	c := newCluster(t, mn, ctx, 2)
 	c.bootstrap(t, ctx, 0)
 	key := c.awaitKey(t, ctx)
 
@@ -367,7 +377,8 @@ func TestInitOnANodeHoldingAKeyWritesUnderIt(t *testing.T) {
 }
 
 func TestInitRefusesABundleThatDoesNotHoldTogether(t *testing.T) {
-	srv, _, _ := single(t)
+	mn := peertest.Net(t)
+	srv, _, _ := single(t, mn)
 	ctx := t.Context()
 
 	_, err := Sealed(Ref{}, []byte("v"), time.Now())
@@ -400,7 +411,8 @@ func TestInitRefusesABundleThatDoesNotHoldTogether(t *testing.T) {
 }
 
 func TestVersionStepsReportAFailingStore(t *testing.T) {
-	srv, _, _ := single(t)
+	mn := peertest.Net(t)
+	srv, _, _ := single(t, mn)
 	ctx := t.Context()
 	r := Ref{Scope: Cloud("auth"), Name: "n"}
 	bundle := bundleOf(t, map[Ref]string{r: "v"})
@@ -424,7 +436,8 @@ func TestVersionStepsReportAFailingStore(t *testing.T) {
 }
 
 func TestAVersionStillHeldByARosterMemberIsNotAbandoned(t *testing.T) {
-	srv, client, _ := single(t)
+	mn := peertest.Net(t)
+	srv, client, _ := single(t, mn)
 	ctx := t.Context()
 
 	r := Ref{Scope: Project("p", "e"), Name: "n"}
@@ -446,8 +459,8 @@ func TestAVersionStillHeldByARosterMemberIsNotAbandoned(t *testing.T) {
 // ownerAway stores v1 on three nodes and a newer v2 only on node 2, under
 // its one-member key, then runs nodes 0 and 1 without it until they have
 // rotated. away closes node 2's database for that time when set.
-func ownerAway(t *testing.T, ctx context.Context, away bool) {
-	c := newMesh(t, ctx, 3)
+func ownerAway(t *testing.T, mn *taupeer.Mocknet, ctx context.Context, away bool) {
+	c := newMesh(t, mn, ctx, 3)
 	open := func(i int) {
 		db, err := kvdb.Open(c.nodes[i], c.db, kvdb.WithLogger(logging.Logger("secrets-test")), kvdb.WithRebroadcast(time.Second))
 		require.NoError(t, err)
@@ -534,13 +547,15 @@ func ownerAway(t *testing.T, ctx context.Context, away bool) {
 }
 
 func TestANewestVersionItsOwnerHasNotCarriedForwardIsKeptAndWins(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	ownerAway(t, ctx, false)
+	ownerAway(t, mn, ctx, false)
 }
 
 func TestAnOwnerReturningWithAStaleStoreKeepsTheOlderVersion(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	ownerAway(t, ctx, true)
+	ownerAway(t, mn, ctx, true)
 }

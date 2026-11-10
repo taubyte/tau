@@ -46,9 +46,10 @@ func (h *heard) gone(key string) bool {
 }
 
 func TestAnObserverHearsWhatThisNodeWritesAndWhatItMerges(t *testing.T) {
-	writer, reader := peertest.Mock(t, t.Context()), peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	writer, reader := mn.Mock(t.Context()), mn.Mock(t.Context())
 	t.Cleanup(func() { writer.Close(); reader.Close() })
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, reader.Host().Connect(t.Context(), libp2ppeer.AddrInfo{ID: writer.ID(), Addrs: writer.Host().Addrs()}))
 
 	here := newHeard()

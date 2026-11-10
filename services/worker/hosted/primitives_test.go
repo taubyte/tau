@@ -6,6 +6,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/service"
+	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/pkg/invoke"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	primitivesService "github.com/taubyte/tau/services/primitives"
@@ -55,10 +57,10 @@ func handleOf(id string) invoke.Grant {
 
 // holdingSync is a node that runs the service, with the project published and the
 // group formed — the two things every send below rests on.
-func holdingSync(t *testing.T, cfg Config) *node {
+func holdingSync(t *testing.T, mn *taupeer.Mocknet, cfg Config) *node {
 	t.Helper()
 
-	n, _, _ := makeNode(t, cfg)
+	n, _, _ := makeNode(t, mn, cfg)
 
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 1, Compiled: withPrimitives(),
@@ -73,7 +75,8 @@ func holdingSync(t *testing.T, cfg Config) *node {
 }
 
 func TestASendThroughTheNodeLandsInThePrimitivesNamespace(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
+	mn := peertest.Net(t)
+	n := holdingSync(t, mn, Config{Services: []string{Register, Worker, Stats, Primitives}})
 	jobs := handleOf(primJobsID)
 
 	require.NoError(t, n.syncs.Send(t.Context(), jobs, "order-1", []byte("ship it")))
@@ -84,7 +87,8 @@ func TestASendThroughTheNodeLandsInThePrimitivesNamespace(t *testing.T) {
 }
 
 func TestQueueDepthAnswersFromTheService(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
+	mn := peertest.Net(t)
+	n := holdingSync(t, mn, Config{Services: []string{Register, Worker, Stats, Primitives}})
 	jobs := handleOf(primJobsID)
 
 	require.NoError(t, n.syncs.Send(t.Context(), jobs, "order-1", []byte("ship it")))
@@ -96,14 +100,16 @@ func TestQueueDepthAnswersFromTheService(t *testing.T) {
 }
 
 func TestASendToAQueueNobodyDeclaredIsRefused(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
+	mn := peertest.Net(t)
+	n := holdingSync(t, mn, Config{Services: []string{Register, Worker, Stats, Primitives}})
 
 	err := n.syncs.Send(t.Context(), handleOf("QmNothingDeclaresThis"), "1", []byte("x"))
 	require.ErrorIs(t, err, primitivesService.ErrNotDeclared)
 }
 
 func TestALogAppendedThroughTheNodeIsReadBackFromTheService(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
+	mn := peertest.Net(t)
+	n := holdingSync(t, mn, Config{Services: []string{Register, Worker, Stats, Primitives}})
 	audit := handleOf(primAuditID)
 
 	cursor, err := n.syncs.Append(t.Context(), audit, []byte("first"))
@@ -121,12 +127,13 @@ func TestALogAppendedThroughTheNodeIsReadBackFromTheService(t *testing.T) {
 }
 
 func TestTheClockFiresThroughTheWorkerBesideIt(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Primitives}})
+	mn := peertest.Net(t)
+	n := holdingSync(t, mn, Config{Services: []string{Register, Worker, Primitives}})
 	w, ok := service.Local[primitivesService.Workloads](n.host.as(Primitives), worker.Protocol)
 	require.True(t, ok, "a worker offers itself to the clock beside it")
 	require.Empty(t, w.Schedules(t.Context()), "nothing deployed, nothing scheduled")
 
-	without, _, _ := makeNode(t, Config{Services: []string{Register, Primitives}})
+	without, _, _ := makeNode(t, mn, Config{Services: []string{Register, Primitives}})
 	_, ok = service.Local[primitivesService.Workloads](without.host.as(Primitives), worker.Protocol)
 	require.False(t, ok, "a node with no worker runs no clock")
 	require.Empty(t, workloads{without.Service}.Schedules(t.Context()))
@@ -135,15 +142,16 @@ func TestTheClockFiresThroughTheWorkerBesideIt(t *testing.T) {
 }
 
 func TestAFireRunsOnTheWorkerItCanReach(t *testing.T) {
+	mn := peertest.Net(t)
 	at := primitivesService.Target{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"}
 	req := &invoke.Request{Method: "POST", Path: "/"}
 
-	none, _, _ := makeNode(t, Config{Services: []string{Register}})
+	none, _, _ := makeNode(t, mn, Config{Services: []string{Register}})
 	_, err := none.fire(t.Context(), at, req)
 	require.ErrorIs(t, err, ErrNoPrimitives)
 
 	answers := &answering{name: "wasm", status: 200}
-	c := dialingNode(t, answers)
+	c := dialingNode(t, mn, answers)
 	res, err := c.node.fire(t.Context(), at, req)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.Status)
@@ -151,8 +159,9 @@ func TestAFireRunsOnTheWorkerItCanReach(t *testing.T) {
 }
 
 func TestAFireIsPlacedWhereThereIsDiscovery(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", status: 200}
-	n, _ := consuming(t, answers, compiled())
+	n, _ := consuming(t, mn, answers, compiled())
 	require.NotNil(t, n.workers)
 
 	res, err := n.fire(t.Context(), primitivesService.Target{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"},

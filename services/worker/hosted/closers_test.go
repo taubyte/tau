@@ -5,10 +5,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 )
 
 func TestEveryLazyOpenerAppendsItsCloserSafely(t *testing.T) {
-	n, _, factory := makeNode(t, Config{Services: []string{Worker, Stats}})
+	mn := peertest.Net(t)
+	n, _, factory := makeNode(t, mn, Config{Services: []string{Worker, Stats}})
 
 	// Three different adapters appending at once, each holding its own mutex, so none
 	// excludes another; each is reached through its seam.

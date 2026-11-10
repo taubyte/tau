@@ -24,11 +24,11 @@ import (
 )
 
 // single is one node running the service, reached through its own Client.
-func single(t *testing.T, opts ...option) (*server, *Client, peerNode.Node) {
+func single(t *testing.T, mn *peerNode.Mocknet, opts ...option) (*server, *Client, peerNode.Node) {
 	t.Helper()
 	ctx := t.Context()
 
-	node := peertest.Mock(t, ctx)
+	node := mn.Mock(ctx)
 	t.Cleanup(func() { node.Close() })
 	db, err := kvdb.Open(node, fmt.Sprintf("secrets-%d", clusters.Add(1)), kvdb.WithLogger(logging.Logger("secrets-test")), kvdb.WithRebroadcast(time.Second))
 	require.NoError(t, err)
@@ -50,7 +50,8 @@ func single(t *testing.T, opts ...option) (*server, *Client, peerNode.Node) {
 }
 
 func TestALocalClientNeedsNoStreamAndFormsAKeyOnFirstWrite(t *testing.T) {
-	_, client, _ := single(t)
+	mn := peertest.Net(t)
+	_, client, _ := single(t, mn)
 	ctx := t.Context()
 
 	require.NoError(t, client.Set(ctx, Ref{Scope: Project("shop", "prod"), Name: "token"}, []byte("sk_live")))
@@ -74,7 +75,8 @@ func TestALocalClientNeedsNoStreamAndFormsAKeyOnFirstWrite(t *testing.T) {
 }
 
 func TestAClientWithNobodyToAskSaysSo(t *testing.T) {
-	node := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	node := mn.Mock(t.Context())
 	t.Cleanup(func() { node.Close() })
 	client, err := NewClient(node.Host(), nil)
 	require.NoError(t, err)
@@ -86,7 +88,7 @@ func TestAClientWithNobodyToAskSaysSo(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoMembers)
 
 	// A member named but unreachable is unavailable, not absent.
-	unreachable := peertest.Mock(t, t.Context())
+	unreachable := mn.Mock(t.Context())
 	t.Cleanup(func() { unreachable.Close() })
 	client, err = NewClient(node.Host(), Peers{unreachable.ID(), node.ID()})
 	require.NoError(t, err)
@@ -98,7 +100,8 @@ func TestAClientWithNobodyToAskSaysSo(t *testing.T) {
 }
 
 func TestWhatNewAndItsOptionsRefuse(t *testing.T) {
-	node := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	node := mn.Mock(t.Context())
 	t.Cleanup(func() { node.Close() })
 	db, err := kvdb.Open(node, fmt.Sprintf("secrets-%d", clusters.Add(1)), kvdb.WithLogger(logging.Logger("secrets-test")), kvdb.WithRebroadcast(time.Second))
 	require.NoError(t, err)
@@ -126,7 +129,8 @@ func TestWhatNewAndItsOptionsRefuse(t *testing.T) {
 }
 
 func TestStartIsOnceAndNotAfterClose(t *testing.T) {
-	srv, _, _ := single(t)
+	mn := peertest.Net(t)
+	srv, _, _ := single(t, mn)
 	require.Error(t, srv.serve(t.Context()))
 	require.NoError(t, srv.Close())
 	require.NoError(t, srv.Close(), "close is idempotent")
@@ -134,7 +138,8 @@ func TestStartIsOnceAndNotAfterClose(t *testing.T) {
 }
 
 func TestTheHandlersRefuseWhatTheyCannotUse(t *testing.T) {
-	srv, _, _ := single(t)
+	mn := peertest.Net(t)
+	srv, _, _ := single(t, mn)
 	ctx := t.Context()
 	h := &secretsHandler{srv}
 
@@ -177,10 +182,11 @@ func TestTheHandlersRefuseWhatTheyCannotUse(t *testing.T) {
 }
 
 func TestReplayOverTheWireNamesTheCaller(t *testing.T) {
-	_, _, server := single(t)
-	caller := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	_, _, server := single(t, mn)
+	caller := mn.Mock(t.Context())
 	t.Cleanup(func() { caller.Close() })
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, caller.Host().Connect(t.Context(), server.Host().Peerstore().PeerInfo(server.ID())))
 
 	c, err := rpc.NewClient(caller.Host(), server.ID(), Protocol)
@@ -199,10 +205,11 @@ func TestWireCarriesTheSentinels(t *testing.T) {
 }
 
 func TestAGroupKeyThatCannotBeUsedIsRefused(t *testing.T) {
+	mn := peertest.Net(t)
 	_, err := groupKey(&secretsv2.GroupKey{Public: []byte("not a point")})
 	require.Error(t, err)
 
-	srv, client, _ := single(t)
+	srv, client, _ := single(t, mn)
 	require.NoError(t, client.Set(t.Context(), Ref{Scope: Project("p", "e"), Name: "n"}, []byte("v")))
 	key, err := srv.ActiveKey(t.Context())
 	require.NoError(t, err)
@@ -214,7 +221,8 @@ func TestAGroupKeyThatCannotBeUsedIsRefused(t *testing.T) {
 }
 
 func TestTheRoundTableStaysBounded(t *testing.T) {
-	srv, _, _ := single(t)
+	mn := peertest.Net(t)
+	srv, _, _ := single(t, mn)
 	members := []string{srv.self(), "a-peer-that-never-answers"}
 	for epoch := range uint64(maxRounds + 3) {
 		_, err := srv.joinRound(t.Context(), roundID(epoch, members), epoch, members)
@@ -226,7 +234,8 @@ func TestTheRoundTableStaysBounded(t *testing.T) {
 }
 
 func TestAwaitGivesUpWithItsCaller(t *testing.T) {
-	srv, _, _ := single(t)
+	mn := peertest.Net(t)
+	srv, _, _ := single(t, mn)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	require.ErrorIs(t, srv.await(ctx, &round{done: make(chan struct{})}), context.Canceled)
@@ -251,7 +260,8 @@ func (broken) Get(context.Context, string) ([]byte, error)    { return nil, errB
 func (broken) Compact(context.Context) (int, error)           { return 0, errBroken }
 
 func TestRetiringCompactsTheRealStore(t *testing.T) {
-	srv, _, _ := single(t)
+	mn := peertest.Net(t)
+	srv, _, _ := single(t, mn)
 	_, ok := srv.db.(coreKvdb.Compactor)
 	require.True(t, ok, "the production store must be a Compactor")
 
@@ -320,7 +330,8 @@ func TestAStoreThatFailsIsAnErrorEverywhere(t *testing.T) {
 }
 
 func TestTheBootTimerFormsTheFirstKey(t *testing.T) {
-	srv, _, _ := single(t, withBootstrapDelay(10*time.Millisecond))
+	mn := peertest.Net(t)
+	srv, _, _ := single(t, mn, withBootstrapDelay(10*time.Millisecond))
 	require.Eventually(t, func() bool {
 		_, err := srv.ActiveKey(t.Context())
 		return err == nil
@@ -328,7 +339,8 @@ func TestTheBootTimerFormsTheFirstKey(t *testing.T) {
 }
 
 func TestTheAtRestKeyIsDerivedPerNode(t *testing.T) {
-	node := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	node := mn.Mock(t.Context())
 	t.Cleanup(func() { node.Close() })
 	a, err := newAtRest(node.Host(), "configured")
 	require.NoError(t, err)

@@ -67,10 +67,10 @@ type cluster struct {
 // difference between testing the design and testing a convenient fiction: the
 // hazards this service is built around -- a node acting on a view that has not
 // caught up yet -- only exist when replication is real and takes time.
-func newCluster(t *testing.T, ctx context.Context, n int, opts ...option) *cluster {
+func newCluster(t *testing.T, mn *peerNode.Mocknet, ctx context.Context, n int, opts ...option) *cluster {
 	t.Helper()
 
-	c := newMesh(t, ctx, n, opts...)
+	c := newMesh(t, mn, ctx, n, opts...)
 	for _, node := range c.nodes {
 		c.start(t, node)
 	}
@@ -81,7 +81,7 @@ func newCluster(t *testing.T, ctx context.Context, n int, opts ...option) *clust
 }
 
 // newMesh connects n nodes and a consumer, and starts no service on them.
-func newMesh(t *testing.T, ctx context.Context, n int, opts ...option) *cluster {
+func newMesh(t *testing.T, mn *peerNode.Mocknet, ctx context.Context, n int, opts ...option) *cluster {
 	t.Helper()
 
 	// The mocknet is process-wide and kvdb replicates by database name, so two
@@ -89,15 +89,15 @@ func newMesh(t *testing.T, ctx context.Context, n int, opts ...option) *cluster 
 	// its own.
 	c := &cluster{opts: opts, db: fmt.Sprintf("secrets-%d", clusters.Add(1))}
 	for range n {
-		node := peertest.Mock(t, ctx)
+		node := mn.Mock(ctx)
 		t.Cleanup(func() { node.Close() })
 		c.nodes = append(c.nodes, node)
 	}
 
-	c.consumer = peertest.Mock(t, ctx)
+	c.consumer = mn.Mock(ctx)
 	t.Cleanup(func() { c.consumer.Close() })
 
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	mesh := append(c.nodes, c.consumer)
 	for i, node := range mesh {
 		for _, other := range mesh[i+1:] {
@@ -176,13 +176,13 @@ func (c *cluster) serve(t *testing.T, node peerNode.Node, db coreKvdb.Instance, 
 
 // grow adds a node to the cluster after it has already formed a key, which is
 // what makes the roster change and therefore what triggers rotation.
-func (c *cluster) grow(t *testing.T, ctx context.Context) {
+func (c *cluster) grow(t *testing.T, mn *peerNode.Mocknet, ctx context.Context) {
 	t.Helper()
 
-	node := peertest.Mock(t, ctx)
+	node := mn.Mock(ctx)
 	t.Cleanup(func() { node.Close() })
 
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	for _, other := range append(c.nodes, c.consumer) {
 		require.NoError(t, node.Host().Connect(ctx, other.Host().Peerstore().PeerInfo(other.ID())))
 	}
@@ -356,10 +356,11 @@ func (c *cluster) awaitKey(t *testing.T, ctx context.Context) *KeyMeta {
 }
 
 func TestSingleNode(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 1)
+	c := newCluster(t, mn, ctx, 1)
 	c.bootstrap(t, ctx, 0)
 	key := c.awaitKey(t, ctx)
 
@@ -376,11 +377,12 @@ func TestSingleNode(t *testing.T) {
 }
 
 func TestThresholdAcrossNodes(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	const n = 3
-	c := newCluster(t, ctx, n)
+	c := newCluster(t, mn, ctx, n)
 	c.bootstrap(t, ctx, 0)
 	key := c.awaitKey(t, ctx)
 
@@ -410,12 +412,13 @@ func TestThresholdAcrossNodes(t *testing.T) {
 }
 
 func TestConcurrentBootstrapAgreesOnOneKey(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Every node starts a round at once. A round is named by its roster, so
 	// these are all the same round rather than three competing ones.
-	c := newCluster(t, ctx, 3)
+	c := newCluster(t, mn, ctx, 3)
 	c.bootstrap(t, ctx, 0, 1, 2)
 	key := c.awaitKey(t, ctx)
 
@@ -435,10 +438,11 @@ func TestConcurrentBootstrapAgreesOnOneKey(t *testing.T) {
 }
 
 func TestSecretLifecycle(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 2)
+	c := newCluster(t, mn, ctx, 2)
 	c.bootstrap(t, ctx, 0)
 	c.awaitKey(t, ctx)
 	secrets := c.client(t)
@@ -487,10 +491,11 @@ func TestSecretLifecycle(t *testing.T) {
 }
 
 func TestRejectsUnusableReferences(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 1)
+	c := newCluster(t, mn, ctx, 1)
 	c.bootstrap(t, ctx, 0)
 	c.awaitKey(t, ctx)
 	secrets := c.client(t)
@@ -523,10 +528,11 @@ func TestRejectsUnusableReferences(t *testing.T) {
 }
 
 func TestNamespacesIsolateNames(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 1)
+	c := newCluster(t, mn, ctx, 1)
 	c.bootstrap(t, ctx, 0)
 	c.awaitKey(t, ctx)
 	secrets := c.client(t)
@@ -563,10 +569,11 @@ func TestNamespacesIsolateNames(t *testing.T) {
 }
 
 func TestRotationCarriesSecretsForward(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 2)
+	c := newCluster(t, mn, ctx, 2)
 	c.bootstrap(t, ctx, 0)
 	first := c.awaitKey(t, ctx)
 	require.Len(t, first.Members, 2)
@@ -576,7 +583,7 @@ func TestRotationCarriesSecretsForward(t *testing.T) {
 	require.NoError(t, secrets.Set(ctx, ref("owner-key"), plaintext))
 
 	// A node joining changes the roster, which is a rotation trigger.
-	c.grow(t, ctx)
+	c.grow(t, mn, ctx)
 
 	var second *KeyMeta
 	require.Eventually(t, func() bool {
@@ -637,10 +644,11 @@ func TestRotationCarriesSecretsForward(t *testing.T) {
 }
 
 func TestNodeOffersOnlyKeysItHolds(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 1)
+	c := newCluster(t, mn, ctx, 1)
 	c.bootstrap(t, ctx, 0)
 	active := c.awaitKey(t, ctx)
 
@@ -668,10 +676,11 @@ func TestNodeOffersOnlyKeysItHolds(t *testing.T) {
 }
 
 func TestRetirementNeedsNoAgreement(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 2)
+	c := newCluster(t, mn, ctx, 2)
 	c.bootstrap(t, ctx, 0)
 	first := c.awaitKey(t, ctx)
 
@@ -679,7 +688,7 @@ func TestRetirementNeedsNoAgreement(t *testing.T) {
 	plaintext := []byte("must outlive the old epoch")
 	require.NoError(t, secrets.Set(ctx, ref("owner-key"), plaintext))
 
-	c.grow(t, ctx)
+	c.grow(t, mn, ctx)
 
 	// Only ONE node ever reconciles. It carries the secret forward and collects
 	// the superseded wrapping without asking anybody.
@@ -715,10 +724,11 @@ func TestRetirementNeedsNoAgreement(t *testing.T) {
 }
 
 func TestSurvivesRestart(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 3)
+	c := newCluster(t, mn, ctx, 3)
 	c.bootstrap(t, ctx, 0)
 	key := c.awaitKey(t, ctx)
 
@@ -753,10 +763,11 @@ func TestSurvivesRestart(t *testing.T) {
 }
 
 func TestSurvivesLosingANode(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 3)
+	c := newCluster(t, mn, ctx, 3)
 	c.bootstrap(t, ctx, 0)
 	key := c.awaitKey(t, ctx)
 	require.Equal(t, uint(2), key.Threshold)
@@ -785,10 +796,11 @@ func TestSurvivesLosingANode(t *testing.T) {
 }
 
 func TestReconcileLoopRunsOnItsOwn(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 2, withReconcileInterval(500*time.Millisecond))
+	c := newCluster(t, mn, ctx, 2, withReconcileInterval(500*time.Millisecond))
 	c.bootstrap(t, ctx, 0)
 	first := c.awaitKey(t, ctx)
 
@@ -798,7 +810,7 @@ func TestReconcileLoopRunsOnItsOwn(t *testing.T) {
 
 	// Changing the roster is the trigger; from here nothing in the test drives
 	// rotation, re-encryption or retirement.
-	c.grow(t, ctx)
+	c.grow(t, mn, ctx)
 
 	require.Eventually(t, func() bool {
 		active, err := c.services[0].ActiveKey(ctx)
@@ -817,10 +829,11 @@ func TestReconcileLoopRunsOnItsOwn(t *testing.T) {
 }
 
 func TestConcurrentReconciliation(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 3)
+	c := newCluster(t, mn, ctx, 3)
 	c.bootstrap(t, ctx, 0)
 	first := c.awaitKey(t, ctx)
 
@@ -829,7 +842,7 @@ func TestConcurrentReconciliation(t *testing.T) {
 		require.NoError(t, secrets.Set(ctx, ref(id), []byte("value of "+id)))
 	}
 
-	c.grow(t, ctx)
+	c.grow(t, mn, ctx)
 
 	require.Eventually(t, func() bool {
 		var wg sync.WaitGroup
@@ -877,10 +890,11 @@ func TestConcurrentReconciliation(t *testing.T) {
 }
 
 func TestGrowsOneNodeAtATime(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 1)
+	c := newCluster(t, mn, ctx, 1)
 	c.bootstrap(t, ctx, 0)
 
 	first := c.awaitKey(t, ctx)
@@ -919,7 +933,7 @@ func TestGrowsOneNodeAtATime(t *testing.T) {
 	// walk still needs.
 	for size := 2; size <= 4; size++ {
 		func() {
-			c.grow(t, ctx)
+			c.grow(t, mn, ctx)
 
 			// Let the cluster settle onto a key over the new roster.
 			var active *KeyMeta
@@ -972,10 +986,11 @@ func TestGrowsOneNodeAtATime(t *testing.T) {
 }
 
 func TestShrinksOneNodeAtATime(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 4)
+	c := newCluster(t, mn, ctx, 4)
 	c.bootstrap(t, ctx, 0)
 
 	start := c.awaitKey(t, ctx)
@@ -1040,10 +1055,11 @@ func TestShrinksOneNodeAtATime(t *testing.T) {
 }
 
 func TestShrinksToASingleNode(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 2)
+	c := newCluster(t, mn, ctx, 2)
 	c.bootstrap(t, ctx, 0)
 
 	key := c.awaitKey(t, ctx)
@@ -1090,10 +1106,11 @@ func mustActive(t *testing.T, ctx context.Context, srv *server) *KeyMeta {
 }
 
 func TestRetirementProvesTheReplacementOpens(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 2)
+	c := newCluster(t, mn, ctx, 2)
 	c.bootstrap(t, ctx, 0)
 	real := c.awaitKey(t, ctx)
 
@@ -1145,10 +1162,11 @@ func TestRetirementProvesTheReplacementOpens(t *testing.T) {
 }
 
 func TestRebuildsALostShareWithoutRotating(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 3)
+	c := newCluster(t, mn, ctx, 3)
 	c.bootstrap(t, ctx, 0)
 	key := c.awaitKey(t, ctx)
 
@@ -1205,10 +1223,11 @@ func TestRebuildsALostShareWithoutRotating(t *testing.T) {
 }
 
 func TestReplayOnlyServesTheCaller(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 3)
+	c := newCluster(t, mn, ctx, 3)
 	c.bootstrap(t, ctx, 0)
 	key := c.awaitKey(t, ctx)
 
@@ -1232,10 +1251,11 @@ func TestReplayOnlyServesTheCaller(t *testing.T) {
 }
 
 func TestRetirementNeverDeletesANewerKey(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 2)
+	c := newCluster(t, mn, ctx, 2)
 	c.bootstrap(t, ctx, 0)
 	older := c.awaitKey(t, ctx)
 
@@ -1283,13 +1303,14 @@ func TestRetirementNeverDeletesANewerKey(t *testing.T) {
 }
 
 func TestRotatesWhenTheKeyAgesOut(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	const age = time.Hour
 	clock := newFakeClock()
 
-	c := newCluster(t, ctx, 2, withRotationAge(age), withClock(clock.now))
+	c := newCluster(t, mn, ctx, 2, withRotationAge(age), withClock(clock.now))
 	c.bootstrap(t, ctx, 0)
 	first := c.awaitKey(t, ctx)
 
@@ -1336,11 +1357,12 @@ func TestRotatesWhenTheKeyAgesOut(t *testing.T) {
 }
 
 func TestZeroRotationAgeDisablesTheTrigger(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	clock := newFakeClock()
-	c := newCluster(t, ctx, 2, withRotationAge(0), withClock(clock.now))
+	c := newCluster(t, mn, ctx, 2, withRotationAge(0), withClock(clock.now))
 	c.bootstrap(t, ctx, 0)
 	first := c.awaitKey(t, ctx)
 
@@ -1375,10 +1397,11 @@ func (c *fakeClock) advance(d time.Duration) {
 }
 
 func TestABootstrapWaitsForItsOwnRoundWhenAPeerFinishedItFirst(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 2)
+	c := newCluster(t, mn, ctx, 2)
 	self, peer := c.services[0], c.services[1]
 
 	members := self.roster()
@@ -1412,10 +1435,11 @@ func TestABootstrapWaitsForItsOwnRoundWhenAPeerFinishedItFirst(t *testing.T) {
 }
 
 func TestABootstrapStillRefusesAKeyItIsNotPartOf(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 2)
+	c := newCluster(t, mn, ctx, 2)
 	self, peer := c.services[0], c.services[1]
 
 	others := []string{peer.self()}

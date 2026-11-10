@@ -25,6 +25,7 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/services"
 
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/stats"
 	"github.com/taubyte/tau/services/plm/ingress"
@@ -56,7 +57,8 @@ func TestTheServiceNamesArePLMAndBuilder(t *testing.T) {
 }
 
 func TestANodeAdvertisesTheRolesItRuns(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Stats, Auth, Builder}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Stats, Auth, Builder}})
 	require.NoError(t, n.Start(t.Context()))
 
 	serving := reported(t, n, func(row stats.Node) bool { return slices.Contains(row.Serving, Builder) }).Serving
@@ -71,10 +73,11 @@ func TestANodeAdvertisesTheRolesItRuns(t *testing.T) {
 }
 
 func TestBuildHoldsTheQueueAndNotAuthsStore(t *testing.T) {
+	mn := peertest.Net(t)
 	// PLM BINDS ITS OWN LISTENER and there is no default port for it — a port
 	// baked into a service is why sibling worktrees collide — so an operator names
 	// one.
-	n, _, _ := makeNode(t, Config{
+	n, _, _ := makeNode(t, mn, Config{
 		Services: []string{Stats, PLM},
 		Sections: map[string]any{PLM: ingress.Config{Listen: "127.0.0.1:0"}},
 	})
@@ -88,14 +91,16 @@ func TestBuildHoldsTheQueueAndNotAuthsStore(t *testing.T) {
 }
 
 func TestANodeRunningNoBuildHasNoBuildAddress(t *testing.T) {
-	require.Nil(t, (&Instance{Node: mockPeer(t)}).PLMAddr())
+	mn := peertest.Net(t)
+	require.Nil(t, (&Instance{Node: mockPeer(t, mn)}).PLMAddr())
 }
 
 // A PEER IS FOUND BY WHAT IT SERVES, through p2p discovery, on a node that runs no
 // stats service at all.
 func TestTheFinderFindsAPeerByWhatItServes(t *testing.T) {
+	mn := peertest.Net(t)
 	nodes := fleet(t,
-		Config{Services: []string{Register}},
+		mn, Config{Services: []string{Register}},
 		Config{Services: []string{Secrets}},
 	)
 	holder, seeker := nodes[0], nodes[1]
@@ -111,7 +116,8 @@ func TestTheFinderFindsAPeerByWhatItServes(t *testing.T) {
 }
 
 func TestTheFinderGivesUp(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Secrets}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Secrets}})
 	require.NoError(t, n.Start(t.Context()))
 
 	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
@@ -122,13 +128,15 @@ func TestTheFinderGivesUp(t *testing.T) {
 }
 
 func TestABuilderWithNoContainerDaemon(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Stats, Builder}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Stats, Builder}})
 	require.NoError(t, n.Start(t.Context()))
 	require.Contains(t, n.Services(), Builder, "it still runs, and still deploys configuration")
 }
 
 func TestABuilderWithADaemonThatIsNotOne(t *testing.T) {
-	n, _, _ := makeNode(t, Config{
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{
 		Services:  []string{Stats, Builder},
 		Container: containers.Declared{Backend: "not-a-backend"},
 	})
@@ -136,8 +144,9 @@ func TestABuilderWithADaemonThatIsNotOne(t *testing.T) {
 }
 
 func TestAWorkerReadsBuildsRecordsOnItsOwnNode(t *testing.T) {
+	mn := peertest.Net(t)
 	nodes := fleet(t,
-		Config{Services: []string{Register, Stats, PLM}, Sections: map[string]any{PLM: ingress.Config{Listen: "127.0.0.1:0"}}},
+		mn, Config{Services: []string{Register, Stats, PLM}, Sections: map[string]any{PLM: ingress.Config{Listen: "127.0.0.1:0"}}},
 		Config{Services: []string{Worker, Stats}},
 	)
 	compute := nodes[1]
@@ -151,8 +160,9 @@ func TestAWorkerReadsBuildsRecordsOnItsOwnNode(t *testing.T) {
 }
 
 func TestTheRegionANodeReadsIsTheOneItsConfigNames(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	n, _, _ := makeNode(t, Config{Services: []string{Register}, Region: "region-1"})
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register}, Region: "region-1"})
 	require.NoError(t, n.Start(ctx))
 	require.Equal(t, "region-1", (&added{node: n}).Region(), "the region its services are told")
 
@@ -167,10 +177,11 @@ func TestTheRegionANodeReadsIsTheOneItsConfigNames(t *testing.T) {
 }
 
 func TestADevelopmentCloudsBuilderIsConfigured(t *testing.T) {
+	mn := peertest.Net(t)
 	dir := filepath.Join(t.TempDir(), "uploads")
 	section := builder.Config{Uploads: dir, Mirror: "file://" + t.TempDir()}
 	cfg := Config{Services: []string{Stats, Builder}, Sections: map[string]any{Builder: section}}
-	n, _, _ := makeNode(t, cfg)
+	n, _, _ := makeNode(t, mn, cfg)
 	require.NoError(t, n.Start(t.Context()))
 	require.Contains(t, n.Services(), Builder)
 	require.DirExists(t, dir, "the uploads directory is the builder's to make")
@@ -180,12 +191,13 @@ func TestADevelopmentCloudsBuilderIsConfigured(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "a file")
 	require.NoError(t, os.WriteFile(file, nil, 0o600))
 	section.Uploads = filepath.Join(file, "below")
-	refused, _, _ := makeNode(t, Config{Services: []string{Stats, Builder}, Sections: map[string]any{Builder: section}})
+	refused, _, _ := makeNode(t, mn, Config{Services: []string{Stats, Builder}, Sections: map[string]any{Builder: section}})
 	require.ErrorContains(t, refused.Start(t.Context()), "uploads")
 }
 
 func TestANodeReadsItsOwnBuild(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Stats, PLM, Worker},
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Stats, PLM, Worker},
 		Sections: map[string]any{PLM: ingress.Config{Listen: "127.0.0.1:0"}}})
 	require.NoError(t, n.Start(t.Context()))
 	built, ok := jobsOf(n)

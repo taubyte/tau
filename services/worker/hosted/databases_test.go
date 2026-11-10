@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/pkg/database"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/services/worker"
@@ -15,12 +16,14 @@ import (
 )
 
 func TestAWorkerLeftToItsDefaultsOpensPostgresAndMysql(t *testing.T) {
-	n := sqlWorker(t, Config{NoRoot: true})
+	mn := peertest.Net(t)
+	n := sqlWorker(t, mn, Config{NoRoot: true})
 	require.ElementsMatch(t, []string{"postgres", "mysql"}, n.engines.EnginesFor(database.SQL))
 }
 
 func TestAWorkerOpensOnlyTheEnginesItsSectionNames(t *testing.T) {
-	n := sqlWorker(t, Config{NoRoot: true, Worker: worker.Config{
+	mn := peertest.Net(t)
+	n := sqlWorker(t, mn, Config{NoRoot: true, Worker: worker.Config{
 		Databases: []worker.Database{{Engine: "mysql", Driver: "mysql"}},
 	}})
 	require.Equal(t, []string{"mysql"}, n.engines.EnginesFor(database.SQL))
@@ -33,7 +36,8 @@ func TestTheDatabasesAreWrittenInTheWorkersSection(t *testing.T) {
 }
 
 func TestANamedEngineOverADriverThisBinaryLacksIsRefused(t *testing.T) {
-	_, _, err := startNode(t, Config{Services: []string{Stats, Worker}, Worker: worker.Config{
+	mn := peertest.Net(t)
+	_, _, err := startNode(t, mn, Config{Services: []string{Stats, Worker}, Worker: worker.Config{
 		Databases: []worker.Database{{Engine: "postgres", Driver: "nosuch"}},
 	}})
 	require.ErrorIs(t, err, ErrNoDriver)
@@ -41,14 +45,16 @@ func TestANamedEngineOverADriverThisBinaryLacksIsRefused(t *testing.T) {
 }
 
 func TestAnEngineTheWorkerCannotAdaptIsRefused(t *testing.T) {
-	_, _, err := startNode(t, Config{Services: []string{Stats, Worker}, Worker: worker.Config{
+	mn := peertest.Net(t)
+	_, _, err := startNode(t, mn, Config{Services: []string{Stats, Worker}, Worker: worker.Config{
 		Databases: []worker.Database{{Engine: "mongo", Driver: "mysql"}},
 	}})
 	require.ErrorContains(t, err, `"mongo" is not an external database engine`)
 }
 
 func TestEveryExternalDatabaseEngineIsAdapted(t *testing.T) {
-	n := sqlWorker(t, Config{})
+	mn := peertest.Net(t)
+	n := sqlWorker(t, mn, Config{})
 
 	registered := map[string]map[string]bool{}
 	for _, model := range []database.Type{database.KV, database.Document, database.SQL, database.Vector} {

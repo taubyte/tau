@@ -11,15 +11,16 @@ import (
 )
 
 // Its repository is a temporary directory only Close removes.
-func mockPeer(t testing.TB) peer.Node {
-	n := peertest.Mock(t, t.Context())
+func mockPeer(t testing.TB, mn *peer.Mocknet) peer.Node {
+	n := mn.Mock(t.Context())
 	t.Cleanup(n.Close)
 	return n
 }
 
 func TestOpen(t *testing.T) {
+	mn := peertest.Net(t)
 	logger := logging.Logger("test")
-	mockNode := mockPeer(t)
+	mockNode := mockPeer(t, mn)
 	f := opener{mockNode}
 
 	db, err := f.New(logger, "testpath", 10)
@@ -35,8 +36,9 @@ func TestOpen(t *testing.T) {
 }
 
 func TestKVDatabase_Close(t *testing.T) {
+	mn := peertest.Net(t)
 	logger := logging.Logger("test")
-	mockNode := mockPeer(t)
+	mockNode := mockPeer(t, mn)
 	factory := opener{mockNode}
 	db, _ := factory.New(logger, "testpath", 10)
 
@@ -48,8 +50,9 @@ func TestKVDatabase_Close(t *testing.T) {
 }
 
 func TestKVDatabase_ReopenClosedDatabase(t *testing.T) {
+	mn := peertest.Net(t)
 	logger := logging.Logger("test")
-	mockNode := mockPeer(t)
+	mockNode := mockPeer(t, mn)
 	f := opener{mockNode}
 
 	db, _ := f.New(logger, "testpath", 10)
@@ -71,8 +74,9 @@ func TestKVDatabase_ReopenClosedDatabase(t *testing.T) {
 }
 
 func TestKVDatabase_Batch_MixedOperations(t *testing.T) {
+	mn := peertest.Net(t)
 	logger := logging.Logger("test")
-	mockNode := mockPeer(t)
+	mockNode := mockPeer(t, mn)
 	f := opener{mockNode}
 	db, _ := f.New(logger, "testpath", 10)
 
@@ -116,8 +120,9 @@ func TestKVDatabase_Batch_MixedOperations(t *testing.T) {
 }
 
 func TestKVDatabase_Sync(t *testing.T) {
+	mn := peertest.Net(t)
 	logger := logging.Logger("test")
-	mockNode := mockPeer(t)
+	mockNode := mockPeer(t, mn)
 	f := opener{mockNode}
 	db, _ := f.New(logger, "testpath", 10)
 

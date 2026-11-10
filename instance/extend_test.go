@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/service"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 	echov1 "github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1"
 	"github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1/echov1connect"
@@ -72,21 +73,23 @@ func TestWhatWithServiceRefuses(t *testing.T) {
 		"misspelled": {withService(addedName, started{})},
 	} {
 		t.Run(name, func(t *testing.T) {
+			mn := peertest.Net(t)
 			services := []string{addedName}
 			if name == "misspelled" {
 				services = []string{"addd"}
 			}
-			_, err := New(mockPeer(t), rooted(t, Config{Services: services}), opts...)
+			_, err := New(mockPeer(t, mn), rooted(t, Config{Services: services}), opts...)
 			require.Error(t, err)
 		})
 	}
 }
 
 func TestAServiceTheComposerServesFirstIsWhatTheNodeServes(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
 	mocked := settings.Defaults()
 	mocked.Replication = 7
-	n, _, _ := makeNode(t, Config{Services: []string{cm.Name}})
+	n, _, _ := makeNode(t, mn, Config{Services: []string{cm.Name}})
 	n.Serve(settings.Protocol, cmmock.New(mocked))
 	require.NoError(t, n.Start(ctx))
 
@@ -96,7 +99,7 @@ func TestAServiceTheComposerServesFirstIsWhatTheNodeServes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 7, region.Replication, "the shipped cm replaced its mocked version")
 
-	shipped, _, _ := makeNode(t, Config{Services: []string{cm.Name}})
+	shipped, _, _ := makeNode(t, mn, Config{Services: []string{cm.Name}})
 	require.NoError(t, shipped.Start(ctx))
 	got, ok = service.Local[settings.Source](shipped.HostOf(cm.Name), settings.Protocol)
 	require.True(t, ok, "the cm a node runs does not say it serves cm's protocol")
@@ -106,24 +109,27 @@ func TestAServiceTheComposerServesFirstIsWhatTheNodeServes(t *testing.T) {
 }
 
 func TestAnEmptyServiceListRunsAddedServicesToo(t *testing.T) {
+	mn := peertest.Net(t)
 	r := &recording{}
-	n, _, _ := makeNode(t, Config{}, r.service())
+	n, _, _ := makeNode(t, mn, Config{}, r.service())
 	require.Contains(t, n.Services(), addedName)
 	require.NoError(t, n.Start(t.Context()))
 	require.NotNil(t, r.host)
 }
 
 func TestAnAddedServiceTheConfigDoesNotNameDoesNotStart(t *testing.T) {
+	mn := peertest.Net(t)
 	r := &recording{}
-	n, _, _ := makeNode(t, Config{Services: []string{Stats}}, r.service())
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Stats}}, r.service())
 	require.NoError(t, n.Start(t.Context()))
 	require.Nil(t, r.host)
 	require.Nil(t, n.Handler(), "nothing it serves runs here")
 }
 
 func TestAServiceIsGivenItsInstance(t *testing.T) {
+	mn := peertest.Net(t)
 	r := &recording{}
-	n, h, _ := makeNode(t, Config{Services: []string{Stats, addedName}}, r.service())
+	n, h, _ := makeNode(t, mn, Config{Services: []string{Stats, addedName}}, r.service())
 	require.NoError(t, n.Start(t.Context()))
 	host := r.host
 	require.NotNil(t, host)
@@ -157,6 +163,7 @@ func TestAServiceIsGivenItsInstance(t *testing.T) {
 }
 
 func TestAServiceListensOnItsInstancesPeer(t *testing.T) {
+	mn := peertest.Net(t)
 	var server *rpc.Server
 	svc := started{
 		start: func(_ context.Context, h Host) error {
@@ -169,13 +176,13 @@ func TestAServiceListensOnItsInstancesPeer(t *testing.T) {
 		close: func() error { return server.Close() },
 	}
 
-	p := mockPeer(t)
+	p := mockPeer(t, mn)
 	n, err := New(p, rooted(t, Config{Services: []string{addedName}}), withService(addedName, svc))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.NoError(t, n.Start(t.Context()))
 
-	client, err := rpc.NewClient(callerOf(t, p), p.ID(), echoProtocol)
+	client, err := rpc.NewClient(callerOf(t, mn, p), p.ID(), echoProtocol)
 	require.NoError(t, err)
 	defer client.Close()
 	echo := echov1connect.NewEchoServiceClient(client.HTTP(), client.URL())
@@ -186,9 +193,10 @@ func TestAServiceListensOnItsInstancesPeer(t *testing.T) {
 }
 
 func TestAnAddedServiceThatFailsToStartFailsTheNode(t *testing.T) {
+	mn := peertest.Net(t)
 	refused := errors.New("refused")
 	svc := started{start: func(context.Context, Host) error { return refused }}
-	n, _, _ := makeNode(t, Config{Services: []string{addedName}}, withService(addedName, svc))
+	n, _, _ := makeNode(t, mn, Config{Services: []string{addedName}}, withService(addedName, svc))
 	err := n.Start(t.Context())
 	require.ErrorIs(t, err, refused)
 	require.Contains(t, err.Error(), addedName)
@@ -205,8 +213,9 @@ func TestAnAddedServiceDecodesItsOwnConfig(t *testing.T) {
 		"from go":     settings{Host: "mail.example.com", Hosts: []string{"a", "b"}, Port: 25},
 	} {
 		t.Run(name, func(t *testing.T) {
+			mn := peertest.Net(t)
 			r := &recording{}
-			n, _, _ := makeNode(t, Config{Services: []string{addedName}, Sections: map[string]any{addedName: entry}}, r.service())
+			n, _, _ := makeNode(t, mn, Config{Services: []string{addedName}, Sections: map[string]any{addedName: entry}}, r.service())
 			require.NoError(t, n.Start(t.Context()))
 			got := settings{Port: 1}
 			require.NoError(t, r.host.Config(&got))
@@ -215,8 +224,9 @@ func TestAnAddedServiceDecodesItsOwnConfig(t *testing.T) {
 	}
 
 	t.Run("no entry keeps the defaults", func(t *testing.T) {
+		mn := peertest.Net(t)
 		r := &recording{}
-		n, _, _ := makeNode(t, Config{Services: []string{addedName}}, r.service())
+		n, _, _ := makeNode(t, mn, Config{Services: []string{addedName}}, r.service())
 		require.NoError(t, n.Start(t.Context()))
 		got := settings{Port: 1}
 		require.NoError(t, r.host.Config(&got))
@@ -224,16 +234,18 @@ func TestAnAddedServiceDecodesItsOwnConfig(t *testing.T) {
 	})
 
 	t.Run("an entry of the wrong shape is an error", func(t *testing.T) {
+		mn := peertest.Net(t)
 		r := &recording{}
-		n, _, _ := makeNode(t, Config{Services: []string{addedName}, Sections: map[string]any{addedName: map[string]any{"port": "many"}}}, r.service())
+		n, _, _ := makeNode(t, mn, Config{Services: []string{addedName}, Sections: map[string]any{addedName: map[string]any{"port": "many"}}}, r.service())
 		require.NoError(t, n.Start(t.Context()))
 		var got settings
 		require.ErrorContains(t, r.host.Config(&got), addedName)
 	})
 
 	t.Run("the cloud-wide keys it declares come from the node, once", func(t *testing.T) {
+		mn := peertest.Net(t)
 		r := &recording{}
-		n, _, _ := makeNode(t, Config{
+		n, _, _ := makeNode(t, mn, Config{
 			Services:  []string{addedName},
 			CloudFqdn: "tau.example.io",
 			Tenancy:   []string{"github.com/acme"},
@@ -258,8 +270,9 @@ func TestAnAddedServiceDecodesItsOwnConfig(t *testing.T) {
 	})
 
 	t.Run("a cloud-wide key the node leaves empty keeps the default", func(t *testing.T) {
+		mn := peertest.Net(t)
 		r := &recording{}
-		n, _, _ := makeNode(t, Config{Services: []string{addedName}}, r.service())
+		n, _, _ := makeNode(t, mn, Config{Services: []string{addedName}}, r.service())
 		require.NoError(t, n.Start(t.Context()))
 		got := cloudAware{CloudFqdn: "default.example.io"}
 		require.NoError(t, r.host.Config(&got))
@@ -277,7 +290,8 @@ type cloudAware struct {
 }
 
 func TestConfigForAServiceNotAddedIsRefused(t *testing.T) {
-	_, err := New(mockPeer(t), rooted(t, Config{Sections: map[string]any{"mail": map[string]any{}}}))
+	mn := peertest.Net(t)
+	_, err := New(mockPeer(t, mn), rooted(t, Config{Sections: map[string]any{"mail": map[string]any{}}}))
 	require.ErrorContains(t, err, `"mail"`)
 }
 
@@ -302,8 +316,9 @@ func (s started) Close() error {
 }
 
 func TestStorageRunsBesideTheServicesItReaches(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	p := mockPeer(t)
+	p := mockPeer(t, mn)
 	n, err := New(p, rooted(t, Config{Services: []string{Register, Stats, storage.Descriptor.Name}}))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
@@ -312,7 +327,7 @@ func TestStorageRunsBesideTheServicesItReaches(t *testing.T) {
 	// FROM ANOTHER PEER, the way any service reaches it. The region's settings are
 	// read from the cm the instance runs beside storage, which is why a write can be
 	// acknowledged at all.
-	client, err := storage.NewClient(callerOf(t, p), p.ID())
+	client, err := storage.NewClient(callerOf(t, mn, p), p.ID())
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
 	at, err := storage.NewAddress("shop", "prod", storage.AssetsBucket, "QmPackage")

@@ -25,14 +25,14 @@ import (
 // quickTimeouts is raft timed for nodes one process apart: a tick every 5ms.
 var quickTimeouts = TimeoutConfig{HeartbeatTimeout: 50 * time.Millisecond, SnapshotThreshold: 1024, TrailingLogs: 64}
 
-func linked(t *testing.T, n int) []taupeer.Node {
+func linked(t *testing.T, mn *taupeer.Mocknet, n int) []taupeer.Node {
 	t.Helper()
 	nodes := make([]taupeer.Node, n)
 	for i := range nodes {
-		nodes[i] = peertest.Mock(t, t.Context())
+		nodes[i] = mn.Mock(t.Context())
 		t.Cleanup(nodes[i].Close)
 	}
-	connectAllOf(t, nodes...)
+	connectAllOf(t, mn, nodes...)
 	return nodes
 }
 
@@ -89,7 +89,8 @@ func leading(t *testing.T, groups ...*group) *group {
 }
 
 func TestAGroupOfOneElectsItselfAppliesAndKeepsItsLog(t *testing.T) {
-	node := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	node := mn.Mock(t.Context())
 	t.Cleanup(node.Close)
 
 	e := engineFor(node)
@@ -128,7 +129,8 @@ func TestAGroupOfOneElectsItselfAppliesAndKeepsItsLog(t *testing.T) {
 }
 
 func TestThreeNodesReplicateAndChangeMembers(t *testing.T) {
-	nodes := linked(t, 4)
+	mn := peertest.Net(t)
+	nodes := linked(t, mn, 4)
 	ids := []peer.ID{nodes[0].ID(), nodes[1].ID(), nodes[2].ID()}
 	groups := []*group{
 		onEngine(t, nodes[0], "three", quickTimeouts),
@@ -179,7 +181,8 @@ func TestThreeNodesReplicateAndChangeMembers(t *testing.T) {
 }
 
 func TestANewcomerCatchesUpFromASnapshot(t *testing.T) {
-	nodes := linked(t, 2)
+	mn := peertest.Net(t)
+	nodes := linked(t, mn, 2)
 	compacting := TimeoutConfig{HeartbeatTimeout: 50 * time.Millisecond, SnapshotThreshold: 5, TrailingLogs: 1}
 	first := onEngine(t, nodes[0], "snap", compacting)
 	require.NoError(t, first.Bootstrap([]peer.ID{nodes[0].ID()}))
@@ -227,7 +230,8 @@ func (w *voteWatch) heard() (foreign, leaders int) {
 // A SECOND GROUP UNDER THE SAME NAME shows itself as a message of another
 // formation, which raft never sees: what the healer watches for.
 func TestAVoteFromOutsideTheGroupIsHeard(t *testing.T) {
-	nodes := linked(t, 2)
+	mn := peertest.Net(t)
+	nodes := linked(t, mn, 2)
 	lone := onEngine(t, nodes[1], "split", quickTimeouts)
 	require.NoError(t, lone.Bootstrap([]peer.ID{nodes[1].ID()}))
 	watch := &voteWatch{}
@@ -244,8 +248,9 @@ func TestAVoteFromOutsideTheGroupIsHeard(t *testing.T) {
 // A WRITE NOBODY CAN COMMIT ends with the group: a quorum of two with one member
 // unreachable commits nothing, and closing the group answers the write.
 func TestClosingAGroupAnswersWhatWaitsOnIt(t *testing.T) {
-	nodes := linked(t, 1)
-	ghost := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	nodes := linked(t, mn, 1)
+	ghost := mn.Mock(t.Context())
 	ghostID := ghost.ID()
 	ghost.Close()
 
@@ -273,7 +278,8 @@ func TestClosingAGroupAnswersWhatWaitsOnIt(t *testing.T) {
 
 // WIPED, a group starts again as on a node that never ran it.
 func TestAWipedGroupStartsAgain(t *testing.T) {
-	node := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	node := mn.Mock(t.Context())
 	t.Cleanup(node.Close)
 	g := onEngine(t, node, "wiped", quickTimeouts)
 	require.NoError(t, g.Bootstrap([]peer.ID{node.ID()}))
@@ -312,7 +318,8 @@ func (r refusingBatches) Batch(ctx context.Context) (datastore.Batch, error) {
 // A GROUP WHOSE STATE CANNOT BE WRITTEN STALLS, rather than run on what it did not
 // keep, and comes back once the store takes its writes again.
 func TestAGroupThatCannotWriteStallsUntilItCan(t *testing.T) {
-	mock := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	mock := mn.Mock(t.Context())
 	t.Cleanup(mock.Close)
 	node := failingStore{Node: mock, broken: &atomic.Bool{}}
 	g := onEngine(t, node, "broken", quickTimeouts)
@@ -348,7 +355,8 @@ func TestEtcdsLogIsTaus(t *testing.T) {
 }
 
 func TestALoneLeaderHasNobodyToHandLeadershipTo(t *testing.T) {
-	node := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	node := mn.Mock(t.Context())
 	t.Cleanup(node.Close)
 	g := onEngine(t, node, "lone", quickTimeouts)
 	require.NoError(t, g.Bootstrap([]peer.ID{node.ID()}))
@@ -359,7 +367,8 @@ func TestALoneLeaderHasNobodyToHandLeadershipTo(t *testing.T) {
 // A WRITE THAT CANNOT COMMIT IN ITS TIME says so: its leader lost the quorum it
 // needs, and either still leads in the term it was asked or has stepped down.
 func TestAWriteThatCannotCommitInTimeSaysWhy(t *testing.T) {
-	nodes := linked(t, 3)
+	mn := peertest.Net(t)
+	nodes := linked(t, mn, 3)
 	ids := []peer.ID{nodes[0].ID(), nodes[1].ID(), nodes[2].ID()}
 	groups := []*group{
 		onEngine(t, nodes[0], "quorum", quickTimeouts),
@@ -386,7 +395,8 @@ func TestAWriteThatCannotCommitInTimeSaysWhy(t *testing.T) {
 // streams the old engine read are reset, so the leader dials the new one rather
 // than writing on into an engine that is gone.
 func TestAFollowerWhoseEngineRestartsHearsItsLeaderAgain(t *testing.T) {
-	nodes := linked(t, 3)
+	mn := peertest.Net(t)
+	nodes := linked(t, mn, 3)
 	ids := []peer.ID{nodes[0].ID(), nodes[1].ID(), nodes[2].ID()}
 	open := func(node taupeer.Node) (*engine, *group) {
 		e := engineFor(node)
@@ -433,7 +443,8 @@ func TestAFollowerWhoseEngineRestartsHearsItsLeaderAgain(t *testing.T) {
 // A GROUP KEEPS ITS LOG IN ITS OWN NODE'S STORE, even on a host whose engine another
 // node value started with a store of its own.
 func TestAGroupKeepsItsLogInItsOwnStore(t *testing.T) {
-	node := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	node := mn.Mock(t.Context())
 	t.Cleanup(node.Close)
 	first := onEngine(t, node, "first", quickTimeouts)
 	require.NoError(t, first.Bootstrap([]peer.ID{node.ID()}))
@@ -482,7 +493,8 @@ func (m *refusingMachine) Restore(data []byte) error {
 // refused by name, one the threshold calls for is put off with the group still
 // writing, and a group whose kept snapshot cannot be restored is not opened.
 func TestAMachineThatCannotSnapshotOrRestoreSaysSo(t *testing.T) {
-	node := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	node := mn.Mock(t.Context())
 	t.Cleanup(node.Close)
 	often := TimeoutConfig{HeartbeatTimeout: 50 * time.Millisecond, SnapshotThreshold: 2, TrailingLogs: 1}
 	open := func(m FSM) (*group, error) {
@@ -522,7 +534,8 @@ func TestAMachineThatCannotSnapshotOrRestoreSaysSo(t *testing.T) {
 // A SNAPSHOT THAT DOES NOT READ refuses the group rather than start it on a machine
 // it could not restore.
 func TestAGroupWhoseSnapshotDoesNotReadIsNotOpened(t *testing.T) {
-	node := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	node := mn.Mock(t.Context())
 	t.Cleanup(node.Close)
 	raw, err := proto.Marshal(&pb.Snapshot{
 		Data:     []byte{0xff},
@@ -557,7 +570,8 @@ func heartbeat(t *testing.T, g *group, from peer.ID, term uint64, formation []by
 // which raft cannot tell apart. A heartbeat at a later term would otherwise move
 // the group to it.
 func TestAGroupTakesNoMessageOfAFormationItIsNotBoundTo(t *testing.T) {
-	nodes := linked(t, 2)
+	mn := peertest.Net(t)
+	nodes := linked(t, mn, 2)
 	g := onEngine(t, nodes[0], "fenced", quickTimeouts)
 	watch := &voteWatch{}
 	g.Observe(watch)
@@ -582,7 +596,8 @@ func TestAGroupTakesNoMessageOfAFormationItIsNotBoundTo(t *testing.T) {
 // A BINDING IS KEPT: a group reopened is bound where it was, refuses another
 // formation, and bootstraps none of its own.
 func TestAGroupKeepsItsFormation(t *testing.T) {
-	node := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	node := mn.Mock(t.Context())
 	t.Cleanup(node.Close)
 	ours := newFormation()
 
@@ -633,7 +648,8 @@ func (a rewire) run(e *engine) {
 // A FOLLOWER'S READ WHOSE FRAME WAS LOST IS ASKED AGAIN: raft sends it once, and a
 // barrier would otherwise wait out its time for an answer nobody will send.
 func TestAFollowersReadThatWasLostIsAskedAgain(t *testing.T) {
-	nodes := linked(t, 2)
+	mn := peertest.Net(t)
+	nodes := linked(t, mn, 2)
 	ids := []peer.ID{nodes[0].ID(), nodes[1].ID()}
 	groups := []*group{onEngine(t, nodes[0], "lost-read", quickTimeouts), onEngine(t, nodes[1], "lost-read", quickTimeouts)}
 	require.NoError(t, groups[0].Bootstrap(ids))

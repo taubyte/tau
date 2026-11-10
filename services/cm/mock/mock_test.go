@@ -50,7 +50,8 @@ func TestTheMockAnswersWhatItWasToldAndChangesWhenTold(t *testing.T) {
 }
 
 func TestTheMockListensOnCmsProtocolUntilClosed(t *testing.T) {
-	p := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	cm := mock.New(settings.Defaults())
 	require.NoError(t, cm.Close(), "closing one never started")

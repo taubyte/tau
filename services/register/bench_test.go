@@ -10,11 +10,13 @@ import (
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 )
 
 func BenchmarkAKeptAnswer(b *testing.B) {
-	registers, _, reader := connected(b, 1)
+	mn := peertest.Net(b)
+	registers, _, reader := connected(b, mn, 1)
 	v := viewsOn(reader, ids(registers), defaultWatcherLimits, watchedOnly)
 	b.Cleanup(func() { v.Close() })
 	v.w.pick()

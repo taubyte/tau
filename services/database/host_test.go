@@ -61,9 +61,9 @@ func (as) Now() time.Time { return time.Now() }
 
 var _ service.Host = as{}
 
-func newMachine(t *testing.T) *machine {
+func newMachine(t *testing.T, mn *peer.Mocknet) *machine {
 	t.Helper()
-	p := peertest.Mock(t, t.Context())
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	m := &machine{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond}), root: t.TempDir(), sections: map[string]func(any) error{}}
 	m.Serve(settings.Protocol, cmmock.New(settings.Defaults()))
@@ -84,8 +84,9 @@ func (m *machine) start(t *testing.T, name string, s service.Service) {
 }
 
 func TestTheDatabaseServiceRunsFromWhatItsInstanceGivesIt(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	m := newMachine(t)
+	m := newMachine(t, mn)
 	m.beside("", groupsOn{node: m.Node, root: m.root})
 	reg := register.New()
 	m.start(t, register.Descriptor.Name, reg)
@@ -122,7 +123,8 @@ func TestTheDatabaseServiceRunsFromWhatItsInstanceGivesIt(t *testing.T) {
 }
 
 func TestTheDatabaseServiceRefusesWhatItCannotStartWith(t *testing.T) {
-	m := newMachine(t)
+	mn := peertest.Net(t)
+	m := newMachine(t, mn)
 	require.ErrorIs(t, New().Start(t.Context(), as{machine: m, name: Descriptor.Name}), ErrNoConsensus)
 
 	m.sections[Descriptor.Name] = func(any) error { return errors.New("no such key") }
@@ -141,8 +143,9 @@ func TestTheDatabaseServiceRefusesWhatItCannotStartWith(t *testing.T) {
 }
 
 func TestAStoreThisNodeReleasesIsDestroyedAndReopened(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	m := newMachine(t)
+	m := newMachine(t, mn)
 	r := &replicas{Node: m.Node, region: settings.On(as{machine: m, name: Descriptor.Name}), open: map[string]kvdb.Instance{}}
 	t.Cleanup(func() { r.Close() })
 

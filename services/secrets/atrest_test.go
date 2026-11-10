@@ -10,10 +10,11 @@ import (
 )
 
 func TestAtRestSealsWithTheConfiguredKey(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	node := peertest.Mock(t, ctx)
+	node := mn.Mock(ctx)
 	t.Cleanup(func() { node.Close() })
 
 	key, err := GenerateAtRestKey()
@@ -46,10 +47,11 @@ func TestAtRestSealsWithTheConfiguredKey(t *testing.T) {
 }
 
 func TestAtRestFallsBackToTheNodeAndSaysSo(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	node := peertest.Mock(t, ctx)
+	node := mn.Mock(ctx)
 	t.Cleanup(func() { node.Close() })
 
 	fallback, err := newAtRest(node.Host(), "")

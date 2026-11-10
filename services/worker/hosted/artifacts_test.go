@@ -6,14 +6,16 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/services/worker"
 )
 
 func TestAnAssetStoreIsEnoughToRunCode(t *testing.T) {
+	mn := peertest.Net(t)
 	// No container backend, no tier handed over — and a worker still starts, with
 	// every tier that needs only the asset store.
-	n, _, _ := makeNode(t, Config{Services: []string{Stats, Worker}}, withoutTiers())
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Stats, Worker}}, withoutTiers())
 	require.NotNil(t, n.Worker())
 
 	// Both: a wasm component and a js function are what the smallest possible cloud
@@ -22,9 +24,10 @@ func TestAnAssetStoreIsEnoughToRunCode(t *testing.T) {
 }
 
 func TestTheArtifactLookupIsCachedForTheDeployBudget(t *testing.T) {
+	mn := peertest.Net(t)
 	now := time.Unix(1_700_000_000, 0)
 	n, _, _ := makeNode(t,
-		Config{Services: []string{Stats, Worker}, Worker: worker.Config{PointerTTL: time.Minute}},
+		mn, Config{Services: []string{Stats, Worker}, Worker: worker.Config{PointerTTL: time.Minute}},
 		WithClock(func() time.Time { return now }))
 
 	a := &artifacts{node: n.Service}
@@ -42,7 +45,8 @@ func TestTheArtifactLookupIsCachedForTheDeployBudget(t *testing.T) {
 }
 
 func TestAFailedArtifactLookupIsNotRemembered(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Stats, Worker}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Stats, Worker}})
 
 	a := n.built
 	_, err := a.Artifact(t.Context(), "shop", "prod", "function", "res")
@@ -58,14 +62,16 @@ func TestTheDeployBudgetHasAnEffectiveValue(t *testing.T) {
 }
 
 func TestTheWorkerResolvesArtifactsFromBuildsRecords(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Stats, Worker}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Stats, Worker}})
 	require.Same(t, n.built, n.Artifacts(), "plm's records on its node")
 	require.Equal(t, n.built, n.PLMArtifacts())
 }
 
 func TestAnInjectedTierWins(t *testing.T) {
+	mn := peertest.Net(t)
 	injected := &tier{name: "wasm"}
-	n, _, _ := makeNode(t, Config{Services: []string{Stats, Worker}}, WithRuntimes(injected))
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Stats, Worker}}, WithRuntimes(injected))
 
 	// One wasm, and it is the injected one; js is still built, because nothing
 	// else answers for it.

@@ -48,9 +48,9 @@ func (s shared) Database(name string) (kvdb.Instance, error) {
 	return kvdbmock.New().New(nil, name, 0)
 }
 
-func newNode(t *testing.T, running ...any) *node {
+func newNode(t *testing.T, mn *peer.Mocknet, running ...any) *node {
 	t.Helper()
-	p := peertest.Mock(t, t.Context())
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	n := &node{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond})}
 	for _, r := range running {
@@ -60,7 +60,8 @@ func newNode(t *testing.T, running ...any) *node {
 }
 
 func TestAuthStartsFromItsNodeAndServesItsProtocolThere(t *testing.T) {
-	n := newNode(t, shared{})
+	mn := peertest.Net(t)
+	n := newNode(t, mn, shared{})
 	s := New()
 	t.Cleanup(func() { s.Close() })
 	require.NoError(t, s.Start(t.Context(), n))
@@ -74,8 +75,9 @@ func TestAuthStartsFromItsNodeAndServesItsProtocolThere(t *testing.T) {
 }
 
 func TestTheProjectTableIsAuthsOwnBesideIt(t *testing.T) {
+	mn := peertest.Net(t)
 	require.Equal(t, Protocol, projects.Protocol, "the table is served on auth's listener")
-	n := newNode(t, shared{})
+	n := newNode(t, mn, shared{})
 	s := New()
 	t.Cleanup(func() { s.Close() })
 	require.NoError(t, s.Start(t.Context(), n))
@@ -90,7 +92,8 @@ func TestTheProjectTableIsAuthsOwnBesideIt(t *testing.T) {
 }
 
 func TestAuthWithNoStoreKeepsNoTable(t *testing.T) {
-	p := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	s, err := build(p.Host())
 	require.NoError(t, err)
@@ -98,7 +101,8 @@ func TestAuthWithNoStoreKeepsNoTable(t *testing.T) {
 }
 
 func TestAuthTakesTheIdentityItsNodeGivesIt(t *testing.T) {
-	n := newNode(t, shared{}, AdmitAll{})
+	mn := peertest.Net(t)
+	n := newNode(t, mn, shared{}, AdmitAll{})
 	s := New()
 	t.Cleanup(func() { s.Close() })
 	require.NoError(t, s.Start(t.Context(), n))
@@ -106,14 +110,15 @@ func TestAuthTakesTheIdentityItsNodeGivesIt(t *testing.T) {
 }
 
 func TestAuthRefusesWhatItCannotStartWith(t *testing.T) {
-	require.ErrorContains(t, New().Start(t.Context(), newNode(t)), "no databases")
-	require.ErrorContains(t, New().Start(t.Context(), newNode(t, shared{err: errors.New("disk gone")})), "disk gone")
+	mn := peertest.Net(t)
+	require.ErrorContains(t, New().Start(t.Context(), newNode(t, mn)), "no databases")
+	require.ErrorContains(t, New().Start(t.Context(), newNode(t, mn, shared{err: errors.New("disk gone")})), "disk gone")
 
-	broken := newNode(t, shared{})
+	broken := newNode(t, mn, shared{})
 	broken.config = func(any) error { return errors.New("no such key") }
 	require.ErrorContains(t, New().Start(t.Context(), broken), "no such key")
 
-	undriven := newNode(t, shared{})
+	undriven := newNode(t, mn, shared{})
 	undriven.config = func(into any) error {
 		into.(*hostConfig).Auth = Config{Forges: []ForgeApp{{Host: "code.example.com", ClientID: "c"}}}
 		return nil

@@ -12,8 +12,9 @@ import (
 )
 
 func TestNewPubSubBroadcaster(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := context.Background()
-	mockNode := peertest.Mock(t, ctx)
+	mockNode := mn.Mock(ctx)
 	defer mockNode.Close()
 
 	broadcaster, err := NewPubSubBroadcaster(ctx, mockNode, "test-topic")
@@ -33,10 +34,11 @@ func TestNewPubSubBroadcaster(t *testing.T) {
 }
 
 func TestPubSubBroadcaster_Broadcast(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mockNode := peertest.Mock(t, ctx)
+	mockNode := mn.Mock(ctx)
 	defer mockNode.Close()
 
 	broadcaster, _ := NewPubSubBroadcaster(ctx, mockNode, "test-topic")
@@ -49,10 +51,11 @@ func TestPubSubBroadcaster_Broadcast(t *testing.T) {
 }
 
 func TestPubSubBroadcaster_Next(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mockNode := peertest.Mock(t, ctx)
+	mockNode := mn.Mock(ctx)
 	defer mockNode.Close()
 
 	broadcaster, _ := NewPubSubBroadcaster(ctx, mockNode, "test-topic")
@@ -73,9 +76,10 @@ func TestPubSubBroadcaster_Next(t *testing.T) {
 }
 
 func TestPubSubBroadcaster_ContextCancellation(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 
-	mockNode := peertest.Mock(t, ctx)
+	mockNode := mn.Mock(ctx)
 	defer mockNode.Close()
 
 	broadcaster, _ := NewPubSubBroadcaster(ctx, mockNode, "test-topic-2")
@@ -92,10 +96,11 @@ func TestPubSubBroadcaster_ContextCancellation(t *testing.T) {
 }
 
 func TestPubSubBroadcaster_ConcurrentOperations(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mockNode := peertest.Mock(t, ctx)
+	mockNode := mn.Mock(ctx)
 	defer mockNode.Close()
 
 	broadcaster, _ := NewPubSubBroadcaster(ctx, mockNode, "test-topic")
@@ -124,10 +129,11 @@ func TestPubSubBroadcaster_ConcurrentOperations(t *testing.T) {
 }
 
 func TestPubSubBroadcaster_BroadcastAndReceive(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mockNode := peertest.Mock(t, ctx)
+	mockNode := mn.Mock(ctx)
 	defer mockNode.Close()
 
 	topic := "testTopic"
@@ -160,10 +166,11 @@ func TestPubSubBroadcaster_BroadcastAndReceive(t *testing.T) {
 }
 
 func TestPubSubBroadcaster_TopicRegistrationAndUnregistration(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mockNode := peertest.Mock(t, ctx)
+	mockNode := mn.Mock(ctx)
 	defer mockNode.Close()
 	topic := "testTopicRegistration"
 	on := peer.Kept[broadcasters](mockNode, broadcastersKey{})

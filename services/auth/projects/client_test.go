@@ -25,9 +25,9 @@ type node struct {
 	finding finding
 }
 
-func newNode(t *testing.T, auth ...*authmock.Auth) *node {
+func newNode(t *testing.T, mn *peer.Mocknet, auth ...*authmock.Auth) *node {
 	t.Helper()
-	p := peertest.Mock(t, t.Context())
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	n := &node{Node: p}
 	n.Served = service.NewServed(p.ID(), &n.finding, rpc.Retry{For: 50 * time.Millisecond})
@@ -59,8 +59,9 @@ const (
 )
 
 func TestAuthOnTheSameNodeIsReachedWithNoClient(t *testing.T) {
+	mn := peertest.Net(t)
 	auth := authmock.New()
-	c := projects.On(newNode(t, auth))
+	c := projects.On(newNode(t, mn, auth))
 	t.Cleanup(func() { c.Close() })
 
 	rec, err := c.LinkProject(t.Context(), projects.Link{Project: shop, Config: config, Claimant: alice})
@@ -71,17 +72,17 @@ func TestAuthOnTheSameNodeIsReachedWithNoClient(t *testing.T) {
 }
 
 // remote is a client on one node of the table auth keeps on another.
-func remote(t *testing.T) *projects.Client {
+func remote(t *testing.T, mn *peer.Mocknet) *projects.Client {
 	t.Helper()
 	ctx := t.Context()
 	auth := authmock.New()
-	far := newNode(t, auth)
+	far := newNode(t, mn, auth)
 	require.NoError(t, auth.Start(ctx, far))
 	t.Cleanup(func() { auth.Close() })
 
-	near := newNode(t)
+	near := newNode(t, mn)
 	near.finding = finding{far.ID()}
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, near.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: far.ID(), Addrs: far.Host().Addrs()}))
 
 	c := projects.On(near)
@@ -90,8 +91,9 @@ func remote(t *testing.T) *projects.Client {
 }
 
 func TestAuthOnAnotherNodeIsReachedOverItsProtocol(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	c := remote(t)
+	c := remote(t, mn)
 
 	rec, err := c.LinkProject(ctx, projects.Link{Project: shop, Config: config, Code: []string{"github.com/acme/web"}, Claimant: alice})
 	require.NoError(t, err)
@@ -125,8 +127,9 @@ func TestAuthOnAnotherNodeIsReachedOverItsProtocol(t *testing.T) {
 }
 
 func TestARefusalCrossesTheWireAsItsSentinel(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	c := remote(t)
+	c := remote(t, mn)
 	_, err := c.LinkProject(ctx, projects.Link{Project: shop, Config: config, Claimant: alice})
 	require.NoError(t, err)
 
@@ -147,7 +150,8 @@ func TestARefusalCrossesTheWireAsItsSentinel(t *testing.T) {
 }
 
 func TestNoAuthInReachIsAnError(t *testing.T) {
-	c := projects.On(newNode(t))
+	mn := peertest.Net(t)
+	c := projects.On(newNode(t, mn))
 	t.Cleanup(func() { c.Close() })
 	_, err := c.Project(t.Context(), shop)
 	require.ErrorIs(t, err, service.ErrNoneRuns)

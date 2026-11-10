@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/service"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/pkg/certificate"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/stats"
@@ -23,7 +24,8 @@ import (
 )
 
 func TestANodeRunsWhatItWasToldTo(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Stats}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register, Stats}})
 
 	require.NotNil(t, n.Register())
 	require.NotNil(t, n.Stats())
@@ -33,7 +35,8 @@ func TestANodeRunsWhatItWasToldTo(t *testing.T) {
 }
 
 func TestAnEmptyServiceListIsEveryService(t *testing.T) {
-	n, _, _ := makeNode(t, Config{})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{})
 
 	require.ElementsMatch(t, services.Default(), n.Services(), "and every service tau ships but build")
 	require.NotNil(t, n.Register())
@@ -46,23 +49,26 @@ func TestAnEmptyServiceListIsEveryService(t *testing.T) {
 }
 
 func TestAMisspelledServiceIsRefused(t *testing.T) {
-	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{"registry"}}))
+	mn := peertest.Net(t)
+	_, err := New(mockPeer(t, mn), rooted(t, Config{Services: []string{"registry"}}))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "registry")
 	require.Contains(t, err.Error(), Register, "and it says what this node can run")
 }
 
 func TestEachServiceSaysWhatItCannotStartWithout(t *testing.T) {
+	mn := peertest.Net(t)
 	_, err := New(nil, rooted(t, Config{}))
 	require.ErrorIs(t, err, ErrNoPeer, "an instance does not mint its own identity")
 
 	// A GATEWAY ROUTES FROM STATS, so a node naming one runs stats beside it.
-	n, _, _ := makeNode(t, Config{Services: []string{Gateway}})
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Gateway}})
 	require.Contains(t, n.Services(), Stats)
 }
 
 func TestWhatWasBuiltIsClosed(t *testing.T) {
-	n, _, factory := makeNode(t, Config{Services: []string{Worker}})
+	mn := peertest.Net(t)
+	n, _, factory := makeNode(t, mn, Config{Services: []string{Worker}})
 	require.NoError(t, n.Start(t.Context()))
 
 	opened, closed := factory.counts()
@@ -77,10 +83,11 @@ func TestWhatWasBuiltIsClosed(t *testing.T) {
 }
 
 func TestAHalfStartedNodeClosesWhatItMade(t *testing.T) {
+	mn := peertest.Net(t)
 	// A cloud issuing certificates with no zone: the gateway fails at its start,
 	// after the worker has opened a database.
 	acme := cm.Config{Certificate: cm.CertificateConfig{ACME: certificate.ACME{Enabled: true}}}
-	n, _, factory := makeNode(t, Config{Services: []string{Worker, Gateway}, CM: acme})
+	n, _, factory := makeNode(t, mn, Config{Services: []string{Worker, Gateway}, CM: acme})
 	require.ErrorIs(t, n.Start(t.Context()), cm.ErrNoZone)
 
 	opened, _ := factory.counts()
@@ -91,7 +98,8 @@ func TestAHalfStartedNodeClosesWhatItMade(t *testing.T) {
 }
 
 func TestStartIsOnce(t *testing.T) {
-	n, _, _ := makeNode(t, Config{})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{})
 
 	require.NoError(t, n.Start(t.Context()))
 	require.Error(t, n.Start(t.Context()), "a second listener is an error, not a leak")
@@ -99,7 +107,8 @@ func TestStartIsOnce(t *testing.T) {
 }
 
 func TestANodeReportsWhatItRuns(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register, Worker, Stats}})
 	require.NoError(t, n.Start(t.Context()))
 
 	snapshot := reported(t, n, func(stats.Node) bool { return true })
@@ -116,7 +125,8 @@ func TestANodeReportsWhatItRuns(t *testing.T) {
 }
 
 func TestAWorkerAdvertisesWhatItHolds(t *testing.T) {
-	n, _, _ := makeNode(t, Config{})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{})
 	require.NoError(t, n.Start(t.Context()))
 
 	// Publish and resolve through this node's own register, which loads the
@@ -133,7 +143,8 @@ func TestAWorkerAdvertisesWhatItHolds(t *testing.T) {
 }
 
 func TestALocalRegisterNeedsNoStream(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register, Worker, Stats}})
 	require.NoError(t, n.Start(t.Context()))
 
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
@@ -149,7 +160,8 @@ func TestALocalRegisterNeedsNoStream(t *testing.T) {
 }
 
 func TestANodeWithNoRegisterSaysSo(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Worker, Stats}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Worker, Stats}})
 	require.NoError(t, n.Start(t.Context()))
 
 	_, err := n.Worker().Resolve(t.Context(), workerTarget())
@@ -158,7 +170,8 @@ func TestANodeWithNoRegisterSaysSo(t *testing.T) {
 }
 
 func TestANodeThatFindsNoRegister(t *testing.T) {
-	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Worker}}))
+	mn := peertest.Net(t)
+	n, err := New(mockPeer(t, mn), rooted(t, Config{Services: []string{Worker}}))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.NoError(t, n.Start(t.Context()))
@@ -169,7 +182,8 @@ func TestANodeThatFindsNoRegister(t *testing.T) {
 }
 
 func TestTheGatewayIsServedByTheCaller(t *testing.T) {
-	n, _, _ := makeNode(t, Config{})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{})
 	require.NoError(t, n.Start(t.Context()))
 
 	handler := n.Handler()
@@ -184,7 +198,8 @@ func TestTheGatewayIsServedByTheCaller(t *testing.T) {
 }
 
 func TestAWholeRequestPathOnOneNode(t *testing.T) {
-	n, _, _ := makeNode(t, Config{})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{})
 	require.NoError(t, n.Start(t.Context()))
 
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
@@ -206,14 +221,16 @@ func TestAWholeRequestPathOnOneNode(t *testing.T) {
 }
 
 func TestADatabaseThatWillNotOpen(t *testing.T) {
-	n, err := New(mockPeer(t), rooted(t, Config{Services: []string{Worker}}), withKVDB(&memFactory{err: errors.New("the disk is full")}))
+	mn := peertest.Net(t)
+	n, err := New(mockPeer(t, mn), rooted(t, Config{Services: []string{Worker}}), withKVDB(&memFactory{err: errors.New("the disk is full")}))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 	require.ErrorContains(t, n.Start(t.Context()), "disk is full")
 }
 
 func TestTheAccessorsAreTheServicesItRuns(t *testing.T) {
-	bare, _, _ := makeNode(t, Config{Services: []string{Register}})
+	mn := peertest.Net(t)
+	bare, _, _ := makeNode(t, mn, Config{Services: []string{Register}})
 	require.Nil(t, bare.Secrets())
 	require.Nil(t, bare.Database())
 	require.Nil(t, bare.TLSConfig(), "no gateway, nothing to answer a handshake with")
@@ -221,7 +238,7 @@ func TestTheAccessorsAreTheServicesItRuns(t *testing.T) {
 	require.False(t, ok, "a node with no sync backing knows no queue")
 	require.Same(t, bare.Messaging(), bare.PubSub())
 
-	full, _, _ := makeNode(t, Config{Services: []string{Register, Stats, Secrets, Database, Gateway}})
+	full, _, _ := makeNode(t, mn, Config{Services: []string{Register, Stats, Secrets, Database, Gateway}})
 	require.NoError(t, full.Start(t.Context()))
 	require.Same(t, full.secrets, full.Secrets())
 	require.Same(t, full.database, full.Database())
@@ -232,8 +249,9 @@ func TestTheAccessorsAreTheServicesItRuns(t *testing.T) {
 }
 
 func TestANodeWithNoRegisterReadsNoneOfItsAnswers(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	without, _, _ := makeNode(t, Config{Services: []string{Stats}})
+	without, _, _ := makeNode(t, mn, Config{Services: []string{Stats}})
 	require.NoError(t, without.Start(ctx))
 	s := registerService.ViewsOn(without.HostOf(""))
 	t.Cleanup(func() { s.Close() })
@@ -244,7 +262,8 @@ func TestANodeWithNoRegisterReadsNoneOfItsAnswers(t *testing.T) {
 }
 
 func TestAGatewayServedOverTLSSaysSoInItsSection(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Stats, Gateway}, Sections: map[string]any{Gateway: gateway.Config{TLS: true}}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register, Stats, Gateway}, Sections: map[string]any{Gateway: gateway.Config{TLS: true}}})
 	require.NoError(t, n.Start(t.Context()))
 	require.NotNil(t, n.TLSConfig())
 }

@@ -5,6 +5,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/pkg/invoke"
 	invokesecret "github.com/taubyte/tau/pkg/invoke/secret"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
@@ -22,17 +24,18 @@ func grant(handle string, settings map[string]string) invoke.Grant {
 	}
 }
 
-func backing(t *testing.T) (wasmtier.Caches, *memFactory) {
+func backing(t *testing.T, mn *taupeer.Mocknet) (wasmtier.Caches, *memFactory) {
 	t.Helper()
 
-	n, _, factory := makeNode(t, Config{Services: []string{Worker, Stats}})
+	n, _, factory := makeNode(t, mn, Config{Services: []string{Worker, Stats}})
 	c, err := cache.New(cacheStores{node: n.Service})
 	require.NoError(t, err)
 	return c, factory
 }
 
 func TestEveryCacheSharesOneDatabase(t *testing.T) {
-	c, factory := backing(t)
+	mn := peertest.Net(t)
+	c, factory := backing(t, mn)
 	ctx := t.Context()
 
 	for _, handle := range []string{"shop/prod/QmA", "shop/prod/QmB", "other/prod/QmA"} {
@@ -51,7 +54,8 @@ func TestEveryCacheSharesOneDatabase(t *testing.T) {
 }
 
 func TestTheCacheDatabaseIsClosedWithTheNode(t *testing.T) {
-	n, _, factory := makeNode(t, Config{Services: []string{Worker, Stats}})
+	mn := peertest.Net(t)
+	n, _, factory := makeNode(t, mn, Config{Services: []string{Worker, Stats}})
 
 	c, err := cache.New(cacheStores{node: n.Service})
 	require.NoError(t, err)
@@ -64,7 +68,8 @@ func TestTheCacheDatabaseIsClosedWithTheNode(t *testing.T) {
 }
 
 func TestOneVaultServesTheWorkerAndTheTier(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register, Worker, Stats, Secrets}})
 	ctx := t.Context()
 
 	require.NoError(t, n.vault.Set(ctx, "shop", "prod", "QmStripe", []byte("sk_live")))
@@ -90,7 +95,8 @@ func TestOneVaultServesTheWorkerAndTheTier(t *testing.T) {
 }
 
 func TestAnUnsetSecretIsTheTiersArm(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register, Worker, Stats, Secrets}})
 
 	_, err := n.vault.SecretFor(t.Context(), invoke.Grant{
 		Kind: "secret", Label: "stripe", Handle: "shop/prod/QmNeverSet", Ops: []string{"get"},
@@ -99,7 +105,8 @@ func TestAnUnsetSecretIsTheTiersArm(t *testing.T) {
 }
 
 func TestAMalformedSecretHandleIsRefused(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register, Worker, Stats, Secrets}})
 
 	for _, handle := range []string{"", "shop", "shop/prod", "shop//QmStripe"} {
 		_, err := n.vault.SecretFor(t.Context(), invoke.Grant{

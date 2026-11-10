@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	logging "github.com/ipfs/go-log/v2"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 )
 
 var logger = logging.Logger("test.kvdb")
@@ -23,7 +24,8 @@ func equalStringSlices(a, b []string) bool {
 }
 
 func TestAsyncRegExp(t *testing.T) {
-	testDB, err := opener{mockPeer(t)}.New(logger, "test", 5)
+	mn := peertest.Net(t)
+	testDB, err := opener{mockPeer(t, mn)}.New(logger, "test", 5)
 	if err != nil {
 		t.Fatal(err)
 	}

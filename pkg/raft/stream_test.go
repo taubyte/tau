@@ -7,6 +7,8 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
+	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 	"gotest.tools/v3/assert"
 )
@@ -34,9 +36,9 @@ func getClusterInternal(c Cluster) *cluster {
 	return c.(*cluster)
 }
 
-func leaderService(t *testing.T) (Cluster, *raftStreamService) {
+func leaderService(t *testing.T, mn *taupeer.Mocknet) (Cluster, *raftStreamService) {
 	t.Helper()
-	cl, err := New(newMockNode(t), "/raft/test", testOptions()...)
+	cl, err := New(newMockNode(t, mn), "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
 	t.Cleanup(func() { cl.Close() })
 
@@ -50,7 +52,8 @@ func leaderService(t *testing.T) (Cluster, *raftStreamService) {
 }
 
 func TestStreamService_HandleGet(t *testing.T) {
-	cl, ss := leaderService(t)
+	mn := peertest.Net(t)
+	cl, ss := leaderService(t, mn)
 	require.NoError(t, cl.Set("testkey", []byte("testvalue"), time.Second))
 
 	resp, err := ss.Get(context.Background(), connect.NewRequest(&raftv2.GetRequest{Key: "testkey"}))
@@ -60,7 +63,8 @@ func TestStreamService_HandleGet(t *testing.T) {
 }
 
 func TestStreamService_HandleGet_NotFound(t *testing.T) {
-	_, ss := leaderService(t)
+	mn := peertest.Net(t)
+	_, ss := leaderService(t, mn)
 
 	resp, err := ss.Get(context.Background(), connect.NewRequest(&raftv2.GetRequest{Key: "nonexistent"}))
 	require.NoError(t, err)
@@ -68,14 +72,16 @@ func TestStreamService_HandleGet_NotFound(t *testing.T) {
 }
 
 func TestStreamService_HandleGet_MissingKey(t *testing.T) {
-	_, ss := leaderService(t)
+	mn := peertest.Net(t)
+	_, ss := leaderService(t, mn)
 
 	_, err := ss.Get(context.Background(), connect.NewRequest(&raftv2.GetRequest{}))
 	require.Error(t, err, "expected error for missing key")
 }
 
 func TestStreamService_HandleSet_AsLeader(t *testing.T) {
-	cl, ss := leaderService(t)
+	mn := peertest.Net(t)
+	cl, ss := leaderService(t, mn)
 
 	value := []byte("handlervalue")
 	_, err := ss.Set(context.Background(), connect.NewRequest(&raftv2.SetRequest{Key: "handlerkey", Value: value, TimeoutMs: 1000}))
@@ -87,7 +93,8 @@ func TestStreamService_HandleSet_AsLeader(t *testing.T) {
 }
 
 func TestStreamService_HandleSet_EmptyValue(t *testing.T) {
-	cl, ss := leaderService(t)
+	mn := peertest.Net(t)
+	cl, ss := leaderService(t, mn)
 
 	_, err := ss.Set(context.Background(), connect.NewRequest(&raftv2.SetRequest{Key: "empty", Value: []byte{}}))
 	require.NoError(t, err)
@@ -98,21 +105,24 @@ func TestStreamService_HandleSet_EmptyValue(t *testing.T) {
 }
 
 func TestStreamService_HandleSet_MissingKey(t *testing.T) {
-	_, ss := leaderService(t)
+	mn := peertest.Net(t)
+	_, ss := leaderService(t, mn)
 
 	_, err := ss.Set(context.Background(), connect.NewRequest(&raftv2.SetRequest{Value: []byte("v")}))
 	require.Error(t, err, "expected error for missing key")
 }
 
 func TestStreamService_HandleSet_MissingValue(t *testing.T) {
-	_, ss := leaderService(t)
+	mn := peertest.Net(t)
+	_, ss := leaderService(t, mn)
 
 	_, err := ss.Set(context.Background(), connect.NewRequest(&raftv2.SetRequest{Key: "k"}))
 	require.Error(t, err, "expected error for missing value")
 }
 
 func TestStreamService_HandleDelete_AsLeader(t *testing.T) {
-	cl, ss := leaderService(t)
+	mn := peertest.Net(t)
+	cl, ss := leaderService(t, mn)
 	require.NoError(t, cl.Set("delkey", []byte("delvalue"), time.Second))
 
 	_, err := ss.Delete(context.Background(), connect.NewRequest(&raftv2.DeleteRequest{Key: "delkey", TimeoutMs: 1000}))
@@ -123,14 +133,16 @@ func TestStreamService_HandleDelete_AsLeader(t *testing.T) {
 }
 
 func TestStreamService_HandleDelete_MissingKey(t *testing.T) {
-	_, ss := leaderService(t)
+	mn := peertest.Net(t)
+	_, ss := leaderService(t, mn)
 
 	_, err := ss.Delete(context.Background(), connect.NewRequest(&raftv2.DeleteRequest{}))
 	require.Error(t, err, "expected error for missing key")
 }
 
 func TestStreamService_HandleKeys(t *testing.T) {
-	cl, ss := leaderService(t)
+	mn := peertest.Net(t)
+	cl, ss := leaderService(t, mn)
 	for _, key := range []string{"prefix/a", "prefix/b", "other/c"} {
 		require.NoError(t, cl.Set(key, []byte("value"), time.Second))
 	}
@@ -141,7 +153,8 @@ func TestStreamService_HandleKeys(t *testing.T) {
 }
 
 func TestStreamService_HandleKeys_NoPrefix(t *testing.T) {
-	cl, ss := leaderService(t)
+	mn := peertest.Net(t)
+	cl, ss := leaderService(t, mn)
 	require.NoError(t, cl.Set("key1", []byte("value"), time.Second))
 
 	resp, err := ss.Keys(context.Background(), connect.NewRequest(&raftv2.KeysRequest{}))
@@ -150,7 +163,8 @@ func TestStreamService_HandleKeys_NoPrefix(t *testing.T) {
 }
 
 func TestStreamService_HandleClusterInfo(t *testing.T) {
-	cl, ss := leaderService(t)
+	mn := peertest.Net(t)
+	cl, ss := leaderService(t, mn)
 
 	resp, err := ss.ClusterInfo(context.Background(), connect.NewRequest(&raftv2.ClusterInfoRequest{}))
 	require.NoError(t, err)
@@ -161,7 +175,8 @@ func TestStreamService_HandleClusterInfo(t *testing.T) {
 }
 
 func TestStreamService_Stop(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -177,7 +192,8 @@ func TestStreamService_Stop(t *testing.T) {
 }
 
 func TestStreamService_HandleExchangePeers_WithTracker(t *testing.T) {
-	cl, ss := leaderService(t)
+	mn := peertest.Net(t)
+	cl, ss := leaderService(t, mn)
 	c := getClusterInternal(cl)
 	require.NotNil(t, c.current().tracker, "peer tracker should be initialized")
 
@@ -194,7 +210,8 @@ func TestStreamService_HandleExchangePeers_WithTracker(t *testing.T) {
 }
 
 func TestStreamService_ForwardToLeader_NoLeader(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")

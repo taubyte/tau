@@ -67,7 +67,8 @@ func survivorsOf(t *testing.T, group []Cluster, key string, keep int) []*cluster
 // A GROUP THAT LOST ITS QUORUM FOR GOOD LEADS AGAIN WHEN TOLD TO, with nobody to
 // restart it: the member that remains forms a new group carrying what it holds.
 func TestHealing_AGroupThatLostItsQuorumRecoversWhenToldTo(t *testing.T) {
-	group := joinedGroup(t, "quorum-recovers", sameStore, 3, WithQuorumLossRecovery(500*time.Millisecond), probingEvery(50*time.Millisecond))
+	mn := peertest.Net(t)
+	group := joinedGroup(t, mn, "quorum-recovers", sameStore, 3, WithQuorumLossRecovery(500*time.Millisecond), probingEvery(50*time.Millisecond))
 	leaderTook(t, group, func(l Cluster) error { return l.Set("kept", []byte("v"), 5*time.Second) })
 	survivor := survivorsOf(t, group, "kept", 1)[0]
 	formed := survivor.current().raft.Formation()
@@ -83,7 +84,8 @@ func TestHealing_AGroupThatLostItsQuorumRecoversWhenToldTo(t *testing.T) {
 // A GROUP LEFT TO MANUAL RECOVERY WAITS for its members however long they are
 // gone.
 func TestHealing_AGroupLeftToManualRecoveryWaits(t *testing.T) {
-	group := joinedGroup(t, "quorum-waits", sameStore, 3, probingEvery(50*time.Millisecond))
+	mn := peertest.Net(t)
+	group := joinedGroup(t, mn, "quorum-waits", sameStore, 3, probingEvery(50*time.Millisecond))
 	leaderTook(t, group, func(l Cluster) error { return l.Set("kept", []byte("v"), 5*time.Second) })
 	survivor := survivorsOf(t, group, "kept", 1)[0]
 	formed := survivor.current().raft.Formation()
@@ -98,7 +100,8 @@ func TestHealing_AGroupLeftToManualRecoveryWaits(t *testing.T) {
 // THE MEMBERS THAT REMAIN END UP IN ONE GROUP: the lowest forms it, and takes the
 // others with their state.
 func TestHealing_TheMembersThatRemainOfALostQuorumEndUpInOneGroup(t *testing.T) {
-	group := joinedGroup(t, "quorum-two-remain", sameStore, 5, WithQuorumLossRecovery(500*time.Millisecond), probingEvery(50*time.Millisecond))
+	mn := peertest.Net(t)
+	group := joinedGroup(t, mn, "quorum-two-remain", sameStore, 5, WithQuorumLossRecovery(500*time.Millisecond), probingEvery(50*time.Millisecond))
 	leaderTook(t, group, func(l Cluster) error { return l.Set("kept", []byte("v"), 5*time.Second) })
 	survivors := survivorsOf(t, group, "kept", 2)
 	formed := survivors[0].current().raft.Formation()
@@ -131,13 +134,14 @@ func TestHealing_TheMembersThatRemainOfALostQuorumEndUpInOneGroup(t *testing.T) 
 // with another group in sight: joining that one, it would lead nothing to merge
 // its archive into.
 func TestHealing_AMemberThatStoppedWhileFormingFormsWithWhatItCarried(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "quorum-archive-replayed"
-	other, err := New(newMockNode(t), namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
+	other, err := New(newMockNode(t, mn), namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	t.Cleanup(func() { other.Close() })
 	waitLeader(t, other, 5*time.Second)
-	node := newMockNode(t)
-	require.NoError(t, peertest.LinkAll(t))
+	node := newMockNode(t, mn)
+	require.NoError(t, mn.LinkAll())
 	connected(t, node, other)
 	data, err := encodeMergeCommand(map[string]CRDTEntry{
 		"carried": {Value: []byte("v"), Timestamp: 1, WallClock: time.Now().UnixNano()},
@@ -165,9 +169,10 @@ func TestManualRecoveryIsWrittenAsManual(t *testing.T) {
 // AN ARCHIVE THE STORE CANNOT READ, MERGE OR LET GO OF IS KEPT, and replayed once
 // it can be: what a member carried out of a lost formation is its only copy.
 func TestHealing_AnArchiveTheStoreRefusesIsReplayedOnceItCan(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "archive-refused"
 	store := newFaultStore()
-	node := storeNode{Node: newMockNode(t), store: store}
+	node := storeNode{Node: newMockNode(t, mn), store: store}
 	data, err := encodeMergeCommand(map[string]CRDTEntry{
 		"carried": {Value: []byte("v"), Timestamp: 1, WallClock: time.Now().UnixNano()},
 	})
@@ -206,6 +211,7 @@ func TestHealing_AnArchiveTheStoreRefusesIsReplayedOnceItCan(t *testing.T) {
 // that names it lets it go. A group that took the member without it had it wipe,
 // form again with the archive, and be taken again, round and round.
 func TestHealing_AMemberCarryingAnArchiveHandsItOverWithItsState(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "archive-handed-over"
 	data, err := encodeMergeCommand(map[string]CRDTEntry{
 		"carried": {Value: []byte("v"), Timestamp: 1, WallClock: time.Now().UnixNano()},
@@ -213,7 +219,7 @@ func TestHealing_AMemberCarryingAnArchiveHandsItOverWithItsState(t *testing.T) {
 	require.NoError(t, err)
 	// The member cannot land the archive in its own group, so it still carries it
 	// when it is taken, as one taken before its first election does.
-	cl, cli := callerOf(t, namespace, func(ds.Batching) ds.Batching {
+	cl, cli := callerOf(t, mn, namespace, func(ds.Batching) ds.Batching {
 		store := newFaultStore()
 		require.NoError(t, store.Put(t.Context(), ds.NewKey(path.Join(RaftStoragePrefix, namespace, "archive")), data))
 		store.failPut(path.Join(RaftStoragePrefix, namespace, "data", "carried"), errNoSpace)
@@ -242,9 +248,10 @@ func TestHealing_AMemberCarryingAnArchiveHandsItOverWithItsState(t *testing.T) {
 // later entry of each key winning: a member that lost a quorum again before its
 // archive was in archived its state alone, over the archive it carried.
 func TestHealing_WhatAMemberHoldsFoldsInItsArchive(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "holding-folds"
 	store := newFaultStore()
-	c := &cluster{Node: storeNode{Node: newMockNode(t), store: store}, namespace: namespace, ctx: t.Context()}
+	c := &cluster{Node: storeNode{Node: newMockNode(t, mn), store: store}, namespace: namespace, ctx: t.Context()}
 	m := &member{fsm: newKVFSM(t.Context(), store, path.Join(RaftStoragePrefix, namespace))}
 	set, err := encodeSetCommand("held", []byte("new"))
 	require.NoError(t, err)
@@ -280,6 +287,7 @@ func TestHealing_WhatAMemberHoldsFoldsInItsArchive(t *testing.T) {
 // A SURVIVOR THAT CANNOT ARCHIVE WHAT IT HOLDS WIPES NOTHING, and forms its new
 // group once it can.
 func TestHealing_ASurvivorThatCannotArchiveWipesNothing(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "archive-not-written"
 	probe := probingEvery(50 * time.Millisecond)
 	var stores []*faultStore
@@ -288,7 +296,7 @@ func TestHealing_ASurvivorThatCannotArchiveWipesNothing(t *testing.T) {
 		stores = append(stores, s)
 		return s
 	}
-	group := joinedGroup(t, namespace, wrap, 3, WithQuorumLossRecovery(300*time.Millisecond), probe)
+	group := joinedGroup(t, mn, namespace, wrap, 3, WithQuorumLossRecovery(300*time.Millisecond), probe)
 	leaderTook(t, group, func(l Cluster) error { return l.Set("kept", []byte("v"), 5*time.Second) })
 	archive := path.Join(RaftStoragePrefix, namespace, "archive")
 	stores[0].failPut(archive, errNoSpace)
@@ -309,9 +317,10 @@ func TestHealing_ASurvivorThatCannotArchiveWipesNothing(t *testing.T) {
 // A GROUP CARRYING AN ARCHIVE TAKES NO OUTSIDE WRITE UNTIL IT IS IN: one taken
 // before would carry a clock behind the archive's, and lose to it on replay.
 func TestHealing_AGroupCarryingAnArchiveTakesNoWriteUntilItIsIn(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "archive-gates-writes"
 	store := newFaultStore()
-	node := storeNode{Node: newMockNode(t), store: store}
+	node := storeNode{Node: newMockNode(t, mn), store: store}
 	data, err := encodeMergeCommand(map[string]CRDTEntry{
 		"carried": {Value: []byte("old"), Timestamp: 100, WallClock: time.Now().UnixNano()},
 	})
@@ -363,12 +372,13 @@ func (s *rearchiving) Get(ctx context.Context, key ds.Key) ([]byte, error) {
 
 // A REPLAY LEAVES AN ARCHIVE WRITTEN SINCE: it lets go only of the one it merged.
 func TestHealing_AReplayLeavesAnArchiveWrittenSince(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "archive-written-since"
 	first, err := encodeMergeCommand(map[string]CRDTEntry{"a": {Value: []byte("v"), Timestamp: 1}})
 	require.NoError(t, err)
 	next, err := encodeMergeCommand(map[string]CRDTEntry{"b": {Value: []byte("v"), Timestamp: 1}})
 	require.NoError(t, err)
-	node := newMockNode(t)
+	node := newMockNode(t, mn)
 	archive := ds.NewKey(path.Join(RaftStoragePrefix, namespace, "archive"))
 	store := &rearchiving{Batching: node.Store(), key: archive, next: next}
 	cl, err := New(storeNode{Node: node, store: store}, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
@@ -390,7 +400,8 @@ func TestHealing_AReplayLeavesAnArchiveWrittenSince(t *testing.T) {
 // A MEMBER THAT HEARS OF A LEADER, or that holds nothing, recovers nothing: its
 // formation has not lost its quorum, or there is nothing to carry.
 func TestHealing_NothingRecoversWhileAMemberLeadsOrNothingIsHeld(t *testing.T) {
-	group := joinedGroup(t, "quorum-still-led", sameStore, 3, WithQuorumLossRecovery(time.Hour))
+	mn := peertest.Net(t)
+	group := joinedGroup(t, mn, "quorum-still-led", sameStore, 3, WithQuorumLossRecovery(time.Hour))
 	leader := leaderTook(t, group, func(l Cluster) error { return l.Set("kept", []byte("v"), 5*time.Second) })
 	for _, cl := range group {
 		require.Eventually(t, func() bool { _, ok := cl.Get("kept"); return ok }, 5*time.Second, 10*time.Millisecond)
@@ -406,7 +417,7 @@ func TestHealing_NothingRecoversWhileAMemberLeadsOrNothingIsHeld(t *testing.T) {
 	require.Same(t, before, follower.current(), "a member that hears of a leader formed again")
 	require.False(t, follower.hasArchive())
 
-	empty, err := New(newMockNode(t), "quorum-nothing-held", WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second))
+	empty, err := New(newMockNode(t, mn), "quorum-nothing-held", WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second))
 	require.NoError(t, err)
 	t.Cleanup(func() { empty.Close() })
 	e := empty.(*cluster)
@@ -423,7 +434,8 @@ func TestHealing_NothingRecoversWhileAMemberLeadsOrNothingIsHeld(t *testing.T) {
 // and the quorum-loss recovery the healer should have run next waited behind three of
 // them for half a minute.
 func TestHealing_MeetingPeersThatClosedHoldsTheHealerACheckEach(t *testing.T) {
-	group := joinedGroup(t, "probe-closed", sameStore, 4, probingEvery(50*time.Millisecond))
+	mn := peertest.Net(t)
+	group := joinedGroup(t, mn, "probe-closed", sameStore, 4, probingEvery(50*time.Millisecond))
 	leader := leaderOf(t, group...).(*cluster)
 	var closed []Cluster
 	for _, cl := range group {

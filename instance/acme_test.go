@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/pkg/certificate"
 	"github.com/taubyte/tau/pkg/certificate/acme"
 	"github.com/taubyte/tau/services/cm"
@@ -15,16 +16,17 @@ import (
 )
 
 func TestACloudIssuingCertificatesNeedsItsZoneAndAWorkableConfig(t *testing.T) {
+	mn := peertest.Net(t)
 	on := cm.Config{Certificate: cm.CertificateConfig{ACME: certificate.ACME{Enabled: true}}}
 
 	// A GATEWAY with no zone cannot say what it issues, and cm keeps nothing for it.
-	edge, _, _ := makeNode(t, Config{Services: []string{Register, Stats, Gateway}, CM: on})
+	edge, _, _ := makeNode(t, mn, Config{Services: []string{Register, Stats, Gateway}, CM: on})
 	require.ErrorIs(t, edge.Start(t.Context()), cm.ErrNoZone)
-	keeper, _, _ := makeNode(t, Config{Services: []string{Stats, Secrets, CM}, CM: on})
+	keeper, _, _ := makeNode(t, mn, Config{Services: []string{Stats, Secrets, CM}, CM: on})
 	require.ErrorIs(t, keeper.Start(t.Context()), cm.ErrNoZone)
 
 	cfg := Config{Services: []string{Register, Stats, Secrets, Gateway, DNS, CM}, CM: on, CloudFqdn: "tau.example.io"}
-	n, _, _ := makeNode(t, cfg)
+	n, _, _ := makeNode(t, mn, cfg)
 	require.NoError(t, n.Start(t.Context()))
 	secure, err := n.ServiceTLS()
 	require.NoError(t, err)
@@ -32,7 +34,7 @@ func TestACloudIssuingCertificatesNeedsItsZoneAndAWorkableConfig(t *testing.T) {
 	require.NotNil(t, cm.On(&added{node: n}).Store(), "a cm node hosts the store")
 
 	cfg.CM.Certificate.ACME.EAB.KeyID = "half"
-	half, _, _ := makeNode(t, cfg)
+	half, _, _ := makeNode(t, mn, cfg)
 	require.ErrorContains(t, half.Start(t.Context()), "external account binding")
 }
 
@@ -44,7 +46,8 @@ func accountKey(t *testing.T) string {
 }
 
 func TestBuildServesTLSWhenTheCloudIssues(t *testing.T) {
-	n, _, _ := makeNode(t, Config{
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{
 		Services:  []string{Stats, PLM},
 		Sections:  map[string]any{PLM: ingress.Config{Listen: "127.0.0.1:0"}},
 		CloudFqdn: "tau.example.io",
@@ -68,7 +71,7 @@ func TestBuildServesTLSWhenTheCloudIssues(t *testing.T) {
 	require.NotNil(t, secure.GetCertificate)
 
 	// A CLOUD THAT ISSUES NOTHING serves its frontend as it did.
-	plain, _, _ := makeNode(t, Config{Services: []string{Stats, PLM}, Sections: map[string]any{PLM: ingress.Config{Listen: "127.0.0.1:0"}}})
+	plain, _, _ := makeNode(t, mn, Config{Services: []string{Stats, PLM}, Sections: map[string]any{PLM: ingress.Config{Listen: "127.0.0.1:0"}}})
 	secure, err = plain.ServiceTLS()
 	require.NoError(t, err)
 	require.Nil(t, secure)

@@ -10,7 +10,8 @@ import (
 )
 
 func TestTheTableIsTheRegisterBesideIt(t *testing.T) {
-	n := mockNode(t)
+	mn := peertest.Net(t)
+	n := mockNode(t, mn)
 	s := startRegister(t, n)
 
 	table := TableOn(n)
@@ -23,10 +24,11 @@ func TestTheTableIsTheRegisterBesideIt(t *testing.T) {
 }
 
 func TestTheTableReachesARegisterElsewhere(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	at, from := mockNode(t), mockNode(t)
+	at, from := mockNode(t, mn), mockNode(t, mn)
 	startRegister(t, at)
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, from.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: at.ID(), Addrs: at.Host().Addrs()}))
 	from.finding = finding{at.ID()}
 

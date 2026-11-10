@@ -58,9 +58,9 @@ func (on) Now() time.Time { return time.Now() }
 
 var _ service.Host = on{}
 
-func newNode(t *testing.T) *node {
+func newNode(t *testing.T, mn *peer.Mocknet) *node {
 	t.Helper()
-	p := peertest.Mock(t, t.Context())
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	return &node{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond}), root: t.TempDir(), sections: map[string]func(any) error{}}
 }
@@ -79,8 +79,9 @@ func (n *node) start(t *testing.T, name string, s service.Service) {
 }
 
 func TestPrimitivesRunsFromWhatItsInstanceGivesIt(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	n := newNode(t)
+	n := newNode(t, mn)
 	n.beside("", groupsOn{node: n.Node, root: n.root})
 	reg := register.New()
 	n.start(t, register.Descriptor.Name, reg)
@@ -121,7 +122,8 @@ func TestPrimitivesRunsFromWhatItsInstanceGivesIt(t *testing.T) {
 }
 
 func TestPrimitivesRefusesWhatItCannotStartWith(t *testing.T) {
-	n := newNode(t)
+	mn := peertest.Net(t)
+	n := newNode(t, mn)
 	require.ErrorIs(t, New().Start(t.Context(), on{node: n, name: Descriptor.Name}), ErrNoConsensus)
 
 	n.sections[Descriptor.Name] = func(any) error { return errors.New("no such key") }
@@ -143,7 +145,8 @@ func TestPrimitivesRefusesWhatItCannotStartWith(t *testing.T) {
 }
 
 func TestTheClockIsDialledAsItsTasking(t *testing.T) {
-	a, b := newNode(t), newNode(t)
+	mn := peertest.Net(t)
+	a, b := newNode(t, mn), newNode(t, mn)
 	c, err := dialClocks(a.Host(), b.ID())
 	require.NoError(t, err)
 	c.(*Client).Close()

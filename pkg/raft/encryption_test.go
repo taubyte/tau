@@ -13,6 +13,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
 	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 	"google.golang.org/protobuf/proto"
 	"gotest.tools/v3/assert"
@@ -41,10 +42,11 @@ func sealedOn(t *testing.T, node taupeer.Node, namespace string, gcm cipher.AEAD
 // A GROUP'S MESSAGES ARE SEALED UNDER ITS KEY: members holding it replicate, and a
 // member holding another reads none of it.
 func TestAGroupsMessagesAreSealedUnderItsKey(t *testing.T) {
+	mn := peertest.Net(t)
 	key, other := make([]byte, AESKeySize), make([]byte, AESKeySize)
 	rand.Read(key)
 	rand.Read(other)
-	nodes := linked(t, 3)
+	nodes := linked(t, mn, 3)
 
 	leader := sealedOn(t, nodes[0], "sealed", keyToCipher(t, key))
 	same := sealedOn(t, nodes[1], "sealed", keyToCipher(t, key))
@@ -75,10 +77,11 @@ func TestAGroupsMessagesAreSealedUnderItsKey(t *testing.T) {
 }
 
 func TestCluster_WithEncryption(t *testing.T) {
+	mn := peertest.Net(t)
 	key := make([]byte, AESKeySize)
 	rand.Read(key)
 
-	node := newMockNode(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/encrypted-test", WithEncryptionKey(key), WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err, "failed to create encrypted cluster")
@@ -107,10 +110,11 @@ func TestCluster_WithEncryption(t *testing.T) {
 }
 
 func TestCluster_Encryption_Transport(t *testing.T) {
+	mn := peertest.Net(t)
 	key := make([]byte, AESKeySize)
 	rand.Read(key)
 
-	node := newMockNode(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/transport-enc-test", WithEncryptionKey(key), WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err, "failed to create encrypted cluster")

@@ -13,7 +13,8 @@ import (
 )
 
 func TestNewClient(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	client, err := NewClient(node, "/raft/test", nil)
 	require.NoError(t, err, "failed to create client")
@@ -29,7 +30,8 @@ func TestSentinel_RestoresWhatCrossedTheWireAsText(t *testing.T) {
 }
 
 func TestClient_Close(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	client, err := NewClient(node, "/raft/test", nil)
 	require.NoError(t, err, "failed to create client")
@@ -40,7 +42,8 @@ func TestClient_Close(t *testing.T) {
 }
 
 func TestClient_SetGetDelete_Integration(t *testing.T) {
-	cl, cli := callerOf(t, "client-round-trip", sameStore)
+	mn := peertest.Net(t)
+	cl, cli := callerOf(t, mn, "client-round-trip", sameStore)
 	member := idOf(cl)
 
 	require.NoError(t, cli.Set("client/a", []byte("a"), time.Second, member))
@@ -65,9 +68,10 @@ func TestClient_SetGetDelete_Integration(t *testing.T) {
 }
 
 func TestClient_ExchangePeers(t *testing.T) {
-	cl, cli := callerOf(t, "client-exchange-seen", sameStore)
-	seen := newMockNode(t)
-	require.NoError(t, peertest.LinkAll(t))
+	mn := peertest.Net(t)
+	cl, cli := callerOf(t, mn, "client-exchange-seen", sameStore)
+	seen := newMockNode(t, mn)
+	require.NoError(t, mn.LinkAll())
 
 	_, theirPeers, err := cli.ExchangePeers(time.Now(), map[string]int64{
 		cli.ID().String():  0,
@@ -81,14 +85,15 @@ func TestClient_ExchangePeers(t *testing.T) {
 }
 
 func TestClient_WithEncryption(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "client-encrypted"
 	key := make([]byte, 32)
 	for i := range key {
 		key[i] = byte(i)
 	}
-	member := newMockNode(t)
-	caller := newMockNode(t)
-	require.NoError(t, peertest.LinkAll(t))
+	member := newMockNode(t, mn)
+	caller := newMockNode(t, mn)
+	require.NoError(t, mn.LinkAll())
 
 	cl, err := New(member, namespace, WithEncryptionKey(key),
 		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())

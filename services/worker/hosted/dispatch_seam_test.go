@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	primitivesService "github.com/taubyte/tau/services/primitives"
@@ -58,7 +59,8 @@ func TestWhichRefusalsAreOrdinary(t *testing.T) {
 }
 
 func TestADispatcherWithNoWorkerDeliversNothing(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register}})
 	require.Zero(t, (&dispatcher{node: n.Service}).step(t.Context()))
 }
 
@@ -83,7 +85,8 @@ func TestARefusedSettlementIsNotRetried(t *testing.T) {
 }
 
 func TestAHandleThatNamesNoQueueHasNoDepth(t *testing.T) {
-	n, _ := consuming(t, &answering{name: "wasm", status: 200}, compiled())
+	mn := peertest.Net(t)
+	n, _ := consuming(t, mn, &answering{name: "wasm", status: 200}, compiled())
 	require.NotNil(t, n.syncs)
 	ready, claimed, ok := n.QueueDepth("not a handle")
 	require.False(t, ok)

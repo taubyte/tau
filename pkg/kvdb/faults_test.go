@@ -713,8 +713,9 @@ func TestAdoptingHeadsBeforeSyncing(t *testing.T) {
 }
 
 func TestKVDatabaseSurface(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := context.Background()
-	node := peertest.Mock(t, ctx)
+	node := mn.Mock(ctx)
 	defer node.Close()
 	f := opener{node}
 	db, err := f.New(logging.Logger("kv"), "surface", 1)

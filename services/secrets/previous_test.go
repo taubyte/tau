@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 )
 
 type manualClock struct {
@@ -27,8 +28,9 @@ func (c *manualClock) advance(d time.Duration) {
 }
 
 func TestTheReplacedVersionIsServedUntilItsRetentionEnds(t *testing.T) {
+	mn := peertest.Net(t)
 	clock := &manualClock{at: time.Now()}
-	srv, client, _ := single(t, withClock(clock.now), withReplacedRetention(time.Hour))
+	srv, client, _ := single(t, mn, withClock(clock.now), withReplacedRetention(time.Hour))
 	ctx := t.Context()
 	r := Ref{Scope: Project("p", "e"), Name: "hook"}
 
@@ -62,7 +64,8 @@ func TestTheReplacedVersionIsServedUntilItsRetentionEnds(t *testing.T) {
 }
 
 func TestPreviousRefusesAnInvalidRef(t *testing.T) {
-	_, client, _ := single(t)
+	mn := peertest.Net(t)
+	_, client, _ := single(t, mn)
 	_, _, err := client.Previous(t.Context(), Ref{Scope: Project("p", "e"), Name: "a/b"})
 	require.ErrorIs(t, err, ErrInvalidRef)
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	secretsService "github.com/taubyte/tau/services/secrets"
 )
@@ -14,7 +15,8 @@ import (
 // reads.
 
 func TestTheDevelopersHalfWritesWhereTheRequestPathReads(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register, Worker, Stats, Secrets}})
 	require.NoError(t, n.Start(t.Context()))
 	v := n.Vault()
 	require.NoError(t, v.Set(t.Context(), "shop", "prod", secretID, []byte("sk_live")))
@@ -41,8 +43,9 @@ func TestTheDevelopersHalfWritesWhereTheRequestPathReads(t *testing.T) {
 }
 
 func TestTheWriteHalfGoesToWhicheverNodeHoldsTheVault(t *testing.T) {
+	mn := peertest.Net(t)
 	nodes := fleet(t,
-		Config{Services: []string{Register, Secrets, Stats}},
+		mn, Config{Services: []string{Register, Secrets, Stats}},
 		Config{Services: []string{Worker, Stats}},
 	)
 	holder, frontend := nodes[0], nodes[1]
@@ -69,7 +72,8 @@ func TestTheWriteHalfGoesToWhicheverNodeHoldsTheVault(t *testing.T) {
 }
 
 func TestAWriteWithNoVaultAnywhereIsRefused(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register}})
 	require.NoError(t, n.Start(t.Context()))
 
 	// This node runs no vault and finds no node running one, so the
@@ -88,8 +92,9 @@ func TestAWriteWithNoVaultAnywhereIsRefused(t *testing.T) {
 }
 
 func TestInitWritesTheCloudsSecretsTheNodeThenServes(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	p := mockPeer(t)
+	p := mockPeer(t, mn)
 	root := t.TempDir()
 
 	ref := secretsService.Ref{Scope: secretsService.Cloud("auth"), Name: "pepper"}

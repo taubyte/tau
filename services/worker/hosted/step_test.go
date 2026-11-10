@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/pkg/invoke"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	primitivesService "github.com/taubyte/tau/services/primitives"
@@ -75,10 +77,10 @@ func withStepFunction() []byte {
 }
 
 // stepping is a node whose worker answers, and the dispatcher over it.
-func stepping(t *testing.T, answers *answering) (*node, *dispatcher) {
+func stepping(t *testing.T, mn *taupeer.Mocknet, answers *answering) (*node, *dispatcher) {
 	t.Helper()
 
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Primitives}},
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register, Worker, Stats, Primitives}},
 		WithRuntimes(answers), prebuilt())
 
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
@@ -98,8 +100,9 @@ func stepping(t *testing.T, answers *answering) (*node, *dispatcher) {
 }
 
 func TestAStepInvokesThenSends(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", status: 200}
-	n, d := stepping(t, answers)
+	n, d := stepping(t, mn, answers)
 
 	require.NoError(t, d.runStep(t.Context(), stepConsumer(true), delivery("order-1", []byte("an order"))))
 
@@ -116,8 +119,9 @@ func TestAStepInvokesThenSends(t *testing.T) {
 }
 
 func TestTheRunKeepsItsIdAcrossSteps(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", status: 200}
-	n, d := stepping(t, answers)
+	n, d := stepping(t, mn, answers)
 
 	consumer := stepConsumer(true)
 	require.NoError(t, d.runStep(t.Context(), consumer, delivery("order-1", []byte("x"))))
@@ -128,16 +132,18 @@ func TestTheRunKeepsItsIdAcrossSteps(t *testing.T) {
 }
 
 func TestTheLastStepEndsTheRun(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", status: 200}
-	_, d := stepping(t, answers)
+	_, d := stepping(t, mn, answers)
 
 	require.NoError(t, d.runStep(t.Context(), stepConsumer(false), delivery("order-1", []byte("x"))))
 	require.Len(t, answers.seen(), 1)
 }
 
 func TestAFailedStepIsTheQueuesBusiness(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", status: 500}
-	n, d := stepping(t, answers)
+	n, d := stepping(t, mn, answers)
 
 	err := d.runStep(t.Context(), stepConsumer(true), delivery("order-1", []byte("x")))
 	require.Error(t, err)
@@ -148,15 +154,17 @@ func TestAFailedStepIsTheQueuesBusiness(t *testing.T) {
 }
 
 func TestAStepWhoseFunctionCannotRunFails(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", fail: true}
-	_, d := stepping(t, answers)
+	_, d := stepping(t, mn, answers)
 
 	require.Error(t, d.runStep(t.Context(), stepConsumer(true), delivery("order-1", []byte("x"))))
 }
 
 func TestAWaitOnlyStepHandsTheItemOn(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", status: 200}
-	n, d := stepping(t, answers)
+	n, d := stepping(t, mn, answers)
 
 	consumer := stepConsumer(true)
 	consumer.Invokes = nil
@@ -172,8 +180,9 @@ func TestAWaitOnlyStepHandsTheItemOn(t *testing.T) {
 }
 
 func TestADriverWithNoTargetAndNoNextFails(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", status: 200}
-	_, d := stepping(t, answers)
+	_, d := stepping(t, mn, answers)
 
 	consumer := stepConsumer(false)
 	consumer.Invokes = nil
@@ -182,8 +191,9 @@ func TestADriverWithNoTargetAndNoNextFails(t *testing.T) {
 }
 
 func TestTheDispatcherRunsTheStepBuiltin(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", status: 200}
-	n, d := stepping(t, answers)
+	n, d := stepping(t, mn, answers)
 
 	consumer := stepConsumer(true)
 	require.NoError(t, n.syncs.Send(t.Context(), consumer.Queue, "order-1", []byte("an order")))

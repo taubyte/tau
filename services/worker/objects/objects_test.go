@@ -111,9 +111,9 @@ func (s *served) Current(ctx context.Context, at storage.Address, name string) (
 	return s.Store.Current(ctx, at, name)
 }
 
-func serving(t *testing.T) *served {
+func serving(t *testing.T, mn *peer.Mocknet) *served {
 	t.Helper()
-	p := peertest.Mock(t, t.Context())
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	n := &node{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond}), root: t.TempDir()}
 	n.Serve(settings.Protocol, cmmock.New(settings.Defaults()))
@@ -136,9 +136,9 @@ func bucketGrant(handle string, size int64) invoke.Grant {
 	}
 }
 
-func opened(t *testing.T, size int64) (wasmtier.Bucket, *served) {
+func opened(t *testing.T, mn *peer.Mocknet, size int64) (wasmtier.Bucket, *served) {
 	t.Helper()
-	store := serving(t)
+	store := serving(t, mn)
 	b, err := objects.New(store)
 	require.NoError(t, err)
 	bucket, err := b.OpenBucket(t.Context(), bucketGrant("shop/prod/QmBucket", size))
@@ -150,7 +150,8 @@ func opened(t *testing.T, size int64) (wasmtier.Bucket, *served) {
 // every version kept, any other has the storage service collect what it replaces, and
 // lifecycle.expire is how long each version lives.
 func TestABucketsVersioningAndExpiryReachItsPuts(t *testing.T) {
-	store := serving(t)
+	mn := peertest.Net(t)
+	store := serving(t, mn)
 	b, err := objects.New(store)
 	require.NoError(t, err)
 	grant := bucketGrant("shop/prod/QmVersioned", 0)
@@ -173,18 +174,20 @@ func TestABucketsVersioningAndExpiryReachItsPuts(t *testing.T) {
 }
 
 func TestABucketNeedsAStorageService(t *testing.T) {
+	mn := peertest.Net(t)
 	_, err := objects.New(nil)
 	require.Error(t, err)
 
-	b, err := objects.New(serving(t))
+	b, err := objects.New(serving(t, mn))
 	require.NoError(t, err)
 	_, err = b.OpenBucket(t.Context(), bucketGrant("not-a-handle", 0))
 	require.Error(t, err, "a handle that names no bucket")
 }
 
 func TestAnObjectIsItsBytesAndItsEtagIsItsContent(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	bucket, _ := opened(t, 0)
+	bucket, _ := opened(t, mn, 0)
 
 	etag, err := bucket.Put(ctx, "receipts/1", []byte("paid"), "text/plain", []wasmtier.Metadata{{Name: "b", Value: "2"}, {Name: "a", Value: "1"}, {Name: "a", Value: "last"}})
 	require.NoError(t, err)
@@ -212,8 +215,9 @@ func TestAnObjectIsItsBytesAndItsEtagIsItsContent(t *testing.T) {
 }
 
 func TestADeletedObjectIsGoneAndAMissingOneIsAMiss(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	bucket, _ := opened(t, 0)
+	bucket, _ := opened(t, mn, 0)
 	_, err := bucket.Put(ctx, "k", []byte("v"), "", nil)
 	require.NoError(t, err)
 
@@ -224,8 +228,9 @@ func TestADeletedObjectIsGoneAndAMissingOneIsAMiss(t *testing.T) {
 }
 
 func TestBucketsAreScopedByHandle(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	store := serving(t)
+	store := serving(t, mn)
 	b, err := objects.New(store)
 	require.NoError(t, err)
 	one, err := b.OpenBucket(ctx, bucketGrant("shop/prod/QmOne", 0))
@@ -240,8 +245,9 @@ func TestBucketsAreScopedByHandle(t *testing.T) {
 }
 
 func TestWhatWouldNotFitInARowIsRefused(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	bucket, _ := opened(t, 0)
+	bucket, _ := opened(t, mn, 0)
 
 	_, err := bucket.Put(ctx, "", []byte("v"), "", nil)
 	require.ErrorIs(t, err, objects.ErrNoName)
@@ -265,8 +271,9 @@ func TestWhatWouldNotFitInARowIsRefused(t *testing.T) {
 }
 
 func TestABucketRefusesToGrowPastItsSize(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	bucket, _ := opened(t, 10)
+	bucket, _ := opened(t, mn, 10)
 
 	_, err := bucket.Put(ctx, "a", []byte("123456"), "", nil)
 	require.NoError(t, err)
@@ -276,7 +283,7 @@ func TestABucketRefusesToGrowPastItsSize(t *testing.T) {
 	_, err = bucket.Put(ctx, "a", []byte("1234567890"), "", nil)
 	require.NoError(t, err, "replacing an object takes its old size off")
 
-	unbounded, _ := opened(t, 0)
+	unbounded, _ := opened(t, mn, 0)
 	_, err = unbounded.Put(ctx, "big", make([]byte, 1<<16), "", nil)
 	require.NoError(t, err, "no declared size is no ceiling")
 }
@@ -284,8 +291,9 @@ func TestABucketRefusesToGrowPastItsSize(t *testing.T) {
 // A VERSIONED BUCKET COUNTS EVERY VERSION IT KEEPS against its size: replacing an
 // object there takes nothing off, since the old version is kept.
 func TestAVersionedBucketCountsWhatItKeeps(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	store := serving(t)
+	store := serving(t, mn)
 	b, err := objects.New(store)
 	require.NoError(t, err)
 	grant := bucketGrant("shop/prod/QmKept", 10)
@@ -302,8 +310,9 @@ func TestAVersionedBucketCountsWhatItKeeps(t *testing.T) {
 }
 
 func TestAListingIsS3s(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	bucket, _ := opened(t, 0)
+	bucket, _ := opened(t, mn, 0)
 	for _, key := range []string{"a/1", "a/2", "b/1", "c", "d"} {
 		_, err := bucket.Put(ctx, key, []byte(key), "", nil)
 		require.NoError(t, err)
@@ -341,8 +350,9 @@ func TestAListingIsS3s(t *testing.T) {
 }
 
 func TestAStoreThatFailsIsNotAMiss(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	bucket, store := opened(t, 10)
+	bucket, store := opened(t, mn, 10)
 	_, err := bucket.Put(ctx, "k", []byte("v"), "", nil)
 	require.NoError(t, err)
 	down := errors.New("the storage service is down")

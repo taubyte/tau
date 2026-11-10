@@ -161,8 +161,9 @@ func TestTheCatalogIsEveryInstanceWrittenOnce(t *testing.T) {
 }
 
 func TestAShardIsOneOfTheInstancesDatabases(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	p := peertest.Mock(t, ctx)
+	p := mn.Mock(ctx)
 	t.Cleanup(p.Close)
 
 	var opened []string

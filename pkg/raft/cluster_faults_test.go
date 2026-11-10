@@ -37,11 +37,12 @@ func strangerID(t *testing.T) peer.ID {
 // the member is closed: Close waits for the apply under way, and every write in
 // flight is answered, applied or not.
 func TestCluster_AWriteInFlightWhenTheRaftShutsDownIsAnswered(t *testing.T) {
+	mn := peertest.Net(t)
 	const (
 		namespace = "write-across-shutdown"
 		queued    = 10
 	)
-	node := newMockNode(t)
+	node := newMockNode(t, mn)
 	held := newHeldStore(node.Store(), ds.NewKey(path.Join(RaftStoragePrefix, namespace, "data", "held")))
 	defer held.letGo()
 	c, err := New(storeNode{Node: node, store: held}, namespace,
@@ -80,8 +81,9 @@ func TestCluster_AWriteInFlightWhenTheRaftShutsDownIsAnswered(t *testing.T) {
 }
 
 func TestCluster_AWriteTheStoreRefusesIsRefused(t *testing.T) {
+	mn := peertest.Net(t)
 	store := newFaultStore()
-	cl, err := New(storeNode{Node: newMockNode(t), store: store}, "cluster-refused-write",
+	cl, err := New(storeNode{Node: newMockNode(t, mn), store: store}, "cluster-refused-write",
 		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	defer cl.Close()
@@ -109,7 +111,8 @@ func TestCluster_AWriteTheStoreRefusesIsRefused(t *testing.T) {
 }
 
 func TestCluster_AMemberLeftAloneInAPairAcknowledgesNoWrite(t *testing.T) {
-	a, b := joinedPair(t, "cluster-left-alone", sameStore)
+	mn := peertest.Net(t)
+	a, b := joinedPair(t, mn, "cluster-left-alone", sameStore)
 
 	alone := leaderOf(t, a, b)
 	gone := a
@@ -181,7 +184,8 @@ func TestNew_RefusesWhatItCannotRun(t *testing.T) {
 		{"a key longer than AES-256 takes", WithEncryptionKey(make([]byte, 48)), "invalid key size 48"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			node := newMockNode(t)
+			mn := peertest.Net(t)
+			node := newMockNode(t, mn)
 			cl, err := New(node, "new-refuses", WithForceBootstrap(), tc.opt)
 			require.ErrorContains(t, err, tc.says)
 			require.Nil(t, cl)
@@ -223,6 +227,7 @@ func (s *writesSeen) Batch(ctx context.Context) (ds.Batch, error) {
 // gostream.Listen replaces a handler already on its protocol, so the transport
 // refuses the protocol before anything is built, and the group keeps it.
 func TestNew_ANamespaceTheNodeAlreadyRunsIsRefused(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "namespace-already-run"
 	// A leadership transfer has one election timeout to finish in.
 	timeouts := TimeoutConfig{
@@ -233,8 +238,8 @@ func TestNew_ANamespaceTheNodeAlreadyRunsIsRefused(t *testing.T) {
 		SnapshotInterval:   time.Minute,
 		SnapshotThreshold:  1000,
 	}
-	nodeA, nodeB := newMockNode(t), newMockNode(t)
-	require.NoError(t, peertest.LinkAll(t))
+	nodeA, nodeB := newMockNode(t, mn), newMockNode(t, mn)
+	require.NoError(t, mn.LinkAll())
 
 	a, err := New(nodeA, namespace, WithTimeouts(timeouts), WithForceBootstrap())
 	require.NoError(t, err)
@@ -277,8 +282,9 @@ func TestNew_ANamespaceTheNodeAlreadyRunsIsRefused(t *testing.T) {
 
 func TestNew_AFailedNewLeavesNothingRunning(t *testing.T) {
 	t.Run("a stream protocol another service holds", func(t *testing.T) {
+		mn := peertest.Net(t)
 		const namespace = "new-stream-protocol-taken"
-		node := newMockNode(t)
+		node := newMockNode(t, mn)
 		route, handler := raftv2connect.NewRaftServiceHandler(raftv2connect.UnimplementedRaftServiceHandler{})
 		mux := http.NewServeMux()
 		mux.Handle(route, handler)
@@ -299,10 +305,11 @@ func TestNew_AFailedNewLeavesNothingRunning(t *testing.T) {
 	})
 
 	t.Run("a bootstrap the store refuses", func(t *testing.T) {
+		mn := peertest.Net(t)
 		const namespace = "new-bootstrap-refused"
 		store := newFaultStore()
 		store.failPut(fmt.Sprintf("%s/%020d", path.Join(RaftStoragePrefix, namespace, "engine", "log"), 1), errNoSpace)
-		node := newMockNode(t)
+		node := newMockNode(t, mn)
 
 		cl, err := New(storeNode{Node: node, store: store}, namespace,
 			WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
@@ -313,7 +320,8 @@ func TestNew_AFailedNewLeavesNothingRunning(t *testing.T) {
 }
 
 func TestCluster_CloseReleasesAWaitForALeader(t *testing.T) {
-	a, b := joinedPair(t, "close-releases-wait", sameStore)
+	mn := peertest.Net(t)
+	a, b := joinedPair(t, mn, "close-releases-wait", sameStore)
 	removed, _ := removeTheLeader(t, a, b)
 	require.Eventually(t, func() bool {
 		_, err := removed.Leader()
@@ -338,7 +346,8 @@ func TestCluster_CloseReleasesAWaitForALeader(t *testing.T) {
 }
 
 func TestCluster_BatchAndMembershipRefuseWhatTheyCannotDo(t *testing.T) {
-	a, b := joinedPair(t, "cluster-refusals", sameStore)
+	mn := peertest.Net(t)
+	a, b := joinedPair(t, mn, "cluster-refusals", sameStore)
 	removed, left := removeTheLeader(t, a, b)
 
 	require.ErrorIs(t, left.Batch([]BatchOp{
@@ -363,8 +372,9 @@ func TestCluster_BatchAndMembershipRefuseWhatTheyCannotDo(t *testing.T) {
 // no quorum, steps down. The change it was asked for is not acknowledged, and a
 // change asked of the member once it follows is refused.
 func TestCluster_AMembershipChangeThatLosesTheLeadIsNotLeader(t *testing.T) {
+	mn := peertest.Net(t)
 	lease := time.Second
-	cl, err := New(newMockNode(t), "membership-loses-the-lead", WithTimeouts(TimeoutConfig{
+	cl, err := New(newMockNode(t, mn), "membership-loses-the-lead", WithTimeouts(TimeoutConfig{
 		HeartbeatTimeout:   lease,
 		ElectionTimeout:    lease,
 		CommitTimeout:      50 * time.Millisecond,

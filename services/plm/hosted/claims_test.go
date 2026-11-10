@@ -38,7 +38,8 @@ func (v *memVault) Set(_ context.Context, n string, b []byte) error {
 }
 
 func TestTheClaimRouteSeamSaysWhatIsMalformed(t *testing.T) {
-	p := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	h := p.Host()
 	db, err := kvdbmock.New().New(nil, "cm", 0)

@@ -67,9 +67,9 @@ func roundTrip(from, into any) error {
 	return yaml.Unmarshal(raw, into)
 }
 
-func newNode(t *testing.T, running ...any) *node {
+func newNode(t *testing.T, mn *peer.Mocknet, running ...any) *node {
 	t.Helper()
-	p := peertest.Mock(t, t.Context())
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	n := &node{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond})}
 	for _, r := range running {
@@ -111,8 +111,9 @@ func (d databases) Database(name string) (kvdb.Instance, error) {
 var issuing = cm.Config{Certificate: cm.CertificateConfig{ACME: certificate.ACME{Enabled: true}}}
 
 func TestDnsStartsFromItsNodeAndAnswersThere(t *testing.T) {
+	mn := peertest.Net(t)
 	shared := databases{f: kvdbmock.New()}
-	n := newNode(t, builders, names{"build", "auth"}, shared)
+	n := newNode(t, mn, builders, names{"build", "auth"}, shared)
 	n.cm = issuing
 	n.config = func(cfg *hostConfig) error {
 		cfg.CloudFqdn = "tau.example.io"
@@ -156,7 +157,8 @@ func TestDnsStartsFromItsNodeAndAnswersThere(t *testing.T) {
 }
 
 func TestACloudIssuingNothingAnswersNoChallenge(t *testing.T) {
-	n := newNode(t, builders, names{"build"})
+	mn := peertest.Net(t)
+	n := newNode(t, mn, builders, names{"build"})
 	n.config = func(cfg *hostConfig) error {
 		cfg.CloudFqdn = "tau.example.io"
 		return nil
@@ -170,32 +172,34 @@ func TestACloudIssuingNothingAnswersNoChallenge(t *testing.T) {
 }
 
 func TestANodeWithNoZoneAnswersNoGeneratedName(t *testing.T) {
+	mn := peertest.Net(t)
 	s := New()
 	t.Cleanup(func() { s.Close() })
-	require.NoError(t, s.Start(t.Context(), newNode(t, builders, names{"build"})))
+	require.NoError(t, s.Start(t.Context(), newNode(t, mn, builders, names{"build"})))
 	require.Nil(t, s.opts.generated)
 	require.Nil(t, s.opts.services)
 	require.Nil(t, s.opts.zones, "no worker beside it, so no authored records")
 }
 
 func TestDnsRefusesWhatItCannotStartWith(t *testing.T) {
+	mn := peertest.Net(t)
 	// Each is closed as its instance closes a service whose start failed.
 	start := func(n *node) error {
 		s := New()
 		t.Cleanup(func() { s.Close() })
 		return s.Start(t.Context(), n)
 	}
-	require.ErrorIs(t, start(newNode(t)), ErrNoRouter, "no stats beside it")
+	require.ErrorIs(t, start(newNode(t, mn)), ErrNoRouter, "no stats beside it")
 
-	broken := newNode(t, builders)
+	broken := newNode(t, mn, builders)
 	broken.config = func(*hostConfig) error { return errors.New("no such key") }
 	require.ErrorContains(t, start(broken), "no such key")
 
-	gone := newNode(t, builders, databases{err: errors.New("challenge store gone")})
+	gone := newNode(t, mn, builders, databases{err: errors.New("challenge store gone")})
 	gone.cm = issuing
 	require.ErrorContains(t, start(gone), "challenge store gone")
 
-	bad := newNode(t, builders)
+	bad := newNode(t, mn, builders)
 	bad.config = func(cfg *hostConfig) error {
 		cfg.MaxRecords = -1
 		return nil

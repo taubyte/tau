@@ -26,9 +26,9 @@ type fake struct {
 	finding finding
 }
 
-func newFake(t *testing.T, found ...libp2ppeer.ID) *fake {
+func newFake(t *testing.T, mn *peer.Mocknet, found ...libp2ppeer.ID) *fake {
 	t.Helper()
-	p := peertest.Mock(t, t.Context())
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	f := &fake{Node: p, finding: found}
 	f.Served = NewServed(p.ID(), &f.finding, rpc.Retry{For: 50 * time.Millisecond})
@@ -56,7 +56,8 @@ func (store) Close() error                      { return nil }
 const storeProtocol = "/tau/store/v2"
 
 func TestTheServiceThisNodeServesIsReachedWithNoClient(t *testing.T) {
-	h := newFake(t, "far")
+	mn := peertest.Net(t)
+	h := newFake(t, mn, "far")
 	h.Serve(storeProtocol, store{held: "here"})
 
 	dialled := 0
@@ -70,7 +71,8 @@ func TestTheServiceThisNodeServesIsReachedWithNoClient(t *testing.T) {
 }
 
 func TestAServiceThisNodeServesIsReachedAsWhatItHolds(t *testing.T) {
-	h := newFake(t, "far")
+	mn := peertest.Net(t)
+	h := newFake(t, mn, "far")
 	h.Serve(storeProtocol, store{held: "held"})
 
 	dialled := 0
@@ -81,7 +83,7 @@ func TestAServiceThisNodeServesIsReachedAsWhatItHolds(t *testing.T) {
 	require.Equal(t, answer("held"), got)
 	require.Zero(t, dialled)
 
-	elsewhere := newFake(t, "far")
+	elsewhere := newFake(t, mn, "far")
 	got, err = ReachAs(elsewhere, storeProtocol, func(s store) answer { return s.held },
 		func(host.Host, libp2ppeer.ID) (answer, error) { dialled++; return "far", nil }).Now(t.Context())
 	require.NoError(t, err)
@@ -90,7 +92,8 @@ func TestAServiceThisNodeServesIsReachedAsWhatItHolds(t *testing.T) {
 }
 
 func TestAServiceElsewhereIsDialledOnANodeDiscoveryNames(t *testing.T) {
-	h := newFake(t)
+	mn := peertest.Net(t)
+	h := newFake(t, mn)
 	h.finding = finding{h.ID(), "far"}
 
 	var at libp2ppeer.ID
@@ -108,7 +111,8 @@ func TestAServiceElsewhereIsDialledOnANodeDiscoveryNames(t *testing.T) {
 }
 
 func TestAServiceOfAnotherTypeIsNotTheOneReached(t *testing.T) {
-	h := newFake(t, "far")
+	mn := peertest.Net(t)
+	h := newFake(t, mn, "far")
 	h.Serve(storeProtocol, &recorder{})
 
 	var at libp2ppeer.ID
@@ -119,7 +123,8 @@ func TestAServiceOfAnotherTypeIsNotTheOneReached(t *testing.T) {
 }
 
 func TestANodeNamesItselfFirstForWhatItServes(t *testing.T) {
-	h := newFake(t, "far", "farther")
+	mn := peertest.Net(t)
+	h := newFake(t, mn, "far", "farther")
 	require.Equal(t, []libp2ppeer.ID{"far", "farther"}, h.Find(storeProtocol).Known())
 
 	h.Serve(storeProtocol, store{})
@@ -151,7 +156,8 @@ func TestANodeWithNoP2PFindsOnlyItself(t *testing.T) {
 }
 
 func TestRoutedWorkLeavesForANodeDiscoveryNames(t *testing.T) {
-	h := newFake(t)
+	mn := peertest.Net(t)
+	h := newFake(t, mn)
 	h.finding = finding{h.ID(), "far"}
 
 	var at libp2ppeer.ID
@@ -197,7 +203,8 @@ func (f found) Peers(context.Context, int) ([]libp2ppeer.ID, error) {
 func (found) Failed(libp2ppeer.ID) {}
 
 func TestNobodyFoundIsNobodyToAsk(t *testing.T) {
-	h := newFake(t)
+	mn := peertest.Net(t)
+	h := newFake(t, mn)
 	r := Reach(h, storeProtocol, func(host.Host, libp2ppeer.ID) (answer, error) { return "", nil })
 	_, err := r.Now(t.Context())
 	require.ErrorIs(t, err, ErrNoneRuns)
@@ -214,7 +221,8 @@ func (r *recorder) Start(_ context.Context, h Host) error { r.host = h; return r
 func (r *recorder) Close() error                          { return nil }
 
 func TestALonePeerRunsServicesBesideEachOther(t *testing.T) {
-	p := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	l := On(p, "cloud")
 
@@ -248,7 +256,8 @@ func (s serving) Start(_ context.Context, h Host) error {
 }
 
 func TestAServiceOnALonePeerIsReachedByTheNextWithNoClient(t *testing.T) {
-	p := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	l := On(p, "cloud")
 	require.NoError(t, l.Start(t.Context(), "store", serving{store{held: "lone"}}))
@@ -273,7 +282,8 @@ func TestANilDiscoveryFindsNothingAndKeepsNothing(t *testing.T) {
 }
 
 func TestTheFirstToServeAProtocolIsWhatTheNodeServesItWith(t *testing.T) {
-	h := newFake(t)
+	mn := peertest.Net(t)
+	h := newFake(t, mn)
 	h.Serve(storeProtocol, store{held: "mocked"})
 	h.Serve(storeProtocol, store{held: "shipped"})
 	got, ok := Local[store](h, storeProtocol)

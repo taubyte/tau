@@ -49,9 +49,9 @@ func (n *node) Config(into any) error {
 
 // lone is a node running nothing beside build, its instance opening the group its
 // queue is, as a lone build process is.
-func lone(t *testing.T, section map[string]any) *node {
+func lone(t *testing.T, mn *peer.Mocknet, section map[string]any) *node {
 	t.Helper()
-	p := peertest.Mock(t, t.Context())
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	n := &node{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond}), root: t.TempDir(), section: section}
 	n.running = []service.Running{{Service: groupsOn{node: p, root: n.root}}}
@@ -59,12 +59,13 @@ func lone(t *testing.T, section map[string]any) *node {
 }
 
 func TestBuildStartsFromItsInstance(t *testing.T) {
+	mn := peertest.Net(t)
 	s := New()
 	require.Nil(t, s.(Service).Addr(), "nothing bound before it starts")
 	_, err := s.(Service).Built("shop", "prod", "QmNothing")
 	require.ErrorIs(t, err, jobs.ErrNotStarted)
 	require.ErrorIs(t, s.(Service).WaitForLeader(t.Context()), jobs.ErrNotStarted)
-	require.NoError(t, s.Start(t.Context(), lone(t, map[string]any{"listen": "127.0.0.1:0", "cloudfqdn": "tau.example.io"})))
+	require.NoError(t, s.Start(t.Context(), lone(t, mn, map[string]any{"listen": "127.0.0.1:0", "cloudfqdn": "tau.example.io"})))
 	t.Cleanup(func() { s.Close() })
 
 	require.NoError(t, s.(Service).WaitForLeader(t.Context()), "it leads its own queue")
@@ -80,7 +81,7 @@ func TestBuildStartsFromItsInstance(t *testing.T) {
 	res.Body.Close()
 	require.Equal(t, http.StatusUnauthorized, res.StatusCode, "it serves its routes, and asks who is calling")
 
-	require.ErrorContains(t, s.Start(t.Context(), lone(t, nil)), "already started")
+	require.ErrorContains(t, s.Start(t.Context(), lone(t, mn, nil)), "already started")
 	require.NoError(t, s.Close())
 }
 
@@ -98,8 +99,9 @@ func TestBuildRefusesWhatItCannotServeWith(t *testing.T) {
 		"certificates with a bad block": {"listen": "127.0.0.1:0", "cloudfqdn": "tau.example.io", "cm": map[string]any{"certificate": map[string]any{"acme": map[string]any{"enabled": true}, "challenge": "carrier-pigeon"}}},
 	} {
 		t.Run(name, func(t *testing.T) {
+			mn := peertest.Net(t)
 			s := New()
-			require.Error(t, s.Start(t.Context(), lone(t, section)))
+			require.Error(t, s.Start(t.Context(), lone(t, mn, section)))
 			require.NoError(t, s.Close(), "what it opened before refusing closes")
 		})
 	}
@@ -112,7 +114,8 @@ var issuing = map[string]any{
 }
 
 func TestACloudThatIssuesServesBuildOverTLS(t *testing.T) {
-	n := lone(t, issuing)
+	mn := peertest.Net(t)
+	n := lone(t, mn, issuing)
 	s := New()
 	require.NoError(t, s.Start(t.Context(), n))
 	t.Cleanup(func() { s.Close() })
@@ -127,6 +130,7 @@ func TestACloudThatIssuesServesBuildOverTLS(t *testing.T) {
 // naming one is refused. A refused start is still closed, as the instance closes it:
 // its queue's group opened before the refusal.
 func TestACloudThatIssuesNamesItsZone(t *testing.T) {
+	mn := peertest.Net(t)
 	unzoned := map[string]any{}
 	for k, v := range issuing {
 		unzoned[k] = v
@@ -134,13 +138,14 @@ func TestACloudThatIssuesNamesItsZone(t *testing.T) {
 	delete(unzoned, "cloudfqdn")
 	refused := New()
 	t.Cleanup(func() { refused.Close() })
-	require.ErrorIs(t, refused.Start(t.Context(), lone(t, unzoned)), cm.ErrNoZone)
+	require.ErrorIs(t, refused.Start(t.Context(), lone(t, mn, unzoned)), cm.ErrNoZone)
 }
 
 func TestAForgeWithAnEventStreamIsFollowed(t *testing.T) {
+	mn := peertest.Net(t)
 	priv, pub := gittest.KeyPair(t)
 	s := New()
-	require.NoError(t, s.Start(t.Context(), lone(t, map[string]any{
+	require.NoError(t, s.Start(t.Context(), lone(t, mn, map[string]any{
 		"listen": "127.0.0.1:0",
 		"forges": []any{map[string]any{
 			"host": "review.example.com", "driver": "gerrit",

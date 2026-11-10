@@ -67,9 +67,9 @@ func roundTrip(from, into any) error {
 	return yaml.Unmarshal(raw, into)
 }
 
-func newNode(t *testing.T, running ...any) *node {
+func newNode(t *testing.T, mn *peer.Mocknet, running ...any) *node {
 	t.Helper()
-	p := peertest.Mock(t, t.Context())
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	n := &node{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond})}
 	for _, r := range running {
@@ -128,7 +128,8 @@ func (builtBeside) Artifact(context.Context, string, string, string, string) (st
 var issuing = cm.Config{Certificate: cm.CertificateConfig{ACME: certificate.ACME{Enabled: true}}}
 
 func TestAGatewayStartsFromItsNodeAndTakesWhatIsBesideIt(t *testing.T) {
-	n := newNode(t, routes{}, busesBeside{}, workerBeside{})
+	mn := peertest.Net(t)
+	n := newNode(t, mn, routes{}, busesBeside{}, workerBeside{})
 	n.cm = issuing
 	n.config = func(cfg *hostConfig) error {
 		cfg.CloudFqdn = "tau.example.io"
@@ -158,9 +159,10 @@ func TestAGatewayStartsFromItsNodeAndTakesWhatIsBesideIt(t *testing.T) {
 }
 
 func TestAGatewayAloneTakesOnlyWhatItMust(t *testing.T) {
+	mn := peertest.Net(t)
 	s := New()
 	t.Cleanup(func() { s.Close() })
-	require.NoError(t, s.Start(t.Context(), newNode(t, routes{})))
+	require.NoError(t, s.Start(t.Context(), newNode(t, mn, routes{})))
 	require.Nil(t, s.buses)
 	require.Nil(t, s.admits)
 	require.Nil(t, s.artifacts)
@@ -169,17 +171,18 @@ func TestAGatewayAloneTakesOnlyWhatItMust(t *testing.T) {
 }
 
 func TestAGatewayRefusesWhatItCannotStartWith(t *testing.T) {
+	mn := peertest.Net(t)
 	start := func(n *node) error {
 		s := New()
 		t.Cleanup(func() { s.Close() })
 		return s.Start(t.Context(), n)
 	}
-	require.ErrorContains(t, start(newNode(t)), "places requests from stats")
-	unzoned := newNode(t, routes{})
+	require.ErrorContains(t, start(newNode(t, mn)), "places requests from stats")
+	unzoned := newNode(t, mn, routes{})
 	unzoned.cm = issuing
 	require.ErrorIs(t, start(unzoned), cm.ErrNoZone, "a cloud issuing certificates names the zone they are for")
 
-	broken := newNode(t, routes{})
+	broken := newNode(t, mn, routes{})
 	broken.config = func(*hostConfig) error { return errors.New("no such key") }
 	require.ErrorContains(t, start(broken), "no such key")
 }

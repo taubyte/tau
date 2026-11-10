@@ -10,11 +10,13 @@ import (
 	query "github.com/ipfs/go-datastore/query"
 	dssync "github.com/ipfs/go-datastore/sync"
 	logging "github.com/ipfs/go-log/v2"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 )
 
 func TestKVDatabase_PutAndGet(t *testing.T) {
+	mn := peertest.Net(t)
 	logger := logging.Logger("test")
-	mockNode := mockPeer(t)
+	mockNode := mockPeer(t, mn)
 	f := opener{mockNode}
 	db, _ := f.New(logger, "testpath", 10)
 
@@ -38,8 +40,9 @@ func TestKVDatabase_PutAndGet(t *testing.T) {
 }
 
 func TestKVDatabase_Delete(t *testing.T) {
+	mn := peertest.Net(t)
 	logger := logging.Logger("test")
-	mockNode := mockPeer(t)
+	mockNode := mockPeer(t, mn)
 	f := opener{mockNode}
 	db, _ := f.New(logger, "testpath", 10)
 
@@ -60,8 +63,9 @@ func TestKVDatabase_Delete(t *testing.T) {
 }
 
 func TestKVDatabase_List(t *testing.T) {
+	mn := peertest.Net(t)
 	logger := logging.Logger("test")
-	mockNode := mockPeer(t)
+	mockNode := mockPeer(t, mn)
 	f := opener{mockNode}
 	db, _ := f.New(logger, "testpath", 10)
 
@@ -86,8 +90,9 @@ func TestKVDatabase_List(t *testing.T) {
 }
 
 func TestKVDatabase_Batch(t *testing.T) {
+	mn := peertest.Net(t)
 	logger := logging.Logger("test")
-	mockNode := mockPeer(t)
+	mockNode := mockPeer(t, mn)
 	f := opener{mockNode}
 	db, _ := f.New(logger, "testpath", 10)
 
@@ -120,8 +125,9 @@ func TestKVDatabase_Batch(t *testing.T) {
 }
 
 func TestKVDatabase_Get_NonExistentKey(t *testing.T) {
+	mn := peertest.Net(t)
 	logger := logging.Logger("test")
-	mockNode := mockPeer(t)
+	mockNode := mockPeer(t, mn)
 	f := opener{mockNode}
 	db, _ := f.New(logger, "testpath", 10)
 
@@ -134,8 +140,9 @@ func TestKVDatabase_Get_NonExistentKey(t *testing.T) {
 }
 
 func TestKVDatabase_Put_EmptyKeyOrValue(t *testing.T) {
+	mn := peertest.Net(t)
 	logger := logging.Logger("test")
-	mockNode := mockPeer(t)
+	mockNode := mockPeer(t, mn)
 	f := opener{mockNode}
 	db, _ := f.New(logger, "testpath", 10)
 
@@ -153,8 +160,9 @@ func TestKVDatabase_Put_EmptyKeyOrValue(t *testing.T) {
 }
 
 func TestKVDatabase_List_SpecificPrefix(t *testing.T) {
+	mn := peertest.Net(t)
 	logger := logging.Logger("test")
-	mockNode := mockPeer(t)
+	mockNode := mockPeer(t, mn)
 	f := opener{mockNode}
 	db, _ := f.New(logger, "testpath", 10)
 

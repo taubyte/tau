@@ -86,7 +86,8 @@ func (sockets) Report(s *Snapshot) {
 }
 
 func TestStatsReportsWhatItsInstanceRuns(t *testing.T) {
-	p := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	d := New()
 
@@ -117,7 +118,8 @@ func TestStatsReportsWhatItsInstanceRuns(t *testing.T) {
 }
 
 func TestStatsRefusesWhatItCannotStartWith(t *testing.T) {
-	p := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	h := &instance{Node: p, config: func(any) error { return errors.New("no such key") }}
 	require.ErrorContains(t, New().Start(t.Context(), h), "no such key")

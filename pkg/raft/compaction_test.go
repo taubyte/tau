@@ -9,6 +9,7 @@ import (
 
 	"github.com/ipfs/go-datastore/query"
 	"github.com/stretchr/testify/require"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 )
 
 // logEntries is how many raft log entries the group keeps in the peer's datastore.
@@ -28,11 +29,12 @@ func logEntries(t *testing.T, c *cluster) int {
 // the log behind it but for the trailing entries, and the state a snapshot holds is
 // the live keys alone.
 func TestCluster_CompactsItsLogBehindItsSnapshot(t *testing.T) {
+	mn := peertest.Net(t)
 	timeouts := testTimeoutConfig()
 	timeouts.SnapshotThreshold = 64
 	timeouts.TrailingLogs = 16
 
-	c, err := New(newMockNode(t), "compacts", WithTimeouts(timeouts), WithForceBootstrap())
+	c, err := New(newMockNode(t, mn), "compacts", WithTimeouts(timeouts), WithForceBootstrap())
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 	waitLeader(t, c, 5*time.Second)

@@ -39,22 +39,23 @@ func (i instance) Config(into any) error {
 
 var _ service.Host = instance{}
 
-func newInstance(t *testing.T, root string) instance {
+func newInstance(t *testing.T, mn *peer.Mocknet, root string) instance {
 	t.Helper()
-	p := peertest.Mock(t, t.Context())
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	return instance{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond}), root: root}
 }
 
 func TestACloudWithNoZoneKeepsNoStore(t *testing.T) {
+	mn := peertest.Net(t)
 	s := New()
 	t.Cleanup(func() { s.Close() })
-	require.NoError(t, s.Start(t.Context(), newInstance(t, t.TempDir())))
+	require.NoError(t, s.Start(t.Context(), newInstance(t, mn, t.TempDir())))
 	require.Nil(t, s.Store(), "nothing to keep certificates for")
 	require.Nil(t, On(instance{}).Store(), "and none beside an instance running no cm")
 	require.Nil(t, On(instance{}).Members(), "nor any node, with no directory to ask")
 
-	i := newInstance(t, t.TempDir())
+	i := newInstance(t, mn, t.TempDir())
 	i.config = func(into any) error {
 		*into.(*hostConfig) = hostConfig{CM: Config{Certificate: CertificateConfig{ACME: pkgcertificate.ACME{Enabled: true}}}}
 		return nil
@@ -80,9 +81,9 @@ func (d databases) Database(name string) (kvdb.Instance, error) {
 	return kvdbmock.New().New(nil, name, 0)
 }
 
-func zoned(t *testing.T, cfg Config) instance {
+func zoned(t *testing.T, mn *peer.Mocknet, cfg Config) instance {
 	t.Helper()
-	i := newInstance(t, t.TempDir())
+	i := newInstance(t, mn, t.TempDir())
 	i.config = func(into any) error {
 		*into.(*hostConfig) = hostConfig{CloudFqdn: "tau.example", CM: cfg}
 		return nil
@@ -91,7 +92,8 @@ func zoned(t *testing.T, cfg Config) instance {
 }
 
 func TestCMKeepsTheStoreWhereTheCloudNamesAZone(t *testing.T) {
-	alone := hosting{instance: zoned(t, Config{})}
+	mn := peertest.Net(t)
+	alone := hosting{instance: zoned(t, mn, Config{})}
 	s := New()
 	t.Cleanup(func() { s.Close() })
 	require.NoError(t, s.Start(t.Context(), alone), "its databases its own, opened on the peer")
@@ -99,16 +101,16 @@ func TestCMKeepsTheStoreWhereTheCloudNamesAZone(t *testing.T) {
 	alone.running = []service.Running{{Name: Name, Service: s}}
 	require.Same(t, s.Store(), On(alone).Store(), "the store beside the instance")
 
-	shared := hosting{instance: zoned(t, Config{}), running: []service.Running{{Service: databases{}}}}
+	shared := hosting{instance: zoned(t, mn, Config{}), running: []service.Running{{Service: databases{}}}}
 	beside := New()
 	t.Cleanup(func() { beside.Close() })
 	require.NoError(t, beside.Start(t.Context(), shared), "the instance's databases")
 	require.NotNil(t, beside.Store())
 
-	broken := hosting{instance: zoned(t, Config{}), running: []service.Running{{Service: databases{err: errors.New("disk gone")}}}}
+	broken := hosting{instance: zoned(t, mn, Config{}), running: []service.Running{{Service: databases{err: errors.New("disk gone")}}}}
 	require.ErrorContains(t, New().Start(t.Context(), broken), "disk gone")
 
 	acme := pkgcertificate.ACME{Enabled: true}
-	refused := hosting{instance: zoned(t, Config{Certificate: CertificateConfig{ACME: acme, Challenge: "tls-alpn-01"}})}
+	refused := hosting{instance: zoned(t, mn, Config{Certificate: CertificateConfig{ACME: acme, Challenge: "tls-alpn-01"}})}
 	require.Error(t, New().Start(t.Context(), refused), "a challenge it does not answer")
 }

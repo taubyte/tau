@@ -20,7 +20,6 @@ import (
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/p2p/peer"
-	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/raft"
 	dnsService "github.com/taubyte/tau/services/dns"
@@ -222,9 +221,9 @@ type factoryOpener struct{ f opensDatabases }
 func (o factoryOpener) Open(name string) (kvdb.Instance, error) { return o.f.New(nil, name, 0) }
 
 // overDouble is an instance built of nothing but p and databases opened from f.
-func overDouble(t *testing.T, f opensDatabases) *Instance {
+func overDouble(t *testing.T, mn *peer.Mocknet, f opensDatabases) *Instance {
 	t.Helper()
-	p := mockPeer(t)
+	p := mockPeer(t, mn)
 	return &Instance{Node: p, dbs: newDatabaseSet(p, factoryOpener{f})}
 }
 
@@ -254,17 +253,17 @@ func mockRaft() Option {
 // mockPeer is a peer for one test, on the process's mocknet.
 // callerOf is a host of another peer, linked and connected to p, to call what p
 // serves.
-func callerOf(t testing.TB, p peer.Node) host.Host {
+func callerOf(t testing.TB, mn *peer.Mocknet, p peer.Node) host.Host {
 	t.Helper()
-	caller := mockPeer(t)
-	require.NoError(t, peertest.LinkAll(t))
+	caller := mockPeer(t, mn)
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, caller.Host().Connect(t.Context(), libp2ppeer.AddrInfo{ID: p.ID(), Addrs: p.Host().Addrs()}))
 	return caller.Host()
 }
 
-func mockPeer(t testing.TB) peer.Node {
+func mockPeer(t testing.TB, mn *peer.Mocknet) peer.Node {
 	t.Helper()
-	p := peertest.Mock(t, t.Context())
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	return p
 }
@@ -333,9 +332,9 @@ func rootedIn(t testing.TB, cfg Config, root string) Config {
 
 // makeNode is an instance over a fresh peer, its databases a factory the test can
 // see into and its raft groups in memory, not started.
-func makeNode(t *testing.T, cfg Config, extra ...Option) (*Instance, host.Host, *memFactory) {
+func makeNode(t *testing.T, mn *peer.Mocknet, cfg Config, extra ...Option) (*Instance, host.Host, *memFactory) {
 	t.Helper()
-	p := mockPeer(t)
+	p := mockPeer(t, mn)
 	factory := &memFactory{}
 	opts := append([]Option{withKVDB(factory), mockRaft()}, extra...)
 	n, err := New(p, rooted(t, cfg), opts...)

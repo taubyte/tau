@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/pkg/invoke"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	primitivesService "github.com/taubyte/tau/services/primitives"
@@ -54,10 +56,10 @@ func handleOf(id string) invoke.Grant {
 
 // holdingSync is a node that runs the service, with the project published and the
 // group formed — the two things every send below rests on.
-func holdingSync(t *testing.T, cfg Config) *Instance {
+func holdingSync(t *testing.T, mn *taupeer.Mocknet, cfg Config) *Instance {
 	t.Helper()
 
-	n, _, _ := makeNode(t, cfg)
+	n, _, _ := makeNode(t, mn, cfg)
 	require.NoError(t, n.Start(t.Context()))
 
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
@@ -73,15 +75,17 @@ func holdingSync(t *testing.T, cfg Config) *Instance {
 }
 
 func TestANodeThatRunsPrimitivesOpensTheService(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
+	mn := peertest.Net(t)
+	n := holdingSync(t, mn, Config{Services: []string{Register, Worker, Stats, Primitives}})
 	require.NotNil(t, n.Primitives(), "the service list named it")
 
-	other, _, _ := makeNode(t, Config{Services: []string{Register, Stats}})
+	other, _, _ := makeNode(t, mn, Config{Services: []string{Register, Stats}})
 	require.Nil(t, other.Primitives(), "the service list did not")
 }
 
 func TestClosingANodeClosesThePrimitivesService(t *testing.T) {
-	n := holdingSync(t, Config{Services: []string{Register, Worker, Stats, Primitives}})
+	mn := peertest.Net(t)
+	n := holdingSync(t, mn, Config{Services: []string{Register, Worker, Stats, Primitives}})
 
 	require.NoError(t, n.Close())
 	require.NoError(t, n.Close(), "closing twice is not a second teardown")
@@ -91,14 +95,16 @@ func TestClosingANodeClosesThePrimitivesService(t *testing.T) {
 }
 
 func TestTheDefaultShapeRunsPrimitives(t *testing.T) {
-	n, _, _ := makeNode(t, Config{})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{})
 	require.Contains(t, n.Services(), Primitives)
 	require.NotNil(t, n.Primitives())
 }
 
 func TestAWorkerReachesAPrimitivesServiceOnAnotherNode(t *testing.T) {
+	mn := peertest.Net(t)
 	nodes := fleet(t,
-		Config{Services: []string{Register, Stats, Primitives}},
+		mn, Config{Services: []string{Register, Stats, Primitives}},
 		Config{Services: []string{Worker, Stats}},
 	)
 	holder, compute := nodes[0], nodes[1]
@@ -121,10 +127,11 @@ func TestAWorkerReachesAPrimitivesServiceOnAnotherNode(t *testing.T) {
 }
 
 func TestAWindowHandedToAnotherNodeReachesItsPrimitivesService(t *testing.T) {
+	mn := peertest.Net(t)
 	// THE HOLDER IS THE ONLY PRIMITIVES NODE, so it leads its group alone: a window
 	// it took would otherwise be forwarded to a leader that does run a clock.
 	nodes := fleet(t,
-		Config{Services: []string{Register, Worker, Stats}},
+		mn, Config{Services: []string{Register, Worker, Stats}},
 		Config{Services: []string{Stats, Primitives}},
 	)
 	clock, holder := nodes[0], nodes[1]

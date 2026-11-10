@@ -6,6 +6,7 @@ import (
 	"github.com/taubyte/tau/pkg/containers"
 
 	"github.com/stretchr/testify/require"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	secretsService "github.com/taubyte/tau/services/secrets"
 )
 
@@ -13,7 +14,8 @@ import (
 // is pkg/invoke/container's test.
 
 func TestAnUnknownBackendIsRefusedAtStart(t *testing.T) {
-	_, _, err := startNode(t, Config{
+	mn := peertest.Net(t)
+	_, _, err := startNode(t, mn, Config{
 		Services:  []string{Worker},
 		Container: containers.Declared{Backend: "podman"},
 	})
@@ -25,12 +27,14 @@ func TestAnUnknownBackendIsRefusedAtStart(t *testing.T) {
 }
 
 func TestAnInjectedTierIsEnough(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register, Worker}})
 	require.NotNil(t, n.Worker())
 }
 
 func TestNoWorkerMeansNoBackend(t *testing.T) {
-	_, _, err := startNode(t, Config{
+	mn := peertest.Net(t)
+	_, _, err := startNode(t, mn, Config{
 		Services:  []string{Register, Stats},
 		Container: containers.Declared{Backend: "podman"},
 	})

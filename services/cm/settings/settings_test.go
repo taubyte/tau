@@ -27,9 +27,9 @@ type node struct {
 	finding finding
 }
 
-func newNode(t *testing.T, cm ...*cmmock.CM) *node {
+func newNode(t *testing.T, mn *peer.Mocknet, cm ...*cmmock.CM) *node {
 	t.Helper()
-	p := peertest.Mock(t, t.Context())
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	n := &node{Node: p}
 	n.Served = service.NewServed(p.ID(), &n.finding, rpc.Retry{For: 50 * time.Millisecond})
@@ -70,8 +70,9 @@ func TestTheDefaultsAreWhatARegionNobodySetComputesWith(t *testing.T) {
 }
 
 func TestCmOnTheSameNodeIsReadWithNoClient(t *testing.T) {
+	mn := peertest.Net(t)
 	cm := cmmock.New(region(5, 3))
-	c := settings.On(newNode(t, cm))
+	c := settings.On(newNode(t, mn, cm))
 	t.Cleanup(func() { c.Close() })
 
 	got, err := c.Settings(t.Context())
@@ -80,15 +81,16 @@ func TestCmOnTheSameNodeIsReadWithNoClient(t *testing.T) {
 }
 
 func TestCmOnAnotherNodeIsReadOverItsProtocol(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
 	cm := cmmock.New(region(4, 2))
-	far := newNode(t, cm)
+	far := newNode(t, mn, cm)
 	require.NoError(t, cm.Start(ctx, far))
 	t.Cleanup(func() { cm.Close() })
 
-	near := newNode(t)
+	near := newNode(t, mn)
 	near.finding = finding{far.ID()}
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, near.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: far.ID(), Addrs: far.Host().Addrs()}))
 
 	c := settings.On(near)
@@ -99,17 +101,18 @@ func TestCmOnAnotherNodeIsReadOverItsProtocol(t *testing.T) {
 }
 
 func TestTheRetentionCrossesTheWireInWholeSeconds(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
 	set := settings.Defaults()
 	set.Retention = 72 * time.Hour
 	cm := cmmock.New(set)
-	far := newNode(t, cm)
+	far := newNode(t, mn, cm)
 	require.NoError(t, cm.Start(ctx, far))
 	t.Cleanup(func() { cm.Close() })
 
-	near := newNode(t)
+	near := newNode(t, mn)
 	near.finding = finding{far.ID()}
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, near.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: far.ID(), Addrs: far.Host().Addrs()}))
 
 	c := settings.On(near)
@@ -120,7 +123,8 @@ func TestTheRetentionCrossesTheWireInWholeSeconds(t *testing.T) {
 }
 
 func TestNoCmInReachIsAnErrorAndNeverTheDefaults(t *testing.T) {
-	near := newNode(t)
+	mn := peertest.Net(t)
+	near := newNode(t, mn)
 	near.finding = finding{}
 	c := settings.On(near)
 	t.Cleanup(func() { c.Close() })
@@ -130,9 +134,10 @@ func TestNoCmInReachIsAnErrorAndNeverTheDefaults(t *testing.T) {
 }
 
 func TestWaitReturnsOnceCmAnswers(t *testing.T) {
+	mn := peertest.Net(t)
 	cm := cmmock.New(region(3, 2))
 	cm.Fail(errors.New("not up yet"))
-	c := settings.On(newNode(t, cm))
+	c := settings.On(newNode(t, mn, cm))
 	t.Cleanup(func() { c.Close() })
 
 	go func() {
@@ -145,9 +150,10 @@ func TestWaitReturnsOnceCmAnswers(t *testing.T) {
 }
 
 func TestWaitGivesUpWithItsContext(t *testing.T) {
+	mn := peertest.Net(t)
 	cm := cmmock.New(region(3, 2))
 	cm.Fail(errors.New("never up"))
-	c := settings.On(newNode(t, cm))
+	c := settings.On(newNode(t, mn, cm))
 	t.Cleanup(func() { c.Close() })
 
 	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
@@ -157,16 +163,17 @@ func TestWaitGivesUpWithItsContext(t *testing.T) {
 }
 
 func TestACmThatCannotAnswerIsUnavailableOnTheWire(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
 	cm := cmmock.New(region(3, 2))
 	cm.Fail(errors.New("its store is gone"))
-	far := newNode(t, cm)
+	far := newNode(t, mn, cm)
 	require.NoError(t, cm.Start(ctx, far))
 	t.Cleanup(func() { cm.Close() })
 
-	near := newNode(t)
+	near := newNode(t, mn)
 	near.finding = finding{far.ID()}
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, near.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: far.ID(), Addrs: far.Host().Addrs()}))
 
 	c := settings.On(near)

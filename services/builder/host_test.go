@@ -52,9 +52,9 @@ func (n *node) Config(into any) error {
 	return yaml.Unmarshal(raw, into)
 }
 
-func lone(t *testing.T, section map[string]any) *node {
+func lone(t *testing.T, mn *peer.Mocknet, section map[string]any) *node {
 	t.Helper()
-	p := peertest.Mock(t, t.Context())
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	return &node{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond}), section: section}
 }
@@ -70,8 +70,9 @@ func TestABuilderRefusesWhatItCannotBuildWith(t *testing.T) {
 		"uploads it cannot keep":        {"uploads": "/dev/null/uploads"},
 	} {
 		t.Run(name, func(t *testing.T) {
+			mn := peertest.Net(t)
 			r := New()
-			require.Error(t, r.Start(t.Context(), lone(t, section)))
+			require.Error(t, r.Start(t.Context(), lone(t, mn, section)))
 			require.NoError(t, r.Close())
 		})
 	}
@@ -80,7 +81,8 @@ func TestABuilderRefusesWhatItCannotBuildWith(t *testing.T) {
 }
 
 func TestAnUntrustedCloudProvesZonesThroughCM(t *testing.T) {
-	h := lone(t, nil)
+	mn := peertest.Net(t)
+	h := lone(t, mn, nil)
 	d, err := provers(h, Config{})
 	require.NoError(t, err)
 	t.Cleanup(func() { d.Close() })
@@ -144,8 +146,9 @@ func TestABuilderConfirmsAPrivateRepositoryWithTheDeployKeyALinkStored(t *testin
 }
 
 func TestADevelopmentCloudsBuilderReadsItsMirrorAndUploads(t *testing.T) {
+	mn := peertest.Net(t)
 	uploads := t.TempDir() + "/uploads"
-	h := lone(t, map[string]any{
+	h := lone(t, mn, map[string]any{
 		"uploads": uploads,
 		"mirror":  "file://" + t.TempDir(),
 		"domains": map[string]any{"trusted": true},

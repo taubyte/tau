@@ -54,14 +54,14 @@ func benchFrame(tb testing.TB, n, size int) *raftv2.Frame {
 }
 
 // benchPair is two linked nodes, a's wire sending to b's.
-func benchPair(b *testing.B, echo bool) (from transport, to peer.ID, got chan *raftv2.Frame) {
+func benchPair(b *testing.B, mn *taupeer.Mocknet, echo bool) (from transport, to peer.ID, got chan *raftv2.Frame) {
 	ctx, cancel := context.WithCancel(context.Background())
 	b.Cleanup(cancel)
-	nodes := []taupeer.Node{peertest.Mock(b, ctx), peertest.Mock(b, ctx)}
+	nodes := []taupeer.Node{mn.Mock(ctx), mn.Mock(ctx)}
 	for _, n := range nodes {
 		b.Cleanup(n.Close)
 	}
-	connectAllOf(b, nodes...)
+	connectAllOf(b, mn, nodes...)
 
 	a := &benchEnd{got: make(chan *raftv2.Frame, linkBacklog)}
 	far := &benchEnd{got: make(chan *raftv2.Frame, linkBacklog)}
@@ -91,7 +91,8 @@ var benchShapes = []struct {
 func BenchmarkEngineWireRoundTrip(b *testing.B) {
 	for _, shape := range benchShapes {
 		b.Run(shape.name, func(b *testing.B) {
-			wire, to, back := benchPair(b, true)
+			mn := peertest.Net(b)
+			wire, to, back := benchPair(b, mn, true)
 			frame := benchFrame(b, shape.envelopes, shape.size)
 			wire.send(to, frame)
 			<-back
@@ -110,7 +111,8 @@ func BenchmarkEngineWireThroughput(b *testing.B) {
 	const window = 64
 	for _, shape := range benchShapes {
 		b.Run(shape.name, func(b *testing.B) {
-			wire, to, got := benchPair(b, false)
+			mn := peertest.Net(b)
+			wire, to, got := benchPair(b, mn, false)
 			frame := benchFrame(b, shape.envelopes, shape.size)
 			wire.send(to, frame)
 			<-got

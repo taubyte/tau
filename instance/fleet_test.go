@@ -26,7 +26,7 @@ import (
 // gossipsub, streams and clients.
 
 // fleet is n nodes on one mocknet, each told what to run.
-func fleet(t *testing.T, configs ...Config) []*Instance {
+func fleet(t *testing.T, mn *peer.Mocknet, configs ...Config) []*Instance {
 	t.Helper()
 
 	// Every peer gossips before it is connected: a pubsub stream is opened at start or
@@ -34,9 +34,9 @@ func fleet(t *testing.T, configs ...Config) []*Instance {
 	// per subnet (every mocknet peer shares one).
 	peers := make([]peer.Node, len(configs))
 	for i := range configs {
-		peers[i] = mockPeer(t)
+		peers[i] = mockPeer(t, mn)
 	}
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	for i, a := range peers {
 		for _, b := range peers[i+1:] {
 			require.NoError(t, a.Host().Connect(t.Context(), libp2ppeer.AddrInfo{ID: b.ID(), Addrs: b.Host().Addrs()}))
@@ -92,11 +92,12 @@ func sees(t *testing.T, watcher *Instance, name string) {
 }
 
 func TestEveryNodeOfALargeFleetHasAStreamToEveryOther(t *testing.T) {
+	mn := peertest.Net(t)
 	configs := make([]Config, 16)
 	for i := range configs {
 		configs[i] = Config{Services: []string{Stats}}
 	}
-	nodes := fleet(t, configs...)
+	nodes := fleet(t, mn, configs...)
 
 	for i, from := range nodes {
 		peers := from.Messaging().ListPeers("")
@@ -109,8 +110,9 @@ func TestEveryNodeOfALargeFleetHasAStreamToEveryOther(t *testing.T) {
 }
 
 func TestAWorkerFindsARegisterOnAnotherNode(t *testing.T) {
+	mn := peertest.Net(t)
 	nodes := fleet(t,
-		Config{Services: []string{Register, Stats}},
+		mn, Config{Services: []string{Register, Stats}},
 		Config{Services: []string{Worker, Stats}},
 	)
 	registry, compute := nodes[0], nodes[1]
@@ -129,8 +131,9 @@ func TestAWorkerFindsARegisterOnAnotherNode(t *testing.T) {
 }
 
 func TestAGatewayReachesAWorkerOnAnotherNode(t *testing.T) {
+	mn := peertest.Net(t)
 	nodes := fleet(t,
-		Config{Services: []string{Register, Stats, Gateway}},
+		mn, Config{Services: []string{Register, Stats, Gateway}},
 		Config{Services: []string{Worker, Stats}},
 	)
 	edge, compute := nodes[0], nodes[1]
@@ -157,8 +160,9 @@ func TestAGatewayReachesAWorkerOnAnotherNode(t *testing.T) {
 }
 
 func TestAWarmWorkerIsAdvertised(t *testing.T) {
+	mn := peertest.Net(t)
 	nodes := fleet(t,
-		Config{Services: []string{Register, Stats}},
+		mn, Config{Services: []string{Register, Stats}},
 		Config{Services: []string{Worker, Stats}},
 	)
 	registry, compute := nodes[0], nodes[1]
@@ -177,7 +181,8 @@ func TestAWarmWorkerIsAdvertised(t *testing.T) {
 }
 
 func TestOneNodeRunningEverythingNeedsNoStream(t *testing.T) {
-	nodes := fleet(t, Config{})
+	mn := peertest.Net(t)
+	nodes := fleet(t, mn, Config{})
 	only := nodes[0]
 
 	_, err := only.Register().Local().Publish(t.Context(), pkgregister.Publication{
@@ -192,7 +197,8 @@ func TestOneNodeRunningEverythingNeedsNoStream(t *testing.T) {
 }
 
 func TestABuiltResourceNothingHasBuiltIsRefused(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Secrets}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register, Worker, Stats, Secrets}})
 	require.NoError(t, n.Start(t.Context()))
 
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
@@ -245,8 +251,9 @@ func withKvDatabase() []byte {
 }
 
 func TestADatabaseServiceIsReachableFromAnotherNode(t *testing.T) {
+	mn := peertest.Net(t)
 	nodes := fleet(t,
-		Config{Services: []string{Register, Stats, Database}},
+		mn, Config{Services: []string{Register, Stats, Database}},
 		Config{Services: []string{Worker, Stats}},
 	)
 	holder, caller := nodes[0], nodes[1]

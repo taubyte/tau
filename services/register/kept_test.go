@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/service"
+	taupeer "github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/peer/peertest"
 	registerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
 	pkgregister "github.com/taubyte/tau/pkg/register"
@@ -27,14 +28,14 @@ func (f fixed) registers() ([]libp2ppeer.ID, error) {
 
 // connected starts a register on each of n nodes, links them and a reader, and
 // connects every pair.
-func connected(t testing.TB, n int) (registers []*node, services []Service, reader *node) {
+func connected(t testing.TB, mn *taupeer.Mocknet, n int) (registers []*node, services []Service, reader *node) {
 	t.Helper()
 	for range n {
-		at := mockNode(t)
+		at := mockNode(t, mn)
 		registers = append(registers, at)
 	}
-	reader = mockNode(t)
-	require.NoError(t, peertest.LinkAll(t))
+	reader = mockNode(t, mn)
+	require.NoError(t, mn.LinkAll())
 	all := append(append([]*node{}, registers...), reader)
 	for i, a := range all {
 		for _, b := range all[i+1:] {
@@ -80,7 +81,8 @@ func claim(t *testing.T, s Service, project string, revision uint64, hosts ...st
 }
 
 func TestANameNobodyClaimedIsKeptUntilItIsClaimed(t *testing.T) {
-	registers, services, reader := connected(t, 1)
+	mn := peertest.Net(t)
+	registers, services, reader := connected(t, mn, 1)
 	v := viewsOn(reader, ids(registers), defaultWatcherLimits, watchedOnly)
 	t.Cleanup(func() { v.Close() })
 	live(t, v, 1)
@@ -100,7 +102,8 @@ func TestANameNobodyClaimedIsKeptUntilItIsClaimed(t *testing.T) {
 }
 
 func TestTwoRegisterNodesKeepAReaderWhenOneGoes(t *testing.T) {
-	registers, services, reader := connected(t, 2)
+	mn := peertest.Net(t)
+	registers, services, reader := connected(t, mn, 2)
 	v := viewsOn(reader, ids(registers), defaultWatcherLimits, watchedOnly)
 	t.Cleanup(func() { v.Close() })
 	live(t, v, 2)
@@ -143,7 +146,8 @@ func TestTwoRegisterNodesKeepAReaderWhenOneGoes(t *testing.T) {
 }
 
 func TestAViewAndTheFleetAreKeptUntilTheyMove(t *testing.T) {
-	registers, services, reader := connected(t, 1)
+	mn := peertest.Net(t)
+	registers, services, reader := connected(t, mn, 1)
 	reader.region = "region-1"
 	v := viewsOn(reader, ids(registers), defaultWatcherLimits, watchedOnly)
 	t.Cleanup(func() { v.Close() })
@@ -166,7 +170,8 @@ func TestAViewAndTheFleetAreKeptUntilTheyMove(t *testing.T) {
 }
 
 func TestAnEvictedAnswerIsReleasedOnTheRegister(t *testing.T) {
-	registers, services, reader := connected(t, 1)
+	mn := peertest.Net(t)
+	registers, services, reader := connected(t, mn, 1)
 	limits := watchedOnly
 	limits.max = 1
 	v := viewsOn(reader, ids(registers), defaultWatcherLimits, limits)
@@ -191,7 +196,8 @@ func TestAnEvictedAnswerIsReleasedOnTheRegister(t *testing.T) {
 }
 
 func TestWithNoSessionAnAnswerLastsTheDeployBudget(t *testing.T) {
-	registers, services, reader := connected(t, 1)
+	mn := peertest.Net(t)
+	registers, services, reader := connected(t, mn, 1)
 	limits := defaultWatcherLimits
 	limits.sessions = 0
 	v := viewsOn(reader, ids(registers), limits, defaultKeptLimits)
@@ -216,7 +222,8 @@ func TestWithNoSessionAnAnswerLastsTheDeployBudget(t *testing.T) {
 }
 
 func TestAReadThatCouldNotLookKeepsNothing(t *testing.T) {
-	registers, services, reader := connected(t, 1)
+	mn := peertest.Net(t)
+	registers, services, reader := connected(t, mn, 1)
 	v := viewsOn(reader, ids(registers), defaultWatcherLimits, watchedOnly)
 	t.Cleanup(func() { v.Close() })
 	live(t, v, 1)
@@ -236,7 +243,8 @@ func (silent) Msg() *registerv2.WatchEvent { return nil }
 func (s silent) Err() error                { return s.ctx.Err() }
 
 func TestASessionThatStopsBeatingIsEnded(t *testing.T) {
-	registers, _, reader := connected(t, 1)
+	mn := peertest.Net(t)
+	registers, _, reader := connected(t, mn, 1)
 	c, err := NewClient(reader.Host(), registers[0].ID())
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -266,14 +274,16 @@ type tellOnce chan struct{}
 func (t tellOnce) told() { close(t) }
 
 func TestAReaderWithNoRegisterAnywhereIsRefusedByName(t *testing.T) {
-	v := viewsOn(mockNode(t), fixed{}, defaultWatcherLimits, defaultKeptLimits)
+	mn := peertest.Net(t)
+	v := viewsOn(mockNode(t, mn), fixed{}, defaultWatcherLimits, defaultKeptLimits)
 	t.Cleanup(func() { v.Close() })
 	_, _, err := v.ResolveHost(t.Context(), "shop.example.com")
 	require.ErrorIs(t, err, service.ErrNoneRuns)
 }
 
 func TestAnAnswerKeptBeforeAnySessionIsReadAgainOnceOneIsLive(t *testing.T) {
-	registers, services, reader := connected(t, 1)
+	mn := peertest.Net(t)
+	registers, services, reader := connected(t, mn, 1)
 	v := viewsOn(reader, ids(registers), defaultWatcherLimits, watchedOnly)
 	t.Cleanup(func() { v.Close() })
 

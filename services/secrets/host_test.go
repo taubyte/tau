@@ -56,8 +56,9 @@ func (v *vaultNode) Config(into any) error {
 var _ service.Host = (*vaultNode)(nil)
 
 func TestAVaultIsWrittenBeforeItServesAndReadThroughItsHost(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	p := peertest.Mock(t, ctx)
+	p := mn.Mock(ctx)
 	t.Cleanup(p.Close)
 	h := &vaultNode{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond}), root: t.TempDir()}
 
@@ -111,7 +112,8 @@ func TestAVaultIsWrittenBeforeItServesAndReadThroughItsHost(t *testing.T) {
 }
 
 func TestAVaultWithNobodyToAskSaysSo(t *testing.T) {
-	p := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	vault := VaultOn(&vaultNode{Node: p})
 	t.Cleanup(func() { vault.Close() })
@@ -120,7 +122,8 @@ func TestAVaultWithNobodyToAskSaysSo(t *testing.T) {
 }
 
 func TestSecretsRefusesWhatItCannotStartWith(t *testing.T) {
-	p := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	require.ErrorIs(t, New().Start(t.Context(), &vaultNode{Node: p}), ErrNoRoot, "no directory for its shares")
 	require.ErrorContains(t, New().Start(t.Context(), &vaultNode{Node: p, root: t.TempDir(), config: func(any) error {

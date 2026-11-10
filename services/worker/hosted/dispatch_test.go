@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/pkg/invoke"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/worker/placement"
@@ -106,10 +108,10 @@ func depth(t *testing.T, n *node) (ready, claimed int) {
 }
 
 // consuming is a node with a worker, a queue and a tier that answers.
-func consuming(t *testing.T, answers *answering, compiled []byte) (*node, *dispatcher) {
+func consuming(t *testing.T, mn *taupeer.Mocknet, answers *answering, compiled []byte) (*node, *dispatcher) {
 	t.Helper()
 
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats, Primitives}},
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register, Worker, Stats, Primitives}},
 		WithRuntimes(answers), prebuilt())
 
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
@@ -147,8 +149,9 @@ func push(t *testing.T, n *node, id string, data []byte) {
 }
 
 func TestAnItemPushedReachesTheConsumer(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", status: 200}
-	n, d := consuming(t, answers, withConsumer(consumer{Attempts: 5}))
+	n, d := consuming(t, mn, answers, withConsumer(consumer{Attempts: 5}))
 
 	push(t, n, "job-1", []byte("do the thing"))
 	require.Equal(t, 1, d.step(t.Context()))
@@ -164,8 +167,9 @@ func TestAnItemPushedReachesTheConsumer(t *testing.T) {
 }
 
 func TestTheDeliveryNamesItself(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", status: 204}
-	n, d := consuming(t, answers, withConsumer(consumer{Attempts: 5}))
+	n, d := consuming(t, mn, answers, withConsumer(consumer{Attempts: 5}))
 
 	push(t, n, "job-7", []byte("x"))
 	require.Equal(t, 1, d.step(t.Context()))
@@ -177,8 +181,9 @@ func TestTheDeliveryNamesItself(t *testing.T) {
 }
 
 func TestAnItemIsPostedWhereTheEntrySaid(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", status: 200}
-	n, d := consuming(t, answers, withConsumer(consumer{Attempts: 5, Path: "/work"}))
+	n, d := consuming(t, mn, answers, withConsumer(consumer{Attempts: 5, Path: "/work"}))
 
 	push(t, n, "job-1", []byte("x"))
 	require.Equal(t, 1, d.step(t.Context()))
@@ -186,8 +191,9 @@ func TestAnItemIsPostedWhereTheEntrySaid(t *testing.T) {
 }
 
 func TestAFailureWithNoIntervalWaitsOutTheVisibilityTimeout(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", status: 500}
-	n, d := consuming(t, answers, withConsumer(consumer{Attempts: 5}))
+	n, d := consuming(t, mn, answers, withConsumer(consumer{Attempts: 5}))
 
 	push(t, n, "job-1", []byte("x"))
 	require.Equal(t, 1, d.step(t.Context()))
@@ -200,8 +206,9 @@ func TestAFailureWithNoIntervalWaitsOutTheVisibilityTimeout(t *testing.T) {
 }
 
 func TestAConsumerThatRefusesGetsTheItemAgain(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", status: 500}
-	n, d := consuming(t, answers, withConsumer(consumer{Attempts: 3, RetryEvery: time.Nanosecond}))
+	n, d := consuming(t, mn, answers, withConsumer(consumer{Attempts: 3, RetryEvery: time.Nanosecond}))
 
 	push(t, n, "job-1", []byte("x"))
 	require.Equal(t, 3, d.step(t.Context()), "an interval of a nanosecond is an author saying 'now'")
@@ -213,8 +220,9 @@ func TestAConsumerThatRefusesGetsTheItemAgain(t *testing.T) {
 }
 
 func TestAnExhaustedItemStopsBeingDelivered(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", status: 500}
-	n, d := consuming(t, answers, withConsumer(consumer{Attempts: 2, RetryEvery: time.Nanosecond}))
+	n, d := consuming(t, mn, answers, withConsumer(consumer{Attempts: 2, RetryEvery: time.Nanosecond}))
 
 	push(t, n, "job-1", []byte("x"))
 	for range 4 {
@@ -228,8 +236,9 @@ func TestAnExhaustedItemStopsBeingDelivered(t *testing.T) {
 }
 
 func TestAnInvocationThatErrorsIsNotAnAcknowledgement(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", fail: true}
-	n, d := consuming(t, answers, withConsumer(consumer{Attempts: 5, RetryEvery: time.Hour}))
+	n, d := consuming(t, mn, answers, withConsumer(consumer{Attempts: 5, RetryEvery: time.Hour}))
 
 	push(t, n, "job-1", []byte("x"))
 	require.Equal(t, 1, d.step(t.Context()))
@@ -239,8 +248,9 @@ func TestAnInvocationThatErrorsIsNotAnAcknowledgement(t *testing.T) {
 }
 
 func TestANodeDrainsOnlyWhatItHolds(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", status: 200}
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register, Worker, Stats}},
 		WithRuntimes(answers), prebuilt())
 
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
@@ -256,16 +266,18 @@ func TestANodeDrainsOnlyWhatItHolds(t *testing.T) {
 }
 
 func TestAProjectThatConsumesNothingIsNotWalkedForItems(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", status: 200}
-	n, d := consuming(t, answers, compiled())
+	n, d := consuming(t, mn, answers, compiled())
 
 	require.Empty(t, n.Worker().Consumers(t.Context()))
 	require.Equal(t, 0, d.step(t.Context()))
 }
 
 func TestConcurrencyIsTheWorkloadsOwnNumber(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", status: 200, block: make(chan struct{})}
-	n, d := consuming(t, answers, withConsumer(consumer{Attempts: 5, Concurrency: 8}))
+	n, d := consuming(t, mn, answers, withConsumer(consumer{Attempts: 5, Concurrency: 8}))
 
 	require.Equal(t, 8, n.Worker().Consumers(t.Context())[0].Concurrency)
 
@@ -288,15 +300,17 @@ func TestConcurrencyIsTheWorkloadsOwnNumber(t *testing.T) {
 }
 
 func TestNoDeclaredConcurrencyIsOneAtATime(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", status: 200}
-	n, _ := consuming(t, answers, withConsumer(consumer{Attempts: 5}))
+	n, _ := consuming(t, mn, answers, withConsumer(consumer{Attempts: 5}))
 
 	require.Zero(t, n.Worker().Consumers(t.Context())[0].Concurrency)
 }
 
 func TestTheClaimLoopStopsWhenTheNodeCloses(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", status: 200}
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register, Worker, Stats}},
 		WithRuntimes(answers), prebuilt())
 
 	require.NotNil(t, n.dispatchDone, "a node with a worker and raft runs one")
@@ -310,9 +324,10 @@ func TestTheClaimLoopStopsWhenTheNodeCloses(t *testing.T) {
 }
 
 func TestAWorkerOnANodeWithNoGroupsSaysSo(t *testing.T) {
+	mn := peertest.Net(t)
 	// A node always has groups; a worker handed none keeps no ledger, and says so
 	// rather than serving a ledger database that cannot order a write.
-	_, _, err := startNode(t, Config{Services: []string{Worker, Stats}}, withRaft(nil), WithRuntimes(&answering{name: "wasm", status: 200}))
+	_, _, err := startNode(t, mn, Config{Services: []string{Worker, Stats}}, withRaft(nil), WithRuntimes(&answering{name: "wasm", status: 200}))
 	require.ErrorContains(t, err, "no way to open a group")
 }
 
@@ -391,8 +406,9 @@ type nowhere struct{}
 func (nowhere) RoutePeers(_ string, _ time.Duration, dst []string) []string { return dst }
 
 func TestADeliveryIsPlacedRatherThanRunWhereItWasClaimed(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", status: 200}
-	n, d := consuming(t, answers, withConsumer(consumer{}))
+	n, d := consuming(t, mn, answers, withConsumer(consumer{}))
 
 	placed, err := placement.New(n.host.Host(), nowhere{})
 	require.NoError(t, err)
@@ -410,8 +426,9 @@ func TestADeliveryIsPlacedRatherThanRunWhereItWasClaimed(t *testing.T) {
 }
 
 func TestANodeThatCanOnlyReachItselfStillRunsWhatItHolds(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &answering{name: "wasm", status: 200}
-	n, d := consuming(t, answers, withConsumer(consumer{}))
+	n, d := consuming(t, mn, answers, withConsumer(consumer{}))
 	n.workers = nil
 
 	push(t, n, "1", []byte("hello"))

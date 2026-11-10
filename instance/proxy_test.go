@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/pkg/stats"
@@ -68,7 +70,7 @@ func withProxy(change func(map[string]any)) []byte {
 }
 
 // proxying is a node that runs a proxy, holding a deployment that declares one.
-func proxying(t *testing.T, compiled []byte) *Instance {
+func proxying(t *testing.T, mn *taupeer.Mocknet, compiled []byte) *Instance {
 	t.Helper()
 
 	cfg := Config{Services: []string{Register, Worker, Stats, Proxy}}
@@ -78,7 +80,7 @@ func proxying(t *testing.T, compiled []byte) *Instance {
 	// tested; with the default the first pass would race the hold.
 	cfg.Sections = map[string]any{Proxy: proxy.Config{Sweep: 20 * time.Millisecond}}
 
-	n, _, _ := makeNode(t, cfg)
+	n, _, _ := makeNode(t, mn, cfg)
 	require.NoError(t, n.Start(t.Context()))
 
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
@@ -97,7 +99,8 @@ func proxying(t *testing.T, compiled []byte) *Instance {
 }
 
 func TestANodeListensForItsHeldProxiesAndReportsThem(t *testing.T) {
-	n := proxying(t, withProxy(nil))
+	mn := peertest.Net(t)
+	n := proxying(t, mn, withProxy(nil))
 
 	require.Eventually(t, func() bool { return len(proxyOf(t, n).Serving()) == 1 }, 5*time.Second, 20*time.Millisecond,
 		"the sweep did not pick up the held deployment's proxy")
@@ -116,7 +119,8 @@ func TestANodeListensForItsHeldProxiesAndReportsThem(t *testing.T) {
 }
 
 func TestANodeDoesNotListenForAProxyItCannotServe(t *testing.T) {
-	n := proxying(t, withProxy(func(r map[string]any) {
+	mn := peertest.Net(t)
+	n := proxying(t, mn, withProxy(func(r map[string]any) {
 		r["tls"] = map[string]any{"mode": "terminate"}
 	}))
 
@@ -127,12 +131,14 @@ func TestANodeDoesNotListenForAProxyItCannotServe(t *testing.T) {
 }
 
 func TestAProxyWithoutAWorkerDoesNotStart(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Stats, Proxy}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register, Stats, Proxy}})
 	require.ErrorIs(t, n.Start(t.Context()), proxy.ErrNoWorker)
 }
 
 func TestANodeNamingAProxyRunsTheStatsItIsPlacedFrom(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Proxy}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register, Worker, Proxy}})
 	require.Contains(t, n.Services(), Stats)
 }
 

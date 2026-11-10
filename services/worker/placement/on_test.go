@@ -29,9 +29,9 @@ func (*node) Cloud() string                { return "placement-test" }
 func (*node) Region() string               { return "" }
 func (*node) Now() time.Time               { return time.Now() }
 
-func onNode(t *testing.T, view *table) *node {
+func onNode(t *testing.T, mn *peer.Mocknet, view *table) *node {
 	t.Helper()
-	p := peertest.Mock(t, t.Context())
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	n := &node{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond})}
 	if view != nil {
@@ -47,8 +47,9 @@ func (statsBeside) Start(context.Context, service.Host) error { return nil }
 func (statsBeside) Close() error                              { return nil }
 
 func TestWorkersAreReachedFromTheStatsViewBesideThem(t *testing.T) {
+	mn := peertest.Net(t)
 	view := &table{}
-	n := onNode(t, view)
+	n := onNode(t, mn, view)
 	w, err := On(n)
 	require.NoError(t, err)
 	t.Cleanup(func() { w.Close() })
@@ -58,6 +59,7 @@ func TestWorkersAreReachedFromTheStatsViewBesideThem(t *testing.T) {
 }
 
 func TestWorkersWithNoStatsBesideThemAreNotPlaced(t *testing.T) {
-	_, err := On(onNode(t, nil))
+	mn := peertest.Net(t)
+	_, err := On(onNode(t, mn, nil))
 	require.ErrorIs(t, err, ErrNoRouter)
 }

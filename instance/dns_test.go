@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/service"
+	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/pkg/stats"
@@ -23,7 +25,7 @@ import (
 
 // serving is a node that runs the whole chain and answers on an ephemeral port,
 // because :53 needs a privilege a test does not have.
-func serving(t *testing.T, compiled []byte, hosts ...string) *Instance {
+func serving(t *testing.T, mn *taupeer.Mocknet, compiled []byte, hosts ...string) *Instance {
 	t.Helper()
 
 	cfg := Config{Services: []string{Register, Worker, Stats, Proxy, DNS}}
@@ -36,7 +38,7 @@ func serving(t *testing.T, compiled []byte, hosts ...string) *Instance {
 		DNS:   dnsService.Config{NodeZone: "nodes.tau.example.io"},
 	}
 
-	n, _, _ := makeNode(t, cfg)
+	n, _, _ := makeNode(t, mn, cfg)
 	require.NoError(t, n.Start(t.Context()))
 
 	// THE HOSTS ARE WHAT TURNS A QUERY INTO A PROJECT. A deploy publishes
@@ -93,7 +95,8 @@ func resolver(t *testing.T, n *Instance) func(string, uint16) *dns.Msg {
 }
 
 func TestAResolverLearnsTheProxysPortOverDns(t *testing.T) {
-	n := serving(t, withProxy(nil))
+	mn := peertest.Net(t)
+	n := serving(t, mn, withProxy(nil))
 
 	require.Eventually(t, func() bool { return len(proxyOf(t, n).Serving()) == 1 }, 5*time.Second, 20*time.Millisecond)
 	sock := proxyOf(t, n).Serving()[0]
@@ -117,7 +120,8 @@ func TestAResolverLearnsTheProxysPortOverDns(t *testing.T) {
 }
 
 func TestTheProxysNameResolvesToTheNodeServingIt(t *testing.T) {
-	n := serving(t, withProxy(nil))
+	mn := peertest.Net(t)
+	n := serving(t, mn, withProxy(nil))
 
 	require.Eventually(t, func() bool { return len(proxyOf(t, n).Serving()) == 1 }, 5*time.Second, 20*time.Millisecond)
 	host := proxyOf(t, n).Serving()[0].Host
@@ -130,21 +134,24 @@ func TestTheProxysNameResolvesToTheNodeServingIt(t *testing.T) {
 }
 
 func TestANameNothingServesIsServfail(t *testing.T) {
-	n := serving(t, withProxy(nil))
+	mn := peertest.Net(t)
+	n := serving(t, mn, withProxy(nil))
 	ask := resolver(t, n)
 
 	require.Equal(t, dns.RcodeServerFailure, ask("nothing.example.com", dns.TypeA).Rcode)
 }
 
 func TestANodeNamingDnsRunsTheStatsItAnswersFrom(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, DNS}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register, DNS}})
 	require.Contains(t, n.Services(), Stats)
 	require.NoError(t, n.Start(t.Context()))
 	require.Len(t, n.DNSAddrs(), 2)
 }
 
 func TestADnsNodeSaysWhereItBound(t *testing.T) {
-	n := serving(t, withProxy(nil))
+	mn := peertest.Net(t)
+	n := serving(t, mn, withProxy(nil))
 
 	addrs := n.DNSAddrs()
 	require.Len(t, addrs, 2, "udp and tcp, always: a truncated answer is retried over tcp")
@@ -159,7 +166,8 @@ func TestADnsNodeSaysWhereItBound(t *testing.T) {
 }
 
 func TestTheReportCarriesAddressesAndNotMultiaddrs(t *testing.T) {
-	n, h, _ := makeNode(t, Config{Services: []string{Register, Stats}})
+	mn := peertest.Net(t)
+	n, h, _ := makeNode(t, mn, Config{Services: []string{Register, Stats}})
 	require.NoError(t, n.Start(t.Context()))
 
 	snap := reported(t, n, func(stats.Node) bool { return true })
@@ -216,7 +224,8 @@ func withZone(apex string, records []any) []byte {
 const zoneResourceID = "QmU1Vy6xqpYjRFFZqucyZULup6svHhsajomz71zWnSz9gk"
 
 func TestAResolverGetsTheRecordsAProjectDeclares(t *testing.T) {
-	n := serving(t, withZone("example.com", []any{
+	mn := peertest.Net(t)
+	n := serving(t, mn, withZone("example.com", []any{
 		"@ 3600 IN MX 10 mail.example.com.",
 		"www 300 IN A 1.2.3.4",
 	}), "example.com")
@@ -234,7 +243,8 @@ func TestAResolverGetsTheRecordsAProjectDeclares(t *testing.T) {
 }
 
 func TestANameDeepInAZoneFindsIt(t *testing.T) {
-	n := serving(t, withZone("example.com", []any{"a.b.c 300 IN TXT \"deep\""}), "example.com")
+	mn := peertest.Net(t)
+	n := serving(t, mn, withZone("example.com", []any{"a.b.c 300 IN TXT \"deep\""}), "example.com")
 
 	reply := resolver(t, n)("a.b.c.example.com", dns.TypeTXT)
 	require.Equal(t, dns.RcodeSuccess, reply.Rcode)
@@ -243,7 +253,8 @@ func TestANameDeepInAZoneFindsIt(t *testing.T) {
 }
 
 func TestEveryServiceANodeCanRunIsAName(t *testing.T) {
-	n := &Instance{Node: mockPeer(t), opts: options{extra: map[string]service.Service{"billing": started{}}}}
+	mn := peertest.Net(t)
+	n := &Instance{Node: mockPeer(t, mn), opts: options{extra: map[string]service.Service{"billing": started{}}}}
 	names := n.knownServices()
 	for _, want := range []string{Worker, Gateway, Proxy, DNS, PLM, "billing"} {
 		require.Contains(t, names, want)

@@ -58,10 +58,11 @@ func waitLeader(t *testing.T, c Cluster, timeout time.Duration) {
 }
 
 func TestHealing_TwoSplitClusters_MergesFSM(t *testing.T) {
-	node1 := newMockNode(t)
-	node2 := newMockNode(t)
+	mn := peertest.Net(t)
+	node1 := newMockNode(t, mn)
+	node2 := newMockNode(t, mn)
 
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 
 	opts := healingTestOptions()
 
@@ -86,7 +87,7 @@ func TestHealing_TwoSplitClusters_MergesFSM(t *testing.T) {
 	time.Sleep(5 * time.Millisecond)
 	require.NoError(t, c2.Set("shared", []byte("c2-version"), time.Second))
 
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 
 	cl1 := c1.(*cluster)
 	cl2 := c2.(*cluster)
@@ -143,8 +144,9 @@ func TestMergeCRDTDelta(t *testing.T) {
 }
 
 func TestHealing_MergeApply(t *testing.T) {
-	node := newMockNode(t)
-	require.NoError(t, peertest.LinkAll(t))
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
+	require.NoError(t, mn.LinkAll())
 
 	c, err := New(node, "merge-apply", healingTestOptions()...)
 	require.NoError(t, err)
@@ -186,8 +188,9 @@ func TestHealing_MergeApply(t *testing.T) {
 }
 
 func TestHealing_HealAck_Signal(t *testing.T) {
-	node := newMockNode(t)
-	require.NoError(t, peertest.LinkAll(t))
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
+	require.NoError(t, mn.LinkAll())
 
 	h := &healer{
 		healAckCh: make(chan healAck, 1),
@@ -223,10 +226,10 @@ func TestHealing_HealAck_Signal(t *testing.T) {
 // they could see each other, then were connected: a split brain, each side
 // holding a write the other never saw. The bootstrap timeout leaves a yielding
 // node's discovery time to find the other side.
-func splitPair(t *testing.T, namespace string, extra ...Option) (winner, loser *cluster) {
+func splitPair(t *testing.T, mn *taupeer.Mocknet, namespace string, extra ...Option) (winner, loser *cluster) {
 	t.Helper()
-	nodeA := newMockNode(t)
-	nodeB := newMockNode(t)
+	nodeA := newMockNode(t, mn)
+	nodeB := newMockNode(t, mn)
 
 	opts := func() []Option {
 		return append([]Option{WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second)}, extra...)
@@ -244,7 +247,7 @@ func splitPair(t *testing.T, namespace string, extra ...Option) (winner, loser *
 	require.NoError(t, b.Set("from-b", []byte("b"), time.Second))
 
 	winner, loser = winnerOf(a, b)
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, nodeB.Host().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Host().Addrs()}))
 	a.(*cluster).current().tracker.addPeer(nodeB.ID())
 	b.(*cluster).current().tracker.addPeer(nodeA.ID())
@@ -269,7 +272,8 @@ func holdsEverything(cl Cluster) bool {
 }
 
 func TestHealing_ALoserRejoinsTheGroupItYieldedTo(t *testing.T) {
-	winner, loser := splitPair(t, "heal-rejoin")
+	mn := peertest.Net(t)
+	winner, loser := splitPair(t, mn, "heal-rejoin")
 
 	winner.current().healer.Load().executeMerge(t.Context(), loser.ID())
 
@@ -284,7 +288,8 @@ func TestHealing_ALoserRejoinsTheGroupItYieldedTo(t *testing.T) {
 }
 
 func TestHealing_AYieldWaitsForTheRaftItReplaces(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 	namespace := "yield-waits"
 	held := newHeldStore(node.Store(), ds.NewKey(path.Join(RaftStoragePrefix, namespace, "data", "held")))
 	defer held.letGo()
@@ -318,7 +323,8 @@ func TestHealing_AYieldWaitsForTheRaftItReplaces(t *testing.T) {
 }
 
 func TestHealing_AJoinEndsWithTheMemberAYieldTakesDown(t *testing.T) {
-	c, err := New(newMockNode(t), "yield-ends-join",
+	mn := peertest.Net(t)
+	c, err := New(newMockNode(t, mn), "yield-ends-join",
 		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	defer c.Close()
@@ -338,15 +344,16 @@ func TestHealing_AJoinEndsWithTheMemberAYieldTakesDown(t *testing.T) {
 }
 
 func TestHealing_AYieldRebuildsTheMemberItsReadersRead(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "yield-under-readers"
-	c, err := New(newMockNode(t), namespace,
+	c, err := New(newMockNode(t, mn), namespace,
 		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	defer c.Close()
 	waitLeader(t, c, 5*time.Second)
 
-	caller := newMockNode(t)
-	require.NoError(t, peertest.LinkAll(t))
+	caller := newMockNode(t, mn)
+	require.NoError(t, mn.LinkAll())
 	connected(t, caller, c)
 	cli, err := newInternalClient(caller, namespace, nil, quickRetry)
 	require.NoError(t, err)
@@ -408,18 +415,19 @@ func (p *holdingPeer) ExchangePeers(ctx context.Context, _ *connect.Request[raft
 }
 
 func TestHealing_AnExchangeAYieldCutsShortKeepsToItsMembersClient(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "yield-mid-exchange"
 	held := &holdingPeer{entered: make(chan struct{})}
-	node := newMockNode(t)
+	node := newMockNode(t, mn)
 	for range 2 {
-		other := newMockNode(t)
+		other := newMockNode(t, mn)
 		route, handler := raftv2connect.NewRaftServiceHandler(held)
 		mux := http.NewServeMux()
 		mux.Handle(route, handler)
 		srv, err := rpc.Listen(t.Context(), other.Host(), protocol.ID(Protocol(namespace)), mux)
 		require.NoError(t, err)
 		t.Cleanup(func() { srv.Close() })
-		require.NoError(t, peertest.LinkAll(t))
+		require.NoError(t, mn.LinkAll())
 		require.NoError(t, node.Host().Connect(t.Context(), peer.AddrInfo{ID: other.ID(), Addrs: other.Host().Addrs()}))
 	}
 
@@ -468,7 +476,8 @@ func (b heldBatch) Delete(ctx context.Context, key ds.Key) error {
 func (s *heldWipe) letGo() { s.out.Do(func() { close(s.release) }) }
 
 func TestCluster_CloseWaitsForAYieldInProgress(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 	namespace := "close-during-yield"
 	wipe := &heldWipe{
 		Batching: node.Store(),
@@ -524,7 +533,8 @@ func splitAfter(cycles int) Option {
 }
 
 func TestHealing_ASplitHealsByItself(t *testing.T) {
-	a, b := splitPair(t, "heal-by-itself", probingEvery(50*time.Millisecond))
+	mn := peertest.Net(t)
+	a, b := splitPair(t, mn, "heal-by-itself", probingEvery(50*time.Millisecond))
 
 	require.Eventually(t, func() bool {
 		ofA, errA := a.Members()
@@ -541,7 +551,8 @@ func TestHealing_ASplitHealsByItself(t *testing.T) {
 // handing either tracker the other: a member that formed before its connections were
 // up hears of the other group from identify, not from its next discovery pass.
 func TestHealing_GroupsFormedApartBecomeOneOnceConnected(t *testing.T) {
-	nodeA, nodeB := newMockNode(t), newMockNode(t)
+	mn := peertest.Net(t)
+	nodeA, nodeB := newMockNode(t, mn), newMockNode(t, mn)
 	opts := func() []Option {
 		return []Option{WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second)}
 	}
@@ -556,7 +567,7 @@ func TestHealing_GroupsFormedApartBecomeOneOnceConnected(t *testing.T) {
 	require.NoError(t, a.Set("from-a", []byte("a"), time.Second))
 	require.NoError(t, b.Set("from-b", []byte("b"), time.Second))
 
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, nodeB.Host().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Host().Addrs()}))
 
 	require.Eventually(t, func() bool {
@@ -571,10 +582,10 @@ func TestHealing_GroupsFormedApartBecomeOneOnceConnected(t *testing.T) {
 
 // formedPair is a group of two that formed the way a fleet does, with no
 // member forced to bootstrap: a bootstrapped alone, then b found it and joined.
-func formedPair(t *testing.T, namespace string, extra ...Option) (a, b Cluster) {
+func formedPair(t *testing.T, mn *taupeer.Mocknet, namespace string, extra ...Option) (a, b Cluster) {
 	t.Helper()
-	nodeA := newMockNode(t)
-	nodeB := newMockNode(t)
+	nodeA := newMockNode(t, mn)
+	nodeB := newMockNode(t, mn)
 
 	a, err := New(nodeA, namespace,
 		append([]Option{WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second)}, extra...)...)
@@ -582,7 +593,7 @@ func formedPair(t *testing.T, namespace string, extra ...Option) (a, b Cluster) 
 	t.Cleanup(func() { a.Close() })
 	waitLeader(t, a, 5*time.Second)
 
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, nodeB.Host().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Host().Addrs()}))
 	b, err = New(nodeB, namespace,
 		append([]Option{WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2 * time.Second)}, extra...)...)
@@ -599,8 +610,9 @@ func formedPair(t *testing.T, namespace string, extra ...Option) (a, b Cluster) 
 // and identify can leave it unlisted for good, so only a probe from the healer
 // finds it.
 func TestHealing_AnOrphanThePeerstoreDoesNotListIsAbsorbed(t *testing.T) {
+	mn := peertest.Net(t)
 	namespace := "heal-orphan-unlisted"
-	a, b := formedPair(t, namespace, probingEvery(50*time.Millisecond))
+	a, b := formedPair(t, mn, namespace, probingEvery(50*time.Millisecond))
 
 	removed, left := removeTheLeader(t, a, b)
 	tracker := left.(*cluster).current().tracker
@@ -616,7 +628,8 @@ func TestHealing_AnOrphanThePeerstoreDoesNotListIsAbsorbed(t *testing.T) {
 }
 
 func TestHealing_AnOrphanIsAbsorbed(t *testing.T) {
-	a, b := formedPair(t, "heal-orphan", probingEvery(50*time.Millisecond))
+	mn := peertest.Net(t)
+	a, b := formedPair(t, mn, "heal-orphan", probingEvery(50*time.Millisecond))
 
 	removed, left := removeTheLeader(t, a, b)
 	left.(*cluster).current().tracker.addPeer(idOf(removed))
@@ -638,9 +651,10 @@ func TestHealing_AnOrphanIsAbsorbed(t *testing.T) {
 // A split needs two leaderless cycles: the group ahead runs 25ms leases, which
 // under load leave it leaderless for longer than one 50ms cycle.
 func TestHealing_AGroupWithoutQuorumYieldsToTheGroupAheadOfIt(t *testing.T) {
+	mn := peertest.Net(t)
 	namespace := "heal-quorum-lost"
-	stranded, gone := formedPair(t, namespace, probingEvery(time.Second), splitAfter(1))
-	ahead, other := formedPair(t, namespace, probingEvery(time.Second), splitAfter(1))
+	stranded, gone := formedPair(t, mn, namespace, probingEvery(time.Second), splitAfter(1))
+	ahead, other := formedPair(t, mn, namespace, probingEvery(time.Second), splitAfter(1))
 	group := []Cluster{ahead, other}
 	for i := range 10 {
 		require.NoError(t, onLeader(t, group, func(leader Cluster) error {
@@ -674,7 +688,8 @@ func TestHealing_AGroupWithoutQuorumYieldsToTheGroupAheadOfIt(t *testing.T) {
 func nodeOfCluster(cl Cluster) taupeer.Node { return cl.(*cluster).Node }
 
 func TestHealing_AVoteFromANonMemberIsReported(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 	c, err := New(node, "foreign-votes", WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	defer c.Close()
@@ -682,7 +697,7 @@ func TestHealing_AVoteFromANonMemberIsReported(t *testing.T) {
 
 	// A healer of its own, so nothing else drains what it reports.
 	h := newHealer(c.(*cluster), c.(*cluster).current())
-	stranger := newMockNode(t).ID()
+	stranger := newMockNode(t, mn).ID()
 
 	h.foreignVote(node.ID())
 	select {
@@ -721,8 +736,9 @@ func TestHealing_ALeaderChangeCountsForTheCycleItHappenedIn(t *testing.T) {
 }
 
 func TestHealing_AForeignVoterIsTrackedAndAbsorbedByTheLeader(t *testing.T) {
-	a, b := formedPair(t, "foreign-voter")
-	stranger := newMockNode(t).ID()
+	mn := peertest.Net(t)
+	a, b := formedPair(t, mn, "foreign-voter")
+	stranger := newMockNode(t, mn).ID()
 
 	leader := leaderOf(t, a, b)
 	follower := a
@@ -746,8 +762,9 @@ func TestHealing_AForeignVoterIsTrackedAndAbsorbedByTheLeader(t *testing.T) {
 }
 
 func TestHealing_AMergeNeedsTheLeadAndTheOtherSide(t *testing.T) {
-	a, b := formedPair(t, "merge-preconditions")
-	stranger := newMockNode(t).ID()
+	mn := peertest.Net(t)
+	a, b := formedPair(t, mn, "merge-preconditions")
+	stranger := newMockNode(t, mn).ID()
 	require.NoError(t, onLeader(t, []Cluster{a, b}, func(leader Cluster) error {
 		return leader.Set("k", []byte("v"), time.Second)
 	}))
@@ -805,16 +822,16 @@ func (p *exportingPeer) HealAck(context.Context, *connect.Request[raftv2.HealAck
 // facing is a group of one running on store, connected to and tracking a node
 // that answers the group's protocol with other, the way the other side of a
 // split does.
-func facing(t *testing.T, namespace string, store ds.Batching, other raftv2connect.RaftServiceHandler, extra ...Option) (*cluster, peer.ID) {
+func facing(t *testing.T, mn *taupeer.Mocknet, namespace string, store ds.Batching, other raftv2connect.RaftServiceHandler, extra ...Option) (*cluster, peer.ID) {
 	t.Helper()
-	winnerNode := newMockNode(t)
+	winnerNode := newMockNode(t, mn)
 	w, err := New(storeNode{Node: winnerNode, store: store}, namespace,
 		append([]Option{WithTimeouts(testTimeoutConfig()), WithForceBootstrap()}, extra...)...)
 	require.NoError(t, err)
 	t.Cleanup(func() { w.Close() })
 	waitLeader(t, w, 5*time.Second)
 
-	otherNode := newMockNode(t)
+	otherNode := newMockNode(t, mn)
 	route, handler := raftv2connect.NewRaftServiceHandler(other)
 	mux := http.NewServeMux()
 	mux.Handle(route, handler)
@@ -822,7 +839,7 @@ func facing(t *testing.T, namespace string, store ds.Batching, other raftv2conne
 	require.NoError(t, err)
 	t.Cleanup(func() { srv.Close() })
 
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, winnerNode.Host().Connect(t.Context(), peer.AddrInfo{ID: otherNode.ID(), Addrs: otherNode.Host().Addrs()}))
 	winner := w.(*cluster)
 	winner.current().tracker.addPeer(otherNode.ID())
@@ -838,11 +855,12 @@ func oneWriteOfTheirs(t *testing.T) map[string]CRDTEntry {
 }
 
 func TestHealing_AMergeTheStoreRefusesTellsNobodyToYield(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "merge-refused"
 	store := newFaultStore()
 	other := &exportingPeer{state: oneWriteOfTheirs(t)}
 	// ONLY THE CALLS BELOW: a merge started by identify would be counted with theirs.
-	winner, otherID := facing(t, namespace, store, other, withoutMeetingIdentified())
+	winner, otherID := facing(t, mn, namespace, store, other, withoutMeetingIdentified())
 	other.members = []string{otherID.String()}
 	theirs := path.Join(RaftStoragePrefix, namespace, "data", "theirs")
 	store.failPut(theirs, errNoSpace)
@@ -869,18 +887,20 @@ func TestHealing_AMergeTheStoreRefusesTellsNobodyToYield(t *testing.T) {
 
 func TestHealing_AnOrphanWhoseStateIsNotTakenIsNotToldToYield(t *testing.T) {
 	t.Run("its export fails", func(t *testing.T) {
+		mn := peertest.Net(t)
 		other := &exportingPeer{refuse: connect.NewError(connect.CodeUnavailable, errDisk)}
-		winner, orphan := facing(t, "orphan-export-refused", newFaultStore(), other)
+		winner, orphan := facing(t, mn, "orphan-export-refused", newFaultStore(), other)
 
 		winner.current().healer.Load().absorbOrphan(t.Context(), orphan)
 		assert.Zero(t, other.healAcks.Load(), "an orphan whose state was never had was told to yield")
 	})
 
 	t.Run("the leader cannot read its own state", func(t *testing.T) {
+		mn := peertest.Net(t)
 		const namespace = "orphan-own-state-unreadable"
 		store := newFaultStore()
 		other := &exportingPeer{state: oneWriteOfTheirs(t)}
-		winner, orphan := facing(t, namespace, store, other)
+		winner, orphan := facing(t, mn, namespace, store, other)
 		store.failScan(path.Join(RaftStoragePrefix, namespace, "data"), errDisk)
 
 		winner.current().healer.Load().absorbOrphan(t.Context(), orphan)
@@ -890,8 +910,9 @@ func TestHealing_AnOrphanWhoseStateIsNotTakenIsNotToldToYield(t *testing.T) {
 
 // The default probe interval keeps the orphan's own healer quiet.
 func TestHealing_AnOrphansWritesAreMergedBeforeItYields(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "orphan-writes"
-	a, b := formedPair(t, namespace)
+	a, b := formedPair(t, mn, namespace)
 	require.NoError(t, onLeader(t, []Cluster{a, b}, func(leader Cluster) error {
 		return leader.Set("held", []byte("v"), time.Second)
 	}))
@@ -912,12 +933,12 @@ func TestHealing_AnOrphansWritesAreMergedBeforeItYields(t *testing.T) {
 		return errors.Is(err, ErrNoLeader)
 	}, leaderWait, 10*time.Millisecond, "the member left alone kept naming a leader")
 
-	groupNode := newMockNode(t)
+	groupNode := newMockNode(t, mn)
 	group, err := New(groupNode, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	t.Cleanup(func() { group.Close() })
 	waitLeader(t, group, 5*time.Second)
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	connected(t, groupNode, orphan)
 
 	group.(*cluster).current().healer.Load().absorbOrphan(t.Context(), idOf(orphan))
@@ -952,8 +973,9 @@ func (p *joiningPeer) HealAck(context.Context, *connect.Request[raftv2.HealAckRe
 }
 
 func TestHealing_AJoinerIsNotTakenForAnOrphan(t *testing.T) {
+	mn := peertest.Net(t)
 	joiner := &joiningPeer{}
-	leader, _ := facing(t, "heal-joiner", newFaultStore(), joiner)
+	leader, _ := facing(t, mn, "heal-joiner", newFaultStore(), joiner)
 
 	leader.current().healer.Load().probeAndMergeAsLeader(t.Context())
 	assert.Zero(t, joiner.healAcks.Load(), "a joiner was told to yield")
@@ -961,7 +983,8 @@ func TestHealing_AJoinerIsNotTakenForAnOrphan(t *testing.T) {
 }
 
 func TestHealing_AHealAckFromTheMembersOwnLeaderIsIgnored(t *testing.T) {
-	a, b := formedPair(t, "heal-ack-own-leader")
+	mn := peertest.Net(t)
+	a, b := formedPair(t, mn, "heal-ack-own-leader")
 	require.NoError(t, onLeader(t, []Cluster{a, b}, func(leader Cluster) error {
 		return leader.Set("held", []byte("v"), time.Second)
 	}))
@@ -985,7 +1008,8 @@ func TestHealing_AHealAckFromTheMembersOwnLeaderIsIgnored(t *testing.T) {
 }
 
 func TestHealing_AWipeFinishesWhateverCancelsItsContext(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 	namespace := "heal-wipe-cancelled"
 	cl, err := New(node, namespace, healingTestOptions()...)
 	require.NoError(t, err)
@@ -1008,7 +1032,8 @@ func TestHealing_AWipeFinishesWhateverCancelsItsContext(t *testing.T) {
 }
 
 func TestHealing_ACycleWithALeaderInItIsNotSplit(t *testing.T) {
-	a, b := formedPair(t, "heal-cycle-with-leader")
+	mn := peertest.Net(t)
+	a, b := formedPair(t, mn, "heal-cycle-with-leader")
 	stranded := a.(*cluster)
 
 	// The cycle begins when the member knows a leader in it: the member the
@@ -1036,10 +1061,11 @@ func TestHealing_ACycleWithALeaderInItIsNotSplit(t *testing.T) {
 // and raft lets no member campaign before it applies a configuration, so the
 // founder's bootstrap alone leaves them unable to ever elect.
 func TestHealing_AGroupWhoseFounderDiesBeforeItReplicatesFormsAgain(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "founder-dies"
-	nodes := []taupeer.Node{newMockNode(t), newMockNode(t), newMockNode(t)}
+	nodes := []taupeer.Node{newMockNode(t, mn), newMockNode(t, mn), newMockNode(t, mn)}
 	slices.SortFunc(nodes, func(a, b taupeer.Node) int { return strings.Compare(a.ID().String(), b.ID().String()) })
-	connectAllOf(t, nodes...)
+	connectAllOf(t, mn, nodes...)
 
 	opened := make(chan *cluster, len(nodes))
 	failed := make(chan error, len(nodes))
@@ -1093,9 +1119,10 @@ func TestHealing_AGroupWhoseFounderDiesBeforeItReplicatesFormsAgain(t *testing.T
 // empty newcomer appears: the newcomer has no leader either, and wiping for it
 // would throw away the only copy of what the group committed.
 func TestHealing_AMemberThatLostItsQuorumKeepsItsStateForAnEmptyNewcomer(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "quorum-lost-keeps"
 	probe := probingEvery(50 * time.Millisecond)
-	group := joinedGroup(t, namespace, sameStore, 3, probe)
+	group := joinedGroup(t, mn, namespace, sameStore, 3, probe)
 	leader := leaderTook(t, group, func(l Cluster) error { return l.Set("kept", []byte("v"), 5*time.Second) })
 
 	survivor := group[0].(*cluster)
@@ -1111,8 +1138,8 @@ func TestHealing_AMemberThatLostItsQuorumKeepsItsStateForAnEmptyNewcomer(t *test
 	require.Eventually(t, func() bool { _, err := survivor.Leader(); return err != nil }, leaderWait, 10*time.Millisecond)
 	before := survivor.current()
 
-	node := newMockNode(t)
-	require.NoError(t, peertest.LinkAll(t))
+	node := newMockNode(t, mn)
+	require.NoError(t, mn.LinkAll())
 	connected(t, node, survivor)
 	newcomer, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second), probe)
 	require.NoError(t, err)
@@ -1128,18 +1155,19 @@ func TestHealing_AMemberThatLostItsQuorumKeepsItsStateForAnEmptyNewcomer(t *test
 // A MERGE TELLS ONLY THE GROUP IT MERGED TO YIELD: a third group in sight, whose
 // state nobody took, keeps it.
 func TestHealing_AMergeTellsOnlyTheMergedGroupToYield(t *testing.T) {
+	mn := peertest.Net(t)
 	// ONLY THE MERGE BELOW: the third group meeting the winner as it is identified
 	// would be a merge of its own, and correctly told to yield.
 	const namespace = "heal-only-merged"
-	winner, loser := splitPair(t, namespace, withoutMeetingIdentified())
+	winner, loser := splitPair(t, mn, namespace, withoutMeetingIdentified())
 
-	node := newMockNode(t)
+	node := newMockNode(t, mn)
 	third, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), withoutMeetingIdentified())
 	require.NoError(t, err)
 	t.Cleanup(func() { third.Close() })
 	waitLeader(t, third, 5*time.Second)
 	require.NoError(t, third.Set("from-third", []byte("c"), time.Second))
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	connected(t, node, winner)
 	winner.current().tracker.addPeer(node.ID())
 	before := third.(*cluster).current()
@@ -1159,9 +1187,10 @@ func TestHealing_AMergeTellsOnlyTheMergedGroupToYield(t *testing.T) {
 // nobody to restart it: the yield took its old raft down, and a failed rebuild
 // left it no raft and no healer.
 func TestHealing_AMemberWhoseRebuildFailsIsRebuiltOnceItCanBe(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "rebuild-fails"
 	store := newFaultStore()
-	node := storeNode{Node: newMockNode(t), store: store}
+	node := storeNode{Node: newMockNode(t, mn), store: store}
 	cl, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	t.Cleanup(func() { cl.Close() })
@@ -1199,9 +1228,10 @@ func (p *winningPeer) ClusterInfo(context.Context, *connect.Request[raftv2.Clust
 // A MEMBER HOLDING STATE THAT LOSES TO ANOTHER GROUP WAITS TO BE TAKEN: yielding
 // before the winner merged it would wipe what the winner never had.
 func TestHealing_ALoserHoldingStateWaitsToBeTaken(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "loser-waits"
 	probe := probingEvery(50 * time.Millisecond)
-	group := joinedGroup(t, namespace, sameStore, 3, probe)
+	group := joinedGroup(t, mn, namespace, sameStore, 3, probe)
 	leader := leaderTook(t, group, func(l Cluster) error { return l.Set("kept", []byte("v"), 5*time.Second) })
 	survivor := group[0].(*cluster)
 	if Cluster(survivor) == leader {
@@ -1214,14 +1244,14 @@ func TestHealing_ALoserHoldingStateWaitsToBeTaken(t *testing.T) {
 		}
 	}
 
-	node := newMockNode(t)
+	node := newMockNode(t, mn)
 	route, handler := raftv2connect.NewRaftServiceHandler(&winningPeer{id: node.ID()})
 	mux := http.NewServeMux()
 	mux.Handle(route, handler)
 	srv, err := rpc.Listen(t.Context(), node.Host(), protocol.ID(Protocol(namespace)), mux)
 	require.NoError(t, err)
 	t.Cleanup(func() { srv.Close() })
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	connected(t, node, survivor)
 	survivor.current().tracker.addPeer(node.ID())
 	before := survivor.current()
@@ -1236,7 +1266,8 @@ func TestHealing_ALoserHoldingStateWaitsToBeTaken(t *testing.T) {
 // stops short of what the member committed, or a member that holds something
 // after all, is rebuilt from what it kept.
 func TestHealing_AYieldThatNoLongerHoldsWipesNothing(t *testing.T) {
-	cl, err := New(newMockNode(t), "yield-guarded", WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
+	mn := peertest.Net(t)
+	cl, err := New(newMockNode(t, mn), "yield-guarded", WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	t.Cleanup(func() { cl.Close() })
 	waitLeader(t, cl, 5*time.Second)
@@ -1265,9 +1296,10 @@ func TestHealing_AYieldThatNoLongerHoldsWipesNothing(t *testing.T) {
 // A REBUILD THAT KEEPS FAILING is tried again, ever less often, until it lands,
 // and stops being tried once the cluster closes.
 func TestHealing_ARebuildThatKeepsFailingIsTriedUntilItLands(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "rebuild-keeps-failing"
 	store := newFaultStore()
-	node := storeNode{Node: newMockNode(t), store: store}
+	node := storeNode{Node: newMockNode(t, mn), store: store}
 	cl, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	t.Cleanup(func() { cl.Close() })
@@ -1293,11 +1325,11 @@ func TestHealing_ARebuildThatKeepsFailingIsTriedUntilItLands(t *testing.T) {
 
 // soloPair is two groups of one, each on its own node and each holding a write,
 // connected but with neither tracking the other, ordered winner first.
-func soloPair(t *testing.T, namespace string, extra ...Option) (winner, loser *cluster) {
+func soloPair(t *testing.T, mn *taupeer.Mocknet, namespace string, extra ...Option) (winner, loser *cluster) {
 	t.Helper()
 	var solos []*cluster
 	for _, key := range []string{"from-a", "from-b"} {
-		cl, err := New(newMockNode(t), namespace, append([]Option{WithTimeouts(testTimeoutConfig()), WithForceBootstrap()}, extra...)...)
+		cl, err := New(newMockNode(t, mn), namespace, append([]Option{WithTimeouts(testTimeoutConfig()), WithForceBootstrap()}, extra...)...)
 		require.NoError(t, err)
 		t.Cleanup(func() { cl.Close() })
 		waitLeader(t, cl, 5*time.Second)
@@ -1305,7 +1337,7 @@ func soloPair(t *testing.T, namespace string, extra ...Option) (winner, loser *c
 		solos = append(solos, cl.(*cluster))
 	}
 	winner, loser = winnerOf(solos[0], solos[1])
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, solos[0].Host().Connect(t.Context(), peer.AddrInfo{ID: solos[1].ID(), Addrs: solos[1].Host().Addrs()}))
 	return winner, loser
 }
@@ -1313,7 +1345,8 @@ func soloPair(t *testing.T, namespace string, extra ...Option) (winner, loser *c
 // A LEADER THAT LOSES TO ANOTHER MAKES ITSELF KNOWN TO IT: the winner may not
 // track it, and would take it only whenever its discovery came round.
 func TestHealing_ALosingLeaderMakesItselfKnownToTheWinner(t *testing.T) {
-	winner, loser := soloPair(t, "loser-announces", probingEvery(50*time.Millisecond))
+	mn := peertest.Net(t)
+	winner, loser := soloPair(t, mn, "loser-announces", probingEvery(50*time.Millisecond))
 	loser.current().tracker.addPeer(winner.ID())
 
 	require.Eventually(t, func() bool {
@@ -1328,7 +1361,8 @@ func TestHealing_ALosingLeaderMakesItselfKnownToTheWinner(t *testing.T) {
 // probe, a check interval away: in a line, the winner is the one that never saw the
 // loser identified, having been a follower then, or not been connected to it at all.
 func TestHealing_ALosingLeaderThatMakesItselfKnownIsMetAtOnce(t *testing.T) {
-	winner, loser := soloPair(t, "loser-met-at-once", withoutMeetingIdentified(), probingEvery(time.Hour))
+	mn := peertest.Net(t)
+	winner, loser := soloPair(t, mn, "loser-met-at-once", withoutMeetingIdentified(), probingEvery(time.Hour))
 
 	loser.current().healer.Load().meetAsLeader(t.Context(), winner.ID())
 	require.Eventually(t, func() bool {
@@ -1344,7 +1378,8 @@ func TestHealing_ALosingLeaderThatMakesItselfKnownIsMetAtOnce(t *testing.T) {
 // while it took that group as the winner of the two: each would yield on the
 // other's receipt, for state only the other held.
 func TestHealing_ALeaderIsNeverTakenAsAnOrphan(t *testing.T) {
-	winner, loser := soloPair(t, "leader-taken-as-orphan", withoutMeetingIdentified(), probingEvery(time.Hour))
+	mn := peertest.Net(t)
+	winner, loser := soloPair(t, mn, "leader-taken-as-orphan", withoutMeetingIdentified(), probingEvery(time.Hour))
 	// The loser holds everything the winner does, so taking the winner adds nothing.
 	for _, key := range []string{"from-a", "from-b"} {
 		require.NoError(t, loser.Set(key, []byte(key[len(key)-1:]), time.Second))
@@ -1367,7 +1402,8 @@ func TestHealing_ALeaderIsNeverTakenAsAnOrphan(t *testing.T) {
 // A NODE MADE TO FORM ITS GROUP ALONE JOINS THE GROUP IT YIELDED TO: it was the
 // first of its group once, and forming another would be absorbed again, forever.
 func TestHealing_AForceBootstrappedLoserJoinsTheGroupItYieldedTo(t *testing.T) {
-	winner, loser := soloPair(t, "forced-loser-joins")
+	mn := peertest.Net(t)
+	winner, loser := soloPair(t, mn, "forced-loser-joins")
 	winner.current().tracker.addPeer(loser.ID())
 
 	winner.current().healer.Load().executeMerge(t.Context(), loser.ID())
@@ -1381,7 +1417,8 @@ func TestHealing_AForceBootstrappedLoserJoinsTheGroupItYieldedTo(t *testing.T) {
 // TWO LEADERS HEARING EACH OTHER AT ONCE NEVER EACH TAKE THE OTHER: both would
 // yield on the other's receipt, and wipe what each had just merged.
 func TestHealing_TwoLeadersHearingEachOtherAtOnceDoNotBothYield(t *testing.T) {
-	winner, loser := soloPair(t, "heard-at-once")
+	mn := peertest.Net(t)
+	winner, loser := soloPair(t, mn, "heard-at-once")
 	done := make(chan struct{}, 2)
 	for _, pair := range [][2]*cluster{{winner, loser}, {loser, winner}} {
 		go func() {
@@ -1402,6 +1439,7 @@ func TestHealing_TwoLeadersHearingEachOtherAtOnceDoNotBothYield(t *testing.T) {
 // A MEMBER LISTED IN THE WINNER'S CONFIGURATION BUT BOUND TO ANOTHER FORMATION IS
 // TAKEN with that formation: listing it does not make it ours.
 func TestHealing_AListedMemberOfAnotherFormationIsTaken(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "listed-elsewhere"
 	probe := probingEvery(50 * time.Millisecond)
 	// OURS IS A FORMATION IN THE LOWER HALF, and the other one above it, so ours
@@ -1410,7 +1448,7 @@ func TestHealing_AListedMemberOfAnotherFormationIsTaken(t *testing.T) {
 	var leader *cluster
 	var ours []Cluster
 	for range 40 {
-		ours = joinedGroup(t, namespace, sameStore, 2, probe)
+		ours = joinedGroup(t, mn, namespace, sameStore, 2, probe)
 		candidate := leaderOf(t, ours...).(*cluster)
 		if candidate.current().raft.Formation()[0] < 0x80 {
 			leader = candidate
@@ -1425,7 +1463,7 @@ func TestHealing_AListedMemberOfAnotherFormationIsTaken(t *testing.T) {
 
 	var other *cluster
 	for range 20 {
-		cl, err := New(newMockNode(t), namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), probe)
+		cl, err := New(newMockNode(t, mn), namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), probe)
 		require.NoError(t, err)
 		t.Cleanup(func() { cl.Close() })
 		waitLeader(t, cl, 5*time.Second)
@@ -1437,7 +1475,7 @@ func TestHealing_AListedMemberOfAnotherFormationIsTaken(t *testing.T) {
 	}
 	require.NotNil(t, other, "no formation came after ours in twenty draws")
 	require.NoError(t, other.Set("from-b", []byte("b"), time.Second))
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, leader.Host().Connect(t.Context(), peer.AddrInfo{ID: other.ID(), Addrs: other.Host().Addrs()}))
 	leader = leaderTook(t, ours, func(l Cluster) error { return l.AddVoter(other.ID(), 5*time.Second) }).(*cluster)
 	leader.current().tracker.addPeer(other.ID())
@@ -1453,16 +1491,17 @@ func TestHealing_AListedMemberOfAnotherFormationIsTaken(t *testing.T) {
 // merge of what one already holds commits nothing, so each receipt would cover
 // its receiver, and both would wipe the only copies there are.
 func TestHealing_TwoLeadersWithTheSameStateDoNotBothYield(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "same-state-at-once"
 	var solos []*cluster
 	for range 2 {
-		cl, err := New(newMockNode(t), namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
+		cl, err := New(newMockNode(t, mn), namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 		require.NoError(t, err)
 		t.Cleanup(func() { cl.Close() })
 		waitLeader(t, cl, 5*time.Second)
 		solos = append(solos, cl.(*cluster))
 	}
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, solos[0].Host().Connect(t.Context(), peer.AddrInfo{ID: solos[1].ID(), Addrs: solos[1].Host().Addrs()}))
 	before := []*member{solos[0].current(), solos[1].current()}
 
@@ -1482,9 +1521,10 @@ func TestHealing_TwoLeadersWithTheSameStateDoNotBothYield(t *testing.T) {
 // A WIPE THE STORE REFUSES TAKES NOTHING: what the member held goes all at once or
 // not at all, so a log is never gone while the data it committed stays.
 func TestHealing_AWipeTheStoreRefusesTakesNothing(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "wipe-refused"
 	store := newFaultStore()
-	cl, err := New(storeNode{Node: newMockNode(t), store: store}, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
+	cl, err := New(storeNode{Node: newMockNode(t, mn), store: store}, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	t.Cleanup(func() { cl.Close() })
 	waitLeader(t, cl, 5*time.Second)
@@ -1504,8 +1544,9 @@ func TestHealing_AWipeTheStoreRefusesTakesNothing(t *testing.T) {
 // A FOUNDER WHOSE OTHER FOUNDER NEVER CAME FORMS AGAIN, alone if need be: its log
 // holds only who it named, which leaving loses nothing of.
 func TestHealing_AFounderLeftWithOnlyItsConfigurationFormsAgain(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "founder-left-alone"
-	node := newMockNode(t)
+	node := newMockNode(t, mn)
 	cl, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithBootstrapTimeout(time.Second),
 		probingEvery(50*time.Millisecond))
 	require.NoError(t, err)

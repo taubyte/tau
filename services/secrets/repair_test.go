@@ -19,10 +19,11 @@ import (
 )
 
 func TestRepairIsBestEffortAndRetries(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 3)
+	c := newCluster(t, mn, ctx, 3)
 	c.bootstrap(t, ctx, 0)
 	key := c.awaitKey(t, ctx)
 	require.NoError(t, c.client(t).Set(ctx, ref("repaired"), []byte("v")))
@@ -52,10 +53,11 @@ func TestRepairIsBestEffortAndRetries(t *testing.T) {
 }
 
 func TestRepairLeavesKeysNothingIsWrappedUnder(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := newCluster(t, ctx, 2)
+	c := newCluster(t, mn, ctx, 2)
 	c.bootstrap(t, ctx, 0)
 	key := c.awaitKey(t, ctx)
 
@@ -82,13 +84,14 @@ func TestRepairLeavesKeysNothingIsWrappedUnder(t *testing.T) {
 }
 
 func TestWithoutStatedMembersTheRosterIsWhoSpeaksTheProtocol(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
 	name := fmt.Sprintf("secrets-%d", clusters.Add(1))
 
 	var services []*server
 	var nodes []peerNode.Node
 	for range 2 {
-		node := peertest.Mock(t, ctx)
+		node := mn.Mock(ctx)
 		t.Cleanup(func() { node.Close() })
 		db, err := kvdb.Open(node, name, kvdb.WithLogger(logging.Logger("secrets-test")), kvdb.WithRebroadcast(time.Second))
 		require.NoError(t, err)
@@ -101,10 +104,10 @@ func TestWithoutStatedMembersTheRosterIsWhoSpeaksTheProtocol(t *testing.T) {
 	}
 
 	// A connected peer that does not run the service is not a member.
-	bystander := peertest.Mock(t, ctx)
+	bystander := mn.Mock(ctx)
 	t.Cleanup(func() { bystander.Close() })
 
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	for _, other := range []peerNode.Node{nodes[1], bystander} {
 		require.NoError(t, nodes[0].Host().Connect(ctx, other.Host().Peerstore().PeerInfo(other.ID())))
 	}
@@ -117,7 +120,8 @@ func TestWithoutStatedMembersTheRosterIsWhoSpeaksTheProtocol(t *testing.T) {
 }
 
 func TestARebuiltShareIsCheckedBeforeItIsKept(t *testing.T) {
-	srv, client, _ := single(t)
+	mn := peertest.Net(t)
+	srv, client, _ := single(t, mn)
 	ctx := t.Context()
 	require.NoError(t, client.Set(ctx, Ref{Scope: Project("p", "e"), Name: "n"}, []byte("v")))
 	key := mustActive(t, ctx, srv)
@@ -156,7 +160,8 @@ func TestARebuiltShareIsCheckedBeforeItIsKept(t *testing.T) {
 }
 
 func TestSetRefusesWhatItCannotStore(t *testing.T) {
-	srv, client, _ := single(t)
+	mn := peertest.Net(t)
+	srv, client, _ := single(t, mn)
 	ctx := t.Context()
 	require.NoError(t, client.Set(ctx, Ref{Scope: Project("p", "e"), Name: "n"}, []byte("v")))
 	key := mustActive(t, ctx, srv)
@@ -172,7 +177,8 @@ func TestSetRefusesWhatItCannotStore(t *testing.T) {
 }
 
 func TestAClientRefusesBadReferencesBeforeAskingAnyone(t *testing.T) {
-	node := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	node := mn.Mock(t.Context())
 	t.Cleanup(func() { node.Close() })
 
 	// Named as a member, but this node runs no service, so it is not a target.
@@ -204,7 +210,8 @@ func TestReconciliationStepsReportAFailingStore(t *testing.T) {
 }
 
 func TestARoundMustNameItsEpochAndRoster(t *testing.T) {
-	srv, _, node := single(t)
+	mn := peertest.Net(t)
+	srv, _, node := single(t, mn)
 	members := []string{node.ID().String()}
 
 	_, err := srv.joinRound(t.Context(), roundID(2, members), 1, members)

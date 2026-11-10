@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	pkgcache "github.com/taubyte/tau/pkg/cache"
 	"github.com/taubyte/tau/pkg/database"
 	"github.com/taubyte/tau/pkg/raft"
@@ -30,9 +31,10 @@ func TestTheGroupAndTheStoreAgreeOnTheNameADatabaseHas(t *testing.T) {
 }
 
 func TestTheRootPicksBetweenACrdtStoreAndAGroup(t *testing.T) {
+	mn := peertest.Net(t)
 	cluster := &closing{MockCluster: raft.NewMockCluster()}
 
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register, Worker, Stats}},
 		withRaft(oneGroup{cluster}))
 	d, err := newDatabases(n.Service)
 	require.NoError(t, err)

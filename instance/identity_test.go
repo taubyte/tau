@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
@@ -26,9 +27,10 @@ func (l *linked) Admit(_ context.Context, c authService.Caller) (authService.Adm
 func (l *linked) Close() error { l.closed = true; return nil }
 
 func TestAComposedIdentityIsWhatAuthAnswersWith(t *testing.T) {
+	mn := peertest.Net(t)
 	id := &linked{}
 	var handed Host
-	p := mockPeer(t)
+	p := mockPeer(t, mn)
 	n, err := New(p, rooted(t, Config{Services: []string{Auth}}), withKVDB(&memFactory{}), WithIdentity(func(host Host) (authService.Identity, error) {
 		handed = host
 		return id, nil
@@ -38,7 +40,7 @@ func TestAComposedIdentityIsWhatAuthAnswersWith(t *testing.T) {
 	require.NoError(t, n.Start(t.Context()))
 	require.Equal(t, p.Host(), handed.Peer().Host(), "handed the instance it runs on")
 
-	client, err := rpc.NewClient(callerOf(t, p), p.ID(), authService.Protocol)
+	client, err := rpc.NewClient(callerOf(t, mn, p), p.ID(), authService.Protocol)
 	require.NoError(t, err)
 	defer client.Close()
 	identities := authv2connect.NewIdentityServiceClient(client.HTTP(), client.URL())
@@ -53,7 +55,8 @@ func TestAComposedIdentityIsWhatAuthAnswersWith(t *testing.T) {
 }
 
 func TestWhatWithIdentityRefuses(t *testing.T) {
-	_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Stats}}), WithIdentity(nil))
+	mn := peertest.Net(t)
+	_, err := New(mockPeer(t, mn), rooted(t, Config{Services: []string{Stats}}), WithIdentity(nil))
 	require.Error(t, err)
 
 	for name, build := range map[string]func(Host) (authService.Identity, error){
@@ -61,7 +64,7 @@ func TestWhatWithIdentityRefuses(t *testing.T) {
 		"nothing": func(Host) (authService.Identity, error) { return nil, nil },
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := New(mockPeer(t), rooted(t, Config{Services: []string{Auth}}), withKVDB(&memFactory{}), WithIdentity(build))
+			_, err := New(mockPeer(t, mn), rooted(t, Config{Services: []string{Auth}}), withKVDB(&memFactory{}), WithIdentity(build))
 			require.Error(t, err)
 		})
 	}

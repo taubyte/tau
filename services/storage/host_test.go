@@ -40,9 +40,9 @@ type storageNode struct {
 	cm      *cmmock.CM
 }
 
-func newStorageNode(t *testing.T) *storageNode {
+func newStorageNode(t *testing.T, mn *peer.Mocknet) *storageNode {
 	t.Helper()
-	p := peertest.Mock(t, t.Context())
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 
 	// THE REGION'S SETTINGS ARE CM'S, which a storage node waits for before it
@@ -93,8 +93,9 @@ func (i *storageNode) start(t *testing.T) *server {
 func (i *storageNode) service() *server { return i.started }
 
 func TestStorageRunsFromWhatItsInstanceGivesIt(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	i := newStorageNode(t)
+	i := newStorageNode(t, mn)
 
 	s := i.start(t)
 
@@ -120,12 +121,13 @@ func TestStorageRunsFromWhatItsInstanceGivesIt(t *testing.T) {
 }
 
 func TestStorageRefusesWhatItCannotStartWith(t *testing.T) {
-	i := newStorageNode(t)
+	mn := peertest.Net(t)
+	i := newStorageNode(t, mn)
 	i.config = func(any) error { return errors.New("no such key") }
 	err := New().Start(t.Context(), i)
 	require.ErrorContains(t, err, "no such key")
 
-	i = newStorageNode(t)
+	i = newStorageNode(t, mn)
 	i.config = func(into any) error {
 		into.(*Config).GraceGC = -time.Hour
 		return nil
@@ -135,10 +137,11 @@ func TestStorageRefusesWhatItCannotStartWith(t *testing.T) {
 }
 
 func TestTwoStorageNodesHoldOneWrite(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	a, b := newStorageNode(t), newStorageNode(t)
+	a, b := newStorageNode(t, mn), newStorageNode(t, mn)
 	a.finding, b.finding = finding{b.ID()}, finding{a.ID()}
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, a.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: b.ID(), Addrs: b.Host().Addrs()}))
 
 	for _, i := range []*storageNode{a, b} {
@@ -171,8 +174,9 @@ func TestTwoStorageNodesHoldOneWrite(t *testing.T) {
 }
 
 func TestAPeersBlocksAreReadOnlyWhereTheyAre(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	i := newStorageNode(t)
+	i := newStorageNode(t, mn)
 	bytes := peerBytes{Node: i.Node}
 
 	content := strings.Repeat("x", 600<<10)
@@ -203,9 +207,10 @@ func TestAPeersBlocksAreReadOnlyWhereTheyAre(t *testing.T) {
 // unchecked, and a holder given a root again after a probe found its copy wrong would
 // otherwise keep the rot.
 func TestAFetchReplacesABlockThatRotted(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	a, b := newStorageNode(t), newStorageNode(t)
-	require.NoError(t, peertest.LinkAll(t))
+	a, b := newStorageNode(t, mn), newStorageNode(t, mn)
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, a.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: b.ID(), Addrs: b.Host().Addrs()}))
 	from, to := peerBytes{Node: a.Node}, peerBytes{Node: b.Node}
 
@@ -232,9 +237,10 @@ func TestAFetchReplacesABlockThatRotted(t *testing.T) {
 // A READ REPLACES A BLOCK THAT ROTTED: the bytes it returns hash to the root, the
 // rotted block fetched again from a node that has it.
 func TestAReadReplacesABlockThatRotted(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	a, b := newStorageNode(t), newStorageNode(t)
-	require.NoError(t, peertest.LinkAll(t))
+	a, b := newStorageNode(t, mn), newStorageNode(t, mn)
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, a.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: b.ID(), Addrs: b.Host().Addrs()}))
 	from, to := peerBytes{Node: a.Node}, peerBytes{Node: b.Node}
 
@@ -258,8 +264,9 @@ func TestAReadReplacesABlockThatRotted(t *testing.T) {
 }
 
 func TestTheStoreIsReachedAsTheServiceBesideIt(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	i := newStorageNode(t)
+	i := newStorageNode(t, mn)
 	i.start(t)
 
 	r := StoreOn(i)
@@ -290,7 +297,7 @@ func TestTheStoreIsReachedAsTheServiceBesideIt(t *testing.T) {
 	require.NoError(t, err)
 
 	// NOWHERE TO REACH, and every call says so.
-	none := StoreOn(newStorageNode(t))
+	none := StoreOn(newStorageNode(t, mn))
 	_, err = none.Put(ctx, at, "o", Object{}, strings.NewReader("x"))
 	require.ErrorIs(t, err, service.ErrNoneRuns)
 	_, err = none.Current(ctx, at, "o")
@@ -306,7 +313,8 @@ func TestTheStoreIsReachedAsTheServiceBesideIt(t *testing.T) {
 }
 
 func TestStorageDoesNotStartWithoutTheRegionsSettings(t *testing.T) {
-	i := newStorageNode(t)
+	mn := peertest.Net(t)
+	i := newStorageNode(t, mn)
 	i.Served = service.NewServed(i.ID(), &i.finding, rpc.Retry{For: 50 * time.Millisecond})
 
 	ctx, cancel := context.WithTimeout(t.Context(), 750*time.Millisecond)
@@ -315,10 +323,11 @@ func TestStorageDoesNotStartWithoutTheRegionsSettings(t *testing.T) {
 }
 
 func TestTheStoreElsewhereIsReachedOverItsProtocol(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	at, from := newStorageNode(t), newStorageNode(t)
+	at, from := newStorageNode(t, mn), newStorageNode(t, mn)
 	at.start(t)
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, from.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: at.ID(), Addrs: at.Host().Addrs()}))
 	from.finding = finding{at.ID()}
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/forge/drivers"
 
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/pkg/git/gittest"
 	"github.com/taubyte/tau/services/plm/ingress"
 
@@ -15,6 +16,7 @@ import (
 )
 
 func TestAFrontendFollowsAForgesEventStream(t *testing.T) {
+	mn := peertest.Net(t)
 	sshd, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	t.Cleanup(func() { sshd.Close() })
@@ -29,7 +31,7 @@ func TestAFrontendFollowsAForgesEventStream(t *testing.T) {
 	}()
 
 	priv, pub := gittest.KeyPair(t)
-	n, _, _ := makeNode(t, Config{
+	n, _, _ := makeNode(t, mn, Config{
 		Services: []string{Stats, PLM},
 		Sections: map[string]any{PLM: ingress.Config{Listen: "127.0.0.1:0"}},
 		Forges: []drivers.Forge{{

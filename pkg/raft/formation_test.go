@@ -53,7 +53,8 @@ func formationMember(t *testing.T, node taupeer.Node, namespace string, client i
 }
 
 func TestAMemberPrefersTheFormationThatNamesIt(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 	c := &cluster{Node: node}
 	other := strangerID(t)
 	low, high := make([]byte, formationSize), make([]byte, formationSize)
@@ -73,7 +74,8 @@ func TestAMemberPrefersTheFormationThatNamesIt(t *testing.T) {
 // A MEMBER BOUND TO NO FORMATION BINDS TO ONE ITS PEERS OFFER, picking the same
 // one every node would, and waits for no peer that does not answer.
 func TestAMemberBindsToAFormationItsPeersOffer(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 	named, quiet, unbound, gone, orphaned := strangerID(t), strangerID(t), strangerID(t), strangerID(t), strangerID(t)
 	theirs := newFormation()
 	client := &offering{
@@ -106,10 +108,11 @@ func TestAMemberBindsToAFormationItsPeersOffer(t *testing.T) {
 // A BINDING THE STORE REFUSES IS NO BINDING: the group stays bound to none, and a
 // bootstrap whose formation cannot be written writes nothing.
 func TestABindingTheStoreRefusesIsNone(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "bind-refused"
 	store := newFaultStore()
 	store.failPut(path.Join(RaftStoragePrefix, namespace, "engine", "formation"), errNoSpace)
-	node := storeNode{Node: newMockNode(t), store: store}
+	node := storeNode{Node: newMockNode(t, mn), store: store}
 	theirs := newFormation()
 	c, m := formationMember(t, node, namespace, &offering{offers: map[peer.ID]offer{node.ID(): {}}})
 	g := m.raft
@@ -127,7 +130,8 @@ func TestABindingTheStoreRefusesIsNone(t *testing.T) {
 
 // A GROUP WHOSE ENGINE HAS STOPPED binds to nothing and holds nothing it can say.
 func TestAGroupOnAStoppedEngineBindsToNothing(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 	e := engineFor(node)
 	fsm := newKVFSM(t.Context(), node.Store(), path.Join(RaftStoragePrefix, "stopped"))
 	g, err := e.open("stopped", groupConfig{timeouts: quickTimeouts, machine: fsm, store: node.Store()})
@@ -157,9 +161,10 @@ func TestAPeerIsExchangedWithOnceAtATime(t *testing.T) {
 }
 
 func TestAnOfferFromAPeerOutsideTheGroupFails(t *testing.T) {
-	_, cli := callerOf(t, "offer-outside", sameStore)
-	outside := newMockNode(t)
-	require.NoError(t, peertest.LinkAll(t))
+	mn := peertest.Net(t)
+	_, cli := callerOf(t, mn, "offer-outside", sameStore)
+	outside := newMockNode(t, mn)
+	require.NoError(t, mn.LinkAll())
 	_, err := cli.Offer(outside.ID())
 	require.Error(t, err)
 }
@@ -215,7 +220,8 @@ func TestACandidateNobodyReachesIsDropped(t *testing.T) {
 // A FROZEN GROUP TAKES NO WRITE until its freeze runs out: it is handing its
 // state to another group, which took it at a cut.
 func TestAFrozenGroupTakesNoWriteUntilItsFreezeEnds(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 	g := onEngine(t, node, "frozen", quickTimeouts)
 	require.NoError(t, g.Bootstrap([]peer.ID{node.ID()}))
 	leading(t, g)
@@ -235,7 +241,8 @@ func TestAFrozenGroupTakesNoWriteUntilItsFreezeEnds(t *testing.T) {
 // formation, and has it take no write meanwhile: nothing it commits after the cut
 // escapes the merge.
 func TestAnExportThatFreezesCutsWhereNothingFollowsUnseen(t *testing.T) {
-	cl, cli := callerOf(t, "export-freezes", sameStore)
+	mn := peertest.Net(t)
+	cl, cli := callerOf(t, mn, "export-freezes", sameStore)
 	require.NoError(t, cl.Set("k", []byte("v"), time.Second))
 	c := cl.(*cluster)
 
@@ -251,7 +258,8 @@ func TestAnExportThatFreezesCutsWhereNothingFollowsUnseen(t *testing.T) {
 // A RECEIPT A MEMBER CANNOT YIELD ON IS REFUSED: one for another formation, or
 // one whose cut stops before what the member committed.
 func TestAMemberRefusesAReceiptThatDoesNotCoverIt(t *testing.T) {
-	cl, cli := callerOf(t, "receipt-refused", sameStore)
+	mn := peertest.Net(t)
+	cl, cli := callerOf(t, mn, "receipt-refused", sameStore)
 	require.NoError(t, cl.Set("k", []byte("v"), time.Second))
 	m := cl.(*cluster).current()
 
@@ -278,7 +286,8 @@ func TestCandidatesHoldSoManyExchangesAndLivePeersAreNeverHeldBack(t *testing.T)
 // A GROUP CLOSED SINCE BINDS TO NOTHING: a join that asked for offers before the
 // group was taken down would otherwise label the group opened after it.
 func TestAGroupClosedSinceBindsToNothing(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 	old := onEngine(t, node, "closed-since", quickTimeouts)
 	keep := onEngine(t, node, "keeps-engine", quickTimeouts)
 	require.NoError(t, old.Close())
@@ -296,7 +305,8 @@ func TestAGroupClosedSinceBindsToNothing(t *testing.T) {
 // A LOG OF NO FORMATION IS NOT BOUND AFTER THE FACT: whichever formation it came
 // from, binding it to another would mix the two.
 func TestALogOfNoFormationIsNotBoundAfterTheFact(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 	g := onEngine(t, node, "unbound-history", quickTimeouts)
 	require.NoError(t, g.Bootstrap([]peer.ID{node.ID()}))
 	leading(t, g)
@@ -314,7 +324,8 @@ func TestALogOfNoFormationIsNotBoundAfterTheFact(t *testing.T) {
 // and holds some once a write is in it, or a snapshot of one; a group on a stopped
 // engine says it holds some.
 func TestALogHoldsNoDataUntilAWriteIsInItOrInItsSnapshot(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 	snapping := TimeoutConfig{HeartbeatTimeout: 50 * time.Millisecond, SnapshotThreshold: 2, TrailingLogs: 1}
 	g := onEngine(t, node, "no-data", snapping)
 	require.True(t, g.HoldsNoData(), "an empty log holds data")
@@ -330,7 +341,7 @@ func TestALogHoldsNoDataUntilAWriteIsInItOrInItsSnapshot(t *testing.T) {
 	require.NoError(t, g.Snapshot())
 	require.False(t, g.HoldsNoData(), "a snapshot of a write holds no data")
 
-	e := engineFor(newMockNode(t))
+	e := engineFor(newMockNode(t, mn))
 	stopped, err := e.open("stopped", groupConfig{timeouts: quickTimeouts, machine: newKVFSM(t.Context(), node.Store(), "/raft/stopped"), store: node.Store()})
 	require.NoError(t, err)
 	require.NoError(t, stopped.Close())

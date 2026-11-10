@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	pkgregister "github.com/taubyte/tau/pkg/register"
@@ -30,7 +32,8 @@ func channelGrant() invoke.Grant {
 }
 
 func TestAChannelWithNoServerIsNoAnswer(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Worker}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Worker}})
 	c := &channels{node: n.Service}
 
 	grant := channelGrant()
@@ -41,7 +44,8 @@ func TestAChannelWithNoServerIsNoAnswer(t *testing.T) {
 }
 
 func TestAHandleThatNamesNoDeploymentIsRefused(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Worker}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Worker}})
 	c := &channels{node: n.Service}
 
 	grant := channelGrant()
@@ -54,7 +58,8 @@ func TestAHandleThatNamesNoDeploymentIsRefused(t *testing.T) {
 }
 
 func TestANodeThatCanReachNoWorkerAnswersNothing(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register}})
 	require.Nil(t, n.worker, "this node runs none")
 	require.Nil(t, n.workers, "and runs no stats to place through")
 
@@ -64,9 +69,9 @@ func TestANodeThatCanReachNoWorkerAnswersNothing(t *testing.T) {
 
 // dialingNode is a worker with no stats — so a dial goes to its own worker,
 // the only workload it can reach — serving the fixture's checkout function.
-func dialingNode(t *testing.T, answers *answering) *channels {
+func dialingNode(t *testing.T, mn *taupeer.Mocknet, answers *answering) *channels {
 	t.Helper()
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker}}, WithRuntimes(answers), prebuilt())
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register, Worker}}, WithRuntimes(answers), prebuilt())
 	require.Nil(t, n.workers, "no stats, so nothing to place through")
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled(),
@@ -76,7 +81,8 @@ func dialingNode(t *testing.T, answers *answering) *channels {
 }
 
 func TestAChannelToAFunctionIsItsAnswer(t *testing.T) {
-	c := dialingNode(t, &answering{name: "wasm", status: 200})
+	mn := peertest.Net(t)
+	c := dialingNode(t, mn, &answering{name: "wasm", status: 200})
 
 	got, err := c.Dial(t.Context(), channelGrant(), []byte("x"))
 	require.NoError(t, err)
@@ -84,7 +90,8 @@ func TestAChannelToAFunctionIsItsAnswer(t *testing.T) {
 }
 
 func TestAFailingServerIsAFailedChannel(t *testing.T) {
-	c := dialingNode(t, &answering{name: "wasm", status: 503})
+	mn := peertest.Net(t)
+	c := dialingNode(t, mn, &answering{name: "wasm", status: 503})
 
 	_, err := c.Dial(t.Context(), channelGrant(), []byte("x"))
 	require.ErrorIs(t, err, wasmtier.ErrChannelFailed)
@@ -92,16 +99,17 @@ func TestAFailingServerIsAFailedChannel(t *testing.T) {
 }
 
 func TestAConnectedKindIsDialled(t *testing.T) {
+	mn := peertest.Net(t)
 	grant := channelGrant()
 	grant.Settings["serve/kind"] = "service"
 	grant.Settings["serve/name"] = "absent"
 
-	n, _, _ := makeNode(t, Config{Services: []string{Register}})
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register}})
 	_, err := (&channels{node: n.Service}).Dial(t.Context(), grant, []byte("x"))
 	require.ErrorIs(t, err, wasmtier.ErrNoAnswer)
 	require.Contains(t, err.Error(), "service/absent")
 
-	c := dialingNode(t, &answering{name: "wasm", status: 200})
+	c := dialingNode(t, mn, &answering{name: "wasm", status: 200})
 	_, err = c.Dial(t.Context(), grant, []byte("x"))
 	require.ErrorIs(t, err, wasmtier.ErrNoAnswer)
 	require.Contains(t, err.Error(), "service/absent")
@@ -109,7 +117,8 @@ func TestAConnectedKindIsDialled(t *testing.T) {
 }
 
 func TestAFunctionNothingDeploysIsNoAnswer(t *testing.T) {
-	c := dialingNode(t, &answering{name: "wasm", status: 200})
+	mn := peertest.Net(t)
+	c := dialingNode(t, mn, &answering{name: "wasm", status: 200})
 	grant := channelGrant()
 	grant.Settings["serve/name"] = "absent"
 
@@ -118,7 +127,8 @@ func TestAFunctionNothingDeploysIsNoAnswer(t *testing.T) {
 }
 
 func TestAPlacedDialToNothingIsNoAnswer(t *testing.T) {
-	n, _ := consuming(t, &answering{name: "wasm", status: 200}, compiled())
+	mn := peertest.Net(t)
+	n, _ := consuming(t, mn, &answering{name: "wasm", status: 200}, compiled())
 	require.NotNil(t, n.workers)
 	grant := channelGrant()
 	grant.Settings["serve/kind"] = "service"

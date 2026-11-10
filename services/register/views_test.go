@@ -40,9 +40,9 @@ type finding []libp2ppeer.ID
 
 func (f *finding) Find(protocol.ID) discovery.Resolver { return discovery.Static(*f...) }
 
-func mockNode(t testing.TB) *node {
+func mockNode(t testing.TB, mn *peer.Mocknet) *node {
 	t.Helper()
-	p := peertest.Mock(t, t.Context())
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	n := &node{Node: p}
 	n.Served = service.NewServed(p.ID(), &n.finding, rpc.Retry{For: 50 * time.Millisecond})
@@ -68,8 +68,9 @@ func startRegister(t *testing.T, n *node) Service {
 }
 
 func TestViewsReadTheRegisterBesideThemInTheirRegion(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	n := mockNode(t)
+	n := mockNode(t, mn)
 	s := startRegister(t, n)
 
 	in := &node{Node: n.Node, Served: n.Served, region: "region-1"}
@@ -97,10 +98,11 @@ func TestViewsReadTheRegisterBesideThemInTheirRegion(t *testing.T) {
 }
 
 func TestViewsReachARegisterElsewhere(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	at, from := mockNode(t), mockNode(t)
+	at, from := mockNode(t, mn), mockNode(t, mn)
 	startRegister(t, at)
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, from.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: at.ID(), Addrs: at.Host().Addrs()}))
 
 	from.region = "region-1"
@@ -117,8 +119,9 @@ func TestViewsReachARegisterElsewhere(t *testing.T) {
 }
 
 func TestViewsWithNoRegisterToReadAreRefusedByName(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	v := ViewsOn(mockNode(t))
+	v := ViewsOn(mockNode(t, mn))
 	t.Cleanup(func() { v.Close() })
 
 	_, err := v.Resolve(ctx, "shop", "prod")

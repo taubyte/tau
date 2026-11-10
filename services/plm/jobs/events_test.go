@@ -208,7 +208,8 @@ func TestAJournalAppendsAndFoldsBack(t *testing.T) {
 		// THE REAL STORE lists keys back as datastore keys, which is why the
 		// journal's own keys start with "/".
 		"kvdb": func(t *testing.T) kvdb.Instance {
-			p := peertest.Mock(t, t.Context())
+			mn := peertest.Net(t)
+			p := mn.Mock(t.Context())
 			t.Cleanup(p.Close)
 			db, err := pkgkvdb.Open(p, "build")
 			require.NoError(t, err)

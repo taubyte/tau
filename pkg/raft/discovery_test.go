@@ -292,10 +292,11 @@ type discoveryNode struct {
 func (n discoveryNode) Discovery() discovery.Discovery { return n.discovery }
 
 func TestDiscovery_AGroupOnlyDiscoveryFindsIsJoined(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "found-by-discovery"
 	meeting := newRendezvous()
-	nodeA, nodeB := newMockNode(t), newMockNode(t)
-	require.NoError(t, peertest.LinkAll(t))
+	nodeA, nodeB := newMockNode(t, mn), newMockNode(t, mn)
+	require.NoError(t, mn.LinkAll())
 
 	b, err := New(discoveryNode{Node: nodeB, discovery: meeting.pointOf(nodeB.Host())}, namespace,
 		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
@@ -355,10 +356,11 @@ func (p slowPoint) FindPeers(ctx context.Context, name string, opts ...discovery
 }
 
 func TestDiscovery_ASearchSlowerThanATickFindsTheGroup(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "found-by-a-slow-search"
 	meeting := newRendezvous()
-	nodeA, nodeB := newMockNode(t), newMockNode(t)
-	require.NoError(t, peertest.LinkAll(t))
+	nodeA, nodeB := newMockNode(t, mn), newMockNode(t, mn)
+	require.NoError(t, mn.LinkAll())
 
 	b, err := New(discoveryNode{Node: nodeB, discovery: meeting.pointOf(nodeB.Host())}, namespace,
 		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
@@ -383,15 +385,15 @@ func TestDiscovery_ASearchSlowerThanATickFindsTheGroup(t *testing.T) {
 
 // pushless is a mock node that refuses identify's push, so all it knows a
 // peer serves is what the identify run on connecting told it.
-func pushless(t *testing.T) taupeer.Node {
-	node := newMockNode(t)
+func pushless(t *testing.T, mn *taupeer.Mocknet) taupeer.Node {
+	node := newMockNode(t, mn)
 	node.Host().RemoveStreamHandler(identify.IDPush)
 	return node
 }
 
-func connectAllOf(t testing.TB, nodes ...taupeer.Node) {
+func connectAllOf(t testing.TB, mn *taupeer.Mocknet, nodes ...taupeer.Node) {
 	t.Helper()
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	for i, a := range nodes {
 		for _, b := range nodes[i+1:] {
 			require.NoError(t, a.Host().Connect(t.Context(), peer.AddrInfo{ID: b.ID(), Addrs: b.Host().Addrs()}))
@@ -401,9 +403,10 @@ func connectAllOf(t testing.TB, nodes ...taupeer.Node) {
 
 func TestDiscovery_APeerConnectedBeforeItServedTheGroupIsFound(t *testing.T) {
 	t.Run("a node joins a group its peer started after they connected", func(t *testing.T) {
+		mn := peertest.Net(t)
 		const namespace = "connected-first-join"
-		leaderNode, joinerNode := pushless(t), pushless(t)
-		connectAllOf(t, leaderNode, joinerNode)
+		leaderNode, joinerNode := pushless(t, mn), pushless(t, mn)
+		connectAllOf(t, mn, leaderNode, joinerNode)
 
 		leader, err := New(leaderNode, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 		require.NoError(t, err)
@@ -425,9 +428,10 @@ func TestDiscovery_APeerConnectedBeforeItServedTheGroupIsFound(t *testing.T) {
 	})
 
 	t.Run("nodes that start a group after connecting form one", func(t *testing.T) {
+		mn := peertest.Net(t)
 		const namespace = "connected-first-found"
-		nodes := []taupeer.Node{pushless(t), pushless(t), pushless(t)}
-		connectAllOf(t, nodes...)
+		nodes := []taupeer.Node{pushless(t, mn), pushless(t, mn), pushless(t, mn)}
+		connectAllOf(t, mn, nodes...)
 
 		opened := make(chan Cluster, len(nodes))
 		failed := make(chan error, len(nodes))
@@ -462,10 +466,11 @@ func TestDiscovery_APeerConnectedBeforeItServedTheGroupIsFound(t *testing.T) {
 }
 
 func TestDiscovery_AMemberTheGroupLetsInLooksForPeersAsAFounderDoes(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "let-in-settles"
-	nodes := []taupeer.Node{newMockNode(t), newMockNode(t)}
+	nodes := []taupeer.Node{newMockNode(t, mn), newMockNode(t, mn)}
 	slices.SortFunc(nodes, func(a, b taupeer.Node) int { return strings.Compare(a.ID().String(), b.ID().String()) })
-	connectAllOf(t, nodes...)
+	connectAllOf(t, mn, nodes...)
 
 	// The lowest founder bootstraps the group once its own bootstrap ends,
 	// after the other's has.

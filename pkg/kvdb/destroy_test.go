@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 )
 
 func keysUnder(t *testing.T, node peer.Node, path string) int {
@@ -30,8 +31,9 @@ func keysUnder(t *testing.T, node peer.Node, path string) int {
 }
 
 func TestDestroyRemovesOnlyThisDatabase(t *testing.T) {
+	mn := peertest.Net(t)
 	logger := logging.Logger("test")
-	node := mockPeer(t)
+	node := mockPeer(t, mn)
 	f := opener{node}
 
 	opened, err := f.New(logger, "databases/shop/prod/kv/QmGoing", 10)

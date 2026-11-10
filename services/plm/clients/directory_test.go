@@ -25,9 +25,9 @@ type instance struct {
 	finding named
 }
 
-func newInstance(t *testing.T, found ...libp2ppeer.ID) *instance {
+func newInstance(t *testing.T, mn *peer.Mocknet, found ...libp2ppeer.ID) *instance {
 	t.Helper()
-	p := peertest.Mock(t, t.Context())
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	i := &instance{Node: p, finding: found}
 	i.Served = service.NewServed(p.ID(), &i.finding, rpc.Retry{For: 50 * time.Millisecond})
@@ -48,7 +48,8 @@ type named []libp2ppeer.ID
 func (n *named) Find(protocol.ID) discovery.Resolver { return discovery.Static(*n...) }
 
 func TestTheFinderNamesWhoServesAProtocolAndOthersLeavesThisNodeOut(t *testing.T) {
-	h := newInstance(t)
+	mn := peertest.Net(t)
+	h := newInstance(t, mn)
 	p := h.Node
 
 	require.Empty(t, Discovered(h, plm.Protocol).Known(), "nothing to find with is nobody found")
@@ -70,7 +71,8 @@ func TestTheFinderNamesWhoServesAProtocolAndOthersLeavesThisNodeOut(t *testing.T
 }
 
 func TestABuildNodeThatKnowsNoOtherIsToldSoAtOnce(t *testing.T) {
-	h := newInstance(t)
+	mn := peertest.Net(t)
+	h := newInstance(t, mn)
 	p := h.Node
 	h.finding = named{p.ID()}
 

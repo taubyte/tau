@@ -29,11 +29,11 @@ func connected(t *testing.T, n taupeer.Node, clusters ...Cluster) {
 // callerOf is a group of one on its own mock node, over the store wrap makes
 // of the node's, and a client on a second node: a caller from outside the
 // group.
-func callerOf(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batching) (Cluster, *client) {
+func callerOf(t *testing.T, mn *taupeer.Mocknet, namespace string, wrap func(ds.Batching) ds.Batching) (Cluster, *client) {
 	t.Helper()
-	member := newMockNode(t)
-	caller := newMockNode(t)
-	require.NoError(t, peertest.LinkAll(t))
+	member := newMockNode(t, mn)
+	caller := newMockNode(t, mn)
+	require.NoError(t, mn.LinkAll())
 
 	cl, err := New(storeNode{Node: member, store: wrap(member.Store())}, namespace,
 		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
@@ -55,7 +55,8 @@ func sameStore(store ds.Batching) ds.Batching { return store }
 func formationOf(cl Cluster) []byte { return cl.(*cluster).current().raft.Formation() }
 
 func TestClient_ClusterInfoIsTheMembersOwnView(t *testing.T) {
-	cl, cli := callerOf(t, "client-cluster-info", sameStore)
+	mn := peertest.Net(t)
+	cl, cli := callerOf(t, mn, "client-cluster-info", sameStore)
 	require.NoError(t, cl.Set("k", []byte("v"), time.Second))
 
 	info, err := cli.ClusterInfo(idOf(cl))
@@ -71,7 +72,8 @@ func TestClient_ClusterInfoIsTheMembersOwnView(t *testing.T) {
 }
 
 func TestClient_ACallWithNowhereToGoFails(t *testing.T) {
-	cl, cli := callerOf(t, "client-nowhere", sameStore)
+	mn := peertest.Net(t)
+	cl, cli := callerOf(t, mn, "client-nowhere", sameStore)
 
 	require.ErrorContains(t, cli.Set("k", []byte("v"), time.Second), "no peers to send to")
 	_, _, err := cli.Get("k", 0)
@@ -95,7 +97,8 @@ func TestClient_ACallWithNowhereToGoFails(t *testing.T) {
 }
 
 func TestClient_AnEmptyValueReadsBackPresent(t *testing.T) {
-	cl, cli := callerOf(t, "client-empty-value", sameStore)
+	mn := peertest.Net(t)
+	cl, cli := callerOf(t, mn, "client-empty-value", sameStore)
 
 	require.NoError(t, cli.Set("empty", nil, time.Second, idOf(cl)))
 	value, found, err := cli.Get("empty", 0, idOf(cl))
@@ -111,7 +114,8 @@ func TestClient_AnEmptyValueReadsBackPresent(t *testing.T) {
 }
 
 func TestClient_KeysMatchingNothingIsAnEmptyList(t *testing.T) {
-	cl, cli := callerOf(t, "client-empty-keys", sameStore)
+	mn := peertest.Net(t)
+	cl, cli := callerOf(t, mn, "client-empty-keys", sameStore)
 	require.NoError(t, cl.Set("held/1", []byte("v"), time.Second))
 
 	keys, err := cli.Keys("nothing/", idOf(cl))
@@ -125,9 +129,10 @@ func TestClient_KeysMatchingNothingIsAnEmptyList(t *testing.T) {
 }
 
 func TestClient_CallsToAPeerThatRunsNoMemberFail(t *testing.T) {
-	cl, _ := callerOf(t, "client-served", sameStore)
-	caller := newMockNode(t)
-	require.NoError(t, peertest.LinkAll(t))
+	mn := peertest.Net(t)
+	cl, _ := callerOf(t, mn, "client-served", sameStore)
+	caller := newMockNode(t, mn)
+	require.NoError(t, mn.LinkAll())
 	connected(t, caller, cl)
 
 	cliOf, err := newInternalClient(caller, "client-not-served", nil, quickRetry)
@@ -153,7 +158,8 @@ func TestClient_CallsToAPeerThatRunsNoMemberFail(t *testing.T) {
 }
 
 func TestClient_ExchangePeersWithNoneOfItsOwn(t *testing.T) {
-	cl, cli := callerOf(t, "client-exchange", sameStore)
+	mn := peertest.Net(t)
+	cl, cli := callerOf(t, mn, "client-exchange", sameStore)
 
 	theirStart, theirPeers, err := cli.ExchangePeers(time.Now(), nil, idOf(cl))
 	require.NoError(t, err)
@@ -169,10 +175,11 @@ func garbledExport(w http.ResponseWriter, _ *http.Request) {
 }
 
 func TestClient_AStateThatWillNotDecodeIsAnError(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "client-garbled-export"
-	server := newMockNode(t)
-	caller := newMockNode(t)
-	require.NoError(t, peertest.LinkAll(t))
+	server := newMockNode(t, mn)
+	caller := newMockNode(t, mn)
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, caller.Host().Connect(t.Context(), peer.AddrInfo{ID: server.ID(), Addrs: server.Host().Addrs()}))
 
 	mux := http.NewServeMux()
@@ -192,8 +199,9 @@ func TestClient_AStateThatWillNotDecodeIsAnError(t *testing.T) {
 }
 
 func TestStream_AWriteTheLeadersStoreRefusesComesBackRefused(t *testing.T) {
+	mn := peertest.Net(t)
 	store := newFaultStore()
-	cl, cli := callerOf(t, "stream-refused-write", func(ds.Batching) ds.Batching { return store })
+	cl, cli := callerOf(t, mn, "stream-refused-write", func(ds.Batching) ds.Batching { return store })
 	store.failPut("/raft/stream-refused-write/data/k", errNoSpace)
 
 	require.ErrorContains(t, cli.Set("k", []byte("v"), time.Second, idOf(cl)), errNoSpace.Error())
@@ -205,8 +213,9 @@ func TestStream_AWriteTheLeadersStoreRefusesComesBackRefused(t *testing.T) {
 }
 
 func TestStream_AnExportTheLeaderCannotReadIsRefused(t *testing.T) {
+	mn := peertest.Net(t)
 	store := newFaultStore()
-	cl, cli := callerOf(t, "stream-refused-export", func(ds.Batching) ds.Batching { return store })
+	cl, cli := callerOf(t, mn, "stream-refused-export", func(ds.Batching) ds.Batching { return store })
 	require.NoError(t, cl.Set("k", []byte("v"), time.Second))
 	store.failScan("/raft/stream-refused-export/data", errDisk)
 
@@ -216,8 +225,9 @@ func TestStream_AnExportTheLeaderCannotReadIsRefused(t *testing.T) {
 }
 
 func TestStream_AConsistentReadFromAMemberThatCannotBarrierIsRefused(t *testing.T) {
-	caller := newMockNode(t)
-	a, b := joinedPair(t, "stream-barrier-refused", sameStore)
+	mn := peertest.Net(t)
+	caller := newMockNode(t, mn)
+	a, b := joinedPair(t, mn, "stream-barrier-refused", sameStore)
 	connected(t, caller, a, b)
 	require.NoError(t, onLeader(t, []Cluster{a, b}, func(l Cluster) error {
 		return l.Set("k", []byte("v"), time.Second)
@@ -240,7 +250,8 @@ func TestStream_AConsistentReadFromAMemberThatCannotBarrierIsRefused(t *testing.
 }
 
 func TestStream_JoinVoterNamingNobodyJoinsTheCaller(t *testing.T) {
-	a, b := joinedPair(t, "stream-join-caller", sameStore)
+	mn := peertest.Net(t)
+	a, b := joinedPair(t, mn, "stream-join-caller", sameStore)
 
 	fromB, err := newInternalClient(b.(*cluster).Node, "stream-join-caller", nil, quickRetry)
 	require.NoError(t, err)
@@ -257,7 +268,8 @@ func TestStream_JoinVoterNamingNobodyJoinsTheCaller(t *testing.T) {
 }
 
 func TestStream_JoinVoterNamingNoPeerIsRefused(t *testing.T) {
-	cl, ss := leaderService(t)
+	mn := peertest.Net(t)
+	cl, ss := leaderService(t, mn)
 
 	_, err := ss.JoinVoter(context.Background(), connect.NewRequest(&raftv2.JoinVoterRequest{Peer: "not-a-peer-id"}))
 	require.Error(t, err)
@@ -270,8 +282,9 @@ func TestStream_JoinVoterNamingNoPeerIsRefused(t *testing.T) {
 }
 
 func TestStream_ExportFSMAskedOfEitherMemberIsTheGroupsState(t *testing.T) {
-	caller := newMockNode(t)
-	a, b := joinedPair(t, "stream-export-either", sameStore)
+	mn := peertest.Net(t)
+	caller := newMockNode(t, mn)
+	a, b := joinedPair(t, mn, "stream-export-either", sameStore)
 	connected(t, caller, a, b)
 	require.NoError(t, onLeader(t, []Cluster{a, b}, func(l Cluster) error {
 		return l.Set("k", []byte("v"), time.Second)
@@ -292,8 +305,9 @@ func TestStream_ExportFSMAskedOfEitherMemberIsTheGroupsState(t *testing.T) {
 // AN ORPHAN'S EXPORT IS SERVED ONLY BY A MEMBER THAT KNOWS NO LEADER, never
 // forwarded: the group taking it takes it outside the order two leaders merge by.
 func TestStream_AnOrphansExportIsServedOnlyByAMemberThatKnowsNoLeader(t *testing.T) {
-	caller := newMockNode(t)
-	a, b := joinedPair(t, "stream-export-orphan", sameStore)
+	mn := peertest.Net(t)
+	caller := newMockNode(t, mn)
+	a, b := joinedPair(t, mn, "stream-export-orphan", sameStore)
 	connected(t, caller, a, b)
 	require.NoError(t, onLeader(t, []Cluster{a, b}, func(l Cluster) error {
 		return l.Set("k", []byte("v"), time.Second)
@@ -318,9 +332,10 @@ func TestStream_AnOrphansExportIsServedOnlyByAMemberThatKnowsNoLeader(t *testing
 }
 
 func TestStream_AJoinAskedOfAFollowerIsForwardedToItsLeader(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "stream-join-forwarded"
-	caller := newMockNode(t)
-	a, b := joinedPair(t, namespace, sameStore)
+	caller := newMockNode(t, mn)
+	a, b := joinedPair(t, mn, namespace, sameStore)
 	connected(t, caller, a, b)
 	cli, err := newInternalClient(caller, namespace, nil, quickRetry)
 	require.NoError(t, err)
@@ -343,9 +358,10 @@ func TestStream_AJoinAskedOfAFollowerIsForwardedToItsLeader(t *testing.T) {
 }
 
 func TestStream_AJoinAskedOfAFollowerBetweenLeadersWaitsForTheNext(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "stream-join-between-leaders"
-	caller := newMockNode(t)
-	group := joinedGroup(t, namespace, sameStore, 4)
+	caller := newMockNode(t, mn)
+	group := joinedGroup(t, mn, namespace, sameStore, 4)
 	connected(t, caller, group...)
 	cli, err := newInternalClient(caller, namespace, nil, quickRetry)
 	require.NoError(t, err)
@@ -406,20 +422,21 @@ func TestStream_AJoinAskedOfAFollowerBetweenLeadersWaitsForTheNext(t *testing.T)
 }
 
 func TestStream_AJoinAskedOfAMemberLetInBeforeItsLogWaitsForTheLeader(t *testing.T) {
+	mn := peertest.Net(t)
 	const (
 		namespace = "stream-join-before-log"
 		firstLog  = "/raft/" + namespace + "/engine/log/00000000000000000001"
 		vote      = "/raft/" + namespace + "/engine/hardstate"
 		budget    = 300 * time.Millisecond
 	)
-	caller := newMockNode(t)
-	group := joinedGroup(t, namespace, sameStore, 3)
+	caller := newMockNode(t, mn)
+	group := joinedGroup(t, mn, namespace, sameStore, 3)
 
-	node := newMockNode(t)
+	node := newMockNode(t, mn)
 	store := newFaultStore()
 	store.failPut(firstLog, errNoSpace)
 	store.failPut(vote, errNoSpace)
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 	founder := group[0].(*cluster).Host()
 	require.NoError(t, node.Host().Connect(t.Context(), peer.AddrInfo{ID: founder.ID(), Addrs: founder.Addrs()}))
 	late, err := New(storeNode{Node: node, store: store}, namespace,
@@ -468,12 +485,13 @@ func TestStream_AJoinAskedOfAMemberLetInBeforeItsLogWaitsForTheLeader(t *testing
 }
 
 func TestStream_AJoinAskedOfAMemberAYieldTookOutOfItsGroupIsRefusedAtOnce(t *testing.T) {
+	mn := peertest.Net(t)
 	const (
 		namespace = "stream-join-after-yield"
 		budget    = time.Second
 	)
-	caller := newMockNode(t)
-	a, b := joinedPair(t, namespace, sameStore)
+	caller := newMockNode(t, mn)
+	a, b := joinedPair(t, mn, namespace, sameStore)
 	require.True(t, b.(*cluster).current().joined.Load(), "the group never let b in")
 	require.NoError(t, a.Close())
 
@@ -499,6 +517,7 @@ func TestStream_AJoinAskedOfAMemberAYieldTookOutOfItsGroupIsRefusedAtOnce(t *tes
 }
 
 func TestStream_AJoinWhoseLeaderStopsLeadingIsAddedByTheNext(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "stream-join-leader-steps-down"
 	// No member loses its leader on its own: the test moves the lead.
 	steady := TimeoutConfig{
@@ -509,9 +528,9 @@ func TestStream_AJoinWhoseLeaderStopsLeadingIsAddedByTheNext(t *testing.T) {
 		SnapshotInterval:   time.Minute,
 		SnapshotThreshold:  1000,
 	}
-	caller := newMockNode(t)
+	caller := newMockNode(t, mn)
 	var stores []*faultStore
-	group := joinedGroup(t, namespace, func(ds.Batching) ds.Batching {
+	group := joinedGroup(t, mn, namespace, func(ds.Batching) ds.Batching {
 		store := newFaultStore()
 		stores = append(stores, store)
 		return store
@@ -556,6 +575,7 @@ func TestStream_AJoinWhoseLeaderStopsLeadingIsAddedByTheNext(t *testing.T) {
 }
 
 func TestStream_AJoinForwardedToALeaderThatClosedReachesTheNext(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "stream-join-past-a-closed-leader"
 	// A member names its leader until an election timeout passes without it, two
 	// seconds here: long enough to ask it a join while it names one that closed.
@@ -567,8 +587,8 @@ func TestStream_AJoinForwardedToALeaderThatClosedReachesTheNext(t *testing.T) {
 		SnapshotInterval:   time.Minute,
 		SnapshotThreshold:  1000,
 	}
-	caller := newMockNode(t)
-	group := joinedGroup(t, namespace, sameStore, 4, WithTimeouts(steady))
+	caller := newMockNode(t, mn)
+	group := joinedGroup(t, mn, namespace, sameStore, 4, WithTimeouts(steady))
 	connected(t, caller, group...)
 	cli, err := newInternalClient(caller, namespace, nil, quickRetry)
 	require.NoError(t, err)
@@ -599,7 +619,8 @@ func TestStream_AJoinForwardedToALeaderThatClosedReachesTheNext(t *testing.T) {
 }
 
 func TestStream_AForwardFromTheLeaderItselfIsRefused(t *testing.T) {
-	cl, _ := callerOf(t, "forward-from-the-leader", sameStore)
+	mn := peertest.Net(t)
+	cl, _ := callerOf(t, mn, "forward-from-the-leader", sameStore)
 	s := &raftStreamService{cluster: cl.(*cluster)}
 	_, err := forwardToLeader(t.Context(), s, "set", func(context.Context, raftv2connect.RaftServiceClient) (*connect.Response[raftv2.SetResponse], error) {
 		t.Error("a leader forwarded to itself")
@@ -611,6 +632,7 @@ func TestStream_AForwardFromTheLeaderItselfIsRefused(t *testing.T) {
 // A FORWARD IN FLIGHT WHEN ITS LEADER CHANGES MAY HAVE LANDED, and says so rather
 // than be sent again to the next.
 func TestStream_AForwardInFlightWhenTheLeaderChangesIsLeadershipLost(t *testing.T) {
+	mn := peertest.Net(t)
 	// No member loses its leader on its own: the test moves the lead.
 	steady := TimeoutConfig{
 		HeartbeatTimeout:   time.Second,
@@ -620,7 +642,7 @@ func TestStream_AForwardInFlightWhenTheLeaderChangesIsLeadershipLost(t *testing.
 		SnapshotInterval:   time.Minute,
 		SnapshotThreshold:  1000,
 	}
-	group := joinedGroup(t, "forward-in-flight", sameStore, 2, WithTimeouts(steady))
+	group := joinedGroup(t, mn, "forward-in-flight", sameStore, 2, WithTimeouts(steady))
 	leader := leaderOf(t, group...)
 	follower := group[0]
 	if follower == leader {
@@ -659,6 +681,7 @@ func TestStream_AForwardInFlightWhenTheLeaderChangesIsLeadershipLost(t *testing.
 // ends a forward to the old leader: the engine tells them only after its store
 // work, which can stall.
 func TestStream_AForwardSeesALeaderChangeItsObserversAreNotToldOfYet(t *testing.T) {
+	mn := peertest.Net(t)
 	steady := TimeoutConfig{
 		HeartbeatTimeout:   time.Second,
 		ElectionTimeout:    time.Second,
@@ -667,7 +690,7 @@ func TestStream_AForwardSeesALeaderChangeItsObserversAreNotToldOfYet(t *testing.
 		SnapshotInterval:   time.Minute,
 		SnapshotThreshold:  1000,
 	}
-	group := joinedGroup(t, "forward-unannounced-change", sameStore, 2, WithTimeouts(steady))
+	group := joinedGroup(t, mn, "forward-unannounced-change", sameStore, 2, WithTimeouts(steady))
 	leader := leaderOf(t, group...)
 	follower := group[0]
 	if follower == leader {
@@ -702,7 +725,8 @@ func TestStream_AForwardSeesALeaderChangeItsObserversAreNotToldOfYet(t *testing.
 // A JOIN FROM A MEMBER OF ANOTHER FORMATION IS REFUSED: added, it would be a voter
 // that takes none of the group's messages.
 func TestStream_AJoinFromAnotherFormationIsRefused(t *testing.T) {
-	cl, cli := callerOf(t, "join-elsewhere", sameStore)
+	mn := peertest.Net(t)
+	cl, cli := callerOf(t, mn, "join-elsewhere", sameStore)
 	err := cli.JoinVoter(t.Context(), strangerID(t), time.Second, newFormation(), 0, idOf(cl))
 	require.ErrorContains(t, err, ErrJoinerElsewhere.Error())
 	members, err := cl.Members()
@@ -715,9 +739,10 @@ func TestStream_AJoinFromAnotherFormationIsRefused(t *testing.T) {
 var quickRetry = rpc.Retry{First: 5 * time.Millisecond, Max: 20 * time.Millisecond, For: 100 * time.Millisecond}
 
 func TestClient_AMemberNotAnsweringYetIsAskedAgain(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "client-late-member"
-	node, caller := newMockNode(t), newMockNode(t)
-	require.NoError(t, peertest.LinkAll(t))
+	node, caller := newMockNode(t, mn), newMockNode(t, mn)
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, caller.Host().Connect(t.Context(), peer.AddrInfo{ID: node.ID(), Addrs: node.Host().Addrs()}))
 
 	cliOf, err := newInternalClient(caller, namespace, nil, rpc.Retry{First: 10 * time.Millisecond, Max: 50 * time.Millisecond, For: 10 * time.Second})

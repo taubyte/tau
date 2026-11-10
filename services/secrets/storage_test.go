@@ -7,12 +7,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/pkg/secrets/tdh"
 )
 
 func TestCorruptEntriesAreSkippedOrRefused(t *testing.T) {
-	srv, client, _ := single(t)
+	mn := peertest.Net(t)
+	srv, client, _ := single(t, mn)
 	ctx := t.Context()
 
 	require.NoError(t, client.Set(ctx, Ref{Scope: Project("p", "e"), Name: "n"}, []byte("v")))
@@ -71,7 +73,8 @@ func TestKeyMetaRefusesElementsItCannotDecode(t *testing.T) {
 }
 
 func TestAShareThatCannotBeOpenedIsNotAShare(t *testing.T) {
-	srv, client, _ := single(t)
+	mn := peertest.Net(t)
+	srv, client, _ := single(t, mn)
 	ctx := t.Context()
 	require.NoError(t, client.Set(ctx, Ref{Scope: Project("p", "e"), Name: "n"}, []byte("v")))
 	key := mustActive(t, ctx, srv)
@@ -124,7 +127,8 @@ func TestAShareThatCannotBeOpenedIsNotAShare(t *testing.T) {
 }
 
 func TestAPartialNeedsAShareThatOpens(t *testing.T) {
-	srv, client, _ := single(t)
+	mn := peertest.Net(t)
+	srv, client, _ := single(t, mn)
 	ctx := t.Context()
 	require.NoError(t, client.Set(ctx, Ref{Scope: Project("p", "e"), Name: "n"}, []byte("v")))
 	key := mustActive(t, ctx, srv)

@@ -19,7 +19,6 @@ import (
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
-	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/containers"
 	"github.com/taubyte/tau/pkg/invoke"
@@ -117,15 +116,15 @@ func (n *node) Secrets() secretsService.Service       { return n.secrets }
 // makeNode starts the services cfg names on a fresh peer, in a node's order, and the
 // worker last; each closes with the test. Its databases are a double the test can see
 // into, and its raft groups are in memory.
-func makeNode(t *testing.T, cfg Config, opts ...Option) (*node, host.Host, *memFactory) {
+func makeNode(t *testing.T, mn *peer.Mocknet, cfg Config, opts ...Option) (*node, host.Host, *memFactory) {
 	t.Helper()
-	n, factory, err := startNode(t, cfg, opts...)
+	n, factory, err := startNode(t, mn, cfg, opts...)
 	require.NoError(t, err)
 	return n, n.host.Peer().Host(), factory
 }
 
 // startNode is makeNode, saying why a service would not start.
-func startNode(t *testing.T, cfg Config, opts ...Option) (*node, *memFactory, error) {
+func startNode(t *testing.T, mn *peer.Mocknet, cfg Config, opts ...Option) (*node, *memFactory, error) {
 	t.Helper()
 	factory := &memFactory{}
 	o := options{factory: factory, groups: mockGroups{}, runtimes: []invoke.Runtime{&tier{name: "oci"}}}
@@ -135,7 +134,7 @@ func startNode(t *testing.T, cfg Config, opts ...Option) (*node, *memFactory, er
 	if cfg.Root == "" && !cfg.NoRoot {
 		cfg.Root = t.TempDir()
 	}
-	p := peertest.Mock(t, t.Context())
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	h := &testHost{
 		Node: p, root: cfg.Root, now: o.now, cfg: cfg,

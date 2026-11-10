@@ -7,13 +7,15 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	cmmock "github.com/taubyte/tau/services/cm/mock"
 	"github.com/taubyte/tau/services/cm/settings"
 )
 
 func TestADatabaseIsOpenedOncePerName(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	d := newDatabaseSet(mockPeer(t), nil)
+	d := newDatabaseSet(mockPeer(t, mn), nil)
 	t.Cleanup(func() { d.Close() })
 
 	a, err := d.at("orders/a")
@@ -52,7 +54,8 @@ func TestADatabaseIsOpenedOncePerName(t *testing.T) {
 }
 
 func TestTheDatabasesMoveToTheRegionsT(t *testing.T) {
-	d := newDatabaseSet(mockPeer(t), nil)
+	mn := peertest.Net(t)
+	d := newDatabaseSet(mockPeer(t, mn), nil)
 	t.Cleanup(func() { d.Close() })
 	_, err := d.at("moves")
 	require.NoError(t, err)
@@ -70,8 +73,9 @@ func TestTheDatabasesMoveToTheRegionsT(t *testing.T) {
 }
 
 func TestTheRegionsTIsReadFromCm(t *testing.T) {
+	mn := peertest.Net(t)
 	ctx := t.Context()
-	n, _, _ := makeNode(t, Config{Services: []string{Stats}})
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Stats}})
 	require.NoError(t, n.Start(ctx))
 
 	set := settings.Defaults()
@@ -92,8 +96,9 @@ func TestTheRegionsTIsReadFromCm(t *testing.T) {
 }
 
 func TestAGroupIsTimedByTheNodesRaftKeys(t *testing.T) {
+	mn := peertest.Net(t)
 	root := t.TempDir()
-	n := &Instance{Node: mockPeer(t), cfg: Config{Root: root, Raft: quickRaft}}
+	n := &Instance{Node: mockPeer(t, mn), cfg: Config{Root: root, Raft: quickRaft}}
 	c, err := groups{n}.Group("built-in")
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })

@@ -9,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	pkgregister "github.com/taubyte/tau/pkg/register"
@@ -41,7 +43,8 @@ func keyFor(spec invoke.Spec, grant invoke.Grant) string {
 }
 
 func TestAKeptAnswerNeedsNoTier(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Worker}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Worker}})
 	n.decider = nil
 
 	a := &authorizers{node: n.Service}
@@ -54,7 +57,8 @@ func TestAKeptAnswerNeedsNoTier(t *testing.T) {
 }
 
 func TestANewRevisionIsANewQuestion(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Worker}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Worker}})
 	n.decider = nil
 
 	a := &authorizers{node: n.Service}
@@ -67,7 +71,8 @@ func TestANewRevisionIsANewQuestion(t *testing.T) {
 }
 
 func TestADifferentTargetIsADifferentQuestion(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Worker}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Worker}})
 
 	a := &authorizers{node: n.Service}
 	first := guardedGrant()
@@ -81,7 +86,8 @@ func TestADifferentTargetIsADifferentQuestion(t *testing.T) {
 }
 
 func TestANodeWithNoTierCannotAnswer(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Worker}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Worker}})
 
 	_, err := (&authorizers{node: n.Service}).Ops(t.Context(), caller("r1"), guardedGrant(), "get")
 	require.Error(t, err)
@@ -89,7 +95,8 @@ func TestANodeWithNoTierCannotAnswer(t *testing.T) {
 }
 
 func TestAGuardedHandleMustNameADeployment(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Worker}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Worker}})
 	a := &authorizers{node: n.Service}
 	a.node.decider = nil
 
@@ -173,10 +180,10 @@ func (g *guarding) questions() []wasmtier.Question {
 // guardingNode is a node holding the guard's project, with the tier's answer
 // faked. The guard is the same `may_open` function the admission fixture
 // publishes — a guard is resolved like any other function, which is the point.
-func guardingNode(t *testing.T, answers *guarding) (*node, *authorizers) {
+func guardingNode(t *testing.T, mn *taupeer.Mocknet, answers *guarding) (*node, *authorizers) {
 	t.Helper()
 
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}},
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register, Worker, Stats}},
 		WithRuntimes(&answering{name: "wasm", status: 200}), prebuilt())
 	n.decider = answers
 
@@ -198,8 +205,9 @@ func guardedBy(name string) invoke.Grant {
 }
 
 func TestTheGuardIsAskedAboutTheCallerAndTheTarget(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &guarding{decision: wasmtier.Decision{Granted: []string{"get"}}}
-	_, a := guardingNode(t, answers)
+	_, a := guardingNode(t, mn, answers)
 
 	ops, err := a.Ops(t.Context(), caller("r1"), guardedBy("may_open"), "get")
 	require.NoError(t, err)
@@ -223,8 +231,9 @@ func TestTheGuardIsAskedAboutTheCallerAndTheTarget(t *testing.T) {
 }
 
 func TestAGuardThatDoesNotDecideIsNotKept(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &guarding{decision: wasmtier.Decision{Undecided: "the plan service did not answer"}}
-	_, a := guardingNode(t, answers)
+	_, a := guardingNode(t, mn, answers)
 
 	_, err := a.Ops(t.Context(), caller("r1"), guardedBy("may_open"), "get")
 	require.ErrorIs(t, err, wasmtier.ErrUndecided)
@@ -236,8 +245,9 @@ func TestAGuardThatDoesNotDecideIsNotKept(t *testing.T) {
 }
 
 func TestAGuardThatFailsIsNotADecision(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &guarding{err: errors.New("the component trapped")}
-	_, a := guardingNode(t, answers)
+	_, a := guardingNode(t, mn, answers)
 
 	_, err := a.Ops(t.Context(), caller("r1"), guardedBy("may_open"), "get")
 	require.ErrorContains(t, err, "asking the authorizer")
@@ -245,8 +255,9 @@ func TestAGuardThatFailsIsNotADecision(t *testing.T) {
 }
 
 func TestAGuardThatIsNotInTheProjectIsReported(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &guarding{decision: wasmtier.Decision{Granted: []string{"get"}}}
-	_, a := guardingNode(t, answers)
+	_, a := guardingNode(t, mn, answers)
 
 	_, err := a.Ops(t.Context(), caller("r1"), guardedBy("nobody_wrote_this"), "get")
 	require.ErrorContains(t, err, "resolving the authorizer")
@@ -255,8 +266,9 @@ func TestAGuardThatIsNotInTheProjectIsReported(t *testing.T) {
 }
 
 func TestAnUnguardedGrantKeepsItsOwnOps(t *testing.T) {
+	mn := peertest.Net(t)
 	answers := &guarding{}
-	_, a := guardingNode(t, answers)
+	_, a := guardingNode(t, mn, answers)
 
 	grant := guardedBy("may_open")
 	delete(grant.Settings, settingAuthorizer)

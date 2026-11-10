@@ -42,9 +42,9 @@ func (h *testHost) Config(into any) error {
 
 // hostWithConsensus is a host whose instance opens groups, which jobs cannot start
 // without.
-func hostWithConsensus(t *testing.T, section map[string]any) *testHost {
+func hostWithConsensus(t *testing.T, mn *peer.Mocknet, section map[string]any) *testHost {
 	t.Helper()
-	p := peertest.Mock(t, t.Context())
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	h := &testHost{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond}), root: t.TempDir(), section: section}
 	h.running = []service.Running{{Service: groupsOn{node: p, root: h.root}}}
@@ -52,7 +52,8 @@ func hostWithConsensus(t *testing.T, section map[string]any) *testHost {
 }
 
 func TestTheBackendStartsFromItsInstance(t *testing.T) {
-	h := hostWithConsensus(t, nil)
+	mn := peertest.Net(t)
+	h := hostWithConsensus(t, mn, nil)
 	b := New()
 	require.ErrorIs(t, b.WaitForLeader(t.Context()), ErrNotStarted)
 	require.NoError(t, b.Start(t.Context(), h))
@@ -67,7 +68,8 @@ func TestTheBackendStartsFromItsInstance(t *testing.T) {
 }
 
 func TestTheBackendNeedsConsensusBesideIt(t *testing.T) {
-	p := peertest.Mock(t, t.Context())
+	mn := peertest.Net(t)
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	b := New()
 	require.ErrorIs(t, b.Start(t.Context(), &testHost{Node: p, root: t.TempDir()}), ErrNoConsensus)
@@ -75,8 +77,9 @@ func TestTheBackendNeedsConsensusBesideIt(t *testing.T) {
 }
 
 func TestTheBackendRefusesASectionOfTheWrongShape(t *testing.T) {
+	mn := peertest.Net(t)
 	b := New()
-	require.Error(t, b.Start(t.Context(), hostWithConsensus(t, map[string]any{"maxQueueDepth": "many"})))
+	require.Error(t, b.Start(t.Context(), hostWithConsensus(t, mn, map[string]any{"maxQueueDepth": "many"})))
 	require.NoError(t, b.Close())
 }
 

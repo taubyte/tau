@@ -51,9 +51,9 @@ func (beside) Cloud() string              { return "keep-test" }
 func (beside) Region() string             { return "" }
 func (beside) Now() time.Time             { return time.Now() }
 
-func reading(t *testing.T, src *saying, now *time.Time) *Client {
+func reading(t *testing.T, mn *peer.Mocknet, src *saying, now *time.Time) *Client {
 	t.Helper()
-	p := peertest.Mock(t, t.Context())
+	p := mn.Mock(t.Context())
 	t.Cleanup(p.Close)
 	h := beside{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond})}
 	h.Serve(Protocol, src)
@@ -64,9 +64,10 @@ func reading(t *testing.T, src *saying, now *time.Time) *Client {
 }
 
 func TestAnAnswerIsKeptForRecheckThenAskedAgain(t *testing.T) {
+	mn := peertest.Net(t)
 	src := &saying{region: Region{StorageReplicas: 3}}
 	now := time.Unix(1_700_000_000, 0)
-	c := reading(t, src, &now)
+	c := reading(t, mn, src, &now)
 
 	got, err := c.Settings(t.Context())
 	require.NoError(t, err)
@@ -85,9 +86,10 @@ func TestAnAnswerIsKeptForRecheckThenAskedAgain(t *testing.T) {
 }
 
 func TestAFailedAskKeepsTheLastAnswer(t *testing.T) {
+	mn := peertest.Net(t)
 	src := &saying{region: Region{StorageReplicas: 3}}
 	now := time.Unix(1_700_000_000, 0)
-	c := reading(t, src, &now)
+	c := reading(t, mn, src, &now)
 
 	_, err := c.Settings(t.Context())
 	require.NoError(t, err)
@@ -100,8 +102,9 @@ func TestAFailedAskKeepsTheLastAnswer(t *testing.T) {
 }
 
 func TestCmOnTheSameNodeIsReadWithNoClientDialled(t *testing.T) {
+	mn := peertest.Net(t)
 	now := time.Unix(1_700_000_000, 0)
-	c := reading(t, &saying{region: Region{StorageReplicas: 4}}, &now)
+	c := reading(t, mn, &saying{region: Region{StorageReplicas: 4}}, &now)
 
 	got, err := c.Settings(t.Context())
 	require.NoError(t, err)

@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/service"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	gateway "github.com/taubyte/tau/services/gateway"
 	workerHosted "github.com/taubyte/tau/services/worker/hosted"
 	"github.com/taubyte/tau/services/worker/stream"
@@ -15,12 +16,14 @@ import (
 // has one, which a workload's publish and a browser's attach both reach.
 
 func TestTheNodeExposesTheBusTopic(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Worker, Stats}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Worker, Stats}})
 	require.Equal(t, stream.Topic(n.cfg.Cloud, "h"), n.BusTopic("h"))
 }
 
 func TestOneBusIsGivenToBothConsumers(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Worker, Stats, Gateway}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Worker, Stats, Gateway}})
 	require.NotNil(t, n.bus)
 
 	host := &added{node: n}

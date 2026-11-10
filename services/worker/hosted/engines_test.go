@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/invoke/js"
 	"github.com/taubyte/tau/pkg/invoke/wasm"
@@ -15,9 +16,10 @@ import (
 )
 
 func TestAJSFunctionRunsOnEveryInstance(t *testing.T) {
+	mn := peertest.Net(t)
 	greet := invoke.Spec{Name: "shop/prod/function/greet", Runtime: js.Name, Artifact: "bafyarchive", Revision: "r1"}
 
-	n, _, _ := makeNode(t, Config{Services: []string{Stats, Worker}})
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Stats, Worker}})
 	require.Contains(t, tierNames(n), js.Name)
 
 	// The archive is asked of this instance's own blocks, which have nothing under
@@ -30,6 +32,7 @@ func TestAJSFunctionRunsOnEveryInstance(t *testing.T) {
 }
 
 func TestTheWorkersEnginesAreTheOperators(t *testing.T) {
+	mn := peertest.Net(t)
 	modes := func(n *node) (js.Mode, wasm.Mode) {
 		var script js.Mode
 		var component wasm.Mode
@@ -44,7 +47,7 @@ func TestTheWorkersEnginesAreTheOperators(t *testing.T) {
 		return script, component
 	}
 
-	chosen, _, _ := makeNode(t, Config{
+	chosen, _, _ := makeNode(t, mn, Config{
 		Services: []string{Stats, Worker},
 		Worker:   worker.Config{Engines: worker.Engines{JS: string(js.ModeBytecode), Wasm: string(wasm.ModeInterpreter)}},
 	})
@@ -52,7 +55,7 @@ func TestTheWorkersEnginesAreTheOperators(t *testing.T) {
 	require.Equal(t, js.ModeBytecode, script)
 	require.Equal(t, wasm.ModeInterpreter, component)
 
-	unset, _, _ := makeNode(t, Config{Services: []string{Stats, Worker}})
+	unset, _, _ := makeNode(t, mn, Config{Services: []string{Stats, Worker}})
 	script, component = modes(unset)
 	require.Equal(t, js.DefaultMode(), script)
 	require.Equal(t, wasm.ModeCompiler, component)
@@ -61,7 +64,7 @@ func TestTheWorkersEnginesAreTheOperators(t *testing.T) {
 		{JS: "turbo"}: js.ErrUnknownMode,
 		{Wasm: "jit"}: wasm.ErrUnknownMode,
 	} {
-		_, _, err := startNode(t, Config{Services: []string{Stats, Worker}, Worker: worker.Config{Engines: engines}})
+		_, _, err := startNode(t, mn, Config{Services: []string{Stats, Worker}, Worker: worker.Config{Engines: engines}})
 		require.ErrorIs(t, err, want)
 	}
 }

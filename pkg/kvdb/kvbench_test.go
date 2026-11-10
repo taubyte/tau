@@ -6,16 +6,17 @@ import (
 	"testing"
 
 	logging "github.com/ipfs/go-log/v2"
+	taupeer "github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/peer/peertest"
 )
 
 var benchValue = []byte("benchmark-value-payload-0123456789")
 
-func benchDB(b *testing.B) (*kvDatabase, func()) {
+func benchDB(b *testing.B, mn *taupeer.Mocknet) (*kvDatabase, func()) {
 	b.Helper()
 	logger := logging.Logger("bench")
 	ctx, cancel := context.WithCancel(context.Background())
-	node := peertest.Mock(b, ctx)
+	node := mn.Mock(ctx)
 	db, err := opener{node}.New(logger, "bench", 10)
 	if err != nil {
 		node.Close()
@@ -36,7 +37,8 @@ func seed(b *testing.B, db *kvDatabase, n int) {
 }
 
 func BenchmarkKVDB_Put(b *testing.B) {
-	db, done := benchDB(b)
+	mn := peertest.Net(b)
+	db, done := benchDB(b, mn)
 	defer done()
 	ctx := context.Background()
 	b.ReportAllocs()
@@ -49,7 +51,8 @@ func BenchmarkKVDB_Put(b *testing.B) {
 }
 
 func BenchmarkKVDB_Overwrite(b *testing.B) {
-	db, done := benchDB(b)
+	mn := peertest.Net(b)
+	db, done := benchDB(b, mn)
 	defer done()
 	ctx := context.Background()
 	b.ReportAllocs()
@@ -62,7 +65,8 @@ func BenchmarkKVDB_Overwrite(b *testing.B) {
 }
 
 func BenchmarkKVDB_DeleteManyVersions(b *testing.B) {
-	db, done := benchDB(b)
+	mn := peertest.Net(b)
+	db, done := benchDB(b, mn)
 	defer done()
 	ctx := context.Background()
 	const versions = 100
@@ -84,7 +88,8 @@ func BenchmarkKVDB_DeleteManyVersions(b *testing.B) {
 }
 
 func BenchmarkKVDB_KeysOnly(b *testing.B) {
-	db, done := benchDB(b)
+	mn := peertest.Net(b)
+	db, done := benchDB(b, mn)
 	defer done()
 	ctx := context.Background()
 	const n = 2000
@@ -108,7 +113,8 @@ func BenchmarkKVDB_KeysOnly(b *testing.B) {
 }
 
 func BenchmarkKVDB_Get(b *testing.B) {
-	db, done := benchDB(b)
+	mn := peertest.Net(b)
+	db, done := benchDB(b, mn)
 	defer done()
 	const n = 1000
 	seed(b, db, n)
@@ -123,7 +129,8 @@ func BenchmarkKVDB_Get(b *testing.B) {
 }
 
 func BenchmarkKVDB_Delete(b *testing.B) {
-	db, done := benchDB(b)
+	mn := peertest.Net(b)
+	db, done := benchDB(b, mn)
 	defer done()
 	seed(b, db, b.N)
 	ctx := context.Background()
@@ -137,7 +144,8 @@ func BenchmarkKVDB_Delete(b *testing.B) {
 }
 
 func BenchmarkKVDB_List(b *testing.B) {
-	db, done := benchDB(b)
+	mn := peertest.Net(b)
+	db, done := benchDB(b, mn)
 	defer done()
 	seed(b, db, 1000)
 	ctx := context.Background()
@@ -151,7 +159,8 @@ func BenchmarkKVDB_List(b *testing.B) {
 }
 
 func BenchmarkKVDB_Batch(b *testing.B) {
-	db, done := benchDB(b)
+	mn := peertest.Net(b)
+	db, done := benchDB(b, mn)
 	defer done()
 	ctx := context.Background()
 	const batchSize = 100

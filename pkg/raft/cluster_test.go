@@ -27,8 +27,8 @@ import (
 // newMockNode is a mock node closed when the test ends: a mock makes a
 // repository of its own and only Close removes it. Cleanups run last in first
 // out, so a cluster whose cleanup is registered after its node closes first.
-func newMockNode(t *testing.T) taupeer.Node {
-	node := peertest.Mock(t, t.Context())
+func newMockNode(t *testing.T, mn *taupeer.Mocknet) taupeer.Node {
+	node := mn.Mock(t.Context())
 	t.Cleanup(node.Close)
 	return node
 }
@@ -52,17 +52,18 @@ func testOptions() []Option {
 }
 
 func TestCluster_NodesKeepTheirOwnSnapshots(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "snapshots-of-their-own"
 	opts := []Option{WithTimeouts(testTimeoutConfig()), WithForceBootstrap()}
 
-	a, err := New(newMockNode(t), namespace, opts...)
+	a, err := New(newMockNode(t, mn), namespace, opts...)
 	require.NoError(t, err)
 	t.Cleanup(func() { a.Close() })
 	waitLeader(t, a, 5*time.Second)
 	require.NoError(t, a.Set("only-a-wrote", []byte("v"), time.Second))
 	require.NoError(t, a.(*cluster).current().raft.Snapshot())
 
-	b, err := New(newMockNode(t), namespace, opts...)
+	b, err := New(newMockNode(t, mn), namespace, opts...)
 	require.NoError(t, err, "b started from a's snapshot")
 	t.Cleanup(func() { b.Close() })
 	waitLeader(t, b, 5*time.Second)
@@ -74,12 +75,13 @@ func TestCluster_NodesKeepTheirOwnSnapshots(t *testing.T) {
 }
 
 func TestCluster_FoundersBootstrapWithinTheirTimeout(t *testing.T) {
+	mn := peertest.Net(t)
 	const (
 		namespace = "founders-on-time"
 		timeout   = 2 * time.Second
 	)
-	nodes := []taupeer.Node{newMockNode(t), newMockNode(t), newMockNode(t)}
-	require.NoError(t, peertest.LinkAll(t))
+	nodes := []taupeer.Node{newMockNode(t, mn), newMockNode(t, mn), newMockNode(t, mn)}
+	require.NoError(t, mn.LinkAll())
 
 	type opened struct {
 		cl   Cluster
@@ -127,7 +129,8 @@ func TestCluster_FoundersBootstrapWithinTheirTimeout(t *testing.T) {
 }
 
 func TestNew_ValidNamespace(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -137,7 +140,8 @@ func TestNew_ValidNamespace(t *testing.T) {
 }
 
 func TestNew_InvalidNamespace(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	type testCase struct {
 		name      string
@@ -161,7 +165,8 @@ func TestNew_NilNode(t *testing.T) {
 }
 
 func TestNew_WithOptions(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -171,7 +176,8 @@ func TestNew_WithOptions(t *testing.T) {
 }
 
 func TestCluster_Close(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -294,9 +300,9 @@ func onLeader(t testing.TB, clusters []Cluster, write func(Cluster) error) error
 	}
 }
 
-func joinedPair(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batching) (a, b Cluster) {
+func joinedPair(t *testing.T, mn *taupeer.Mocknet, namespace string, wrap func(ds.Batching) ds.Batching) (a, b Cluster) {
 	t.Helper()
-	group := joinedGroup(t, namespace, wrap, 2)
+	group := joinedGroup(t, mn, namespace, wrap, 2)
 	return group[0], group[1]
 }
 
@@ -305,13 +311,13 @@ func joinedPair(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batchi
 // A joiner connects once the first serves the group, so identify already lists
 // its protocols; connected earlier, it learns them only from identify's push,
 // and one that misses it founds a group of its own.
-func joinedGroup(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batching, size int, opts ...Option) []Cluster {
+func joinedGroup(t *testing.T, mn *taupeer.Mocknet, namespace string, wrap func(ds.Batching) ds.Batching, size int, opts ...Option) []Cluster {
 	t.Helper()
 	nodes := make([]taupeer.Node, size)
 	for i := range nodes {
-		nodes[i] = newMockNode(t)
+		nodes[i] = newMockNode(t, mn)
 	}
-	require.NoError(t, peertest.LinkAll(t))
+	require.NoError(t, mn.LinkAll())
 
 	first, err := New(storeNode{Node: nodes[0], store: wrap(nodes[0].Store())}, namespace,
 		append([]Option{WithTimeouts(testTimeoutConfig()), WithForceBootstrap()}, opts...)...)
@@ -381,9 +387,10 @@ func inConfiguration(g *group, id peer.ID) bool {
 // A LEADER THAT REMOVED ITSELF while its machine was inside an apply still closes
 // only once that apply finished: nothing writes to the store after Close returns.
 func TestCluster_CloseWaitsForALeaderThatRemovedItself(t *testing.T) {
+	mn := peertest.Net(t)
 	namespace := "close-after-self-removal"
 	key := ds.NewKey(path.Join(RaftStoragePrefix, namespace, "data", "held"))
-	a, b := joinedPair(t, namespace, func(store ds.Batching) ds.Batching { return newHeldStore(store, key) })
+	a, b := joinedPair(t, mn, namespace, func(store ds.Batching) ds.Batching { return newHeldStore(store, key) })
 	heldOf := func(cl Cluster) *heldStore { return cl.(*cluster).Store().(*heldStore) }
 	defer heldOf(a).letGo()
 	defer heldOf(b).letGo()
@@ -434,7 +441,8 @@ func TestCluster_CloseWaitsForALeaderThatRemovedItself(t *testing.T) {
 }
 
 func TestCluster_BarrierOffTheLeaderIsNotLeader(t *testing.T) {
-	a, b := joinedPair(t, "barrier-off-the-leader", func(store ds.Batching) ds.Batching { return store })
+	mn := peertest.Net(t)
+	a, b := joinedPair(t, mn, "barrier-off-the-leader", func(store ds.Batching) ds.Batching { return store })
 
 	// A member that removed itself follows and can never be elected again.
 	removed, left := removeTheLeader(t, a, b)
@@ -444,7 +452,8 @@ func TestCluster_BarrierOffTheLeaderIsNotLeader(t *testing.T) {
 }
 
 func TestCluster_SingleNode_IsLeader(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -459,7 +468,8 @@ func TestCluster_SingleNode_IsLeader(t *testing.T) {
 }
 
 func TestCluster_SingleNode_SetGet(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -478,7 +488,8 @@ func TestCluster_SingleNode_SetGet(t *testing.T) {
 }
 
 func TestCluster_SingleNode_Delete(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -498,7 +509,8 @@ func TestCluster_SingleNode_Delete(t *testing.T) {
 }
 
 func TestCluster_SingleNode_Keys(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -522,7 +534,8 @@ func TestCluster_SingleNode_Keys(t *testing.T) {
 }
 
 func TestCluster_Barrier(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -543,7 +556,8 @@ func TestCluster_Barrier(t *testing.T) {
 }
 
 func TestCluster_Members(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -569,7 +583,8 @@ func TestCluster_Members(t *testing.T) {
 }
 
 func TestCluster_State(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -591,7 +606,8 @@ func TestCluster_State(t *testing.T) {
 }
 
 func TestCluster_ClosedOperations(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -622,7 +638,8 @@ func TestCluster_ClosedOperations(t *testing.T) {
 }
 
 func TestCluster_WaitForLeader_Timeout(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -639,7 +656,8 @@ func TestCluster_WaitForLeader_Timeout(t *testing.T) {
 }
 
 func TestCluster_TransferLeadership(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -659,7 +677,8 @@ func TestCluster_TransferLeadership(t *testing.T) {
 }
 
 func TestCluster_Leader(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -685,7 +704,8 @@ func TestCluster_Leader(t *testing.T) {
 }
 
 func TestCluster_Apply(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -721,7 +741,8 @@ func TestCluster_Apply(t *testing.T) {
 }
 
 func TestCluster_RemoveServer(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -742,7 +763,8 @@ func TestCluster_RemoveServer(t *testing.T) {
 }
 
 func TestCluster_Get_Closed(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -761,7 +783,8 @@ func TestCluster_Get_Closed(t *testing.T) {
 }
 
 func TestCluster_Keys_Closed(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -776,7 +799,8 @@ func TestCluster_Keys_Closed(t *testing.T) {
 }
 
 func TestCluster_IsLeader_Closed(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -791,7 +815,8 @@ func TestCluster_IsLeader_Closed(t *testing.T) {
 }
 
 func TestCluster_Leader_Closed(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -807,7 +832,8 @@ func TestCluster_Leader_Closed(t *testing.T) {
 }
 
 func TestCluster_WaitForLeader_Closed(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -824,7 +850,8 @@ func TestCluster_WaitForLeader_Closed(t *testing.T) {
 }
 
 func TestCluster_RemoveServer_Closed(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -841,7 +868,8 @@ func TestCluster_RemoveServer_Closed(t *testing.T) {
 }
 
 func TestCluster_TransferLeadership_Closed(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -857,7 +885,8 @@ func TestCluster_TransferLeadership_Closed(t *testing.T) {
 }
 
 func TestCluster_State_Closed(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -873,7 +902,8 @@ func TestCluster_State_Closed(t *testing.T) {
 }
 
 func TestCluster_Set_Closed(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -889,7 +919,8 @@ func TestCluster_Set_Closed(t *testing.T) {
 }
 
 func TestCluster_Delete_Closed(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -905,7 +936,8 @@ func TestCluster_Delete_Closed(t *testing.T) {
 }
 
 func TestCluster_Apply_Closed(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -921,7 +953,8 @@ func TestCluster_Apply_Closed(t *testing.T) {
 }
 
 func TestCluster_Apply_InvalidCommand(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -946,7 +979,8 @@ func TestCluster_Apply_InvalidCommand(t *testing.T) {
 }
 
 func TestCluster_Barrier_Closed(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -962,7 +996,8 @@ func TestCluster_Barrier_Closed(t *testing.T) {
 }
 
 func TestCluster_Members_Closed(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -978,7 +1013,8 @@ func TestCluster_Members_Closed(t *testing.T) {
 }
 
 func TestCluster_RemoveServer_NotLeader(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
@@ -992,7 +1028,8 @@ func TestCluster_RemoveServer_NotLeader(t *testing.T) {
 }
 
 func TestBuildRaftConfig(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "/raft/test",
 		WithTimeouts(TimeoutConfig{
@@ -1015,7 +1052,8 @@ func TestBuildRaftConfig(t *testing.T) {
 }
 
 func TestCluster_RaftClient(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	if err != nil {
@@ -1030,7 +1068,8 @@ func TestCluster_RaftClient(t *testing.T) {
 }
 
 func TestCluster_StreamService(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1041,7 +1080,8 @@ func TestCluster_StreamService(t *testing.T) {
 }
 
 func TestCluster_Apply_NotLeader(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1052,7 +1092,8 @@ func TestCluster_Apply_NotLeader(t *testing.T) {
 }
 
 func TestCluster_Apply_AsLeader(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1069,7 +1110,8 @@ func TestCluster_Apply_AsLeader(t *testing.T) {
 }
 
 func TestCluster_Set_EncodingError(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1084,7 +1126,8 @@ func TestCluster_Set_EncodingError(t *testing.T) {
 }
 
 func TestCluster_Delete_NotFound(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1099,7 +1142,8 @@ func TestCluster_Delete_NotFound(t *testing.T) {
 }
 
 func TestCluster_FSM_Nil_CustomFSM(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1114,7 +1158,8 @@ func TestCluster_FSM_Nil_CustomFSM(t *testing.T) {
 }
 
 func TestCluster_Keys_WithData(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1136,7 +1181,8 @@ func TestCluster_Keys_WithData(t *testing.T) {
 }
 
 func TestCluster_Get_NotFound(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1179,7 +1225,8 @@ func TestFsmAdapter_Snapshot_ViaCluster(t *testing.T) {
 }
 
 func TestCluster_AddVoter_NotLeader(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1193,7 +1240,8 @@ func TestCluster_AddVoter_NotLeader(t *testing.T) {
 }
 
 func TestCluster_Barrier_Success(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1208,7 +1256,8 @@ func TestCluster_Barrier_Success(t *testing.T) {
 }
 
 func TestCluster_TransferLeadership_SingleNode(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1223,7 +1272,8 @@ func TestCluster_TransferLeadership_SingleNode(t *testing.T) {
 }
 
 func TestCluster_Members_AsLeader(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1239,7 +1289,8 @@ func TestCluster_Members_AsLeader(t *testing.T) {
 }
 
 func TestCluster_State_AsLeader(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1254,7 +1305,8 @@ func TestCluster_State_AsLeader(t *testing.T) {
 }
 
 func TestCluster_Leader_AsLeader(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1270,7 +1322,8 @@ func TestCluster_Leader_AsLeader(t *testing.T) {
 }
 
 func TestCluster_AddVoter_AsLeader(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1285,7 +1338,8 @@ func TestCluster_AddVoter_AsLeader(t *testing.T) {
 }
 
 func TestCluster_Set_AsLeader(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1304,7 +1358,8 @@ func TestCluster_Set_AsLeader(t *testing.T) {
 }
 
 func TestCluster_Delete_AsLeader(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1324,7 +1379,8 @@ func TestCluster_Delete_AsLeader(t *testing.T) {
 }
 
 func TestCluster_Close_Idempotent(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1337,7 +1393,8 @@ func TestCluster_Close_Idempotent(t *testing.T) {
 }
 
 func TestCluster_Apply_InvalidTimeout(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cluster, err := New(node, "/raft/test-apply-timeout", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1382,7 +1439,8 @@ func TestCluster_Apply_InvalidTimeout(t *testing.T) {
 }
 
 func TestCluster_ApplyAsLeader(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1408,7 +1466,8 @@ func TestCluster_ApplyAsLeader(t *testing.T) {
 }
 
 func TestCluster_SetAndVerify(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1437,7 +1496,8 @@ func TestCluster_SetAndVerify(t *testing.T) {
 }
 
 func TestCluster_DeleteAndVerify(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1459,7 +1519,8 @@ func TestCluster_DeleteAndVerify(t *testing.T) {
 }
 
 func TestCluster_BarrierSuccess(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1474,7 +1535,8 @@ func TestCluster_BarrierSuccess(t *testing.T) {
 }
 
 func TestCluster_LeaderInfo(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1494,7 +1556,8 @@ func TestCluster_LeaderInfo(t *testing.T) {
 }
 
 func TestCluster_MembersAfterBootstrap(t *testing.T) {
-	node := newMockNode(t)
+	mn := peertest.Net(t)
+	node := newMockNode(t, mn)
 
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
@@ -1512,9 +1575,10 @@ func TestCluster_MembersAfterBootstrap(t *testing.T) {
 }
 
 func TestCluster_TwoMembersThatStartTogetherFormOneGroup(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "start-together"
-	nodes := []taupeer.Node{newMockNode(t), newMockNode(t)}
-	require.NoError(t, peertest.LinkAll(t))
+	nodes := []taupeer.Node{newMockNode(t, mn), newMockNode(t, mn)}
+	require.NoError(t, mn.LinkAll())
 	require.NoError(t, nodes[1].Host().Connect(t.Context(), peer.AddrInfo{ID: nodes[0].ID(), Addrs: nodes[0].Host().Addrs()}))
 
 	type started struct {
@@ -1559,8 +1623,9 @@ func TestCluster_TwoMembersThatStartTogetherFormOneGroup(t *testing.T) {
 // new member would make is refused because the store already holds a group, so
 // it asks to be let in and takes the group up again from its log.
 func TestCluster_AMemberRestartedOnItsStateLeadsItsGroupAgain(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "restarted-member"
-	node := newMockNode(t)
+	node := newMockNode(t, mn)
 
 	first, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
@@ -1590,8 +1655,9 @@ func TestCluster_AMemberRestartedOnItsStateLeadsItsGroupAgain(t *testing.T) {
 // leader, leading on with the rest, holds the progress of the log the member lost,
 // and raft would send the member a commit past the end of the log it holds now.
 func TestCluster_AMemberBackWithItsLogLostIsCaughtUp(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "log-lost"
-	group := joinedGroup(t, namespace, sameStore, 3)
+	group := joinedGroup(t, mn, namespace, sameStore, 3)
 	require.NoError(t, onLeader(t, group, func(leader Cluster) error {
 		return leader.Set("kept", []byte("v"), time.Second)
 	}))
@@ -1633,7 +1699,8 @@ func TestCluster_AMemberBackWithItsLogLostIsCaughtUp(t *testing.T) {
 // HOLDS has no member to hand its lead to, and admits the follower as it is: the
 // follower answering it nothing ends the term (TestAMemberOfTwoBackWithItsLogLostIsCaughtUp).
 func TestCluster_ALeaderOfTwoHasNoMemberToHandItsLeadTo(t *testing.T) {
-	a, b := joinedPair(t, "lead-of-two", sameStore)
+	mn := peertest.Net(t)
+	a, b := joinedPair(t, mn, "lead-of-two", sameStore)
 	require.NoError(t, onLeader(t, []Cluster{a, b}, func(leader Cluster) error {
 		return leader.Set("kept", []byte("v"), time.Second)
 	}))
@@ -1664,8 +1731,9 @@ func (p *letInPeer) JoinVoter(context.Context, *connect.Request[raftv2.JoinVoter
 }
 
 func TestCluster_AMemberLetInAsksNoMore(t *testing.T) {
+	mn := peertest.Net(t)
 	group := &letInPeer{}
-	member, _ := facing(t, "let-in-asks-no-more", newFaultStore(), group)
+	member, _ := facing(t, mn, "let-in-asks-no-more", newFaultStore(), group)
 
 	member.askToJoin(member.current(), time.Second)
 	assert.Equal(t, int32(1), group.joins.Load(), "the member asked again once let in")
@@ -1675,8 +1743,9 @@ func TestCluster_AMemberLetInAsksNoMore(t *testing.T) {
 // A NODE THAT FORMED ITS GROUP BY ITSELF RESUMES IT after a restart, over what it
 // kept: the bootstrap it cannot make again is the one it already made.
 func TestCluster_AForceBootstrappedNodeResumesItsGroupAfterARestart(t *testing.T) {
+	mn := peertest.Net(t)
 	const namespace = "force-resumes"
-	node := newMockNode(t)
+	node := newMockNode(t, mn)
 	first, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err)
 	waitLeader(t, first, 5*time.Second)

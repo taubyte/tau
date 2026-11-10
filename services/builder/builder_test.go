@@ -11,6 +11,7 @@ import (
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 	builderv2 "github.com/taubyte/tau/pkg/proto/gen/tau/builder/v2"
 	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
@@ -149,14 +150,16 @@ func TestAFollowerThatLeavesLetsGoOfTheLog(t *testing.T) {
 }
 
 func TestABuilderRefusesWhatItCannotBeStartedWith(t *testing.T) {
+	mn := peertest.Net(t)
 	r := New()
-	require.Error(t, r.Start(t.Context(), lone(t, map[string]any{"logs": map[string]any{"maxBytes": -1}})))
+	require.Error(t, r.Start(t.Context(), lone(t, mn, map[string]any{"logs": map[string]any{"maxBytes": -1}})))
 	require.NoError(t, r.Close())
 }
 
 func TestABuilderStartsServingAndClosesOnce(t *testing.T) {
+	mn := peertest.Net(t)
 	r := New()
-	h := lone(t, map[string]any{"domains": map[string]any{"trusted": true}, "logs": map[string]any{"dir": t.TempDir()}})
+	h := lone(t, mn, map[string]any{"domains": map[string]any{"trusted": true}, "logs": map[string]any{"dir": t.TempDir()}})
 	require.NoError(t, r.Start(t.Context(), h))
 	require.ErrorContains(t, r.Start(t.Context(), h), "already started")
 

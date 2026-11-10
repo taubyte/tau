@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	secretsService "github.com/taubyte/tau/services/secrets"
 )
 
@@ -64,7 +65,8 @@ func TestADatabaseStoreIsOpenedAndReleasedByName(t *testing.T) {
 }
 
 func TestADatabaseCredentialNeedsAVault(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Stats}})
+	mn := peertest.Net(t)
+	n, _, _ := makeNode(t, mn, Config{Services: []string{Register, Worker, Stats}})
 	_, err := vaultSecrets{node: n.Service}.Secret(t.Context(), "shop", "prod", "dbpass")
 	require.ErrorIs(t, err, secretsService.ErrNoSecrets)
 }
