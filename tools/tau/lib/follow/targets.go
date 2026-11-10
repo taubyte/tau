@@ -46,7 +46,7 @@ func Targets(st *tcc.Store, withWebsites bool) ([]Target, error) {
 			} else if t, _ := tcc.Get(doc, []string{"trigger", "type"}).(string); !strings.HasPrefix(t, "http") {
 				continue // p2p/pubsub functions have no URL
 			}
-			domains, _ := tcc.Get(doc, []string{"domains"}).([]any)
+			domains := domainsOf(doc)
 			if len(domains) == 0 {
 				continue
 			}
@@ -77,6 +77,16 @@ func Targets(st *tcc.Store, withWebsites bool) ([]Target, error) {
 		}
 	}
 	return out, nil
+}
+
+// domainsOf reads a resource's domains. A function keeps them under trigger;
+// websites and older functions at the top level, as pkg/schema/functions reads them.
+func domainsOf(doc tcc.Doc) []any {
+	if domains, ok := tcc.Get(doc, []string{"trigger", "domains"}).([]any); ok {
+		return domains
+	}
+	domains, _ := tcc.Get(doc, []string{"domains"}).([]any)
+	return domains
 }
 
 func firstString(v any) string {
