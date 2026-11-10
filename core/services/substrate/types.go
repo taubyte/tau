@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 
+	"github.com/taubyte/tau/pkg/config"
+
 	services "github.com/taubyte/tau/core/services"
 	"github.com/taubyte/tau/core/services/substrate/counters"
 	"github.com/taubyte/tau/core/services/substrate/smartops"
@@ -26,6 +28,8 @@ type Service interface {
 
 	Dev() bool
 	Verbose() bool
+	// Caps returns the operator's caps for a project.
+	Caps(projectID string) config.Caps
 	Context() context.Context
 }
 
