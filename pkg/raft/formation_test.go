@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 )
 
 // offering answers Offer from what it was given, and holds a peer it was told to
@@ -158,7 +159,7 @@ func TestAPeerIsExchangedWithOnceAtATime(t *testing.T) {
 func TestAnOfferFromAPeerOutsideTheGroupFails(t *testing.T) {
 	_, cli := callerOf(t, "offer-outside", sameStore)
 	outside := newMockNode(t)
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	_, err := cli.Offer(outside.ID())
 	require.Error(t, err)
 }

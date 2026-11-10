@@ -9,7 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
-	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 )
 
 func TestNewClient(t *testing.T) {
@@ -67,7 +67,7 @@ func TestClient_SetGetDelete_Integration(t *testing.T) {
 func TestClient_ExchangePeers(t *testing.T) {
 	cl, cli := callerOf(t, "client-exchange-seen", sameStore)
 	seen := newMockNode(t)
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 
 	_, theirPeers, err := cli.ExchangePeers(time.Now(), map[string]int64{
 		cli.ID().String():  0,
@@ -88,7 +88,7 @@ func TestClient_WithEncryption(t *testing.T) {
 	}
 	member := newMockNode(t)
 	caller := newMockNode(t)
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 
 	cl, err := New(member, namespace, WithEncryptionKey(key),
 		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())

@@ -5,8 +5,7 @@ import (
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
-
-	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 )
 
@@ -27,7 +26,7 @@ func TestTheTableReachesARegisterElsewhere(t *testing.T) {
 	ctx := t.Context()
 	at, from := mockNode(t), mockNode(t)
 	startRegister(t, at)
-	require.NoError(t, peer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	require.NoError(t, from.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: at.ID(), Addrs: at.Host().Addrs()}))
 	from.finding = finding{at.ID()}
 

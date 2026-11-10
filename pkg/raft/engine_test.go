@@ -18,6 +18,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 )
 
@@ -28,7 +29,7 @@ func linked(t *testing.T, n int) []taupeer.Node {
 	t.Helper()
 	nodes := make([]taupeer.Node, n)
 	for i := range nodes {
-		nodes[i] = taupeer.Mock(t.Context())
+		nodes[i] = peertest.Mock(t, t.Context())
 		t.Cleanup(nodes[i].Close)
 	}
 	connectAllOf(t, nodes...)
@@ -88,7 +89,7 @@ func leading(t *testing.T, groups ...*group) *group {
 }
 
 func TestAGroupOfOneElectsItselfAppliesAndKeepsItsLog(t *testing.T) {
-	node := taupeer.Mock(t.Context())
+	node := peertest.Mock(t, t.Context())
 	t.Cleanup(node.Close)
 
 	e := engineFor(node)
@@ -244,7 +245,7 @@ func TestAVoteFromOutsideTheGroupIsHeard(t *testing.T) {
 // unreachable commits nothing, and closing the group answers the write.
 func TestClosingAGroupAnswersWhatWaitsOnIt(t *testing.T) {
 	nodes := linked(t, 1)
-	ghost := taupeer.Mock(t.Context())
+	ghost := peertest.Mock(t, t.Context())
 	ghostID := ghost.ID()
 	ghost.Close()
 
@@ -272,7 +273,7 @@ func TestClosingAGroupAnswersWhatWaitsOnIt(t *testing.T) {
 
 // WIPED, a group starts again as on a node that never ran it.
 func TestAWipedGroupStartsAgain(t *testing.T) {
-	node := taupeer.Mock(t.Context())
+	node := peertest.Mock(t, t.Context())
 	t.Cleanup(node.Close)
 	g := onEngine(t, node, "wiped", quickTimeouts)
 	require.NoError(t, g.Bootstrap([]peer.ID{node.ID()}))
@@ -311,7 +312,7 @@ func (r refusingBatches) Batch(ctx context.Context) (datastore.Batch, error) {
 // A GROUP WHOSE STATE CANNOT BE WRITTEN STALLS, rather than run on what it did not
 // keep, and comes back once the store takes its writes again.
 func TestAGroupThatCannotWriteStallsUntilItCan(t *testing.T) {
-	mock := taupeer.Mock(t.Context())
+	mock := peertest.Mock(t, t.Context())
 	t.Cleanup(mock.Close)
 	node := failingStore{Node: mock, broken: &atomic.Bool{}}
 	g := onEngine(t, node, "broken", quickTimeouts)
@@ -347,7 +348,7 @@ func TestEtcdsLogIsTaus(t *testing.T) {
 }
 
 func TestALoneLeaderHasNobodyToHandLeadershipTo(t *testing.T) {
-	node := taupeer.Mock(t.Context())
+	node := peertest.Mock(t, t.Context())
 	t.Cleanup(node.Close)
 	g := onEngine(t, node, "lone", quickTimeouts)
 	require.NoError(t, g.Bootstrap([]peer.ID{node.ID()}))
@@ -432,7 +433,7 @@ func TestAFollowerWhoseEngineRestartsHearsItsLeaderAgain(t *testing.T) {
 // A GROUP KEEPS ITS LOG IN ITS OWN NODE'S STORE, even on a host whose engine another
 // node value started with a store of its own.
 func TestAGroupKeepsItsLogInItsOwnStore(t *testing.T) {
-	node := taupeer.Mock(t.Context())
+	node := peertest.Mock(t, t.Context())
 	t.Cleanup(node.Close)
 	first := onEngine(t, node, "first", quickTimeouts)
 	require.NoError(t, first.Bootstrap([]peer.ID{node.ID()}))
@@ -481,7 +482,7 @@ func (m *refusingMachine) Restore(data []byte) error {
 // refused by name, one the threshold calls for is put off with the group still
 // writing, and a group whose kept snapshot cannot be restored is not opened.
 func TestAMachineThatCannotSnapshotOrRestoreSaysSo(t *testing.T) {
-	node := taupeer.Mock(t.Context())
+	node := peertest.Mock(t, t.Context())
 	t.Cleanup(node.Close)
 	often := TimeoutConfig{HeartbeatTimeout: 50 * time.Millisecond, SnapshotThreshold: 2, TrailingLogs: 1}
 	open := func(m FSM) (*group, error) {
@@ -521,7 +522,7 @@ func TestAMachineThatCannotSnapshotOrRestoreSaysSo(t *testing.T) {
 // A SNAPSHOT THAT DOES NOT READ refuses the group rather than start it on a machine
 // it could not restore.
 func TestAGroupWhoseSnapshotDoesNotReadIsNotOpened(t *testing.T) {
-	node := taupeer.Mock(t.Context())
+	node := peertest.Mock(t, t.Context())
 	t.Cleanup(node.Close)
 	raw, err := proto.Marshal(&pb.Snapshot{
 		Data:     []byte{0xff},
@@ -581,7 +582,7 @@ func TestAGroupTakesNoMessageOfAFormationItIsNotBoundTo(t *testing.T) {
 // A BINDING IS KEPT: a group reopened is bound where it was, refuses another
 // formation, and bootstraps none of its own.
 func TestAGroupKeepsItsFormation(t *testing.T) {
-	node := taupeer.Mock(t.Context())
+	node := peertest.Mock(t, t.Context())
 	t.Cleanup(node.Close)
 	ours := newFormation()
 

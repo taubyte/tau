@@ -16,6 +16,7 @@ import (
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
@@ -112,7 +113,7 @@ func (s *served) Current(ctx context.Context, at storage.Address, name string) (
 
 func serving(t *testing.T) *served {
 	t.Helper()
-	p := peer.Mock(t.Context())
+	p := peertest.Mock(t, t.Context())
 	t.Cleanup(p.Close)
 	n := &node{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond}), root: t.TempDir()}
 	n.Serve(settings.Protocol, cmmock.New(settings.Defaults()))

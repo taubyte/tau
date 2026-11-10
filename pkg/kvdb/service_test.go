@@ -7,11 +7,12 @@ import (
 	ds "github.com/ipfs/go-datastore"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 )
 
 // Its repository is a temporary directory only Close removes.
 func mockPeer(t testing.TB) peer.Node {
-	n := peer.Mock(t.Context())
+	n := peertest.Mock(t, t.Context())
 	t.Cleanup(n.Close)
 	return n
 }

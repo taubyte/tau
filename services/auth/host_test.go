@@ -10,6 +10,7 @@ import (
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 	kvdbmock "github.com/taubyte/tau/pkg/kvdb/mock"
 	"github.com/taubyte/tau/services/auth/projects"
@@ -49,7 +50,7 @@ func (s shared) Database(name string) (kvdb.Instance, error) {
 
 func newNode(t *testing.T, running ...any) *node {
 	t.Helper()
-	p := peer.Mock(t.Context())
+	p := peertest.Mock(t, t.Context())
 	t.Cleanup(p.Close)
 	n := &node{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond})}
 	for _, r := range running {
@@ -89,7 +90,7 @@ func TestTheProjectTableIsAuthsOwnBesideIt(t *testing.T) {
 }
 
 func TestAuthWithNoStoreKeepsNoTable(t *testing.T) {
-	p := peer.Mock(t.Context())
+	p := peertest.Mock(t, t.Context())
 	t.Cleanup(p.Close)
 	s, err := build(p.Host())
 	require.NoError(t, err)

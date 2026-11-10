@@ -14,6 +14,7 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/protocol/identify"
 	"github.com/stretchr/testify/require"
 	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"gotest.tools/v3/assert"
 )
 
@@ -294,7 +295,7 @@ func TestDiscovery_AGroupOnlyDiscoveryFindsIsJoined(t *testing.T) {
 	const namespace = "found-by-discovery"
 	meeting := newRendezvous()
 	nodeA, nodeB := newMockNode(t), newMockNode(t)
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 
 	b, err := New(discoveryNode{Node: nodeB, discovery: meeting.pointOf(nodeB.Host())}, namespace,
 		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
@@ -357,7 +358,7 @@ func TestDiscovery_ASearchSlowerThanATickFindsTheGroup(t *testing.T) {
 	const namespace = "found-by-a-slow-search"
 	meeting := newRendezvous()
 	nodeA, nodeB := newMockNode(t), newMockNode(t)
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 
 	b, err := New(discoveryNode{Node: nodeB, discovery: meeting.pointOf(nodeB.Host())}, namespace,
 		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
@@ -390,7 +391,7 @@ func pushless(t *testing.T) taupeer.Node {
 
 func connectAllOf(t testing.TB, nodes ...taupeer.Node) {
 	t.Helper()
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	for i, a := range nodes {
 		for _, b := range nodes[i+1:] {
 			require.NoError(t, a.Host().Connect(t.Context(), peer.AddrInfo{ID: b.ID(), Addrs: b.Host().Addrs()}))

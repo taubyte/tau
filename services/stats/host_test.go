@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/pkg/stats"
 )
 
@@ -85,7 +86,7 @@ func (sockets) Report(s *Snapshot) {
 }
 
 func TestStatsReportsWhatItsInstanceRuns(t *testing.T) {
-	p := peer.Mock(t.Context())
+	p := peertest.Mock(t, t.Context())
 	t.Cleanup(p.Close)
 	d := New()
 
@@ -116,7 +117,7 @@ func TestStatsReportsWhatItsInstanceRuns(t *testing.T) {
 }
 
 func TestStatsRefusesWhatItCannotStartWith(t *testing.T) {
-	p := peer.Mock(t.Context())
+	p := peertest.Mock(t, t.Context())
 	t.Cleanup(p.Close)
 	h := &instance{Node: p, config: func(any) error { return errors.New("no such key") }}
 	require.ErrorContains(t, New().Start(t.Context(), h), "no such key")

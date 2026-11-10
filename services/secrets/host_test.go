@@ -11,6 +11,7 @@ import (
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
 	invokesecret "github.com/taubyte/tau/pkg/invoke/secret"
@@ -56,7 +57,7 @@ var _ service.Host = (*vaultNode)(nil)
 
 func TestAVaultIsWrittenBeforeItServesAndReadThroughItsHost(t *testing.T) {
 	ctx := t.Context()
-	p := peer.Mock(ctx)
+	p := peertest.Mock(t, ctx)
 	t.Cleanup(p.Close)
 	h := &vaultNode{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond}), root: t.TempDir()}
 
@@ -110,7 +111,7 @@ func TestAVaultIsWrittenBeforeItServesAndReadThroughItsHost(t *testing.T) {
 }
 
 func TestAVaultWithNobodyToAskSaysSo(t *testing.T) {
-	p := peer.Mock(t.Context())
+	p := peertest.Mock(t, t.Context())
 	t.Cleanup(p.Close)
 	vault := VaultOn(&vaultNode{Node: p})
 	t.Cleanup(func() { vault.Close() })
@@ -119,7 +120,7 @@ func TestAVaultWithNobodyToAskSaysSo(t *testing.T) {
 }
 
 func TestSecretsRefusesWhatItCannotStartWith(t *testing.T) {
-	p := peer.Mock(t.Context())
+	p := peertest.Mock(t, t.Context())
 	t.Cleanup(p.Close)
 	require.ErrorIs(t, New().Start(t.Context(), &vaultNode{Node: p}), ErrNoRoot, "no directory for its shares")
 	require.ErrorContains(t, New().Start(t.Context(), &vaultNode{Node: p, root: t.TempDir(), config: func(any) error {

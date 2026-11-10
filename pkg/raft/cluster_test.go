@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2/raftv2connect"
 	etcdraft "go.etcd.io/raft/v3"
@@ -27,7 +28,7 @@ import (
 // repository of its own and only Close removes it. Cleanups run last in first
 // out, so a cluster whose cleanup is registered after its node closes first.
 func newMockNode(t *testing.T) taupeer.Node {
-	node := taupeer.Mock(t.Context())
+	node := peertest.Mock(t, t.Context())
 	t.Cleanup(node.Close)
 	return node
 }
@@ -78,7 +79,7 @@ func TestCluster_FoundersBootstrapWithinTheirTimeout(t *testing.T) {
 		timeout   = 2 * time.Second
 	)
 	nodes := []taupeer.Node{newMockNode(t), newMockNode(t), newMockNode(t)}
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 
 	type opened struct {
 		cl   Cluster
@@ -310,7 +311,7 @@ func joinedGroup(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batch
 	for i := range nodes {
 		nodes[i] = newMockNode(t)
 	}
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 
 	first, err := New(storeNode{Node: nodes[0], store: wrap(nodes[0].Store())}, namespace,
 		append([]Option{WithTimeouts(testTimeoutConfig()), WithForceBootstrap()}, opts...)...)
@@ -1513,7 +1514,7 @@ func TestCluster_MembersAfterBootstrap(t *testing.T) {
 func TestCluster_TwoMembersThatStartTogetherFormOneGroup(t *testing.T) {
 	const namespace = "start-together"
 	nodes := []taupeer.Node{newMockNode(t), newMockNode(t)}
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	require.NoError(t, nodes[1].Host().Connect(t.Context(), peer.AddrInfo{ID: nodes[0].ID(), Addrs: nodes[0].Host().Addrs()}))
 
 	type started struct {

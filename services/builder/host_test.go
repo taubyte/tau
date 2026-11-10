@@ -13,6 +13,7 @@ import (
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/containers"
 	"github.com/taubyte/tau/pkg/forge/drivers"
@@ -53,7 +54,7 @@ func (n *node) Config(into any) error {
 
 func lone(t *testing.T, section map[string]any) *node {
 	t.Helper()
-	p := peer.Mock(t.Context())
+	p := peertest.Mock(t, t.Context())
 	t.Cleanup(p.Close)
 	return &node{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond}), section: section}
 }

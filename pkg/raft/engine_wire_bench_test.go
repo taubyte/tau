@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 )
 
@@ -56,7 +57,7 @@ func benchFrame(tb testing.TB, n, size int) *raftv2.Frame {
 func benchPair(b *testing.B, echo bool) (from transport, to peer.ID, got chan *raftv2.Frame) {
 	ctx, cancel := context.WithCancel(context.Background())
 	b.Cleanup(cancel)
-	nodes := []taupeer.Node{taupeer.Mock(ctx), taupeer.Mock(ctx)}
+	nodes := []taupeer.Node{peertest.Mock(b, ctx), peertest.Mock(b, ctx)}
 	for _, n := range nodes {
 		b.Cleanup(n.Close)
 	}

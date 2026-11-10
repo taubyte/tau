@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/kvdb"
-	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	kvdbmock "github.com/taubyte/tau/pkg/kvdb/mock"
 )
@@ -162,7 +162,7 @@ func TestTheCatalogIsEveryInstanceWrittenOnce(t *testing.T) {
 
 func TestAShardIsOneOfTheInstancesDatabases(t *testing.T) {
 	ctx := t.Context()
-	p := peer.Mock(ctx)
+	p := peertest.Mock(t, ctx)
 	t.Cleanup(p.Close)
 
 	var opened []string

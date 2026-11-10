@@ -12,9 +12,8 @@ import (
 	ds "github.com/ipfs/go-datastore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"gopkg.in/yaml.v3"
-
-	taupeer "github.com/taubyte/tau/p2p/peer"
 )
 
 func TestQuorumLossRecoveryIsManualOrADuration(t *testing.T) {
@@ -138,7 +137,7 @@ func TestHealing_AMemberThatStoppedWhileFormingFormsWithWhatItCarried(t *testing
 	t.Cleanup(func() { other.Close() })
 	waitLeader(t, other, 5*time.Second)
 	node := newMockNode(t)
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	connected(t, node, other)
 	data, err := encodeMergeCommand(map[string]CRDTEntry{
 		"carried": {Value: []byte("v"), Timestamp: 1, WallClock: time.Now().UnixNano()},

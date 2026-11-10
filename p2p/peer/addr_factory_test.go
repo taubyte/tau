@@ -121,7 +121,7 @@ func TestIpfsStyleAddrsFactory_InvalidAnnounce(t *testing.T) {
 
 func TestSimpleAddrsFactory(t *testing.T) {
 	ctx := context.Background()
-	mockNode := Mock(ctx)
+	mockNode := testNet(t).Mock(ctx)
 	require.NotNil(t, mockNode)
 	defer mockNode.Close()
 
@@ -132,7 +132,7 @@ func TestSimpleAddrsFactory(t *testing.T) {
 
 func TestSimpleAddrsFactory_Override(t *testing.T) {
 	ctx := context.Background()
-	mockNode := Mock(ctx)
+	mockNode := testNet(t).Mock(ctx)
 	require.NotNil(t, mockNode)
 	defer mockNode.Close()
 
@@ -143,7 +143,7 @@ func TestSimpleAddrsFactory_Override(t *testing.T) {
 
 func TestSimpleAddrsFactory_InvalidAnnounce(t *testing.T) {
 	ctx := context.Background()
-	mockNode := Mock(ctx)
+	mockNode := testNet(t).Mock(ctx)
 	require.NotNil(t, mockNode)
 	defer mockNode.Close()
 
@@ -196,7 +196,7 @@ func TestANodeThatLetTheKernelPickAnnouncesThePortItBound(t *testing.T) {
 }
 
 func TestAnAnnouncedPortStillOverridesWhatTheHostBound(t *testing.T) {
-	node := Mock(t.Context())
+	node := testNet(t).Mock(t.Context())
 	defer node.Close()
 
 	var cfg config.Config

@@ -13,6 +13,7 @@ import (
 
 	"github.com/taubyte/tau/p2p/discovery"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 )
 
@@ -27,7 +28,7 @@ type fake struct {
 
 func newFake(t *testing.T, found ...libp2ppeer.ID) *fake {
 	t.Helper()
-	p := peer.Mock(t.Context())
+	p := peertest.Mock(t, t.Context())
 	t.Cleanup(p.Close)
 	f := &fake{Node: p, finding: found}
 	f.Served = NewServed(p.ID(), &f.finding, rpc.Retry{For: 50 * time.Millisecond})
@@ -213,7 +214,7 @@ func (r *recorder) Start(_ context.Context, h Host) error { r.host = h; return r
 func (r *recorder) Close() error                          { return nil }
 
 func TestALonePeerRunsServicesBesideEachOther(t *testing.T) {
-	p := peer.Mock(t.Context())
+	p := peertest.Mock(t, t.Context())
 	t.Cleanup(p.Close)
 	l := On(p, "cloud")
 
@@ -247,7 +248,7 @@ func (s serving) Start(_ context.Context, h Host) error {
 }
 
 func TestAServiceOnALonePeerIsReachedByTheNextWithNoClient(t *testing.T) {
-	p := peer.Mock(t.Context())
+	p := peertest.Mock(t, t.Context())
 	t.Cleanup(p.Close)
 	l := On(p, "cloud")
 	require.NoError(t, l.Start(t.Context(), "store", serving{store{held: "lone"}}))

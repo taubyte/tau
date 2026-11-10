@@ -20,6 +20,7 @@ import (
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/raft"
 	dnsService "github.com/taubyte/tau/services/dns"
@@ -256,14 +257,14 @@ func mockRaft() Option {
 func callerOf(t testing.TB, p peer.Node) host.Host {
 	t.Helper()
 	caller := mockPeer(t)
-	require.NoError(t, peer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	require.NoError(t, caller.Host().Connect(t.Context(), libp2ppeer.AddrInfo{ID: p.ID(), Addrs: p.Host().Addrs()}))
 	return caller.Host()
 }
 
 func mockPeer(t testing.TB) peer.Node {
 	t.Helper()
-	p := peer.Mock(t.Context())
+	p := peertest.Mock(t, t.Context())
 	t.Cleanup(p.Close)
 	return p
 }

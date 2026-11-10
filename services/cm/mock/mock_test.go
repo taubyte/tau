@@ -9,6 +9,7 @@ import (
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/services/cm/mock"
 	"github.com/taubyte/tau/services/cm/settings"
@@ -49,7 +50,7 @@ func TestTheMockAnswersWhatItWasToldAndChangesWhenTold(t *testing.T) {
 }
 
 func TestTheMockListensOnCmsProtocolUntilClosed(t *testing.T) {
-	p := peer.Mock(t.Context())
+	p := peertest.Mock(t, t.Context())
 	t.Cleanup(p.Close)
 	cm := mock.New(settings.Defaults())
 	require.NoError(t, cm.Close(), "closing one never started")

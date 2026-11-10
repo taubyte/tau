@@ -19,7 +19,7 @@ import (
 
 func TestDAG_Accessors(t *testing.T) {
 	ctx := context.Background()
-	node := Mock(ctx)
+	node := testNet(t).Mock(ctx)
 	require.NotNil(t, node)
 	defer node.Close()
 
@@ -34,7 +34,7 @@ func TestDAG_Accessors(t *testing.T) {
 
 func TestDAG_HasBlock(t *testing.T) {
 	ctx := context.Background()
-	node := Mock(ctx)
+	node := testNet(t).Mock(ctx)
 	require.NotNil(t, node)
 	defer node.Close()
 
@@ -54,7 +54,7 @@ func TestDAG_HasBlock(t *testing.T) {
 
 func TestDAG_ReadBlock(t *testing.T) {
 	ctx := context.Background()
-	node := Mock(ctx)
+	node := testNet(t).Mock(ctx)
 	require.NotNil(t, node)
 	defer node.Close()
 
@@ -75,7 +75,7 @@ func TestDAG_ReadBlock(t *testing.T) {
 }
 
 func TestDAG_BlockLogIsTheNodesStore(t *testing.T) {
-	node := Mock(context.Background())
+	node := testNet(t).Mock(context.Background())
 	require.NotNil(t, node)
 	defer node.Close()
 	assert.True(t, node.DAG().BlockLog() == node.Store())
@@ -83,7 +83,7 @@ func TestDAG_BlockLogIsTheNodesStore(t *testing.T) {
 
 func TestDAG_CloseIdempotent(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	node := Mock(ctx)
+	node := testNet(t).Mock(ctx)
 	require.NotNil(t, node)
 
 	dag := node.DAG()
@@ -126,7 +126,7 @@ func (s *lateQueryStore) Close() error {
 func TestDAG_CloseWaitsForTheBloomBuild(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	n := Mock(ctx).(*node)
+	n := testNet(t).Mock(ctx).(*node)
 	defer n.Close()
 
 	store := &lateQueryStore{Batching: dssync.MutexWrap(datastore.NewMapDatastore())}

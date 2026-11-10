@@ -7,6 +7,7 @@ import (
 	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	peercore "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/taubyte/tau/p2p/keypair"
@@ -14,7 +15,7 @@ import (
 
 func TestMock(t *testing.T) {
 	ctx := context.Background()
-	node := Mock(ctx)
+	node := testNet(t).Mock(ctx)
 	require.NotNil(t, node, "Mock should return a non-nil node")
 
 	defer node.Close()
@@ -45,7 +46,7 @@ func TestMock(t *testing.T) {
 
 func TestMock_NewChildContextWithCancel(t *testing.T) {
 	ctx := context.Background()
-	node := Mock(ctx)
+	node := testNet(t).Mock(ctx)
 	require.NotNil(t, node)
 	defer node.Close()
 
@@ -70,7 +71,7 @@ func TestMock_NewChildContextWithCancel(t *testing.T) {
 
 func TestMock_Done(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	node := Mock(ctx)
+	node := testNet(t).Mock(ctx)
 	require.NotNil(t, node)
 
 	done := node.Done()
@@ -89,7 +90,7 @@ func TestMock_Done(t *testing.T) {
 
 func TestMock_AddAndGetFile(t *testing.T) {
 	ctx := context.Background()
-	node := Mock(ctx)
+	node := testNet(t).Mock(ctx)
 	require.NotNil(t, node)
 	defer node.Close()
 
@@ -112,7 +113,7 @@ func TestMock_AddAndGetFile(t *testing.T) {
 
 func TestMock_AddFileForCid(t *testing.T) {
 	ctx := context.Background()
-	node := Mock(ctx)
+	node := testNet(t).Mock(ctx)
 	require.NotNil(t, node)
 	defer node.Close()
 
@@ -135,7 +136,7 @@ func TestMock_AddFileForCid(t *testing.T) {
 
 func TestMock_DeleteFile(t *testing.T) {
 	ctx := context.Background()
-	node := Mock(ctx)
+	node := testNet(t).Mock(ctx)
 	require.NotNil(t, node)
 	defer node.Close()
 
@@ -148,52 +149,53 @@ func TestMock_DeleteFile(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestLinkAllPeers_NotInitialized(t *testing.T) {
-	mocknetLock.Lock()
-	oldMocknet := mocknet
-	mocknet = nil
-	mocknetLock.Unlock()
-
-	defer func() {
-		mocknetLock.Lock()
-		mocknet = oldMocknet
-		mocknetLock.Unlock()
-	}()
-
-	err := LinkAllPeers()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not initialized")
+// testNet is a network of the test's own, closed when it ends.
+func testNet(t testing.TB) *Mocknet {
+	m := NewMocknet()
+	t.Cleanup(func() { m.Close() })
+	return m
 }
 
-func TestLinkAllPeers_Success(t *testing.T) {
+func TestLinkAll_Success(t *testing.T) {
 	ctx := context.Background()
+	net := testNet(t)
 
-	node1 := Mock(ctx)
-	node2 := Mock(ctx)
+	node1 := net.Mock(ctx)
+	node2 := net.Mock(ctx)
 	defer node1.Close()
 	defer node2.Close()
 
-	err := LinkAllPeers()
+	err := net.LinkAll()
 	assert.NoError(t, err)
 }
 
-func TestLinkAllPeers_LinksEachPairOfOpenNodesOnce(t *testing.T) {
-	a := Mock(t.Context())
+func TestLinkAll_LinksEachPairOfOpenNodesOnce(t *testing.T) {
+	net := testNet(t)
+	a := net.Mock(t.Context())
 	defer a.Close()
-	b := Mock(t.Context())
+	b := net.Mock(t.Context())
 	defer b.Close()
-	c := Mock(t.Context())
+	c := net.Mock(t.Context())
 
-	require.NoError(t, LinkAllPeers())
-	require.NoError(t, LinkAllPeers())
-	assert.Len(t, mocknet.LinksBetweenPeers(a.ID(), b.ID()), 1)
-	assert.Len(t, mocknet.LinksBetweenPeers(a.ID(), c.ID()), 1)
-	assert.Empty(t, mocknet.LinksBetweenPeers(a.ID(), a.ID()))
+	require.NoError(t, net.LinkAll())
+	require.NoError(t, net.LinkAll())
+	assert.Len(t, net.net.LinksBetweenPeers(a.ID(), b.ID()), 1)
+	assert.Len(t, net.net.LinksBetweenPeers(a.ID(), c.ID()), 1)
+	assert.Empty(t, net.net.LinksBetweenPeers(a.ID(), a.ID()))
 
 	c.Close()
-	require.NoError(t, LinkAllPeers())
-	assert.Empty(t, mocknet.LinksBetweenPeers(a.ID(), c.ID()), "a closed node is still linked")
-	assert.Len(t, mocknet.LinksBetweenPeers(a.ID(), b.ID()), 1)
+	require.NoError(t, net.LinkAll())
+	assert.Empty(t, net.net.LinksBetweenPeers(a.ID(), c.ID()), "a closed node is still linked")
+	assert.Len(t, net.net.LinksBetweenPeers(a.ID(), b.ID()), 1)
+}
+
+// Nodes on two networks never reach each other.
+func TestTwoNetworksDoNotMeet(t *testing.T) {
+	a := testNet(t).Mock(t.Context())
+	defer a.Close()
+	b := testNet(t).Mock(t.Context())
+	defer b.Close()
+	require.Error(t, a.Host().Connect(t.Context(), peercore.AddrInfo{ID: b.ID(), Addrs: b.Host().Addrs()}))
 }
 
 func TestStandAlone(t *testing.T) {
@@ -210,7 +212,7 @@ func TestBootstrap(t *testing.T) {
 
 func TestClose_Multiple(t *testing.T) {
 	ctx := context.Background()
-	node := Mock(ctx)
+	node := testNet(t).Mock(ctx)
 	require.NotNil(t, node)
 
 	node.Close()
@@ -220,7 +222,7 @@ func TestClose_Multiple(t *testing.T) {
 
 func TestMock_PubSubPublish(t *testing.T) {
 	ctx := context.Background()
-	node := Mock(ctx)
+	node := testNet(t).Mock(ctx)
 	require.NotNil(t, node)
 	defer node.Close()
 
@@ -230,7 +232,7 @@ func TestMock_PubSubPublish(t *testing.T) {
 
 func TestMock_PubSubSubscribe(t *testing.T) {
 	ctx := context.Background()
-	node := Mock(ctx)
+	node := testNet(t).Mock(ctx)
 	require.NotNil(t, node)
 	defer node.Close()
 
@@ -251,7 +253,7 @@ func TestErrorClosed(t *testing.T) {
 
 func TestNewFolder(t *testing.T) {
 	ctx := context.Background()
-	node := Mock(ctx)
+	node := testNet(t).Mock(ctx)
 	require.NotNil(t, node)
 	defer node.Close()
 
@@ -262,7 +264,7 @@ func TestNewFolder(t *testing.T) {
 
 func TestPubSubSubscribeContext(t *testing.T) {
 	ctx := context.Background()
-	node := Mock(ctx)
+	node := testNet(t).Mock(ctx)
 	require.NotNil(t, node)
 	defer node.Close()
 
@@ -282,7 +284,7 @@ func TestPubSubSubscribeContext(t *testing.T) {
 
 func TestClosedNodeOperations(t *testing.T) {
 	ctx := context.Background()
-	node := Mock(ctx)
+	node := testNet(t).Mock(ctx)
 	require.NotNil(t, node)
 
 	node.Close()
@@ -308,7 +310,7 @@ func TestClosedNodeOperations(t *testing.T) {
 
 func TestGetOrCreateTopic_Closed(t *testing.T) {
 	ctx := context.Background()
-	node := Mock(ctx)
+	node := testNet(t).Mock(ctx)
 	require.NotNil(t, node)
 
 	node.Close()
@@ -319,7 +321,7 @@ func TestGetOrCreateTopic_Closed(t *testing.T) {
 
 func TestPubSubKeepAlive_Closed(t *testing.T) {
 	ctx := context.Background()
-	node := Mock(ctx)
+	node := testNet(t).Mock(ctx)
 	require.NotNil(t, node)
 
 	node.Close()
@@ -331,7 +333,7 @@ func TestPubSubKeepAlive_Closed(t *testing.T) {
 
 func TestPubSubSubscribeToTopic(t *testing.T) {
 	ctx := context.Background()
-	node := Mock(ctx)
+	node := testNet(t).Mock(ctx)
 	require.NotNil(t, node)
 	defer node.Close()
 
@@ -347,7 +349,7 @@ func TestPubSubSubscribeToTopic(t *testing.T) {
 
 func TestPubSubSubscribeToTopic_Closed(t *testing.T) {
 	ctx := context.Background()
-	node := Mock(ctx)
+	node := testNet(t).Mock(ctx)
 	require.NotNil(t, node)
 
 	ps := node.Messaging()
@@ -461,7 +463,7 @@ func TestNewWithBootstrapList(t *testing.T) {
 
 func TestWaitForSwarm_Timeout(t *testing.T) {
 	ctx := context.Background()
-	node := Mock(ctx)
+	node := testNet(t).Mock(ctx)
 	require.NotNil(t, node)
 	defer node.Close()
 

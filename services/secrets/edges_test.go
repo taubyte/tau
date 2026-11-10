@@ -15,6 +15,7 @@ import (
 
 	coreKvdb "github.com/taubyte/tau/core/kvdb"
 	peerNode "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/kvdb"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
@@ -27,7 +28,7 @@ func single(t *testing.T, opts ...option) (*server, *Client, peerNode.Node) {
 	t.Helper()
 	ctx := t.Context()
 
-	node := peerNode.Mock(ctx)
+	node := peertest.Mock(t, ctx)
 	t.Cleanup(func() { node.Close() })
 	db, err := kvdb.Open(node, fmt.Sprintf("secrets-%d", clusters.Add(1)), kvdb.WithLogger(logging.Logger("secrets-test")), kvdb.WithRebroadcast(time.Second))
 	require.NoError(t, err)
@@ -73,7 +74,7 @@ func TestALocalClientNeedsNoStreamAndFormsAKeyOnFirstWrite(t *testing.T) {
 }
 
 func TestAClientWithNobodyToAskSaysSo(t *testing.T) {
-	node := peerNode.Mock(t.Context())
+	node := peertest.Mock(t, t.Context())
 	t.Cleanup(func() { node.Close() })
 	client, err := NewClient(node.Host(), nil)
 	require.NoError(t, err)
@@ -85,7 +86,7 @@ func TestAClientWithNobodyToAskSaysSo(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoMembers)
 
 	// A member named but unreachable is unavailable, not absent.
-	unreachable := peerNode.Mock(t.Context())
+	unreachable := peertest.Mock(t, t.Context())
 	t.Cleanup(func() { unreachable.Close() })
 	client, err = NewClient(node.Host(), Peers{unreachable.ID(), node.ID()})
 	require.NoError(t, err)
@@ -97,7 +98,7 @@ func TestAClientWithNobodyToAskSaysSo(t *testing.T) {
 }
 
 func TestWhatNewAndItsOptionsRefuse(t *testing.T) {
-	node := peerNode.Mock(t.Context())
+	node := peertest.Mock(t, t.Context())
 	t.Cleanup(func() { node.Close() })
 	db, err := kvdb.Open(node, fmt.Sprintf("secrets-%d", clusters.Add(1)), kvdb.WithLogger(logging.Logger("secrets-test")), kvdb.WithRebroadcast(time.Second))
 	require.NoError(t, err)
@@ -177,9 +178,9 @@ func TestTheHandlersRefuseWhatTheyCannotUse(t *testing.T) {
 
 func TestReplayOverTheWireNamesTheCaller(t *testing.T) {
 	_, _, server := single(t)
-	caller := peerNode.Mock(t.Context())
+	caller := peertest.Mock(t, t.Context())
 	t.Cleanup(func() { caller.Close() })
-	require.NoError(t, peerNode.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	require.NoError(t, caller.Host().Connect(t.Context(), server.Host().Peerstore().PeerInfo(server.ID())))
 
 	c, err := rpc.NewClient(caller.Host(), server.ID(), Protocol)
@@ -327,7 +328,7 @@ func TestTheBootTimerFormsTheFirstKey(t *testing.T) {
 }
 
 func TestTheAtRestKeyIsDerivedPerNode(t *testing.T) {
-	node := peerNode.Mock(t.Context())
+	node := peertest.Mock(t, t.Context())
 	t.Cleanup(func() { node.Close() })
 	a, err := newAtRest(node.Host(), "configured")
 	require.NoError(t, err)

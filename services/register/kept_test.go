@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/service"
-	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	registerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 )
@@ -34,7 +34,7 @@ func connected(t testing.TB, n int) (registers []*node, services []Service, read
 		registers = append(registers, at)
 	}
 	reader = mockNode(t)
-	require.NoError(t, peer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	all := append(append([]*node{}, registers...), reader)
 	for i, a := range all {
 		for _, b := range all[i+1:] {

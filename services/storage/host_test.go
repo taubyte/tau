@@ -19,6 +19,7 @@ import (
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/discovery"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 	cmmock "github.com/taubyte/tau/services/cm/mock"
 	"github.com/taubyte/tau/services/cm/settings"
@@ -41,7 +42,7 @@ type storageNode struct {
 
 func newStorageNode(t *testing.T) *storageNode {
 	t.Helper()
-	p := peer.Mock(t.Context())
+	p := peertest.Mock(t, t.Context())
 	t.Cleanup(p.Close)
 
 	// THE REGION'S SETTINGS ARE CM'S, which a storage node waits for before it
@@ -137,7 +138,7 @@ func TestTwoStorageNodesHoldOneWrite(t *testing.T) {
 	ctx := t.Context()
 	a, b := newStorageNode(t), newStorageNode(t)
 	a.finding, b.finding = finding{b.ID()}, finding{a.ID()}
-	require.NoError(t, peer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	require.NoError(t, a.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: b.ID(), Addrs: b.Host().Addrs()}))
 
 	for _, i := range []*storageNode{a, b} {
@@ -204,7 +205,7 @@ func TestAPeersBlocksAreReadOnlyWhereTheyAre(t *testing.T) {
 func TestAFetchReplacesABlockThatRotted(t *testing.T) {
 	ctx := t.Context()
 	a, b := newStorageNode(t), newStorageNode(t)
-	require.NoError(t, peer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	require.NoError(t, a.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: b.ID(), Addrs: b.Host().Addrs()}))
 	from, to := peerBytes{Node: a.Node}, peerBytes{Node: b.Node}
 
@@ -233,7 +234,7 @@ func TestAFetchReplacesABlockThatRotted(t *testing.T) {
 func TestAReadReplacesABlockThatRotted(t *testing.T) {
 	ctx := t.Context()
 	a, b := newStorageNode(t), newStorageNode(t)
-	require.NoError(t, peer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	require.NoError(t, a.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: b.ID(), Addrs: b.Host().Addrs()}))
 	from, to := peerBytes{Node: a.Node}, peerBytes{Node: b.Node}
 
@@ -317,7 +318,7 @@ func TestTheStoreElsewhereIsReachedOverItsProtocol(t *testing.T) {
 	ctx := t.Context()
 	at, from := newStorageNode(t), newStorageNode(t)
 	at.start(t)
-	require.NoError(t, peer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	require.NoError(t, from.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: at.ID(), Addrs: at.Host().Addrs()}))
 	from.finding = finding{at.ID()}
 

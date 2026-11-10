@@ -13,6 +13,7 @@ import (
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/discovery"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 	cmmock "github.com/taubyte/tau/services/cm/mock"
 	"github.com/taubyte/tau/services/cm/settings"
@@ -28,7 +29,7 @@ type node struct {
 
 func newNode(t *testing.T, cm ...*cmmock.CM) *node {
 	t.Helper()
-	p := peer.Mock(t.Context())
+	p := peertest.Mock(t, t.Context())
 	t.Cleanup(p.Close)
 	n := &node{Node: p}
 	n.Served = service.NewServed(p.ID(), &n.finding, rpc.Retry{For: 50 * time.Millisecond})
@@ -87,7 +88,7 @@ func TestCmOnAnotherNodeIsReadOverItsProtocol(t *testing.T) {
 
 	near := newNode(t)
 	near.finding = finding{far.ID()}
-	require.NoError(t, peer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	require.NoError(t, near.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: far.ID(), Addrs: far.Host().Addrs()}))
 
 	c := settings.On(near)
@@ -108,7 +109,7 @@ func TestTheRetentionCrossesTheWireInWholeSeconds(t *testing.T) {
 
 	near := newNode(t)
 	near.finding = finding{far.ID()}
-	require.NoError(t, peer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	require.NoError(t, near.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: far.ID(), Addrs: far.Host().Addrs()}))
 
 	c := settings.On(near)
@@ -165,7 +166,7 @@ func TestACmThatCannotAnswerIsUnavailableOnTheWire(t *testing.T) {
 
 	near := newNode(t)
 	near.finding = finding{far.ID()}
-	require.NoError(t, peer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	require.NoError(t, near.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: far.ID(), Addrs: far.Host().Addrs()}))
 
 	c := settings.On(near)

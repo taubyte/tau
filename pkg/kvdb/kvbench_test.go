@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 )
 
 var benchValue = []byte("benchmark-value-payload-0123456789")
@@ -15,7 +15,7 @@ func benchDB(b *testing.B) (*kvDatabase, func()) {
 	b.Helper()
 	logger := logging.Logger("bench")
 	ctx, cancel := context.WithCancel(context.Background())
-	node := peer.Mock(ctx)
+	node := peertest.Mock(b, ctx)
 	db, err := opener{node}.New(logger, "bench", 10)
 	if err != nil {
 		node.Close()

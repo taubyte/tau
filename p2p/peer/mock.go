@@ -20,18 +20,28 @@ import (
 	"github.com/taubyte/tau/p2p/protobook"
 )
 
-var (
-	mocknet     netmock.Mocknet
-	mocknetLock sync.Mutex
-	// mocks are the mock nodes LinkAllPeers links until they close; the mocknet
-	// itself keeps every peer it ever made.
-	mocks = map[peer.ID]*node{}
-)
+// Mocknet is an in-memory network of mock nodes. Only the nodes made on one can
+// reach each other, so a test makes its own.
+type Mocknet struct {
+	mu  sync.Mutex
+	net netmock.Mocknet
+	// nodes are the ones LinkAll links until they close; the mocknet itself keeps
+	// every peer it ever made.
+	nodes map[peer.ID]*node
+}
 
-// mockHost is a mocknet peer keyed like a real node. mocknet's GenPeer signs with
+// NewMocknet is an empty network.
+func NewMocknet() *Mocknet {
+	return &Mocknet{net: netmock.New(), nodes: map[peer.ID]*node{}}
+}
+
+// Close takes the network down, with every host on it.
+func (m *Mocknet) Close() error { return m.net.Close() }
+
+// host is a mocknet peer keyed like a real node. mocknet's GenPeer signs with
 // ECDSA where a node signs with Ed25519, and every pubsub message is signed and then
 // checked by its own sender: a mock kvdb spent half of each write on ECDSA.
-func mockHost() (host.Host, error) {
+func (m *Mocknet) host() (host.Host, error) {
 	sk, _, err := crypto.GenerateKeyPair(crypto.Ed25519, -1)
 	if err != nil {
 		return nil, err
@@ -52,16 +62,11 @@ func mockHost() (host.Host, error) {
 	if err != nil {
 		return nil, err
 	}
-	return mocknet.AddPeer(sk, addr)
+	return m.net.AddPeer(sk, addr)
 }
 
-func Mock(ctx context.Context) Node {
-	mocknetLock.Lock()
-	if mocknet == nil {
-		mocknet = netmock.New()
-	}
-	mocknetLock.Unlock()
-
+// Mock is a node on m that lives until ctx ends or it is closed.
+func (m *Mocknet) Mock(ctx context.Context) Node {
 	var (
 		err error
 		p   node
@@ -69,7 +74,7 @@ func Mock(ctx context.Context) Node {
 
 	p.ctx, p.ctx_cancel = context.WithCancel(ctx)
 
-	p.host, err = mockHost()
+	p.host, err = m.host()
 	if err != nil {
 		panic(err)
 	}
@@ -123,33 +128,30 @@ func Mock(ctx context.Context) Node {
 		logger.Warnf("mock DHT bootstrap failed: %v", err)
 	}
 
-	mocknetLock.Lock()
-	mocks[p.id] = &p
-	mocknetLock.Unlock()
+	m.mu.Lock()
+	m.nodes[p.id] = &p
+	m.mu.Unlock()
 
 	return &p
 }
 
-// LinkAllPeers links each pair of open mock nodes once and unlinks closed
-// ones: the mocknet's LinkAll links every ordered pair of every peer it ever
-// made on each call.
-func LinkAllPeers() error {
-	mocknetLock.Lock()
-	defer mocknetLock.Unlock()
-	if mocknet == nil {
-		return fmt.Errorf("mocknet not initialized")
-	}
+// LinkAll links each pair of m's open nodes once and unlinks closed ones: the
+// mocknet's own LinkAll links every ordered pair of every peer it ever made on
+// each call.
+func (m *Mocknet) LinkAll() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	open := make([]peer.ID, 0, len(mocks))
-	for id, n := range mocks {
+	open := make([]peer.ID, 0, len(m.nodes))
+	for id, n := range m.nodes {
 		if n.ctx.Err() == nil {
 			open = append(open, id)
 			continue
 		}
-		delete(mocks, id)
-		for _, other := range mocknet.Peers() {
-			for _, l := range mocknet.LinksBetweenPeers(id, other) {
-				if err := mocknet.Unlink(l); err != nil {
+		delete(m.nodes, id)
+		for _, other := range m.net.Peers() {
+			for _, l := range m.net.LinksBetweenPeers(id, other) {
+				if err := m.net.Unlink(l); err != nil {
 					return err
 				}
 			}
@@ -158,10 +160,10 @@ func LinkAllPeers() error {
 
 	for i, a := range open {
 		for _, b := range open[i+1:] {
-			if len(mocknet.LinksBetweenPeers(a, b)) > 0 {
+			if len(m.net.LinksBetweenPeers(a, b)) > 0 {
 				continue
 			}
-			if _, err := mocknet.LinkPeers(a, b); err != nil {
+			if _, err := m.net.LinkPeers(a, b); err != nil {
 				return err
 			}
 		}

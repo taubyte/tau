@@ -11,6 +11,7 @@ import (
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 )
 
@@ -52,7 +53,7 @@ func (beside) Now() time.Time             { return time.Now() }
 
 func reading(t *testing.T, src *saying, now *time.Time) *Client {
 	t.Helper()
-	p := peer.Mock(t.Context())
+	p := peertest.Mock(t, t.Context())
 	t.Cleanup(p.Close)
 	h := beside{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond})}
 	h.Serve(Protocol, src)

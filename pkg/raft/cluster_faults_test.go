@@ -18,6 +18,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/stretchr/testify/require"
 	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2/raftv2connect"
@@ -233,7 +234,7 @@ func TestNew_ANamespaceTheNodeAlreadyRunsIsRefused(t *testing.T) {
 		SnapshotThreshold:  1000,
 	}
 	nodeA, nodeB := newMockNode(t), newMockNode(t)
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 
 	a, err := New(nodeA, namespace, WithTimeouts(timeouts), WithForceBootstrap())
 	require.NoError(t, err)

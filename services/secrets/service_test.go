@@ -20,6 +20,7 @@ import (
 
 	coreKvdb "github.com/taubyte/tau/core/kvdb"
 	peerNode "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/secrets/tdh"
 )
@@ -88,15 +89,15 @@ func newMesh(t *testing.T, ctx context.Context, n int, opts ...option) *cluster 
 	// its own.
 	c := &cluster{opts: opts, db: fmt.Sprintf("secrets-%d", clusters.Add(1))}
 	for range n {
-		node := peerNode.Mock(ctx)
+		node := peertest.Mock(t, ctx)
 		t.Cleanup(func() { node.Close() })
 		c.nodes = append(c.nodes, node)
 	}
 
-	c.consumer = peerNode.Mock(ctx)
+	c.consumer = peertest.Mock(t, ctx)
 	t.Cleanup(func() { c.consumer.Close() })
 
-	require.NoError(t, peerNode.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	mesh := append(c.nodes, c.consumer)
 	for i, node := range mesh {
 		for _, other := range mesh[i+1:] {
@@ -178,10 +179,10 @@ func (c *cluster) serve(t *testing.T, node peerNode.Node, db coreKvdb.Instance, 
 func (c *cluster) grow(t *testing.T, ctx context.Context) {
 	t.Helper()
 
-	node := peerNode.Mock(ctx)
+	node := peertest.Mock(t, ctx)
 	t.Cleanup(func() { node.Close() })
 
-	require.NoError(t, peerNode.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	for _, other := range append(c.nodes, c.consumer) {
 		require.NoError(t, node.Host().Connect(ctx, other.Host().Peerstore().PeerInfo(other.ID())))
 	}

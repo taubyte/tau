@@ -11,6 +11,7 @@ import (
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/discovery"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 	authmock "github.com/taubyte/tau/services/auth/mock"
 	"github.com/taubyte/tau/services/auth/projects"
@@ -26,7 +27,7 @@ type node struct {
 
 func newNode(t *testing.T, auth ...*authmock.Auth) *node {
 	t.Helper()
-	p := peer.Mock(t.Context())
+	p := peertest.Mock(t, t.Context())
 	t.Cleanup(p.Close)
 	n := &node{Node: p}
 	n.Served = service.NewServed(p.ID(), &n.finding, rpc.Retry{For: 50 * time.Millisecond})
@@ -80,7 +81,7 @@ func remote(t *testing.T) *projects.Client {
 
 	near := newNode(t)
 	near.finding = finding{far.ID()}
-	require.NoError(t, peer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	require.NoError(t, near.Host().Connect(ctx, libp2ppeer.AddrInfo{ID: far.ID(), Addrs: far.Host().Addrs()}))
 
 	c := projects.On(near)

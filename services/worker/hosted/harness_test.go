@@ -19,6 +19,7 @@ import (
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/containers"
 	"github.com/taubyte/tau/pkg/invoke"
@@ -134,7 +135,7 @@ func startNode(t *testing.T, cfg Config, opts ...Option) (*node, *memFactory, er
 	if cfg.Root == "" && !cfg.NoRoot {
 		cfg.Root = t.TempDir()
 	}
-	p := peer.Mock(t.Context())
+	p := peertest.Mock(t, t.Context())
 	t.Cleanup(p.Close)
 	h := &testHost{
 		Node: p, root: cfg.Root, now: o.now, cfg: cfg,

@@ -12,6 +12,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/stretchr/testify/require"
 	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2/raftv2connect"
@@ -32,7 +33,7 @@ func callerOf(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batching
 	t.Helper()
 	member := newMockNode(t)
 	caller := newMockNode(t)
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 
 	cl, err := New(storeNode{Node: member, store: wrap(member.Store())}, namespace,
 		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
@@ -126,7 +127,7 @@ func TestClient_KeysMatchingNothingIsAnEmptyList(t *testing.T) {
 func TestClient_CallsToAPeerThatRunsNoMemberFail(t *testing.T) {
 	cl, _ := callerOf(t, "client-served", sameStore)
 	caller := newMockNode(t)
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	connected(t, caller, cl)
 
 	cliOf, err := newInternalClient(caller, "client-not-served", nil, quickRetry)
@@ -171,7 +172,7 @@ func TestClient_AStateThatWillNotDecodeIsAnError(t *testing.T) {
 	const namespace = "client-garbled-export"
 	server := newMockNode(t)
 	caller := newMockNode(t)
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	require.NoError(t, caller.Host().Connect(t.Context(), peer.AddrInfo{ID: server.ID(), Addrs: server.Host().Addrs()}))
 
 	mux := http.NewServeMux()
@@ -418,7 +419,7 @@ func TestStream_AJoinAskedOfAMemberLetInBeforeItsLogWaitsForTheLeader(t *testing
 	store := newFaultStore()
 	store.failPut(firstLog, errNoSpace)
 	store.failPut(vote, errNoSpace)
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	founder := group[0].(*cluster).Host()
 	require.NoError(t, node.Host().Connect(t.Context(), peer.AddrInfo{ID: founder.ID(), Addrs: founder.Addrs()}))
 	late, err := New(storeNode{Node: node, store: store}, namespace,
@@ -716,7 +717,7 @@ var quickRetry = rpc.Retry{First: 5 * time.Millisecond, Max: 20 * time.Milliseco
 func TestClient_AMemberNotAnsweringYetIsAskedAgain(t *testing.T) {
 	const namespace = "client-late-member"
 	node, caller := newMockNode(t), newMockNode(t)
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	require.NoError(t, caller.Host().Connect(t.Context(), peer.AddrInfo{ID: node.ID(), Addrs: node.Host().Addrs()}))
 
 	cliOf, err := newInternalClient(caller, namespace, nil, rpc.Retry{First: 10 * time.Millisecond, Max: 50 * time.Millisecond, For: 10 * time.Second})

@@ -7,8 +7,7 @@ import (
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
-
-	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 )
 
 // heard is an observer that keeps what it was told.
@@ -47,9 +46,9 @@ func (h *heard) gone(key string) bool {
 }
 
 func TestAnObserverHearsWhatThisNodeWritesAndWhatItMerges(t *testing.T) {
-	writer, reader := peer.Mock(t.Context()), peer.Mock(t.Context())
+	writer, reader := peertest.Mock(t, t.Context()), peertest.Mock(t, t.Context())
 	t.Cleanup(func() { writer.Close(); reader.Close() })
-	require.NoError(t, peer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	require.NoError(t, reader.Host().Connect(t.Context(), libp2ppeer.AddrInfo{ID: writer.ID(), Addrs: writer.Host().Addrs()}))
 
 	here := newHeard()

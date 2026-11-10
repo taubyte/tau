@@ -13,6 +13,7 @@ import (
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/git/gittest"
 	"github.com/taubyte/tau/pkg/raft"
@@ -50,7 +51,7 @@ func (n *node) Config(into any) error {
 // queue is, as a lone build process is.
 func lone(t *testing.T, section map[string]any) *node {
 	t.Helper()
-	p := peer.Mock(t.Context())
+	p := peertest.Mock(t, t.Context())
 	t.Cleanup(p.Close)
 	n := &node{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond}), root: t.TempDir(), section: section}
 	n.running = []service.Running{{Service: groupsOn{node: p, root: n.root}}}

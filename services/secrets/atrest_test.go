@@ -6,14 +6,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	peerNode "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 )
 
 func TestAtRestSealsWithTheConfiguredKey(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	node := peerNode.Mock(ctx)
+	node := peertest.Mock(t, ctx)
 	t.Cleanup(func() { node.Close() })
 
 	key, err := GenerateAtRestKey()
@@ -49,7 +49,7 @@ func TestAtRestFallsBackToTheNodeAndSaysSo(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	node := peerNode.Mock(ctx)
+	node := peertest.Mock(t, ctx)
 	t.Cleanup(func() { node.Close() })
 
 	fallback, err := newAtRest(node.Host(), "")

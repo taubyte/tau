@@ -9,8 +9,7 @@ import (
 	"connectrpc.com/connect"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
-
-	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	kvdbmock "github.com/taubyte/tau/pkg/kvdb/mock"
 	"github.com/taubyte/tau/services/cm"
 )
@@ -39,7 +38,7 @@ func (v *memVault) Set(_ context.Context, n string, b []byte) error {
 }
 
 func TestTheClaimRouteSeamSaysWhatIsMalformed(t *testing.T) {
-	p := peer.Mock(t.Context())
+	p := peertest.Mock(t, t.Context())
 	t.Cleanup(p.Close)
 	h := p.Host()
 	db, err := kvdbmock.New().New(nil, "cm", 0)

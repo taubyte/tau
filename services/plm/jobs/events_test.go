@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/kvdb"
-	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	kvdbmock "github.com/taubyte/tau/pkg/kvdb/mock"
 	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
@@ -208,7 +208,7 @@ func TestAJournalAppendsAndFoldsBack(t *testing.T) {
 		// THE REAL STORE lists keys back as datastore keys, which is why the
 		// journal's own keys start with "/".
 		"kvdb": func(t *testing.T) kvdb.Instance {
-			p := peer.Mock(t.Context())
+			p := peertest.Mock(t, t.Context())
 			t.Cleanup(p.Close)
 			db, err := pkgkvdb.Open(p, "build")
 			require.NoError(t, err)

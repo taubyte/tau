@@ -16,7 +16,7 @@ import (
 	dssync "github.com/ipfs/go-datastore/sync"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
 	"github.com/taubyte/tau/pkg/kvdb/statetree"
 	"google.golang.org/protobuf/proto"
@@ -714,7 +714,7 @@ func TestAdoptingHeadsBeforeSyncing(t *testing.T) {
 
 func TestKVDatabaseSurface(t *testing.T) {
 	ctx := context.Background()
-	node := peer.Mock(ctx)
+	node := peertest.Mock(t, ctx)
 	defer node.Close()
 	f := opener{node}
 	db, err := f.New(logging.Logger("kv"), "surface", 1)

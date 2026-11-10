@@ -8,11 +8,12 @@ import (
 	"time"
 
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 )
 
 func TestNewPubSubBroadcaster(t *testing.T) {
 	ctx := context.Background()
-	mockNode := peer.Mock(ctx)
+	mockNode := peertest.Mock(t, ctx)
 	defer mockNode.Close()
 
 	broadcaster, err := NewPubSubBroadcaster(ctx, mockNode, "test-topic")
@@ -35,7 +36,7 @@ func TestPubSubBroadcaster_Broadcast(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mockNode := peer.Mock(ctx)
+	mockNode := peertest.Mock(t, ctx)
 	defer mockNode.Close()
 
 	broadcaster, _ := NewPubSubBroadcaster(ctx, mockNode, "test-topic")
@@ -51,7 +52,7 @@ func TestPubSubBroadcaster_Next(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mockNode := peer.Mock(ctx)
+	mockNode := peertest.Mock(t, ctx)
 	defer mockNode.Close()
 
 	broadcaster, _ := NewPubSubBroadcaster(ctx, mockNode, "test-topic")
@@ -74,7 +75,7 @@ func TestPubSubBroadcaster_Next(t *testing.T) {
 func TestPubSubBroadcaster_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	mockNode := peer.Mock(ctx)
+	mockNode := peertest.Mock(t, ctx)
 	defer mockNode.Close()
 
 	broadcaster, _ := NewPubSubBroadcaster(ctx, mockNode, "test-topic-2")
@@ -94,7 +95,7 @@ func TestPubSubBroadcaster_ConcurrentOperations(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mockNode := peer.Mock(ctx)
+	mockNode := peertest.Mock(t, ctx)
 	defer mockNode.Close()
 
 	broadcaster, _ := NewPubSubBroadcaster(ctx, mockNode, "test-topic")
@@ -126,7 +127,7 @@ func TestPubSubBroadcaster_BroadcastAndReceive(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mockNode := peer.Mock(ctx)
+	mockNode := peertest.Mock(t, ctx)
 	defer mockNode.Close()
 
 	topic := "testTopic"
@@ -162,7 +163,7 @@ func TestPubSubBroadcaster_TopicRegistrationAndUnregistration(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mockNode := peer.Mock(ctx)
+	mockNode := peertest.Mock(t, ctx)
 	defer mockNode.Close()
 	topic := "testTopicRegistration"
 	on := peer.Kept[broadcasters](mockNode, broadcastersKey{})

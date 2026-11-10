@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	peerNode "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/secrets/tdh"
 )
@@ -87,7 +88,7 @@ func TestWithoutStatedMembersTheRosterIsWhoSpeaksTheProtocol(t *testing.T) {
 	var services []*server
 	var nodes []peerNode.Node
 	for range 2 {
-		node := peerNode.Mock(ctx)
+		node := peertest.Mock(t, ctx)
 		t.Cleanup(func() { node.Close() })
 		db, err := kvdb.Open(node, name, kvdb.WithLogger(logging.Logger("secrets-test")), kvdb.WithRebroadcast(time.Second))
 		require.NoError(t, err)
@@ -100,10 +101,10 @@ func TestWithoutStatedMembersTheRosterIsWhoSpeaksTheProtocol(t *testing.T) {
 	}
 
 	// A connected peer that does not run the service is not a member.
-	bystander := peerNode.Mock(ctx)
+	bystander := peertest.Mock(t, ctx)
 	t.Cleanup(func() { bystander.Close() })
 
-	require.NoError(t, peerNode.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	for _, other := range []peerNode.Node{nodes[1], bystander} {
 		require.NoError(t, nodes[0].Host().Connect(ctx, other.Host().Peerstore().PeerInfo(other.ID())))
 	}
@@ -171,7 +172,7 @@ func TestSetRefusesWhatItCannotStore(t *testing.T) {
 }
 
 func TestAClientRefusesBadReferencesBeforeAskingAnyone(t *testing.T) {
-	node := peerNode.Mock(t.Context())
+	node := peertest.Mock(t, t.Context())
 	t.Cleanup(func() { node.Close() })
 
 	// Named as a member, but this node runs no service, so it is not a target.

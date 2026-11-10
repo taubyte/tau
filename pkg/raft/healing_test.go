@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2/raftv2connect"
@@ -60,7 +61,7 @@ func TestHealing_TwoSplitClusters_MergesFSM(t *testing.T) {
 	node1 := newMockNode(t)
 	node2 := newMockNode(t)
 
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 
 	opts := healingTestOptions()
 
@@ -85,7 +86,7 @@ func TestHealing_TwoSplitClusters_MergesFSM(t *testing.T) {
 	time.Sleep(5 * time.Millisecond)
 	require.NoError(t, c2.Set("shared", []byte("c2-version"), time.Second))
 
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 
 	cl1 := c1.(*cluster)
 	cl2 := c2.(*cluster)
@@ -143,7 +144,7 @@ func TestMergeCRDTDelta(t *testing.T) {
 
 func TestHealing_MergeApply(t *testing.T) {
 	node := newMockNode(t)
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 
 	c, err := New(node, "merge-apply", healingTestOptions()...)
 	require.NoError(t, err)
@@ -186,7 +187,7 @@ func TestHealing_MergeApply(t *testing.T) {
 
 func TestHealing_HealAck_Signal(t *testing.T) {
 	node := newMockNode(t)
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 
 	h := &healer{
 		healAckCh: make(chan healAck, 1),
@@ -243,7 +244,7 @@ func splitPair(t *testing.T, namespace string, extra ...Option) (winner, loser *
 	require.NoError(t, b.Set("from-b", []byte("b"), time.Second))
 
 	winner, loser = winnerOf(a, b)
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	require.NoError(t, nodeB.Host().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Host().Addrs()}))
 	a.(*cluster).current().tracker.addPeer(nodeB.ID())
 	b.(*cluster).current().tracker.addPeer(nodeA.ID())
@@ -345,7 +346,7 @@ func TestHealing_AYieldRebuildsTheMemberItsReadersRead(t *testing.T) {
 	waitLeader(t, c, 5*time.Second)
 
 	caller := newMockNode(t)
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	connected(t, caller, c)
 	cli, err := newInternalClient(caller, namespace, nil, quickRetry)
 	require.NoError(t, err)
@@ -418,7 +419,7 @@ func TestHealing_AnExchangeAYieldCutsShortKeepsToItsMembersClient(t *testing.T) 
 		srv, err := rpc.Listen(t.Context(), other.Host(), protocol.ID(Protocol(namespace)), mux)
 		require.NoError(t, err)
 		t.Cleanup(func() { srv.Close() })
-		require.NoError(t, taupeer.LinkAllPeers())
+		require.NoError(t, peertest.LinkAll(t))
 		require.NoError(t, node.Host().Connect(t.Context(), peer.AddrInfo{ID: other.ID(), Addrs: other.Host().Addrs()}))
 	}
 
@@ -555,7 +556,7 @@ func TestHealing_GroupsFormedApartBecomeOneOnceConnected(t *testing.T) {
 	require.NoError(t, a.Set("from-a", []byte("a"), time.Second))
 	require.NoError(t, b.Set("from-b", []byte("b"), time.Second))
 
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	require.NoError(t, nodeB.Host().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Host().Addrs()}))
 
 	require.Eventually(t, func() bool {
@@ -581,7 +582,7 @@ func formedPair(t *testing.T, namespace string, extra ...Option) (a, b Cluster) 
 	t.Cleanup(func() { a.Close() })
 	waitLeader(t, a, 5*time.Second)
 
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	require.NoError(t, nodeB.Host().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Host().Addrs()}))
 	b, err = New(nodeB, namespace,
 		append([]Option{WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2 * time.Second)}, extra...)...)
@@ -821,7 +822,7 @@ func facing(t *testing.T, namespace string, store ds.Batching, other raftv2conne
 	require.NoError(t, err)
 	t.Cleanup(func() { srv.Close() })
 
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	require.NoError(t, winnerNode.Host().Connect(t.Context(), peer.AddrInfo{ID: otherNode.ID(), Addrs: otherNode.Host().Addrs()}))
 	winner := w.(*cluster)
 	winner.current().tracker.addPeer(otherNode.ID())
@@ -916,7 +917,7 @@ func TestHealing_AnOrphansWritesAreMergedBeforeItYields(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { group.Close() })
 	waitLeader(t, group, 5*time.Second)
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	connected(t, groupNode, orphan)
 
 	group.(*cluster).current().healer.Load().absorbOrphan(t.Context(), idOf(orphan))
@@ -1111,7 +1112,7 @@ func TestHealing_AMemberThatLostItsQuorumKeepsItsStateForAnEmptyNewcomer(t *test
 	before := survivor.current()
 
 	node := newMockNode(t)
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	connected(t, node, survivor)
 	newcomer, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second), probe)
 	require.NoError(t, err)
@@ -1138,7 +1139,7 @@ func TestHealing_AMergeTellsOnlyTheMergedGroupToYield(t *testing.T) {
 	t.Cleanup(func() { third.Close() })
 	waitLeader(t, third, 5*time.Second)
 	require.NoError(t, third.Set("from-third", []byte("c"), time.Second))
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	connected(t, node, winner)
 	winner.current().tracker.addPeer(node.ID())
 	before := third.(*cluster).current()
@@ -1220,7 +1221,7 @@ func TestHealing_ALoserHoldingStateWaitsToBeTaken(t *testing.T) {
 	srv, err := rpc.Listen(t.Context(), node.Host(), protocol.ID(Protocol(namespace)), mux)
 	require.NoError(t, err)
 	t.Cleanup(func() { srv.Close() })
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	connected(t, node, survivor)
 	survivor.current().tracker.addPeer(node.ID())
 	before := survivor.current()
@@ -1304,7 +1305,7 @@ func soloPair(t *testing.T, namespace string, extra ...Option) (winner, loser *c
 		solos = append(solos, cl.(*cluster))
 	}
 	winner, loser = winnerOf(solos[0], solos[1])
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	require.NoError(t, solos[0].Host().Connect(t.Context(), peer.AddrInfo{ID: solos[1].ID(), Addrs: solos[1].Host().Addrs()}))
 	return winner, loser
 }
@@ -1436,7 +1437,7 @@ func TestHealing_AListedMemberOfAnotherFormationIsTaken(t *testing.T) {
 	}
 	require.NotNil(t, other, "no formation came after ours in twenty draws")
 	require.NoError(t, other.Set("from-b", []byte("b"), time.Second))
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	require.NoError(t, leader.Host().Connect(t.Context(), peer.AddrInfo{ID: other.ID(), Addrs: other.Host().Addrs()}))
 	leader = leaderTook(t, ours, func(l Cluster) error { return l.AddVoter(other.ID(), 5*time.Second) }).(*cluster)
 	leader.current().tracker.addPeer(other.ID())
@@ -1461,7 +1462,7 @@ func TestHealing_TwoLeadersWithTheSameStateDoNotBothYield(t *testing.T) {
 		waitLeader(t, cl, 5*time.Second)
 		solos = append(solos, cl.(*cluster))
 	}
-	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, peertest.LinkAll(t))
 	require.NoError(t, solos[0].Host().Connect(t.Context(), peer.AddrInfo{ID: solos[1].ID(), Addrs: solos[1].Host().Addrs()}))
 	before := []*member{solos[0].current(), solos[1].current()}
 

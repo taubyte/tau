@@ -11,6 +11,7 @@ import (
 
 	"github.com/taubyte/tau/core/service"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer/peertest"
 	"github.com/taubyte/tau/p2p/rpc"
 	statsService "github.com/taubyte/tau/services/stats"
 	"github.com/taubyte/tau/services/worker"
@@ -42,7 +43,7 @@ func (n *node) Config(into any) error {
 
 func newNode(t *testing.T, running ...any) *node {
 	t.Helper()
-	p := peer.Mock(t.Context())
+	p := peertest.Mock(t, t.Context())
 	t.Cleanup(p.Close)
 	n := &node{Node: p, Served: service.NewServed(p.ID(), nil, rpc.Retry{For: 50 * time.Millisecond})}
 	for _, r := range running {
