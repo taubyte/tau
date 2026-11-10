@@ -679,15 +679,22 @@ func TestStream_AForwardSeesALeaderChangeItsObserversAreNotToldOfYet(t *testing.
 	s := &raftStreamService{cluster: follower.(*cluster)}
 	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
 	defer cancel()
+	// Every retry is answered with the leader's one refusal, so the forward's
+	// deadline never falls on a call in flight.
 	sent := false
+	var refused error
 	_, err := forwardToLeader(ctx, s, "set", func(ctx context.Context, c raftv2connect.RaftServiceClient) (*connect.Response[raftv2.SetResponse], error) {
-		sent = true
-		g.mu.Lock()
-		g.lead = 0
-		g.mu.Unlock()
-		return c.Set(ctx, connect.NewRequest(&raftv2.SetRequest{Key: "k", Value: []byte("v")}))
+		if !sent {
+			sent = true
+			g.mu.Lock()
+			g.lead = 0
+			g.mu.Unlock()
+			_, refused = c.Set(ctx, connect.NewRequest(&raftv2.SetRequest{Key: "k", Value: []byte("v")}))
+		}
+		return nil, refused
 	})
 	require.True(t, sent, "the follower stopped naming the closed leader before it forwarded")
+	require.True(t, rpc.Unreached(refused), "the closed leader's refusal was taken for an answer: %v", refused)
 	require.ErrorIs(t, err, ErrNoLeader)
 }
 
