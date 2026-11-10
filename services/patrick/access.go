@@ -16,6 +16,7 @@ import (
 	httpAuth "github.com/taubyte/tau/pkg/http/auth"
 
 	"github.com/google/go-github/v71/github"
+	ds "github.com/ipfs/go-datastore"
 	authService "github.com/taubyte/tau/services/auth"
 )
 
@@ -112,17 +113,24 @@ func repoWriteAccess(client authService.GitHubClient, repoID string) (allowed, c
 // anyJob finds a job wherever it is stored, finished or not.
 func (srv *PatrickService) anyJob(ctx context.Context, jid string) (*commonIface.Job, error) {
 	job, err := srv.getJob(ctx, "/archive/jobs/", jid)
-	if err != nil {
-		return srv.getJob(ctx, "/jobs/", jid)
+	if err == nil {
+		return job, nil
 	}
-	return job, nil
+	if job, err = srv.getJob(ctx, "/jobs/", jid); err == nil {
+		return job, nil
+	}
+	// it may have reached the archive after the first look
+	return srv.getJob(ctx, "/archive/jobs/", jid)
 }
 
 func (srv *PatrickService) authorizeJob(ctx http.Context, jid string) error {
 	job, err := srv.anyJob(ctx.Request().Context(), jid)
-	if err != nil {
+	if errors.Is(err, ds.ErrNotFound) {
 		// the handler reports the unknown job; there is nothing to protect
 		return nil
+	}
+	if err != nil {
+		return err
 	}
 	allowed, err := callerRepoAccess(ctx, job.Meta.Repository.ID)
 	if err != nil {
@@ -146,6 +154,43 @@ func (srv *PatrickService) withJobAccess(variable string, handler func(http.Cont
 			return nil, err
 		}
 		return handler(ctx)
+	}
+}
+
+// onlyReadableJobs drops from a project listing the jobs whose repository the
+// caller can't write to. withProjectAccess lets in a writer of any one of the
+// project's repositories, /job/{id} checks each job's own, and a client stops at
+// the first job it is refused.
+func (srv *PatrickService) onlyReadableJobs(handler func(http.Context) (interface{}, error)) func(http.Context) (interface{}, error) {
+	return func(ctx http.Context) (interface{}, error) {
+		res, err := handler(ctx)
+		listing, ok := res.(project)
+		if err != nil || !ok {
+			return res, err
+		}
+
+		// one answer per repository, even when GitHub failed to give it
+		access := make(map[int]bool)
+		readable := make([]string, 0, len(listing.JobIds))
+		for _, jid := range listing.JobIds {
+			job, err := srv.anyJob(ctx.Request().Context(), jid)
+			if err != nil {
+				continue
+			}
+			repo := job.Meta.Repository.ID
+			allowed, known := access[repo]
+			if !known {
+				if allowed, err = callerRepoAccess(ctx, repo); err != nil {
+					return nil, err
+				}
+				access[repo] = allowed
+			}
+			if allowed {
+				readable = append(readable, jid)
+			}
+		}
+		listing.JobIds = readable
+		return listing, nil
 	}
 }
 

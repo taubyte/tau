@@ -68,22 +68,21 @@ func New(ctx context.Context, cfg tauConfig.Config) (*Service, error) {
 	// synchronous pass, background continuation past the bound. Fresh nodes
 	// pay one empty prefix query, migrated nodes one key lookup.
 	//
-	// The migration treats every kvdb namespace and block it reaches in the
-	// node's store as substrate's own, so it runs only when substrate is alone
-	// on its node. Sharing a node (the "all" shape), the store also holds the
-	// other services' databases and blocks — monkey's build artifacts,
-	// hoarder's hosted instances — which a scrub would delete.
-	if others := coLocatedServices(cfg.Services()); len(others) == 0 {
-		var opts []migration.Option
-		if !cfg.Substrate().MigrationEnabled() {
-			logger.Info("node-local data migration disabled by config")
-			opts = append(opts, migration.Disabled())
-		}
-		srv.migrator = migration.New(ctx, srv.node, srv.hoarderClient, srv.tns, opts...)
-		srv.migrator.Boot()
-	} else {
-		logger.Infof("node-local data migration skipped: the node's store is shared with %v", others)
+	// A scrub treats every kvdb namespace and block it reaches as substrate's
+	// own. Sharing a node (the "all" shape), the store also holds the other
+	// services' databases and blocks — monkey's build artifacts, hoarder's
+	// hosted instances — so there the data is replayed and nothing is deleted.
+	var opts []migration.Option
+	if !cfg.Substrate().MigrationEnabled() {
+		logger.Info("node-local data migration disabled by config")
+		opts = append(opts, migration.Disabled())
 	}
+	if others := coLocatedServices(cfg.Services()); len(others) > 0 {
+		logger.Infof("node-local data migration keeps local data: the node's store is shared with %v", others)
+		opts = append(opts, migration.KeepLocal())
+	}
+	srv.migrator = migration.New(ctx, srv.node, srv.hoarderClient, srv.tns, opts...)
+	srv.migrator.Boot()
 
 	if err = srv.startVm(); err != nil {
 		return nil, fmt.Errorf("starting vm failed with %w", err)
