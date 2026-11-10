@@ -10,6 +10,7 @@ import (
 	"time"
 
 	ds "github.com/ipfs/go-datastore"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
@@ -117,11 +118,15 @@ func TestHealing_TheMembersThatRemainOfALostQuorumEndUpInOneGroup(t *testing.T) 
 	}, 30*time.Second, 50*time.Millisecond, "the members that remain never formed one group")
 	leaderTook(t, []Cluster{survivors[0], survivors[1]}, func(l Cluster) error { return l.Set("after", []byte("v"), 5*time.Second) })
 	for _, s := range survivors {
-		require.Eventually(t, func() bool {
-			_, kept := s.Get("kept")
-			_, after := s.Get("after")
+		var kept, after bool
+		held := func() bool {
+			_, kept = s.Get("kept")
+			_, after = s.Get("after")
 			return kept && after
-		}, 5*time.Second, 20*time.Millisecond)
+		}
+		if !assert.Eventually(t, held, 5*time.Second, 20*time.Millisecond) {
+			require.FailNowf(t, "a survivor lacks a write", "%s holds kept=%v after=%v", s.ID().ShortString(), kept, after)
+		}
 	}
 }
 
