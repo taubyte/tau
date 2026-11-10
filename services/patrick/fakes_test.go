@@ -2,11 +2,11 @@ package service
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
+	ds "github.com/ipfs/go-datastore"
 	"github.com/taubyte/tau/core/kvdb"
 	commonIface "github.com/taubyte/tau/core/services/patrick"
 )
@@ -24,7 +24,7 @@ func (d *fakeJobs) Get(_ context.Context, key string) ([]byte, error) {
 	if v, ok := d.keys[key]; ok {
 		return v, nil
 	}
-	return nil, errors.New("not found")
+	return nil, ds.ErrNotFound
 }
 
 func (d *fakeJobs) put(t *testing.T, key string) {

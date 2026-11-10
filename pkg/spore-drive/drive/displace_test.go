@@ -226,7 +226,8 @@ func testDisplace(t *testing.T, sd Spore) {
 			assert.NilError(t, err)
 			f.Close()
 			assert.Equal(t, string(data), `[Unit]
-Description = Taubyte Tau Service Running %i
+Description           = Taubyte Tau Service Running %i
+StartLimitIntervalSec = 0
 
 [Service]
 Type                     = simple
