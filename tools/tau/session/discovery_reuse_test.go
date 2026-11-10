@@ -65,3 +65,30 @@ func TestLongestCommonRun(t *testing.T) {
 		}
 	}
 }
+
+// A stale file whose only link to this process is one reused PID is not this
+// session: using it would bring its cloud and project along.
+func TestDiscoveryIgnoresLoneReusedPID(t *testing.T) {
+	leaf := ancestorPIDs(sessionMaxAncestors)
+	if len(leaf) < 2 {
+		t.Skip("needs at least two ancestors")
+	}
+
+	tmp := t.TempDir()
+	old := sessionRootDirOverride
+	sessionRootDirOverride = tmp
+	defer func() { sessionRootDirOverride = old }()
+
+	stale := filepath.Join(tmp, sessionFileBaseName([]int{leaf[0], 70001, 70002})+".yaml")
+	if err := os.WriteFile(stale, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := discoverOrCreateConfigFileLoc()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == stale {
+		t.Fatalf("selected the stale file %s", filepath.Base(got))
+	}
+}
