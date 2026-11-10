@@ -12,7 +12,8 @@ const concurrentJobs = 3
 
 // pollJobs periodically asks Patrick for available jobs.
 func (srv *Service) pollJobs() {
-	interval := 5 * time.Second
+	// A queued job waits at most this long for an idle monkey to notice it.
+	interval := time.Second
 	concurrent := concurrentJobs
 	if srv.dev {
 		interval = 500 * time.Millisecond
@@ -58,14 +59,7 @@ func (srv *Service) pollJobs() {
 // tryDequeueJob attempts to dequeue a single job from Patrick and returns the
 // monkey that will run it, or nil when there is nothing new to run.
 func (srv *Service) tryDequeueJob() *Monkey {
-	peers := srv.discoverPatrickPeers()
-	client := srv.patrickClient.Peers(peers...)
-
-	job, err := client.Dequeue()
-	if err != nil {
-		logger.Debugf("Dequeue failed: %v", err)
-		return nil
-	}
+	job := srv.dequeueFromAny(srv.discoverPatrickPeers())
 	if job == nil {
 		return nil
 	}

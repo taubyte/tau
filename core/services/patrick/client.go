@@ -8,6 +8,7 @@ import (
 type Client interface {
 	Dequeue() (*Job, error)
 	IsAssigned(jid string) (bool, error)
+	Refresh(jid string) (bool, error)
 	Done(jid string, cid_log map[string]string, assetCid map[string]string) error
 	Failed(jid string, cid_log map[string]string, assetCid map[string]string) error
 	List() ([]string, error)

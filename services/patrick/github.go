@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -193,9 +194,12 @@ func (srv *PatrickService) RegisterJob(ctx context.Context, newJob *iface.Job) e
 		return fmt.Errorf("failed putting job into database with error: %w", err)
 	}
 
-	err = srv.connectToProject(ctx, newJob)
-	if err != nil {
-		return err
+	if err = srv.connectToProject(ctx, newJob); err != nil {
+		if !errors.Is(err, errProjectUnknown) {
+			return err
+		}
+		// queued by the leader's re-announce once the config job publishes the repository
+		return srv.db.Put(ctx, waitingProjectPrefix+newJob.Id, []byte(strconv.FormatInt(time.Now().Unix(), 10)))
 	}
 
 	exists, err := srv.jobExistsInOtherCluster(ctx, newJob.Id)
@@ -205,7 +209,7 @@ func (srv *PatrickService) RegisterJob(ctx context.Context, newJob *iface.Job) e
 	if exists {
 		return nil
 	}
-	if err = srv.jobQueue.Push(newJob.Id, nil, 5*time.Second); err != nil {
+	if err = srv.enqueue(newJob.Id); err != nil {
 		return fmt.Errorf("failed to push job onto queue: %w", err)
 	}
 	return nil

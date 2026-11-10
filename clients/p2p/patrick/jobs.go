@@ -51,6 +51,17 @@ func (c *Client) IsAssigned(jid string) (bool, error) {
 	return assigned, nil
 }
 
+// Refresh renews this Monkey's claim on the job. It returns false when another
+// Monkey holds the claim, and an error from a Patrick that has no refresh.
+func (c *Client) Refresh(jid string) (bool, error) {
+	resp, err := c.Send("patrick", command.Body{"action": "refresh", "jid": jid}, c.peers...)
+	if err != nil {
+		return false, fmt.Errorf("refresh failed: %w", err)
+	}
+
+	return maps.Bool(resp, "assigned")
+}
+
 func (c *Client) Done(jid string, cid_log map[string]string, assetCid map[string]string) error {
 	if _, err := c.Send("patrick", command.Body{"action": "done", "jid": jid, "cid": cid_log, "assetCid": assetCid}, c.peers...); err != nil {
 		return fmt.Errorf("failed sending done with error: %w", err)

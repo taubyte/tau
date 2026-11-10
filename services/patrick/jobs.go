@@ -2,13 +2,16 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/taubyte/tau/core/services/patrick"
 	ifaceTNS "github.com/taubyte/tau/core/services/tns"
+	servicesCommon "github.com/taubyte/tau/services/common"
 )
 
 // ReannounceJobs scans pending jobs and pushes forgotten or expired ones back onto the queue.
@@ -25,13 +28,16 @@ func (p *PatrickService) ReannounceJobs(ctx context.Context) error {
 		}
 
 		jid := skey[2]
+		if since, err := p.db.Get(ctx, waitingProjectPrefix+jid); err == nil && !p.projectFound(ctx, jid, since) {
+			continue
+		}
 		repush := true
 
 		if assignData, err := p.db.Get(ctx, "/assigned/"+jid); err == nil {
 			var assignment Assignment
 			if err := cbor.Unmarshal(assignData, &assignment); err == nil {
-				// Still within the assignment window — don't re-push
-				repush = time.Now().Unix()-assignment.Timestamp > int64(p.reAnnounceJobTime.Seconds())
+				// The owning Monkey refreshes its claim; only an expired one is re-pushed
+				repush = time.Now().Unix()-assignment.Timestamp > int64(servicesCommon.DefaultLockTime.Seconds())
 			}
 		}
 
@@ -47,10 +53,42 @@ func (p *PatrickService) ReannounceJobs(ctx context.Context) error {
 
 // republishJob pushes a job back onto the queue (idempotent by id).
 func (p *PatrickService) republishJob(ctx context.Context, jid string) error {
-	if err := p.jobQueue.Push(jid, nil, 5*time.Second); err != nil {
+	if err := p.enqueue(jid); err != nil {
 		return fmt.Errorf("failed to re-push job in republishJob: %w", err)
 	}
 	return nil
+}
+
+// A new website's or library's repository belongs to a project only once the
+// config job has published it, which can be after the repository's first push.
+// That job waits under waitingProjectPrefix, holding when it started, and is
+// queued once its project is known, or after projectWaitMax.
+const waitingProjectPrefix = "/waiting-project/"
+
+var (
+	projectWaitMax    = 10 * time.Minute
+	errProjectUnknown = errors.New("repository not in a known project yet")
+)
+
+// projectFound links a waiting job to its project once the project is known,
+// and reports whether the job may now be queued.
+func (p *PatrickService) projectFound(ctx context.Context, jid string, since []byte) bool {
+	job, err := p.getJob(ctx, "/jobs/", jid)
+	if err != nil {
+		return false
+	}
+	projectID, err := p.getProjectIDFromJob(job)
+	if err == nil {
+		err = p.linkToProject(ctx, job.Id, projectID)
+	} else {
+		start, _ := strconv.ParseInt(string(since), 10, 64)
+		if time.Since(time.Unix(start, 0)) < projectWaitMax {
+			return false
+		}
+		logger.Warnf("job %s: no project has repository %d after %s, queuing it anyway", jid, job.Meta.Repository.ID, projectWaitMax)
+		err = nil
+	}
+	return err == nil && p.db.Delete(ctx, waitingProjectPrefix+jid) == nil
 }
 
 // devProjectLookupWait is how long a development node waits for a pushed
@@ -70,14 +108,15 @@ func (srv *PatrickService) connectToProject(ctx context.Context, job *patrick.Jo
 		projectID, err = srv.getProjectIDFromJob(job)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", errProjectUnknown, err)
 	}
+	return srv.linkToProject(ctx, job.Id, projectID)
+}
 
-	err = srv.db.Put(ctx, fmt.Sprintf("/by/project/%s/%s", projectID, job.Id), []byte{})
-	if err != nil {
+func (srv *PatrickService) linkToProject(ctx context.Context, jid, projectID string) error {
+	if err := srv.db.Put(ctx, fmt.Sprintf("/by/project/%s/%s", projectID, jid), []byte{}); err != nil {
 		return fmt.Errorf("failed putting job into project with error: %w", err)
 	}
-
 	return nil
 }
 
