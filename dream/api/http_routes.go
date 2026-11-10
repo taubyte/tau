@@ -25,6 +25,7 @@ func (srv *Service) setUpHttpRoutes() httpIface.Service {
 	srv.validFixtures()
 
 	srv.pingHttp()
+	srv.versionHttp()
 
 	return srv.server
 }

@@ -20,24 +20,32 @@ type syncBuf struct {
 func (s *syncBuf) Write(p []byte) (int, error) { s.mu.Lock(); defer s.mu.Unlock(); return s.b.Write(p) }
 func (s *syncBuf) String() string              { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
 
+// lineSignal is a syncBuf that signals each line written.
+type lineSignal struct {
+	syncBuf
+	said chan struct{}
+}
+
+func (l *lineSignal) Write(p []byte) (int, error) {
+	n, err := l.syncBuf.Write(p)
+	l.said <- struct{}{}
+	return n, err
+}
+
 // A line as the job appears, as it starts, on a new attempt, and as it ends.
 func TestWaitPrintsProgress(t *testing.T) {
 	f, p := newPatrick(t)
-	step := func(status patrick.JobStatus, attempt int) {
-		time.Sleep(40 * time.Millisecond)
-		j := job("j1", "c1", 1, status)
-		j.Attempt = attempt
-		f.set(j)
-	}
-	go func() {
-		step(patrick.JobStatusOpen, 0)
-		step(patrick.JobStatusLocked, 1)
-		step(patrick.JobStatusLocked, 2)
-		step(patrick.JobStatusSuccess, 2)
+	out := &lineSignal{said: make(chan struct{}, 4)}
+	go func() { // next state only once Wait printed the last one: no timing
+		for i, st := range []patrick.JobStatus{patrick.JobStatusOpen, patrick.JobStatusLocked, patrick.JobStatusLocked, patrick.JobStatusSuccess} {
+			j := job("j1", "c1", 1, st)
+			j.Attempt = min(i, 2)
+			f.set(j)
+			<-out.said
+		}
 	}()
 
-	var out syncBuf
-	_, code := Wait(context.Background(), p, "p", []Repo{{Name: "code", Commit: "c1"}}, poll, &out)
+	_, code := Wait(context.Background(), p, "p", []Repo{{Name: "code", Commit: "c1"}}, poll, out)
 	assert.Equal(t, code, 0)
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
 	assert.Equal(t, len(lines), 4, out.String())

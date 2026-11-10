@@ -27,6 +27,7 @@ func fakes() deps {
 		docker:       func() error { return nil },
 		lookup:       func(string) error { return nil },
 		dreamVersion: func() (string, error) { return "dream 1.0", nil },
+		dreamAPI:     func() (string, error) { return "dream v1.0 (commit a1ff405)", nil },
 		now:          func() time.Time { return now },
 	}
 }
@@ -118,5 +119,17 @@ func TestDoctorFailures(t *testing.T) {
 				t.Fatalf("%s = %+v; want %s with %q", tc.check, r, tc.status, tc.want)
 			}
 		})
+	}
+}
+
+func TestDoctorDreamAPIVersion(t *testing.T) {
+	p := config.Profile{Token: "t", CloudType: common.DreamCloud, Cloud: "blackhole"}
+	d := fakes()
+	if got := status(run(p, d))["dream api"].msg; got != "dream v1.0 (commit a1ff405)" {
+		t.Fatal(got)
+	}
+	d.dreamAPI = func() (string, error) { return "", errors.New("404") }
+	if got := status(run(p, d))["dream api"]; got.msg != "version unknown" || got.status != "PASS" {
+		t.Fatal(got)
 	}
 }

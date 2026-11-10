@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,6 +10,7 @@ import (
 
 	// Relative
 	"github.com/pterm/pterm"
+	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/tools/dream/cli/common"
 	inject "github.com/taubyte/tau/tools/dream/cli/inject"
 	"github.com/taubyte/tau/tools/dream/cli/kill"
@@ -67,17 +67,55 @@ func main() {
 		client.Timeout(300*time.Second),
 	)
 	if err != nil {
-		log.Fatalf("Starting new dream client failed with: %s", err.Error())
+		fmt.Fprintf(os.Stderr, "Error: could not create the Dream client: %s\n", err)
+		os.Exit(1)
 	}
 
 	err = defineCLI(&common.Context{Ctx: ctx, Multiverse: multiverse}).RunContext(ctx, os.Args)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Fprintln(os.Stderr, "Error:", common.Friendly(err, universeNames(multiverse)))
+		os.Exit(1)
 	}
+}
+
+// universeNames lists the running universes, for the "universe not found" hint.
+func universeNames(m *client.Client) func() ([]string, error) {
+	return func() ([]string, error) {
+		info, err := m.Universes()
+		if err != nil {
+			return nil, err
+		}
+		names := make([]string, 0, len(info))
+		for name := range info {
+			names = append(names, name)
+		}
+		return names, nil
+	}
+}
+
+func init() {
+	// prints "dream <version> (commit <short>)", the line tau doctor reads
+	cli.VersionPrinter = func(c *cli.Context) { fmt.Fprintln(c.App.Writer, c.App.Version) }
 }
 
 func defineCLI(ctx *common.Context) *(cli.App) {
 	app := &cli.App{
+		Name:      "dream",
+		Usage:     "run a local Taubyte cloud for development",
+		UsageText: "dream <command> [subcommand] [flags] [arguments]",
+		Description: `Dream runs a whole Taubyte cloud on this machine: universes made of nodes
+(auth, tns, patrick, monkey, substrate, gateway...). Pair it with the tau CLI to
+build and test projects without a remote cloud. The API listens on ` + common.DefaultDreamURL() + `.
+
+Put flags BEFORE the name: dream new universe --bind gateway@18080/http blackhole
+
+Examples:
+   dream start                                             start Dream; kept universes come back
+   dream new universe --bind gateway@18080/http blackhole  add a universe, gateway on port 18080
+   dream status universe blackhole                         list its nodes and ports
+   dream inject push-all --force true blackhole            rebuild every repo
+   dream kill universe blackhole                           stop that universe`,
+		CommandNotFound:        common.CommandNotFound,
 		UseShortOptionHandling: true,
 		Commands: []*cli.Command{
 			new.Command(ctx),
@@ -86,7 +124,14 @@ func defineCLI(ctx *common.Context) *(cli.App) {
 			kill.Command(ctx),
 			status.Command(ctx),
 			reset.Command(ctx),
+			{
+				Name:     "version",
+				Usage:    "Print the Dream version and commit",
+				Category: "Inspect",
+				Action:   func(c *cli.Context) error { cli.ShowVersion(c); return nil },
+			},
 		},
+		Version:              dream.BuildVersion().String(),
 		Suggest:              true,
 		EnableBashCompletion: true,
 	}

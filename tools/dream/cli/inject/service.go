@@ -16,10 +16,12 @@ func service(multiverse *client.Client) []*cli.Command {
 
 	for idx, _service := range validServices {
 		c := &cli.Command{
-			Name: _service,
+			Name:  _service,
+			Usage: "Start the " + _service + " service",
 			Flags: []cli.Flag{
 				&cli.IntFlag{
-					Name: "http",
+					Name:  "http",
+					Usage: "HTTP port (default: a free one)",
 				},
 			},
 			Action: runService(_service, multiverse),

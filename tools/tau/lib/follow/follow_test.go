@@ -161,7 +161,7 @@ func TestServeReportsSlowNode(t *testing.T) {
 	before["fast"] = "v1-hash" // the fast node already moved on before we looked again
 	time.AfterFunc(300*time.Millisecond, func() { flipped.Store(true) })
 
-	served, code := Serve(context.Background(), targets, func(t Target) string { return before[t.Node] }, poll, time.Now())
+	served, code := Serve(context.Background(), targets, func(t Target) string { return before[t.Node] }, poll, time.Now(), nil)
 	assert.Equal(t, code, 0)
 	assert.Equal(t, served[1].Node, "slow")
 	assert.Assert(t, served[1].Changed)
@@ -181,7 +181,7 @@ func TestServeTimeoutUnchanged(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Millisecond)
 	defer cancel()
 
-	served, code := Serve(ctx, []Target{tg}, func(Target) string { return old }, poll, time.Now())
+	served, code := Serve(ctx, []Target{tg}, func(Target) string { return old }, poll, time.Now(), nil)
 	assert.Equal(t, code, 2)
 	assert.Assert(t, !served[0].Changed)
 }

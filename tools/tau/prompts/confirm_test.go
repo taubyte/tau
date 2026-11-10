@@ -29,3 +29,9 @@ func TestConfirmPrompt(t *testing.T) {
 		assert.Assert(t, !prompts.ConfirmPrompt(ctx, "Confirm?"))
 	})
 }
+
+func TestConfirmPromptNoTerminalDoesNotPanic(t *testing.T) {
+	ctx, err := mock.CLI{Flags: []cli.Flag{flags.Yes}}.Run()
+	assert.NilError(t, err)
+	assert.Assert(t, !prompts.ConfirmPrompt(ctx, "Confirm?"))
+}

@@ -15,6 +15,7 @@ import (
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 
 	authIface "github.com/taubyte/tau/core/services/auth"
+	patrickIface "github.com/taubyte/tau/core/services/patrick"
 	tnsIface "github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
@@ -73,6 +74,13 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 		}
 	}
 
+	force := false
+	if len(params) > 3 {
+		if f, ok := params[3].(string); ok {
+			force, _ = strconv.ParseBool(f)
+		}
+	}
+
 	tns, err := simple.TNS()
 	if err != nil {
 		return err
@@ -81,6 +89,19 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 	auth, err := simple.Auth()
 	if err != nil {
 		return err
+	}
+
+	// Each repo's newest job, to skip repos whose head already built. Without
+	// Patrick nothing is skipped.
+	var jobs map[int]*patrickIface.Job
+	var patrick patrickIface.Client
+	if err := simple.Provides("patrick"); err == nil {
+		if p, err := simple.Patrick(); err == nil {
+			patrick = p
+			if !force {
+				jobs = newestJobs(p)
+			}
+		}
 	}
 
 	type repo struct{ id, fullName string }
@@ -121,25 +142,27 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 	// are named in its compiled config: note the config's commit now, and after
 	// the first pass push those (waiting for the config job if the project has
 	// no commit yet). pushSpecific registers each one it pushes.
-	configProject, commitBefore := "", ""
+	configProject, commitBefore, configRepo := "", "", 0
 	for _, r := range repos {
 		if repoKindOrder(r.fullName) == 0 {
 			if configProject = projectId; configProject == "" {
 				configProject = repoProject(auth, tns, r.id)
 			}
 			commitBefore, _, _ = tns.Simple().Commit(configProject, branch)
+			configRepo, _ = strconv.Atoi(r.id)
 			break
 		}
 	}
 
 	pushed := make(map[string]bool)
+	startedAt, configSent := time.Now().Unix(), false
 	pushIdx := 0
 	push := func(r repo) error {
 		repoId, fullName := r.id, r.fullName
 		pushed[repoId] = true
-		var err error
 		pushedAt := time.Now().Unix() + int64(pushIdx)
 		pushIdx++
+		localPath := ""
 		if projectRoot != "" {
 			// Derive per-repo local path from fullname (e.g. taubyte-test/tb_code_foo -> projectRoot/code)
 			parts := strings.SplitN(fullName, "/", 2)
@@ -147,7 +170,6 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 			if len(parts) == 2 {
 				name = parts[1]
 			}
-			var localPath string
 			switch {
 			case strings.HasPrefix(name, "tb_code_"):
 				localPath = projectRoot + "/code"
@@ -158,11 +180,14 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 			default:
 				localPath = projectRoot + "/config"
 			}
-			err = pushSpecific(u, repoId, fullName, projectId, branch, localPath, pushedAt)
-		} else {
-			err = pushSpecific(u, repoId, fullName, projectId, branch, "", pushedAt)
+			// Without a local path the payload carries the default commit: always rebuilt.
+			if commit, err := commonTest.HeadCommitFromLocalRepo(localPath); err == nil && built(jobs, repoId, commit) {
+				fmt.Printf("Skipping %s: commit %s already built\n", fullName, commit)
+				return nil
+			}
 		}
-		return err
+		configSent = configSent || repoKindOrder(fullName) == 0
+		return pushSpecific(u, repoId, fullName, projectId, branch, localPath, pushedAt)
 	}
 
 	for _, r := range repos {
@@ -174,7 +199,12 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 	if configProject == "" {
 		return nil
 	}
-	if commitBefore == "" {
+	// The websites and libraries are read from the config the config job
+	// publishes: wait for that job, or a website just added to the config of an
+	// already-built project is read from the old config and never pushed.
+	if patrick != nil && configSent && configRepo != 0 {
+		waitForJob(u.Context(), patrick, configRepo, startedAt, newCommitWait)
+	} else if commitBefore == "" {
 		waitForNewCommit(u.Context(), tns.Simple(), configProject, branch, commitBefore, newCommitWait)
 	}
 	websites, _, _, _ := tns.Website().All(configProject, "", branch).List()
@@ -189,6 +219,37 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 	}
 
 	return nil
+}
+
+// newestJobs is each repository's newest job in Patrick.
+func newestJobs(p patrickIface.Client) map[int]*patrickIface.Job {
+	ids, err := p.List()
+	if err != nil {
+		return nil
+	}
+	jobs := make(map[int]*patrickIface.Job)
+	for _, id := range ids {
+		j, err := p.Get(id)
+		if err != nil {
+			continue
+		}
+		repo := j.Meta.Repository.ID
+		if old, ok := jobs[repo]; !ok || j.Timestamp > old.Timestamp {
+			jobs[repo] = j
+		}
+	}
+	return jobs
+}
+
+// built is true when repoId's newest job built commit successfully.
+// The default commit is what payloads carry with no local repo: never built.
+func built(jobs map[int]*patrickIface.Job, repoId, commit string) bool {
+	id, err := strconv.Atoi(repoId)
+	if err != nil || commit == "" || commit == commonTest.DefaultCommitID {
+		return false
+	}
+	j := jobs[id]
+	return j != nil && j.Status == patrickIface.JobStatusSuccess && j.Meta.HeadCommit.ID == commit
 }
 
 type configuredRepo struct{ id, fullName string }
@@ -225,6 +286,26 @@ func waitForNewCommit(ctx context.Context, tns tnsIface.SimpleIface, project, br
 	deadline := time.Now().Add(wait)
 	for {
 		if commit, _, err := tns.Commit(project, branch); err == nil && commit != "" && commit != before {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+// waitForJob returns true once repo has a job created at or after since that
+// has finished, or false after wait (no such job: it was skipped as built).
+func waitForJob(ctx context.Context, p patrickIface.Client, repo int, since int64, wait time.Duration) bool {
+	deadline := time.Now().Add(wait)
+	for {
+		if j := newestJobs(p)[repo]; j != nil && j.Timestamp >= since &&
+			j.Status != patrickIface.JobStatusOpen && j.Status != patrickIface.JobStatusLocked {
 			return true
 		}
 		if time.Now().After(deadline) {

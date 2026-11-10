@@ -9,11 +9,13 @@
 package session
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -995,7 +997,9 @@ func (s *Session) Merge() error {
 // Close releases the session. The in-memory filesystem is then garbage-collected.
 func (s *Session) Close() { s.seer = nil }
 
-// copyTree copies the subtree at srcDir in src into dst rooted at dstDir.
+// copyTree copies the subtree at srcDir in src into dst rooted at dstDir. It
+// skips .git (git keeps its objects read-only, which Windows refuses to open for
+// write) and files dst already holds unchanged, so saving in place writes only edits.
 func copyTree(src afero.Fs, srcDir string, dst afero.Fs, dstDir string) error {
 	if srcDir == "" {
 		srcDir = "/"
@@ -1004,14 +1008,27 @@ func copyTree(src afero.Fs, srcDir string, dst afero.Fs, dstDir string) error {
 		if err != nil {
 			return err
 		}
-		rel := strings.TrimPrefix(p, srcDir)
-		target := path.Join(dstDir, rel)
+		// afero.Walk joins with OS separators: on Windows p is "\.git", not "/.git".
+		rel, err := filepath.Rel(srcDir, p)
+		if err != nil {
+			return err
+		}
+		target := path.Join(dstDir, filepath.ToSlash(rel))
+		if info.Name() == ".git" {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if info.IsDir() {
 			return dst.MkdirAll(target, 0o755)
 		}
 		data, err := afero.ReadFile(src, p)
 		if err != nil {
 			return err
+		}
+		if old, err := afero.ReadFile(dst, target); err == nil && bytes.Equal(old, data) {
+			return nil
 		}
 		if err := dst.MkdirAll(path.Dir(target), 0o755); err != nil {
 			return err

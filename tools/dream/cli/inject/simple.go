@@ -16,7 +16,8 @@ import (
 
 func simple(multiverse *client.Client) *cli.Command {
 	c := &cli.Command{
-		Name: "simple",
+		Name:  "simple",
+		Usage: "Add a simple (client) node; default name: client, with all clients",
 		Flags: []cli.Flag{
 			&cli.StringSliceFlag{
 				Name:  "enable",

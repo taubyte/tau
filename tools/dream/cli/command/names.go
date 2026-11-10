@@ -13,9 +13,9 @@ func attachNames(c *cli.Command, flag cli.Flag) {
 	c.Flags = append(c.Flags, flag)
 
 	if len(c.ArgsUsage) == 0 {
-		c.ArgsUsage = "[name,...]"
+		c.ArgsUsage = "name[,name...]"
 	} else {
-		c.ArgsUsage = "[name,...]" + c.ArgsUsage
+		c.ArgsUsage = "name[,name...] " + c.ArgsUsage
 	}
 
 	action := c.Action

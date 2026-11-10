@@ -3,6 +3,7 @@ package inject
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	client "github.com/taubyte/tau/clients/http/dream"
@@ -35,10 +36,9 @@ func fixture(multiverse *client.Client) []*cli.Command {
 		}
 
 		c := &cli.Command{
-			Name:        noCamel(fixtureName),
-			Description: obj.Description,
-			Usage:       obj.Description,
-			Action:      runFixture(fixtureName, multiverse),
+			Name:   noCamel(fixtureName),
+			Usage:  obj.Description,
+			Action: runFixture(fixtureName, multiverse),
 		}
 		command.Universe0(c)
 
@@ -59,6 +59,7 @@ func fixture(multiverse *client.Client) []*cli.Command {
 		idx++
 	}
 
+	sort.Slice(commands, func(i, j int) bool { return commands[i].Name < commands[j].Name })
 	return commands
 }
 

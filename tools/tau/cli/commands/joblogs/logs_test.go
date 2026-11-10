@@ -27,6 +27,10 @@ func fakePatrick(t *testing.T) Client {
 			json.NewEncoder(w).Encode(map[string]any{"Job": patrick.Job{Id: "j1", Status: patrick.JobStatusFailed, Logs: map[string]string{"res1": "cid1"}}})
 		case "/job/j2":
 			json.NewEncoder(w).Encode(map[string]any{"Job": patrick.Job{Id: "j2", Status: patrick.JobStatusSuccess, Logs: map[string]string{"2026-11-07T16:27:54Z": "cid1", "j2": "cid1"}}})
+		case "/job/j3":
+			json.NewEncoder(w).Encode(map[string]any{"Job": patrick.Job{Id: "j3", Status: patrick.JobStatusSuccess, Logs: map[string]string{"2026-11-07T18:54:54+01:00": "cid1", "j3": "cid2"}}})
+		case "/logs/cid2":
+			io.WriteString(w, "step 1\nerror: go build failed\n\nRunning job `j3` was successful\n")
 		case "/logs/cid1":
 			io.WriteString(w, "step 1\nerror: go build failed\n")
 		case "/stream/logs/j1":
@@ -80,4 +84,12 @@ func TestShowLogOnceUnderJobID(t *testing.T) {
 	assert.NilError(t, Show(&buf, fakePatrick(t), "j2", false))
 	assert.Equal(t, strings.Count(buf.String(), "error: go build failed"), 1, buf.String())
 	assert.Assert(t, strings.Contains(buf.String(), "resource j2"), buf.String())
+}
+
+// Patrick stores the same log twice under two CIDs: tau logs prints it once.
+func TestShowSameLogTwoCIDsOnce(t *testing.T) {
+	var buf bytes.Buffer
+	assert.NilError(t, Show(&buf, fakePatrick(t), "j3", false))
+	assert.Equal(t, strings.Count(buf.String(), "--- job"), 1, buf.String())
+	assert.Assert(t, strings.Contains(buf.String(), "resource j3"), buf.String())
 }

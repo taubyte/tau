@@ -13,7 +13,7 @@ var outputFlag = &cli.StringFlag{
 
 var Command = &cli.Command{
 	Name:  "build",
-	Usage: "Build a resource from local clone (function, website, or library)",
+	Usage: "Build a function, website or library from its local clone",
 	Subcommands: []*cli.Command{
 		{
 			Name:   "function",

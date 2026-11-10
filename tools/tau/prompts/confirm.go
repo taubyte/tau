@@ -2,6 +2,7 @@ package prompts
 
 import (
 	"github.com/AlecAivazis/survey/v2"
+	cliPrompts "github.com/taubyte/tau/pkg/cli/prompts"
 	"github.com/taubyte/tau/tools/tau/flags"
 	"github.com/urfave/cli/v2"
 )
@@ -10,6 +11,10 @@ func ConfirmPrompt(c *cli.Context, label string) bool {
 	confirm := c.Bool(flags.Yes.Name)
 	if !confirm {
 		if UseDefaults {
+			return false
+		}
+		// No terminal to ask on: the answer is no, as with --defaults.
+		if cliPrompts.IsNonInteractive() {
 			return false
 		}
 		AskOne(&survey.Confirm{

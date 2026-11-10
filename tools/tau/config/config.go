@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -18,7 +20,8 @@ func getOrCreateConfig() *tauConfig {
 	if _config == nil {
 		err := loadConfig()
 		if err != nil {
-			panic(err)
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
 		}
 	}
 

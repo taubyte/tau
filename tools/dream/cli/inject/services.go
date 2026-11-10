@@ -12,7 +12,10 @@ import (
 
 func services(multiverse *client.Client) *cli.Command {
 	c := &cli.Command{
-		Name:   "services",
+		Name:  "services",
+		Usage: "Start several services at once",
+		Description: `Example:
+   dream inject services auth,tns blackhole`,
 		Action: runServices(multiverse),
 	}
 

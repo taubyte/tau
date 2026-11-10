@@ -13,7 +13,8 @@ import (
 
 	"github.com/google/go-github/v71/github"
 	"github.com/taubyte/tau/pkg/platformerr"
-	loginLib "github.com/taubyte/tau/tools/tau/lib/login"
+	"github.com/taubyte/tau/tools/tau/i18n/selection"
+	"github.com/taubyte/tau/tools/tau/session"
 )
 
 // Debug shows the original error under the friendly one. Set by --debug.
@@ -21,11 +22,10 @@ var Debug = os.Getenv("TAU_DEBUG") == "1"
 
 // Cloud names the selected cloud for messages; tests replace it.
 var Cloud = func() string {
-	p, err := loginLib.GetSelectedProfile()
-	if err != nil || p.Cloud == "" {
-		return "the selected cloud"
+	if c := session.CloudName(); c != "" {
+		return c
 	}
-	return p.Cloud
+	return "the selected cloud"
 }
 
 var codes = map[platformerr.Code][2]string{
@@ -39,9 +39,10 @@ var codes = map[platformerr.Code][2]string{
 }
 
 var (
-	codeInBody  = regexp.MustCompile(`"(?:error|code)"\s*:\s*"([a-z_]+)"`)
-	projectName = regexp.MustCompile("project `([^`]+)` not found")
-	universe    = regexp.MustCompile("universe `([^`]+)` (?:was )?not found(?:; Dream has: (.*))?")
+	codeInBody   = regexp.MustCompile(`"(?:error|code)"\s*:\s*"([a-z_]+)"`)
+	projectName  = regexp.MustCompile("project `([^`]+)` not found")
+	unknownCloud = regexp.MustCompile("unknown cloud `([^`]*)`")
+	universe     = regexp.MustCompile("universe `([^`]+)` (?:was )?not found(?:; Dream has: (.*))?")
 )
 
 // Explain returns a sentence and a hint for err, or ok=false if it has none.
@@ -76,6 +77,21 @@ func Explain(err error) (msg, hint string, ok bool) {
 			return fmt.Sprintf("Dream has no universe %q.", m[1]), "select one it has (" + m[2] + ") with `tau select cloud --universe <name>`", true
 		}
 		return fmt.Sprintf("Dream has no universe %q.", m[1]), "start it with `dream new universe " + m[1] + "` or run `tau doctor`", true
+	}
+
+	switch {
+	case errors.Is(err, selection.ErrorUserNotFound) || strings.Contains(text, "profile does not exist"):
+		return "You are not logged in.", "run `tau login`", true
+	case strings.Contains(text, "no cloud selected"):
+		return "No cloud is selected.", "run `tau select cloud --universe <name>` for Dream, or `--fqdn <cloud>`", true
+	case errors.Is(err, selection.ErrorProjectNotFound):
+		return "No project is selected.", "run `tau select project`, or cd into a cloned project", true
+	case unknownCloud.MatchString(text):
+		return fmt.Sprintf("Unknown cloud type %q in your login.", unknownCloud.FindStringSubmatch(text)[1]), "select the cloud again with `tau select cloud`", true
+	case strings.Contains(text, "repository not found") || errors.As(err, &gh) && gh.Response != nil && gh.Response.StatusCode == 404:
+		return "GitHub repository not found.", "check the owner/name, and that your login can see it (`tau doctor`)", true
+	case strings.Contains(text, "127.0.0.1:1421") && containsAny(text, "connection refused", "dial tcp"):
+		return "Could not reach Dream: it is not running.", "start it with `dream start`, then run `tau doctor`", true
 	}
 
 	if strings.Contains(text, "project not found") || strings.Contains(text, "project") && strings.Contains(text, "not found") {

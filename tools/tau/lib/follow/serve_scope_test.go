@@ -30,7 +30,7 @@ func TestServeStopsWhenChangedResourceServes(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	served, code := Serve(ctx, targets, func(t Target) string { return before[t] }, poll, time.Now())
+	served, code := Serve(ctx, targets, func(t Target) string { return before[t] }, poll, time.Now(), nil)
 	assert.Equal(t, code, 0)
 	assert.Assert(t, served[0].Changed && served[1].Changed)
 	assert.Equal(t, served[2].Note, "not changed by this push")

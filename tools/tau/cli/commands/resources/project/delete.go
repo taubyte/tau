@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/taubyte/tau/tools/tau/session"
+
 	"github.com/pterm/pterm"
 	client "github.com/taubyte/tau/clients/http/auth"
 	authCommon "github.com/taubyte/tau/clients/http/auth/git/common"
@@ -87,7 +89,7 @@ func _delete(ctx *cli.Context) error {
 			return repositoryI18n.ErrorUnregisterRepositories(err)
 		}
 
-		projectI18n.RemovedProject(project.Name, profile.Cloud)
+		projectI18n.RemovedProject(project.Name, session.CloudName())
 
 		repoNames = prompts.MultiSelect(ctx, prompts.MultiSelectConfig{
 			Field:   "github",

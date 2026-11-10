@@ -9,11 +9,19 @@ import (
 
 func universe(multiverse *client.Client) *cli.Command {
 	c := &cli.Command{
-		Name: "universe",
+		Name:  "universe",
+		Usage: "Start a universe in the running Dream, with every service unless told otherwise",
+		Description: `Starts a universe (default name: "default") in the running Dream. Its data is
+kept across restarts. Put flags BEFORE the name.
+
+Examples:
+   dream new universe blackhole
+   dream new universe --bind gateway@18080/http blackhole
+   dream new universe --enable auth,tns,patrick --fresh test`,
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
 				Name:  "empty",
-				Usage: "Create an empty universe (Overrides the below)",
+				Usage: "First start the universe with no nodes, then apply the other flags",
 			},
 			&cli.BoolFlag{
 				Name:  "fresh",
@@ -21,24 +29,24 @@ func universe(multiverse *client.Client) *cli.Command {
 			},
 			&cli.StringSliceFlag{
 				Name:  "enable",
-				Usage: "List services separated by comma ( Conflicts with disable )",
+				Usage: "Only start these services, comma separated (conflicts with --disable)",
 			},
 			&cli.StringSliceFlag{
 				Name:  "disable",
-				Usage: "List services separated by comma ( Conflicts with enable )",
+				Usage: "Start every service except these, comma separated (conflicts with --enable)",
 			},
 			&cli.StringSliceFlag{
 				Name:  "bind",
-				Usage: "service@0000/http,...,service@0000/p2p,...",
+				Usage: "Fix a service port: service@port[/http|https|p2p|dns], comma separated",
 			},
 			&cli.StringSliceFlag{
 				Name:  "fixtures",
-				Usage: "List fixtures separated by comma",
+				Usage: "Fixtures to run after the start, comma separated",
 			},
 			&cli.StringSliceFlag{
 				Name:        "simples",
-				Usage:       "List simples separated by comma",
-				DefaultText: "Creates a simple named `client` with all clients",
+				Usage:       "Simple (client) nodes to add, comma separated",
+				DefaultText: "one simple named client, with all clients",
 			},
 		},
 		Action: runUniverse(multiverse),

@@ -129,6 +129,10 @@ func (l link) promptNewRepo(ctx *cli.Context) (any, repositoryCommands.Resource,
 	}
 
 	r := &resource{l: l, st: st, shape: l.repo, name: name, doc: tcc.Doc{"id": id.Generate(projectID, name)}}
+	// a new repo starts on main; empty here fails the clone after the repo is created
+	if len(l.repo.Branch) > 0 {
+		tcc.Set(r.doc, l.repo.Branch, "main")
+	}
 	if err := l.fill(ctx, st, name, r.doc); err != nil {
 		return nil, nil, err
 	}

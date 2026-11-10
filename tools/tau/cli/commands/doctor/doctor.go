@@ -23,6 +23,7 @@ import (
 	"github.com/taubyte/tau/tools/tau/common"
 	"github.com/taubyte/tau/tools/tau/config"
 	loginLib "github.com/taubyte/tau/tools/tau/lib/login"
+	"github.com/taubyte/tau/tools/tau/output"
 	"github.com/urfave/cli/v2"
 )
 
@@ -44,6 +45,7 @@ type deps struct {
 	docker       func() error
 	lookup       func(host string) error
 	dreamVersion func() (string, error)
+	dreamAPI     func() (string, error) // the running Dream's GET /version
 	now          func() time.Time
 	project      func() []string // the selected project's files, "/"-separated; nil: none
 }
@@ -82,6 +84,14 @@ func live(ctx context.Context) deps {
 		dreamVersion: func() (string, error) {
 			out, err := exec.Command("dream", "--version").Output()
 			return strings.TrimSpace(string(out)), err
+		},
+		dreamAPI: func() (string, error) {
+			c, err := dreamClient.Client(ctx)
+			if err != nil {
+				return "", err
+			}
+			v, err := c.Version()
+			return v.String(), err
 		},
 		now:     time.Now,
 		project: projectFiles,
@@ -215,6 +225,12 @@ func run(p config.Profile, d deps) (out []result) {
 			}
 			add("FAIL", "cloud", fmt.Sprintf("universe %q not found; Dream has: %s", p.Cloud, strings.Join(names, ", ")), fix)
 		}
+		// older Dreams have no /version
+		if v, err := d.dreamAPI(); err == nil {
+			add("PASS", "dream api", v, "")
+		} else {
+			add("PASS", "dream api", "version unknown", "")
+		}
 		if err := d.docker(); err != nil {
 			add("FAIL", "docker", "Docker not reachable; Dream builds need it", "start Docker (Docker Desktop on Windows/macOS)")
 		} else {
@@ -252,9 +268,10 @@ func run(p config.Profile, d deps) (out []result) {
 func report(w io.Writer, results []result) error {
 	failed := 0
 	for _, r := range results {
-		line := fmt.Sprintf("%-4s  %-13s %s", r.status, r.name, r.msg)
+		mark := map[string]string{"PASS": output.OK(), "FAIL": output.Failed(), "WARN": output.Warn()}[r.status]
+		line := fmt.Sprintf("%s %-4s  %-13s %s", mark, r.status, r.name, r.msg)
 		if r.fix != "" {
-			line += "\n      fix: " + r.fix
+			line += "\n        fix: " + r.fix
 		}
 		fmt.Fprintln(w, line)
 		if r.status == "FAIL" {

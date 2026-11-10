@@ -10,6 +10,7 @@ import (
 func simple(multiverse *client.Client) *cli.Command {
 	c := &cli.Command{
 		Name:   "simple",
+		Usage:  "Stop a simple (client) node; default name: client",
 		Action: killSimple(multiverse),
 	}
 

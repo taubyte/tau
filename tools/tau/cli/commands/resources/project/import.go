@@ -150,7 +150,7 @@ func _import(ctx *cli.Context) error {
 		return projectI18n.CreatingProjectFailed(err)
 	}
 
-	projectI18n.ImportedProject(clientProject.Name, profile.Cloud)
+	reportImported(clientProject.Name)
 
 	if prompts.ConfirmPrompt(ctx, fmt.Sprintf("select `%s` as current project?", clientProject.Name)) {
 		if err = session.Set().SelectedProject(clientProject.Name); err != nil {
@@ -178,4 +178,9 @@ func importableID(auth *httpClient.Client, projectID, configRepoName string) str
 	}
 	printer.Out.WarningPrintfln("%s carries the id of project %s, which this cloud holds for %s; registering a new project", configRepoName, projectID, existing.RepoList.Configuration.Fullname)
 	return ""
+}
+
+// reportImported names the cloud the session selected, not the profile's.
+func reportImported(name string) {
+	projectI18n.ImportedProject(name, session.CloudName())
 }

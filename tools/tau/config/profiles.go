@@ -2,7 +2,6 @@ package config
 
 import (
 	seer "github.com/taubyte/tau/pkg/yaseer"
-	"github.com/taubyte/tau/tools/tau/i18n"
 	singletonsI18n "github.com/taubyte/tau/tools/tau/i18n/shared"
 )
 
@@ -37,11 +36,7 @@ func (p *profileHandler) Set(name string, profile Profile) error {
 }
 
 func (p *profileHandler) List(loginCommand bool) (profiles map[string]Profile) {
-	// Ignoring error here as it will just return an empty map
-	err := p.Root().Value(&profiles)
-	if err != nil && !loginCommand {
-		i18n.Help().HaveYouLoggedIn()
-	}
-
+	// An error leaves the map empty; the caller's error then says to log in.
+	_ = p.Root().Value(&profiles)
 	return profiles
 }

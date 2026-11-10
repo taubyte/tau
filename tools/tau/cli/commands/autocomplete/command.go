@@ -16,7 +16,7 @@ var (
 
 	Command = &cli.Command{
 		Name:   "autocomplete",
-		Usage:  "Used with eval or in .bashrc for autocompletion",
+		Usage:  "Print a shell completion script (use with eval or in .bashrc)",
 		Action: Run,
 	}
 )

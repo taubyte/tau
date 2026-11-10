@@ -88,6 +88,7 @@ func New() (*cli.App, error) {
 		doctor.Command,
 	}...)
 	app.Commands = append(app.Commands, extraCommands...)
+	applyHelp(app)
 
 	return app, nil
 }

@@ -227,3 +227,15 @@ func TestUdpBurstSlipsToTruncated(t *testing.T) {
 	}
 	assert.Equal(t, h.slip(udpFrom("2001:db8:1:ff::9")), true)
 }
+
+// A wildcard (or any unknown label) under the service domain, like the
+// *.tau CNAME or a wildcard cert lookup, gets NXDOMAIN without an error log.
+func TestWildcardServiceNameIsQuiet(t *testing.T) {
+	h := testHandler(t)
+	for _, name := range []string{"*.tau.example.com.", "nosuch.tau.example.com."} {
+		w := tcpFrom("192.0.2.1")
+		levels := captureLevels(t, func() { h.ServeDNS(w, question(name, dns.TypeA)) })
+		assert.Equal(t, levels["error"], 0, name)
+		assert.Equal(t, w.last().Rcode, dns.RcodeNameError, name)
+	}
+}
