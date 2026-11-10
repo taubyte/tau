@@ -178,7 +178,7 @@ func (s *Service) startCheckCpu() error {
 				// setting interval to greater than 0 will sleep for given interval duration
 				cpuUsage, err := cpu.Percent(CPUCheckInterval, false)
 				if err != nil {
-					logger.Errorf("checking cpu usage failed with: %w", err)
+					logger.Errorf("checking cpu usage failed with: %v", err)
 				}
 
 				s.cpuAverage = cpuUsage[0]

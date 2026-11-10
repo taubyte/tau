@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
+	"github.com/taubyte/tau/pkg/platformerr"
 )
 
 func TestEncode(t *testing.T) {
@@ -119,4 +120,21 @@ func TestEncode_UnicodeError(t *testing.T) {
 	errVal, err := resp.Get("error")
 	require.NoError(t, err)
 	assert.Equal(t, "错误消息 🚨", errVal)
+}
+
+// An old client reads only "error"; a coded error must leave it exactly as before.
+func TestEncode_CodedKeepsErrorKey(t *testing.T) {
+	var buf bytes.Buffer
+	require.NoError(t, Encode(&buf, platformerr.New(platformerr.NotFound, errors.New("no match"))))
+	resp, err := cr.Decode(&buf)
+	require.NoError(t, err)
+	assert.Equal(t, cr.Response{"error": "no match", "code": "not_found"}, resp)
+}
+
+func TestEncode_UncodedHasNoCodeKey(t *testing.T) {
+	var buf bytes.Buffer
+	require.NoError(t, Encode(&buf, errors.New("x")))
+	resp, err := cr.Decode(&buf)
+	require.NoError(t, err)
+	assert.Equal(t, cr.Response{"error": "x"}, resp)
 }

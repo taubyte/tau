@@ -6,8 +6,10 @@ import (
 
 	goHttp "net/http"
 
+	"github.com/ipfs/go-log/v2"
 	iface "github.com/taubyte/tau/core/services/substrate/components/http"
 	http "github.com/taubyte/tau/pkg/http"
+	"github.com/taubyte/tau/pkg/platformerr"
 	"github.com/taubyte/tau/services/substrate/components/http/common"
 	"github.com/taubyte/tau/services/substrate/runtime/counter"
 	"github.com/taubyte/tau/services/substrate/runtime/helpers"
@@ -58,18 +60,17 @@ func (s *Service) handle(w goHttp.ResponseWriter, r *goHttp.Request) error {
 	}
 
 	if err := pick.Ready(); err != nil {
-		return counter.ErrorWrapper(pick, startTime, time.Time{}, fmt.Errorf("HTTP serviceable is not ready with: %s", err))
+		return counter.ErrorWrapper(pick, startTime, time.Time{}, fmt.Errorf("HTTP serviceable is not ready with: %w", err))
 	}
 
 	coldStartDoneTime, err := pick.Handle(w, r, matcher)
 	return counter.ErrorWrapper(pick, startTime, coldStartDoneTime, err)
 }
 
+var logger = log.Logger("tau.substrate.service.http")
+
 func (s *Service) Handler(w goHttp.ResponseWriter, r *goHttp.Request) {
-	if err := s.handle(w, r); err != nil {
-		w.WriteHeader(500)
-		w.Write([]byte(err.Error()))
-	}
+	platformerr.Serve(w, r, logger, s.handle)
 }
 
 func (s *Service) attach() error {

@@ -16,6 +16,7 @@ import (
 	"github.com/taubyte/tau/dream/helpers"
 	httpPkg "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/pkg/kvdb/mock"
+	"github.com/taubyte/tau/pkg/platformerr"
 	servicesCommon "github.com/taubyte/tau/services/common"
 	"gotest.tools/v3/assert"
 )
@@ -515,4 +516,38 @@ func TestGithubHookHandler_duplicateDeliverySameJobID(t *testing.T) {
 	keys, err := ts.mockDB.List(context.Background(), "/jobs/")
 	assert.NilError(t, err)
 	assert.Equal(t, len(keys), 1)
+}
+
+// GitHub pings a hook when it is created, often before the hook record is
+// readable: the ping got 401 or 400 and an ERROR line. It is answered, and
+// builds nothing, without needing the hook.
+func TestPingIsAnsweredWithoutTheHook(t *testing.T) {
+	srv := &PatrickService{authClient: &mockAuthClient{repos: make(map[int]mockRepo)}}
+	ctx := newMockHTTPContext()
+	ctx.SetHeader("X-GitHub-Event", "ping")
+	ctx.SetVariables(map[string]interface{}{"hook": "not-registered-yet"})
+
+	if _, err := srv.githubCheckHookAndExtractSecret(ctx); err != nil {
+		t.Fatalf("auth refused a ping: %v", err)
+	}
+	got, err := srv.githubHookHandler(ctx)
+	if err != nil || got.(map[string]string)["ping"] != "pong" {
+		t.Fatalf("got %v, %v", got, err)
+	}
+}
+
+// A bad signature is the caller's fault and anyone can send one: it is tagged
+// Rejected, which the HTTP layer logs as a warning.
+func TestBadSignatureIsRejected(t *testing.T) {
+	srv := &PatrickService{authClient: &mockAuthClient{repos: make(map[int]mockRepo)}}
+	ctx := newMockHTTPContext()
+	ctx.SetHeader("X-GitHub-Event", "push")
+	ctx.SetHeader("X-Hub-Signature-256", "sha256=00")
+	ctx.SetVariables(map[string]interface{}{"GithubSecret": "s3cret"})
+	ctx.SetBody([]byte(`{"ref":"refs/heads/main"}`))
+
+	_, err := srv.githubHookHandler(ctx)
+	if platformerr.CodeOf(err) != platformerr.Rejected {
+		t.Fatalf("got %v (code %q)", err, platformerr.CodeOf(err))
+	}
 }

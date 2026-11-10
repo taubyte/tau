@@ -8,6 +8,7 @@ import (
 	dv "github.com/taubyte/domain-validation"
 	commonIface "github.com/taubyte/tau/core/services/substrate/components"
 	"github.com/taubyte/tau/core/services/tns"
+	"github.com/taubyte/tau/pkg/platformerr"
 	spec "github.com/taubyte/tau/pkg/specs/common"
 	domainSpec "github.com/taubyte/tau/pkg/specs/domain"
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
@@ -64,7 +65,7 @@ func (s *Service) CheckTns(matcherIface commonIface.MatchDefinition) ([]commonIf
 		return []commonIface.Serviceable{pick}, nil
 	}
 
-	return nil, fmt.Errorf("no HTTP match found for method `%s` on `https://%s%s`", matcher.Method, matcher.Host, matcher.Path)
+	return nil, platformerr.New(platformerr.NotFound, fmt.Errorf("no HTTP match found for method `%s` on `https://%s%s`", matcher.Method, matcher.Host, matcher.Path))
 }
 
 func (s *Service) handleTNSPaths(stype spec.PathVariable, matcher *common.MatchDefinition, paths []tns.Path) []commonIface.Serviceable {

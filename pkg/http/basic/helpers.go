@@ -9,6 +9,7 @@ import (
 	auth "github.com/taubyte/tau/pkg/http/auth"
 	"github.com/taubyte/tau/pkg/http/context"
 	"github.com/taubyte/tau/pkg/http/request"
+	"github.com/taubyte/tau/pkg/platformerr"
 )
 
 func (s *Service) handleRequest(req *request.Request, vars *service.Variables, scope []string, authHandler service.Handler, handler service.Handler, cleanupHandler service.Handler, options ...context.Option) {
@@ -30,7 +31,12 @@ func (s *Service) handleRequest(req *request.Request, vars *service.Variables, s
 	}()
 
 	if err = ctx.HandleWith(handler); err != nil {
-		logger.Error(fmt.Errorf("calling %s failed with %v", req.HttpRequest.URL, err))
+		if platformerr.CodeOf(err) == platformerr.Rejected {
+			// anyone can send these: a warning, not an error
+			logger.Warnf("rejected %s: %v", req.HttpRequest.URL.Path, err)
+		} else {
+			logger.Error(fmt.Errorf("calling %s failed with %v", req.HttpRequest.URL, err))
+		}
 	}
 
 	// never the variables: they hold the caller's token

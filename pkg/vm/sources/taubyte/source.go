@@ -22,13 +22,13 @@ func New(loader vm.Loader) vm.Source {
 func (s *source) Module(ctx vm.Context, name string) (vm.SourceModule, error) {
 	_reader, err := s.loader.Load(ctx, name)
 	if err != nil {
-		return nil, fmt.Errorf("loading module `%s` failed with %w", name, err)
+		return nil, err // the loader already names the module
 	}
 
 	_source, err := io.ReadAll(_reader)
 	_reader.Close()
 	if err != nil {
-		return nil, fmt.Errorf("reading module `%s` failed with %w", name, err)
+		return nil, fmt.Errorf("reading module `%s`: %w", name, err)
 	}
 
 	return _source, nil

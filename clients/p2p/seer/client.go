@@ -24,7 +24,7 @@ func New(ctx context.Context, node peer.Node, registry *sensors.Registry) (clien
 	}
 	c.client, err = streamClient.New(node, common.SeerProtocol)
 	if err != nil {
-		logger.Error("API client creation failed: %s", err)
+		logger.Errorf("API client creation failed: %s", err)
 		return
 	}
 

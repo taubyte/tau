@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/taubyte/tau/core/vm"
+	"github.com/taubyte/tau/pkg/platformerr"
 )
 
 var DebugFunctionCallsLogger vm.Logger
@@ -46,7 +47,7 @@ func (f *Function) Call(inst Instance, id uint32) (err error) {
 
 	moduleName, err := f.moduleName()
 	if err != nil {
-		return fmt.Errorf("getting module name for resource `%s` failed with: %w", f.serviceable.Id(), err)
+		return platformerr.New(platformerr.ModuleUnavailable, fmt.Errorf("getting module name for resource `%s` failed with: %w", f.serviceable.Id(), err))
 	}
 
 	var module vm.ModuleInstance
@@ -63,17 +64,17 @@ func (f *Function) Call(inst Instance, id uint32) (err error) {
 
 		module, fx, err = ii.function(moduleName, f.config.Call)
 		if err != nil {
-			return fmt.Errorf("getting wasm function instance failed with: %w", err)
+			return platformerr.New(platformerr.ModuleUnavailable, fmt.Errorf("getting wasm function instance failed with: %w", err))
 		}
 	} else {
 		module, err = inst.Module(moduleName)
 		if err != nil {
-			return fmt.Errorf("creating module instance failed with: %w", err)
+			return platformerr.New(platformerr.ModuleUnavailable, fmt.Errorf("creating module instance failed with: %w", err))
 		}
 
 		fx, err = module.Function(f.config.Call)
 		if err != nil {
-			return fmt.Errorf("getting wasm function instance failed with: %w", err)
+			return platformerr.New(platformerr.ModuleUnavailable, fmt.Errorf("getting wasm function instance failed with: %w", err))
 		}
 	}
 
@@ -93,7 +94,11 @@ func (f *Function) Call(inst Instance, id uint32) (err error) {
 	}
 
 	if err != nil {
-		return fmt.Errorf("calling function for event %d failed with: %w", id, err)
+		code := platformerr.FunctionError
+		if ctx.Err() == context.DeadlineExceeded {
+			code = platformerr.FunctionTimeout
+		}
+		return platformerr.New(code, fmt.Errorf("calling function for event %d failed with: %w", id, err))
 	}
 
 	return nil

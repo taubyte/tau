@@ -19,6 +19,7 @@ import (
 	authIface "github.com/taubyte/tau/core/services/auth"
 	iface "github.com/taubyte/tau/core/services/patrick"
 	http "github.com/taubyte/tau/pkg/http"
+	"github.com/taubyte/tau/pkg/platformerr"
 	servicesCommon "github.com/taubyte/tau/services/common"
 	"gopkg.in/go-playground/webhooks.v5/github"
 
@@ -30,6 +31,9 @@ import (
 func (srv *PatrickService) githubCheckHookAndExtractSecret(ctx http.Context) (interface{}, error) {
 	if servicesCommon.FakeSecret && srv.devMode {
 		ctx.SetVariable("GithubSecret", "taubyte_secret")
+		return nil, nil
+	}
+	if isPing(ctx) {
 		return nil, nil
 	}
 	hook_uuid, err := ctx.GetStringVariable("hook")
@@ -51,7 +55,16 @@ func (srv *PatrickService) githubCheckHookAndExtractSecret(ctx http.Context) (in
 	return nil, nil
 }
 
+// isPing is GitHub's test delivery, sent when a hook is created. It carries no
+// push, so it is answered without the hook's secret and builds nothing.
+func isPing(ctx http.Context) bool {
+	return ctx.Request().Header.Get("X-GitHub-Event") == "ping"
+}
+
 func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, error) {
+	if isPing(ctx) {
+		return map[string]string{"ping": "pong"}, nil
+	}
 	newJob := &iface.Job{
 		Status:    iface.JobStatusOpen,
 		Timestamp: time.Now().Unix(),
@@ -77,10 +90,10 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 		parseSecret = secret
 	} else {
 		if secret == "" && !srv.devMode {
-			return nil, errors.New("hook has no secret")
+			return nil, platformerr.New(platformerr.Rejected, errors.New("hook has no secret"))
 		}
 		if secret != "" && !validSignature256(ctx.Request().Header.Get("X-Hub-Signature-256"), ctx.Body(), secret) {
-			return nil, errors.New("invalid X-Hub-Signature-256")
+			return nil, platformerr.New(platformerr.Rejected, errors.New("invalid X-Hub-Signature-256"))
 		}
 	}
 

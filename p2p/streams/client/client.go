@@ -13,6 +13,7 @@ import (
 
 	"github.com/taubyte/tau/p2p/peer"
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
+	"github.com/taubyte/tau/pkg/platformerr"
 
 	"github.com/libp2p/go-libp2p/core/discovery"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -496,11 +497,11 @@ func (c *Client) sendTo(strm stream, deadline time.Time, cmdName string, body co
 		}
 	}
 
-	if v, k := resp["error"]; k {
+	if err := peerError(strm.ID, cmdName, resp); err != nil {
 		return &Response{
 			ReadWriter: strm.Stream,
 			pid:        strm.ID,
-			err:        fmt.Errorf("peer %s returned error for command %q: %v", strm.ID, cmdName, v),
+			err:        err,
 		}
 	}
 
@@ -509,6 +510,18 @@ func (c *Client) sendTo(strm stream, deadline time.Time, cmdName string, body co
 		pid:        strm.ID,
 		Response:   resp,
 	}
+}
+
+// peerError is the error a peer answered with, or nil.
+func peerError(pid peerCore.ID, cmdName string, resp cr.Response) error {
+	v, k := resp["error"]
+	if !k {
+		return nil
+	}
+	if code, ok := resp["code"].(string); ok && code != "" {
+		return fmt.Errorf("peer %s returned error for command %q: %w", pid, cmdName, platformerr.New(platformerr.Code(code), errors.New(fmt.Sprint(v))))
+	}
+	return fmt.Errorf("peer %s returned error for command %q: %v", pid, cmdName, v)
 }
 
 func (c *Client) send(cmdName string, body command.Body, streams []stream, threshold int, timeout time.Duration) (<-chan *Response, error) {

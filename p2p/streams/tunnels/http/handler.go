@@ -47,7 +47,8 @@ func Frontend(w http.ResponseWriter, r *http.Request, stream io.ReadWriter) erro
 	ctx, ctxC := context.WithCancel(context.Background())
 	defer ctxC()
 
-	done := make(chan error)
+	// buffered: if sending the request fails, nobody reads done and the reader must not block forever
+	done := make(chan error, 1)
 	go func() {
 		var exitError error
 

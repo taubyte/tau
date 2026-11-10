@@ -38,19 +38,19 @@ func (srv *Service) pubsubMsgHandler(msg *pubsub.Message) {
 		if node.Services != nil {
 			_, err = srv.oracle.insertHandler(srv.node.Context(), node.Cid, *node.Services)
 			if err != nil {
-				logger.Error("Failed inserting node data with: %s", err.Error())
+				logger.Errorf("Failed inserting node data with: %s", err.Error())
 			}
 		}
 		if node.Usage != nil {
 			err = srv.oracle.insertUsage(srv.node.Context(), node.Cid, node.Hostname, "", node.Usage)
 			if err != nil {
-				logger.Error("Failed inserting node usage with: %s", err.Error())
+				logger.Errorf("Failed inserting node usage with: %s", err.Error())
 			}
 		}
 		if node.Geo != nil {
 			_, err = srv.geo.setNode(srv.node.Context(), node.Cid, node.Geo.Location)
 			if err != nil {
-				logger.Error("Failed inserting node geo with: %s", err.Error())
+				logger.Errorf("Failed inserting node geo with: %s", err.Error())
 			}
 		}
 	}

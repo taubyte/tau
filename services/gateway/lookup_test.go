@@ -1,28 +1,14 @@
 package gateway
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	goHttp "net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
-)
 
-func TestIsTimeout(t *testing.T) {
-	for err, want := range map[error]bool{
-		context.DeadlineExceeded:                      true,
-		os.ErrDeadlineExceeded:                        true,
-		fmt.Errorf("x: %w", context.DeadlineExceeded): true,
-		errors.New("read: i/o timeout"):               true,
-		errors.New("lookup failed with: no such"):     false,
-	} {
-		if got := isTimeout(err); got != want {
-			t.Errorf("%v: got %v", err, got)
-		}
-	}
-}
+	"github.com/taubyte/tau/pkg/platformerr"
+)
 
 func TestNoMatchSaysWhatHappened(t *testing.T) {
 	for _, c := range []struct {
@@ -38,7 +24,7 @@ func TestNoMatchSaysWhatHappened(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			writeError(w, noMatch(&c.result))
+			platformerr.Write(w, noMatch(&c.result), "")
 			if w.Code != c.status || w.Header().Get("Retry-After") != c.retry {
 				t.Fatalf("status %d retry %q", w.Code, w.Header().Get("Retry-After"))
 			}
@@ -48,7 +34,7 @@ func TestNoMatchSaysWhatHappened(t *testing.T) {
 
 func TestOtherErrorsStay500(t *testing.T) {
 	w := httptest.NewRecorder()
-	writeError(w, errors.New("tunneling failed"))
+	platformerr.Write(w, errors.New("tunneling failed"), "")
 	if w.Code != goHttp.StatusInternalServerError {
 		t.Fatalf("status %d", w.Code)
 	}
@@ -73,8 +59,31 @@ func TestOnlyNoMatchIsNotFound(t *testing.T) {
 		"lookup failed with: no HTTP match found ... context deadline exceeded":       false,
 	} {
 		err := errors.New(msg)
-		if got := isNotFound(err) && !isTimeout(err); got != want {
+		if got := notFound(err); got != want {
 			t.Errorf("%q: got %v", msg, got)
 		}
+	}
+}
+
+// The user's host and path are in the error text; they must not decide anything.
+func TestNotFoundWhenPathSaysTimeout(t *testing.T) {
+	for _, err := range []error{
+		fmt.Errorf("peer p returned error for command \"proxy\": %w", platformerr.New(platformerr.NotFound,
+			errors.New("no HTTP match found for method `GET` on `https://deadline.example.com/api/timeout`"))),
+		errors.New("lookup failed with: no HTTP match found for method `GET` on `https://a.b/api/timeout`"), // old substrate, no code
+	} {
+		nf := notFound(err)
+		w := httptest.NewRecorder()
+		platformerr.Write(w, noMatch(&lookupResult{notFound: nf, failed: !nf}), "")
+		if w.Code != goHttp.StatusNotFound {
+			t.Fatalf("%v: status %d", err, w.Code)
+		}
+	}
+}
+
+func TestRewordedNotFoundIsStillNotFound(t *testing.T) {
+	err := fmt.Errorf("peer p returned error for command \"proxy\": %w", platformerr.New(platformerr.NotFound, errors.New("nothing is served here")))
+	if !notFound(err) {
+		t.Fatal("a coded not-found is not found whatever its text")
 	}
 }

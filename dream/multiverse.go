@@ -53,7 +53,7 @@ func (m *Multiverse) init(ctx context.Context) (*Multiverse, error) {
 			m.Close()
 			return nil, err
 		}
-		logger.Debugf("Loading persistent universes skipped: %w", err)
+		logger.Debugf("Loading persistent universes skipped: %v", err)
 	}
 
 	return m, nil

@@ -343,7 +343,7 @@ func (hh *heads) primeCacheDagsNs(ctx context.Context) (ret error) {
 		// left with /<dagName>/<cid>
 		namespcs := headKey.Namespaces()
 		if len(namespcs) != 2 {
-			hh.logger.Error("bad head key: %s", r.Key)
+			hh.logger.Errorf("bad head key: %s", r.Key)
 			continue
 		}
 		dagName := namespcs[0]
