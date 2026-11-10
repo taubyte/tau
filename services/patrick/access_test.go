@@ -5,10 +5,12 @@ import (
 	"crypto/sha256"
 	"errors"
 	goHttp "net/http"
+	"slices"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/google/go-github/v71/github"
+	ds "github.com/ipfs/go-datastore"
 	commonIface "github.com/taubyte/tau/core/services/patrick"
 	http "github.com/taubyte/tau/pkg/http"
 	httpAuth "github.com/taubyte/tau/pkg/http/auth"
@@ -159,6 +161,124 @@ func TestProjectAccess(t *testing.T) {
 				t.Fatalf("got %v, want %v", err, c.want)
 			}
 		})
+	}
+}
+
+func TestProjectListingOnlyShowsJobsTheCallerCanRead(t *testing.T) {
+	freshRepoAccesses(t)
+	jobs := &fakeJobs{keys: map[string][]byte{}}
+	addJob(t, jobs, "/archive/jobs/", "code1", 41)
+	addJob(t, jobs, "/archive/jobs/", "code2", 41)
+	addJob(t, jobs, "/jobs/", "site", 42)
+	srv := &PatrickService{db: jobs}
+	handler := srv.onlyReadableJobs(func(http.Context) (interface{}, error) {
+		return project{ProjectId: "p", JobIds: []string{"code1", "site", "code2", "gone"}}, nil
+	})
+
+	client := &fakeRepos{perms: map[string]map[string]bool{"41": {"push": true}, "42": {"pull": true}}}
+	got, err := handler(accessCtx("partial-token", client, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ids := got.(project).JobIds; !slices.Equal(ids, []string{"code1", "code2"}) {
+		t.Fatalf("listed %v", ids)
+	}
+	if client.asked != 2 {
+		t.Fatalf("asked GitHub %d times for 2 repositories", client.asked)
+	}
+
+	// GitHub down: one question per repository, not one per job
+	flaky := &fakeRepos{fail: &github.ErrorResponse{Response: &goHttp.Response{StatusCode: goHttp.StatusBadGateway}}}
+	if _, err = handler(accessCtx("flaky-token", flaky, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if flaky.asked != 2 {
+		t.Fatalf("asked a failing GitHub %d times for 2 repositories", flaky.asked)
+	}
+}
+
+// movingJobs is a job on its way to the archive: absent from both places until
+// the archive has been read once.
+type movingJobs struct {
+	*fakeJobs
+	archiveReads int
+}
+
+func (d *movingJobs) Get(ctx context.Context, key string) ([]byte, error) {
+	if key == "/archive/jobs/moving" {
+		if d.archiveReads++; d.archiveReads == 1 {
+			return nil, ds.ErrNotFound
+		}
+	}
+	return d.fakeJobs.Get(ctx, key)
+}
+
+type brokenJobs struct{ *fakeJobs }
+
+func (brokenJobs) Get(context.Context, string) ([]byte, error) {
+	return nil, errors.New("store timed out")
+}
+
+func TestJobAccessOnlyLetsARealNotFoundThrough(t *testing.T) {
+	stranger := &fakeRepos{perms: map[string]map[string]bool{"51": {"pull": true}}}
+	ran := false
+	run := func(srv *PatrickService, jid string) error {
+		ran = false
+		_, err := srv.withJobAccess("jid", func(http.Context) (interface{}, error) { ran = true; return "ok", nil })(
+			accessCtx("lookup-"+jid, stranger, map[string]any{"jid": jid}))
+		return err
+	}
+
+	jobs := &fakeJobs{keys: map[string][]byte{}}
+	addJob(t, jobs, "/archive/jobs/", "moving", 51)
+	if err := run(&PatrickService{db: &movingJobs{fakeJobs: jobs}}, "moving"); !errors.Is(err, errNoJobAccess) || ran {
+		t.Fatalf("a job moving to the archive went unchecked: err=%v ran=%v", err, ran)
+	}
+
+	if err := run(&PatrickService{db: brokenJobs{jobs}}, "moving"); err == nil || ran {
+		t.Fatalf("a failed lookup reached the handler: err=%v ran=%v", err, ran)
+	}
+
+	if err := run(&PatrickService{db: jobs}, "nope"); err != nil || !ran {
+		t.Fatalf("an unknown job should reach the handler: err=%v ran=%v", err, ran)
+	}
+}
+
+// A finishing job is always in one place or the other, so a reader that looks
+// in both cannot miss it.
+type archiveOrderJobs struct {
+	*fakeJobs
+	t *testing.T
+}
+
+func (d *archiveOrderJobs) Put(_ context.Context, key string, v []byte) error {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+	d.keys[key] = v
+	return nil
+}
+
+func (d *archiveOrderJobs) Delete(_ context.Context, key string) error {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+	if key == "/jobs/j" {
+		if _, ok := d.keys["/archive/jobs/j"]; !ok {
+			d.t.Error("job left /jobs/ before reaching the archive")
+		}
+	}
+	delete(d.keys, key)
+	return nil
+}
+
+func TestFinishedJobIsArchivedBeforeLeavingJobs(t *testing.T) {
+	jobs := &fakeJobs{keys: map[string][]byte{}}
+	addJob(t, jobs, "/jobs/", "j", 61)
+	srv := &PatrickService{db: &archiveOrderJobs{fakeJobs: jobs, t: t}}
+	if err := srv.updateStatus(context.Background(), "", "j", map[string]string{}, commonIface.JobStatusSuccess, map[string]string{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := jobs.keys["/jobs/j"]; ok {
+		t.Fatal("job still in /jobs/")
 	}
 }
 
