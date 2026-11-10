@@ -42,7 +42,7 @@ func (f *Factory) getGlobalValueSize(
 		return uint32(errno.ErrorDatabaseGetFailed)
 	}
 
-	return uint32(f.WriteUint32Le(module, valueSizePtr, uint32(len(value))))
+	return uint32(f.WriteBytesSizeFor(module, "globals"+path, valueSizePtr, value))
 }
 
 func (f *Factory) getGlobalValue(
@@ -70,5 +70,5 @@ func (f *Factory) getGlobalValue(
 		return uint32(errno.ErrorDatabaseGetFailed)
 	}
 
-	return uint32(f.WriteBytes(module, valuePtr, value))
+	return uint32(f.WriteBytesFor(module, "globals"+path, valuePtr, value))
 }

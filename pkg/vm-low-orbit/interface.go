@@ -24,6 +24,11 @@ type eventApi interface {
 	CreateHttpEvent(w http.ResponseWriter, r *http.Request) *event.Event
 	CreatePubsubEvent(msg pubsubIface.Message) *event.Event
 	CreateP2PEvent(cmd *command.Command, response res.Response) *event.Event
+
+	// ReleaseEvent forgets an event once its call has returned. An instance is
+	// pooled and serves many calls, so an event kept past its call kept the
+	// whole request it carries alive for as long as the instance lived.
+	ReleaseEvent(id uint32)
 }
 
 var With = func(pi vm.PluginInstance) (Instance, error) {

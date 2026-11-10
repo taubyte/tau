@@ -16,6 +16,13 @@ func (f *Factory) AttachEvent(e *Event) {
 	f.events[e.Id] = e
 }
 
+// ReleaseEvent forgets the event with id, once its call has returned.
+func (f *Factory) ReleaseEvent(id uint32) {
+	f.eventsLock.Lock()
+	defer f.eventsLock.Unlock()
+	delete(f.events, id)
+}
+
 func (f *Factory) CreatePubsubEvent(msg pubsubIface.Message) *Event {
 	e := &Event{
 		Id:     f.generateEventId(),

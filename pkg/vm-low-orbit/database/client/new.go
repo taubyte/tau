@@ -19,6 +19,10 @@ func (f *Factory) newDatabase(ctx context.Context,
 		return uint32(err)
 	}
 
+	if open := f.openedDatabase(databaseMatch); open != nil {
+		return uint32(f.WriteUint32Le(module, idPtr, open.Id))
+	}
+
 	_ctx := f.parent.Context()
 	databaseContext := databaseIface.Context{
 		ProjectId:     _ctx.Project(),
@@ -31,7 +35,7 @@ func (f *Factory) newDatabase(ctx context.Context,
 		return uint32(errno.ErrorDatabaseCreateFailed)
 	}
 
-	database := f.createDatabasePointer(_database)
+	database := f.createDatabasePointer(_database, databaseMatch)
 
 	return uint32(f.WriteUint32Le(module, idPtr, uint32(database.Id)))
 }

@@ -46,6 +46,7 @@ func (f *Function) Handle(cmd *command.Command) (t time.Time, res response.Respo
 
 	res = make(response.Response)
 	ev := instance.SDK().CreateP2PEvent(cmd, res)
+	defer instance.SDK().ReleaseEvent(ev.Id)
 	if len(f.config.SmartOps) > 0 {
 		val, err := f.SmartOps()
 		if err != nil || val > 0 {
