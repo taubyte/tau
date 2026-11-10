@@ -375,7 +375,7 @@ func (b *ContainerdBackend) Create(ctx context.Context, config *core.ContainerCo
 
 	ctx = namespaces.WithNamespace(ctx, b.config.Namespace)
 
-	containerID := core.ContainerID(fmt.Sprintf("tau-%s-%d", time.Now().Format("20060102-150405"), time.Now().Nanosecond()))
+	containerID := core.NewContainerID()
 
 	image, err := b.client.GetImage(ctx, config.Image)
 	if err != nil {
