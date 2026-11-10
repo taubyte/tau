@@ -22,6 +22,9 @@ type Factory struct {
 	// instance is pooled across calls, and a function opening its database on
 	// every call without closing it added a handle per call.
 	byMatch map[string]*Database
+	// batches are the open batches by id; see crud.go.
+	batches       map[uint32]*batch
+	batchIdToGrab uint32
 }
 
 var _ vm.Factory = &Factory{}

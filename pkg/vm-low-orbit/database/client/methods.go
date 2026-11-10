@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ipfs/go-datastore"
 	"github.com/taubyte/go-sdk/errno"
 	common "github.com/taubyte/tau/core/vm"
 )
@@ -14,7 +13,7 @@ func (d *Database) Get(ctx context.Context, key string) (data []byte, err errno.
 	var err0 error
 	data, err0 = d.KV().Get(ctx, key)
 	if err0 != nil {
-		if strings.Contains(err0.Error(), datastore.ErrNotFound.Error()) {
+		if strings.Contains(err0.Error(), keyNotFound) {
 			err = errno.ErrorDatabaseKeyNotFound
 		} else {
 			err = errno.ErrorDatabaseGetFailed
@@ -187,3 +186,8 @@ func (f *Factory) databaseListSize(ctx context.Context, module common.Module,
 // Keys naming a value across its size and data steps; see helpers/sized.go.
 func getKey(id uint32, key string) string  { return fmt.Sprintf("database.get/%d/%s", id, key) }
 func listKey(id uint32, key string) string { return fmt.Sprintf("database.list/%d/%s", id, key) }
+
+// keyNotFound ends the error of a missing key from the local kvdb
+// (datastore.ErrNotFound) and from the hoarder client and the kvdb mock, whose
+// errors are only "key not found".
+const keyNotFound = "key not found"
