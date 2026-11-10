@@ -71,6 +71,11 @@ var (
 	// deleted it after the write found it here.
 	ErrSwept = errors.New("storage: a block the write relied on was swept")
 
+	// ErrIncompletePut is a put whose stream did not end with its end, or whose end
+	// names a size its chunks did not carry: the bytes are not the whole object, and
+	// nothing of them is kept.
+	ErrIncompletePut = errors.New("storage: the put did not end whole")
+
 	// ErrNoSettings is a node that has not heard the region's settings from cm, so
 	// it does not know how many copies to place or wait for.
 	ErrNoSettings = errors.New("storage: the region's settings have not been heard")

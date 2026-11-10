@@ -327,24 +327,58 @@ func versionsFromWire(a Address, name string, wires []*storagev2.Version) ([]Ver
 }
 
 // chunks reads a put's bytes out of the stream after its head.
+// chunks is a put's bytes, which end only at its end: a stream that closes before
+// it is a put that failed, never a shorter object.
 type chunks struct {
-	stream *connect.ClientStream[storagev2.PutRequest]
-	buf    []byte
+	stream   *connect.ClientStream[storagev2.PutRequest]
+	buf      []byte
+	received uint64
+	ended    bool
 }
 
 func (c *chunks) Read(p []byte) (int, error) {
 	for len(c.buf) == 0 {
-		if !c.stream.Receive() {
-			if err := c.stream.Err(); err != nil {
-				return 0, err
-			}
+		if c.ended {
 			return 0, io.EOF
 		}
-		c.buf = c.stream.Msg().GetChunk()
+		if err := c.next(); err != nil {
+			return 0, err
+		}
 	}
 	n := copy(p, c.buf)
 	c.buf = c.buf[n:]
 	return n, nil
+}
+
+func (c *chunks) next() error {
+	if !c.stream.Receive() {
+		return c.closed(ErrIncompletePut)
+	}
+	switch part := c.stream.Msg().GetPart().(type) {
+	case *storagev2.PutRequest_Chunk:
+		c.buf = part.Chunk
+		c.received += uint64(len(part.Chunk))
+	case *storagev2.PutRequest_End:
+		if part.End.GetSize() != c.received {
+			return fmt.Errorf("%w: it carried %d bytes and ended saying %d", ErrIncompletePut, c.received, part.End.GetSize())
+		}
+		if c.stream.Receive() {
+			return fmt.Errorf("%w: a message followed its end", ErrIncompletePut)
+		}
+		c.ended = true
+		return c.closed(nil)
+	default:
+		return fmt.Errorf("%w: a head after its head", ErrIncompletePut)
+	}
+	return nil
+}
+
+// closed is why the stream stopped: its own failure, or else because.
+func (c *chunks) closed(because error) error {
+	if err := c.stream.Err(); err != nil {
+		return err
+	}
+	return because
 }
 
 // underHeld marks the one Unavailable that is this service's refusal rather than a
@@ -368,7 +402,7 @@ func wire(err error) error {
 		e := connect.NewError(connect.CodeFailedPrecondition, err)
 		e.Meta().Set(emptyCopy, "1")
 		return e
-	case errors.Is(err, ErrNoAddress), errors.Is(err, ErrEmptyIdentity):
+	case errors.Is(err, ErrNoAddress), errors.Is(err, ErrEmptyIdentity), errors.Is(err, ErrIncompletePut):
 		return connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	return err

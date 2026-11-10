@@ -368,12 +368,61 @@ func (x *PutHead) GetExpireMs() uint64 {
 	return 0
 }
 
+// PutEnd says the bytes before it are the whole object. It is the last message
+// of a Put: a stream that closes without it is a put that failed, and nothing of
+// it is kept.
+type PutEnd struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// size is how many bytes the chunks carried.
+	Size          uint64 `protobuf:"varint,1,opt,name=size,proto3" json:"size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutEnd) Reset() {
+	*x = PutEnd{}
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutEnd) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutEnd) ProtoMessage() {}
+
+func (x *PutEnd) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutEnd.ProtoReflect.Descriptor instead.
+func (*PutEnd) Descriptor() ([]byte, []int) {
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *PutEnd) GetSize() uint64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
 type PutRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Part:
 	//
 	//	*PutRequest_Head
 	//	*PutRequest_Chunk
+	//	*PutRequest_End
 	Part          isPutRequest_Part `protobuf_oneof:"part"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -381,7 +430,7 @@ type PutRequest struct {
 
 func (x *PutRequest) Reset() {
 	*x = PutRequest{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[4]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -393,7 +442,7 @@ func (x *PutRequest) String() string {
 func (*PutRequest) ProtoMessage() {}
 
 func (x *PutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[4]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -406,7 +455,7 @@ func (x *PutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutRequest.ProtoReflect.Descriptor instead.
 func (*PutRequest) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{4}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *PutRequest) GetPart() isPutRequest_Part {
@@ -434,6 +483,15 @@ func (x *PutRequest) GetChunk() []byte {
 	return nil
 }
 
+func (x *PutRequest) GetEnd() *PutEnd {
+	if x != nil {
+		if x, ok := x.Part.(*PutRequest_End); ok {
+			return x.End
+		}
+	}
+	return nil
+}
+
 type isPutRequest_Part interface {
 	isPutRequest_Part()
 }
@@ -446,9 +504,15 @@ type PutRequest_Chunk struct {
 	Chunk []byte `protobuf:"bytes,2,opt,name=chunk,proto3,oneof"`
 }
 
+type PutRequest_End struct {
+	End *PutEnd `protobuf:"bytes,3,opt,name=end,proto3,oneof"`
+}
+
 func (*PutRequest_Head) isPutRequest_Part() {}
 
 func (*PutRequest_Chunk) isPutRequest_Part() {}
+
+func (*PutRequest_End) isPutRequest_Part() {}
 
 // Version is one version of one object, as a reader sees it.
 type Version struct {
@@ -472,7 +536,7 @@ type Version struct {
 
 func (x *Version) Reset() {
 	*x = Version{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[5]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -484,7 +548,7 @@ func (x *Version) String() string {
 func (*Version) ProtoMessage() {}
 
 func (x *Version) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[5]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -497,7 +561,7 @@ func (x *Version) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Version.ProtoReflect.Descriptor instead.
 func (*Version) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{5}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Version) GetRootCid() string {
@@ -582,7 +646,7 @@ type PutResponse struct {
 
 func (x *PutResponse) Reset() {
 	*x = PutResponse{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[6]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -594,7 +658,7 @@ func (x *PutResponse) String() string {
 func (*PutResponse) ProtoMessage() {}
 
 func (x *PutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[6]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -607,7 +671,7 @@ func (x *PutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutResponse.ProtoReflect.Descriptor instead.
 func (*PutResponse) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{6}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *PutResponse) GetVersion() *Version {
@@ -640,7 +704,7 @@ type HoldRequest struct {
 
 func (x *HoldRequest) Reset() {
 	*x = HoldRequest{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[7]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -652,7 +716,7 @@ func (x *HoldRequest) String() string {
 func (*HoldRequest) ProtoMessage() {}
 
 func (x *HoldRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[7]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -665,7 +729,7 @@ func (x *HoldRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HoldRequest.ProtoReflect.Descriptor instead.
 func (*HoldRequest) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{7}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *HoldRequest) GetRootCid() string {
@@ -711,7 +775,7 @@ type HoldResponse struct {
 
 func (x *HoldResponse) Reset() {
 	*x = HoldResponse{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[8]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -723,7 +787,7 @@ func (x *HoldResponse) String() string {
 func (*HoldResponse) ProtoMessage() {}
 
 func (x *HoldResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[8]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -736,7 +800,7 @@ func (x *HoldResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HoldResponse.ProtoReflect.Descriptor instead.
 func (*HoldResponse) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{8}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{9}
 }
 
 // AppendRequest writes one version row on a holder of the instance's shard, for a
@@ -753,7 +817,7 @@ type AppendRequest struct {
 
 func (x *AppendRequest) Reset() {
 	*x = AppendRequest{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[9]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -765,7 +829,7 @@ func (x *AppendRequest) String() string {
 func (*AppendRequest) ProtoMessage() {}
 
 func (x *AppendRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[9]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -778,7 +842,7 @@ func (x *AppendRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AppendRequest.ProtoReflect.Descriptor instead.
 func (*AppendRequest) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{9}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *AppendRequest) GetAt() *Address {
@@ -817,7 +881,7 @@ type AppendResponse struct {
 
 func (x *AppendResponse) Reset() {
 	*x = AppendResponse{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[10]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -829,7 +893,7 @@ func (x *AppendResponse) String() string {
 func (*AppendResponse) ProtoMessage() {}
 
 func (x *AppendResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[10]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -842,7 +906,7 @@ func (x *AppendResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AppendResponse.ProtoReflect.Descriptor instead.
 func (*AppendResponse) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{10}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{11}
 }
 
 type CurrentRequest struct {
@@ -861,7 +925,7 @@ type CurrentRequest struct {
 
 func (x *CurrentRequest) Reset() {
 	*x = CurrentRequest{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[11]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -873,7 +937,7 @@ func (x *CurrentRequest) String() string {
 func (*CurrentRequest) ProtoMessage() {}
 
 func (x *CurrentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[11]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -886,7 +950,7 @@ func (x *CurrentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CurrentRequest.ProtoReflect.Descriptor instead.
 func (*CurrentRequest) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{11}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CurrentRequest) GetAt() *Address {
@@ -926,7 +990,7 @@ type CurrentResponse struct {
 
 func (x *CurrentResponse) Reset() {
 	*x = CurrentResponse{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[12]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -938,7 +1002,7 @@ func (x *CurrentResponse) String() string {
 func (*CurrentResponse) ProtoMessage() {}
 
 func (x *CurrentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[12]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -951,7 +1015,7 @@ func (x *CurrentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CurrentResponse.ProtoReflect.Descriptor instead.
 func (*CurrentResponse) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{12}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CurrentResponse) GetVersion() *Version {
@@ -975,7 +1039,7 @@ type VersionsRequest struct {
 
 func (x *VersionsRequest) Reset() {
 	*x = VersionsRequest{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[13]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -987,7 +1051,7 @@ func (x *VersionsRequest) String() string {
 func (*VersionsRequest) ProtoMessage() {}
 
 func (x *VersionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[13]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1000,7 +1064,7 @@ func (x *VersionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VersionsRequest.ProtoReflect.Descriptor instead.
 func (*VersionsRequest) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{13}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *VersionsRequest) GetAt() *Address {
@@ -1040,7 +1104,7 @@ type VersionsResponse struct {
 
 func (x *VersionsResponse) Reset() {
 	*x = VersionsResponse{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[14]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1052,7 +1116,7 @@ func (x *VersionsResponse) String() string {
 func (*VersionsResponse) ProtoMessage() {}
 
 func (x *VersionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[14]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1065,7 +1129,7 @@ func (x *VersionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VersionsResponse.ProtoReflect.Descriptor instead.
 func (*VersionsResponse) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{14}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *VersionsResponse) GetVersions() []*Version {
@@ -1085,7 +1149,7 @@ type DeleteRequest struct {
 
 func (x *DeleteRequest) Reset() {
 	*x = DeleteRequest{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[15]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1097,7 +1161,7 @@ func (x *DeleteRequest) String() string {
 func (*DeleteRequest) ProtoMessage() {}
 
 func (x *DeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[15]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1110,7 +1174,7 @@ func (x *DeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteRequest.ProtoReflect.Descriptor instead.
 func (*DeleteRequest) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{15}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *DeleteRequest) GetAt() *Address {
@@ -1136,7 +1200,7 @@ type DeleteResponse struct {
 
 func (x *DeleteResponse) Reset() {
 	*x = DeleteResponse{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[16]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1148,7 +1212,7 @@ func (x *DeleteResponse) String() string {
 func (*DeleteResponse) ProtoMessage() {}
 
 func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[16]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1161,7 +1225,7 @@ func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteResponse.ProtoReflect.Descriptor instead.
 func (*DeleteResponse) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{16}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *DeleteResponse) GetVersion() *Version {
@@ -1192,7 +1256,7 @@ type ListRequest struct {
 
 func (x *ListRequest) Reset() {
 	*x = ListRequest{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[17]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1204,7 +1268,7 @@ func (x *ListRequest) String() string {
 func (*ListRequest) ProtoMessage() {}
 
 func (x *ListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[17]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1217,7 +1281,7 @@ func (x *ListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRequest.ProtoReflect.Descriptor instead.
 func (*ListRequest) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{17}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ListRequest) GetAt() *Address {
@@ -1272,7 +1336,7 @@ type ListResponse struct {
 
 func (x *ListResponse) Reset() {
 	*x = ListResponse{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[18]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1284,7 +1348,7 @@ func (x *ListResponse) String() string {
 func (*ListResponse) ProtoMessage() {}
 
 func (x *ListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[18]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1297,7 +1361,7 @@ func (x *ListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListResponse.ProtoReflect.Descriptor instead.
 func (*ListResponse) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{18}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ListResponse) GetVersions() []*Version {
@@ -1320,7 +1384,7 @@ type ReadRequest struct {
 
 func (x *ReadRequest) Reset() {
 	*x = ReadRequest{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[19]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1332,7 +1396,7 @@ func (x *ReadRequest) String() string {
 func (*ReadRequest) ProtoMessage() {}
 
 func (x *ReadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[19]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1345,7 +1409,7 @@ func (x *ReadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadRequest.ProtoReflect.Descriptor instead.
 func (*ReadRequest) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{19}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ReadRequest) GetRootCid() string {
@@ -1371,7 +1435,7 @@ type ReadResponse struct {
 
 func (x *ReadResponse) Reset() {
 	*x = ReadResponse{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[20]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1383,7 +1447,7 @@ func (x *ReadResponse) String() string {
 func (*ReadResponse) ProtoMessage() {}
 
 func (x *ReadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[20]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1396,7 +1460,7 @@ func (x *ReadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadResponse.ProtoReflect.Descriptor instead.
 func (*ReadResponse) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{20}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ReadResponse) GetChunk() []byte {
@@ -1419,7 +1483,7 @@ type ProbeRequest struct {
 
 func (x *ProbeRequest) Reset() {
 	*x = ProbeRequest{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[21]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1431,7 +1495,7 @@ func (x *ProbeRequest) String() string {
 func (*ProbeRequest) ProtoMessage() {}
 
 func (x *ProbeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[21]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1444,7 +1508,7 @@ func (x *ProbeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProbeRequest.ProtoReflect.Descriptor instead.
 func (*ProbeRequest) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{21}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ProbeRequest) GetRootCid() string {
@@ -1470,7 +1534,7 @@ type ProbeResponse struct {
 
 func (x *ProbeResponse) Reset() {
 	*x = ProbeResponse{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[22]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1482,7 +1546,7 @@ func (x *ProbeResponse) String() string {
 func (*ProbeResponse) ProtoMessage() {}
 
 func (x *ProbeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[22]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1495,7 +1559,7 @@ func (x *ProbeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProbeResponse.ProtoReflect.Descriptor instead.
 func (*ProbeResponse) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{22}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ProbeResponse) GetProof() []byte {
@@ -1517,7 +1581,7 @@ type Span struct {
 
 func (x *Span) Reset() {
 	*x = Span{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[23]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1529,7 +1593,7 @@ func (x *Span) String() string {
 func (*Span) ProtoMessage() {}
 
 func (x *Span) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[23]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1542,7 +1606,7 @@ func (x *Span) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Span.ProtoReflect.Descriptor instead.
 func (*Span) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{23}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *Span) GetReplica() string {
@@ -1578,7 +1642,7 @@ type CoversRequest struct {
 
 func (x *CoversRequest) Reset() {
 	*x = CoversRequest{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[24]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1590,7 +1654,7 @@ func (x *CoversRequest) String() string {
 func (*CoversRequest) ProtoMessage() {}
 
 func (x *CoversRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[24]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1603,7 +1667,7 @@ func (x *CoversRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CoversRequest.ProtoReflect.Descriptor instead.
 func (*CoversRequest) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{24}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *CoversRequest) GetShard() uint32 {
@@ -1629,7 +1693,7 @@ type CoversResponse struct {
 
 func (x *CoversResponse) Reset() {
 	*x = CoversResponse{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[25]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1641,7 +1705,7 @@ func (x *CoversResponse) String() string {
 func (*CoversResponse) ProtoMessage() {}
 
 func (x *CoversResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[25]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1654,7 +1718,7 @@ func (x *CoversResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CoversResponse.ProtoReflect.Descriptor instead.
 func (*CoversResponse) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{25}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *CoversResponse) GetCovered() bool {
@@ -1677,7 +1741,7 @@ type SizeRequest struct {
 
 func (x *SizeRequest) Reset() {
 	*x = SizeRequest{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[26]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1689,7 +1753,7 @@ func (x *SizeRequest) String() string {
 func (*SizeRequest) ProtoMessage() {}
 
 func (x *SizeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[26]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1702,7 +1766,7 @@ func (x *SizeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SizeRequest.ProtoReflect.Descriptor instead.
 func (*SizeRequest) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{26}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *SizeRequest) GetAt() *Address {
@@ -1728,7 +1792,7 @@ type SizeResponse struct {
 
 func (x *SizeResponse) Reset() {
 	*x = SizeResponse{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[27]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1740,7 +1804,7 @@ func (x *SizeResponse) String() string {
 func (*SizeResponse) ProtoMessage() {}
 
 func (x *SizeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[27]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1753,7 +1817,7 @@ func (x *SizeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SizeResponse.ProtoReflect.Descriptor instead.
 func (*SizeResponse) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{27}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *SizeResponse) GetBytes() uint64 {
@@ -1778,7 +1842,7 @@ type SupersededRequest struct {
 
 func (x *SupersededRequest) Reset() {
 	*x = SupersededRequest{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[28]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1790,7 +1854,7 @@ func (x *SupersededRequest) String() string {
 func (*SupersededRequest) ProtoMessage() {}
 
 func (x *SupersededRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[28]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1803,7 +1867,7 @@ func (x *SupersededRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SupersededRequest.ProtoReflect.Descriptor instead.
 func (*SupersededRequest) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{28}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *SupersededRequest) GetAt() *Address {
@@ -1849,7 +1913,7 @@ type SupersededResponse struct {
 
 func (x *SupersededResponse) Reset() {
 	*x = SupersededResponse{}
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[29]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1861,7 +1925,7 @@ func (x *SupersededResponse) String() string {
 func (*SupersededResponse) ProtoMessage() {}
 
 func (x *SupersededResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_storage_v2_storage_proto_msgTypes[29]
+	mi := &file_tau_storage_v2_storage_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1874,7 +1938,7 @@ func (x *SupersededResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SupersededResponse.ProtoReflect.Descriptor instead.
 func (*SupersededResponse) Descriptor() ([]byte, []int) {
-	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{29}
+	return file_tau_storage_v2_storage_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *SupersededResponse) GetHeld() bool {
@@ -1941,11 +2005,14 @@ const file_tau_storage_v2_storage_proto_rawDesc = "" +
 	"\texpire_ms\x18\x06 \x01(\x04R\bexpireMs\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"[\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x1c\n" +
+	"\x06PutEnd\x12\x12\n" +
+	"\x04size\x18\x01 \x01(\x04R\x04size\"\x87\x01\n" +
 	"\n" +
 	"PutRequest\x12-\n" +
 	"\x04head\x18\x01 \x01(\v2\x17.tau.storage.v2.PutHeadH\x00R\x04head\x12\x16\n" +
-	"\x05chunk\x18\x02 \x01(\fH\x00R\x05chunkB\x06\n" +
+	"\x05chunk\x18\x02 \x01(\fH\x00R\x05chunk\x12*\n" +
+	"\x03end\x18\x03 \x01(\v2\x16.tau.storage.v2.PutEndH\x00R\x03endB\x06\n" +
 	"\x04part\"\xf9\x02\n" +
 	"\aVersion\x12\x19\n" +
 	"\broot_cid\x18\x01 \x01(\tR\arootCid\x12\x14\n" +
@@ -2072,91 +2139,93 @@ func file_tau_storage_v2_storage_proto_rawDescGZIP() []byte {
 	return file_tau_storage_v2_storage_proto_rawDescData
 }
 
-var file_tau_storage_v2_storage_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
+var file_tau_storage_v2_storage_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
 var file_tau_storage_v2_storage_proto_goTypes = []any{
 	(*VersionRecord)(nil),      // 0: tau.storage.v2.VersionRecord
 	(*Metadata)(nil),           // 1: tau.storage.v2.Metadata
 	(*Address)(nil),            // 2: tau.storage.v2.Address
 	(*PutHead)(nil),            // 3: tau.storage.v2.PutHead
-	(*PutRequest)(nil),         // 4: tau.storage.v2.PutRequest
-	(*Version)(nil),            // 5: tau.storage.v2.Version
-	(*PutResponse)(nil),        // 6: tau.storage.v2.PutResponse
-	(*HoldRequest)(nil),        // 7: tau.storage.v2.HoldRequest
-	(*HoldResponse)(nil),       // 8: tau.storage.v2.HoldResponse
-	(*AppendRequest)(nil),      // 9: tau.storage.v2.AppendRequest
-	(*AppendResponse)(nil),     // 10: tau.storage.v2.AppendResponse
-	(*CurrentRequest)(nil),     // 11: tau.storage.v2.CurrentRequest
-	(*CurrentResponse)(nil),    // 12: tau.storage.v2.CurrentResponse
-	(*VersionsRequest)(nil),    // 13: tau.storage.v2.VersionsRequest
-	(*VersionsResponse)(nil),   // 14: tau.storage.v2.VersionsResponse
-	(*DeleteRequest)(nil),      // 15: tau.storage.v2.DeleteRequest
-	(*DeleteResponse)(nil),     // 16: tau.storage.v2.DeleteResponse
-	(*ListRequest)(nil),        // 17: tau.storage.v2.ListRequest
-	(*ListResponse)(nil),       // 18: tau.storage.v2.ListResponse
-	(*ReadRequest)(nil),        // 19: tau.storage.v2.ReadRequest
-	(*ReadResponse)(nil),       // 20: tau.storage.v2.ReadResponse
-	(*ProbeRequest)(nil),       // 21: tau.storage.v2.ProbeRequest
-	(*ProbeResponse)(nil),      // 22: tau.storage.v2.ProbeResponse
-	(*Span)(nil),               // 23: tau.storage.v2.Span
-	(*CoversRequest)(nil),      // 24: tau.storage.v2.CoversRequest
-	(*CoversResponse)(nil),     // 25: tau.storage.v2.CoversResponse
-	(*SizeRequest)(nil),        // 26: tau.storage.v2.SizeRequest
-	(*SizeResponse)(nil),       // 27: tau.storage.v2.SizeResponse
-	(*SupersededRequest)(nil),  // 28: tau.storage.v2.SupersededRequest
-	(*SupersededResponse)(nil), // 29: tau.storage.v2.SupersededResponse
-	nil,                        // 30: tau.storage.v2.PutHead.MetadataEntry
-	nil,                        // 31: tau.storage.v2.Version.MetadataEntry
+	(*PutEnd)(nil),             // 4: tau.storage.v2.PutEnd
+	(*PutRequest)(nil),         // 5: tau.storage.v2.PutRequest
+	(*Version)(nil),            // 6: tau.storage.v2.Version
+	(*PutResponse)(nil),        // 7: tau.storage.v2.PutResponse
+	(*HoldRequest)(nil),        // 8: tau.storage.v2.HoldRequest
+	(*HoldResponse)(nil),       // 9: tau.storage.v2.HoldResponse
+	(*AppendRequest)(nil),      // 10: tau.storage.v2.AppendRequest
+	(*AppendResponse)(nil),     // 11: tau.storage.v2.AppendResponse
+	(*CurrentRequest)(nil),     // 12: tau.storage.v2.CurrentRequest
+	(*CurrentResponse)(nil),    // 13: tau.storage.v2.CurrentResponse
+	(*VersionsRequest)(nil),    // 14: tau.storage.v2.VersionsRequest
+	(*VersionsResponse)(nil),   // 15: tau.storage.v2.VersionsResponse
+	(*DeleteRequest)(nil),      // 16: tau.storage.v2.DeleteRequest
+	(*DeleteResponse)(nil),     // 17: tau.storage.v2.DeleteResponse
+	(*ListRequest)(nil),        // 18: tau.storage.v2.ListRequest
+	(*ListResponse)(nil),       // 19: tau.storage.v2.ListResponse
+	(*ReadRequest)(nil),        // 20: tau.storage.v2.ReadRequest
+	(*ReadResponse)(nil),       // 21: tau.storage.v2.ReadResponse
+	(*ProbeRequest)(nil),       // 22: tau.storage.v2.ProbeRequest
+	(*ProbeResponse)(nil),      // 23: tau.storage.v2.ProbeResponse
+	(*Span)(nil),               // 24: tau.storage.v2.Span
+	(*CoversRequest)(nil),      // 25: tau.storage.v2.CoversRequest
+	(*CoversResponse)(nil),     // 26: tau.storage.v2.CoversResponse
+	(*SizeRequest)(nil),        // 27: tau.storage.v2.SizeRequest
+	(*SizeResponse)(nil),       // 28: tau.storage.v2.SizeResponse
+	(*SupersededRequest)(nil),  // 29: tau.storage.v2.SupersededRequest
+	(*SupersededResponse)(nil), // 30: tau.storage.v2.SupersededResponse
+	nil,                        // 31: tau.storage.v2.PutHead.MetadataEntry
+	nil,                        // 32: tau.storage.v2.Version.MetadataEntry
 }
 var file_tau_storage_v2_storage_proto_depIdxs = []int32{
 	1,  // 0: tau.storage.v2.VersionRecord.metadata:type_name -> tau.storage.v2.Metadata
 	2,  // 1: tau.storage.v2.PutHead.at:type_name -> tau.storage.v2.Address
-	30, // 2: tau.storage.v2.PutHead.metadata:type_name -> tau.storage.v2.PutHead.MetadataEntry
+	31, // 2: tau.storage.v2.PutHead.metadata:type_name -> tau.storage.v2.PutHead.MetadataEntry
 	3,  // 3: tau.storage.v2.PutRequest.head:type_name -> tau.storage.v2.PutHead
-	31, // 4: tau.storage.v2.Version.metadata:type_name -> tau.storage.v2.Version.MetadataEntry
-	5,  // 5: tau.storage.v2.PutResponse.version:type_name -> tau.storage.v2.Version
-	2,  // 6: tau.storage.v2.HoldRequest.at:type_name -> tau.storage.v2.Address
-	2,  // 7: tau.storage.v2.AppendRequest.at:type_name -> tau.storage.v2.Address
-	0,  // 8: tau.storage.v2.AppendRequest.record:type_name -> tau.storage.v2.VersionRecord
-	2,  // 9: tau.storage.v2.CurrentRequest.at:type_name -> tau.storage.v2.Address
-	5,  // 10: tau.storage.v2.CurrentResponse.version:type_name -> tau.storage.v2.Version
-	2,  // 11: tau.storage.v2.VersionsRequest.at:type_name -> tau.storage.v2.Address
-	5,  // 12: tau.storage.v2.VersionsResponse.versions:type_name -> tau.storage.v2.Version
-	2,  // 13: tau.storage.v2.DeleteRequest.at:type_name -> tau.storage.v2.Address
-	5,  // 14: tau.storage.v2.DeleteResponse.version:type_name -> tau.storage.v2.Version
-	2,  // 15: tau.storage.v2.ListRequest.at:type_name -> tau.storage.v2.Address
-	5,  // 16: tau.storage.v2.ListResponse.versions:type_name -> tau.storage.v2.Version
-	23, // 17: tau.storage.v2.CoversRequest.spans:type_name -> tau.storage.v2.Span
-	2,  // 18: tau.storage.v2.SizeRequest.at:type_name -> tau.storage.v2.Address
-	2,  // 19: tau.storage.v2.SupersededRequest.at:type_name -> tau.storage.v2.Address
-	4,  // 20: tau.storage.v2.StorageService.Put:input_type -> tau.storage.v2.PutRequest
-	11, // 21: tau.storage.v2.StorageService.Current:input_type -> tau.storage.v2.CurrentRequest
-	13, // 22: tau.storage.v2.StorageService.Versions:input_type -> tau.storage.v2.VersionsRequest
-	15, // 23: tau.storage.v2.StorageService.Delete:input_type -> tau.storage.v2.DeleteRequest
-	17, // 24: tau.storage.v2.StorageService.List:input_type -> tau.storage.v2.ListRequest
-	26, // 25: tau.storage.v2.StorageService.Size:input_type -> tau.storage.v2.SizeRequest
-	19, // 26: tau.storage.v2.StorageService.Read:input_type -> tau.storage.v2.ReadRequest
-	7,  // 27: tau.storage.v2.StorageService.Hold:input_type -> tau.storage.v2.HoldRequest
-	9,  // 28: tau.storage.v2.StorageService.Append:input_type -> tau.storage.v2.AppendRequest
-	21, // 29: tau.storage.v2.StorageService.Probe:input_type -> tau.storage.v2.ProbeRequest
-	24, // 30: tau.storage.v2.StorageService.Covers:input_type -> tau.storage.v2.CoversRequest
-	28, // 31: tau.storage.v2.StorageService.Superseded:input_type -> tau.storage.v2.SupersededRequest
-	6,  // 32: tau.storage.v2.StorageService.Put:output_type -> tau.storage.v2.PutResponse
-	12, // 33: tau.storage.v2.StorageService.Current:output_type -> tau.storage.v2.CurrentResponse
-	14, // 34: tau.storage.v2.StorageService.Versions:output_type -> tau.storage.v2.VersionsResponse
-	16, // 35: tau.storage.v2.StorageService.Delete:output_type -> tau.storage.v2.DeleteResponse
-	18, // 36: tau.storage.v2.StorageService.List:output_type -> tau.storage.v2.ListResponse
-	27, // 37: tau.storage.v2.StorageService.Size:output_type -> tau.storage.v2.SizeResponse
-	20, // 38: tau.storage.v2.StorageService.Read:output_type -> tau.storage.v2.ReadResponse
-	8,  // 39: tau.storage.v2.StorageService.Hold:output_type -> tau.storage.v2.HoldResponse
-	10, // 40: tau.storage.v2.StorageService.Append:output_type -> tau.storage.v2.AppendResponse
-	22, // 41: tau.storage.v2.StorageService.Probe:output_type -> tau.storage.v2.ProbeResponse
-	25, // 42: tau.storage.v2.StorageService.Covers:output_type -> tau.storage.v2.CoversResponse
-	29, // 43: tau.storage.v2.StorageService.Superseded:output_type -> tau.storage.v2.SupersededResponse
-	32, // [32:44] is the sub-list for method output_type
-	20, // [20:32] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	4,  // 4: tau.storage.v2.PutRequest.end:type_name -> tau.storage.v2.PutEnd
+	32, // 5: tau.storage.v2.Version.metadata:type_name -> tau.storage.v2.Version.MetadataEntry
+	6,  // 6: tau.storage.v2.PutResponse.version:type_name -> tau.storage.v2.Version
+	2,  // 7: tau.storage.v2.HoldRequest.at:type_name -> tau.storage.v2.Address
+	2,  // 8: tau.storage.v2.AppendRequest.at:type_name -> tau.storage.v2.Address
+	0,  // 9: tau.storage.v2.AppendRequest.record:type_name -> tau.storage.v2.VersionRecord
+	2,  // 10: tau.storage.v2.CurrentRequest.at:type_name -> tau.storage.v2.Address
+	6,  // 11: tau.storage.v2.CurrentResponse.version:type_name -> tau.storage.v2.Version
+	2,  // 12: tau.storage.v2.VersionsRequest.at:type_name -> tau.storage.v2.Address
+	6,  // 13: tau.storage.v2.VersionsResponse.versions:type_name -> tau.storage.v2.Version
+	2,  // 14: tau.storage.v2.DeleteRequest.at:type_name -> tau.storage.v2.Address
+	6,  // 15: tau.storage.v2.DeleteResponse.version:type_name -> tau.storage.v2.Version
+	2,  // 16: tau.storage.v2.ListRequest.at:type_name -> tau.storage.v2.Address
+	6,  // 17: tau.storage.v2.ListResponse.versions:type_name -> tau.storage.v2.Version
+	24, // 18: tau.storage.v2.CoversRequest.spans:type_name -> tau.storage.v2.Span
+	2,  // 19: tau.storage.v2.SizeRequest.at:type_name -> tau.storage.v2.Address
+	2,  // 20: tau.storage.v2.SupersededRequest.at:type_name -> tau.storage.v2.Address
+	5,  // 21: tau.storage.v2.StorageService.Put:input_type -> tau.storage.v2.PutRequest
+	12, // 22: tau.storage.v2.StorageService.Current:input_type -> tau.storage.v2.CurrentRequest
+	14, // 23: tau.storage.v2.StorageService.Versions:input_type -> tau.storage.v2.VersionsRequest
+	16, // 24: tau.storage.v2.StorageService.Delete:input_type -> tau.storage.v2.DeleteRequest
+	18, // 25: tau.storage.v2.StorageService.List:input_type -> tau.storage.v2.ListRequest
+	27, // 26: tau.storage.v2.StorageService.Size:input_type -> tau.storage.v2.SizeRequest
+	20, // 27: tau.storage.v2.StorageService.Read:input_type -> tau.storage.v2.ReadRequest
+	8,  // 28: tau.storage.v2.StorageService.Hold:input_type -> tau.storage.v2.HoldRequest
+	10, // 29: tau.storage.v2.StorageService.Append:input_type -> tau.storage.v2.AppendRequest
+	22, // 30: tau.storage.v2.StorageService.Probe:input_type -> tau.storage.v2.ProbeRequest
+	25, // 31: tau.storage.v2.StorageService.Covers:input_type -> tau.storage.v2.CoversRequest
+	29, // 32: tau.storage.v2.StorageService.Superseded:input_type -> tau.storage.v2.SupersededRequest
+	7,  // 33: tau.storage.v2.StorageService.Put:output_type -> tau.storage.v2.PutResponse
+	13, // 34: tau.storage.v2.StorageService.Current:output_type -> tau.storage.v2.CurrentResponse
+	15, // 35: tau.storage.v2.StorageService.Versions:output_type -> tau.storage.v2.VersionsResponse
+	17, // 36: tau.storage.v2.StorageService.Delete:output_type -> tau.storage.v2.DeleteResponse
+	19, // 37: tau.storage.v2.StorageService.List:output_type -> tau.storage.v2.ListResponse
+	28, // 38: tau.storage.v2.StorageService.Size:output_type -> tau.storage.v2.SizeResponse
+	21, // 39: tau.storage.v2.StorageService.Read:output_type -> tau.storage.v2.ReadResponse
+	9,  // 40: tau.storage.v2.StorageService.Hold:output_type -> tau.storage.v2.HoldResponse
+	11, // 41: tau.storage.v2.StorageService.Append:output_type -> tau.storage.v2.AppendResponse
+	23, // 42: tau.storage.v2.StorageService.Probe:output_type -> tau.storage.v2.ProbeResponse
+	26, // 43: tau.storage.v2.StorageService.Covers:output_type -> tau.storage.v2.CoversResponse
+	30, // 44: tau.storage.v2.StorageService.Superseded:output_type -> tau.storage.v2.SupersededResponse
+	33, // [33:45] is the sub-list for method output_type
+	21, // [21:33] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_tau_storage_v2_storage_proto_init() }
@@ -2164,9 +2233,10 @@ func file_tau_storage_v2_storage_proto_init() {
 	if File_tau_storage_v2_storage_proto != nil {
 		return
 	}
-	file_tau_storage_v2_storage_proto_msgTypes[4].OneofWrappers = []any{
+	file_tau_storage_v2_storage_proto_msgTypes[5].OneofWrappers = []any{
 		(*PutRequest_Head)(nil),
 		(*PutRequest_Chunk)(nil),
+		(*PutRequest_End)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -2174,7 +2244,7 @@ func file_tau_storage_v2_storage_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_storage_v2_storage_proto_rawDesc), len(file_tau_storage_v2_storage_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   32,
+			NumMessages:   33,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

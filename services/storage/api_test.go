@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/require"
@@ -16,6 +17,7 @@ import (
 	"github.com/taubyte/tau/p2p/peer/peertest"
 	pkgkvdb "github.com/taubyte/tau/pkg/kvdb"
 	kvdbmock "github.com/taubyte/tau/pkg/kvdb/mock"
+	storagev2 "github.com/taubyte/tau/pkg/proto/gen/tau/storage/v2"
 )
 
 func names(vs []Version) []string {
@@ -134,6 +136,60 @@ func TestAStoreIsDialledAsTheStore(t *testing.T) {
 	require.Equal(t, []string{"o"}, names(listed))
 	_, err = here.Delete(ctx, at, "o")
 	require.NoError(t, err)
+}
+
+func TestAPutIsKeptOnlyWhenItsEndSaysItIsWhole(t *testing.T) {
+	ctx := t.Context()
+	at := assetsOf(t, "objects")
+	c := newCluster(t, 3, fixedCatalog{at})
+	cl, err := NewClient(c.caller, c.ids[0])
+	require.NoError(t, err)
+	t.Cleanup(func() { cl.Close() })
+
+	head := func(name string) *storagev2.PutRequest {
+		return &storagev2.PutRequest{Part: &storagev2.PutRequest_Head{Head: &storagev2.PutHead{At: wireAddress(at), Name: []byte(name)}}}
+	}
+	chunk := &storagev2.PutRequest{Part: &storagev2.PutRequest_Chunk{Chunk: []byte("some")}}
+	end := func(size uint64) *storagev2.PutRequest {
+		return &storagev2.PutRequest{Part: &storagev2.PutRequest_End{End: &storagev2.PutEnd{Size: size}}}
+	}
+	put := func(name string, parts ...*storagev2.PutRequest) error {
+		stream := cl.svc.Put(ctx)
+		for _, p := range append([]*storagev2.PutRequest{head(name)}, parts...) {
+			// A send the server stopped taking is its answer, which the close returns.
+			if stream.Send(p) != nil {
+				break
+			}
+		}
+		_, err := stream.CloseAndReceive()
+		return err
+	}
+
+	// A STREAM THAT DOES NOT END WITH ITS END is refused, and nothing of it is kept.
+	for name, parts := range map[string][]*storagev2.PutRequest{
+		"closed after a chunk":  {chunk},
+		"closed after its head": nil,
+		"ended short":           {chunk, end(5)},
+		"ended long":            {chunk, end(3)},
+		"sent on after its end": {chunk, end(4), chunk},
+		"headed twice":          {chunk, head("headed twice"), end(4)},
+	} {
+		err := put(name, parts...)
+		require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "%s: %v", name, err)
+		require.ErrorContains(t, err, ErrIncompletePut.Error(), name)
+		_, err = cl.Current(ctx, at, name)
+		require.ErrorIs(t, err, ErrNotFound, name)
+	}
+
+	// AN END THAT COUNTS WHAT CAME is the object, an empty one too.
+	require.NoError(t, put("whole", chunk, end(4)))
+	require.NoError(t, put("empty", end(0)))
+	whole, err := cl.Current(ctx, at, "whole")
+	require.NoError(t, err)
+	require.EqualValues(t, 4, whole.Record.Size)
+	empty, err := cl.Current(ctx, at, "empty")
+	require.NoError(t, err)
+	require.Zero(t, empty.Record.Size)
 }
 
 type erroring struct{}

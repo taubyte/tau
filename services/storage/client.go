@@ -39,10 +39,6 @@ func (c *Client) Close() error { c.conn.Close(); return nil }
 // Put stores content as the next version of name, and returns once the cloud's
 // barrier of nodes hold it.
 func (c *Client) Put(ctx context.Context, at Address, name string, o Object, content io.Reader) (Version, error) {
-	// A SOURCE THAT FAILS CANCELS THE STREAM rather than closing it: a closed
-	// stream is a whole object to the server, and it would keep the prefix.
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	stream := c.svc.Put(ctx)
 	head := &storagev2.PutRequest{Part: &storagev2.PutRequest_Head{Head: &storagev2.PutHead{
 		At: wireAddress(at), Name: []byte(name), ContentType: o.ContentType, Metadata: o.Metadata,
@@ -52,21 +48,27 @@ func (c *Client) Put(ctx context.Context, at Address, name string, o Object, con
 		return Version{}, c.closed(stream, err)
 	}
 	buf := make([]byte, chunkSize)
+	var size uint64
 	for {
 		n, err := content.Read(buf)
 		if n > 0 {
 			if serr := stream.Send(&storagev2.PutRequest{Part: &storagev2.PutRequest_Chunk{Chunk: buf[:n]}}); serr != nil {
 				return Version{}, c.closed(stream, serr)
 			}
+			size += uint64(n)
 		}
 		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
-			cancel()
+			// A SOURCE THAT FAILS closes the stream without its end, which the
+			// server refuses: only an end says the bytes before it are the object.
 			stream.CloseAndReceive()
 			return Version{}, err
 		}
+	}
+	if err := stream.Send(&storagev2.PutRequest{Part: &storagev2.PutRequest_End{End: &storagev2.PutEnd{Size: size}}}); err != nil {
+		return Version{}, c.closed(stream, err)
 	}
 	res, err := stream.CloseAndReceive()
 	if err != nil {

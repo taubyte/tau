@@ -62,10 +62,19 @@ message PutHead {
   uint64 expire_ms = 6;
 }
 
+// PutEnd says the bytes before it are the whole object. It is the last message
+// of a Put: a stream that closes without it is a put that failed, and nothing of
+// it is kept.
+message PutEnd {
+  // size is how many bytes the chunks carried.
+  uint64 size = 1;
+}
+
 message PutRequest {
   oneof part {
     PutHead head = 1;
     bytes chunk = 2;
+    PutEnd end = 3;
   }
 }
 
