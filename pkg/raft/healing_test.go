@@ -1396,9 +1396,10 @@ func TestHealing_AListedMemberOfAnotherFormationIsTaken(t *testing.T) {
 	const namespace = "listed-elsewhere"
 	probeEvery(t, 50*time.Millisecond)
 	// OURS IS A FORMATION IN THE LOWER HALF, and the other one above it, so ours
-	// takes it: drawn at random, either is redrawn until it is.
+	// takes it: drawn at random, either is redrawn until it is. Each draw is a coin,
+	// so forty of them all miss once in 2^40; ten missed once in a thousand runs.
 	var leader *cluster
-	for range 10 {
+	for range 40 {
 		ours := joinedGroup(t, namespace, sameStore, 2)
 		candidate := leaderOf(t, ours...).(*cluster)
 		if candidate.current().raft.Formation()[0] < 0x80 {
@@ -1409,7 +1410,7 @@ func TestHealing_AListedMemberOfAnotherFormationIsTaken(t *testing.T) {
 			require.NoError(t, cl.Close())
 		}
 	}
-	require.NotNil(t, leader, "no formation fell in the lower half in ten draws")
+	require.NotNil(t, leader, "no formation fell in the lower half in forty draws")
 	require.NoError(t, leader.Set("from-a", []byte("a"), time.Second))
 
 	var other *cluster
