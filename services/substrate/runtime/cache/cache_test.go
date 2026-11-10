@@ -15,6 +15,7 @@ import (
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/core/vm"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/pkg/config"
 	http "github.com/taubyte/tau/pkg/http"
 	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
@@ -2193,3 +2194,5 @@ func TestCacheWithMultipleMatchIndices(t *testing.T) {
 		t.Fatal("Expected high match serviceable")
 	}
 }
+
+func (m *mockServiceComponent) Caps(string) config.Caps { return config.Caps{} }
