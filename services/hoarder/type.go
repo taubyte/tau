@@ -27,6 +27,7 @@ type Service struct {
 	ldr         *loader
 	stashClient hoarderIface.Client
 	kvStream    *streamClient.Client
+	stopLocal   func() // withdraws this hoarder from in-process clients
 
 	// membership (heartbeat controller — see membership.go)
 	membersLock sync.RWMutex

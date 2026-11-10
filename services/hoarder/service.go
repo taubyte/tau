@@ -9,6 +9,8 @@ import (
 	tnsApi "github.com/taubyte/tau/clients/p2p/tns"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	streamClient "github.com/taubyte/tau/p2p/streams/client"
+	"github.com/taubyte/tau/p2p/streams/command"
+	cr "github.com/taubyte/tau/p2p/streams/command/response"
 	streams "github.com/taubyte/tau/p2p/streams/service"
 	tauConfig "github.com/taubyte/tau/pkg/config"
 	"github.com/taubyte/tau/pkg/kvdb"
@@ -87,6 +89,10 @@ func New(ctx context.Context, cfg tauConfig.Config) (service hoarderIface.Servic
 	s.loopsWG.Add(1)
 	go func() { defer s.loopsWG.Done(); s.assetSweepLoop(loopCtx) }()
 
+	s.stopLocal = hoarderClient.ServeLocal(s.node.ID(), func(ctx context.Context, body command.Body) (cr.Response, error) {
+		return s.kvdbHandler(ctx, nil, body)
+	})
+
 	service = s
 	return
 }
@@ -94,6 +100,10 @@ func New(ctx context.Context, cfg tauConfig.Config) (service hoarderIface.Servic
 func (srv *Service) Close() error {
 	logger.Info("Closing", protocolCommon.Hoarder)
 	defer logger.Info(protocolCommon.Hoarder, "closed")
+
+	if srv.stopLocal != nil {
+		srv.stopLocal()
+	}
 
 	// Stop membership + reconcile first so they don't touch state we're tearing
 	// down.
