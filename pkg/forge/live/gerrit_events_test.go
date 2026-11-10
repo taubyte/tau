@@ -26,7 +26,7 @@ import (
 	"github.com/taubyte/tau/pkg/git/gittest"
 	"github.com/taubyte/tau/pkg/git/repokey"
 	plmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/plm/v2"
-	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/auth/projects"
 	"github.com/taubyte/tau/services/plm/ingress"
 	"github.com/taubyte/tau/services/plm/ingress/forgeauth"
 )
@@ -245,7 +245,7 @@ func (noHooks) Hook(context.Context, string) (ingress.Hook, error) {
 
 type noProjects struct{}
 
-func (noProjects) Role(context.Context, string, string) (register.Role, error) {
+func (noProjects) Role(context.Context, string, string) (projects.Role, error) {
 	return "", errors.New("unused")
 }
 
