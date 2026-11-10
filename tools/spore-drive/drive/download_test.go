@@ -1,75 +1,38 @@
 package drive
 
 import (
-	"bytes"
-	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/h2non/filetype"
-	"github.com/jarcoal/httpmock"
 	"gotest.tools/v3/assert"
-
-	"archive/tar"
-	"compress/gzip"
 )
 
 func TestDownload(t *testing.T) {
-	arch := "amd64"
+	elf := append([]byte{0x7f, 0x45, 0x4c, 0x46}, make([]byte, 1024)...)
+	r := serveRelease(t, elf)
 
-	fakeTau := bytes.NewBuffer([]byte{0x7f, 0x45, 0x4c, 0x46})
-	for i := 0; i < 1024; i++ {
-		fakeTau.WriteByte(0x00)
-	}
-
-	var tarGzBuf bytes.Buffer
-
-	gzWriter := gzip.NewWriter(&tarGzBuf)
-	defer gzWriter.Close()
-
-	tarWriter := tar.NewWriter(gzWriter)
-	defer tarWriter.Close()
-
-	tarHeader := &tar.Header{
-		Name: "taud",
-		Mode: 0600,
-		Size: int64(fakeTau.Len()),
-	}
-	err := tarWriter.WriteHeader(tarHeader)
+	version, err := r.latestVersion()
 	assert.NilError(t, err)
+	assert.Equal(t, version, "1.2.3")
 
-	_, err = tarWriter.Write(fakeTau.Bytes())
+	tauBin, err := r.tau(version, "x86_64")
 	assert.NilError(t, err)
-
-	err = tarWriter.Close()
+	kind, err := filetype.Match(tauBin[:512])
 	assert.NilError(t, err)
-	err = gzWriter.Close()
-	assert.NilError(t, err)
+	assert.Equal(t, kind.Extension, "elf")
+}
 
-	httpmock.Activate()
-	defer httpmock.DeactivateAndReset()
+// A RELEASE THAT NAMES NO VERSION is refused, not indexed into.
+func TestALatestReleaseWithNoVersionIsRefused(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"tag_name":""}`))
+	}))
+	t.Cleanup(srv.Close)
 
-	version := "1.2.3"
-	asset := fmt.Sprintf("tau_%s_linux_%s.tar.gz", version, arch)
-
-	httpmock.RegisterResponder("GET", "https://api.github.com/repos/taubyte/tau/releases/latest",
-		httpmock.NewStringResponder(200, "{\"tag_name\": \"v"+version+"\"}"))
-
-	httpmock.RegisterResponder("GET", fmt.Sprintf("https://github.com/taubyte/tau/releases/download/v%s/%s", version, asset),
-		httpmock.NewBytesResponder(200, tarGzBuf.Bytes()))
-
-	r, err := published.latestVersion()
-	assert.NilError(t, err)
-	assert.Equal(t, r, version)
-
-	tauBin, err := published.tau(r, arch)
-	assert.NilError(t, err)
-
-	tauBinType, err := filetype.Match(tauBin[:512])
-	assert.NilError(t, err)
-	assert.Equal(t, tauBinType.Extension, "elf")
-
-	info := httpmock.GetCallCountInfo()
-	for url, count := range info {
-		t.Logf("Mocked %s called %d time(s)", url, count)
-	}
+	_, err := releases{latest: srv.URL}.latestVersion()
+	assert.ErrorContains(t, err, "names no version")
+	assert.Equal(t, normalizeVersion(""), "")
+	assert.Equal(t, normalizeVersion("v1.2.3"), "1.2.3")
 }

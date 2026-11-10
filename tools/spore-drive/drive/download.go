@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
+	"strings"
 
 	"github.com/pkg/errors"
 )
@@ -48,15 +48,13 @@ func (r releases) latestVersion() (string, error) {
 		return "", fmt.Errorf("decode failed with: %s", err)
 	}
 
+	if latest.Version == "" {
+		return "", errors.New("the latest release names no version")
+	}
 	return normalizeVersion(latest.Version), nil
 }
 
-func normalizeVersion(version string) string {
-	if version[0] == 'v' {
-		return version[1:]
-	}
-	return version
-}
+func normalizeVersion(version string) string { return strings.TrimPrefix(version, "v") }
 
 func (r releases) tau(version, arch string) ([]byte, error) {
 	version = normalizeVersion(version)
@@ -66,7 +64,6 @@ func (r releases) tau(version, arch string) ([]byte, error) {
 	}
 
 	asset := fmt.Sprintf("tau_%s_linux_%s.tar.gz", version, arch)
-	defer os.Remove(asset)
 
 	downloadUrl := fmt.Sprintf("%s/v%s/%s", r.download, version, asset)
 	tauBin, err := httpDownload(downloadUrl)

@@ -36,7 +36,6 @@ func tarball(t *testing.T, name string, content []byte) []byte {
 	return buf.Bytes()
 }
 
-// releases serves a latest-release answer and one release asset, as GitHub does.
 // fromReleases has a spore-drive download from r.
 func fromReleases(r releases) Option {
 	return func(s Spore) error {
@@ -45,10 +44,16 @@ func fromReleases(r releases) Option {
 	}
 }
 
-// serveReleases publishes a release of tau, and is where it is.
+// serveReleases publishes a release of tau, as GitHub does, and is where it is.
 func serveReleases(t *testing.T) releases {
 	t.Helper()
-	asset := tarball(t, "taud", []byte("tau binary"))
+	return serveRelease(t, []byte("tau binary"))
+}
+
+// serveRelease publishes v1.2.3 of tau with binary as its taud.
+func serveRelease(t *testing.T, binary []byte) releases {
+	t.Helper()
+	asset := tarball(t, "taud", binary)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/latest":
