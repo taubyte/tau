@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"testing"
 
-	"github.com/taubyte/go-sdk/errno"
 	dbIface "github.com/taubyte/tau/core/services/substrate/components/database"
 	"github.com/taubyte/tau/core/vm"
 	"github.com/taubyte/tau/pkg/vm-low-orbit/helpers"
@@ -75,8 +74,9 @@ const (
 )
 
 // A value that grows between the size step and the data step must not be
-// written past the buffer the guest sized from the first step.
-func TestDataStepRefusesValueThatGrew(t *testing.T) {
+// written past the buffer the guest sized from the first step: the data step
+// writes what the size step read.
+func TestDataStepWritesWhatTheSizeStepReadWhenTheValueGrew(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		size, data func(*Factory, vm.Module, uint32) uint32
@@ -131,8 +131,8 @@ func TestDataStepRefusesValueThatGrew(t *testing.T) {
 					t.Fatalf("byte %d past the %d-byte buffer was overwritten", i-dataPtr-n, n)
 				}
 			}
-			if errno.Error(rc) != errno.ErrorSizeMismatch {
-				t.Fatalf("want ErrorSizeMismatch, got errno %d", rc)
+			if rc != 0 {
+				t.Fatalf("data step: errno %d", rc)
 			}
 
 			// Asking again works.

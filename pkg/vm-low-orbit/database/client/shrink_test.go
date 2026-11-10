@@ -5,14 +5,14 @@ import (
 	"encoding/binary"
 	"testing"
 
-	"github.com/taubyte/go-sdk/errno"
 	"github.com/taubyte/tau/core/vm"
 	"github.com/taubyte/tau/pkg/vm-low-orbit/helpers"
 )
 
-// A value that shrinks between the size step and the data step is refused too:
-// written short, the guest would read the rest of its buffer as zero bytes.
-func TestDataStepRefusesValueThatShrank(t *testing.T) {
+// A value that shrinks between the size step and the data step must not leave
+// zero bytes at the end of the guest's buffer: the data step writes what the
+// size step read.
+func TestDataStepWritesWhatTheSizeStepReadWhenTheValueShrank(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		size, data func(*Factory, vm.Module, uint32) uint32
@@ -42,8 +42,11 @@ func TestDataStepRefusesValueThatShrank(t *testing.T) {
 			kv.m["k"] = []byte("hi") // another request shrinks the value
 			delete(kv.m, "other")    // and the key list
 
-			if rc := tc.data(f, mod, id); errno.Error(rc) != errno.ErrorSizeMismatch {
-				t.Fatalf("want ErrorSizeMismatch, got errno %d", rc)
+			if rc := tc.data(f, mod, id); rc != 0 {
+				t.Fatalf("data step: errno %d", rc)
+			}
+			if tc.name == "databaseGet" && string(mod.mem.buf[dataPtr:dataPtr+11]) != "hello world" {
+				t.Fatalf("got %q", mod.mem.buf[dataPtr:dataPtr+11])
 			}
 
 			// Asking again works.
