@@ -17,6 +17,8 @@ import (
 )
 
 func (s *Service) Lookup(matcher *common.MatchDefinition) (iface.Serviceable, error) {
+	defer trackLookup()()
+
 	servs, err := lookup.Lookup(s, matcher)
 	if err != nil {
 		return nil, fmt.Errorf("http serviceable lookup failed with: %w", err)
@@ -52,19 +54,28 @@ func (s *Service) handle(w goHttp.ResponseWriter, r *goHttp.Request) error {
 		return fmt.Errorf("looking up serviceable failed with: %w", err)
 	}
 
-	if !pick.IsProvisioned() {
-		pick, err = pick.Provision()
-		if err != nil {
-			return fmt.Errorf("provisioning serviceable failed with: %w", err)
+	run := func() error {
+		if !pick.IsProvisioned() {
+			pick, err = pick.Provision()
+			if err != nil {
+				return fmt.Errorf("provisioning serviceable failed with: %w", err)
+			}
 		}
+
+		if err := pick.Ready(); err != nil {
+			return counter.ErrorWrapper(pick, startTime, time.Time{}, fmt.Errorf("HTTP serviceable is not ready with: %w", err))
+		}
+
+		coldStartDoneTime, err := pick.Handle(w, r, matcher)
+		return counter.ErrorWrapper(pick, startTime, coldStartDoneTime, err)
 	}
 
-	if err := pick.Ready(); err != nil {
-		return counter.ErrorWrapper(pick, startTime, time.Time{}, fmt.Errorf("HTTP serviceable is not ready with: %w", err))
+	// Websites answer from memory in microseconds, and a flood of slow
+	// functions must not turn the site away, so only functions take a slot.
+	if _, isSite := pick.(iface.Website); isSite {
+		return run()
 	}
-
-	coldStartDoneTime, err := pick.Handle(w, r, matcher)
-	return counter.ErrorWrapper(pick, startTime, coldStartDoneTime, err)
+	return admitted(s.inflight, run)
 }
 
 var logger = log.Logger("tau.substrate.service.http")

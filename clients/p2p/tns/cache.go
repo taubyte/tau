@@ -3,6 +3,7 @@ package tns
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -39,6 +40,11 @@ func (c *cache) store(sub *subscription, gen uint64, key tns.Path, value interfa
 	}
 }
 
+// initialLifetime spreads the first expiry so keys cached together do not all miss at once.
+func initialLifetime() time.Duration {
+	return common.ClientKeyCacheLifetime + rand.N(common.ClientKeyCacheLifetime/5+1)
+}
+
 // listen subscribes to the key's invalidations before it is fetched, and
 // returns the subscription's generation at that moment for store.
 func (c *cache) listen(key tns.Path) (*subscription, uint64, error) {
@@ -66,7 +72,7 @@ func (c *cache) listen(key tns.Path) (*subscription, uint64, error) {
 		topic:    topic,
 		key:      make(chan string, 8),
 		keys:     make([]string, 0),
-		deadline: time.Now().Add(common.ClientKeyCacheLifetime),
+		deadline: time.Now().Add(initialLifetime()),
 	}
 	sub.ctx, sub.ctxC = context.WithCancel(c.node.Context())
 
