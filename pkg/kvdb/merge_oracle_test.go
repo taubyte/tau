@@ -17,23 +17,30 @@ import (
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
 )
 
-// Every snapshot merge is decided twice, through the tree diff and through an
-// oracle that decides every record either side holds; the two must write the
-// same bytes or the merge panics. Benchmarks run without it, as it reads what
-// the tree path exists not to.
-func installOracle() {
-	if flag.Lookup("test.bench").Value.String() != "" {
-		return
+// Every snapshot merge of a test's store is decided twice, through the tree diff
+// and through an oracle that decides every record either side holds; the two
+// must write the same bytes or the merge panics. Benchmarks run without it, as it
+// reads what the tree path exists not to.
+type snapshotOracle struct{}
+
+func (snapshotOracle) checkSnapshot(ctx context.Context, store *Datastore, c cid.Cid, root *pb.Delta, s *snapState, p *snapshotMerge) error {
+	if err := againstOracle(ctx, store, c, root, s, p); err != nil {
+		// A panic unwinding through a test's deferred Close waits on the
+		// lock this merge holds, and is never printed.
+		fmt.Fprintln(os.Stderr, err)
+		panic(err)
 	}
-	checkSnapshot = func(ctx context.Context, store *Datastore, c cid.Cid, root *pb.Delta, s *snapState, p *snapshotMerge) error {
-		if err := againstOracle(ctx, store, c, root, s, p); err != nil {
-			// A panic unwinding through a test's deferred Close waits on the
-			// lock this merge holds, and is never printed.
-			fmt.Fprintln(os.Stderr, err)
-			panic(err)
-		}
-		return nil
+	return nil
+}
+
+// testOptions are the options a test's store starts from: the defaults, with the
+// oracle unless benchmarking.
+func testOptions() *Options {
+	o := DefaultOptions()
+	if flag.Lookup("test.bench").Value.String() == "" {
+		o.checks = snapshotOracle{}
 	}
+	return o
 }
 
 var oracleChecks atomic.Int64

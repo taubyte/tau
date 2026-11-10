@@ -72,7 +72,7 @@ func TestARebaseDoesNotWaitOnAVanishedJudge(t *testing.T) {
 		rDag := &hangingDAG{newFetchThrough()}
 		rDag.setRemotes(pDag.DAGService)
 		in := &chanBroadcaster{in: make(chan []byte, 3)}
-		opts := replicaOptions(DefaultOptions(), "r: ")
+		opts := replicaOptions(testOptions(), "r: ")
 		opts.RebroadcastInterval = time.Hour
 		opts.DeliveryBound = opts.DAGSyncerTimeout + opts.RebroadcastInterval
 		opts.RepairInterval = 0
@@ -136,7 +136,7 @@ func TestARebaseWritesNoSnapshotBeforeItHasWalkedTheJudgesState(t *testing.T) {
 			t.Fatal(err)
 		}
 		in := &chanBroadcaster{in: make(chan []byte, 1)}
-		opts := replicaOptions(DefaultOptions(), "r: ")
+		opts := replicaOptions(testOptions(), "r: ")
 		// A maintenance pass, and no gap, while a fetch waits out its
 		// deadline.
 		opts.RebroadcastInterval = opts.DAGSyncerTimeout * 2 / 3

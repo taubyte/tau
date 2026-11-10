@@ -14,9 +14,6 @@ import (
 
 func TestAPutAllocations(t *testing.T) {
 	ctx := context.Background()
-	check := checkSnapshot
-	checkSnapshot = nil
-	defer func() { checkSnapshot = check }()
 	r := warmPebble(t, 4000)
 	keys := make([]ds.Key, 4000)
 	values := make([][]byte, 4000)

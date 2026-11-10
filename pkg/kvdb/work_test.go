@@ -179,6 +179,8 @@ func warmReplicaOn(t testing.TB, n int, st ds.Datastore, dag ipld.DAGService) *D
 	o.CompactAfterBlocks = 0
 	o.manual = true
 	o.Logger = DefaultOptions().Logger
+	// What a warm store measures is its own work, which the oracle would add to.
+	o.checks = nil
 	r, err := NewDatastore(st, ds.NewKey("warm"), dag, &nullBroadcaster{}, o)
 	if err != nil {
 		t.Fatal(err)
@@ -216,9 +218,6 @@ func warmValue(i, round int) []byte {
 
 func TestCompactionWorkIsBounded(t *testing.T) {
 	ctx := context.Background()
-	check := checkSnapshot
-	checkSnapshot = nil
-	defer func() { checkSnapshot = check }()
 	const changes = 64
 	var compactions []work
 	for _, n := range []int{1000, 8000} {
@@ -271,9 +270,6 @@ func benchCompact(b *testing.B, n, changes int) {
 }
 
 func BenchmarkHotCompact(b *testing.B) {
-	check := checkSnapshot
-	checkSnapshot = nil
-	defer func() { checkSnapshot = check }()
 	for _, changes := range []int{1, 32} {
 		b.Run(fmt.Sprintf("changes=%d", changes), func(b *testing.B) { benchCompact(b, 4000, changes) })
 	}
@@ -281,9 +277,6 @@ func BenchmarkHotCompact(b *testing.B) {
 
 func TestCompactionAllocs(t *testing.T) {
 	ctx := context.Background()
-	check := checkSnapshot
-	checkSnapshot = nil
-	defer func() { checkSnapshot = check }()
 	r, _ := warmReplica(t, 4000)
 	round := 0
 	const changes = 32
@@ -311,9 +304,6 @@ func TestCompactionAllocs(t *testing.T) {
 
 func BenchmarkHotPut(b *testing.B) {
 	ctx := context.Background()
-	check := checkSnapshot
-	checkSnapshot = nil
-	defer func() { checkSnapshot = check }()
 	r := warmPebble(b, 4000)
 	keys := make([]ds.Key, 4000)
 	values := make([][]byte, 4000)

@@ -499,7 +499,7 @@ func TestCRDTPrintDAG(t *testing.T) {
 func TestCRDTBatch(t *testing.T) {
 	ctx := context.Background()
 
-	opts := DefaultOptions()
+	opts := testOptions()
 	opts.MaxBatchDeltaSize = 500 // bytes
 
 	replicas, closeReplicas := makeReplicas(t, opts)
@@ -563,7 +563,7 @@ func TestCRDTBatch(t *testing.T) {
 func TestCRDTNamespaceClash(t *testing.T) {
 	ctx := context.Background()
 
-	opts := DefaultOptions()
+	opts := testOptions()
 	replicas, closeReplicas := makeReplicas(t, opts)
 	defer closeReplicas()
 
@@ -755,7 +755,7 @@ func (mb *memoryBroadcaster) Last() []byte {
 }
 
 func TestCRDTBatchBroadcast(t *testing.T) {
-	opts := DefaultOptions()
+	opts := testOptions()
 	opts.BroadcastBatchDelay = 250 * time.Millisecond
 
 	bcaster, cancel := newBroadcasters(t, 1)
@@ -806,8 +806,8 @@ func makeNReplicasNoBcast(t testing.TB, n int, opts *Options) ([]*Datastore, fun
 
 func openTestStore(t testing.TB, name string, mapDs ds.Datastore, dagServ ipld.DAGService, repair time.Duration) *Datastore {
 	t.Helper()
-	opts := DefaultOptions()
-	opts.Logger = &testLogger{name: name + ": ", l: DefaultOptions().Logger}
+	opts := testOptions()
+	opts.Logger = &testLogger{name: name + ": ", l: testOptions().Logger}
 	opts.ReplicaID = []byte(name)
 	opts.RepairInterval = repair
 	opts.RebroadcastInterval = time.Hour

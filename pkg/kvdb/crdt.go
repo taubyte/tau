@@ -130,6 +130,8 @@ type Options struct {
 	// incarnations is where the node remembers the incarnations of its closed
 	// stores.
 	incarnations *incarnationRegistry
+	// checks is shown every snapshot merge before it commits: a test's.
+	checks snapshotChecker
 	// treeCache is the tree-node cache budget in bytes; 0 for treeCacheBytes.
 	treeCache int
 }

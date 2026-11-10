@@ -884,8 +884,8 @@ func (store *Datastore) mergeSnapshot(ctx context.Context, c cid.Cid, root *pb.D
 		return nil, nil, err
 	}
 	defer p.m.t.endReads()
-	if checkSnapshot != nil {
-		if err := checkSnapshot(ctx, store, c, root, s, p); err != nil {
+	if checks := store.opts.checks; checks != nil {
+		if err := checks.checkSnapshot(ctx, store, c, root, s, p); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -931,8 +931,10 @@ func (store *Datastore) mergeSnapshot(ctx context.Context, c cid.Cid, root *pb.D
 	return p.walk, s.cc, nil
 }
 
-// checkSnapshot is a test hook shown every snapshot merge before it commits.
-var checkSnapshot func(ctx context.Context, store *Datastore, c cid.Cid, root *pb.Delta, s *snapState, p *snapshotMerge) error
+// snapshotChecker is shown every snapshot merge before it commits.
+type snapshotChecker interface {
+	checkSnapshot(ctx context.Context, store *Datastore, c cid.Cid, root *pb.Delta, s *snapState, p *snapshotMerge) error
+}
 
 // A snapshotMerge is decided and not yet committed: its writes, the parents to
 // walk, whether it leaves a state other than the snapshot's, and the journal

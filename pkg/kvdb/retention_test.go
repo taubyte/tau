@@ -38,7 +38,7 @@ func TestARegionRetentionADatabaseCannotHoldFallsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if got := ttlOf(t, db); got != DefaultOptions().Retention {
+	if got := ttlOf(t, db); got != testOptions().Retention {
 		t.Fatalf("a database that cannot hold the region's T writes under %s", got)
 	}
 }
@@ -55,7 +55,7 @@ func TestAnOpenDatabaseMovesToANewT(t *testing.T) {
 	if err := db.CanRetain(72 * time.Hour); err != nil {
 		t.Fatal(err)
 	}
-	if got := ttlOf(t, db); got != DefaultOptions().Retention {
+	if got := ttlOf(t, db); got != testOptions().Retention {
 		t.Fatalf("asking changed T to %s", got)
 	}
 	if err := db.SetRetention(72 * time.Hour); err != nil {

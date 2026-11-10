@@ -100,9 +100,6 @@ func (d *gcCountedDAG) RemoveMany(ctx context.Context, cids []cid.Cid) error {
 
 func TestCollectionWorkIsWhatChanged(t *testing.T) {
 	ctx := context.Background()
-	check := checkSnapshot
-	checkSnapshot = nil
-	defer func() { checkSnapshot = check }()
 	const changes = 64
 	for _, n := range []int{1000, 8000} {
 		c := &gcCounter{ns: "/warm"}
@@ -110,6 +107,7 @@ func TestCollectionWorkIsWhatChanged(t *testing.T) {
 		o.CompactAfterBlocks = 0
 		o.manual = true
 		o.Logger = DefaultOptions().Logger
+		o.checks = nil
 		r, err := NewDatastore(&gcCountedStore{Datastore: newSortedStore(), c: c}, ds.NewKey("warm"),
 			&gcCountedDAG{DAGService: newFetchThrough(), c: c}, &nullBroadcaster{}, o)
 		if err != nil {

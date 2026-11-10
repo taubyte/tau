@@ -11,11 +11,10 @@ import (
 
 func TestAMergeReadsItsBaseFromTheCacheOfTreeNodes(t *testing.T) {
 	// The oracle reads every record of every merge.
-	check := checkSnapshot
-	checkSnapshot = nil
-	defer func() { checkSnapshot = check }()
+	unchecked := noAutoCompact()
+	unchecked.checks = nil
 	ctx := context.Background()
-	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 2, noAutoCompact())
+	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 2, unchecked)
 	defer done()
 	a, b := replicas[0], replicas[1]
 	seedKeys(t, a, 3000, "k")

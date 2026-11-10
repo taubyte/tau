@@ -19,7 +19,7 @@ func TestDatastoreSuite(t *testing.T) {
 	defer func() {
 		numReplicas = numReplicasOld
 	}()
-	opts := DefaultOptions()
+	opts := testOptions()
 	opts.MaxBatchDeltaSize = 200 * 1024 * 1024 // 200 MB
 	replicas, closeReplicas := makeReplicas(t, opts)
 	defer closeReplicas()

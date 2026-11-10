@@ -508,7 +508,7 @@ func BenchmarkSnapshotSteady(b *testing.B) {
 		b.Run(fmt.Sprintf("keys=%d", n), func(b *testing.B) {
 			ctx := context.Background()
 			o := newSimTime().options(0)
-			o.CompactAfterBlocks = DefaultOptions().CompactAfterBlocks
+			o.CompactAfterBlocks = testOptions().CompactAfterBlocks
 			writes := 3 * max(o.CompactAfterBlocks, n)
 			r := newSnapNode(b, "a", o)
 			w := newSnapWorkload(n, 1)

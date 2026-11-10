@@ -38,7 +38,6 @@ import (
 func TestMain(m *testing.M) {
 	otel.SetTracerProvider(noop.NewTracerProvider())
 	flag.Parse()
-	installOracle()
 	os.Exit(m.Run())
 }
 
@@ -179,12 +178,12 @@ func from(dagsyncs []*fetchThroughDAGSvc, r, src int) {
 }
 
 func replicaOptions(opts *Options, name string) *Options {
-	o := DefaultOptions()
+	o := testOptions()
 	if opts != nil {
 		cp := *opts
 		o = &cp
 	}
-	o.Logger = &testLogger{name: name, l: DefaultOptions().Logger}
+	o.Logger = &testLogger{name: name, l: testOptions().Logger}
 	o.DAGSyncerTimeout = time.Second
 	if len(o.ReplicaID) == 0 {
 		o.ReplicaID = []byte(name)

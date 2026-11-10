@@ -42,7 +42,7 @@ func TestOptionsVerify(t *testing.T) {
 		"margin":      func(o *Options) { o.Margin = o.minMargin() - 1 },
 		"retention":   func(o *Options) { o.Retention = retentionFactor*o.margin() - 1 },
 	} {
-		o := DefaultOptions()
+		o := testOptions()
 		mutate(o)
 		if err := o.verify(); err == nil {
 			t.Errorf("%s: invalid options verified", name)
@@ -51,10 +51,10 @@ func TestOptionsVerify(t *testing.T) {
 			t.Errorf("%s: a store opened with invalid options", name)
 		}
 	}
-	if err := DefaultOptions().verify(); err != nil {
+	if err := testOptions().verify(); err != nil {
 		t.Fatal(err)
 	}
-	o := DefaultOptions()
+	o := testOptions()
 	o.Margin = 2 * o.minMargin()
 	o.Retention = retentionFactor * o.Margin
 	if err := o.verify(); err != nil {
@@ -140,7 +140,7 @@ func TestDecodersRefuseGarbage(t *testing.T) {
 	} else if _, err := extractDelta(garbage); err == nil {
 		t.Error("extractDelta accepted garbage")
 	}
-	r := &Datastore{logger: DefaultOptions().Logger}
+	r := &Datastore{logger: testOptions().Logger}
 	if _, err := r.decodeBroadcast([]byte{0xff}); err == nil {
 		t.Error("decodeBroadcast accepted garbage")
 	}
@@ -295,7 +295,7 @@ func openOn(t *testing.T, store ds.Datastore, d ipld.DAGService, o *Options) (*D
 	if o == nil {
 		o = noAutoCompact()
 	}
-	o.Logger = &testLogger{name: "f: ", l: DefaultOptions().Logger}
+	o.Logger = &testLogger{name: "f: ", l: testOptions().Logger}
 	o.ReplicaID = []byte("f")
 	return NewDatastore(store, ds.NewKey("crdttest"), d, &nullBroadcaster{}, o)
 }
@@ -543,7 +543,7 @@ type errBroadcaster struct{ nullBroadcaster }
 func (errBroadcaster) Broadcast(context.Context, []byte) error { return errFault }
 
 func TestAStoreWithABroadcasterNeedsAReplicaID(t *testing.T) {
-	o := DefaultOptions()
+	o := testOptions()
 	if _, err := NewDatastore(dssync.MutexWrap(ds.NewMapDatastore()), ds.NewKey("x"), newFetchThrough(), &nullBroadcaster{}, o); err == nil {
 		t.Fatal("a store with a broadcaster opened without a ReplicaID")
 	}

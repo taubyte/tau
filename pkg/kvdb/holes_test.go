@@ -54,7 +54,7 @@ func want(t testing.TB, name string, r *Datastore, kv map[string]string) {
 }
 
 func noAutoCompact() *Options {
-	o := DefaultOptions()
+	o := testOptions()
 	o.CompactAfterBlocks = 0
 	return o
 }

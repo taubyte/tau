@@ -74,7 +74,7 @@ func TestStorageIsBoundedUnderChurn(t *testing.T) {
 		{"same key overwritten, three replicas", 3, func(int) string { return "k" }, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			opts := DefaultOptions()
+			opts := testOptions()
 			opts.CompactAfterBlocks = 16
 			replicas, dagsyncs, done := makeNReplicasSeparateStores(t, tc.replicas, opts)
 			defer done()

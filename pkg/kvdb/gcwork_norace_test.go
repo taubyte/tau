@@ -17,9 +17,6 @@ import (
 
 func TestARetirementAllocatesLittleBeyondItsDiffs(t *testing.T) {
 	ctx := context.Background()
-	check := checkSnapshot
-	checkSnapshot = nil
-	defer func() { checkSnapshot = check }()
 	for _, changes := range []int{1, 32, 256} {
 		r, _ := warmReplica(t, 4000)
 		old := stateOf(t, r)
