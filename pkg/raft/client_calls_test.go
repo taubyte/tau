@@ -554,6 +554,106 @@ func TestStream_AJoinWhoseLeaderStopsLeadingIsAddedByTheNext(t *testing.T) {
 	require.Contains(t, ids, joiner)
 }
 
+func TestStream_AJoinForwardedToALeaderThatClosedReachesTheNext(t *testing.T) {
+	const namespace = "stream-join-past-a-closed-leader"
+	// A member names its leader until an election timeout passes without it, two
+	// seconds here: long enough to ask it a join while it names one that closed.
+	steady := TimeoutConfig{
+		HeartbeatTimeout:   2 * time.Second,
+		ElectionTimeout:    2 * time.Second,
+		CommitTimeout:      50 * time.Millisecond,
+		LeaderLeaseTimeout: time.Second,
+		SnapshotInterval:   time.Minute,
+		SnapshotThreshold:  1000,
+	}
+	caller := newMockNode(t)
+	group := joinedGroup(t, namespace, sameStore, 4, WithTimeouts(steady))
+	connected(t, caller, group...)
+	cli, err := newInternalClient(caller, namespace, nil, quickRetry)
+	require.NoError(t, err)
+	defer cli.Close()
+
+	gone := leaderOf(t, group...)
+	var survivors []Cluster
+	for _, cl := range group {
+		if cl != gone {
+			survivors = append(survivors, cl)
+		}
+	}
+	asked := survivors[0]
+	require.NoError(t, gone.Close())
+	named, err := asked.Leader()
+	require.NoError(t, err)
+	require.Equal(t, idOf(gone), named, "the member stopped naming the closed leader before it was asked")
+
+	joiner := strangerID(t)
+	require.NoError(t, cli.JoinVoter(t.Context(), joiner, leaderWait, formationOf(asked), 0, idOf(asked)))
+	members, err := leaderOf(t, survivors...).Members()
+	require.NoError(t, err)
+	ids := make([]peer.ID, 0, len(members))
+	for _, m := range members {
+		ids = append(ids, m.ID)
+	}
+	require.Contains(t, ids, joiner)
+}
+
+func TestStream_AForwardFromTheLeaderItselfIsRefused(t *testing.T) {
+	cl, _ := callerOf(t, "forward-from-the-leader", sameStore)
+	s := &raftStreamService{cluster: cl.(*cluster)}
+	_, err := forwardToLeader(t.Context(), s, "set", func(context.Context, raftv2connect.RaftServiceClient) (*connect.Response[raftv2.SetResponse], error) {
+		t.Error("a leader forwarded to itself")
+		return nil, nil
+	})
+	require.ErrorIs(t, err, ErrNotLeader)
+}
+
+// A FORWARD IN FLIGHT WHEN ITS LEADER CHANGES MAY HAVE LANDED, and says so rather
+// than be sent again to the next.
+func TestStream_AForwardInFlightWhenTheLeaderChangesIsLeadershipLost(t *testing.T) {
+	// No member loses its leader on its own: the test moves the lead.
+	steady := TimeoutConfig{
+		HeartbeatTimeout:   time.Second,
+		ElectionTimeout:    time.Second,
+		CommitTimeout:      50 * time.Millisecond,
+		LeaderLeaseTimeout: 500 * time.Millisecond,
+		SnapshotInterval:   time.Minute,
+		SnapshotThreshold:  1000,
+	}
+	group := joinedGroup(t, "forward-in-flight", sameStore, 2, WithTimeouts(steady))
+	leader := leaderOf(t, group...)
+	follower := group[0]
+	if follower == leader {
+		follower = group[1]
+	}
+	g := follower.(*cluster).current().raft
+	observers := func() int {
+		g.mu.Lock()
+		defer g.mu.Unlock()
+		return len(g.observers)
+	}
+	before := observers()
+
+	s := &raftStreamService{cluster: follower.(*cluster)}
+	sent := make(chan struct{})
+	answered := make(chan error, 1)
+	go func() {
+		_, err := forwardToLeader(t.Context(), s, "set", func(ctx context.Context, _ raftv2connect.RaftServiceClient) (*connect.Response[raftv2.SetResponse], error) {
+			close(sent)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		})
+		answered <- err
+	}()
+	select {
+	case <-sent:
+	case err := <-answered:
+		t.Fatalf("the forward answered before it was sent: %v", err)
+	}
+	require.NoError(t, leader.(*cluster).current().raft.TransferLeadership(idOf(follower)))
+	require.ErrorIs(t, <-answered, ErrLeadershipLost)
+	require.Equal(t, before, observers(), "the forward kept watching the leader")
+}
+
 // A JOIN FROM A MEMBER OF ANOTHER FORMATION IS REFUSED: added, it would be a voter
 // that takes none of the group's messages.
 func TestStream_AJoinFromAnotherFormationIsRefused(t *testing.T) {

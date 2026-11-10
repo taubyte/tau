@@ -1130,6 +1130,13 @@ func (g *group) Observe(o groupObserver) {
 	g.mu.Unlock()
 }
 
+// Unobserve stops o hearing the group.
+func (g *group) Unobserve(o groupObserver) {
+	g.mu.Lock()
+	g.observers = slices.DeleteFunc(g.observers, func(x groupObserver) bool { return x == o })
+	g.mu.Unlock()
+}
+
 // Close stops the group on the engine, once what it is applying has applied; what
 // it kept stays on disk.
 func (g *group) Close() error {
