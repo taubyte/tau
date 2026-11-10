@@ -358,6 +358,32 @@ func (r *remoteKV) wrote(keys ...string) {
 	}
 }
 
+// holdsLocally reports whether a replica in this process certainly has the
+// write this response acknowledges: the hoarder that served it, or the co-owner
+// that took the K=2 copy before the ack.
+func holdsLocally(resp cr.Response) bool {
+	for _, key := range []string{hoarderSpecs.BodyServedBy, hoarderSpecs.BodyCopiedTo} {
+		pid, err := peerCore.Decode(maps.TryString(resp, key))
+		if err != nil {
+			continue
+		}
+		if _, ok := localHoarders.Load(pid); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// wroteAcked is wrote for a write that got a reply: when this process's replica
+// holds the write, a read of it there is both local and fresh, so the key needs
+// no window.
+func (r *remoteKV) wroteAcked(resp cr.Response, err error, keys ...string) {
+	if err == nil && holdsLocally(resp) {
+		return
+	}
+	r.wrote(keys...)
+}
+
 func (r *remoteKV) refreshReaders() {
 	peers, err := r.resolve()
 	if err != nil || len(peers) == 0 {
@@ -466,8 +492,8 @@ func (r *remoteKV) Get(ctx context.Context, key string) ([]byte, error) {
 }
 
 func (r *remoteKV) Put(ctx context.Context, key string, v []byte) error {
-	defer r.wrote(key)
 	resp, err := r.do(ctx, command.Body{hoarderSpecs.BodyKVOp: hoarderSpecs.KVPut, hoarderSpecs.BodyKey: key, hoarderSpecs.BodyValue: v})
+	r.wroteAcked(resp, err, key)
 	if err != nil {
 		return err
 	}
@@ -478,8 +504,8 @@ func (r *remoteKV) Put(ctx context.Context, key string, v []byte) error {
 // against concurrent writes there. Returns existed=true when the key was
 // already present (nothing written).
 func (r *remoteKV) PutNx(ctx context.Context, key string, v []byte) (bool, error) {
-	defer r.wrote(key)
 	resp, err := r.do(ctx, command.Body{hoarderSpecs.BodyKVOp: hoarderSpecs.KVPutNx, hoarderSpecs.BodyKey: key, hoarderSpecs.BodyValue: v})
+	r.wroteAcked(resp, err, key)
 	if err != nil {
 		return false, err
 	}
@@ -491,8 +517,8 @@ func (r *remoteKV) PutNx(ctx context.Context, key string, v []byte) (bool, error
 }
 
 func (r *remoteKV) Delete(ctx context.Context, key string) error {
-	defer r.wrote(key)
-	_, err := r.do(ctx, command.Body{hoarderSpecs.BodyKVOp: hoarderSpecs.KVDelete, hoarderSpecs.BodyKey: key})
+	resp, err := r.do(ctx, command.Body{hoarderSpecs.BodyKVOp: hoarderSpecs.KVDelete, hoarderSpecs.BodyKey: key})
+	r.wroteAcked(resp, err, key)
 	return err
 }
 
@@ -612,12 +638,12 @@ func (b *remoteBatch) Commit() error {
 		ops[i] = map[string]interface{}(o)
 		keys[i] = maps.TryString(o, hoarderSpecs.BodyKey)
 	}
-	defer b.kv.wrote(keys...)
 	body := command.Body{hoarderSpecs.BodyKVOp: hoarderSpecs.KVBatch, hoarderSpecs.BodyOps: ops}
 	if b.max > 0 {
 		body[hoarderSpecs.BodyMaxSize] = b.max
 	}
 	resp, err := b.kv.do(b.ctx, body)
+	b.kv.wroteAcked(resp, err, keys...)
 	if err != nil {
 		return err
 	}

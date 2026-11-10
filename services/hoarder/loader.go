@@ -31,13 +31,16 @@ type loader struct {
 	// this node. Locks live for the process — tying them to load/unload would
 	// let a racing writer hold a stale lock while a fresh one is handed out.
 	writeLocks map[string]*sync.Mutex
+	// commitQueues group an instance's concurrent batches into shared commits.
+	commitQueues map[string]*commitQueue
 }
 
 func newLoader() *loader {
 	return &loader{
-		loaded:     make(map[string]*loadedInstance),
-		claimed:    make(map[string]bool),
-		writeLocks: make(map[string]*sync.Mutex),
+		loaded:       make(map[string]*loadedInstance),
+		claimed:      make(map[string]bool),
+		writeLocks:   make(map[string]*sync.Mutex),
+		commitQueues: make(map[string]*commitQueue),
 	}
 }
 

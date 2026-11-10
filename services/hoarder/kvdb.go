@@ -204,8 +204,7 @@ func (srv *Service) kvPut(ctx context.Context, handle kvdb.KVDB, hash string, bo
 	if err != nil {
 		return nil, fmt.Errorf("put failed with: %w", err)
 	}
-	srv.replicateWrite(ctx, hash, body)
-	return cr.Response{}, nil
+	return acked(srv.replicateWrite(ctx, hash, body)), nil
 }
 
 // kvPutNx writes the key only if it is absent, atomically against concurrent
@@ -241,8 +240,7 @@ func (srv *Service) kvPutNx(ctx context.Context, handle kvdb.KVDB, hash string, 
 	}
 	// Replicated as putnx too: the co-owner nx-checks its own state, so a value
 	// it already holds through the normal path is never clobbered there either.
-	srv.replicateWrite(ctx, hash, body)
-	return cr.Response{}, nil
+	return acked(srv.replicateWrite(ctx, hash, body)), nil
 }
 
 func (srv *Service) kvDelete(ctx context.Context, handle kvdb.KVDB, hash string, body command.Body) (cr.Response, error) {
@@ -258,8 +256,7 @@ func (srv *Service) kvDelete(ctx context.Context, handle kvdb.KVDB, hash string,
 	if err != nil {
 		return nil, fmt.Errorf("delete failed with: %w", err)
 	}
-	srv.replicateWrite(ctx, hash, body)
-	return cr.Response{}, nil
+	return acked(srv.replicateWrite(ctx, hash, body)), nil
 }
 
 // replicateWrite is the K=2 ack barrier: after the local commit, synchronously
@@ -272,9 +269,9 @@ func (srv *Service) kvDelete(ctx context.Context, handle kvdb.KVDB, hash string,
 // genuinely no live co-claimant (fleet=1), or a co-claimant stays undialable past
 // the barrier window (see the loop). A push already carrying no-barrier is skipped
 // (it *is* the second copy).
-func (srv *Service) replicateWrite(ctx context.Context, hash string, body command.Body) {
+func (srv *Service) replicateWrite(ctx context.Context, hash string, body command.Body) string {
 	if nb, _ := maps.Bool(body, hoarderSpecs.BodyNoBarrier); nb {
-		return
+		return ""
 	}
 
 	self := srv.node.ID().String()
@@ -330,7 +327,7 @@ func (srv *Service) replicateWrite(ctx context.Context, hash string, body comman
 			}
 			resp, err := srv.kvStream.Send(hoarderSpecs.KVDBCommand, repl, pid)
 			if err == nil && maps.TryString(resp, hoarderSpecs.BodyCode) == "" {
-				return // a co-owner persisted it — K>=2 satisfied
+				return c // a co-owner persisted it — K>=2 satisfied
 			}
 		}
 
@@ -356,12 +353,21 @@ func (srv *Service) replicateWrite(ctx context.Context, hash string, body comman
 		}
 		select {
 		case <-ctx.Done():
-			return
+			return ""
 		case <-time.After(hoarderSpecs.BarrierRetryInterval):
 		}
 	}
 
 	logger.Warnf("write to %s acked under-replicated: %s", hash, reason)
+	return ""
+}
+
+// acked is the response of a write that got its K=2 copy on copiedTo.
+func acked(copiedTo string) cr.Response {
+	if copiedTo == "" {
+		return cr.Response{}
+	}
+	return cr.Response{hoarderSpecs.BodyCopiedTo: copiedTo}
 }
 
 func (srv *Service) kvList(ctx context.Context, handle kvdb.KVDB, body command.Body) (cr.Response, error) {
@@ -383,64 +389,63 @@ func (srv *Service) kvListRegex(ctx context.Context, handle kvdb.KVDB, body comm
 	return cr.Response{hoarderSpecs.BodyKeys: keys}, nil
 }
 
-// kvBatch applies a grouped list of put/delete ops through the kvdb's native
-// batch — preserving grouped semantics rather than replaying individual puts.
+// kvBatch queues a grouped list of put/delete ops for the instance's next
+// commit (see commit.go) and waits for it and its K=2 copy.
 func (srv *Service) kvBatch(ctx context.Context, handle kvdb.KVDB, hash string, body command.Body) (cr.Response, error) {
 	rawOps, ok := body[hoarderSpecs.BodyOps].([]interface{})
 	if !ok {
 		return nil, fmt.Errorf("missing or malformed ops")
 	}
-
-	// Build + commit under the instance write lock (local work only); the
-	// replication barrier runs after release.
-	mu := srv.writeLock(hash)
-	mu.Lock()
-	resp, err := srv.applyBatch(ctx, handle, srv.usageOf(hash), body, rawOps)
-	mu.Unlock()
-	if resp != nil || err != nil {
-		return resp, err
+	w := newGroupWrite(body, rawOps)
+	srv.enqueueWrite(handle, hash, w)
+	select {
+	case <-w.done:
+		return w.resp, w.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
-	srv.replicateWrite(ctx, hash, body)
-	return cr.Response{}, nil
 }
 
-// applyBatch builds and commits the grouped ops. Runs under the instance write
-// lock. A non-nil response is a typed refusal (over-capacity); (nil, nil) is
-// success. used is the instance's usage, kept up to date by every batch once
-// known, and checked against the optional BodyMaxSize.
-func (srv *Service) applyBatch(ctx context.Context, handle kvdb.KVDB, used *dbUsage, body command.Body, rawOps []interface{}) (cr.Response, error) {
+// batchOp is one validated write of a batch.
+type batchOp struct {
+	del   bool
+	key   string
+	value []byte
+}
+
+// checkBatch validates one batch and charges its quota, on top of the pending
+// bytes already accepted in this commit. Runs under the instance write lock. A
+// non-nil response is a typed refusal (over-capacity); on success it returns
+// the batch's ops and how much it adds to used, for the caller to add once the
+// commit lands.
+func (srv *Service) checkBatch(ctx context.Context, handle kvdb.KVDB, used *dbUsage, body command.Body, rawOps []interface{}, pending int64) ([]batchOp, int64, cr.Response, error) {
 	// Check every op before applying any: the batch shares one pending delta,
 	// so ops added before a bad one would be published by the next batch.
-	type batchOp struct {
-		del   bool
-		key   string
-		value []byte
-	}
 	ops := make([]batchOp, 0, len(rawOps))
 	for _, ro := range rawOps {
 		opMap := maps.SafeInterfaceToStringKeys(ro)
 		kvop, err := maps.String(opMap, hoarderSpecs.BodyKVOp)
 		if err != nil {
-			return nil, fmt.Errorf("batch op missing kvop: %w", err)
+			return nil, 0, nil, fmt.Errorf("batch op missing kvop: %w", err)
 		}
 		key, err := maps.String(opMap, hoarderSpecs.BodyKey)
 		if err != nil {
-			return nil, fmt.Errorf("batch op missing key: %w", err)
+			return nil, 0, nil, fmt.Errorf("batch op missing key: %w", err)
 		}
 		switch kvop {
 		case hoarderSpecs.KVPut:
 			value, err := maps.ByteArray(opMap, hoarderSpecs.BodyValue)
 			if err != nil {
-				return nil, fmt.Errorf("batch put missing value: %w", err)
+				return nil, 0, nil, fmt.Errorf("batch put missing value: %w", err)
 			}
 			if err := srv.admitWrite(maps.TryString(body, hoarderSpecs.BodyProject), len(value)); err != nil {
-				return cr.Response{hoarderSpecs.BodyCode: hoarderSpecs.CodeOverCapacity}, nil
+				return nil, 0, cr.Response{hoarderSpecs.BodyCode: hoarderSpecs.CodeOverCapacity}, nil
 			}
 			ops = append(ops, batchOp{key: key, value: value})
 		case hoarderSpecs.KVDelete:
 			ops = append(ops, batchOp{del: true, key: key})
 		default:
-			return nil, fmt.Errorf("unsupported batch op %q", kvop)
+			return nil, 0, nil, fmt.Errorf("unsupported batch op %q", kvop)
 		}
 	}
 
@@ -469,45 +474,23 @@ func (srv *Service) applyBatch(ctx context.Context, handle kvdb.KVDB, used *dbUs
 		fresh := !used.known
 		if fresh {
 			if err := used.scan(ctx, handle); err != nil {
-				return nil, err
+				return nil, 0, nil, err
 			}
 		}
-		if enforce && delta > 0 && used.bytes+delta > int64(max) {
+		if enforce && delta > 0 && used.bytes+pending+delta > int64(max) {
 			// Refuse only on this node's exact state: the in-memory count misses
 			// writes merged from other replicas.
 			if !fresh {
 				if err := used.scan(ctx, handle); err != nil {
-					return nil, err
+					return nil, 0, nil, err
 				}
 			}
-			if used.bytes+delta > int64(max) {
-				return cr.Response{hoarderSpecs.BodyCode: hoarderSpecs.CodeOverCapacity}, nil
+			if used.bytes+pending+delta > int64(max) {
+				return nil, 0, cr.Response{hoarderSpecs.BodyCode: hoarderSpecs.CodeOverCapacity}, nil
 			}
 		}
 	}
-
-	batch, err := handle.Batch(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("opening batch failed with: %w", err)
-	}
-	for _, op := range ops {
-		if op.del {
-			err = batch.Delete(op.key)
-		} else {
-			err = batch.Put(op.key, op.value)
-		}
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if err := batch.Commit(); err != nil {
-		return nil, fmt.Errorf("batch commit failed with: %w", err)
-	}
-	if used.known {
-		used.bytes += delta
-	}
-	return nil, nil
+	return ops, delta, nil, nil
 }
 
 func (srv *Service) kvSync(ctx context.Context, handle kvdb.KVDB, body command.Body) (cr.Response, error) {
