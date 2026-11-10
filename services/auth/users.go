@@ -330,15 +330,15 @@ func (s *Service) checkPassword(ctx context.Context, u user, pw string) error {
 	if u.Builtin {
 		phc, err := s.keys.vault.Get(ctx, AdminSecret)
 		if errors.Is(err, secrets.ErrNotSet) {
-			serviceLog.Warnf("admin login refused: the admin password has not been initialized in the secrets service (secret %q is not set)", AdminSecret)
+			s.logs().Warnf("admin login refused: the admin password has not been initialized in the secrets service (secret %q is not set)", AdminSecret)
 			return connect.NewError(connect.CodeNotFound, fmt.Errorf("auth: the admin has no password in the secrets service yet: %w", err))
 		}
 		if err != nil {
-			serviceLog.Errorf("admin login refused: reading secret %q from the secrets service: %s", AdminSecret, err)
+			s.logs().Errorf("admin login refused: reading secret %q from the secrets service: %s", AdminSecret, err)
 			return connect.NewError(connect.CodeUnavailable, fmt.Errorf("auth: the admin cannot sign in until the secrets service answers: %w", err))
 		}
 		if h, err = password.Parse(string(phc)); err != nil {
-			serviceLog.Errorf("admin login refused: secret %q in the secrets service is not a password hash; it is corrupted and must be reset", AdminSecret)
+			s.logs().Errorf("admin login refused: secret %q in the secrets service is not a password hash; it is corrupted and must be reset", AdminSecret)
 			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("auth: the admin's password in the secrets service is not a hash: %w", err))
 		}
 	} else {

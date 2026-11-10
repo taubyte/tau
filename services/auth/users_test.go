@@ -16,11 +16,10 @@ import (
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 )
 
-func observeLogs(t *testing.T) *observer.ObservedLogs {
+// observeLogs has s write where the test reads.
+func observeLogs(s *Service) *observer.ObservedLogs {
 	core, logs := observer.New(zapcore.DebugLevel)
-	prev := serviceLog
-	serviceLog = &logging.ZapEventLogger{SugaredLogger: *zap.New(core).Sugar()}
-	t.Cleanup(func() { serviceLog = prev })
+	s.log = &logging.ZapEventLogger{SugaredLogger: *zap.New(core).Sugar()}
 	return logs
 }
 
@@ -38,7 +37,7 @@ func requireOneLog(t *testing.T, logs *observer.ObservedLogs, level zapcore.Leve
 func TestTheAdminWaitsForItsPasswordInTheVault(t *testing.T) {
 	f := newFx(t)
 	ctx := t.Context()
-	logs := observeLogs(t)
+	logs := observeLogs(f.s)
 	phc := f.vault.m[AdminSecret]
 	delete(f.vault.m, AdminSecret)
 	_, err := f.sessions().Login(ctx, req(&authv2.LoginRequest{Name: "root", Password: f.adminP}, ""))

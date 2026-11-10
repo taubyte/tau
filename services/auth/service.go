@@ -28,6 +28,13 @@ import (
 
 var serviceLog = logging.Logger("tau.auth.service")
 
+func (s *Service) logs() *logging.ZapEventLogger {
+	if s.log != nil {
+		return s.log
+	}
+	return serviceLog
+}
+
 type Service struct {
 	host host.Host
 
@@ -60,6 +67,11 @@ type Service struct {
 	closeOnce sync.Once
 	closeErr  error
 	closed    atomic.Bool
+
+	// pollFor bounds one DevicePoll, and log is where the service writes: the
+	// package's when unset.
+	pollFor time.Duration
+	log     *logging.ZapEventLogger
 }
 
 type Option func(*Service) error

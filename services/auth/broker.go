@@ -51,7 +51,7 @@ const (
 )
 
 // pollFor bounds one DevicePoll; the client calls again while pending.
-var pollFor = 25 * time.Second
+const pollFor = 25 * time.Second
 
 type provider struct {
 	id     string
@@ -441,7 +441,11 @@ func (s *Service) devicePoll(ctx context.Context, as *principal, req *authv2.Dev
 	if err := s.withSecret(ctx, p); err != nil {
 		return nil, err
 	}
-	wait, cancel := context.WithTimeout(ctx, pollFor)
+	bound := s.pollFor
+	if bound == 0 {
+		bound = pollFor
+	}
+	wait, cancel := context.WithTimeout(ctx, bound)
 	defer cancel()
 	tok, err := p.oauth.DeviceAccessToken(s.oauthContext(wait), &oauth2.DeviceAuthResponse{
 		DeviceCode: req.GetDeviceCode(), Interval: row.Interval, Expiry: time.Now().Add(time.Duration(row.Expires - s.now().UnixNano())),

@@ -294,9 +294,8 @@ func TestDeviceSignIn(t *testing.T) {
 }
 
 func TestDevicePollPending(t *testing.T) {
-	defer func(d time.Duration) { pollFor = d }(pollFor)
-	pollFor = 1500 * time.Millisecond
 	f := newFx(t, func(c *Config) { c.SignUp = SignUpOpen })
+	f.s.pollFor = 1500 * time.Millisecond
 	start, err := f.sessions().DeviceStart(t.Context(), req(&authv2.DeviceStartRequest{Provider: testHost}, ""))
 	require.NoError(t, err)
 	poll, err := f.sessions().DevicePoll(t.Context(), req(&authv2.DevicePollRequest{Provider: testHost, DeviceCode: start.Msg.GetDeviceCode()}, ""))
