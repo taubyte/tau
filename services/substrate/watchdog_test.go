@@ -109,3 +109,11 @@ func TestStuckWatchdogRecoveryResets(t *testing.T) {
 		t.Fatal("count must reset when requests complete")
 	}
 }
+
+// A miss is a check of the same outstanding probe, so one slow lookup spends
+// the whole budget by itself; it must outlast the worst legitimate lookup.
+func TestWatchdogBudgetOutlastsASlowLookup(t *testing.T) {
+	if budget := watchdogDeadline + time.Duration(watchdogMisses-1)*watchdogInterval; budget < stuckAfter {
+		t.Fatalf("one probe outstanding for %s exits the node, below %s", budget, stuckAfter)
+	}
+}

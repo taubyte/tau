@@ -237,3 +237,42 @@ func TestNodePoolBudget(t *testing.T) {
 		t.Fatal("nodePoolBudgetFor default/floor/quarter wrong")
 	}
 }
+
+// Shutdown closes every pooled instance and gives its memory back to the node
+// budget; an instance returned after Shutdown is closed and not counted.
+func TestShutdownReleasesPooledMemory(t *testing.T) {
+	f := pooledFunction(t)
+	before := nodePooledMem.Load()
+	idle := <-f.availableInstances
+	f.availableInstances <- idle
+
+	rts := []*fakeRuntime{{size: vm.MemoryPageSize}, {size: vm.MemoryPageSize}}
+	for _, rt := range rts {
+		if err := (&instance{runtime: rt, parent: f}).Free(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := nodePooledMem.Load(); got != before+int64(2*vm.MemoryPageSize) {
+		t.Fatalf("nodePooledMem = %d, want %d", got, before+int64(2*vm.MemoryPageSize))
+	}
+
+	f.Shutdown()
+
+	if got := nodePooledMem.Load(); got != before {
+		t.Fatalf("nodePooledMem = %d after Shutdown, want %d", got, before)
+	}
+	if got := f.pooledMem.Load(); got != 0 {
+		t.Fatalf("pooledMem = %d after Shutdown", got)
+	}
+	if idle.(*instance).runtime.(*fakeRuntime).closed != 1 || rts[0].closed != 1 || rts[1].closed != 1 {
+		t.Fatal("Shutdown must close every pooled instance")
+	}
+
+	late := &fakeRuntime{size: vm.MemoryPageSize}
+	if err := (&instance{runtime: late, parent: f}).Free(); err != nil {
+		t.Fatal(err)
+	}
+	if late.closed != 1 || nodePooledMem.Load() != before {
+		t.Fatalf("an instance back after Shutdown must be closed and not counted, closed=%d", late.closed)
+	}
+}
