@@ -13,6 +13,7 @@ import (
 	"github.com/taubyte/go-sdk/errno"
 	dbIface "github.com/taubyte/tau/core/services/substrate/components/database"
 	common "github.com/taubyte/tau/core/vm"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -25,6 +26,9 @@ const (
 	maxOpenBatches = 8
 	// maxPatternLen bounds the regex of databaseListMatch.
 	maxPatternLen = 1024
+	// maxEntryReads is how many keys databaseListEntries reads at once: every
+	// read is a network call, and one at a time costs a round trip per key.
+	maxEntryReads = 16
 )
 
 // maxQueuedBatchBytes bounds what open batches hold on the node, across every
@@ -193,16 +197,34 @@ func (f *Factory) listEntries(ctx context.Context, database *Database, prefix st
 		return nil, errno.ErrorDatabaseListFailed
 	}
 
+	values := make([][]byte, len(keys))
+	found := make([]bool, len(keys))
+	var failed atomic.Uint32
+	var reads errgroup.Group
+	reads.SetLimit(maxEntryReads)
+	for i, key := range keys {
+		reads.Go(func() error {
+			value, err := database.Get(ctx, key)
+			switch {
+			case err == errno.ErrorDatabaseKeyNotFound:
+			case err != 0:
+				failed.CompareAndSwap(0, uint32(err))
+			default:
+				values[i], found[i] = value, true
+			}
+			return nil
+		})
+	}
+	reads.Wait()
+	if rc := failed.Load(); rc != 0 {
+		return nil, errno.Error(rc)
+	}
+
 	var encoded []byte
-	for _, key := range keys {
-		value, err := database.Get(ctx, key)
-		if err == errno.ErrorDatabaseKeyNotFound {
-			continue
+	for i, key := range keys {
+		if found[i] {
+			encoded = appendEntry(encoded, key, values[i])
 		}
-		if err != 0 {
-			return nil, err
-		}
-		encoded = appendEntry(encoded, key, value)
 	}
 
 	return encoded, 0
@@ -241,6 +263,10 @@ func (f *Factory) databaseListEntries(ctx context.Context, module common.Module,
 	prefix, err := f.ReadString(module, prefixPtr, prefixLen)
 	if err != 0 {
 		return uint32(err)
+	}
+
+	if rc, ok := f.WriteReported(module, entriesKey(databaseId, prefix), dataPtr); ok {
+		return uint32(rc)
 	}
 
 	encoded, err := f.listEntries(ctx, database, prefix)
@@ -325,7 +351,19 @@ func (f *Factory) databaseListMatch(ctx context.Context, module common.Module,
 	patternPtr, patternLen,
 	dataPtr uint32,
 ) uint32 {
-	prefix, pattern, keys, err := f.listMatch(ctx, module, databaseId, prefixPtr, prefixLen, patternPtr, patternLen)
+	prefix, err := f.ReadString(module, prefixPtr, prefixLen)
+	if err != 0 {
+		return uint32(err)
+	}
+	pattern, err := f.ReadString(module, patternPtr, patternLen)
+	if err != 0 {
+		return uint32(err)
+	}
+	if rc, ok := f.WriteReported(module, matchKey(databaseId, prefix, pattern), dataPtr); ok {
+		return uint32(rc)
+	}
+
+	_, _, keys, err := f.listMatch(ctx, module, databaseId, prefixPtr, prefixLen, patternPtr, patternLen)
 	if err != 0 {
 		return uint32(err)
 	}
@@ -403,6 +441,18 @@ func (f *Factory) databaseListPage(ctx context.Context, module common.Module,
 	limit,
 	dataPtr uint32,
 ) uint32 {
+	prefix, err := f.ReadString(module, prefixPtr, prefixLen)
+	if err != 0 {
+		return uint32(err)
+	}
+	cursor, err := f.ReadString(module, cursorPtr, cursorLen)
+	if err != 0 {
+		return uint32(err)
+	}
+	if rc, ok := f.WriteReported(module, pageKey(databaseId, prefix, cursor, limit), dataPtr); ok {
+		return uint32(rc)
+	}
+
 	key, page, err := f.listPage(ctx, module, databaseId, prefixPtr, prefixLen, cursorPtr, cursorLen, limit)
 	if err != 0 {
 		return uint32(err)

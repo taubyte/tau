@@ -35,6 +35,7 @@ type Methods interface {
 	WriteStringSlice(module common.Module, ptr uint32, value []string) errno.Error
 	WriteBytesSizeFor(module common.Module, key string, ptr uint32, data []byte) errno.Error
 	WriteBytesFor(module common.Module, key string, ptr uint32, value []byte) errno.Error
+	WriteReported(module common.Module, key string, ptr uint32) (errno.Error, bool)
 	WriteStringSliceSizeFor(module common.Module, key string, ptr uint32, value []string) errno.Error
 	WriteStringSliceFor(module common.Module, key string, ptr uint32, value []string) errno.Error
 	WriteUint32SliceSize(module common.Module, ptr uint32, value []uint32) errno.Error
@@ -63,6 +64,9 @@ type methods struct {
 
 	sizesLock sync.Mutex
 	sizes     map[string]uint32 // see sized.go
+	// values holds what the size step read, for its data step.
+	values      map[string][]byte
+	valuesBytes int
 }
 
 type ByteConvertible interface {

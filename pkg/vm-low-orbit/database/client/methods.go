@@ -44,6 +44,10 @@ func (f *Factory) databaseGet(ctx context.Context, module common.Module,
 		return uint32(err)
 	}
 
+	if rc, ok := f.WriteReported(module, getKey(databaseId, key), dataPtr); ok {
+		return uint32(rc)
+	}
+
 	data, err := database.Get(ctx, key)
 	if err != 0 {
 		return uint32(err)
@@ -155,6 +159,10 @@ func (f *Factory) databaseList(ctx context.Context, module common.Module,
 	_key, err := f.ReadString(module, keyPtr, keyLen)
 	if err != 0 {
 		return uint32(err)
+	}
+
+	if rc, ok := f.WriteReported(module, listKey(databaseId, _key), dataPtr); ok {
+		return uint32(rc)
 	}
 
 	keys, err0 := database.KV().List(ctx, _key)
