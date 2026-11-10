@@ -5,10 +5,19 @@ import (
 	"runtime/debug"
 )
 
+// LinkVersion and LinkCommit are set by -ldflags -X and win over build info.
+var LinkVersion, LinkCommit string
+
 const defaultVersion = "0.1"
 
 func init() {
 	Version, Commit = versionFromBuildInfo()
+	if LinkVersion != "" {
+		Version = LinkVersion
+	}
+	if LinkCommit != "" {
+		Commit = LinkCommit
+	}
 }
 
 // Version is the semantic version (from build info or default).

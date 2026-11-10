@@ -57,6 +57,11 @@ func newApp() *cli.App {
 		},
 		Commands: []*cli.Command{
 			buildInfoCommand(),
+			{
+				Name:   "version",
+				Usage:  "print version, commit and build date",
+				Action: func(c *cli.Context) error { cli.ShowVersion(c); return nil },
+			},
 			startCommand(),
 			configCommand(),
 			exportDataCommand(),

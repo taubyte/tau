@@ -216,3 +216,4 @@ pkg/spore-drive/clients/py/spore_drive/bin/
 tools/spore-drive/service/service
 
 .gstack/
+/bin/

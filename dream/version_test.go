@@ -14,3 +14,11 @@ func TestVersionFrom(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestLinkVersionWins(t *testing.T) {
+	LinkVersion, LinkCommit = "v9.9.9-fork.1", "abcdef1234"
+	defer func() { LinkVersion, LinkCommit = "", "" }()
+	if got := BuildVersion().String(); got != "dream v9.9.9-fork.1 (commit abcdef1)" {
+		t.Fatal(got)
+	}
+}

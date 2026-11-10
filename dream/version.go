@@ -11,8 +11,20 @@ type Version struct {
 	Commit  string `json:"commit"`
 }
 
+// LinkVersion and LinkCommit are set by -ldflags -X and win over build info.
+var LinkVersion, LinkCommit string
+
 // BuildVersion reads the version and commit Go embedded in the binary.
-func BuildVersion() Version { return versionFrom(debug.ReadBuildInfo()) }
+func BuildVersion() Version {
+	v := versionFrom(debug.ReadBuildInfo())
+	if LinkVersion != "" {
+		v.Version = LinkVersion
+	}
+	if LinkCommit != "" {
+		v.Commit = LinkCommit
+	}
+	return v
+}
 
 func versionFrom(info *debug.BuildInfo, ok bool) Version {
 	v := Version{Version: "unknown", Commit: "unknown"}
