@@ -62,29 +62,30 @@ func TestKeysAreTheirSegments(t *testing.T) {
 }
 
 func TestParsedSegmentsAreInterned(t *testing.T) {
+	var replicas internTable
 	d := dot{replica: "replica\x00\xff-interned", counter: 42}
 	seg := d.segment()
-	got, err := new(internTable).parseDotSegment(seg)
+	got, err := replicas.parseDotSegment(seg)
 	if err != nil || got != d {
 		t.Fatalf("parsed %v, %v", got, err)
 	}
 	if a := testing.AllocsPerRun(100, func() {
-		if _, err := new(internTable).parseDotSegment(seg); err != nil {
+		if _, err := replicas.parseDotSegment(seg); err != nil {
 			t.Fatal(err)
 		}
 	}); a != 0 {
 		t.Fatalf("parsing a dot segment: %.0f allocations", a)
 	}
 	p, v := d.toPB(), encodeDot(d)
-	if new(internTable).dotFromPB(p) != d {
+	if replicas.dotFromPB(p) != d {
 		t.Fatal("dot from its message")
 	}
-	if got, err := new(internTable).decodeDot(v); err != nil || got != d {
+	if got, err := replicas.decodeDot(v); err != nil || got != d {
 		t.Fatalf("dot from its value: %v, %v", got, err)
 	}
 	if a := testing.AllocsPerRun(100, func() {
-		new(internTable).dotFromPB(p)
-		if _, err := new(internTable).decodeDot(v); err != nil {
+		replicas.dotFromPB(p)
+		if _, err := replicas.decodeDot(v); err != nil {
 			t.Fatal(err)
 		}
 	}); a != 0 {
@@ -108,7 +109,7 @@ func TestParsedSegmentsAreInterned(t *testing.T) {
 	if _, err := parseKeySegment("k!!"); err == nil {
 		t.Fatal("a bad key segment parsed")
 	}
-	if _, err := new(internTable).parseDotSegment("r!!." + fmt.Sprintf("%020d", 1)); err == nil {
+	if _, err := replicas.parseDotSegment("r!!." + fmt.Sprintf("%020d", 1)); err == nil {
 		t.Fatal("a bad dot segment parsed")
 	}
 }

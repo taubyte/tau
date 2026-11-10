@@ -247,15 +247,15 @@ func TestSpecOpts(t *testing.T) {
 // was rewritten under the ones already running, which could read it empty.
 func TestARestrictedContainersResolverFileIsItsOwn(t *testing.T) {
 	host := filepath.Join(t.TempDir(), "resolv.conf")
-	require.NoError(t, os.WriteFile(host, []byte("nameserver 10.0.0.2\n"), 0o644))
+	require.NoError(t, os.WriteFile(host, []byte("nameserver 9.9.9.9\n"), 0o644))
 
 	a, err := restrictedResolvConf(filepath.Join(t.TempDir(), "a"), host)
 	require.NoError(t, err)
 	first, err := os.ReadFile(a)
 	require.NoError(t, err)
-	assert.Contains(t, string(first), "nameserver 10.0.0.2")
+	assert.Contains(t, string(first), "nameserver 9.9.9.9")
 
-	require.NoError(t, os.WriteFile(host, []byte("nameserver 10.0.0.3\n"), 0o644))
+	require.NoError(t, os.WriteFile(host, []byte("nameserver 149.112.112.112\n"), 0o644))
 	b, err := restrictedResolvConf(filepath.Join(t.TempDir(), "b"), host)
 	require.NoError(t, err)
 	require.NotEqual(t, a, b)
