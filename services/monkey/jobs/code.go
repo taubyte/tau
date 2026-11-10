@@ -24,26 +24,36 @@ import (
 )
 
 func (c code) handle() error {
+	ops, err := c.readOps()
+	if err != nil {
+		return err
+	}
+
+	return c.handleOps(ops)
+}
+
+// readOps lists what the project's config says to build. It holds the config
+// clone only for this: every job of the project needs it and a build is long.
+func (c code) readOps() ([]Op, error) {
+	c.unlocks = nil // c is a copy: only the config clone's lock is released here
+	defer c.releaseRepos()
+
 	if err := c.checkConfig(); err != nil {
-		return fmt.Errorf("checking config repo for project failed with: %w", err)
+		return nil, fmt.Errorf("checking config repo for project failed with: %w", err)
 	}
 
 	project, err := projectSchema.Open(projectSchema.SystemFS(c.ConfigRepoRoot))
 	if err != nil {
-		return fmt.Errorf("opening project from path `%s` failed with: %w", c.ConfigRepoRoot, err)
+		return nil, fmt.Errorf("opening project from path `%s` failed with: %w", c.ConfigRepoRoot, err)
 	}
 
 	// Decompile and get includes and id of each function, website and library
 	ops, err := buildTodoFromConfig(project)
 	if err != nil {
-		return fmt.Errorf("building todo from config for project `%s` failed with: %w", project.Get().Id(), err)
+		return nil, fmt.Errorf("building todo from config for project `%s` failed with: %w", project.Get().Id(), err)
 	}
 
-	if err = c.handleOps(ops); err != nil {
-		return err
-	}
-
-	return nil
+	return ops, nil
 }
 
 // handleOps builds the ops, several at a time on a development node, then

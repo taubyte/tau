@@ -109,8 +109,9 @@ func Serve(w http.ResponseWriter, r *http.Request, log Logger, h func(http.Respo
 	rec := &recorder{ResponseWriter: w}
 	if err := h(rec, r); err != nil {
 		logf := log.Errorf
-		if CodeOf(err) == NotFound {
-			logf = log.Debugf // every scan of a missing page lands here
+		switch Status(CodeOf(err)) {
+		case http.StatusNotFound, http.StatusServiceUnavailable, http.StatusTooManyRequests:
+			logf = log.Debugf // every scan of a missing page and every refusal under load lands here
 		}
 		logf("%s %s%s failed with: %s", r.Method, r.Host, r.URL.Path, err)
 		if rec.started.Load() {

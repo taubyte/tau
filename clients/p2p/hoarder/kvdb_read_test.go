@@ -267,6 +267,65 @@ func TestRemoteKV_ReadAfterWrite_LaggingReplica(t *testing.T) {
 	}
 }
 
+// A replica lagging behind a backlog can trail by more than a rebroadcast, so a
+// written key stays on the sticky replica for minutes.
+func TestRemoteKV_ReadAfterWrite_LaggingReplicaOverMinutes(t *testing.T) {
+	a, b, c := testPeers(t)
+	f := newFakeHoarders()
+	for _, p := range []peerCore.ID{a, b, c} {
+		f.set(p, "k", "old")
+	}
+	r := newTestKV(f, a, b, c)
+	warm(t, r, 3)
+	ctx := context.Background()
+
+	if err := r.Put(ctx, "k", []byte("new")); err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	r.written[canonicalKey("k")] = time.Now().Add(-time.Minute)
+	r.mu.Unlock()
+	for i := 0; i < 50; i++ {
+		if got, err := r.Get(ctx, "k"); err != nil || string(got) != "new" {
+			t.Fatalf("read %d one minute after the write = %q, %v", i, got, err)
+		}
+	}
+}
+
+// A handle that writes more keys than it can remember forgets them, but its
+// reads of every key stay on the sticky replica for the window instead.
+func TestRemoteKV_ReadAfterWrite_ManyKeys(t *testing.T) {
+	a, b, c := testPeers(t)
+	f := newFakeHoarders()
+	for _, p := range []peerCore.ID{a, b, c} {
+		f.set(p, "k", "old")
+	}
+	r := newTestKV(f, a, b, c)
+	warm(t, r, 3)
+	ctx := context.Background()
+
+	if err := r.Put(ctx, "k", []byte("new")); err != nil {
+		t.Fatal(err)
+	}
+	keys := make([]string, maxWrittenKeys)
+	for i := range keys {
+		keys[i] = fmt.Sprintf("other/%d", i)
+	}
+	r.wrote(keys...)
+
+	r.mu.Lock()
+	remembered := len(r.written)
+	r.mu.Unlock()
+	if remembered > maxWrittenKeys {
+		t.Fatalf("handle remembers %d written keys, bound is %d", remembered, maxWrittenKeys)
+	}
+	for i := 0; i < 50; i++ {
+		if got, err := r.Get(ctx, "k"); err != nil || string(got) != "new" {
+			t.Fatalf("read %d after the key was forgotten = %q, %v", i, got, err)
+		}
+	}
+}
+
 func TestRemoteKV_ReadAfterDelete_LaggingReplica(t *testing.T) {
 	a, b, c := testPeers(t)
 	f := newFakeHoarders()

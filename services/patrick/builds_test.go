@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -132,6 +133,57 @@ func TestUsage(t *testing.T) {
 
 	if _, err := handler(accessCtx("usage-stranger", &fakeRepos{perms: map[string]map[string]bool{"21": {"pull": true}}}, map[string]any{"projectId": "a"})); !errors.Is(err, errNoJobAccess) {
 		t.Fatalf("a stranger must be refused, got %v", err)
+	}
+}
+
+// listTogether makes concurrent /assigned reads overlap: each waits for the
+// other, or gives up when the other cannot get there.
+type listTogether struct {
+	*fakeJobs
+	entered atomic.Int32
+	both    chan struct{}
+}
+
+func (d *listTogether) List(ctx context.Context, prefix string) ([]string, error) {
+	keys, err := d.fakeJobs.List(ctx, prefix)
+	if d.entered.Add(1) == 2 {
+		close(d.both)
+	}
+	select {
+	case <-d.both:
+	case <-time.After(200 * time.Millisecond):
+	}
+	return keys, err
+}
+
+// Cap 2 with 1 running: of two dequeues at the same moment, only one gets a build.
+func TestConcurrentDequeuesRespectBuildCap(t *testing.T) {
+	p, db, q := capped(t, 2, "a2", "a3")
+	claim(t, db, "a1", "a", time.Now())
+	p.db = &listTogether{fakeJobs: db, both: make(chan struct{})}
+
+	var given atomic.Int32
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			resp, err := p.dequeueHandler(context.Background(), &mockConnection{})
+			if err != nil {
+				t.Error(err)
+			}
+			if resp["available"] == true {
+				given.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if got := given.Load(); got != 1 {
+		t.Fatalf("cap 2 with 1 running allows one more build, %d were handed out", got)
+	}
+	if len(q.ids) != 1 {
+		t.Fatalf("the job over the cap must go back to the queue, queue is %v", q.ids)
 	}
 }
 
