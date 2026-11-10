@@ -110,7 +110,10 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 		}
 	}
 
-	own := projectRepoIDs(auth, tns, projectId, branch)
+	own := projectRepoIDs(u.Context(), auth, tns, projectId, branch)
+	if projectId != "" && own == nil {
+		return fmt.Errorf("auth does not know project %s: nothing was pushed", projectId)
+	}
 
 	type repo struct{ id, fullName string }
 	list := func() ([]repo, error) {
@@ -126,7 +129,7 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 			}
 			// The universe's repos are every project's: with a project id, push
 			// only that project's, rather than rebuilding every project there is.
-			if !inProject(own, projectId, repoId, func() string { return repoProject(auth, tns, repoId) }) {
+			if !inProject(own, projectId, repoId) {
 				continue
 			}
 			repos = append(repos, repo{repoId, fullName})
@@ -165,7 +168,7 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 	pushIdx := 0
 	push := func(r repo) error {
 		repoId, fullName := r.id, r.fullName
-		owner := func() string { return repoProject(auth, tns, repoId) }
+		owner := claimedBy(own, projectId, repoId, func() string { return repoProject(auth, tns, repoId) })
 		if !markPushed(pushed, jobs, repoId, owner) {
 			fmt.Printf("Skipping %s: it already has a job and no project claims it yet\n", fullName)
 			return nil
@@ -229,6 +232,9 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 			if pushed[r.id] {
 				continue
 			}
+			if own != nil {
+				own[r.id] = true // its published config names it
+			}
 			if err := push(repo(r)); err != nil {
 				fmt.Printf("Pushing %s failed: %s\n", r.fullName, err)
 			}
@@ -271,13 +277,32 @@ func (p projectJobs) Get(id string) (*patrickIface.Job, error) {
 	return job, nil
 }
 
+// authProjectWait is how long push-all waits for Auth to answer for a project:
+// just after Dream starts, Auth does not answer yet.
+var authProjectWait = 30 * time.Second
+
+// waitForAuthProject asks get until it has the project, for up to wait.
+func waitForAuthProject(ctx context.Context, get func() *authIface.Project, wait time.Duration) *authIface.Project {
+	deadline := time.Now().Add(wait)
+	for {
+		if p := get(); p != nil || time.Now().After(deadline) {
+			return p
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(time.Second):
+		}
+	}
+}
+
 // projectRepoIDs is what a project owns, by Auth and its published config. It
 // is nil without a project id, or when Auth does not know the project.
-func projectRepoIDs(auth authIface.Client, tns tnsIface.Client, projectId, branch string) map[string]bool {
+func projectRepoIDs(ctx context.Context, auth authIface.Client, tns tnsIface.Client, projectId, branch string) map[string]bool {
 	if projectId == "" {
 		return nil
 	}
-	p := auth.Projects().Get(projectId)
+	p := waitForAuthProject(ctx, func() *authIface.Project { return auth.Projects().Get(projectId) }, authProjectWait)
 	if p == nil {
 		return nil
 	}
@@ -293,15 +318,19 @@ func projectRepoIDs(auth authIface.Client, tns tnsIface.Client, projectId, branc
 // inProject says whether a push-all for projectId takes repoId. A repository no
 // project claims is nobody's to build: taking it into every project's push-all
 // is what re-created its failing job for hours.
-func inProject(own map[string]bool, projectId, repoId string, owner func() string) bool {
-	if projectId == "" {
-		return true
+func inProject(own map[string]bool, projectId, repoId string) bool {
+	return projectId == "" || own[repoId]
+}
+
+// claimedBy is who claims repoId. A repository its project owns is claimed even
+// when a lookup has nothing yet, or a new project's repositories never get a job.
+func claimedBy(own map[string]bool, projectId, repoId string, lookup func() string) func() string {
+	return func() string {
+		if own[repoId] {
+			return projectId
+		}
+		return lookup()
 	}
-	if own != nil {
-		return own[repoId]
-	}
-	o := owner()
-	return o == "" || o == projectId
 }
 
 const unclaimedPrefix = "/dream/unclaimed/"
