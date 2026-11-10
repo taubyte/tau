@@ -174,3 +174,39 @@ func TestPagesMergeOnTheNewestOfEachName(t *testing.T) {
 	union := unionOf([][]Version{{v("a", 3, VersionRecord{}), v("a", 1, VersionRecord{})}, {v("a", 3, VersionRecord{}), v("a", 2, VersionRecord{})}}, 2)
 	require.Equal(t, []uint64{3, 2}, []uint64{union[0].Stamp, union[1].Stamp})
 }
+
+// A LISTING SKIPS NO NAME ONE COPY MISSED: one copy's page, short a name, reaches past
+// another's, and a tombstone frees a slot in it; the names past the shorter page wait
+// for the next one rather than be taken now and skip what lies between.
+func TestAListingSkipsNoNameOneCopyMissed(t *testing.T) {
+	at := assetsOf(t, "site_code")
+	c := newCluster(t, 3, fixedCatalog{at})
+	put := func(name string) Version {
+		t.Helper()
+		v, err := c.client(t, 0, 0).Put(t.Context(), at, name, Object{}, strings.NewReader(name))
+		require.NoError(t, err)
+		return v
+	}
+	put("a")
+	b, bb := put("b"), put("bb")
+	put("c")
+	put("d")
+	_, err := c.client(t, 0, 0).Delete(t.Context(), at, "a")
+	require.NoError(t, err)
+	missed(t, c, 2, at, b)
+	missed(t, c, 2, at, bb)
+
+	behind := c.client(t, 2, 2)
+	var got []string
+	after := ""
+	for range 10 {
+		page, err := behind.List(t.Context(), at, "", after, 2)
+		require.NoError(t, err)
+		if len(page) == 0 {
+			break
+		}
+		got = append(got, names(page)...)
+		after = page[len(page)-1].Name
+	}
+	require.Equal(t, []string{"b", "bb", "c", "d"}, got)
+}
