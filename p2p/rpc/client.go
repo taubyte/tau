@@ -10,6 +10,7 @@ import (
 
 	gostream "github.com/libp2p/go-libp2p-gostream"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	msmux "github.com/multiformats/go-multistream"
@@ -92,12 +93,26 @@ type stream struct {
 	refused atomic.Bool
 }
 
+// negotiationFailed is the reset a peer that does not serve the protocol answers
+// with, which can arrive before its refusal does.
+var negotiationFailed = &network.StreamError{ErrorCode: network.StreamProtocolNegotiationFailed, Remote: true}
+
 func (s *stream) Read(b []byte) (int, error) {
 	n, err := s.Conn.Read(b)
-	if errors.Is(err, msmux.ErrNotSupported[protocol.ID]{}) {
+	s.saw(err)
+	return n, err
+}
+
+func (s *stream) Write(b []byte) (int, error) {
+	n, err := s.Conn.Write(b)
+	s.saw(err)
+	return n, err
+}
+
+func (s *stream) saw(err error) {
+	if errors.Is(err, msmux.ErrNotSupported[protocol.ID]{}) || errors.Is(err, negotiationFailed) {
 		s.refused.Store(true)
 	}
-	return n, err
 }
 
 // refusals takes a call carried on a stream its peer refused for one that never

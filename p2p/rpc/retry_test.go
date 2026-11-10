@@ -157,9 +157,9 @@ func TestACallToANodeThatDoesNotServeTheProtocolNeverReachedIt(t *testing.T) {
 }
 
 // A NODE STILL LISTED AS SERVING A PROTOCOL IT DOES NOT SERVE is handed the stream
-// before it answers, so its refusal comes after the dial: on the call, or as a conn
-// that closed before the call was sent. Which one is timing, so it is asked more
-// than once.
+// before it answers, so its refusal comes after the dial: on the call, as a reset,
+// or as a conn that closed before the call was sent. Which one is timing, so it is
+// asked more than once.
 func TestACallToANodeListedForAProtocolItDoesNotServeNeverReachedIt(t *testing.T) {
 	from, to := twoHosts(t)
 	require.Eventually(t, func() bool {
