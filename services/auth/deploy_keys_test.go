@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -9,8 +10,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/go-github/v71/github"
+	"github.com/taubyte/tau/core/kvdb"
+	"golang.org/x/crypto/ssh"
+	"gotest.tools/v3/assert"
 )
 
 // keyServer is a repository's deploy keys on a fake GitHub.
@@ -19,6 +24,7 @@ type keyServer struct {
 	keys    map[int64][2]string // id -> title, key
 	deleted []int64
 	failDel bool
+	fresh   map[int64]bool // added moments ago; every other key is old
 }
 
 func (k *keyServer) handler(w http.ResponseWriter, r *http.Request) {
@@ -28,7 +34,11 @@ func (k *keyServer) handler(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/keys"):
 		var parts []string
 		for id, tk := range k.keys {
-			parts = append(parts, fmt.Sprintf(`{"id":%d,"title":%q,"key":%q}`, id, tk[0], tk[1]))
+			created := "2020-01-01T00:00:00Z"
+			if k.fresh[id] {
+				created = time.Now().UTC().Format(time.RFC3339)
+			}
+			parts = append(parts, fmt.Sprintf(`{"id":%d,"title":%q,"key":%q,"created_at":%q}`, id, tk[0], tk[1], created))
 		}
 		w.Write([]byte("[" + strings.Join(parts, ",") + "]"))
 	case r.Method == http.MethodDelete:
@@ -90,6 +100,60 @@ func TestRemoveOtherDeployKeysReportsFailures(t *testing.T) {
 	if err := keyClient(t, k).RemoveOtherDeployKeys("taubyte_deploy_key", "ecdsa-sha2-nistp256 NEW"); err == nil {
 		t.Fatal("a key GitHub would not delete was not reported")
 	}
+}
+
+// Two registrations of one repository at once each add a key, and only one of
+// them ends up stored: neither may remove the other's.
+func TestRemoveOtherDeployKeysSparesARecentKey(t *testing.T) {
+	k := &keyServer{fresh: map[int64]bool{2: true, 3: true}, keys: map[int64][2]string{
+		1: {"taubyte_deploy_key", "ecdsa-sha2-nistp256 OLD"},
+		2: {"taubyte_deploy_key", "ecdsa-sha2-nistp256 OTHER_REGISTRATION"},
+		3: {"taubyte_deploy_key", "ecdsa-sha2-nistp256 NEW"},
+	}}
+	if err := keyClient(t, k).RemoveOtherDeployKeys("taubyte_deploy_key", "ecdsa-sha2-nistp256 NEW"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := k.keys[2]; !ok {
+		t.Fatal("removed the key of a registration still in flight")
+	}
+	if _, ok := k.keys[1]; ok {
+		t.Fatal("left an old key")
+	}
+}
+
+type failingBatchKV struct{ kvdb.KVDB }
+
+func (failingBatchKV) Batch(context.Context) (kvdb.Batch, error) {
+	return nil, errors.New("store is down")
+}
+
+func TestRegisterRemovesOldKeysOnlyAfterTheNewOneIsStored(t *testing.T) {
+	ctx := context.Background()
+	svc, err := New(ctx, newTestConfig(t, 12391))
+	assert.NilError(t, err)
+	defer svc.Close()
+	svc.tnsClient = &mockTNSClient{}
+
+	const repoID = "4242"
+	calls := 0
+	client := &mockGitHubClient{removeOther: func(_ string, keep string) {
+		calls++
+		stored, err := svc.KV().Get(ctx, "/repositories/github/"+repoID+"/key")
+		assert.NilError(t, err, "old keys removed before the new one was stored")
+		signer, err := ssh.ParsePrivateKey(stored)
+		assert.NilError(t, err)
+		assert.Equal(t, sameDeployKey(string(ssh.MarshalAuthorizedKey(signer.PublicKey()))), sameDeployKey(keep))
+	}}
+
+	_, err = svc.registerGitHubRepository(ctx, client, repoID)
+	assert.NilError(t, err)
+	assert.Equal(t, calls, 1)
+
+	calls = 0
+	svc.db = failingBatchKV{svc.db}
+	_, err = svc.registerGitHubRepository(ctx, client, repoID)
+	assert.Assert(t, err != nil)
+	assert.Equal(t, calls, 0, "old keys removed although the new one could not be stored")
 }
 
 func TestSameDeployKey(t *testing.T) {
