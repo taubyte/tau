@@ -51,6 +51,8 @@ type PatrickService struct {
 	config tauConfig.Config
 	// projects caches job id -> project id, so a job waiting on its cap is looked up once.
 	projects sync.Map
+	// claimLock serializes capped dequeues, which only the raft leader can pop.
+	claimLock sync.Mutex
 }
 
 // Assignment tracks which Monkey is working on a job.

@@ -29,6 +29,8 @@ type Function struct {
 	shutdown     *atomic.Bool
 	shutdownDone chan struct{}
 	shutdownMu   sync.RWMutex
+	// drained: Shutdown has emptied the pool, so returned instances are closed. Guarded by shutdownMu.
+	drained bool
 
 	// metrics
 	coldStarts     *atomic.Uint64

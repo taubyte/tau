@@ -35,13 +35,14 @@ type Report struct {
 	Err         string
 
 	thresholdHit bool // the pass refused to delete: stop until the next boot
+	keepLocal    bool // verified instances are finished, their local copy stays
 }
 
 // RemainingCount is how many local namespaces still hold data after the pass.
 func (r *Report) RemainingCount() int {
 	n := len(r.Unresolved)
 	for _, ir := range r.Instances {
-		if !ir.Scrubbed {
+		if !ir.Scrubbed && !(r.keepLocal && ir.Verified && ir.Err == "") {
 			n++
 		}
 	}

@@ -104,6 +104,8 @@ func Frontend(w http.ResponseWriter, r *http.Request, stream io.ReadWriter) erro
 					if m != n {
 						err = fmt.Errorf("failed to forward body: expected %d bytes, forwarded %d", n, m)
 					}
+				case AbortOp:
+					err = ErrAborted
 				default:
 					err = fmt.Errorf("failed to process http response op: unknown channel %d", ch)
 				}

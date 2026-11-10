@@ -77,6 +77,9 @@ type remoteKV struct {
 	readersAt time.Time
 	written   map[string]time.Time // key -> when this handle last wrote it
 	sweptAt   time.Time
+	// allWrittenUntil stands in for written once it outgrew maxWrittenKeys:
+	// until then every read stays on the sticky replica.
+	allWrittenUntil time.Time
 }
 
 var _ coreKvdb.KVDB = (*remoteKV)(nil)
@@ -316,10 +319,15 @@ func ServeLocal(id peerCore.ID, h LocalHandler) (stop func()) {
 
 const (
 	// readYourWritesWindow is how long a handle's reads of a key it wrote stay on
-	// the sticky replica. It outlasts two CRDT rebroadcasts (5s, plus 30% jitter)
-	// so a replica that missed the gossip has been told again.
-	readYourWritesWindow = 15 * time.Second
-	readersRefresh       = 30 * time.Second
+	// the sticky replica. Minutes, not a few rebroadcasts: a replica behind a DAG
+	// backlog can lag far longer than the gossip interval. After it, and for keys
+	// written elsewhere, a read can be stale for as long as its replica lags.
+	readYourWritesWindow = 5 * time.Minute
+	// maxWrittenKeys bounds the keys a handle remembers writing. A handle that
+	// writes more within the window forgets them and keeps every read on the
+	// sticky replica until the window ends: the same guarantee, in bounded memory.
+	maxWrittenKeys = 1 << 16
+	readersRefresh = 30 * time.Second
 )
 
 func canonicalKey(key string) string { return path.Clean("/" + key) }
@@ -343,6 +351,10 @@ func (r *remoteKV) wrote(keys ...string) {
 	}
 	for _, k := range keys {
 		r.written[canonicalKey(k)] = now
+	}
+	if len(r.written) > maxWrittenKeys {
+		r.allWrittenUntil = now.Add(readYourWritesWindow)
+		r.written = make(map[string]time.Time)
 	}
 }
 
@@ -370,7 +382,7 @@ func (r *remoteKV) readTarget(key string) (peerCore.ID, bool) {
 	now := time.Now()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if now.Sub(r.written[k]) < readYourWritesWindow {
+	if now.Before(r.allWrittenUntil) || now.Sub(r.written[k]) < readYourWritesWindow {
 		return "", false
 	}
 	if now.Sub(r.readersAt) > readersRefresh {
