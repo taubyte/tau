@@ -58,6 +58,8 @@ func probeDNSResolvers(ctx context.Context, r remoteHost) []string {
 
 func (d *sporedrive) Displace(ctx context.Context, course course.Course) <-chan Progress {
 
+	logDNSRecords(d.parser)
+
 	hyphae := course.Hyphae()
 
 	pCh := make(chan Progress, hyphae.Size()*1024)

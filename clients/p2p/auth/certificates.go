@@ -22,6 +22,16 @@ func (c *Client) InjectStaticCertificate(domain string, data []byte) error {
 	return nil
 }
 
+// DeleteCertificate removes the certificate stored in /acme for domain.
+func (c *Client) DeleteCertificate(domain string) error {
+	_, err := c.client.Send("acme", command.Body{"action": "delete", "fqdn": domain}, c.peers...)
+	if err != nil {
+		return fmt.Errorf("failed deleting certificate for %s with %v", domain, err)
+	}
+
+	return nil
+}
+
 func (c *Client) InjectKey(domain string, data []byte) error {
 	_, err := c.client.Send("acme", command.Body{"action": "cache-set", "key": domain, "data": data}, c.peers...)
 	if err != nil {

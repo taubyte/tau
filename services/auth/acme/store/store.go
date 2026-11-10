@@ -252,6 +252,13 @@ func (d *Store) Delete(ctx context.Context, name string) error {
 			logger.Errorf("Deleting `%s` error: %s", name, err.Error())
 			return err
 		}
+
+		// Put stores certificates with "set"; without this a bad certificate is served forever.
+		_, err = d.client.Send("acme", command.Body{"action": "delete", "fqdn": name})
+		if err != nil {
+			logger.Errorf("Deleting certificate `%s` error: %s", name, err.Error())
+			return err
+		}
 	}
 
 	return nil

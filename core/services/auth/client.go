@@ -10,6 +10,7 @@ import (
 
 type Client interface {
 	InjectStaticCertificate(domain string, data []byte) error
+	DeleteCertificate(domain string) error
 	GetCertificate(domain string) (*tls.Certificate, error)
 	GetStaticCertificate(domain string) (*tls.Certificate, error)
 	GetRawCertificate(domain string) ([]byte, error)

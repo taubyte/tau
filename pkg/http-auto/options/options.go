@@ -40,6 +40,18 @@ func SkipDomainProof(fn func(host string) bool) options.Option {
 	}
 }
 
+// OptionWildcard serves every host matching SkipDomainProof from one
+// *.<Base> certificate ordered with DNS-01 (answered by Seer).
+type OptionWildcard struct {
+	Base string
+}
+
+func WildcardDomain(base string) options.Option {
+	return func(s options.Configurable) error {
+		return s.SetOption(OptionWildcard{Base: base})
+	}
+}
+
 // OptionClientNode overrides the libp2p node used for the auth + tns + acme
 // stream clients. Default: same node passed to auto.New.
 type OptionClientNode struct {

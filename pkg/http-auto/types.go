@@ -1,7 +1,10 @@
 package auto
 
 import (
+	"context"
+	"crypto/tls"
 	"crypto/x509"
+	"sync/atomic"
 	"time"
 
 	"github.com/jellydator/ttlcache/v3"
@@ -30,6 +33,11 @@ type Service struct {
 	acme             *options.OptionACME
 	acmeCARoots      *x509.CertPool
 	acmeCASkipVerify bool
+
+	// wildcardBase is the generated domain; its *.<base> certificate serves every generated host.
+	wildcardBase  string
+	wildcard      atomic.Pointer[tls.Certificate]
+	orderWildcard func(ctx context.Context, base string) ([]byte, error)
 
 	positiveCache *ttlcache.Cache[string, bool]
 	negativeCache *ttlcache.Cache[string, bool]

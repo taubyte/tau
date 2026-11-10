@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	_ "embed"
@@ -16,6 +17,7 @@ import (
 	streams "github.com/taubyte/tau/p2p/streams/service"
 	tauConfig "github.com/taubyte/tau/pkg/config"
 	"github.com/taubyte/tau/pkg/poe"
+	acmeStore "github.com/taubyte/tau/services/auth/acme/store"
 	servicesCommon "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/services/common/httpsvc"
 )
@@ -67,6 +69,19 @@ func New(ctx context.Context, cfg tauConfig.Config, opts ...Options) (*Service, 
 
 	if srv.tns, err = tnsClient.New(ctx, clientNode); err != nil {
 		return nil, fmt.Errorf("new tns api failed with: %s", err)
+	}
+	if gen := strings.ToLower(strings.Trim(cfg.GeneratedDomain(), ".")); !srv.devMode && gen != "" {
+		dir, err := clientNode.NewFolder("acme")
+		if err != nil {
+			return nil, fmt.Errorf("acme folder failed with: %w", err)
+		}
+		st, err := acmeStore.New(ctx, clientNode, dir.Path())
+		if err != nil {
+			return nil, fmt.Errorf("acme store failed with: %w", err)
+		}
+		key := acmeStore.ChallengeKey(gen)
+		srv.acmeChallengeName = "_acme-challenge." + gen
+		srv.acmeChallenge = func() ([]byte, error) { return st.Lookup(key) }
 	}
 	if srv.ds, err = pebbleds.NewDatastore(
 		path.Join(cfg.Root(), "storage", srv.shape, "seer"),

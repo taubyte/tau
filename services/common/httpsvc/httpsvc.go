@@ -44,6 +44,9 @@ func AutoOptsFromConfig(cfg config.Config) []options.Option {
 		autoOpts.AutoTrustDomain(autoTrustFromConfig(cfg)),
 		autoOpts.SkipDomainProof(cfg.GeneratedDomainMatch),
 	}
+	if cfg.GeneratedDomain() != "" {
+		ops = append(ops, autoOpts.WildcardDomain(cfg.GeneratedDomain()))
+	}
 	if cfg.CustomAcme() {
 		ops = append(ops, options.ACMEWithKey(cfg.AcmeUrl(), cfg.AcmeKey()))
 	}

@@ -39,6 +39,16 @@ var acmeTree = &tctree{
 			handler: getCertificate,
 		},
 		{
+			validator: stringValidator("deleteCert"),
+			ret: []goPrompt.Suggest{
+				{
+					Text:        "deleteCert",
+					Description: "deletes the certificate for a domain in /acme. Ex: deleteCert *.example.com",
+				},
+			},
+			handler: deleteCertificate,
+		},
+		{
 			validator: stringValidator("getStaticCert"),
 			ret: []goPrompt.Suggest{
 				{
@@ -86,6 +96,21 @@ func getCertificate(p Prompt, args []string) error {
 	}
 
 	fmt.Println(_pem)
+	return nil
+}
+
+func deleteCertificate(p Prompt, args []string) error {
+	if len(args) != 2 {
+		fmt.Println("Must provide a domain")
+		return errors.New("must provide a domain")
+	}
+
+	if err := p.AuthClient().DeleteCertificate(args[1]); err != nil {
+		fmt.Printf("Failed deleting certificate for %s with %v\n", args[1], err)
+		return fmt.Errorf("failed deleting certificate for %s with %v", args[1], err)
+	}
+
+	fmt.Printf("Deleted certificate for %s\n", args[1])
 	return nil
 }
 

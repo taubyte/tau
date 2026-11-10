@@ -36,6 +36,8 @@ func (s *Service) SetOption(opt interface{}) error {
 		s.autoTrustDomain = opt.Fn
 	case autoOptions.OptionSkipDomainProof:
 		s.skipDomainProof = opt.Fn
+	case autoOptions.OptionWildcard:
+		s.wildcardBase = strings.ToLower(strings.Trim(opt.Base, "."))
 	case autoOptions.OptionClientNode:
 		s.clientNode = opt.Node
 	case options.OptionACME:
@@ -104,6 +106,8 @@ func newAuto(ctx context.Context, node peer.Node, opts ...options.Option) (*Serv
 		logger.Error("new Auto HTTP: ", err)
 		return nil, err
 	}
+
+	s.orderWildcard = s.orderWildcardACME
 
 	s.positiveCache = newValidationCache(PositiveTTL)
 	s.negativeCache = newValidationCache(NegativeTTL)
@@ -174,24 +178,15 @@ func (s *Service) Start() {
 	}
 
 	if s.acme != nil {
-		m.Client = &acme.Client{
-			DirectoryURL: s.acme.DirectoryURL,
-			Key:          s.acme.Key,
-		}
-		if s.acmeCASkipVerify || s.acmeCARoots != nil {
-			m.Client.HTTPClient = &http.Client{
-				Transport: &http.Transport{
-					TLSClientConfig: &tls.Config{
-						InsecureSkipVerify: s.acmeCASkipVerify,
-						RootCAs:            s.acmeCARoots,
-					},
-				},
-			}
-		}
+		m.Client = s.acmeClient()
+	}
+
+	if s.wildcardBase != "" && s.skipDomainProof != nil {
+		go s.keepWildcard(s.Context())
 	}
 
 	cfg := &tls.Config{
-		GetCertificate: m.GetCertificate,
+		GetCertificate: s.getCertificate(m.GetCertificate),
 		NextProtos: []string{
 			"http/1.1", acme.ALPNProto,
 		},
@@ -217,6 +212,25 @@ func (s *Service) Start() {
 	}()
 
 	s.WatchContextDone()
+}
+
+// acmeClient is the configured ACME directory and key, or Let's Encrypt with a new key.
+func (s *Service) acmeClient() *acme.Client {
+	c := &acme.Client{DirectoryURL: autocert.DefaultACMEDirectory}
+	if s.acme != nil {
+		c.DirectoryURL, c.Key = s.acme.DirectoryURL, s.acme.Key
+	}
+	if s.acmeCASkipVerify || s.acmeCARoots != nil {
+		c.HTTPClient = &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: s.acmeCASkipVerify,
+					RootCAs:            s.acmeCARoots,
+				},
+			},
+		}
+	}
+	return c
 }
 
 func (s *Service) GetListenAddress() (*url.URL, error) {
