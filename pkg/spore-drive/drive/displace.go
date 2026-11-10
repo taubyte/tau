@@ -396,6 +396,8 @@ func (d *sporedrive) uploadSystemdFile(h remoteHost) error {
 
 	unit := cnf.Section("Unit")
 	unit.Key("Description").SetValue("Taubyte Tau Service Running %i")
+	// Keep restarting after any number of quick failures: only exit 78 (below) is final.
+	unit.Key("StartLimitIntervalSec").SetValue("0")
 
 	service := cnf.Section("Service")
 	service.Key("Type").SetValue("simple")
