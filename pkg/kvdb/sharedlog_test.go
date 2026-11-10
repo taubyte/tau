@@ -148,7 +148,7 @@ func TestASharedLogSurvivesAPowerLossOnPebble(t *testing.T) {
 	if err := n.log.Close(); err != nil {
 		t.Fatal(err)
 	}
-	forgetIncarnation(r.incarnationKey())
+	forgetIncarnation(r)
 
 	for _, c := range crashes {
 		re := openPebbleNode(t, c.fs)
@@ -170,7 +170,7 @@ func TestASharedLogSurvivesAPowerLossOnPebble(t *testing.T) {
 			t.Fatalf("power off in %s (seed %d)", c.at, c.seed)
 		}
 		closeStore(t, reopened)
-		forgetIncarnation(reopened.incarnationKey())
+		forgetIncarnation(reopened)
 		if err := re.log.Close(); err != nil {
 			t.Fatal(err)
 		}

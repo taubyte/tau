@@ -110,6 +110,8 @@ func (s *simTime) replica(t testing.TB, name string, offset time.Duration) *simR
 	sr := &simReplica{name: name, store: newSortedStore(), dag: newFetchThrough(), out: &outbox{}, offset: offset, st: s}
 	sr.opts = s.options(offset)
 	sr.opts.ReplicaID = []byte(name)
+	// One process of its node, which a copy of its disk shares.
+	sr.opts.incarnations = &incarnationRegistry{}
 	sr.open(t)
 	return sr
 }

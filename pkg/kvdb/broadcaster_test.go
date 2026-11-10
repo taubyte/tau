@@ -14,9 +14,8 @@ func TestNewPubSubBroadcaster(t *testing.T) {
 	ctx := context.Background()
 	mockNode := peer.Mock(ctx)
 	defer mockNode.Close()
-	psub := mockNode.Messaging()
 
-	broadcaster, err := NewPubSubBroadcaster(ctx, psub, "test-topic")
+	broadcaster, err := NewPubSubBroadcaster(ctx, mockNode, "test-topic")
 	if err != nil {
 		t.Fatalf("Failed to create new broadcaster: %v", err)
 	}
@@ -24,7 +23,7 @@ func TestNewPubSubBroadcaster(t *testing.T) {
 		t.Fatal("Expected non-nil broadcaster, got nil")
 	}
 
-	_, err = NewPubSubBroadcaster(ctx, psub, "test-topic")
+	_, err = NewPubSubBroadcaster(ctx, mockNode, "test-topic")
 	if err != nil {
 		t.Fatalf("Failed to create broadcaster with existing topic: %v", err)
 	}
@@ -38,9 +37,8 @@ func TestPubSubBroadcaster_Broadcast(t *testing.T) {
 
 	mockNode := peer.Mock(ctx)
 	defer mockNode.Close()
-	psub := mockNode.Messaging()
 
-	broadcaster, _ := NewPubSubBroadcaster(ctx, psub, "test-topic")
+	broadcaster, _ := NewPubSubBroadcaster(ctx, mockNode, "test-topic")
 	defer broadcaster.topic.Close()
 
 	err := broadcaster.Broadcast(ctx, []byte("test message"))
@@ -55,9 +53,8 @@ func TestPubSubBroadcaster_Next(t *testing.T) {
 
 	mockNode := peer.Mock(ctx)
 	defer mockNode.Close()
-	psub := mockNode.Messaging()
 
-	broadcaster, _ := NewPubSubBroadcaster(ctx, psub, "test-topic")
+	broadcaster, _ := NewPubSubBroadcaster(ctx, mockNode, "test-topic")
 	defer broadcaster.topic.Close()
 
 	go func() {
@@ -79,9 +76,8 @@ func TestPubSubBroadcaster_ContextCancellation(t *testing.T) {
 
 	mockNode := peer.Mock(ctx)
 	defer mockNode.Close()
-	psub := mockNode.Messaging()
 
-	broadcaster, _ := NewPubSubBroadcaster(ctx, psub, "test-topic-2")
+	broadcaster, _ := NewPubSubBroadcaster(ctx, mockNode, "test-topic-2")
 	defer broadcaster.topic.Close()
 
 	cancel()
@@ -100,9 +96,8 @@ func TestPubSubBroadcaster_ConcurrentOperations(t *testing.T) {
 
 	mockNode := peer.Mock(ctx)
 	defer mockNode.Close()
-	psub := mockNode.Messaging()
 
-	broadcaster, _ := NewPubSubBroadcaster(ctx, psub, "test-topic")
+	broadcaster, _ := NewPubSubBroadcaster(ctx, mockNode, "test-topic")
 	defer broadcaster.topic.Close()
 
 	var wg sync.WaitGroup
@@ -133,10 +128,9 @@ func TestPubSubBroadcaster_BroadcastAndReceive(t *testing.T) {
 
 	mockNode := peer.Mock(ctx)
 	defer mockNode.Close()
-	psub := mockNode.Messaging()
 
 	topic := "testTopic"
-	broadcaster, err := NewPubSubBroadcaster(ctx, psub, topic)
+	broadcaster, err := NewPubSubBroadcaster(ctx, mockNode, topic)
 	if err != nil {
 		t.Fatalf("Failed to create new PubSubBroadcaster: %v", err)
 	}
@@ -170,16 +164,14 @@ func TestPubSubBroadcaster_TopicRegistrationAndUnregistration(t *testing.T) {
 
 	mockNode := peer.Mock(ctx)
 	defer mockNode.Close()
-	psub := mockNode.Messaging()
-
 	topic := "testTopicRegistration"
-	key := broadcasterKey{psub: psub, topic: topic}
-	_, err := NewPubSubBroadcaster(ctx, psub, topic)
+	on := peer.Kept[broadcasters](mockNode, broadcastersKey{})
+	_, err := NewPubSubBroadcaster(ctx, mockNode, topic)
 	if err != nil {
 		t.Fatalf("Failed to create new PubSubBroadcaster: %v", err)
 	}
 
-	if getTopic(key) == nil {
+	if on.get(topic) == nil {
 		t.Errorf("Expected topic '%s' to be registered", topic)
 	}
 
@@ -187,7 +179,7 @@ func TestPubSubBroadcaster_TopicRegistrationAndUnregistration(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	if getTopic(key) != nil {
+	if on.get(topic) != nil {
 		t.Errorf("Expected topic '%s' to be unregistered after context cancellation", topic)
 	}
 }

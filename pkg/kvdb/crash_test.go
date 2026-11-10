@@ -89,7 +89,7 @@ func reopen(t testing.TB, old *Datastore, store ds.Datastore, dag ipld.DAGServic
 	if err := store.Put(context.Background(), ds.NewKey("crdttest").ChildString(badShutdownKey), nil); err != nil {
 		t.Fatal(err)
 	}
-	r, err := NewDatastore(store, ds.NewKey("crdttest"), dag, &nullBroadcaster{}, onNode(replicaOptions(noAutoCompact(), name)))
+	r, err := NewDatastore(store, ds.NewKey("crdttest"), dag, &nullBroadcaster{}, onNode(old.incarnations, replicaOptions(noAutoCompact(), name)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestCrashMidCompaction(t *testing.T) {
 			ctx := context.Background()
 			store := newFaultyDatastore(ds.NewMapDatastore())
 			dag := &removeFailing{fetchThroughDAGSvc: newFetchThrough()}
-			r, err := NewDatastore(store, ds.NewKey("crdttest"), dag, &nullBroadcaster{}, onNode(replicaOptions(noAutoCompact(), "crash: ")))
+			r, err := NewDatastore(store, ds.NewKey("crdttest"), dag, &nullBroadcaster{}, onNode(aNode(), replicaOptions(noAutoCompact(), "crash: ")))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -158,8 +158,9 @@ func TestRestoredBackupNeverReusesAnIncarnation(t *testing.T) {
 	ctx := context.Background()
 	live := dssync.MutexWrap(ds.NewMapDatastore())
 	dag := newFetchThrough()
+	node := aNode()
 	open := func(store ds.Datastore, d ipld.DAGService, name string) *Datastore {
-		r, err := NewDatastore(store, ds.NewKey("crdttest"), d, &nullBroadcaster{}, onNode(replicaOptions(noAutoCompact(), name)))
+		r, err := NewDatastore(store, ds.NewKey("crdttest"), d, &nullBroadcaster{}, onNode(node, replicaOptions(noAutoCompact(), name)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -230,21 +231,19 @@ func TestRestoredBackupNeverReusesAnIncarnation(t *testing.T) {
 	}
 }
 
-func freshProcess(t testing.TB) {
-	t.Helper()
-	old := incarnations
-	incarnations = newIncarnationRegistry()
-	t.Cleanup(func() { incarnations = old })
-}
+// aNode is one process of one node, where its stores remember their incarnations;
+// a test starts the node again by making another.
+func aNode() *incarnationRegistry { return &incarnationRegistry{} }
 
-func onNode(o *Options) *Options {
+func onNode(node *incarnationRegistry, o *Options) *Options {
 	o.ReplicaID = []byte("node")
+	o.incarnations = node
 	return o
 }
 
-func openStore(t testing.TB, store ds.Datastore, dag ipld.DAGService, name string) *Datastore {
+func openStore(t testing.TB, node *incarnationRegistry, store ds.Datastore, dag ipld.DAGService, name string) *Datastore {
 	t.Helper()
-	r, err := NewDatastore(store, ds.NewKey("crdttest"), dag, &nullBroadcaster{}, onNode(replicaOptions(noAutoCompact(), name)))
+	r, err := NewDatastore(store, ds.NewKey("crdttest"), dag, &nullBroadcaster{}, onNode(node, replicaOptions(noAutoCompact(), name)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +316,7 @@ func assertChained(t testing.TB, name string, r *Datastore, replica string, coun
 }
 
 func TestReopenContinuesTheIncarnation(t *testing.T) {
-	freshProcess(t)
+	node := aNode()
 	store := dssync.MutexWrap(ds.NewMapDatastore())
 	dag := newFetchThrough()
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 1, noAutoCompact())
@@ -325,7 +324,7 @@ func TestReopenContinuesTheIncarnation(t *testing.T) {
 	peer := replicas[0]
 	dagsyncs[0].setRemotes(dag.DAGService)
 
-	a := openStore(t, store, dag, "a: ")
+	a := openStore(t, node, store, dag, "a: ")
 	put(t, a, "k", "1")
 	put(t, a, "k", "2")
 	compact(t, a)
@@ -333,7 +332,7 @@ func TestReopenContinuesTheIncarnation(t *testing.T) {
 	syncReplicaHeads(t, a, peer)
 	closeStore(t, a)
 
-	a = openStore(t, store, dag, "a reopened: ")
+	a = openStore(t, node, store, dag, "a reopened: ")
 	defer a.Close()
 	if a.replica != replica {
 		t.Fatal("the store drew a new incarnation on a reopen in the process that closed it")
@@ -354,17 +353,17 @@ func TestReopenContinuesTheIncarnation(t *testing.T) {
 }
 
 func TestANewProcessDrawsANewIncarnation(t *testing.T) {
-	freshProcess(t)
+	node := aNode()
 	store := dssync.MutexWrap(ds.NewMapDatastore())
 	dag := newFetchThrough()
 
-	a := openStore(t, store, dag, "a: ")
+	a := openStore(t, node, store, dag, "a: ")
 	put(t, a, "k", "1")
 	first := a.replica
 	closeStore(t, a)
 
-	freshProcess(t)
-	a = openStore(t, store, dag, "a in a new process: ")
+	node = aNode()
+	a = openStore(t, node, store, dag, "a in a new process: ")
 	defer a.Close()
 	if a.replica == first {
 		t.Fatal("a new process continued an incarnation it never drew")
@@ -379,22 +378,22 @@ func TestANewProcessDrawsANewIncarnation(t *testing.T) {
 }
 
 func TestAnEarlierCopyNeverContinuesTheIncarnation(t *testing.T) {
-	freshProcess(t)
+	node := aNode()
 	live := dssync.MutexWrap(ds.NewMapDatastore())
 	dag := newFetchThrough()
 
-	a := openStore(t, live, dag, "a: ")
+	a := openStore(t, node, live, dag, "a: ")
 	put(t, a, "k", "1")
 	closeStore(t, a)
 	backup, backupDag := copyStore(t, live), copyBlocks(t, dag)
 
-	a = openStore(t, live, dag, "a again: ")
+	a = openStore(t, node, live, dag, "a again: ")
 	replica := a.replica
 	put(t, a, "k", "2")
 	put(t, a, "after", "original")
 	closeStore(t, a)
 
-	restored := openStore(t, backup, backupDag, "restored: ")
+	restored := openStore(t, node, backup, backupDag, "restored: ")
 	defer restored.Close()
 	if restored.replica == replica {
 		t.Fatal("a copy taken before the incarnation's last writes continued it")
@@ -402,7 +401,7 @@ func TestAnEarlierCopyNeverContinuesTheIncarnation(t *testing.T) {
 	put(t, restored, "k", "3")
 	assertChained(t, "restored", restored, restored.replica, restored.counter)
 
-	a = openStore(t, live, dag, "a reopened: ")
+	a = openStore(t, node, live, dag, "a reopened: ")
 	defer a.Close()
 	if a.replica != replica {
 		t.Fatal("the original lost its incarnation to a copy that did not take it")
@@ -418,10 +417,10 @@ func TestAnEarlierCopyNeverContinuesTheIncarnation(t *testing.T) {
 }
 
 func TestConcurrentOpensNeverShareAnIncarnation(t *testing.T) {
-	freshProcess(t)
+	node := aNode()
 	live := dssync.MutexWrap(ds.NewMapDatastore())
 	dag := newFetchThrough()
-	a := openStore(t, live, dag, "a: ")
+	a := openStore(t, node, live, dag, "a: ")
 	put(t, a, "k", "1")
 	replica := a.replica
 	closeStore(t, a)
@@ -439,7 +438,7 @@ func TestConcurrentOpensNeverShareAnIncarnation(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			r, err := NewDatastore(copies[i], ds.NewKey("crdttest"), dag, &nullBroadcaster{}, onNode(replicaOptions(noAutoCompact(), fmt.Sprintf("copy %d: ", i))))
+			r, err := NewDatastore(copies[i], ds.NewKey("crdttest"), dag, &nullBroadcaster{}, onNode(node, replicaOptions(noAutoCompact(), fmt.Sprintf("copy %d: ", i))))
 			if err != nil {
 				t.Error(err)
 				return
@@ -471,11 +470,11 @@ func TestConcurrentOpensNeverShareAnIncarnation(t *testing.T) {
 }
 
 func TestAClosedStoreWritesNothing(t *testing.T) {
-	freshProcess(t)
+	node := aNode()
 	ctx := context.Background()
 	store := dssync.MutexWrap(ds.NewMapDatastore())
 	dag := newFetchThrough()
-	a := openStore(t, store, dag, "a: ")
+	a := openStore(t, node, store, dag, "a: ")
 	put(t, a, "k", "1")
 	closeStore(t, a)
 
@@ -486,13 +485,13 @@ func TestAClosedStoreWritesNothing(t *testing.T) {
 		t.Fatalf("a compaction of a closed store returned %v", err)
 	}
 
-	again := openStore(t, store, dag, "a reopened: ")
+	again := openStore(t, node, store, dag, "a reopened: ")
 	defer again.Close()
 	if again.replica != a.replica {
 		t.Fatal("the reopen should continue the incarnation")
 	}
 	closeStore(t, a)
-	twin := openStore(t, copyStore(t, store), dag, "twin: ")
+	twin := openStore(t, node, copyStore(t, store), dag, "twin: ")
 	defer twin.Close()
 	if twin.replica == again.replica {
 		t.Fatal("a second Close handed out the incarnation an open store is writing under")

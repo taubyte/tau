@@ -23,7 +23,8 @@ type dot struct {
 	counter uint64
 }
 
-var incarnations = newIncarnationRegistry()
+// incarnationsKey is what a node keeps its incarnationRegistry under.
+type incarnationsKey struct{}
 
 type incarnationKey struct {
 	replicaID string
@@ -35,8 +36,9 @@ type incarnation struct {
 	counter uint64
 }
 
-// incarnationRegistry lets a store reopened in the process that closed it
-// continue its incarnation, so a load/unload cycle does not grow every vector.
+// incarnationRegistry lets a store reopened on the node that closed it continue
+// its incarnation, so a load/unload cycle does not grow every vector. The node
+// keeps it; a store opened without one keeps its own.
 // An entry is the true last counter, written under the store's lock after its
 // last write, and resuming takes it out, so no two open stores share an
 // incarnation. A store whose context does not reach that counter draws a new
@@ -44,10 +46,6 @@ type incarnation struct {
 type incarnationRegistry struct {
 	mu     sync.Mutex
 	closed map[incarnationKey]incarnation
-}
-
-func newIncarnationRegistry() *incarnationRegistry {
-	return &incarnationRegistry{closed: map[incarnationKey]incarnation{}}
 }
 
 // resume takes the incarnation closed under k when reached gives its last
@@ -66,6 +64,9 @@ func (r *incarnationRegistry) resume(k incarnationKey, reached func(replica stri
 func (r *incarnationRegistry) release(k incarnationKey, inc incarnation) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closed == nil {
+		r.closed = map[incarnationKey]incarnation{}
+	}
 	r.closed[k] = inc
 }
 

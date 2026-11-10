@@ -6,6 +6,8 @@ import (
 	"sync"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+
+	"github.com/taubyte/tau/p2p/peer"
 )
 
 type PubSubBroadcaster struct {
@@ -16,49 +18,50 @@ type PubSubBroadcaster struct {
 	subs  *pubsub.Subscription
 }
 
-// Keyed by PubSub too: tau runs many nodes in one process, and a topic name
-// alone handed one node another's closed broadcaster.
-type broadcasterKey struct {
-	psub  *pubsub.PubSub
-	topic string
+// broadcasters is a node's broadcaster per topic: a topic is joined once on a
+// PubSub, so every database on the node that broadcasts on it shares one.
+type broadcasters struct {
+	sync.Mutex
+	on map[string]*PubSubBroadcaster
 }
 
-var (
-	broadcasters     = make(map[broadcasterKey]*PubSubBroadcaster)
-	broadcastersLock sync.Mutex
-)
+// broadcastersKey is what a node keeps its broadcasters under.
+type broadcastersKey struct{}
 
-func registerTopic(key broadcasterKey, b *PubSubBroadcaster) {
-	broadcastersLock.Lock()
-	defer broadcastersLock.Unlock()
-	broadcasters[key] = b
+func (bs *broadcasters) register(topic string, b *PubSubBroadcaster) {
+	bs.Lock()
+	defer bs.Unlock()
+	if bs.on == nil {
+		bs.on = map[string]*PubSubBroadcaster{}
+	}
+	bs.on[topic] = b
 }
 
 // The identity check keeps a late cleanup from evicting a newer broadcaster
-// under the same key.
-func unregisterTopic(key broadcasterKey, b *PubSubBroadcaster) {
-	broadcastersLock.Lock()
-	defer broadcastersLock.Unlock()
-	if broadcasters[key] == b {
-		delete(broadcasters, key)
+// under the same topic.
+func (bs *broadcasters) unregister(topic string, b *PubSubBroadcaster) {
+	bs.Lock()
+	defer bs.Unlock()
+	if bs.on[topic] == b {
+		delete(bs.on, topic)
 	}
 }
 
-func getTopic(key broadcasterKey) *PubSubBroadcaster {
-	broadcastersLock.Lock()
-	defer broadcastersLock.Unlock()
-	return broadcasters[key]
+func (bs *broadcasters) get(topic string) *PubSubBroadcaster {
+	bs.Lock()
+	defer bs.Unlock()
+	return bs.on[topic]
 }
 
 // Register topic validators first. Cancel ctx to shut it down, before closing
 // the Datastore, or Close may hang.
-func NewPubSubBroadcaster(ctx context.Context, psub *pubsub.PubSub, topic string) (b *PubSubBroadcaster, err error) {
-	key := broadcasterKey{psub: psub, topic: topic}
-
-	if b = getTopic(key); b != nil {
+func NewPubSubBroadcaster(ctx context.Context, node peer.Node, topic string) (b *PubSubBroadcaster, err error) {
+	on := peer.Kept[broadcasters](node, broadcastersKey{})
+	if b = on.get(topic); b != nil {
 		return b, nil
 	}
 
+	psub := node.Messaging()
 	b = &PubSubBroadcaster{
 		ctx:  ctx,
 		psub: psub,
@@ -69,7 +72,7 @@ func NewPubSubBroadcaster(ctx context.Context, psub *pubsub.PubSub, topic string
 		return nil, err
 	}
 
-	registerTopic(key, b)
+	on.register(topic, b)
 
 	if err = b.ensureSubscribed(); err != nil {
 		return nil, err
@@ -84,7 +87,7 @@ func NewPubSubBroadcaster(ctx context.Context, psub *pubsub.PubSub, topic string
 			b.subs.Cancel()
 		}
 		b.topic.Close()
-		unregisterTopic(key, b)
+		on.unregister(topic, b)
 	}()
 
 	return

@@ -449,7 +449,7 @@ func (f *propFleet) restart(i int, crash bool) {
 		// A process that died: the store as it was, the shutdown mark
 		// left, and the incarnation never handed to a next open.
 		closeStore(f.t, sr.r)
-		forgetIncarnation(sr.r.incarnationKey())
+		forgetIncarnation(sr.r)
 		if err := sr.store.Put(context.Background(), ds.NewKey("crdttest").ChildString(badShutdownKey), nil); err != nil {
 			f.t.Fatal(err)
 		}
@@ -461,10 +461,11 @@ func (f *propFleet) restart(i int, crash bool) {
 	f.log("restart r%d crash %t (rejoining %t, since %d)", i, crash, f.reps[i].rejoining(), f.reps[i].r.reportedSinceNow())
 }
 
-func forgetIncarnation(k incarnationKey) {
-	incarnations.mu.Lock()
-	defer incarnations.mu.Unlock()
-	delete(incarnations.closed, k)
+// forgetIncarnation is r's node forgetting r's incarnation, as a crash does.
+func forgetIncarnation(r *Datastore) {
+	r.incarnations.mu.Lock()
+	defer r.incarnations.mu.Unlock()
+	delete(r.incarnations.closed, r.incarnationKey())
 }
 
 func (f *propFleet) backup(i int) {
@@ -486,7 +487,7 @@ func (f *propFleet) restore(i int) {
 	b := mine[f.rng.Intn(len(mine))]
 	sr := f.reps[i]
 	closeStore(f.t, sr.r)
-	forgetIncarnation(sr.r.incarnationKey())
+	forgetIncarnation(sr.r)
 	sr.store, sr.dag = copyStore(f.t, b.store), copyBlocks(f.t, b.dag)
 	sr.open(f.t)
 	f.gens[i] = sr.rebases()

@@ -127,6 +127,9 @@ type Options struct {
 
 	// manual leaves maintenance, heartbeats and repair to the caller.
 	manual bool
+	// incarnations is where the node remembers the incarnations of its closed
+	// stores.
+	incarnations *incarnationRegistry
 	// treeCache is the tree-node cache budget in bytes; 0 for treeCacheBytes.
 	treeCache int
 }
@@ -217,8 +220,10 @@ type Datastore struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	opts   *Options
-	logger logging.StandardLogger
+	opts *Options
+	// incarnations is the opts' registry, or the store's own.
+	incarnations *incarnationRegistry
+	logger       logging.StandardLogger
 
 	// store is raw behind the journal, which marks every state record written
 	// through it.
@@ -390,10 +395,15 @@ func NewDatastore(
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	incarnations := opts.incarnations
+	if incarnations == nil {
+		incarnations = &incarnationRegistry{}
+	}
 	dstore := &Datastore{
 		ctx:              ctx,
 		cancel:           cancel,
 		opts:             opts,
+		incarnations:     incarnations,
 		logger:           opts.Logger,
 		store:            store,
 		namespace:        namespace,
@@ -566,7 +576,7 @@ func (store *Datastore) open(ctx context.Context) error {
 	if err := store.loadRejoin(ctx); err != nil {
 		return fmt.Errorf("error loading the rejoin state: %w", err)
 	}
-	if inc, ok := incarnations.resume(store.incarnationKey(), store.cc.counter); ok {
+	if inc, ok := store.incarnations.resume(store.incarnationKey(), store.cc.counter); ok {
 		store.replica, store.counter = inc.replica, inc.counter
 	} else if err := store.drawIncarnation(); err != nil {
 		return err
@@ -1648,7 +1658,7 @@ func (store *Datastore) Close() error {
 	store.mu.Lock()
 	if !store.closed {
 		store.closed = true
-		incarnations.release(store.incarnationKey(), incarnation{replica: store.replica, counter: store.counter})
+		store.incarnations.release(store.incarnationKey(), incarnation{replica: store.replica, counter: store.counter})
 	}
 	store.mu.Unlock()
 	store.dropping.Wait()

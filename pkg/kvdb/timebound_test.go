@@ -412,7 +412,7 @@ func TestASnapshotWrittenBeforeAnyContactIsJudgedByItsOldestElement(t *testing.T
 	st.deliver(t, a, b, c) // its write goes out, and nothing comes back
 	st.advance(simRI)
 	closeStore(t, a.r)
-	forgetIncarnation(a.r.incarnationKey())
+	forgetIncarnation(a.r)
 	a.open(t)
 	if err := a.r.SetRetention(4 * simRetention); err != nil {
 		t.Fatal(err)

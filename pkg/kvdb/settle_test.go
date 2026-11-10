@@ -1311,7 +1311,7 @@ func healWindow(t *testing.T, known bool, over int) {
 func (sr *simReplica) restartEmpty(t testing.TB) {
 	t.Helper()
 	closeStore(t, sr.r)
-	forgetIncarnation(sr.r.incarnationKey())
+	forgetIncarnation(sr.r)
 	sr.store, sr.dag = newSortedStore(), newFetchThrough()
 	sr.open(t)
 }

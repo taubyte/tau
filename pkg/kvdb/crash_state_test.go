@@ -531,7 +531,7 @@ func crashAtAnyWrite(t *testing.T, m crashMode) {
 		if err := c.disk.Put(ctx, ds.NewKey("crdttest").ChildString(badShutdownKey), nil); err != nil {
 			t.Fatal(err)
 		}
-		forgetIncarnation(r.incarnationKey())
+		forgetIncarnation(r)
 		c.blocks.setRemotes(peerDag.DAGService)
 		t.Logf("crash at write %d: %v", at, err)
 		re := manualReplica(t, c.disk, c.blocks, "reopened: ")
@@ -709,7 +709,7 @@ func crashInAResumedFetch(t *testing.T, m crashMode) {
 		if err := c.disk.Put(ctx, ds.NewKey("crdttest").ChildString(badShutdownKey), nil); err != nil {
 			t.Fatal(err)
 		}
-		forgetIncarnation(r.incarnationKey())
+		forgetIncarnation(r)
 		c.blocks.setRemotes(peerDag.DAGService)
 		re := manualReplica(t, c.disk, c.blocks, m.String()+" reopened: ")
 		got := queryAll(t, re)
@@ -1046,7 +1046,7 @@ func writeSurvivesAnyLoss(t *testing.T, place blockPlace) {
 	events := vs.events
 	vs.mu.Unlock()
 	closeStore(t, r)
-	forgetIncarnation(r.incarnationKey())
+	forgetIncarnation(r)
 	states := []map[string][]byte{
 		{"/a": []byte("old"), "/b": []byte("old")},
 		{"/a": []byte("new"), "/b": []byte("old")},
@@ -1094,7 +1094,7 @@ func writeSurvivesAnyLoss(t *testing.T, place blockPlace) {
 				t.Fatalf("power off after event %d, losing %v of %v", n, lost, u)
 			}
 			closeStore(t, re)
-			forgetIncarnation(re.incarnationKey())
+			forgetIncarnation(re)
 			runs++
 		}
 	}
@@ -1155,7 +1155,7 @@ func TestAnAtomicCommitSurvivesAnyLoss(t *testing.T) {
 	events := vs.events
 	vs.mu.Unlock()
 	closeStore(t, r)
-	forgetIncarnation(r.incarnationKey())
+	forgetIncarnation(r)
 
 	rng := rand.New(rand.NewPCG(1, 2))
 	runs := 0
@@ -1190,7 +1190,7 @@ func TestAnAtomicCommitSurvivesAnyLoss(t *testing.T) {
 				t.Fatalf("power off after event %d, losing %v of %v: the replica holds %v, neither %v nor %v", n, lost, u, got, old, want)
 			}
 			closeStore(t, re)
-			forgetIncarnation(re.incarnationKey())
+			forgetIncarnation(re)
 			runs++
 		}
 	}
@@ -1366,7 +1366,7 @@ func collectorRun(t *testing.T, seed uint64, steps int) {
 				if err := c.disk.Put(ctx, ds.NewKey("crdttest").ChildString(badShutdownKey), nil); err != nil {
 					t.Fatal(err)
 				}
-				forgetIncarnation(r.incarnationKey())
+				forgetIncarnation(r)
 				own = c.blocks
 				own.setRemotes(link)
 				c = &crashPoint{t: t, at: -1, store: c.disk, dag: own}

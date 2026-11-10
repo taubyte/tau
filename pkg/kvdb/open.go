@@ -107,7 +107,7 @@ func open(p peer.Node, path string, options ...OpenOption) (*kvDatabase, error) 
 	d := &kvDatabase{Node: p, path: path, onClose: o.onClose}
 	var err error
 	d.closeCtx, d.closeCtxC = p.NewChildContextWithCancel()
-	d.broadcaster, err = NewPubSubBroadcaster(d.closeCtx, p.Messaging(), path+"/broadcast")
+	d.broadcaster, err = NewPubSubBroadcaster(d.closeCtx, p, path+"/broadcast")
 	if err != nil {
 		d.closeCtxC()
 		return nil, err
@@ -116,6 +116,7 @@ func open(p peer.Node, path string, options ...OpenOption) (*kvDatabase, error) 
 	opts := DefaultOptions()
 	opts.Logger = o.logger
 	opts.ReplicaID = []byte(p.ID())
+	opts.incarnations = peer.Kept[incarnationRegistry](p, incarnationsKey{})
 	opts.RebroadcastInterval = o.rebroadcast
 	opts.DeliveryBound = max(opts.DeliveryBound, opts.DAGSyncerTimeout+opts.RebroadcastInterval)
 	if o.retention != 0 {

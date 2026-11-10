@@ -112,7 +112,7 @@ func TestPinsAreBoundedAndEndWithTheProcess(t *testing.T) {
 	if err := store.Put(ctx, ds.NewKey("crdttest").ChildString(badShutdownKey), nil); err != nil {
 		t.Fatal(err)
 	}
-	forgetIncarnation(r.incarnationKey())
+	forgetIncarnation(r)
 	re := manualReplica(t, store, own, "reopened: ")
 	defer re.Close()
 	if n, err := countPrefix(ctx, re.store, re.pinPrefix()); err != nil || n != 0 {

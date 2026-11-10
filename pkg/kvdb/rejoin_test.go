@@ -612,7 +612,7 @@ func TestACopyRestoredFromBeforeFirstContactIsJudged(t *testing.T) {
 	st.exchange(t, a, b, c)
 	st.away(t, simRetention+2*simMargin, b, c)
 	closeStore(t, a.r)
-	forgetIncarnation(a.r.incarnationKey())
+	forgetIncarnation(a.r)
 	a.store, a.dag = saved, blocks
 	a.open(t)
 	a.maintain(t)
