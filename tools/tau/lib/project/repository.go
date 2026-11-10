@@ -3,6 +3,7 @@ package projectLib
 import (
 	"context"
 
+	httpClient "github.com/taubyte/tau/clients/http/auth"
 	"github.com/taubyte/tau/pkg/git"
 	"github.com/taubyte/tau/tools/tau/config"
 	projectI18n "github.com/taubyte/tau/tools/tau/i18n/project"
@@ -10,6 +11,7 @@ import (
 
 type repositoryHandler struct {
 	projectName string
+	project     *httpClient.Project // when set, it need not be looked up by name
 
 	config *git.Repository
 	code   *git.Repository
@@ -17,6 +19,12 @@ type repositoryHandler struct {
 
 func Repository(projectName string) RepositoryHandler {
 	return &repositoryHandler{projectName: projectName}
+}
+
+// repositoryOf is Repository for a project already at hand: finding one by
+// name lists every project the caller has.
+func repositoryOf(project *httpClient.Project) RepositoryHandler {
+	return &repositoryHandler{projectName: project.Name, project: project}
 }
 
 func (h *repositoryHandler) Config() (*git.Repository, error) {

@@ -68,7 +68,7 @@ func clone(c *cli.Context) error {
 
 	branch, err := prompts.SelectABranch(c, config)
 	if err != nil {
-		return err
+		return projectI18n.NeverFinishedIfEmpty(project.Name, err)
 	}
 
 	currentBranch, err := repository.CurrentBranch()

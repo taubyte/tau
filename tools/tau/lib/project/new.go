@@ -21,7 +21,8 @@ New creates a new project. It creates the config and code repositories
 and registers them with the auth server. It then creates a project on
 the auth server and sets the current project to the new project.
 After that it will clone the project then push the id, description, and
-email to the config.yaml file.
+email to the config.yaml file. The project is selected only once all that
+worked. Any failure can be finished by running the same command again.
 
 Args:
 
@@ -52,53 +53,81 @@ func New(p *Project, location string, embedToken bool) error {
 		pterm.Println(buf.String())
 	}()
 
-	private := !p.Public
-
 	client, err := authClient.Load()
 	if err != nil {
 		return singletonsI18n.LoadingAuthClientFailed(err)
 	}
 
+	clientProject := p.Resume
+	if clientProject == nil {
+		if clientProject, err = createProject(client, p); err != nil {
+			return projectI18n.ProjectNotFinished(p.Name, err)
+		}
+	} else if _, err := config.Projects().Get(clientProject.Name); err == nil {
+		// The failed run's entry would stop the clone as "already cloned".
+		if err := config.Projects().Delete(clientProject.Name); err != nil {
+			return err
+		}
+	}
+
+	if err = cloneProjectAndPushConfig(clientProject, location, p.Description, user, embedToken, p.Account, p.Plan); err != nil {
+		return projectI18n.ProjectNotFinished(p.Name, err)
+	}
+
+	return session.Set().SelectedProject(clientProject.Name)
+}
+
+// createProject creates the repositories and registers the project. Each step
+// is safe to redo after an interrupted run.
+func createProject(client *httpClient.Client, p *Project) (*httpClient.Project, error) {
+	private := !p.Public
+
 	// Create config repository
 	config_name := fmt.Sprintf(common.ConfigRepoPrefix, p.Name)
-	config_id, err := CreateRepository(client, config_name, p.Description, private)
+	config_id, err := createOrAdoptRepository(client, config_name, p.Description, private)
 	if err != nil {
-		return projectI18n.ConfigRepoCreateFailed(err)
+		return nil, projectI18n.ConfigRepoCreateFailed(err)
 	}
 
 	// Create code repository
 	code_name := fmt.Sprintf(common.CodeRepoPrefix, p.Name)
-	code_id, err := CreateRepository(client, code_name, p.Description, private)
+	code_id, err := createOrAdoptRepository(client, code_name, p.Description, private)
 	if err != nil {
-		return projectI18n.CodeRepoCreateFailed(err)
+		return nil, projectI18n.CodeRepoCreateFailed(err)
 	}
 
 	// Register config repository
 	err = client.RegisterRepository(config_id)
 	if err != nil {
-		return projectI18n.ConfigRepoRegisterFailed(err)
+		return nil, projectI18n.ConfigRepoRegisterFailed(err)
 	}
 
 	// Register code repository
 	err = client.RegisterRepository(code_id)
 	if err != nil {
-		return projectI18n.CodeRepoRegisterFailed(err)
+		return nil, projectI18n.CodeRepoRegisterFailed(err)
 	}
 
 	// Create project
 	clientProject := &httpClient.Project{
 		Name: p.Name,
 	}
-	err = clientProject.Create(client, config_id, code_id)
-	if err != nil {
-		return projectI18n.CreatingProjectFailed(err)
+	if err = clientProject.Create(client, config_id, code_id); err != nil {
+		return nil, projectI18n.CreatingProjectFailed(err)
 	}
 
-	// Select created project
-	err = session.Set().SelectedProject(clientProject.Name)
-	if err != nil {
-		return err
-	}
+	return clientProject, nil
+}
 
-	return cloneProjectAndPushConfig(clientProject, location, p.Description, user, embedToken, p.Account, p.Plan)
+// createOrAdoptRepository creates a repository, or uses one of that name with
+// no commits: a repository with commits is left alone and stays an error.
+func createOrAdoptRepository(client *httpClient.Client, name, description string, private bool) (string, error) {
+	id, err := CreateRepository(client, name, description, private)
+	if err != nil {
+		if emptyID := client.EmptyRepository(name); emptyID != "" {
+			pterm.Info.Printfln("Using the existing empty repository `%s`", name)
+			return emptyID, nil
+		}
+	}
+	return id, err
 }

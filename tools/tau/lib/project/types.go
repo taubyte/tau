@@ -1,6 +1,7 @@
 package projectLib
 
 import (
+	httpClient "github.com/taubyte/tau/clients/http/auth"
 	"github.com/taubyte/tau/pkg/git"
 	"github.com/taubyte/tau/tools/tau/config"
 )
@@ -16,6 +17,10 @@ type Project struct {
 	// projectLib.BindingFlags.
 	Account string
 	Plan    string
+
+	// Resume is set when this name is a project whose creation never finished:
+	// New picks it up instead of creating repositories.
+	Resume *httpClient.Project
 }
 
 type ProjectRepository interface {

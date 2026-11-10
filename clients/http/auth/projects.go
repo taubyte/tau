@@ -85,6 +85,22 @@ func (p *Project) Repositories() (*RawRepoDataOuter, error) {
 	return p.RepoList, nil
 }
 
+// Unfinished reports whether creating this project never finished. tau's last
+// step is the config repository's first commit, so a project without one has
+// nothing to lose by being finished. On any error it is not called unfinished.
+func (p *Project) Unfinished() bool {
+	repos, err := p.Repositories()
+	if err != nil {
+		return false
+	}
+	owner, name, ok := strings.Cut(repos.Configuration.Fullname, "/")
+	if !ok {
+		return false
+	}
+	empty, err := p.client.RepositoryEmpty(owner, name)
+	return err == nil && empty
+}
+
 // Config returns the project configuration and an error
 // The configuration is a "config.yaml" file in the root of the repository
 func (p *Project) Config() (*common.ProjectConfig, error) {

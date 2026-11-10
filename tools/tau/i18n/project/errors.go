@@ -3,6 +3,9 @@ package projectI18n
 import (
 	"errors"
 	"fmt"
+	"strings"
+
+	"github.com/go-git/go-git/v5/plumbing/transport"
 )
 
 const (
@@ -26,6 +29,8 @@ const (
 	codeRepoRegisterFailed   = "registering code repository failed with: %s"
 	creatingProjectFailed    = "creating project failed with: %s"
 	projectBranchesNotEqual  = "config-`%s` and code-`%s` not on the same branch"
+	projectNotFinished       = "creating project `%s` did not finish: %w\nRun `tau new project --name %s` again to finish it"
+	projectNeverFinished     = "project `%s` has no commits, creating it never finished\nRun `tau new project --name %s` to finish it"
 
 	ConfigRepo = "config repository: %s"
 	CodeRepo   = "code repository: %s"
@@ -104,6 +109,19 @@ func CodeRepoRegisterFailed(err error) error {
 
 func CreatingProjectFailed(err error) error {
 	return fmt.Errorf(creatingProjectFailed, err)
+}
+
+func ProjectNotFinished(project string, err error) error {
+	return fmt.Errorf(projectNotFinished, project, err, project)
+}
+
+// NeverFinishedIfEmpty says what to do when err is git finding project's
+// repository empty; any other err is returned as it is.
+func NeverFinishedIfEmpty(project string, err error) error {
+	if err != nil && strings.Contains(err.Error(), transport.ErrEmptyRemoteRepository.Error()) {
+		return fmt.Errorf(projectNeverFinished, project, project)
+	}
+	return err
 }
 
 func ProjectBranchesNotEqual(branch1, branch2 string) error {
