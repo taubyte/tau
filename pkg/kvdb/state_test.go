@@ -126,13 +126,13 @@ func TestEscapingKeepsOrderAndParses(t *testing.T) {
 		if got, want := bytes.Compare(ka, kb), cmp(a, b); (got < 0) != (want < 0) || (got == 0) != (want == 0) {
 			t.Fatalf("%+v vs %+v: keys compare %d, identities %d", a, b, got, want)
 		}
-		key, d, err := parseElemTreeKey(ka)
+		key, d, err := new(internTable).parseElemTreeKey(ka)
 		if err != nil || key != a.key || d != a.d {
 			t.Fatalf("%+v parsed as %q %v (%v)", a, key, d, err)
 		}
 	}
 	for _, bad := range [][]byte{nil, {0}, {0, 2}, {'a', 0, 1}, append(elemTreeKey("k", dot{"r", 1}), 9), elemTreeKey("k", dot{"r", 0})} {
-		if _, _, err := parseElemTreeKey(bad); err == nil {
+		if _, _, err := new(internTable).parseElemTreeKey(bad); err == nil {
 			t.Errorf("%x parsed", bad)
 		}
 	}
@@ -148,20 +148,20 @@ func TestStateRecordsRoundTrip(t *testing.T) {
 		t.Error("a short element value parsed")
 	}
 	r := removal{key: "k", dot: dot{"r", 3}, at: bucketWidth - 10, ttl: 20}
-	pr, err := parsePending(pendingTreeKey(r), pendingValue(r))
+	pr, err := new(internTable).parsePending(pendingTreeKey(r), pendingValue(r))
 	if err != nil || pr != r {
 		t.Fatalf("removal came back as %+v (%v)", pr, err)
 	}
-	if _, err := parsePending(pendingTreeKeyIn(0, r.key, r.dot), pendingValue(r)); err == nil {
+	if _, err := new(internTable).parsePending(pendingTreeKeyIn(0, r.key, r.dot), pendingValue(r)); err == nil {
 		t.Error("a removal under another bucket parsed")
 	}
-	if _, err := parsePending(pendingTreeKey(r), pendingValue(r)[:15]); err == nil {
+	if _, err := new(internTable).parsePending(pendingTreeKey(r), pendingValue(r)[:15]); err == nil {
 		t.Error("a short removal value parsed")
 	}
-	if _, err := parsePending([]byte{1}, nil); err == nil {
+	if _, err := new(internTable).parsePending([]byte{1}, nil); err == nil {
 		t.Error("a short removal key parsed")
 	}
-	if _, _, _, err := parsePendingTreeKey([]byte{1, 2}); err == nil {
+	if _, _, _, err := new(internTable).parsePendingTreeKey([]byte{1, 2}); err == nil {
 		t.Error("a short pending key parsed")
 	}
 	k := &known{spans: []span{{0, 4}, {6, 9}}, changed: 5, expires: 3 * bucketWidth}
@@ -372,7 +372,7 @@ func TestTheJournalMarksEveryRecordWrite(t *testing.T) {
 	ctx := context.Background()
 	inner := ds.NewMapDatastore()
 	ns := ds.NewKey("j")
-	s := newSet(nil, ns.ChildString(setNs))
+	s := newSet(nil, ns.ChildString(setNs), new(internTable))
 	j := newJournal(inner, ns, s)
 	store := &journaled{Datastore: inner, j: j}
 	d := dot{"r", 4}
@@ -392,7 +392,7 @@ func TestTheJournalMarksEveryRecordWrite(t *testing.T) {
 	if err := store.Put(ctx, ns.ChildString("other"), nil); err != nil {
 		t.Fatal(err)
 	}
-	var sb stateBuild
+	sb := stateBuild{replicas: new(internTable)}
 	parseElemMark := func(k string) (string, dot, error) {
 		return sb.elemMark([]byte(strings.TrimPrefix(k, j.jElems)))
 	}

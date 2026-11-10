@@ -94,7 +94,6 @@ var allowed = map[string]string{
 	"pkg/containers/backends/containerd.tree":     "the process's own cgroup, which preparing moves the process into: once per process",
 	"pkg/containers/backends/containerd.treeErr":  "the process's own cgroup, which preparing moves the process into: once per process",
 	"pkg/kvdb.contextGens":                        "a source of unique numbers, shared only in being unique",
-	"pkg/kvdb.replicas":                           "the replica ids every key parse names: moving onto the store next",
 	"pkg/forge/bitbucket.routesMu":                "routes enrol as the package's vars initialise, and are read-only once they have",
 	"pkg/forge/bitbucket.routeTable":              "routes enrol as the package's vars initialise, and are read-only once they have",
 	"pkg/forge/bitbucket.enrolled":                "routes enrol as the package's vars initialise, and are read-only once they have",

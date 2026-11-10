@@ -160,7 +160,7 @@ func appendElemTreeKey(b []byte, key string, d dot) []byte {
 	return binary.BigEndian.AppendUint64(b, d.counter)
 }
 
-func parseElemTreeKey(b []byte) (string, dot, error) {
+func (replicas *internTable) parseElemTreeKey(b []byte) (string, dot, error) {
 	key, rest, err := readEscaped(b)
 	if err != nil {
 		return "", dot{}, err
@@ -181,11 +181,11 @@ func pendingTreeKey(r removal) []byte {
 	return pendingTreeKeyIn(bucket(r.expires()), r.key, r.dot)
 }
 
-func parsePendingTreeKey(b []byte) (uint64, string, dot, error) {
+func (replicas *internTable) parsePendingTreeKey(b []byte) (uint64, string, dot, error) {
 	if len(b) < 8 {
 		return 0, "", dot{}, errMalformedState
 	}
-	key, d, err := parseElemTreeKey(b[8:])
+	key, d, err := replicas.parseElemTreeKey(b[8:])
 	return binary.BigEndian.Uint64(b), key, d, err
 }
 
@@ -222,8 +222,8 @@ func appendPendingValue(b []byte, r removal) []byte {
 	return binary.BigEndian.AppendUint64(binary.BigEndian.AppendUint64(b, r.at), r.ttl)
 }
 
-func parsePending(b []byte, v []byte) (removal, error) {
-	bk, key, d, err := parsePendingTreeKey(b)
+func (replicas *internTable) parsePending(b []byte, v []byte) (removal, error) {
+	bk, key, d, err := replicas.parsePendingTreeKey(b)
 	if err != nil {
 		return removal{}, err
 	}

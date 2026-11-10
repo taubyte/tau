@@ -65,7 +65,7 @@ func TestTxnScanMatchesPendingWrites(t *testing.T) {
 func TestTxnScanWorkStaysLogarithmic(t *testing.T) {
 	ctx := context.Background()
 	const n = 4096
-	s := newSet(nil, ds.NewKey("/s"))
+	s := newSet(nil, ds.NewKey("/s"), new(internTable))
 	tx := newTxn(ds.NewMapDatastore())
 	for i := range n {
 		tx.put(s.elemKey(fmt.Sprint(i), dot{replica: "r", counter: uint64(i + 1)}), []byte{})

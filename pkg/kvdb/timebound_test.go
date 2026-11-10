@@ -113,7 +113,7 @@ func TestALateDeltaIsNotMergedOnceExpired(t *testing.T) {
 	}
 	b.mergeBlock(w, add)
 	b.wantValue(t, "/k", "<deleted>")
-	if b.r.covered(dotFromPB(deltaAt(t, w, add).GetDot())) {
+	if b.r.covered(new(internTable).dotFromPB(deltaAt(t, w, add).GetDot())) {
 		t.Fatal("an expired delta was merged")
 	}
 }

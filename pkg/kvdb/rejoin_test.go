@@ -411,7 +411,7 @@ func TestASlowAuthorStampsTheFleetTimeItHeard(t *testing.T) {
 		t.Fatal("setup: slow should have rejoined")
 	}
 	d := deltaAt(t, slow, del(t, slow.r, "/s"))
-	if dotFromPB(d.GetDot()).replica != slow.incarnation() || len(d.GetTombstones()) == 0 {
+	if new(internTable).dotFromPB(d.GetDot()).replica != slow.incarnation() || len(d.GetTombstones()) == 0 {
 		t.Fatal("setup: slow's removal wrote no block")
 	}
 	if now := st.ms(); d.GetAt()+durationMillis(simS) < now {

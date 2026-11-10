@@ -183,7 +183,7 @@ func TestH4SnapshotStateIsMergedWhole(t *testing.T) {
 
 	syncHeadsLogged(t, a, x)
 	want(t, "X", x, all)
-	if x.covered(dotFromPB(rootDelta.GetDot())) {
+	if x.covered(new(internTable).dotFromPB(rootDelta.GetDot())) {
 		t.Fatal("X merged a snapshot it could not fetch whole")
 	}
 
@@ -194,7 +194,7 @@ func TestH4SnapshotStateIsMergedWhole(t *testing.T) {
 	if err := x.Repair(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if !x.covered(dotFromPB(rootDelta.GetDot())) {
+	if !x.covered(new(internTable).dotFromPB(rootDelta.GetDot())) {
 		t.Fatal("repair did not retry the snapshot")
 	}
 	want(t, "X", x, all)
@@ -285,7 +285,7 @@ func TestH4AStateFetchThatEndsEarlyIsNotMerged(t *testing.T) {
 	defer x.Close()
 
 	syncHeadsLogged(t, a, x)
-	if x.covered(dotFromPB(rootDelta.GetDot())) {
+	if x.covered(new(internTable).dotFromPB(rootDelta.GetDot())) {
 		t.Fatal("X merged a snapshot it fetched only part of")
 	}
 	if got := queryAll(t, x); len(got) != 0 {

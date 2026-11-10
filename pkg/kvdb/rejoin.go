@@ -142,7 +142,7 @@ func (store *Datastore) decodeBroadcast(data []byte) (message, error) {
 		if err != nil {
 			return message{}, err
 		}
-		msg.heads = append(msg.heads, Head{Cid: c, Dot: dotFromPB(h.GetDot()), At: h.GetAt(), TTL: h.GetTtl()})
+		msg.heads = append(msg.heads, Head{Cid: c, Dot: store.replicas.dotFromPB(h.GetDot()), At: h.GetAt(), TTL: h.GetTtl()})
 	}
 	if v := b.GetVerdict(); v != nil {
 		msg.verdict = &verdict{to: string(v.GetTo()), rebase: v.GetRebase(), since: v.GetSince(), held: v.GetHeld()}
@@ -710,7 +710,7 @@ func (store *Datastore) reached(ctx context.Context, theirs *causalContext) erro
 	t := newTxn(store.store)
 	prefix := store.ownPrefix().String() + "/"
 	err := scanStore(ctx, store.store, store.ownPrefix(), func(k string, _ []byte) error {
-		d, err := parseDotSegment(strings.TrimPrefix(k, prefix))
+		d, err := store.replicas.parseDotSegment(strings.TrimPrefix(k, prefix))
 		if err != nil {
 			return err
 		}
@@ -824,7 +824,7 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 	prefix := store.ownPrefix().String() + "/"
 	held := map[uint64]struct{}{}
 	for k, rec := range own {
-		d, err := parseDotSegment(strings.TrimPrefix(k, prefix))
+		d, err := store.replicas.parseDotSegment(strings.TrimPrefix(k, prefix))
 		if err != nil {
 			return err
 		}
@@ -1031,7 +1031,7 @@ func (store *Datastore) reissueLocked(ctx context.Context) error {
 	kept := map[ds.Key]*pb.Delta{}
 	prefix := store.ownPrefix().String() + "/"
 	err = scanStore(ctx, store.store, store.ownPrefix(), func(k string, v []byte) error {
-		d, err := parseDotSegment(strings.TrimPrefix(k, prefix))
+		d, err := store.replicas.parseDotSegment(strings.TrimPrefix(k, prefix))
 		if err != nil {
 			return err
 		}

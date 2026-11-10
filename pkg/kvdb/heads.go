@@ -41,14 +41,14 @@ type heads struct {
 	cache map[cid.Cid]Head
 }
 
-func newHeads(ctx context.Context, store ds.Datastore, namespace ds.Key) (*heads, error) {
+func newHeads(ctx context.Context, store ds.Datastore, namespace ds.Key, replicas *internTable) (*heads, error) {
 	hh := &heads{store: store, namespace: namespace, prefix: namespace.String(), cache: map[cid.Cid]Head{}}
 	err := scanStore(ctx, store, namespace, func(k string, v []byte) error {
 		c, err := dshelp.DsKeyToCidV1(ds.NewKey(strings.TrimPrefix(k, namespace.String())), cid.Raw)
 		if err != nil {
 			return fmt.Errorf("bad head key %s: %w", k, err)
 		}
-		h, err := decodeHead(c, v)
+		h, err := replicas.decodeHead(c, v)
 		if err != nil {
 			return err
 		}
@@ -76,13 +76,13 @@ func appendHead(b []byte, h Head) []byte {
 	return appendDot(b, h.Dot)
 }
 
-func decodeHead(c cid.Cid, v []byte) (Head, error) {
+func (replicas *internTable) decodeHead(c cid.Cid, v []byte) (Head, error) {
 	var f [3]uint64
 	rest, err := uvarintsInto(f[:], v)
 	if err != nil {
 		return Head{}, errors.New("error decoding head")
 	}
-	d, err := decodeDot(rest)
+	d, err := replicas.decodeDot(rest)
 	if err != nil {
 		return Head{}, err
 	}

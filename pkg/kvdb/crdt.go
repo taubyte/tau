@@ -341,6 +341,8 @@ type Datastore struct {
 	parents    []Head
 	build      stateBuild
 	redo       redoScratch
+	// replicas interns the replica ids this store's keys name.
+	replicas   internTable
 	compactDue bool
 	// lows are lower bounds that let frequent passes skip empty scans: the
 	// earliest pending-removal expiry, indexed-block half-life (at + ttl/2) and
@@ -434,7 +436,8 @@ func NewDatastore(
 	}
 	dstore.ttl.Store(durationMillis(opts.Retention))
 	dstore.times = timesOf(opts)
-	dstore.set = newSet(store, namespace.ChildString(setNs))
+	dstore.set = newSet(store, namespace.ChildString(setNs), &dstore.replicas)
+	dstore.build.replicas = &dstore.replicas
 	dstore.set.logger = opts.Logger
 	dstore.set.putHook = func(k string, v []byte) {
 		if opts.PutHook != nil {
@@ -515,7 +518,7 @@ func (store *Datastore) open(ctx context.Context) error {
 	}
 
 	var err error
-	if store.heads, err = newHeads(ctx, store.store, store.namespace.ChildString(headsNs)); err != nil {
+	if store.heads, err = newHeads(ctx, store.store, store.namespace.ChildString(headsNs), &store.replicas); err != nil {
 		return fmt.Errorf("error building heads: %w", err)
 	}
 	if store.cc, err = store.loadContext(ctx); err != nil {
@@ -776,7 +779,7 @@ func (store *Datastore) adoptHeads(ctx context.Context, received []Head) {
 			continue
 		}
 		head.Height = delta.GetPriority()
-		head.Dot = dotFromPB(delta.GetDot())
+		head.Dot = store.replicas.dotFromPB(delta.GetDot())
 		head.At, head.TTL = delta.GetAt(), delta.GetTtl()
 		// A walk that merged it meanwhile made it a head, or a parent.
 		if store.covered(head.Dot) {
@@ -1004,7 +1007,7 @@ func (store *Datastore) dagWorker() {
 			// rebroadcasts; recording it would let a clock far ahead fill
 			// other replicas' stores.
 			if !errors.Is(err, errAhead) {
-				store.retryLater(ctx, linkOf(job.node.Cid(), job.delta))
+				store.retryLater(ctx, store.replicas.linkOf(job.node.Cid(), job.delta))
 			}
 			job.session.Done()
 			continue
@@ -1225,7 +1228,7 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 		store.dropFailed(ctx, current)
 		return nil, err
 	}
-	d := dotFromPB(delta.GetDot())
+	d := store.replicas.dotFromPB(delta.GetDot())
 	if store.cc.covers(d) || gen != store.generation {
 		settled = store.cc.covers(d)
 		return nil, store.dropUnindexed(ctx, current)
@@ -1352,7 +1355,7 @@ func (store *Datastore) repairDAG(ctx context.Context) error {
 	var done []ds.Key
 	for _, prefix := range []ds.Key{store.missingPrefix(), store.retryPrefix()} {
 		err := scanStore(ctx, store.store, prefix, func(k string, v []byte) error {
-			d, err := parseDotSegment(k[len(prefix.String())+1:])
+			d, err := store.replicas.parseDotSegment(k[len(prefix.String())+1:])
 			if err != nil {
 				return err
 			}
@@ -1569,8 +1572,8 @@ func parentsOf(hs []Head) []*pb.Parent {
 	return out
 }
 
-func linkOf(c cid.Cid, delta *pb.Delta) link {
-	return link{cid: c, dot: dotFromPB(delta.GetDot()), at: delta.GetAt(), ttl: delta.GetTtl()}
+func (replicas *internTable) linkOf(c cid.Cid, delta *pb.Delta) link {
+	return link{cid: c, dot: replicas.dotFromPB(delta.GetDot()), at: delta.GetAt(), ttl: delta.GetTtl()}
 }
 
 func (store *Datastore) stamped(delta *pb.Delta) *pb.Delta {
@@ -1824,7 +1827,7 @@ func (store *Datastore) dropOrphans(ctx context.Context) error {
 	var orphans []cid.Cid
 	prefix := store.blocksPrefix()
 	err := scanStore(ctx, store.store, prefix, func(k string, v []byte) error {
-		b, err := decodeBlock(v)
+		b, err := store.replicas.decodeBlock(v)
 		if err != nil {
 			return err
 		}
@@ -1943,7 +1946,7 @@ func (store *Datastore) DotDAG(ctx context.Context, w io.Writer) error {
 		if err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(w, "%s [label=\"%d | %s | snapshot=%t: +%d -%d\"]\n", c, delta.GetPriority(), dotFromPB(delta.GetDot()), delta.GetSnapshot(), len(delta.GetElements()), len(delta.GetTombstones())); err != nil {
+		if _, err := fmt.Fprintf(w, "%s [label=\"%d | %s | snapshot=%t: +%d -%d\"]\n", c, delta.GetPriority(), store.replicas.dotFromPB(delta.GetDot()), delta.GetSnapshot(), len(delta.GetElements()), len(delta.GetTombstones())); err != nil {
 			return err
 		}
 		links, err := blockLinks(nd, nil)

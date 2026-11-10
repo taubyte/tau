@@ -46,7 +46,7 @@ func testOptions() *Options {
 var oracleChecks atomic.Int64
 
 func everything(ctx context.Context, store *Datastore, s *snapState) (*mergeSet, error) {
-	ms := newMergeSet()
+	ms := newMergeSet(&store.replicas)
 	if err := s.elems.Range(ctx, nil, nil, func(k, v []byte) error { return ms.addElem(k, v, true) }); err != nil {
 		return nil, err
 	}
@@ -170,7 +170,7 @@ func TestTheOracleChecksEveryMerge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	blind, err := b.prepareSnapshot(ctx, snap, root, s, newMergeSet())
+	blind, err := b.prepareSnapshot(ctx, snap, root, s, newMergeSet(&b.replicas))
 	if err != nil {
 		t.Fatal(err)
 	}

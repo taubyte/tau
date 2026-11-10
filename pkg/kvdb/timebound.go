@@ -405,7 +405,7 @@ func (store *Datastore) refreshDue(ctx context.Context) (bool, error) {
 		if store.isTaken(prefix, k) {
 			return nil
 		}
-		b, err := decodeBlock(v)
+		b, err := store.replicas.decodeBlock(v)
 		if err != nil {
 			return err
 		}
@@ -440,7 +440,7 @@ func (store *Datastore) staleHead(ctx context.Context) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		b, err := decodeBlock(v)
+		b, err := store.replicas.decodeBlock(v)
 		if err != nil {
 			return false, err
 		}

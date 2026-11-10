@@ -124,7 +124,7 @@ func replicaSegment(replica string) string {
 	return "r" + segEncoding.EncodeToString([]byte(replica))
 }
 
-func parseDotSegment(s string) (dot, error) {
+func (replicas *internTable) parseDotSegment(s string) (dot, error) {
 	r, c, ok := strings.Cut(s, ".")
 	if !ok || !strings.HasPrefix(r, "r") {
 		return dot{}, fmt.Errorf("bad dot segment %q", s)
@@ -140,12 +140,11 @@ func parseDotSegment(s string) (dot, error) {
 	return dot{replica: replica, counter: counter}, nil
 }
 
-// replicas interns the replicas dot segments name, so parsing a key does not
-// make a string per key. It empties at internedLimit.
-var replicas = &internTable{m: map[string]string{}, raw: map[string]string{}}
-
+// internedLimit is where each of an internTable's two maps empties.
 const internedLimit = 1 << 12
 
+// internTable interns the replicas dot segments name, so parsing a key does not
+// make a string per key. A store keeps one; its zero value is ready.
 type internTable struct {
 	mu     sync.RWMutex
 	m, raw map[string]string
@@ -160,6 +159,9 @@ func (t *internTable) bytes(b []byte) string {
 	}
 	r = string(b)
 	t.mu.Lock()
+	if t.raw == nil {
+		t.raw = map[string]string{}
+	}
 	if len(t.raw) >= internedLimit {
 		clear(t.raw)
 	}
@@ -180,6 +182,9 @@ func (t *internTable) of(enc string) (string, error) {
 		return "", err
 	}
 	t.mu.Lock()
+	if t.m == nil {
+		t.m = map[string]string{}
+	}
 	if len(t.m) >= internedLimit {
 		clear(t.m)
 	}
@@ -232,7 +237,7 @@ func (d dot) pooledPB() *pb.Dot {
 	return p
 }
 
-func dotFromPB(p *pb.Dot) dot {
+func (replicas *internTable) dotFromPB(p *pb.Dot) dot {
 	return dot{replica: replicas.bytes(p.GetReplica()), counter: p.GetCounter()}
 }
 
@@ -243,7 +248,7 @@ func appendDot(b []byte, d dot) []byte {
 	return append(binary.AppendUvarint(b, d.counter), d.replica...)
 }
 
-func decodeDot(b []byte) (dot, error) {
+func (replicas *internTable) decodeDot(b []byte) (dot, error) {
 	c, n := binary.Uvarint(b)
 	if n <= 0 {
 		return dot{}, errors.New("error decoding dot")

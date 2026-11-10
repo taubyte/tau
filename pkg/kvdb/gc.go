@@ -1018,7 +1018,7 @@ func (store *Datastore) openGC(ctx context.Context) error {
 	ch := store.changeRoots()
 	prefix := store.blocksPrefix()
 	err := scanStore(ctx, store.store, prefix, func(_ string, v []byte) error {
-		b, err := decodeBlock(v)
+		b, err := store.replicas.decodeBlock(v)
 		if err != nil || !b.state.Defined() {
 			return err
 		}

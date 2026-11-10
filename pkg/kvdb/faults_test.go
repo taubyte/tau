@@ -65,7 +65,7 @@ func TestOptionsVerify(t *testing.T) {
 func TestDecodersRefuseGarbage(t *testing.T) {
 	for _, s := range []string{"", "x", "r.1", "r!!.00000000000000000001", "rAA.12", "rAA.abcdefghijklmnopqrst",
 		"rAA.0000000000000000001x", "rAA. 0000000000000000001", "rAA.0000000000000000_001", "rAA.+0000000000000000001"} {
-		if _, err := parseDotSegment(s); err == nil {
+		if _, err := new(internTable).parseDotSegment(s); err == nil {
 			t.Errorf("parseDotSegment(%q) accepted", s)
 		}
 	}
@@ -74,22 +74,22 @@ func TestDecodersRefuseGarbage(t *testing.T) {
 			t.Errorf("parseKeySegment(%q) accepted", s)
 		}
 	}
-	if _, err := decodeDot(nil); err == nil {
+	if _, err := new(internTable).decodeDot(nil); err == nil {
 		t.Error("decodeDot accepted nothing")
 	}
-	if _, err := decodeHead(cid.Undef, nil); err == nil {
+	if _, err := new(internTable).decodeHead(cid.Undef, nil); err == nil {
 		t.Error("decodeHead accepted nothing")
 	}
-	if _, err := decodeHead(cid.Undef, []byte{1}); err == nil {
+	if _, err := new(internTable).decodeHead(cid.Undef, []byte{1}); err == nil {
 		t.Error("decodeHead accepted a height without a dot")
 	}
-	if _, err := decodeBlock([]byte{0}); err == nil {
+	if _, err := new(internTable).decodeBlock([]byte{0}); err == nil {
 		t.Error("decodeBlock accepted a kind without a dot")
 	}
-	if _, err := decodeBlock([]byte{0, 0x80}); err == nil {
+	if _, err := new(internTable).decodeBlock([]byte{0, 0x80}); err == nil {
 		t.Error("decodeBlock accepted broken stamps")
 	}
-	if _, err := decodeBlock([]byte{0, 1, 1, 0x80}); err == nil {
+	if _, err := new(internTable).decodeBlock([]byte{0, 1, 1, 0x80}); err == nil {
 		t.Error("decodeBlock accepted a broken dot")
 	}
 	if _, err := decodeMarker(nil); err == nil {
@@ -114,7 +114,7 @@ func TestDecodersRefuseGarbage(t *testing.T) {
 		t.Error("the zero dot names nothing, so it is always covered")
 	}
 
-	s := newSet(nil, ds.NewKey("/s"))
+	s := newSet(nil, ds.NewKey("/s"), new(internTable))
 	for _, k := range []string{"/s/e/nokey", "/s/e/x/r.1", "/s/e/" + keySegment("/a") + "/bad"} {
 		if _, err := s.parseElem(k, []byte{1}); err == nil {
 			t.Errorf("parseElem(%q) accepted", k)

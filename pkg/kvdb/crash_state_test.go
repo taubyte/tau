@@ -315,7 +315,7 @@ func assertReach(t testing.TB, r *Datastore) {
 		}
 	}
 	err := scanStore(ctx, r.store, r.blocksPrefix(), func(_ string, v []byte) error {
-		b, err := decodeBlock(v)
+		b, err := new(internTable).decodeBlock(v)
 		root(b.state)
 		return err
 	})

@@ -29,12 +29,12 @@ func (o *oracle) record(t testing.TB, r *Datastore) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := dotFromPB(delta.GetDot())
+	d := new(internTable).dotFromPB(delta.GetDot())
 	for _, e := range delta.GetElements() {
 		o.elems[elemID(string(e.GetKey()), d)] = struct{}{}
 	}
 	for _, e := range delta.GetTombstones() {
-		o.tombs[elemID(string(e.GetKey()), dotFromPB(e.GetDot()))] = struct{}{}
+		o.tombs[elemID(string(e.GetKey()), new(internTable).dotFromPB(e.GetDot()))] = struct{}{}
 	}
 }
 
@@ -252,12 +252,12 @@ func runInterleaving(t *testing.T, seed int64) {
 		if m := countEntries(t, r, r.missingPrefix()); m != 0 {
 			var diag []string
 			scanStore(ctx, r.store, r.missingPrefix(), func(k string, v []byte) error {
-				d, _ := parseDotSegment(strings.TrimPrefix(k, r.missingPrefix().String()+"/"))
+				d, _ := new(internTable).parseDotSegment(strings.TrimPrefix(k, r.missingPrefix().String()+"/"))
 				c, _ := cid.Cast(v)
 				_, md, gerr := (&crdtNodeGetter{r.dagService}).GetDelta(ctx, c)
 				line := fmt.Sprintf("missing %s %s (snapshot=%t err=%v parents=%d):", d, c, md.GetSnapshot(), gerr, len(md.GetParents()))
 				for _, p := range md.GetParents() {
-					pd := dotFromPB(p.GetDot())
+					pd := new(internTable).dotFromPB(p.GetDot())
 					line += fmt.Sprintf(" [parent %s covered-by-r0=%t]", pd, r.covered(pd))
 				}
 				for j, o := range all {

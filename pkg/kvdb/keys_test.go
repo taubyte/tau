@@ -16,9 +16,9 @@ import (
 
 func TestKeysAreTheirSegments(t *testing.T) {
 	ns := ds.NewKey("/ns")
-	s := newSet(nil, ns.ChildString(setNs))
+	s := newSet(nil, ns.ChildString(setNs), new(internTable))
 	pre := newPrefixes(ns)
-	hh, err := newHeads(context.Background(), ds.NewMapDatastore(), ns.ChildString(headsNs))
+	hh, err := newHeads(context.Background(), ds.NewMapDatastore(), ns.ChildString(headsNs), new(internTable))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,27 +64,27 @@ func TestKeysAreTheirSegments(t *testing.T) {
 func TestParsedSegmentsAreInterned(t *testing.T) {
 	d := dot{replica: "replica\x00\xff-interned", counter: 42}
 	seg := d.segment()
-	got, err := parseDotSegment(seg)
+	got, err := new(internTable).parseDotSegment(seg)
 	if err != nil || got != d {
 		t.Fatalf("parsed %v, %v", got, err)
 	}
 	if a := testing.AllocsPerRun(100, func() {
-		if _, err := parseDotSegment(seg); err != nil {
+		if _, err := new(internTable).parseDotSegment(seg); err != nil {
 			t.Fatal(err)
 		}
 	}); a != 0 {
 		t.Fatalf("parsing a dot segment: %.0f allocations", a)
 	}
 	p, v := d.toPB(), encodeDot(d)
-	if dotFromPB(p) != d {
+	if new(internTable).dotFromPB(p) != d {
 		t.Fatal("dot from its message")
 	}
-	if got, err := decodeDot(v); err != nil || got != d {
+	if got, err := new(internTable).decodeDot(v); err != nil || got != d {
 		t.Fatalf("dot from its value: %v, %v", got, err)
 	}
 	if a := testing.AllocsPerRun(100, func() {
-		dotFromPB(p)
-		if _, err := decodeDot(v); err != nil {
+		new(internTable).dotFromPB(p)
+		if _, err := new(internTable).decodeDot(v); err != nil {
 			t.Fatal(err)
 		}
 	}); a != 0 {
@@ -108,7 +108,7 @@ func TestParsedSegmentsAreInterned(t *testing.T) {
 	if _, err := parseKeySegment("k!!"); err == nil {
 		t.Fatal("a bad key segment parsed")
 	}
-	if _, err := parseDotSegment("r!!." + fmt.Sprintf("%020d", 1)); err == nil {
+	if _, err := new(internTable).parseDotSegment("r!!." + fmt.Sprintf("%020d", 1)); err == nil {
 		t.Fatal("a bad dot segment parsed")
 	}
 }
@@ -145,7 +145,7 @@ func TestABlockRecordIsOneAllocation(t *testing.T) {
 		if !bytes.Equal(got, want) {
 			t.Fatalf("record %x, want %x", got, want)
 		}
-		back, err := decodeBlock(got)
+		back, err := new(internTable).decodeBlock(got)
 		if err != nil || back != b {
 			t.Fatalf("read back %+v, %v", back, err)
 		}

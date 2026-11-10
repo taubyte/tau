@@ -40,6 +40,7 @@ type set struct {
 	putHook              func(key string, v []byte)
 	deleteHook           func(key string)
 	logger               logging.StandardLogger
+	replicas             *internTable
 }
 
 type element struct {
@@ -63,9 +64,10 @@ type removal struct {
 
 func (r removal) expires() uint64 { return r.at + r.ttl }
 
-func newSet(store ds.Datastore, namespace ds.Key) *set {
+func newSet(store ds.Datastore, namespace ds.Key, replicas *internTable) *set {
 	return &set{
 		store:     store,
+		replicas:  replicas,
 		namespace: namespace,
 		elems:     namespace.ChildString(elemsNs).String(),
 		pending:   namespace.ChildString(pendingNs).String(),
@@ -187,7 +189,7 @@ func (s *set) parseElem(k string, v []byte) (element, error) {
 	if err != nil {
 		return element{}, err
 	}
-	d, err := parseDotSegment(dseg)
+	d, err := s.replicas.parseDotSegment(dseg)
 	if err != nil {
 		return element{}, err
 	}
@@ -209,7 +211,7 @@ func (s *set) parsePending(k string, v []byte) (removal, error) {
 	if err != nil {
 		return removal{}, err
 	}
-	d, err := parseDotSegment(dseg)
+	d, err := s.replicas.parseDotSegment(dseg)
 	if err != nil {
 		return removal{}, err
 	}
@@ -229,7 +231,7 @@ func (s *set) liveElems(ctx context.Context, t *txn, key string) ([]element, err
 	}
 	t.elems = t.elems[:0]
 	for _, e := range entries {
-		d, err := parseDotSegment(e.key[len(t.prefix)+1:])
+		d, err := s.replicas.parseDotSegment(e.key[len(t.prefix)+1:])
 		if err != nil {
 			return nil, err
 		}

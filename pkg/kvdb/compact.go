@@ -93,7 +93,7 @@ func (store *Datastore) compactLocked(ctx context.Context, force bool) (Head, *c
 	links := append([]Head(nil), hs...)
 	missing := store.missingPrefix()
 	err := scanStore(ctx, store.store, missing, func(k string, v []byte) error {
-		d, err := parseDotSegment(strings.TrimPrefix(k, missing.String()+"/"))
+		d, err := store.replicas.parseDotSegment(strings.TrimPrefix(k, missing.String()+"/"))
 		if err != nil {
 			return err
 		}
@@ -293,7 +293,7 @@ func (store *Datastore) nothingToFold(ctx context.Context, hs []Head) (bool, err
 		if store.isTaken(prefix, stringOf(k)) {
 			return nil
 		}
-		b, err := decodeBlock(v)
+		b, err := store.replicas.decodeBlock(v)
 		if err != nil {
 			return err
 		}
@@ -314,6 +314,7 @@ func (store *Datastore) nothingToFold(ctx context.Context, hs []Head) (bool, err
 
 type stateBuild struct {
 	arena, look, key []byte
+	replicas         *internTable
 }
 
 const keptBuild = 1 << 20
@@ -345,7 +346,7 @@ func (b *stateBuild) elemMark(rest []byte) (string, dot, error) {
 	if err != nil {
 		return "", dot{}, err
 	}
-	d, err := parseDotSegment(stringOf(rest[i+1:]))
+	d, err := b.replicas.parseDotSegment(stringOf(rest[i+1:]))
 	return key, d, err
 }
 
@@ -363,7 +364,7 @@ func (b *stateBuild) pendingMark(rest []byte) (uint64, string, dot, error) {
 	if i < 1 {
 		return 0, "", dot{}, fmt.Errorf("bad journal key %q", rest)
 	}
-	d, err := parseDotSegment(stringOf(tail[:i]))
+	d, err := b.replicas.parseDotSegment(stringOf(tail[:i]))
 	if err != nil {
 		return 0, "", dot{}, err
 	}

@@ -243,7 +243,7 @@ func (store *Datastore) fetchState(ctx context.Context, ng *crdtNodeGetter, c ci
 	if err := cs.verify(stc, root); err != nil {
 		return nil, fmt.Errorf("state %s: %w", stc, err)
 	}
-	f := store.beginFetch(stc, linkOf(c, root))
+	f := store.beginFetch(stc, store.replicas.linkOf(c, root))
 	store.sweepFetches(ctx, store.dropClockNow())
 	cctx, cancel := context.WithTimeout(ctx, store.opts.DAGSyncerTimeout)
 	defer cancel()

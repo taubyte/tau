@@ -119,7 +119,7 @@ func appendBlock(v []byte, b block) []byte {
 	return append(binary.AppendUvarint(v, b.dot.counter), b.dot.replica...)
 }
 
-func decodeBlock(v []byte) (block, error) {
+func (replicas *internTable) decodeBlock(v []byte) (block, error) {
 	if len(v) < 2 {
 		return block{}, errors.New("error decoding block entry")
 	}
@@ -134,7 +134,7 @@ func decodeBlock(v []byte) (block, error) {
 			return block{}, err
 		}
 	}
-	b.dot, err = decodeDot(rest[st[2]:])
+	b.dot, err = replicas.decodeDot(rest[st[2]:])
 	return b, err
 }
 
@@ -188,7 +188,7 @@ func (store *Datastore) loadContext(ctx context.Context) (*causalContext, error)
 	}
 	dp := store.cloudPrefix()
 	err = scanStore(ctx, store.store, dp, func(k string, v []byte) error {
-		d, err := parseDotSegment(strings.TrimPrefix(k, dp.String()+"/"))
+		d, err := store.replicas.parseDotSegment(strings.TrimPrefix(k, dp.String()+"/"))
 		if err != nil {
 			return err
 		}
@@ -412,7 +412,7 @@ func (m *merging) link(ctx context.Context, parents []*pb.Parent) ([]link, error
 			c = h.Cid
 			m.heads.removeHead(c)
 		}
-		l := link{dot: dotFromPB(p.GetDot()), at: p.GetAt(), ttl: p.GetTtl()}
+		l := link{dot: m.store.replicas.dotFromPB(p.GetDot()), at: p.GetAt(), ttl: p.GetTtl()}
 		if m.cc.covers(l.dot) || m.store.expired(l.at+l.ttl, now) {
 			continue
 		}
@@ -503,16 +503,16 @@ func (m *merging) commit(ctx context.Context) error {
 }
 
 // A tombstone written without its own time takes the delta's.
-func tombstoneOf(e *pb.Element, at uint64) removal {
+func (replicas *internTable) tombstoneOf(e *pb.Element, at uint64) removal {
 	if e.GetAt() != 0 {
 		at = e.GetAt()
 	}
-	return removal{key: stringOf(e.GetKey()), dot: dotFromPB(e.GetDot()), at: at, ttl: e.GetTtl()}
+	return removal{key: stringOf(e.GetKey()), dot: replicas.dotFromPB(e.GetDot()), at: at, ttl: e.GetTtl()}
 }
 
 // The caller holds store.mu.
 func (store *Datastore) mergeDelta(ctx context.Context, c cid.Cid, delta *pb.Delta) ([]link, error) {
-	d := dotFromPB(delta.GetDot())
+	d := store.replicas.dotFromPB(delta.GetDot())
 	if d.isZero() {
 		return nil, fmt.Errorf("delta %s has no dot", c)
 	}
@@ -544,7 +544,7 @@ func (m *merging) delta(ctx context.Context, c cid.Cid, d dot, delta *pb.Delta) 
 		return nil, err
 	}
 	for _, tomb := range delta.GetTombstones() {
-		if err := m.remove(ctx, tombstoneOf(tomb, at)); err != nil {
+		if err := m.remove(ctx, m.store.replicas.tombstoneOf(tomb, at)); err != nil {
 			return nil, err
 		}
 	}
@@ -708,6 +708,8 @@ type mergeSet struct {
 	// the number of marks the journal holds.
 	pendingOf map[string][]string
 	journal   int
+	// replicas interns what the set's keys name: the merging store's.
+	replicas *internTable
 	// els and rems hold the records theirs points to, 64 to an allocation; keys
 	// holds the tree keys the set makes, a chunk at a time.
 	els  []element
@@ -749,15 +751,15 @@ func (ms *mergeSet) keepRemoval(r removal) *removal {
 	return &ms.rems[len(ms.rems)-1]
 }
 
-func newMergeSet() *mergeSet {
-	return &mergeSet{elems: map[string]elemCase{}, pending: map[string]pendCase{}, pendingOf: map[string][]string{}}
+func newMergeSet(replicas *internTable) *mergeSet {
+	return &mergeSet{elems: map[string]elemCase{}, pending: map[string]pendCase{}, pendingOf: map[string][]string{}, replicas: replicas}
 }
 
 func (ms *mergeSet) addElem(tk []byte, theirs []byte, has bool) error {
 	if _, ok := ms.elems[string(tk)]; ok {
 		return nil
 	}
-	key, d, err := parseElemTreeKey(tk)
+	key, d, err := ms.replicas.parseElemTreeKey(tk)
 	if err != nil {
 		return err
 	}
@@ -777,13 +779,13 @@ func (ms *mergeSet) addPending(tk []byte, theirs []byte, has bool) error {
 	if _, ok := ms.pending[string(tk)]; ok {
 		return nil
 	}
-	_, key, d, err := parsePendingTreeKey(tk)
+	_, key, d, err := ms.replicas.parsePendingTreeKey(tk)
 	if err != nil {
 		return err
 	}
 	c := pendCase{key: key, dot: d}
 	if has {
-		r, err := parsePending(tk, theirs)
+		r, err := ms.replicas.parsePending(tk, theirs)
 		if err != nil {
 			return err
 		}
@@ -798,7 +800,7 @@ func (ms *mergeSet) addPending(tk []byte, theirs []byte, has bool) error {
 // enumerate is the records whose trees differ between the base and s, and
 // those the journal names: this replica differs from the base in nothing else.
 func (store *Datastore) enumerate(ctx context.Context, s *snapState) (*mergeSet, error) {
-	ms := newMergeSet()
+	ms := newMergeSet(&store.replicas)
 	err := statetree.Diff(ctx, store.tree(store.dagService, store.base.elems), s.elems, func(ch statetree.Change) error {
 		return ms.addElem(ch.Key, ch.New, ch.Kind != statetree.Removed)
 	})
@@ -811,7 +813,7 @@ func (store *Datastore) enumerate(ctx context.Context, s *snapState) (*mergeSet,
 	if err != nil {
 		return nil, err
 	}
-	var sb stateBuild
+	sb := stateBuild{replicas: &store.replicas}
 	err = scanBytes(ctx, store.store, store.journal.elemsPrefix(), func(k, _ []byte) error {
 		key, d, err := sb.elemMark(k[len(store.journal.jElems):])
 		if err != nil {
@@ -860,7 +862,7 @@ func sortedKeys[V any](m map[string]V) []string {
 // merge publishes the state's closure, the roots' reach and sess's intents,
 // with the root that now reaches it. The caller holds store.mu.
 func (store *Datastore) mergeSnapshot(ctx context.Context, c cid.Cid, root *pb.Delta, dags ipld.DAGService, sess *gcSession) ([]link, *causalContext, error) {
-	d := dotFromPB(root.GetDot())
+	d := store.replicas.dotFromPB(root.GetDot())
 	if d.isZero() {
 		return nil, nil, fmt.Errorf("snapshot %s has no dot", c)
 	}
@@ -948,7 +950,7 @@ type snapshotMerge struct {
 
 // The caller holds store.mu.
 func (store *Datastore) prepareSnapshot(ctx context.Context, c cid.Cid, root *pb.Delta, s *snapState, ms *mergeSet) (*snapshotMerge, error) {
-	d := dotFromPB(root.GetDot())
+	d := store.replicas.dotFromPB(root.GetDot())
 	theirs := s.cc
 	local := store.cc
 	m := store.beginMerge()
@@ -1117,7 +1119,7 @@ func (m *merging) written(fn func(pending bool, key string, d dot) error) error 
 			if err != nil {
 				return err
 			}
-			d, err := parseDotSegment(dseg)
+			d, err := m.store.replicas.parseDotSegment(dseg)
 			if err != nil {
 				return err
 			}
@@ -1130,7 +1132,7 @@ func (m *merging) written(fn func(pending bool, key string, d dot) error) error 
 			if err != nil {
 				return err
 			}
-			d, err := parseDotSegment(dseg)
+			d, err := m.store.replicas.parseDotSegment(dseg)
 			if err != nil {
 				return err
 			}
@@ -1230,7 +1232,7 @@ func (m *merging) residual(ctx context.Context, s *snapState, ms *mergeSet) (map
 					return err
 				}
 				if has {
-					r, err := parsePending(tk, v)
+					r, err := m.store.replicas.parsePending(tk, v)
 					if err != nil {
 						return err
 					}
@@ -1311,7 +1313,7 @@ func (m *merging) differs(ctx context.Context, want *causalContext, s *snapState
 			if err != nil || !has {
 				return !has, err
 			}
-			if o, err = parsePending(pendingTreeKey(*r), v); err != nil {
+			if o, err = m.store.replicas.parsePending(pendingTreeKey(*r), v); err != nil {
 				return false, err
 			}
 		}
@@ -1370,7 +1372,7 @@ func (m *merging) dropCovered(ctx context.Context) error {
 			return err
 		}
 		for _, e := range marks {
-			d, err := parseDotSegment(strings.TrimPrefix(e.key, prefix.String()+"/"))
+			d, err := m.store.replicas.parseDotSegment(strings.TrimPrefix(e.key, prefix.String()+"/"))
 			if err != nil {
 				return err
 			}
@@ -1401,7 +1403,7 @@ func (store *Datastore) take(ctx context.Context, pick func(block) bool) ([]cid.
 	var ends []int
 	prefix := store.blocksPrefix()
 	err := scanBytes(ctx, store.store, prefix, func(k, v []byte) error {
-		b, err := decodeBlock(v)
+		b, err := store.replicas.decodeBlock(v)
 		if err != nil {
 			return err
 		}
@@ -1500,7 +1502,7 @@ func (store *Datastore) unindex(ctx context.Context, cids []cid.Cid) error {
 		if err != nil {
 			return err
 		}
-		b, err := decodeBlock(v)
+		b, err := store.replicas.decodeBlock(v)
 		if err != nil {
 			return err
 		}

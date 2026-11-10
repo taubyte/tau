@@ -46,7 +46,7 @@ func assertNoLeak(t testing.TB, r *Datastore, d *fetchThroughDAGSvc) {
 		if err != nil {
 			return err
 		}
-		b, err := decodeBlock(v)
+		b, err := new(internTable).decodeBlock(v)
 		if err != nil {
 			return err
 		}
@@ -295,7 +295,7 @@ func deltaOf(t testing.TB, r *Datastore, c cid.Cid) (dot, uint64) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return dotFromPB(d.GetDot()), d.GetPrev()
+	return new(internTable).dotFromPB(d.GetDot()), d.GetPrev()
 }
 
 func assertChained(t testing.TB, name string, r *Datastore, replica string, counter uint64) {

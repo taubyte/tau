@@ -531,7 +531,7 @@ func (f *propFleet) ownLog(i int) map[dot]*pb.Delta {
 	out := map[dot]*pb.Delta{}
 	prefix := r.ownPrefix().String() + "/"
 	err := scanStore(context.Background(), r.store, r.ownPrefix(), func(k string, v []byte) error {
-		d, err := parseDotSegment(strings.TrimPrefix(k, prefix))
+		d, err := new(internTable).parseDotSegment(strings.TrimPrefix(k, prefix))
 		if err != nil {
 			return err
 		}
@@ -1093,7 +1093,7 @@ func (f *propFleet) bound() {
 		missing := 0
 		mp := r.missingPrefix()
 		scanStore(context.Background(), r.store, mp, func(k string, v []byte) error {
-			d, err := parseDotSegment(strings.TrimPrefix(k, mp.String()+"/"))
+			d, err := new(internTable).parseDotSegment(strings.TrimPrefix(k, mp.String()+"/"))
 			if err != nil {
 				return err
 			}
@@ -1132,7 +1132,7 @@ func (f *propFleet) bound() {
 			})
 			mp := r.missingPrefix()
 			scanStore(context.Background(), r.store, mp, func(k string, v []byte) error {
-				d, _ := parseDotSegment(strings.TrimPrefix(k, mp.String()+"/"))
+				d, _ := new(internTable).parseDotSegment(strings.TrimPrefix(k, mp.String()+"/"))
 				l, err := decodeLink(d, v)
 				if err == nil {
 					incs = append(incs, fmt.Sprintf("missing %s at %d ttl %d covered %t gone %t dirty %t", d, l.at, l.ttl, r.covered(d), r.gone(l, r.dropClockNow()), r.IsDirty(context.Background())))
