@@ -25,6 +25,11 @@ func (link) Query() common.Command {
 					Aliases: []string{"o"},
 					Usage:   "set output dir of log files (defaults to terminal)",
 				},
+				&cli.BoolFlag{
+					Name:    "follow",
+					Aliases: []string{"f"},
+					Usage:   "print the log as the build writes it, until the job is done",
+				},
 			},
 			Action: query,
 		},
@@ -40,6 +45,10 @@ func query(ctx *cli.Context) error {
 	jobId := ctx.String("jid")
 	if len(jobId) < 1 {
 		return errors.New("job id not set")
+	}
+
+	if ctx.Bool("follow") {
+		return patrickC.StreamLogs(jobId, os.Stdout)
 	}
 
 	job, err := patrickC.Job(jobId)

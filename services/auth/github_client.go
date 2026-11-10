@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net/http"
@@ -224,24 +225,34 @@ func (client *githubClient) ShortRepositoryInfo(id string) RepositoryShortInfo {
 }
 
 // verifiedTokenTTL is how long a token GitHub accepted is trusted without
-// asking again. Every authenticated HTTP request builds a client, and asking
-// GitHub who the token belongs to took ~0.5s, so a CLI listing n jobs waited
-// n times that and spent n calls of the token's hourly rate limit.
-var verifiedTokenTTL = 5 * time.Minute
+// asking again, and so how long a revoked token keeps working here. Every
+// authenticated HTTP request builds a client, and asking GitHub who the token
+// belongs to took ~0.5s, so a CLI listing n jobs waited n times that and spent
+// n calls of the token's hourly rate limit. A burst like that fits in a minute.
+var (
+	verifiedTokenTTL = time.Minute
+	verifiedTokenMax = 4096
+)
 
 type verifiedToken struct {
 	user    *github.User
 	expires time.Time
 }
 
-var verifiedTokens sync.Map // token -> verifiedToken
+// verifiedTokens is keyed by the token's hash, so tokens are not kept in memory.
+var (
+	verifiedTokens     = make(map[[sha256.Size]byte]verifiedToken)
+	verifiedTokensLock sync.Mutex
+)
 
 func verifiedUser(ctx context.Context, client *github.Client, token string) (*github.User, error) {
-	if v, ok := verifiedTokens.Load(token); ok {
-		if vt := v.(verifiedToken); time.Now().Before(vt.expires) {
-			return vt.user, nil
-		}
-		verifiedTokens.Delete(token)
+	key := sha256.Sum256([]byte(token))
+
+	verifiedTokensLock.Lock()
+	vt, ok := verifiedTokens[key]
+	verifiedTokensLock.Unlock()
+	if ok && time.Now().Before(vt.expires) {
+		return vt.user, nil
 	}
 
 	user, _, err := client.Users.Get(ctx, "")
@@ -249,6 +260,19 @@ func verifiedUser(ctx context.Context, client *github.Client, token string) (*gi
 		return nil, err
 	}
 
-	verifiedTokens.Store(token, verifiedToken{user: user, expires: time.Now().Add(verifiedTokenTTL)})
+	now := time.Now()
+	verifiedTokensLock.Lock()
+	defer verifiedTokensLock.Unlock()
+	if len(verifiedTokens) >= verifiedTokenMax {
+		for k, v := range verifiedTokens {
+			if !now.Before(v.expires) {
+				delete(verifiedTokens, k)
+			}
+		}
+		if len(verifiedTokens) >= verifiedTokenMax {
+			clear(verifiedTokens)
+		}
+	}
+	verifiedTokens[key] = verifiedToken{user: user, expires: now.Add(verifiedTokenTTL)}
 	return user, nil
 }

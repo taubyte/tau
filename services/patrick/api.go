@@ -698,6 +698,19 @@ func (srv *PatrickService) setupJobRoutes() {
 		RawResponse: true,
 	})
 
+	srv.http.WebSocket(&http.WebSocketDefinition{
+		Hosts: hosts,
+		Path:  "/stream/logs/{jid}",
+		Vars: http.Variables{
+			Required: []string{"jid"},
+		},
+		Auth: http.RouteAuthHandler{
+			Validator: srv.GitHubTokenHTTPAuth,
+			GC:        srv.GitHubTokenHTTPAuthCleanup,
+		},
+		NewHandler: srv.newLogStream,
+	})
+
 	srv.http.POST(&http.RouteDefinition{
 		Hosts: hosts,
 		Path:  "/cancel/{jid}",
