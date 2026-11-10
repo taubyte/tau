@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"math"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -186,5 +187,30 @@ func TestInstanceForGoneCallerIsReturned(t *testing.T) {
 	}
 	if got := instancesOf(project); got != before {
 		t.Fatalf("the undelivered instance must release its slot: %d -> %d", before, got)
+	}
+}
+
+// A checkout that fails for any reason answers the caller: its context lasts as
+// long as the function, so nothing else would ever end the wait.
+func TestFailedCheckoutAnswersTheCaller(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f, err := New(ctx, newMockServiceable())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.config = &structureSpec.Function{Memory: math.MaxUint64} // no node has this much: node_busy
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.Instantiate(context.Background())
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if platformerr.CodeOf(err) != platformerr.NodeBusy {
+			t.Fatalf("got %v (%q), want node_busy", err, platformerr.CodeOf(err))
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the request is still waiting")
 	}
 }
