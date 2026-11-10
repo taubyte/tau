@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,31 +20,40 @@ import (
 	"github.com/pbnjay/memory"
 	"github.com/taubyte/tau/core/builders"
 	build "github.com/taubyte/tau/pkg/builder"
-	"github.com/taubyte/tau/pkg/git"
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 )
 
 func (c code) handle() error {
+	ops, err := c.readOps()
+	if err != nil {
+		return err
+	}
+
+	return c.handleOps(ops)
+}
+
+// readOps lists what the project's config says to build. It holds the config
+// clone only for this: every job of the project needs it and a build is long.
+func (c code) readOps() ([]Op, error) {
+	c.unlocks = nil // c is a copy: only the config clone's lock is released here
+	defer c.releaseRepos()
+
 	if err := c.checkConfig(); err != nil {
-		return fmt.Errorf("checking config repo for project failed with: %w", err)
+		return nil, fmt.Errorf("checking config repo for project failed with: %w", err)
 	}
 
 	project, err := projectSchema.Open(projectSchema.SystemFS(c.ConfigRepoRoot))
 	if err != nil {
-		return fmt.Errorf("opening project from path `%s` failed with: %w", c.ConfigRepoRoot, err)
+		return nil, fmt.Errorf("opening project from path `%s` failed with: %w", c.ConfigRepoRoot, err)
 	}
 
 	// Decompile and get includes and id of each function, website and library
 	ops, err := buildTodoFromConfig(project)
 	if err != nil {
-		return fmt.Errorf("building todo from config for project `%s` failed with: %w", project.Get().Id(), err)
+		return nil, fmt.Errorf("building todo from config for project `%s` failed with: %w", project.Get().Id(), err)
 	}
 
-	if err = c.handleOps(ops); err != nil {
-		return err
-	}
-
-	return nil
+	return ops, nil
 }
 
 // handleOps builds the ops, several at a time on a development node, then
@@ -327,15 +337,7 @@ func (c *code) checkConfig() error {
 			Branch:    c.Job.Meta.Repository.Branch,
 			Timestamp: time.Now().UnixNano(),
 		})
-		configRepo, err := git.New(
-			c.ctx,
-			git.URL(url),
-			git.SSHKey(c.ConfigPrivateKey),
-			git.Temporary(),
-			git.Shallow(),
-			git.Branch(c.Job.Meta.Repository.Branch),
-			git.Output(c.LogFile),
-		)
+		configRepo, err := c.openRepo(strconv.Itoa(c.ConfigRepoId), url, c.ConfigPrivateKey, "")
 		if err != nil {
 			json.NewEncoder(c.LogFile).Encode(struct {
 				Op        string `json:"op"`

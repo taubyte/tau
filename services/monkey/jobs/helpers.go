@@ -179,15 +179,7 @@ func (c *Context) cloneAndSet() error {
 		Branch:    c.Job.Meta.Repository.Branch,
 		Timestamp: time.Now().UnixNano(),
 	})
-	repo, err := git.New(
-		c.ctx,
-		git.URL(c.Job.Meta.Repository.URI),
-		git.SSHKey(c.DeployKey),
-		git.Temporary(),
-		git.Shallow(),
-		git.Branch(c.Job.Meta.Repository.Branch),
-		git.Output(c.LogFile),
-	)
+	repo, err := c.openRepo(strconv.Itoa(c.Job.Meta.Repository.ID), uri, c.DeployKey, c.Job.Meta.HeadCommit.ID)
 	if err != nil {
 		json.NewEncoder(c.LogFile).Encode(struct {
 			Op        string `json:"op"`

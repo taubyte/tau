@@ -21,6 +21,7 @@ var (
 // entries for tests — was dead code.
 func (c *Context) Run(ctx context.Context) (err error) {
 	defer c.handleLog()
+	defer c.releaseRepos()
 
 	go c.startTimeout()
 	defer c.ctxC()
