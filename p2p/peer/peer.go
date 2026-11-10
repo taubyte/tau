@@ -19,6 +19,7 @@ import (
 	dirutils "github.com/taubyte/tau/utils/fs/dir"
 
 	libp2ptls "github.com/libp2p/go-libp2p/p2p/security/tls"
+	"github.com/taubyte/tau/p2p/protobook"
 	"github.com/taubyte/tau/p2p/sectls"
 
 	helpers "github.com/taubyte/tau/p2p/helpers"
@@ -72,6 +73,9 @@ func (p *node) cleanup() error {
 	p.topics = nil
 
 	var errs []error
+	if p.book != nil {
+		p.book.Close()
+	}
 	if p.host != nil {
 		if err := p.host.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("closing peer failed: %w", err))
@@ -260,6 +264,11 @@ func new(ctx context.Context, repoPath interface{}, privateKey []byte, admission
 	)
 	if err != nil {
 		return nil, fmt.Errorf("setting up libp2p failed: %w", err)
+	}
+
+	p.book, err = protobook.Keep(p.ctx, p.host)
+	if err != nil {
+		return nil, fmt.Errorf("keeping the protocol book failed: %w", err)
 	}
 
 	rng := rand.New(rand.NewSource(rand.Int63()))

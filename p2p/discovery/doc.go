@@ -23,13 +23,12 @@
 // with no router in the picture at all, which is what lets a service test
 // resolve a peer and then call it without a cloud underneath.
 //
-// What identify leaves in the peerstore can be older than what the peer last sent:
-// it applies two messages from one peer at once and keeps whichever lands last, and
-// the list never expires, so a peer that began to serve after its connection closed
-// is still denied by what it said before. Nothing corrects either until the peer's
-// protocols change while connected. So a peer the list leaves out, while it was a
-// member or an identify message or routing named it, is asked: a stream on the
-// protocol, which the host negotiates and records when the peer answers.
+// The list of a connected peer is kept true by the host (p2p/protobook), where
+// identify can leave an older message's list in place of a newer one. The list of a
+// peer no longer connected is what it said last, and never expires, so a peer that
+// began to serve after its connection closed is still denied by it. Routing naming
+// such a peer is therefore not overruled by the list: the peer is asked, by a stream
+// on the protocol that the host negotiates and records when the peer answers.
 //
 // Routing — the DHT — is the second, and it is optional because a host.Host
 // has no discovery of its own: pass WithRouting to get it. It is what finds a
@@ -73,9 +72,9 @@
 //
 // Only to ask. The addresses of a peer found through routing are put in the
 // peerstore, and a peer routing names with nothing known against it is handed out
-// for the caller's first RPC to dial. A peer whose list denies what there is reason
-// to believe is dialled when it is not connected, because a list nobody reconnects
-// to is never corrected, and no caller connects to a peer it is never handed. Two
+// for the caller's first RPC to dial. A peer routing names that its list denies is
+// dialled to be asked, because a list nobody reconnects to is never corrected, and
+// no caller connects to a peer it is never handed. Two
 // nodes dialling each other at once both connect, since a node of the cloud dials
 // from a port of its own, so the ask and a caller's dial do not cost each other the
 // connection. A caller whose connection fails says so with Failed.

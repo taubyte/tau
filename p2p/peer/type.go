@@ -8,6 +8,7 @@ import (
 	"time"
 
 	crypto "github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/taubyte/tau/p2p/protobook"
 	"github.com/taubyte/tau/utils/fs/dir"
 
 	"github.com/ipfs/go-cid"
@@ -63,6 +64,7 @@ type node struct {
 	key                 crypto.PrivKey
 	id                  peer.ID
 	host                host.Host
+	book                *protobook.Keeper
 	dht                 routing.Routing
 	drouter             discovery.Discovery
 	messaging           *pubsub.PubSub

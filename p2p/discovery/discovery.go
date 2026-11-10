@@ -131,6 +131,7 @@ type Discovery struct {
 	quarantine map[peer.ID]time.Time
 	waiters    map[*waiter]struct{}
 	asking     map[peer.ID]bool
+	refused    map[peer.ID]bool
 }
 
 // entry is what is known about a member beyond the fact that it is one.
@@ -201,6 +202,7 @@ func New(ctx context.Context, h host.Host, id protocol.ID, opts ...Option) (*Dis
 	d.quarantine = make(map[peer.ID]time.Time)
 	d.waiters = make(map[*waiter]struct{})
 	d.asking = make(map[peer.ID]bool)
+	d.refused = make(map[peer.ID]bool)
 	// The tag is per Discovery, so two of them watching the same peer do not
 	// unprotect each other's connection.
 	d.tag = fmt.Sprintf("discovery:%s:%p", id, d)
@@ -284,30 +286,25 @@ func (d *Discovery) fill() {
 }
 
 // onEvent turns any of the three subscribed events into the same question about one
-// peer. The peerstore holds the merged answer; an event's own protocol data only says
-// whether the peer is to be asked when the peerstore denies what the event named.
+// peer. The events' own protocol data is ignored: the peerstore holds the merged
+// answer. A peer that refused when asked is news again once any of them names it.
 func (d *Discovery) onEvent(e any) {
-	var (
-		pid  peer.ID
-		said bool
-	)
+	var pid peer.ID
 	switch v := e.(type) {
 	case event.EvtPeerIdentificationCompleted:
-		pid, said = v.Peer, slices.Contains(v.Protocols, d.id)
+		pid = v.Peer
 	case event.EvtPeerProtocolsUpdated:
-		pid, said = v.Peer, slices.Contains(v.Added, d.id)
+		pid = v.Peer
 	case event.EvtPeerConnectednessChanged:
 		pid = v.Peer
 		d.connectedness(pid, v.Connectedness)
 	default:
 		return
 	}
+	d.mu.Lock()
+	delete(d.refused, pid)
+	d.mu.Unlock()
 	d.reconsider(pid, false)
-	if said {
-		d.mu.Lock()
-		d.doubtLocked(pid)
-		d.mu.Unlock()
-	}
 }
 
 // connectedness records what a connection coming or going is evidence of. A live
@@ -364,7 +361,6 @@ func (d *Discovery) reap() {
 	for pid, e := range d.peers {
 		if !d.admissible(pid, e.advertised) {
 			d.dropLocked(pid)
-			d.doubtLocked(pid)
 		}
 	}
 }
@@ -382,24 +378,21 @@ func (d *Discovery) reconsider(pid peer.ID, advertised bool) {
 		d.admitLocked(pid, advertised)
 	case known:
 		d.dropLocked(pid)
-		d.doubtLocked(pid)
 	case advertised:
 		d.doubtLocked(pid)
 	}
 }
 
-// doubtLocked asks pid itself whether it serves the protocol, when identify's list
-// leaves it out and there is reason to think it serves: it was a member, an identify
-// message named it, or routing did. identify applies two messages from one peer at
-// once and keeps whichever lands last, so the list can be older than what the peer
-// last sent; and the list never expires, so a peer that began to serve after its
-// connection closed is denied by what it said before. Nothing corrects either until
-// the peer's protocols change while connected, and no caller connects to a peer it
-// is never handed.
+// doubtLocked asks pid itself whether it serves the protocol, when routing names it
+// and identify's list leaves it out. The list never expires, so a peer that began to
+// serve after its connection closed is denied by what it said before; nothing
+// corrects it until the two connect again, and no caller connects to a peer it is
+// never handed. A peer that refused is not asked again until something new is heard
+// of it.
 //
 // Called with d.mu held.
 func (d *Discovery) doubtLocked(pid peer.ID) {
-	if pid == "" || pid == d.host.ID() || d.asking[pid] {
+	if pid == "" || pid == d.host.ID() || d.asking[pid] || d.refused[pid] {
 		return
 	}
 	protos, err := d.host.Peerstore().GetProtocols(pid)
@@ -410,14 +403,16 @@ func (d *Discovery) doubtLocked(pid peer.ID) {
 	go d.ask(pid)
 }
 
-// ask hands the loop pid if it answers on the protocol. It lets go of pid before
-// the answer is in, so a list overwritten again meanwhile can be asked about anew.
+// ask hands the loop pid if it answers on the protocol, and remembers a refusal.
 func (d *Discovery) ask(pid peer.ID) {
-	yes := d.answers(pid)
+	serves, refused := d.answers(pid)
 	d.mu.Lock()
 	delete(d.asking, pid)
+	if refused {
+		d.refused[pid] = true
+	}
 	d.mu.Unlock()
-	if !yes {
+	if !serves {
 		return
 	}
 	select {
@@ -431,7 +426,7 @@ func (d *Discovery) ask(pid peer.ID) {
 // records it there when pid answers. A peer that fails to answer is asked again each
 // retry interval while it stays connected; one that refuses has said what identify
 // said, and one that cannot be reached has nothing to be asked over.
-func (d *Discovery) answers(pid peer.ID) bool {
+func (d *Discovery) answers(pid peer.ID) (serves, refused bool) {
 	for {
 		ctx, cancel := context.WithTimeout(d.ctx, askTimeout)
 		s, err := d.host.NewStream(ctx, pid, d.id)
@@ -439,14 +434,16 @@ func (d *Discovery) answers(pid peer.ID) bool {
 		switch {
 		case err == nil:
 			s.Reset()
-			return true
-		case errors.Is(err, msmux.ErrNotSupported[protocol.ID]{}), d.host.Network().Connectedness(pid) != network.Connected:
-			return false
+			return true, false
+		case errors.Is(err, msmux.ErrNotSupported[protocol.ID]{}):
+			return false, true
+		case d.host.Network().Connectedness(pid) != network.Connected:
+			return false, false
 		}
 		select {
 		case <-time.After(d.retry):
 		case <-d.ctx.Done():
-			return false
+			return false, false
 		}
 	}
 }

@@ -17,6 +17,7 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 
 	helpers "github.com/taubyte/tau/p2p/helpers"
+	"github.com/taubyte/tau/p2p/protobook"
 )
 
 var (
@@ -69,6 +70,11 @@ func Mock(ctx context.Context) Node {
 	p.ctx, p.ctx_cancel = context.WithCancel(ctx)
 
 	p.host, err = mockHost()
+	if err != nil {
+		panic(err)
+	}
+
+	p.book, err = protobook.Keep(p.ctx, p.host)
 	if err != nil {
 		panic(err)
 	}
