@@ -123,9 +123,12 @@ func TestAnOlderMessageThatLandedLastIsCorrected(t *testing.T) {
 	kept(t, client)
 	updates := watch(t, client)
 	connect(t, client, server)
+	identifiedOnce(t, client, server.ID())
 
+	// The push that tells the client is announced by identify itself.
 	serve(server)
-	require.Eventually(t, func() bool { return lists(client, server.ID()) }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return lists(client, server.ID()) && updates.added.Load() == 1 },
+		5*time.Second, 10*time.Millisecond)
 
 	older := without(book(client, server.ID()), served)
 	require.NoError(t, client.Peerstore().SetProtocols(server.ID(), older...))
@@ -133,7 +136,7 @@ func TestAnOlderMessageThatLandedLastIsCorrected(t *testing.T) {
 
 	require.Eventually(t, func() bool { return lists(client, server.ID()) }, 5*time.Second, 10*time.Millisecond,
 		"an older message that landed last was left in the book")
-	require.Eventually(t, func() bool { return updates.added.Load() == 1 }, 5*time.Second, 10*time.Millisecond,
+	require.Eventually(t, func() bool { return updates.added.Load() == 2 }, 5*time.Second, 10*time.Millisecond,
 		"the correction was not announced")
 }
 
