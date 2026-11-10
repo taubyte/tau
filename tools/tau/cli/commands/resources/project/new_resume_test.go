@@ -2,6 +2,7 @@ package project_test
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/h2non/gock"
@@ -87,4 +88,39 @@ func TestNewProjectKeepsAFinishedProjectsName(t *testing.T) {
 	defer testutil.ActivateAuthMock()()
 
 	assert.ErrorContains(t, newProject(t, "my_app"), "already taken")
+}
+
+// GitHub already holds this name's repositories, with other work in them: no
+// rerun can finish that, so the name is reported as taken, on one line (callers
+// keep only an error's last line), naming the repositories.
+func TestNewProjectNameTakenByRepositoriesWithCommits(t *testing.T) {
+	authGet("/projects", nil, map[string]any{"projects": []any{}})
+	gock.New(githubAPI).Post("/user/repos").Persist().Reply(422).JSON(map[string]any{"message": "Repository creation failed."})
+	gock.New(githubAPI).Get("/user").AddMatcher(exactPath("GET", "/user", nil)).Persist().Reply(200).JSON(map[string]any{"login": "me"})
+	for _, repo := range []string{"tb_todo_list", "tb_code_todo_list"} {
+		gock.New(githubAPI).Get("/repos/me/" + repo + "/commits").Persist().Reply(200).JSON([]any{map[string]any{"sha": "abc"}})
+	}
+	defer testutil.ActivateAuthMock()()
+
+	err := newProject(t, "todo_list")
+	assert.ErrorContains(t, err, "is already taken")
+	assert.ErrorContains(t, err, "tb_todo_list")
+	assert.ErrorContains(t, err, "tb_code_todo_list")
+	assert.Assert(t, !strings.Contains(err.Error(), "again"), err.Error())
+	assert.Assert(t, !strings.Contains(err.Error(), "\n"), err.Error())
+	selected, _ := session.Get().SelectedProject()
+	assert.Equal(t, selected, "")
+}
+
+// A failure a rerun can finish keeps the advice, with the cause on the same
+// line, as callers keep only an error's last line.
+func TestNewProjectFailureKeepsItsCauseOnOneLine(t *testing.T) {
+	authGet("/projects", nil, map[string]any{"projects": []any{}})
+	gock.New(githubAPI).Post("/user/repos").Persist().Reply(500)
+	defer testutil.ActivateAuthMock()()
+
+	err := newProject(t, "my_app")
+	assert.ErrorContains(t, err, "creating config repository failed")
+	assert.ErrorContains(t, err, "Run `tau new project --name my_app` again")
+	assert.Assert(t, !strings.Contains(err.Error(), "\n"), err.Error())
 }

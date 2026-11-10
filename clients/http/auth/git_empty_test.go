@@ -57,3 +57,20 @@ func TestEmptyRepository(t *testing.T) {
 		t.Fatalf("a failed check was taken as empty: %q", id)
 	}
 }
+
+// Only a repository seen to have commits counts: a failed check says nothing.
+func TestRepositoryHasCommits(t *testing.T) {
+	ctx := context.Background()
+	if !repositoryHasCommits(ctx, commitsGitHub(t, true, http.StatusOK), "r") {
+		t.Fatal("a repository with commits was not seen")
+	}
+	if repositoryHasCommits(ctx, commitsGitHub(t, true, http.StatusConflict), "r") {
+		t.Fatal("an empty repository was said to have commits")
+	}
+	if repositoryHasCommits(ctx, commitsGitHub(t, false, 0), "r") {
+		t.Fatal("a missing repository was said to have commits")
+	}
+	if repositoryHasCommits(ctx, commitsGitHub(t, true, http.StatusBadGateway), "r") {
+		t.Fatal("a failed check was taken as commits")
+	}
+}

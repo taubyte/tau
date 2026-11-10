@@ -29,8 +29,9 @@ const (
 	codeRepoRegisterFailed   = "registering code repository failed with: %s"
 	creatingProjectFailed    = "creating project failed with: %s"
 	projectBranchesNotEqual  = "config-`%s` and code-`%s` not on the same branch"
-	projectNotFinished       = "creating project `%s` did not finish: %w\nRun `tau new project --name %s` again to finish it"
-	projectNeverFinished     = "project `%s` has no commits, creating it never finished\nRun `tau new project --name %s` to finish it"
+	projectNotFinished       = "creating project `%s` did not finish: %s. Run `tau new project --name %s` again to finish it"
+	projectNeverFinished     = "project `%s` has no commits, creating it never finished. Run `tau new project --name %s` to finish it"
+	projectNameTaken         = "%w: `%s` is already taken: GitHub repositories %v already have commits and are not this project"
 
 	ConfigRepo = "config repository: %s"
 	CodeRepo   = "code repository: %s"
@@ -41,6 +42,7 @@ var (
 	ErrorConfigRepositoryNotFound = errors.New("config repository is not found")
 	ErrorCodeRepositoryNotFound   = errors.New("code repository is not found")
 	ErrorNoProjectsFound          = errors.New("no projects found")
+	ErrorNameTaken                = errors.New("name not available")
 )
 
 func BothFlagsCannotBeTrue(flag1, flag2 string) error {
@@ -111,8 +113,19 @@ func CreatingProjectFailed(err error) error {
 	return fmt.Errorf(creatingProjectFailed, err)
 }
 
+// ProjectNotFinished says to run the command again. An error no rerun can get
+// past (see ErrorNameTaken) is returned as it is.
 func ProjectNotFinished(project string, err error) error {
-	return fmt.Errorf(projectNotFinished, project, err, project)
+	if errors.Is(err, ErrorNameTaken) {
+		return err
+	}
+	// One line: retries report an error per attempt, and callers may keep only the last line.
+	return fmt.Errorf(projectNotFinished, project, strings.ReplaceAll(err.Error(), "\n", " "), project)
+}
+
+// ProjectNameTaken is one line: callers may keep only an error's last line.
+func ProjectNameTaken(project string, repositories []string) error {
+	return fmt.Errorf(projectNameTaken, ErrorNameTaken, project, repositories)
 }
 
 // NeverFinishedIfEmpty says what to do when err is git finding project's

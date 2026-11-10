@@ -2,8 +2,10 @@ package projectLib
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/pterm/pterm"
 	httpClient "github.com/taubyte/tau/clients/http/auth"
@@ -84,14 +86,20 @@ func createProject(client *httpClient.Client, p *Project) (*httpClient.Project, 
 
 	// Create config repository
 	config_name := fmt.Sprintf(common.ConfigRepoPrefix, p.Name)
+	code_name := fmt.Sprintf(common.CodeRepoPrefix, p.Name)
 	config_id, err := createOrAdoptRepository(client, config_name, p.Description, private)
+	if errors.Is(err, projectI18n.ErrorNameTaken) {
+		return nil, projectI18n.ProjectNameTaken(p.Name, withCommits(client, config_name, code_name))
+	}
 	if err != nil {
 		return nil, projectI18n.ConfigRepoCreateFailed(err)
 	}
 
 	// Create code repository
-	code_name := fmt.Sprintf(common.CodeRepoPrefix, p.Name)
 	code_id, err := createOrAdoptRepository(client, code_name, p.Description, private)
+	if errors.Is(err, projectI18n.ErrorNameTaken) {
+		return nil, projectI18n.ProjectNameTaken(p.Name, withCommits(client, config_name, code_name))
+	}
 	if err != nil {
 		return nil, projectI18n.CodeRepoCreateFailed(err)
 	}
@@ -119,14 +127,23 @@ func createProject(client *httpClient.Client, p *Project) (*httpClient.Project, 
 	return clientProject, nil
 }
 
+// withCommits keeps the named repositories that hold commits.
+func withCommits(client *httpClient.Client, names ...string) []string {
+	return slices.DeleteFunc(names, func(name string) bool { return !client.RepositoryHasCommits(name) })
+}
+
 // createOrAdoptRepository creates a repository, or uses one of that name with
-// no commits: a repository with commits is left alone and stays an error.
+// no commits. One with commits is other work: it is left alone, and the error
+// is projectI18n.ErrorNameTaken, as running again cannot change that.
 func createOrAdoptRepository(client *httpClient.Client, name, description string, private bool) (string, error) {
 	id, err := CreateRepository(client, name, description, private)
 	if err != nil {
 		if emptyID := client.EmptyRepository(name); emptyID != "" {
 			pterm.Info.Printfln("Using the existing empty repository `%s`", name)
 			return emptyID, nil
+		}
+		if client.RepositoryHasCommits(name) {
+			return "", projectI18n.ErrorNameTaken
 		}
 	}
 	return id, err

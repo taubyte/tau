@@ -127,6 +127,25 @@ func emptyRepository(ctx context.Context, g common.Client, name string) string {
 	return found.Get().ID()
 }
 
+// RepositoryHasCommits reports whether the caller has a repository called name
+// that was seen to hold commits. On any error it returns false.
+func (c *Client) RepositoryHasCommits(name string) bool {
+	return repositoryHasCommits(c.http.Context(), c.Git(), name)
+}
+
+func repositoryHasCommits(ctx context.Context, g common.Client, name string) bool {
+	gh, err := g.GithubTODO()
+	if err != nil {
+		return false
+	}
+	me, _, err := gh.Users.Get(ctx, "")
+	if err != nil {
+		return false
+	}
+	empty, err := repositoryEmpty(ctx, g, me.GetLogin(), name)
+	return err == nil && !empty
+}
+
 // GetRepositoryById returns a common Repository based on the id and an error
 func (c *Client) GetRepositoryById(repoId string) (common.Repository, error) {
 	repo, err := c.Git().GetByID(repoId)
