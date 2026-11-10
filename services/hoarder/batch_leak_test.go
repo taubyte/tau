@@ -18,18 +18,21 @@ func TestRefusedBatchLeavesNothingForTheNext(t *testing.T) {
 	}
 	defer handle.Close()
 
-	_, err = srv.applyBatch(ctx, handle, &dbUsage{}, command.Body{}, []interface{}{
+	refused := newGroupWrite(command.Body{}, []interface{}{
 		map[string]interface{}{hoarderSpecs.BodyKVOp: hoarderSpecs.KVPut, hoarderSpecs.BodyKey: "/refused", hoarderSpecs.BodyValue: []byte("x")},
 		map[string]interface{}{hoarderSpecs.BodyKVOp: hoarderSpecs.KVPut}, // no key
 	})
-	if err == nil {
+	srv.commitGroup(ctx, handle, "batch-leak", []*groupWrite{refused})
+	if refused.err == nil {
 		t.Fatal("a batch with a malformed op was accepted")
 	}
 
-	if _, err = srv.applyBatch(ctx, handle, &dbUsage{}, command.Body{}, []interface{}{
+	next := newGroupWrite(command.Body{}, []interface{}{
 		map[string]interface{}{hoarderSpecs.BodyKVOp: hoarderSpecs.KVPut, hoarderSpecs.BodyKey: "/next", hoarderSpecs.BodyValue: []byte("y")},
-	}); err != nil {
-		t.Fatal(err)
+	})
+	srv.commitGroup(ctx, handle, "batch-leak", []*groupWrite{next})
+	if next.err != nil {
+		t.Fatal(next.err)
 	}
 
 	if v, err := handle.Get(ctx, "/refused"); err == nil && v != nil {

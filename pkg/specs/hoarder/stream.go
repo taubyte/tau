@@ -67,6 +67,8 @@ const (
 	// the client can pin to it for read-your-writes (esp. after a first-touch,
 	// where the client didn't pick the peer).
 	BodyServedBy = "servedBy"
+	// BodyCopiedTo names the co-owner that holds the K=2 copy of a write.
+	BodyCopiedTo = "copiedTo"
 	// BodyNoBarrier marks a write as a K=2 replication push from another hoarder
 	// — the receiver applies it locally without re-replicating (no barrier loop).
 	BodyNoBarrier = "noBarrier"

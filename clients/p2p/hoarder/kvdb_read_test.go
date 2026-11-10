@@ -552,3 +552,53 @@ func TestRemoteKV_ConcurrentReadsAndWrites_Race(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// The write's ack names who holds it. When that is this process's replica, the
+// read is served here: the K=2 copy landed before the ack.
+func TestRemoteKV_ReadAfterWrite_LocalCopyServes(t *testing.T) {
+	a, b, c := testPeers(t)
+	ctx := context.Background()
+	f := newFakeHoarders()
+	for _, p := range []peerCore.ID{a, b, c} {
+		f.set(p, "k", "old")
+	}
+	var hits int
+	var mu sync.Mutex
+	defer ServeLocal(b, func(_ context.Context, body command.Body) (cr.Response, error) {
+		mu.Lock()
+		hits++
+		mu.Unlock()
+		return f.serve(b, body), nil
+	})()
+
+	r := newTestKV(f, a, b, c)
+	r.send = func(cmd string, body command.Body, peers ...peerCore.ID) (cr.Response, error) {
+		resp, err := f.send(cmd, body, peers...)
+		if err == nil && maps.TryString(body, hoarderSpecs.BodyKVOp) == hoarderSpecs.KVBatch {
+			f.serve(b, body) // the barrier's copy
+			resp[hoarderSpecs.BodyCopiedTo] = b.String()
+		}
+		return resp, err
+	}
+	warm(t, r, 3)
+
+	batch, _ := r.Batch(ctx)
+	if err := batch.Put("k", []byte("new")); err != nil {
+		t.Fatal(err)
+	}
+	if err := batch.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	remote := f.total()
+	for i := 0; i < 20; i++ {
+		if got, err := r.Get(ctx, "k"); err != nil || string(got) != "new" {
+			t.Fatalf("read %d = %q, %v", i, got, err)
+		}
+	}
+	if f.total() != remote {
+		t.Fatalf("%d network reads, want none", f.total()-remote)
+	}
+	if hits != 20 {
+		t.Fatalf("local replica served %d of 20", hits)
+	}
+}
