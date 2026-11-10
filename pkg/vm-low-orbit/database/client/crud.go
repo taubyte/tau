@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 	"sync/atomic"
 
 	"github.com/taubyte/go-sdk/errno"
@@ -187,7 +188,7 @@ func (f *Factory) dropBatches(e *Database) {
 // listEntries reads every key under prefix with its value. A key deleted
 // between the list and its read is left out.
 func (f *Factory) listEntries(ctx context.Context, database *Database, prefix string) ([]byte, errno.Error) {
-	keys, err0 := database.KV().List(ctx, prefix)
+	keys, err0 := userKeys(ctx, database, prefix)
 	if err0 != nil {
 		return nil, errno.ErrorDatabaseListFailed
 	}
@@ -209,6 +210,17 @@ func (f *Factory) listEntries(ctx context.Context, database *Database, prefix st
 
 // appendEntry encodes one entry as: key, 0x00, value length (uint32 little
 // endian), value. The key list encoding ends each key with 0x00 the same way.
+// userKeys lists keys as the user stored them: the store lists them with a
+// leading slash that Put, Get and Has accept without. The old List call keeps
+// the slash; only the CRUD calls use this.
+func userKeys(ctx context.Context, database *Database, prefix string) ([]string, error) {
+	keys, err := database.KV().List(ctx, prefix)
+	for i, k := range keys {
+		keys[i] = strings.TrimPrefix(k, "/")
+	}
+	return keys, err
+}
+
 func appendEntry(encoded []byte, key string, value []byte) []byte {
 	encoded = append(encoded, key...)
 	encoded = append(encoded, 0)
@@ -292,9 +304,16 @@ func (f *Factory) listMatch(ctx context.Context, module common.Module,
 		return
 	}
 
-	keys, err0 := database.KV().ListRegEx(ctx, prefix, pattern)
+	all, err0 := userKeys(ctx, database, prefix)
 	if err0 != nil {
 		err = errno.ErrorDatabaseListFailed
+		return
+	}
+	re := regexp.MustCompile(pattern) // validated above
+	for _, k := range all {
+		if re.MatchString(k) {
+			keys = append(keys, k)
+		}
 	}
 
 	return
@@ -358,7 +377,7 @@ func (f *Factory) listPage(ctx context.Context, module common.Module,
 		return
 	}
 
-	keys, err0 := database.KV().List(ctx, prefix)
+	keys, err0 := userKeys(ctx, database, prefix)
 	if err0 != nil {
 		err = errno.ErrorDatabaseListFailed
 		return
@@ -422,7 +441,7 @@ func (f *Factory) databaseCount(ctx context.Context, module common.Module,
 		return uint32(err)
 	}
 
-	keys, err0 := database.KV().List(ctx, prefix)
+	keys, err0 := userKeys(ctx, database, prefix)
 	if err0 != nil {
 		return uint32(errno.ErrorDatabaseListFailed)
 	}

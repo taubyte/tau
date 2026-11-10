@@ -139,3 +139,24 @@ func TestOverCapStreams(t *testing.T) {
 		t.Fatalf("got %d len %d", rec.Code, rec.Body.Len())
 	}
 }
+
+func TestHeaderSetReplacesAndDelDeletes(t *testing.T) {
+	f, id, rec := newF()
+	mod := &memMod{buf: []byte("kAvalBval")} // key 0:1, Aval 1:4, Bval 5:4
+	ctx := context.Background()
+	if rc := f.eventHttpHeaderAdd(ctx, mod, id, 0, 1, 1, 4); rc != 0 { // k: Aval
+		t.Fatal(rc)
+	}
+	if rc := f.eventHttpHeaderSet(ctx, mod, id, 0, 1, 5, 4); rc != 0 { // k: Bval
+		t.Fatal(rc)
+	}
+	if got := rec.Header().Values("K"); len(got) != 1 || got[0] != "Bval" {
+		t.Fatalf("Set did not replace: %v", got)
+	}
+	if rc := f.eventHttpHeaderDel(ctx, mod, id, 0, 1); rc != 0 {
+		t.Fatal(rc)
+	}
+	if got := rec.Header().Values("K"); len(got) != 0 {
+		t.Fatalf("Del left %v", got)
+	}
+}

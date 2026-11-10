@@ -50,6 +50,7 @@ func newEnv(t *testing.T, wrap func(kvdb.KVDB) kvdb.KVDB) *env {
 	if wrap != nil {
 		store = wrap(store)
 	}
+	store = slashKVDB{store}
 	f := &Factory{Methods: helpers.New(context.Background()), database: map[uint32]*Database{}}
 	id := f.createDatabasePointer(kvDB{kv: dbkv.New(1<<30, "crud", store)}, "/kv").Id
 	return &env{t: t, f: f, mod: &memModule{mem: &memMemory{buf: make([]byte, 4<<20)}}, id: id, store: store, ctx: context.Background()}
@@ -268,7 +269,7 @@ func TestListEntries(t *testing.T) {
 	e.put("/users/2", "")
 	e.put("/orders/1", "bob\x00with nul")
 
-	if got := e.entries("/users/"); !reflect.DeepEqual(got, map[string]string{"/users/1": "ann", "/users/2": ""}) {
+	if got := e.entries("/users/"); !reflect.DeepEqual(got, map[string]string{"users/1": "ann", "users/2": ""}) {
 		t.Fatalf("prefix: %v", got)
 	}
 	if got := e.entries("/none/"); len(got) != 0 {
@@ -276,7 +277,7 @@ func TestListEntries(t *testing.T) {
 	}
 	// An empty prefix lists every key, as databaseList does.
 	all := e.entries("")
-	for k, v := range map[string]string{"/users/1": "ann", "/users/2": "", "/orders/1": "bob\x00with nul"} {
+	for k, v := range map[string]string{"users/1": "ann", "users/2": "", "orders/1": "bob\x00with nul"} {
 		if all[k] != v {
 			t.Fatalf("empty prefix: %s = %q in %v", k, all[k], all)
 		}
@@ -284,8 +285,8 @@ func TestListEntries(t *testing.T) {
 
 	big := strings.Repeat("v", 600<<10) // past the 64 KiB a uint16 length would hold
 	e.put("/big", big)
-	if got := e.entries("/big"); got["/big"] != big {
-		t.Fatalf("large value came back as %d bytes", len(got["/big"]))
+	if got := e.entries("/big"); got["big"] != big {
+		t.Fatalf("large value came back as %d bytes", len(got["big"]))
 	}
 }
 
@@ -308,14 +309,14 @@ func TestListMatch(t *testing.T) {
 		e.put(k, "v")
 	}
 
-	rc, keys := e.match("/users/", `^/users/[0-9]+$`)
+	rc, keys := e.match("/users/", `^users/[0-9]+$`)
 	e.ok(rc)
-	if !sameSet(keys, "/users/1", "/users/22") {
+	if !sameSet(keys, "users/1", "users/22") {
 		t.Fatalf("match: %v", keys)
 	}
-	rc, keys = e.match("", `^/[a-z]+/1$`)
+	rc, keys = e.match("", `^[a-z]+/1$`)
 	e.ok(rc)
-	if !sameSet(keys, "/users/1", "/orders/1") {
+	if !sameSet(keys, "users/1", "orders/1") {
 		t.Fatalf("empty prefix: %v", keys)
 	}
 
@@ -374,14 +375,14 @@ func TestListPageWalksEveryKeyOnce(t *testing.T) {
 		all = append(all, keys...)
 		cursor = keys[len(keys)-1]
 	}
-	if fmt.Sprint(all) != "[/k/a /k/b /k/c /k/d /k/e]" {
+	if fmt.Sprint(all) != "[k/a k/b k/c k/d k/e]" {
 		t.Fatalf("pages gave %v", all)
 	}
 
 	// A cursor that is no longer a key still resumes after it.
-	rc, keys := e.page("/k/", "/k/bb", 10)
+	rc, keys := e.page("/k/", "k/bb", 10)
 	e.ok(rc)
-	if fmt.Sprint(keys) != "[/k/c /k/d /k/e]" {
+	if fmt.Sprint(keys) != "[k/c k/d k/e]" {
 		t.Fatalf("after a deleted cursor: %v", keys)
 	}
 	rc, keys = e.page("/none/", "", 10)
@@ -442,4 +443,43 @@ func TestOldImportsUnchanged(t *testing.T) {
 	}
 	e.ok(e.f.databaseClose(e.ctx, e.mod, e.id))
 	e.want(errno.ErrorDatabaseNotFound, e.f.databaseClose(e.ctx, e.mod, e.id))
+}
+
+// The store lists keys with a leading slash; every list call hands back the
+// key as it was put, and a returned key works as a cursor.
+func TestListReturnsKeysAsPut(t *testing.T) {
+	e := newEnv(t, nil)
+	for _, k := range []string{"/p/00", "/p/01", "/p/02"} {
+		e.put(k, "v")
+	}
+	if got := e.entries("/p/"); len(got) != 3 || got["p/00"] != "v" {
+		t.Fatalf("entries: %v", got)
+	}
+	rc, keys := e.match("/p/", `^p/0[01]$`)
+	e.ok(rc)
+	if !sameSet(keys, "p/00", "p/01") {
+		t.Fatalf("match: %v", keys)
+	}
+	rc, keys = e.page("/p/", "", 2)
+	e.ok(rc)
+	rc, rest := e.page("/p/", keys[len(keys)-1], 2)
+	e.ok(rc)
+	if fmt.Sprint(keys, rest) != "[p/00 p/01] [p/02]" {
+		t.Fatalf("pages: %v %v", keys, rest)
+	}
+	if v, err := e.get("p/00"); err != 0 || v != "v" {
+		t.Fatalf("get: %q %v", v, err)
+	}
+}
+
+// slashKVDB reads keys as the real store does: a key put with a leading slash is found without it.
+type slashKVDB struct{ kvdb.KVDB }
+
+func slashed(k string) string { return "/" + strings.TrimPrefix(k, "/") }
+
+func (s slashKVDB) Get(ctx context.Context, k string) ([]byte, error) {
+	if v, err := s.KVDB.Get(ctx, k); err == nil {
+		return v, nil
+	}
+	return s.KVDB.Get(ctx, slashed(k))
 }
