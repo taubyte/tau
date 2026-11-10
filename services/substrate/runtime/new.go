@@ -62,18 +62,20 @@ func (f *Function) Shutdown() {
 	// Wait for all pending requests to be processed
 	<-f.shutdownDone
 
-	// Close all available instances
+	// Close all available instances. The channel stays open: a call still
+	// running returns its instance to repool afterwards, and a send on a
+	// closed channel would panic.
 	f.shutdownMu.Lock()
 	defer f.shutdownMu.Unlock()
+	f.drained = true
 
-	// Use a select to avoid panicking if channel is already closed
-	select {
-	case <-f.availableInstances:
-		// Channel is already closed, do nothing
-	default:
-		close(f.availableInstances)
-		for instance := range f.availableInstances {
+	for {
+		select {
+		case instance := <-f.availableInstances:
+			unpool(instance)
 			instance.Close()
+		default:
+			return
 		}
 	}
 }

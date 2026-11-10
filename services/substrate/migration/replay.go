@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	hoarderClient "github.com/taubyte/tau/clients/p2p/hoarder"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	storageSpec "github.com/taubyte/tau/pkg/specs/storage"
+	mh "github.com/taubyte/tau/utils/multihash"
 )
 
 // replayInstance moves one instance: replay every local key through the
@@ -24,14 +26,28 @@ import (
 func (m *Migrator) replayInstance(ctx context.Context, info hoarderIface.InstanceInfo) *InstanceReport {
 	rep := &InstanceReport{Match: info.Meta.Match, Kind: kindName(info.Kind)}
 
+	if m.keepLocal {
+		inPlace, err := m.servedInPlace(info)
+		if err != nil {
+			rep.Err = fmt.Sprintf("checking replicas: %s", err)
+			return rep
+		}
+		if inPlace {
+			rep.Verified = true
+			return rep
+		}
+	}
+
 	view, err := openLegacyView(m.node.Store(), info.Hash)
 	if err != nil {
 		rep.Err = fmt.Sprintf("opening local view: %s", err)
 		return rep
 	}
-	defer view.Close()
 
 	entries, err := localEntries(ctx, view)
+	// Closed before the first hoarder call, which on a shared store can make
+	// the hoarder open this very path.
+	view.Close()
 	if err != nil {
 		rep.Err = fmt.Sprintf("listing local keys: %s", err)
 		return rep
@@ -129,6 +145,20 @@ func (m *Migrator) replayInstance(ctx context.Context, info hoarderIface.Instanc
 	}
 	rep.Verified = true
 	return rep
+}
+
+// servedInPlace reports whether this node's hoarder already holds the instance
+// at the path its local data sits on: the data is then already served, and a
+// view would write to a live CRDT. A legacy global sits on another path.
+func (m *Migrator) servedInPlace(info hoarderIface.InstanceInfo) (bool, error) {
+	if mh.Hash(info.Meta.ProjectId+info.Meta.ApplicationId+info.Meta.Match) != info.Hash {
+		return false, nil
+	}
+	peers, err := m.hoarder.ReplicasOf(info.Kind, info.Meta.ProjectId, info.Meta.ApplicationId, info.Meta.Match)
+	if err != nil {
+		return false, err
+	}
+	return slices.Contains(peers, m.node.ID()), nil
 }
 
 // stashInstanceFiles pushes the storage instance's locally-held file bytes to

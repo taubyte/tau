@@ -9,8 +9,9 @@ import (
 // Some host calls are two steps: the guest asks for a value's size, allocates
 // that many bytes, then asks for the data, which re-reads the value. The data
 // step gets only a pointer, so the host remembers the size it reported under a
-// key naming the value and refuses to write a value that grew since: writing it
-// would run past the guest's buffer into its other memory.
+// key naming the value and refuses to write a value whose size changed since:
+// one that grew would run past the guest's buffer into its other memory, and one
+// that shrank would leave the guest reading zero bytes at the end of its buffer.
 
 // shortcut: sizes reported but never fetched are dropped all at once past this
 // many, which only makes those later fetches behave as before the check.
@@ -29,16 +30,16 @@ func (m *methods) WriteBytesSizeFor(module common.Module, key string, ptr uint32
 	return m.WriteBytesSize(module, ptr, data)
 }
 
-// WriteBytesFor writes value at ptr, as WriteBytes, unless it outgrew the size
-// last reported for key; then it returns ErrorSizeMismatch so the guest asks
-// for the size again. With no size reported it behaves as WriteBytes.
+// WriteBytesFor writes value at ptr, as WriteBytes, unless its size differs from
+// the one last reported for key; then it returns ErrorSizeMismatch so the guest
+// asks for the size again. With no size reported it behaves as WriteBytes.
 func (m *methods) WriteBytesFor(module common.Module, key string, ptr uint32, value []byte) errno.Error {
 	m.sizesLock.Lock()
 	size, reported := m.sizes[key]
 	delete(m.sizes, key)
 	m.sizesLock.Unlock()
 
-	if reported && uint32(len(value)) > size {
+	if reported && uint32(len(value)) != size {
 		return errno.ErrorSizeMismatch
 	}
 
