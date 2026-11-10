@@ -12,6 +12,7 @@ func (s *service) New(ctx vm.Context, config vm.Config) (vm.Instance, error) {
 		config:  &config,
 		fs:      afero.NewMemMapFs(),
 		deps:    make(map[string]vm.SourceModule, 0),
+		closed:  make(chan struct{}),
 	}
 
 	switch config.Output {
@@ -28,14 +29,19 @@ func (s *service) New(ctx vm.Context, config vm.Config) (vm.Instance, error) {
 		}
 
 		if r.outputErr, err = newPipe(); err != nil {
+			r.output.Close()
 			return nil, err
 		}
 	}
 
+	// ctx is often the function's long-lived context: also stop on Close, or
+	// this goroutine holds the instance until the function is unloaded.
 	go func() {
-		<-ctx.Context().Done()
-		r.output.Close()
-		r.outputErr.Close()
+		select {
+		case <-ctx.Context().Done():
+			r.Close()
+		case <-r.closed:
+		}
 	}()
 
 	return r, nil

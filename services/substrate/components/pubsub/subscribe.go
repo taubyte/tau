@@ -51,19 +51,26 @@ func (s *Service) Subscribe(projectId, appId, resource, path string) error {
 		matcher.Channel = matcher.Channel[1:]
 	}
 
+	// A function that subscribes on every call must not add a handler per
+	// call: each one handles every message again.
+	key := matcher.String() + "/" + resource
+	if _, dup := s.subscribed.LoadOrStore(key, struct{}{}); dup {
+		return nil
+	}
+
 	picks, err := s.Lookup(matcher)
 	if err != nil {
+		s.subscribed.Delete(key)
 		return fmt.Errorf("lookup failed with: %s", err.Error())
 	}
 	if len(picks) == 0 {
+		s.subscribed.Delete(key)
 		return fmt.Errorf("lookup returned no picks")
 	}
 
 	ctx, ctxC := context.WithCancel(s.Context())
-	workers := make(chan struct{}, 64)
-	for range 64 {
-		workers <- struct{}{}
-	}
+	q := newQueue(ctx, Function{projectId, appId, resource}, func(m iface.Message) { s.handle(start, matcher, m) })
+	q.report = counterReport(s.Counter(), q.fn)
 
 	_, err = websocket.AddSubscription(s, matcher.String(), func(msg *pubsub.Message) {
 		// unwarp the message first
@@ -77,25 +84,19 @@ func (s *Service) Subscribe(projectId, appId, resource, path string) error {
 			return
 		}
 
-		go func() {
-			defer func() {
-				workers <- struct{}{}
-			}()
-			select {
-			case <-workers:
-				s.handle(start, matcher, message)
-			case <-ctx.Done():
-				return
-			}
-		}()
+		q.push(message)
 	}, func(err error) {
 		common.Logger.Error("handle error with:", err.Error())
 		ctxC()
+		q.close()
+		s.subscribed.Delete(key)
 	})
 
 	if err != nil {
 		common.Logger.Error("subscribe failed with:", err.Error())
 		ctxC()
+		q.close()
+		s.subscribed.Delete(key)
 		return err
 	}
 

@@ -36,6 +36,8 @@ type instance struct {
 	output    io.ReadWriteCloser
 	outputErr io.ReadWriteCloser
 	deps      map[string]vm.SourceModule
+	closeOnce sync.Once
+	closed    chan struct{}
 }
 
 /*************** Module Instance ***************/
