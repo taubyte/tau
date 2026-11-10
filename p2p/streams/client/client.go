@@ -53,6 +53,24 @@ type peerRequest struct {
 	ch   chan *peerCore.AddrInfo
 	ctx  context.Context
 	need int
+
+	seen      map[peerCore.ID]struct{} // peers this call already has; owned by discover
+	exhausted chan struct{}            // closed once every known peer is in seen
+	done      bool                     // exhausted is closed; owned by discover
+}
+
+// offer hands p to the call unless it already has it. A peer that does not fit
+// the buffer stays unseen and is offered again on the next retry tick.
+func (pr *peerRequest) offer(p *peerCore.AddrInfo) {
+	if _, ok := pr.seen[p.ID]; ok {
+		return
+	}
+	select {
+	case pr.ch <- p:
+		pr.seen[p.ID] = struct{}{}
+	case <-pr.ctx.Done():
+	default:
+	}
 }
 
 type Request struct {
@@ -260,24 +278,31 @@ func (c *Client) addPeer(p *peerCore.AddrInfo) {
 	c.activePeers[p.ID] = p
 	c.node.Peer().ConnManager().Protect(p.ID, c.tag)
 
-	kept := make([]*peerRequest, 0, len(c.peerFeeds))
 	for _, pr := range c.peerFeeds {
-		select {
-		case <-pr.ctx.Done():
-			close(pr.ch)
-			continue
-		default:
-		}
-		select {
-		case pr.ch <- p:
-			kept = append(kept, pr)
-		case <-pr.ctx.Done():
-			close(pr.ch)
-		default:
-			kept = append(kept, pr)
-		}
+		pr.offer(p)
 	}
-	c.peerFeeds = kept
+}
+
+// markExhausted tells calls that hold every known peer to stop waiting for more.
+// settled is false at startup, when an empty or short list only means discovery
+// and identify have not caught up yet.
+func (c *Client) markExhausted(settled bool) {
+	if !settled {
+		return
+	}
+feeds:
+	for _, pr := range c.peerFeeds {
+		if pr.done || len(pr.seen) == 0 {
+			continue
+		}
+		for pid := range c.activePeers {
+			if _, ok := pr.seen[pid]; !ok {
+				continue feeds
+			}
+		}
+		pr.done = true
+		close(pr.exhausted)
+	}
 }
 
 func (c *Client) discover() {
@@ -293,6 +318,10 @@ func (c *Client) discover() {
 	c.refreshFromPeerStore()
 	dpeers := c.discPeers()
 	discoverDone := false
+	discovered := false // a discovery round has finished since New
+	started := time.Now()
+	grace := PeerRetryInterval
+	settled := func() bool { return discovered && time.Since(started) >= grace }
 	dpeersWait := make(chan peerCore.AddrInfo)
 
 	retry := time.NewTicker(PeerRetryInterval)
@@ -306,7 +335,9 @@ func (c *Client) discover() {
 		case p, ok := <-dpeers:
 			if !ok {
 				discoverDone = true
+				discovered = true
 				dpeers = dpeersWait
+				c.markExhausted(settled())
 				continue
 			}
 			c.addPeer(&p)
@@ -315,19 +346,8 @@ func (c *Client) discover() {
 			c.cleanPeer(pid)
 
 		case pr := <-c.peerRequests:
-		peerLoop:
 			for _, info := range c.activePeers {
-				select {
-				case pr.ch <- info:
-				case <-pr.ctx.Done():
-					close(pr.ch)
-					pr = nil
-					break peerLoop
-				default:
-				}
-			}
-			if pr == nil {
-				continue
+				pr.offer(info)
 			}
 			c.peerFeeds = append(c.peerFeeds, pr)
 
@@ -338,6 +358,7 @@ func (c *Client) discover() {
 					discoverDone = false
 				}
 			}
+			c.markExhausted(settled())
 
 		case <-retry.C:
 			// event-driven discovery only refreshes when a peerRequest
@@ -360,6 +381,11 @@ func (c *Client) discover() {
 			c.peerFeeds = kept
 
 			c.refreshFromPeerStore()
+			for _, pr := range c.peerFeeds {
+				for _, info := range c.activePeers {
+					pr.offer(info)
+				}
+			}
 
 			needMore := false
 			for _, pr := range c.peerFeeds {
@@ -369,8 +395,10 @@ func (c *Client) discover() {
 				}
 			}
 			if needMore && discoverDone {
-				dpeers = c.discPeers()
+				dpeers = c.discPeers() // the end of this round marks exhausted calls
 				discoverDone = false
+			} else {
+				c.markExhausted(settled())
 			}
 		}
 	}
@@ -396,28 +424,37 @@ func (c *Client) openStream(pid peerCore.ID) (stream, error) {
 	return stream{Stream: strm, ID: pid}, nil
 }
 
-func (c *Client) peers(ctx context.Context, needs int) <-chan *peerCore.AddrInfo {
-	ch := make(chan *peerCore.AddrInfo, c.maxPeers)
+// peers asks discovery for peers of one call; used are the peers it already has.
+func (c *Client) peers(ctx context.Context, needs int, used []stream) *peerRequest {
+	req := &peerRequest{
+		ch:        make(chan *peerCore.AddrInfo, c.maxPeers),
+		ctx:       ctx,
+		need:      needs,
+		seen:      make(map[peerCore.ID]struct{}, needs),
+		exhausted: make(chan struct{}),
+	}
+	for _, strm := range used {
+		req.seen[strm.ID] = struct{}{}
+	}
+
 	select {
 	case <-ctx.Done():
-		close(ch)
-		return ch
+		close(req.ch)
+		return req
 	case <-c.ctx.Done():
-		close(ch)
-		return ch
+		close(req.ch)
+		return req
 	default:
 	}
 
-	req := &peerRequest{ch: ch, ctx: ctx, need: needs}
-
 	select {
 	case <-ctx.Done():
-		close(ch)
+		close(req.ch)
 	case <-c.ctx.Done():
-		close(ch)
+		close(req.ch)
 	case c.peerRequests <- req:
 	}
-	return ch
+	return req
 }
 
 func (c *Client) connect(p *peerCore.AddrInfo) (network.Stream, error) {
@@ -471,6 +508,9 @@ func (r *Request) Do() (<-chan *Response, error) {
 		for _, pid := range r.to {
 			if len(strms) >= r.threshold {
 				break
+			}
+			if slices.ContainsFunc(strms, func(s stream) bool { return s.ID == pid }) {
+				continue
 			}
 			slot, err := r.client.acquire(ctx, pid)
 			if err != nil {
@@ -657,16 +697,20 @@ func (c *Client) send(cmdName string, body command.Body, streams []stream, thres
 		go func() {
 			defer close(strms)
 
-			discPeers := c.peers(ctx, threshold)
+			req := c.peers(ctx, threshold, streams)
+			discPeers, exhausted, noMorePeers := req.ch, req.exhausted, false
 
 		morePeersLoop:
 			for {
-				if strmsCount >= threshold {
+				// with nothing connected yet, keep waiting: a dead list may still be replaced
+				if strmsCount >= threshold || (noMorePeers && strmsCount > 0 && len(discPeers) == 0) {
 					return
 				}
 				select {
 				case <-ctx.Done():
 					return
+				case <-exhausted:
+					noMorePeers, exhausted = true, nil
 				case peer := <-discPeers:
 					if peer == nil {
 						break morePeersLoop
@@ -736,6 +780,12 @@ func (c *Client) syncSend(cmd string, opts ...Option[Request]) (cr.Response, err
 		return nil, fmt.Errorf("command %q timed out: %w", cmd, os.ErrDeadlineExceeded)
 	}
 	defer res.Close()
+	// only the first response is used; the others' streams must still be closed
+	go func() {
+		for extra := range resCh {
+			extra.Close()
+		}
+	}()
 
 	if err := res.Error(); err != nil {
 		return res.Response, fmt.Errorf("command %q returned error: %w", cmd, err)

@@ -207,6 +207,21 @@ func (l *limiter) setLimit(next int64) {
 	l.limit.Store(next)
 }
 
+// free is the share of the limit still open. Waiters count against it, so a
+// node that is queueing reads as full.
+func (l *limiter) free() float32 {
+	open := float32(int64(len(l.tokens))-l.waiting.Load()) / float32(l.limit.Load())
+	return max(0, min(1, open))
+}
+
+// FreeCapacity reports how much of this node's in-flight limit is open, 0 to 1.
+func (s *Service) FreeCapacity() float32 {
+	if s.inflight == nil {
+		return 1
+	}
+	return s.inflight.free()
+}
+
 // admitted runs run holding an in-flight slot, or fails with NodeBusy when none
 // frees up in time. The slot is freed on return, panic and client disconnect
 // alike. A nil limiter (no limit set) admits everything.

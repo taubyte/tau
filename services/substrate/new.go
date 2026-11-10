@@ -92,6 +92,7 @@ func New(ctx context.Context, cfg tauConfig.Config) (*Service, error) {
 	if err = srv.attachNodes(cfg); err != nil {
 		return nil, fmt.Errorf("attaching node services failed with: %w", err)
 	}
+	cfg.SetLocalHTTP(srv.components.http.ServeLocal)
 
 	if err = tbPlugins.Initialize(ctx, srv.components.config()...); err != nil {
 		return nil, fmt.Errorf("initializing Taubyte plugins failed with: %w", err)

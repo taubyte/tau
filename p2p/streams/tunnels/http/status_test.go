@@ -25,7 +25,7 @@ func encodeHeaders(t *testing.T, code int32) []byte {
 func TestHeadersOpClampsOutOfRangeCode(t *testing.T) {
 	for _, code := range []int32{0, 99, 1000, -1, 2000000} {
 		rec := httptest.NewRecorder()
-		if err := headersOp(rec, bytes.NewReader(encodeHeaders(t, code))); err != nil {
+		if err := headersOp(rec, bytes.NewReader(encodeHeaders(t, code)), false); err != nil {
 			t.Fatalf("headersOp(code=%d) errored: %v", code, err)
 		}
 		if rec.Code != http.StatusInternalServerError {
@@ -36,7 +36,7 @@ func TestHeadersOpClampsOutOfRangeCode(t *testing.T) {
 
 func TestHeadersOpPassesValidCode(t *testing.T) {
 	rec := httptest.NewRecorder()
-	if err := headersOp(rec, bytes.NewReader(encodeHeaders(t, 404))); err != nil {
+	if err := headersOp(rec, bytes.NewReader(encodeHeaders(t, 404)), false); err != nil {
 		t.Fatalf("headersOp(404) errored: %v", err)
 	}
 	if rec.Code != http.StatusNotFound {

@@ -42,10 +42,25 @@ func Backend(stream io.ReadWriter) (http.ResponseWriter, *http.Request, error) {
 
 }
 
+// Replayable says the request can be sent twice: a body is consumed as it is forwarded.
+func Replayable(r *http.Request) bool {
+	return (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.ContentLength == 0
+}
+
 // HTTP -> Stream
 func Frontend(w http.ResponseWriter, r *http.Request, stream io.ReadWriter) error {
-	ctx, ctxC := context.WithCancel(context.Background())
-	defer ctxC()
+	ctx := r.Context()
+
+	// The body is read while the response is written. Without this, HTTP/1 makes
+	// writing the response headers wait on a body read blocked on a stalled client.
+	http.NewResponseController(w).EnableFullDuplex()
+
+	// Closing the stream is what wakes the reader and a sender stuck on a full
+	// stream window, so nothing below outlives the request or a client that left.
+	defer closeStream(stream)
+	defer context.AfterFunc(ctx, func() { closeStream(stream) })()
+
+	replayable := Replayable(r)
 
 	// buffered: if sending the request fails, nobody reads done and the reader must not block forever
 	done := make(chan error, 1)
@@ -83,12 +98,14 @@ func Frontend(w http.ResponseWriter, r *http.Request, stream io.ReadWriter) erro
 				var m int64
 				switch ch {
 				case HeadersOp:
-					err = headersOp(w, payload)
+					err = headersOp(w, payload, replayable)
 				case BodyOp:
 					m, err = bodyOp(w, payload)
 					if m != n {
 						err = fmt.Errorf("failed to forward body: expected %d bytes, forwarded %d", n, m)
 					}
+				case AbortOp:
+					err = ErrAborted
 				default:
 					err = fmt.Errorf("failed to process http response op: unknown channel %d", ch)
 				}
@@ -100,42 +117,62 @@ func Frontend(w http.ResponseWriter, r *http.Request, stream io.ReadWriter) erro
 		}
 	}()
 
-	_, _, err := requestToStream(stream, r)
-	if err != nil {
+	if err := requestToStream(stream, r); err != nil {
 		return fmt.Errorf("request stream failed with %w", err)
 	}
 
-	return <-done
+	// Not awaited: a backend may answer without reading the body, and closing a
+	// stream's read side does not tell the sender, so this can block until
+	// closeStream. It only touches r.Body, which net/http keeps safe after the handler.
+	go func() {
+		packer.New(Magic, Version).Stream(BodyOp, stream, r.Body, BodyStreamBufferSize)
+		r.Body.Close()
+	}()
+
+	err := <-done
+	if ctx.Err() != nil {
+		return nil // the client left: there is nobody to report to and nothing went wrong here
+	}
+	return err
 }
 
-func requestToStream(stream io.Writer, r *http.Request) (int64, int64, error) {
+// closeStream tears the stream down in both directions. *client.Response resets.
+func closeStream(stream io.ReadWriter) {
+	switch s := stream.(type) {
+	case interface{ Close() }:
+		s.Close()
+	case io.Closer:
+		s.Close()
+	}
+}
+
+func requestToStream(stream io.Writer, r *http.Request) error {
 	pack := packer.New(Magic, Version)
 
 	rpayload := requestToPayload(r)
 
 	rpbuf, err := rpayload.Encode()
 	if err != nil {
-		return 0, 0, fmt.Errorf("encoding request payload failed: %w", err)
+		return fmt.Errorf("encoding request payload failed: %w", err)
 	}
 
-	hdrlen := int64(len(rpbuf))
-	err = pack.Send(RequestOp, stream, bytes.NewBuffer(rpbuf), hdrlen)
-	if err != nil {
-		return 0, 0, fmt.Errorf("sending request payload failed: %w", err)
+	if err = pack.Send(RequestOp, stream, bytes.NewBuffer(rpbuf), int64(len(rpbuf))); err != nil {
+		return fmt.Errorf("sending request payload failed: %w", err)
 	}
 
-	bodylen, _ := pack.Stream(BodyOp, stream, r.Body, BodyStreamBufferSize)
-	r.Body.Close()
-
-	return hdrlen, bodylen, nil
+	return nil
 }
 
-func headersOp(w http.ResponseWriter, r io.Reader) error {
+func headersOp(w http.ResponseWriter, r io.Reader, replayable bool) error {
 	dec := cbor.NewDecoder(r)
 	var obj headersOpPayload
 	err := dec.Decode(&obj)
 	if err != nil {
 		return fmt.Errorf("decoding headers operation payload failed: %w", err)
+	}
+
+	if obj.Refused && replayable {
+		return ErrRefused
 	}
 
 	// merge: the gateway's own headers (X-Substrate-Peer, CORS Vary) stay;
@@ -165,5 +202,11 @@ func headersOp(w http.ResponseWriter, r io.Reader) error {
 }
 
 func bodyOp(w http.ResponseWriter, r io.Reader) (int64, error) {
-	return io.Copy(w, r)
+	n, err := io.Copy(w, r)
+	// As httputil.ReverseProxy: a body of unknown length may be a stream, so it
+	// reaches the client now. A declared length stays in net/http's buffer.
+	if err == nil && w.Header().Get("Content-Length") == "" {
+		http.NewResponseController(w).Flush() // an error only means w cannot flush
+	}
+	return n, err
 }

@@ -35,6 +35,8 @@ func New(ctx context.Context, cfg tauConfig.Config) (gateway iface.Service, err 
 		clientNode = cfg.ClientNode()
 	}
 
+	g.clientNode = clientNode
+
 	if g.http = cfg.Http(); g.http == nil {
 		if g.http, err = httpsvc.New(g.ctx, g.node, cfg); err != nil {
 			return nil, fmt.Errorf("starting http failed with: %w", err)
@@ -49,6 +51,8 @@ func New(ctx context.Context, cfg tauConfig.Config) (gateway iface.Service, err 
 	if g.substrateClient, err = substrate.New(ctx, clientNode); err != nil {
 		return nil, fmt.Errorf("new streams client failed with: %w", err)
 	}
+
+	g.local = cfg.LocalHTTP()
 
 	g.attach()
 	return g, nil
