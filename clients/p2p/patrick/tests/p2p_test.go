@@ -96,7 +96,7 @@ func TestClientWithUniverse_Dreaming(t *testing.T) {
 	testAssets["asset2"] = "assetCID2"
 	testAssets["asset3"] = "assetCID3"
 
-	err = patrickClient.Failed(job.Id, testLogs, testAssets)
+	err = patrickClient.Failed(job.Id, testLogs, testAssets, "")
 	assert.NilError(t, err)
 
 	jobs, err = patrickClient.List()

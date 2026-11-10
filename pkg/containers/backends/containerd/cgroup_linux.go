@@ -198,3 +198,23 @@ func inRootCgroupNamespace() error {
 	}
 	return nil
 }
+
+// cgroupOOMKilled reports whether the OOM killer killed a process in a
+// container's cgroup, read while the stopped task still holds it. False when
+// that cannot be told: no cgroup, or cgroup v1.
+func cgroupOOMKilled(path string) bool {
+	if path == "" {
+		return false
+	}
+	events, err := os.ReadFile(filepath.Join(cgroupRoot, path, "memory.events"))
+	return err == nil && oomKillCounted(string(events))
+}
+
+func oomKillCounted(events string) bool {
+	for line := range strings.SplitSeq(events, "\n") {
+		if count, ok := strings.CutPrefix(line, "oom_kill "); ok {
+			return count != "0"
+		}
+	}
+	return false
+}

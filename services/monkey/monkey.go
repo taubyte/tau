@@ -54,7 +54,7 @@ func (m *Monkey) Run() {
 	}
 
 	if runErr != nil {
-		if err = m.Service.patrickClient.Failed(m.Id, m.Job.Logs, m.Job.AssetCid); err != nil {
+		if err = m.Service.patrickClient.Failed(m.Id, m.Job.Logs, m.Job.AssetCid, m.failReason); err != nil {
 			logger.Errorf("Marking job failed `%s` failed with: %s", m.Id, err.Error())
 		}
 		m.Status = patrick.JobStatusFailed
@@ -119,6 +119,7 @@ func (m *Monkey) refreshClaim() (stop func()) {
 
 func (m *Monkey) run(errs chan error) {
 	if err := m.RunJob(); err != nil {
+		m.failReason = failReason(err)
 		appendAndLogError(errs, "Running job `%s` failed with error: %s", m.Id, err.Error())
 	} else {
 		m.logFile.Seek(0, io.SeekEnd)

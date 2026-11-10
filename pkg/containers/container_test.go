@@ -19,7 +19,8 @@ import (
 // fakeBackend stands in for a container runtime so the run semantics — exit
 // codes, log delivery, cleanup ordering — can be tested without a daemon.
 type fakeBackend struct {
-	mu sync.Mutex
+	oomKilled bool
+	mu        sync.Mutex
 
 	exitCode int
 	stdout   string
@@ -81,7 +82,7 @@ func (f *fakeBackend) Inspect(context.Context, core.ContainerID) (*core.Containe
 	if f.inspectErr != nil {
 		return nil, f.inspectErr
 	}
-	return &core.ContainerInfo{ID: "fake-id", ExitCode: f.exitCode, Status: "exited"}, nil
+	return &core.ContainerInfo{ID: "fake-id", ExitCode: f.exitCode, OOMKilled: f.oomKilled, Status: "exited"}, nil
 }
 
 func (f *fakeBackend) Logs(context.Context, core.ContainerID) (io.ReadCloser, error) {

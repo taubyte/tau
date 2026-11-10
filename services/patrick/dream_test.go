@@ -157,7 +157,7 @@ func TestDream_Dreaming(t *testing.T) {
 		}
 		assert.Assert(t, job != nil, "Expected a job from dequeue")
 
-		err = patrickClient.Failed(job.Id, job.Logs, nil)
+		err = patrickClient.Failed(job.Id, job.Logs, nil, "")
 		assert.NilError(t, err)
 
 		var jobs []string

@@ -243,6 +243,9 @@ func logTail(p Patrick, j *patrick.Job) (string, []string) {
 	if len(lines) > tailLines {
 		lines = lines[len(lines)-tailLines:]
 	}
+	if j.Reason != "" {
+		return j.Reason, lines
+	}
 	if len(lines) == 0 {
 		return "no logs", nil
 	}

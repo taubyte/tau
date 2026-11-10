@@ -50,7 +50,7 @@ func (p *claimPatrick) Done(jid string, _, _ map[string]string) error {
 	return nil
 }
 
-func (p *claimPatrick) Failed(jid string, _, _ map[string]string) error {
+func (p *claimPatrick) Failed(jid string, _, _ map[string]string, _ string) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	p.failed = append(p.failed, jid)

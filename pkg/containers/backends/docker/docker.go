@@ -194,7 +194,7 @@ func (b *DockerBackend) Create(ctx context.Context, config *core.ContainerConfig
 		return "", fmt.Errorf("Docker client not initialized")
 	}
 
-	containerID := core.ContainerID(fmt.Sprintf("tau-%s-%d", time.Now().Format("20060102-150405"), time.Now().Nanosecond()))
+	containerID := core.NewContainerID()
 
 	containerConfig, hostConfig, networkingConfig, err := b.createDockerConfig(config)
 	if err != nil {
@@ -615,6 +615,7 @@ func (b *DockerBackend) Inspect(ctx context.Context, id core.ContainerID) (*core
 	if info.State.ExitCode != 0 {
 		containerInfo.ExitCode = info.State.ExitCode
 	}
+	containerInfo.OOMKilled = info.State.OOMKilled
 
 	if info.State.StartedAt != "" {
 		startedAt, err := time.Parse(time.RFC3339Nano, info.State.StartedAt)

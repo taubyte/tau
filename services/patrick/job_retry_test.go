@@ -25,14 +25,35 @@ func storedJob(t *testing.T, id string) (*PatrickService, context.Context) {
 func TestFailedJobWithATryLeftIsOpen(t *testing.T) {
 	srv, ctx := storedJob(t, "j1")
 
-	assert.NilError(t, srv.updateStatus(ctx, "", "j1", nil, patrick.JobStatusFailed, nil))
+	assert.NilError(t, srv.updateStatus(ctx, "", "j1", nil, patrick.JobStatusFailed, nil, ""))
 	job, err := srv.getJob(ctx, "/jobs/", "j1")
 	assert.NilError(t, err)
 	assert.Equal(t, job.Status, patrick.JobStatusOpen)
 	assert.Equal(t, job.Attempt, 1)
 
-	assert.NilError(t, srv.updateStatus(ctx, "", "j1", nil, patrick.JobStatusFailed, nil))
+	assert.NilError(t, srv.updateStatus(ctx, "", "j1", nil, patrick.JobStatusFailed, nil, ""))
 	job, err = srv.getJob(ctx, "/archive/jobs/", "j1")
 	assert.NilError(t, err)
 	assert.Equal(t, job.Status, patrick.JobStatusFailed)
+}
+
+// A build that cannot succeed on another try is failed on its first.
+func TestFailedJobWithAReasonIsNotRetried(t *testing.T) {
+	srv, ctx := storedJob(t, "oom")
+
+	assert.NilError(t, srv.updateStatus(ctx, "", "oom", nil, patrick.JobStatusFailed, nil, "out of memory"))
+	job, err := srv.getJob(ctx, "/archive/jobs/", "oom")
+	assert.NilError(t, err)
+	assert.Equal(t, job.Status, patrick.JobStatusFailed)
+	_, err = srv.getJob(ctx, "/jobs/", "oom")
+	assert.Assert(t, err != nil, "still queued for another run")
+}
+
+func TestFailureReasonIsKeptOnTheJob(t *testing.T) {
+	srv, ctx := storedJob(t, "oom")
+
+	assert.NilError(t, srv.updateStatus(ctx, "", "oom", nil, patrick.JobStatusFailed, nil, "out of memory"))
+	job, err := srv.getJob(ctx, "/archive/jobs/", "oom")
+	assert.NilError(t, err)
+	assert.Equal(t, job.Reason, "out of memory")
 }

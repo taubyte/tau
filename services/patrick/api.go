@@ -101,7 +101,8 @@ func (p *PatrickService) requestServiceHandler(ctx context.Context, conn streams
 	case "done":
 		return nil, p.doneHandler(ctx, jid, cidMap, assetMap, conn)
 	case "failed":
-		return nil, p.failedHandler(ctx, jid, cidMap, assetMap, conn)
+		reason, _ := body["reason"].(string)
+		return nil, p.failedHandler(ctx, jid, cidMap, assetMap, reason, conn)
 	case "timeout":
 		return nil, p.timeoutHandler(ctx, jid, cidMap)
 	case "hasJob":
@@ -342,15 +343,15 @@ func (p *PatrickService) timeoutHandler(ctx context.Context, jid string, cid_log
 }
 
 func (p *PatrickService) doneHandler(ctx context.Context, jid string, cid_log map[string]string, assetCid map[string]string, conn streams.Connection) error {
-	return p.updateStatus(ctx, conn.RemotePeer(), jid, cid_log, commonIface.JobStatusSuccess, assetCid)
+	return p.updateStatus(ctx, conn.RemotePeer(), jid, cid_log, commonIface.JobStatusSuccess, assetCid, "")
 }
 
-func (p *PatrickService) failedHandler(ctx context.Context, jid string, cid_log map[string]string, assetCid map[string]string, conn streams.Connection) error {
-	return p.updateStatus(ctx, conn.RemotePeer(), jid, cid_log, commonIface.JobStatusFailed, assetCid)
+func (p *PatrickService) failedHandler(ctx context.Context, jid string, cid_log map[string]string, assetCid map[string]string, reason string, conn streams.Connection) error {
+	return p.updateStatus(ctx, conn.RemotePeer(), jid, cid_log, commonIface.JobStatusFailed, assetCid, reason)
 }
 
 func (p *PatrickService) cancelHandler(ctx context.Context, jid string, cid_log map[string]string) error {
-	return p.updateStatus(ctx, "", jid, cid_log, commonIface.JobStatusCancelled, nil)
+	return p.updateStatus(ctx, "", jid, cid_log, commonIface.JobStatusCancelled, nil, "")
 }
 
 func (p *PatrickService) deleteJob(ctx context.Context, jid string, loc ...string) error {
@@ -363,7 +364,7 @@ func (p *PatrickService) deleteJob(ctx context.Context, jid string, loc ...strin
 	return nil
 }
 
-func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid string, cid_log map[string]string, status commonIface.JobStatus, assetCid map[string]string) error {
+func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid string, cid_log map[string]string, status commonIface.JobStatus, assetCid map[string]string, reason string) error {
 	if pid != "" {
 		data, err := p.db.Get(ctx, "/assigned/"+jid)
 		if err == nil {
@@ -386,14 +387,17 @@ func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid stri
 	if job.Status != commonIface.JobStatusCancelled {
 		job.Logs = cid_log
 		job.AssetCid = assetCid
+		job.Reason = reason
 		job.Attempt++
 		if err := p.recordLogOwner(ctx, jid, cid_log); err != nil {
 			return fmt.Errorf("recording owners of job %s logs failed with %w", jid, err)
 		}
 	}
 
+	lastTry := reason != "" || job.Attempt >= servicesCommon.MaxJobAttempts
+
 	// not the job's last try: it runs again, so it is open, as after a timeout
-	if job.Status == commonIface.JobStatusFailed && job.Attempt < servicesCommon.MaxJobAttempts {
+	if job.Status == commonIface.JobStatusFailed && !lastTry {
 		job.Status = commonIface.JobStatusOpen
 	}
 
@@ -402,7 +406,7 @@ func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid stri
 		return fmt.Errorf("marshal in updateStatus error: %w", err)
 	}
 
-	if job.Status == commonIface.JobStatusSuccess || job.Status == commonIface.JobStatusCancelled || job.Attempt >= servicesCommon.MaxJobAttempts {
+	if job.Status == commonIface.JobStatusSuccess || job.Status == commonIface.JobStatusCancelled || lastTry {
 		// archived first, so a job is always in one place or the other
 		if err = p.db.Put(ctx, "/archive/jobs/"+jid, jobData); err != nil {
 			return fmt.Errorf("updateStatus put failed with error: %w", err)
@@ -610,6 +614,7 @@ func (srv *PatrickService) retryJob(ctx http.Context) (iface interface{}, err er
 	if job.Status == commonIface.JobStatusCancelled || job.Status == commonIface.JobStatusFailed || job.Status == commonIface.JobStatusSuccess {
 		job.Status = commonIface.JobStatusOpen
 		job.Attempt = 0
+		job.Reason = ""
 		job_byte, err := cbor.Marshal(job)
 		if err != nil {
 			logger.Errorf("failed cbor marshall on job %s with err: %v", job.Id, err)

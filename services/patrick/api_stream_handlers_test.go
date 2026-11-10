@@ -751,7 +751,7 @@ func TestUpdateStatus_ErrorCases(t *testing.T) {
 			cidLog := map[string]string{"log1": "cid1"}
 			assetCid := map[string]string{"asset1": "cid1"}
 
-			err := service.updateStatus(ctx, tt.pid, tt.jid, cidLog, tt.status, assetCid)
+			err := service.updateStatus(ctx, tt.pid, tt.jid, cidLog, tt.status, assetCid, "")
 
 			if tt.expectError {
 				assert.Assert(t, err != nil, "Expected error but got nil")
@@ -937,7 +937,7 @@ func TestZombieMonkeyProtection(t *testing.T) {
 	cidLog := map[string]string{"log1": "cid1"}
 	assetCid := map[string]string{"asset1": "cid1"}
 
-	err := service.updateStatus(ctx, monkey2, "zombie-job", cidLog, patrick.JobStatusSuccess, assetCid)
+	err := service.updateStatus(ctx, monkey2, "zombie-job", cidLog, patrick.JobStatusSuccess, assetCid, "")
 	assert.Assert(t, err != nil)
 	assert.ErrorContains(t, err, "is not the owner")
 
@@ -946,7 +946,7 @@ func TestZombieMonkeyProtection(t *testing.T) {
 	_, err = service.getJob(ctx, "/archive/jobs/", "zombie-job")
 	assert.Assert(t, err != nil, "job should NOT be in archive after zombie rejection")
 
-	err = service.updateStatus(ctx, monkey1, "zombie-job", cidLog, patrick.JobStatusSuccess, assetCid)
+	err = service.updateStatus(ctx, monkey1, "zombie-job", cidLog, patrick.JobStatusSuccess, assetCid, "")
 	assert.NilError(t, err)
 
 	_, err = service.getJob(ctx, "/archive/jobs/", "zombie-job")

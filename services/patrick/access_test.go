@@ -274,7 +274,7 @@ func TestFinishedJobIsArchivedBeforeLeavingJobs(t *testing.T) {
 	jobs := &fakeJobs{keys: map[string][]byte{}}
 	addJob(t, jobs, "/jobs/", "j", 61)
 	srv := &PatrickService{db: &archiveOrderJobs{fakeJobs: jobs, t: t}}
-	if err := srv.updateStatus(context.Background(), "", "j", map[string]string{}, commonIface.JobStatusSuccess, map[string]string{}); err != nil {
+	if err := srv.updateStatus(context.Background(), "", "j", map[string]string{}, commonIface.JobStatusSuccess, map[string]string{}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := jobs.keys["/jobs/j"]; ok {

@@ -3,6 +3,7 @@ package builder
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -134,6 +135,11 @@ func (b *builder) run(output *output, image *ci.DockerImage, environment specs.E
 			}
 		}
 		if runErr != nil {
+			if errors.Is(runErr, ci.ErrorOutOfMemory) {
+				runErr = fmt.Errorf("%w: %w", b.outOfMemory(), runErr)
+			} else if errors.Is(runErr, ci.ErrorKilled) {
+				runErr = fmt.Errorf("the build was killed before it finished, for example by its node stopping or restarting; it was not confirmed as out of memory: %w", runErr)
+			}
 			json.NewEncoder(b.output).Encode(struct {
 				Step      string `json:"step"`
 				Timestamp int64  `json:"timestamp"`

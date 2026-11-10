@@ -112,6 +112,7 @@ type ContainerInfo struct {
 	ID        ContainerID
 	Status    string
 	ExitCode  int
+	OOMKilled bool // the kernel killed a process in the container for memory; false when unconfirmed
 	StartedAt time.Time
 	Image     string
 	Resources *ResourceLimits
