@@ -26,6 +26,7 @@ type GitHubClient interface {
 	CreateRepository(name *string, description *string, private *bool) error
 	CreateDeployKey(name *string, key *string) error
 	RemoveOtherDeployKeys(name string, keep string) error
+	RemoveDeployKey(key string) error
 	CreatePushHook(name *string, url *string, devMode bool) (int64, string, error)
 	ListMyRepos() (map[string]RepositoryBasicInfo, error)
 	EachRepoPage(fn func(ids []string) (more bool)) error
@@ -127,6 +128,11 @@ func (client *githubClient) CreateDeployKey(name *string, key *string) error {
 	return err
 }
 
+// deployKeyGrace spares a key this young when older ones are removed: it may
+// belong to another registration of the repository that is about to store it.
+// It goes at the next registration.
+const deployKeyGrace = 10 * time.Minute
+
 // RemoveOtherDeployKeys deletes the selected repository's deploy keys titled
 // name, except keep (an authorized_keys line). Every registration adds a key and
 // none was ever removed, so each Dream restart or re-import left one more live
@@ -146,7 +152,7 @@ func (client *githubClient) RemoveOtherDeployKeys(name string, keep string) erro
 			return fmt.Errorf("listing deploy keys of %s/%s failed with: %w", owner, repo, err)
 		}
 		for _, k := range keys {
-			if k.GetTitle() != name || sameDeployKey(k.GetKey()) == keepKey {
+			if k.GetTitle() != name || sameDeployKey(k.GetKey()) == keepKey || k.CreatedAt == nil || time.Since(k.CreatedAt.Time) < deployKeyGrace {
 				continue
 			}
 			if _, err := client.Repositories.DeleteKey(client.ctx, owner, repo, k.GetID()); err != nil {
