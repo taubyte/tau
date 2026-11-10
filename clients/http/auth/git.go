@@ -83,6 +83,69 @@ func createRepository(ctx context.Context, g common.Client, name, description st
 	return repo, nil
 }
 
+// RepositoryEmpty reports whether a repository has no commits yet.
+func (c *Client) RepositoryEmpty(owner, name string) (bool, error) {
+	return repositoryEmpty(c.http.Context(), c.Git(), owner, name)
+}
+
+func repositoryEmpty(ctx context.Context, g common.Client, owner, name string) (bool, error) {
+	gh, err := g.GithubTODO()
+	if err != nil {
+		return false, err
+	}
+	_, resp, err := gh.Repositories.ListCommits(ctx, owner, name, &github.CommitsListOptions{ListOptions: github.ListOptions{PerPage: 1}})
+	// GitHub answers 409 Conflict for a repository with no commits.
+	if resp != nil && resp.StatusCode == http.StatusConflict {
+		return true, nil
+	}
+	return false, err
+}
+
+// EmptyRepository returns the id of the caller's repository called name when it
+// has no commits: all an interrupted `tau new project` leaves behind, so using
+// it cannot overwrite anything. Otherwise, or on any error, it returns "".
+func (c *Client) EmptyRepository(name string) string {
+	return emptyRepository(c.http.Context(), c.Git(), name)
+}
+
+func emptyRepository(ctx context.Context, g common.Client, name string) string {
+	gh, err := g.GithubTODO()
+	if err != nil {
+		return ""
+	}
+	me, _, err := gh.Users.Get(ctx, "")
+	if err != nil {
+		return ""
+	}
+	found, err := g.GetByName(me.GetLogin(), name)
+	if err != nil {
+		return ""
+	}
+	if empty, err := repositoryEmpty(ctx, g, me.GetLogin(), name); err != nil || !empty {
+		return ""
+	}
+	return found.Get().ID()
+}
+
+// RepositoryHasCommits reports whether the caller has a repository called name
+// that was seen to hold commits. On any error it returns false.
+func (c *Client) RepositoryHasCommits(name string) bool {
+	return repositoryHasCommits(c.http.Context(), c.Git(), name)
+}
+
+func repositoryHasCommits(ctx context.Context, g common.Client, name string) bool {
+	gh, err := g.GithubTODO()
+	if err != nil {
+		return false
+	}
+	me, _, err := gh.Users.Get(ctx, "")
+	if err != nil {
+		return false
+	}
+	empty, err := repositoryEmpty(ctx, g, me.GetLogin(), name)
+	return err == nil && !empty
+}
+
 // GetRepositoryById returns a common Repository based on the id and an error
 func (c *Client) GetRepositoryById(repoId string) (common.Repository, error) {
 	repo, err := c.Git().GetByID(repoId)

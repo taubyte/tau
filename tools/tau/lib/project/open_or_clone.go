@@ -7,9 +7,12 @@ import (
 )
 
 func (h *repositoryHandler) openOrCloneProject(profile config.Profile, tauProject config.Project, embedToken bool) error {
-	project, err := projectByName(h.projectName)
-	if err != nil {
-		return err
+	var err error
+	project := h.project
+	if project == nil {
+		if project, err = projectByName(h.projectName); err != nil {
+			return err
+		}
 	}
 
 	repoData, err := project.Repositories()

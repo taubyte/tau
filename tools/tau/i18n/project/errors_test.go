@@ -65,3 +65,12 @@ func TestCreatingProjectFailed(t *testing.T) {
 	err := projectI18n.CreatingProjectFailed(errors.New("create"))
 	assert.ErrorContains(t, err, "creating project failed")
 }
+
+func TestNeverFinishedIfEmpty(t *testing.T) {
+	err := projectI18n.NeverFinishedIfEmpty("p", errors.New("listing origin references failed with: remote repository is empty"))
+	assert.ErrorContains(t, err, "Run `tau new project --name p`")
+
+	other := errors.New("authentication required")
+	assert.Equal(t, projectI18n.NeverFinishedIfEmpty("p", other), other)
+	assert.NilError(t, projectI18n.NeverFinishedIfEmpty("p", nil))
+}

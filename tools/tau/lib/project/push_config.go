@@ -3,11 +3,13 @@
 package projectLib
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path"
 	"strings"
 
+	gogit "github.com/go-git/go-git/v5"
 	httpClient "github.com/taubyte/tau/clients/http/auth"
 	"github.com/taubyte/tau/tools/tau/config"
 	"github.com/taubyte/tau/tools/tau/tcc"
@@ -38,7 +40,7 @@ func cloneProjectAndPushConfig(clientProject *httpClient.Project, location, desc
 	}
 
 	// Clone project to given location
-	projectRepository, err := Repository(clientProject.Name).Clone(configProject, embedToken)
+	projectRepository, err := repositoryOf(clientProject).Clone(configProject, embedToken)
 	if err != nil {
 		return fmt.Errorf("failed to clone %s with %w", clientProject.Name, err)
 	}
@@ -80,8 +82,9 @@ func cloneProjectAndPushConfig(clientProject *httpClient.Project, location, desc
 		return err
 	}
 
+	// A rerun after a failed push has nothing new to commit.
 	err = gitRepo.Commit("init", ".")
-	if err != nil {
+	if err != nil && !errors.Is(err, gogit.ErrEmptyCommit) {
 		return err
 	}
 

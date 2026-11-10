@@ -1,6 +1,8 @@
 package projectPrompts
 
 import (
+	"strings"
+
 	"github.com/taubyte/tau/tools/tau/flags"
 	projectFlags "github.com/taubyte/tau/tools/tau/flags/project"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
@@ -18,9 +20,20 @@ func New(ctx *cli.Context) (embedToken bool, project *projectLib.Project, err er
 		}
 	}
 
-	projectNames, err := projectLib.List()
+	projects, err := projectLib.ListResources()
 	if err != nil {
 		return
+	}
+
+	// The name of a project that never finished is free to finish it with.
+	wanted := ctx.String(flags.Name.Name)
+	projectNames := make([]string, 0, len(projects))
+	for _, p := range projects {
+		if project.Resume == nil && strings.EqualFold(p.Name, wanted) && p.Unfinished() {
+			project.Resume = p
+			continue
+		}
+		projectNames = append(projectNames, p.Name)
 	}
 
 	project.Name, err = prompts.GetOrRequireAUniqueName(ctx, projectName, projectNames)
