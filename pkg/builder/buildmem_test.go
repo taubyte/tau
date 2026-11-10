@@ -17,3 +17,19 @@ func TestBuildMemoryLeavesRoomOnSmallNodes(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildSwap(t *testing.T) {
+	const gib = 1 << 30
+	cases := map[uint64]int64{
+		0:         4 * gib, // unknown size: the default, no swap
+		2 * gib:   -1,
+		5*gib - 1: -1,
+		5 * gib:   4 * gib,
+		32 * gib:  4 * gib,
+	}
+	for total, want := range cases {
+		if got := buildSwap(buildMemory(total)); got != want {
+			t.Errorf("buildSwap at total %d = %d, want %d", total, got, want)
+		}
+	}
+}

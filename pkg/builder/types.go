@@ -37,14 +37,14 @@ func (b *builder) restrictEgress() bool {
 }
 
 // buildLimits caps a confined build so one build.sh cannot starve the node or
-// its other tenants: buildMemory, no swap beyond it, 4096 processes, half the
+// its other tenants: buildMemory of RAM, buildSwap, 4096 processes, half the
 // cores.
 func buildLimits() core.ResourceLimits {
 	const period = 100_000
 	mem := buildMemory(memory.TotalMemory())
 	return core.ResourceLimits{
 		Memory:     mem,
-		MemorySwap: mem,
+		MemorySwap: buildSwap(mem),
 		PIDs:       4096,
 		CPUPeriod:  period,
 		CPUQuota:   int64(max(runtime.NumCPU()/2, 1)) * period,
@@ -93,13 +93,25 @@ type logs struct {
 	*os.File
 }
 
+const buildMemoryLimit = 4 << 30
+
 // buildMemory is a build's memory limit: 4 GiB, but on a small node at most its
 // memory less 1 GiB, so the build is killed before tau and Docker are. Never
 // under 512 MiB; an unknown total gets the 4 GiB default.
 func buildMemory(total uint64) int64 {
-	const limit, reserve, floor = 4 << 30, 1 << 30, 512 << 20
-	if total == 0 || total >= limit+reserve {
-		return limit
+	const reserve, floor = 1 << 30, 512 << 20
+	if total == 0 || total >= buildMemoryLimit+reserve {
+		return buildMemoryLimit
 	}
 	return max(int64(total)-reserve, floor)
+}
+
+// buildSwap is a build's memory-plus-swap limit. A node too small to give a
+// build the full limit lets it use the host's swap (-1), or large libraries
+// cannot compile there at all; larger nodes keep builds to RAM.
+func buildSwap(mem int64) int64 {
+	if mem < buildMemoryLimit {
+		return -1
+	}
+	return mem
 }
