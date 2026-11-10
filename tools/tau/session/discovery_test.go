@@ -204,8 +204,8 @@ func TestDiscoveryPreferNewestOnTie(t *testing.T) {
 	}
 
 	root := sessionRootDir()
-	base1 := sessionFileBaseName(pids[0:1])
-	base2 := sessionFileBaseName(pids[1:2])
+	base1 := sessionFileBaseName(pids[0:2])
+	base2 := sessionFileBaseName(append(append([]int{}, pids[0:2]...), 70001))
 	path1 := filepath.Join(root, base1+".yaml")
 	path2 := filepath.Join(root, base2+".yaml")
 
