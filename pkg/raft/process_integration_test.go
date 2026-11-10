@@ -20,6 +20,7 @@ import (
 
 	"github.com/ipfs/go-datastore/query"
 	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/network"
 	peercore "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
 
@@ -88,6 +89,24 @@ func runProcess(dir string) int {
 	return 0
 }
 
+// meet dials at until the two are connected. A dial that crosses one from the
+// other side at the same instant, each from its listening port, is one TCP connection
+// both ends took for their own, and its TLS handshake fails on both; a peer keeps
+// dialing, as the DHT and a stream that wants one do, and the next dial lands.
+func meet(ctx context.Context, node taupeer.Node, at peercore.AddrInfo) string {
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		err := node.Host().Connect(network.WithForceDirectDial(ctx, "a dial that crossed"), at)
+		if err == nil || node.Host().Network().Connectedness(at.ID) == network.Connected {
+			return "ok"
+		}
+		if time.Now().After(deadline) {
+			return "err " + err.Error()
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 // answer is one command's one-line reply.
 func answer(ctx context.Context, node taupeer.Node, groups map[string]Cluster, f []string) string {
 	switch {
@@ -107,10 +126,7 @@ func answer(ctx context.Context, node taupeer.Node, groups map[string]Cluster, f
 		if err != nil {
 			return "err " + err.Error()
 		}
-		if err := node.Host().Connect(ctx, *at); err != nil {
-			return "err " + err.Error()
-		}
-		return "ok"
+		return meet(ctx, node, *at)
 	case f[0] == "set" && len(f) == 4 && groups[f[1]] != nil:
 		if err := groups[f[1]].Set(f[2], []byte(f[3]), 2*time.Second); err != nil {
 			return "err " + err.Error()
