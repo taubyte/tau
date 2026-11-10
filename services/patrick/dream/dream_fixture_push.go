@@ -385,7 +385,8 @@ func pushSpecificOnce(u *dream.Universe, params ...interface{}) error {
 	if len(params) > 0 {
 		repoId, ok = params[0].(string)
 	}
-	if !ok {
+	// A malformed call is refused by pushSpecific, even for a repository already pushed.
+	if !ok || len(params) < 2 {
 		return pushSpecific(u, params...)
 	}
 	if err := u.Provides("auth", "patrick", "tns"); err != nil {
