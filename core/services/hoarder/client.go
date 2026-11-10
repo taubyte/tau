@@ -46,6 +46,14 @@ type NxKVDB interface {
 	PutNx(ctx context.Context, key string, value []byte) (existed bool, err error)
 }
 
+// QuotaKVDB is a KVDB handle whose batches can carry the database quota, so
+// the hoarder checks it against its local data instead of the caller scanning
+// every size record over the network. Commit fails when the quota is exceeded.
+type QuotaKVDB interface {
+	kvdb.KVDB
+	BatchWithMax(ctx context.Context, max uint64) (kvdb.Batch, error)
+}
+
 // StashConfig carries push options. Target is the desired replica count; Owner
 // is the storage instance hash the blocks belong to; Fanout is whether the
 // receiving hoarder re-pushes to co-claimants (false for hoarder→hoarder

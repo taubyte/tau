@@ -20,6 +20,18 @@ import (
 // ErrNotFound is returned by the remote KVDB's Get when the key is absent.
 var ErrNotFound = errors.New("key not found")
 
+// ErrOverCapacity is returned when the hoarder refused a write: the database
+// quota or the node's admission policy.
+var ErrOverCapacity = errors.New("no space left for input")
+
+// refused turns a typed refusal in a response into an error.
+func refused(resp cr.Response) error {
+	if maps.TryString(resp, hoarderSpecs.BodyCode) == hoarderSpecs.CodeOverCapacity {
+		return ErrOverCapacity
+	}
+	return nil
+}
+
 // KVDB returns a remote-backed kvdb.KVDB for a database/storage instance. Every
 // operation is a p2p call to a hoarder holding the instance; the handle resolves
 // replicas lazily and sticks to one (read-your-writes) with failover.
@@ -49,6 +61,7 @@ type remoteKV struct {
 
 var _ coreKvdb.KVDB = (*remoteKV)(nil)
 var _ hoarderIface.NxKVDB = (*remoteKV)(nil)
+var _ hoarderIface.QuotaKVDB = (*remoteKV)(nil)
 
 func (r *remoteKV) instanceBody() command.Body {
 	return command.Body{
@@ -234,8 +247,11 @@ func (r *remoteKV) Get(ctx context.Context, key string) ([]byte, error) {
 }
 
 func (r *remoteKV) Put(ctx context.Context, key string, v []byte) error {
-	_, err := r.do(ctx, command.Body{hoarderSpecs.BodyKVOp: hoarderSpecs.KVPut, hoarderSpecs.BodyKey: key, hoarderSpecs.BodyValue: v})
-	return err
+	resp, err := r.do(ctx, command.Body{hoarderSpecs.BodyKVOp: hoarderSpecs.KVPut, hoarderSpecs.BodyKey: key, hoarderSpecs.BodyValue: v})
+	if err != nil {
+		return err
+	}
+	return refused(resp)
 }
 
 // PutNx writes the key only if absent on the serving replica, atomically
@@ -244,6 +260,9 @@ func (r *remoteKV) Put(ctx context.Context, key string, v []byte) error {
 func (r *remoteKV) PutNx(ctx context.Context, key string, v []byte) (bool, error) {
 	resp, err := r.do(ctx, command.Body{hoarderSpecs.BodyKVOp: hoarderSpecs.KVPutNx, hoarderSpecs.BodyKey: key, hoarderSpecs.BodyValue: v})
 	if err != nil {
+		return false, err
+	}
+	if err = refused(resp); err != nil {
 		return false, err
 	}
 	existed, _ := maps.Bool(resp, hoarderSpecs.BodyExisted)
@@ -317,6 +336,13 @@ func (r *remoteKV) Batch(ctx context.Context) (coreKvdb.Batch, error) {
 	return &remoteBatch{kv: r}, nil
 }
 
+// BatchWithMax is Batch with the database quota sent along, enforced by the
+// hoarder from its local data. A hoarder that predates the field ignores it,
+// so during a rolling upgrade the quota is not enforced.
+func (r *remoteKV) BatchWithMax(ctx context.Context, max uint64) (coreKvdb.Batch, error) {
+	return &remoteBatch{kv: r, max: max}, nil
+}
+
 // Stats over the wire is not yet mapped; return an empty CRDT stats so callers
 // that only inspect the type don't panic.
 func (r *remoteKV) Stats(ctx context.Context) coreKvdb.Stats {
@@ -333,6 +359,7 @@ func (r *remoteKV) Close() {}
 type remoteBatch struct {
 	kv  *remoteKV
 	ops []command.Body
+	max uint64 // database quota in bytes; 0 = not sent
 }
 
 func (b *remoteBatch) Put(key string, value []byte) error {
@@ -361,6 +388,13 @@ func (b *remoteBatch) Commit() error {
 		ops[i] = map[string]interface{}(o)
 	}
 	// The Batch interface's Commit carries no ctx; the op is not caller-cancellable.
-	_, err := b.kv.do(context.Background(), command.Body{hoarderSpecs.BodyKVOp: hoarderSpecs.KVBatch, hoarderSpecs.BodyOps: ops})
-	return err
+	body := command.Body{hoarderSpecs.BodyKVOp: hoarderSpecs.KVBatch, hoarderSpecs.BodyOps: ops}
+	if b.max > 0 {
+		body[hoarderSpecs.BodyMaxSize] = b.max
+	}
+	resp, err := b.kv.do(context.Background(), body)
+	if err != nil {
+		return err
+	}
+	return refused(resp)
 }

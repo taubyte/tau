@@ -19,12 +19,10 @@ func (kv *kv) used(ctx context.Context) (int, error) {
 			return 0, fmt.Errorf("getting Size for key %s failed with %w", key, err)
 		}
 
-		size, err := strconv.Atoi(string(sizeByte))
-		if err != nil {
-			return 0, fmt.Errorf("failed converting byte to int %s failed with %w", key, err)
+		// A user key under size/ can hold anything; it is not a size record.
+		if size, err := strconv.Atoi(string(sizeByte)); err == nil {
+			used += size
 		}
-
-		used += int(size)
 	}
 	return used, nil
 }
