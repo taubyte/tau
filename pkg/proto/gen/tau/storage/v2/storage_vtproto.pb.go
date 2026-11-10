@@ -437,6 +437,11 @@ func (m *Version) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if m.ExpiresMs != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.ExpiresMs))
+		i--
+		dAtA[i] = 0x50
+	}
 	if len(m.Name) > 0 {
 		i -= len(m.Name)
 		copy(dAtA[i:], m.Name)
@@ -790,6 +795,16 @@ func (m *CurrentRequest) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if m.Newest {
+		i--
+		if m.Newest {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x20
+	}
 	if m.Here {
 		i--
 		if m.Here {
@@ -1095,6 +1110,16 @@ func (m *ListRequest) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.Newest {
+		i--
+		if m.Newest {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x30
 	}
 	if m.Here {
 		i--
@@ -1934,6 +1959,9 @@ func (m *Version) SizeVT() (n int) {
 	if l > 0 {
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
+	if m.ExpiresMs != 0 {
+		n += 1 + protohelpers.SizeOfVarint(uint64(m.ExpiresMs))
+	}
 	n += len(m.unknownFields)
 	return n
 }
@@ -2044,6 +2072,9 @@ func (m *CurrentRequest) SizeVT() (n int) {
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
 	if m.Here {
+		n += 2
+	}
+	if m.Newest {
 		n += 2
 	}
 	n += len(m.unknownFields)
@@ -2158,6 +2189,9 @@ func (m *ListRequest) SizeVT() (n int) {
 		n += 1 + protohelpers.SizeOfVarint(uint64(m.Limit))
 	}
 	if m.Here {
+		n += 2
+	}
+	if m.Newest {
 		n += 2
 	}
 	n += len(m.unknownFields)
@@ -3771,6 +3805,25 @@ func (m *Version) UnmarshalVT(dAtA []byte) error {
 				m.Name = []byte{}
 			}
 			iNdEx = postIndex
+		case 10:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ExpiresMs", wireType)
+			}
+			m.ExpiresMs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ExpiresMs |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -4500,6 +4553,26 @@ func (m *CurrentRequest) UnmarshalVT(dAtA []byte) error {
 				}
 			}
 			m.Here = bool(v != 0)
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Newest", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Newest = bool(v != 0)
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -5234,6 +5307,26 @@ func (m *ListRequest) UnmarshalVT(dAtA []byte) error {
 				}
 			}
 			m.Here = bool(v != 0)
+		case 6:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Newest", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Newest = bool(v != 0)
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])

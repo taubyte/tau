@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"time"
 
 	"connectrpc.com/connect"
@@ -65,7 +66,7 @@ func (s *server) Put(ctx context.Context, at Address, name string, o Object, con
 }
 
 func (s *server) Current(ctx context.Context, at Address, name string) (Version, error) {
-	return s.current(ctx, at, name, false)
+	return s.current(ctx, at, name, false, false)
 }
 
 func (s *server) Versions(ctx context.Context, at Address, name string, limit int) ([]Version, error) {
@@ -73,7 +74,7 @@ func (s *server) Versions(ctx context.Context, at Address, name string, limit in
 }
 
 func (s *server) List(ctx context.Context, at Address, prefix, after string, limit int) ([]Version, error) {
-	return s.list(ctx, at, prefix, after, limit, false)
+	return s.list(ctx, at, prefix, after, limit, false, false)
 }
 
 func (s *server) Delete(ctx context.Context, at Address, name string) (Version, error) {
@@ -84,26 +85,34 @@ func (s *server) Size(ctx context.Context, at Address) (uint64, error) {
 	return s.size(ctx, at, false)
 }
 
-// size is the bytes an instance holds, from this node's copy of the index or a
-// holder's. An instance no copy holds anything of holds nothing.
+// size is the bytes an instance holds: the most any copy a read hears says, since a
+// copy behind holds less. Here, it is this node's copy's alone.
 func (s *server) size(ctx context.Context, a Address, here bool) (uint64, error) {
-	var out uint64
-	err := s.fromIndex(ctx, a, here, func(i index) error {
-		n, err := i.Size(ctx, a)
-		out = n
-		return err
-	}, func(svc storagev2Client) error {
+	if here {
+		var out uint64
+		err := s.copyHere(ctx, a, func(i index) error {
+			n, err := i.Size(ctx, a)
+			out = n
+			return err
+		})
+		return out, err
+	}
+	sizes, err := fromCopies(ctx, s, a, func(i index) (uint64, error) {
+		return i.Size(ctx, a)
+	}, func(svc storagev2Client) (uint64, error) {
 		res, err := svc.Size(ctx, connect.NewRequest(&storagev2.SizeRequest{At: wireAddress(a), Here: true}))
 		if err != nil {
-			return err
+			return 0, err
 		}
-		out = res.Msg.GetBytes()
-		return nil
+		return res.Msg.GetBytes(), nil
 	})
 	if errors.Is(err, ErrNotFound) {
 		return 0, nil
 	}
-	return out, err
+	if err != nil {
+		return 0, err
+	}
+	return slices.Max(sizes), nil
 }
 
 func (s *server) Read(ctx context.Context, root string) (io.ReadCloser, error) {
@@ -114,38 +123,54 @@ func (s *server) Read(ctx context.Context, root string) (io.ReadCloser, error) {
 	return s.open(ctx, c, false)
 }
 
-// list is the live names of an instance, from this node's copy of the index or a
-// holder's.
-func (s *server) list(ctx context.Context, a Address, prefix, after string, limit int, here bool) ([]Version, error) {
-	var out []Version
-	err := s.fromIndex(ctx, a, here, func(i index) error {
-		vs, err := i.List(ctx, a, prefix, after, limit)
-		out = vs
-		return err
-	}, func(svc storagev2Client) error {
-		res, err := svc.List(ctx, connect.NewRequest(&storagev2.ListRequest{
-			At: wireAddress(a), Prefix: []byte(prefix), After: []byte(after), Limit: uint32(limit), Here: true,
-		}))
-		if err != nil {
-			return err
-		}
-		out = out[:0]
-		for _, w := range res.Msg.GetVersions() {
-			v, err := versionFromWire(a, string(w.GetName()), w)
-			if err != nil {
-				return err
+// list is the live names of an instance beginning with prefix and sorting after
+// after, in order, the newest each the copies a read hears hold (quorum.go). Here, it
+// is this node's copy's alone; with newest too, the newest row of each name,
+// tombstones and expired versions included.
+func (s *server) list(ctx context.Context, a Address, prefix, after string, limit int, here, newest bool) ([]Version, error) {
+	if here {
+		var out []Version
+		err := s.copyHere(ctx, a, func(i index) error {
+			var err error
+			if newest {
+				out, err = i.NewestRows(ctx, a, prefix, after, limit)
+			} else {
+				out, err = i.List(ctx, a, prefix, after, limit)
 			}
-			out = append(out, v)
+			return err
+		})
+		return out, err
+	}
+	var out []Version
+	for {
+		pages, err := fromCopies(ctx, s, a, func(i index) ([]Version, error) {
+			return i.NewestRows(ctx, a, prefix, after, limit)
+		}, func(svc storagev2Client) ([]Version, error) {
+			res, err := svc.List(ctx, connect.NewRequest(&storagev2.ListRequest{
+				At: wireAddress(a), Prefix: []byte(prefix), After: []byte(after), Limit: uint32(limit), Here: true, Newest: true,
+			}))
+			if err != nil {
+				return nil, err
+			}
+			return versionsFromWire(a, "", res.Msg.GetVersions())
+		})
+		if errors.Is(err, ErrNotFound) {
+			return out, nil
 		}
-		return nil
-	})
-	if errors.Is(err, ErrNotFound) {
-		return nil, nil
+		if err != nil {
+			return nil, err
+		}
+		live, bound, more := mergePages(pages, limit, s.now())
+		s.observe(live...)
+		out = append(out, live...)
+		if limit > 0 && len(out) >= limit {
+			return out[:limit], nil
+		}
+		if !more {
+			return out, nil
+		}
+		after = bound
 	}
-	if err == nil {
-		s.observe(out...)
-	}
-	return out, err
 }
 
 // open is the bytes under root: this node's when it has them, otherwise a holder's

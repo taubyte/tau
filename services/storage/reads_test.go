@@ -106,7 +106,7 @@ func TestACopyHoldingNothingOfAnInstanceAnswersNothing(t *testing.T) {
 	versions, err := through.Versions(t.Context(), at, "page", 0)
 	require.NoError(t, err)
 	require.Len(t, versions, 1)
-	_, err = c.nodes[2].current(t.Context(), at, "page", true)
+	_, err = c.nodes[2].current(t.Context(), at, "page", true, false)
 	require.ErrorIs(t, err, ErrEmptyCopy)
 
 	// An object nobody wrote is still not found, and an instance nobody wrote lists

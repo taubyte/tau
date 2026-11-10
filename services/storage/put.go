@@ -100,7 +100,7 @@ func (s *server) remove(ctx context.Context, a Address, name string) (Version, e
 	if err != nil {
 		return Version{}, err
 	}
-	if _, err := s.current(ctx, a, name, false); err != nil && !errors.Is(err, ErrNotFound) {
+	if _, err := s.current(ctx, a, name, false, false); err != nil && !errors.Is(err, ErrNotFound) {
 		return Version{}, fmt.Errorf("storage: reading what the delete supersedes: %w", err)
 	}
 	stamp, err := s.stamp(ctx)

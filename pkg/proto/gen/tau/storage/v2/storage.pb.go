@@ -462,7 +462,10 @@ type Version struct {
 	CreatedMs   uint64                 `protobuf:"varint,7,opt,name=created_ms,json=createdMs,proto3" json:"created_ms,omitempty"`
 	Metadata    map[string]string      `protobuf:"bytes,8,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// name is the object's, set where a response carries versions of many.
-	Name          []byte `protobuf:"bytes,9,opt,name=name,proto3" json:"name,omitempty"`
+	Name []byte `protobuf:"bytes,9,opt,name=name,proto3" json:"name,omitempty"`
+	// expires_ms is when the version is gone, by its bucket's lifecycle.expire;
+	// zero is never.
+	ExpiresMs     uint64 `protobuf:"varint,10,opt,name=expires_ms,json=expiresMs,proto3" json:"expires_ms,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -558,6 +561,13 @@ func (x *Version) GetName() []byte {
 		return x.Name
 	}
 	return nil
+}
+
+func (x *Version) GetExpiresMs() uint64 {
+	if x != nil {
+		return x.ExpiresMs
+	}
+	return 0
 }
 
 type PutResponse struct {
@@ -841,7 +851,10 @@ type CurrentRequest struct {
 	Name  []byte                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	// here answers from this node's copy of the index, never forwarding: what one
 	// storage node asks another that placement names as a holder.
-	Here          bool `protobuf:"varint,3,opt,name=here,proto3" json:"here,omitempty"`
+	Here bool `protobuf:"varint,3,opt,name=here,proto3" json:"here,omitempty"`
+	// newest answers with the newest row of the name, a tombstone or an expired
+	// version included: what a node comparing copies takes the newest of.
+	Newest        bool `protobuf:"varint,4,opt,name=newest,proto3" json:"newest,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -893,6 +906,13 @@ func (x *CurrentRequest) GetName() []byte {
 func (x *CurrentRequest) GetHere() bool {
 	if x != nil {
 		return x.Here
+	}
+	return false
+}
+
+func (x *CurrentRequest) GetNewest() bool {
+	if x != nil {
+		return x.Newest
 	}
 	return false
 }
@@ -1162,7 +1182,10 @@ type ListRequest struct {
 	// limit bounds how many names; zero is all of them.
 	Limit uint32 `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
 	// here is as on CurrentRequest.
-	Here          bool `protobuf:"varint,5,opt,name=here,proto3" json:"here,omitempty"`
+	Here bool `protobuf:"varint,5,opt,name=here,proto3" json:"here,omitempty"`
+	// newest lists the newest row of each name, tombstones and expired versions
+	// included, as on CurrentRequest.
+	Newest        bool `protobuf:"varint,6,opt,name=newest,proto3" json:"newest,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1228,6 +1251,13 @@ func (x *ListRequest) GetLimit() uint32 {
 func (x *ListRequest) GetHere() bool {
 	if x != nil {
 		return x.Here
+	}
+	return false
+}
+
+func (x *ListRequest) GetNewest() bool {
+	if x != nil {
+		return x.Newest
 	}
 	return false
 }
@@ -1916,7 +1946,7 @@ const file_tau_storage_v2_storage_proto_rawDesc = "" +
 	"PutRequest\x12-\n" +
 	"\x04head\x18\x01 \x01(\v2\x17.tau.storage.v2.PutHeadH\x00R\x04head\x12\x16\n" +
 	"\x05chunk\x18\x02 \x01(\fH\x00R\x05chunkB\x06\n" +
-	"\x04part\"\xda\x02\n" +
+	"\x04part\"\xf9\x02\n" +
 	"\aVersion\x12\x19\n" +
 	"\broot_cid\x18\x01 \x01(\tR\arootCid\x12\x14\n" +
 	"\x05stamp\x18\x02 \x01(\x04R\x05stamp\x12\x16\n" +
@@ -1927,7 +1957,10 @@ const file_tau_storage_v2_storage_proto_rawDesc = "" +
 	"\n" +
 	"created_ms\x18\a \x01(\x04R\tcreatedMs\x12A\n" +
 	"\bmetadata\x18\b \x03(\v2%.tau.storage.v2.Version.MetadataEntryR\bmetadata\x12\x12\n" +
-	"\x04name\x18\t \x01(\fR\x04name\x1a;\n" +
+	"\x04name\x18\t \x01(\fR\x04name\x12\x1d\n" +
+	"\n" +
+	"expires_ms\x18\n" +
+	" \x01(\x04R\texpiresMs\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"Z\n" +
@@ -1946,11 +1979,12 @@ const file_tau_storage_v2_storage_proto_rawDesc = "" +
 	"\x04name\x18\x02 \x01(\fR\x04name\x12\x14\n" +
 	"\x05stamp\x18\x03 \x01(\x04R\x05stamp\x125\n" +
 	"\x06record\x18\x04 \x01(\v2\x1d.tau.storage.v2.VersionRecordR\x06record\"\x10\n" +
-	"\x0eAppendResponse\"a\n" +
+	"\x0eAppendResponse\"y\n" +
 	"\x0eCurrentRequest\x12'\n" +
 	"\x02at\x18\x01 \x01(\v2\x17.tau.storage.v2.AddressR\x02at\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\fR\x04name\x12\x12\n" +
-	"\x04here\x18\x03 \x01(\bR\x04here\"D\n" +
+	"\x04here\x18\x03 \x01(\bR\x04here\x12\x16\n" +
+	"\x06newest\x18\x04 \x01(\bR\x06newest\"D\n" +
 	"\x0fCurrentResponse\x121\n" +
 	"\aversion\x18\x01 \x01(\v2\x17.tau.storage.v2.VersionR\aversion\"x\n" +
 	"\x0fVersionsRequest\x12'\n" +
@@ -1964,13 +1998,14 @@ const file_tau_storage_v2_storage_proto_rawDesc = "" +
 	"\x02at\x18\x01 \x01(\v2\x17.tau.storage.v2.AddressR\x02at\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\fR\x04name\"C\n" +
 	"\x0eDeleteResponse\x121\n" +
-	"\aversion\x18\x01 \x01(\v2\x17.tau.storage.v2.VersionR\aversion\"\x8e\x01\n" +
+	"\aversion\x18\x01 \x01(\v2\x17.tau.storage.v2.VersionR\aversion\"\xa6\x01\n" +
 	"\vListRequest\x12'\n" +
 	"\x02at\x18\x01 \x01(\v2\x17.tau.storage.v2.AddressR\x02at\x12\x16\n" +
 	"\x06prefix\x18\x02 \x01(\fR\x06prefix\x12\x14\n" +
 	"\x05after\x18\x03 \x01(\fR\x05after\x12\x14\n" +
 	"\x05limit\x18\x04 \x01(\rR\x05limit\x12\x12\n" +
-	"\x04here\x18\x05 \x01(\bR\x04here\"C\n" +
+	"\x04here\x18\x05 \x01(\bR\x04here\x12\x16\n" +
+	"\x06newest\x18\x06 \x01(\bR\x06newest\"C\n" +
 	"\fListResponse\x123\n" +
 	"\bversions\x18\x01 \x03(\v2\x17.tau.storage.v2.VersionR\bversions\"<\n" +
 	"\vReadRequest\x12\x19\n" +

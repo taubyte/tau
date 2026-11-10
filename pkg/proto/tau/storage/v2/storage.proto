@@ -81,6 +81,9 @@ message Version {
   map<string, string> metadata = 8;
   // name is the object's, set where a response carries versions of many.
   bytes name = 9;
+  // expires_ms is when the version is gone, by its bucket's lifecycle.expire;
+  // zero is never.
+  uint64 expires_ms = 10;
 }
 
 message PutResponse {
@@ -120,6 +123,9 @@ message CurrentRequest {
   // here answers from this node's copy of the index, never forwarding: what one
   // storage node asks another that placement names as a holder.
   bool here = 3;
+  // newest answers with the newest row of the name, a tombstone or an expired
+  // version included: what a node comparing copies takes the newest of.
+  bool newest = 4;
 }
 
 message CurrentResponse {
@@ -159,6 +165,9 @@ message ListRequest {
   uint32 limit = 4;
   // here is as on CurrentRequest.
   bool here = 5;
+  // newest lists the newest row of each name, tombstones and expired versions
+  // included, as on CurrentRequest.
+  bool newest = 6;
 }
 
 // ListResponse is each live object's current version, ordered by name.

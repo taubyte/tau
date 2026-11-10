@@ -404,6 +404,62 @@ func (i index) Size(ctx context.Context, a Address) (uint64, error) {
 	return total, nil
 }
 
+// Newest is name's newest row in this copy, a tombstone or an expired version
+// included; ok is false when the copy holds none.
+func (i index) Newest(ctx context.Context, a Address, name string) (v Version, ok bool, err error) {
+	prefix, err := a.objectPrefix(name)
+	if err != nil {
+		return Version{}, false, err
+	}
+	r, ok, err := i.first(ctx, prefix)
+	if err != nil || !ok {
+		return Version{}, false, err
+	}
+	v, err = parseVersion(r.key, r.value)
+	return v, err == nil, err
+}
+
+// NewestRows is the newest row of every name beginning with prefix that sorts after
+// after, in name order, tombstones and expired versions included; a limit of zero is
+// all of them.
+func (i index) NewestRows(ctx context.Context, a Address, prefix, after string, limit int) ([]Version, error) {
+	namespace, err := a.objectsPrefix()
+	if err != nil {
+		return nil, err
+	}
+	raw, err := a.listPrefix(prefix)
+	if err != nil {
+		return nil, err
+	}
+	var past string
+	if after != "" {
+		object, err := a.objectPrefix(after)
+		if err != nil {
+			return nil, err
+		}
+		past = object + "/~"
+	}
+	rows, err := i.scan(ctx, namespace, raw, past, 0)
+	if err != nil {
+		return nil, err
+	}
+	var out []Version
+	for _, r := range rows {
+		v, err := parseVersion(r.key, r.value)
+		if err != nil {
+			return nil, err
+		}
+		if n := len(out); n > 0 && out[n-1].Name == v.Name {
+			continue
+		}
+		out = append(out, v)
+		if limit > 0 && len(out) == limit {
+			break
+		}
+	}
+	return out, nil
+}
+
 // At resolves one exact stamp (the ABI's open(name, version)). Two nodes can mint the
 // same stamp in one millisecond, so it may find more than one and returns them all in
 // resolution order rather than picking silently.

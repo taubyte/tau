@@ -59,7 +59,7 @@ func (h *handler) Current(ctx context.Context, req *connect.Request[storagev2.Cu
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	v, err := h.s.current(ctx, a, string(req.Msg.GetName()), req.Msg.GetHere())
+	v, err := h.s.current(ctx, a, string(req.Msg.GetName()), req.Msg.GetHere(), req.Msg.GetNewest())
 	if err != nil {
 		return nil, wire(err)
 	}
@@ -99,7 +99,7 @@ func (h *handler) List(ctx context.Context, req *connect.Request[storagev2.ListR
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	vs, err := h.s.list(ctx, a, string(req.Msg.GetPrefix()), string(req.Msg.GetAfter()), int(req.Msg.GetLimit()), req.Msg.GetHere())
+	vs, err := h.s.list(ctx, a, string(req.Msg.GetPrefix()), string(req.Msg.GetAfter()), int(req.Msg.GetLimit()), req.Msg.GetHere(), req.Msg.GetNewest())
 	if err != nil {
 		return nil, wire(err)
 	}
@@ -219,26 +219,53 @@ func (h *handler) Append(ctx context.Context, req *connect.Request[storagev2.App
 	return connect.NewResponse(&storagev2.AppendResponse{}), nil
 }
 
-// current is the newest version of name, from this node's copy of the index or a
-// holder's.
-func (s *server) current(ctx context.Context, a Address, name string, here bool) (Version, error) {
-	var out Version
-	err := s.fromIndex(ctx, a, here, func(i index) error {
-		v, err := i.Current(ctx, a, name)
-		out = v
-		return err
-	}, func(svc storagev2Client) error {
-		res, err := svc.Current(ctx, connect.NewRequest(&storagev2.CurrentRequest{At: wireAddress(a), Name: []byte(name), Here: true}))
-		if err != nil {
+// current is the newest version of name, the newest the copies of the index a read
+// hears hold (quorum.go). Here, it is this node's copy's alone; with newest too, its
+// newest row, a tombstone or an expired version included.
+func (s *server) current(ctx context.Context, a Address, name string, here, newest bool) (Version, error) {
+	if here {
+		var out Version
+		err := s.copyHere(ctx, a, func(i index) error {
+			if !newest {
+				v, err := i.Current(ctx, a, name)
+				out = v
+				return err
+			}
+			v, ok, err := i.Newest(ctx, a, name)
+			if err == nil && !ok {
+				err = fmt.Errorf("%w: %s in %s", ErrNotFound, name, a)
+			}
+			out = v
 			return err
-		}
-		out, err = versionFromWire(a, name, res.Msg.GetVersion())
-		return err
-	})
-	if err == nil {
-		s.observe(out)
+		})
+		return out, err
 	}
-	return out, err
+	rows, err := fromCopies(ctx, s, a, func(i index) (copyRow, error) {
+		v, ok, err := i.Newest(ctx, a, name)
+		return copyRow{v: v, ok: ok}, err
+	}, func(svc storagev2Client) (copyRow, error) {
+		res, err := svc.Current(ctx, connect.NewRequest(&storagev2.CurrentRequest{At: wireAddress(a), Name: []byte(name), Here: true, Newest: true}))
+		if connect.CodeOf(err) == connect.CodeNotFound {
+			return copyRow{}, nil
+		}
+		if err != nil {
+			return copyRow{}, err
+		}
+		v, err := versionFromWire(a, name, res.Msg.GetVersion())
+		return copyRow{v: v, ok: true}, err
+	})
+	if err != nil {
+		return Version{}, err
+	}
+	v, ok := newestOf(rows)
+	if !ok {
+		return Version{}, fmt.Errorf("%w: %s in %s", ErrNotFound, name, a)
+	}
+	s.observe(v)
+	if gone(v, s.now()) {
+		return Version{}, fmt.Errorf("%w: %s in %s is deleted or expired", ErrNotFound, name, a)
+	}
+	return v, nil
 }
 
 // observe advances this node's clock past versions it read: an overwrite or a delete
@@ -251,97 +278,52 @@ func (s *server) observe(vs ...Version) {
 	}
 }
 
-// versions is name's versions, newest first.
+// versions is name's versions, newest first: every one the copies a read hears hold.
 func (s *server) versions(ctx context.Context, a Address, name string, limit int, here bool) ([]Version, error) {
-	var out []Version
-	err := s.fromIndex(ctx, a, here, func(i index) error {
-		vs, err := i.Versions(ctx, a, name, limit)
-		out = vs
-		return err
-	}, func(svc storagev2Client) error {
+	if here {
+		var out []Version
+		err := s.copyHere(ctx, a, func(i index) error {
+			vs, err := i.Versions(ctx, a, name, limit)
+			out = vs
+			return err
+		})
+		return out, err
+	}
+	lists, err := fromCopies(ctx, s, a, func(i index) ([]Version, error) {
+		return i.Versions(ctx, a, name, limit)
+	}, func(svc storagev2Client) ([]Version, error) {
 		res, err := svc.Versions(ctx, connect.NewRequest(&storagev2.VersionsRequest{At: wireAddress(a), Name: []byte(name), Limit: uint32(limit), Here: true}))
 		if err != nil {
-			return err
+			return nil, err
 		}
-		out = out[:0]
-		for _, w := range res.Msg.GetVersions() {
-			v, err := versionFromWire(a, name, w)
-			if err != nil {
-				return err
-			}
-			out = append(out, v)
-		}
-		return nil
+		return versionsFromWire(a, name, res.Msg.GetVersions())
 	})
 	if errors.Is(err, ErrNotFound) {
 		return nil, nil
 	}
-	if err == nil {
-		s.observe(out...)
+	if err != nil {
+		return nil, err
 	}
-	return out, err
+	out := unionOf(lists, limit)
+	s.observe(out...)
+	return out, nil
 }
 
-// fromIndex answers from this node's copy when it holds the shard, and otherwise from
-// the first holder that answers. A request that says here never leaves this node.
-//
-// A COPY HOLDING NO ROW OF THE INSTANCE ANSWERS NOTHING: opened where placement just
-// moved the shard, it holds nothing yet, and would call every object not found. The
-// read goes to the next holder, and is not found only when every copy holds nothing.
-func (s *server) fromIndex(ctx context.Context, a Address, here bool, local func(index) error, remote func(storagev2Client) error) error {
-	i, release, ok, err := s.indexOf(ctx, a)
-	if err != nil {
-		return err
-	}
-	empty := 0
-	if ok {
-		held, err := i.holdsAny(ctx, a)
-		if err == nil && held {
-			defer release()
-			return local(i)
+// versionsFromWire is a response's versions; name is theirs when they carry none.
+func versionsFromWire(a Address, name string, wires []*storagev2.Version) ([]Version, error) {
+	out := make([]Version, 0, len(wires))
+	for _, w := range wires {
+		n := name
+		if len(w.GetName()) > 0 {
+			n = string(w.GetName())
 		}
-		release()
+		v, err := versionFromWire(a, n, w)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		empty++
-		if here {
-			return fmt.Errorf("%w: %s", ErrEmptyCopy, a)
-		}
+		out = append(out, v)
 	}
-	if here {
-		return fmt.Errorf("storage: this node does not hold %s's index", a)
-	}
-
-	shard, err := shardOf(a.Bucket())
-	if err != nil {
-		return err
-	}
-	replicas, _, err := s.promise(ctx)
-	if err != nil {
-		return err
-	}
-	holders := indexHolders(shard, s.placement(), replicas)
-	var errs []error
-	for _, holder := range holders {
-		if holder == s.self {
-			continue
-		}
-		svc, err := s.peer(holder)
-		if err == nil {
-			if err = unwire(remote(svc)); err == nil || errors.Is(err, ErrNotFound) {
-				return err
-			}
-		}
-		if errors.Is(err, ErrEmptyCopy) {
-			empty++
-		}
-		errs = append(errs, fmt.Errorf("%s: %w", holder, err))
-	}
-	if empty > 0 && empty == len(holders) {
-		return fmt.Errorf("%w: no copy of %s's index holds anything of it", ErrNotFound, a)
-	}
-	return fmt.Errorf("storage: no holder of %s's index answered: %w", a, errors.Join(errs...))
+	return out, nil
 }
 
 // chunks reads a put's bytes out of the stream after its head.
@@ -461,6 +443,7 @@ func wireVersion(v Version) *storagev2.Version {
 		RootCid: v.Record.RootCID, Stamp: v.Stamp, Writer: v.Writer, Size: v.Record.Size,
 		ContentType: v.Record.ContentType, Tombstone: v.Record.Tombstone,
 		CreatedMs: v.Record.CreatedMS, Metadata: v.Record.Metadata, Name: []byte(v.Name),
+		ExpiresMs: v.Record.ExpiresMS,
 	}
 }
 
@@ -468,5 +451,6 @@ func versionFromWire(a Address, name string, w *storagev2.Version) (Version, err
 	return versionOf(a, name, w.GetStamp(), VersionRecord{
 		RootCID: w.GetRootCid(), Size: w.GetSize(), ContentType: w.GetContentType(),
 		Writer: w.GetWriter(), Tombstone: w.GetTombstone(), CreatedMS: w.GetCreatedMs(), Metadata: w.GetMetadata(),
+		ExpiresMS: w.GetExpiresMs(),
 	})
 }
