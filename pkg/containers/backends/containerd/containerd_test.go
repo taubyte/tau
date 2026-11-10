@@ -167,7 +167,7 @@ func TestSpecOpts(t *testing.T) {
 		// PATH, not two whose precedence depends on the runtime.
 		spec := &specs.Spec{Process: &specs.Process{Env: []string{"PATH=/image/bin", "KEEP=1"}}}
 
-		opts, err := specOpts(&core.ContainerConfig{Env: []string{"PATH=/build/bin"}})
+		opts, err := specOpts(&core.ContainerConfig{Env: []string{"PATH=/build/bin"}}, "")
 		require.NoError(t, err)
 		applyTo(t, spec, opts)
 
@@ -197,7 +197,7 @@ func TestSpecOpts(t *testing.T) {
 	t.Run("named volumes are refused", func(t *testing.T) {
 		_, err := specOpts(&core.ContainerConfig{
 			Volumes: []core.VolumeMount{{Source: "myvol", Destination: "/data", IsVolumeName: true}},
-		})
+		}, "")
 		require.Error(t, err, "containerd has no volume manager: silently mounting nothing would be worse")
 		assert.Contains(t, err.Error(), "not supported")
 	})
@@ -209,12 +209,12 @@ func TestSpecOpts(t *testing.T) {
 		host := applySpecOpts(t, &core.ContainerConfig{Network: &core.NetworkConfig{Mode: "host"}})
 		assert.NotContains(t, namespaceTypes(host), specs.NetworkNamespace)
 
-		_, err := specOpts(&core.ContainerConfig{Network: &core.NetworkConfig{Mode: "bridge"}})
+		_, err := specOpts(&core.ContainerConfig{Network: &core.NetworkConfig{Mode: "bridge"}}, "")
 		require.Error(t, err, "bridge needs CNI, which is not wired up: it must fail loudly")
 
 		_, err = specOpts(&core.ContainerConfig{Network: &core.NetworkConfig{
 			PortMappings: []core.PortMapping{{HostPort: 8080, ContainerPort: 80}},
-		}})
+		}}, "")
 		require.Error(t, err, "port mappings are meaningless on host networking and must not be accepted silently")
 	})
 
@@ -243,6 +243,37 @@ func TestSpecOpts(t *testing.T) {
 	})
 }
 
+// A RESTRICTED CONTAINER'S RESOLVER FILE IS ITS OWN: one shared by every container
+// was rewritten under the ones already running, which could read it empty.
+func TestARestrictedContainersResolverFileIsItsOwn(t *testing.T) {
+	host := filepath.Join(t.TempDir(), "resolv.conf")
+	require.NoError(t, os.WriteFile(host, []byte("nameserver 10.0.0.2\n"), 0o644))
+
+	a, err := restrictedResolvConf(filepath.Join(t.TempDir(), "a"), host)
+	require.NoError(t, err)
+	first, err := os.ReadFile(a)
+	require.NoError(t, err)
+	assert.Contains(t, string(first), "nameserver 10.0.0.2")
+
+	require.NoError(t, os.WriteFile(host, []byte("nameserver 10.0.0.3\n"), 0o644))
+	b, err := restrictedResolvConf(filepath.Join(t.TempDir(), "b"), host)
+	require.NoError(t, err)
+	require.NotEqual(t, a, b)
+	again, err := os.ReadFile(a)
+	require.NoError(t, err)
+	assert.Equal(t, first, again, "making another container's file rewrote this one")
+
+	taken := filepath.Join(t.TempDir(), "taken")
+	require.NoError(t, os.Mkdir(taken, 0o700))
+	_, err = restrictedResolvConf(taken, host)
+	require.Error(t, err, "a directory already there is not this container's")
+
+	_, err = resolverMount(true, "")
+	require.Error(t, err, "a restricted container with no file of its own was given the host's")
+
+	assert.NotEqual(t, resolvDirOf("one"), resolvDirOf("two"))
+}
+
 func TestPermittedNameservers(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "resolv.conf")
 	require.NoError(t, os.WriteFile(path, []byte(`# generated
@@ -266,7 +297,13 @@ options edns0
 func applySpecOpts(t *testing.T, config *core.ContainerConfig) *specs.Spec {
 	t.Helper()
 
-	opts, err := specOpts(config)
+	var resolv string
+	if config.Network != nil && config.Network.RestrictEgress {
+		var err error
+		resolv, err = restrictedResolvConf(filepath.Join(t.TempDir(), "resolv"), filepath.Join(t.TempDir(), "missing"))
+		require.NoError(t, err)
+	}
+	opts, err := specOpts(config, resolv)
 	require.NoError(t, err)
 
 	spec := &specs.Spec{}

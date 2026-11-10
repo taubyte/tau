@@ -388,7 +388,7 @@ func (b *ContainerdBackend) Create(ctx context.Context, config *core.ContainerCo
 
 // create creates a container with extra spec options layered last, for what
 // only this backend's own containers ask for.
-func (b *ContainerdBackend) create(ctx context.Context, config *core.ContainerConfig, extra ...oci.SpecOpts) (core.ContainerID, error) {
+func (b *ContainerdBackend) create(ctx context.Context, config *core.ContainerConfig, extra ...oci.SpecOpts) (_ core.ContainerID, err error) {
 	if b.client == nil {
 		return "", fmt.Errorf("containerd client not initialized")
 	}
@@ -404,16 +404,29 @@ func (b *ContainerdBackend) create(ctx context.Context, config *core.ContainerCo
 		}
 	}
 
-	opts, err := specOpts(config)
-	if err != nil {
-		return "", fmt.Errorf("failed to build OCI spec options: %w", err)
-	}
-
 	// A container is placed in tau's own cgroup subtree whenever there is one:
 	// that is what the egress rule matches, and what carries resource limits.
 	// Rootless is no longer the exception it was — with the subtree delegated,
 	// a rootless daemon owns cgroups just as a rootful one does.
 	restricted := config.Network != nil && config.Network.RestrictEgress
+
+	var resolv string
+	if restricted {
+		if resolv, err = restrictedResolvConf(resolvDirOf(containerID), "/etc/resolv.conf"); err != nil {
+			return "", err
+		}
+		// A container that was not created has no Remove to take its file back.
+		defer func() {
+			if err != nil {
+				os.RemoveAll(resolvDirOf(containerID))
+			}
+		}()
+	}
+
+	opts, err := specOpts(config, resolv)
+	if err != nil {
+		return "", fmt.Errorf("failed to build OCI spec options: %w", err)
+	}
 	cgroupPath, cgroupErr := containerCgroupPath(string(containerID), restricted)
 
 	if config.Resources != nil && !resourceLimitsAvailable() {
@@ -522,7 +535,9 @@ func imageSpecOpts(ctx context.Context, image containerd.Image) ([]oci.SpecOpts,
 	return opts, nil
 }
 
-func specOpts(config *core.ContainerConfig) ([]oci.SpecOpts, error) {
+// specOpts is the container's spec; resolv is its own restricted resolver file,
+// written when its egress is restricted.
+func specOpts(config *core.ContainerConfig, resolv string) ([]oci.SpecOpts, error) {
 	opts := []oci.SpecOpts{}
 
 	if len(config.Command) > 0 {
@@ -547,7 +562,7 @@ func specOpts(config *core.ContainerConfig) ([]oci.SpecOpts, error) {
 		opts = append(opts, oci.WithMounts(mounts))
 	}
 
-	networkOpts, err := networkSpecOpts(config.Network)
+	networkOpts, err := networkSpecOpts(config.Network, resolv)
 	if err != nil {
 		return nil, err
 	}
@@ -688,7 +703,7 @@ func portMappings(network *core.NetworkConfig) []core.PortMapping {
 // its default spec unshares the network, leaving no route out, so the default is
 // the host's network (docker bridges by default). A bridged mode is refused rather
 // than silently downgraded.
-func networkSpecOpts(network *core.NetworkConfig) ([]oci.SpecOpts, error) {
+func networkSpecOpts(network *core.NetworkConfig, resolv string) ([]oci.SpecOpts, error) {
 	mode := "host"
 	if network != nil && network.Mode != "" {
 		mode = network.Mode
@@ -709,7 +724,7 @@ func networkSpecOpts(network *core.NetworkConfig) ([]oci.SpecOpts, error) {
 					m.ContainerPort, m.HostPort)
 			}
 		}
-		resolver, err := resolverMount(network != nil && network.RestrictEgress)
+		resolver, err := resolverMount(network != nil && network.RestrictEgress, resolv)
 		if err != nil {
 			return nil, err
 		}
@@ -742,17 +757,17 @@ func withoutCgroups() oci.SpecOpts {
 // falls back to localhost and fails. Any build that fetches dependencies needs
 // this. The container shares the host's network namespace, so a resolver the
 // host reaches on loopback works here too — unless egress is restricted, in
-// which case the host's file has to be filtered first (restrictedResolvConf).
-func resolverMount(restricted bool) ([]oci.SpecOpts, error) {
+// which case the host's file has to be filtered first (restrictedResolvConf): resolv
+// is that filtered file.
+func resolverMount(restricted bool, resolv string) ([]oci.SpecOpts, error) {
 	const resolvConf = "/etc/resolv.conf"
 
 	source := resolvConf
 	if restricted {
-		path, err := restrictedResolvConf(resolvConf)
-		if err != nil {
-			return nil, err
+		if resolv == "" {
+			return nil, errors.New("a restricted container has no resolver file of its own")
 		}
-		source = path
+		source = resolv
 	} else if _, err := os.Stat(resolvConf); err != nil {
 		return nil, nil
 	}
@@ -772,14 +787,8 @@ func resolverMount(restricted bool) ([]oci.SpecOpts, error) {
 // names, which is the point.
 var publicResolvers = []string{"1.1.1.1", "8.8.8.8"}
 
-var (
-	restrictedResolvOnce sync.Once
-	restrictedResolvDir  string
-	restrictedResolvErr  error
-)
-
-// restrictedResolvConf writes, and returns the path of, the /etc/resolv.conf a
-// restricted container gets: the host's nameservers minus every one the egress
+// restrictedResolvConf writes, in dir, and returns the path of, the /etc/resolv.conf
+// a restricted container gets: the host's nameservers minus every one the egress
 // policy denies.
 //
 // Without this the firewall quietly costs the container its name resolution. The
@@ -789,14 +798,11 @@ var (
 // not a secured one. systemd publishes the real upstream servers separately, so
 // those are tried before falling back to public ones.
 //
-// One file per process: its content is the same for every container, and a file
-// per container would leak a temp directory per run on a long-lived node.
-func restrictedResolvConf(hostPath string) (string, error) {
-	restrictedResolvOnce.Do(func() {
-		restrictedResolvDir, restrictedResolvErr = os.MkdirTemp("", "tau-netguard-*")
-	})
-	if restrictedResolvErr != nil {
-		return "", fmt.Errorf("creating the restricted build's resolver directory: %w", restrictedResolvErr)
+// The file is the container's own, written once: a file shared by every container
+// was rewritten under the ones already running, which could read it empty.
+func restrictedResolvConf(dir, hostPath string) (string, error) {
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		return "", fmt.Errorf("creating the restricted container's resolver directory: %w", err)
 	}
 
 	servers := permittedNameservers(hostPath)
@@ -814,7 +820,7 @@ func restrictedResolvConf(hostPath string) (string, error) {
 		fmt.Fprintf(&b, "nameserver %s\n", s)
 	}
 
-	path := filepath.Join(restrictedResolvDir, "resolv.conf")
+	path := filepath.Join(dir, "resolv.conf")
 	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
 		return "", fmt.Errorf("writing the restricted build's resolv.conf: %w", err)
 	}
@@ -1110,8 +1116,7 @@ func (b *ContainerdBackend) Remove(ctx context.Context, id core.ContainerID) err
 	if err := container.Delete(ctx, containerd.WithSnapshotCleanup); err != nil {
 		return fmt.Errorf("failed to delete container %s: %w", id, err)
 	}
-
-	return nil
+	return os.RemoveAll(resolvDirOf(id))
 }
 
 func (b *ContainerdBackend) Wait(ctx context.Context, id core.ContainerID) error {
@@ -1330,4 +1335,10 @@ func (b *ContainerdBackend) testSocketConnection() error {
 	conn.Close()
 
 	return nil
+}
+
+// resolvDirOf is where a restricted container's resolver file lives: named by the
+// container, so Remove finds it whichever process created the container.
+func resolvDirOf(id core.ContainerID) string {
+	return filepath.Join(os.TempDir(), "tau-resolv-"+string(id))
 }

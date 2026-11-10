@@ -635,13 +635,13 @@ func TestBuildRejectsABadContext(t *testing.T) {
 }
 
 func TestNetworkSpecOptsRefusals(t *testing.T) {
-	_, err := networkSpecOpts(&core.NetworkConfig{DNS: []string{"1.1.1.1"}})
+	_, err := networkSpecOpts(&core.NetworkConfig{DNS: []string{"1.1.1.1"}}, "")
 	assert.ErrorContains(t, err, "custom DNS servers not supported")
 
-	_, err = networkSpecOpts(&core.NetworkConfig{PortMappings: []core.PortMapping{{HostPort: 8080, ContainerPort: 80}}})
+	_, err = networkSpecOpts(&core.NetworkConfig{PortMappings: []core.PortMapping{{HostPort: 8080, ContainerPort: 80}}}, "")
 	assert.ErrorContains(t, err, "cannot map port 80 to 8080")
 
-	opts, err := networkSpecOpts(&core.NetworkConfig{PortMappings: []core.PortMapping{{HostPort: 80, ContainerPort: 80}}})
+	opts, err := networkSpecOpts(&core.NetworkConfig{PortMappings: []core.PortMapping{{HostPort: 80, ContainerPort: 80}}}, "")
 	require.NoError(t, err, "host networking already gives a container its own port")
 	assert.NotEmpty(t, opts)
 }
