@@ -156,12 +156,9 @@ func TestReadErrors(t *testing.T) {
 	w := newWorld(t)
 	failing := Env{Join: func(context.Context, bridge.Config) (Seat, error) {
 		me := fixture.Host(t)
-		b, err := bridge.New(context.Background(), me, gossip(t, me), nil, "")
+		b, err := bridge.New(context.Background(), me, gossip(t, me), nil, "", bridge.WithPickWait(100*time.Millisecond))
 		return seat{b}, err
 	}}
-	old := bridge.PickWait
-	bridge.PickWait = 100 * time.Millisecond
-	defer func() { bridge.PickWait = old }()
 	if _, err := w.run(t, failing, "projects"); err == nil {
 		t.Fatal("projects with nobody to ask")
 	}

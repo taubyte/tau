@@ -120,11 +120,8 @@ func discoveryReport(p peer.ID, ready bool) stats.Report {
 }
 
 func TestPickTimesOut(t *testing.T) {
-	old := PickWait
-	PickWait = 200 * time.Millisecond
-	defer func() { PickWait = old }()
 	me := fixture.Host(t)
-	br, err := New(context.Background(), me, gossip(t, me), nil, "x")
+	br, err := New(context.Background(), me, gossip(t, me), nil, "x", WithPickWait(200*time.Millisecond))
 	if err != nil {
 		t.Fatal(err)
 	}

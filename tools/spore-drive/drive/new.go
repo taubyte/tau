@@ -26,6 +26,7 @@ func New(cnf config.Parser, options ...Option) (Spore, error) {
 		hostWrapper: newRemote,
 		root:        DefaultRoot,
 		now:         time.Now,
+		releases:    published,
 	}
 
 	for _, opt := range options {

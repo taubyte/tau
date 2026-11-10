@@ -37,7 +37,16 @@ func tarball(t *testing.T, name string, content []byte) []byte {
 }
 
 // releases serves a latest-release answer and one release asset, as GitHub does.
-func releases(t *testing.T) {
+// fromReleases has a spore-drive download from r.
+func fromReleases(r releases) Option {
+	return func(s Spore) error {
+		s.(*sporedrive).releases = r
+		return nil
+	}
+}
+
+// serveReleases publishes a release of tau, and is where it is.
+func serveReleases(t *testing.T) releases {
 	t.Helper()
 	asset := tarball(t, "taud", []byte("tau binary"))
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -51,17 +60,15 @@ func releases(t *testing.T) {
 		}
 	}))
 	t.Cleanup(srv.Close)
-	latest, download := releasesLatest, releasesDownload
-	releasesLatest, releasesDownload = srv.URL+"/latest", srv.URL+"/download"
-	t.Cleanup(func() { releasesLatest, releasesDownload = latest, download })
+	return releases{latest: srv.URL + "/latest", download: srv.URL + "/download"}
 }
 
 func TestTauComesFromWhereAnOptionSays(t *testing.T) {
-	releases(t)
+	r := serveReleases(t)
 	_, p := fixtures.VirtConfig()
 
-	for _, opt := range []Option{WithTauLatest(), WithTauVersion("v1.2.3"), WithTauUrl(releasesDownload + "/v1.2.3/tau_1.2.3_linux_amd64.tar.gz")} {
-		s, err := New(p, opt)
+	for _, opt := range []Option{WithTauLatest(), WithTauVersion("v1.2.3"), WithTauUrl(r.download + "/v1.2.3/tau_1.2.3_linux_amd64.tar.gz")} {
+		s, err := New(p, fromReleases(r), opt)
 		assert.NilError(t, err)
 		assert.Equal(t, string(s.(*sporedrive).tauBinary), "tau binary")
 		assert.Assert(t, s.(*sporedrive).tauBinaryHash != "")
@@ -73,13 +80,13 @@ func TestTauComesFromWhereAnOptionSays(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, string(s.(*sporedrive).tauBinary), "local")
 
-	for _, opt := range []Option{WithTauVersion("9.9.9"), WithTauUrl(releasesDownload + "/nothing"), WithTauPath(filepath.Join(t.TempDir(), "missing"))} {
-		_, err := New(p, opt)
+	for _, opt := range []Option{WithTauVersion("9.9.9"), WithTauUrl(r.download + "/nothing"), WithTauPath(filepath.Join(t.TempDir(), "missing"))} {
+		_, err := New(p, fromReleases(r), opt)
 		assert.Assert(t, err != nil)
 	}
 
-	releasesLatest = releasesDownload + "/nothing-to-decode"
-	_, err = New(p, WithTauLatest())
+	undecodable := releases{latest: r.download + "/nothing-to-decode", download: r.download}
+	_, err = New(p, fromReleases(undecodable), WithTauLatest())
 	assert.ErrorContains(t, err, "fetching latest release")
 }
 

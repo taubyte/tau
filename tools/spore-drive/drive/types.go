@@ -16,6 +16,8 @@ type sporedrive struct {
 
 	tauBinary     []byte
 	tauBinaryHash string
+	// releases is where WithTauLatest and WithTauVersion download from.
+	releases releases
 
 	// root is where everything tau keeps on a host lives: bin, config and
 	// storage.

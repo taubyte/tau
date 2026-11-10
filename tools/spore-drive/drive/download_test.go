@@ -57,11 +57,11 @@ func TestDownload(t *testing.T) {
 	httpmock.RegisterResponder("GET", fmt.Sprintf("https://github.com/taubyte/tau/releases/download/v%s/%s", version, asset),
 		httpmock.NewBytesResponder(200, tarGzBuf.Bytes()))
 
-	r, err := getLatestAssetVersion()
+	r, err := published.latestVersion()
 	assert.NilError(t, err)
 	assert.Equal(t, r, version)
 
-	tauBin, err := downloadTau(r, arch)
+	tauBin, err := published.tau(r, arch)
 	assert.NilError(t, err)
 
 	tauBinType, err := filetype.Match(tauBin[:512])

@@ -11,12 +11,13 @@ type Option func(Spore) error
 
 func WithTauLatest() Option {
 	return func(s Spore) error {
-		r, err := getLatestAssetVersion()
+		sd := s.(*sporedrive)
+		r, err := sd.releases.latestVersion()
 		if err != nil {
 			return fmt.Errorf("fetching latest release: %w", err)
 		}
 
-		s.(*sporedrive).tauBinary, err = downloadTau(r, "amd64")
+		sd.tauBinary, err = sd.releases.tau(r, "amd64")
 		if err != nil {
 			return fmt.Errorf("downloading latest (v%s) release: %w", r, err)
 		}
@@ -27,7 +28,8 @@ func WithTauLatest() Option {
 
 func WithTauVersion(version string) Option {
 	return func(s Spore) (err error) {
-		s.(*sporedrive).tauBinary, err = downloadTau(version, "amd64")
+		sd := s.(*sporedrive)
+		sd.tauBinary, err = sd.releases.tau(version, "amd64")
 		if err != nil {
 			return fmt.Errorf("downloading %v release: %w", version, err)
 		}

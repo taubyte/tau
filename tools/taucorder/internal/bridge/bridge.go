@@ -28,18 +28,27 @@ import (
 	statsService "github.com/taubyte/tau/services/stats"
 )
 
-// PickWait bounds how long Pick waits for a first peer of a protocol nobody
-// has been seen serving yet.
-var PickWait = 10 * time.Second
+// PickWait is how long Pick waits, unless told otherwise, for a first peer of a
+// protocol nobody has been seen serving yet.
+const PickWait = 10 * time.Second
+
+// Option adjusts a Bridge as New makes it.
+type Option func(*Bridge)
+
+// WithPickWait bounds Pick's wait for a first peer at d.
+func WithPickWait(d time.Duration) Option {
+	return func(b *Bridge) { b.pickWait = d }
+}
 
 // Fresh is the age past which a gossiped report no longer orders a pick.
 var Fresh = statsService.Config{}.Freshness()
 
 // Bridge is a running seat. It is safe for concurrent use.
 type Bridge struct {
-	host    host.Host
-	routing libdisc.Discoverer
-	view    *stats.View
+	host     host.Host
+	routing  libdisc.Discoverer
+	view     *stats.View
+	pickWait time.Duration
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -52,7 +61,7 @@ type Bridge struct {
 // New starts a bridge on an existing host: it subscribes to cloud's
 // discovery topic on ps and folds every report into its view until Close.
 // routing may be nil, in which case only connected peers are candidates.
-func New(ctx context.Context, h host.Host, ps statsService.PubSub, routing libdisc.Discoverer, cloud string) (*Bridge, error) {
+func New(ctx context.Context, h host.Host, ps statsService.PubSub, routing libdisc.Discoverer, cloud string, opts ...Option) (*Bridge, error) {
 	if h == nil {
 		return nil, errors.New("bridge: no host")
 	}
@@ -64,7 +73,10 @@ func New(ctx context.Context, h host.Host, ps statsService.PubSub, routing libdi
 	if err != nil {
 		return nil, err
 	}
-	b := &Bridge{host: h, routing: routing, view: view, done: make(chan struct{}), disc: map[protocol.ID]*pdisc.Discovery{}}
+	b := &Bridge{host: h, routing: routing, view: view, pickWait: PickWait, done: make(chan struct{}), disc: map[protocol.ID]*pdisc.Discovery{}}
+	for _, opt := range opts {
+		opt(b)
+	}
 	b.ctx, b.cancel = context.WithCancel(ctx)
 	reports, err := bus.Subscribe(b.ctx)
 	if err != nil {
@@ -111,7 +123,8 @@ func (b *Bridge) discovery(id protocol.ID) (*pdisc.Discovery, error) {
 
 // Pick names the peers speaking id, best first: ready and freshly reported
 // before anything else, then by reported load, then peers the gossip has not
-// described at all. It waits up to PickWait for a first peer.
+// described at all. It waits up to PickWait, or what WithPickWait set, for a
+// first peer.
 func (b *Bridge) Pick(ctx context.Context, id protocol.ID) ([]peer.ID, error) {
 	d, err := b.discovery(id)
 	if err != nil {
@@ -119,7 +132,7 @@ func (b *Bridge) Pick(ctx context.Context, id protocol.ID) ([]peer.ID, error) {
 	}
 	known := d.Known()
 	if len(known) == 0 {
-		wctx, cancel := context.WithTimeout(ctx, PickWait)
+		wctx, cancel := context.WithTimeout(ctx, b.pickWait)
 		defer cancel()
 		if _, err := d.Any(wctx); err != nil {
 			return nil, err

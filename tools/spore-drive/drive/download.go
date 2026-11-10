@@ -13,18 +13,25 @@ import (
 	"github.com/pkg/errors"
 )
 
-var (
-	releasesLatest   = "https://api.github.com/repos/taubyte/tau/releases/latest"
-	releasesDownload = "https://github.com/taubyte/tau/releases/download"
-)
+// releases is where tau's builds are published: the latest release's document,
+// and the base of every asset's URL.
+type releases struct {
+	latest, download string
+}
 
-func getLatestAssetVersion() (string, error) {
+// published is tau's releases on GitHub.
+var published = releases{
+	latest:   "https://api.github.com/repos/taubyte/tau/releases/latest",
+	download: "https://github.com/taubyte/tau/releases/download",
+}
+
+func (r releases) latestVersion() (string, error) {
 	type latestRelease struct {
 		Version string `json:"tag_name"`
 	}
 	var latest latestRelease
 
-	req, err := http.NewRequest("GET", releasesLatest, nil)
+	req, err := http.NewRequest("GET", r.latest, nil)
 	if err != nil {
 		return "", fmt.Errorf("cerating request: %w", err)
 	}
@@ -51,7 +58,7 @@ func normalizeVersion(version string) string {
 	return version
 }
 
-func downloadTau(version, arch string) ([]byte, error) {
+func (r releases) tau(version, arch string) ([]byte, error) {
 	version = normalizeVersion(version)
 
 	if arch == "x86_64" {
@@ -61,7 +68,7 @@ func downloadTau(version, arch string) ([]byte, error) {
 	asset := fmt.Sprintf("tau_%s_linux_%s.tar.gz", version, arch)
 	defer os.Remove(asset)
 
-	downloadUrl := fmt.Sprintf("%s/v%s/%s", releasesDownload, version, asset)
+	downloadUrl := fmt.Sprintf("%s/v%s/%s", r.download, version, asset)
 	tauBin, err := httpDownload(downloadUrl)
 	if err != nil {
 		return nil, fmt.Errorf("downloading failed with: %s", err)
