@@ -83,10 +83,9 @@ func TestBlockMemory(t *testing.T) {
 }
 
 func TestBlockFilterRebuilds(t *testing.T) {
-	defer func(b uint64) { bloomBits = b }(bloomBits)
-	bloomBits = 1 << 10
 	ctx := context.Background()
 	s := open(t)
+	s.blocks.bits = 1 << 10
 	bs := s.Blockstore()
 	ready(t, s)
 	var all []blocks.Block

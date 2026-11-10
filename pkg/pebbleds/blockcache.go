@@ -19,7 +19,7 @@ const (
 	bloomProbes = 7
 )
 
-var bloomBits uint64 = 1 << 24
+const bloomBits uint64 = 1 << 24
 
 var bloomSeed = maphash.MakeSeed()
 
@@ -160,11 +160,17 @@ type blockMemory struct {
 	ready       atomic.Bool
 	building    sync.Mutex
 	once        sync.Once
+	// bits is the first filter's size, bloomBits when zero.
+	bits uint64
 }
 
 func (m *blockMemory) start(s *Store) {
 	m.once.Do(func() {
-		m.bloom.Store(newBlockBloom(bloomBits))
+		bits := m.bits
+		if bits == 0 {
+			bits = bloomBits
+		}
+		m.bloom.Store(newBlockBloom(bits))
 		go m.build(s, m.bloom.Load(), true)
 	})
 }
