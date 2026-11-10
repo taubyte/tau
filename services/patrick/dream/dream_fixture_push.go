@@ -159,8 +159,7 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 	pushIdx := 0
 	push := func(r repo) error {
 		repoId, fullName := r.id, r.fullName
-		pushed[repoId] = true
-		if hasJobButNoProject(jobs, repoId, func() string { return repoProject(auth, tns, repoId) }) {
+		if !markPushed(pushed, jobs, repoId, func() string { return repoProject(auth, tns, repoId) }) {
 			fmt.Printf("Skipping %s: it already has a job and no project claims it yet\n", fullName)
 			return nil
 		}
@@ -252,6 +251,17 @@ func newestJobs(p patrickIface.Client) map[int]*patrickIface.Job {
 func hasJobButNoProject(jobs map[int]*patrickIface.Job, repoId string, project func() string) bool {
 	id, err := strconv.Atoi(repoId)
 	return err == nil && jobs[id] != nil && project() == ""
+}
+
+// markPushed records repoId as pushed and returns true, unless it is skipped as
+// having a job and no project; then a later pass of the same push-all, after the
+// config job, can still push it.
+func markPushed(pushed map[string]bool, jobs map[int]*patrickIface.Job, repoId string, project func() string) bool {
+	if hasJobButNoProject(jobs, repoId, project) {
+		return false
+	}
+	pushed[repoId] = true
+	return true
 }
 
 // built is true when repoId's newest job built commit successfully.

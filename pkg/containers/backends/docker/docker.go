@@ -194,7 +194,7 @@ func (b *DockerBackend) Create(ctx context.Context, config *core.ContainerConfig
 		return "", fmt.Errorf("Docker client not initialized")
 	}
 
-	containerID := core.ContainerID(fmt.Sprintf("tau-%s-%d", time.Now().Format("20060102-150405"), time.Now().Nanosecond()))
+	containerID := core.NewContainerID()
 
 	containerConfig, hostConfig, networkingConfig, err := b.createDockerConfig(config)
 	if err != nil {

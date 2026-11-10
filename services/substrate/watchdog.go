@@ -11,7 +11,7 @@ import (
 
 var (
 	watchdogInterval = 30 * time.Second
-	watchdogDeadline = 60 * time.Second
+	watchdogDeadline = 3 * time.Minute
 	watchdogMisses   = 5
 	watchdogExit     = func() { os.Exit(1) }
 )
@@ -19,7 +19,9 @@ var (
 // startWatchdog restarts a node whose request path hangs while the process stays
 // alive, so systemd's Restart=always can heal it. Only a probe that has not
 // returned within the deadline is a miss: an error return (TNS busy, peers down,
-// overload) is a live node and never counts.
+// overload) is a live node and never counts. Each check that finds the same probe
+// still out is one miss, so one hung probe exits the node after the deadline plus
+// an interval per further miss: 5 minutes, past the longest a lookup can take.
 func startWatchdog(ctx context.Context, probe func()) {
 	interval, deadline, limit, exit := watchdogInterval, watchdogDeadline, watchdogMisses, watchdogExit
 	go func() {
@@ -54,7 +56,7 @@ func startWatchdog(ctx context.Context, probe func()) {
 			misses++
 			logger.Errorf("watchdog: request path has not answered for %s (%d/%d)", time.Since(started).Round(time.Second), misses, limit)
 			if misses >= limit {
-				logger.Errorf("watchdog: %d checks in a row hung, the node is deadlocked; exiting so it is restarted", misses)
+				logger.Errorf("watchdog: a probe is still out after %d checks, the node is deadlocked; exiting so it is restarted", misses)
 				exit()
 				return
 			}

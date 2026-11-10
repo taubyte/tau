@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync/atomic"
 
 	"github.com/taubyte/go-sdk/errno"
 	dbIface "github.com/taubyte/tau/core/services/substrate/components/database"
@@ -18,9 +19,27 @@ const (
 	// maxBatchBytes bounds the keys and values a batch holds in host memory
 	// until it is committed.
 	maxBatchBytes = 32 << 20
+	// maxOpenBatches bounds the batches of an instance, so the host memory they
+	// hold: there is no abort, and an instance is pooled, so a batch left
+	// uncommitted would otherwise live until its database closes.
+	maxOpenBatches = 8
 	// maxPatternLen bounds the regex of databaseListMatch.
 	maxPatternLen = 1024
 )
+
+// maxQueuedBatchBytes bounds what open batches hold on the node, across every
+// instance: the per-instance bound alone lets many instances of a function
+// queue maxOpenBatches × maxBatchBytes each. A var so tests can lower it.
+var maxQueuedBatchBytes int64 = 256 << 20
+
+// queuedBatchBytes is what open batches hold on the node right now.
+var queuedBatchBytes atomic.Int64
+
+// release gives back what b held to the node's budget. Called once, when b
+// leaves f.batches.
+func (b *batch) release() {
+	queuedBatchBytes.Add(-int64(b.bytes))
+}
 
 // batch holds the writes a function queued for one commit. They stay on the
 // host until databaseBatchCommit, so a batch never committed writes nothing.
@@ -45,6 +64,17 @@ func (f *Factory) databaseBatchNew(ctx context.Context, module common.Module,
 	}
 	id := f.batchIdToGrab
 	f.batchIdToGrab++
+	if len(f.batches) >= maxOpenBatches {
+		// Dropped rather than refused: abandoned batches must not stop this
+		// instance from ever opening another. Ids only grow, so the lowest is
+		// the oldest; a later use of it gets ErrorDatabaseNotFound.
+		oldest := id
+		for open := range f.batches {
+			oldest = min(oldest, open)
+		}
+		f.batches[oldest].release()
+		delete(f.batches, oldest)
+	}
 	f.batches[id] = &batch{db: database}
 	f.databaseLock.Unlock()
 
@@ -68,10 +98,15 @@ func (f *Factory) addBatchOp(batchId uint32, op dbIface.Op) errno.Error {
 	if !ok {
 		return errno.ErrorDatabaseNotFound
 	}
-	if b.bytes+len(op.Key)+len(op.Value) > maxBatchBytes {
+	n := len(op.Key) + len(op.Value)
+	if b.bytes+n > maxBatchBytes {
 		return errno.ErrorDatabasePutFailed
 	}
-	b.bytes += len(op.Key) + len(op.Value)
+	if queuedBatchBytes.Add(int64(n)) > maxQueuedBatchBytes {
+		queuedBatchBytes.Add(-int64(n))
+		return errno.ErrorDatabasePutFailed
+	}
+	b.bytes += n
 	b.ops = append(b.ops, op)
 
 	return 0
@@ -127,6 +162,7 @@ func (f *Factory) databaseBatchCommit(ctx context.Context, module common.Module,
 	if !ok {
 		return uint32(errno.ErrorDatabaseNotFound)
 	}
+	defer b.release()
 
 	if _, err := f.getDatabase(b.db.Id); err != 0 {
 		return uint32(err)
@@ -143,6 +179,7 @@ func (f *Factory) databaseBatchCommit(ctx context.Context, module common.Module,
 func (f *Factory) dropBatches(e *Database) {
 	for id, b := range f.batches {
 		if b.db == e {
+			b.release()
 			delete(f.batches, id)
 		}
 	}

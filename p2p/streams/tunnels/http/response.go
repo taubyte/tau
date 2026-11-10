@@ -53,6 +53,12 @@ func Refuse(w http.ResponseWriter) {
 	}
 }
 
+// Abort tells the frontend the response failed after it began, so the client
+// sees a failed transfer and not a clean short body.
+func (w *responseWriter) Abort() {
+	w.pack.Send(AbortOp, w.stream, bytes.NewReader(nil), 0)
+}
+
 func (w *responseWriter) Header() http.Header {
 	return w.header
 }

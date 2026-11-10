@@ -139,6 +139,10 @@ var heartbeat = time.Minute
 // targets all stay unchanged this long changed nothing served.
 var serveQuiet = time.Minute
 
+// ExitQuiet is Serve's exit code when nothing served changed within serveQuiet:
+// not a success, because a rollout that never propagates looks the same.
+const ExitQuiet = 3
+
 // Wait follows each pushed repo's job (see match) until all end, writing a
 // line to progress (if not nil) as a job appears, starts, retries or ends,
 // and every heartbeat while a job runs with no change.
@@ -345,10 +349,11 @@ func Baseline(targets []Target) (keep []Target, before map[Target]string, skippe
 // then are not waited on: they are "not changed by this push".
 // shortcut: a resource that changes later than the others is cut off; upgrade
 // by matching the build's asset CIDs per function once Patrick exposes them.
-// When no resource has changed serveQuiet after Serve began, the push changed
-// nothing served: Serve says so on progress and returns 0. While waiting it
-// writes a line to progress (if not nil) every heartbeat.
-// Exit code 0, or 2 if ctx ended first.
+// When no resource has changed serveQuiet after Serve began, either the push
+// changed nothing served or the nodes never picked it up; Serve cannot tell
+// which, so it says so on progress and returns ExitQuiet, not 0. While waiting
+// it writes a line to progress (if not nil) every heartbeat.
+// Exit code 0, ExitQuiet, or 2 if ctx ended first.
 func Serve(ctx context.Context, targets []Target, before func(Target) string, poll time.Duration, start time.Time, progress io.Writer) ([]Served, int) {
 	entered, said := time.Now(), time.Now()
 	out := make([]Served, len(targets))
@@ -391,13 +396,16 @@ func Serve(ctx context.Context, targets []Target, before func(Target) string, po
 		}
 		quiet := !anyChanged && time.Since(entered) >= serveQuiet
 		if quiet && progress != nil {
-			fmt.Fprintf(progress, "nothing serves a new build %s after the builds ended: this push changed nothing served\n", serveQuiet)
+			fmt.Fprintf(progress, "nothing serves a new build %s after the builds ended: either this push changed nothing served or the nodes have not picked it up (exit %d)\n", serveQuiet, ExitQuiet)
 		}
 		if settled && someDone || quiet {
 			for i := range out {
 				if !out[i].Changed {
 					out[i].Note = "not changed by this push"
 				}
+			}
+			if quiet {
+				return out, ExitQuiet
 			}
 			return out, 0
 		}
