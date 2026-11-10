@@ -8,6 +8,7 @@ import (
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/core/vm"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/pkg/config"
 	httpSrv "github.com/taubyte/tau/pkg/http"
 )
 
@@ -65,3 +66,5 @@ func (m *mockedSubstrate) Dev() bool {
 func (m *mockedSubstrate) Verbose() bool {
 	return true
 }
+
+func (m *mockedSubstrate) Caps(string) config.Caps { return config.Caps{} }

@@ -7,6 +7,7 @@ import (
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/core/vm"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/pkg/config"
 	http "github.com/taubyte/tau/pkg/http"
 	httpMock "github.com/taubyte/tau/pkg/http/mocks"
 	"github.com/taubyte/tau/services/substrate/components/counters"
@@ -84,3 +85,5 @@ func (s *NodeService) Dev() bool {
 func (s *NodeService) Verbose() bool {
 	return false
 }
+
+func (s *NodeService) Caps(string) config.Caps { return config.Caps{} }

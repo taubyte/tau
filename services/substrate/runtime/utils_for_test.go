@@ -8,6 +8,7 @@ import (
 	"github.com/taubyte/tau/core/services/substrate/components"
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/core/vm"
+	"github.com/taubyte/tau/pkg/config"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	plugins "github.com/taubyte/tau/pkg/vm-low-orbit"
 )
@@ -100,3 +101,5 @@ func (*mockRuntime) Close() error  { return nil }
 func (*mockRuntime) Attach(plugin vm.Plugin) (vm.PluginInstance, vm.ModuleInstance, error) {
 	return nil, nil, nil
 }
+
+func (*mockService) Caps(string) config.Caps { return config.Caps{} }
