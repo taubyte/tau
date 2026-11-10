@@ -229,6 +229,9 @@ func (p *PatrickService) timeoutHandler(ctx context.Context, jid string, cid_log
 		if job.Attempt == servicesCommon.MaxJobAttempts {
 			job.Status = commonIface.JobStatusFailed
 			job.Logs = cid_log
+			if err := p.recordLogOwner(ctx, jid, cid_log); err != nil {
+				return fmt.Errorf("recording owners of job %s logs failed with %w", jid, err)
+			}
 
 			jobData, err := cbor.Marshal(job)
 			if err != nil {
@@ -321,6 +324,9 @@ func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid stri
 		job.Logs = cid_log
 		job.AssetCid = assetCid
 		job.Attempt++
+		if err := p.recordLogOwner(ctx, jid, cid_log); err != nil {
+			return fmt.Errorf("recording owners of job %s logs failed with %w", jid, err)
+		}
 	}
 
 	jobData, err := cbor.Marshal(job)
@@ -329,10 +335,11 @@ func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid stri
 	}
 
 	if job.Status == commonIface.JobStatusSuccess || job.Status == commonIface.JobStatusCancelled || job.Attempt >= servicesCommon.MaxJobAttempts {
-		p.deleteJob(ctx, jid, "/jobs/")
+		// archived first, so a job is always in one place or the other
 		if err = p.db.Put(ctx, "/archive/jobs/"+jid, jobData); err != nil {
 			return fmt.Errorf("updateStatus put failed with error: %w", err)
 		}
+		p.deleteJob(ctx, jid, "/jobs/")
 	} else {
 		if err = p.db.Put(ctx, "/jobs/"+jid, jobData); err != nil {
 			return fmt.Errorf("updateStatus put failed with error: %w", err)
@@ -525,6 +532,11 @@ func (srv *PatrickService) retryJob(ctx http.Context) (iface interface{}, err er
 			return nil, fmt.Errorf("failed deleting job %s with error: %w", jid, err)
 		}
 
+		// its next run writes a new log from the start
+		if srv.liveLogs != nil {
+			srv.liveLogs.reset(job.Id)
+		}
+
 		err = srv.db.Put(requestCtx, "/jobs/"+job.Id, job_byte)
 		if err != nil {
 			logger.Errorf("failed putting job %s into database with error: %s", job.Id, err.Error())
@@ -658,7 +670,7 @@ func (srv *PatrickService) setupJobRoutes() {
 			Validator: srv.GitHubTokenHTTPAuth,
 			GC:        srv.GitHubTokenHTTPAuthCleanup,
 		},
-		Handler: srv.projectAllJobHandler,
+		Handler: srv.withProjectAccess(srv.onlyReadableJobs(srv.projectAllJobHandler)),
 	})
 
 	srv.http.GET(&http.RouteDefinition{
@@ -671,7 +683,7 @@ func (srv *PatrickService) setupJobRoutes() {
 			Validator: srv.GitHubTokenHTTPAuth,
 			GC:        srv.GitHubTokenHTTPAuthCleanup,
 		},
-		Handler: srv.projectJobHandler,
+		Handler: srv.withJobAccess("jid", srv.projectJobHandler),
 	})
 
 	srv.http.GET(&http.RouteDefinition{
@@ -680,7 +692,11 @@ func (srv *PatrickService) setupJobRoutes() {
 		Vars: http.Variables{
 			Required: []string{"jobId", "resourceId"},
 		},
-		Handler:     srv.downloadAsset,
+		Auth: http.RouteAuthHandler{
+			Validator: srv.GitHubTokenHTTPAuth,
+			GC:        srv.GitHubTokenHTTPAuthCleanup,
+		},
+		Handler:     srv.withJobAccess("jobId", srv.downloadAsset),
 		RawResponse: true,
 	})
 
@@ -694,7 +710,7 @@ func (srv *PatrickService) setupJobRoutes() {
 			Validator: srv.GitHubTokenHTTPAuth,
 			GC:        srv.GitHubTokenHTTPAuthCleanup,
 		},
-		Handler:     srv.cidHandler,
+		Handler:     srv.withLogAccess(srv.cidHandler),
 		RawResponse: true,
 	})
 
@@ -721,7 +737,7 @@ func (srv *PatrickService) setupJobRoutes() {
 			Validator: srv.GitHubTokenHTTPAuth,
 			GC:        srv.GitHubTokenHTTPAuthCleanup,
 		},
-		Handler: srv.cancelJob,
+		Handler: srv.withJobAccess("jid", srv.cancelJob),
 	})
 
 	srv.http.POST(&http.RouteDefinition{
@@ -734,7 +750,7 @@ func (srv *PatrickService) setupJobRoutes() {
 			Validator: srv.GitHubTokenHTTPAuth,
 			GC:        srv.GitHubTokenHTTPAuthCleanup,
 		},
-		Handler: srv.retryJob,
+		Handler: srv.withJobAccess("jid", srv.retryJob),
 	})
 
 }

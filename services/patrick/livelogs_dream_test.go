@@ -18,6 +18,7 @@ import (
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	servicesCommon "github.com/taubyte/tau/services/common"
+	service "github.com/taubyte/tau/services/patrick"
 	"gotest.tools/v3/assert"
 )
 
@@ -27,6 +28,8 @@ func TestDream_LiveLogs(t *testing.T) {
 	if token == "" {
 		t.Skip("TAU_TEST_GITHUB_TOKEN not set")
 	}
+
+	service.GrantRepoAccess(token, commonTest.ConfigRepo.ID)
 
 	http.DefaultClient = commonTest.CreateHttpClient()
 
@@ -89,6 +92,8 @@ func TestDream_LiveLogs(t *testing.T) {
 	}
 
 	node := simple.PeerNode()
+	// the test publishes as the job's monkey
+	assert.NilError(t, service.AssignJob(u.Context(), u.Patrick().KV(), jid, node.ID()))
 	publish := func(off int64, data string, done bool) {
 		b, err := cbor.Marshal(servicesCommon.LiveLogChunk{Job: jid, Offset: off, Data: []byte(data), Done: done})
 		assert.NilError(t, err)

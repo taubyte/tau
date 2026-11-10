@@ -215,6 +215,14 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client Git
 		return nil, err
 	}
 
+	// only now: until the new key is stored, builds clone with an old one. A key
+	// left behind is reported, not fatal
+	if client != nil {
+		if err := client.RemoveOtherDeployKeys(kname, kpub); err != nil {
+			logger.Errorf("removing old deploy keys of repository %s failed: %s", repoID, err)
+		}
+	}
+
 	hook, err := hooks.New(srv.KV(), hooks.Data{
 		"id":         hook_id,
 		"provider":   "github",
