@@ -2,7 +2,7 @@ package raft
 
 import "time"
 
-var (
+const (
 	// BootstrapCheckInterval is the interval at which we check if we can join an existing cluster
 	BootstrapCheckInterval = 200 * time.Millisecond
 

@@ -53,6 +53,11 @@ type Node interface {
 	SimpleAddrsFactory(announce []string, override bool) config.Option
 	Store() datastore.Batching
 	WaitForSwarm(timeout time.Duration) error
+
+	// Keep is the value the node keeps under key, v when it keeps none yet: what a
+	// package shares between its users on one node lives with the node, not the
+	// process.
+	Keep(key, v any) any
 }
 
 type node struct {
@@ -74,6 +79,19 @@ type node struct {
 	topicsMutex sync.RWMutex
 	topics      map[string]*pubsub.Topic
 	closed      atomic.Bool
+
+	kept sync.Map
+}
+
+func (p *node) Keep(key, v any) any {
+	kept, _ := p.kept.LoadOrStore(key, v)
+	return kept
+}
+
+// Kept is the *T n keeps under key, a zero T the first time it is asked for.
+func Kept[T any](n Node, key any) *T {
+	var zero T
+	return n.Keep(key, &zero).(*T)
 }
 
 func (p *node) ID() peer.ID {

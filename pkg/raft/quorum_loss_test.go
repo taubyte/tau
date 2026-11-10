@@ -68,8 +68,7 @@ func survivorsOf(t *testing.T, group []Cluster, key string, keep int) []*cluster
 // A GROUP THAT LOST ITS QUORUM FOR GOOD LEADS AGAIN WHEN TOLD TO, with nobody to
 // restart it: the member that remains forms a new group carrying what it holds.
 func TestHealing_AGroupThatLostItsQuorumRecoversWhenToldTo(t *testing.T) {
-	probeEvery(t, 50*time.Millisecond)
-	group := joinedGroup(t, "quorum-recovers", sameStore, 3, WithQuorumLossRecovery(500*time.Millisecond))
+	group := joinedGroup(t, "quorum-recovers", sameStore, 3, WithQuorumLossRecovery(500*time.Millisecond), probingEvery(50*time.Millisecond))
 	leaderTook(t, group, func(l Cluster) error { return l.Set("kept", []byte("v"), 5*time.Second) })
 	survivor := survivorsOf(t, group, "kept", 1)[0]
 	formed := survivor.current().raft.Formation()
@@ -85,8 +84,7 @@ func TestHealing_AGroupThatLostItsQuorumRecoversWhenToldTo(t *testing.T) {
 // A GROUP LEFT TO MANUAL RECOVERY WAITS for its members however long they are
 // gone.
 func TestHealing_AGroupLeftToManualRecoveryWaits(t *testing.T) {
-	probeEvery(t, 50*time.Millisecond)
-	group := joinedGroup(t, "quorum-waits", sameStore, 3)
+	group := joinedGroup(t, "quorum-waits", sameStore, 3, probingEvery(50*time.Millisecond))
 	leaderTook(t, group, func(l Cluster) error { return l.Set("kept", []byte("v"), 5*time.Second) })
 	survivor := survivorsOf(t, group, "kept", 1)[0]
 	formed := survivor.current().raft.Formation()
@@ -101,8 +99,7 @@ func TestHealing_AGroupLeftToManualRecoveryWaits(t *testing.T) {
 // THE MEMBERS THAT REMAIN END UP IN ONE GROUP: the lowest forms it, and takes the
 // others with their state.
 func TestHealing_TheMembersThatRemainOfALostQuorumEndUpInOneGroup(t *testing.T) {
-	probeEvery(t, 50*time.Millisecond)
-	group := joinedGroup(t, "quorum-two-remain", sameStore, 5, WithQuorumLossRecovery(500*time.Millisecond))
+	group := joinedGroup(t, "quorum-two-remain", sameStore, 5, WithQuorumLossRecovery(500*time.Millisecond), probingEvery(50*time.Millisecond))
 	leaderTook(t, group, func(l Cluster) error { return l.Set("kept", []byte("v"), 5*time.Second) })
 	survivors := survivorsOf(t, group, "kept", 2)
 	formed := survivors[0].current().raft.Formation()
@@ -285,14 +282,14 @@ func TestHealing_WhatAMemberHoldsFoldsInItsArchive(t *testing.T) {
 // group once it can.
 func TestHealing_ASurvivorThatCannotArchiveWipesNothing(t *testing.T) {
 	const namespace = "archive-not-written"
-	probeEvery(t, 50*time.Millisecond)
+	probe := probingEvery(50 * time.Millisecond)
 	var stores []*faultStore
 	wrap := func(ds.Batching) ds.Batching {
 		s := newFaultStore()
 		stores = append(stores, s)
 		return s
 	}
-	group := joinedGroup(t, namespace, wrap, 3, WithQuorumLossRecovery(300*time.Millisecond))
+	group := joinedGroup(t, namespace, wrap, 3, WithQuorumLossRecovery(300*time.Millisecond), probe)
 	leaderTook(t, group, func(l Cluster) error { return l.Set("kept", []byte("v"), 5*time.Second) })
 	archive := path.Join(RaftStoragePrefix, namespace, "archive")
 	stores[0].failPut(archive, errNoSpace)
@@ -427,8 +424,7 @@ func TestHealing_NothingRecoversWhileAMemberLeadsOrNothingIsHeld(t *testing.T) {
 // and the quorum-loss recovery the healer should have run next waited behind three of
 // them for half a minute.
 func TestHealing_MeetingPeersThatClosedHoldsTheHealerACheckEach(t *testing.T) {
-	probeEvery(t, 50*time.Millisecond)
-	group := joinedGroup(t, "probe-closed", sameStore, 4)
+	group := joinedGroup(t, "probe-closed", sameStore, 4, probingEvery(50*time.Millisecond))
 	leader := leaderOf(t, group...).(*cluster)
 	var closed []Cluster
 	for _, cl := range group {

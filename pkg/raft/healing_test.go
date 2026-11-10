@@ -506,15 +506,24 @@ func TestCluster_CloseWaitsForAYieldInProgress(t *testing.T) {
 	assert.Equal(t, Shutdown, cl.current().raft.State(), "a raft the yield built is still running after Close")
 }
 
-func probeEvery(t *testing.T, interval time.Duration) {
-	before := HealingProbeInterval
-	HealingProbeInterval = interval
-	t.Cleanup(func() { HealingProbeInterval = before })
+// probingEvery is a group whose healer probes for foreign groups every interval.
+func probingEvery(interval time.Duration) Option {
+	return func(c *cluster) error {
+		c.healingProbeInterval = interval
+		return nil
+	}
+}
+
+// splitAfter is a group that calls itself split after cycles leaderless checks.
+func splitAfter(cycles int) Option {
+	return func(c *cluster) error {
+		c.splitBrainDetectionCycles = cycles
+		return nil
+	}
 }
 
 func TestHealing_ASplitHealsByItself(t *testing.T) {
-	probeEvery(t, 50*time.Millisecond)
-	a, b := splitPair(t, "heal-by-itself")
+	a, b := splitPair(t, "heal-by-itself", probingEvery(50*time.Millisecond))
 
 	require.Eventually(t, func() bool {
 		ofA, errA := a.Members()
@@ -559,28 +568,15 @@ func TestHealing_GroupsFormedApartBecomeOneOnceConnected(t *testing.T) {
 	}, 5*time.Second, 50*time.Millisecond, "the group they became does not hold both sides' writes")
 }
 
-func TestHealing_ASettingChangedAfterNewIsNotReadByItsHealer(t *testing.T) {
-	c, err := New(newMockNode(t), "heal-settings",
-		WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
-	require.NoError(t, err)
-	defer c.Close()
-	waitLeader(t, c, 5*time.Second)
-
-	probeEvery(t, 50*time.Millisecond)
-	before := SplitBrainDetectionCycles
-	SplitBrainDetectionCycles = 1
-	t.Cleanup(func() { SplitBrainDetectionCycles = before })
-}
-
 // formedPair is a group of two that formed the way a fleet does, with no
 // member forced to bootstrap: a bootstrapped alone, then b found it and joined.
-func formedPair(t *testing.T, namespace string) (a, b Cluster) {
+func formedPair(t *testing.T, namespace string, extra ...Option) (a, b Cluster) {
 	t.Helper()
 	nodeA := newMockNode(t)
 	nodeB := newMockNode(t)
 
 	a, err := New(nodeA, namespace,
-		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second))
+		append([]Option{WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second)}, extra...)...)
 	require.NoError(t, err)
 	t.Cleanup(func() { a.Close() })
 	waitLeader(t, a, 5*time.Second)
@@ -588,7 +584,7 @@ func formedPair(t *testing.T, namespace string) (a, b Cluster) {
 	require.NoError(t, taupeer.LinkAllPeers())
 	require.NoError(t, nodeB.Host().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Host().Addrs()}))
 	b, err = New(nodeB, namespace,
-		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second))
+		append([]Option{WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2 * time.Second)}, extra...)...)
 	require.NoError(t, err)
 	t.Cleanup(func() { b.Close() })
 	require.Eventually(t, func() bool {
@@ -602,9 +598,8 @@ func formedPair(t *testing.T, namespace string) (a, b Cluster) {
 // and identify can leave it unlisted for good, so only a probe from the healer
 // finds it.
 func TestHealing_AnOrphanThePeerstoreDoesNotListIsAbsorbed(t *testing.T) {
-	probeEvery(t, 50*time.Millisecond)
 	namespace := "heal-orphan-unlisted"
-	a, b := formedPair(t, namespace)
+	a, b := formedPair(t, namespace, probingEvery(50*time.Millisecond))
 
 	removed, left := removeTheLeader(t, a, b)
 	tracker := left.(*cluster).current().tracker
@@ -620,8 +615,7 @@ func TestHealing_AnOrphanThePeerstoreDoesNotListIsAbsorbed(t *testing.T) {
 }
 
 func TestHealing_AnOrphanIsAbsorbed(t *testing.T) {
-	probeEvery(t, 50*time.Millisecond)
-	a, b := formedPair(t, "heal-orphan")
+	a, b := formedPair(t, "heal-orphan", probingEvery(50*time.Millisecond))
 
 	removed, left := removeTheLeader(t, a, b)
 	left.(*cluster).current().tracker.addPeer(idOf(removed))
@@ -643,14 +637,9 @@ func TestHealing_AnOrphanIsAbsorbed(t *testing.T) {
 // A split needs two leaderless cycles: the group ahead runs 25ms leases, which
 // under load leave it leaderless for longer than one 50ms cycle.
 func TestHealing_AGroupWithoutQuorumYieldsToTheGroupAheadOfIt(t *testing.T) {
-	probeEvery(t, time.Second)
-	before := SplitBrainDetectionCycles
-	SplitBrainDetectionCycles = 1
-	t.Cleanup(func() { SplitBrainDetectionCycles = before })
-
 	namespace := "heal-quorum-lost"
-	stranded, gone := formedPair(t, namespace)
-	ahead, other := formedPair(t, namespace)
+	stranded, gone := formedPair(t, namespace, probingEvery(time.Second), splitAfter(1))
+	ahead, other := formedPair(t, namespace, probingEvery(time.Second), splitAfter(1))
 	group := []Cluster{ahead, other}
 	for i := range 10 {
 		require.NoError(t, onLeader(t, group, func(leader Cluster) error {
@@ -1047,7 +1036,6 @@ func TestHealing_ACycleWithALeaderInItIsNotSplit(t *testing.T) {
 // founder's bootstrap alone leaves them unable to ever elect.
 func TestHealing_AGroupWhoseFounderDiesBeforeItReplicatesFormsAgain(t *testing.T) {
 	const namespace = "founder-dies"
-	probeEvery(t, 50*time.Millisecond)
 	nodes := []taupeer.Node{newMockNode(t), newMockNode(t), newMockNode(t)}
 	slices.SortFunc(nodes, func(a, b taupeer.Node) int { return strings.Compare(a.ID().String(), b.ID().String()) })
 	connectAllOf(t, nodes...)
@@ -1061,7 +1049,7 @@ func TestHealing_AGroupWhoseFounderDiesBeforeItReplicatesFormsAgain(t *testing.T
 			timeouts.HeartbeatTimeout = time.Minute
 		}
 		go func() {
-			cl, err := New(node, namespace, WithTimeouts(timeouts), WithBootstrapTimeout(time.Second))
+			cl, err := New(node, namespace, WithTimeouts(timeouts), WithBootstrapTimeout(time.Second), probingEvery(50*time.Millisecond))
 			if err != nil {
 				failed <- err
 				return
@@ -1105,8 +1093,8 @@ func TestHealing_AGroupWhoseFounderDiesBeforeItReplicatesFormsAgain(t *testing.T
 // would throw away the only copy of what the group committed.
 func TestHealing_AMemberThatLostItsQuorumKeepsItsStateForAnEmptyNewcomer(t *testing.T) {
 	const namespace = "quorum-lost-keeps"
-	probeEvery(t, 50*time.Millisecond)
-	group := joinedGroup(t, namespace, sameStore, 3)
+	probe := probingEvery(50 * time.Millisecond)
+	group := joinedGroup(t, namespace, sameStore, 3, probe)
 	leader := leaderTook(t, group, func(l Cluster) error { return l.Set("kept", []byte("v"), 5*time.Second) })
 
 	survivor := group[0].(*cluster)
@@ -1125,7 +1113,7 @@ func TestHealing_AMemberThatLostItsQuorumKeepsItsStateForAnEmptyNewcomer(t *test
 	node := newMockNode(t)
 	require.NoError(t, taupeer.LinkAllPeers())
 	connected(t, node, survivor)
-	newcomer, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second))
+	newcomer, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second), probe)
 	require.NoError(t, err)
 	t.Cleanup(func() { newcomer.Close() })
 
@@ -1211,8 +1199,8 @@ func (p *winningPeer) ClusterInfo(context.Context, *connect.Request[raftv2.Clust
 // before the winner merged it would wipe what the winner never had.
 func TestHealing_ALoserHoldingStateWaitsToBeTaken(t *testing.T) {
 	const namespace = "loser-waits"
-	probeEvery(t, 50*time.Millisecond)
-	group := joinedGroup(t, namespace, sameStore, 3)
+	probe := probingEvery(50 * time.Millisecond)
+	group := joinedGroup(t, namespace, sameStore, 3, probe)
 	leader := leaderTook(t, group, func(l Cluster) error { return l.Set("kept", []byte("v"), 5*time.Second) })
 	survivor := group[0].(*cluster)
 	if Cluster(survivor) == leader {
@@ -1324,8 +1312,7 @@ func soloPair(t *testing.T, namespace string, extra ...Option) (winner, loser *c
 // A LEADER THAT LOSES TO ANOTHER MAKES ITSELF KNOWN TO IT: the winner may not
 // track it, and would take it only whenever its discovery came round.
 func TestHealing_ALosingLeaderMakesItselfKnownToTheWinner(t *testing.T) {
-	probeEvery(t, 50*time.Millisecond)
-	winner, loser := soloPair(t, "loser-announces")
+	winner, loser := soloPair(t, "loser-announces", probingEvery(50*time.Millisecond))
 	loser.current().tracker.addPeer(winner.ID())
 
 	require.Eventually(t, func() bool {
@@ -1340,8 +1327,7 @@ func TestHealing_ALosingLeaderMakesItselfKnownToTheWinner(t *testing.T) {
 // probe, a check interval away: in a line, the winner is the one that never saw the
 // loser identified, having been a follower then, or not been connected to it at all.
 func TestHealing_ALosingLeaderThatMakesItselfKnownIsMetAtOnce(t *testing.T) {
-	probeEvery(t, time.Hour)
-	winner, loser := soloPair(t, "loser-met-at-once", withoutMeetingIdentified())
+	winner, loser := soloPair(t, "loser-met-at-once", withoutMeetingIdentified(), probingEvery(time.Hour))
 
 	loser.current().healer.Load().meetAsLeader(t.Context(), winner.ID())
 	require.Eventually(t, func() bool {
@@ -1357,8 +1343,7 @@ func TestHealing_ALosingLeaderThatMakesItselfKnownIsMetAtOnce(t *testing.T) {
 // while it took that group as the winner of the two: each would yield on the
 // other's receipt, for state only the other held.
 func TestHealing_ALeaderIsNeverTakenAsAnOrphan(t *testing.T) {
-	probeEvery(t, time.Hour)
-	winner, loser := soloPair(t, "leader-taken-as-orphan", withoutMeetingIdentified())
+	winner, loser := soloPair(t, "leader-taken-as-orphan", withoutMeetingIdentified(), probingEvery(time.Hour))
 	// The loser holds everything the winner does, so taking the winner adds nothing.
 	for _, key := range []string{"from-a", "from-b"} {
 		require.NoError(t, loser.Set(key, []byte(key[len(key)-1:]), time.Second))
@@ -1417,14 +1402,14 @@ func TestHealing_TwoLeadersHearingEachOtherAtOnceDoNotBothYield(t *testing.T) {
 // TAKEN with that formation: listing it does not make it ours.
 func TestHealing_AListedMemberOfAnotherFormationIsTaken(t *testing.T) {
 	const namespace = "listed-elsewhere"
-	probeEvery(t, 50*time.Millisecond)
+	probe := probingEvery(50 * time.Millisecond)
 	// OURS IS A FORMATION IN THE LOWER HALF, and the other one above it, so ours
 	// takes it: drawn at random, either is redrawn until it is. Each draw is a coin,
 	// so forty of them all miss once in 2^40; ten missed once in a thousand runs.
 	var leader *cluster
 	var ours []Cluster
 	for range 40 {
-		ours = joinedGroup(t, namespace, sameStore, 2)
+		ours = joinedGroup(t, namespace, sameStore, 2, probe)
 		candidate := leaderOf(t, ours...).(*cluster)
 		if candidate.current().raft.Formation()[0] < 0x80 {
 			leader = candidate
@@ -1439,7 +1424,7 @@ func TestHealing_AListedMemberOfAnotherFormationIsTaken(t *testing.T) {
 
 	var other *cluster
 	for range 20 {
-		cl, err := New(newMockNode(t), namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
+		cl, err := New(newMockNode(t), namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), probe)
 		require.NoError(t, err)
 		t.Cleanup(func() { cl.Close() })
 		waitLeader(t, cl, 5*time.Second)
@@ -1519,9 +1504,9 @@ func TestHealing_AWipeTheStoreRefusesTakesNothing(t *testing.T) {
 // holds only who it named, which leaving loses nothing of.
 func TestHealing_AFounderLeftWithOnlyItsConfigurationFormsAgain(t *testing.T) {
 	const namespace = "founder-left-alone"
-	probeEvery(t, 50*time.Millisecond)
 	node := newMockNode(t)
-	cl, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithBootstrapTimeout(time.Second))
+	cl, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithBootstrapTimeout(time.Second),
+		probingEvery(50*time.Millisecond))
 	require.NoError(t, err)
 	t.Cleanup(func() { cl.Close() })
 	c := cl.(*cluster)

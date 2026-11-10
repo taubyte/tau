@@ -414,9 +414,10 @@ func TestAFollowerWhoseEngineRestartsHearsItsLeaderAgain(t *testing.T) {
 	require.Eventually(t, func() bool { return held(groups[f], "before") == "v" }, 5*time.Second, 5*time.Millisecond)
 	require.NoError(t, groups[f].Close())
 	running[f].release()
-	engines.Lock()
-	_, stillRunning := engines.on[nodes[f].ID()]
-	engines.Unlock()
+	on := taupeer.Kept[engines](nodes[f], enginesKey{})
+	on.Lock()
+	stillRunning := on.running != nil
+	on.Unlock()
 	require.False(t, stillRunning, "its engine stopped with its last group")
 
 	set(t, leader, "while", "v")

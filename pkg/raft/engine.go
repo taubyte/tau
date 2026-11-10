@@ -73,35 +73,39 @@ var (
 )
 
 // engines is every running engine, one per host, so a node's groups share one and
-// the host's engine stream has one reader. The entry goes when its last group
-// closes.
-var engines = struct {
+// the host's engine stream has one reader. The node keeps it, and it goes when its
+// last group closes.
+type engines struct {
 	sync.Mutex
-	on map[peer.ID]*engine
-}{on: map[peer.ID]*engine{}}
+	running *engine
+	refs    int
+}
+
+// enginesKey is what a node keeps its engines under.
+type enginesKey struct{}
 
 // engineFor is node's engine, started on first use, and holds it until release.
 func engineFor(node taupeer.Node) *engine {
-	engines.Lock()
-	defer engines.Unlock()
-	e, ok := engines.on[node.ID()]
-	if !ok {
-		e = newEngine(node)
-		engines.on[node.ID()] = e
+	on := taupeer.Kept[engines](node, enginesKey{})
+	on.Lock()
+	defer on.Unlock()
+	if on.running == nil {
+		on.running = newEngine(node)
+		on.running.on = on
 	}
-	e.refs++
-	return e
+	on.refs++
+	return on.running
 }
 
 // release lets go of e; the last group to let go stops it.
 func (e *engine) release() {
-	engines.Lock()
-	e.refs--
-	last := e.refs == 0
+	e.on.Lock()
+	e.on.refs--
+	last := e.on.refs == 0
 	if last {
-		delete(engines.on, e.id)
+		e.on.running = nil
 	}
-	engines.Unlock()
+	e.on.Unlock()
 	if last {
 		e.stop()
 	}
@@ -127,8 +131,8 @@ type engine struct {
 	groups   map[string]*group
 	stopping []*group
 
-	// refs is under engines' lock.
-	refs int
+	// on is where the node keeps it.
+	on *engines
 }
 
 // delivery is one message a peer sent a group, as it arrived: the group opens and
