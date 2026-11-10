@@ -367,8 +367,7 @@ func (h *healer) meet(ctx context.Context, a memberAnswer) {
 		return
 	}
 	// THE WINNER MAY NOT KNOW THIS GROUP: an exchange with its leader puts this
-	// one in its tracker, so its next probe takes us rather than whenever its
-	// discovery would.
+	// one in its tracker, and has it meet this group at once (stream.go).
 	startTime, peers := h.member.tracker.getPeersMap()
 	h.member.raftClient.ExchangePeers(startTime, peers, leaderPID)
 }

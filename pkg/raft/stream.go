@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"path"
+	"slices"
 	"time"
 
 	"connectrpc.com/connect"
@@ -207,6 +208,13 @@ func (s *raftStreamService) ExchangePeers(ctx context.Context, req *connect.Requ
 
 	if from := remotePeer(ctx); from != "" {
 		tracker.heardFrom(from)
+		// A PEER NO MEMBER OF THIS GROUP THAT EXCHANGES WITH IT is a leader that
+		// lost to this group making itself known: met now, as a vote from a
+		// non-member is, rather than at the next probe, a check interval away.
+		m := s.cluster.current()
+		if h := m.healer.Load(); h != nil && !slices.ContainsFunc(m.raft.Members(), func(mb Member) bool { return mb.ID == from }) {
+			h.notifyForeign(from)
+		}
 	}
 
 	ourStart, ourPeers := tracker.getPeersMap()

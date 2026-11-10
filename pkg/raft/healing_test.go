@@ -1307,11 +1307,11 @@ func TestHealing_ARebuildThatKeepsFailingIsTriedUntilItLands(t *testing.T) {
 
 // soloPair is two groups of one, each on its own node and each holding a write,
 // connected but with neither tracking the other, ordered winner first.
-func soloPair(t *testing.T, namespace string) (winner, loser *cluster) {
+func soloPair(t *testing.T, namespace string, extra ...Option) (winner, loser *cluster) {
 	t.Helper()
 	var solos []*cluster
 	for _, key := range []string{"from-a", "from-b"} {
-		cl, err := New(newMockNode(t), namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
+		cl, err := New(newMockNode(t), namespace, append([]Option{WithTimeouts(testTimeoutConfig()), WithForceBootstrap()}, extra...)...)
 		require.NoError(t, err)
 		t.Cleanup(func() { cl.Close() })
 		waitLeader(t, cl, 5*time.Second)
@@ -1337,6 +1337,22 @@ func TestHealing_ALosingLeaderMakesItselfKnownToTheWinner(t *testing.T) {
 	}, 10*time.Second, 50*time.Millisecond, "the winner never took the leader that lost to it")
 	require.Eventually(t, func() bool { return holdsEverything(winner) && holdsEverything(loser) },
 		10*time.Second, 50*time.Millisecond, "the healed group does not hold both sides' writes")
+}
+
+// A LEADER THAT LOST AND MADE ITSELF KNOWN IS MET AT ONCE, not at the winner's next
+// probe, a check interval away: in a line, the winner is the one that never saw the
+// loser identified, having been a follower then, or not been connected to it at all.
+func TestHealing_ALosingLeaderThatMakesItselfKnownIsMetAtOnce(t *testing.T) {
+	probeEvery(t, time.Hour)
+	winner, loser := soloPair(t, "loser-met-at-once", withoutMeetingIdentified())
+
+	loser.current().healer.Load().meetAsLeader(t.Context(), winner.ID())
+	require.Eventually(t, func() bool {
+		members, err := winner.Members()
+		return err == nil && len(members) == 2
+	}, 10*time.Second, 50*time.Millisecond, "the winner waited for its probe to take the leader that lost to it")
+	require.Eventually(t, func() bool { return holdsEverything(winner) && holdsEverything(loser) },
+		10*time.Second, 50*time.Millisecond)
 }
 
 // A NODE MADE TO FORM ITS GROUP ALONE JOINS THE GROUP IT YIELDED TO: it was the
