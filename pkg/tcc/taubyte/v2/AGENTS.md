@@ -31,10 +31,11 @@ be written as a VARIANT `<key>_<value>`, and a read is made under a BINDING". Th
 vocabulary's `engine.Varies(EnvironmentVar)`, and the root says `Varying(EnvironmentVar)`.
 Adding a second axis is now a name on that line, not a patch to `pkg/tcc/`.
 
-`tools/tcc-gen` is the exception — it carries `--dsl v1|v2` to select the vocabulary.
+`tools/tcc-gen` is the exception: it names the vocabulary it generates from (`--dsl`,
+whose one value is `v2`).
 
-**Read `taubyte/v1/schema/definition.go` first.** It is a complete worked example of
-every construct. `functions` alone answers most questions.
+**Read `schema/definition.go` first.** It uses every construct below, and `function`
+alone answers most questions.
 
 ---
 
@@ -47,22 +48,20 @@ every construct. `functions` alone answers most questions.
 | `clouds:` as a map inside the project's `project.yaml` | `DefineGroup("clouds", DefineIter(attrs…))` |
 
 A **resource** (`DefineIter`, `Group == false`) reads its attributes from the
-document root and **never walks children** — `engine/node.go:478-483` returns before
-the child walk at `:529`. Passing a `*Node` to `DefineIter` compiles and is silently
-dropped.
+document root and **never walks children** — `engine/node.go` sets a resource's
+attributes and returns before the child walk unless it is `Nested`. Passing a `*Node` to
+`DefineIter` compiles and is silently dropped.
 
 A **container** (`DefineIterGroup`, `Group == true`) walks children, but reads its own
-attributes from its leaf (`node.go:486`). In a directory that is
-the document the group NAMES with `Leaf(...)` — `meta.yaml` in v2, `config.yaml` in v1,
-and nothing at all when a group names none; in a flat document it is a literal key by that
-name. This is why a
-container instance cannot be a flat `shop.yaml` with `id` at the root — the resulting
-error is `required attribute 'id'`, and that error is **correct**.
+attributes from its leaf (`LeafOf`). In a directory that is the document the group NAMES
+with `Leaf(...)` — `meta.yaml` here, and nothing at all when a group names none; in a
+flat document it is a literal key by that name. This is why a container instance cannot
+be a flat `shop.yaml` with `id` at the root — the resulting error is
+`required attribute 'id'`, and that error is **correct**.
 
 A **nested resource** (`DefineIter` + `Nested(groups…)`) walks its children against
 its own document AND stays a resource: scalars parsed, wire keys applied, indexed by
-name, no `config` leaf. This is what an access block uses. It was added to the engine
-on 2026-08-16 under `ENGINE-UPGRADE.md`, with v1 output proven byte-identical.
+name, no `config` leaf. This is what an access block uses.
 
 ---
 
@@ -163,9 +162,6 @@ route:
             name: notify
 ```
 
-Same construct as v1's `storages.type` (`Path(Either("object","streaming"))`, `Key()`)
-and `git-provider` (`Path("source", Either("github"))`, `Key()`).
-
 A key outside the set fails to compile with `attribute handler has an empty key` —
 `inferPathQuery` finds no match, so the switch captures nothing. That is how you keep
 an unroutable target from becoming a rule that silently never fires. Prefer this over
@@ -224,8 +220,8 @@ String(Key("route", "target"), Path("route", Either("handler", "router")), Captu
 `inferPathQuery` refuses a document that opens two branches — *"ambiguous path: route and
 router each match, and only one may be set"*, with a line number — and `Captures()` on a
 `Required()` switch refuses one that opens none. "Exactly one" is a property of the
-DECLARATION; there is nothing left to check afterwards, and I wrote a `checkRouting`
-before remembering that.
+DECLARATION, so there is nothing left to check afterwards. A `checkRouting` audit rule
+was written once before that was remembered, and it went.
 
 The inner switch is NOT `Required()`: a switch inside an optional block is demanded only
 when the block is there, which `parentExists` already answers. And a field under one
@@ -250,10 +246,8 @@ beside the name, which `model/opus` had nowhere to put, so it silently meant "so
 from here". And the compiled value is **the id alone**: ids are unique, so nothing else is
 needed to find the resource.
 
-`Prefix(...)` is gone from v2. It was always `group + "/"` — the same fact a third time —
-and single-versus-list is the attribute's own type (`String` vs `StringSlice`). v1 keeps its
-composite through `FlatValue()`, because its consumers read `libraries/<id>` off the
-compiled object and the OLD compiler built it that way long before tcc.
+`Prefix(...)` is gone. It was always `group + "/"` — the same fact a third time — and
+single-versus-list is the attribute's own type (`String` vs `StringSlice`).
 
 This is also why `agent.model` is no longer destroyed. `model` is a kind AND an attribute,
 so the attribute's block and the access group generated for the kind land at one key —
@@ -282,8 +276,8 @@ names. That hack is gone.
 A consequence worth knowing: a kind name may no longer collide with a resource's own
 block. `cache` used to keep its capacity under `storage:` while the access group for
 storages was `storages:`; singular made both `storage:`. The cache's fields are `size:`
-and `ttl:` at the top level now. `/tmp`-style throwaway check for this lives in the
-review notes — the rule is that no attribute path may START with a kind name.
+and `ttl:` at the top level now. The rule is that no attribute path may START with a kind
+name.
 
 ---
 
@@ -313,9 +307,10 @@ review notes — the rule is that no attribute path may START with a kind name.
 - ~~**More than one walked container.**~~ Fixed 2026-08-22, because a second one was
   needed: `ContainerKeys` (`interp/shape.go`) answers with EVERY top-level group whose
   iterator is a group — including a kind that is a resource AND a container, which is what
-  a lowered `workflow` is — and `utils.Global` walks the project root plus all of them. It used to answer with the first, and a second scope
-  compiled, indexed its own names and then resolved no references at all — which reads
-  like the reference being wrong rather than like half the walk being missing.
+  a lowered `workflow` is — and `utils.Global` walks the project root plus all of them. It
+  used to answer with the first, and a second scope compiled, indexed its own names and
+  then resolved no references at all — which reads like the reference being wrong rather
+  than like half the walk being missing.
 
 ### What NOT to do instead
 
@@ -341,14 +336,12 @@ at the line that is wrong.)
 ## 6. References
 
 ```go
-StringSlice("domains", Ref("domains"), …)                    // []name → []id
-String("source", Ref("libraries", Prefix("libraries/")), …)  // v1: "libraries/x" → "libraries/<id>"
+String(Key("certificate", "secret", "name"), Ref("secret"), …)   // name → id
 ```
 
-A **scalar** ref needs a `Prefix`; without one `resolveRefAttr` treats the value as a
-`[]string` and fails with `<attr> is not a []string`. A slice ref takes bare names.
-This one bites even after you have written it down — `Ref("libraries")` on a
-`String` compiles fine and fails at runtime.
+The attribute's type says whether it holds one reference or a list: `resolveRefAttr`
+(`interp/refs.go`) resolves a `String` as one name and a `StringSlice` as a list of names,
+to ids either way.
 
 Names resolve in the authoring scope, then walk up to the project root
 (`interp/utils/paths.go`). A sibling namespace's resource has no spelling, so it simply
@@ -371,17 +364,14 @@ neither the field nor the file. Worth improving one day; do not paper over it.
 - `invalid type passed to validator`, pointing at a fixture line ⇒ a scalar-only
   option on a `StringSlice`. `InSet` is the usual one: its validator takes a `T`, so
   a `[]string` fails at LOAD, in the user's yaml, not at schema-build where the
-  mistake is. Use `EachInSet` (verbs.go). Same family as `Ref` without `Prefix` on a
-  `String`, §6.
+  mistake is. Use `EachInSet` (verbs.go).
 - `unknown key 'x'; valid keys here: …` ⇒ exactly what it says, and the list is
   generated from the schema, so it is the truth rather than a doc comment. Check the
   spelling against the attribute's `Path(...)`. This used to be SILENT — the field was
   dropped and the compile succeeded — until `engine/strict.go` (2026-08-17); a fixture
   here said `source: true` where the attribute is `polls` and nothing complained for
   weeks. If you are adding an attribute and its key is rejected, the schema is what is
-  wrong. It is opt-in per vocabulary (`Strict()` on the root): v2 has it, v1 does not,
-  because v1 is frozen with projects deployed against it — so in v1 the key is still
-  dropped in silence.
+  wrong. The engine checks a node's keys before it reads any of them (`checkKeys`).
 - A `RequiredWhen` naming a `Key()` sibling works (engine reads the matched branch,
   fixed 2026-08-18). A `ShowWhen` naming one is still evaluated by CONSUMERS, not the
   engine, so a UI has to do the same resolution.
@@ -411,7 +401,7 @@ Regenerate after a schema change:
 ```
 go run ./tools/tcc-gen --dsl v2 --wasm   # explorer/public/tcc.wasm
 go run ./tools/tcc-gen --dsl v2 --ts     # explorer/src/gen/schema.ts
-go test ./pkg/tcc/... ./tools/tcc-gen/   # v1's parity oracle must stay green
+go test ./pkg/tcc/... ./tools/tcc-gen/
 ```
 
 ---
@@ -629,7 +619,7 @@ walk of every scope's every group. Resolving outward, which is what a bare name 
 
 Three properties of the shape, each a decision rather than an inheritance:
 
-- **The kind is in the key.** v1's by-name index has none, so a consumer picks its own
+- **The kind is in the key.** v1's by-name index had none, so a consumer picked its own
   kind out by reading the resource type from each value — a consumer parsing this
   vocabulary's address space, which §8c forbids.
 - **The scope is its ids, and each level says what KIND of scope it is.** The key and the
@@ -658,7 +648,7 @@ raise what shape the driver is missing rather than adding a seventh annotation, 
 the seventh is how the first six happened. This index needed exactly one, and it was a
 fix rather than an addition: `IndexCtx.Scope` was the id of the scope a resource is in,
 worked out by asking the root's container for the name of the object it had been handed
-— a direct child only one level down. v1's applications cannot hold applications, so one
+— a direct child only one level down. v1's applications could not hold applications, so one
 level was the whole tree; everything two namespaces deep was indexed as though it sat at
 the project root. It is the scope CHAIN now, ids from the root down.
 
