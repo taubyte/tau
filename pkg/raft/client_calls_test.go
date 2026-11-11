@@ -698,6 +698,10 @@ func TestStream_AForwardSeesALeaderChangeItsObserversAreNotToldOfYet(t *testing.
 	}
 	// Its host stays up, so a call to it is never reached.
 	require.NoError(t, leader.Close())
+	// A CALL ON THE CONN THE FOLLOWER ALREADY HELD may have been sent before the
+	// closed leader's EOF was read, which nothing tells from one it took, so the
+	// forward is made on a conn it has to dial: the refusal is the path under test.
+	forget(t, follower.(*cluster).current().raftClient.(*client), idOf(leader))
 	g := follower.(*cluster).current().raft
 
 	s := &raftStreamService{cluster: follower.(*cluster)}
@@ -720,6 +724,17 @@ func TestStream_AForwardSeesALeaderChangeItsObserversAreNotToldOfYet(t *testing.
 	require.True(t, sent, "the follower stopped naming the closed leader before it forwarded")
 	require.True(t, rpc.Unreached(refused), "the closed leader's refusal was taken for an answer: %v", refused)
 	require.ErrorIs(t, err, ErrNoLeader)
+}
+
+// forget drops the conn c holds to pid, if any, so its next call to pid dials.
+func forget(t *testing.T, c *client, pid peer.ID) {
+	t.Helper()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if pc, ok := c.peers[pid]; ok {
+		delete(c.peers, pid)
+		pc.conn.Close()
+	}
 }
 
 // A JOIN FROM A MEMBER OF ANOTHER FORMATION IS REFUSED: added, it would be a voter
