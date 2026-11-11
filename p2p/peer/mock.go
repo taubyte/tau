@@ -11,6 +11,7 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	discovery "github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	netmock "github.com/libp2p/go-libp2p/p2p/net/mock"
@@ -62,7 +63,34 @@ func (m *Mocknet) host() (host.Host, error) {
 	if err != nil {
 		return nil, err
 	}
-	return m.net.AddPeer(sk, addr)
+	h, err := m.net.AddPeer(sk, addr)
+	if err != nil {
+		return nil, err
+	}
+	h.Network().SetStreamHandler(negotiating{h}.stream)
+	return h, nil
+}
+
+// negotiating takes a mock host's inbound streams as a host does, but ends one for
+// a protocol it does not serve by closing it rather than resetting it. A mock
+// stream drops a reset's error code and the refusal not yet delivered, so a host's
+// refusal would reach its caller as a bare reset, which a call that reached its
+// service can end in too. Closing the write side first delivers the refusal; on a
+// real transport the reset's code says it.
+type negotiating struct{ host host.Host }
+
+func (n negotiating) stream(s network.Stream) {
+	proto, handle, err := n.host.Mux().Negotiate(s)
+	if err != nil {
+		s.CloseWrite()
+		s.CloseRead()
+		return
+	}
+	if err := s.SetProtocol(proto); err != nil {
+		s.Reset()
+		return
+	}
+	handle(proto, s)
 }
 
 // Mock is a node on m that lives until ctx ends or it is closed.
