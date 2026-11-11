@@ -3,6 +3,7 @@ package peer
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"sync"
@@ -72,18 +73,21 @@ func (m *Mocknet) host() (host.Host, error) {
 }
 
 // negotiating takes a mock host's inbound streams as a host does, but ends one for
-// a protocol it does not serve by closing it rather than resetting it. A mock
-// stream drops a reset's error code and the refusal not yet delivered, so a host's
-// refusal would reach its caller as a bare reset, which a call that reached its
-// service can end in too. Closing the write side first delivers the refusal; on a
-// real transport the reset's code says it.
+// a protocol it does not serve by closing its side rather than resetting it. A
+// mock stream drops a reset's error code and the refusal not yet delivered, so a
+// host's refusal would reach its caller as a bare reset, which a call that reached
+// its service can end in too; on a real transport the reset's code says it.
+// Closing the write side delivers the refusal, and what the caller sent after its
+// proposal is read until it closes: a refused read side would fail the caller's
+// write before it reads the refusal.
 type negotiating struct{ host host.Host }
 
 func (n negotiating) stream(s network.Stream) {
 	proto, handle, err := n.host.Mux().Negotiate(s)
 	if err != nil {
 		s.CloseWrite()
-		s.CloseRead()
+		io.Copy(io.Discard, s)
+		s.Close()
 		return
 	}
 	if err := s.SetProtocol(proto); err != nil {
