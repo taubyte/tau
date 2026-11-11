@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -417,11 +418,26 @@ const specsImportPath = `"github.com/taubyte/tau/pkg/specs"`
 var pathReaders = map[string]bool{"descend": true}
 
 // skipped are directories with no reader in them, and two that would lie: a
-// worktree holds another branch's copy of this tree, and a vendored or generated
-// example is not this cloud's code.
+// vendored or generated example is not this cloud's code, and neither is what git
+// ignores (ignored).
 var skipped = map[string]bool{
-	".git": true, ".claude": true, ".agents": true, "agent": true,
-	"node_modules": true, "vendor": true, "testdata": true, "legacy": true,
+	".git": true, "node_modules": true, "vendor": true, "testdata": true, "legacy": true,
+}
+
+// ignored is every directory git ignores under root: a worktree holding another
+// branch's copy of this tree, a tool's own files. With no git to ask, it is none.
+func ignored(root string) map[string]bool {
+	out := map[string]bool{}
+	list, err := exec.Command("git", "-C", root, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory").Output()
+	if err != nil {
+		return out
+	}
+	for _, path := range strings.Split(string(list), "\n") {
+		if dir, ok := strings.CutSuffix(path, "/"); ok {
+			out[filepath.Join(root, dir)] = true
+		}
+	}
+	return out
 }
 
 // scan is every non-test file that reads a compiled resource and the paths it
@@ -450,13 +466,14 @@ func scanReads(t *testing.T, root string) (spelledReads, typedReads map[string]m
 	typedOut := map[string]map[string]bool{}
 	types := generatedTypes(t, root)
 	consts := map[string]map[string]string{}
+	outside := ignored(root)
 
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
 		if entry.IsDir() {
-			if skipped[entry.Name()] {
+			if skipped[entry.Name()] || outside[path] {
 				return filepath.SkipDir
 			}
 			return nil

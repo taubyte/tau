@@ -2,8 +2,6 @@
 
 .notes/
 
-.claude/
-
 tools/spore-drive/clients/mock/mock
 
 .vscode/
@@ -203,8 +201,6 @@ tools/spore-drive/clients/py/example/config/
 tools/spore-drive/clients/py/example/hosts.csv
 tools/spore-drive/clients/py/spore_drive/bin/
 tools/spore-drive/service/service
-
-.gstack/
 
 # a stray `go build ./pkg/tcc/taubyte/v2/wasm` drops a 9MB binary here
 /wasm
