@@ -327,6 +327,11 @@ func versionsFromWire(a Address, name string, wires []*storagev2.Version) ([]Ver
 }
 
 // chunks reads a put's bytes out of the stream after its head.
+// errIncompletePut is a put whose stream did not end with its end, or whose end
+// names a size its chunks did not carry: the bytes are not the whole object, and
+// nothing of them is kept.
+var errIncompletePut = errors.New("storage: the put did not end whole")
+
 // chunks is a put's bytes, which end only at its end: a stream that closes before
 // it is a put that failed, never a shorter object.
 type chunks struct {
@@ -352,7 +357,7 @@ func (c *chunks) Read(p []byte) (int, error) {
 
 func (c *chunks) next() error {
 	if !c.stream.Receive() {
-		return c.closed(ErrIncompletePut)
+		return c.closed(errIncompletePut)
 	}
 	switch part := c.stream.Msg().GetPart().(type) {
 	case *storagev2.PutRequest_Chunk:
@@ -360,15 +365,15 @@ func (c *chunks) next() error {
 		c.received += uint64(len(part.Chunk))
 	case *storagev2.PutRequest_End:
 		if part.End.GetSize() != c.received {
-			return fmt.Errorf("%w: it carried %d bytes and ended saying %d", ErrIncompletePut, c.received, part.End.GetSize())
+			return fmt.Errorf("%w: it carried %d bytes and ended saying %d", errIncompletePut, c.received, part.End.GetSize())
 		}
 		if c.stream.Receive() {
-			return fmt.Errorf("%w: a message followed its end", ErrIncompletePut)
+			return fmt.Errorf("%w: a message followed its end", errIncompletePut)
 		}
 		c.ended = true
 		return c.closed(nil)
 	default:
-		return fmt.Errorf("%w: a head after its head", ErrIncompletePut)
+		return fmt.Errorf("%w: a head after its head", errIncompletePut)
 	}
 	return nil
 }
@@ -402,7 +407,7 @@ func wire(err error) error {
 		e := connect.NewError(connect.CodeFailedPrecondition, err)
 		e.Meta().Set(emptyCopy, "1")
 		return e
-	case errors.Is(err, ErrNoAddress), errors.Is(err, ErrEmptyIdentity), errors.Is(err, ErrIncompletePut):
+	case errors.Is(err, ErrNoAddress), errors.Is(err, ErrEmptyIdentity), errors.Is(err, errIncompletePut):
 		return connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	return err

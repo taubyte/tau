@@ -176,7 +176,7 @@ func TestAPutIsKeptOnlyWhenItsEndSaysItIsWhole(t *testing.T) {
 	} {
 		err := put(name, parts...)
 		require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "%s: %v", name, err)
-		require.ErrorContains(t, err, ErrIncompletePut.Error(), name)
+		require.ErrorContains(t, err, errIncompletePut.Error(), name)
 		_, err = cl.Current(ctx, at, name)
 		require.ErrorIs(t, err, ErrNotFound, name)
 	}
