@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Run a test command on a build server instead of on this machine.
 #
-#   scripts/rtest go test ./services/database/ -race -count=1
-#   scripts/rtest go test ./instance/dream/ -tags dreaming -count=1
-#   TAU_REMOTE=192.168.29.11 TAU_CAP_MEM=20G scripts/rtest make test-dreaming
+#   TAU_REMOTE=user@build1 scripts/rtest go test ./services/database/ -race -count=1
+#   TAU_REMOTE=user@build1 scripts/rtest go test ./instance/dream/ -tags dreaming -count=1
+#   TAU_REMOTE=user@build2 TAU_CAP_MEM=20G scripts/rtest make test-dreaming
+#
+# TAU_REMOTE names the host and has no default; TAU_REMOTE_KEY names an ssh key
+# when the agent's or ~/.ssh/config's would not do.
 #
 # ★ WHY THIS EXISTS. The suites here are heavy enough to make the machine
 # somebody is working on unusable, and the dreaming ones are timing-sensitive:
@@ -23,8 +26,8 @@
 # waits for. TAU_CAP_CLASS=gate or small classes a command the other way.
 set -euo pipefail
 
-host="${TAU_REMOTE:-192.168.29.12}"
-key="${TAU_REMOTE_KEY:-$HOME/.ssh/id_ed25519_homelab}"
+host="${TAU_REMOTE:?set TAU_REMOTE to the host that runs the tests, e.g. TAU_REMOTE=user@build1}"
+key="${TAU_REMOTE_KEY:-}"
 mem="${TAU_CAP_MEM:-12G}"
 dir="${TAU_REMOTE_DIR:-tau-rtest}"
 
@@ -33,7 +36,10 @@ if [ $# -eq 0 ]; then
 	exit 2
 fi
 
-ssh_opts=(-o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 -i "$key")
+ssh_opts=(-o BatchMode=yes -o ConnectTimeout=10)
+if [ -n "$key" ]; then
+	ssh_opts+=(-o IdentitiesOnly=yes -i "$key")
+fi
 
 # WHAT GIT IGNORES IS WHAT IS EXCLUDED, and everything else is synced with
 # --delete. Stated as an exclude list rather than a file list, because those two

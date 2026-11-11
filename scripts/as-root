@@ -7,14 +7,14 @@
 # lands in the Go cache; only the binary is run with the privilege.
 #
 #   root already          run it
-#   passwordless sudo     run it under `sudo -n` (the homelab, GitHub's runners)
+#   passwordless sudo     run it under `sudo -n` (a build server, GitHub's runners)
 #   neither               print SKIP and exit 0 — a laptop is not a failure
 #
 # The environment the caller set is carried through sudo, because a test that
 # runs elsewhere than it was told to is a test that lies about where it ran. -E
 # carries it where sudo honours -E; the temp directories are also passed by
 # name, since the loader strips TMPDIR from any setuid program's environment and
-# sudo-rs, which the build servers run, ignores -E altogether. Without them a
+# sudo-rs ignores -E altogether. Without them a
 # root test wrote to /tmp while its run's TMPDIR was somewhere else.
 
 if [ "$(id -u)" -eq 0 ]; then
