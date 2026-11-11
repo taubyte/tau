@@ -221,7 +221,7 @@ function regionBar(): HTMLElement {
   const bar = div("tabs regions");
   const views = lastResult && !("error" in lastResult) ? lastResult.views : undefined;
   for (const [id, label] of [
-    ["strict", "No regions (OSS)"],
+    ["strict", "No regions"],
     ["named", "Preview: regions it names"],
   ] as const) {
     const b = document.createElement("button");

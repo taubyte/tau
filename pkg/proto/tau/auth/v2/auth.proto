@@ -66,7 +66,7 @@ message Principal {
   string token_id = 2;
 }
 
-// Role is a user's standing on this cloud. OSS knows two.
+// Role is a user's standing on this cloud. There are two.
 enum Role {
   ROLE_UNSPECIFIED = 0;
   ROLE_MEMBER = 1;
@@ -432,7 +432,7 @@ service UserService {
 // ListProjects is the one enumeration: every linked project, for an operator's
 // view of a cloud (taucorder). It is a scan of the table, which grows with
 // links rather than with traffic, and like everything here it is reachable by
-// any swarm peer, the OSS trust model. ProjectsOf lists one claimant's own
+// any swarm peer, the swarm trust model. ProjectsOf lists one claimant's own
 // index.
 //
 // AUTHORIZATION OF A LINK IS NOT HERE: whether the claimant may write to the

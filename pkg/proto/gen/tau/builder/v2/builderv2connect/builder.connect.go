@@ -3,7 +3,7 @@
 // Source: tau/builder/v2/builder.proto
 
 // builder's p2p surface: what plm asks the private service that runs a
-// repository's code (.notes/v2/build-topology.md). A builder serves it on
+// repository's code. A builder serves it on
 // /tau/builder/v2 over p2p and faces nothing else; plm finds builders by that
 // protocol through p2p discovery and hands each one run at a time.
 //

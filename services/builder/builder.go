@@ -2,7 +2,7 @@
 // runs what plm hands it. A builder serves its own protocol (builder.proto) on
 // /tau/builder/v2 over p2p and faces nothing else; plm finds builders by that
 // protocol through p2p discovery and hands each one run at a time. A run's log lives here until plm
-// seals it, and plm proxies a follower to it (.notes/v2/build-topology.md).
+// seals it, and plm proxies a follower to it.
 package builder
 
 import (

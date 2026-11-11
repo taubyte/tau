@@ -22,13 +22,13 @@ import (
 	pbconnect "github.com/taubyte/tau/tools/spore-drive/proto/gen/drive/v2/drivev2connect"
 )
 
-// acdz is a cloud config with the shape of a real one: one host named by a
+// realCloud is a cloud config with the shape of a real one: one host named by a
 // domain, a single shape running every v1 service, a main and a lite port, a
 // location, and every key in its own file. The keys are dummies.
-func acdz(t *testing.T) *pb.Document {
+func realCloud(t *testing.T) *pb.Document {
 	t.Helper()
 	doc := &pb.Document{Files: map[string][]byte{}}
-	root := "testdata/acdz"
+	root := "testdata/cloud"
 	err := filepath.WalkDir(root, func(name string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
@@ -113,7 +113,7 @@ func code(err error) connect.Code { return connect.CodeOf(err) }
 
 func TestARealConfigShapeValidatesUnchangedAndPlans(t *testing.T) {
 	_, c := serve(t, nil)
-	doc := acdz(t)
+	doc := realCloud(t)
 
 	res, err := c.Validate(context.Background(), connect.NewRequest(&pb.ValidateRequest{Document: doc}))
 	assert.NilError(t, err)
@@ -145,7 +145,7 @@ func TestARealConfigShapeValidatesUnchangedAndPlans(t *testing.T) {
 
 func TestValidateGeneratesWhatADocumentLeavesOut(t *testing.T) {
 	_, c := serve(t, nil)
-	doc := acdz(t)
+	doc := realCloud(t)
 	hosts := `node1.example.com:
     addr:
         - 203.0.113.10/32
@@ -191,7 +191,7 @@ func TestWhatADocumentCannotBe(t *testing.T) {
 		assert.ErrorContains(t, errors.New(errs[0]), "is not a path inside the config")
 	}
 
-	broken := with(acdz(t), "hosts.yaml", "node1.example.com:\n    addr:\n        - nonsense\n    shapes:\n        all: {}\n")
+	broken := with(realCloud(t), "hosts.yaml", "node1.example.com:\n    addr:\n        - nonsense\n    shapes:\n        all: {}\n")
 	errs := validate(broken)
 	assert.Assert(t, len(errs) > 0)
 
@@ -199,16 +199,16 @@ func TestWhatADocumentCannotBe(t *testing.T) {
 	assert.Equal(t, code(err), connect.CodeInvalidArgument)
 
 	_, err = c.Plan(context.Background(), connect.NewRequest(&pb.PlanRequest{
-		Document: acdz(t),
+		Document: realCloud(t),
 		Tau:      &pb.PlanRequest_Path{Path: "/nonexistent/tau"},
 	}))
 	assert.Equal(t, code(err), connect.CodeInvalidArgument)
 
-	_, err = c.Plan(context.Background(), connect.NewRequest(&pb.PlanRequest{Document: acdz(t), Root: "relative"}))
+	_, err = c.Plan(context.Background(), connect.NewRequest(&pb.PlanRequest{Document: realCloud(t), Root: "relative"}))
 	assert.Equal(t, code(err), connect.CodeInvalidArgument)
 	assert.ErrorContains(t, err, "root")
 
-	shapes := with(acdz(t), "shapes.yaml", "all:\n    services:\n        - gatewya\n    ports:\n        main: 4242\n")
+	shapes := with(realCloud(t), "shapes.yaml", "all:\n    services:\n        - gatewya\n    ports:\n        main: 4242\n")
 	_, err = c.Plan(context.Background(), connect.NewRequest(&pb.PlanRequest{Document: shapes}))
 	assert.Equal(t, code(err), connect.CodeInvalidArgument)
 	assert.ErrorContains(t, err, "gatewya")
@@ -216,7 +216,7 @@ func TestWhatADocumentCannotBe(t *testing.T) {
 
 func TestDocumentsNoV2NodeReadsAreReportedNotRefused(t *testing.T) {
 	_, c := serve(t, nil)
-	doc := with(acdz(t), "accounts.yaml", "session-ttl: 168h\n")
+	doc := with(realCloud(t), "accounts.yaml", "session-ttl: 168h\n")
 	res, err := c.Validate(context.Background(), connect.NewRequest(&pb.ValidateRequest{Document: doc}))
 	assert.NilError(t, err)
 	assert.DeepEqual(t, res.Msg.Errors, []string(nil))
@@ -226,7 +226,7 @@ func TestDocumentsNoV2NodeReadsAreReportedNotRefused(t *testing.T) {
 func TestPlanTakesItsShapesAndConcurrency(t *testing.T) {
 	_, c := serve(t, nil)
 	plan, err := c.Plan(context.Background(), connect.NewRequest(&pb.PlanRequest{
-		Document: acdz(t), Shapes: []string{"all", "all"}, Concurrency: 2,
+		Document: realCloud(t), Shapes: []string{"all", "all"}, Concurrency: 2,
 	}))
 	assert.NilError(t, err)
 	assert.Equal(t, len(plan.Msg.Hops), 2)
@@ -247,7 +247,7 @@ func TestTauSources(t *testing.T) {
 
 func plan(t *testing.T, c pbconnect.DriveServiceClient) string {
 	t.Helper()
-	res, err := c.Plan(context.Background(), connect.NewRequest(&pb.PlanRequest{Document: acdz(t)}))
+	res, err := c.Plan(context.Background(), connect.NewRequest(&pb.PlanRequest{Document: realCloud(t)}))
 	assert.NilError(t, err)
 	return res.Msg.Id
 }

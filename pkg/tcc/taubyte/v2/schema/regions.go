@@ -55,8 +55,7 @@ type Regions interface {
 // is a name for "where this build runs", not a region a cloud declares.
 const DefaultRegion = "default"
 
-// WithNoRegions is the Regions of a build with no regions, the OSS build and the
-// default: everything is placed in DefaultRegion, and naming any other region is
+// WithNoRegions is the Regions of a build with no regions, the default: everything is placed in DefaultRegion, and naming any other region is
 // Broken.
 func WithNoRegions() Regions { return oneRegion{region: DefaultRegion} }
 

@@ -669,8 +669,7 @@ of `V2Resources`, with the scope container last.
 **A group with no index footprint emits no deferred validations either.** The whole
 driver is gated on `UsesIndexing`, and inside it an attribute's `EmitValidation` fires
 after the footprint runs — so v2's `zone`/dns check was declared and dead until this
-landed. Do not read that coupling as a rule; it is a trap in the driver, recorded in
-`.notes/v2/lowering.md`.
+landed. Do not read that coupling as a rule; it is a trap in the driver.
 
 ## 8c. The rules a consumer depends on
 

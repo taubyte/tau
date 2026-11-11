@@ -3,8 +3,8 @@
 // Source: tau/plm/v2/plm.proto
 
 // plm's inter-service RPC surface. v1's patrick (webhook + job store) and monkey
-// (CI builder) become two v2 services on either side of a trust boundary
-// (.notes/v2/build-topology.md): `plm`, public, which takes webhooks and the job
+// (CI builder) become two v2 services on either side of a trust boundary:
+// `plm`, public, which takes webhooks and the job
 // API off the internet and OWNS THE QUEUE AND THE JOB RECORDS; and `builder`,
 // private, N of them, which hold no state and run what plm hands them. Public
 // and dangerous are different axes: plm is exposed to hostile INPUT, a builder to

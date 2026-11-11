@@ -266,7 +266,7 @@ type Authorizer interface {
 	Allow(ctx context.Context, caller peer.ID, act Action, subject string) error
 }
 
-// AllowAnyPeer is the OSS default: any peer the transport authenticated may call.
+// AllowAnyPeer is the default: any peer the transport authenticated may call.
 func AllowAnyPeer() Authorizer { return allowAnyPeer{} }
 
 type allowAnyPeer struct{}

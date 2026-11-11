@@ -45,7 +45,7 @@ syntax = "proto3";
 // reading the register's idea of the schema instead of the schema.
 //
 // AUTHORIZATION IS NOT HERE. Any peer that can reach this service can publish,
-// which is the OSS trust model — the swarm's members are the trust boundary
+// which is the swarm trust model — the swarm's members are the trust boundary
 // and a certificate from the cloud's CA is what enforces it. A deployment that needs to
 // distinguish between its own peers needs a caller identity on every request
 // and an answer to "who may move this pointer"; that is a real design, not a

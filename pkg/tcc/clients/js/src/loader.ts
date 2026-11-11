@@ -16,7 +16,7 @@ export interface CompileOptions {
 
 /**
  * Which regions the views are cut for. Omitted: the build with no regions, one view
- * `default` (what an OSS deploy publishes), refusing a region the project names.
+ * `default` (what a deploy with no regions publishes), refusing a region the project names.
  * `"named"`: a preview of every
  * region the project names. A list: a preview of exactly those.
  */

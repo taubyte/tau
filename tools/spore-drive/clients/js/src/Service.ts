@@ -124,8 +124,7 @@ export class Service {
     }
   }
 
-  // Which release tarball to download. Override point: the ee client pulls the
-  // ee spore-drive build instead of the community one.
+  // Which release tarball to download; a subclass can download another build.
   protected releaseAssetUrl(version: string, os: string, arch: string): string {
     const assetName = `spore-drive-service_${version}_${os}_${arch}.tar.gz`;
     return `https://github.com/taubyte/spore-drive/releases/download/v${version}/${assetName}`;

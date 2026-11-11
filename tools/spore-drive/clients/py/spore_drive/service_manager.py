@@ -82,8 +82,7 @@ class ServiceManager:
         return os_map.get(system), arch_map.get(machine)
     
     def _release_asset_url(self, os_name: str, arch: str) -> str:
-        """Which release tarball to download. Override point: the ee client pulls
-        the ee spore-drive build instead of the community one."""
+        """Which release tarball to download; a subclass can download another build."""
         asset_name = f"spore-drive-service_{self.service_version}_{os_name}_{arch}.tar.gz"
         return f"https://github.com/taubyte/spore-drive/releases/download/v{self.service_version}/{asset_name}"
 

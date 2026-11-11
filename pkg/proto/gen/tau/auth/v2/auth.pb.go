@@ -42,7 +42,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Role is a user's standing on this cloud. OSS knows two.
+// Role is a user's standing on this cloud. There are two.
 type Role int32
 
 const (
