@@ -1,0 +1,9 @@
+id: QmZBUW9eWreBhsF8ct6FXVhXtRg6gx6V1uWsqwSVYyhY7W
+description: the home site's files again, on a name of their own and with no not-found page - a path it does not have is a bare 404, though the files hold a 404.html
+package:
+    name: home_code
+host:
+    zone:
+        in:
+            name: example_com
+        name: plain

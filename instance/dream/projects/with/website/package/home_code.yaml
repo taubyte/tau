@@ -1,5 +1,5 @@
 id: QmRd1fKynBXAJt2aahbVe6v3sHsQW4ALRGVCA56C4EpTjq
-description: the home site's files, written by its build - an index and a not-found page
+description: the home site's files, written by its build - an index, a guide in a directory of its own, and a not-found page
 type: assets
 source: .
 output: dist
@@ -10,4 +10,6 @@ build:
           commands:
               - mkdir -p dist
               - printf '<h1>home</h1>' > dist/index.html
+              - mkdir -p dist/guide
+              - printf '<h1>guide</h1>' > dist/guide/index.html
               - printf '<h1>gone</h1>' > dist/404.html

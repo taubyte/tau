@@ -208,6 +208,8 @@ type probe struct {
 	status             int
 	answer             string
 	contains           string
+	// empty says the answer has no body, which a zero answer cannot say.
+	empty bool
 	// budget is how long the cloud may take to start answering; zero is two
 	// minutes.
 	budget time.Duration
@@ -335,12 +337,19 @@ var corpus = []corpusCase{
 		{host: "vault.example.com", method: http.MethodGet, path: "/", status: 200, answer: fingerprintOf(signingKey)},
 		{host: "reader.example.com", method: http.MethodGet, path: "/", status: 200, answer: fingerprintOf(signingKey)},
 	}},
-	// TWO WEBSITES ON ONE NAME, each compiled into the gateway that serves its package's
-	// files: the static one answers a path it lacks with its own page and 404, the
-	// single-page app at /docs answers every route under it with its one page.
+	// THREE WEBSITES ON TWO NAMES, each compiled into the gateway that serves its
+	// package's files: the static one answers a directory with its index and a path it
+	// lacks with its own page and 404, the single-page app at /docs answers every route
+	// under it with its one page, and a static site naming no not-found page answers a
+	// bare 404 though its files hold one.
 	{name: "with/website", probes: []probe{
 		{host: "www.example.com", method: http.MethodGet, path: "/", status: 200, answer: "<h1>home</h1>"},
+		{host: "www.example.com", method: http.MethodHead, path: "/", status: 200, empty: true},
+		{host: "www.example.com", method: http.MethodGet, path: "/guide", status: 200, answer: "<h1>guide</h1>"},
+		{host: "www.example.com", method: http.MethodGet, path: "/guide/", status: 200, answer: "<h1>guide</h1>"},
 		{host: "www.example.com", method: http.MethodGet, path: "/nope", status: 404, answer: "<h1>gone</h1>"},
+		{host: "plain.example.com", method: http.MethodGet, path: "/", status: 200, answer: "<h1>home</h1>"},
+		{host: "plain.example.com", method: http.MethodGet, path: "/nope", status: 404, empty: true},
 		{host: "www.example.com", method: http.MethodGet, path: "/docs/", status: 200, answer: "<div id=docs></div>"},
 		{host: "www.example.com", method: http.MethodGet, path: "/docs/guide/intro", status: 200, answer: "<div id=docs></div>"},
 		{host: "www.example.com", method: http.MethodPost, path: "/", status: 405},
@@ -721,7 +730,7 @@ func answered(t *testing.T, n *instance.Instance, project string, p probe) {
 			return false
 		}
 		last = fmt.Sprintf("%d %s", status, body)
-		return status == p.status && (p.answer == "" || body == p.answer) && strings.Contains(body, p.contains)
+		return status == p.status && (p.answer == "" || body == p.answer) && (!p.empty || body == "") && strings.Contains(body, p.contains)
 	}, budget, time.Second, "%+v never answered: %s", p, said{&last})
 }
 
