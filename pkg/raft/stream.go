@@ -145,7 +145,12 @@ func (s *raftStreamService) Get(ctx context.Context, req *connect.Request[raftv2
 		}
 	}
 
-	val, found := s.cluster.Get(m.GetKey())
+	// A MEMBER THAT CANNOT READ SAYS SO rather than answer not found: a caller
+	// asking several takes the first answer, which would beat a live one's value.
+	val, found, err := s.cluster.TryGet(m.GetKey())
+	if err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&raftv2.GetResponse{Value: val, Found: found}), nil
 }
 

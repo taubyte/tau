@@ -629,6 +629,28 @@ func TestStream_AForwardFromTheLeaderItselfIsRefused(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotLeader)
 }
 
+// A CLOSED MEMBER'S GET FAILS rather than answer not found: a caller asking several
+// members takes the first answer, so a member that can no longer read would beat
+// the value a live one holds.
+func TestStream_AClosedMembersGetFailsRatherThanAnswersNotFound(t *testing.T) {
+	mn := peertest.Net(t)
+	cl, _ := callerOf(t, mn, "get-from-a-closed-member", sameStore)
+	require.NoError(t, cl.Set("k", []byte("v"), time.Second))
+	s := &raftStreamService{cluster: cl.(*cluster)}
+	get := func() (*connect.Response[raftv2.GetResponse], error) {
+		return s.Get(t.Context(), connect.NewRequest(&raftv2.GetRequest{Key: "k"}))
+	}
+
+	res, err := get()
+	require.NoError(t, err)
+	require.True(t, res.Msg.GetFound())
+	require.Equal(t, []byte("v"), res.Msg.GetValue())
+
+	require.NoError(t, cl.Close())
+	_, err = get()
+	require.ErrorIs(t, err, ErrShutdown)
+}
+
 // A FORWARD IN FLIGHT WHEN ITS LEADER CHANGES MAY HAVE LANDED, and says so rather
 // than be sent again to the next.
 func TestStream_AForwardInFlightWhenTheLeaderChangesIsLeadershipLost(t *testing.T) {
