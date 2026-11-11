@@ -83,16 +83,29 @@ func (srv *server) repairShares(ctx context.Context) {
 		return
 	}
 
+	self := srv.self()
+	var missing []*KeyMeta
+	for _, key := range keys {
+		if !slices.Contains(key.Members, self) {
+			continue
+		}
+		if _, err := srv.shares.Get(ctx, key.KeyID); err != nil {
+			missing = append(missing, key)
+		}
+	}
+	if len(missing) == 0 {
+		return
+	}
+
+	// WHAT IS IN USE IS READ AFTER THE SHARES ARE FOUND MISSING. Read first, it
+	// counts a key active on a share that was there then and is gone by the
+	// check, and repair rebuilds a key nothing needs.
 	inUse, err := srv.keysInUse(ctx)
 	if err != nil {
 		return
 	}
 
-	self := srv.self()
-	for _, key := range keys {
-		if !slices.Contains(key.Members, self) {
-			continue
-		}
+	for _, key := range missing {
 		// Only keys something is still wrapped under. Key material is kept
 		// forever, so repairing on membership alone would let a node holding
 		// nothing but its private key pull back every share that identity was
@@ -100,9 +113,6 @@ func (srv *server) repairShares(ctx context.Context) {
 		// would make the private key alone as good as the private key plus the
 		// share store.
 		if _, ok := inUse[key.KeyID]; !ok {
-			continue
-		}
-		if _, err := srv.shares.Get(ctx, key.KeyID); err == nil {
 			continue
 		}
 
